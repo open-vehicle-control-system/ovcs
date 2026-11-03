@@ -28,9 +28,10 @@ defmodule VisionCore.Detection.Supervisor do
   nothing across one.
 
   The backend's options go to the backend, the pipeline's to the
-  pipeline and `:max_hz` to `Live`; see their docs. The ROS 2 exporter
-  reads `:topic_prefix`, `:frame_id`, `:marker_lifetime_ms` and
-  `:label_font_size` (`VisionCore.Ros2.Exporter.Detections`).
+  pipeline and `:max_hz` to `Live`; see their docs. How the detections
+  are published is the exporters' business: the ROS 2 exporter's are its
+  `detections:` options (`VisionCore.Ros2.Exporter`), and their frame
+  is the one their pair carries.
   """
   use Supervisor
 

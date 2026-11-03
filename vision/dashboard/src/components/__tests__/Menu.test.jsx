@@ -1,14 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, within, fireEvent } from '@testing-library/react'
 import Menu from '../Menu.jsx'
 import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
+import { useExporters } from '../../stores/exporters.js'
+import { useStatus } from '../../stores/status.js'
 
 vi.mock('../../services/parameters.js')
 
 const group = (id, name, position, pipeline, role = 'step') => ({
   id, name, summary: '', pipeline, role, position, status: null, parameterIds: []
 })
+
+const exporter = (id, name, level, detail) => ({ id, name, module: name, status: { level, detail }, outputs: [] })
 
 describe('Menu', () => {
   beforeEach(() => {
@@ -17,10 +21,14 @@ describe('Menu', () => {
       parameters: {},
       selectedGroupId: null
     })
-    useNavigation.setState({ page: 'overview' })
+    useNavigation.setState({ page: 'overview', exporterId: null })
+    useExporters.setState({
+      exporters: [exporter('ros2', 'ROS 2', 'warning', 'Disconnected'), exporter('api', 'API', 'ok', 'Answering')]
+    })
+    useStatus.setState({ snapshot: null })
   })
 
-  it("lists the unit's pages in Main, each pipeline's steps in Pipelines and the exporters last", () => {
+  it("lists the unit's pages in Main, each pipeline's steps in Pipelines and the unit's exporters last", () => {
     render(<Menu />)
 
     const main = screen.getByRole('region', { name: 'Main' })
@@ -32,6 +40,36 @@ describe('Menu', () => {
 
     const exporters = screen.getByRole('region', { name: 'Exporters' })
     expect(within(exporters).getAllByRole('button').map((button) => button.textContent)).toEqual(['ROS 2', 'API'])
+  })
+
+  it('marks each exporter with its status, the live one of the status first, and opens its page', () => {
+    useExporters.setState({
+      exporters: [
+        exporter('ros2', 'ROS 2', 'warning', 'Disconnected'),
+        exporter('recorder', 'Recorder', 'off', 'Not running'),
+        exporter('api', 'API', 'ok', 'Answering')
+      ]
+    })
+    useStatus.setState({ snapshot: { exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'ok', detail: 'Connected' } }] } })
+    render(<Menu />)
+
+    const exporters = screen.getByRole('region', { name: 'Exporters' })
+    const ros2 = within(exporters).getByRole('button', { name: 'ROS 2, ok: Connected' })
+    expect(ros2.querySelector('.ovcs-status')).toBeNull()
+    const recorder = within(exporters).getByRole('button', { name: 'Recorder, off: Not running' })
+    expect(recorder.querySelector('.ovcs-status')).not.toBeNull()
+    expect(recorder.className).toContain('border-dashed')
+
+    fireEvent.click(recorder)
+    expect(useNavigation.getState()).toMatchObject({ page: 'exporter', exporterId: 'recorder' })
+    expect(recorder.getAttribute('aria-current')).toBe('page')
+  })
+
+  it('marks an exporter whose status is a warning in red', () => {
+    render(<Menu />)
+
+    const ros2 = within(screen.getByRole('region', { name: 'Exporters' })).getByRole('button', { name: 'ROS 2, warning: Disconnected' })
+    expect(ros2.querySelector('.ovcs-status--error')).not.toBeNull()
   })
 
   it('shows the detection pipeline greyed, with nothing to select, on a unit without a detector', () => {

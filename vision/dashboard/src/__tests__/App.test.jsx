@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import App from '../App.jsx'
 import { useParameters } from '../stores/parameters.js'
-import { pageFromUrl, useNavigation } from '../stores/navigation.js'
+import { exporterFromUrl, pageFromUrl, useNavigation } from '../stores/navigation.js'
+import { useExporters } from '../stores/exporters.js'
 import * as service from '../services/parameters.js'
 import { dashboardSocket } from '../services/socket.js'
 
@@ -23,6 +24,18 @@ const groups = [
   group('cameras', 'Cameras', 1, { role: 'source' })
 ]
 
+const exporters = [
+  { id: 'ros2', name: 'ROS 2', module: 'VisionCore.Ros2.Exporter', status: { level: 'ok', detail: 'Connected' }, outputs: [] },
+  {
+    id: 'recorder',
+    name: 'Recorder',
+    module: 'MyCar.Recorder',
+    status: { level: 'ok', detail: 'Recording' },
+    outputs: [{ name: 'stereo_pair', maxHz: 2 }]
+  },
+  { id: 'api', name: 'API', module: 'VisionApiWeb.Endpoint', status: { level: 'ok', detail: 'Answering' }, outputs: [] }
+]
+
 const initial = useParameters.getState()
 
 describe('App', () => {
@@ -31,13 +44,14 @@ describe('App', () => {
     actions = { startPolling: vi.fn(), stopPolling: vi.fn() }
     dashboardSocket.channel.mockClear()
     useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
+    useExporters.setState({ exporters })
     visit('/')
   })
 
   // Opens the dashboard at `path`, as a reload would.
   const visit = (path) => {
     window.history.replaceState(null, '', path)
-    useNavigation.setState({ page: pageFromUrl() })
+    useNavigation.setState({ page: pageFromUrl(), exporterId: exporterFromUrl() })
   }
 
   it('polls the parameters while mounted', () => {
@@ -127,8 +141,8 @@ describe('App', () => {
     expect(window.location.search).toBe('')
   })
 
-  it('opens the page the URL names, and keeps the page in the URL', () => {
-    visit('/?page=api')
+  it('opens the exporter the URL names, and keeps the page in the URL', () => {
+    visit('/?exporter=api')
     useParameters.setState({ groups })
     render(<App />)
     expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()
@@ -136,6 +150,17 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Calibration' }))
     expect(window.location.search).toBe('?page=calibration')
     expect(screen.getByRole('heading', { name: 'Calibration' })).toBeTruthy()
+  })
+
+  it("opens an exporter without a page of its own on the exporters' page: its status and outputs", () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Recorder/ }))
+
+    expect(window.location.search).toBe('?exporter=recorder')
+    expect(screen.getByRole('heading', { name: 'Recorder' })).toBeTruthy()
+    expect(screen.getByText('Recording')).toBeTruthy()
+    expect(screen.getByRole('row', { name: /Stereo pairs/ }).textContent).toContain('at most 2 Hz')
   })
 
   it('keeps the videos playing between the overview and a stage, which show the same previews', () => {
@@ -163,8 +188,8 @@ describe('App', () => {
     expect(window.location.search).toBe('?box=stereo.match')
     expect(screen.getByRole('heading', { name: 'Match' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'API' }))
-    expect(window.location.search).toBe('?page=api')
+    fireEvent.click(screen.getByRole('button', { name: /^API/ }))
+    expect(window.location.search).toBe('?exporter=api')
     expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBeNull()
   })
 })

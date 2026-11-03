@@ -107,10 +107,27 @@ export function pairStatus(status) {
   return [syncStatus(status.sync), alignmentStatus(status.alignment), sharpnessStatus(status.sharpness)]
 }
 
+// The ROS 2 exporter's status, lower-cased like the other values; none on a unit without a ROS 2 exporter.
+function ros2Status(exporters) {
+  const ros2 = (exporters ?? []).find((exporter) => exporter.id === 'ros2')
+  if (!ros2) return []
+  const { level, detail } = ros2.status
+  return [
+    {
+      id: 'ros2',
+      title: 'ROS 2',
+      value: detail.charAt(0).toLowerCase() + detail.slice(1),
+      widest: 'not answering',
+      healthy: level === 'ok',
+      hint: HINTS.ros2
+    }
+  ]
+}
+
 /** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
-    { id: 'zenoh', title: 'Zenoh', value: status.zenoh, widest: 'disconnected', healthy: status.zenoh === 'connected', hint: HINTS.zenoh },
+    ...ros2Status(status.exporters),
     // Absent is a unit built without an accelerator, not a fault.
     {
       id: 'hailo',

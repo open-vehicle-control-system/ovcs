@@ -3,8 +3,11 @@ defmodule VisionApiWeb.StatusJSON do
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
   same fields with camelCase keys, states as strings, and
   `:stereo_segment_percent` as `stereoLoadPercent`. A camera's or the
-  sync's fields that were not measured are left out.
+  sync's fields that were not measured are left out. Each exporter's
+  status is a `level` and a `detail`, as in `VisionApiWeb.ExporterJSON`.
   """
+
+  alias VisionApiWeb.ExporterJSON
 
   @camera_keys %{
     present: :present,
@@ -37,9 +40,12 @@ defmodule VisionApiWeb.StatusJSON do
       alignment: alignment(snapshot.alignment),
       sharpness: snapshot.sharpness,
       quality: quality(snapshot.quality),
-      zenoh: Atom.to_string(snapshot.zenoh)
+      exporters: Enum.map(snapshot.exporters, &exporter/1)
     }
   end
+
+  defp exporter(exporter),
+    do: %{id: exporter.id, name: exporter.name, status: ExporterJSON.status(exporter.status)}
 
   defp rename(fields, keys) do
     for {key, value} <- fields, Map.has_key?(keys, key), into: %{}, do: {keys[key], value}

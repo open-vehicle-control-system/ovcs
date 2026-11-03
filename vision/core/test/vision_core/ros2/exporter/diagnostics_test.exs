@@ -7,8 +7,6 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
   alias VisionCore.Outputs
   alias VisionCore.Ros2.Exporter.Diagnostics
 
-  @half_period_ns 16_666_666
-
   # Names the cameras, which need not be running: without live/1, nothing is asked of them.
   defmodule Camera do
     def name_for(label), do: Module.concat(__MODULE__, label)
@@ -38,7 +36,7 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
     )
   end
 
-  test "measures the sync of the frames the cameras publish" do
+  test "plots the sync it measures on the frames the cameras publish" do
     diagnostics = start_diagnostics(Camera)
 
     for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
@@ -46,26 +44,11 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
       Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
     end
 
-    assert %{pairs: 1, offset_median_ms: offset_ms} = Diagnostics.sync(diagnostics)
+    :sys.get_state(diagnostics)
+    send(diagnostics, :plot)
+
+    assert_receive {:published, "stereo/live/sync_offset_ms", %Float64{data: offset_ms}}, 1_000
     assert_in_delta offset_ms, 0.2, 1.0e-9
-  end
-
-  test "measures no sync once its cameras have formed no pair for two seconds" do
-    diagnostics = start_diagnostics(Camera)
-
-    for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
-      frame = %Frame{label: label, width: 1, height: 1, capture_ns: capture_ns, grey: <<0>>}
-      Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
-    end
-
-    assert %{pairs: 1} = Diagnostics.sync(diagnostics)
-
-    # White-box: the pair formed two seconds and more ago.
-    :sys.replace_state(diagnostics, fn state ->
-      %{state | last_pair_ms: state.last_pair_ms - 2_001}
-    end)
-
-    assert Diagnostics.sync(diagnostics) == %{offset_median_ms: nil, offset_max_ms: nil, pairs: 0}
   end
 
   test "reports cameras that are not running as stale, and keeps running" do
@@ -82,7 +65,8 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
            ]
 
     send(diagnostics, :plot)
-    assert %{pairs: 0} = Diagnostics.sync(diagnostics)
+    :sys.get_state(diagnostics)
+    assert Process.alive?(diagnostics)
   end
 
   test "plots the sync offset and each camera's exposure and gain" do
@@ -117,36 +101,5 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
 
     assert %DiagnosticArray{status: [_left, _right, %{level: :warn}]} =
              Diagnostics.diagnostic_array("stereo", roles, [1.5], live.(), 1_500, nil)
-  end
-
-  describe "pair_offset/4" do
-    test "measures right minus left against the nearest frame of the other camera" do
-      assert Diagnostics.pair_offset(
-               :right,
-               1_000_200_000,
-               [1_000_000_000, 966_666_666],
-               @half_period_ns
-             ) ==
-               200_000
-
-      assert Diagnostics.pair_offset(
-               :left,
-               1_000_200_000,
-               [1_000_000_000, 966_666_666],
-               @half_period_ns
-             ) ==
-               -200_000
-    end
-
-    test "pairs nothing farther than half a frame period, nor without frames" do
-      assert Diagnostics.pair_offset(
-               :right,
-               1_020_000_000,
-               [1_000_000_000],
-               @half_period_ns
-             ) == nil
-
-      assert Diagnostics.pair_offset(:right, 1_000_000_000, [], @half_period_ns) == nil
-    end
   end
 end

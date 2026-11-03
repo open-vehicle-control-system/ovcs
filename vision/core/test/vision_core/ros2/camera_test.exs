@@ -38,22 +38,37 @@ defmodule VisionCore.Ros2.CameraTest do
     end
   end
 
-  test "publishes each image as a frame under its label" do
+  test "publishes each image as a frame under its label, with its configured frame id" do
     output = {:camera_frame, Camera.name_for("left")}
     :ok = Outputs.subscribe(output)
 
     state = %{
       label: "left",
+      frame_id: "stereo_left_optical",
       topic: "stereo/left/image_raw/compressed",
       output: output,
       frame_count: 0
     }
 
-    header = %Header{stamp: %Time{sec: 1}, frame_id: "stereo_left"}
+    header = %Header{stamp: %Time{sec: 1}, frame_id: "camera_left"}
     image = %CompressedImage{header: header, format: "jpeg", data: jpeg(17, 5)}
 
     assert {:noreply, _state} = Camera.handle_info({:ros_message, {state.topic, image}}, state)
 
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", width: 17, height: 5}}}
+    assert_receive {:"$gen_cast",
+                    {:camera_frame,
+                     %Frame{label: "left", frame_id: "stereo_left_optical", width: 17, height: 5}}}
+  end
+
+  test "does not start without the ROS 2 link, and says so" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:error, {:shutdown, :no_ros2_link}} =
+                 Camera.start_link(label: "left", topic: "stereo/left/image_raw/compressed")
+      end)
+
+    assert log =~ "no ros2: section"
   end
 end

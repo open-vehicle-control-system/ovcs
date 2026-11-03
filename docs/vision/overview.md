@@ -1,9 +1,9 @@
 ---
 title: Vision unit
-description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns stereo cameras into ROS 2 depth and detection topics, and how a vehicle opts in.
+description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns stereo cameras into depth and detection, exported as ROS 2 topics, and how a vehicle opts in.
 ---
 
-The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, publishes the results as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2_compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
+The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, takes the results out through its exporters, such as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2_compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
 
 A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs stereo depth and detection in its `ros_vision` bridge firmware instead, with the ROS bridge's own stack ([Perception](../ros2_perception.md)).
 
@@ -13,7 +13,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 
 | Layer | Path | What it is |
 |---|---|---|
-| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the ROS 2 side under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
+| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
 | Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
@@ -35,7 +35,7 @@ def vision_target, do: :rpi5
 
 `vision_target/0` is `:rpi5` or `:okdo_c100`; see [The OKdo Nano C100](#the-okdo-nano-c100) for the second.
 
-`vision/0` returns a module implementing `VisionCore.Composer`: `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm (Zenoh endpoint, ROS node name, components and their drivers), and the optional `required_files/0` lists files, relative to your vehicle app, that the image needs and the repository does not carry, such as a detection model. The build fails when one is missing. The behaviour is documented in `VisionCore.Composer`, and the components you can list in `VisionCore.Components`; see also [Your vehicle package](../vehicle_package.md#the-five-behaviours).
+`vision/0` returns a module implementing `VisionCore.Composer`: `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm (the components and their drivers, the exporters, and the ROS 2 link they need: Zenoh endpoint and ROS node name), and the optional `required_files/0` lists files, relative to your vehicle app, that the image needs and the repository does not carry, such as a detection model. The build fails when one is missing. The behaviour is documented in `VisionCore.Composer`, the components you can list in `VisionCore.Components`, and the exporters in [How a pair flows](./data_flow.md#exporters); see also [Your vehicle package](../vehicle_package.md#the-five-behaviours).
 
 Everything the unit needs from a vehicle lives in the package: resolution, the stereo stages and their settings, calibration, topic prefix, frame ids, detection model and thresholds. Boot files for the Pi go in `vehicles/<vehicle>/priv/firmware/vision/`.
 
@@ -105,6 +105,8 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
 
 The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../../vision/api/README.md).
+
+The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. The ROS 2 exporter and the API open pages of their own, another exporter a page with its status and the outputs it reads. The top bar shows the ROS 2 exporter's status, its link to the Zenoh router, on a unit that has one.
 
 `GET /api/ros2-node` describes what the unit exports over ROS 2: its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open, the topics it has published, each with its message type and rate over the last second, and the services it answers, the parameter services and each camera's `set_camera_info`. Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.ZenohClient.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent: it is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
 

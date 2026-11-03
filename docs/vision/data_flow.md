@@ -27,10 +27,10 @@ A Port's row below names the process that owns it.
 | Box | Process | Started by |
 |---|---|---|
 | LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100, one per side | `VisionCore.Stereo.Supervisor` |
-| Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex) | `VisionCore.Stereo.Supervisor` |
+| Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
-| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) measuring the cameras' sync | `VisionCore.Exporters` |
+| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
 | Detection pipeline | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor` |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
@@ -47,7 +47,7 @@ The drivers, the Pipeline and the Detection pipeline publish their frames, pairs
 2. **Pairing.** The Pairer pairs a left and a right frame by their capture times, and submits a pair only when the Pipeline says it can take one. Pairs that are ready while the Pipeline is busy are dropped, not queued: a queue would only make the depth older.
 3. **Stages.** The Pipeline runs the stages in order. Consecutive stages that run on the same device form one segment, so a pair crosses to the GPU, or to the `stereo_match` Port, once and comes back once. The [stages guide](./stages.md) describes each one.
 4. **Subscribers.** The finished `Pair` goes to every subscriber as a message. On the BEAM, a large binary such as an image is shared between processes by reference, not copied, so five subscribers cost no more memory than one.
-5. **Publishing.** The ROS 2 exporter sends the disparity, depth and point cloud of every pair, and the raw camera images as frames arrive, at most `:raw_image_max_hz` a second per side; detection runs on every `:detect_every_n`-th pair; the dashboard's previews are encoded only when a dashboard is open.
+5. **Publishing.** The ROS 2 exporter sends the disparity, depth and point cloud of every pair, and the raw camera images as frames arrive, at most `:raw_image_max_hz` a second per side (its `stereo:` options); detection runs on every `:detect_every_n`-th pair; the dashboard's previews are encoded only when a dashboard is open.
 
 ## Two pairs in flight
 
@@ -66,7 +66,7 @@ With a compiled segment first, as on the C100, the Pipeline overlaps differently
 
 ## What leaves the unit
 
-Everything the unit publishes goes over Zenoh as ROS 2 messages, under the component's `:topic_prefix`, `stereo` by default:
+The exporters take the unit's outputs out of it ([Exporters](#exporters) below). The ROS 2 exporter publishes them over Zenoh as ROS 2 messages, under its `:topic_prefix`, the stereo unit's `:prefix` by default, `stereo`:
 
 | Topic | Content |
 |---|---|
@@ -80,13 +80,29 @@ Everything the unit publishes goes over Zenoh as ROS 2 messages, under the compo
 
 Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Ros2.Exporter.Stereo`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./overview.md#dashboard-and-api)).
 
+Each message is stamped with the frame id of what it comes from. The stereo component's sides set each camera's (`left: [frame_id: "stereo_left_optical"]`, `<prefix>_left` without one), every frame carries its camera's, and a pair's outputs and its detections are in the left camera's frame: one setting reaches every exporter.
+
 ## Exporters
 
 An exporter takes the unit's outputs out of it, to a network or to storage. It is a module of plain functions implementing [`VisionCore.Exporter`](../../vision/core/lib/vision_core/exporter.ex): it names the outputs it reads (the stereo pairs, a camera's frames, the detections) and takes each value it is handed. [`VisionCore.Exporter.Runner`](../../vision/core/lib/vision_core/exporter/runner.ex) subscribes to those outputs and hands the exporter the newest value of each, at most the output's `:max_hz` times a second. A value that arrives while the exporter is busy replaces the one before it, so a slow exporter skips values instead of falling behind; an exporter whose transport answers later says it is busy with an output, and is handed its newest value once it says it is ready.
 
-[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts last in `VisionCore.Supervisor`, after the components, the Status and the Preview, and runs each exporter under a supervisor with its own restart budget. An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts, without holding up the rest of the unit. One that keeps crashing stops alone, for good, with an error logged: the cameras, the pipelines and the other exporters keep running.
+Your vehicle's composer lists the exporters in its `VisionCore.Config`, each `{module, options}`, next to the components that produce the outputs. The ROS 2 exporter needs the ROS 2 link, the `ros2:` section:
 
-The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), is one of them. It publishes the topics above, the cameras' diagnostics and a heartbeat, with what the `:heartbeat`, `:stereo` and detector components ask it to publish. The Zenoh session it publishes through, the parameter services and the topic counts belong to the unit's core and start before the components.
+```elixir
+%VisionCore.Config{
+  ros2: [zenoh_endpoint_ip: "10.0.0.2"],
+  components: [stereo_component()],
+  exporters: [{VisionCore.Ros2.Exporter, heartbeat: [], stereo: []}]
+}
+```
+
+Without `ros2:`, no ROS 2 process starts: no Zenoh session, no parameter services, no topic counts, no simulator clock. A ROS 2 exporter or a `VisionCore.Ros2.Camera` configured without it is not started, with the reason logged, and the unit runs on. An exporter of your own needs no change to the core, the API or the dashboard: one module, and one line in your composer.
+
+[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components in `VisionCore.Supervisor`, before the Status, which reports the exporters' statuses, and the Preview, and runs each exporter under a supervisor with its own restart budget. An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts, without holding up the rest of the unit. One that keeps crashing stops alone, for good, with an error logged: the cameras, the pipelines and the other exporters keep running. The ROS 2 link stays in the unit's core, before the components: the simulator clock holds every stamp back until the first `/clock`, and a `VisionCore.Ros2.Camera` reads its frames through the Zenoh session.
+
+The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), publishes the topics above, the cameras' diagnostics and a heartbeat, each part when its option is given, and answers `cameracalibrator`'s commit. It reads the stereo unit's cameras in the configuration each time it starts, the calibration a commit stored first, so the camera info it publishes is the calibration the stereo unit uses.
+
+`GET /api/exporters` lists the exporters with their statuses and the outputs they read, the API last, as it is the one answering. The dashboard's Exporters menu is built from it, each entry with its status; the ROS 2 exporter and the API have pages of their own, another exporter a page with its status and outputs. The top bar shows the ROS 2 exporter's status, its link to the Zenoh router.
 
 ## The dashboard's previews
 

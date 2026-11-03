@@ -7,21 +7,16 @@ defmodule VisionCore.Components do
   runtime shape is exactly what the vehicle declared; there are no
   implicit defaults.
 
+  The components produce the unit's outputs; what takes them out of the
+  unit, such as `VisionCore.Ros2.Exporter`, is an exporter
+  (`VisionCore.Config`'s `:exporters`).
+
   ## Components
 
-    * `:heartbeat` — a `std_msgs/String` on `/ovcs_heartbeat`, 1 Hz,
-      which `VisionCore.Ros2.Exporter` publishes; it starts no process
-      of its own. Opts:
-        * `:interval_ms` (default `1_000`)
-    * `:simulator_clock` — `VisionCore.Ros2.Clock`, following `/clock` so
-      published stamps use simulator time rather than wall clock.
-      **Simulation only.** Without it every stamp is wall clock, which
-      is correct on a vehicle and wrong against Gazebo — see
-      `VisionCore.Ros2.Clock` for what that breaks.
     * `:stereo` — the stereo unit: two cameras, the pairer and the
       `VisionCore.Stereo.Pipeline` turning pairs into disparity and
-      depth, which `VisionCore.Ros2.Exporter` publishes.
-      `VisionCore.Stereo.Supervisor` documents the opts. Minimal wiring:
+      depth. `VisionCore.Stereo.Supervisor` documents the opts. Minimal
+      wiring:
 
           {:stereo,
            driver: VisionCore.Camera.GStreamer,
@@ -34,9 +29,9 @@ defmodule VisionCore.Components do
     * `:detector` — `VisionCore.Detection.Supervisor`: the `:backend`
       given in the opts (`VisionCore.Detection.Backend.Hailo` or
       `.Stub`) and the `VisionCore.Detection.Pipeline` placing its boxes
-      in 3D, which `VisionCore.Ros2.Exporter` publishes. The detection
-      pipeline subscribes to the stereo pipeline's pairs through
-      `VisionCore.Outputs`, whichever of the two starts first.
+      in 3D. The detection pipeline subscribes to the stereo pipeline's
+      pairs through `VisionCore.Outputs`, whichever of the two starts
+      first.
     * `:hailo_detector` — `:detector` with the Hailo backend.
   """
 
@@ -45,11 +40,7 @@ defmodule VisionCore.Components do
   unknown names so a typo in a vehicle's `:components` list fails
   loudly at boot.
   """
-  @spec start(atom(), keyword()) :: [Supervisor.child_spec() | {module(), term()}]
-  def start(:heartbeat, _opts), do: []
-
-  def start(:simulator_clock, opts), do: [{VisionCore.Ros2.Clock, opts}]
-
+  @spec start(atom(), keyword()) :: [Supervisor.child_spec()]
   def start(:hailo_detector, opts) do
     start(:detector, Keyword.put_new(opts, :backend, VisionCore.Detection.Backend.Hailo))
   end

@@ -18,3 +18,9 @@ export async function fetchFirmware() {
   const document = await request('firmware')
   return document.data.attributes
 }
+
+/** What takes the outputs out of the unit: each exporter's `id`, `name`, `module`, `status` and `outputs`, the API last. */
+export async function fetchExporters() {
+  const document = await request('exporters')
+  return document.data.map((resource) => ({ id: resource.id, ...resource.attributes }))
+}

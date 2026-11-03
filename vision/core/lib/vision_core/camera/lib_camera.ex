@@ -7,6 +7,8 @@ defmodule VisionCore.Camera.LibCamera do
 
   The native binary is `camera_capture` in `vision_core`'s `priv/`
   (override with `:executable`); it owns libcamera + the Pi 5 ISP path.
+  Each frame carries the `:frame_id` the driver is given, `nil` without
+  one.
 
   ## Framing protocol
 
@@ -59,7 +61,7 @@ defmodule VisionCore.Camera.LibCamera do
   all the stereo pipeline uses. It spares the capture program the
   encoding and the pipeline the decoding; raw images and dashboard
   previews then encode the frames they send, as for any driver that
-  delivers grey frames (see `VisionCore.Stereo.Supervisor`'s
+  delivers grey frames (see `VisionCore.Ros2.Exporter.Stereo`'s
   `:raw_image_max_hz` and `VisionCore.Preview`). Rotation, sensor mode,
   sync and the controls apply to both.
 
@@ -312,6 +314,7 @@ defmodule VisionCore.Camera.LibCamera do
     {:ok,
      %{
        label: label,
+       frame_id: Keyword.get(opts, :frame_id),
        camera_id: camera_id,
        port: port,
        output: {:camera_frame, name_for(label)},
@@ -329,7 +332,8 @@ defmodule VisionCore.Camera.LibCamera do
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
       {:ok, %Frame{} = frame} ->
-        Outputs.publish(state.output, {:camera_frame, %{frame | label: state.label}})
+        frame = %{frame | label: state.label, frame_id: state.frame_id}
+        Outputs.publish(state.output, {:camera_frame, frame})
         {:noreply, apply_start_controls(%{state | last_frame_at: now_ms()})}
 
       {:log, level, message} ->

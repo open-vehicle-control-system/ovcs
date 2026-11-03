@@ -8,8 +8,7 @@ defmodule VisionCore.ExporterTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
-  defp config(components),
-    do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+  defp config(components), do: %VisionCore.Config{components: components}
 
   test "an output resolves to the key its producer in the configuration publishes under" do
     config = config([{:stereo, driver: Camera, left: [], right: []}, :hailo_detector])
@@ -35,7 +34,7 @@ defmodule VisionCore.ExporterTest do
 
   test "an output no component of the configuration produces has no key" do
     for output <- [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}, :detections] do
-      assert Exporter.output_key(output, config([:heartbeat])) == nil
+      assert Exporter.output_key(output, config([])) == nil
       assert Exporter.output_key(output, nil) == nil
     end
   end

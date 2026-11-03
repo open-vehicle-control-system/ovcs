@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.Parameters do
   @moduledoc """
   Declares a stereo unit's parameter groups in `VisionCore.Parameters`,
-  the steps of its `:stereo` pipeline, under its topic prefix `<prefix>`:
+  the steps of its `:stereo` pipeline, under its prefix `<prefix>`:
 
     * `<prefix>.cameras` — the capture settings of both cameras, with the
       capture size, frame rate and each side's addressing as build
@@ -56,7 +56,7 @@ defmodule VisionCore.Stereo.Parameters do
                          "synchronisation between them."
 
   @doc """
-  Declares the unit's groups. Options: `:topic_prefix`, `:driver`,
+  Declares the unit's groups. Options: `:prefix`, `:driver`,
   `:pipeline` (`VisionCore.Stereo.Pipeline`), `:left`, `:right`, `:width`,
   `:height`, `:fps`, `:match_width` and `:match_height`.
   """
@@ -73,7 +73,7 @@ defmodule VisionCore.Stereo.Parameters do
   @doc "The unit's group declarations for `opts`; see `start_link/1`."
   @spec groups(keyword()) :: [VisionCore.Parameters.group_declaration()]
   def groups(opts) do
-    prefix = Keyword.fetch!(opts, :topic_prefix)
+    prefix = Keyword.fetch!(opts, :prefix)
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
     stage_options = Pipeline.stage_options(pipeline)
     offset = AlignmentCorrection.offset_stage(stage_options)

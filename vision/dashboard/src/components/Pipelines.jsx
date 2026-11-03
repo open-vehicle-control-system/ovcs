@@ -2,16 +2,9 @@ import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { pipelines as pipelinesOf, unsavedByGroup, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
-import { SELECTED, SUBSECTION_HEADING } from './menu.js'
+import { SELECTED, STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 import { computeTags } from '../compute.js'
-
-// A warning item keeps its red border when selected.
-const STATUS_STYLES = {
-  ok: { border: 'border-transparent', dot: null },
-  warning: { border: 'border-ovcs-error', dot: 'ovcs-status ovcs-status--error' },
-  off: { border: 'border-dashed border-ovcs-border text-ovcs-muted', dot: 'ovcs-status' }
-}
 
 function accessibleName(group, unsaved) {
   const parts = [group.name]

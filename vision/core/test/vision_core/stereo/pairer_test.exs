@@ -47,6 +47,25 @@ defmodule VisionCore.Stereo.PairerTest do
                     {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
   end
 
+  test "measures the sync of the frames its cameras publish" do
+    pairer =
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: 30}
+      )
+
+    assert Pairer.sync(pairer) == %{offset_median_ms: nil, offset_max_ms: nil, pairs: 0}
+
+    for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}],
+        do:
+          Outputs.publish(
+            {:camera_frame, Camera.name_for(label)},
+            {:camera_frame, %{frame(label, 0) | capture_ns: capture_ns}}
+          )
+
+    assert %{pairs: 1, offset_median_ms: offset_ms} = Pairer.sync(pairer)
+    assert_in_delta offset_ms, 0.2, 1.0e-9
+  end
+
   test "nothing to pair until both sides have a frame" do
     assert Pairer.ready_pair(state([0], [], 5)) == :not_ready
     assert Pairer.ready_pair(state([], [0], 5)) == :not_ready

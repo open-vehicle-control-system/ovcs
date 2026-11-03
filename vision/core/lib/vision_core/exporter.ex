@@ -64,17 +64,28 @@ defmodule VisionCore.Exporter do
       acknowledgement. `{:error, reason, state}` counts a value not
       exported, which the default status shows.
     * `c:status/1` answers `VisionCore.Exporter.Runner.status/2`; one
-      that raises is reported as a warning.
+      that raises, or answers no status, is reported as a warning.
     * `c:terminate/2`, when defined, makes the runner trap exits so that
       it is called on shutdown too; an exit of a linked process then
       stops the runner as it would without it, and `c:handle_info/2`
       never sees `{:EXIT, _, _}`.
 
-  The callbacks that take options get the exporter's own, which
-  `VisionCore.Exporters` gives `:jpeg_codec`: the `VisionCore.Jpeg`
-  instance to encode on, apart from the pipeline's. A `:name` among them
-  registers the runner, so that other processes can send the exporter
-  messages; an `:id` tells two exporters of one module apart.
+  The callbacks that take options get the exporter's own, to which
+  `VisionCore.Exporters` adds `:jpeg_codec`, the `VisionCore.Jpeg`
+  instance to encode on, apart from the pipeline's, and `:config`, the
+  active `VisionCore.Config`. A `:name` among them registers the runner,
+  so that other processes can send the exporter messages; an `:id` tells
+  two exporters of one module apart, replacing the id of
+  `c:describe/1`.
+
+  ## Starting and listing
+
+  `c:check/1`, when defined, runs before anything else: an exporter
+  whose options, or the configuration they need, cannot work, such as
+  the ROS 2 exporter without the ROS 2 link, is not started, with the
+  reason logged, and the unit runs on without it. `c:describe/1` gives
+  the id and the name `VisionCore.Exporters.list/0` lists the exporter
+  under, the dashboard's Exporters menu among its readers.
 
   ## Example
 
@@ -190,11 +201,46 @@ defmodule VisionCore.Exporter do
   @doc "Flushes or closes what the exporter holds, as the runner stops."
   @callback terminate(reason :: term(), state()) :: term()
 
-  @optional_callbacks handle_info: 2, status: 1, children: 1, terminate: 2
+  @doc """
+  Whether the exporter can run with `options`: `:ok`, or `{:error, reason}`,
+  a sentence saying why not. Without it, every exporter can.
+  """
+  @callback check(options :: keyword()) :: :ok | {:error, String.t()}
+
+  @doc """
+  How the exporter is listed: its id, an atom unique among the unit's
+  exporters, and its name, for people. Without it, both are the
+  exporter's module.
+  """
+  @callback describe(options :: keyword()) :: %{id: atom(), name: String.t()}
+
+  @optional_callbacks handle_info: 2,
+                      status: 1,
+                      children: 1,
+                      terminate: 2,
+                      check: 1,
+                      describe: 1
 
   @doc "Whether `term` is one of the outputs an exporter can name."
   @spec output?(term()) :: boolean()
   def output?(term), do: is_map_key(@outputs, term)
+
+  @doc """
+  The id and name `exporter` is listed under with `options`: those of its
+  `c:describe/1`, the id replaced by an `:id` among `options`, and without
+  `c:describe/1`, or when it raises, its module.
+  """
+  @spec identity(module(), keyword()) :: %{id: term(), name: String.t()}
+  def identity(exporter, options) do
+    described =
+      if Code.ensure_loaded?(exporter) and function_exported?(exporter, :describe, 1),
+        do: exporter.describe(options),
+        else: %{id: exporter, name: inspect(exporter)}
+
+    Map.put(described, :id, Keyword.get(options, :id, described.id))
+  rescue
+    _exception -> %{id: Keyword.get(options, :id, exporter), name: inspect(exporter)}
+  end
 
   @doc """
   The `VisionCore.Outputs` key `output` is published under on the unit

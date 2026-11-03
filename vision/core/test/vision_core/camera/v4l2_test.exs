@@ -129,7 +129,7 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   @tag :tmp_dir
-  test "the left camera runs the capture program and hands the right frame on, then stops with it",
+  test "the left camera runs the capture program and hands the right frame on, each with its frame id, then stops with it",
        %{tmp_dir: tmp_dir} do
     records = Path.join(tmp_dir, "records.bin")
     record = pair_record(5, 6)
@@ -141,12 +141,20 @@ defmodule VisionCore.Camera.V4L2Test do
     for label <- ["left", "right"],
         do: :ok = Outputs.subscribe({:camera_frame, V4L2.name_for(label)})
 
-    start_supervised!(Supervisor.child_spec({V4L2, label: "right"}, id: :right))
+    start_supervised!(
+      Supervisor.child_spec({V4L2, label: "right", frame_id: "stereo_right_optical"}, id: :right)
+    )
 
     left =
       start_supervised!(
         Supervisor.child_spec(
-          {V4L2, label: "left", executable: script, width: 2, height: 1, fps: 30},
+          {V4L2,
+           label: "left",
+           frame_id: "stereo_left_optical",
+           executable: script,
+           width: 2,
+           height: 1,
+           fps: 30},
           id: :left,
           restart: :temporary
         )
@@ -154,8 +162,16 @@ defmodule VisionCore.Camera.V4L2Test do
 
     ref = Process.monitor(left)
 
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", grey: <<1, 2>>}}}, 2_000
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "right", grey: <<3, 4>>}}}, 2_000
+    assert_receive {:"$gen_cast",
+                    {:camera_frame,
+                     %Frame{label: "left", frame_id: "stereo_left_optical", grey: <<1, 2>>}}},
+                   2_000
+
+    assert_receive {:"$gen_cast",
+                    {:camera_frame,
+                     %Frame{label: "right", frame_id: "stereo_right_optical", grey: <<3, 4>>}}},
+                   2_000
+
     assert_receive {:DOWN, ^ref, :process, _, {:v4l2_capture_exit, 0}}, 2_000
   end
 

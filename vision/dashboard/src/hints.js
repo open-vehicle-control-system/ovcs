@@ -69,9 +69,11 @@ export const HINTS = {
       'beyond. At ∞ the colours spread up to infinitely far. Every dashboard on this unit shares it, and only ' +
       'this video changes; the depth sent to ROS 2 does not.'
   },
-  zenoh: {
-    title: 'Zenoh',
-    text: 'The link to the Zenoh router that carries the ROS 2 topics. Disconnected, nothing reaches ROS 2.'
+  ros2: {
+    title: 'ROS 2',
+    text:
+      "The ROS 2 exporter's link to the Zenoh router that carries its topics. Disconnected, nothing reaches ROS 2. " +
+      'Its page, under Exporters, lists the topics and their rates.'
   },
   hailo: {
     title: 'Hailo',

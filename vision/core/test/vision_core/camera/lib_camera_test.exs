@@ -126,12 +126,13 @@ defmodule VisionCore.Camera.LibCameraTest do
                {:error, :malformed_record}
     end
 
-    test "are published as grey frames under the camera's label" do
+    test "are published as grey frames under the camera's label, with its frame id" do
       packet = <<5, 2::little-16, 1::little-16, 0::little-signed-64, 7, 8>>
       :ok = Outputs.subscribe(@output)
 
       state = %{
         label: "left",
+        frame_id: "stereo_left_optical",
         port: :port,
         output: @output,
         start_controls: [],
@@ -141,7 +142,14 @@ defmodule VisionCore.Camera.LibCameraTest do
       assert {:noreply, _state} = LibCamera.handle_info({:port, {:data, packet}}, state)
 
       assert_receive {:"$gen_cast",
-                      {:camera_frame, %Frame{label: "left", width: 2, height: 1, grey: <<7, 8>>}}}
+                      {:camera_frame,
+                       %Frame{
+                         label: "left",
+                         frame_id: "stereo_left_optical",
+                         width: 2,
+                         height: 1,
+                         grey: <<7, 8>>
+                       }}}
     end
   end
 
@@ -210,6 +218,7 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       state = %{
         label: "left",
+        frame_id: nil,
         output: @output,
         port: port,
         controls: %{},
@@ -232,6 +241,7 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       state = %{
         label: "left",
+        frame_id: nil,
         output: @output,
         port: port,
         controls: %{brightness: 0.2, contrast: 1.0},

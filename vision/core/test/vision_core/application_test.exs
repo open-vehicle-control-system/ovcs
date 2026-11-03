@@ -55,8 +55,28 @@ defmodule VisionCore.ApplicationTest do
     pid
   end
 
-  test "the ROS 2 link starts under VisionCore.Supervisor, and the heartbeat is published through it" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+  @ros2 [zenoh_endpoint_ip: "127.0.0.1"]
+  @ros2_processes [
+    VisionCore.Ros2.ZenohClient,
+    VisionCore.Ros2.Parameters,
+    VisionCore.Ros2.Topics,
+    VisionCore.Ros2.Clock
+  ]
+
+  test "without ros2:, no ROS 2 process starts and the unit runs" do
+    start_pipeline(%VisionCore.Config{})
+
+    ids = child_ids(VisionCore.Supervisor)
+    for process <- @ros2_processes, do: refute(process in ids)
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+    assert Process.alive?(Process.whereis(VisionCore.Exporters))
+  end
+
+  test "with ros2:, the ROS 2 link starts, and the ROS 2 exporter publishes the heartbeat through it" do
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 50]}]
+    })
 
     ids = child_ids(VisionCore.Supervisor)
     assert VisionCore.Ros2.ZenohClient in ids
@@ -68,36 +88,80 @@ defmodule VisionCore.ApplicationTest do
            end)
   end
 
-  test "the exporters start last, after the components, the dashboard's sources and their codec" do
+  test "ros2: gives the Zenoh client its router, node name and domain" do
     start_pipeline(%VisionCore.Config{
-      zenoh_endpoint_ip: "127.0.0.1",
-      components: [:heartbeat]
+      ros2: [zenoh_endpoint_ip: "127.0.0.2", node_name: "front_vision", domain_id: 7]
+    })
+
+    assert %{endpoint_ip: "127.0.0.2", node_name: "front_vision", domain_id: 7} =
+             :sys.get_state(VisionCore.Ros2.ZenohClient)
+  end
+
+  test "a ROS 2 exporter without ros2: is not started, with the reason logged, and the unit runs" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+        })
+      end)
+
+    assert log =~ "VisionCore.Ros2.Exporter not started"
+    assert log =~ "ros2:"
+    assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+  end
+
+  test "the exporters start after the components and their codec, before Status and the previews" do
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
     })
 
     assert Enum.take(child_ids(VisionCore.Supervisor), 4) == [
-             VisionCore.Exporters,
              VisionCore.Preview,
-             VisionCore.Jpeg.Export,
-             VisionCore.Status
+             VisionCore.Status,
+             VisionCore.Exporters,
+             VisionCore.Jpeg.Export
            ]
 
     assert for(
              {id, _pid, :supervisor, _} <- Supervisor.which_children(VisionCore.Exporters),
              do: id
-           ) == [VisionCore.Ros2.Exporter]
+           ) == [:ros2]
   end
 
-  test "the core starts the parameter storage and registry first, then the outputs registry, before the components" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+  test "a restart of Status or the previews leaves the exporters running" do
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+    })
+
+    exporters = Process.whereis(VisionCore.Exporters)
+
+    for name <- [VisionCore.Status, VisionCore.Preview] do
+      pid = Process.whereis(name)
+      Process.exit(pid, :kill)
+      wait_for_restart(name, pid)
+    end
+
+    assert Process.whereis(VisionCore.Exporters) == exporters
+  end
+
+  test "the core starts the parameter storage and registry, the outputs registry, then the ROS 2 link, before the Port servers" do
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2 ++ [simulator_clock: [acquire_timeout_ms: 10]]
+    })
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 7) == [
+    assert Enum.take(ids, 9) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
              VisionCore.Ros2.ZenohClient,
              VisionCore.Ros2.Parameters,
+             VisionCore.Ros2.Topics,
+             VisionCore.Ros2.Clock,
              VisionCore.Jpeg,
              VisionCore.Stereo.Matcher
            ]
@@ -105,7 +169,7 @@ defmodule VisionCore.ApplicationTest do
 
   @tag :jpeg
   test "the previews encode JPEG on a codec of their own, not the pipeline's" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    start_pipeline(%VisionCore.Config{})
     :ok = :sys.suspend(VisionCore.Jpeg)
     :ok = VisionCore.Preview.subscribe(:left)
     frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
@@ -124,14 +188,14 @@ defmodule VisionCore.ApplicationTest do
 
     Application.put_env(:vision_core, :stereo_match_path, "/opt/stereo_match")
     Application.put_env(:vision_core, :stereo_match_threads, 3)
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    start_pipeline(%VisionCore.Config{})
 
     assert %{path: "/opt/stereo_match", arguments: ["--threads", "3"]} =
              :sys.get_state(VisionCore.Stereo.Matcher)
   end
 
   test "a Zenoh client restart keeps the unsaved changes" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    start_pipeline(%VisionCore.Config{ros2: @ros2})
     declare_sample()
     assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("test.sample.value", 5)
 
@@ -143,7 +207,7 @@ defmodule VisionCore.ApplicationTest do
   end
 
   test "the pipeline starts on an empty store with its own Repo" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+    start_pipeline(%VisionCore.Config{})
 
     assert is_pid(child_pid(VisionCore.Supervisor, VisionCore.Parameters.Storage))
     declare_sample()
@@ -151,10 +215,7 @@ defmodule VisionCore.ApplicationTest do
   end
 
   test "the config's preview options reach the preview" do
-    start_pipeline(%VisionCore.Config{
-      zenoh_endpoint_ip: "127.0.0.1",
-      preview: [max_hz: 4, depth_range_m: 12]
-    })
+    start_pipeline(%VisionCore.Config{preview: [max_hz: 4, depth_range_m: 12]})
 
     assert VisionCore.Preview.options() == %{max_hz: 4, depth_range_m: 12.0}
   end
@@ -170,7 +231,7 @@ defmodule VisionCore.ApplicationTest do
     )
 
     capture_log(fn ->
-      start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+      start_pipeline(%VisionCore.Config{})
     end)
 
     assert Process.alive?(Process.whereis(VisionCore.Parameters))
@@ -181,20 +242,34 @@ defmodule VisionCore.ApplicationTest do
   end
 
   test "settings are the config the pipeline started with" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
-
-    Application.put_env(:vision_core, :test_config, %VisionCore.Config{
-      zenoh_endpoint_ip: "10.0.0.9"
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 500]}]
     })
 
-    assert %{"zenoh_endpoint_ip" => "127.0.0.1"} = VisionCore.settings()
+    Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+      ros2: [zenoh_endpoint_ip: "10.0.0.9"]
+    })
+
+    assert %{
+             "ros2" => %{"zenoh_endpoint_ip" => "127.0.0.1"},
+             "exporters" => [
+               %{
+                 "module" => "VisionCore.Ros2.Exporter",
+                 "options" => %{"heartbeat" => %{"interval_ms" => 500}}
+               }
+             ]
+           } = VisionCore.settings()
 
     Application.stop(:vision_core)
     assert VisionCore.settings() == %{}
   end
 
   test "the pipeline keeps running with no Zenoh router" do
-    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+    })
 
     Process.sleep(2_000)
 
@@ -232,43 +307,46 @@ defmodule VisionCore.ApplicationTest do
     frame_path
   end
 
+  defp stereo_component(left_executable, right_executable, side_options \\ []) do
+    {:stereo,
+     driver: LibCamera,
+     width: 64,
+     height: 48,
+     fps: 5,
+     left:
+       [
+         camera_id: 0,
+         executable: left_executable,
+         calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
+       ] ++ side_options,
+     right:
+       [
+         camera_id: 1,
+         executable: right_executable,
+         calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
+       ] ++ side_options}
+  end
+
+  defp write_script(tmp_dir, name, script) do
+    path = Path.join(tmp_dir, name)
+    File.write!(path, "#!/bin/sh\n#{script}\n")
+    File.chmod!(path, 0o755)
+    path
+  end
+
   test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
     frame_path = write_frame(tmp_dir)
-    exiting = Path.join(tmp_dir, "exiting_camera.sh")
 
-    File.write!(exiting, """
-    #!/bin/sh
-    sleep 1.5
-    cat "#{frame_path}"
-    sleep 0.3
-    exit 3
-    """)
+    exiting =
+      write_script(
+        tmp_dir,
+        "exiting_camera.sh",
+        "sleep 1.5\ncat \"#{frame_path}\"\nsleep 0.3\nexit 3"
+      )
 
-    idle = Path.join(tmp_dir, "idle_camera.sh")
-    File.write!(idle, "#!/bin/sh\ncat > /dev/null\n")
-    File.chmod!(exiting, 0o755)
-    File.chmod!(idle, 0o755)
+    idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
 
-    start_pipeline(%VisionCore.Config{
-      zenoh_endpoint_ip: "127.0.0.1",
-      components: [
-        {:stereo,
-         driver: LibCamera,
-         width: 64,
-         height: 48,
-         fps: 5,
-         left: [
-           camera_id: 0,
-           executable: exiting,
-           calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
-         ],
-         right: [
-           camera_id: 1,
-           executable: idle,
-           calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
-         ]}
-      ]
-    })
+    start_pipeline(%VisionCore.Config{components: [stereo_component(exiting, idle)]})
 
     :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
     stereo = VisionCore.Stereo.Supervisor
@@ -279,13 +357,11 @@ defmodule VisionCore.ApplicationTest do
              VisionCore.Stereo.Pipeline,
              VisionCore.Stereo.Pairer,
              VisionCore.Stereo.AlignmentCorrection,
-             {:stereo, :parameters},
-             {:stereo, :set_camera_info, :left},
-             {:stereo, :set_camera_info, :right}
+             {:stereo, :parameters}
            ]
 
     first_driver = child_pid(stereo, {:stereo, :driver, :left})
-    assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{frame_id: "stereo_left"}}}, 5_000
 
     second_driver = wait_for_new_driver(stereo, first_driver)
     refute second_driver == first_driver
@@ -302,42 +378,137 @@ defmodule VisionCore.ApplicationTest do
        %{tmp_dir: tmp_dir} do
     start_failing_cameras(tmp_dir, "cat \"#{write_frame(tmp_dir)}\"\nsleep 0.3\nexit 3")
     assert Process.whereis(VisionCore.Stereo.Supervisor)
-    exporter = Process.whereis(VisionCore.Ros2.Exporter)
+    exporter = child_pid(VisionCore.Exporters, :ros2)
     assert is_pid(exporter)
-    assert eventually(fn -> VisionCore.Ros2.Exporter.Diagnostics.sync().pairs > 0 end)
 
     assert_stereo_unit_down()
 
-    assert Process.whereis(VisionCore.Ros2.Exporter) == exporter
+    assert child_pid(VisionCore.Exporters, :ros2) == exporter
     assert VisionCore.Status.snapshot().sync == %{present: false}
-    assert eventually(fn -> VisionCore.Ros2.Exporter.Diagnostics.sync().pairs == 0 end, 80)
   end
 
   defp start_failing_cameras(tmp_dir, script) do
-    failing = Path.join(tmp_dir, "failing_camera.sh")
-    File.write!(failing, "#!/bin/sh\n#{script}\n")
-    File.chmod!(failing, 0o755)
+    failing = write_script(tmp_dir, "failing_camera.sh", script)
 
     start_pipeline(%VisionCore.Config{
-      zenoh_endpoint_ip: "127.0.0.1",
-      components: [
-        {:stereo,
-         driver: LibCamera,
-         width: 64,
-         height: 48,
-         fps: 5,
-         left: [
-           camera_id: 0,
-           executable: failing,
-           calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
-         ],
-         right: [
-           camera_id: 1,
-           executable: failing,
-           calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
-         ]}
-      ]
+      ros2: @ros2,
+      components: [stereo_component(failing, failing)],
+      exporters: [{VisionCore.Ros2.Exporter, stereo: []}]
     })
+  end
+
+  # Cameras that start and stay silent: the stereo unit runs, with nothing to restart it.
+  defp start_idle_unit(tmp_dir) do
+    idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
+
+    start_pipeline(%VisionCore.Config{
+      ros2: @ros2,
+      components: [stereo_component(idle, idle, startup_timeout_ms: 60_000)],
+      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [], stereo: []}]
+    })
+
+    stereo_processes()
+  end
+
+  defp stereo_processes do
+    for {id, pid, _type, _modules} <- Supervisor.which_children(VisionCore.Stereo.Supervisor),
+        do: {id, pid}
+  end
+
+  # Kills the exporter's child `id` each time its supervisor starts it again, until it gives up.
+  defp crash_loop(exporter, child) do
+    case child_pid(VisionCore.Exporters, exporter) do
+      :undefined ->
+        :ok
+
+      supervisor ->
+        case List.keyfind(Supervisor.which_children(supervisor), child, 0) do
+          {^child, pid, _type, _modules} when is_pid(pid) -> Process.exit(pid, :kill)
+          _restarting -> :ok
+        end
+
+        Process.sleep(20)
+        crash_loop(exporter, child)
+    end
+  end
+
+  test "a ROS 2 exporter that keeps crashing stops alone: the stereo unit runs on as it was",
+       %{tmp_dir: tmp_dir} do
+    stereo = start_idle_unit(tmp_dir)
+    exporters = Process.whereis(VisionCore.Exporters)
+    status = Process.whereis(VisionCore.Status)
+
+    crash_loop(:ros2, VisionCore.Exporter.Runner)
+
+    assert stereo_processes() == stereo
+    assert Process.whereis(VisionCore.Exporters) == exporters
+    assert Process.whereis(VisionCore.Status) == status
+    assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+  end
+
+  test "a diagnostics helper that keeps crashing stops the ROS 2 exporter alone: the stereo unit runs on as it was",
+       %{tmp_dir: tmp_dir} do
+    stereo = start_idle_unit(tmp_dir)
+    exporters = Process.whereis(VisionCore.Exporters)
+
+    crash_loop(:ros2, VisionCore.Ros2.Exporter.Diagnostics)
+
+    assert stereo_processes() == stereo
+    assert Process.whereis(VisionCore.Exporters) == exporters
+  end
+
+  test "a ROS 2 camera source without ros2: leaves its unit down, with the reason logged, and the unit runs" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:stereo,
+             driver: VisionCore.Ros2.Camera,
+             width: 64,
+             height: 48,
+             left: [
+               topic: "stereo/left/image_raw/compressed",
+               calibration_path: Path.join(@calibration_dir, "stereo_left.yaml")
+             ],
+             right: [
+               topic: "stereo/right/image_raw/compressed",
+               calibration_path: Path.join(@calibration_dir, "stereo_right.yaml")
+             ]}
+          ]
+        })
+      end)
+
+    assert log =~
+             "cannot read stereo/left/image_raw/compressed: the vision configuration has no ros2: section"
+
+    assert Process.whereis(VisionCore.Stereo.Supervisor) == nil
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+  end
+
+  for {malformed, options} <- [
+        {"a side that is not a list", [left: :front]},
+        {"no driver", [driver: nil]}
+      ] do
+    test "a stereo component with #{malformed} leaves its unit down and the ROS 2 exporter not started, and the unit runs",
+         %{tmp_dir: tmp_dir} do
+      idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
+      {:stereo, stereo_options} = stereo_component(idle, idle)
+
+      log =
+        capture_log(fn ->
+          start_pipeline(%VisionCore.Config{
+            ros2: @ros2,
+            components: [{:stereo, Keyword.merge(stereo_options, unquote(options))}],
+            exporters: [{VisionCore.Ros2.Exporter, stereo: []}]
+          })
+        end)
+
+      assert log =~ "VisionCore.Ros2.Exporter not started: "
+      assert Process.whereis(VisionCore.Stereo.Supervisor) == nil
+      assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+      assert Process.alive?(Process.whereis(VisionCore.Status))
+      assert Process.alive?(Process.whereis(VisionCore.Preview))
+    end
   end
 
   defp assert_stereo_unit_down do

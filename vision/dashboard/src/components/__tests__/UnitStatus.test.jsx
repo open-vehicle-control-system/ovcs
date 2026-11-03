@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, cleanup } from '@testing-library/react'
 import UnitStatus from '../UnitStatus.jsx'
 import Previews from '../Previews.jsx'
 
@@ -10,7 +10,7 @@ const snapshot = {
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
   hailo: 'absent',
   depthHz: 12.8,
-  zenoh: 'disconnected',
+  exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'warning', detail: 'Disconnected' } }],
   cpuPercent: 37.25,
   stereoLoadPercent: 81.5,
   alignment: { offsetRows: -1.43, bandOffsetRows: [-1.9, -1.6, -1.2, -1.0] },
@@ -39,10 +39,21 @@ describe('UnitStatus and the pair status', () => {
     expect(card('hailo').querySelector('.ovcs-status--error')).not.toBeNull()
   })
 
-  it('shows Zenoh in the top bar', () => {
+  it("shows the ROS 2 exporter's status in the top bar", () => {
     show(snapshot)
 
-    expect(card('zenoh').textContent).toContain('disconnected')
+    expect(card('ros2').textContent).toContain('ROS 2')
+    expect(card('ros2').textContent).toContain('disconnected')
+    expect(card('ros2').querySelector('.ovcs-status--error')).not.toBeNull()
+  })
+
+  it('shows a connected ROS 2 exporter as healthy, and none without a ROS 2 exporter', () => {
+    show({ ...snapshot, exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'ok', detail: 'Connected' } }] })
+    expect(card('ros2').querySelector('.ovcs-status--ok')).not.toBeNull()
+    cleanup()
+
+    show({ ...snapshot, exporters: [{ id: 'recorder', name: 'Recorder', status: { level: 'ok', detail: 'Recording' } }] })
+    expect(card('ros2')).toBeNull()
   })
 
   it('shows the CPU usage, and the stereo stages\' busy time as the stereo load, explained by its hint', () => {
@@ -98,7 +109,7 @@ describe('UnitStatus and the pair status', () => {
   it('marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader', () => {
     show(snapshot)
 
-    for (const id of ['zenoh', 'alignment', 'sharpness', 'right']) {
+    for (const id of ['ros2', 'alignment', 'sharpness', 'right']) {
       expect(card(id).querySelector('[data-warning]')).not.toBeNull()
       expect(card(id).textContent).toContain(', unhealthy')
     }
@@ -109,14 +120,14 @@ describe('UnitStatus and the pair status', () => {
   })
 
   it('keeps each top bar value as wide as its widest form, warning sign included, so the line does not move', () => {
-    show({ ...snapshot, zenoh: 'connected', stereoLoadPercent: 98 })
+    show({ ...snapshot, stereoLoadPercent: 98 })
 
     const widest = (id) => card(id).querySelector('[data-widest]').dataset.widest
-    expect(widest('zenoh')).toBe('disconnected')
+    expect(widest('ros2')).toBe('not answering')
     expect(widest('hailo')).toBe('running')
     expect(widest('cpu')).toBe('100 %')
     expect(widest('segment')).toBe('100 %')
-    for (const id of ['zenoh', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
+    for (const id of ['ros2', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
   })
 
   it('waits for the first status', () => {

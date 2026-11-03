@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchFirmware, fetchRos2Node } from '../unit.js'
+import { fetchExporters, fetchFirmware, fetchRos2Node } from '../unit.js'
 
 const respond = (body) => ({ ok: true, status: 200, json: async () => body })
 
@@ -53,5 +53,18 @@ describe('unit service', () => {
 
     expect(await fetchFirmware()).toEqual(attributes)
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/firmware$/)
+  })
+
+  it('reads the exporters, each with its id', async () => {
+    const attributes = {
+      name: 'ROS 2',
+      module: 'VisionCore.Ros2.Exporter',
+      status: { level: 'ok', detail: 'Connected' },
+      outputs: [{ name: 'stereo_pair', maxHz: null }]
+    }
+    fetchMock.mockResolvedValue(respond({ data: [{ type: 'exporters', id: 'ros2', attributes }] }))
+
+    expect(await fetchExporters()).toEqual([{ id: 'ros2', ...attributes }])
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/exporters$/)
   })
 })

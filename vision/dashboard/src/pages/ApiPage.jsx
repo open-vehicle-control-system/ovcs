@@ -13,6 +13,7 @@ const resources = (parameterId) => [
   ['POST', 'parameter-resets', 'Sets a parameter, a stage or everything back to its built-in value'],
   ['GET', 'configuration', 'The active composer configuration'],
   ['GET', 'firmware', 'The firmware: the commit it is built from, its target and its Nerves system'],
+  ['GET', 'exporters', 'What takes the outputs out of the unit: each exporter with its status and the outputs it reads, this API last'],
   ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered']
 ]
 
@@ -30,7 +31,7 @@ export default function ApiPage() {
   const parameterId = useParameters((state) => orderedGroups(state).flatMap((group) => group.parameterIds)[0])
 
   return (
-    <PageFrame title="API" summary="How other programs reach this unit, besides ROS 2.">
+    <PageFrame title="API" summary="How other programs reach this unit: its resources and its live channels.">
       <OvcsCard className="flex flex-col gap-3">
         <h3 className="font-semibold">Resources</h3>
         <p className="text-sm text-ovcs-muted">

@@ -11,13 +11,13 @@ npm run test:unit
 
 The page is laid out for a laptop screen:
 
-- the header: the title with the firmware's commit and Nerves system, read again whenever the unit comes back, the parameters' error when there is one, the unit's status inline (Zenoh, Hailo, CPU and stereo load), and the dark mode switch, whose choice the browser keeps;
-- a menu on the left, in three sections: Main (Overview, Calibration), Pipelines (the stereo and detection pipelines, each a numbered flow of its steps, detection as one greyed line on a unit without a detector) and Exporters (ROS 2, API);
+- the header: the title with the firmware's commit and Nerves system, read again whenever the unit comes back, the parameters' error when there is one, the unit's status inline (the ROS 2 exporter's link on a unit that has one, Hailo, CPU and stereo load), and the dark mode switch, whose choice the browser keeps;
+- a menu on the left, in three sections: Main (Overview, Calibration), Pipelines (the stereo and detection pipelines, each a numbered flow of its steps, detection as one greyed line on a unit without a detector) and Exporters (the unit's exporters, each with its status, listed again whenever the unit comes back, and the API);
 - the Overview: the previews at the full width, the left and right cameras with their synchronisation, row alignment and sharpness between them, then the depth with its colour scale;
 - a step's page: one line on what it does, with How it works opening a paragraph on why it matters, what its settings change and what to watch, then its parameters with the save bar (Save, Discard, Reset all), beside the same previews, which keep playing when you go between it and the Overview;
-- the Calibration page, whose tools are still to come, the ROS 2 page (the node, its topics with their rates, its services) and the API page (the resources and channels).
+- the Calibration page, whose tools are still to come, and an exporter's page: the ROS 2 page (the node, its topics with their rates, its services), the API page (the resources and channels), and for another exporter its status and the outputs it reads.
 
-A step's page is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`), any other page but the Overview as `?page=<page>` (`?page=ros2`). The parameters are polled every second, so values set by an automatic mode stay current.
+A step's page is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`), an exporter's as `?exporter=<id>` (`?exporter=ros2`), any other page but the Overview as `?page=<page>` (`?page=calibration`). The parameters are polled every second, so values set by an automatic mode stay current.
 
 `src/stores/parameters.js` holds the groups and parameters; the controls and the save bar are `OvcsParameterControl` and `OvcsSaveBar` from `@ovcs/ui/react`.
 

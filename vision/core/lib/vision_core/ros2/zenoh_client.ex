@@ -186,14 +186,14 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   # With no session the client drops the publish: no payload, only the drop to tally.
   defp encode_unless_offline(message) do
-    if session_open?(), do: encode_payload(message), else: {:ok, nil}
+    if offline?(), do: {:ok, nil}, else: encode_payload(message)
   end
 
   # Only a client that says it has no session lets a publish go unencoded.
-  defp session_open? do
-    :ets.lookup_element(@session_table, :open, 2)
+  defp offline? do
+    not :ets.lookup_element(@session_table, :open, 2)
   rescue
-    ArgumentError -> true
+    ArgumentError -> false
   end
 
   defp put_session_open(open?), do: :ets.insert(@session_table, {:open, open?})
@@ -275,11 +275,27 @@ defmodule VisionCore.Ros2.ZenohClient do
     GenServer.cast(__MODULE__, {:respond, service_name, query, response_payload})
   end
 
-  @doc "Whether a session to the router is open. `false` when the client is not running."
+  @doc """
+  Whether a session to the router is open, once the client has handled
+  what was sent to it before. `false` when the client is not running.
+  """
   def connected? do
     GenServer.call(__MODULE__, :connected?)
   catch
     :exit, _reason -> false
+  end
+
+  @doc """
+  Whether a session to the router is open, read from the client's flag
+  without waiting on the client, which may be busy with puts: what a
+  process that must answer at once, such as an exporter giving its
+  status, asks. `false` when the client is not running.
+  """
+  @spec session_open?() :: boolean()
+  def session_open? do
+    :ets.lookup_element(@session_table, :open, 2)
+  rescue
+    ArgumentError -> false
   end
 
   @doc """
@@ -302,10 +318,13 @@ defmodule VisionCore.Ros2.ZenohClient do
       %{node_name: node_name, connected: false, endpoint: nil, services: []}
   end
 
-  @doc "The node name the client runs under with `config`: its `:node_name`, else the default."
+  @doc """
+  The node name the client runs under with `config`: the `:node_name` of
+  its `ros2:` section, else the default.
+  """
   @spec configured_node_name(VisionCore.Config.t() | nil) :: String.t()
-  def configured_node_name(%VisionCore.Config{node_name: node_name}) when is_binary(node_name),
-    do: node_name
+  def configured_node_name(%VisionCore.Config{ros2: ros2}) when is_list(ros2),
+    do: Keyword.get(ros2, :node_name) || @default_node_name
 
   def configured_node_name(_config), do: @default_node_name
 

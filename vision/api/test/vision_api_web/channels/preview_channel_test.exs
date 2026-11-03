@@ -4,7 +4,7 @@ defmodule VisionApiWeb.PreviewChannelTest do
   alias VisionCore.Camera.Frame
 
   setup do
-    config = %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: []}
+    config = %VisionCore.Config{}
     start_supervised!({VisionCore.Preview, config: config, max_hz: 50})
     :ok
   end

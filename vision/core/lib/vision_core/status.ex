@@ -2,9 +2,10 @@ defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
-  rate, the Zenoh session, the CPU's busy share (`VisionCore.SystemLoad`)
-  and the share of time the stereo pipeline spent in its compiled Nx or
-  native segments (`Pair` `:device_ms`). Where they run on the GPU, that time
+  rate, each exporter's status (`VisionCore.Exporters.list/1`), the CPU's
+  busy share (`VisionCore.SystemLoad`) and the share of time the stereo
+  pipeline spent in its compiled Nx or native segments
+  (`Pair` `:device_ms`). Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
   not the GPU's busy share. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness
@@ -13,19 +14,19 @@ defmodule VisionCore.Status do
   pixels, the disparity's mean and spread, and its jitter), each averaged
   over the tick's pairs; `nil` without any.
 
-  Started after the components in `VisionCore.Supervisor`. Without a `:stereo`
-  component the cameras and sync are reported absent and the depth rate
-  is zero; the sync is absent too while neither camera runs, as once the
-  stereo unit gave up.
+  Started after the components and the exporters in `VisionCore.Supervisor`.
+  The sync is the stereo unit's measure (`VisionCore.Stereo.Pairer.sync/1`).
+  Without a `:stereo` component the cameras and sync are reported absent
+  and the depth rate is zero; the sync is absent too while neither camera
+  runs, as once the stereo unit gave up.
 
   Rates are counted over the last tick, one second by default (`:tick_ms`),
   and every subscriber receives `{:vision_status, snapshot}` each tick.
   """
   use GenServer
 
-  alias VisionCore.Outputs
-  alias VisionCore.Ros2.Exporter.Diagnostics
-  alias VisionCore.Ros2.ZenohClient
+  alias VisionCore.{Exporter, Exporters, Outputs}
+  alias VisionCore.Stereo.Pairer
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias VisionCore.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
@@ -38,12 +39,13 @@ defmodule VisionCore.Status do
   @quality_metrics [:matched_percent, :mean_disparity_px, :spread_px, :jitter_px]
 
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
+  @type exporter :: %{id: String.t(), name: String.t(), status: Exporter.status()}
   @type snapshot :: %{
           cameras: %{left: camera(), right: camera()},
           sync: map(),
           hailo: :running | :absent | :failed,
           depth_hz: float(),
-          zenoh: :connected | :disconnected,
+          exporters: [exporter()],
           cpu_percent: float() | nil,
           stereo_segment_percent: float(),
           alignment: %{offset_rows: float(), band_offset_rows: [float() | nil]} | nil,
@@ -250,7 +252,7 @@ defmodule VisionCore.Status do
       alignment: state.alignment,
       sharpness: state.sharpness,
       quality: state.quality,
-      zenoh: if(replies.zenoh, do: :connected, else: :disconnected)
+      exporters: replies.exporters
     }
   end
 
@@ -258,15 +260,21 @@ defmodule VisionCore.Status do
   defp calls(state) do
     hailo = if state.hailo_configured?, do: %{hailo: {&Hailo.available?/0, false}}, else: %{}
 
-    %{zenoh: {&ZenohClient.connected?/0, false}}
+    %{exporters: {&exporters/0, []}}
     |> Map.merge(hailo)
     |> Map.merge(stereo_calls(state))
+  end
+
+  # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
+  defp exporters do
+    for exporter <- Exporters.list(div(@call_timeout_ms, 2)),
+        do: Map.take(exporter, [:id, :name, :status])
   end
 
   defp stereo_calls(%{cameras: []}), do: %{}
 
   defp stereo_calls(%{cameras: cameras}) do
-    sync = {fn -> Map.put(Diagnostics.sync(), :present, true) end, %{present: false}}
+    sync = {fn -> Map.put(Pairer.sync(), :present, true) end, %{present: false}}
 
     for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
         function_exported?(driver, :live, 1),

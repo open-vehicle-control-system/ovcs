@@ -10,24 +10,33 @@ defmodule VisionCore.Application do
   come first, so saved values are loaded before any component declares its
   parameters and a restart of anything after them keeps the unsaved changes.
   `VisionCore.Outputs` follows them, before every process that publishes or
-  subscribes through it. `VisionCore.Ros2.ZenohClient` comes next; its
-  subscribers subscribe only from `init/1`, so they must restart with it to
-  get their subscriptions back. The Port servers, `VisionCore.Jpeg` and
-  `VisionCore.Stereo.Matcher`, start before the components and open their
-  Ports on the first request, so a unit that computes no stereo stage
-  natively never starts `stereo_match`; the Matcher runs the binary and
-  thread count of `config :vision_core, :stereo_match_path` and
-  `:stereo_match_threads`. `VisionCore.Ros2.Topics`, which counts what is
-  published on ROS 2, starts before the components. `VisionCore.Status`
-  and `VisionCore.Preview`, the dashboard's sources, start after the
-  components, and `VisionCore.Exporters`, which runs the ROS 2 exporter
-  (`VisionCore.Ros2.Exporter`), last.
+  subscribes through it.
+
+  The ROS 2 link comes next, when the configuration has a `ros2:` section:
+  `VisionCore.Ros2.ZenohClient`, `VisionCore.Ros2.Parameters`,
+  `VisionCore.Ros2.Topics`, which counts what is published on ROS 2, and
+  with `simulator_clock:` `VisionCore.Ros2.Clock`. It starts before the
+  components: the clock holds every stamp back until the simulator's first
+  `/clock`, and a `VisionCore.Ros2.Camera` subscribes through the client
+  from its `init/1`, so it must restart with the client to get its
+  subscription back.
+
+  The Port servers, `VisionCore.Jpeg` and `VisionCore.Stereo.Matcher`,
+  start before the components and open their Ports on the first request,
+  so a unit that computes no stereo stage natively never starts
+  `stereo_match`; the Matcher runs the binary and thread count of
+  `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
+
+  After the components come `VisionCore.Exporters`, which runs the
+  configuration's exporters, then `VisionCore.Status`, which reports
+  their statuses, and `VisionCore.Preview`: a restart of the dashboard's
+  sources does not restart the exporters.
 
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
-  on `VisionCore.Jpeg`, while `VisionCore.Preview` and the exporters
+  on `VisionCore.Jpeg`, while the exporters and `VisionCore.Preview`
   encode on `VisionCore.Jpeg.Export`, apart from those decodes. The
-  second starts after the components, before `VisionCore.Preview`, so
-  that its restart reaches its users only, not the cameras and pipelines.
+  second starts after the components, before the exporters, so that its
+  restart reaches its users only, not the cameras and pipelines.
   """
   use Application
 
@@ -60,26 +69,23 @@ defmodule VisionCore.Application do
   def active_config, do: :persistent_term.get(@active_config, nil)
 
   defp pipeline_child(%VisionCore.Config{} = config) do
-    core_children = [
-      VisionCore.Parameters.Storage,
-      VisionCore.Parameters,
-      VisionCore.Outputs,
-      {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
-      VisionCore.Ros2.Parameters,
-      VisionCore.Jpeg,
-      {VisionCore.Stereo.Matcher,
-       path: Application.get_env(:vision_core, :stereo_match_path),
-       threads: Application.get_env(:vision_core, :stereo_match_threads)},
-      VisionCore.Ros2.Topics
-    ]
+    core_children =
+      [VisionCore.Parameters.Storage, VisionCore.Parameters, VisionCore.Outputs] ++
+        ros2_children(config.ros2) ++
+        [
+          VisionCore.Jpeg,
+          {VisionCore.Stereo.Matcher,
+           path: Application.get_env(:vision_core, :stereo_match_path),
+           threads: Application.get_env(:vision_core, :stereo_match_threads)}
+        ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
 
     consumer_children = [
-      {VisionCore.Status, config: config},
       {VisionCore.Jpeg, name: @export_jpeg_codec},
-      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview},
-      {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec}
+      {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec},
+      {VisionCore.Status, config: config},
+      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
     ]
 
     %{
@@ -94,12 +100,25 @@ defmodule VisionCore.Application do
     }
   end
 
-  # Omit `:node_name` when unset so `ZenohClient` applies its default.
-  defp zenoh_client_opts(%VisionCore.Config{node_name: nil} = config),
-    do: [endpoint_ip: config.zenoh_endpoint_ip]
+  defp ros2_children(nil), do: []
 
-  defp zenoh_client_opts(%VisionCore.Config{} = config),
-    do: [endpoint_ip: config.zenoh_endpoint_ip, node_name: config.node_name]
+  defp ros2_children(ros2) do
+    [
+      {VisionCore.Ros2.ZenohClient, zenoh_client_options(ros2)},
+      VisionCore.Ros2.Parameters,
+      VisionCore.Ros2.Topics
+    ] ++ clock_children(Keyword.get(ros2, :simulator_clock))
+  end
+
+  # A key left out takes the client's default.
+  defp zenoh_client_options(ros2) do
+    [endpoint_ip: Keyword.fetch!(ros2, :zenoh_endpoint_ip)] ++
+      for key <- [:node_name, :domain_id], value = ros2[key], do: {key, value}
+  end
+
+  defp clock_children(clock) when clock in [nil, false], do: []
+  defp clock_children(true), do: [{VisionCore.Ros2.Clock, []}]
+  defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
 
   defp resolve_component(name) when is_atom(name), do: VisionCore.Components.start(name, [])
 

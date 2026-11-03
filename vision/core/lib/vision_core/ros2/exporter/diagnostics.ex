@@ -13,9 +13,11 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
       (`std_msgs/Float64`), five times a second, for plotting
 
   The sync offset is measured on every pair of frames taken less than
-  half a frame period apart, right minus left; `sync/1` answers it, and
-  answers no pair once the cameras formed none for two seconds, as when
-  they stopped.
+  half a frame period apart, right minus left
+  (`VisionCore.Stereo.Sync.pair_offset/4`). The stereo unit measures the
+  same for `VisionCore.Status` (`VisionCore.Stereo.Pairer.sync/1`); this
+  helper measures its own because its plot takes the offsets since the
+  last one, and so that it reports on cameras whose unit gave up.
 
   `VisionCore.Ros2.Exporter` starts it as a helper under its own
   supervisor when it publishes a stereo unit. It subscribes to the
@@ -42,6 +44,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
   alias VisionCore.Ros2.{Stamp, ZenohClient}
+  alias VisionCore.Stereo.Sync
 
   @default_topic_prefix "stereo"
   @default_fps 30
@@ -64,19 +67,6 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   @doc "Starts listening to both cameras of the unit; see the module doc."
   def start_link(opts),
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
-
-  @doc """
-  The sync of the unit's recent frame pairs: the median and largest
-  right minus left offset in ms, `nil` without pairs, and how many
-  pairs were measured. No pair is recent once the last one formed more
-  than two seconds ago.
-  """
-  @spec sync(GenServer.server()) :: %{
-          offset_median_ms: float() | nil,
-          offset_max_ms: float() | nil,
-          pairs: non_neg_integer()
-        }
-  def sync(server \\ __MODULE__), do: GenServer.call(server, :sync)
 
   @impl GenServer
   def init(opts) do
@@ -102,28 +92,8 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
        half_period_ns: div(1_000_000_000, 2 * Keyword.get(opts, :fps, @default_fps)),
        recent: %{left: [], right: []},
        offsets_ms: [],
-       recent_offsets_ms: [],
-       last_pair_ms: nil
+       recent_offsets_ms: []
      }}
-  end
-
-  @impl GenServer
-  def handle_call(:sync, _from, state) do
-    window =
-      if recent?(state.last_pair_ms),
-        do: Enum.take(state.offsets_ms ++ state.recent_offsets_ms, @sync_window_size),
-        else: []
-
-    sync =
-      if window == [],
-        do: %{offset_median_ms: nil, offset_max_ms: nil, pairs: 0},
-        else: %{
-          offset_median_ms: median(window),
-          offset_max_ms: Enum.max_by(window, &abs/1),
-          pairs: length(window)
-        }
-
-    {:reply, sync, state}
   end
 
   @impl GenServer
@@ -132,12 +102,9 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     other_side = if side == :left, do: :right, else: :left
 
     state =
-      case pair_offset(side, capture_ns, state.recent[other_side], state.half_period_ns) do
-        nil ->
-          state
-
-        offset_ns ->
-          %{state | offsets_ms: [offset_ns / 1.0e6 | state.offsets_ms], last_pair_ms: now_ms()}
+      case Sync.pair_offset(side, capture_ns, state.recent[other_side], state.half_period_ns) do
+        nil -> state
+        offset_ns -> %{state | offsets_ms: [offset_ns / 1.0e6 | state.offsets_ms]}
       end
 
     recent = Map.update!(state.recent, side, &Enum.take([capture_ns | &1], @recent_frame_count))
@@ -178,21 +145,6 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   def handle_info(_message, state), do: {:noreply, state}
 
   @doc """
-  Right minus left capture time of the frame at `capture_ns` and the
-  nearest of the other camera's `recent` frames, or nil when none is
-  within `half_period_ns`. Pure.
-  """
-  @spec pair_offset(:left | :right, integer(), [integer()], pos_integer()) :: integer() | nil
-  def pair_offset(side, capture_ns, recent, half_period_ns) do
-    case Enum.min_by(recent, &abs(&1 - capture_ns), fn -> nil end) do
-      nil -> nil
-      other_capture_ns when abs(other_capture_ns - capture_ns) >= half_period_ns -> nil
-      other_capture_ns when side == :right -> capture_ns - other_capture_ns
-      other_capture_ns -> other_capture_ns - capture_ns
-    end
-  end
-
-  @doc """
   The plotted values of the unit under `prefix`: the median of
   `offsets_ms`, the offsets measured since the last plot, when there
   are any, then each camera's exposure and gain in `live_metadata`.
@@ -202,7 +154,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     sync =
       if offsets_ms == [],
         do: [],
-        else: [float_message("#{prefix}/live/sync_offset_ms", median(offsets_ms))]
+        else: [float_message("#{prefix}/live/sync_offset_ms", Sync.median(offsets_ms))]
 
     cameras =
       for side <- [:left, :right],
@@ -316,7 +268,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
         if window == [],
           do: [],
           else: [
-            {"offset median (ms)", format(median(window))},
+            {"offset median (ms)", format(Sync.median(window))},
             {"offset max (ms)", format(Enum.max_by(window, &abs/1))},
             {"pairs measured", Integer.to_string(length(window))}
           ]
@@ -329,29 +281,19 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
         Enum.any?(ready, &(&1 != true)) ->
           {:warn, "cameras not synced"}
 
-        abs(median(window)) > @max_sync_offset_ms ->
-          {:warn, "frames #{format(median(window))} ms apart"}
+        abs(Sync.median(window)) > @max_sync_offset_ms ->
+          {:warn, "frames #{format(Sync.median(window))} ms apart"}
 
         true ->
-          {:ok, "frames #{format(median(window))} ms apart"}
+          {:ok, "frames #{format(Sync.median(window))} ms apart"}
       end
 
     Map.merge(base, %{level: level, message: message, values: values})
   end
 
-  defp recent?(nil), do: false
-  defp recent?(pair_ms), do: now_ms() - pair_ms <= @stale_ms
-
-  defp now_ms, do: System.monotonic_time(:millisecond)
-
   defp float_message(topic, value), do: {topic, Float64, %Float64{data: value * 1.0}}
 
   defp publish(state, {topic, module, message}), do: state.publish.(topic, module, message, [])
-
-  defp median(values) do
-    sorted = Enum.sort(values)
-    Enum.at(sorted, div(length(sorted), 2))
-  end
 
   defp format(value) when is_float(value), do: :erlang.float_to_binary(value, decimals: 2)
   defp format(value), do: to_string(value)

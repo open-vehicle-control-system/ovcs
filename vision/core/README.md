@@ -1,10 +1,10 @@
 # vision_core
 
-Stereo depth and object detection for a vehicle, published over native Zenoh as ROS 2 messages.
+Stereo depth and object detection for a vehicle, taken out of the unit by its exporters, such as ROS 2 messages over native Zenoh.
 
-`vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming the Zenoh router, the node name and the components to run (`:heartbeat`, `:simulator_clock`, `:stereo`, `:detector`, `:hailo_detector`; see `VisionCore.Components`).
+`vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming the components to run (`:stereo`, `:detector`, `:hailo_detector`; see `VisionCore.Components`), the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.Exporter`) and, for ROS 2, the Zenoh router and the node name.
 
-`VisionCore.Application` starts the composer set in `:vision_core, :vehicle` under `VisionCore.Supervisor`: the saved parameters' storage and the parameter registry first, then `VisionCore.Ros2.ZenohClient` and the components. With no composer it starts nothing.
+`VisionCore.Application` starts the composer set in `:vision_core, :vehicle` under `VisionCore.Supervisor`: the saved parameters' storage and the parameter registry first, then the ROS 2 link when the configuration has one, the components, the exporters, and the dashboard's sources. With no composer it starts nothing.
 
 On a vision target, compiling this app cross-builds the Ports from [`../rust`](../rust) through `Makefile` into `priv/`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` on `rpi5`, `v4l2_capture` and `jpeg_codec` on `okdo_c100`.
 

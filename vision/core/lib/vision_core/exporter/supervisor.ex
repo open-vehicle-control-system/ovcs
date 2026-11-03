@@ -13,13 +13,17 @@ defmodule VisionCore.Exporter.Supervisor do
   logged; an exporter whose `c:VisionCore.Exporter.init/1` fails is not
   one of them, its runner trying it again.
 
+  Before anything starts, the exporter's `c:VisionCore.Exporter.check/1`,
+  when it has one, is asked whether it can run: when it cannot, or
+  raises, the exporter is left down the same way, with its reason logged.
+
   Its options are the runner's (`VisionCore.Exporter.Runner`); its child
-  id is the exporter's `:id` option, or without one the exporter's
-  module.
+  id is the exporter's id (`VisionCore.Exporter.identity/2`).
   """
   use Supervisor
   require Logger
 
+  alias VisionCore.Exporter
   alias VisionCore.Exporter.Runner
 
   @max_restarts 10
@@ -30,7 +34,7 @@ defmodule VisionCore.Exporter.Supervisor do
     exporter = Keyword.fetch!(opts, :exporter)
 
     %{
-      id: opts |> Keyword.get(:options, []) |> Keyword.get(:id, exporter),
+      id: Exporter.identity(exporter, Keyword.get(opts, :options, [])).id,
       start: {__MODULE__, :start_link, [opts]},
       type: :supervisor,
       restart: :transient
@@ -38,22 +42,36 @@ defmodule VisionCore.Exporter.Supervisor do
   end
 
   @doc """
-  Starts the exporter `opts` names; `:ignore` when it fails to start, so
-  the vision core starts without it.
+  Starts the exporter `opts` names; `:ignore` when its check refuses it or
+  it fails to start, so the vision core starts without it.
   """
   def start_link(opts) do
-    case Supervisor.start_link(__MODULE__, opts) do
-      {:error, reason} ->
-        Logger.error(
-          "#{inspect(Keyword.fetch!(opts, :exporter))} failed to start, not exporting: " <>
-            inspect(reason)
-        )
+    exporter = Keyword.fetch!(opts, :exporter)
 
+    with :ok <- check(exporter, Keyword.get(opts, :options, [])),
+         {:ok, _supervisor} = started <- Supervisor.start_link(__MODULE__, opts) do
+      started
+    else
+      {:refused, reason} ->
+        Logger.error("#{inspect(exporter)} not started: #{reason}")
         :ignore
 
-      started ->
-        started
+      {:error, reason} ->
+        Logger.error("#{inspect(exporter)} failed to start, not exporting: " <> inspect(reason))
+        :ignore
     end
+  end
+
+  defp check(exporter, options) do
+    with true <- Code.ensure_loaded?(exporter) and function_exported?(exporter, :check, 1),
+         {:error, reason} <- exporter.check(options) do
+      {:refused, if(is_binary(reason), do: reason, else: inspect(reason))}
+    else
+      _can_run -> :ok
+    end
+  catch
+    :error, reason -> {:refused, Exception.message(Exception.normalize(:error, reason))}
+    kind, reason -> {:refused, "#{kind}: #{inspect(reason)}"}
   end
 
   @impl Supervisor

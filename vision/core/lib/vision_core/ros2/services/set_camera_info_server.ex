@@ -6,6 +6,8 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   delivers the freshly-solved `CameraInfo` over Zenoh, this persists
   it to the side's YAML and triggers a hot-reload of the stereo
   pipeline so the new geometry takes effect on the next frame.
+  `VisionCore.Ros2.Exporter` starts one per side it publishes, as a
+  helper, and is told of each calibration committed (`notify/2`).
 
   ## Required opts
 
@@ -17,14 +19,18 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     * `:camera_name` — `camera_name:` field written into the
       YAML; informational only.
     * `:reload` — `{module, function, args}` invoked with no extra
-      args after a successful write. Lets the calling
+      args after a successful write, answering `:ok` once the stereo
+      unit has taken the calibration. Lets the calling
       supervisor wire in the stereo pipeline's reload without
       coupling this module to it.
+    * `:register_service` (`&VisionCore.Ros2.ZenohClient.register_service/3`)
+      — registers the service, called with its name, its module and
+      this server's pid.
   """
   use GenServer
   require Logger
 
-  alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Ros2.{CameraCalibration, ZenohClient}
   alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo
   alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo.{Request, Response}
 
@@ -36,14 +42,24 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     Module.concat([__MODULE__, "S_#{service_name}"])
   end
 
+  @doc """
+  Has `server` send `pid` `{:calibration_committed, service_name}` after
+  each calibration it writes and the stereo unit takes, its `:reload`
+  answering `:ok`, or with no `:reload`; in place of the pid it told
+  before. A calibration the reload refuses, or raises on, is not told.
+  """
+  @spec notify(GenServer.server(), pid()) :: :ok
+  def notify(server, pid), do: GenServer.cast(server, {:notify, pid})
+
   @impl GenServer
   def init(opts) do
     service_name = Keyword.fetch!(opts, :service_name)
     calibration_path = Keyword.fetch!(opts, :calibration_path)
     camera_name = Keyword.get(opts, :camera_name, Path.basename(calibration_path, ".yaml"))
     reload = Keyword.get(opts, :reload)
+    register_service = Keyword.get(opts, :register_service, &ZenohClient.register_service/3)
 
-    VisionCore.Ros2.ZenohClient.register_service(service_name, SetCameraInfo, self())
+    register_service.(service_name, SetCameraInfo, self())
 
     Logger.info("#{__MODULE__} ready for #{service_name} → #{calibration_path}")
 
@@ -52,9 +68,13 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
        service_name: service_name,
        calibration_path: calibration_path,
        camera_name: camera_name,
-       reload: reload
+       reload: reload,
+       notified: nil
      }}
   end
+
+  @impl GenServer
+  def handle_cast({:notify, pid}, state), do: {:noreply, %{state | notified: pid}}
 
   @impl GenServer
   def handle_info({:service_request, %{query: query, request_payload: payload}}, state) do
@@ -71,7 +91,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
           %Response{success: false, status_message: "could not decode request"}
       end
 
-    VisionCore.Ros2.ZenohClient.respond(state.service_name, query, Response.encode(response))
+    ZenohClient.respond(state.service_name, query, Response.encode(response))
     {:noreply, state}
   end
 
@@ -86,7 +106,9 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
           "#{byte_size(yaml)} B → #{state.calibration_path}"
       )
 
-      maybe_reload(state.reload)
+      if reload(state) == :ok and state.notified,
+        do: send(state.notified, {:calibration_committed, state.service_name})
+
       %Response{success: true, status_message: "ok"}
     else
       {:error, reason} ->
@@ -96,12 +118,23 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     end
   end
 
-  defp maybe_reload(nil), do: :ok
+  defp reload(%{reload: nil}), do: :ok
 
-  defp maybe_reload({module, function, args}) do
-    apply(module, function, args)
+  defp reload(%{reload: {module, function, args}} = state) do
+    case apply(module, function, args) do
+      :ok -> :ok
+      refusal -> reload_failed(state, inspect(refusal))
+    end
   catch
-    kind, reason ->
-      Logger.warning("#{__MODULE__}: reload callback failed #{kind}: #{inspect(reason)}")
+    kind, reason -> reload_failed(state, "#{kind}: #{inspect(reason)}")
+  end
+
+  defp reload_failed(state, reason) do
+    Logger.warning(
+      "#{__MODULE__}[#{state.service_name}] the stereo unit did not take the calibration " <>
+        "written to #{state.calibration_path}: #{reason}"
+    )
+
+    {:error, reason}
   end
 end

@@ -41,17 +41,17 @@ defmodule VisionCore.Detection.SupervisorTest do
 
   describe "the detection unit of a config" do
     defp config(components),
-      do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+      do: %VisionCore.Config{components: components}
 
     test "its output: the detection pipeline's detections, whichever component starts it" do
       for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
-        assert Supervisor.outputs(config([:heartbeat, detector])) ==
+        assert Supervisor.outputs(config([detector])) ==
                  [detections: {:detections, VisionCore.Detection.Pipeline}]
       end
     end
 
     test "none without a component starting it" do
-      assert Supervisor.outputs(config([:heartbeat, {:stereo, []}])) == []
+      assert Supervisor.outputs(config([{:stereo, []}])) == []
     end
   end
 end

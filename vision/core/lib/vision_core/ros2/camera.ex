@@ -17,6 +17,12 @@ defmodule VisionCore.Ros2.Camera do
     * `:label` (required) — `"left"` / `"right"`, as for every driver.
     * `:topic` (required) — the ROS topic to consume, e.g.
       `"/stereo/left/image_raw/compressed"`.
+    * `:frame_id` — the optical frame each frame carries, in place of
+      the frame id of the image's header.
+
+  It reads through `VisionCore.Ros2.ZenohClient`, the ROS 2 link of the
+  configuration's `ros2:` section: without it, it does not start, with
+  an error logged, and neither does its stereo unit.
 
   `:width`, `:height` and `:fps` are accepted and ignored: the
   publisher decides the format, and quietly resizing here would hide a
@@ -52,7 +58,7 @@ defmodule VisionCore.Ros2.Camera do
   alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.Stamp
+  alias VisionCore.Ros2.{Stamp, ZenohClient}
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -68,14 +74,30 @@ defmodule VisionCore.Ros2.Camera do
     label = Keyword.fetch!(opts, :label)
     topic = Keyword.fetch!(opts, :topic)
 
-    # Subscribing from `init/1` is safe: ZenohClient records the
-    # subscription and declares it on the next successful connect, so
-    # a camera that starts before the session is up still works.
-    :ok = VisionCore.Ros2.ZenohClient.subscribe(topic, CompressedImage)
+    if Process.whereis(ZenohClient) do
+      # Subscribing from `init/1` is safe: ZenohClient records the
+      # subscription and declares it on the next successful connect, so
+      # a camera that starts before the session is up still works.
+      :ok = ZenohClient.subscribe(topic, CompressedImage)
 
-    Logger.info("#{__MODULE__}[#{label}] consuming #{topic}")
+      Logger.info("#{__MODULE__}[#{label}] consuming #{topic}")
 
-    {:ok, %{label: label, topic: topic, output: {:camera_frame, name_for(label)}, frame_count: 0}}
+      {:ok,
+       %{
+         label: label,
+         frame_id: Keyword.get(opts, :frame_id),
+         topic: topic,
+         output: {:camera_frame, name_for(label)},
+         frame_count: 0
+       }}
+    else
+      Logger.error(
+        "#{__MODULE__}[#{label}] cannot read #{topic}: the vision configuration has no ros2: " <>
+          "section, the ROS 2 link it reads through"
+      )
+
+      {:stop, {:shutdown, :no_ros2_link}}
+    end
   end
 
   @impl GenServer
@@ -84,6 +106,7 @@ defmodule VisionCore.Ros2.Camera do
       {:ok, width, height} ->
         frame = %Frame{
           label: state.label,
+          frame_id: state.frame_id,
           width: width,
           height: height,
           capture_ns: capture_ns(image),

@@ -154,10 +154,86 @@ defmodule VisionCore.ExportersTest do
     def handle_output(_output, _value, state), do: {:ok, state}
   end
 
-  defp config,
+  # Listed under an id and a name of its own.
+  defmodule Described do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def describe(_options), do: %{id: :described, name: "Described"}
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [{:camera_frame, :left}, stereo_pair: [max_hz: 5]]
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+
+    @impl VisionCore.Exporter
+    def status(_state), do: {:ok, "Connected"}
+  end
+
+  # Refuses to run, for want of what its options name.
+  defmodule Refusing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def check(_options), do: {:error, "no broker to publish to"}
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+  end
+
+  defmodule RaisingCheck do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def check(options), do: Keyword.fetch!(options, :broker)
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+  end
+
+  # Answers its status only once the test lets it.
+  defmodule Stuck do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def describe(options), do: %{id: Keyword.fetch!(options, :stuck_id), name: "Stuck"}
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+
+    @impl VisionCore.Exporter
+    def status(_state) do
+      Process.sleep(1_000)
+      {:ok, "Late"}
+    end
+  end
+
+  defp config(exporters \\ []),
     do: %VisionCore.Config{
-      zenoh_endpoint_ip: "127.0.0.1",
-      components: [{:stereo, driver: Camera, left: [], right: []}]
+      components: [{:stereo, driver: Camera, left: [], right: []}],
+      exporters: exporters
     }
 
   defp exporter_pid(id) do
@@ -235,106 +311,123 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
-  describe "from_config/1" do
-    test "lists the ROS 2 exporter, which the exporters run without :exporters" do
-      assert [{VisionCore.Ros2.Exporter, _options}] = Exporters.from_config(config())
+  test "runs the exporters of its configuration without :exporters" do
+    start_supervised!({Exporters, config: config([{Steady, test: self()}])})
 
-      start_supervised!({Exporters, config: config()})
+    assert exporter_ids() == [Steady]
+    assert_receive {:started, _options}
+  end
 
-      assert exporter_ids() == [VisionCore.Ros2.Exporter]
-    end
+  describe "list/1" do
+    test "lists each exporter in the configuration's order: its id, name, module, status and outputs" do
+      start_supervised!(
+        {Exporters, config: config(), exporters: [{Described, []}, {Steady, test: self()}]}
+      )
 
-    test "gives the ROS 2 exporter what the components ask it to publish" do
-      config = %VisionCore.Config{
-        zenoh_endpoint_ip: "127.0.0.1",
-        node_name: "front_vision",
-        components: [
-          {:heartbeat, interval_ms: 500},
-          {:stereo,
-           driver: Camera,
-           width: 640,
-           height: 480,
-           fps: 15,
-           match_width: 320,
-           match_height: 240,
-           topic_prefix: "front",
-           calibration_dir: "/rom/calibration",
-           publish_rectified_image: true,
-           raw_image_max_hz: 5,
-           left: [device: "/dev/video0", frame_id: "front_left_optical", sync: :server],
-           right: [device: "/dev/video1"]},
-          {:hailo_detector,
-           hef_path: "/rom/model.hef", frame_id: "front_left_optical", marker_lifetime_ms: 300}
-        ]
-      }
+      await_runner(:described)
+      await_runner(Steady)
 
-      assert Exporters.from_config(config) == [
-               {VisionCore.Ros2.Exporter,
-                name: VisionCore.Ros2.Exporter,
-                node_name: "front_vision",
-                heartbeat: [interval_ms: 500],
-                stereo: [
-                  driver: Camera,
-                  topic_prefix: "front",
-                  width: 640,
-                  height: 480,
-                  fps: 15,
-                  left: [
-                    frame_id: "front_left_optical",
-                    calibration_path: "/rom/calibration/front_left.yaml",
-                    sync: :server
-                  ],
-                  right: [
-                    frame_id: "front_right",
-                    calibration_path: "/rom/calibration/front_right.yaml"
-                  ],
-                  publish_rectified_image: true,
-                  raw_image_max_hz: 5
-                ],
-                detections: [frame_id: "front_left_optical", marker_lifetime_ms: 300]}
+      assert Exporters.list() == [
+               %{
+                 id: "described",
+                 name: "Described",
+                 module: Described,
+                 status: {:ok, "Connected"},
+                 outputs: [
+                   %{output: {:camera_frame, :left}, max_hz: nil},
+                   %{output: :stereo_pair, max_hz: 5}
+                 ]
+               },
+               %{
+                 id: "VisionCore.ExportersTest.Steady",
+                 name: "VisionCore.ExportersTest.Steady",
+                 module: Steady,
+                 status: {:ok, "Running"},
+                 outputs: [%{output: :stereo_pair, max_hz: nil}]
+               }
              ]
     end
 
-    @tag :tmp_dir
-    test "points the stereo unit's camera info at the stored calibration once both sides are stored",
-         %{tmp_dir: tmp_dir} do
-      for side <- ["left", "right"],
-          do: File.write!(Path.join(tmp_dir, "stereo_#{side}.yaml"), "")
+    test "an :id among an exporter's options replaces its own" do
+      start_supervised!({Exporters, config: config(), exporters: [{Described, id: :front}]})
 
-      config = %VisionCore.Config{
-        zenoh_endpoint_ip: "127.0.0.1",
-        components: [
-          {:stereo,
-           driver: Camera,
-           calibration_dir: "/rom/calibration",
-           calibration_store_dir: tmp_dir,
-           left: [],
-           right: []}
-        ]
-      }
-
-      assert [{VisionCore.Ros2.Exporter, options}] = Exporters.from_config(config)
-      assert options[:stereo][:left][:calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
-
-      assert options[:stereo][:right][:calibration_path] ==
-               Path.join(tmp_dir, "stereo_right.yaml")
+      assert exporter_ids() == [:front]
+      assert [%{id: "front", name: "Described"}] = Exporters.list()
     end
 
-    test "a configuration without components gives the ROS 2 exporter nothing to publish" do
-      assert Exporters.from_config(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"}) == [
-               {VisionCore.Ros2.Exporter,
-                name: VisionCore.Ros2.Exporter, node_name: "ovcs_vision"}
-             ]
+    test "lists an exporter that is not running as off" do
+      capture_log(fn ->
+        start_supervised!({Exporters, config: config(), exporters: [{Refusing, []}]})
+      end)
 
-      assert [{VisionCore.Ros2.Exporter, options}] =
-               Exporters.from_config(%VisionCore.Config{
-                 zenoh_endpoint_ip: "127.0.0.1",
-                 components: [:heartbeat, :detector]
-               })
-
-      assert options[:heartbeat] == []
-      assert options[:detections] == []
+      assert [%{id: "VisionCore.ExportersTest.Refusing", status: {:off, "Not running"}}] =
+               Exporters.list()
     end
+
+    @tag timeout: 10_000
+    test "asks the statuses at once, reporting one that misses the deadline as not answering" do
+      start_supervised!(
+        {Exporters,
+         config: config(),
+         exporters: [{Stuck, stuck_id: :first}, {Stuck, stuck_id: :second}, {Described, []}]}
+      )
+
+      for id <- [:first, :second, :described], do: await_runner(id)
+
+      {elapsed_us, listed} = :timer.tc(fn -> Exporters.list(100) end)
+
+      assert [
+               %{id: "first", status: {:warning, "Not answering"}},
+               %{id: "second", status: {:warning, "Not answering"}},
+               %{id: "described", status: {:ok, "Connected"}}
+             ] = listed
+
+      assert elapsed_us < 180_000
+    end
+
+    test "is empty while the exporters are not running" do
+      assert Exporters.list() == []
+    end
+  end
+
+  test "an exporter that refuses its options is not started, with its reason logged, and the others start" do
+    log =
+      capture_log(fn ->
+        start_supervised!(
+          {Exporters, config: config(), exporters: [{Refusing, []}, {Steady, test: self()}]}
+        )
+      end)
+
+    assert exporter_pid(Refusing) == :undefined
+    assert_receive {:started, _options}
+    assert log =~ "#{inspect(Refusing)} not started: no broker to publish to"
+  end
+
+  test "an exporter whose check raises is not started, and the others start" do
+    log =
+      capture_log(fn ->
+        start_supervised!(
+          {Exporters, config: config(), exporters: [{RaisingCheck, []}, {Steady, test: self()}]}
+        )
+      end)
+
+    assert exporter_pid(RaisingCheck) == :undefined
+    assert_receive {:started, _options}
+    assert log =~ "#{inspect(RaisingCheck)} not started"
+    assert log =~ ":broker"
+  end
+
+  test "an entry that is not {module, options} is left out, logged, and the others start" do
+    log =
+      capture_log(fn ->
+        start_supervised!(
+          {Exporters, config: config(), exporters: [Steady, {Steady, test: self()}]}
+        )
+      end)
+
+    assert exporter_ids() == [Steady]
+    assert_receive {:started, _options}
+    assert log =~ "not an exporter"
   end
 
   test "an exporter that keeps crashing stops alone: the producer and the other exporters run on" do
@@ -502,7 +595,7 @@ defmodule VisionCore.ExportersTest do
     assert eventually_restarted(WithHelper, Runner, runner)
   end
 
-  test "hands each exporter, in its options, the JPEG codec it encodes on" do
+  test "hands each exporter, in its options, the JPEG codec it encodes on and the configuration" do
     start_supervised!(
       {Exporters,
        config: config(), jpeg_codec: :export_codec, exporters: [{Steady, test: self()}]}
@@ -510,6 +603,7 @@ defmodule VisionCore.ExportersTest do
 
     assert_receive {:started, options}
     assert options[:jpeg_codec] == :export_codec
+    assert options[:config] == config()
   end
 
   test "runs two instances of one exporter apart, by their :id" do

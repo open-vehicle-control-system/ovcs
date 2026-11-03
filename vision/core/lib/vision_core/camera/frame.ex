@@ -5,6 +5,11 @@ defmodule VisionCore.Camera.Frame do
     * `:label` — driver-assigned identity (e.g. `"left"`, `"right"`).
       Lets a single consumer process multiplex frames from several
       cameras over its mailbox.
+    * `:frame_id` — the camera's optical frame, the coordinate frame
+      what is measured on the image is positioned in, as the driver was
+      configured with it; `nil` when it was not. The stereo unit gives
+      each camera its own (`VisionCore.Stereo.Supervisor`), and the
+      exporters stamp what they publish of the frame with it.
     * `:width`, `:height` — pixel dimensions.
     * `:capture_ns` — capture timestamp in nanoseconds, always on the
       Erlang monotonic timescale (`System.monotonic_time/1`). Drivers
@@ -18,10 +23,11 @@ defmodule VisionCore.Camera.Frame do
       Exactly one of the two is set.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
-  defstruct [:label, :width, :height, :capture_ns, jpeg: nil, grey: nil]
+  defstruct [:label, :width, :height, :capture_ns, frame_id: nil, jpeg: nil, grey: nil]
 
   @type t :: %__MODULE__{
           label: String.t(),
+          frame_id: String.t() | nil,
           width: pos_integer(),
           height: pos_integer(),
           capture_ns: integer(),

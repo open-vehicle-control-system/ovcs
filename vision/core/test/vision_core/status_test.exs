@@ -10,35 +10,78 @@ defmodule VisionCore.StatusTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
-  defp config(components),
-    do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+  # An exporter whose status says how it is configured, or that answers too late with `delay_ms:`.
+  defmodule Exporter do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def describe(_options), do: %{id: :probe, name: "Probe"}
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, options}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, options), do: {:ok, options}
+
+    @impl VisionCore.Exporter
+    def status(options) do
+      Process.sleep(Keyword.get(options, :delay_ms, 0))
+      {:ok, "Linked"}
+    end
+  end
+
+  defp config(components), do: %VisionCore.Config{components: components}
+
+  defp start_exporter(options) do
+    start_supervised!(
+      {VisionCore.Exporters, config: config([]), exporters: [{Exporter, options}]}
+    )
+
+    {_id, supervisor, :supervisor, _modules} =
+      List.keyfind(Supervisor.which_children(VisionCore.Exporters), :probe, 0)
+
+    {_id, runner, :worker, _modules} =
+      List.keyfind(Supervisor.which_children(supervisor), VisionCore.Exporter.Runner, 0)
+
+    :sys.get_state(runner)
+  end
 
   defp pair do
     frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
     %Pair{left_frame: frame, right_frame: %{frame | label: "right"}}
   end
 
-  test "snapshot reports zenoh disconnected without a session" do
+  test "a snapshot of a unit with nothing running reports everything absent" do
     start_supervised!({Status, config: config([])})
 
     snapshot = Status.snapshot()
 
-    assert snapshot.zenoh == :disconnected
+    assert snapshot.exporters == []
     assert snapshot.cameras == %{left: %{present: false}, right: %{present: false}}
     assert snapshot.sync == %{present: false}
     assert snapshot.hailo == :absent
     assert snapshot.depth_hz == 0.0
   end
 
+  test "reports each exporter's status, as the exporters list them" do
+    start_exporter([])
+    start_supervised!({Status, config: config([])})
+
+    assert Status.snapshot().exporters == [%{id: "probe", name: "Probe", status: {:ok, "Linked"}}]
+  end
+
   describe "the sync" do
-    alias VisionCore.Ros2.Exporter.Diagnostics
+    alias VisionCore.Stereo.Pairer
 
     defp stereo_config, do: config([{:stereo, driver: Camera, left: [], right: []}])
 
-    # One pair of frames measured by the diagnostics, the right one 0.2 ms after the left one.
+    # One pair of frames measured by the stereo unit, the right one 0.2 ms after the left one.
     defp measure_one_pair do
       start_supervised!(
-        {Diagnostics, driver: Camera, publish: fn _topic, _module, _message, _options -> :ok end}
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()}
       )
 
       for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
@@ -46,7 +89,7 @@ defmodule VisionCore.StatusTest do
         Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
       end
 
-      assert %{pairs: 1} = Diagnostics.sync()
+      assert %{pairs: 1} = Pairer.sync()
     end
 
     defp run_camera(label) do
@@ -55,7 +98,7 @@ defmodule VisionCore.StatusTest do
       on_exit(fn -> Process.exit(camera, :kill) end)
     end
 
-    test "is the one the diagnostics measured while the cameras run" do
+    test "is the one the stereo unit measured while the cameras run" do
       measure_one_pair()
       for label <- ["left", "right"], do: run_camera(label)
       start_supervised!({Status, config: stereo_config()})
@@ -90,17 +133,15 @@ defmodule VisionCore.StatusTest do
   end
 
   test "callees that do not answer delay the snapshot by one timeout, not one each" do
-    for name <- [VisionCore.Detection.Backend.Hailo, VisionCore.Ros2.ZenohClient] do
-      silent = spawn(fn -> Process.sleep(:infinity) end)
-      Process.register(silent, name)
-      on_exit(fn -> Process.exit(silent, :kill) end)
-    end
-
+    silent = spawn(fn -> Process.sleep(:infinity) end)
+    Process.register(silent, VisionCore.Detection.Backend.Hailo)
+    on_exit(fn -> Process.exit(silent, :kill) end)
+    start_exporter(delay_ms: 1_000)
     start_supervised!({Status, config: config([:hailo_detector])})
 
     {elapsed_us, snapshot} = :timer.tc(&Status.snapshot/0)
 
-    assert %{hailo: :failed, zenoh: :disconnected} = snapshot
+    assert %{hailo: :failed, exporters: [%{status: {:warning, "Not answering"}}]} = snapshot
     assert elapsed_us < 350_000
   end
 
@@ -108,7 +149,7 @@ defmodule VisionCore.StatusTest do
     start_supervised!({Status, config: config([]), tick_ms: 60_000})
     :ok = Status.subscribe()
 
-    assert_receive {:vision_status, %{zenoh: :disconnected}}, 500
+    assert_receive {:vision_status, %{exporters: []}}, 500
   end
 
   test "an unsubscribed process receives no more snapshots" do

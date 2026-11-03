@@ -8,8 +8,9 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
   ## Frames
 
-  Everything is published in the depth image's own optical frame, so
-  it lines up with the point cloud without further transformation.
+  Everything is published in the depth image's own optical frame, the
+  frame the pair's left frame carries (`VisionCore.Stereo.Pair.frame_id/1`),
+  so it lines up with the point cloud without further transformation.
   The vehicle's transform tree relates that frame to the vehicle body
   — without it a viewer has boxes but nowhere to put them.
 
@@ -19,9 +20,6 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       `<prefix>/detections/markers`, detections to
       `<prefix>/detections`, and the 2D image overlay to
       `<prefix>/left/detections`.
-    * `:frame_id` (`"<prefix>_left"`) — must match the frame the
-      stereo unit stamps its depth image with, since the boxes are
-      positioned in that image's pixels.
     * `:marker_lifetime_ms` (`500`) — how long a marker survives
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
@@ -71,12 +69,15 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
 
-  @typedoc "The topics, frame, marker lifetime and font size, from `new/1`."
+  @typedoc """
+  The topics, the frame of a pair that carries none, the marker lifetime
+  and the font size, from `new/1`.
+  """
   @type t :: %{
           markers_topic: String.t(),
           detections_topic: String.t(),
           overlay_topic: String.t(),
-          frame_id: String.t(),
+          default_frame_id: String.t(),
           marker_lifetime: struct(),
           label_font_size: float()
         }
@@ -90,7 +91,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       markers_topic: "#{topic_prefix}/detections/markers",
       detections_topic: "#{topic_prefix}/detections",
       overlay_topic: "#{topic_prefix}/left/detections",
-      frame_id: Keyword.get(options, :frame_id, "#{topic_prefix}_left"),
+      default_frame_id: "#{topic_prefix}_left",
       marker_lifetime:
         options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
@@ -109,7 +110,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   def messages(detections, %Pair{} = pair, settings, drawn) do
     header = %Header{
       stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
-      frame_id: settings.frame_id
+      frame_id: Pair.frame_id(pair) || settings.default_frame_id
     }
 
     [

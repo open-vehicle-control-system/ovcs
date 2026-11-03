@@ -15,6 +15,9 @@ defmodule VisionCore.Stereo.Pairer do
   The next pair goes in as soon as the pipeline reports the previous one
   done, failed or not.
 
+  It also measures how far apart the two cameras capture, on every frame
+  they deliver (`VisionCore.Stereo.Sync`), which `sync/1` answers.
+
   ## Options
 
     * `:cameras` (required) — `[{driver_module, "left"}, {driver_module, "right"}]`.
@@ -22,21 +25,31 @@ defmodule VisionCore.Stereo.Pairer do
     * `:pair_tolerance_ms` (33) — the largest capture time gap of a
       pair; wide enough for unsynchronised USB cameras with a stable
       phase offset.
+    * `:fps` (30) — the cameras' frame rate: frames half a period apart
+      or more are not measured as a pair of the sync.
   """
   use GenServer
   require Logger
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Stereo.{Pipeline, StageTimer}
+  alias VisionCore.Stereo.{Pipeline, StageTimer, Sync}
 
   @default_pair_tolerance_ms 33
+  @default_fps 30
   # A few frame periods: enough to find the closest pair.
   @frames_kept_per_side 4
   # Gaps closer than this are equally good: the newest pair is the one with least latency.
   @gap_resolution_ns 1_000_000
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @doc """
+  How far apart the cameras captured their recent pairs of frames; see
+  `VisionCore.Stereo.Sync.summary/2`.
+  """
+  @spec sync(GenServer.server()) :: Sync.summary()
+  def sync(server \\ __MODULE__), do: GenServer.call(server, :sync)
 
   @impl GenServer
   def init(opts) do
@@ -59,13 +72,18 @@ defmodule VisionCore.Stereo.Pairer do
        right_frames: [],
        awaiting_pair: false,
        submitted_at_ns: nil,
+       sync: Sync.new(Keyword.get(opts, :fps, @default_fps)),
        timer: StageTimer.new(window: 30, label: "pairer")
      }}
   end
 
   @impl GenServer
+  def handle_call(:sync, _from, state),
+    do: {:reply, Sync.summary(state.sync, System.monotonic_time(:millisecond)), state}
+
+  @impl GenServer
   def handle_cast({:camera_frame, %Frame{} = frame}, state),
-    do: {:noreply, state |> keep(frame) |> maybe_submit()}
+    do: {:noreply, state |> measure(frame) |> keep(frame) |> maybe_submit()}
 
   def handle_cast(_message, state), do: {:noreply, state}
 
@@ -81,6 +99,16 @@ defmodule VisionCore.Stereo.Pairer do
     # Frames may have arrived while the pipeline was busy: submit a ready pair now.
     {:noreply, maybe_submit(%{state | awaiting_pair: false, submitted_at_ns: nil, timer: timer})}
   end
+
+  defp measure(state, %Frame{label: label, capture_ns: capture_ns})
+       when label in ["left", "right"] do
+    side = String.to_existing_atom(label)
+    now_ms = System.monotonic_time(:millisecond)
+    {_offset_ms, sync} = Sync.add(state.sync, side, capture_ns, now_ms)
+    %{state | sync: sync}
+  end
+
+  defp measure(state, _frame), do: state
 
   defp keep(state, %Frame{label: "left"} = frame),
     do: %{state | left_frames: Enum.take([frame | state.left_frames], @frames_kept_per_side)}

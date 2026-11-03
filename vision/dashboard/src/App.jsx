@@ -5,18 +5,19 @@ import Menu from './components/Menu.jsx'
 import ThemeSwitch from './components/ThemeSwitch.jsx'
 import Firmware from './components/Firmware.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
-import Ros2Page from './pages/Ros2Page.jsx'
-import ApiPage from './pages/ApiPage.jsx'
+import ExporterPage from './pages/ExporterPage.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
 import { OvcsCard, OvcsHeader, OvcsSaveBar, focusClass as FOCUS } from '@ovcs/ui/react'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
+import { useExporters } from './stores/exporters.js'
 import { orderedGroups, useParameters } from './stores/parameters.js'
 import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 
-// Keeps the page and the box in the URL; on the pipeline, selects the URL's box once known, else the first box.
+// Keeps the page, its box or exporter, in the URL; on the pipeline, selects the URL's box once known, else the first box.
 function useNavigationInUrl() {
   const page = useNavigation((state) => state.page)
+  const exporterId = useNavigation((state) => state.exporterId)
   const loaded = useParameters((state) => state.groups.length > 0)
   const selectedGroupId = useParameters((state) => state.selectedGroupId)
 
@@ -31,10 +32,20 @@ function useNavigationInUrl() {
 
   // Until a box is selected, the URL keeps the one it names.
   useEffect(() => {
-    if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId)
-  }, [page, selectedGroupId])
+    if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId, exporterId)
+  }, [page, selectedGroupId, exporterId])
 
-  return { page, selectedGroupId }
+  return { page, selectedGroupId, exporterId }
+}
+
+// The exporters are listed again whenever the unit comes back, as after a reboot with another configuration.
+function useExportersListed() {
+  const joins = useStatus((state) => state.joins)
+  const load = useExporters((state) => state.load)
+
+  useEffect(() => {
+    if (joins > 0) load()
+  }, [joins, load])
 }
 
 // Keeps focused controls clear of the sticky bar when the browser scrolls them into view.
@@ -134,7 +145,7 @@ function PreviewsPage({ page, groupId }) {
   )
 }
 
-const PAGES = { calibration: CalibrationPage, ros2: Ros2Page, api: ApiPage }
+const PAGES = { calibration: CalibrationPage }
 
 export default function App() {
   const listen = useStatus((state) => state.listen)
@@ -148,7 +159,9 @@ export default function App() {
     return stopPolling
   }, [startPolling, stopPolling])
 
-  const { page, selectedGroupId } = useNavigationInUrl()
+  useExportersListed()
+
+  const { page, selectedGroupId, exporterId } = useNavigationInUrl()
   const Page = PAGES[page]
 
   // On a laptop the page is the screen: only a page's own content scrolls.
@@ -171,7 +184,13 @@ export default function App() {
       <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
         <Menu />
         <main className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:p-6">
-          {Page ? <Page /> : <PreviewsPage page={page} groupId={selectedGroupId} />}
+          {page === 'exporter' ? (
+            <ExporterPage id={exporterId} />
+          ) : Page ? (
+            <Page />
+          ) : (
+            <PreviewsPage page={page} groupId={selectedGroupId} />
+          )}
         </main>
       </div>
     </div>

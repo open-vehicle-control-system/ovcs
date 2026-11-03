@@ -3,37 +3,49 @@ defmodule VisionCore.Config do
   A vehicle's vision configuration, returned by its
   `c:VisionCore.Composer.config/1` callback.
 
-    * `:zenoh_endpoint_ip` — the Zenoh router the pipeline peers with.
-    * `:components` — the pipeline's components on top of the always-on
-      `VisionCore.Ros2.ZenohClient`, `VisionCore.Parameters` and
-      `VisionCore.Ros2.Parameters`. Each entry is
-      a bare component atom (`:heartbeat`) or a `{name, opts}` tuple. See
-      `VisionCore.Components` for the catalogue.
-    * `:node_name` — the ROS 2 node name announced in the rmw_zenoh
-      liveliness tokens. Defaults to `VisionCore.Ros2.ZenohClient`'s default.
-      Set it whenever another ROS 2 node on the same fabric could share
-      the name: two nodes with one name collide in the ROS graph.
+    * `:components` — what produces the unit's outputs: the stereo unit
+      and the detector. Each entry is a bare component atom or a
+      `{name, opts}` tuple; see `VisionCore.Components` for the
+      catalogue.
+    * `:exporters` — what takes the outputs out of the unit, each
+      `{module, options}`, `module` implementing `VisionCore.Exporter`,
+      such as `VisionCore.Ros2.Exporter`; see `VisionCore.Exporters`.
+    * `:ros2` — the ROS 2 link, on top of the always-on
+      `VisionCore.Parameters`: the Zenoh session the ROS 2 exporter
+      publishes through and a `VisionCore.Ros2.Camera` reads from, the
+      parameters as ROS 2 parameter services, and the published topics'
+      counts. Without it, no ROS 2 process starts. Options:
+        * `:zenoh_endpoint_ip` (required) — the Zenoh router the unit
+          peers with.
+        * `:node_name` (`"ovcs_vision"`) — the ROS 2 node name announced
+          in the rmw_zenoh liveliness tokens. Set it whenever another ROS 2
+          node on the same fabric could share the name: two nodes with
+          one name collide in the ROS graph.
+        * `:domain_id` (`0`) — the ROS 2 domain.
+        * `:simulator_clock` — `true`, or `VisionCore.Ros2.Clock`'s
+          options, to stamp with the simulator's `/clock` rather than
+          wall clock. **Simulation only**: see `VisionCore.Ros2.Clock`
+          for what wall clock breaks against a simulator.
     * `:preview` — options of `VisionCore.Preview` (`:max_hz`,
       `:depth_range_m`).
   """
-  @enforce_keys [:zenoh_endpoint_ip]
-  defstruct [:zenoh_endpoint_ip, :node_name, components: [], preview: []]
+  defstruct ros2: nil, components: [], exporters: [], preview: []
 
   @type component :: atom() | {atom(), keyword()}
   @type t :: %__MODULE__{
-          zenoh_endpoint_ip: String.t(),
-          node_name: String.t() | nil,
+          ros2: keyword() | nil,
           components: [component()],
+          exporters: [{module(), keyword()}],
           preview: keyword()
         }
 end
 
 defmodule VisionCore do
   @moduledoc """
-  Stereo depth and object detection published over native Zenoh as ROS 2
-  messages. It carries no vehicle knowledge: the vehicle package names the
-  cameras, calibration, tuning and detector through a
-  `VisionCore.Composer`.
+  Stereo depth and object detection, taken out of the unit by its
+  exporters, such as ROS 2 messages over native Zenoh. It carries no
+  vehicle knowledge: the vehicle package names the cameras, calibration,
+  tuning, detector and exporters through a `VisionCore.Composer`.
 
   `VisionCore.Application` starts the pipeline under `VisionCore.Supervisor`
   when `:vision_core, :vehicle` names a composer.
@@ -64,6 +76,7 @@ defmodule VisionCore do
     config
     |> Map.from_struct()
     |> Map.update!(:components, fn components -> Enum.map(components, &component_term/1) end)
+    |> Map.update!(:exporters, fn exporters -> Enum.map(exporters, &exporter_term/1) end)
     |> settings_term()
   end
 
@@ -94,4 +107,7 @@ defmodule VisionCore do
 
   defp component_term({name, options}), do: %{name: name, options: options}
   defp component_term(name), do: %{name: name, options: []}
+
+  defp exporter_term({module, options}), do: %{module: module, options: options}
+  defp exporter_term(module), do: %{module: module, options: []}
 end

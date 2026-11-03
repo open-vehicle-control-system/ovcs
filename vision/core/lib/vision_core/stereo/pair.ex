@@ -6,7 +6,9 @@ defmodule VisionCore.Stereo.Pair do
   `VisionCore.Stereo.Stage`); the pipeline publishes the finished pair
   as `{:stereo_pair, %Pair{}}` (`VisionCore.Outputs`).
 
-    * `:left_frame`, `:right_frame` — the submitted `Camera.Frame`s.
+    * `:left_frame`, `:right_frame` — the submitted `Camera.Frame`s,
+      each with its camera's frame id: the disparity, depth and point
+      cloud are in the left one's (`frame_id/1`).
     * `:geometry` — the pipeline's `t:VisionCore.Stereo.Stage.context/0`
       at the time: capture size, calibration, focal length, baseline
       and principal point.
@@ -71,6 +73,13 @@ defmodule VisionCore.Stereo.Pair do
   @doc "The left frame's monotonic capture time, which every output is stamped with."
   @spec capture_ns(t()) :: integer()
   def capture_ns(%__MODULE__{left_frame: frame}), do: frame.capture_ns
+
+  @doc """
+  The frame the pair's outputs are in: the left camera's optical frame,
+  `nil` when its driver was given none.
+  """
+  @spec frame_id(t()) :: String.t() | nil
+  def frame_id(%__MODULE__{left_frame: frame}), do: frame.frame_id
 
   @doc "`{width, height}` of the rectified images and the maps derived from them."
   @spec size(t()) :: {pos_integer(), pos_integer()}

@@ -7,7 +7,7 @@ defmodule VisionCore.PreviewTest do
   alias VisionCore.{Outputs, Preview}
   alias VisionCore.Stereo.Pair
 
-  @config %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: []}
+  @config %VisionCore.Config{components: []}
 
   # Names a stereo unit's cameras, which need not be running.
   defmodule Camera do

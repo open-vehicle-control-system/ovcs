@@ -120,38 +120,64 @@ defmodule VisionCore.Stereo.SupervisorTest do
   end
 
   describe "camera_options/1" do
-    test "the driver, the capture size and rate, and each side's frame id and calibration path" do
+    defp stereo_config(options), do: %VisionCore.Config{components: [{:stereo, options}]}
+
+    test "the driver, the prefix, the capture size and rate, and each side's frame id and calibration path" do
       assert StereoSupervisor.camera_options(
-               driver: VisionCore.Camera.V4L2,
-               width: 640,
-               height: 360,
-               calibration_dir: "/rom/calibration",
-               left: [device: "/dev/video0", frame_id: "front_left_optical"],
-               right: [device: "/dev/video2", calibration_path: "/rom/right.yaml"]
-             ) == [
-               driver: VisionCore.Camera.V4L2,
-               topic_prefix: "stereo",
-               width: 640,
-               height: 360,
-               fps: 30,
-               left: [
-                 calibration_path: "/rom/calibration/stereo_left.yaml",
-                 device: "/dev/video0",
-                 frame_id: "front_left_optical"
-               ],
-               right: [
-                 frame_id: "stereo_right",
-                 device: "/dev/video2",
-                 calibration_path: "/rom/right.yaml"
-               ]
-             ]
+               stereo_config(
+                 driver: VisionCore.Camera.V4L2,
+                 width: 640,
+                 height: 360,
+                 calibration_dir: "/rom/calibration",
+                 left: [device: "/dev/video0", frame_id: "front_left_optical"],
+                 right: [device: "/dev/video2", calibration_path: "/rom/right.yaml"]
+               )
+             ) ==
+               {:ok,
+                [
+                  driver: VisionCore.Camera.V4L2,
+                  prefix: "stereo",
+                  width: 640,
+                  height: 360,
+                  fps: 30,
+                  left: [
+                    calibration_path: "/rom/calibration/stereo_left.yaml",
+                    device: "/dev/video0",
+                    frame_id: "front_left_optical"
+                  ],
+                  right: [
+                    frame_id: "stereo_right",
+                    device: "/dev/video2",
+                    calibration_path: "/rom/right.yaml"
+                  ]
+                ]}
+    end
+
+    test "the unit's prefix names its frames and calibration files" do
+      assert {:ok, options} =
+               StereoSupervisor.camera_options(
+                 stereo_config(
+                   driver: VisionCore.Camera.V4L2,
+                   prefix: "front",
+                   calibration_dir: "/rom/calibration",
+                   left: [],
+                   right: []
+                 )
+               )
+
+      assert options[:prefix] == "front"
+      assert options[:left][:frame_id] == "front_left"
+      assert options[:right][:calibration_path] == "/rom/calibration/front_right.yaml"
     end
 
     test "the stored calibration once both sides are stored", %{tmp_dir: tmp_dir} do
       for side <- ["left", "right"],
           do: File.write!(Path.join(tmp_dir, "stereo_#{side}.yaml"), "")
 
-      options = StereoSupervisor.camera_options(@stereo ++ [calibration_store_dir: tmp_dir])
+      {:ok, options} =
+        StereoSupervisor.camera_options(
+          stereo_config(@stereo ++ [calibration_store_dir: tmp_dir])
+        )
 
       assert options[:left][:calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
       assert options[:right][:calibration_store_path] == Path.join(tmp_dir, "stereo_right.yaml")
@@ -160,26 +186,44 @@ defmodule VisionCore.Stereo.SupervisorTest do
     test "do not refuse the stages or backends the pipeline refuses" do
       backends = [{NxSegment, defn_options: [compiler: EXLA]}]
 
-      options =
+      {:ok, options} =
         StereoSupervisor.camera_options(
-          @stereo ++
-            [
-              stages: Pipeline.default_stages() ++ [VehicleRectification],
-              backends: backends,
-              defn_options: [compiler: EXLA]
-            ]
+          stereo_config(
+            @stereo ++
+              [
+                stages: Pipeline.default_stages() ++ [VehicleRectification],
+                backends: backends,
+                defn_options: [compiler: EXLA]
+              ]
+          )
         )
 
       assert options[:left][:calibration_path] == "/rom/stereo_left.yaml"
     end
+
+    test "say why there are none: no stereo component, or one whose cameras cannot be read" do
+      assert {:error, "no :stereo component"} =
+               StereoSupervisor.camera_options(%VisionCore.Config{})
+
+      for malformed <- [
+            [left: :front],
+            [right: nil],
+            [driver: nil],
+            [driver: NotACamera]
+          ] do
+        assert {:error, reason} =
+                 StereoSupervisor.camera_options(stereo_config(Keyword.merge(@stereo, malformed)))
+
+        assert is_binary(reason)
+      end
+    end
   end
 
   describe "the stereo unit of a config" do
-    defp config(components),
-      do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+    defp config(components), do: %VisionCore.Config{components: components}
 
     test "its cameras, left then right, and its outputs: the pipeline's pairs, then each camera's frames" do
-      config = config([:heartbeat, {:stereo, @stereo}])
+      config = config([{:detector, []}, {:stereo, @stereo}])
       left = VisionCore.Camera.V4L2.name_for("left")
       right = VisionCore.Camera.V4L2.name_for("right")
 
@@ -193,10 +237,38 @@ defmodule VisionCore.Stereo.SupervisorTest do
              ]
     end
 
-    test "none without a stereo component" do
-      assert StereoSupervisor.cameras(config([:heartbeat])) == []
-      assert StereoSupervisor.outputs(config([:heartbeat])) == []
+    test "none without a stereo component, nor with one whose driver names no camera" do
+      for config <- [
+            config([{:detector, []}]),
+            config([{:stereo, Keyword.put(@stereo, :driver, nil)}]),
+            config([{:stereo, Keyword.put(@stereo, :driver, NotACamera)}])
+          ] do
+        assert StereoSupervisor.cameras(config) == []
+        assert StereoSupervisor.outputs(config) == []
+      end
     end
+  end
+
+  test "gives each camera driver its side's frame id, and starts no ROS 2 service" do
+    {:ok, {_flags, children}} =
+      StereoSupervisor.init(
+        Keyword.merge(@stereo,
+          prefix: "front",
+          align_correction: false,
+          right: [calibration_path: "/rom/stereo_right.yaml", frame_id: "front_right_optical"]
+        )
+      )
+
+    driver_options = fn side ->
+      %{start: {VisionCore.Camera.V4L2, :start_link, [options]}} =
+        Enum.find(children, &(&1.id == {:stereo, :driver, side}))
+
+      options
+    end
+
+    assert driver_options.(:left)[:frame_id] == "front_left"
+    assert driver_options.(:right)[:frame_id] == "front_right_optical"
+    refute Enum.any?(children, &match?(%{id: {:stereo, :set_camera_info, _side}}, &1))
   end
 
   describe "reload_calibration/3" do
@@ -240,63 +312,6 @@ defmodule VisionCore.Stereo.SupervisorTest do
       values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
       assert values.vehicle_rectification.right_row_offset == 0.0
       assert MemoryStore.rows() == %{"stereo.disparity.p1" => 5}
-    end
-
-    test "has the ROS 2 exporter read its camera info from the new calibration" do
-      pipeline = start_pipeline(Pipeline.default_stages())
-      test = self()
-      driver = VisionCore.Camera.V4L2
-
-      start_supervised!(
-        {VisionCore.Exporter.Runner,
-         exporter: VisionCore.Ros2.Exporter,
-         options: [
-           name: VisionCore.Ros2.Exporter,
-           stereo: [
-             driver: driver,
-             width: 64,
-             height: 48,
-             camera_info_interval_frames: 1,
-             left: [calibration_path: calibration_path(:identity, :left)],
-             right: [calibration_path: calibration_path(:identity, :right)]
-           ],
-           publish: fn topic, _module, message, _options -> send(test, {topic, message}) end
-         ],
-         config: %VisionCore.Config{
-           zenoh_endpoint_ip: "127.0.0.1",
-           components: [{:stereo, @stereo}]
-         }}
-      )
-
-      camera_info = fn ->
-        :sys.get_state(VisionCore.Ros2.Exporter)
-
-        frame = %VisionCore.Camera.Frame{
-          label: "left",
-          width: 64,
-          height: 48,
-          capture_ns: 0,
-          jpeg: <<>>
-        }
-
-        VisionCore.Outputs.publish(
-          {:camera_frame, driver.name_for("left")},
-          {:camera_frame, frame}
-        )
-
-        assert_receive {"stereo/left/camera_info", camera_info}, 1_000
-        camera_info
-      end
-
-      before = camera_info.()
-
-      assert :ok =
-               StereoSupervisor.reload_calibration(pipeline, "stereo",
-                 left_calibration_path: calibration_path(:distorted, :left),
-                 right_calibration_path: calibration_path(:distorted, :right)
-               )
-
-      refute camera_info.().d == before.d
     end
   end
 

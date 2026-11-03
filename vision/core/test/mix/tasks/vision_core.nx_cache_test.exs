@@ -14,7 +14,6 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
 
     def config(stages, defn_options, extra \\ []) do
       %VisionCore.Config{
-        zenoh_endpoint_ip: "127.0.0.1",
         components: [
           stereo:
             [

@@ -7,9 +7,8 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
     @impl VisionCore.Composer
     def config(_arm) do
       %VisionCore.Config{
-        zenoh_endpoint_ip: "127.0.0.1",
-        node_name: "vision_test",
-        components: [{:heartbeat, interval_ms: 5_000}]
+        ros2: [zenoh_endpoint_ip: "127.0.0.1", node_name: "vision_test"],
+        exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 5_000]}]
       }
     end
   end
@@ -39,10 +38,13 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
                  "id" => "current",
                  "attributes" => %{
                    "composer" => %{
-                     "zenoh_endpoint_ip" => "127.0.0.1",
-                     "node_name" => "vision_test",
-                     "components" => [
-                       %{"name" => "heartbeat", "options" => %{"interval_ms" => 5_000}}
+                     "ros2" => %{"zenoh_endpoint_ip" => "127.0.0.1", "node_name" => "vision_test"},
+                     "components" => [],
+                     "exporters" => [
+                       %{
+                         "module" => "VisionCore.Ros2.Exporter",
+                         "options" => %{"heartbeat" => %{"interval_ms" => 5_000}}
+                       }
                      ],
                      "preview" => []
                    }

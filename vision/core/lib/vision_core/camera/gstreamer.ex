@@ -24,7 +24,8 @@ defmodule VisionCore.Camera.GStreamer do
   ## Framing
 
   The stream is split into JPEG frames by `VisionCore.Camera.MjpegStream`;
-  see that module's doc for details.
+  see that module's doc for details. Each frame carries the `:frame_id`
+  the driver was given, `nil` without one.
   """
   @behaviour VisionCore.Camera
 
@@ -74,6 +75,7 @@ defmodule VisionCore.Camera.GStreamer do
     {:ok,
      %{
        label: label,
+       frame_id: Keyword.get(opts, :frame_id),
        width: width,
        height: height,
        fps: fps,
@@ -91,6 +93,7 @@ defmodule VisionCore.Camera.GStreamer do
     Enum.each(frames, fn jpeg ->
       frame = %Frame{
         label: state.label,
+        frame_id: state.frame_id,
         width: state.width,
         height: state.height,
         capture_ns: System.monotonic_time(:nanosecond),

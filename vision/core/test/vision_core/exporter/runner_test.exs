@@ -162,6 +162,23 @@ defmodule VisionCore.Exporter.RunnerTest do
     def status(_test), do: raise("no link")
   end
 
+  # Gives as its status whatever its `:status` option holds.
+  defmodule GivenStatus do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :status)}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, status), do: {:ok, status}
+
+    @impl VisionCore.Exporter
+    def status(status), do: status
+  end
+
   # Starts on its attempt after the ones its `:attempts` agent scripts as failures.
   defmodule LateStart do
     @behaviour VisionCore.Exporter
@@ -202,7 +219,7 @@ defmodule VisionCore.Exporter.RunnerTest do
   end
 
   defp config(components \\ [{:stereo, driver: Camera, left: [], right: []}, :detector]),
-    do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+    do: %VisionCore.Config{components: components}
 
   # Started, and done with its exporter's init/1, which runs after the runner's own.
   defp start_runner(exporter, options, id \\ Runner, config \\ config()) do
@@ -484,6 +501,33 @@ defmodule VisionCore.Exporter.RunnerTest do
 
       assert_receive {:exported, :stereo_pair, :pair}
       assert length(String.split(log, "no link")) == 2
+    end
+
+    test "a status/1 that answers no status is a warning that says what it answered, logged once" do
+      for malformed <- [
+            :ok,
+            {"ok", "Connected"},
+            {:ok, :connected},
+            {:good, "Fine"},
+            {:ok, "a", "b"}
+          ] do
+        runner = start_runner(GivenStatus, [status: malformed], {GivenStatus, malformed})
+
+        log =
+          capture_log(fn ->
+            assert Runner.status(runner) == {:warning, "Malformed status: #{inspect(malformed)}"}
+            assert Runner.status(runner) == {:warning, "Malformed status: #{inspect(malformed)}"}
+          end)
+
+        assert length(String.split(log, "#{inspect(GivenStatus)} status/1 answered")) == 2
+      end
+    end
+
+    test "a status/1 that answers a status passes it on" do
+      for status <- [{:ok, "Connected"}, {:warning, "Disconnected"}, {:off, "Idle"}] do
+        runner = start_runner(GivenStatus, [status: status], {GivenStatus, status})
+        assert Runner.status(runner) == status
+      end
     end
 
     test "values the exporter could not export show in the default status, each reason logged once" do

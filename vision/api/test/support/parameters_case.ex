@@ -2,7 +2,8 @@ defmodule VisionApiWeb.ParametersCase do
   @moduledoc """
   Test case declaring the group `test.disparity` in a restarted `:vision_core`
   whose registry saves into memory. The declaring process is the test
-  process, which stays alive for the test.
+  process, which stays alive for the test. The unit has the ROS 2 link and
+  a ROS 2 exporter, which publishes nothing.
   """
   use ExUnit.CaseTemplate
 
@@ -23,7 +24,10 @@ defmodule VisionApiWeb.ParametersCase do
 
     @impl VisionCore.Composer
     def config(_arm) do
-      %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", node_name: "vision_test", components: []}
+      %VisionCore.Config{
+        ros2: [zenoh_endpoint_ip: "127.0.0.1", node_name: "vision_test"],
+        exporters: [{VisionCore.Ros2.Exporter, detections: []}]
+      }
     end
   end
 

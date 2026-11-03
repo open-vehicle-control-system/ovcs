@@ -3,7 +3,7 @@ defmodule VisionApiWeb.StatusJSONTest do
 
   alias VisionApiWeb.StatusJSON
 
-  test "gives the snapshot's fields camelCase keys and states as strings" do
+  test "gives the snapshot's fields camelCase keys and states as strings, each exporter's status a level and a detail" do
     snapshot = %{
       cameras: %{
         left: %{
@@ -24,7 +24,7 @@ defmodule VisionApiWeb.StatusJSONTest do
       alignment: %{offset_rows: -0.02, band_offset_rows: [0.1, -0.1]},
       sharpness: %{left: 0.01, right: 0.012},
       quality: %{matched_percent: 60.4, mean_disparity_px: 24.2, spread_px: 15.6, jitter_px: 0.13},
-      zenoh: :connected
+      exporters: [%{id: "ros2", name: "ROS 2", status: {:ok, "Connected"}}]
     }
 
     assert StatusJSON.status(snapshot) == %{
@@ -52,7 +52,9 @@ defmodule VisionApiWeb.StatusJSONTest do
                spreadPx: 15.6,
                jitterPx: 0.13
              },
-             zenoh: "connected"
+             exporters: [
+               %{id: "ros2", name: "ROS 2", status: %{level: "ok", detail: "Connected"}}
+             ]
            }
   end
 
@@ -67,7 +69,7 @@ defmodule VisionApiWeb.StatusJSONTest do
       alignment: nil,
       sharpness: nil,
       quality: nil,
-      zenoh: :disconnected
+      exporters: []
     }
 
     assert %{
@@ -76,7 +78,8 @@ defmodule VisionApiWeb.StatusJSONTest do
              alignment: nil,
              sharpness: nil,
              quality: nil,
-             hailo: "running"
+             hailo: "running",
+             exporters: []
            } = StatusJSON.status(snapshot)
   end
 end

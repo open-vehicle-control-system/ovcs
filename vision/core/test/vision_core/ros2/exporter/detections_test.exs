@@ -92,9 +92,10 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
            ] = overlay.texts
   end
 
-  test "stamps everything in the frame it is given, under the prefix it is given" do
-    settings = Detections.new(topic_prefix: "front", frame_id: "front_left_optical")
-    messages = Detections.messages([detection("person", square(0.0, 0.0))], pair(), settings, 0)
+  test "stamps everything in the frame of the pair, under the prefix it is given" do
+    settings = Detections.new(topic_prefix: "front")
+    pair = put_in(pair().left_frame.frame_id, "front_left_optical")
+    messages = Detections.messages([detection("person", square(0.0, 0.0))], pair, settings, 0)
 
     assert Enum.map(messages, &elem(&1, 0)) == [
              "front/detections/markers",
@@ -104,5 +105,13 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
     assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
     assert array.header.frame_id == "front_left_optical"
+  end
+
+  test "stamps the detections of a pair without a frame id in the prefix's left frame" do
+    settings = Detections.new(topic_prefix: "front")
+    messages = Detections.messages([detection("person", square(0.0, 0.0))], pair(), settings, 0)
+
+    assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
+    assert array.header.frame_id == "front_left"
   end
 end

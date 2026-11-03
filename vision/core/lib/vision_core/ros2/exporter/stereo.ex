@@ -9,9 +9,11 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
 
     * **Raw images** on `<topic_prefix>/<side>/image_raw/compressed`,
       and **calibration** on `<topic_prefix>/<side>/camera_info` every
-      Nth frame, so late subscribers see it without latched QoS.
+      Nth frame, so late subscribers see it without latched QoS, both
+      in the frame id the camera's frame carries.
     * **Stereo outputs**, all stamped with the left frame's capture time
-      so consumers can pair them with the raw streams:
+      so consumers can pair them with the raw streams, in the frame id
+      it carries (`VisionCore.Stereo.Pair.frame_id/1`):
 
         * `stereo_msgs/DisparityImage` on `<topic_prefix>/disparity` —
           the canonical topic, and the only one carrying the geometry
@@ -39,12 +41,18 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
 
   ## Options
 
+  `VisionCore.Ros2.Exporter` takes `:left`, `:right`, `:width` and
+  `:height` from the stereo unit's cameras
+  (`VisionCore.Stereo.Supervisor.camera_options/1`); the others are its
+  own `stereo:` options.
+
     * `:topic_prefix` (`"stereo"`) — root of every topic above.
-    * `:left`, `:right` — each side's `:frame_id` (`<topic_prefix>_left`,
-      `<topic_prefix>_right`), used in every header for that side, and
-      `:calibration_path`, a `camera_calibration_parsers` YAML (see
+    * `:left`, `:right` — each side's `:calibration_path`, a
+      `camera_calibration_parsers` YAML (see
       `VisionCore.Ros2.CameraCalibration`); without one, the side's
-      camera info is empty.
+      camera info is empty. And its `:frame_id`
+      (`<topic_prefix>_left`, `<topic_prefix>_right`), for a frame or
+      pair that carries none.
     * `:width` (1280), `:height` (720) — the capture size, which the
       calibration is scaled to and an empty camera info carries.
     * `:camera_info_interval_frames` (30) — camera info every Nth frame.
@@ -211,7 +219,7 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
   def frame_messages(%Frame{} = frame, side, stereo, now_ms, encode) do
     header = %Header{
       stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
-      frame_id: side.frame_id
+      frame_id: frame.frame_id || side.frame_id
     }
 
     {image, side} = raw_image(frame, side, header, now_ms, stereo.raw_image_max_hz, encode)
@@ -276,7 +284,7 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
   def pair_messages(%Pair{} = pair, stereo, encode) do
     header = %Header{
       stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
-      frame_id: stereo.frame_id
+      frame_id: Pair.frame_id(pair) || stereo.frame_id
     }
 
     disparity_image = disparity_image(pair, header)

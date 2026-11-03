@@ -2,7 +2,7 @@ defmodule VisionApiWeb.StatusChannelTest do
   use VisionApiWeb.ChannelCase, async: false
 
   setup do
-    config = %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: []}
+    config = %VisionCore.Config{}
     start_supervised!({VisionCore.Status, config: config})
     :ok
   end
@@ -16,7 +16,7 @@ defmodule VisionApiWeb.StatusChannelTest do
   test "status channel pushes a snapshot on join" do
     {:ok, _reply, _socket} = join()
 
-    assert_push "status", %{zenoh: "disconnected", hailo: "absent", depthHz: +0.0}
+    assert_push "status", %{exporters: [], hailo: "absent", depthHz: +0.0}
   end
 
   test "the channel stops when the status server restarts" do

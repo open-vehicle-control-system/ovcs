@@ -1,17 +1,13 @@
 import { useId } from 'react'
 import { focusClass as FOCUS } from '@ovcs/ui/react'
 import Pipelines from './Pipelines.jsx'
+import Exporters from './Exporters.jsx'
 import { SECTION_HEADING, SELECTED } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 
 const MAIN_PAGES = [
   ['overview', 'Overview'],
   ['calibration', 'Calibration']
-]
-
-const EXPORTER_PAGES = [
-  ['ros2', 'ROS 2'],
-  ['api', 'API']
 ]
 
 function Section({ title, children }) {
@@ -64,7 +60,7 @@ export default function Menu() {
         <Pipelines />
       </Section>
       <Section title="Exporters">
-        <Pages label="Exporters" pages={EXPORTER_PAGES} />
+        <Exporters />
       </Section>
     </nav>
   )

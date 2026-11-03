@@ -26,7 +26,9 @@ defmodule VisionCore.Exporter.Runner do
   Without the exporter's own `c:VisionCore.Exporter.status/1`, the status
   is `{:ok, "Running"}`, a warning while the last value handed over of
   any output was not exported, and the count of values not exported once
-  some were.
+  some were. A `c:VisionCore.Exporter.status/1` that raises, or answers
+  anything but `{:ok | :warning | :off, text}`, is a warning saying so, so
+  that what `status/2` answers is always a status.
 
   `VisionCore.Exporter.Supervisor` starts it under the exporter's own
   supervisor.
@@ -207,7 +209,19 @@ defmodule VisionCore.Exporter.Runner do
   end
 
   defp exporter_status(%{exporter: exporter} = state) do
-    {exporter.status(state.exporter_state), state}
+    case exporter.status(state.exporter_state) do
+      {level, detail} = status when level in [:ok, :warning, :off] and is_binary(detail) ->
+        {status, state}
+
+      malformed ->
+        answer = inspect(malformed)
+
+        message =
+          "#{inspect(exporter)} status/1 answered #{answer}, not {:ok | :warning | :off, text}"
+
+        {{:warning, "Malformed status: " <> answer},
+         log_once(state, :status, answer, :error, message)}
+    end
   catch
     kind, reason ->
       text = failure_text(kind, reason)

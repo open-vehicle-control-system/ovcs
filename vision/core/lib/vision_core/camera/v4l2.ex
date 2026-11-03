@@ -56,6 +56,7 @@ defmodule VisionCore.Camera.V4L2 do
   ## Opts
 
     * `:label` — `"left"` or `"right"`.
+    * `:frame_id` — the optical frame each of this side's frames carries.
     * `:width`, `:height`, `:fps` — the output size and frame rate (left).
     * `:left_video`, `:left_sensor`, `:right_video`, `:right_sensor` — the
       V4L2 names (`/sys/class/video4linux/*/name`) of each side's capture
@@ -294,6 +295,7 @@ defmodule VisionCore.Camera.V4L2 do
 
     state = %{
       label: label,
+      frame_id: Keyword.get(opts, :frame_id),
       output: {:camera_frame, name_for(label)},
       port: nil,
       controls: controls,
@@ -429,7 +431,8 @@ defmodule VisionCore.Camera.V4L2 do
   defp refreshed(nil), do: nil
   defp refreshed(applied), do: %{applied | received_ms: System.system_time(:millisecond)}
 
-  defp publish_frame(state, frame), do: Outputs.publish(state.output, {:camera_frame, frame})
+  defp publish_frame(state, frame),
+    do: Outputs.publish(state.output, {:camera_frame, %{frame | frame_id: state.frame_id}})
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 
