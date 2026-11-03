@@ -54,4 +54,10 @@ port_tests =
 # the :iree tests run the IREE compiler; run them with `--include vulkan`
 # or `--include iree`.
 rust_tests = if ci?, do: [], else: [:rust]
-ExUnit.start(exclude: rust_tests ++ [:vulkan, :iree | port_tests])
+
+# A message another process sends may come late while the async tests and EXLA compiles share
+# the schedulers; an assert_receive waits only until it comes.
+ExUnit.start(
+  exclude: rust_tests ++ [:vulkan, :iree | port_tests],
+  assert_receive_timeout: 1_000
+)

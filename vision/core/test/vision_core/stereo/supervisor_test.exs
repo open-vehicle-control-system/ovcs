@@ -2,6 +2,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
   # One test changes the app env the defn options default to.
   use ExUnit.Case, async: false
 
+  import ExUnit.CaptureLog
   import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
 
   alias VisionCore.Parameters.MemoryStore
@@ -201,6 +202,52 @@ defmodule VisionCore.Stereo.SupervisorTest do
       assert options[:left][:calibration_path] == "/rom/stereo_left.yaml"
     end
 
+    test "refuse an option the unit does not take, naming where a moved one went" do
+      for {option, reason} <- [
+            {[topic_prefix: "front"], ":topic_prefix is now :prefix"},
+            {[publish_rectified_image: true], ":publish_rectified_image is the ROS 2 exporter's"},
+            {[raw_image_max_hz: 5], ":raw_image_max_hz is the ROS 2 exporter's"},
+            {[fsp: 30], "no option :fsp"}
+          ] do
+        assert {:error, refusal} =
+                 StereoSupervisor.camera_options(stereo_config(@stereo ++ option))
+
+        assert refusal =~ reason
+      end
+    end
+
+    test "take every option the unit documents" do
+      assert {:ok, _options} =
+               StereoSupervisor.camera_options(
+                 stereo_config(
+                   @stereo ++
+                     [
+                       width: 640,
+                       height: 360,
+                       fps: 15,
+                       match_width: 320,
+                       match_height: 180,
+                       prefix: "front",
+                       calibration_dir: "/rom/calibration",
+                       calibration_store_dir: "/data/calibration",
+                       pair_tolerance_ms: 5,
+                       align_correction: false,
+                       stages: Pipeline.default_stages(),
+                       compute: :native,
+                       backends: [NxSegment],
+                       defn_options: []
+                     ]
+                 )
+               )
+    end
+
+    test "take an option given twice, as a keyword list may hold it" do
+      assert {:ok, options} =
+               StereoSupervisor.camera_options(stereo_config(@stereo ++ [fps: 15, fps: 30]))
+
+      assert options[:fps] == 15
+    end
+
     test "say why there are none: no stereo component, or one whose cameras cannot be read" do
       assert {:error, "no :stereo component"} =
                StereoSupervisor.camera_options(%VisionCore.Config{})
@@ -247,6 +294,19 @@ defmodule VisionCore.Stereo.SupervisorTest do
         assert StereoSupervisor.outputs(config) == []
       end
     end
+  end
+
+  test "is left down, saying why, with an option it does not take" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      capture_log(fn ->
+        assert StereoSupervisor.start_link(
+                 Keyword.merge(@stereo, driver: NotACamera, topic_prefix: "front")
+               ) == :ignore
+      end)
+
+    assert log =~ "failed to start, cameras down: its :topic_prefix is now :prefix"
   end
 
   test "gives each camera driver its side's frame id, and starts no ROS 2 service" do

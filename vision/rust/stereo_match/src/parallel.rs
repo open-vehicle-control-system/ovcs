@@ -67,6 +67,9 @@ impl RowQueue {
     }
 }
 
+/// Rows a thread follows a chunk down before it looks for other work.
+pub const ROWS_PER_CLAIM: usize = 8;
+
 /// Column chunks a sweep follows down (or up) the image, each claimed by
 /// one thread at a time, with the number of rows each has done.
 pub struct Chunks {

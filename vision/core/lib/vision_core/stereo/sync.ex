@@ -7,8 +7,8 @@ defmodule VisionCore.Stereo.Sync do
 
   `VisionCore.Stereo.Pairer` measures it on every frame its cameras
   deliver, for `VisionCore.Status`; the ROS 2 exporter's diagnostics
-  (`VisionCore.Ros2.Exporter.Diagnostics`) measure their own with
-  `pair_offset/4`.
+  (`VisionCore.Ros2.Exporter.Diagnostics`) keep a measurement of their
+  own.
   """
 
   @recent_frame_count 4

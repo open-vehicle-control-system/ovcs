@@ -352,13 +352,7 @@ defmodule VisionCore.Stereo.NxSegment do
     |> Map.new(fn {member, index} -> {index, Map.keys(carry(member, context))} end)
   end
 
-  defp device_only(members) do
-    Enum.flat_map(members, fn member ->
-      if function_exported?(member.module, :device_only, 0),
-        do: member.module.device_only(),
-        else: []
-    end)
-  end
+  defp device_only(members), do: Enum.flat_map(members, &NxStage.device_only(&1.module))
 
   defp carry(member, context) do
     if function_exported?(member.module, :carry, 2),

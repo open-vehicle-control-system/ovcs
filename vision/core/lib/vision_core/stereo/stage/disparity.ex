@@ -14,9 +14,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   stage to add for a wider window, documents what that means.
 
   Natively (`VisionCore.Stereo.NativeSegment`), it matches with
-  `NxStereo.sgm/3`'s results, many times faster on a CPU than the
-  compiled Nx, as on a Raspberry Pi 5. It keeps its name, settings and
-  outputs.
+  `NxStereo.sgm/3`'s results, faster on a CPU than the compiled Nx, as
+  on a Raspberry Pi 5. It keeps its name, settings and outputs.
 
   ## Options
 
@@ -43,8 +42,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
-  # The Census window is 9 pixels wide: the border it cannot match.
+  # NxStereo.sgm/3's Census window, 9x7: the border it cannot match.
   @census_width 9
+  @census_height 7
   # Path costs are bytes in the shaders: NxStereo.sgm/3 bounds P2 so they cannot overflow.
   @max_penalty 79
 
@@ -144,7 +144,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
         disparity_range: %{
           min_disparity: 0,
           num_disparities: state.num_disparities,
-          block_size: @census_width
+          block_size: @census_width,
+          block_height: @census_height
         }
     }
   end

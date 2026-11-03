@@ -265,6 +265,15 @@ defmodule VisionCore.ApplicationTest do
     assert VisionCore.settings() == %{}
   end
 
+  test "a detector that cannot start leaves the unit running without it, the reason logged" do
+    log = capture_log(fn -> start_pipeline(%VisionCore.Config{components: [:hailo_detector]}) end)
+
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, detection down"
+    refute Process.whereis(VisionCore.Detection.Supervisor)
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+    assert Process.alive?(Process.whereis(VisionCore.Preview))
+  end
+
   test "the pipeline keeps running with no Zenoh router" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,

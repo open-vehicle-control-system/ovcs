@@ -19,8 +19,10 @@ defmodule VisionCore.Stereo.Pair do
       times `:disparity_scale`: positive where matched, -1 where
       unmatched. A stage tests `> 0` for a match.
     * `:disparity_range` — `%{min_disparity: _, num_disparities: _,
-      block_size: _}`, the matcher's search; see `disparity_bounds/1`
-      and `valid_window/1`.
+      block_size: _, block_height: _}`, the matcher's search and the
+      width and height of its matching window, `block_height`
+      `block_size` when left out; see `disparity_bounds/1` and
+      `valid_window/1`.
     * `:disparity_bytes` — 32-bit float disparity in pixels, row-major,
       what `stereo_msgs/DisparityImage.image` carries. Unmatched pixels
       stay below the minimum disparity rather than clamped to 0.
@@ -95,20 +97,28 @@ defmodule VisionCore.Stereo.Pair do
   def disparity_bounds(%__MODULE__{disparity_range: range}),
     do: {range.min_disparity / 1.0, (range.min_disparity + range.num_disparities - 1) / 1.0}
 
-  @doc "The smallest disparity step the disparity encodes, in pixels."
+  @doc """
+  The disparity step `stereo_msgs/DisparityImage` carries as `delta_d`,
+  in pixels: 1/16, the sub-pixel step of OpenCV's SGBM, which the
+  message's consumers assume. The matcher's parabolic refinement gives
+  `f32` fractions, finer than any fixed step.
+  """
   @spec disparity_step(t()) :: float()
-  def disparity_step(%__MODULE__{disparity_scale: scale}), do: 1.0 / scale
+  def disparity_step(%__MODULE__{}), do: 1 / 16
 
   @doc """
   `{x, y, width, height}` of the region where disparity is meaningful:
-  away from the borders, where the matcher had enough context.
+  away from the borders, where the matcher had enough context. The
+  search range is left out on the left, the matching window's width on
+  the right, and half its height above and below.
   """
   @spec valid_window(t()) :: {integer(), integer(), integer(), integer()}
   def valid_window(%__MODULE__{disparity_range: range} = pair) do
     {width, height} = size(pair)
     search = range.min_disparity + range.num_disparities
+    half_height = div(Map.get(range, :block_height, range.block_size), 2)
 
-    {search, div(range.block_size, 2), max(width - search - range.block_size, 0),
-     max(height - range.block_size, 0)}
+    {search, half_height, max(width - search - range.block_size, 0),
+     max(height - 2 * half_height, 0)}
   end
 end

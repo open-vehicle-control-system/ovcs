@@ -35,13 +35,19 @@ defmodule VisionCore.Detection.Live do
   @spec subscribe() :: :ok
   def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
 
+  @doc "The most results a subscriber receives a second, its `:max_hz`."
+  @spec max_hz() :: pos_integer()
+  def max_hz, do: GenServer.call(__MODULE__, :max_hz)
+
   @impl GenServer
   def init(opts) do
     :ok = Outputs.subscribe({:detections, Pipeline})
+    max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
 
     {:ok,
      %{
-       interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
+       max_hz: max_hz,
+       interval_ms: div(1_000, max_hz),
        subscribers: %{},
        sent_at_ms: nil,
        held: nil
@@ -49,6 +55,8 @@ defmodule VisionCore.Detection.Live do
   end
 
   @impl GenServer
+  def handle_call(:max_hz, _from, state), do: {:reply, state.max_hz, state}
+
   def handle_call({:subscribe, pid}, _from, state) do
     subscribers = Map.put_new_lazy(state.subscribers, pid, fn -> Process.monitor(pid) end)
     {:reply, :ok, %{state | subscribers: subscribers}}

@@ -31,9 +31,15 @@ defmodule VisionCore.Detection.Supervisor do
   pipeline and `:max_hz` to `Live`; see their docs. How the detections
   are published is the exporters' business: the ROS 2 exporter's are its
   `detections:` options (`VisionCore.Ros2.Exporter`), and their frame
-  is the one their pair carries.
+  is the one their pair carries, the stereo unit's left `:frame_id`.
+
+  A unit that fails to start, such as one whose backend cannot, or one
+  given an option it does not take, is left down, with the reason
+  logged, and the rest of the vision core runs on. The refusal of an
+  option another component or exporter takes names where it belongs.
   """
   use Supervisor
+  require Logger
 
   alias VisionCore.Detection.{Live, Pipeline}
 
@@ -41,11 +47,31 @@ defmodule VisionCore.Detection.Supervisor do
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
   @max_seconds 60
+  @exporter_options [:topic_prefix, :marker_lifetime_ms, :label_font_size]
 
-  def start_link(opts), do: Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
+  @doc """
+  Starts the detection unit; see the module doc for `opts`. `:ignore`
+  when it fails to start, so the vision core starts without it.
+  """
+  def start_link(opts) do
+    case Supervisor.start_link(__MODULE__, opts, name: __MODULE__) do
+      {:error, reason} ->
+        Logger.error("#{__MODULE__} failed to start, detection down: #{failure_text(reason)}")
+        :ignore
+
+      started ->
+        started
+    end
+  end
+
+  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
+    do: Exception.message(exception)
+
+  defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
   def init(opts) do
+    check_options!(opts)
     {backend, backend_opts} = split_backend_options(opts)
 
     children = [
@@ -85,6 +111,25 @@ defmodule VisionCore.Detection.Supervisor do
   end
 
   defp starts_unit?(name), do: starts_unit?({name, []})
+
+  defp check_options!(opts) do
+    case Enum.uniq(Keyword.keys(opts)) -- options() do
+      [] -> :ok
+      refused -> raise ArgumentError, Enum.map_join(refused, "; ", &refused_option/1)
+    end
+  end
+
+  defp refused_option(:frame_id),
+    do: "its :frame_id is the stereo unit's: each side's :frame_id, which the pairs carry"
+
+  defp refused_option(option) when option in @exporter_options,
+    do:
+      "its #{inspect(option)} is the ROS 2 exporter's detections: option " <>
+        "(VisionCore.Ros2.Exporter)"
+
+  defp refused_option(option), do: "it has no option #{inspect(option)}"
+
+  defp options, do: [:backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
 
   @doc false
   def split_backend_options(opts) do

@@ -18,27 +18,11 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     ]
 
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline, Segment, Stage}
-  alias VisionCore.Stereo.TestHelpers
+  alias VisionCore.Stereo.{TestHelpers, UnknownKind, VehicleDepth}
 
   @moduletag :stereo_match
   @moduletag :capture_log
   @moduletag timeout: 600_000
-
-  # A vehicle's stage wrapping a core one, computed natively as that one.
-  defmodule VehicleDepth do
-    @behaviour VisionCore.Stereo.NxStage
-
-    alias VisionCore.Stereo.Stage.Depth
-
-    defdelegate init(opts, context), to: Depth
-    defdelegate requires(), to: Depth
-    defdelegate provides(), to: Depth
-    defdelegate params(state, context), to: Depth
-    defdelegate step(tensors, params, state), to: Depth
-    defdelegate device_only(), to: Depth
-    defdelegate finish(pair, outputs, state), to: Depth
-    def native_kind, do: "depth"
-  end
 
   # PointCloud with a range of its own, which the Port is configured with.
   defmodule NearCloud do
@@ -58,15 +42,22 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     def native_constants, do: %{min_depth_m: 1.0, max_depth_m: 2.0}
   end
 
-  # A stage of a kind the Port has no implementation of.
-  defmodule UnknownKind do
-    @behaviour VisionCore.Stereo.NxStage
+  # A matcher whose Port answers each run with one 1x1 f32 output, named `name`.
+  defmodule OneOutputMatcher do
+    use GenServer
 
-    def init(_opts, _context), do: {:ok, nil}
-    def requires, do: [:disparity]
-    def provides, do: [:disparity]
-    def step(tensors, _params, _state), do: tensors
-    def native_kind, do: "no_such_stage"
+    def start_link(name), do: GenServer.start_link(__MODULE__, name)
+
+    @impl GenServer
+    def init(name), do: {:ok, name}
+
+    @impl GenServer
+    def handle_call({:run, _owner, _segment_id, _version, _configuration, _request}, _from, name) do
+      output =
+        <<byte_size(name), name::binary, 2, 2, 1::little-32, 1::little-32, 0.0::little-float-32>>
+
+      {:reply, {:ok, <<1, 0::little-32, 1>> <> output}, name}
+    end
   end
 
   setup do
@@ -646,6 +637,19 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     {:ok, segment} = NativeSegment.build(members, context, matcher: :segment_matcher)
 
     assert {:ok, %Pair{disparity: %Nx.Tensor{}}, _segment} = run(NativeSegment, pair, segment)
+  end
+
+  test "fails a pair whose reply names an output none of its stages has" do
+    matcher = start_supervised!({OneOutputMatcher, "output of no stage"}, id: :one_output)
+    context = context(:stereo, 64, 48)
+    pair = %{disparity_pair(disparity(48, 64, 1)) | geometry: context}
+    members = members([{Stage.TemporalFilter, []}], context)
+    {:ok, segment} = NativeSegment.build(members, context, matcher: matcher)
+
+    {:ok, request_id} = NativeSegment.send_request(pair, segment)
+
+    assert NativeSegment.await(request_id, segment, 5_000) ==
+             {:error, {:unknown_output, "output of no stage"}}
   end
 
   test "refuses a build option it does not know" do

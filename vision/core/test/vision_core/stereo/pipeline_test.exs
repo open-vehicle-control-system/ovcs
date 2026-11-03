@@ -2,11 +2,11 @@ defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
   import VisionCore.Stereo.TestHelpers,
-    only: [calibration_path: 2, stereo_match_path: 0, texture: 3]
+    only: [calibration_path: 2, start_pipeline: 1, stereo_match_path: 0, texture: 3]
 
   alias VisionCore.Outputs
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline}
-  alias VisionCore.Stereo.Stage
+  alias VisionCore.Stereo.{Stage, UnknownKind, VehicleDepth}
 
   # A CPU stage with a runtime setting and a build setting.
   defmodule Gain do
@@ -98,6 +98,16 @@ defmodule VisionCore.Stereo.PipelineTest do
     def run(pair, state), do: {:ok, pair, state}
   end
 
+  # A CPU stage that reads the depth in metres, which Depth keeps on the device.
+  defmodule DepthInMetres do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:depth_m]
+    def provides, do: []
+    def run(pair, state), do: {:ok, pair, state}
+  end
+
   # A vehicle's stage of the same name as Quality.
   defmodule Vehicle.Quality do
     @behaviour VisionCore.Stereo.Stage
@@ -135,33 +145,6 @@ defmodule VisionCore.Stereo.PipelineTest do
     def requires, do: []
     def provides, do: [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth]
     def run(pair, state), do: {:ok, pair, state}
-  end
-
-  # A vehicle's stage wrapping a core one, computed natively as that one.
-  defmodule VehicleDepth do
-    @behaviour VisionCore.Stereo.NxStage
-
-    alias VisionCore.Stereo.Stage.Depth
-
-    defdelegate init(opts, context), to: Depth
-    defdelegate requires(), to: Depth
-    defdelegate provides(), to: Depth
-    defdelegate params(state, context), to: Depth
-    defdelegate step(tensors, params, state), to: Depth
-    defdelegate device_only(), to: Depth
-    defdelegate finish(pair, outputs, state), to: Depth
-    def native_kind, do: "depth"
-  end
-
-  # A stage of a kind the Port has no implementation of.
-  defmodule UnknownKind do
-    @behaviour VisionCore.Stereo.NxStage
-
-    def init(_opts, _context), do: {:ok, nil}
-    def requires, do: [:disparity]
-    def provides, do: [:disparity]
-    def step(tensors, _params, _state), do: tensors
-    def native_kind, do: "no_such_stage"
   end
 
   # A compiler of its own, as EMLX or Torchx would be: Nx's evaluator under another name.
@@ -255,7 +238,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     opts =
       if opts[:backends], do: opts, else: Keyword.put_new(opts, :defn_options, compiler: EXLA)
 
-    Pipeline.start_link(
+    start_pipeline(
       Keyword.merge(
         [
           name: :pipeline_test,
@@ -317,6 +300,17 @@ defmodule VisionCore.Stereo.PipelineTest do
              start([Stage.Decode, Stage.Disparity])
 
     assert message =~ "depth"
+  end
+
+  test "refuses a stage outside Depth's segment that reads the depth Depth keeps on the device" do
+    [rectification, sharpness, disparity | _rest] = Pipeline.default_stages()
+    before_depth = [rectification, sharpness, disparity, Stage.Depth]
+
+    for stages <- [before_depth ++ [DepthInMetres], before_depth ++ [Pass, Stage.PointCloud]] do
+      assert {:error, {%ArgumentError{message: message}, _}} = start(stages)
+
+      assert message =~ "needs :depth_m, which VisionCore.Stereo.Stage.Depth keeps on the device"
+    end
   end
 
   defp without_compute(stages), do: Enum.map(stages, &Map.delete(&1, :compute))
@@ -962,7 +956,10 @@ defmodule VisionCore.Stereo.PipelineTest do
 
       assert %Nx.Tensor{shape: {48, 64}, type: {:f, 32}} = pair.disparity
       assert pair.disparity_scale == 1.0
-      assert %{min_disparity: 0, num_disparities: 64, block_size: 9} = pair.disparity_range
+
+      assert %{min_disparity: 0, num_disparities: 64, block_size: 9, block_height: 7} =
+               pair.disparity_range
+
       assert pair.disparity |> Nx.greater(0) |> Nx.sum() |> Nx.to_number() > 0
       assert byte_size(pair.depth) == 48 * 64 * 2
     end

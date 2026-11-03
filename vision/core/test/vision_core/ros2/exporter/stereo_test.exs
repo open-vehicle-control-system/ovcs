@@ -60,7 +60,7 @@ defmodule VisionCore.Ros2.Exporter.StereoTest do
       assert {disparity.min_disparity, disparity.max_disparity, disparity.delta_d} ==
                {0.0, 1.0, 0.0625}
 
-      assert %{x_offset: 2, y_offset: 0, width: 5, height: 3} = disparity.valid_window
+      assert %{x_offset: 2, y_offset: 0, width: 5, height: 4} = disparity.valid_window
       assert %{width: 8, height: 4, encoding: "16UC1", step: 16} = depth
       assert %{height: 1, width: 2, is_dense: 0} = cloud
       assert cloud.row_step == 2 * cloud.point_step

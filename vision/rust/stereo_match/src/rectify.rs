@@ -1,8 +1,9 @@
 //! `NxStereo.Rectify.rectify/3`: undistortion, rectification and shrinking
 //! to the working size, one bilinear sample per pixel. The sampling map is
-//! computed with the same `f32` operations in the same order, once per
-//! camera model rather than per pair, and the sampling likewise, so the
-//! images are those of the Nx stage.
+//! computed once per camera model rather than per pair, with the `f32`
+//! operations of the Nx stage in the same order, and each pair is sampled
+//! through it as the Nx stage samples, so the images are those of the Nx
+//! stage.
 
 use crate::parallel::{on_threads, RowQueue, Shared};
 

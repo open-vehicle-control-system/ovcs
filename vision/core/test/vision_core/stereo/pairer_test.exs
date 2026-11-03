@@ -34,7 +34,10 @@ defmodule VisionCore.Stereo.PairerTest do
     do: {div(left.capture_ns, 1_000_000), div(right.capture_ns, 1_000_000)}
 
   test "pairs the frames its cameras publish and submits them to its pipeline" do
-    start_supervised!({Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()})
+    pairer =
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()}
+      )
 
     for label <- ["left", "right"],
         do:
@@ -43,8 +46,11 @@ defmodule VisionCore.Stereo.PairerTest do
             {:camera_frame, frame(label, 33)}
           )
 
-    assert_receive {:"$gen_cast",
-                    {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
+    # A barrier: the Pairer handles both frames, and submits, before it answers.
+    Pairer.sync(pairer)
+
+    assert_received {:"$gen_cast",
+                     {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
   end
 
   test "measures the sync of the frames its cameras publish" do

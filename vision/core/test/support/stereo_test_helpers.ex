@@ -1,9 +1,10 @@
 defmodule VisionCore.Stereo.TestHelpers do
   @moduledoc """
   What the stereo tests share: calibration fixtures and the context of
-  the stages built from them, test images and pairs, and segments run
-  on each backend, either on the stages of a segment (`run_nx/4`,
-  `run_native/4`) or on one stage alone (`run_stage/5`).
+  the stages built from them, test images and pairs, segments run on
+  each backend, either on the stages of a segment (`run_nx/4`,
+  `run_native/4`) or on one stage alone (`run_stage/5`), and pipelines
+  started under a name the next test can take again (`start_pipeline/1`).
 
   Plain functions, imported where used:
 
@@ -57,6 +58,31 @@ defmodule VisionCore.Stereo.TestHelpers do
       frame_width: frame_width,
       frame_height: frame_height
     )
+  end
+
+  @doc """
+  Starts a `VisionCore.Stereo.Pipeline` with `opts` linked to the test
+  process, and returns what `VisionCore.Stereo.Pipeline.start_link/1`
+  returns. The pipeline exits with the test process, and the next test
+  starts only once it has: a pipeline busy in a NIF exits late, still
+  holding its name.
+  """
+  @spec start_pipeline(keyword()) :: GenServer.on_start()
+  def start_pipeline(opts) do
+    with {:ok, pipeline} <- Pipeline.start_link(opts) do
+      ExUnit.Callbacks.on_exit(fn -> await_exit(pipeline) end)
+      {:ok, pipeline}
+    end
+  end
+
+  defp await_exit(process) do
+    monitor = Process.monitor(process)
+
+    receive do
+      {:DOWN, ^monitor, :process, _process, _reason} -> :ok
+    after
+      30_000 -> raise "#{inspect(process)} still runs 30 s after its test"
+    end
   end
 
   @doc "The `stereo_match` binary the tests run, which `test_helper.exs` puts in the app env."

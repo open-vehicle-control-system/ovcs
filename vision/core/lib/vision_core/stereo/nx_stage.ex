@@ -176,6 +176,12 @@ defmodule VisionCore.Stereo.NxStage do
     if function_exported?(module, :compute, 1), do: module.compute(state)
   end
 
+  @doc "The tensors `module` keeps on the device; see `c:device_only/0`."
+  @spec device_only(module()) :: [atom()]
+  def device_only(module) do
+    if function_exported?(module, :device_only, 0), do: module.device_only(), else: []
+  end
+
   @doc "The native implementation `module` declares, or `nil`; see `c:native_kind/0`."
   @spec native_kind(module()) :: String.t() | nil
   def native_kind(module) do

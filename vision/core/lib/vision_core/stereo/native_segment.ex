@@ -3,13 +3,16 @@ defmodule VisionCore.Stereo.NativeSegment do
   A run of consecutive `VisionCore.Stereo.NxStage`s computed natively, in
   the `stereo_match` Port through `VisionCore.Stereo.Matcher`, and run on
   each pair as one stage: the counterpart of `VisionCore.Stereo.NxSegment`
-  for a CPU, where the compiled Nx is many times slower, as on a
-  Raspberry Pi 5.
+  for a CPU, where the compiled Nx is slower, as on a Raspberry Pi 5.
 
   Each stage it `accepts?/3` has a native implementation with the
-  results of its Nx step: integer outputs and the `f32` values it
-  computes in the same order are identical, and the sums the measuring
-  stages reduce on the device agree to the rounding of their order. The
+  results of its Nx step on Nx's evaluator, which rounds every `f32`
+  operation: integer outputs and the `f32` values it computes in the
+  same order are identical, and the sums the measuring stages reduce on
+  the device agree to the rounding of their order. A compiler may fuse
+  operations: against EXLA, which fuses the temporal filter's blend
+  into a multiply-add, a smoothed disparity may differ in its last bit,
+  and so a depth by a millimetre. The
   Port keeps what the stages carry from one pair to the next and what
   depends only on their settings, such as the rectification maps.
 
@@ -30,8 +33,10 @@ defmodule VisionCore.Stereo.NativeSegment do
   segments without one. A configuration the Port refuses, such as a kind
   it has no implementation of, a setting a stage does not take or frames
   smaller than the working size to rectify, answers that pair with
-  `{:stop, reason}`: the segment cannot run. The process that builds it
-  owns it: the Port releases it once that process exits.
+  `{:stop, reason}`: the segment cannot run. A reply that does not
+  decode, or that names an output no loaded stage has, fails that pair
+  alone. The process that builds it owns it: the Port releases it once
+  that process exits.
 
   `send_request/2` sends a pair without waiting for its outputs, which
   `response/3` recognises among the process's messages, or `await/3`
@@ -369,7 +374,10 @@ defmodule VisionCore.Stereo.NativeSegment do
           |> Nx.from_binary(type, backend: Nx.BinaryBackend)
           |> Nx.reshape(List.to_tuple(shape))
 
-        decode_outputs(count - 1, rest, Map.put(outputs, String.to_existing_atom(key), tensor))
+        case output_name(key) do
+          {:ok, name} -> decode_outputs(count - 1, rest, Map.put(outputs, name, tensor))
+          :error -> {:error, {:unknown_output, key}}
+        end
 
       _short ->
         {:error, :bad_reply}
@@ -377,4 +385,11 @@ defmodule VisionCore.Stereo.NativeSegment do
   end
 
   defp decode_outputs(_count, _rest, _outputs), do: {:error, :bad_reply}
+
+  # A name no loaded module mentions is no output of these stages.
+  defp output_name(key) do
+    {:ok, String.to_existing_atom(key)}
+  rescue
+    ArgumentError -> :error
+  end
 end

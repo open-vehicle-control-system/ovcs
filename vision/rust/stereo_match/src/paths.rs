@@ -6,7 +6,7 @@
 //! between two 255 sentinels, which stand for the `p2 - p1` libSGM pads with,
 //! as both only ever lose to the `p2` jump.
 
-use crate::parallel::{on_threads, Backoff, Chunks, Shared};
+use crate::parallel::{on_threads, Backoff, Chunks, Shared, ROWS_PER_CLAIM};
 
 pub const SENTINEL: u8 = u8::MAX;
 /// The largest padded state, for 128 disparities.
@@ -100,9 +100,6 @@ pub struct SweepBuffers {
     states: Vec<u8>,
     minimums: Vec<u8>,
 }
-
-/// Rows a thread does on a chunk before it looks for other work.
-const ROWS_PER_CLAIM: usize = 8;
 
 /// The order a sweep visits rows in, and the column offsets of the paths it
 /// follows: a path at `x` continues the one at `x - offset` on the row

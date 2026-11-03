@@ -42,7 +42,7 @@ pub fn depth(
                 *millimetres = if rounded > MAX_DEPTH_MM {
                     0
                 } else {
-                    rounded.clamp(0.0, MAX_DEPTH_MM) as u16
+                    rounded.max(0.0) as u16
                 };
             }
         }

@@ -12,6 +12,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       frames_pair: 2,
       run_nx: 3,
       run_stage: 4,
+      start_pipeline: 1,
       texture: 3
     ]
 
@@ -379,7 +380,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
 
     defp start(name) do
       {:ok, pipeline} =
-        Pipeline.start_link(
+        start_pipeline(
           name: name,
           stages: Pipeline.default_stages(),
           left_calibration_path: calibration_path(:identity, :left),

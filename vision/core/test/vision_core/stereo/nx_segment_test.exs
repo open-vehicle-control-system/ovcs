@@ -2,7 +2,9 @@ defmodule VisionCore.Stereo.NxSegmentTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
-  import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2, members: 2]
+
+  import VisionCore.Stereo.TestHelpers,
+    only: [calibration_path: 2, members: 2, start_pipeline: 1]
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
@@ -425,7 +427,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     end
 
     defp start(stages, opts \\ []) do
-      Pipeline.start_link(
+      start_pipeline(
         [
           name: :nx_segment_test,
           stages: stages,

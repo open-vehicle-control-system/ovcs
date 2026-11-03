@@ -21,7 +21,7 @@ pub mod tensor;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use parallel::{on_threads, Backoff, Chunks, RowQueue, Shared};
+use parallel::{on_threads, Backoff, Chunks, RowQueue, Shared, ROWS_PER_CLAIM};
 use paths::{Sweep, SweepBuffers};
 
 /// The matching settings, as `NxStereo.sgm/3` takes them.
@@ -419,11 +419,8 @@ impl Matcher {
     }
 }
 
-/// The ring of rows' costs and horizontal sums, in about the shared cache
-/// of a Raspberry Pi 5.
+/// The size of the ring of rows' costs and horizontal sums.
 const RING_BYTES: usize = 1 << 20;
-/// Rows a thread follows a chunk down before it looks for other work.
-const ROWS_PER_CLAIM: usize = 8;
 
 /// What a thread computes a row's costs and horizontal paths with.
 #[derive(Default)]

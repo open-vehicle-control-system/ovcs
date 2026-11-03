@@ -35,8 +35,11 @@ defmodule VisionCore.Stereo.Supervisor do
   exhausts this budget, the unit shuts down and stays down, and the
   rest of the vision core keeps running, with `VisionCore.Status`
   reporting the cameras absent. A unit that fails to start, such as
-  one whose camera exits while the children after it start, is left
-  down the same way.
+  one whose camera exits while the children after it start, or one
+  given an option it does not take, is left down the same way, with
+  the reason logged. The refusal of an option the ROS 2 exporter takes
+  names where it belongs: its `stereo:` publishes the images
+  (`VisionCore.Ros2.Exporter`).
 
   ## Required opts
 
@@ -116,6 +119,16 @@ defmodule VisionCore.Stereo.Supervisor do
   @max_restarts 10
   @max_seconds 60
 
+  @options [:driver, :left, :right, :width, :height, :fps, :match_width, :match_height] ++
+             [:prefix, :calibration_dir, :calibration_store_dir, :pair_tolerance_ms] ++
+             [:align_correction, :stages, :compute, :backends, :defn_options]
+  @exporter_options [
+    :publish_disparity_image,
+    :publish_rectified_image,
+    :publish_raw_images,
+    :raw_image_max_hz
+  ]
+
   @doc """
   Starts the stereo unit; see the module doc for `opts`. `:ignore` when
   it fails to start, so the vision core starts without it.
@@ -123,13 +136,18 @@ defmodule VisionCore.Stereo.Supervisor do
   def start_link(opts) do
     case Supervisor.start_link(__MODULE__, opts, name: __MODULE__) do
       {:error, reason} ->
-        Logger.error("#{__MODULE__} failed to start, cameras down: #{inspect(reason)}")
+        Logger.error("#{__MODULE__} failed to start, cameras down: #{failure_text(reason)}")
         :ignore
 
       started ->
         started
     end
   end
+
+  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
+    do: Exception.message(exception)
+
+  defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
   def init(opts) do
@@ -211,7 +229,8 @@ defmodule VisionCore.Stereo.Supervisor do
   `:calibration_store_path` with a store. The store is read at each
   call. Unlike the unit's start, it checks neither the stages nor the
   backends. `{:error, reason}` without a `:stereo` component, or with one
-  whose driver or sides cannot be read.
+  whose driver or sides cannot be read, or that has an option the unit
+  does not take.
   """
   @spec camera_options(VisionCore.Config.t()) :: {:ok, keyword()} | {:error, String.t()}
   def camera_options(%VisionCore.Config{components: components}) do
@@ -223,6 +242,7 @@ defmodule VisionCore.Stereo.Supervisor do
 
   defp stereo_camera_options(opts) do
     with :ok <- check_keyword(opts, "the :stereo component's options"),
+         :ok <- check_options(opts),
          driver = Keyword.get(opts, :driver),
          :ok <- check_driver(driver),
          :ok <- check_keyword(Keyword.get(opts, :left), "its :left options"),
@@ -251,39 +271,46 @@ defmodule VisionCore.Stereo.Supervisor do
       else: {:error, "#{what}, #{inspect(options)}, are not a keyword list"}
   end
 
+  defp check_options(opts) do
+    case Enum.uniq(Keyword.keys(opts)) -- @options do
+      [] -> :ok
+      refused -> {:error, Enum.map_join(refused, "; ", &refused_option/1)}
+    end
+  end
+
+  defp refused_option(:topic_prefix), do: "its :topic_prefix is now :prefix"
+
+  defp refused_option(option) when option in @exporter_options,
+    do: "its #{inspect(option)} is the ROS 2 exporter's stereo: option (VisionCore.Ros2.Exporter)"
+
+  defp refused_option(option), do: "it has no option #{inspect(option)}"
+
   defp check_driver(driver) do
     if camera_driver?(driver),
       do: :ok,
       else: {:error, "its :driver, #{inspect(driver)}, is not a VisionCore.Camera"}
   end
 
+  # The cameras as the exporters read them (`camera_options/1`), with what only the unit uses.
   defp build_config(opts) do
-    prefix = Keyword.get(opts, :prefix, @default_prefix)
+    cameras =
+      case stereo_camera_options(opts) do
+        {:ok, cameras} -> Map.new(cameras)
+        {:error, reason} -> raise ArgumentError, reason
+      end
 
-    {left, right} =
-      sides(Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right), opts, prefix)
-
-    width = Keyword.get(opts, :width, @default_width)
-    height = Keyword.get(opts, :height, @default_height)
     stages = Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0)
     :ok = AlignmentCorrection.check_stages!(stages)
 
-    %{
-      driver: Keyword.fetch!(opts, :driver),
-      width: width,
-      height: height,
-      match_width: Keyword.get(opts, :match_width, width),
-      match_height: Keyword.get(opts, :match_height, height),
-      fps: Keyword.get(opts, :fps, @default_fps),
-      prefix: prefix,
+    Map.merge(cameras, %{
+      match_width: Keyword.get(opts, :match_width, cameras.width),
+      match_height: Keyword.get(opts, :match_height, cameras.height),
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
       align_correction: Keyword.get(opts, :align_correction, true),
       stages: stages,
       backends: backends(opts),
-      compute: Keyword.get(opts, :compute, :nx),
-      left: left,
-      right: right
-    }
+      compute: Keyword.get(opts, :compute, :nx)
+    })
   end
 
   defp backends(opts) do

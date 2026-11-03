@@ -35,6 +35,10 @@ defmodule VisionCore.Detection.LiveTest do
     :ok
   end
 
+  test "answers the most results it sends a subscriber a second" do
+    assert Live.max_hz() == 1_000
+  end
+
   test "takes the results the detection pipeline publishes" do
     :ok = Live.subscribe()
     positioned = [person(240, 108, 720, 432, 1.8)]

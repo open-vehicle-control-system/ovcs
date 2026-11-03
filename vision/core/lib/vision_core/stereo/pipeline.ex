@@ -19,8 +19,10 @@ defmodule VisionCore.Stereo.Pipeline do
       Quality         # disparity statistics for the log line
 
   A stage list is checked at start: every field a stage requires must be
-  provided by a stage before it, and the stages together must provide
-  the disparity and depth its subscribers consume. A stage is named after the
+  provided by a stage before it, a tensor an Nx stage keeps on the device
+  (`c:VisionCore.Stereo.NxStage.device_only/0`) by a stage before it in
+  its segment, and the stages together must provide the disparity and
+  depth its subscribers consume. A stage is named after the
   last segment of its module, underscored (`SpeckleFilter` is
   `:speckle_filter`): `stage_options/1` lists it, `set_options/3` and
   the timings address it by that name, so two stages of the same name
@@ -751,10 +753,14 @@ defmodule VisionCore.Stereo.Pipeline do
 
   # Each run of consecutive stages one backend takes becomes one segment stage.
   defp group_stages(stages, backends, compute, context) do
-    stages
-    |> Enum.map(&placement(&1, backends, compute))
-    |> Enum.chunk_by(&elem(&1, 0))
-    |> Enum.flat_map(fn
+    runs =
+      stages
+      |> Enum.map(&placement(&1, backends, compute))
+      |> Enum.chunk_by(&elem(&1, 0))
+
+    check_device_only!(runs)
+
+    Enum.flat_map(runs, fn
       [{:cpu, _stage, _fallback?} | _] = run ->
         Enum.map(run, &elem(&1, 1))
 
@@ -779,6 +785,39 @@ defmodule VisionCore.Stereo.Pipeline do
 
       true ->
         {backend!(backends, stage, :nx), stage, compute == :native}
+    end
+  end
+
+  # Before the segments are built, which would refuse such a stage as reading from a CPU stage.
+  defp check_device_only!(runs) do
+    stages =
+      for {run, index} <- Enum.with_index(runs),
+          {_on, stage, _fallback?} <- run,
+          do: {stage, index}
+
+    Enum.reduce(stages, %{}, fn {stage, index}, kept ->
+      check_kept!(stage, kept, index)
+      kept_after(stage, kept, index)
+    end)
+  end
+
+  defp kept_after(stage, kept, index) do
+    device_only = NxStage.device_only(stage.module)
+
+    Enum.reduce(stage.module.provides(), kept, fn field, kept ->
+      if field in device_only,
+        do: Map.put(kept, field, {stage.module, index}),
+        else: Map.delete(kept, field)
+    end)
+  end
+
+  defp check_kept!(stage, kept, index) do
+    for field <- stage.module.requires(),
+        {keeper, keeper_index} <- [kept[field]],
+        keeper_index != index do
+      raise ArgumentError,
+            "#{inspect(stage.module)} needs #{inspect(field)}, which #{inspect(keeper)} keeps " <>
+              "on the device for the stages after it in its segment"
     end
   end
 
