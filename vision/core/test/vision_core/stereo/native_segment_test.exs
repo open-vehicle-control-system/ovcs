@@ -476,7 +476,11 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   end
 
   test "says which stages have a native implementation" do
-    for {module, _opts} <- Pipeline.default_stages(), do: assert(NativeSegment.supported?(module))
+    optional = [{Stage.MedianFilter, []}]
+
+    for {module, _opts} <- optional ++ Pipeline.default_stages(),
+        do: assert(NativeSegment.supported?(module))
+
     refute NativeSegment.supported?(Stage.Decode)
   end
 end

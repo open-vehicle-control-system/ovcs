@@ -9,8 +9,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
       Rectification   # camera frames → rectified grey images at the pipeline's size
       Sharpness       # each image's sharpness, to compare the cameras' focus
-      Disparity       # disparity, libSGM's semi-global matching
-      MedianFilter    # median filter on the disparity
+      Disparity       # disparity, libSGM's semi-global matching, ending with a 3×3 median
       SpeckleFilter   # drops small islands of disparity
       RowAlignment    # measures the rectified images' row offset
       TemporalFilter  # smoothing of the disparity over time
@@ -98,7 +97,9 @@ defmodule VisionCore.Stereo.Pipeline do
   @doc """
   The default stages, with `overrides` merged into the options of the
   stage they name: `default_stages(disparity: [num_disparities: 128])`.
-  Raises on an override that names none of them.
+  Raises on an override that names none of them: a stage outside them,
+  such as `VisionCore.Stereo.Stage.MedianFilter`, is one the composer
+  inserts into the returned list.
   """
   @spec default_stages(keyword()) :: [{module(), keyword()}]
   def default_stages(overrides \\ []) do
@@ -106,7 +107,6 @@ defmodule VisionCore.Stereo.Pipeline do
       Stage.Rectification,
       Stage.Sharpness,
       Stage.Disparity,
-      Stage.MedianFilter,
       Stage.SpeckleFilter,
       Stage.RowAlignment,
       Stage.TemporalFilter,

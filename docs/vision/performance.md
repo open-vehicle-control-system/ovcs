@@ -36,7 +36,7 @@ At 480 × 270 the cameras delivered 30 frames a second, CPU stood at 88 to 90 % 
 
 ### Where the time goes
 
-Median time of each stage in `stereo_match`, at 480 × 270:
+Median time of each stage in `stereo_match`, at 480 × 270, with a 3 × 3 MedianFilter added after Disparity, which the default stages leave out:
 
 | Stage | Time |
 |---|---|

@@ -203,6 +203,42 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     end
   end
 
+  test "MedianFilter takes unmatched pixels for the lowest values of the window" do
+    context = context(:stereo, 64, 48)
+
+    # A 5x5 window of `middle` and its 24 `neighbours`, whose order does not matter.
+    window = fn middle, neighbours ->
+      {before_middle, after_middle} = Enum.split(neighbours, 12)
+      Nx.tensor(before_middle ++ [middle] ++ after_middle, type: :f32) |> Nx.reshape({5, 5})
+    end
+
+    unmatched = &List.duplicate(-1.0, &1)
+    at = &List.duplicate(&1, &2)
+
+    cases = [
+      {window.(30.0, unmatched.(13) ++ at.(30.0, 11)), -1.0},
+      {window.(30.0, unmatched.(12) ++ at.(30.0, 12)), 30.0},
+      {window.(-1.0, unmatched.(11) ++ at.(30.0, 13)), 30.0},
+      {window.(-1.0, unmatched.(12) ++ at.(30.0, 12)), -1.0},
+      {window.(30.0, unmatched.(10) ++ at.(20.0, 5) ++ at.(30.0, 9)), 20.0}
+    ]
+
+    matched = Nx.broadcast(Nx.f32(30.0), {48, 64})
+
+    disparity =
+      cases
+      |> Enum.with_index()
+      |> Enum.reduce(matched, fn {{patch, _expected}, index}, image ->
+        Nx.put_slice(image, [10, 10 * index + 4], patch)
+      end)
+
+    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
+    pair = run_nx([{Stage.MedianFilter, []}], context, input)
+
+    for {{_window, expected}, index} <- Enum.with_index(cases),
+        do: assert(Nx.to_number(pair.disparity[[12, 10 * index + 6]]) == expected)
+  end
+
   test "Rectification moves the right image by right_row_offset rows, and only it" do
     context = context(:identity, 96, 64)
     image = smooth(64, 96)

@@ -29,13 +29,12 @@ They run in this order. Each stage declares what it reads from the pair and what
 | 1 | [Rectification](../../vision/core/lib/vision_core/stereo/stage/rectification.ex) | camera frames | `left`, `right` | Undistorted, rectified grey images at the working size |
 | 2 | [Sharpness](../../vision/core/lib/vision_core/stereo/stage/sharpness.ex) | `left`, `right` | `sharpness` | Compares the cameras' focus |
 | 3 | [Disparity](../../vision/core/lib/vision_core/stereo/stage/disparity.ex) | `left`, `right` | `disparity`, `disparity_range` | Semi-global matching |
-| 4 | [MedianFilter](../../vision/core/lib/vision_core/stereo/stage/median_filter.ex) | `disparity` | `disparity` | Removes isolated wrong pixels |
-| 5 | [SpeckleFilter](../../vision/core/lib/vision_core/stereo/stage/speckle_filter.ex) | `disparity` | `disparity` | Removes small unsupported islands |
-| 6 | [RowAlignment](../../vision/core/lib/vision_core/stereo/stage/row_alignment.ex) | `left`, `right`, `disparity` | `alignment` | Checks the calibration still fits |
-| 7 | [TemporalFilter](../../vision/core/lib/vision_core/stereo/stage/temporal_filter.ex) | `disparity` | `disparity` | Smooths over time |
-| 8 | [Depth](../../vision/core/lib/vision_core/stereo/stage/depth.ex) | `disparity` | `depth`, `disparity_bytes` | Disparity to millimetres |
-| 9 | [PointCloud](../../vision/core/lib/vision_core/stereo/stage/point_cloud.ex) | depth in metres | `cloud` | Decimated 3D points |
-| 10 | [Quality](../../vision/core/lib/vision_core/stereo/stage/quality.ex) | `disparity` | metrics | Statistics for the log line |
+| 4 | [SpeckleFilter](../../vision/core/lib/vision_core/stereo/stage/speckle_filter.ex) | `disparity` | `disparity` | Removes small unsupported islands |
+| 5 | [RowAlignment](../../vision/core/lib/vision_core/stereo/stage/row_alignment.ex) | `left`, `right`, `disparity` | `alignment` | Checks the calibration still fits |
+| 6 | [TemporalFilter](../../vision/core/lib/vision_core/stereo/stage/temporal_filter.ex) | `disparity` | `disparity` | Smooths over time |
+| 7 | [Depth](../../vision/core/lib/vision_core/stereo/stage/depth.ex) | `disparity` | `depth`, `disparity_bytes` | Disparity to millimetres |
+| 8 | [PointCloud](../../vision/core/lib/vision_core/stereo/stage/point_cloud.ex) | depth in metres | `cloud` | Decimated 3D points |
+| 9 | [Quality](../../vision/core/lib/vision_core/stereo/stage/quality.ex) | `disparity` | metrics | Statistics for the log line |
 
 Below, **the device** is wherever the stages run: the GPU on the C100, the `stereo_match` Port on the Pi 5. Values that stay on the device are not sent back to the BEAM.
 
@@ -76,6 +75,8 @@ Matches the rectified pair with **semi-global matching** (SGM), the algorithm of
 
 Matched pixels carry a positive disparity, unmatched ones −1. A match at disparity 0, which `NxStereo.sgm/3` finds on points too far to measure and in the leftmost columns, has no depth, so this stage marks it unmatched.
 
+The 3 × 3 median is the only one in the default list; [a wider one can be added](#adding-a-wider-median-filter).
+
 | Setting | Kind | Meaning |
 |---|---|---|
 | `num_disparities` | build | Positions searched. Sets the nearest measurable distance. |
@@ -86,17 +87,7 @@ Matched pixels carry a positive disparity, unmatched ones −1. A match at dispa
 
 `:matcher` (`:native` or `:nx`), given in the composer, makes this stage run natively or compiled whatever the rest of the pipeline does. Cost on the Pi 5: about 30 ms, two thirds of the pipeline.
 
-### 4. MedianFilter
-
-Replaces each disparity with the median of its neighbourhood, which removes isolated wrong pixels without blurring edges.
-
-| Setting | Kind | Meaning |
-|---|---|---|
-| `kernel_size` | build | Neighbourhood width, in pixels. |
-
-Cost: about 2 ms with `kernel_size` 3.
-
-### 5. SpeckleFilter
+### 4. SpeckleFilter
 
 Drops speckles: small islands of disparity that agree with nothing around them, typically false matches on reflections or fine repetitive structure. A matched pixel is kept when at least `min_support` of the 48 other pixels in its 7 × 7 neighbourhood matched within `max_diff` pixels of it. Islands smaller than about 4 × 4 lose their support; surfaces keep theirs up to their corners. It plays the part of OpenCV's `filterSpeckles`, which labels connected regions instead, a poor fit for a GPU.
 
@@ -107,11 +98,11 @@ Drops speckles: small islands of disparity that agree with nothing around them, 
 
 Cost: about 3 ms.
 
-### 6. RowAlignment
+### 5. RowAlignment
 
 Measures how well the rectified images line up. A calibration that no longer fits the cameras, because a camera or a lens moved, breaks that first. Each matched pixel is compared with the right image at its disparity on the rows 2 above to 2 below its own, in four vertical bands; the row with the lowest difference is the offset there. The dashboard shows it as Row alignment: within half a row is good, a larger offset means recalibrate, and offsets that change from band to band mean a rotation. Cost: under 1 ms.
 
-### 7. TemporalFilter
+### 6. TemporalFilter
 
 Smooths the disparity over time. Where a pixel matched in this pair and the previous one, within `delta` pixels of each other, it moves `alpha` of the way from the previous value to the new one; elsewhere it takes the new value, so motion and new edges show at once. A pixel that loses its match keeps its last disparity for up to `hold` pairs. On a still scene this removes most of the flicker of the subpixel estimates and the holes that come and go.
 
@@ -123,11 +114,11 @@ Smooths the disparity over time. Where a pixel matched in this pair and the prev
 
 This stage carries the previous disparity from one pair to the next, on the device that runs it. Cost: about 2 ms.
 
-### 8. Depth
+### 7. Depth
 
 Turns the disparity into depth with `Z = f × B / d`, taking `f` and `B` from the calibration. It fills the 16-bit millimetre depth the depth topic and detection use, and the 32-bit float disparity the disparity topic carries. It also computes the depth in metres for the stages after it in the same segment, PointCloud among them; that image stays on the device. Unmatched pixels have no depth (0), and so do depths beyond the 65.535 m that 16-bit millimetres hold. Cost: about 2 ms.
 
-### 9. PointCloud
+### 8. PointCloud
 
 Unprojects one depth pixel every `decimation` in each direction into an `x, y, z` point in the left camera's optical frame. Points nearer than 5 cm or farther than 20 m, and unmatched pixels, are NaN, as ROS organized clouds mark them.
 
@@ -137,9 +128,19 @@ Unprojects one depth pixel every `decimation` in each direction into an `x, y, z
 
 Cost: under 1 ms.
 
-### 10. Quality
+### 9. Quality
 
 Measures the disparity on every pair: the share of matched pixels, those with a positive disparity, the mean and spread of their disparity, and the jitter, the mean change of a pixel's disparity from one pair to the next (the matcher's noise on a still scene). Its sums are taken on the device; only five numbers come back. The depth caption on the dashboard shows the matched share. Cost: about 1 ms.
+
+## Adding a wider median filter
+
+Disparity already ends with a 3 × 3 median, so the default list has no median stage of its own. [MedianFilter](../../vision/core/lib/vision_core/stereo/stage/median_filter.ex) is the one to add, after Disparity in your composer's `:stages` list, for a wider window: it replaces each disparity with the median of its neighbourhood, which removes isolated wrong pixels without blurring edges. Add it to the list itself: `default_stages/1` refuses an override for a stage it does not list.
+
+| Setting | Kind | Meaning |
+|---|---|---|
+| `kernel_size` | build | Neighbourhood width, in pixels: 3 or 5. |
+
+The median does not skip unmatched pixels: it counts them as the lowest values of the neighbourhood, as Disparity's median does. A pixel comes out unmatched when more than half of its neighbourhood is, and a hole that is mostly surrounded by matches is filled. Next to a hole, the result can be a lower disparity, which reads farther, than the median of the matched pixels alone. Cost: about 2 ms with `kernel_size` 3.
 
 ## Your own stages
 

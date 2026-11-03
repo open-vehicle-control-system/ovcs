@@ -118,6 +118,35 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert {Stage.PointCloud, [decimation: 2]} in stages
   end
 
+  test "default_stages/1 lists the stages in pipeline order, with no median after Disparity's" do
+    assert Enum.map(Pipeline.default_stages(), &elem(&1, 0)) == [
+             Stage.Rectification,
+             Stage.Sharpness,
+             Stage.Disparity,
+             Stage.SpeckleFilter,
+             Stage.RowAlignment,
+             Stage.TemporalFilter,
+             Stage.Depth,
+             Stage.PointCloud,
+             Stage.Quality
+           ]
+  end
+
+  test "default_stages/1 refuses an override for MedianFilter, which it does not list" do
+    assert_raise ArgumentError,
+                 ~r/^no default stage named :median_filter; they are :rectification, /,
+                 fn -> Pipeline.default_stages(median_filter: [kernel_size: 3]) end
+  end
+
+  test "starts with MedianFilter added after Disparity, once" do
+    stages = List.insert_at(Pipeline.default_stages(), 3, {Stage.MedianFilter, kernel_size: 3})
+    {:ok, pipeline} = start(stages)
+    names = pipeline |> Pipeline.stage_options() |> Enum.map(& &1.stage)
+
+    assert Enum.slice(names, 2, 3) == [:disparity, :median_filter, :speckle_filter]
+    assert Enum.count(names, &(&1 == :median_filter)) == 1
+  end
+
   test "default_stages/1 refuses an override that names no stage" do
     assert_raise ArgumentError,
                  ~r/^no default stage named :disparty; they are :rectification, /,
@@ -158,7 +187,6 @@ defmodule VisionCore.Stereo.PipelineTest do
              :rectification,
              :sharpness,
              :disparity,
-             :median_filter,
              :speckle_filter,
              :row_alignment,
              :temporal_filter,
@@ -195,7 +223,9 @@ defmodule VisionCore.Stereo.PipelineTest do
   end
 
   test "every stage the framework provides explains itself" do
-    for {module, _opts} <- [{Stage.Decode, []} | Pipeline.default_stages()] do
+    optional = [{Stage.Decode, []}, {Stage.MedianFilter, []}]
+
+    for {module, _opts} <- optional ++ Pipeline.default_stages() do
       assert String.length(module.explanation()) > 0, "#{inspect(module)} has no explanation"
     end
   end
@@ -365,7 +395,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     test "times the segment under its name" do
       assert_timed(
         [
-          :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+          :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
         ],
         []
       )
@@ -483,7 +513,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert names(pipeline) == [
                :"rectification+sharpness",
                :disparity,
-               :"median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+               :"speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
       options = Pipeline.stage_options(pipeline)
@@ -558,7 +588,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       {:ok, pipeline} = start(Pipeline.default_stages(), compute: :native)
 
       assert names(pipeline) == [
-               :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+               :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
       options = Pipeline.stage_options(pipeline)
@@ -566,6 +596,24 @@ defmodule VisionCore.Stereo.PipelineTest do
 
       for stage <- options,
           do: assert(stage.compute == %{runs_on: :cpu, implementation: :rust, backend: nil})
+    end
+
+    test "runs the MedianFilter a vehicle adds as a member of the native segment" do
+      stages =
+        List.insert_at(
+          Pipeline.default_stages(disparity: [paths: 3]),
+          3,
+          {Stage.MedianFilter, kernel_size: 3}
+        )
+
+      {:ok, pipeline} = start(stages, compute: :native)
+
+      assert names(pipeline) == [
+               :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+             ]
+
+      Pipeline.register_listener(pipeline, self())
+      assert byte_size(receive_pair(pipeline, textured_pair(6)).depth) == 48 * 64 * 2
     end
 
     test "fills every field the listeners read" do
@@ -598,7 +646,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert names(pipeline) == [
                :"rectification+sharpness+disparity",
                :gain2_d,
-               :"median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+               :"speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
       Pipeline.register_listener(pipeline, self())
@@ -612,7 +660,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert names(pipeline) == [
                :"rectification+sharpness",
                :disparity,
-               :"median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+               :"speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
       assert [NativeSegment, NxSegment, NativeSegment] ==
@@ -691,7 +739,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "times the segment and each member under their names" do
       segment =
-        :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+        :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
 
       members = segment |> to_string() |> String.split("+") |> Enum.map(&String.to_atom/1)
       assert_timed([segment | members], compute: :native)

@@ -215,7 +215,7 @@ Stereo matches **texture**: small patterns of light and dark that can be told ap
 | Darkness | The cameras raise their gain and lengthen their exposure: noise and motion blur, fewer matches. |
 | Motion with unsynchronised cameras | The two images are taken at different instants: at 1 m/s, 33 ms apart means 3.3 cm of movement, read as a false disparity. The cameras' frame starts are synchronised for that reason. |
 
-Filters after matching (median, speckle, temporal) remove isolated wrong pixels; [Stereo stages](./stages.md) describes each one.
+The median that ends the matching and the speckle and temporal filters after it remove isolated wrong pixels; [Stereo stages](./stages.md) describes each one.
 
 ## Words used in this section
 
