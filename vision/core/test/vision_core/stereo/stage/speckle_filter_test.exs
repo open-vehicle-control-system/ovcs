@@ -1,24 +1,14 @@
 defmodule VisionCore.Stereo.Stage.SpeckleFilterTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Segment, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [run_stage: 4]
+
+  alias VisionCore.Stereo.Stage
 
   defp filter(disparity, opts \\ []) do
     {height, width} = Nx.shape(disparity)
     context = %{height: height, width: width}
-    {:ok, state} = Stage.SpeckleFilter.init(opts, context)
-    member = %{module: Stage.SpeckleFilter, name: :speckle_filter, state: state}
-    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
-
-    {:ok, pair, _segment} =
-      Segment.run(
-        NxSegment,
-        %Pair{left_frame: nil, right_frame: nil, disparity: disparity},
-        segment,
-        :infinity
-      )
-
-    pair.disparity
+    run_stage(Stage.SpeckleFilter, opts, context, %{disparity: disparity}).disparity
   end
 
   # A 20x30 surface at disparity 10 with a 3x3 blob at 30 inside it.

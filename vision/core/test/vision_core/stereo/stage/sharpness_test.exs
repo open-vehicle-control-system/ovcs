@@ -1,24 +1,14 @@
 defmodule VisionCore.Stereo.Stage.SharpnessTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Segment, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [run_stage: 4]
+
+  alias VisionCore.Stereo.Stage
 
   defp measure(left, right) do
     {height, width} = Nx.shape(left)
     context = %{height: height, width: width}
-    {:ok, state} = Stage.Sharpness.init([], context)
-    member = %{module: Stage.Sharpness, name: :sharpness, state: state}
-    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
-
-    {:ok, pair, _segment} =
-      Segment.run(
-        NxSegment,
-        %Pair{left_frame: nil, right_frame: nil, left: left, right: right},
-        segment,
-        :infinity
-      )
-
-    pair.sharpness
+    run_stage(Stage.Sharpness, [], context, %{left: left, right: right}).sharpness
   end
 
   defp texture do

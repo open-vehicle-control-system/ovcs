@@ -2,6 +2,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
+  import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2, members: 2]
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment}
@@ -174,8 +175,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def __to_backend__(_opts), do: {Nx.BinaryBackend, []}
   end
 
-  @calibration Path.expand("../../support/calibration", __DIR__)
-
   defp context(focal_length_px \\ 100.0) do
     %{
       width: 4,
@@ -188,13 +187,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       baseline_m: 0.06,
       principal_point: {2.0, 1.0}
     }
-  end
-
-  defp members(modules, context) do
-    for module <- modules do
-      {:ok, state} = module.init([], context)
-      %{module: module, name: module, state: state}
-    end
   end
 
   defp grey_pair(values) do
@@ -436,8 +428,8 @@ defmodule VisionCore.Stereo.NxSegmentTest do
         [
           name: :nx_segment_test,
           stages: stages,
-          left_calibration_path: Path.join(@calibration, "stereo_left.yaml"),
-          right_calibration_path: Path.join(@calibration, "stereo_right.yaml"),
+          left_calibration_path: calibration_path(:stereo, :left),
+          right_calibration_path: calibration_path(:stereo, :right),
           width: 4,
           height: 2
         ] ++ opts

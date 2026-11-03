@@ -1,36 +1,15 @@
 defmodule VisionCore.Stereo.Stage.TemporalFilterTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [context: 3, nx_segment: 2, run_segment: 2]
 
-  @calibration Path.expand("../../../support/calibration", __DIR__)
+  alias VisionCore.Stereo.Stage
 
-  defp segment(opts) do
-    context =
-      Pipeline.context(
-        left_calibration_path: Path.join(@calibration, "identity_left.yaml"),
-        right_calibration_path: Path.join(@calibration, "identity_right.yaml"),
-        width: 4,
-        height: 2
-      )
-
-    {:ok, state} = Stage.TemporalFilter.init(opts, context)
-    member = %{module: Stage.TemporalFilter, name: :temporal_filter, state: state}
-    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
-    segment
-  end
+  defp segment(opts), do: nx_segment([{Stage.TemporalFilter, opts}], context(:identity, 4, 2))
 
   defp run(segment, row) do
     disparity = Nx.tensor([row, row], type: :f32)
-
-    {:ok, pair, segment} =
-      Segment.run(
-        NxSegment,
-        %Pair{left_frame: nil, right_frame: nil, disparity: disparity},
-        segment,
-        :infinity
-      )
-
+    {pair, segment} = run_segment(segment, %{disparity: disparity})
     {pair.disparity[0] |> Nx.to_flat_list(), segment}
   end
 

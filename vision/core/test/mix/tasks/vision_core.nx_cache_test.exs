@@ -7,7 +7,7 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
   @moduletag timeout: 600_000
 
   defmodule Composer do
-    @calibration Path.expand("../../support/calibration", __DIR__)
+    import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
 
     def config(:target),
       do: config(Pipeline.default_stages(), NxSegment.c100_defn_options("unused"))
@@ -25,8 +25,8 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
               match_height: 54,
               stages: stages,
               defn_options: defn_options,
-              left: [calibration_path: Path.join(@calibration, "identity_left.yaml")],
-              right: [calibration_path: Path.join(@calibration, "identity_right.yaml")]
+              left: [calibration_path: calibration_path(:identity, :left)],
+              right: [calibration_path: calibration_path(:identity, :right)]
             ] ++ extra
         ]
       }

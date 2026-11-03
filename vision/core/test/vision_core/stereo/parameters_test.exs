@@ -1,6 +1,8 @@
 defmodule VisionCore.Stereo.ParametersTest do
   use ExUnit.Case, async: false
 
+  import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
+
   alias VisionCore.Parameters.{Check, MemoryStore}
   alias VisionCore.Stereo.{AlignmentCorrection, Parameters, Stage, VehicleRectification}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
@@ -697,14 +699,12 @@ defmodule VisionCore.Stereo.ParametersTest do
   end
 
   test "a calibration reload forgets the saved right_row_offset" do
-    calibration = Path.expand("../../support/calibration", __DIR__)
-
     pipeline =
       start_supervised!(
         {VisionCore.Stereo.Pipeline,
          name: :parameters_reload,
-         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         left_calibration_path: calibration_path(:identity, :left),
+         right_calibration_path: calibration_path(:identity, :right),
          width: 64,
          height: 48}
       )
@@ -729,14 +729,12 @@ defmodule VisionCore.Stereo.ParametersTest do
   end
 
   test "the default stages' settings go through the registry and back to the stages" do
-    calibration = Path.expand("../../support/calibration", __DIR__)
-
     pipeline =
       start_supervised!(
         {VisionCore.Stereo.Pipeline,
          name: :parameters_default_stages,
-         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         left_calibration_path: calibration_path(:identity, :left),
+         right_calibration_path: calibration_path(:identity, :right),
          width: 64,
          height: 48}
       )

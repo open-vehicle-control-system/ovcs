@@ -1,7 +1,9 @@
 defmodule VisionCore.Stereo.MatcherTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{Matcher, NativeSegment, Pair, Pipeline, Segment, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [context: 3, stereo_match_path: 0]
+
+  alias VisionCore.Stereo.{Matcher, NativeSegment, Pair, Segment, Stage}
 
   @moduletag :stereo_match
   @moduletag :capture_log
@@ -11,10 +13,6 @@ defmodule VisionCore.Stereo.MatcherTest do
     start_supervised!({Matcher, path: stereo_match_path()})
     :ok
   end
-
-  @calibration Path.expand("../../support/calibration", __DIR__)
-
-  defp stereo_match_path, do: Application.fetch_env!(:vision_core, :stereo_match_path)
 
   defp sgm_opts(opts) do
     Keyword.merge(
@@ -35,14 +33,7 @@ defmodule VisionCore.Stereo.MatcherTest do
 
   defp disparity_segment(left, right, opts, state_change \\ & &1) do
     {height, width} = Nx.shape(left)
-
-    context =
-      Pipeline.context(
-        left_calibration_path: Path.join(@calibration, "stereo_left.yaml"),
-        right_calibration_path: Path.join(@calibration, "stereo_right.yaml"),
-        width: width,
-        height: height
-      )
+    context = context(:stereo, width, height)
 
     stage_opts =
       opts |> Keyword.put(:num_disparities, opts[:disparities]) |> Keyword.delete(:disparities)

@@ -3,52 +3,21 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
   # stages are measured against.
   use ExUnit.Case, async: false
 
+  import VisionCore.Stereo.TestHelpers,
+    only: [
+      calibration_path: 2,
+      context: 3,
+      context: 4,
+      frame: 1,
+      frames_pair: 2,
+      run_nx: 3,
+      run_stage: 4,
+      texture: 3
+    ]
+
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment, Stage}
-
-  @calibration Path.expand("../../../support/calibration", __DIR__)
-
-  defp context(calibration, width, height, frame_size \\ nil) do
-    {frame_width, frame_height} = frame_size || {width, height}
-
-    Pipeline.context(
-      left_calibration_path: Path.join(@calibration, "#{calibration}_left.yaml"),
-      right_calibration_path: Path.join(@calibration, "#{calibration}_right.yaml"),
-      width: width,
-      height: height,
-      frame_width: frame_width,
-      frame_height: frame_height
-    )
-  end
-
-  # Runs Nx `stages` as one segment on `pair`.
-  defp run_nx(stages, context, pair) do
-    members =
-      for {module, opts} <- stages do
-        {:ok, state} = module.init(opts, context)
-        %{module: module, name: module, state: state}
-      end
-
-    {:ok, segment} = NxSegment.build(members, context, defn_options: [compiler: EXLA])
-
-    {:ok, pair, _segment} =
-      Segment.run(NxSegment, %{pair | geometry: context}, segment, :infinity)
-
-    pair
-  end
-
-  defp frame(image) do
-    {height, width} = Nx.shape(image)
-    %Frame{label: "left", grey: Nx.to_binary(image), width: width, height: height, capture_ns: 0}
-  end
-
-  defp texture(height, width, seed) do
-    {texture, _key} =
-      Nx.Random.randint(Nx.Random.key(seed), 0, 256, shape: {height, width}, type: :s32)
-
-    Nx.as_type(texture, :u8)
-  end
+  alias VisionCore.Stereo.{Pair, Pipeline, Stage}
 
   # Smooth enough that bilinear sampling differs from OpenCV's fixed point
   # by rounding only.
@@ -96,11 +65,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       context = context(:stereo, 480, 270, {768, 432})
       image = texture(432, 768, 1)
 
-      pair =
-        run_nx([{Stage.Decode, []}], context, %Pair{
-          left_frame: frame(image),
-          right_frame: frame(image)
-        })
+      pair = run_stage(Stage.Decode, [], context, frames_pair(image, image))
 
       reference =
         image
@@ -116,11 +81,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       context = context(:stereo, 64, 48)
       image = texture(48, 64, 2)
 
-      pair =
-        run_nx([{Stage.Decode, []}], context, %Pair{
-          left_frame: frame(image),
-          right_frame: frame(image)
-        })
+      pair = run_stage(Stage.Decode, [], context, frames_pair(image, image))
 
       assert Nx.to_list(pair.left) == Nx.to_list(image)
     end
@@ -129,11 +90,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       context = context(:stereo, 480, 270)
       image = smooth(270, 480)
 
-      pair =
-        run_nx([{Stage.Rectification, []}], context, %Pair{
-          left_frame: frame(image),
-          right_frame: frame(image)
-        })
+      pair = run_stage(Stage.Rectification, [], context, frames_pair(image, image))
 
       for {rectified, calibration} <- [
             {pair.left, context.left_calibration},
@@ -157,11 +114,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
       context = context(:stereo, 480, 270, {768, 432})
       image = smooth(432, 768)
 
-      pair =
-        run_nx([{Stage.Rectification, []}], context, %Pair{
-          left_frame: frame(image),
-          right_frame: frame(image)
-        })
+      pair = run_stage(Stage.Rectification, [], context, frames_pair(image, image))
 
       assert Nx.shape(pair.left) == {270, 480}
 
@@ -198,8 +151,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     test "MedianFilter filters as medianBlur does" do
       context = context(:stereo, 64, 48)
       disparity = Nx.divide(Nx.as_type(texture(48, 64, 3), :f32), 4)
-      input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-      pair = run_nx([{Stage.MedianFilter, []}], context, input)
+      pair = run_stage(Stage.MedianFilter, [], context, %{disparity: disparity})
 
       reference = disparity |> Evision.Mat.from_nx_2d() |> Evision.medianBlur(5) |> to_tensor()
       assert Nx.to_list(pair.disparity) == Nx.to_list(reference)
@@ -235,8 +187,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
         Nx.put_slice(image, [10, 10 * index + 4], patch)
       end)
 
-    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    pair = run_nx([{Stage.MedianFilter, []}], context, input)
+    pair = run_stage(Stage.MedianFilter, [], context, %{disparity: disparity})
 
     for {{_window, expected}, index} <- Enum.with_index(cases),
         do: assert(Nx.to_number(pair.disparity[[12, 10 * index + 6]]) == expected)
@@ -245,18 +196,8 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
   test "Rectification moves the right image by right_row_offset rows, and only it" do
     context = context(:identity, 96, 64)
     image = smooth(64, 96)
-    input = %Pair{left_frame: frame(image), right_frame: frame(image)}
-
-    rectify = fn opts ->
-      {:ok, state} = Stage.Rectification.init(opts, context)
-      member = %{module: Stage.Rectification, name: :rectification, state: state}
-      {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
-
-      {:ok, pair, _segment} =
-        Segment.run(NxSegment, %{input | geometry: context}, segment, :infinity)
-
-      pair
-    end
+    input = frames_pair(image, image)
+    rectify = &run_stage(Stage.Rectification, &1, context, input)
 
     {plain, shifted} = {rectify.([]), rectify.(right_row_offset: 1.0)}
     assert Nx.to_list(shifted.left) == Nx.to_list(plain.left)
@@ -314,8 +255,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Nx.to_number(Nx.any(Nx.equal(sgm, 0))) == 1
     assert Nx.to_number(Nx.any(Nx.greater(sgm, 0))) == 1
 
-    input = %Pair{left_frame: nil, right_frame: nil, left: left, right: right}
-    pair = run_nx([{Stage.Disparity, [paths: 3]}], context, input)
+    pair = run_stage(Stage.Disparity, [paths: 3], context, %{left: left, right: right})
 
     assert Nx.to_list(pair.disparity) == Nx.to_list(Nx.select(Nx.greater(sgm, 0), sgm, -1.0))
   end
@@ -368,8 +308,9 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     context = context(:identity, 192, 108)
     matched = Nx.iota({108, 192}, axis: 1) |> Nx.less(96)
     disparity = Nx.select(matched, 12.0, -1.0)
-    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    pair = run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, input)
+
+    [pair] =
+      run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, [%{disparity: disparity}])
 
     depth_mm = Nx.from_binary(pair.depth, :u16) |> Nx.reshape({108, 192})
     assert Nx.to_number(depth_mm[[0, 0]]) == 1000
@@ -393,8 +334,9 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     columns = Nx.iota({110, 194}, axis: 1, type: :f32)
     # A disparity, and so a depth, of its own at every pixel.
     disparity = rows |> Nx.multiply(0.1) |> Nx.add(Nx.multiply(columns, 0.01)) |> Nx.add(4.0)
-    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    pair = run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, input)
+
+    [pair] =
+      run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, [%{disparity: disparity}])
 
     assert pair.cloud_size == {27, 48}
     {cx, cy} = context.principal_point
@@ -419,8 +361,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     # f·B is 12 px·m: 0.2 px is 60 m, 12 / 65.535 px 65535 mm, 0.1 px 120 m.
     disparities = Nx.tensor([[12.0, 0.2, 12 / 65.535, 0.1, 1.0e-6, 0.0]])
     disparity = Nx.broadcast(Nx.f32(-1.0), {108, 192}) |> Nx.put_slice([0, 0], disparities)
-    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    pair = run_nx([{Stage.Depth, []}], context, input)
+    pair = run_stage(Stage.Depth, [], context, %{disparity: disparity})
 
     <<first_pixels::binary-size(12), _::binary>> = pair.depth
 
@@ -440,8 +381,8 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
         Pipeline.start_link(
           name: name,
           stages: Pipeline.default_stages(),
-          left_calibration_path: Path.join(@calibration, "identity_left.yaml"),
-          right_calibration_path: Path.join(@calibration, "identity_right.yaml"),
+          left_calibration_path: calibration_path(:identity, :left),
+          right_calibration_path: calibration_path(:identity, :right),
           width: 192,
           height: 108,
           defn_options: [compiler: EXLA]

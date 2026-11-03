@@ -5,14 +5,24 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   # disparity, too slow on the evaluator, is compared with EXLA.
   use ExUnit.Case, async: false
 
-  alias VisionCore.Camera.Frame
+  import VisionCore.Stereo.TestHelpers,
+    only: [
+      context: 3,
+      context: 4,
+      frames_pair: 2,
+      members: 2,
+      pair: 1,
+      run_native: 3,
+      stereo_match_path: 0,
+      texture: 3
+    ]
+
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline, Segment, Stage}
+  alias VisionCore.Stereo.TestHelpers
 
   @moduletag :stereo_match
   @moduletag :capture_log
   @moduletag timeout: 600_000
-
-  @calibration Path.expand("../../support/calibration", __DIR__)
 
   # A vehicle's stage wrapping a core one, computed natively as that one.
   defmodule VehicleDepth do
@@ -60,21 +70,8 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   end
 
   setup do
-    start_supervised!({Matcher, path: Application.fetch_env!(:vision_core, :stereo_match_path)})
+    start_supervised!({Matcher, path: stereo_match_path()})
     :ok
-  end
-
-  defp context(calibration, width, height, frame_size \\ nil) do
-    {frame_width, frame_height} = frame_size || {width, height}
-
-    Pipeline.context(
-      left_calibration_path: Path.join(@calibration, "#{calibration}_left.yaml"),
-      right_calibration_path: Path.join(@calibration, "#{calibration}_right.yaml"),
-      width: width,
-      height: height,
-      frame_width: frame_width,
-      frame_height: frame_height
-    )
   end
 
   # Both cameras turned about their optical axis: rectification leaves black wedges at the edges.
@@ -89,51 +86,11 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     }
   end
 
-  defp members(stages, context) do
-    for {module, opts} <- stages do
-      {:ok, state} = module.init(opts, context)
-      %{module: module, name: module, state: state}
-    end
-  end
-
-  # Every pair through one segment, in order, so carried values flow.
-  defp run_nx(stages, context, pairs, compiler \\ Nx.Defn.Evaluator) do
-    {:ok, segment} =
-      NxSegment.build(members(stages, context), context, defn_options: [compiler: compiler])
-
-    run_all(NxSegment, segment, context, pairs)
-  end
-
-  defp run_native(stages, context, pairs) do
-    {:ok, segment} = NativeSegment.build(members(stages, context), context, [])
-    run_all(NativeSegment, segment, context, pairs)
-  end
-
-  defp run_all(backend, segment, context, pairs) do
-    {pairs, _segment} =
-      Enum.map_reduce(pairs, segment, fn pair, segment ->
-        {:ok, pair, segment} = run(backend, %{pair | geometry: context}, segment)
-        {pair, segment}
-      end)
-
-    pairs
-  end
+  # On Nx's evaluator, the exact reference, unless a compiler is given.
+  defp run_nx(stages, context, pairs, compiler \\ Nx.Defn.Evaluator),
+    do: TestHelpers.run_nx(stages, context, pairs, compiler)
 
   defp run(backend, pair, segment), do: Segment.run(backend, pair, segment, :infinity)
-
-  defp frame(image) do
-    {height, width} = Nx.shape(image)
-    %Frame{label: "left", grey: Nx.to_binary(image), width: width, height: height, capture_ns: 0}
-  end
-
-  defp frames_pair(left, right), do: %Pair{left_frame: frame(left), right_frame: frame(right)}
-
-  defp texture(height, width, seed) do
-    {texture, _key} =
-      Nx.Random.randint(Nx.Random.key(seed), 0, 256, shape: {height, width}, type: :s32)
-
-    Nx.as_type(texture, :u8)
-  end
 
   # Subpixel disparities from 0 to 40, unmatched (-1) on about a fifth of the pixels.
   defp disparity(height, width, seed) do
@@ -147,8 +104,7 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     Nx.backend_transfer(values, Nx.BinaryBackend)
   end
 
-  defp disparity_pair(disparity),
-    do: %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
+  defp disparity_pair(disparity), do: pair(disparity: disparity)
 
   defp assert_same_tensor(got, want, label) do
     assert Nx.shape(got) == Nx.shape(want), "#{label}: shape"
@@ -680,7 +636,7 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   end
 
   test "sends its pairs to the matcher its build options name" do
-    path = Application.fetch_env!(:vision_core, :stereo_match_path)
+    path = stereo_match_path()
     start_supervised!({Matcher, name: :segment_matcher, path: path}, id: :segment_matcher)
     stop_supervised!(Matcher)
 

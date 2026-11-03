@@ -1,6 +1,8 @@
 defmodule VisionCore.Stereo.AlignmentCorrectionTest do
   use ExUnit.Case, async: false
 
+  import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
+
   alias VisionCore.Stereo.{AlignmentCorrection, Pipeline, Stage, VehicleRectification}
 
   defp start(offset \\ 0.0, opts \\ []) do
@@ -144,14 +146,12 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
   end
 
   defp start_pipeline(stages) do
-    calibration = Path.expand("../../support/calibration", __DIR__)
-
     start_supervised!(
       {Pipeline,
        name: :alignment_correction_pipeline,
        stages: stages,
-       left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-       right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+       left_calibration_path: calibration_path(:identity, :left),
+       right_calibration_path: calibration_path(:identity, :right),
        width: 64,
        height: 48,
        defn_options: [compiler: EXLA]}

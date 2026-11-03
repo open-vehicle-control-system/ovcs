@@ -1,7 +1,9 @@
 defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Segment, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [run_stage: 4, texture: 3]
+
+  alias VisionCore.Stereo.Stage
 
   @height 64
   @width 128
@@ -9,37 +11,19 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
 
   # Options: `:matched` (every pixel), `:unmatched_disparity` (-1.0), `:uniform_columns` (0).
   defp measure(row_offset, opts \\ []) do
-    {texture, _key} =
-      Nx.Random.randint(Nx.Random.key(7), 0, 256,
-        shape: {@height + 8, @width + @disparity},
-        type: :s32
-      )
-
-    uniform = Nx.less(Nx.iota(Nx.shape(texture), axis: 1), Keyword.get(opts, :uniform_columns, 0))
-    first_row = Nx.broadcast(texture[0], Nx.shape(texture))
-    texture = uniform |> Nx.select(first_row, texture) |> Nx.as_type(:u8)
+    image = texture(@height + 8, @width + @disparity, 7)
+    uniform = Nx.less(Nx.iota(Nx.shape(image), axis: 1), Keyword.get(opts, :uniform_columns, 0))
+    first_row = Nx.broadcast(image[0], Nx.shape(image))
+    image = Nx.select(uniform, first_row, image)
     # A left pixel (y, x) matches the right pixel (y + row_offset, x - @disparity).
-    left = Nx.slice(texture, [4, 0], [@height, @width])
-    right = Nx.slice(texture, [4 - row_offset, @disparity], [@height, @width])
+    left = Nx.slice(image, [4, 0], [@height, @width])
+    right = Nx.slice(image, [4 - row_offset, @disparity], [@height, @width])
     matched = Keyword.get_lazy(opts, :matched, fn -> columns_from(0) end)
     unmatched_disparity = Keyword.get(opts, :unmatched_disparity, -1.0)
     disparity = Nx.select(matched, Nx.f32(@disparity), Nx.f32(unmatched_disparity))
 
     context = %{height: @height, width: @width}
-    {:ok, state} = Stage.RowAlignment.init([], context)
-    member = %{module: Stage.RowAlignment, name: :row_alignment, state: state}
-    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
-
-    pair = %Pair{
-      left_frame: nil,
-      right_frame: nil,
-      left: left,
-      right: right,
-      disparity: disparity
-    }
-
-    {:ok, pair, _segment} = Segment.run(NxSegment, pair, segment, :infinity)
-    pair
+    run_stage(Stage.RowAlignment, [], context, %{left: left, right: right, disparity: disparity})
   end
 
   defp columns_from(first), do: Nx.greater_equal(Nx.iota({@height, @width}, axis: 1), first)

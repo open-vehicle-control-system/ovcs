@@ -2,6 +2,8 @@ defmodule VisionCore.Stereo.SupervisorTest do
   # One test changes the app env the defn options default to.
   use ExUnit.Case, async: false
 
+  import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
+
   alias VisionCore.Parameters.MemoryStore
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pipeline, VehicleRectification}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
@@ -119,14 +121,12 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
   describe "reload_calibration/3" do
     defp start_pipeline(stages) do
-      calibration = Path.expand("../../support/calibration", __DIR__)
-
       start_supervised!(
         {Pipeline,
          name: :reload_row_offset,
          stages: stages,
-         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         left_calibration_path: calibration_path(:identity, :left),
+         right_calibration_path: calibration_path(:identity, :right),
          width: 64,
          height: 48,
          defn_options: [compiler: EXLA]}

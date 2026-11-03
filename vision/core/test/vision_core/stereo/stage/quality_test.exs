@@ -1,7 +1,8 @@
 defmodule VisionCore.Stereo.Stage.QualityTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Segment}
+  import VisionCore.Stereo.TestHelpers, only: [run_nx: 3]
+
   alias VisionCore.Stereo.Stage.Quality
 
   @context %{width: 64, height: 48}
@@ -13,23 +14,15 @@ defmodule VisionCore.Stereo.Stage.QualityTest do
     Nx.divide(sixteenths, 16)
   end
 
-  defp segment do
-    {:ok, state} = Quality.init([], @context)
-    member = %{module: Quality, name: :quality, state: state}
-    {:ok, segment} = NxSegment.build([member], @context, defn_options: [compiler: EXLA])
-    segment
-  end
-
-  defp run(segment, disparity) do
-    pair = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    {:ok, pair, segment} = Segment.run(NxSegment, pair, segment, :infinity)
-    {Map.new(pair.metrics, fn {name, value, _unit} -> {name, value} end), segment}
+  # The metrics of the last of `disparities`, run through one segment in order.
+  defp metrics(disparities) do
+    pairs = run_nx([Quality], @context, Enum.map(disparities, &%{disparity: &1}))
+    Map.new(List.last(pairs).metrics, fn {name, value, _unit} -> {name, value} end)
   end
 
   test "measures the matched share, mean, spread and jitter of the disparity" do
     {first, second} = {disparity(1), disparity(2)}
-    {_metrics, segment} = run(segment(), first)
-    {metrics, _segment} = run(segment, second)
+    metrics = metrics([first, second])
 
     values = Nx.to_flat_list(second)
     matched = Enum.filter(values, &(&1 > 0))
@@ -48,6 +41,6 @@ defmodule VisionCore.Stereo.Stage.QualityTest do
   end
 
   test "has no jitter on the first pair" do
-    assert {%{jitter_px: +0.0}, _segment} = run(segment(), disparity(1))
+    assert %{jitter_px: +0.0} = metrics([disparity(1)])
   end
 end

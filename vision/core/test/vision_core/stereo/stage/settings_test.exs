@@ -3,24 +3,16 @@ defmodule VisionCore.Stereo.Stage.SettingsTest do
   # declare, and nothing else.
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{Pipeline, Stage}
+  import VisionCore.Stereo.TestHelpers, only: [context: 3]
 
-  @calibration Path.expand("../../../support/calibration", __DIR__)
+  alias VisionCore.Stereo.Stage
 
   @stages for module <- Application.spec(:vision_core, :modules),
               match?(["VisionCore", "Stereo", "Stage", _name], Module.split(module)),
               do: module
 
   setup_all do
-    context =
-      Pipeline.context(
-        left_calibration_path: Path.join(@calibration, "identity_left.yaml"),
-        right_calibration_path: Path.join(@calibration, "identity_right.yaml"),
-        width: 64,
-        height: 48
-      )
-
-    %{context: context}
+    %{context: context(:identity, 64, 48)}
   end
 
   test "finds the stages the framework provides" do

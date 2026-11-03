@@ -1,10 +1,11 @@
 defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
+  import VisionCore.Stereo.TestHelpers,
+    only: [calibration_path: 2, stereo_match_path: 0, texture: 3]
+
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline}
   alias VisionCore.Stereo.Stage
-
-  @calibration Path.expand("../../support/calibration", __DIR__)
 
   # A CPU stage with a runtime setting and a build setting.
   defmodule Gain do
@@ -257,8 +258,8 @@ defmodule VisionCore.Stereo.PipelineTest do
       [
         name: :pipeline_test,
         stages: stages,
-        left_calibration_path: Path.join(@calibration, "stereo_left.yaml"),
-        right_calibration_path: Path.join(@calibration, "stereo_right.yaml"),
+        left_calibration_path: calibration_path(:stereo, :left),
+        right_calibration_path: calibration_path(:stereo, :right),
         width: 64,
         height: 48
       ] ++ opts
@@ -267,8 +268,6 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   defp segment_modules(pipeline),
     do: Enum.map(Pipeline.segments(pipeline), &{&1.name, &1.module})
-
-  defp stereo_match_path, do: Application.fetch_env!(:vision_core, :stereo_match_path)
 
   # The Matcher again, running the stereo_match at `path`.
   defp restart_matcher(path) do
@@ -561,8 +560,8 @@ defmodule VisionCore.Stereo.PipelineTest do
   test "gives the stages a context without the compiler's options" do
     context =
       Pipeline.context(
-        left_calibration_path: Path.join(@calibration, "stereo_left.yaml"),
-        right_calibration_path: Path.join(@calibration, "stereo_right.yaml"),
+        left_calibration_path: calibration_path(:stereo, :left),
+        right_calibration_path: calibration_path(:stereo, :right),
         width: 64,
         height: 48,
         defn_options: [compiler: EXLA]
@@ -709,12 +708,9 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   describe "with a compiled segment first" do
     defp textured_pair(seed) do
-      {texture, _key} =
-        Nx.Random.randint(Nx.Random.key(seed), 0, 256, shape: {48, 76}, type: :s32)
+      noise = texture(48, 76, seed)
 
-      texture = Nx.as_type(texture, :u8)
-
-      for {label, image} <- [left: texture[[.., 0..63]], right: texture[[.., 12..75]]] do
+      for {label, image} <- [left: noise[[.., 0..63]], right: noise[[.., 12..75]]] do
         %VisionCore.Camera.Frame{
           label: to_string(label),
           grey: Nx.to_binary(image),
