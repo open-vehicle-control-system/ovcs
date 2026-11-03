@@ -22,6 +22,7 @@ defmodule VisionApiWeb.DetectionChannelTest do
   end
 
   test "pushes each detection result, with its objects' outlines on the left image" do
+    start_supervised!(VisionCore.Outputs)
     start_supervised!({Live, max_hz: 1_000, outline_segments: 1})
     {:ok, _reply, _socket} = join()
 

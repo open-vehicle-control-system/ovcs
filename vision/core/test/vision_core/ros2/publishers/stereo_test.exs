@@ -10,14 +10,14 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
     alias Ros2Zenoh.SensorMsgs.Msg.{Image, PointCloud2}
     alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
     alias VisionCore.Camera.Frame
+    alias VisionCore.Outputs
     alias VisionCore.Stereo.Pair
 
     @moduletag :capture_log
 
-    # Stands in for the camera drivers: they only take listeners.
+    # Names the camera drivers and the pipeline, which need not be running.
     defmodule Source do
       def name_for(label), do: Module.concat(__MODULE__, label)
-      def register_listener(_server, _listener), do: :ok
     end
 
     # Stands in for VisionCore.Ros2.ZenohClient: hands every publish to the test.
@@ -75,8 +75,12 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
       }
     end
 
+    # As the pipeline publishes it.
+    defp publish_pair(pair),
+      do: Outputs.publish({:stereo_pair, Source.name_for("pipeline")}, {:stereo_pair, pair})
+
     test "publishes the disparity, the depth in millimetres and the organized point cloud" do
-      GenServer.cast(Stereo, {:stereo_pair, pair()})
+      publish_pair(pair())
 
       assert_receive {:published, "stereo/disparity", %DisparityImage{} = disparity}
       assert %{width: 8, height: 4, encoding: "32FC1", step: 32} = disparity.image
@@ -98,7 +102,7 @@ defmodule VisionCore.Ros2.Publishers.StereoTest do
     test "drops a message that does not encode and publishes the rest of the pair" do
       publisher = Process.whereis(Stereo)
 
-      GenServer.cast(Stereo, {:stereo_pair, %Pair{pair() | depth: nil}})
+      publish_pair(%Pair{pair() | depth: nil})
 
       assert_receive {:published, "stereo/disparity", %DisparityImage{}}
       assert_receive {:published, "stereo/points", %PointCloud2{}}

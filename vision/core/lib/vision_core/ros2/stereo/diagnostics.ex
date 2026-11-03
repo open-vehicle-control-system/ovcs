@@ -22,6 +22,7 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
   alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
   alias VisionCore.Ros2.{Stamp, ZenohClient}
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
 
   @plot_period_ms 200
   @diagnostics_period_ms 1_000
@@ -50,7 +51,7 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
       right: driver.name_for("right")
     }
 
-    Enum.each(servers, fn {_, server} -> driver.register_listener(server, self()) end)
+    Enum.each(servers, fn {_side, server} -> :ok = Outputs.subscribe({:camera_frame, server}) end)
     Process.send_after(self(), :plot, @plot_period_ms)
     Process.send_after(self(), :diagnostics, @diagnostics_period_ms)
 

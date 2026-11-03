@@ -3,8 +3,8 @@ defmodule VisionCore.Stereo.Pair do
   One left/right pair: the two frames submitted to
   `VisionCore.Stereo.Pipeline`, and everything its stages derive from
   them. Each field is filled by the stage that `provides/0` it (see
-  `VisionCore.Stereo.Stage`); listeners receive the finished pair as
-  `{:stereo_pair, %Pair{}}`.
+  `VisionCore.Stereo.Stage`); the pipeline publishes the finished pair
+  as `{:stereo_pair, %Pair{}}` (`VisionCore.Outputs`).
 
     * `:left_frame`, `:right_frame` — the submitted `Camera.Frame`s.
     * `:geometry` — the pipeline's `t:VisionCore.Stereo.Stage.context/0`

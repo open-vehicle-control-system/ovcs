@@ -23,9 +23,8 @@ defmodule VisionCore.Detection.Supervisor do
   holds the pair whose image is at the accelerator and waits for a
   reply keyed on its sequence number. That reply is never coming, and
   nothing times it out, so it would hold a stale depth map and discard
-  every later answer as stale. Restarting it alongside clears that, and
-  the publisher after it registers on the new pipeline. Not the
-  reverse: a backend is told where to reply on every call and holds
+  every later answer as stale. Restarting it alongside clears that. Not
+  the reverse: a backend is told where to reply on every call and holds
   nothing across one.
 
   Options other than the backend's go to the pipeline and the

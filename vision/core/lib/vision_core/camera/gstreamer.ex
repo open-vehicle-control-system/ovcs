@@ -32,6 +32,7 @@ defmodule VisionCore.Camera.GStreamer do
   require Logger
 
   alias VisionCore.Camera.{Frame, MjpegStream}
+  alias VisionCore.Outputs
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -79,7 +80,7 @@ defmodule VisionCore.Camera.GStreamer do
        device: device,
        port: port,
        buffer: <<>>,
-       listeners: []
+       output: {:camera_frame, name_for(label)}
      }}
   end
 
@@ -96,7 +97,7 @@ defmodule VisionCore.Camera.GStreamer do
         jpeg: jpeg
       }
 
-      Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
+      Outputs.publish(state.output, {:camera_frame, frame})
     end)
 
     {:noreply, %{state | buffer: leftover}}
@@ -108,16 +109,6 @@ defmodule VisionCore.Camera.GStreamer do
     )
 
     {:stop, {:gst_launch_exit, status}, state}
-  end
-
-  @impl GenServer
-  def handle_cast({:register_listener, listener}, state) do
-    {:noreply, %{state | listeners: state.listeners ++ [listener]}}
-  end
-
-  @impl VisionCore.Camera
-  def register_listener(server, listener) do
-    GenServer.cast(server, {:register_listener, listener})
   end
 
   # `-q` keeps routine progress off the inherited stderr; errors still print.

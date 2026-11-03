@@ -3,6 +3,7 @@ defmodule VisionCore.Detection.LiveTest do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection.{Fusion, Live}
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
   # Matched at half the camera's size, with no calibration, so outlines only scale.
@@ -32,6 +33,18 @@ defmodule VisionCore.Detection.LiveTest do
   setup do
     start_supervised!({Live, max_hz: 1_000, outline_segments: 1})
     :ok
+  end
+
+  test "takes the results the detection pipeline publishes" do
+    :ok = Live.subscribe()
+    positioned = [person(120, 54, 360, 216, 1.8)]
+
+    Outputs.publish(
+      {:detections, VisionCore.Detection.Pipeline},
+      {:detections, pair(), positioned}
+    )
+
+    assert_receive {:vision_detections, [%{label: "person", distance_m: 1.8}]}
   end
 
   test "sends each result to subscribers: label, score, distance and outline on the raw image" do

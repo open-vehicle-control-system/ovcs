@@ -5,6 +5,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
   import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2, members: 2]
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment}
 
   defmodule AddOne do
@@ -438,7 +439,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
 
     test "consecutive Nx stages form one segment, a CPU stage splits them" do
       {:ok, pipeline} = start([AddOne, Halve, Double, Fill])
-      Pipeline.register_listener(pipeline, self())
+      :ok = Outputs.subscribe({:stereo_pair, :nx_segment_test})
 
       assert :sys.get_state(pipeline).stages |> Enum.map(& &1.name) ==
                [:add_one, :halve, :double, :fill]
@@ -464,7 +465,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
 
     test "keeps what a stage carries when a live setting changes while a pair is at the device" do
       {:ok, pipeline} = start([AddOne, SlowCount, Fill], defn_options: [compiler: EXLA])
-      Pipeline.register_listener(pipeline, self())
+      :ok = Outputs.subscribe({:stereo_pair, :nx_segment_test})
       %Pair{left_frame: frame} = grey_pair(List.duplicate(0, 8))
 
       Pipeline.submit(pipeline, frame, frame)
@@ -480,9 +481,10 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     end
 
     test "logs a pair the device fails on, first or later in the stages, and takes the next one" do
+      :ok = Outputs.subscribe({:stereo_pair, :nx_segment_test})
+
       for stages <- [[AddOne, Fill], [LeftFrame, Double, Fill]] do
         {:ok, pipeline} = start(stages, defn_options: [compiler: FailingDevice])
-        Pipeline.register_listener(pipeline, self())
         %Pair{left_frame: frame} = grey_pair(List.duplicate(0, 8))
 
         log =

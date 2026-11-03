@@ -119,6 +119,28 @@ defmodule VisionCore.Stereo.SupervisorTest do
     end
   end
 
+  describe "the stereo unit of a config" do
+    defp config(components),
+      do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
+
+    test "its cameras, left then right, and its outputs: the pipeline's pairs, then each camera's frames" do
+      config = config([:heartbeat, {:stereo, @stereo}])
+      left = VisionCore.Camera.V4L2.name_for("left")
+      right = VisionCore.Camera.V4L2.name_for("right")
+
+      assert StereoSupervisor.cameras(config) ==
+               [{VisionCore.Camera.V4L2, left}, {VisionCore.Camera.V4L2, right}]
+
+      assert StereoSupervisor.outputs(config) ==
+               [{:stereo_pair, Pipeline}, {:camera_frame, left}, {:camera_frame, right}]
+    end
+
+    test "none without a stereo component" do
+      assert StereoSupervisor.cameras(config([:heartbeat])) == []
+      assert StereoSupervisor.outputs(config([:heartbeat])) == []
+    end
+  end
+
   describe "reload_calibration/3" do
     defp start_pipeline(stages) do
       start_supervised!(

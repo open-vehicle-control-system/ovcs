@@ -33,20 +33,23 @@ defmodule VisionCore.Stereo.Supervisor do
     8. A `VisionCore.Ros2.Services.SetCameraInfoServer` per side with a
        calibration path, for `cameracalibrator`'s commit.
 
-  Children start in that order so each downstream child can register
-  on its upstream during `init/1`. The strategy is `:rest_for_one`
-  because that registration is the only wiring: a restarted driver or
-  pipeline comes back with no listeners, so everything downstream of it
-  restarts too and registers again. Drivers stop deliberately when
-  their subprocess exits, so restarts are a designed path.
+  The children subscribe to the drivers' frames and the pipeline's pairs
+  through `VisionCore.Outputs`, which holds a subscription across the
+  producer's restarts. Children start in that order and the strategy is
+  `:rest_for_one` because the children after a driver or the pipeline
+  hold state about it: the pairer waits for the pipeline's
+  `:stereo_pipeline_ready`, and `VisionCore.Stereo.Parameters` applies
+  the parameters' values when it declares its groups, at start. Drivers
+  stop deliberately when their subprocess exits, so restarts are a
+  designed path.
 
   The unit has its own restart budget, and `VisionCore.Components`
   starts it as a `:transient` child: a camera that keeps failing
   exhausts this budget, the unit shuts down and stays down, and the
   rest of the vision core keeps running, with `VisionCore.Status`
   reporting the cameras absent. A unit that fails to start, such as
-  one whose camera exits before the children after it register,
-  is left down the same way.
+  one whose camera exits while the children after it start, is left
+  down the same way.
 
   ## Required opts
 
@@ -171,6 +174,44 @@ defmodule VisionCore.Stereo.Supervisor do
       max_restarts: @max_restarts,
       max_seconds: @max_seconds
     )
+  end
+
+  @doc """
+  The camera drivers of the stereo unit in `config`, the active
+  `VisionCore.Config`: `{driver, name}` for the left camera, then the
+  right one, the driver module loaded so that `function_exported?/3`
+  sees its functions. `[]` without a `:stereo` component.
+  """
+  @spec cameras(VisionCore.Config.t()) :: [{module(), atom()}]
+  def cameras(%VisionCore.Config{components: components}) do
+    case Enum.find_value(components, &stereo_options/1) do
+      nil ->
+        []
+
+      opts ->
+        driver = Keyword.fetch!(opts, :driver)
+        Code.ensure_loaded(driver)
+        for label <- ["left", "right"], do: {driver, driver.name_for(label)}
+    end
+  end
+
+  defp stereo_options({:stereo, opts}), do: opts
+  defp stereo_options(_component), do: nil
+
+  @doc """
+  The `VisionCore.Outputs` keys of the stereo unit in `config`: its
+  pipeline's pairs, then its left and right cameras' frames. `[]`
+  without a `:stereo` component.
+  """
+  @spec outputs(VisionCore.Config.t()) :: [VisionCore.Outputs.key()]
+  def outputs(config) do
+    case cameras(config) do
+      [] ->
+        []
+
+      cameras ->
+        [{:stereo_pair, Pipeline} | for({_driver, name} <- cameras, do: {:camera_frame, name})]
+    end
   end
 
   @doc """

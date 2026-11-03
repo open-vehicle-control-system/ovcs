@@ -13,6 +13,10 @@ ExUnit.after_suite(fn _results -> remove_database.() end)
 {:ok, _pid} = VisionCore.Repo.start_link()
 Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)
 
+# The outputs registry, which VisionCore.Supervisor starts on a vehicle, for the
+# producers and consumers the tests start on their own.
+{:ok, _pid} = VisionCore.Outputs.start_link()
+
 # The Ports the tests run, built from the Rust workspace: jpeg_codec
 # (VisionCore.Jpeg) for the :jpeg tests, stereo_match (VisionCore.Stereo.Matcher)
 # for the :stereo_match tests. CI fails rather than skip them.

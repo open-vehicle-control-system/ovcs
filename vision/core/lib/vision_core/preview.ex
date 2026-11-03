@@ -41,8 +41,9 @@ defmodule VisionCore.Preview do
   require Logger
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
-  alias VisionCore.Stereo.Sources
+  alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @streams [:left, :right, :depth]
   @default_max_hz 10
@@ -91,7 +92,11 @@ defmodule VisionCore.Preview do
 
   @impl GenServer
   def init(opts) do
-    sources = opts |> Keyword.fetch!(:config) |> Sources.from_config()
+    opts
+    |> Keyword.fetch!(:config)
+    |> StereoSupervisor.outputs()
+    |> Enum.each(&Outputs.subscribe/1)
+
     max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
 
     {:ok,
@@ -101,7 +106,6 @@ defmodule VisionCore.Preview do
        interval_ms: div(1_000, max_hz),
        depth_encoder: Keyword.get(opts, :depth_encoder),
        frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg/1),
-       monitors: Sources.register(sources),
        latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded: Map.new(@streams, &{&1, {0, nil}}),
        depth_failure_logged: false,
@@ -185,22 +189,13 @@ defmodule VisionCore.Preview do
     end
   end
 
-  def handle_info({:register_source, source}, state),
-    do: {:noreply, %{state | monitors: Sources.retry(source, state.monitors)}}
-
   def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
-    case Sources.down(monitor_reference, state.monitors) do
-      {:ok, monitors} ->
-        {:noreply, %{state | monitors: monitors}}
+    subscribers =
+      Map.reject(state.subscribers, fn {_key, subscriber} ->
+        subscriber.monitor == monitor_reference
+      end)
 
-      :error ->
-        subscribers =
-          Map.reject(state.subscribers, fn {_key, subscriber} ->
-            subscriber.monitor == monitor_reference
-          end)
-
-        {:noreply, %{state | subscribers: subscribers}}
-    end
+    {:noreply, %{state | subscribers: subscribers}}
   end
 
   def handle_info(_message, state), do: {:noreply, state}

@@ -27,6 +27,7 @@ defmodule VisionCore.Stereo.Pairer do
   require Logger
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.{Pipeline, StageTimer}
 
   @default_pair_tolerance_ms 33
@@ -45,7 +46,7 @@ defmodule VisionCore.Stereo.Pairer do
 
     for side <- ["left", "right"] do
       {driver, ^side} = List.keyfind(cameras, side, 1) || raise "no #{side} camera in :cameras"
-      driver.register_listener(driver.name_for(side), self())
+      :ok = Outputs.subscribe({:camera_frame, driver.name_for(side)})
     end
 
     Logger.info("#{__MODULE__} pairing within #{tolerance_ms} ms")

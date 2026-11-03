@@ -2,8 +2,8 @@ defmodule VisionCore.Camera.LibCamera do
   @moduledoc """
   Target-side `VisionCore.Camera` implementation. Spawns the
   `camera_capture` native binary (one Port per camera), parses its
-  length-prefixed framing protocol, and fans frames out to
-  registered listeners.
+  length-prefixed framing protocol, and publishes the frames through
+  `VisionCore.Outputs`.
 
   The native binary is `camera_capture` in `vision_core`'s `priv/`
   (override with `:executable`); it owns libcamera + the Pi 5 ISP path.
@@ -146,9 +146,8 @@ defmodule VisionCore.Camera.LibCamera do
   (default 15000 ms, libcamera's pipeline set-up on a Pi 5 can take a
   few seconds) is the most a camera gets to produce one. Either way the
   driver logs the reason and stops, and the stereo supervisor's
-  `:rest_for_one` restarts it together with everything downstream, which
-  re-runs the listener registrations. The binary is relaunched by the
-  restart, and with it libcamera's pipeline.
+  `:rest_for_one` restarts it together with everything downstream. The
+  binary is relaunched by the restart, and with it libcamera's pipeline.
   """
   @behaviour VisionCore.Camera
 
@@ -156,6 +155,7 @@ defmodule VisionCore.Camera.LibCamera do
   require Logger
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
 
   @frame_tag 1
   @log_tag 2
@@ -314,7 +314,7 @@ defmodule VisionCore.Camera.LibCamera do
        label: label,
        camera_id: camera_id,
        port: port,
-       listeners: [],
+       output: {:camera_frame, name_for(label)},
        controls: Map.merge(initial_controls(), Map.new(start_controls, &normalise_control/1)),
        applied_metadata: nil,
        start_controls: start_controls,
@@ -329,8 +329,7 @@ defmodule VisionCore.Camera.LibCamera do
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
       {:ok, %Frame{} = frame} ->
-        frame = %{frame | label: state.label}
-        Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
+        Outputs.publish(state.output, {:camera_frame, %{frame | label: state.label}})
         {:noreply, apply_start_controls(%{state | last_frame_at: now_ms()})}
 
       {:log, level, message} ->
@@ -376,16 +375,6 @@ defmodule VisionCore.Camera.LibCamera do
 
         {:stop, {:camera_stall, :no_first_frame}, state}
     end
-  end
-
-  @impl GenServer
-  def handle_cast({:register_listener, listener}, state) do
-    {:noreply, %{state | listeners: state.listeners ++ [listener]}}
-  end
-
-  @impl VisionCore.Camera
-  def register_listener(server, listener) do
-    GenServer.cast(server, {:register_listener, listener})
   end
 
   @impl VisionCore.Camera

@@ -2,33 +2,7 @@ defmodule VisionCore.Detection.PipelineTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Detection.Pipeline
-
-  # Stands in for the stereo pipeline: tells the test who registers on it.
-  defmodule StereoPipeline do
-    use GenServer
-
-    def start_link(test),
-      do: GenServer.start_link(__MODULE__, test, name: VisionCore.Stereo.Pipeline)
-
-    def init(test), do: {:ok, test}
-
-    def handle_cast({:register_listener, listener}, test) do
-      send(test, {:registered, listener})
-      {:noreply, test}
-    end
-  end
-
-  test "registers on the stereo pipeline again once it restarts, and waits for one that is not up yet" do
-    detection = start_supervised!({Pipeline, backend: VisionCore.Detection.Backend.Stub})
-    refute_receive {:registered, _}, 100
-
-    start_supervised!({StereoPipeline, self()})
-    assert_receive {:registered, ^detection}, 1_000
-
-    stop_supervised!(StereoPipeline)
-    start_supervised!({StereoPipeline, self()})
-    assert_receive {:registered, ^detection}, 1_000
-  end
+  alias VisionCore.Outputs
 
   describe "a pair through the backend" do
     alias VisionCore.Detection.Backend.Stub
@@ -58,11 +32,19 @@ defmodule VisionCore.Detection.PipelineTest do
     defp start_detection(boxes, opts) do
       start_supervised!({Stub, boxes: boxes})
       start_supervised!({Pipeline, [backend: Stub] ++ opts})
-      Pipeline.register_listener(Pipeline, self())
+      :ok = Outputs.subscribe({:detections, Pipeline})
     end
 
+    # As the stereo pipeline publishes it, which need not be running.
+    defp publish_pair,
+      do:
+        Outputs.publish(
+          {:stereo_pair, VisionCore.Stereo.Pipeline},
+          {:stereo_pair, pair_with_depth()}
+        )
+
     defp detections do
-      GenServer.cast(Pipeline, {:stereo_pair, pair_with_depth()})
+      publish_pair()
       assert_receive {:"$gen_cast", {:detections, %Pair{}, detections}}, 1_000
       detections
     end
@@ -94,7 +76,7 @@ defmodule VisionCore.Detection.PipelineTest do
     test "detects on every :detect_every_n-th pair" do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], detect_every_n: 2)
 
-      GenServer.cast(Pipeline, {:stereo_pair, pair_with_depth()})
+      publish_pair()
       refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 200
       assert [_person] = detections()
     end

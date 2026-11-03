@@ -68,6 +68,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
 
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Detection.Fusion
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Stamp
   alias VisionCore.Stereo.Pair
 
@@ -99,7 +100,7 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       previous_indexes: MapSet.new()
     }
 
-    VisionCore.Detection.Pipeline.register_listener(VisionCore.Detection.Pipeline, self())
+    :ok = Outputs.subscribe({:detections, VisionCore.Detection.Pipeline})
 
     Logger.info(
       "#{__MODULE__} publishing markers on #{state.markers_topic} and " <>

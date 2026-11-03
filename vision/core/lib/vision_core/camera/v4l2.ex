@@ -6,11 +6,11 @@ defmodule VisionCore.Camera.V4L2 do
   ports. The program locks the right sensor's frame starts to the left
   one's and writes frame pairs, so both sides come from one Port.
 
-  The `"left"` instance opens the Port and fans out left frames. It hands
-  each right frame to the `"right"` instance, which opens nothing and fans
-  out what it receives. When the program exits or stops delivering, the
-  left instance stops; the stereo unit's `:rest_for_one` supervision then
-  restarts the right one after it.
+  The `"left"` instance opens the Port and publishes left frames. It
+  hands each right frame to the `"right"` instance, which opens nothing
+  and publishes what it receives. When the program exits or stops
+  delivering, the left instance stops; the stereo unit's `:rest_for_one`
+  supervision then restarts the right one after it.
 
   Frames are 8-bit grey (`%Frame{grey: ...}`): the program averages each
   2x2 Bayer cell, so the output is half the sensor mode in each axis.
@@ -69,7 +69,7 @@ defmodule VisionCore.Camera.V4L2 do
   @behaviour VisionCore.Camera
 
   alias VisionCore.Camera.{Frame, LibCamera}
-  alias VisionCore.Timing
+  alias VisionCore.{Outputs, Timing}
 
   @pair_tag 4
   @log_tag 2
@@ -92,10 +92,6 @@ defmodule VisionCore.Camera.V4L2 do
   @doc "The registered name of the driver for `label`."
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
-
-  @impl VisionCore.Camera
-  def register_listener(server, listener),
-    do: GenServer.cast(server, {:register_listener, listener})
 
   @settings [
     %{
@@ -296,7 +292,13 @@ defmodule VisionCore.Camera.V4L2 do
         {spec.key, normalise(spec, Keyword.get(opts, spec.key, spec.default))}
       end)
 
-    state = %{label: label, listeners: [], port: nil, controls: controls, applied: nil}
+    state = %{
+      label: label,
+      output: {:camera_frame, name_for(label)},
+      port: nil,
+      controls: controls,
+      applied: nil
+    }
 
     if label == "left" do
       {:ok, open_port(state, opts)}
@@ -377,11 +379,8 @@ defmodule VisionCore.Camera.V4L2 do
   end
 
   @impl GenServer
-  def handle_cast({:register_listener, listener}, state),
-    do: {:noreply, %{state | listeners: state.listeners ++ [listener]}}
-
   def handle_cast({:pair_frame, %Frame{} = frame}, state) do
-    fan_out(state, frame)
+    publish_frame(state, frame)
     {:noreply, state}
   end
 
@@ -389,7 +388,7 @@ defmodule VisionCore.Camera.V4L2 do
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
       {:pair, left, right} ->
-        fan_out(state, left)
+        publish_frame(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
         {:noreply, %{state | last_frame_at: now_ms(), applied: refreshed(state.applied)}}
 
@@ -430,8 +429,7 @@ defmodule VisionCore.Camera.V4L2 do
   defp refreshed(nil), do: nil
   defp refreshed(applied), do: %{applied | received_ms: System.system_time(:millisecond)}
 
-  defp fan_out(state, frame),
-    do: Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
+  defp publish_frame(state, frame), do: Outputs.publish(state.output, {:camera_frame, frame})
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 

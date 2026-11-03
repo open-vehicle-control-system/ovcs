@@ -2,6 +2,9 @@ defmodule VisionCore.Camera.LibCameraTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Camera.{Frame, LibCamera}
+  alias VisionCore.Outputs
+
+  @output {:camera_frame, LibCamera.name_for("left")}
 
   # The driver itself needs the native binary and two cameras; the
   # watchdog's decision is the part that can be wrong, and it is pure.
@@ -123,13 +126,14 @@ defmodule VisionCore.Camera.LibCameraTest do
                {:error, :malformed_record}
     end
 
-    test "reach the listeners as grey frames under the camera's label" do
+    test "are published as grey frames under the camera's label" do
       packet = <<5, 2::little-16, 1::little-16, 0::little-signed-64, 7, 8>>
+      :ok = Outputs.subscribe(@output)
 
       state = %{
         label: "left",
         port: :port,
-        listeners: [self()],
+        output: @output,
         start_controls: [],
         last_frame_at: nil
       }
@@ -206,7 +210,7 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       state = %{
         label: "left",
-        listeners: [],
+        output: @output,
         port: port,
         controls: %{},
         start_controls: [exposure_time_us: 8000],
@@ -228,7 +232,7 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       state = %{
         label: "left",
-        listeners: [],
+        output: @output,
         port: port,
         controls: %{brightness: 0.2, contrast: 1.0},
         start_controls: [brightness: 0.2, contrast: 2.0],

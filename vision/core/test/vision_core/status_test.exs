@@ -2,8 +2,13 @@ defmodule VisionCore.StatusTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Status
+  alias VisionCore.{Outputs, Status}
   alias VisionCore.Stereo.Pair
+
+  # Names a stereo unit's cameras, which need not be running.
+  defmodule Camera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+  end
 
   defp config(components),
     do: %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: components}
@@ -93,6 +98,28 @@ defmodule VisionCore.StatusTest do
 
     assert_receive {:vision_status, %{depth_hz: depth_hz}}, 500
     assert depth_hz > 0.0
+  end
+
+  test "counts the pairs and frames the stereo unit of its config publishes" do
+    left = spawn(fn -> Process.sleep(:infinity) end)
+    Process.register(left, Camera.name_for("left"))
+    on_exit(fn -> Process.exit(left, :kill) end)
+    stereo = {:stereo, driver: Camera, left: [], right: []}
+    start_supervised!({Status, config: config([stereo]), tick_ms: 200})
+    :ok = Status.subscribe()
+
+    for _ <- 1..4 do
+      Outputs.publish({:stereo_pair, VisionCore.Stereo.Pipeline}, {:stereo_pair, pair()})
+
+      Outputs.publish(
+        {:camera_frame, Camera.name_for("left")},
+        {:camera_frame, pair().left_frame}
+      )
+    end
+
+    assert_receive {:vision_status, %{depth_hz: depth_hz, cameras: %{left: %{fps: fps}}}}
+                   when depth_hz > 0.0 and fps > 0.0,
+                   500
   end
 
   test "each tick reports the row alignment averaged over its pairs" do

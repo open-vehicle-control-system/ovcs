@@ -1,6 +1,11 @@
 defmodule VisionCore.Ros2.CameraTest do
   use ExUnit.Case, async: true
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
+  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Camera
 
   # A real JPEG of random pixels: a flat fill compresses to an unrepresentative short scan.
@@ -31,5 +36,24 @@ defmodule VisionCore.Ros2.CameraTest do
       full = jpeg(480, 270)
       assert Camera.decode_dimensions(binary_part(full, 0, 4)) == :error
     end
+  end
+
+  test "publishes each image as a frame under its label" do
+    output = {:camera_frame, Camera.name_for("left")}
+    :ok = Outputs.subscribe(output)
+
+    state = %{
+      label: "left",
+      topic: "stereo/left/image_raw/compressed",
+      output: output,
+      frame_count: 0
+    }
+
+    header = %Header{stamp: %Time{sec: 1}, frame_id: "stereo_left"}
+    image = %CompressedImage{header: header, format: "jpeg", data: jpeg(17, 5)}
+
+    assert {:noreply, _state} = Camera.handle_info({:ros_message, {state.topic, image}}, state)
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", width: 17, height: 5}}}
   end
 end

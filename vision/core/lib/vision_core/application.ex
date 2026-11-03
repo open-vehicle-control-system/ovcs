@@ -9,9 +9,10 @@ defmodule VisionCore.Application do
   `VisionCore.Parameters.Storage` and the `VisionCore.Parameters` registry
   come first, so saved values are loaded before any component declares its
   parameters and a restart of anything after them keeps the unsaved changes.
-  `VisionCore.Ros2.ZenohClient` follows them. Consumers subscribe only from
-  `init/1`, so they must restart with the client to get their subscriptions
-  back. The Port servers, `VisionCore.Jpeg` and
+  `VisionCore.Outputs` follows them, before every process that publishes or
+  subscribes through it. `VisionCore.Ros2.ZenohClient` comes next; its
+  subscribers subscribe only from `init/1`, so they must restart with it to
+  get their subscriptions back. The Port servers, `VisionCore.Jpeg` and
   `VisionCore.Stereo.Matcher`, start before the components and open their
   Ports on the first request, so a unit that computes no stereo stage
   natively never starts `stereo_match`; the Matcher runs the binary and
@@ -53,6 +54,7 @@ defmodule VisionCore.Application do
     core_children = [
       VisionCore.Parameters.Storage,
       VisionCore.Parameters,
+      VisionCore.Outputs,
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
       VisionCore.Ros2.Parameters,
       VisionCore.Jpeg,
@@ -63,7 +65,7 @@ defmodule VisionCore.Application do
     ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
-    # Last, so they register on the components while starting.
+
     dashboard_children = [
       {VisionCore.Status, config: config},
       {VisionCore.Preview, [config: config] ++ config.preview}

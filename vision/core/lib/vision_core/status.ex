@@ -22,9 +22,10 @@ defmodule VisionCore.Status do
   """
   use GenServer
 
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Stereo.Diagnostics
   alias VisionCore.Ros2.ZenohClient
-  alias VisionCore.Stereo.Sources
+  alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias VisionCore.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
   alias VisionCore.Stereo.Pair
@@ -85,14 +86,13 @@ defmodule VisionCore.Status do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
-    sources = Sources.from_config(config)
+    Enum.each(StereoSupervisor.outputs(config), &Outputs.subscribe/1)
     Process.send_after(self(), :tick, tick_ms)
 
     {:ok,
      %{
        tick_ms: tick_ms,
-       sources: sources,
-       monitors: Sources.register(sources),
+       cameras: StereoSupervisor.cameras(config),
        hailo_configured?: hailo_configured?(config),
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
@@ -155,15 +155,8 @@ defmodule VisionCore.Status do
     {:noreply, state}
   end
 
-  def handle_info({:register_source, source}, state),
-    do: {:noreply, %{state | monitors: Sources.retry(source, state.monitors)}}
-
-  def handle_info({:DOWN, monitor_reference, :process, pid, _reason}, state) do
-    case Sources.down(monitor_reference, state.monitors) do
-      {:ok, monitors} -> {:noreply, %{state | monitors: monitors}}
-      :error -> {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
-    end
-  end
+  def handle_info({:DOWN, _monitor_reference, :process, pid, _reason}, state),
+    do: {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -268,9 +261,9 @@ defmodule VisionCore.Status do
     |> Map.merge(stereo_calls(state))
   end
 
-  defp stereo_calls(%{sources: []}), do: %{}
+  defp stereo_calls(%{cameras: []}), do: %{}
 
-  defp stereo_calls(%{sources: [_pipeline | cameras]}) do
+  defp stereo_calls(%{cameras: cameras}) do
     sync = {fn -> Map.put(Diagnostics.sync(), :present, true) end, %{present: false}}
 
     for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
@@ -279,9 +272,9 @@ defmodule VisionCore.Status do
         do: {side, {fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end, %{}}}
   end
 
-  defp camera(%{sources: []}, _side, _replies), do: %{present: false}
+  defp camera(%{cameras: []}, _side, _replies), do: %{present: false}
 
-  defp camera(%{sources: [_pipeline, left, right]} = state, side, replies) do
+  defp camera(%{cameras: [left, right]} = state, side, replies) do
     {_driver, server} = if side == :left, do: left, else: right
 
     if GenServer.whereis(server),

@@ -28,6 +28,7 @@ defmodule VisionCore.Detection.Live do
   use GenServer
 
   alias VisionCore.Detection.{Fusion, Pipeline}
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
   @default_max_hz 10
@@ -41,7 +42,7 @@ defmodule VisionCore.Detection.Live do
 
   @impl GenServer
   def init(opts) do
-    Pipeline.register_listener(Pipeline, self())
+    :ok = Outputs.subscribe({:detections, Pipeline})
 
     {:ok,
      %{

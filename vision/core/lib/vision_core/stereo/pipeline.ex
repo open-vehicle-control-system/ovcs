@@ -1,8 +1,9 @@
 defmodule VisionCore.Stereo.Pipeline do
   @moduledoc """
   Runs each submitted left/right pair through a list of
-  `VisionCore.Stereo.Stage`s and sends the finished
-  `VisionCore.Stereo.Pair` to its listeners as `{:stereo_pair, pair}`.
+  `VisionCore.Stereo.Stage`s and publishes the finished
+  `VisionCore.Stereo.Pair` as `{:stereo_pair, pair}` through
+  `VisionCore.Outputs`, under `{:stereo_pair, name}`.
 
   The default stages, from `default_stages/1`, all written in Nx
   (`VisionCore.Stereo.NxStage`):
@@ -19,7 +20,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
   A stage list is checked at start: every field a stage requires must be
   provided by a stage before it, and the stages together must provide
-  the disparity and depth listeners consume. A stage is named after the
+  the disparity and depth its subscribers consume. A stage is named after the
   last segment of its module, underscored (`SpeckleFilter` is
   `:speckle_filter`): `stage_options/1` lists it, `set_options/3` and
   the timings address it by that name, so two stages of the same name
@@ -56,15 +57,15 @@ defmodule VisionCore.Stereo.Pipeline do
   segment first, that is once the pair is done, whether it succeeded or
   not. With a segment first, it is once fewer pairs than the segment's
   `c:VisionCore.Stereo.Segment.depth/0` are at its device, and pairs
-  reach the listeners in the order submitted. A compiled segment takes
+  are published in the order submitted. A compiled segment takes
   one pair at a time, so a pair is done once its device work is: the
   pair's outputs are collected and the later stages run while the next
-  pair's device work does, and it reaches the listeners then, or after
+  pair's device work does, and it is published then, or after
   `:flush_after_ms` if no pair follows. A native segment takes two, so
   the Port computes one while the other's frames and outputs go through
   the pipes: the next pair is taken once the earlier of the two is
   back, and that one is then collected, run through the later stages
-  and sent to the listeners. A live setting of a native stage then
+  and published. A live setting of a native stage then
   applies from the second pair submitted after the change.
 
   A pair a segment refuses, such as one whose frames are of another
@@ -108,7 +109,8 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:device_timeout_ms` (`10000`) — how long a pair may stay at a
       segment's device: past it the pipeline stops, for its supervisor to
       start it again, rather than wait on a device that no longer answers.
-    * `:name` (`__MODULE__`).
+    * `:name` (`__MODULE__`) — the registered name, which the pairs are
+      published under.
   """
   use GenServer
   require Logger
@@ -118,6 +120,7 @@ defmodule VisionCore.Stereo.Pipeline do
   @max_failed_pairs 10
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.{NativeSegment, NxSegment, NxStage, Pair, Segment, Stage, StageTimer}
@@ -181,10 +184,6 @@ defmodule VisionCore.Stereo.Pipeline do
 
     :ok
   end
-
-  @doc "Sends every later `{:stereo_pair, %Pair{}}` to `listener` as a cast."
-  def register_listener(server, listener),
-    do: GenServer.cast(server, {:register_listener, listener})
 
   @doc "Queues one left/right frame pair; the caller receives `:stereo_pipeline_ready` once it is done."
   def submit(server, %Frame{} = left, %Frame{} = right),
@@ -266,7 +265,7 @@ defmodule VisionCore.Stereo.Pipeline do
        opts: opts,
        context: context,
        stages: stages,
-       listeners: [],
+       output: {:stereo_pair, Keyword.get(opts, :name, __MODULE__)},
        timer: StageTimer.new(window: 30, label: "pipeline"),
        last_start_ns: nil,
        in_flight: :queue.new(),
@@ -329,9 +328,6 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   @impl GenServer
-  def handle_cast({:register_listener, listener}, state),
-    do: {:noreply, %{state | listeners: state.listeners ++ [listener]}}
-
   def handle_cast({:submit, %Frame{} = left, %Frame{} = right, submitter}, state) do
     start_ns = System.monotonic_time(:nanosecond)
     pair = %Pair{left_frame: left, right_frame: right, geometry: state.context}
@@ -543,7 +539,7 @@ defmodule VisionCore.Stereo.Pipeline do
     state =
       case outcome do
         {:ok, %Pair{} = pair} ->
-          Enum.each(state.listeners, &GenServer.cast(&1, {:stereo_pair, pair}))
+          Outputs.publish(state.output, {:stereo_pair, pair})
           %{state | failed_pairs: 0}
 
         {:error, module, reason} ->

@@ -4,10 +4,15 @@ defmodule VisionCore.PreviewTest do
   import ExUnit.CaptureLog
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Preview
+  alias VisionCore.{Outputs, Preview}
   alias VisionCore.Stereo.Pair
 
   @config %VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: []}
+
+  # Names a stereo unit's cameras, which need not be running.
+  defmodule Camera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+  end
 
   defp feed_left(sequence) do
     frame = %Frame{label: "left", width: 2, height: 2, capture_ns: sequence, jpeg: "#{sequence}"}
@@ -125,6 +130,26 @@ defmodule VisionCore.PreviewTest do
 
     assert_receive {:vision_preview_options, %{depth_range_m: 8.5}}, 500
     refute_receive {:previewed, _jpeg}, 100
+  end
+
+  test "previews what the stereo unit of its config publishes" do
+    stereo = {:stereo, driver: Camera, left: [], right: []}
+    depth_encoder = fn _pair -> "depth jpeg" end
+    config = %{@config | components: [stereo]}
+    start_supervised!({Preview, config: config, depth_encoder: depth_encoder})
+    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe(:depth)
+    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, jpeg: "left jpeg"}
+
+    Outputs.publish({:camera_frame, Camera.name_for("left")}, {:camera_frame, frame})
+
+    Outputs.publish(
+      {:stereo_pair, VisionCore.Stereo.Pipeline},
+      {:stereo_pair, pair(List.duplicate(0, 16))}
+    )
+
+    assert_receive {:vision_preview, :left, "left jpeg"}, 1_000
+    assert_receive {:vision_preview, :depth, "depth jpeg"}, 1_000
   end
 
   test "depth is not encoded without subscribers" do

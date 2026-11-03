@@ -51,6 +51,7 @@ defmodule VisionCore.Ros2.Camera do
 
   alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Stamp
 
   def start_link(opts) do
@@ -61,11 +62,6 @@ defmodule VisionCore.Ros2.Camera do
   @doc "The registered name of the driver for `label`."
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
-
-  @impl VisionCore.Camera
-  def register_listener(server, listener) do
-    GenServer.cast(server, {:register_listener, listener})
-  end
 
   @impl GenServer
   def init(opts) do
@@ -79,12 +75,7 @@ defmodule VisionCore.Ros2.Camera do
 
     Logger.info("#{__MODULE__}[#{label}] consuming #{topic}")
 
-    {:ok, %{label: label, topic: topic, listeners: [], frame_count: 0}}
-  end
-
-  @impl GenServer
-  def handle_cast({:register_listener, listener}, state) do
-    {:noreply, %{state | listeners: state.listeners ++ [listener]}}
+    {:ok, %{label: label, topic: topic, output: {:camera_frame, name_for(label)}, frame_count: 0}}
   end
 
   @impl GenServer
@@ -99,7 +90,7 @@ defmodule VisionCore.Ros2.Camera do
           jpeg: image.data
         }
 
-        Enum.each(state.listeners, &GenServer.cast(&1, {:camera_frame, frame}))
+        Outputs.publish(state.output, {:camera_frame, frame})
         {:noreply, %{state | frame_count: state.frame_count + 1}}
 
       :error ->

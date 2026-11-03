@@ -2,7 +2,13 @@ defmodule VisionCore.Stereo.PairerTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.Pairer
+
+  # Names the cameras, which need not be running.
+  defmodule Camera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+  end
 
   defp frame(label, capture_time_ms),
     do: %Frame{
@@ -26,6 +32,20 @@ defmodule VisionCore.Stereo.PairerTest do
 
   defp capture_ms({:ok, left, right, _delta}),
     do: {div(left.capture_ns, 1_000_000), div(right.capture_ns, 1_000_000)}
+
+  test "pairs the frames its cameras publish and submits them to its pipeline" do
+    start_supervised!({Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()})
+
+    for label <- ["left", "right"],
+        do:
+          Outputs.publish(
+            {:camera_frame, Camera.name_for(label)},
+            {:camera_frame, frame(label, 33)}
+          )
+
+    assert_receive {:"$gen_cast",
+                    {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
+  end
 
   test "nothing to pair until both sides have a frame" do
     assert Pairer.ready_pair(state([0], [], 5)) == :not_ready

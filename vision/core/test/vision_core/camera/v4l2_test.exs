@@ -4,7 +4,7 @@ defmodule VisionCore.Camera.V4L2Test do
   import ExUnit.CaptureLog
 
   alias VisionCore.Camera.{Frame, V4L2}
-  alias VisionCore.Timing
+  alias VisionCore.{Outputs, Timing}
 
   defp eventually(check, attempts \\ 100) do
     cond do
@@ -138,6 +138,9 @@ defmodule VisionCore.Camera.V4L2Test do
     File.write!(script, "#!/bin/sh\nsleep 0.3\ncat #{records}\n")
     File.chmod!(script, 0o755)
 
+    for label <- ["left", "right"],
+        do: :ok = Outputs.subscribe({:camera_frame, V4L2.name_for(label)})
+
     start_supervised!(Supervisor.child_spec({V4L2, label: "right"}, id: :right))
 
     left =
@@ -150,8 +153,6 @@ defmodule VisionCore.Camera.V4L2Test do
       )
 
     ref = Process.monitor(left)
-    V4L2.register_listener(V4L2.name_for("left"), self())
-    V4L2.register_listener(V4L2.name_for("right"), self())
 
     assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", grey: <<1, 2>>}}}, 2_000
     assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "right", grey: <<3, 4>>}}}, 2_000

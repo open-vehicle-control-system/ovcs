@@ -5,6 +5,7 @@ defmodule VisionCore.Ros2.Publishers.DetectionsTest do
   alias Ros2Zenoh.VisionMsgs.Msg.Detection3DArray
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Publishers.Detections
   alias VisionCore.Stereo.Pair
 
@@ -55,7 +56,11 @@ defmodule VisionCore.Ros2.Publishers.DetectionsTest do
   end
 
   defp publish(detections) do
-    GenServer.cast(Detections, {:detections, pair(), detections})
+    Outputs.publish(
+      {:detections, VisionCore.Detection.Pipeline},
+      {:detections, pair(), detections}
+    )
+
     assert_receive {:published, "stereo/detections/markers", %MarkerArray{markers: markers}}
     assert_receive {:published, "stereo/detections", %Detection3DArray{} = array}
     assert_receive {:published, "stereo/left/detections", %ImageAnnotations{} = overlay}

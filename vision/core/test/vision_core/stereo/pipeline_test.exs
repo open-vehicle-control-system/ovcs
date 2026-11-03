@@ -4,6 +4,7 @@ defmodule VisionCore.Stereo.PipelineTest do
   import VisionCore.Stereo.TestHelpers,
     only: [calibration_path: 2, stereo_match_path: 0, texture: 3]
 
+  alias VisionCore.Outputs
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline}
   alias VisionCore.Stereo.Stage
 
@@ -126,7 +127,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     def step(tensors, _params, _state), do: tensors
   end
 
-  # A CPU stage that claims what the listeners consume, after FrameTag.
+  # A CPU stage that claims what the subscribers consume, after FrameTag.
   defmodule FillAll do
     @behaviour VisionCore.Stereo.Stage
 
@@ -255,16 +256,22 @@ defmodule VisionCore.Stereo.PipelineTest do
       if opts[:backends], do: opts, else: Keyword.put_new(opts, :defn_options, compiler: EXLA)
 
     Pipeline.start_link(
-      [
-        name: :pipeline_test,
-        stages: stages,
-        left_calibration_path: calibration_path(:stereo, :left),
-        right_calibration_path: calibration_path(:stereo, :right),
-        width: 64,
-        height: 48
-      ] ++ opts
+      Keyword.merge(
+        [
+          name: :pipeline_test,
+          stages: stages,
+          left_calibration_path: calibration_path(:stereo, :left),
+          right_calibration_path: calibration_path(:stereo, :right),
+          width: 64,
+          height: 48
+        ],
+        opts
+      )
     )
   end
+
+  # The pairs of the pipeline `start/2` starts, under any later restart too.
+  defp subscribe_to_pairs, do: :ok = Outputs.subscribe({:stereo_pair, :pipeline_test})
 
   defp segment_modules(pipeline),
     do: Enum.map(Pipeline.segments(pipeline), &{&1.name, &1.module})
@@ -282,6 +289,20 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   test "starts with the default stages" do
     assert {:ok, _pipeline} = start(Pipeline.default_stages())
+  end
+
+  test "publishes its pairs under its name, apart from another pipeline's" do
+    {:ok, pipeline} = start([FillAll])
+    {:ok, other} = start([FillAll], name: :other_pipeline)
+    subscribe_to_pairs()
+    [left, right] = textured_pair(1)
+
+    Pipeline.submit(other, left, right)
+    assert_receive :stereo_pipeline_ready, 5_000
+    refute_received {:"$gen_cast", {:stereo_pair, _pair}}
+
+    Pipeline.submit(pipeline, left, right)
+    assert_receive {:"$gen_cast", {:stereo_pair, %Pair{left_frame: %{capture_ns: 1}}}}, 5_000
   end
 
   test "refuses a stage whose inputs no stage before it provides" do
@@ -481,7 +502,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert %{compute: %{runs_on: :cpu, implementation: :nx, backend: :evaluator}} =
              Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :tag))
 
-    Pipeline.register_listener(pipeline, self())
+    subscribe_to_pairs()
     assert [%Pair{disparity: %Nx.Tensor{}}] = submit_when_ready(pipeline, [textured_pair(23)])
   end
 
@@ -723,7 +744,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "is ready for the next pair before it publishes the previous one" do
       {:ok, pipeline} = start(Pipeline.default_stages())
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
 
       [left, right] = textured_pair(1)
       Pipeline.submit(pipeline, left, right)
@@ -747,7 +768,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "publishes the last pair when no other follows" do
       {:ok, pipeline} = start(Pipeline.default_stages())
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
 
       [left, right] = textured_pair(3)
       Pipeline.submit(pipeline, left, right)
@@ -764,7 +785,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       {:ok, pipeline} =
         start(Pipeline.default_stages(disparity: [paths: 3]) ++ [SlowFinish], flush_after_ms: 0)
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       submit_when_ready(pipeline, [textured_pair(40)])
 
       start_ms = System.monotonic_time(:millisecond)
@@ -778,7 +799,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       {:ok, pipeline} =
         start(Pipeline.default_stages(disparity: [paths: 3]), flush_after_ms: 5_000)
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       submit_when_ready(pipeline, [textured_pair(50)])
 
       [left, right] = textured_pair(51)
@@ -829,12 +850,11 @@ defmodule VisionCore.Stereo.PipelineTest do
     frames = Enum.map(10..13, &textured_pair/1)
 
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
+    subscribe_to_pairs()
     one_at_a_time = Enum.flat_map(frames, &submit_when_ready(pipeline, [&1]))
     GenServer.stop(pipeline)
 
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
     overlapped = submit_when_ready(pipeline, frames)
 
     assert Enum.map(overlapped, & &1.left_frame.capture_ns) == Enum.to_list(10..13)
@@ -851,12 +871,11 @@ defmodule VisionCore.Stereo.PipelineTest do
     frames = Enum.map(30..(30 + count - 1), &textured_pair/1)
 
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
+    subscribe_to_pairs()
     one_at_a_time = Enum.flat_map(frames, &submit_when_ready(pipeline, [&1]))
     GenServer.stop(pipeline)
 
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
     for [left, right] <- frames, do: Pipeline.submit(pipeline, left, right)
 
     early =
@@ -872,7 +891,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   defp assert_refused_pair_skipped(opts) do
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
+    subscribe_to_pairs()
     [left, right] = textured_pair(20)
     small = %{left | width: 32, height: 48, grey: binary_part(left.grey, 0, 32 * 48)}
 
@@ -890,7 +909,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   defp assert_timed(names, opts) do
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
-    Pipeline.register_listener(pipeline, self())
+    subscribe_to_pairs()
     submit_when_ready(pipeline, [textured_pair(21)])
     timed = Map.keys(:sys.get_state(pipeline).timer.stages)
 
@@ -937,7 +956,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "produces a disparity and depth" do
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [matcher: :native, paths: 3]))
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
 
       pair = receive_pair(pipeline, textured_pair(5))
 
@@ -951,7 +970,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     test "applies a live p1 change from the next pair, as NxStereo.sgm/3 would" do
       stages = [Stage.Rectification, {Stage.Disparity, matcher: :native, paths: 3}, Stage.Depth]
       {:ok, pipeline} = start(stages)
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       frames = textured_pair(6)
       first = receive_pair(pipeline, frames)
 
@@ -1022,13 +1041,13 @@ defmodule VisionCore.Stereo.PipelineTest do
                :"rectification+sharpness+disparity+median_filter+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       assert byte_size(receive_pair(pipeline, textured_pair(6)).depth) == 48 * 64 * 2
     end
 
-    test "fills every field the listeners read" do
+    test "fills every field the subscribers read" do
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
 
       pair = receive_pair(pipeline, textured_pair(7))
 
@@ -1062,7 +1081,7 @@ defmodule VisionCore.Stereo.PipelineTest do
                :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+vehicle_depth+point_cloud+quality"
              ]
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
     end
 
@@ -1083,7 +1102,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert segment_modules(pipeline) == [{:decode, NxSegment}, {native, NativeSegment}]
       assert log =~ "stages: decode (cpu, nx, exla) → #{native} (cpu, rust))"
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
     end
 
@@ -1097,7 +1116,7 @@ defmodule VisionCore.Stereo.PipelineTest do
                :"speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
              ]
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
     end
 
@@ -1117,7 +1136,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     test "applies a live setting from the next pair, and keeps it across a calibration reload" do
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       frames = textured_pair(9)
       first = receive_pair(pipeline, frames)
 
@@ -1141,12 +1160,11 @@ defmodule VisionCore.Stereo.PipelineTest do
       frames = Enum.map(10..13, &textured_pair/1)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       one_at_a_time = Enum.map(frames, &receive_pair(pipeline, &1))
       GenServer.stop(pipeline)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
-      Pipeline.register_listener(pipeline, self())
       [[left, right] | later] = frames
       Pipeline.submit(pipeline, left, right)
       assert_receive :stereo_pipeline_ready, 1_000
@@ -1200,7 +1218,7 @@ defmodule VisionCore.Stereo.PipelineTest do
           flush_after_ms: 60_000
         )
 
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       [left, right] = textured_pair(22)
       Pipeline.submit(pipeline, left, right)
       assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 22}}}}, 10_000
@@ -1312,7 +1330,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       silent_port(dir)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
-      Pipeline.register_listener(pipeline, self())
+      subscribe_to_pairs()
       [[left, right], [next_left, next_right], last] = Enum.map(14..16, &textured_pair/1)
 
       Pipeline.submit(pipeline, left, right)

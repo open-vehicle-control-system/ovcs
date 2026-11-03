@@ -52,7 +52,8 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
 
   ## Optional options
 
-    * `:pipeline` (`VisionCore.Stereo.Pipeline`) — the pipeline server.
+    * `:pipeline` (`VisionCore.Stereo.Pipeline`) — the name of the
+      pipeline whose pairs it publishes.
     * `:camera_info_interval_frames` — republish CameraInfo every
       Nth frame. Default 30.
     * `:publish_raw_images` (`true`) — republish each camera frame on
@@ -73,6 +74,7 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
   require Logger
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
   alias VisionCore.Stereo.{Pair, Pipeline, StageTimer}
 
@@ -127,9 +129,9 @@ defmodule VisionCore.Ros2.Publishers.Stereo do
     {left_driver, "left"} = locate_side(cameras, "left")
     {right_driver, "right"} = locate_side(cameras, "right")
 
-    Pipeline.register_listener(pipeline, self())
-    left_driver.register_listener(left_driver.name_for("left"), self())
-    right_driver.register_listener(right_driver.name_for("right"), self())
+    :ok = Outputs.subscribe({:stereo_pair, pipeline})
+    :ok = Outputs.subscribe({:camera_frame, left_driver.name_for("left")})
+    :ok = Outputs.subscribe({:camera_frame, right_driver.name_for("right")})
 
     Logger.info(
       "#{__MODULE__} publishing #{inspect(left_driver)}[left], " <>

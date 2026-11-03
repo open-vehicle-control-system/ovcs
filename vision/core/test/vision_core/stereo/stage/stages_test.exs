@@ -16,6 +16,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     ]
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.{Pair, Pipeline, Stage}
 
@@ -388,7 +389,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
           defn_options: [compiler: EXLA]
         )
 
-      Pipeline.register_listener(pipeline, self())
+      :ok = Outputs.subscribe({:stereo_pair, name})
       pipeline
     end
 

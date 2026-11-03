@@ -18,11 +18,13 @@ defmodule VisionCore.ApplicationTest do
     def config(_arm), do: Application.fetch_env!(:vision_core, :test_config)
   end
 
-  # The pipeline's Storage owns VisionCore.Repo here, on an empty store; test_helper's Repo is back after.
+  # The pipeline's Storage owns VisionCore.Repo here, on an empty store, and the pipeline starts
+  # its own VisionCore.Outputs; test_helper's are back after.
   setup do
     Application.stop(:vision_core)
     Repo.delete_all(SavedValue)
     :ok = Supervisor.stop(Repo)
+    :ok = Supervisor.stop(VisionCore.Outputs)
 
     on_exit(fn ->
       Application.stop(:vision_core)
@@ -31,6 +33,8 @@ defmodule VisionCore.ApplicationTest do
       Application.ensure_all_started(:vision_core)
       {:ok, pid} = Repo.start_link()
       Process.unlink(pid)
+      {:ok, outputs} = VisionCore.Outputs.start_link()
+      Process.unlink(outputs)
     end)
   end
 
@@ -62,14 +66,15 @@ defmodule VisionCore.ApplicationTest do
     assert Enum.take(ids, 2) == [VisionCore.Preview, VisionCore.Status]
   end
 
-  test "the core starts the parameter storage and registry first, before the components" do
+  test "the core starts the parameter storage and registry first, then the outputs registry, before the components" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 6) == [
+    assert Enum.take(ids, 7) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
+             VisionCore.Outputs,
              VisionCore.Ros2.ZenohClient,
              VisionCore.Ros2.Parameters,
              VisionCore.Jpeg,
@@ -226,14 +231,13 @@ defmodule VisionCore.ApplicationTest do
       ]
     })
 
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
     stereo = VisionCore.Stereo.Supervisor
     first_driver = child_pid(stereo, {:stereo, :driver, :left})
-    LibCamera.register_listener(first_driver, self())
     assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
 
     second_driver = wait_for_new_driver(stereo, first_driver)
     refute second_driver == first_driver
-    LibCamera.register_listener(second_driver, self())
     assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
   end
 
