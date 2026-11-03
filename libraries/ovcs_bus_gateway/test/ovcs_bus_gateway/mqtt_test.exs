@@ -57,6 +57,19 @@ defmodule OvcsBusGateway.MqttTest do
   defp up(pid), do: send(pid, {{Tortoise311, client_id()}, :status, :up})
   defp down(pid), do: send(pid, {{Tortoise311, client_id()}, :status, :down})
 
+  test "reports its connection: down until the broker answers, up after, nil when not running" do
+    assert Mqtt.connection() == nil
+
+    pid = start_mqtt(connect: idle_connection(self()), publish: fn _, _, _, _ -> :ok end)
+    assert Mqtt.connection() == :down
+
+    up(pid)
+    assert Mqtt.connection() == :up
+
+    down(pid)
+    assert Mqtt.connection() == :down
+  end
+
   test "publishes each envelope retained as JSON without waiting" do
     test_pid = self()
 

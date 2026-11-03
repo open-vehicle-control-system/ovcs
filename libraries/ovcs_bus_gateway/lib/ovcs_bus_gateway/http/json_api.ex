@@ -26,7 +26,40 @@ defmodule OvcsBusGateway.Http.JsonApi do
     |> send_resp(status, Jason.encode!(%{errors: [error]}))
   end
 
-  @doc "A resource object."
-  @spec resource(String.t(), String.t(), map()) :: map()
-  def resource(type, id, attributes), do: %{type: type, id: id, attributes: attributes}
+  @doc """
+  Answers a 400 naming the first of `conn`'s query parameters that `allowed` does not list, or
+  returns `:ok` when there is none.
+  """
+  @spec check_parameters(Plug.Conn.t(), [String.t()]) :: :ok | Plug.Conn.t()
+  def check_parameters(conn, allowed) do
+    case conn.query_params |> Map.keys() |> Enum.sort() |> Enum.reject(&(&1 in allowed)) do
+      [] -> :ok
+      [parameter | _others] -> unsupported_parameter(conn, parameter)
+    end
+  end
+
+  @doc "Answers a 400 naming `parameter`, a query parameter the route does not take."
+  @spec unsupported_parameter(Plug.Conn.t(), String.t()) :: Plug.Conn.t()
+  def unsupported_parameter(conn, parameter) do
+    detail = "unsupported query parameter #{parameter}"
+    error(conn, 400, "Bad Request", detail, %{parameter: parameter})
+  end
+
+  @doc "A resource object, without `relationships` when it has none."
+  @spec resource(String.t(), String.t(), map(), map()) :: map()
+  def resource(type, id, attributes, relationships \\ %{})
+
+  def resource(type, id, attributes, relationships) when relationships == %{},
+    do: %{type: type, id: id, attributes: attributes}
+
+  def resource(type, id, attributes, relationships),
+    do: %{type: type, id: id, attributes: attributes, relationships: relationships}
+
+  @doc "A to-one relationship."
+  @spec to_one(String.t(), String.t()) :: map()
+  def to_one(type, id), do: %{data: %{type: type, id: id}}
+
+  @doc "A to-many relationship."
+  @spec to_many(String.t(), [String.t()]) :: map()
+  def to_many(type, ids), do: %{data: Enum.map(ids, &%{type: type, id: &1})}
 end

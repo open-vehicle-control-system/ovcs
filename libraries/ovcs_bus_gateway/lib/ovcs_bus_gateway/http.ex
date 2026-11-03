@@ -19,6 +19,10 @@ defmodule OvcsBusGateway.Http do
 
   @default_port 4100
 
+  @doc "The port the endpoint listens on when its options name none."
+  @spec default_port() :: pos_integer()
+  def default_port, do: @default_port
+
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(opts) do
     endpoint_config = [

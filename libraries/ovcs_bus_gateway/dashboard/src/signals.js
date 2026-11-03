@@ -1,9 +1,5 @@
 export const keyOf = ({ node, source, name }) => `${node}/${source}/${name}`
 
-// The collector's per-node presence signal, shown as the node's status rather than as a row.
-export const PRESENCE_SOURCE = 'OvcsBusGateway.Collector'
-export const isPresence = (signal) => signal.source === PRESENCE_SOURCE && signal.name === 'connected'
-
 // A signal from a forwarder that does not report publish times has a null `publishedAt`.
 const publishedAt = (signal) => signal.publishedAt ?? signal.changedAt
 
@@ -46,7 +42,11 @@ export const staleCount = (node) =>
 
 const byName = (field) => (a, b) => (a[field] < b[field] ? -1 : a[field] > b[field] ? 1 : 0)
 
-export function groupTree(state, filterText) {
+/**
+ * The nodes of `presence`, the `status` channel's, and of the signals in `state`, each with its
+ * signals by source; a node is kept when the filter matches its name or one of its signals.
+ */
+export function groupTree(state, filterText, presence = []) {
   const needle = filterText.trim().toLowerCase()
   const matches = (signal) => !needle || keyOf(signal).toLowerCase().includes(needle)
   const nodes = new Map()
@@ -55,15 +55,14 @@ export function groupTree(state, filterText) {
     return nodes.get(name)
   }
 
+  for (const { id, connected } of presence) {
+    const node = nodeOf(id)
+    node.connected = connected
+    node.shown ||= !needle || id.toLowerCase().includes(needle)
+  }
+
   for (const signal of state.values()) {
     const node = nodeOf(signal.node)
-
-    if (isPresence(signal)) {
-      node.connected = signal.value === true
-      node.shown ||= matches(signal)
-      continue
-    }
-
     node.lastChange = Math.max(node.lastChange ?? 0, signal.changedAt)
     if (!matches(signal)) continue
     node.shown = true

@@ -21,7 +21,7 @@ The collector turns each batch into `OvcsBusGateway.Envelope`s, stores the lates
 
 Each envelope carries two times: `changedAt`, the last change of the value, and `publishedAt`, the last time the component published it. A signal that holds its value is refreshed while its component keeps publishing, so `publishedAt` advances about once a second. The gateway decides staleness: once a second it sets `stale: true` on every signal it has not received for 3 seconds and sends that envelope out again, and the next envelope it receives for the signal clears it to `stale: false`. A component that publishes a signal less often than every few seconds shows it as stale between publications.
 
-To tell a quiet node from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. It goes through the cache and every adapter like any other signal. It is not refreshed, since it is sent only when the collector starts a forwarder on the node or loses the node, so the stale rule does not apply to it: it carries `stale: null`.
+To tell a quiet node from a node that is gone, the collector also publishes each node's presence as a signal of its own: source `OvcsBusGateway.Collector`, name `connected`, `node` the node's role, `true` when it starts a forwarder on the node, `false` when the node leaves the mesh. MQTT publishes it like any other signal; the HTTP API serves it as the node's `connected`, in [`/api/nodes` and on the `status` channel](#nodes-adapters-and-configuration), and leaves it out of the signals. It is not refreshed, since it is sent only when the collector starts a forwarder on the node or loses the node, so the stale rule does not apply to it: it carries `stale: null`.
 
 Nothing safety-relevant depends on the gateway. It only reads the bus. The gateway's subtree is a temporary child with its own restart limit (10 restarts in 60 seconds). A gateway that cannot start, for example because the HTTP port is already taken, or that keeps crashing stops alone with an error in the log, and the rest of the firmware keeps running.
 
@@ -134,11 +134,17 @@ With `:http` set, the gateway runs a Phoenix endpoint, `OvcsBusGateway.Http.Endp
 |---|---|
 | `GET /api/signals` | every signal, as a `signals` resource; 400 for a query parameter other than the filters below |
 | `GET /api/signals/:node/:source/:name` | one signal; 404 when unknown |
-| `/sockets/dashboard` | the Phoenix socket, with the `signals` channel |
+| `GET /api/nodes` | every node on the bus, as a `nodes` resource, its signals in `included` with `include=signals`; 400 for any other include |
+| `GET /api/nodes/:id` | one node, by role; 404 when unknown |
+| `GET /api/adapters` | MQTT, then HTTP, each with its status |
+| `GET /api/configuration` | the gateway's configuration |
+| `/sockets/dashboard` | the Phoenix socket, with the `signals` and `status` channels |
+
+The other routes take no query parameter: one answers a 400.
 
 ### Requests and errors
 
-Every answer under `/api` is `application/vnd.api+json`. A signal's `id` is `<node>/<source>/<name>`, which is also its path under `/api/signals`, and its attributes are its [envelope](#envelope):
+Every answer under `/api` is `application/vnd.api+json`. A signal's `id` is `<node>/<source>/<name>`, which is also its path under `/api/signals`, its attributes are its [envelope](#envelope), and it relates to its node:
 
 ```json
 {
@@ -154,10 +160,13 @@ Every answer under `/api` is `application/vnd.api+json`. A signal's `id` is `<no
       "changedAt": 1761565200123,
       "publishedAt": 1761565204310,
       "stale": false
-    }
+    },
+    "relationships": {"node": {"data": {"type": "nodes", "id": "vms"}}}
   }
 }
 ```
+
+A node's presence is not a signal here: it is the node's `connected`, below.
 
 `GET /api/signals` takes `filter[node]`, `filter[source]` and `filter[name]`; a missing or empty one matches everything. `-g` keeps curl from reading the brackets as a pattern:
 
@@ -180,9 +189,82 @@ A refusal is an `errors` list holding one error object. A query parameter the ga
 }
 ```
 
+### Nodes, adapters and configuration
+
+`GET /api/nodes` lists the nodes the gateway has seen. `connected` is the node's presence, `null` until the gateway has seen it; `lastChangeAt` is when one of its values last changed, `null` for a node without signals. On the OVCS Mini reference vehicle, a bridge reports only its presence:
+
+```json
+{
+  "data": [
+    {
+      "type": "nodes",
+      "id": "bridge-ros",
+      "attributes": {"name": "bridge-ros", "connected": true, "signalCount": 0, "staleCount": 0, "lastChangeAt": null},
+      "relationships": {"signals": {"data": []}}
+    },
+    {
+      "type": "nodes",
+      "id": "vms",
+      "attributes": {"name": "vms", "connected": true, "signalCount": 45, "staleCount": 0, "lastChangeAt": 1793743037758},
+      "relationships": {
+        "signals": {"data": [{"type": "signals", "id": "vms/OvcsMini.Vms/vms_status"}]}
+      }
+    }
+  ]
+}
+```
+
+`GET /api/adapters` lists the gateway's two ways out, MQTT and HTTP, with the same status as the vision unit's exporters: `level` is `ok`, `warning` or `off`, and `detail` says why. MQTT is in `warning` while it is configured but not connected, and `off` without a broker; HTTP has its `port` and its `clients`, the `signals` channels joined:
+
+```json
+{
+  "data": [
+    {
+      "type": "adapters",
+      "id": "mqtt",
+      "attributes": {
+        "name": "MQTT",
+        "module": "OvcsBusGateway.Mqtt",
+        "status": {"level": "ok", "detail": "Connected to 127.0.0.1:1883"},
+        "broker": "127.0.0.1:1883",
+        "clientId": "ovcs_bus_gateway_ovcs_mini_ros_host",
+        "topic": "ovcs/<node>/<source>/<name>"
+      }
+    },
+    {
+      "type": "adapters",
+      "id": "http",
+      "attributes": {
+        "name": "HTTP",
+        "module": "OvcsBusGateway.Http",
+        "status": {"level": "ok", "detail": "Answering on port 4100"},
+        "port": 4100,
+        "clients": 1
+      }
+    }
+  ]
+}
+```
+
+`GET /api/configuration` returns what your vehicle starts the gateway with: the vehicle, the MQTT client id, and `config`, keyed by `OvcsBusGateway.Config`'s field names, as the vision unit's configuration keeps its composer's:
+
+```json
+{
+  "data": {
+    "type": "configurations",
+    "id": "current",
+    "attributes": {
+      "vehicle": "OvcsMini",
+      "mqttClientId": "ovcs_bus_gateway_ovcs_mini_ros_host",
+      "config": {"mqtt": {"host": "127.0.0.1", "port": 1883}, "http": {"port": 4100}, "forward_interval": 20}
+    }
+  }
+}
+```
+
 ### Live channels
 
-The `signals` channel of the `/sockets/dashboard` socket streams the envelopes. Its join parameters are the filter, `node`, `source` and `name`, each optional, a missing or empty one matching everything. After the join the channel pushes:
+The `signals` channel of the `/sockets/dashboard` socket streams the envelopes, without the nodes' presence. Its join parameters are the filter, `node`, `source` and `name`, each optional, a missing or empty one matching everything. After the join the channel pushes:
 
 | Event | Payload |
 |---|---|
@@ -206,9 +288,21 @@ channel.join()
 
 The first `update` events may repeat envelopes of the snapshot or carry older ones: compare `publishedAt` (or `changedAt` when `publishedAt` is `null`) and keep the newer. A signal turning stale arrives in an `update` with `stale: true`. A client that cannot speak Phoenix Channels subscribes to the broker instead: MQTT is the protocol-neutral way out of the gateway.
 
+The `status` channel pushes a `status` event after the join, then again whenever a node or an adapter changes, checked once a second. A node is its `id`, `name`, `connected`, `signalCount` and `staleCount`; an adapter its `id` and its attributes in `/api/adapters`:
+
+```json
+{
+  "nodes": [{"id": "vms", "name": "vms", "connected": true, "signalCount": 45, "staleCount": 0}],
+  "adapters": [
+    {"id": "mqtt", "name": "MQTT", "module": "OvcsBusGateway.Mqtt", "status": {"level": "ok", "detail": "Connected to 127.0.0.1:1883"}, "broker": "127.0.0.1:1883", "clientId": "ovcs_bus_gateway_ovcs_mini_ros_host", "topic": "ovcs/<node>/<source>/<name>"},
+    {"id": "http", "name": "HTTP", "module": "OvcsBusGateway.Http", "status": {"level": "ok", "detail": "Answering on port 4100"}, "port": 4100, "clients": 1}
+  ]
+}
+```
+
 ## Dashboard
 
-`libraries/ovcs_bus_gateway/dashboard/` is a React app fed by the `signals` channel. It draws the bus with every node plugged into it: a node's link pulses while it publishes and turns red and dashed when the node drops off. Under the bus, a table lists every signal by node and source; selecting a node, from the bus or the menu, narrows it to that node, with one tab per component. The selection stays in the URL, and a filter box in the top bar narrows the tables. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
+`libraries/ovcs_bus_gateway/dashboard/` is a React app fed by the `signals` and `status` channels. It draws the bus with every node plugged into it: a node's link pulses while it publishes and turns red and dashed when the node drops off. Under the bus, a table lists every signal by node and source; selecting a node, from the bus or the menu, narrows it to that node, with one tab per component. The menu also lists the adapters, each with its status and a page saying what it is set up with. The selection stays in the URL, and a filter box in the top bar narrows the tables. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
 
 Its page frame (top bar, menu, theme switch), components, design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_ui/README.md), shared with the vision dashboard.
 

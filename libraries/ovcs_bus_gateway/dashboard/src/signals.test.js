@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applyFrame, groupTree, nodeStatus, PRESENCE_SOURCE, shortNames, signalCount, splitSource, staleCount } from './signals'
+import { applyFrame, groupTree, nodeStatus, shortNames, signalCount, splitSource, staleCount } from './signals'
 
 describe('nodeStatus and signalCount', () => {
   test('label the presence and count the signals of a node', () => {
@@ -87,15 +87,11 @@ describe('groupTree', () => {
     ])
   })
 
-  test('turns the presence signal into the node status and keeps it out of the sources', () => {
-    const tree = groupTree(
-      stateOf([
-        sig('vms', PRESENCE_SOURCE, 'connected', true, 900),
-        sig('vms', 'A', 'speed', 1, 1500),
-        sig('bridge', PRESENCE_SOURCE, 'connected', false, 800)
-      ]),
-      ''
-    )
+  test("takes each node's presence from the status channel, a node without signals included", () => {
+    const tree = groupTree(stateOf([sig('vms', 'A', 'speed', 1, 1500)]), '', [
+      { id: 'vms', connected: true },
+      { id: 'bridge', connected: false }
+    ])
     expect(tree.map(({ node, connected, lastChange }) => ({ node, connected, lastChange }))).toEqual([
       { node: 'bridge', connected: false, lastChange: null },
       { node: 'vms', connected: true, lastChange: 1500 }
@@ -104,12 +100,12 @@ describe('groupTree', () => {
     expect(tree[0].sources).toEqual([])
   })
 
-  test('a node without a presence signal has an unknown status', () => {
+  test('a node the status channel does not list has an unknown status', () => {
     expect(groupTree(stateOf([sig('vms', 'A', 'speed', 1)]), '')[0].connected).toBeNull()
   })
 
   test('keeps a node whose only match is its name, so its status stays visible', () => {
-    const tree = groupTree(stateOf([sig('bridge', PRESENCE_SOURCE, 'connected', true)]), 'bridge')
+    const tree = groupTree(stateOf([]), 'bridge', [{ id: 'bridge', connected: true }, { id: 'vms', connected: true }])
     expect(tree.map((n) => n.node)).toEqual(['bridge'])
   })
 

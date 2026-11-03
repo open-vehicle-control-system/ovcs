@@ -58,7 +58,8 @@ const sig = (value, changedAt = 1000) => ({
 })
 
 const socket = () => phoenix.sockets.at(-1)
-const channel = () => socket().channels.at(-1)
+const channelsOf = (topic) => socket().channels.filter((entry) => entry.topic === topic)
+const channel = (topic = 'signals') => channelsOf(topic).at(-1)
 
 describe('useBusSocket', () => {
   beforeEach(() => {
@@ -99,19 +100,31 @@ describe('useBusSocket', () => {
   test('joins again a second after the gateway stops the channel', () => {
     renderHook(() => useBusSocket())
     act(() => channel().handlers.close())
-    expect(socket().channels).toHaveLength(1)
+    expect(channelsOf('signals')).toHaveLength(1)
     act(() => vi.advanceTimersByTime(1000))
-    expect(socket().channels).toHaveLength(2)
+    expect(channelsOf('signals')).toHaveLength(2)
     expect(channel().joined).toBe(true)
   })
 
-  test('leaves the channel and disconnects on unmount, without joining again', () => {
+  test('leaves both channels and disconnects on unmount, without joining again', () => {
     const { unmount } = renderHook(() => useBusSocket())
-    const joined = channel()
+    const joined = [channel(), channel('status')]
     unmount()
-    expect(joined.left).toBe(true)
+    expect(joined.map((entry) => entry.left)).toEqual([true, true])
     expect(socket().disconnect).toHaveBeenCalled()
     vi.advanceTimersByTime(5000)
-    expect(socket().channels).toHaveLength(1)
+    expect(channelsOf('signals')).toHaveLength(1)
+  })
+
+  test("follows the nodes and the adapters on the status channel", () => {
+    const { result } = renderHook(() => useBusSocket())
+    expect(channel('status').joined).toBe(true)
+    expect(result.current.nodes).toEqual([])
+    expect(result.current.adapters).toBeNull()
+
+    const adapters = [{ id: 'mqtt', name: 'MQTT', status: { level: 'ok', detail: 'Connected' } }]
+    act(() => channel('status').handlers.status({ nodes: [{ id: 'vms', connected: true }], adapters }))
+    expect(result.current.nodes).toEqual([{ id: 'vms', connected: true }])
+    expect(result.current.adapters).toEqual(adapters)
   })
 })

@@ -1,8 +1,8 @@
 defmodule OvcsBusGateway.Http.SignalsController do
   @moduledoc """
-  The `signals` resources over `OvcsBusGateway.Cache`, following JSON:API. A signal's id is
-  `<node>/<source>/<name>` and its attributes are its envelope's JSON,
-  `OvcsBusGateway.Envelope.to_json/1`.
+  The `signals` resources over `OvcsBusGateway.Cache`, following JSON:API (`OvcsBusGateway.Http.Json.signal/1`):
+  every signal of the bus except the nodes' presence, which `OvcsBusGateway.Http.NodesController`
+  serves as each node's `connected`.
 
   `index` takes `filter[node]`, `filter[source]` and `filter[name]`, an empty one matching
   everything, and answers a 400 naming any other query parameter; `show` answers a 404 for an
@@ -11,8 +11,8 @@ defmodule OvcsBusGateway.Http.SignalsController do
 
   use Phoenix.Controller, formats: [:json]
 
-  alias OvcsBusGateway.{Cache, Envelope}
-  alias OvcsBusGateway.Http.JsonApi
+  alias OvcsBusGateway.{Cache, Collector}
+  alias OvcsBusGateway.Http.{Json, JsonApi}
 
   @filters %{"node" => :node, "source" => :source, "name" => :name}
 
@@ -20,27 +20,31 @@ defmodule OvcsBusGateway.Http.SignalsController do
   def index(conn, _params) do
     case filter(conn.query_params) do
       {:ok, filter} ->
-        json(conn, %{data: Enum.map(Cache.select(filter), &resource/1)})
+        signals = filter |> Cache.select() |> Enum.reject(&Collector.presence?/1)
+        json(conn, %{data: Enum.map(signals, &Json.signal/1)})
 
       {:error, parameter} ->
-        detail = "unsupported query parameter #{parameter}"
-        JsonApi.error(conn, 400, "Bad Request", detail, %{parameter: parameter})
+        JsonApi.unsupported_parameter(conn, parameter)
     end
   end
 
   @spec show(Plug.Conn.t(), map()) :: Plug.Conn.t()
   def show(conn, %{"node" => node, "source" => source, "name" => name}) do
-    case Cache.fetch({node, source, name}) do
-      {:ok, envelope} -> json(conn, %{data: resource(envelope)})
-      :error -> JsonApi.error(conn, 404, "Not Found", "no signal #{id({node, source, name})}")
+    with :ok <- JsonApi.check_parameters(conn, []),
+         {:ok, envelope} <- fetch_signal({node, source, name}) do
+      json(conn, %{data: Json.signal(envelope)})
+    else
+      :error -> JsonApi.error(conn, 404, "Not Found", "no signal #{node}/#{source}/#{name}")
+      %Plug.Conn{} = refused -> refused
     end
   end
 
-  defp resource(envelope) do
-    JsonApi.resource("signals", id(Envelope.key(envelope)), Envelope.to_json(envelope))
+  defp fetch_signal(key) do
+    case Cache.fetch(key) do
+      {:ok, envelope} -> if Collector.presence?(envelope), do: :error, else: {:ok, envelope}
+      :error -> :error
+    end
   end
-
-  defp id({node, source, name}), do: Enum.join([node, source, name], "/")
 
   defp filter(params) do
     case Map.pop(params, "filter", %{}) do

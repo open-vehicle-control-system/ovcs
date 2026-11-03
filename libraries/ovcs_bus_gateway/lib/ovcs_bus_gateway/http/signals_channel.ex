@@ -1,7 +1,8 @@
 defmodule OvcsBusGateway.Http.SignalsChannel do
   @moduledoc """
   The `signals` channel: streams the envelopes matching the filter given as join params
-  (`node`, `source`, `name`, each optional; a missing or empty one matches everything).
+  (`node`, `source`, `name`, each optional; a missing or empty one matches everything), without
+  the nodes' presence, which the `status` channel carries.
 
   After the join it pushes `snapshot` with `%{signals: [...]}`, the cached envelopes, then
   `update` with the matching envelopes of each dispatched batch, nothing for a batch without
@@ -11,14 +12,14 @@ defmodule OvcsBusGateway.Http.SignalsChannel do
 
   use Phoenix.Channel
 
-  alias OvcsBusGateway.{Cache, Http, Subscribers}
+  alias OvcsBusGateway.{Cache, Collector, Http, Subscribers}
 
   @max_queue 1000
 
   @impl Phoenix.Channel
   def join("signals", params, socket) do
     # Subscribing before the snapshot is read loses nothing in between.
-    :ok = Subscribers.subscribe()
+    :ok = Subscribers.subscribe(:signals_channel)
     send(self(), :push_snapshot)
 
     {:ok, assign(socket, filter: Http.filter(params), snapshot_pushed?: false)}
@@ -26,7 +27,8 @@ defmodule OvcsBusGateway.Http.SignalsChannel do
 
   @impl Phoenix.Channel
   def handle_info(:push_snapshot, socket) do
-    push(socket, "snapshot", %{signals: Cache.select(socket.assigns.filter)})
+    signals = socket.assigns.filter |> Cache.select() |> Enum.reject(&Collector.presence?/1)
+    push(socket, "snapshot", %{signals: signals})
     {:noreply, assign(socket, :snapshot_pushed?, true)}
   end
 
@@ -62,6 +64,7 @@ defmodule OvcsBusGateway.Http.SignalsChannel do
   end
 
   defp matches?(envelope, filter) do
-    Enum.all?(filter, fn {field, value} -> Map.fetch!(envelope, field) == value end)
+    not Collector.presence?(envelope) and
+      Enum.all?(filter, fn {field, value} -> Map.fetch!(envelope, field) == value end)
   end
 end

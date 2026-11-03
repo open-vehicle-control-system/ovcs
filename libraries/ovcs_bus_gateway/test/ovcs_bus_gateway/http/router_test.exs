@@ -3,15 +3,33 @@ defmodule OvcsBusGateway.Http.RouterTest do
 
   import Plug.Test
 
-  alias OvcsBusGateway.{Cache, Envelope}
+  alias OvcsBusGateway.{Cache, Config, Envelope, Settings, Subscribers}
   alias OvcsBusGateway.Http.Router
 
   @media_type "application/vnd.api+json"
 
   setup do
     start_supervised!(Cache)
+    start_supervised!(Subscribers)
+
+    start_supervised!(
+      {Settings,
+       %Settings{
+         vehicle: OvcsMini,
+         config: %Config{mqtt: nil, http: [port: 4100]},
+         mqtt_client_id: "ovcs_bus_gateway_ovcs_mini"
+       }}
+    )
 
     Cache.put_all([
+      %Envelope{
+        node: "vms",
+        source: "OvcsBusGateway.Collector",
+        name: "connected",
+        value: true,
+        changed_at: 0,
+        published_at: 0
+      },
       %Envelope{
         node: "vms",
         source: "VmsCore.Vehicle",
@@ -53,7 +71,7 @@ defmodule OvcsBusGateway.Http.RouterTest do
     error
   end
 
-  test "lists every signal as a JSON:API resource" do
+  test "lists every signal as a JSON:API resource, without the nodes' presence" do
     conn = get("/api/signals")
 
     assert conn.status == 200
@@ -76,7 +94,8 @@ defmodule OvcsBusGateway.Http.RouterTest do
                "changedAt" => 0,
                "publishedAt" => 5,
                "stale" => false
-             }
+             },
+             "relationships" => %{"node" => %{"data" => %{"type" => "nodes", "id" => "vms"}}}
            }
   end
 
@@ -129,8 +148,97 @@ defmodule OvcsBusGateway.Http.RouterTest do
   end
 
   test "answers a 404 naming an unknown API route, whatever the method" do
-    assert_error(get("/api/nodes"), 404, "no route for GET /api/nodes")
+    assert_error(get("/api/frames"), 404, "no route for GET /api/frames")
     assert_error(request(:post, "/api/signals"), 404, "no route for POST /api/signals")
+  end
+
+  test "answers a 404 for a node's presence, which is not a signal" do
+    assert_error(
+      get("/api/signals/vms/OvcsBusGateway.Collector/connected"),
+      404,
+      "no signal vms/OvcsBusGateway.Collector/connected"
+    )
+  end
+
+  test "lists the nodes, each with its presence and its signals" do
+    conn = get("/api/nodes")
+
+    assert conn.status == 200
+    assert_media_type(conn)
+    assert %{"data" => [ros, vms]} = body(conn)
+
+    assert vms == %{
+             "type" => "nodes",
+             "id" => "vms",
+             "attributes" => %{
+               "name" => "vms",
+               "connected" => true,
+               "signalCount" => 1,
+               "staleCount" => 0,
+               "lastChangeAt" => 0
+             },
+             "relationships" => %{
+               "signals" => %{
+                 "data" => [%{"type" => "signals", "id" => "vms/VmsCore.Vehicle/speed"}]
+               }
+             }
+           }
+
+    assert ros["attributes"]["connected"] == nil
+    refute Map.has_key?(body(conn), "included")
+  end
+
+  test "includes the nodes' signals on request" do
+    assert %{"data" => %{"id" => "vms"}, "included" => [%{"type" => "signals", "id" => id}]} =
+             body(get("/api/nodes/vms?include=signals"))
+
+    assert id == "vms/VmsCore.Vehicle/speed"
+
+    error = assert_error(get("/api/nodes?include=adapters"), 400, "unsupported include")
+    assert error["source"] == %{"parameter" => "include"}
+  end
+
+  test "answers a 404 naming an unknown node" do
+    assert_error(get("/api/nodes/infotainment"), 404, "no node infotainment")
+  end
+
+  test "lists the adapters with their status" do
+    assert %{"data" => [mqtt, http]} = body(get("/api/adapters"))
+
+    assert mqtt == %{
+             "type" => "adapters",
+             "id" => "mqtt",
+             "attributes" => %{
+               "name" => "MQTT",
+               "module" => "OvcsBusGateway.Mqtt",
+               "status" => %{"level" => "off", "detail" => "No broker in the configuration"}
+             }
+           }
+
+    assert %{"id" => "http", "attributes" => %{"port" => 4100, "clients" => 0}} = http
+  end
+
+  test "describes the configuration, keyed by the config's field names" do
+    assert body(get("/api/configuration")) == %{
+             "data" => %{
+               "type" => "configurations",
+               "id" => "current",
+               "attributes" => %{
+                 "vehicle" => "OvcsMini",
+                 "mqttClientId" => "ovcs_bus_gateway_ovcs_mini",
+                 "config" => %{
+                   "mqtt" => nil,
+                   "http" => %{"port" => 4100},
+                   "forward_interval" => 20
+                 }
+               }
+             }
+           }
+  end
+
+  test "refuses a query parameter a route does not take" do
+    assert_error(get("/api/adapters?sort=name"), 400, "unsupported query parameter sort")
+    assert_error(get("/api/configuration?include=x"), 400, "unsupported query parameter include")
   end
 
   @tag :tmp_dir
