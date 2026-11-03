@@ -25,10 +25,11 @@ defmodule VisionCore.Stereo.NxStage do
   the pipeline takes out before `init/2`) or its `compute/1` asks for
   one; the pipeline refuses a pin and a `compute/1` that disagree. The
   first of the pipeline's backends (`VisionCore.Stereo.Segment`) that
-  takes the stage runs it: under `:native`, a stage
-  `VisionCore.Stereo.NativeSegment` implements runs natively, and
+  takes the stage runs it: a stage that declares a `native_kind/0` runs
+  natively under `:native`, in `VisionCore.Stereo.NativeSegment`, and
   consecutive native stages run as one native segment, under the same
-  names and settings.
+  names and settings. One without is compiled under the pipeline's
+  `:native`, and refused when it asks for `:native` itself.
   """
 
   alias VisionCore.Stereo.{Pair, Stage}
@@ -115,6 +116,25 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback device_only() :: [atom()]
 
+  @doc """
+  The name of the stage's native implementation in the `stereo_match`
+  Port, which `VisionCore.Stereo.NativeSegment` computes it with: a
+  stage without one does not compute natively. A vehicle's module that
+  wraps a core stage declares that stage's kind, with its
+  `native_constants/0`, and no numeric build setting of its own: the
+  Port is configured with every numeric build setting and refuses one
+  its kind does not take. A refused configuration, or a kind the Port
+  has no implementation of, stops the pipeline at its first pair.
+  """
+  @callback native_kind() :: String.t()
+
+  @doc """
+  The constants the stage's step shares with its native implementation,
+  by name, which the `stereo_match` Port is configured with beside the
+  stage's build settings: each is written once, in the stage.
+  """
+  @callback native_constants() :: %{atom() => number()}
+
   @optional_callbacks summary: 0,
                       explanation: 0,
                       params: 2,
@@ -124,7 +144,9 @@ defmodule VisionCore.Stereo.NxStage do
                       set_option: 3,
                       carry: 2,
                       compute: 1,
-                      device_only: 0
+                      device_only: 0,
+                      native_kind: 0,
+                      native_constants: 0
 
   @doc "Whether `module` is an Nx stage: it declares `@behaviour VisionCore.Stereo.NxStage`."
   @spec nx_stage?(module()) :: boolean()
@@ -152,5 +174,20 @@ defmodule VisionCore.Stereo.NxStage do
   @spec compute(module(), term()) :: :nx | :native | nil
   def compute(module, state) do
     if function_exported?(module, :compute, 1), do: module.compute(state)
+  end
+
+  @doc "The native implementation `module` declares, or `nil`; see `c:native_kind/0`."
+  @spec native_kind(module()) :: String.t() | nil
+  def native_kind(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :native_kind, 0),
+      do: module.native_kind()
+  end
+
+  @doc "The constants `module` shares with its native implementation; see `c:native_constants/0`."
+  @spec native_constants(module()) :: %{atom() => number()}
+  def native_constants(module) do
+    if Code.ensure_loaded?(module) and function_exported?(module, :native_constants, 0),
+      do: module.native_constants(),
+      else: %{}
   end
 end

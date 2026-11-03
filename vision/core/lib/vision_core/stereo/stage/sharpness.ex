@@ -45,6 +45,9 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   def provides, do: [:sharpness]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "sharpness"
+
+  @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, _state),
     do: Map.put(tensors, :sharpness_sums, sums(tensors.left, tensors.right))
 

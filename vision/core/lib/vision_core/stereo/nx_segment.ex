@@ -103,10 +103,10 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
-  @doc "Every Nx stage, however it asks to compute: the backend for what no other takes."
+  @doc "Every Nx stage, to compile it."
   @impl VisionCore.Stereo.Segment
   @spec accepts?(module(), term(), :nx | :native) :: boolean()
-  def accepts?(module, _state, _compute), do: NxStage.nx_stage?(module)
+  def accepts?(module, _state, compute), do: compute == :nx and NxStage.nx_stage?(module)
 
   @doc """
   Compiles `function` for `templates` with `defn_options`, an
@@ -369,7 +369,12 @@ defmodule VisionCore.Stereo.NxSegment do
   defp to_input(value) when is_number(value), do: Nx.tensor(value, type: :f32)
   defp to_input(value), do: value
 
-  @doc "Where the segment, or `defn_options`, run a segment, and with what."
+  @doc """
+  Where the segment, or `defn_options`, run a segment, and with what:
+  Nx's `:evaluator` without a compiler or with `Nx.Defn.Evaluator`; a
+  compiler other than it, `NxIREE.Compiler` and EXLA has no backend name
+  (`nil`).
+  """
   @impl VisionCore.Stereo.Segment
   @spec compute(t() | keyword()) :: VisionCore.Parameters.Group.compute()
   def compute(%__MODULE__{defn_options: defn_options}), do: compute(defn_options)
@@ -379,7 +384,8 @@ defmodule VisionCore.Stereo.NxSegment do
       case Keyword.get(defn_options, :compiler) do
         NxIREE.Compiler -> iree_target(Keyword.get(defn_options, :iree_compiler_flags, []))
         EXLA -> {exla_device(Keyword.get(defn_options, :client, :host)), :exla}
-        _evaluator -> {:cpu, :evaluator}
+        evaluator when evaluator in [nil, Nx.Defn.Evaluator] -> {:cpu, :evaluator}
+        _other -> {:cpu, nil}
       end
 
     %{runs_on: runs_on, implementation: :nx, backend: backend}

@@ -82,6 +82,12 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "temporal_filter"
+
+  @impl VisionCore.Stereo.NxStage
+  def native_constants, do: %{max_missed: @max_missed}
+
+  @impl VisionCore.Stereo.NxStage
   def params(state, _context), do: options(state)
 
   # `missed`: pairs since the pixel last matched.

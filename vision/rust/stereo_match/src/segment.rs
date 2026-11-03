@@ -1,16 +1,17 @@
 //! A run of consecutive stages of `VisionCore.Stereo.Pipeline` computed
 //! natively: the counterpart of `VisionCore.Stereo.NxSegment`. It is
-//! configured once with each stage's kind and build settings, keeps what
-//! depends only on them and the inputs it last saw (rectification maps,
-//! matching buffers) and what stages carry from one pair to the next, and
-//! runs each pair through every stage in order on named tensors.
+//! configured once with each stage's kind, its build settings and the
+//! constants it shares with its Nx step, keeps what depends only on them
+//! and the inputs it last saw (rectification maps, matching buffers) and
+//! what stages carry from one pair to the next, and runs each pair through
+//! every stage in order on named tensors.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
 use crate::depth::{self, Intrinsics};
 use crate::filters::{self, Temporal, TemporalSettings};
-use crate::measures::{self, Quality, BANDS, PLANES};
+use crate::measures::{self, Alignment, Quality};
 use crate::rectify::{self, Camera, Map};
 use crate::tensor::{f32_map, u8_image, Elements, Tensor, Tensors};
 use crate::{Matcher, Parameters};
@@ -25,7 +26,7 @@ pub struct Geometry {
     pub frame_height: usize,
 }
 
-/// A stage's build settings, its `options/1` values.
+/// A stage's build settings and constants, by name.
 pub type Options = HashMap<String, f64>;
 /// A stage's live inputs for one pair, its `params/2` values as `f32`.
 pub type Inputs = HashMap<String, Vec<f32>>;
@@ -45,12 +46,15 @@ enum Stage {
     MedianFilter {
         kernel_size: usize,
     },
-    SpeckleFilter,
-    RowAlignment,
+    SpeckleFilter {
+        radius: usize,
+    },
+    RowAlignment(Alignment),
     TemporalFilter(Temporal),
     Depth,
     PointCloud {
         decimation: usize,
+        depth_range: (f32, f32),
     },
     Quality(Quality),
 }
@@ -69,9 +73,9 @@ fn outputs(stage: &Stage) -> &'static [&'static str] {
         Stage::Sharpness => &["sharpness_sums"],
         Stage::Disparity { .. }
         | Stage::MedianFilter { .. }
-        | Stage::SpeckleFilter
+        | Stage::SpeckleFilter { .. }
         | Stage::TemporalFilter(_) => &["disparity"],
-        Stage::RowAlignment => &["alignment_sums"],
+        Stage::RowAlignment(_) => &["alignment_sums"],
         Stage::Depth => &["depth_mm"],
         Stage::PointCloud { .. } => &["cloud_grid", "cloud_points"],
         Stage::Quality(_) => &["quality_sums"],
@@ -83,6 +87,39 @@ fn option(options: &Options, kind: &str, name: &str) -> Result<f64, String> {
         .get(name)
         .copied()
         .ok_or_else(|| format!("{kind} needs its {name} setting"))
+}
+
+/// Refuses the settings of `options` that `kind` does not take.
+fn takes_only(options: &Options, kind: &str, names: &[&str]) -> Result<(), String> {
+    let mut unknown: Vec<&str> = options
+        .keys()
+        .map(String::as_str)
+        .filter(|name| !names.contains(name))
+        .collect();
+    if unknown.is_empty() {
+        Ok(())
+    } else {
+        unknown.sort_unstable();
+        Err(format!("{kind} has no setting {}", unknown.join(", ")))
+    }
+}
+
+/// A whole-number setting from `lowest` to `highest`.
+fn count_option(
+    options: &Options,
+    kind: &str,
+    name: &str,
+    lowest: usize,
+    highest: usize,
+) -> Result<usize, String> {
+    let value = option(options, kind, name)?;
+    if value.fract() == 0.0 && (lowest as f64..=highest as f64).contains(&value) {
+        Ok(value as usize)
+    } else {
+        Err(format!(
+            "{kind} {name} must be an integer from {lowest} to {highest}, got {value}"
+        ))
+    }
 }
 
 fn input<'a>(inputs: &'a Inputs, name: &str, length: usize) -> Result<&'a [f32], String> {
@@ -137,7 +174,7 @@ fn integer_option(
 
 impl Segment {
     /// A segment of `members`, each a stage kind (its name in the pipeline)
-    /// and its build settings, run on `threads` threads.
+    /// and its options, run on `threads` threads.
     pub fn new(
         geometry: Geometry,
         members: &[(String, Options)],
@@ -146,41 +183,9 @@ impl Segment {
         if geometry.width < 2 || geometry.height < 2 {
             return Err(format!("a segment works at 2x2 or more, got {geometry:?}"));
         }
-        let pixels = geometry.width * geometry.height;
         let stages = members
             .iter()
-            .map(|(kind, options)| {
-                Ok(match kind.as_str() {
-                    "rectification" => Stage::Rectification {
-                        maps: Box::new([None, None]),
-                    },
-                    "sharpness" => Stage::Sharpness,
-                    "disparity" => {
-                        let disparities = integer_option(options, kind, "num_disparities", &[64, 128])?;
-                        let paths = integer_option(options, kind, "paths", &[3, 8])? as u8;
-                        let parameters = Parameters { disparities, paths, p1: 8, p2: 64, uniqueness: 1.0 };
-                        parameters.check(geometry.width, geometry.height)?;
-                        Stage::Disparity { disparities, paths, matcher: Box::new(Matcher::new(threads)) }
-                    }
-                    "median_filter" => Stage::MedianFilter {
-                        kernel_size: integer_option(options, kind, "kernel_size", &[3, 5])?,
-                    },
-                    "speckle_filter" => Stage::SpeckleFilter,
-                    "row_alignment" => Stage::RowAlignment,
-                    "temporal_filter" => Stage::TemporalFilter(Temporal::new(pixels)),
-                    "depth" => Stage::Depth,
-                    "point_cloud" => {
-                        let decimation = option(options, kind, "decimation")?;
-                        let largest = geometry.width.min(geometry.height) as f64;
-                        if !(decimation.fract() == 0.0 && (1.0..=largest).contains(&decimation)) {
-                            return Err(format!("point_cloud decimation must be an integer from 1 to {largest}, got {decimation}"));
-                        }
-                        Stage::PointCloud { decimation: decimation as usize }
-                    }
-                    "quality" => Stage::Quality(Quality::new(pixels)),
-                    other => return Err(format!("no native implementation of {other}")),
-                })
-            })
+            .map(|(kind, options)| stage(&geometry, kind, options, threads))
             .collect::<Result<Vec<_>, String>>()?;
         Ok(Segment {
             geometry,
@@ -223,6 +228,99 @@ impl Segment {
             .collect();
         Ok((outputs, times_us))
     }
+}
+
+/// The stage of `kind` with `options`, which must be exactly the ones it
+/// takes.
+fn stage(
+    geometry: &Geometry,
+    kind: &str,
+    options: &Options,
+    threads: usize,
+) -> Result<Stage, String> {
+    let (width, height) = (geometry.width, geometry.height);
+    let pixels = width * height;
+    let takes = |names: &[&str]| takes_only(options, kind, names);
+    Ok(match kind {
+        "rectification" => {
+            takes(&[])?;
+            if geometry.frame_width < width || geometry.frame_height < height {
+                return Err(format!(
+                    "rectification only shrinks: {}x{} frames are smaller than the {width}x{height} working size",
+                    geometry.frame_width, geometry.frame_height
+                ));
+            }
+            Stage::Rectification {
+                maps: Box::new([None, None]),
+            }
+        }
+        "sharpness" => {
+            takes(&[])?;
+            Stage::Sharpness
+        }
+        "disparity" => {
+            takes(&["num_disparities", "paths"])?;
+            let disparities = integer_option(options, kind, "num_disparities", &[64, 128])?;
+            let paths = integer_option(options, kind, "paths", &[3, 8])? as u8;
+            let parameters = Parameters {
+                disparities,
+                paths,
+                p1: 8,
+                p2: 64,
+                uniqueness: 1.0,
+            };
+            parameters.check(width, height)?;
+            Stage::Disparity {
+                disparities,
+                paths,
+                matcher: Box::new(Matcher::new(threads)),
+            }
+        }
+        "median_filter" => {
+            takes(&["kernel_size"])?;
+            Stage::MedianFilter {
+                kernel_size: integer_option(options, kind, "kernel_size", &[3, 5])?,
+            }
+        }
+        "speckle_filter" => {
+            takes(&["radius"])?;
+            Stage::SpeckleFilter {
+                radius: count_option(options, kind, "radius", 1, width.min(height))?,
+            }
+        }
+        "row_alignment" => {
+            takes(&["bands", "reach", "row_step"])?;
+            Stage::RowAlignment(Alignment {
+                bands: count_option(options, kind, "bands", 1, width)?,
+                reach: count_option(options, kind, "reach", 0, height)?,
+                row_step: count_option(options, kind, "row_step", 1, height)?,
+            })
+        }
+        "temporal_filter" => {
+            takes(&["max_missed"])?;
+            let max_missed = option(options, kind, "max_missed")? as f32;
+            Stage::TemporalFilter(Temporal::new(pixels, max_missed))
+        }
+        "depth" => {
+            takes(&[])?;
+            Stage::Depth
+        }
+        "point_cloud" => {
+            takes(&["decimation", "min_depth_m", "max_depth_m"])?;
+            Stage::PointCloud {
+                decimation: count_option(options, kind, "decimation", 1, width.min(height))?,
+                depth_range: (
+                    option(options, kind, "min_depth_m")? as f32,
+                    option(options, kind, "max_depth_m")? as f32,
+                ),
+            }
+        }
+        "quality" => {
+            takes(&[])?;
+            Stage::Quality(Quality::new(pixels))
+        }
+        other => return Err(format!("no native implementation of {other}")),
+    })
 }
 
 fn run_stage(
@@ -313,29 +411,33 @@ fn run_stage(
             );
             tensors.insert("disparity".into(), image(Elements::F32(filtered)));
         }
-        Stage::SpeckleFilter => {
+        Stage::SpeckleFilter { radius } => {
             let filtered = filters::despeckle(
                 f32_map(tensors, "disparity", size)?,
                 width,
                 height,
                 scalar(inputs, "min_support")?,
                 scalar(inputs, "max_diff")?,
+                *radius,
                 threads,
             );
             tensors.insert("disparity".into(), image(Elements::F32(filtered)));
         }
-        Stage::RowAlignment => {
+        Stage::RowAlignment(alignment) => {
             let sums = measures::alignment_sums(
                 u8_image(tensors, "left", size)?,
                 u8_image(tensors, "right", size)?,
                 f32_map(tensors, "disparity", size)?,
                 width,
                 height,
+                alignment,
             );
-            let flat = sums.iter().flatten().copied().collect();
             tensors.insert(
                 "alignment_sums".into(),
-                Tensor::new(vec![BANDS, PLANES], Elements::F32(flat)),
+                Tensor::new(
+                    vec![alignment.bands, alignment.planes()],
+                    Elements::F32(sums),
+                ),
             );
         }
         Stage::TemporalFilter(temporal) => {
@@ -365,7 +467,10 @@ fn run_stage(
             tensors.insert("depth_mm".into(), image(Elements::U16(depth_mm)));
             tensors.insert("depth_m".into(), image(Elements::F32(depth_m)));
         }
-        Stage::PointCloud { decimation } => {
+        Stage::PointCloud {
+            decimation,
+            depth_range,
+        } => {
             let intrinsics = Intrinsics {
                 focal_length_px: scalar(inputs, "focal_length_px")?,
                 cx: scalar(inputs, "cx")?,
@@ -377,6 +482,7 @@ fn run_stage(
                 height,
                 *decimation,
                 &intrinsics,
+                *depth_range,
             );
             let grid = vec![height / *decimation, width / *decimation, 3];
             tensors.insert(
@@ -430,6 +536,66 @@ mod tests {
         assert!(refused("median_filter", &[("kernel_size", 7.0)]).contains("[3, 5]"));
         assert!(refused("disparity", &[("num_disparities", 64.0)]).contains("paths"));
         assert!(refused("point_cloud", &[("decimation", 0.0)]).contains("decimation"));
+        assert_eq!(
+            refused(
+                "temporal_filter",
+                &[("max_missed", 255.0), ("hold", 2.0), ("alpha", 0.4)]
+            ),
+            "temporal_filter has no setting alpha, hold"
+        );
+        assert_eq!(
+            refused("depth", &[("baseline_m", 0.1)]),
+            "depth has no setting baseline_m"
+        );
+    }
+
+    #[test]
+    fn needs_the_constants_each_stage_shares_with_its_nx_step() {
+        let refused = |kind: &str, values: &[(&str, f64)]| {
+            Segment::new(geometry(), &[(kind.to_string(), options(values))], 2)
+                .err()
+                .unwrap()
+        };
+        assert_eq!(
+            refused("temporal_filter", &[]),
+            "temporal_filter needs its max_missed setting"
+        );
+        assert_eq!(
+            refused("speckle_filter", &[]),
+            "speckle_filter needs its radius setting"
+        );
+        assert_eq!(
+            refused("point_cloud", &[("decimation", 2.0), ("min_depth_m", 0.05)]),
+            "point_cloud needs its max_depth_m setting"
+        );
+        assert_eq!(
+            refused(
+                "row_alignment",
+                &[("bands", 0.0), ("reach", 2.0), ("row_step", 4.0)]
+            ),
+            "row_alignment bands must be an integer from 1 to 32, got 0"
+        );
+    }
+
+    #[test]
+    fn refuses_frames_smaller_than_the_working_size_to_rectify() {
+        let rectification = [("rectification".to_string(), Options::new())];
+        let frames = |frame_width, frame_height| Geometry {
+            frame_width,
+            frame_height,
+            ..geometry()
+        };
+        assert_eq!(
+            Segment::new(frames(32, 12), &rectification, 1)
+                .err()
+                .unwrap(),
+            "rectification only shrinks: 32x12 frames are smaller than the 32x24 working size"
+        );
+        assert!(Segment::new(frames(16, 24), &rectification, 1).is_err());
+        assert!(Segment::new(frames(32, 24), &rectification, 1).is_ok());
+        assert!(Segment::new(frames(64, 48), &rectification, 1).is_ok());
+        let depth = [("depth".to_string(), Options::new())];
+        assert!(Segment::new(frames(16, 12), &depth, 1).is_ok());
     }
 
     #[test]
@@ -441,7 +607,7 @@ mod tests {
                 options(&[("kernel_size", 3.0)]),
             ),
             ("depth".to_string(), Options::new()),
-            ("speckle_filter".to_string(), Options::new()),
+            ("speckle_filter".to_string(), options(&[("radius", 3.0)])),
         ];
         let mut segment = Segment::new(geometry, &members, 2).unwrap();
         let inputs: Vec<Inputs> = vec![

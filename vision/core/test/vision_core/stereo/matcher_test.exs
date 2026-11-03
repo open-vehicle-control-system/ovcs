@@ -8,11 +8,13 @@ defmodule VisionCore.Stereo.MatcherTest do
   @moduletag timeout: 600_000
 
   setup do
-    start_supervised!(Matcher)
+    start_supervised!({Matcher, path: stereo_match_path()})
     :ok
   end
 
   @calibration Path.expand("../../support/calibration", __DIR__)
+
+  defp stereo_match_path, do: Application.fetch_env!(:vision_core, :stereo_match_path)
 
   defp sgm_opts(opts) do
     Keyword.merge(
@@ -185,16 +187,64 @@ defmodule VisionCore.Stereo.MatcherTest do
     assert Matcher.port_arguments(nil) == []
     assert Matcher.port_arguments(3) == ["--threads", "3"]
 
-    assert ExUnit.CaptureLog.capture_log(fn -> assert Matcher.port_arguments(0) == [] end) =~
-             "must be a positive integer, got 0"
+    log = ExUnit.CaptureLog.capture_log(fn -> assert Matcher.port_arguments(0) == [] end)
+    assert log =~ "config :vision_core, :stereo_match_threads"
+    assert log =~ "must be a positive integer, got 0"
+  end
+
+  test "logs why the Port refuses a configuration, and not the refusals of the pairs sent with it" do
+    {left, right} = textured_pair(9, {48, 64}, 8)
+
+    {segment, pair} =
+      disparity_segment(left, right, sgm_opts([]), &%{&1 | num_disparities: 96})
+
+    log =
+      ExUnit.CaptureLog.capture_log([level: :error], fn ->
+        replies =
+          segment
+          |> send_pairs([pair, pair])
+          |> Enum.map(&:gen_server.receive_response(&1, 60_000))
+
+        send(self(), {:replies, replies})
+      end)
+
+    reason = "disparity num_disparities must be one of [64, 128], got 96"
+
+    assert_received {:replies,
+                     [
+                       {:reply, {:error, {:configuration_refused, ^reason}}},
+                       {:reply, {:error, :bad_request}}
+                     ]}
+
+    assert log =~ reason
+    refute log =~ "not configured"
+  end
+
+  @tag :tmp_dir
+  test "a Port that closes answers a run it refused the configuration of with that refusal",
+       %{tmp_dir: dir} do
+    # Refuses the first request, a configuration, and exits without answering the run.
+    refusing = Path.join(dir, "stereo_match")
+
+    File.write!(
+      refusing,
+      "#!/bin/sh\nprintf '\\000\\000\\000\\010\\011refused'\nsleep 0.2\nexit 3\n"
+    )
+
+    File.chmod!(refusing, 0o755)
+    stop_supervised!(Matcher)
+    start_supervised!({Matcher, path: refusing})
+    {left, right} = textured_pair(10, {48, 64}, 8)
+    {segment, pair} = disparity_segment(left, right, sgm_opts([]))
+    {:ok, request_id} = NativeSegment.send_request(pair, segment)
+
+    assert :gen_server.receive_response(request_id, 5_000) ==
+             {:reply, {:error, {:configuration_refused, "refused"}}}
   end
 
   test "without the binary, says where it looked" do
-    path = Application.get_env(:vision_core, :stereo_match_path)
-    on_exit(fn -> Application.put_env(:vision_core, :stereo_match_path, path) end)
-    Application.put_env(:vision_core, :stereo_match_path, "/nonexistent/stereo_match")
     stop_supervised!(Matcher)
-    start_supervised!(Matcher)
+    start_supervised!({Matcher, path: "/nonexistent/stereo_match"})
 
     {left, right} = textured_pair(3, {48, 64}, 8)
 
@@ -202,9 +252,22 @@ defmodule VisionCore.Stereo.MatcherTest do
              match(left, right, sgm_opts([]))
   end
 
+  test "computes on the threads its start options give" do
+    stop_supervised!(Matcher)
+    start_supervised!({Matcher, path: stereo_match_path(), threads: 2})
+    {left, right} = textured_pair(3, {48, 64}, 8)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        {:ok, _disparity} = match(left, right, sgm_opts([]))
+      end)
+
+    assert log =~ "computing on 2 threads"
+  end
+
   test "a request without a reply in time closes the Port, so its reply cannot answer the next" do
     stop_supervised!(Matcher)
-    matcher = start_supervised!({Matcher, timeout_ms: 1})
+    matcher = start_supervised!({Matcher, path: stereo_match_path(), timeout_ms: 1})
     {left, right} = textured_pair(4, {360, 480}, 8)
     {segment, pair} = disparity_segment(left, right, sgm_opts(paths: 8, disparities: 128))
 

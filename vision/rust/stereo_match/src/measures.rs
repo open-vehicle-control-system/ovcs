@@ -50,29 +50,43 @@ fn sum_columns(columns: &[u64]) -> f32 {
         .sum::<f64>() as f32
 }
 
-/// Vertical bands the row offset is measured in.
-pub const BANDS: usize = 4;
-/// Rows above and below a pixel's own that it is compared with.
-pub const REACH: usize = 2;
-/// One row in this many is compared.
-const ROW_STEP: usize = 4;
-/// Per band, a sum per row offset and the matched count.
-pub const PLANES: usize = 2 * REACH + 2;
+/// How `RowAlignment` compares the rectified images: in `bands` vertical
+/// bands, the matched pixels of one row in `row_step`, each with the right
+/// image on the rows `reach` above to `reach` below its own.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Alignment {
+    pub bands: usize,
+    pub reach: usize,
+    pub row_step: usize,
+}
+
+impl Alignment {
+    /// Per band, a sum per row offset and the matched count.
+    pub fn planes(&self) -> usize {
+        2 * self.reach + 2
+    }
+}
 
 /// Per vertical band, the summed absolute difference between each matched
-/// left pixel of every fourth row and the right pixel at its disparity on
-/// the rows `REACH` above to `REACH` below, then the matched count.
+/// left pixel of the compared rows and the right pixel at its disparity on
+/// each row offset, then the matched count: `bands` rows of `planes()`.
 pub fn alignment_sums(
     left: &[u8],
     right: &[u8],
     disparity: &[f32],
     width: usize,
     height: usize,
-) -> [[f32; PLANES]; BANDS] {
-    let band_width = width / BANDS;
-    let mut sums = [[0u64; PLANES]; BANDS];
-    for y in (0..height).step_by(ROW_STEP) {
-        for (band, sums) in sums.iter_mut().enumerate() {
+    alignment: &Alignment,
+) -> Vec<f32> {
+    let Alignment {
+        bands,
+        reach,
+        row_step,
+    } = *alignment;
+    let band_width = width / bands;
+    let mut sums = vec![0u64; bands * alignment.planes()];
+    for y in (0..height).step_by(row_step) {
+        for (band, sums) in sums.chunks_exact_mut(alignment.planes()).enumerate() {
             for x in band * band_width..(band + 1) * band_width {
                 let value = disparity[y * width + x];
                 let matched = value > 0.0;
@@ -81,16 +95,16 @@ pub fn alignment_sums(
                 }
                 let source_x = (x as f32 - value.round()).clamp(0.0, (width - 1) as f32) as usize;
                 let grey = i32::from(left[y * width + x]);
-                for (offset, sum) in sums[..2 * REACH + 1].iter_mut().enumerate() {
-                    let source_y = (y + offset).saturating_sub(REACH).min(height - 1);
+                for (offset, sum) in sums[..2 * reach + 1].iter_mut().enumerate() {
+                    let source_y = (y + offset).saturating_sub(reach).min(height - 1);
                     let difference = i32::from(right[source_y * width + source_x]) - grey;
                     *sum += difference.unsigned_abs() as u64;
                 }
-                sums[2 * REACH + 1] += 1;
+                sums[2 * reach + 1] += 1;
             }
         }
     }
-    sums.map(|band| band.map(|sum| sum as f32))
+    sums.into_iter().map(|sum| sum as f32).collect()
 }
 
 /// What `Quality` carries from one pair to the next: the disparity it last
@@ -144,6 +158,13 @@ impl Quality {
 mod tests {
     use super::*;
 
+    /// RowAlignment's own.
+    const ALIGNMENT: Alignment = Alignment {
+        bands: 4,
+        reach: 2,
+        row_step: 4,
+    };
+
     #[test]
     fn sharpness_sums_neighbour_differences_and_grey() {
         let image = [10u8, 13, 13, 1, 1, 5];
@@ -174,15 +195,21 @@ mod tests {
             .map(|i| texture(i % width + 3, i / width + 3))
             .collect();
         let disparity = vec![3.0; width * height];
-        let sums = alignment_sums(&left, &right, &disparity, width, height);
-        for band in &sums[1..] {
-            let lowest = (0..=2 * REACH)
+        let sums = alignment_sums(&left, &right, &disparity, width, height, &ALIGNMENT);
+        let Alignment {
+            bands,
+            reach,
+            row_step,
+        } = ALIGNMENT;
+        assert_eq!(sums.len(), bands * ALIGNMENT.planes());
+        for band in sums.chunks_exact(ALIGNMENT.planes()).skip(1) {
+            let lowest = (0..=2 * reach)
                 .min_by(|&a, &b| band[a].total_cmp(&band[b]))
                 .unwrap();
-            assert_eq!(lowest, REACH + 1);
+            assert_eq!(lowest, reach + 1);
             assert_eq!(
-                band[2 * REACH + 1],
-                (width / BANDS * height / ROW_STEP) as f32
+                band[2 * reach + 1],
+                (width / bands * height / row_step) as f32
             );
         }
     }
@@ -191,8 +218,24 @@ mod tests {
     fn alignment_counts_no_pixel_at_disparity_0() {
         let (width, height) = (32, 24);
         let image = vec![90u8; width * height];
-        let sums = alignment_sums(&image, &image, &vec![0.0; width * height], width, height);
-        assert_eq!(sums, [[0.0; PLANES]; BANDS]);
+        let disparity = vec![0.0; width * height];
+        let sums = alignment_sums(&image, &image, &disparity, width, height, &ALIGNMENT);
+        assert_eq!(sums, vec![0.0; ALIGNMENT.bands * ALIGNMENT.planes()]);
+    }
+
+    #[test]
+    fn alignment_takes_its_bands_reach_and_rows_as_configured() {
+        let (width, height) = (8, 6);
+        let image = vec![90u8; width * height];
+        let alignment = Alignment {
+            bands: 2,
+            reach: 1,
+            row_step: 2,
+        };
+        let disparity = vec![1.0; width * height];
+        let sums = alignment_sums(&image, &image, &disparity, width, height, &alignment);
+        // Per band: three row offsets, all equal on a flat image, then 4 columns x 3 rows.
+        assert_eq!(sums, [0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 12.0]);
     }
 
     #[test]

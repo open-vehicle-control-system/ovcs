@@ -63,6 +63,12 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "speckle_filter"
+
+  @impl VisionCore.Stereo.NxStage
+  def native_constants, do: %{radius: @radius}
+
+  @impl VisionCore.Stereo.NxStage
   def params(state, _context), do: options(state)
 
   @impl VisionCore.Stereo.NxStage

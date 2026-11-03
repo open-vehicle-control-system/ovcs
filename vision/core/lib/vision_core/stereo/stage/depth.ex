@@ -40,6 +40,9 @@ defmodule VisionCore.Stereo.Stage.Depth do
   def provides, do: [:disparity_bytes, :depth, :depth_m]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "depth"
+
+  @impl VisionCore.Stereo.NxStage
   def params(_state, context),
     do: %{focal_length_px: context.focal_length_px, baseline_m: context.baseline_m}
 

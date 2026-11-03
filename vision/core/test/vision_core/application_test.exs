@@ -77,6 +77,20 @@ defmodule VisionCore.ApplicationTest do
            ]
   end
 
+  test "starts the Matcher with the stereo_match binary and thread count of the app env" do
+    for key <- [:stereo_match_path, :stereo_match_threads] do
+      value = Application.get_env(:vision_core, key)
+      on_exit(fn -> Application.put_env(:vision_core, key, value) end)
+    end
+
+    Application.put_env(:vision_core, :stereo_match_path, "/opt/stereo_match")
+    Application.put_env(:vision_core, :stereo_match_threads, 3)
+    start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
+
+    assert %{path: "/opt/stereo_match", arguments: ["--threads", "3"]} =
+             :sys.get_state(VisionCore.Stereo.Matcher)
+  end
+
   test "a Zenoh client restart keeps the unsaved changes" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"})
     declare_sample()

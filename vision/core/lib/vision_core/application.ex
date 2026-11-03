@@ -14,7 +14,9 @@ defmodule VisionCore.Application do
   back. The Port servers, `VisionCore.Jpeg` and
   `VisionCore.Stereo.Matcher`, start before the components and open their
   Ports on the first request, so a unit that computes no stereo stage
-  natively never starts `stereo_match`. `VisionCore.Ros2.Topics`, which counts what
+  natively never starts `stereo_match`; the Matcher runs the binary and
+  thread count of `config :vision_core, :stereo_match_path` and
+  `:stereo_match_threads`. `VisionCore.Ros2.Topics`, which counts what
   the components publish, starts before them. `VisionCore.Status` and
   `VisionCore.Preview`, the dashboard's sources, start after the components.
   """
@@ -54,7 +56,9 @@ defmodule VisionCore.Application do
       {VisionCore.Ros2.ZenohClient, zenoh_client_opts(config)},
       VisionCore.Ros2.Parameters,
       VisionCore.Jpeg,
-      VisionCore.Stereo.Matcher,
+      {VisionCore.Stereo.Matcher,
+       path: Application.get_env(:vision_core, :stereo_match_path),
+       threads: Application.get_env(:vision_core, :stereo_match_threads)},
       VisionCore.Ros2.Topics
     ]
 

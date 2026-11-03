@@ -104,7 +104,7 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   # `module` with its default settings, as `VisionCore.Stereo.Pipeline.stage_options/1` lists it.
   defp stage(name, module, fields) do
-    {:ok, state} = module.init([], %{width: 64, height: 48})
+    {:ok, state} = module.init([], %{width: 64, height: 48, frame_width: 64, frame_height: 48})
 
     specs =
       for {key, spec} <- module.option_specs(), do: {key, Map.put_new(spec, :applies, :live)}

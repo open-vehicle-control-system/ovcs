@@ -116,6 +116,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   def provides, do: [:disparity, :disparity_range]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "disparity"
+
+  @impl VisionCore.Stereo.NxStage
   def params(state, _context), do: Map.take(state, @live)
 
   @impl VisionCore.Stereo.NxStage

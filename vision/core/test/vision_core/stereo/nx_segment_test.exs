@@ -331,9 +331,18 @@ defmodule VisionCore.Stereo.NxSegmentTest do
              {:error, "unknown build options [:compiler]"}
   end
 
-  test "takes every Nx stage, however it asks to compute" do
+  test "runs on Nx's evaluator without a compiler or with the evaluator, on another compiler else" do
+    evaluator = %{runs_on: :cpu, implementation: :nx, backend: :evaluator}
+    assert NxSegment.compute([]) == evaluator
+    assert NxSegment.compute(compiler: Nx.Defn.Evaluator) == evaluator
+
+    assert NxSegment.compute(compiler: FailingDevice) ==
+             %{runs_on: :cpu, implementation: :nx, backend: nil}
+  end
+
+  test "takes every Nx stage to compile it, and none to compute natively" do
     assert NxSegment.accepts?(AddOne, nil, :nx)
-    assert NxSegment.accepts?(AddOne, nil, :native)
+    refute NxSegment.accepts?(AddOne, nil, :native)
     refute NxSegment.accepts?(Halve, nil, :nx)
   end
 

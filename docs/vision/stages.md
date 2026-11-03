@@ -49,7 +49,7 @@ The costs below were measured on a Raspberry Pi 5 matching 480 × 270 with 64 di
 
 ### 1. Rectification
 
-Undistorts and rectifies both camera frames with each camera's calibration, so a point lies on the same row in both, and shrinks frames larger than the working size in the same pass. Each output pixel is one bilinear sample of the camera frame, read through a sampling map computed once per calibration.
+Undistorts and rectifies both camera frames with each camera's calibration, so a point lies on the same row in both, and shrinks frames larger than the working size in the same pass; frames smaller than the working size are refused at start. Each output pixel is one bilinear sample of the camera frame, read through a sampling map computed once per calibration.
 
 | Setting | Kind | Meaning |
 |---|---|---|
@@ -144,7 +144,7 @@ The median does not skip unmatched pixels: it counts them as the lowest values o
 
 ## Your own stages
 
-A stage is a module declaring `@behaviour VisionCore.Stereo.Stage`, or `@behaviour VisionCore.Stereo.NxStage` for a stage written in Nx, which is how the pipeline recognises it; the behaviour's documentation lists the callbacks. Its optional `summary/0` and `explanation/0` are the line and the paragraph the dashboard shows on the stage's panel. Put it in your composer's `:stages` list. An Nx stage compiles into the segment around it. With `compute: :native`, an Nx stage without a native implementation becomes a compiled segment of its own between the native ones, so the component also needs `:defn_options` and a module cache ([Where depth is computed](./compute.md#nx-the-stages-as-tensor-programs)); `compute: :nx` or `compute: :native` among an Nx stage's own options sets where it computes, whatever the component's `:compute`. A stage not written in Nx runs on the BEAM. [`VisionCore.Stereo.Stage.Decode`](../../vision/core/lib/vision_core/stereo/stage/decode.ex) replaces Rectification in a list without one: it only converts and shrinks the frames.
+A stage is a module declaring `@behaviour VisionCore.Stereo.Stage`, or `@behaviour VisionCore.Stereo.NxStage` for a stage written in Nx, which is how the pipeline recognises it; the behaviour's documentation lists the callbacks. Its optional `summary/0` and `explanation/0` are the line and the paragraph the dashboard shows on the stage's panel. Put it in your composer's `:stages` list. An Nx stage compiles into the segment around it. It can compute natively when it declares the kind of its native implementation with `native_kind/0`, as a module wrapping a default stage does with that stage's kind, adding for TemporalFilter, PointCloud, RowAlignment and SpeckleFilter their `native_constants/0`, or the pipeline stops at its first pair. With `compute: :native`, an Nx stage without one becomes a compiled segment of its own between the native ones, so the component also needs `:defn_options` and a module cache ([Where depth is computed](./compute.md#nx-the-stages-as-tensor-programs)); without a compiler, the pipeline refuses to start. `compute: :nx` or `compute: :native` among an Nx stage's own options sets where it computes, whatever the component's `:compute`, and a stage asked to compute where no backend takes it is refused at start. A stage not written in Nx runs on the BEAM. [`VisionCore.Stereo.Stage.Decode`](../../vision/core/lib/vision_core/stereo/stage/decode.ex) replaces Rectification in a list without one: it only converts and shrinks the frames.
 
 ## See also
 

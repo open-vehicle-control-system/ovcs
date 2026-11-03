@@ -62,6 +62,9 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "median_filter"
+
+  @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, kernel_size),
     do: Map.put(tensors, :disparity, NxStereo.Image.median(tensors.disparity, kernel_size))
 

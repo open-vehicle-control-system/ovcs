@@ -121,8 +121,7 @@ fn serve() -> io::Result<()> {
                         stdout.write_record_parts(&parts)?;
                     }
                     Reply::Refused(reason) => {
-                        stdout.write_record(&log_record(LogLevel::Error, &reason))?;
-                        stdout.write_record(&[])?;
+                        stdout.write_record(&protocol::refused_record(&reason))?
                     }
                 }
             }

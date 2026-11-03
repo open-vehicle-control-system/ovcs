@@ -10,13 +10,13 @@ defmodule Mix.Tasks.VisionCore.NxCache do
 
   Run it in the vehicle's project, on the host, where `vision_firmware`
   brings EXLA. It reads the `:stereo` component of the composer's
-  `config(:target)` and starts its pipeline, with the compiler and flags
-  of its `:defn_options` writing each module to the cache without
-  loading it, so it compiles everything the pipeline compiles when it
-  starts: with `compute: :native`, only the stages without a native
-  implementation, if any. The cache keys each module on the stages,
-  their options and the size: run it again after changing any of them.
-  A calibration change needs no new module.
+  `config(:target)` and starts its pipeline, its
+  `VisionCore.Stereo.NxSegment` backend's compiler and flags writing
+  each module to the cache without loading it, so it compiles everything
+  the pipeline compiles when it starts: with `compute: :native`, only
+  the stages without a native implementation, if any. The cache keys
+  each module on the stages, their options and the size: run it again
+  after changing any of them. A calibration change needs no new module.
   """
   use Mix.Task
 
@@ -52,18 +52,25 @@ defmodule Mix.Tasks.VisionCore.NxCache do
   # How many compiled segments the pipeline has once its modules are in `dir`.
   defp build_cache(pipeline_opts, dir) do
     File.mkdir_p!(dir)
-
-    defn_options =
-      pipeline_opts
-      |> Keyword.fetch!(:defn_options)
-      |> Keyword.put(:iree_module_cache, dir)
-      |> Keyword.put(:cache_only, true)
+    backends = pipeline_opts |> Keyword.fetch!(:backends) |> Enum.map(&cache_only(&1, dir))
 
     pipeline_opts
-    |> Keyword.put(:defn_options, defn_options)
+    |> Keyword.put(:backends, backends)
     |> Keyword.put(:name, :nx_cache_pipeline)
     |> compile_pipeline()
   end
+
+  defp cache_only({NxSegment, opts}, dir) do
+    defn_options =
+      opts
+      |> Keyword.get(:defn_options, [])
+      |> Keyword.merge(iree_module_cache: dir, cache_only: true)
+
+    {NxSegment, Keyword.put(opts, :defn_options, defn_options)}
+  end
+
+  defp cache_only(NxSegment, dir), do: cache_only({NxSegment, []}, dir)
+  defp cache_only(backend, _dir), do: backend
 
   # In a task, so the exit of a pipeline that fails to start stays there.
   defp compile_pipeline(opts) do

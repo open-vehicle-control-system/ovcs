@@ -55,6 +55,12 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   def provides, do: [:alignment, :metrics]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "row_alignment"
+
+  @impl VisionCore.Stereo.NxStage
+  def native_constants, do: %{bands: @bands, reach: @reach, row_step: @row_step}
+
+  @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, _state) do
     Map.put(tensors, :alignment_sums, band_sums(tensors.left, tensors.right, tensors.disparity))
   end

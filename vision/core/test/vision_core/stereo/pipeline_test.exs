@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{NativeSegment, NxSegment, Pair, Pipeline}
+  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline}
   alias VisionCore.Stereo.Stage
 
   @calibration Path.expand("../../support/calibration", __DIR__)
@@ -125,6 +125,43 @@ defmodule VisionCore.Stereo.PipelineTest do
     def run(pair, state), do: {:ok, pair, state}
   end
 
+  # A vehicle's stage wrapping a core one, computed natively as that one.
+  defmodule VehicleDepth do
+    @behaviour VisionCore.Stereo.NxStage
+
+    alias VisionCore.Stereo.Stage.Depth
+
+    defdelegate init(opts, context), to: Depth
+    defdelegate requires(), to: Depth
+    defdelegate provides(), to: Depth
+    defdelegate params(state, context), to: Depth
+    defdelegate step(tensors, params, state), to: Depth
+    defdelegate device_only(), to: Depth
+    defdelegate finish(pair, outputs, state), to: Depth
+    def native_kind, do: "depth"
+  end
+
+  # A stage of a kind the Port has no implementation of.
+  defmodule UnknownKind do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+    def step(tensors, _params, _state), do: tensors
+    def native_kind, do: "no_such_stage"
+  end
+
+  # A compiler of its own, as EMLX or Torchx would be: Nx's evaluator under another name.
+  defmodule OwnCompiler do
+    @behaviour Nx.Defn.Compiler
+
+    defdelegate __jit__(key, vars, fun, args, opts), to: Nx.Defn.Evaluator
+    defdelegate __compile__(key, vars, fun, opts), to: Nx.Defn.Evaluator
+    defdelegate __partitions_options__(opts), to: Nx.Defn.Evaluator
+    defdelegate __to_backend__(opts), to: Nx.Defn.Evaluator
+  end
+
   # A stage's callbacks without a stage behaviour.
   defmodule Undeclared do
     def init(_opts, _context), do: {:ok, nil}
@@ -220,6 +257,14 @@ defmodule VisionCore.Stereo.PipelineTest do
 
   defp segment_modules(pipeline),
     do: Enum.map(Pipeline.segments(pipeline), &{&1.name, &1.module})
+
+  defp stereo_match_path, do: Application.fetch_env!(:vision_core, :stereo_match_path)
+
+  # The Matcher again, running the stereo_match at `path`.
+  defp restart_matcher(path) do
+    stop_supervised!(Matcher)
+    start_supervised!({Matcher, path: path})
+  end
 
   setup do
     Process.flag(:trap_exit, true)
@@ -352,6 +397,52 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert message == "#{inspect(Stage.Depth)}: compute is :nx or :native, got :gpu"
   end
 
+  test "refuses a stage asked to compute natively that no backend computes natively" do
+    stages = [{Stage.Decode, compute: :native} | tl(Pipeline.default_stages())]
+    assert {:error, {%ArgumentError{message: message}, _}} = start(stages)
+    assert message == "no backend takes #{inspect(Stage.Decode)} to compute :native"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(disparity: [matcher: :native]),
+               backends: [{NxSegment, defn_options: [compiler: EXLA]}]
+             )
+
+    assert message == "no backend takes #{inspect(Stage.Disparity)} to compute :native"
+  end
+
+  test "refuses frames smaller than the working size, compiled or computed natively" do
+    for compute <- [:nx, :native] do
+      assert {:error, {%ArgumentError{message: message}, _}} =
+               start(Pipeline.default_stages(),
+                 compute: compute,
+                 frame_width: 64,
+                 frame_height: 36
+               )
+
+      assert message ==
+               "#{inspect(Stage.Rectification)} cannot start: rectification only shrinks: " <>
+                 "64x36 frames are smaller than the 64x48 working size"
+    end
+  end
+
+  test "refuses to run a stage no backend computes natively on Nx's evaluator" do
+    stages = [Stage.Decode | tl(Pipeline.default_stages())]
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(stages, compute: :native, defn_options: [])
+
+    assert message ==
+             "no backend computes #{inspect(Stage.Decode)} natively, and without a compiler " <>
+               "in :defn_options it would run on Nx's evaluator"
+  end
+
+  test "compiles a stage no backend computes natively with a compiler other than Nx's evaluator" do
+    stages = [Stage.Decode | tl(Pipeline.default_stages())]
+    {:ok, pipeline} = start(stages, compute: :native, defn_options: [compiler: OwnCompiler])
+
+    assert [{:decode, NxSegment}, {_native, NativeSegment}] = segment_modules(pipeline)
+  end
+
   test "places each Nx stage in the first of its backends that takes it" do
     backends = [EagerSegment, NativeSegment, {NxSegment, defn_options: [compiler: EXLA]}]
 
@@ -378,7 +469,17 @@ defmodule VisionCore.Stereo.PipelineTest do
                defn_options: [compiler: EXLA]
              )
 
-    assert message =~ ":defn_options"
+    assert message ==
+             ":defn_options sets the default backends' NxSegment: " <>
+               "with :backends, give it among NxSegment's options"
+
+    assert {:ok, pipeline} =
+             start(Pipeline.default_stages(),
+               backends: [{NxSegment, defn_options: [compiler: EXLA]}],
+               defn_options: nil
+             )
+
+    GenServer.stop(pipeline)
 
     assert {:error, {%ArgumentError{message: message}, _}} =
              start(Pipeline.default_stages(), backends: [Gain])
@@ -780,7 +881,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     @describetag :stereo_match
 
     setup do
-      start_supervised!(VisionCore.Stereo.Matcher)
+      start_supervised!({Matcher, path: stereo_match_path()})
       :ok
     end
 
@@ -865,7 +966,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     @describetag :stereo_match
 
     setup do
-      start_supervised!(VisionCore.Stereo.Matcher)
+      start_supervised!({Matcher, path: stereo_match_path()})
       :ok
     end
 
@@ -926,6 +1027,44 @@ defmodule VisionCore.Stereo.PipelineTest do
                []
 
       assert pair.device_ms > 0
+    end
+
+    test "runs a vehicle's stage that declares a native kind in the native segment" do
+      stages =
+        Enum.map(Pipeline.default_stages(disparity: [paths: 3]), fn
+          {Stage.Depth, opts} -> {VehicleDepth, opts}
+          stage -> stage
+        end)
+
+      {:ok, pipeline} = start(stages, compute: :native)
+
+      assert names(pipeline) == [
+               :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+vehicle_depth+point_cloud+quality"
+             ]
+
+      Pipeline.register_listener(pipeline, self())
+      assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
+    end
+
+    test "compiles a stage no backend computes natively, and logs where each run computes" do
+      stages = [Stage.Decode | tl(Pipeline.default_stages(disparity: [paths: 3]))]
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {:ok, pipeline} = start(stages, compute: :native)
+          send(self(), {:started, pipeline})
+        end)
+
+      assert_received {:started, pipeline}
+
+      native =
+        :"sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+
+      assert segment_modules(pipeline) == [{:decode, NxSegment}, {native, NativeSegment}]
+      assert log =~ "stages: decode (cpu, nx, exla) → #{native} (cpu, rust))"
+
+      Pipeline.register_listener(pipeline, self())
+      assert byte_size(receive_pair(pipeline, textured_pair(8)).depth) == 48 * 64 * 2
     end
 
     test "runs a stage without a native implementation between two native segments" do
@@ -1047,26 +1186,61 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 22}}}}, 10_000
     end
 
-    # A stereo_match that reads its requests and never answers; returns the real one's path.
+    # A stereo_match that reads its requests and never answers, until `dir` holds an `answer`
+    # file: started from then on, it is the real one.
     defp silent_port(dir) do
-      path = Application.get_env(:vision_core, :stereo_match_path)
-      on_exit(fn -> Application.put_env(:vision_core, :stereo_match_path, path) end)
       silent = Path.join(dir, "stereo_match")
-      File.write!(silent, "#!/bin/sh\nexec cat > /dev/null\n")
+
+      File.write!(silent, """
+      #!/bin/sh
+      if [ -e "#{Path.join(dir, "answer")}" ]; then exec "#{stereo_match_path()}" "$@"; fi
+      exec cat > /dev/null
+      """)
+
       File.chmod!(silent, 0o755)
-      Application.put_env(:vision_core, :stereo_match_path, silent)
-      path
+      restart_matcher(silent)
+    end
+
+    test "stops at its first pair when the Port refuses its configuration, saying why" do
+      stages = List.insert_at(Pipeline.default_stages(disparity: [paths: 3]), 3, UnknownKind)
+      {:ok, pipeline} = start(stages, compute: :native)
+      [{name, NativeSegment}] = segment_modules(pipeline)
+      [left, right] = textured_pair(26)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        Pipeline.submit(pipeline, left, right)
+
+        assert_receive {:EXIT, ^pipeline,
+                        {:device_refused, ^name, "no native implementation of no_such_stage"}},
+                       5_000
+      end)
+    end
+
+    test "stops at the pair the device of a segment after the first refuses, saying why" do
+      stages = [
+        Pass | List.insert_at(Pipeline.default_stages(disparity: [paths: 3]), 3, UnknownKind)
+      ]
+
+      {:ok, pipeline} = start(stages, compute: :native)
+      [{name, NativeSegment}] = segment_modules(pipeline)
+      [left, right] = textured_pair(27)
+
+      ExUnit.CaptureLog.capture_log(fn ->
+        Pipeline.submit(pipeline, left, right)
+
+        assert_receive {:EXIT, ^pipeline,
+                        {:device_refused, ^name, "no native implementation of no_such_stage"}},
+                       5_000
+      end)
     end
 
     @tag :tmp_dir
     test "stops once the Port fails ten pairs in a row", %{tmp_dir: dir} do
       # A stereo_match that echoes each request, which the Matcher reads as a refusal.
-      path = Application.get_env(:vision_core, :stereo_match_path)
-      on_exit(fn -> Application.put_env(:vision_core, :stereo_match_path, path) end)
       echo = Path.join(dir, "stereo_match")
       File.write!(echo, "#!/bin/sh\nexec cat\n")
       File.chmod!(echo, 0o755)
-      Application.put_env(:vision_core, :stereo_match_path, echo)
+      restart_matcher(echo)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
 
@@ -1115,7 +1289,7 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     @tag :tmp_dir
     test "a Port that exits fails the pairs at it, and the next pair is taken", %{tmp_dir: dir} do
-      path = silent_port(dir)
+      silent_port(dir)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
       Pipeline.register_listener(pipeline, self())
@@ -1126,8 +1300,8 @@ defmodule VisionCore.Stereo.PipelineTest do
       Pipeline.submit(pipeline, next_left, next_right)
       refute_receive :stereo_pipeline_ready, 200
 
-      Application.put_env(:vision_core, :stereo_match_path, path)
-      {:os_pid, os_pid} = Port.info(:sys.get_state(VisionCore.Stereo.Matcher).port, :os_pid)
+      File.touch!(Path.join(dir, "answer"))
+      {:os_pid, os_pid} = Port.info(:sys.get_state(Matcher).port, :os_pid)
       System.cmd("kill", ["-9", Integer.to_string(os_pid)])
 
       assert_receive :stereo_pipeline_ready, 5_000

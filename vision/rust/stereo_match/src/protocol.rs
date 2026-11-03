@@ -4,8 +4,9 @@
 //!
 //! * 1, configure: `segment: u32`, the `width`, `height`, `frame_width` and
 //!   `frame_height` the stages work with as `u16`, then the member count
-//!   (`u8`) and each member's kind (a name) and build settings: a count
-//!   (`u8`), then each one's name and `f64` value. Replied to with tag 7.
+//!   (`u8`) and each member's kind (a name) and options, its build settings
+//!   and the constants it shares with its Nx step: a count (`u8`), then
+//!   each one's name and `f64` value. Replied to with tag 7.
 //! * 2, run: `segment: u32`, the member count (`u8`) and each member's live
 //!   inputs: a count (`u8`), then each one's name, value count (`u16`) and
 //!   `f32` values; then the entry tensors: a count (`u8`) and each one as a
@@ -18,8 +19,8 @@
 //! type (`u8`: 0 `u8`, 1 `u16`, 2 `f32`, 3 `s32`), its rank (`u8`), each
 //! dimension (`u32`), and its elements, row-major.
 //!
-//! A request that cannot be served gets an error log record saying why,
-//! then an empty reply.
+//! A request that cannot be served is refused with tag 9 and why, as UTF-8
+//! text.
 
 use std::borrow::Cow;
 
@@ -29,6 +30,7 @@ use crate::tensor::{self, Tensor, Tensors};
 /// Apart from the tags of `framing`'s records, the log record's among them.
 pub const TAG_CONFIGURED: u8 = 7;
 pub const TAG_OUTPUTS: u8 = 8;
+pub const TAG_REFUSED: u8 = 9;
 
 const CONFIGURE: u8 = 1;
 const RUN: u8 = 2;
@@ -168,6 +170,11 @@ pub fn parse(request: &[u8]) -> Result<Request, String> {
     }
 }
 
+/// The reply to a request that cannot be served, saying why.
+pub fn refused_record(reason: &str) -> Vec<u8> {
+    [&[TAG_REFUSED][..], reason.as_bytes()].concat()
+}
+
 fn push_name(record: &mut Vec<u8>, name: &str) {
     record.push(name.len() as u8);
     record.extend_from_slice(name.as_bytes());
@@ -270,6 +277,14 @@ mod tests {
             .unwrap_err()
             .contains("unknown request kind 9"));
         assert_eq!(parse(&[3, 1, 0, 0, 0]), Ok(Request::Release { segment: 1 }));
+    }
+
+    #[test]
+    fn writes_a_refusal_with_its_reason() {
+        assert_eq!(
+            refused_record("no native implementation of decode"),
+            [&[9][..], b"no native implementation of decode"].concat()
+        );
     }
 
     #[test]

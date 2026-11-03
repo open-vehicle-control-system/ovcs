@@ -25,7 +25,9 @@ defmodule VisionCore.Stereo.Segment do
   size, never reaches the device. A reply or a download that is an
   error, such as an exception on the device, fails that pair on the
   device. Either way only that pair is dropped, but a run of pairs the
-  device fails stops the pipeline.
+  device fails stops the pipeline. A reply `{:stop, reason}`, from a
+  device that refuses the segment itself, such as its configuration,
+  stops the pipeline at once.
   """
 
   alias VisionCore.Camera.Frame
@@ -37,8 +39,15 @@ defmodule VisionCore.Stereo.Segment do
 
   @type t :: %{required(:members) => [map()], optional(atom()) => term()}
 
-  @typedoc "What a segment returns for a pair: its outputs, the segment to keep, and when the device was done."
-  @type response :: {:ok, outputs :: map(), t(), done_ns :: integer()} | {:error, term()}
+  @typedoc """
+  What a segment returns for a pair: its outputs, the segment to keep,
+  and when the device was done; the error the device failed it with; or
+  why the device refuses the segment itself.
+  """
+  @type response ::
+          {:ok, outputs :: map(), t(), done_ns :: integer()}
+          | {:error, term()}
+          | {:stop, term()}
 
   @typedoc "The shape and type a `Pair` field enters a segment with."
   @type entry_spec :: {tuple(), Nx.Type.t()}
@@ -53,9 +62,11 @@ defmodule VisionCore.Stereo.Segment do
 
   @doc """
   Whether the backend runs the Nx stage `module`, initialised to
-  `stage_state`, to compute as `compute` says: the stage's `compute:`
-  option, else its own `c:VisionCore.Stereo.NxStage.compute/1`, else the
-  pipeline's `:compute`.
+  `stage_state`, computing as `compute` says: compiled with Nx (`:nx`),
+  or natively (`:native`). The pipeline asks with the stage's `compute:`
+  option, else its own `c:VisionCore.Stereo.NxStage.compute/1`, else
+  its `:compute`, and under its `:native` asks again with `:nx` when no
+  backend takes the stage natively.
   """
   @callback accepts?(module(), stage_state :: term(), compute :: :nx | :native) :: boolean()
 
@@ -71,7 +82,9 @@ defmodule VisionCore.Stereo.Segment do
   When `message` is the reply to `request`, sent with `segment`: the
   pair's outputs, the segment to keep, which carries the values its
   stages pass to the next pair, and the monotonic time in nanoseconds
-  the device was done; `:no_reply` for another message.
+  the device was done; `{:error, reason}` when the device failed the
+  pair, `{:stop, reason}` when it refuses the segment itself; `:no_reply`
+  for another message.
   """
   @callback response(message :: term(), request :: term(), segment :: t()) ::
               response() | :no_reply
@@ -126,10 +139,15 @@ defmodule VisionCore.Stereo.Segment do
   `timeout` milliseconds for each of its reply and its download: the
   pair filled and the segment to keep; `{:refused, reason}` when
   `c:send_request/2` refused the pair, `{:error, reason}` when the
-  device failed it, or `:timeout`.
+  device failed it, `{:stop, reason}` when the device refuses the
+  segment, or `:timeout`.
   """
   @spec run(module(), Pair.t(), t(), timeout()) ::
-          {:ok, Pair.t(), t()} | {:refused, term()} | {:error, term()} | :timeout
+          {:ok, Pair.t(), t()}
+          | {:refused, term()}
+          | {:error, term()}
+          | {:stop, term()}
+          | :timeout
   def run(module, %Pair{} = pair, segment, timeout) do
     case module.send_request(pair, segment) do
       {:ok, request} ->

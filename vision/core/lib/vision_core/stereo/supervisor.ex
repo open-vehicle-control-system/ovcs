@@ -66,7 +66,8 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:match_width`, `:match_height` (`:width`, `:height`) — the size
       the pipeline matches at, and so the size of the disparity, depth
       and point cloud. Smaller than the capture size, the frames are
-      shrunk to it while they are rectified.
+      shrunk to it while they are rectified; larger, the pipeline does
+      not start.
     * `:publish_disparity_image` (`false`) — also publish the
       disparity pixels as a bare `sensor_msgs/Image`, because viewers
       match on a topic's type and cannot render the `DisparityImage`
@@ -108,9 +109,15 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:compute` (`:nx`) — `:native` computes every stage that has a
       native implementation in the `stereo_match` Port, for a CPU; see
       `VisionCore.Stereo.Pipeline`.
+    * `:backends` (`VisionCore.Stereo.NativeSegment` on
+      `VisionCore.Stereo.Matcher`, then `VisionCore.Stereo.NxSegment`
+      with `:defn_options`) — the pipeline's backends, each
+      `{module, opts}`.
     * `:defn_options` (`config :vision_core, :nx_defn_options`, else
       EXLA where it is loaded, as on a workstation, else Nx's evaluator) —
-      how the pipeline compiles Nx stages; see `VisionCore.Stereo.NxSegment`.
+      how the default backends' NxSegment compiles Nx stages; refused
+      beside `:backends`, among whose options NxSegment's go
+      (`VisionCore.Stereo.Pipeline.check_backend_options!/1`).
   """
   use Supervisor
   require Logger
@@ -118,7 +125,16 @@ defmodule VisionCore.Stereo.Supervisor do
   alias VisionCore.Ros2.Publishers.Stereo, as: StereoPublisher
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.Stereo.Diagnostics
-  alias VisionCore.Stereo.{AlignmentCorrection, Pairer, Parameters, Pipeline}
+
+  alias VisionCore.Stereo.{
+    AlignmentCorrection,
+    Matcher,
+    NativeSegment,
+    NxSegment,
+    Pairer,
+    Parameters,
+    Pipeline
+  }
 
   @default_width 1280
   @default_height 720
@@ -196,11 +212,21 @@ defmodule VisionCore.Stereo.Supervisor do
       align_correction: Keyword.get(opts, :align_correction, true),
       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
       stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
-      defn_options: Keyword.get(opts, :defn_options) || default_defn_options(),
+      backends: backends(opts),
       compute: Keyword.get(opts, :compute, :nx),
       left: left,
       right: right
     }
+  end
+
+  defp backends(opts) do
+    Pipeline.check_backend_options!(opts)
+
+    Keyword.get(opts, :backends) ||
+      [
+        {NativeSegment, matcher: Matcher},
+        {NxSegment, defn_options: Keyword.get(opts, :defn_options) || default_defn_options()}
+      ]
   end
 
   defp default_defn_options do
@@ -397,7 +423,7 @@ defmodule VisionCore.Stereo.Supervisor do
      frame_width: config.width,
      frame_height: config.height,
      compute: config.compute,
-     defn_options: config.defn_options}
+     backends: config.backends}
   end
 
   defp publisher_spec(config) do

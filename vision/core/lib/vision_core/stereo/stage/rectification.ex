@@ -3,8 +3,9 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   Undistorts and rectifies both camera frames with `NxStereo.Rectify`,
   so a point lies on the same row in each, and shrinks frames larger
   than the pipeline's size in the same pass, with one bilinear sample
-  per pixel. Each camera's calibration is an input, so a reloaded
-  calibration needs no new compiled module.
+  per pixel; it refuses to start on frames smaller than that size. Each
+  camera's calibration is an input, so a reloaded calibration needs no
+  new compiled module.
 
   ## Options
 
@@ -47,7 +48,8 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
-    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+    with :ok <- check_frame_size(context),
+         {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
          do: {:ok, Map.put(settings, :size, {context.height, context.width})}
   end
 
@@ -56,6 +58,9 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   @impl VisionCore.Stereo.NxStage
   def provides, do: [:left, :right]
+
+  @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "rectification"
 
   @impl VisionCore.Stereo.NxStage
   def params(state, context) do
@@ -86,6 +91,15 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
+  end
+
+  defp check_frame_size(context) do
+    if context.frame_width < context.width or context.frame_height < context.height,
+      do:
+        {:error,
+         "rectification only shrinks: #{context.frame_width}x#{context.frame_height} frames " <>
+           "are smaller than the #{context.width}x#{context.height} working size"},
+      else: :ok
   end
 
   # Sampling row v + rows: the inverse projection's row column, times rows, joins its constant one.

@@ -101,7 +101,11 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
     opts =
       stereo
       |> Supervisor.pipeline_options()
-      |> Keyword.merge(defn_options: defn_options, name: :nx_cache_test_pipeline)
+      |> Keyword.update!(
+        :backends,
+        &List.keyreplace(&1, NxSegment, 0, {NxSegment, defn_options: defn_options})
+      )
+      |> Keyword.put(:name, :nx_cache_test_pipeline)
 
     {:ok, pipeline} = Pipeline.start_link(opts)
     GenServer.stop(pipeline)

@@ -269,6 +269,15 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert {:error, _} = Stage.Rectification.set_option(state, :right_row_offset, 20)
   end
 
+  test "Rectification refuses frames smaller than the working size: it only shrinks them" do
+    assert Stage.Rectification.init([], context(:identity, 96, 64, {64, 64})) ==
+             {:error,
+              "rectification only shrinks: 64x64 frames are smaller than the 96x64 working size"}
+
+    assert {:error, _reason} = Stage.Rectification.init([], context(:identity, 96, 64, {96, 48}))
+    assert {:ok, _state} = Stage.Rectification.init([], context(:identity, 96, 64, {192, 128}))
+  end
+
   test "Disparity aggregates along 8 paths, or 3 when asked" do
     context = context(:identity, 192, 108)
     assert {:ok, state} = Stage.Disparity.init([], context)

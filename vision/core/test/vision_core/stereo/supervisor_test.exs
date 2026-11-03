@@ -2,7 +2,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
   # One test changes the app env the defn options default to.
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.Pipeline
+  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @moduletag :tmp_dir
@@ -58,25 +58,53 @@ defmodule VisionCore.Stereo.SupervisorTest do
       right: [calibration_path: "/rom/stereo_right.yaml"]
     ]
 
-    test "gives the pipeline the component's defn options" do
+    # The defn options of the pipeline's NxSegment.
+    defp defn_options(stereo) do
+      [{NativeSegment, matcher: Matcher}, {NxSegment, defn_options: defn_options}] =
+        StereoSupervisor.pipeline_options(stereo)[:backends]
+
+      defn_options
+    end
+
+    test "gives the pipeline native backends on the Matcher, then Nx with the component's defn options" do
       opts =
         StereoSupervisor.pipeline_options(
           @stereo ++ [defn_options: [compiler: Nx.Defn.Evaluator]]
         )
 
-      assert opts[:defn_options] == [compiler: Nx.Defn.Evaluator]
+      assert opts[:backends] == [
+               {NativeSegment, matcher: Matcher},
+               {NxSegment, defn_options: [compiler: Nx.Defn.Evaluator]}
+             ]
+
+      refute Keyword.has_key?(opts, :defn_options)
     end
 
     test "without them, config :vision_core, :nx_defn_options, else EXLA where it is loaded" do
       configured = Application.fetch_env!(:vision_core, :nx_defn_options)
-      assert StereoSupervisor.pipeline_options(@stereo)[:defn_options] == configured
-
-      assert StereoSupervisor.pipeline_options(@stereo ++ [defn_options: nil])[:defn_options] ==
-               configured
+      assert defn_options(@stereo) == configured
+      assert defn_options(@stereo ++ [defn_options: nil]) == configured
 
       Application.delete_env(:vision_core, :nx_defn_options)
       on_exit(fn -> Application.put_env(:vision_core, :nx_defn_options, configured) end)
-      assert StereoSupervisor.pipeline_options(@stereo)[:defn_options] == [compiler: EXLA]
+      assert defn_options(@stereo) == [compiler: EXLA]
+    end
+
+    test "gives the pipeline the component's backends, refusing defn options beside them" do
+      backends = [{NxSegment, defn_options: [compiler: EXLA]}]
+      opts = StereoSupervisor.pipeline_options(@stereo ++ [backends: backends])
+      assert opts[:backends] == backends
+      refute Keyword.has_key?(opts, :defn_options)
+
+      assert StereoSupervisor.pipeline_options(@stereo ++ [backends: backends, defn_options: nil])[
+               :backends
+             ] == backends
+
+      assert_raise ArgumentError, ~r/^:defn_options sets the default backends' NxSegment/, fn ->
+        StereoSupervisor.pipeline_options(
+          @stereo ++ [backends: backends, defn_options: [compiler: EXLA]]
+        )
+      end
     end
   end
 

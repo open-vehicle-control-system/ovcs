@@ -28,18 +28,23 @@ defmodule VisionCore.Stereo.Pipeline do
   its members. By default, consecutive Nx stages are compiled at start
   into one `VisionCore.Stereo.NxSegment`, and so, through `nx_iree`, one
   module on the device. With `compute: :native`, consecutive stages
-  that have a native implementation, every default one, run instead as
-  one `VisionCore.Stereo.NativeSegment` in the `stereo_match` Port, a
-  pair's one round trip, with each member's time logged under its name
-  too; stages without one are compiled between the segments around
-  them, which take their outputs as inputs. A stage not written in Nx
-  runs on the BEAM, between the segments.
+  that declare a native implementation
+  (`c:VisionCore.Stereo.NxStage.native_kind/0`), every default one, run
+  instead as one `VisionCore.Stereo.NativeSegment` in the `stereo_match`
+  Port, a pair's one round trip, with each member's time logged under
+  its name too; a stage no backend computes natively is compiled between
+  the segments around it, which take their outputs as inputs, unless it
+  would run on Nx's evaluator: without a compiler in `:defn_options`,
+  the pipeline refuses to start. A stage not written in Nx runs on the
+  BEAM, between the segments. The pipeline logs each run of stages at
+  start, with where it computes.
 
   A stage computes as its `compute:` option says, `:nx` or `:native`,
   which the pipeline takes out of its options before `init/2`; else as
   its `c:VisionCore.Stereo.NxStage.compute/1` asks, as `Disparity`'s
   `:matcher` does; else as the pipeline's `:compute`. A `compute:` that
-  the stage's own choice contradicts is refused at start.
+  the stage's own choice contradicts is refused at start, as is a choice
+  no backend takes the stage for.
 
   Once the pipeline can take another pair, the process that submitted
   the last one receives `:stereo_pipeline_ready`;
@@ -65,7 +70,9 @@ defmodule VisionCore.Stereo.Pipeline do
   (`@max_failed_pairs`), with no pair it gets through between them,
   stop the pipeline, and so does a segment whose device does not answer
   within `:device_timeout_ms`, waiting for its reply or its download,
-  for its supervisor to start it again.
+  for its supervisor to start it again. A device that refuses a segment
+  itself, as the `stereo_match` Port refuses a configuration it cannot
+  run, stops the pipeline at that pair, with the device's reason.
 
   ## Options
 
@@ -79,15 +86,18 @@ defmodule VisionCore.Stereo.Pipeline do
     * `:stages` (`default_stages/0`) — modules or `{module, opts}`, an
       Nx stage's `opts` with its `compute:`, if any.
     * `:compute` (`:nx`) — `:native` runs the stages that have a native
-      implementation natively, through `VisionCore.Stereo.Matcher`, which
-      must be running; `:nx` compiles them.
+      implementation natively, through the `VisionCore.Stereo.Matcher`
+      the `VisionCore.Stereo.NativeSegment` backend's `matcher:` names
+      (`VisionCore.Stereo.Matcher` by default), which must be running;
+      `:nx` compiles them.
     * `:backends` (`[NativeSegment, {NxSegment, defn_options: defn_options}]`)
       — the `VisionCore.Stereo.Segment`s to run Nx stages on, modules or
       `{module, opts}`, `opts` for its `c:VisionCore.Stereo.Segment.build/3`,
       in the order they are asked for each stage.
+      `VisionCore.Stereo.Supervisor` passes the unit's.
     * `:defn_options` (`[]`, Nx's own defaults) — how the default
       backends' `VisionCore.Stereo.NxSegment` compiles; refused beside
-      `:backends`. `VisionCore.Stereo.Supervisor` passes the unit's.
+      `:backends` (`check_backend_options!/1`).
     * `:flush_after_ms` (`100`) — how long a pair a compiled segment
       returned waits for the next one before it is finished alone; see
       above.
@@ -147,6 +157,25 @@ defmodule VisionCore.Stereo.Pipeline do
               "no default stage named #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
                 "they are #{Enum.map_join(names, ", ", &inspect/1)}"
     end
+  end
+
+  @doc """
+  Raises when `opts` give `:defn_options` beside `:backends`: they
+  configure the default backends' `VisionCore.Stereo.NxSegment`, which
+  takes them among its own options in `:backends`. A `nil` option is
+  not given.
+  """
+  @spec check_backend_options!(keyword()) :: :ok
+  def check_backend_options!(opts) do
+    if Keyword.get(opts, :backends) != nil and Keyword.get(opts, :defn_options) != nil,
+      do:
+        raise(
+          ArgumentError,
+          ":defn_options sets the default backends' NxSegment: " <>
+            "with :backends, give it among NxSegment's options"
+        )
+
+    :ok
   end
 
   @doc "Sends every later `{:stereo_pair, %Pair{}}` to `listener` as a cast."
@@ -219,16 +248,19 @@ defmodule VisionCore.Stereo.Pipeline do
     check_stages!(stages)
     check_order!(stages)
     check_live_settings!(stages)
+
+    stages =
+      stages
+      |> Enum.map(&initialise_stage!(&1, context))
+      |> group_stages(backends, compute, context)
+
     log_ready(context, stages)
 
     {:ok,
      %{
        opts: opts,
        context: context,
-       stages:
-         stages
-         |> Enum.map(&initialise_stage!(&1, context))
-         |> group_stages(backends, compute, context),
+       stages: stages,
        listeners: [],
        timer: StageTimer.new(window: 30, label: "pipeline"),
        last_start_ns: nil,
@@ -346,6 +378,11 @@ defmodule VisionCore.Stereo.Pipeline do
     %{state | stop: {:device_timeout, state.device_timeout_ms}}
   end
 
+  defp device_refused(state, name, reason) do
+    Logger.error("#{__MODULE__}: #{name}'s device refuses it: #{inspect(reason)}")
+    %{state | stop: {:device_refused, name, reason}}
+  end
+
   defp device_failed(state, name, reason) do
     failed_pairs = state.failed_pairs + 1
 
@@ -419,6 +456,9 @@ defmodule VisionCore.Stereo.Pipeline do
         {:error, reason} ->
           state = %{state | last_reply_ns: System.monotonic_time(:nanosecond)}
           finish_pair(state, {:device_error, first.module, first.name, reason}, sent.start_ns)
+
+        {:stop, reason} ->
+          finish_pair(state, {:device_refused, first.name, reason}, sent.start_ns)
       end
 
     state |> send_queued() |> ready()
@@ -511,6 +551,9 @@ defmodule VisionCore.Stereo.Pipeline do
 
         {:device_timeout, name} ->
           device_timeout(state, name)
+
+        {:device_refused, name, reason} ->
+          device_refused(state, name, reason)
       end
 
     timer =
@@ -565,6 +608,9 @@ defmodule VisionCore.Stereo.Pipeline do
   defp stage_outcome(stage, :timeout, _elapsed_ns, timer),
     do: {{:device_timeout, stage.name}, stage, timer}
 
+  defp stage_outcome(stage, {:stop, reason}, _elapsed_ns, timer),
+    do: {{:device_refused, stage.name, reason}, stage, timer}
+
   defp record_members(timer, member_times) do
     Enum.reduce(member_times, timer, fn {name, duration_ns}, timer ->
       StageTimer.record(timer, name, duration_ns)
@@ -608,20 +654,14 @@ defmodule VisionCore.Stereo.Pipeline do
     do: module |> Module.split() |> List.last() |> Macro.underscore() |> String.to_atom()
 
   defp backends(opts) do
-    case Keyword.fetch(opts, :backends) do
-      {:ok, backends} ->
-        if Keyword.has_key?(opts, :defn_options),
-          do:
-            raise(
-              ArgumentError,
-              ":defn_options sets the default backends' NxSegment: " <>
-                "with :backends, give it among NxSegment's options"
-            )
+    check_backend_options!(opts)
 
+    case Keyword.get(opts, :backends) do
+      nil ->
+        [{NativeSegment, []}, {NxSegment, defn_options: Keyword.get(opts, :defn_options) || []}]
+
+      backends ->
         Enum.map(backends, &normalise_backend/1)
-
-      :error ->
-        [{NativeSegment, []}, {NxSegment, defn_options: Keyword.get(opts, :defn_options, [])}]
     end
   end
 
@@ -694,37 +734,51 @@ defmodule VisionCore.Stereo.Pipeline do
   # Each run of consecutive stages one backend takes becomes one segment stage.
   defp group_stages(stages, backends, compute, context) do
     stages
-    |> Enum.map(&{placement(&1, backends, compute), &1})
+    |> Enum.map(&placement(&1, backends, compute))
     |> Enum.chunk_by(&elem(&1, 0))
     |> Enum.flat_map(fn
-      [{:cpu, _stage} | _] = run ->
+      [{:cpu, _stage, _fallback?} | _] = run ->
         Enum.map(run, &elem(&1, 1))
 
-      [{{backend, backend_opts}, _stage} | _] = run ->
-        [segment_stage!(Enum.map(run, &elem(&1, 1)), backend, backend_opts, context)]
+      [{{backend, backend_opts}, _stage, _fallback?} | _] = run ->
+        segment = segment_stage!(Enum.map(run, &elem(&1, 1)), backend, backend_opts, context)
+        check_fallbacks!(segment, for({_backend, stage, true} <- run, do: stage.module))
+        [segment]
     end)
   end
 
-  # A CPU stage runs on the BEAM; an Nx stage on the first backend that accepts it.
+  # An Nx stage computes as it asks, else as :compute says, and under :native falls back to :nx.
   defp placement(stage, backends, compute) do
-    if NxStage.nx_stage?(stage.module) do
-      compute = stage_compute!(stage, compute)
+    cond do
+      not NxStage.nx_stage?(stage.module) ->
+        {:cpu, stage, false}
 
-      Enum.find(backends, fn {backend, _opts} ->
-        backend.accepts?(stage.module, stage.state, compute)
-      end) ||
-        raise ArgumentError,
-              "no backend takes #{inspect(stage.module)} to compute #{inspect(compute)}"
-    else
-      :cpu
+      asked = own_compute!(stage) ->
+        {backend!(backends, stage, asked), stage, false}
+
+      backend = compute == :native && backend(backends, stage, :native) ->
+        {backend, stage, false}
+
+      true ->
+        {backend!(backends, stage, :nx), stage, compute == :native}
     end
   end
 
-  defp stage_compute!(stage, compute) do
-    case {stage.compute, NxStage.compute(stage.module, stage.state)} do
-      {nil, nil} ->
-        compute
+  defp backend(backends, stage, compute),
+    do:
+      Enum.find(backends, fn {backend, _opts} ->
+        backend.accepts?(stage.module, stage.state, compute)
+      end)
 
+  defp backend!(backends, stage, compute) do
+    backend(backends, stage, compute) ||
+      raise ArgumentError,
+            "no backend takes #{inspect(stage.module)} to compute #{inspect(compute)}"
+  end
+
+  # The stage's own choice: its compute: pin, else its compute/1; nil leaves it to the pipeline.
+  defp own_compute!(stage) do
+    case {stage.compute, NxStage.compute(stage.module, stage.state)} do
       {nil, own} ->
         own
 
@@ -736,6 +790,19 @@ defmodule VisionCore.Stereo.Pipeline do
               "#{inspect(stage.module)} is pinned to compute: #{inspect(pinned)}, " <>
                 "but its own options ask for #{inspect(own)}"
     end
+  end
+
+  # Refused on Nx's evaluator, far too slow for a stage asked to compute natively.
+  defp check_fallbacks!(_segment, []), do: :ok
+
+  defp check_fallbacks!(segment, modules) do
+    if compute(segment).backend == :evaluator,
+      do:
+        raise(
+          ArgumentError,
+          "no backend computes #{Enum.map_join(modules, ", ", &inspect/1)} natively, and " <>
+            "without a compiler in :defn_options it would run on Nx's evaluator"
+        )
   end
 
   defp segment_stage!(members, backend, backend_opts, context) do
@@ -894,7 +961,11 @@ defmodule VisionCore.Stereo.Pipeline do
       "#{__MODULE__} ready (#{context.width}×#{context.height}, " <>
         "fx=#{Float.round(context.focal_length_px, 2)} px, " <>
         "baseline=#{Float.round(context.baseline_m, 4)} m, " <>
-        "stages: #{Enum.map_join(stages, " → ", & &1.name)})"
+        "stages: #{Enum.map_join(stages, " → ", &"#{&1.name} (#{where(compute(&1))})")})"
     )
   end
+
+  # Where a run of stages computes, as `runs_on, implementation, backend`.
+  defp where(%{runs_on: runs_on, implementation: implementation, backend: backend}),
+    do: [runs_on, implementation, backend] |> Enum.reject(&is_nil/1) |> Enum.join(", ")
 end

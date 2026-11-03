@@ -56,6 +56,12 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   def provides, do: [:cloud, :cloud_points, :cloud_size]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "point_cloud"
+
+  @impl VisionCore.Stereo.NxStage
+  def native_constants, do: %{min_depth_m: @min_depth_m, max_depth_m: @max_depth_m}
+
+  @impl VisionCore.Stereo.NxStage
   def params(_state, context) do
     {cx, cy} = context.principal_point
     %{focal_length_px: context.focal_length_px, cx: cx, cy: cy}

@@ -14,8 +14,53 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
 
   @calibration Path.expand("../../support/calibration", __DIR__)
 
+  # A vehicle's stage wrapping a core one, computed natively as that one.
+  defmodule VehicleDepth do
+    @behaviour VisionCore.Stereo.NxStage
+
+    alias VisionCore.Stereo.Stage.Depth
+
+    defdelegate init(opts, context), to: Depth
+    defdelegate requires(), to: Depth
+    defdelegate provides(), to: Depth
+    defdelegate params(state, context), to: Depth
+    defdelegate step(tensors, params, state), to: Depth
+    defdelegate device_only(), to: Depth
+    defdelegate finish(pair, outputs, state), to: Depth
+    def native_kind, do: "depth"
+  end
+
+  # PointCloud with a range of its own, which the Port is configured with.
+  defmodule NearCloud do
+    @behaviour VisionCore.Stereo.NxStage
+
+    alias VisionCore.Stereo.Stage.PointCloud
+
+    defdelegate init(opts, context), to: PointCloud
+    defdelegate requires(), to: PointCloud
+    defdelegate provides(), to: PointCloud
+    defdelegate params(state, context), to: PointCloud
+    defdelegate step(tensors, params, state), to: PointCloud
+    defdelegate finish(pair, outputs, state), to: PointCloud
+    defdelegate option_specs(), to: PointCloud
+    defdelegate options(state), to: PointCloud
+    def native_kind, do: "point_cloud"
+    def native_constants, do: %{min_depth_m: 1.0, max_depth_m: 2.0}
+  end
+
+  # A stage of a kind the Port has no implementation of.
+  defmodule UnknownKind do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+    def step(tensors, _params, _state), do: tensors
+    def native_kind, do: "no_such_stage"
+  end
+
   setup do
-    start_supervised!(Matcher)
+    start_supervised!({Matcher, path: Application.fetch_env!(:vision_core, :stereo_match_path)})
     :ok
   end
 
@@ -573,10 +618,49 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
              run(NativeSegment, %{good | geometry: context}, segment)
   end
 
-  test "takes the stages that have a native implementation, to compute natively" do
-    optional = [{Stage.MedianFilter, []}]
+  test "configures the Port with the constants a stage declares" do
+    context = context(:identity, 192, 108)
+    disparity = disparity(108, 192, 7) |> Nx.multiply(8) |> Nx.max(-1.0)
+    pairs = [disparity_pair(Nx.backend_transfer(disparity, Nx.BinaryBackend))]
 
-    for {module, _opts} <- optional ++ Pipeline.default_stages() do
+    [near] = run_native([{Stage.Depth, []}, {NearCloud, [decimation: 1]}], context, pairs)
+    [all] = run_native([{Stage.Depth, []}, {Stage.PointCloud, [decimation: 1]}], context, pairs)
+
+    # NaN, outside the range, is no float: only the kept points match.
+    kept =
+      for <<_x::float-32-little, _y::float-32-little, z::float-32-little <- near.cloud>>, do: z
+
+    assert length(kept) == near.cloud_points
+    assert near.cloud_points > 0 and near.cloud_points < all.cloud_points
+    assert Enum.all?(kept, &(&1 > 1.0 and &1 < 2.0))
+  end
+
+  test "stops at a configuration the Port refuses, saying why" do
+    context = context(:stereo, 64, 48)
+    pair = %{disparity_pair(disparity(48, 64, 1)) | geometry: context}
+    stages = [{Stage.TemporalFilter, []}, {UnknownKind, []}]
+    {:ok, segment} = NativeSegment.build(members(stages, context), context, [])
+
+    assert run(NativeSegment, pair, segment) ==
+             {:stop, "no native implementation of no_such_stage"}
+  end
+
+  test "refuses frames smaller than the working size to rectify, as the Nx stage does" do
+    context = context(:identity, 64, 48)
+    small = %{context | frame_width: 48, frame_height: 36}
+    members = members([{Stage.Rectification, []}], context)
+    {:ok, segment} = NativeSegment.build(members, small, [])
+    pair = %{frames_pair(texture(36, 48, 1), texture(36, 48, 2)) | geometry: small}
+
+    assert run(NativeSegment, pair, segment) ==
+             {:stop,
+              "rectification only shrinks: 48x36 frames are smaller than the 64x48 working size"}
+  end
+
+  test "takes the stages that declare a native kind, to compute natively" do
+    declared = [{Stage.MedianFilter, []}, {VehicleDepth, []}]
+
+    for {module, _opts} <- declared ++ Pipeline.default_stages() do
       assert NativeSegment.accepts?(module, nil, :native)
       refute NativeSegment.accepts?(module, nil, :nx)
     end
@@ -584,12 +668,36 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     refute NativeSegment.accepts?(Stage.Decode, nil, :native)
   end
 
+  test "computes a vehicle's stage as the core stage of the kind it declares" do
+    context = context(:identity, 64, 48)
+    pairs = [disparity_pair(disparity(48, 64, 3))]
+
+    [native] = run_native([{VehicleDepth, []}], context, pairs)
+    [nx] = run_nx([{Stage.Depth, []}], context, pairs)
+
+    assert native.depth == nx.depth
+    assert native.disparity_bytes == nx.disparity_bytes
+  end
+
+  test "sends its pairs to the matcher its build options name" do
+    path = Application.fetch_env!(:vision_core, :stereo_match_path)
+    start_supervised!({Matcher, name: :segment_matcher, path: path}, id: :segment_matcher)
+    stop_supervised!(Matcher)
+
+    context = context(:stereo, 64, 48)
+    pair = %{disparity_pair(disparity(48, 64, 1)) | geometry: context}
+    members = members([{Stage.TemporalFilter, []}], context)
+    {:ok, segment} = NativeSegment.build(members, context, matcher: :segment_matcher)
+
+    assert {:ok, %Pair{disparity: %Nx.Tensor{}}, _segment} = run(NativeSegment, pair, segment)
+  end
+
   test "refuses a build option it does not know" do
     context = context(:stereo, 64, 48)
     members = members([{Stage.TemporalFilter, []}], context)
 
-    assert NativeSegment.build(members, context, matcher: Matcher) ==
-             {:error, "unknown build options [:matcher]"}
+    assert NativeSegment.build(members, context, defn_options: []) ==
+             {:error, "unknown build options [:defn_options]"}
   end
 
   test "waits for a pair's outputs up to a timeout" do

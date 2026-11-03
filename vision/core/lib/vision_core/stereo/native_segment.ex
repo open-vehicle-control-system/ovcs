@@ -13,20 +13,25 @@ defmodule VisionCore.Stereo.NativeSegment do
   Port keeps what the stages carry from one pair to the next and what
   depends only on their settings, such as the rectification maps.
 
-  The Port is configured with each stage's kind and the numbers among
-  its `options/1`, its build settings. A pair is then one request: the
-  fields the run needs from earlier stages and each stage's `params/2`,
-  so a live setting applies from the next pair sent. The reply holds the
-  tensors the Nx steps would have produced, as `Nx.BinaryBackend`
-  tensors, and each stage's `finish/3` fills the `Pair` from them as
-  after an Nx segment. A calibration reload (`reload/3`) configures the
-  stages again, which starts what they carry over, as
-  `VisionCore.Stereo.NxSegment.reload/3` does.
+  The Port is configured with each stage's kind
+  (`c:VisionCore.Stereo.NxStage.native_kind/0`), its build settings and
+  the constants its step shares with the Port
+  (`c:VisionCore.Stereo.NxStage.native_constants/0`). A pair is then one
+  request: the fields the run needs from earlier stages and each stage's
+  `params/2`, so a live setting applies from the next pair sent. The
+  reply holds the tensors the Nx steps would have produced, as
+  `Nx.BinaryBackend` tensors, and each stage's `finish/3` fills the
+  `Pair` from them as after an Nx segment. A calibration reload
+  (`reload/3`) configures the stages again, which starts what they carry
+  over, as `VisionCore.Stereo.NxSegment.reload/3` does.
 
   Building a segment does not reach the Port: it is configured on its
   first pair, so `mix vision_core.nx_cache` starts a pipeline with native
-  segments without one. The process that builds it owns it: the Port
-  releases it once that process exits.
+  segments without one. A configuration the Port refuses, such as a kind
+  it has no implementation of, a setting a stage does not take or frames
+  smaller than the working size to rectify, answers that pair with
+  `{:stop, reason}`: the segment cannot run. The process that builds it
+  owns it: the Port releases it once that process exits.
 
   `send_request/2` sends a pair without waiting for its outputs, which
   `response/3` recognises among the process's messages, or `await/3`
@@ -38,8 +43,9 @@ defmodule VisionCore.Stereo.NativeSegment do
 
   alias VisionCore.Stereo.{Matcher, NxStage, Pair, Segment, Stage}
 
-  @enforce_keys [:id, :version, :members, :specs, :configuration, :inputs, :context]
+  @enforce_keys [:matcher, :id, :version, :members, :specs, :configuration, :inputs, :context]
   defstruct [
+    :matcher,
     :owner,
     :id,
     :version,
@@ -52,19 +58,6 @@ defmodule VisionCore.Stereo.NativeSegment do
   ]
 
   @type t :: %__MODULE__{}
-
-  @kinds %{
-    Stage.Rectification => "rectification",
-    Stage.Sharpness => "sharpness",
-    Stage.Disparity => "disparity",
-    Stage.MedianFilter => "median_filter",
-    Stage.SpeckleFilter => "speckle_filter",
-    Stage.RowAlignment => "row_alignment",
-    Stage.TemporalFilter => "temporal_filter",
-    Stage.Depth => "depth",
-    Stage.PointCloud => "point_cloud",
-    Stage.Quality => "quality"
-  }
 
   @configure 1
   @run 2
@@ -84,28 +77,35 @@ defmodule VisionCore.Stereo.NativeSegment do
   @spec depth() :: pos_integer()
   def depth, do: 2
 
-  @doc "Whether `module` has a native implementation, for a stage to compute natively."
+  @doc """
+  Whether `module` declares the kind of its native implementation
+  (`c:VisionCore.Stereo.NxStage.native_kind/0`), for a stage to compute
+  natively.
+  """
   @impl VisionCore.Stereo.Segment
   @spec accepts?(module(), term(), :nx | :native) :: boolean()
-  def accepts?(module, _state, compute), do: compute == :native and Map.has_key?(@kinds, module)
+  def accepts?(module, _state, compute),
+    do: compute == :native and NxStage.native_kind(module) != nil
 
   @doc """
   The segment of `members`, initialised pipeline stages (`%{module:,
-  name:, state:}`) that it `accepts?/3`, for `context`. It takes no
-  `opts`.
+  name:, state:}`) that it `accepts?/3`, for `context`, with `opts`:
+  `:matcher` (`VisionCore.Stereo.Matcher`), the `VisionCore.Stereo.Matcher`
+  server its pairs go to.
   """
   @impl VisionCore.Stereo.Segment
   @spec build([map()], Stage.context(), keyword()) :: {:ok, t()} | {:error, String.t()}
   def build(members, context, opts) do
-    case Keyword.validate(opts, []) do
-      {:ok, _opts} -> new_segment(members, context)
+    case Keyword.validate(opts, matcher: Matcher) do
+      {:ok, opts} -> new_segment(members, context, opts[:matcher])
       {:error, unknown} -> {:error, "unknown build options #{inspect(unknown)}"}
     end
   end
 
-  defp new_segment(members, context) do
+  defp new_segment(members, context, matcher) do
     with {:ok, specs} <- Segment.entry_specs(members, context) do
       segment = %__MODULE__{
+        matcher: matcher,
         owner: self(),
         id: rem(System.unique_integer([:positive]), 0x1_0000_0000),
         version: 0,
@@ -158,6 +158,7 @@ defmodule VisionCore.Stereo.NativeSegment do
 
       {:ok,
        Matcher.send_run(
+         segment.matcher,
          segment.owner,
          segment.id,
          segment.version,
@@ -175,8 +176,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   another message.
   """
   @impl VisionCore.Stereo.Segment
-  @spec response(term(), :gen_server.request_id(), t()) ::
-          {:ok, map(), t(), integer()} | {:error, term()} | :no_reply
+  @spec response(term(), :gen_server.request_id(), t()) :: Segment.response() | :no_reply
   def response(message, request_id, %__MODULE__{} = segment) do
     case :gen_server.check_response(message, request_id) do
       :no_reply -> :no_reply
@@ -189,14 +189,16 @@ defmodule VisionCore.Stereo.NativeSegment do
   for its reply up to `timeout` ms, or `:timeout`.
   """
   @impl VisionCore.Stereo.Segment
-  @spec await(:gen_server.request_id(), t(), timeout()) ::
-          {:ok, map(), t(), integer()} | {:error, term()} | :timeout
+  @spec await(:gen_server.request_id(), t(), timeout()) :: Segment.response() | :timeout
   def await(request_id, %__MODULE__{} = segment, timeout) do
     case :gen_server.receive_response(request_id, timeout) do
       :timeout -> :timeout
       response -> received(response, segment)
     end
   end
+
+  defp received({:reply, {:error, {:configuration_refused, reason}}}, _segment),
+    do: {:stop, reason}
 
   defp received({:reply, reply}, segment) do
     with {:ok, outputs, segment} <- run_outputs(reply, segment),
@@ -244,7 +246,7 @@ defmodule VisionCore.Stereo.NativeSegment do
         settings = build_settings(member)
 
         [
-          length_prefixed(Map.fetch!(@kinds, member.module)),
+          length_prefixed(member.module.native_kind()),
           length(settings),
           Enum.map(settings, fn {key, value} ->
             [length_prefixed(key), <<value::little-float-64>>]
@@ -255,15 +257,28 @@ defmodule VisionCore.Stereo.NativeSegment do
     |> IO.iodata_to_binary()
   end
 
+  # The stage's build settings and native constants; its live settings go with each pair.
   defp build_settings(member) do
-    if function_exported?(member.module, :options, 1) do
-      for {key, value} <- member.module.options(member.state),
-          is_number(value) or is_boolean(value) do
-        {key, setting_float(value)}
-      end
-    else
-      []
-    end
+    values =
+      if function_exported?(member.module, :options, 1),
+        do: member.module.options(member.state),
+        else: %{}
+
+    build =
+      for {key, spec} <- option_specs(member.module),
+          Map.get(spec, :applies, :live) == :build,
+          is_number(values[key]) or is_boolean(values[key]),
+          do: {key, setting_float(values[key])}
+
+    constants =
+      for {key, value} <- member.module |> NxStage.native_constants() |> Enum.sort(),
+          do: {key, setting_float(value)}
+
+    build ++ constants
+  end
+
+  defp option_specs(module) do
+    if function_exported?(module, :option_specs, 0), do: module.option_specs(), else: []
   end
 
   defp setting_float(true), do: 1.0

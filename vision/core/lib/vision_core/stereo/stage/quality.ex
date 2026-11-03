@@ -46,6 +46,9 @@ defmodule VisionCore.Stereo.Stage.Quality do
   def provides, do: [:metrics]
 
   @impl VisionCore.Stereo.NxStage
+  def native_kind, do: "quality"
+
+  @impl VisionCore.Stereo.NxStage
   def carry(state, _context), do: %{previous: Nx.broadcast(Nx.f32(-1), state.size)}
 
   @impl VisionCore.Stereo.NxStage

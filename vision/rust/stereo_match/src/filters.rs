@@ -220,24 +220,23 @@ fn median_row(
     filtered_row.copy_from_slice(&values[side * side / 2 * width..][..width]);
 }
 
-/// The radius of the speckle filter's window.
-const SPECKLE_RADIUS: usize = 3;
-
 /// The disparity with each matched pixel kept only where at least
-/// `min_support` of the 48 others in its 7x7 window matched within
-/// `max_difference` of it, unmatched (`-1.0`) outside the image.
+/// `min_support` of the others in its window, `radius` pixels each way,
+/// matched within `max_difference` of it, unmatched (`-1.0`) outside the
+/// image.
 pub fn despeckle(
     disparity: &[f32],
     width: usize,
     height: usize,
     min_support: f32,
     max_difference: f32,
+    radius: usize,
     threads: usize,
 ) -> Vec<f32> {
-    let stride = width + 2 * SPECKLE_RADIUS;
-    let mut padded = vec![-1.0f32; stride * (height + 2 * SPECKLE_RADIUS)];
+    let stride = width + 2 * radius;
+    let mut padded = vec![-1.0f32; stride * (height + 2 * radius)];
     for (y, row) in disparity.chunks_exact(width).enumerate() {
-        let start = (y + SPECKLE_RADIUS) * stride + SPECKLE_RADIUS;
+        let start = (y + radius) * stride + radius;
         padded[start..start + width].copy_from_slice(row);
     }
     let mut despeckled = vec![0.0; width * height];
@@ -250,9 +249,9 @@ pub fn despeckle(
             for y in range {
                 support.fill(0);
                 let centre = &disparity[y * width..(y + 1) * width];
-                for dy in 0..2 * SPECKLE_RADIUS + 1 {
-                    for dx in 0..2 * SPECKLE_RADIUS + 1 {
-                        if (dy, dx) == (SPECKLE_RADIUS, SPECKLE_RADIUS) {
+                for dy in 0..2 * radius + 1 {
+                    for dx in 0..2 * radius + 1 {
+                        if (dy, dx) == (radius, radius) {
                             continue;
                         }
                         let neighbours = &padded[(y + dy) * stride + dx..][..width];
@@ -280,10 +279,12 @@ pub fn despeckle(
 }
 
 /// What the temporal filter carries from one pair to the next: the last
-/// filtered disparity and, per pixel, the pairs since it last matched.
+/// filtered disparity and, per pixel, the pairs since it last matched, a
+/// count that stops at `max_missed`.
 pub struct Temporal {
     previous: Vec<f32>,
     missed: Vec<f32>,
+    max_missed: f32,
 }
 
 /// The temporal filter's live settings.
@@ -294,16 +295,18 @@ pub struct TemporalSettings {
 }
 
 impl Temporal {
-    pub fn new(pixels: usize) -> Temporal {
+    pub fn new(pixels: usize, max_missed: f32) -> Temporal {
         Temporal {
             previous: vec![-1.0; pixels],
             missed: vec![0.0; pixels],
+            max_missed,
         }
     }
 
     /// Filters `disparity` in place against the previous pair's.
     pub fn filter(&mut self, disparity: &mut [f32], settings: &TemporalSettings) {
         let TemporalSettings { alpha, delta, hold } = *settings;
+        let max_missed = self.max_missed;
         for ((current, previous), missed) in disparity
             .iter_mut()
             .zip(self.previous.iter_mut())
@@ -321,7 +324,7 @@ impl Temporal {
             let filtered = if held { *previous } else { smoothed };
             *current = filtered;
             *previous = filtered;
-            *missed = pairs_missed.min(255.0);
+            *missed = pairs_missed.min(max_missed);
         }
     }
 }
@@ -372,7 +375,7 @@ mod tests {
             disparity[y * width + 15..(y + 1) * width].fill(-1.0);
         }
         disparity[5 * width + 17] = 30.0;
-        let got = despeckle(&disparity, width, height, 12.0, 1.0, 2);
+        let got = despeckle(&disparity, width, height, 12.0, 1.0, 3, 2);
         assert_eq!(got[5 * width + 17], -1.0);
         assert_eq!(got[0], 10.0);
         assert_eq!(got[5 * width + 5], 10.0);
@@ -386,8 +389,27 @@ mod tests {
         let (width, height) = (12, 10);
         let mut disparity = vec![0.0; width * height];
         disparity[5 * width + 5] = 0.5;
-        let got = despeckle(&disparity, width, height, 12.0, 1.0, 2);
+        let got = despeckle(&disparity, width, height, 12.0, 1.0, 3, 2);
         assert!(got.iter().all(|&d| d == -1.0));
+    }
+
+    #[test]
+    fn despeckle_counts_the_neighbours_within_its_radius() {
+        let (width, height) = (5, 5);
+        let disparity = vec![10.0; width * height];
+        // The centre has 8 neighbours within 1 pixel, 24 within 3 in a 5x5 image.
+        assert_eq!(
+            despeckle(&disparity, width, height, 9.0, 0.0, 1, 1)[12],
+            -1.0
+        );
+        assert_eq!(
+            despeckle(&disparity, width, height, 8.0, 0.0, 1, 1)[12],
+            10.0
+        );
+        assert_eq!(
+            despeckle(&disparity, width, height, 24.0, 0.0, 3, 1)[12],
+            10.0
+        );
     }
 
     #[test]
@@ -397,7 +419,7 @@ mod tests {
             delta: 2.0,
             hold: 1.0,
         };
-        let mut temporal = Temporal::new(2);
+        let mut temporal = Temporal::new(2, 255.0);
         temporal.filter(&mut [10.0, 0.0], &settings);
         let mut second = [0.0, 1.0];
         temporal.filter(&mut second, &settings);
@@ -411,7 +433,7 @@ mod tests {
             delta: 2.0,
             hold: 1.0,
         };
-        let mut temporal = Temporal::new(3);
+        let mut temporal = Temporal::new(3, 255.0);
         let mut first = [10.0, 10.0, 10.0];
         temporal.filter(&mut first, &settings);
         assert_eq!(first, [10.0, 10.0, 10.0]);
@@ -421,5 +443,28 @@ mod tests {
         let mut third = [11.0, 20.0, -1.0];
         temporal.filter(&mut third, &settings);
         assert_eq!(third, [10.75, 20.0, -1.0]);
+    }
+
+    #[test]
+    fn temporal_counts_missed_pairs_up_to_its_cap() {
+        let settings = TemporalSettings {
+            alpha: 1.0,
+            delta: 2.0,
+            hold: 2.0,
+        };
+        let held = |max_missed| {
+            let mut temporal = Temporal::new(1, max_missed);
+            temporal.filter(&mut [10.0], &settings);
+            (0..4)
+                .map(|_pair| {
+                    let mut lost = [-1.0];
+                    temporal.filter(&mut lost, &settings);
+                    lost[0]
+                })
+                .collect::<Vec<f32>>()
+        };
+        assert_eq!(held(255.0), [10.0, 10.0, -1.0, -1.0]);
+        // Capped below the hold, the count never passes it.
+        assert_eq!(held(1.0), [10.0, 10.0, 10.0, 10.0]);
     }
 }
