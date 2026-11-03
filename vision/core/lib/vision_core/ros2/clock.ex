@@ -71,9 +71,9 @@ defmodule VisionCore.Ros2.Clock do
   and never ages out. The static-transform publisher races the first
   `/clock` sample, so this is not a theoretical window.
 
-  So this is listed first among a vehicle's simulation components, and
-  blocking here means no publisher can emit a wall-clock stamp into a
-  simulator's graph.
+  So `VisionCore.Application` starts it with the ROS 2 link, before the
+  components and the exporters, and blocking here means no exporter can
+  emit a wall-clock stamp into a simulator's graph.
 
   ## Giving up is permanent, on purpose
 
@@ -143,7 +143,7 @@ defmodule VisionCore.Ros2.Clock do
 
   @impl GenServer
   def init(opts) do
-    # Keyword list or map, depending on how the component is listed.
+    # Keyword list or map, as `simulator_clock:` gives them.
     opts = Map.new(opts || [])
     timeout_ms = Map.get(opts, :acquire_timeout_ms, @default_acquire_timeout_ms)
     # Injected so the lifecycle can be tested without a live

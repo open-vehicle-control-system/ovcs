@@ -26,6 +26,9 @@ defmodule VisionCore.Ros2.ZenohClient.State do
       open, logged once on connect, then reset.
     * `open_session`: how a session is opened, a function from the
       router's address to `{:ok, session}` or `{:error, reason}`.
+    * `connecting`: the session being opened, `%{ref, backoff_ms}`: the
+      reference of the task opening it and the delay before the next
+      attempt should it fail; `nil` when none is.
   """
 
   defstruct [
@@ -35,6 +38,7 @@ defmodule VisionCore.Ros2.ZenohClient.State do
     :open_session,
     :session,
     :node_token,
+    :connecting,
     publishers: %{},
     subscriptions: %{},
     services: %{},
@@ -49,7 +53,10 @@ defmodule VisionCore.Ros2.ZenohClient do
   publisher and subscriber in `vision_core`. Handles three concerns:
 
     * Connecting to the configured Zenoh router with bounded-backoff
-      reconnect.
+      reconnect. The session opens in a task of its own, linked to the
+      client, so the client answers its callers while a router does
+      not: subscriptions and services wait for the session, and
+      publishes are dropped until it opens.
     * Lazily declaring per-topic publishers (`publish/4`) and their
       matching rmw_zenoh liveliness tokens so ROS 2 graph introspection
       (`ros2 topic list`, Foxglove) sees them.
@@ -86,10 +93,14 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   `publish/4` encodes in the calling process and casts the encoded
   payload; the client only numbers it, attaches the publisher's GID and
-  puts it. The encoders are binary constructions guarded on the field
-  types, so a `nil` where a number belongs raises. In the client that
-  raise would restart it and, `VisionCore.Supervisor` being `:rest_for_one`,
-  every consumer behind it, cameras included, at the publisher's rate.
+  puts it. A publish waiting in the client behind a newer one of the same
+  topic is dropped, never put, unless it was given `keep: true`: when
+  puts fall behind, the client puts each topic's newest message instead
+  of queueing the older ones. The encoders are binary constructions
+  guarded on the field types, so a `nil` where a number belongs raises.
+  In the client that raise would restart it and, `VisionCore.Supervisor`
+  being `:rest_for_one`, every consumer behind it, cameras included, at
+  the publisher's rate.
   In the caller it costs one message: `publish/4` returns
   `{:error, reason}`, logs once per topic and message type, and counts the
   failure in `VisionCore.Ros2.Topics`.
@@ -169,6 +180,11 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   Each message that encodes, and each one dropped for want of a session, is
   counted in `VisionCore.Ros2.Topics`.
+
+  A newer message of `topic` waiting behind this one stands in for it: the
+  client puts the newer one alone. With `keep: true` the client puts this
+  one too, for a message the next does not stand in for, such as a marker
+  array that deletes markers.
   """
   @spec publish(String.t(), module(), struct(), keyword()) ::
           :ok | {:error, {:encode_raised, String.t()}}
@@ -276,16 +292,6 @@ defmodule VisionCore.Ros2.ZenohClient do
   end
 
   @doc """
-  Whether a session to the router is open, once the client has handled
-  what was sent to it before. `false` when the client is not running.
-  """
-  def connected? do
-    GenServer.call(__MODULE__, :connected?)
-  catch
-    :exit, _reason -> false
-  end
-
-  @doc """
   Whether a session to the router is open, read from the client's flag
   without waiting on the client, which may be busy with puts: what a
   process that must answer at once, such as an exporter giving its
@@ -299,13 +305,15 @@ defmodule VisionCore.Ros2.ZenohClient do
   end
 
   @doc """
-  The node and its link to the router: the node name, whether a session is
-  open, the router endpoint, and the services this client answers, by full
-  name and ROS type, sorted by name. When the client is not running, the
-  node is the configured one, down, with no endpoint and no service.
+  The node and its link to the router: the node name and ROS 2 domain,
+  whether a session is open, the router endpoint, and the services this
+  client answers, by full name and ROS type, sorted by name. When the
+  client is not running, the node is the configured one, down, with no
+  endpoint and no service.
   """
   @spec link() :: %{
           node_name: String.t(),
+          domain_id: non_neg_integer(),
           connected: boolean(),
           endpoint: String.t() | nil,
           services: [%{name: String.t(), type: String.t()}]
@@ -314,8 +322,15 @@ defmodule VisionCore.Ros2.ZenohClient do
     GenServer.call(__MODULE__, :link)
   catch
     :exit, _reason ->
-      node_name = configured_node_name(VisionCore.Application.active_config())
-      %{node_name: node_name, connected: false, endpoint: nil, services: []}
+      config = VisionCore.Application.active_config()
+
+      %{
+        node_name: configured_node_name(config),
+        domain_id: configured_domain_id(config),
+        connected: false,
+        endpoint: nil,
+        services: []
+      }
   end
 
   @doc """
@@ -327,6 +342,11 @@ defmodule VisionCore.Ros2.ZenohClient do
     do: Keyword.get(ros2, :node_name) || @default_node_name
 
   def configured_node_name(_config), do: @default_node_name
+
+  defp configured_domain_id(%VisionCore.Config{ros2: ros2}) when is_list(ros2),
+    do: Keyword.get(ros2, :domain_id) || @default_domain_id
+
+  defp configured_domain_id(_config), do: @default_domain_id
 
   @impl GenServer
   def init(opts) do
@@ -345,7 +365,6 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   @impl GenServer
   def handle_call(:node_name, _from, state), do: {:reply, state.node_name, state}
-  def handle_call(:connected?, _from, state), do: {:reply, not is_nil(state.session), state}
 
   def handle_call(:link, _from, state) do
     services =
@@ -361,6 +380,7 @@ defmodule VisionCore.Ros2.ZenohClient do
     {:reply,
      %{
        node_name: state.node_name,
+       domain_id: state.domain_id,
        connected: not is_nil(state.session),
        endpoint: "tcp/#{state.endpoint_ip}:#{@zenoh_port}",
        services: services
@@ -502,7 +522,9 @@ defmodule VisionCore.Ros2.ZenohClient do
     {:noreply, %{state | drops_while_offline: state.drops_while_offline + 1}}
   end
 
-  def handle_cast({:publish, topic, message_module, payload, _opts}, state) do
+  def handle_cast({:publish, topic, message_module, payload, opts}, state) do
+    {message_module, payload} = newest_publish(topic, message_module, payload, opts)
+
     case ensure_publisher(state, topic, message_module) do
       {:ok, state, publisher} ->
         publisher = %{publisher | sequence_number: publisher.sequence_number + 1}
@@ -547,25 +569,38 @@ defmodule VisionCore.Ros2.ZenohClient do
     end
   end
 
+  defp newest_publish(topic, message_module, payload, opts) do
+    if Keyword.get(opts, :keep, false) do
+      {message_module, payload}
+    else
+      receive do
+        {:"$gen_cast", {:publish, ^topic, newer_module, newer_payload, newer_opts}}
+        when newer_payload != nil ->
+          newest_publish(topic, newer_module, newer_payload, newer_opts)
+      after
+        0 -> {message_module, payload}
+      end
+    end
+  end
+
   @impl GenServer
-  def handle_info({:connect, backoff_ms}, state) do
-    case state.open_session.(state.endpoint_ip) do
+  def handle_info({:connect, _backoff_ms}, %State{} = state)
+      when state.session != nil or state.connecting != nil,
+      do: {:noreply, state}
+
+  def handle_info({:connect, backoff_ms}, %State{} = state) do
+    %{open_session: open_session, endpoint_ip: endpoint_ip} = state
+    task = Task.async(fn -> open(open_session, endpoint_ip) end)
+    {:noreply, %{state | connecting: %{ref: task.ref, backoff_ms: backoff_ms}}}
+  end
+
+  def handle_info({ref, opened}, %State{connecting: %{ref: ref, backoff_ms: backoff_ms}} = state) do
+    Process.demonitor(ref, [:flush])
+    state = %{state | connecting: nil}
+
+    case opened do
       {:ok, session} ->
-        Logger.info("#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}")
-
-        if state.drops_while_offline > 0 do
-          Logger.debug(
-            "#{__MODULE__} dropped #{state.drops_while_offline} publish(es) before session opened"
-          )
-        end
-
-        state = %{state | session: session, drops_while_offline: 0}
-        put_session_open(true)
-        state = declare_node(state)
-        state = redeclare_publishers(state)
-        state = redeclare_subscribers(state)
-        state = redeclare_services(state)
-        {:noreply, state}
+        {:noreply, connected(state, session)}
 
       {:error, reason} ->
         schedule_reconnect(state, backoff_ms, "connect failed: #{inspect(reason)}")
@@ -976,6 +1011,31 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   defp put_publisher(state, topic, publisher) do
     %{state | publishers: Map.put(state.publishers, topic, publisher)}
+  end
+
+  # Runs in the connecting task, linked to the client: a raise there would take the client down.
+  defp open(open_session, endpoint_ip) do
+    open_session.(endpoint_ip)
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  defp connected(state, session) do
+    Logger.info("#{__MODULE__} connected to tcp/#{state.endpoint_ip}:#{@zenoh_port}")
+
+    if state.drops_while_offline > 0 do
+      Logger.debug(
+        "#{__MODULE__} dropped #{state.drops_while_offline} publish(es) before session opened"
+      )
+    end
+
+    put_session_open(true)
+
+    %{state | session: session, drops_while_offline: 0}
+    |> declare_node()
+    |> redeclare_publishers()
+    |> redeclare_subscribers()
+    |> redeclare_services()
   end
 
   defp open_session(endpoint_ip) do

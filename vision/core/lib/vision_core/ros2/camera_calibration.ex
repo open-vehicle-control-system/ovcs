@@ -198,6 +198,13 @@ defmodule VisionCore.Ros2.CameraCalibration do
   Only valid for a proportional resize. Changing the *aspect* ratio
   changes which part of the sensor is sampled and needs a fresh
   calibration, not a rescale.
+
+  The principal point scales with the pixel's corner as origin: `cx`
+  becomes `cx × s`, `s` the new width over the saved one. Rectification
+  (`NxStereo.Rectify` and the `stereo_match` Port) maps pixel centres
+  instead: a working pixel `x` samples the frame at `(x + 0.5) / s − 0.5`.
+  Against that convention a scaled principal point sits `(1 − s) / 2`
+  new pixels off: under half a pixel when shrinking.
   """
   @spec scale_to(t(), pos_integer(), pos_integer()) :: t()
   def scale_to(%__MODULE__{} = calibration, actual_width, actual_height)

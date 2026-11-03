@@ -41,6 +41,7 @@ defmodule VisionCore.Ros2.ClockTest do
 
   alias Ros2Zenoh.RosgraphMsgs.Msg.Clock, as: ClockMessage
   alias VisionCore.Ros2.{Clock, Stamp}
+  alias VisionCore.Timing
   alias VisionCore.Ros2.ClockTest.{AcquiringSubscriber, SilentSubscriber}
 
   @persistent_key VisionCore.Ros2.Clock
@@ -93,7 +94,7 @@ defmodule VisionCore.Ros2.ClockTest do
     test "Timing stays on wall clock" do
       # Stamps must still land near system time, not near zero.
       monotonic_ns = System.monotonic_time(:nanosecond)
-      stamp_ns = Stamp.ros_time_from_monotonic(monotonic_ns)
+      stamp_ns = Timing.export_time_from_monotonic(monotonic_ns)
       assert_in_delta stamp_ns, System.system_time(:nanosecond), 1_000_000_000
     end
   end
@@ -106,14 +107,14 @@ defmodule VisionCore.Ros2.ClockTest do
 
       # A capture taken now stamps at roughly the simulator time just
       # received, not at wall-clock seconds.
-      stamp_ns = Stamp.ros_time_from_monotonic(System.monotonic_time(:nanosecond))
+      stamp_ns = Timing.export_time_from_monotonic(System.monotonic_time(:nanosecond))
       assert_in_delta stamp_ns, 58_643_000_000, 100_000_000
     end
 
     test "a stamp is nowhere near wall clock, which is the whole point" do
       {:noreply, _state} = Clock.handle_info(clock_message(58, 0), tracking_state())
 
-      stamp_ns = Stamp.ros_time_from_monotonic(System.monotonic_time(:nanosecond))
+      stamp_ns = Timing.export_time_from_monotonic(System.monotonic_time(:nanosecond))
       wall_ns = System.system_time(:nanosecond)
 
       assert abs(wall_ns - stamp_ns) > 1_000_000_000_000_000,
@@ -154,7 +155,7 @@ defmodule VisionCore.Ros2.ClockTest do
 
       assert Clock.following?()
 
-      assert_in_delta Stamp.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.export_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       58_000_000_000,
                       100_000_000
     end
@@ -169,7 +170,7 @@ defmodule VisionCore.Ros2.ClockTest do
              "a stopped clock left a frozen offset behind, so every stamp would drift for ever"
 
       # And Timing is back on wall clock rather than using it.
-      assert_in_delta Stamp.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.export_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       System.system_time(:nanosecond),
                       1_000_000_000
     end
@@ -183,7 +184,7 @@ defmodule VisionCore.Ros2.ClockTest do
 
       refute Clock.following?()
 
-      assert_in_delta Stamp.ros_time_from_monotonic(System.monotonic_time(:nanosecond)),
+      assert_in_delta Timing.export_time_from_monotonic(System.monotonic_time(:nanosecond)),
                       System.system_time(:nanosecond),
                       1_000_000_000
     end

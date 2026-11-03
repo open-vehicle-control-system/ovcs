@@ -93,8 +93,31 @@ defmodule VisionCore.ApplicationTest do
       ros2: [zenoh_endpoint_ip: "127.0.0.2", node_name: "front_vision", domain_id: 7]
     })
 
-    assert %{endpoint_ip: "127.0.0.2", node_name: "front_vision", domain_id: 7} =
-             :sys.get_state(VisionCore.Ros2.ZenohClient)
+    assert %{endpoint: "tcp/127.0.0.2:7447", node_name: "front_vision", domain_id: 7} =
+             VisionCore.Ros2.ZenohClient.link()
+  end
+
+  test "boots with ros2: while the Zenoh router does not answer" do
+    # TEST-NET-1, where nothing answers.
+    start_pipeline(%VisionCore.Config{ros2: [zenoh_endpoint_ip: "192.0.2.1"]})
+
+    assert Process.alive?(Process.whereis(VisionCore.Ros2.Parameters))
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+    assert %{connected: false} = VisionCore.Ros2.ZenohClient.link()
+  end
+
+  test "a ros2: that is no keyword list, or without the router's address, fails the start saying so" do
+    for {ros2, message} <- [
+          {"192.0.2.1", "ros2: is a keyword list"},
+          {[node_name: "front_vision"],
+           "ros2: needs :zenoh_endpoint_ip, the Zenoh router's address"}
+        ] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{ros2: ros2})
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
+      assert inspect(reason) =~ message
+    end
   end
 
   test "a ROS 2 exporter without ros2: is not started, with the reason logged, and the unit runs" do
@@ -180,18 +203,26 @@ defmodule VisionCore.ApplicationTest do
     :ok = :sys.resume(VisionCore.Jpeg)
   end
 
-  test "starts the Matcher with the stereo_match binary and thread count of the app env" do
+  test "starts the Matcher with the stereo_match binary and thread count of the app env",
+       %{tmp_dir: tmp_dir} do
     for key <- [:stereo_match_path, :stereo_match_threads] do
       value = Application.get_env(:vision_core, key)
       on_exit(fn -> Application.put_env(:vision_core, key, value) end)
     end
 
-    Application.put_env(:vision_core, :stereo_match_path, "/opt/stereo_match")
+    # A stereo_match that writes down its arguments, then reads its requests without answering.
+    arguments = Path.join(tmp_dir, "arguments")
+
+    stereo_match =
+      write_script(tmp_dir, "stereo_match", ~s(echo "$@" > #{arguments}\nexec cat > /dev/null))
+
+    Application.put_env(:vision_core, :stereo_match_path, stereo_match)
     Application.put_env(:vision_core, :stereo_match_threads, 3)
     start_pipeline(%VisionCore.Config{})
 
-    assert %{path: "/opt/stereo_match", arguments: ["--threads", "3"]} =
-             :sys.get_state(VisionCore.Stereo.Matcher)
+    VisionCore.Stereo.Matcher.send_run(VisionCore.Stereo.Matcher, self(), 0, 0, [], [])
+
+    assert eventually(fn -> File.read(arguments) == {:ok, "--threads 3\n"} end)
   end
 
   test "a Zenoh client restart keeps the unsaved changes" do

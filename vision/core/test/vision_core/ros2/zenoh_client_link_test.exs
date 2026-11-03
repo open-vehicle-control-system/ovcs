@@ -3,6 +3,7 @@ defmodule VisionCore.Ros2.ZenohClientLinkTest do
 
   @moduletag :capture_log
 
+  alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias VisionCore.Ros2.{Topics, ZenohClient}
@@ -56,6 +57,30 @@ defmodule VisionCore.Ros2.ZenohClientLinkTest do
       :sys.get_state(topics)
 
       assert [%{name: "/ovcs_heartbeat", type: "std_msgs/msg/String"}] = Topics.topics()
+    end
+  end
+
+  describe "while its router does not answer" do
+    setup do
+      start_supervised!(Topics)
+
+      start_supervised!(
+        {ZenohClient,
+         endpoint_ip: "192.0.2.1",
+         node_name: "vision_test",
+         open_session: fn _endpoint_ip -> Process.sleep(:infinity) end}
+      )
+
+      :ok
+    end
+
+    test "answers at once, keeping subscriptions and services for the session to come" do
+      assert ZenohClient.node_name() == "vision_test"
+      assert :ok = ZenohClient.register_service("stereo/left/set_camera_info", SetCameraInfo)
+      assert :ok = ZenohClient.subscribe("stereo/left/image_raw/compressed", CompressedImage)
+
+      assert %{connected: false, services: [%{name: "/stereo/left/set_camera_info"}]} =
+               ZenohClient.link()
     end
   end
 end

@@ -94,6 +94,23 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     session
   end
 
+  defp connected?, do: ZenohClient.link().connected
+
+  # The client opens its session in a task of its own.
+  defp await_connected(attempts \\ 150) do
+    cond do
+      connected?() ->
+        :ok
+
+      attempts == 0 ->
+        flunk("the client did not connect")
+
+      true ->
+        Process.sleep(20)
+        await_connected(attempts - 1)
+    end
+  end
+
   # How a client opens its session: each result in turn, then no router.
   defp opener(results) do
     agent = start_supervised!({Agent, fn -> results end})
@@ -292,7 +309,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     test "drops a publish and counts it without encoding while it has no session",
          %{topics: topics} do
       start_supervised!({ZenohClient, endpoint_ip: "127.0.0.1", open_session: opener([])})
-      refute ZenohClient.connected?()
+      refute connected?()
 
       assert :ok = ZenohClient.publish(@topic, Probe, %Probe{test: self()})
       assert :ok = ZenohClient.publish(@topic, StringMessage, unencodable())
@@ -317,13 +334,13 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
            open_session: opener([{:error, :unreachable}, {:ok, session}])}
         )
 
-      refute ZenohClient.connected?()
+      refute connected?()
       :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
       refute_receive {:encoded_in, _process}
 
       # What the reconnect timer sends.
       send(client, {:connect, 1_000})
-      assert ZenohClient.connected?()
+      await_connected()
 
       :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
       assert_receive {:encoded_in, ^test}
@@ -333,11 +350,59 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       Zenohex.Session.close(session)
       :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
       assert_receive {:encoded_in, ^test}
-      refute ZenohClient.connected?()
+      refute connected?()
 
       :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
       refute_receive {:encoded_in, _process}
       assert %State{drops_while_offline: 1} = :sys.get_state(ZenohClient)
+    end
+
+    test "puts only the newest of the publishes of a topic waiting for it" do
+      session = local_session()
+
+      client =
+        start_supervised!(
+          {ZenohClient,
+           endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
+        )
+
+      await_connected()
+      :ok = :sys.suspend(client)
+
+      for data <- ["first", "second", "third"],
+          do: :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: data})
+
+      :ok = :sys.resume(client)
+
+      assert {1, _gid, payload} = received_put()
+      assert payload == RmwZenoh.encode_payload(%StringMessage{data: "third"})
+      refute_receive %Zenohex.Sample{}
+    end
+
+    test "puts a publish given keep: true even when a newer one of its topic waits" do
+      session = local_session()
+
+      client =
+        start_supervised!(
+          {ZenohClient,
+           endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
+        )
+
+      await_connected()
+      :ok = :sys.suspend(client)
+
+      :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "kept"}, keep: true)
+
+      for data <- ["second", "third"],
+          do: :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: data})
+
+      :ok = :sys.resume(client)
+
+      assert {1, _gid, kept} = received_put()
+      assert kept == RmwZenoh.encode_payload(%StringMessage{data: "kept"})
+      assert {2, _gid, newest} = received_put()
+      assert newest == RmwZenoh.encode_payload(%StringMessage{data: "third"})
+      refute_receive %Zenohex.Sample{}
     end
   end
 end

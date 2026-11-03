@@ -17,6 +17,26 @@ defmodule VisionCore.TimingTest do
     end
   end
 
+  describe "export_time_from_monotonic/1" do
+    test "projects an Erlang monotonic timestamp onto wall clock without a simulator clock" do
+      now = System.monotonic_time(:nanosecond)
+
+      assert_in_delta Timing.export_time_from_monotonic(now),
+                      System.system_time(:nanosecond),
+                      @tolerance_ns
+    end
+  end
+
+  describe "monotonic_from_export_time/1" do
+    test "undoes export_time_from_monotonic/1" do
+      now = System.monotonic_time(:nanosecond)
+
+      assert_in_delta Timing.monotonic_from_export_time(Timing.export_time_from_monotonic(now)),
+                      now,
+                      @tolerance_ns
+    end
+  end
+
   describe "monotonic_from_kernel/1" do
     test "converts a kernel CLOCK_MONOTONIC timestamp onto the Erlang timescale" do
       kernel_now = :os.perf_counter(:nanosecond)

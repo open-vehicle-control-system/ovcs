@@ -247,7 +247,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       {ZenohClient, endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
     )
 
-    assert ZenohClient.connected?()
+    assert eventually(fn -> ZenohClient.link().connected end)
     assert Exporter.status(state) == {:ok, "Connected"}
   end
 

@@ -36,7 +36,8 @@ defmodule VisionCore.Application do
   on `VisionCore.Jpeg`, while the exporters and `VisionCore.Preview`
   encode on `VisionCore.Jpeg.Export`, apart from those decodes. The
   second starts after the components, before the exporters, so that its
-  restart reaches its users only, not the cameras and pipelines.
+  restart reaches only what starts after it, its users among them, not
+  the cameras and pipelines.
   """
   use Application
 
@@ -103,11 +104,29 @@ defmodule VisionCore.Application do
   defp ros2_children(nil), do: []
 
   defp ros2_children(ros2) do
+    check_ros2!(ros2)
+
     [
       {VisionCore.Ros2.ZenohClient, zenoh_client_options(ros2)},
       VisionCore.Ros2.Parameters,
       VisionCore.Ros2.Topics
     ] ++ clock_children(Keyword.get(ros2, :simulator_clock))
+  end
+
+  defp check_ros2!(ros2) do
+    cond do
+      not (is_list(ros2) and Keyword.keyword?(ros2)) ->
+        raise ArgumentError,
+              "ros2: is a keyword list of the ROS 2 link's options, got #{inspect(ros2)}"
+
+      not is_binary(ros2[:zenoh_endpoint_ip]) ->
+        raise ArgumentError,
+              "ros2: needs :zenoh_endpoint_ip, the Zenoh router's address as text, got " <>
+                inspect(ros2[:zenoh_endpoint_ip])
+
+      true ->
+        :ok
+    end
   end
 
   # A key left out takes the client's default.

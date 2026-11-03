@@ -3,9 +3,12 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   ROS 2 service server for `sensor_msgs/srv/SetCameraInfo`. One
   instance per camera side; together they make the
   `cameracalibrator` GUI's **COMMIT** button work — clicking it
-  delivers the freshly-solved `CameraInfo` over Zenoh, this persists
-  it to the side's YAML and triggers a hot-reload of the stereo
-  pipeline so the new geometry takes effect on the next frame.
+  delivers the freshly-solved `CameraInfo` over Zenoh, this writes
+  it to the side's YAML and has the stereo pipeline reload it, so the
+  new geometry takes effect on the next frame. A calibration the
+  stereo unit refuses is taken back: the YAML holds what it held
+  before, or is removed when there was none, so the next start does
+  not load it, and the answer is `success: false` with the reason.
   `VisionCore.Ros2.Exporter` starts one per side it publishes, as a
   helper, and is told of each calibration committed (`notify/2`).
 
@@ -26,6 +29,9 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     * `:register_service` (`&VisionCore.Ros2.ZenohClient.register_service/3`)
       — registers the service, called with its name, its module and
       this server's pid.
+    * `:respond` (`&VisionCore.Ros2.ZenohClient.respond/3`) — answers a
+      request, called with the service name, the query and the encoded
+      response.
   """
   use GenServer
   require Logger
@@ -69,6 +75,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
        calibration_path: calibration_path,
        camera_name: camera_name,
        reload: reload,
+       respond: Keyword.get(opts, :respond, &ZenohClient.respond/3),
        notified: nil
      }}
   end
@@ -91,7 +98,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
           %Response{success: false, status_message: "could not decode request"}
       end
 
-    ZenohClient.respond(state.service_name, query, Response.encode(response))
+    state.respond.(state.service_name, query, Response.encode(response))
     {:noreply, state}
   end
 
@@ -99,24 +106,69 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     calibration = CameraCalibration.from_camera_info(camera_info)
     yaml = CameraCalibration.to_yaml(calibration, state.camera_name)
 
-    with :ok <- File.mkdir_p(Path.dirname(state.calibration_path)),
+    with {:ok, previous} <- read_previous(state.calibration_path),
+         :ok <- File.mkdir_p(Path.dirname(state.calibration_path)),
          :ok <- File.write(state.calibration_path, yaml) do
       Logger.info(
         "#{__MODULE__}[#{state.service_name}] wrote " <>
           "#{byte_size(yaml)} B → #{state.calibration_path}"
       )
 
-      if reload(state) == :ok and state.notified,
-        do: send(state.notified, {:calibration_committed, state.service_name})
-
-      %Response{success: true, status_message: "ok"}
+      take(state, previous)
     else
-      {:error, reason} ->
-        Logger.warning("#{__MODULE__}[#{state.service_name}] write failed: #{inspect(reason)}")
+      {:error, {:unreadable, reason}} ->
+        refuse(state, "cannot read the calibration it would replace: #{inspect(reason)}")
 
-        %Response{success: false, status_message: "write failed: #{inspect(reason)}"}
+      {:error, reason} ->
+        refuse(state, "write failed: #{inspect(reason)}")
     end
   end
+
+  defp refuse(state, message) do
+    Logger.warning("#{__MODULE__}[#{state.service_name}] #{message}")
+    %Response{success: false, status_message: message}
+  end
+
+  # What the calibration file holds before it is written, `nil` when there is none.
+  defp read_previous(path) do
+    case File.read(path) do
+      {:ok, previous} -> {:ok, previous}
+      {:error, :enoent} -> {:ok, nil}
+      {:error, reason} -> {:error, {:unreadable, reason}}
+    end
+  end
+
+  defp take(state, previous) do
+    case reload(state) do
+      :ok ->
+        if state.notified, do: send(state.notified, {:calibration_committed, state.service_name})
+        %Response{success: true, status_message: "ok"}
+
+      {:error, reason} ->
+        restore(state, previous)
+
+        %Response{
+          success: false,
+          status_message: "the stereo unit refused the calibration: #{reason}"
+        }
+    end
+  end
+
+  defp restore(state, previous) do
+    case put_back(state.calibration_path, previous) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.error(
+          "#{__MODULE__}[#{state.service_name}] cannot take back the refused calibration " <>
+            "in #{state.calibration_path}: #{inspect(reason)}"
+        )
+    end
+  end
+
+  defp put_back(path, nil), do: File.rm(path)
+  defp put_back(path, previous), do: File.write(path, previous)
 
   defp reload(%{reload: nil}), do: :ok
 
@@ -132,7 +184,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   defp reload_failed(state, reason) do
     Logger.warning(
       "#{__MODULE__}[#{state.service_name}] the stereo unit did not take the calibration " <>
-        "written to #{state.calibration_path}: #{reason}"
+        "written to #{state.calibration_path}: #{reason}; taking it back"
     )
 
     {:error, reason}

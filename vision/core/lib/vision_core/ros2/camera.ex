@@ -17,8 +17,8 @@ defmodule VisionCore.Ros2.Camera do
     * `:label` (required) — `"left"` / `"right"`, as for every driver.
     * `:topic` (required) — the ROS topic to consume, e.g.
       `"/stereo/left/image_raw/compressed"`.
-    * `:frame_id` — the optical frame each frame carries, in place of
-      the frame id of the image's header.
+    * `:frame_id` — the optical frame each frame carries, `nil`
+      without it; the image header's frame id is not read.
 
   It reads through `VisionCore.Ros2.ZenohClient`, the ROS 2 link of the
   configuration's `ros2:` section: without it, it does not start, with
@@ -41,7 +41,7 @@ defmodule VisionCore.Ros2.Camera do
 
   `Frame.capture_ns` means Erlang monotonic time everywhere in this
   vision core, so the stamp a frame carries, on the simulator's clock, is
-  converted back through `VisionCore.Ros2.Stamp.monotonic_from_ros_time/1`. Both
+  converted back through `VisionCore.Timing.monotonic_from_export_time/1`. Both
   sides of a pair carry the same render stamp, so the stereo
   publisher pairs them exactly; their arrival times differ by tens of
   milliseconds, enough to pair a frame with its neighbour's, which
@@ -58,7 +58,8 @@ defmodule VisionCore.Ros2.Camera do
   alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.{Stamp, ZenohClient}
+  alias VisionCore.Ros2.ZenohClient
+  alias VisionCore.Timing
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -133,7 +134,7 @@ defmodule VisionCore.Ros2.Camera do
 
   defp capture_ns(%CompressedImage{header: %{stamp: %{sec: sec, nanosec: nanosec}}}) do
     if VisionCore.Ros2.Clock.following?(),
-      do: Stamp.monotonic_from_ros_time(sec * 1_000_000_000 + nanosec),
+      do: Timing.monotonic_from_export_time(sec * 1_000_000_000 + nanosec),
       else: System.monotonic_time(:nanosecond)
   end
 
