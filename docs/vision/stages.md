@@ -44,7 +44,7 @@ A setting is either **live** or **build**:
 - **Live** settings change while the unit runs, from the dashboard or as ROS 2 parameters under `<prefix>.<stage>.<setting>`, where the prefix is the component's `:topic_prefix`, `stereo` by default (`stereo.disparity.p1`). They apply from the next pair; with native stages, from the second pair after the change, since one pair is already in the Port ([Two pairs in flight](./data_flow.md#two-pairs-in-flight)).
 - **Build** settings are fixed when the pipeline starts, because they decide the shape of what it computes. You set them in your composer, for example `Pipeline.default_stages(disparity: [num_disparities: 128])`. The dashboard shows them locked.
 
-The defaults and accepted values of each setting are in its stage's module, linked from the table above, and on the dashboard's panel.
+The defaults and accepted values of each setting are in its stage's module, linked from the table above, and on the dashboard's panel. A composer option a stage does not have, a value outside what it accepts, or a `default_stages/1` override that names no stage is refused at start rather than ignored.
 
 The costs below were measured on a Raspberry Pi 5 matching 480 × 270 with 64 disparities over 3 paths, while both cameras captured at 30 frames a second: the median time of each stage in the `stereo_match` Port. [Vision performance](./performance.md) has the full measurements.
 

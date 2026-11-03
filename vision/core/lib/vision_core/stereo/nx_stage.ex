@@ -30,7 +30,11 @@ defmodule VisionCore.Stereo.NxStage do
 
   @type state :: term()
 
-  @doc "Builds the stage's state from its options and the pipeline's context."
+  @doc """
+  Builds the stage's state from its options and the pipeline's context,
+  or says why it cannot: an option it does not declare, or a value its
+  spec refuses.
+  """
   @callback init(opts :: keyword(), Stage.context()) :: {:ok, state()} | {:error, String.t()}
 
   @doc "The `Pair` fields the stage reads."
@@ -74,7 +78,10 @@ defmodule VisionCore.Stereo.NxStage do
   @doc "The value of every setting in `option_specs/0`."
   @callback options(state()) :: %{atom() => term()}
 
-  @doc "Changes one live setting from the next pair on, or says why it cannot."
+  @doc """
+  Changes one live setting from the next pair on, or says why it cannot:
+  a key that is not a live setting, or a value its spec refuses.
+  """
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
   @doc """

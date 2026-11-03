@@ -1,8 +1,8 @@
 defmodule VisionCore.Stereo.ParametersTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Parameters.MemoryStore
-  alias VisionCore.Stereo.{AlignmentCorrection, Parameters}
+  alias VisionCore.Parameters.{Check, MemoryStore}
+  alias VisionCore.Stereo.{AlignmentCorrection, Parameters, Stage}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   # A pipeline answering with the stages it is given, and recording the settings it is sent.
@@ -79,42 +79,37 @@ defmodule VisionCore.Stereo.ParametersTest do
     def handle_call({:put, snapshot}, _from, _snapshot), do: {:reply, :ok, snapshot}
   end
 
-  @stages [
-    %{
-      stage: :rectification,
-      summary: "Rectifies",
-      specs: [right_row_offset: %{type: :double, range: {-8, 8}, applies: :live}],
-      values: %{right_row_offset: 0.0}
-    },
-    %{stage: :sharpness, summary: "Sharpness", specs: [], values: %{}},
-    %{
-      stage: :disparity,
-      summary: "Matches",
-      specs: [
-        p1: %{type: :integer, range: {0, 78}, applies: :live},
-        p2: %{type: :integer, range: {1, 79}, greater_than: :p1, applies: :live},
-        num_disparities: %{type: :integer, values: [64, 128], applies: :build},
-        paths: %{type: :integer, values: [3, 8], applies: :build}
-      ],
-      values: %{p1: 8, p2: 40, num_disparities: 64, paths: 8}
-    },
-    %{
-      stage: :median_filter,
-      summary: "Filters",
-      explanation: "Replaces each disparity with its neighbours' median.",
-      specs: [median: %{type: :bool, applies: :live}],
-      values: %{median: true},
-      compute: %{runs_on: :cpu, implementation: :rust, backend: nil}
-    },
-    %{stage: :row_alignment, summary: "Measures", specs: [], values: %{}}
-  ]
-
   @controls Map.new(VisionCore.Camera.V4L2.control_specs(), &{&1.key, &1.default})
 
   setup do
-    start_supervised!({Pipeline, @stages})
+    start_supervised!({Pipeline, stages()})
     start_supervised!({Driver, %{controls: @controls, live: nil}})
     :ok
+  end
+
+  # The stub pipeline's stages: the real stages' settings and defaults, summaries of their own.
+  defp stages do
+    [
+      stage(:rectification, Stage.Rectification, summary: "Rectifies"),
+      %{stage: :sharpness, summary: "Sharpness", specs: [], values: %{}},
+      stage(:disparity, Stage.Disparity, summary: "Matches"),
+      stage(:median_filter, Stage.MedianFilter,
+        summary: "Filters",
+        explanation: "Replaces each disparity with its neighbours' median.",
+        compute: %{runs_on: :cpu, implementation: :rust, backend: nil}
+      ),
+      %{stage: :row_alignment, summary: "Measures", specs: [], values: %{}}
+    ]
+  end
+
+  # `module` with its default settings, as `VisionCore.Stereo.Pipeline.stage_options/1` lists it.
+  defp stage(name, module, fields) do
+    {:ok, state} = module.init([], %{width: 64, height: 48})
+
+    specs =
+      for {key, spec} <- module.option_specs(), do: {key, Map.put_new(spec, :applies, :live)}
+
+    Map.merge(%{stage: name, specs: specs, values: module.options(state)}, Map.new(fields))
   end
 
   defp groups(opts \\ []) do
@@ -542,7 +537,9 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     assert %{applies: :build} = parameter(disparity, "paths")
     assert disparity.values.()["paths"] == 8
-    assert parameter(group("stereo.median_filter"), "median").constraint == %{kind: :bool}
+
+    assert %{applies: :build, constraint: %{kind: :choices, values: [3, 5]}} =
+             parameter(group("stereo.median_filter"), "kernel_size")
   end
 
   test "a stage setting changed through its parameter reaches the pipeline" do
@@ -562,7 +559,7 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "right_row_offset stays live without a row alignment stage to declare the correction" do
     stop_supervised!(Pipeline)
-    start_supervised!({Pipeline, Enum.reject(@stages, &(&1.stage == :row_alignment))})
+    start_supervised!({Pipeline, Enum.reject(stages(), &(&1.stage == :row_alignment))})
     start_supervised!({AlignmentCorrection, subscribe: false})
 
     assert parameter(group("stereo.rectification"), "right_row_offset").applies == :live
@@ -689,6 +686,82 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert {:ok, %{value: +0.0, state: :builtin}} =
              VisionCore.Parameters.get("stereo.rectification.right_row_offset")
   end
+
+  test "the default stages' settings go through the registry and back to the stages" do
+    calibration = Path.expand("../../support/calibration", __DIR__)
+
+    pipeline =
+      start_supervised!(
+        {VisionCore.Stereo.Pipeline,
+         name: :parameters_default_stages,
+         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         width: 64,
+         height: 48}
+      )
+
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: pipeline})
+
+    stage_value = fn id ->
+      ["stereo", stage, key] = String.split(id, ".")
+      options = VisionCore.Stereo.Pipeline.stage_options(pipeline)
+      Enum.find(options, &(&1.stage == String.to_atom(stage))).values[String.to_atom(key)]
+    end
+
+    groups = Enum.filter(VisionCore.Parameters.groups(), &(&1.kind == :stage))
+
+    assert Enum.map(groups, & &1.id) ==
+             Enum.map(VisionCore.Stereo.Pipeline.stage_options(pipeline), &"stereo.#{&1.stage}")
+
+    # Each value a stage starts with is one the registry takes, and sets back.
+    for group <- groups, parameter <- group.parameters do
+      assert {:ok, _value} = Check.value(parameter.type, parameter.constraint, parameter.value),
+             "#{parameter.id} = #{inspect(parameter.value)}"
+
+      if parameter.applies == :live,
+        do: assert({:ok, _parameter} = VisionCore.Parameters.set(parameter.id, parameter.value))
+    end
+
+    live =
+      for group <- groups,
+          parameter <- group.parameters,
+          parameter.applies == :live,
+          do: {group.id, parameter.id}
+
+    assert live != []
+
+    # A change of each live setting, read with its group's values as they stand, reaches its stage.
+    for {group_id, id} <- live do
+      parameters = Enum.find(VisionCore.Parameters.groups(), &(&1.id == group_id)).parameters
+      value = parameters |> Enum.find(&(&1.id == id)) |> other_value(parameters)
+      assert value != nil, "no other value of #{id} to set"
+
+      assert {:ok, %{value: set}} = VisionCore.Parameters.set(id, value)
+      assert set == value
+      assert stage_value.(id) == value
+    end
+  end
+
+  # A value `parameter` does not hold that its constraint and its order among `parameters` allow.
+  defp other_value(parameter, parameters) do
+    above =
+      for other <- parameters, other.id == parameter.greater_than, do: other.value
+
+    below = for other <- parameters, other.greater_than == parameter.id, do: other.value
+
+    Enum.find(candidates(parameter), fn candidate ->
+      candidate != parameter.value and
+        match?({:ok, _value}, Check.value(parameter.type, parameter.constraint, candidate)) and
+        Enum.all?(above, &(candidate > &1)) and Enum.all?(below, &(candidate < &1))
+    end)
+  end
+
+  defp candidates(%{constraint: %{kind: :range, min: min, max: max}}),
+    do: [min, max, trunc((min + max) / 2), (min + max) / 2]
+
+  defp candidates(%{constraint: %{kind: :choices, values: values}}), do: values
+  defp candidates(%{type: :bool}), do: [false, true]
 
   test "a sensor mode with its bit depth reads as one string" do
     assert %{type: :string, get: get} =

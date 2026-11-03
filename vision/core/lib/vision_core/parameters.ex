@@ -28,7 +28,7 @@ defmodule VisionCore.Parameters do
   use GenServer
   require Logger
 
-  alias VisionCore.Parameters.{Group, Parameter, Store}
+  alias VisionCore.Parameters.{Check, Group, Parameter, Store}
 
   @type id :: String.t()
   @type type :: :integer | :double | :bool | :string
@@ -92,10 +92,11 @@ defmodule VisionCore.Parameters do
   def get(server \\ __MODULE__, id), do: GenServer.call(server, {:get, id})
 
   @doc """
-  Checks `value` against parameter `id` and applies it;
-  `{:error, :not_found}` when there is no such parameter. Switching an automatic
-  mode off, here or when a saved or unsaved value is applied, first sets each
-  parameter it controls to the value it left, brought within its range.
+  Checks `value` against parameter `id` with `VisionCore.Parameters.Check`
+  and applies it; `{:error, :not_found}` when there is no such parameter.
+  Switching an automatic mode off, here or when a saved or unsaved value is
+  applied, first sets each parameter it controls to the value it left,
+  brought within its range.
   """
   @spec set(GenServer.server(), id(), term()) ::
           {:ok, Parameter.t()} | {:error, :not_found | String.t()}
@@ -373,9 +374,8 @@ defmodule VisionCore.Parameters do
 
   defp check_value(state, declared, value, values) do
     with :ok <- check_settable(declared, values),
-         {:ok, value} <- check_type(declared.type, value),
-         :ok <- check_constraint(declared.constraint, value),
-         :ok <- check_order(state, declared, value, values) do
+         {:ok, value} <- Check.value(declared.type, declared.constraint, value),
+         :ok <- Check.order(value, order_relations(state, declared, values)) do
       {:ok, value}
     end
   end
@@ -542,61 +542,20 @@ defmodule VisionCore.Parameters do
       else: :ok
   end
 
-  defp check_type(:bool, value) when is_boolean(value), do: {:ok, value}
-  defp check_type(:integer, value) when is_integer(value), do: {:ok, value}
-  defp check_type(:double, value) when is_number(value), do: {:ok, value * 1.0}
-  defp check_type(:string, value) when is_binary(value), do: {:ok, value}
-  defp check_type(type, value), do: {:error, "expected #{type}, got #{inspect(value)}"}
-
-  defp check_constraint(%{kind: :range, min: min, max: max}, value)
-       when value < min or value > max,
-       do: {:error, "out of range #{min}..#{max}"}
-
-  defp check_constraint(%{kind: :range, min: min, step: step}, value) when is_number(step) do
-    steps = (value - min) / step
-
-    if abs(steps - round(steps)) < 1.0e-9,
-      do: :ok,
-      else: {:error, "not a multiple of #{step} from #{min}"}
-  end
-
-  defp check_constraint(%{kind: :choices, values: choices}, value) do
-    if value in choices,
-      do: :ok,
-      else: {:error, "expected one of #{Enum.map_join(choices, ", ", &render_choice/1)}"}
-  end
-
-  defp check_constraint(_constraint, _value), do: :ok
-
-  defp render_choice(nil), do: inspect(nil)
-
-  defp render_choice(choice) when is_binary(choice) or is_atom(choice) or is_number(choice),
-    do: to_string(choice)
-
-  defp render_choice(choice), do: inspect(choice)
-
-  defp check_order(state, declared, value, values) do
-    above = if declared.greater_than, do: [{:above, declared.greater_than}], else: []
+  # The parameters `declared` must stay above or below, with their values.
+  defp order_relations(state, declared, values) do
+    above =
+      if declared.greater_than,
+        do: [above: {declared.greater_than, values[declared.greater_than]}],
+        else: []
 
     below =
       for parameter <- all_parameters(state),
           parameter.greater_than == declared.id,
-          do: {:below, parameter.id}
+          do: {:below, {parameter.id, values[parameter.id]}}
 
-    Enum.find_value(above ++ below, :ok, fn {side, other} ->
-      order_refusal(side, other, value, values[other])
-    end)
+    above ++ below
   end
-
-  defp order_refusal(_side, _other, _value, nil), do: nil
-
-  defp order_refusal(:above, other, value, other_value) when value <= other_value,
-    do: {:error, "must be above #{other} (#{other_value})"}
-
-  defp order_refusal(:below, other, value, other_value) when value >= other_value,
-    do: {:error, "must stay below #{other} (#{other_value})"}
-
-  defp order_refusal(_side, _other, _value, _other_value), do: nil
 
   # Switching an automatic mode off sets what it controls to the values it left.
   defp release_controlled(state, declared, false, values) do

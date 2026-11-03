@@ -27,6 +27,7 @@ defmodule VisionCore.Stereo.Parameters do
   """
   use GenServer
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
 
   @side_keys [:device, :camera_id, :sync, :sensor_mode, :format]
@@ -216,7 +217,7 @@ defmodule VisionCore.Stereo.Parameters do
     do: %{kind: :range, min: 1, max: 1_000_000, step: nil}
 
   defp side_constraint(%{key: :analogue_gain}), do: %{kind: :range, min: 1, max: 16, step: nil}
-  defp side_constraint(spec), do: constraint(spec)
+  defp side_constraint(spec), do: Check.constraint(spec)
 
   defp side_description(%{key: :exposure_time_us}),
     do: "Shutter time in microseconds; set by auto exposure while it is on"
@@ -269,7 +270,7 @@ defmodule VisionCore.Stereo.Parameters do
   defp live_key(:analogue_gain), do: :analogue_gain
 
   defp control_constraint(%{key: :rotation}), do: %{kind: :choices, values: [0, 180]}
-  defp control_constraint(spec), do: constraint(spec)
+  defp control_constraint(spec), do: Check.constraint(spec)
 
   defp control_applies(key, group_id) when key in [:exposure_us, :analogue_gain],
     do: {:auto, "#{group_id}.auto_exposure"}
@@ -319,7 +320,7 @@ defmodule VisionCore.Stereo.Parameters do
       name: Atom.to_string(key),
       type: spec.type,
       set: &set_result(Pipeline.set_options(pipeline, stage, [{key, &1}])),
-      constraint: constraint(spec),
+      constraint: Check.constraint(spec),
       applies: stage_applies(stage, key, spec, prefix, correction?)
     }
     |> put_present(:greater_than, spec[:greater_than] && Atom.to_string(spec.greater_than))
@@ -381,14 +382,6 @@ defmodule VisionCore.Stereo.Parameters do
       _no_measurement -> nil
     end
   end
-
-  defp constraint(%{type: :bool}), do: %{kind: :bool}
-  defp constraint(%{values: values}), do: %{kind: :choices, values: values}
-
-  defp constraint(%{range: {min, max}} = spec),
-    do: %{kind: :range, min: min, max: max, step: spec[:step]}
-
-  defp constraint(_spec), do: nil
 
   @doc "A build parameter declaration for `{key, value}`: read-only, fixed at start."
   @spec build_parameter({atom(), term()}, String.t()) :: VisionCore.Parameters.declaration()

@@ -110,18 +110,19 @@ defmodule VisionCore.ParametersTest do
     start_owner(server, &preview_groups/1)
 
     assert Parameters.set(server, "stereo.disparity.p1", "8") ==
-             {:error, ~s(expected integer, got "8")}
+             {:error, ~s(must be an integer, got "8")}
 
-    assert Parameters.set(server, "stereo.disparity.p1", 79) == {:error, "out of range 0..78"}
+    assert Parameters.set(server, "stereo.disparity.p1", 79) ==
+             {:error, "must be from 0 to 78, got 79"}
 
     assert Parameters.set(server, "preview.quality", 52) ==
-             {:error, "not a multiple of 5 from 10"}
+             {:error, "must be a multiple of 5 from 10, got 52"}
 
     assert Parameters.set(server, "preview.colormap", "hot") ==
-             {:error, "expected one of jet, gray"}
+             {:error, ~s(must be one of jet, gray, got "hot")}
 
     assert Parameters.set(server, "preview.mode", "manual") ==
-             {:error, "expected one of {:fixed, 2}, auto, nil"}
+             {:error, ~s(must be one of {:fixed, 2}, auto, nil, got "manual")}
 
     assert {:ok, %{value: 55}} = Parameters.set(server, "preview.quality", 55)
     assert {:ok, %{value: "gray"}} = Parameters.set(server, "preview.colormap", "gray")
@@ -131,12 +132,30 @@ defmodule VisionCore.ParametersTest do
     start_owner(server, &match_groups/1)
 
     assert Parameters.set(server, "stereo.disparity.p2", 8) ==
-             {:error, "must be above stereo.disparity.p1 (8)"}
+             {:error, "must be above stereo.disparity.p1 (8), got 8"}
 
     assert Parameters.set(server, "stereo.disparity.p1", 64) ==
-             {:error, "must stay below stereo.disparity.p2 (64)"}
+             {:error, "must be below stereo.disparity.p2 (64), got 64"}
 
     assert {:ok, %{value: 9}} = Parameters.set(server, "stereo.disparity.p2", 9)
+  end
+
+  test "answers a value it cannot check with a refusal: a number no double holds, an unknown type",
+       %{server: server} do
+    start_owner(server, &unusual_groups/1)
+    huge = 10 ** 400
+
+    assert Parameters.set(server, "unusual.gain", huge) ==
+             {:error, "must be from 0 to 8, got #{huge}"}
+
+    assert Parameters.set(server, "unusual.scale", huge) ==
+             {:error, "must be a number a double can hold, got #{huge}"}
+
+    assert Parameters.set(server, "unusual.ratio", 1.0) ==
+             {:error, "must be of type :float, got 1.0"}
+
+    refute_received {:set, _name, _value}
+    assert {:ok, %{value: 1.0}} = Parameters.set(server, "unusual.scale", 1)
   end
 
   test "refuses an unknown parameter", %{server: server} do
@@ -411,7 +430,7 @@ defmodule VisionCore.ParametersTest do
          %{server: server} do
       log = capture_log(fn -> start_owner(server, &match_groups/1) end)
 
-      assert log =~ "stereo.disparity.p1 = 200 dropped: out of range 0..78"
+      assert log =~ "stereo.disparity.p1 = 200 dropped: must be from 0 to 78, got 200"
       refute_receive {:set, _name, _value}
       assert MemoryStore.rows() == %{}
 
@@ -851,6 +870,27 @@ defmodule VisionCore.ParametersTest do
         backed(agent, test, "quality", :integer, %{kind: :range, min: 10, max: 100, step: 5}),
         backed(agent, test, "colormap", :string, %{kind: :choices, values: ["jet", "gray"]}),
         backed(agent, test, "mode", :string, %{kind: :choices, values: [{:fixed, 2}, :auto, nil]})
+      ]
+    }
+
+    {[group], agent}
+  end
+
+  # A ranged double, an unconstrained one, and one declared with a type the registry has not.
+  defp unusual_groups(test) do
+    {:ok, agent} = Agent.start_link(fn -> %{"gain" => 1.0, "scale" => 2.0, "ratio" => 1.0} end)
+
+    group = %{
+      id: "unusual",
+      name: "Unusual",
+      summary: "",
+      kind: :stage,
+      pipeline: :stereo,
+      position: 3,
+      parameters: [
+        backed(agent, test, "gain", :double, %{kind: :range, min: 0, max: 8, step: nil}),
+        backed(agent, test, "scale", :double, nil),
+        backed(agent, test, "ratio", :float, nil)
       ]
     }
 

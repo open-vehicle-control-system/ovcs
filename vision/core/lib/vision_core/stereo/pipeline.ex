@@ -83,6 +83,7 @@ defmodule VisionCore.Stereo.Pipeline do
   @default_device_timeout_ms 10_000
 
   alias VisionCore.Camera.Frame
+  alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.{NativeSegment, NxSegment, NxStage, Pair, Stage, StageTimer}
 
@@ -97,22 +98,33 @@ defmodule VisionCore.Stereo.Pipeline do
   @doc """
   The default stages, with `overrides` merged into the options of the
   stage they name: `default_stages(disparity: [num_disparities: 128])`.
+  Raises on an override that names none of them.
   """
   @spec default_stages(keyword()) :: [{module(), keyword()}]
   def default_stages(overrides \\ []) do
-    for module <- [
-          Stage.Rectification,
-          Stage.Sharpness,
-          Stage.Disparity,
-          Stage.MedianFilter,
-          Stage.SpeckleFilter,
-          Stage.RowAlignment,
-          Stage.TemporalFilter,
-          Stage.Depth,
-          Stage.PointCloud,
-          Stage.Quality
-        ] do
-      {module, Keyword.get(overrides, stage_name(module), [])}
+    modules = [
+      Stage.Rectification,
+      Stage.Sharpness,
+      Stage.Disparity,
+      Stage.MedianFilter,
+      Stage.SpeckleFilter,
+      Stage.RowAlignment,
+      Stage.TemporalFilter,
+      Stage.Depth,
+      Stage.PointCloud,
+      Stage.Quality
+    ]
+
+    names = Enum.map(modules, &stage_name/1)
+
+    case Enum.reject(Keyword.keys(overrides), &(&1 in names)) do
+      [] ->
+        for module <- modules, do: {module, Keyword.get(overrides, stage_name(module), [])}
+
+      unknown ->
+        raise ArgumentError,
+              "no default stage named #{Enum.map_join(unknown, ", ", &inspect/1)}; " <>
+                "they are #{Enum.map_join(names, ", ", &inspect/1)}"
     end
   end
 
@@ -175,6 +187,7 @@ defmodule VisionCore.Stereo.Pipeline do
       |> Enum.map(&normalise_stage/1)
 
     check_order!(stages)
+    check_live_settings!(stages)
     log_ready(context, stages)
 
     {:ok,
@@ -499,6 +512,22 @@ defmodule VisionCore.Stereo.Pipeline do
     end
   end
 
+  defp check_live_settings!(stages) do
+    stages
+    |> Enum.reject(&function_exported?(&1.module, :set_option, 3))
+    |> Enum.each(fn stage ->
+      case for({key, %{applies: :live}} <- option_specs(stage.module), do: key) do
+        [] ->
+          :ok
+
+        live ->
+          raise ArgumentError,
+                "#{inspect(stage.module)} declares the live settings #{inspect(live)} " <>
+                  "but no set_option/3"
+      end
+    end)
+  end
+
   defp defn_options(opts),
     do: Keyword.get_lazy(opts, :defn_options, fn -> NxSegment.defn_options(%{}) end)
 
@@ -626,20 +655,19 @@ defmodule VisionCore.Stereo.Pipeline do
     specs = option_specs(stage.module)
 
     Enum.reduce_while(options, {:ok, stage.state}, fn {key, value}, {:ok, stage_state} ->
-      case specs[key] do
-        nil ->
-          {:halt, {:error, "#{stage.name}.#{key} is not a setting of the stage"}}
-
-        %{applies: :build} ->
-          {:halt, {:error, "#{stage.name}.#{key} is fixed when the stage starts"}}
-
-        _live ->
-          case stage.module.set_option(stage_state, key, value) do
-            {:ok, stage_state} -> {:cont, {:ok, stage_state}}
-            {:error, _reason} = error -> {:halt, error}
-          end
+      case apply_option(stage, specs, stage_state, key, value) do
+        {:ok, stage_state} -> {:cont, {:ok, stage_state}}
+        {:error, _reason} = error -> {:halt, error}
       end
     end)
+  end
+
+  # A key the stage cannot change is refused before the stage sees it, under the stage's name.
+  defp apply_option(stage, specs, stage_state, key, value) do
+    case Check.live_setting(specs, key) do
+      :ok -> stage.module.set_option(stage_state, key, value)
+      {:error, reason} -> {:error, "#{stage.name}.#{reason}"}
+    end
   end
 
   defp put_stage_state(stages, {index, nil}, stage_state),

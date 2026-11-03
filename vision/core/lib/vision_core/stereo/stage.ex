@@ -10,12 +10,18 @@ defmodule VisionCore.Stereo.Stage do
   `VisionCore.Stereo.Pipeline.default_stages/1` for the default list.
 
   A stage with settings declares them with `option_specs/0`, under the
-  names of its options, and implements `options/1` and `set_option/3`.
-  Live settings change while running; build settings (`applies:
-  :build`) are fixed when the stage starts, and listed so they can be
-  shown. Keys are unique within a stage, and the settings become the
-  unit's vision parameters (`VisionCore.Parameters`), addressed by
-  stage (`VisionCore.Stereo.Pipeline.set_options/3`).
+  names of its options, and implements `options/1` and, for live
+  settings, `set_option/3`: the pipeline refuses at start a stage with
+  live settings and no `set_option/3`. Live settings change while
+  running; build settings (`applies: :build`) are fixed when the stage
+  starts, and listed so they can be shown. Keys are unique within a
+  stage, and the settings become the unit's vision parameters
+  (`VisionCore.Parameters`), addressed by stage
+  (`VisionCore.Stereo.Pipeline.set_options/3`). `init/2` builds them
+  from its options with `VisionCore.Parameters.Check.init_settings/3`,
+  and `set_option/3` checks a change with
+  `VisionCore.Parameters.Check.change_setting/4`, so a stage refuses
+  what the registry refuses, and an option it does not declare.
   """
 
   alias VisionCore.Stereo.Pair
@@ -62,7 +68,11 @@ defmodule VisionCore.Stereo.Stage do
           optional(:description) => String.t()
         }
 
-  @doc "Builds the stage's state from its options and the pipeline's context."
+  @doc """
+  Builds the stage's state from its options and the pipeline's context,
+  or says why it cannot: an option it does not declare, or a value its
+  spec refuses.
+  """
   @callback init(opts :: keyword(), context()) :: {:ok, state()} | {:error, String.t()}
 
   @doc "Runs the stage on one pair."
@@ -89,7 +99,10 @@ defmodule VisionCore.Stereo.Stage do
   @doc "The value of every setting in `option_specs/0`."
   @callback options(state()) :: %{atom() => term()}
 
-  @doc "Changes one live setting from the next pair on, or says why it cannot."
+  @doc """
+  Changes one live setting from the next pair on, or says why it cannot:
+  a key that is not a live setting, or a value its spec refuses.
+  """
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
   @optional_callbacks summary: 0, explanation: 0, option_specs: 0, options: 1, set_option: 3

@@ -18,7 +18,7 @@ defmodule VisionCore.Stereo.Stage.Disparity do
     * `:p1` (8), `:p2` (64) — penalties for a disparity change of one, and
       of more, between neighbours: integers up to 79, `:p2` above `:p1`.
     * `:uniqueness` (1.0526) — a match is kept when the second-best cost
-      is at least this factor above the best.
+      is at least this factor above the best, 1 to 3.
     * `:paths` (8) — aggregation paths, 8 or 3: 3 takes much less time
       and leaves more pixels unmatched on dark or textureless surfaces.
     * `:matcher` — `:native` matches natively, `:nx` compiles
@@ -31,6 +31,7 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   # The Census window is 9 pixels wide: the border it cannot match.
@@ -71,6 +72,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
     }
   ]
 
+  @defaults %{p1: 8, p2: 64, uniqueness: 1.0526315789473684, num_disparities: 64, paths: 8}
+
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Matches the rectified pair into a disparity with semi-global matching."
 
@@ -89,32 +92,19 @@ defmodule VisionCore.Stereo.Stage.Disparity do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
-    disparities = Keyword.get(opts, :num_disparities, 64)
-    p1 = Keyword.get(opts, :p1, 8)
-    p2 = Keyword.get(opts, :p2, 64)
-    uniqueness = Keyword.get(opts, :uniqueness, 1.0526315789473684)
-    paths = Keyword.get(opts, :paths, 8)
-    matcher = Keyword.get(opts, :matcher)
+    {matcher, opts} = Keyword.pop(opts, :matcher)
 
-    cond do
-      disparities not in [64, 128] ->
-        {:error, "nx_stereo searches 64 or 128 disparities, got #{inspect(disparities)}"}
-
-      paths not in [3, 8] ->
-        {:error, "nx_stereo aggregates along 3 or 8 paths, got #{inspect(paths)}"}
-
-      matcher not in [nil, :nx, :native] ->
-        {:error, "the matcher is :nx or :native, got #{inspect(matcher)}"}
-
-      true ->
-        validate(
-          disparities: disparities,
-          paths: paths,
-          p1: p1,
-          p2: p2,
-          uniqueness: uniqueness,
-          matcher: matcher
-        )
+    with :ok <- check_matcher(matcher),
+         {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts) do
+      {:ok,
+       [
+         disparities: settings.num_disparities,
+         paths: settings.paths,
+         p1: settings.p1,
+         p2: settings.p2,
+         uniqueness: settings.uniqueness,
+         matcher: matcher
+       ]}
     end
   end
 
@@ -132,27 +122,16 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   end
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(sgm_opts, key, value) when key in @live,
-    do: validate(Keyword.put(sgm_opts, key, value))
-
-  defp validate(sgm_opts) do
-    {p1, p2, uniqueness} = {sgm_opts[:p1], sgm_opts[:p2], sgm_opts[:uniqueness]}
-
-    cond do
-      not (is_integer(p1) and is_integer(p2) and p1 in 0..@max_penalty and
-               p2 in 0..@max_penalty) ->
-        {:error, "p1 and p2 must be integers from 0 to #{@max_penalty}, got #{p1} and #{p2}"}
-
-      p2 <= p1 ->
-        {:error, "p2 must exceed p1, got #{p1} and #{p2}"}
-
-      not (is_number(uniqueness) and uniqueness >= 1) ->
-        {:error, "uniqueness must be at least 1, got #{inspect(uniqueness)}"}
-
-      true ->
-        {:ok, Keyword.put(sgm_opts, :uniqueness, uniqueness * 1.0)}
-    end
+  def set_option(sgm_opts, key, value) do
+    with {:ok, value} <- Check.change_setting(@option_specs, options(sgm_opts), key, value),
+         do: {:ok, Keyword.put(sgm_opts, key, value)}
   end
+
+  # The matcher is an option, not a setting: it picks how the disparity is computed.
+  defp check_matcher(matcher) when matcher in [nil, :nx, :native], do: :ok
+
+  defp check_matcher(matcher),
+    do: {:error, "matcher must be :nx or :native, got #{inspect(matcher)}"}
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left, :right]

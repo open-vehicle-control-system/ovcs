@@ -9,6 +9,8 @@ defmodule VisionCore.Stereo.Stage.Decode do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
+
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Turns both camera frames into grey images at the pipeline's size."
 
@@ -21,7 +23,10 @@ defmodule VisionCore.Stereo.Stage.Decode do
         "aligned. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: {:ok, %{size: {context.height, context.width}}}
+  end
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left_frame, :right_frame]

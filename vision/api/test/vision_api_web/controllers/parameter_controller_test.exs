@@ -81,12 +81,12 @@ defmodule VisionApiWeb.ParameterControllerTest do
   end
 
   test "PATCH refuses a value as a 422 error pointing at the value", %{conn: conn} do
-    assert %{"errors" => [refusal("expected integer, got \"8\"")]} ==
+    assert %{"errors" => [refusal("must be an integer, got \"8\"")]} ==
              conn
              |> patch_value("test.disparity.p1", body("test.disparity.p1", "8"))
              |> json_response(422)
 
-    assert %{"errors" => [refusal("must be above test.disparity.p1 (8)")]} ==
+    assert %{"errors" => [refusal("must be above test.disparity.p1 (8), got 8")]} ==
              conn
              |> patch_value("test.disparity.p2", body("test.disparity.p2", 8))
              |> json_response(422)

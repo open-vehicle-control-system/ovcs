@@ -5,6 +5,10 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
+
+  @defaults %{kernel_size: 5}
+
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Removes isolated wrong disparities with a median filter."
 
@@ -18,10 +22,9 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
-    case Keyword.get(opts, :kernel_size, 5) do
-      size when size in [3, 5] -> {:ok, size}
-      size -> {:error, "kernel_size must be 3 or 5, got #{inspect(size)}"}
-    end
+    with {:ok, %{kernel_size: kernel_size}} <-
+           Check.init_settings(option_specs(), @defaults, opts),
+         do: {:ok, kernel_size}
   end
 
   @impl VisionCore.Stereo.NxStage

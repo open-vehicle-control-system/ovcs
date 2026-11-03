@@ -8,13 +8,14 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   ## Options
 
-    * `:right_row_offset` (`0.0`) — rows the right image is moved by, a
-      correction for cameras that have shifted since the calibration
-      (`VisionCore.Stereo.AlignmentCorrection` sets it); also a runtime
-      setting.
+    * `:right_row_offset` (`0.0`) — rows the right image is moved by, up
+      to 8 either way, a correction for cameras that have shifted since
+      the calibration (`VisionCore.Stereo.AlignmentCorrection` sets it);
+      also a runtime setting.
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
 
   @max_row_offset 8
@@ -26,6 +27,8 @@ defmodule VisionCore.Stereo.Stage.Rectification do
       description: "Rows the right image is moved by to line up with the left one"
     }
   ]
+
+  @defaults %{right_row_offset: 0.0}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Undistorts and rectifies both frames so a point lies on the same row in each."
@@ -44,8 +47,8 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
-    state = %{size: {context.height, context.width}, right_row_offset: 0.0}
-    set_option(state, :right_row_offset, Keyword.get(opts, :right_row_offset, 0.0))
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: {:ok, Map.put(settings, :size, {context.height, context.width})}
   end
 
   @impl VisionCore.Stereo.NxStage
@@ -80,12 +83,10 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   def options(state), do: %{right_row_offset: state.right_row_offset}
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(state, :right_row_offset, rows)
-      when is_number(rows) and abs(rows) <= @max_row_offset,
-      do: {:ok, %{state | right_row_offset: rows * 1.0}}
-
-  def set_option(_state, :right_row_offset, rows),
-    do: {:error, "right_row_offset is at most #{@max_row_offset} rows, got #{inspect(rows)}"}
+  def set_option(state, key, value) do
+    with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
+         do: {:ok, %{state | key => value}}
+  end
 
   # Sampling row v + rows: the inverse projection's row column, times rows, joins its constant one.
   defp move_rows(camera, rows) do

@@ -29,6 +29,18 @@ defmodule VisionCore.Stereo.PipelineTest do
     def set_option(_state, :gain, gain), do: {:error, "gain out of range: #{inspect(gain)}"}
   end
 
+  # A CPU stage declaring a live setting it has no set_option/3 to change.
+  defmodule FixedGain do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, 1}
+    def requires, do: [:depth]
+    def provides, do: [:depth]
+    def run(pair, state), do: {:ok, pair, state}
+    def option_specs, do: [gain: %{type: :integer, range: {1, 10}}]
+    def options(gain), do: %{gain: gain}
+  end
+
   # A CPU stage between two native runs.
   defmodule Gain2D do
     @behaviour VisionCore.Stereo.Stage
@@ -106,6 +118,38 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert {Stage.PointCloud, [decimation: 2]} in stages
   end
 
+  test "default_stages/1 refuses an override that names no stage" do
+    assert_raise ArgumentError,
+                 ~r/^no default stage named :disparty; they are :rectification, /,
+                 fn ->
+                   Pipeline.default_stages(
+                     disparity: [paths: 3],
+                     disparty: [num_disparities: 128]
+                   )
+                 end
+  end
+
+  test "refuses a stage that declares a live setting and has no set_option/3 to change it" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages() ++ [FixedGain])
+
+    assert message ==
+             "#{inspect(FixedGain)} declares the live settings [:gain] but no set_option/3"
+  end
+
+  test "refuses a stage option out of its spec, or that it does not declare" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(temporal_filter: [hold: 300]))
+
+    assert message ==
+             "#{inspect(Stage.TemporalFilter)} cannot start: hold must be from 0 to 10, got 300"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(disparity: [num_disparity: 128]))
+
+    assert message == "#{inspect(Stage.Disparity)} cannot start: num_disparity is not a setting"
+  end
+
   test "lists each stage's settings and values in pipeline order" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
     stages = Pipeline.stage_options(pipeline)
@@ -168,17 +212,24 @@ defmodule VisionCore.Stereo.PipelineTest do
   test "refuses a build setting, an unknown stage or setting, and an invalid value, changing nothing" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
 
-    assert {:error, "gain.size" <> _} = Pipeline.set_options(pipeline, :gain, gain: 2, size: 5)
+    assert Pipeline.set_options(pipeline, :gain, gain: 2, size: 5) ==
+             {:error, "gain.size is fixed when the stage starts"}
+
     assert {:error, "no stereo stage" <> _} = Pipeline.set_options(pipeline, :nope, gain: 2)
-    assert {:error, "gain.block_size" <> _} = Pipeline.set_options(pipeline, :gain, block_size: 7)
+
+    assert Pipeline.set_options(pipeline, :gain, block_size: 7) ==
+             {:error, "gain.block_size is not a setting"}
+
+    assert Pipeline.set_options(pipeline, :disparity, [{"p1", 2}]) ==
+             {:error, ~s(disparity."p1" is not a setting)}
 
     assert {:error, "gain out of range" <> _} =
              Pipeline.set_options(pipeline, :gain, gain: 2, gain: 20)
 
     assert {:error, "disparity.paths" <> _} = Pipeline.set_options(pipeline, :disparity, paths: 3)
 
-    assert {:error, "p2 must exceed p1" <> _} =
-             Pipeline.set_options(pipeline, :disparity, p1: 4, p1: 70)
+    assert Pipeline.set_options(pipeline, :disparity, p1: 4, p1: 70) ==
+             {:error, "p1 must be below p2 (64), got 70"}
 
     values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
     assert values.gain == %{gain: 1, size: 3}
@@ -199,10 +250,11 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert params |> Map.keys() |> Enum.sort() == [:p1, :p2, :uniqueness]
     assert {Nx.to_number(p1), Nx.to_number(p2)} == {4.0, 40.0}
 
-    assert {:error, "p2 must exceed p1" <> _} = Pipeline.set_options(pipeline, :disparity, p1: 40)
+    assert Pipeline.set_options(pipeline, :disparity, p1: 40) ==
+             {:error, "p1 must be below p2 (40), got 40"}
 
-    assert {:error, "p1 and p2 must be integers" <> _} =
-             Pipeline.set_options(pipeline, :disparity, p2: 100)
+    assert Pipeline.set_options(pipeline, :disparity, p2: 100) ==
+             {:error, "p2 must be from 1 to 79, got 100"}
 
     assert %{values: %{p1: 4}} =
              Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :disparity))

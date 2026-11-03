@@ -199,7 +199,7 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
 
     test "TemporalFilter carries the previous disparity and the missed count across pairs" do
       context = context(:stereo, 64, 48)
-      stages = [{Stage.TemporalFilter, [alpha: 0.3, delta: 30.0, hold: 1]}]
+      stages = [{Stage.TemporalFilter, [alpha: 0.3, delta: 8.0, hold: 1]}]
       pairs = for seed <- 1..4, do: disparity_pair(disparity(48, 64, seed))
 
       for {native, nx} <-

@@ -11,15 +11,22 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
 
   ## Options
 
-    * `:alpha` (`0.4`) — the new value's weight; `1.0` turns smoothing
-      off.
-    * `:delta` (`2.0`) — the largest change, in pixels, that is smoothed.
-    * `:hold` (`2`) — how many pairs a lost match is held; `0` turns
-      holding off.
+    * `:alpha` (`0.4`) — the new value's weight, 0.05 to 1; `1.0` turns
+      smoothing off.
+    * `:delta` (`2.0`) — the largest change, in pixels, that is smoothed,
+      up to 8.
+    * `:hold` (`2`) — how many pairs a lost match is held, up to 10; `0`
+      turns holding off.
 
   They change while running.
   """
   @behaviour VisionCore.Stereo.NxStage
+
+  alias VisionCore.Parameters.Check
+
+  @max_hold 10
+  # The missed count stops here, above the longest hold, so that every hold ends.
+  @max_missed 255.0
 
   @option_specs [
     alpha: %{
@@ -35,11 +42,13 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
     },
     hold: %{
       type: :integer,
-      range: {0, 10},
+      range: {0, @max_hold},
       description:
         "Pairs a pixel that loses its match keeps its last disparity; 0 turns holding off"
     }
   ]
+
+  @defaults %{alpha: 0.4, delta: 2.0, hold: 2}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Smooths the disparity over time and holds lost matches briefly."
@@ -56,16 +65,8 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
-    state = %{
-      alpha: Keyword.get(opts, :alpha, 0.4),
-      delta: Keyword.get(opts, :delta, 2.0),
-      hold: Keyword.get(opts, :hold, 2),
-      size: {context.height, context.width}
-    }
-
-    with {:ok, state} <- validate(state, :alpha, state.alpha),
-         {:ok, state} <- validate(state, :delta, state.delta),
-         do: validate(state, :hold, state.hold)
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: {:ok, Map.put(settings, :size, {context.height, context.width})}
   end
 
   @impl VisionCore.Stereo.NxStage
@@ -104,7 +105,7 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
     tensors
     |> Map.put(:disparity, filtered)
     |> Map.put({:carry, :previous}, filtered)
-    |> Map.put({:carry, :missed}, Nx.min(missed, 255.0))
+    |> Map.put({:carry, :missed}, Nx.min(missed, @max_missed))
   end
 
   @impl VisionCore.Stereo.NxStage
@@ -114,20 +115,10 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def options(state), do: %{alpha: state.alpha, delta: state.delta, hold: state.hold}
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(state, key, value) when key in [:alpha, :delta, :hold],
-    do: validate(state, key, value)
-
-  defp validate(state, :alpha, value) when is_number(value) and value > 0 and value <= 1,
-    do: {:ok, %{state | alpha: value * 1.0}}
-
-  defp validate(state, :delta, value) when is_number(value) and value >= 0,
-    do: {:ok, %{state | delta: value * 1.0}}
-
-  defp validate(state, :hold, value) when is_integer(value) and value >= 0,
-    do: {:ok, %{state | hold: value}}
-
-  defp validate(_state, key, value),
-    do: {:error, "temporal_filter #{key} out of range: #{inspect(value)}"}
+  def set_option(state, key, value) do
+    with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
+         do: {:ok, %{state | key => value}}
+  end
 
   defp smooth(current, previous, alpha, delta) do
     agree =

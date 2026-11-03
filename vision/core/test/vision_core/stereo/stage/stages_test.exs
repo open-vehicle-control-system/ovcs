@@ -234,8 +234,8 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert {:ok, opts} = Stage.Disparity.init([paths: 3], context)
     assert opts[:paths] == 3
 
-    assert {:error, "nx_stereo aggregates along 3 or 8 paths" <> _} =
-             Stage.Disparity.init([paths: 4], context)
+    assert Stage.Disparity.init([paths: 4], context) ==
+             {:error, "paths must be one of 3, 8, got 4"}
   end
 
   test "Disparity's matcher says where it runs, or leaves it to the pipeline" do
@@ -249,7 +249,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Stage.Disparity.compute(nx) == :nx
     assert Stage.Disparity.options(native) == Stage.Disparity.options(default)
 
-    assert {:error, "the matcher is :nx or :native, got :gpu"} =
+    assert {:error, "matcher must be :nx or :native, got :gpu"} =
              Stage.Disparity.init([matcher: :gpu], context)
   end
 

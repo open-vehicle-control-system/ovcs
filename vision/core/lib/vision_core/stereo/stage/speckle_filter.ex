@@ -11,11 +11,14 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   ## Options
 
     * `:min_support` (`12`) — neighbours that must agree, 0 to 48.
-    * `:max_diff` (`1.0`) — how close, in pixels, a neighbour must be.
+    * `:max_diff` (`1.0`) — how close, in pixels, a neighbour must be, 0
+      to 8.
 
   Both change while running.
   """
   @behaviour VisionCore.Stereo.NxStage
+
+  alias VisionCore.Parameters.Check
 
   @radius 3
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
@@ -34,6 +37,8 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
     }
   ]
 
+  @defaults %{min_support: 12, max_diff: 1.0}
+
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Drops small islands of disparity that agree with nothing around them."
 
@@ -48,15 +53,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
         "scattered dots in open space."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    state = %{
-      min_support: Keyword.get(opts, :min_support, 12),
-      max_diff: Keyword.get(opts, :max_diff, 1.0)
-    }
-
-    with {:ok, state} <- validate(state, :min_support, state.min_support),
-         do: validate(state, :max_diff, state.max_diff)
-  end
+  def init(opts, _context), do: Check.init_settings(@option_specs, @defaults, opts)
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -83,18 +80,10 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def options(state), do: %{min_support: state.min_support, max_diff: state.max_diff}
 
   @impl VisionCore.Stereo.NxStage
-  def set_option(state, key, value) when key in [:min_support, :max_diff],
-    do: validate(state, key, value)
-
-  defp validate(state, :min_support, value)
-       when is_integer(value) and value >= 0 and value <= @neighbours,
-       do: {:ok, %{state | min_support: value}}
-
-  defp validate(state, :max_diff, value) when is_number(value) and value >= 0,
-    do: {:ok, %{state | max_diff: value * 1.0}}
-
-  defp validate(_state, key, value),
-    do: {:error, "speckle_filter #{key} out of range: #{inspect(value)}"}
+  def set_option(state, key, value) do
+    with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
+         do: {:ok, %{state | key => value}}
+  end
 
   # One gather of all 48 neighbours, unmatched outside the image, compiles to one pass.
   defp despeckle(disparity, min_support, max_diff) do

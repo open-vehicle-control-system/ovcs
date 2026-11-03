@@ -15,6 +15,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @bands 4
@@ -36,7 +37,10 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
         "calibration fixes. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: {:ok, %{size: {context.height, context.width}}}
+  end
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left, :right, :disparity]

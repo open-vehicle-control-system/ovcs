@@ -7,11 +7,14 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @min_depth_m 0.05
   @max_depth_m 20.0
   @max_decimation 16
+
+  @defaults %{decimation: 4}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Unprojects the depth into a decimated point cloud."
@@ -26,14 +29,8 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
-    case Keyword.get(opts, :decimation, 4) do
-      decimation when decimation in 1..@max_decimation//1 ->
-        {:ok, decimation}
-
-      decimation ->
-        {:error,
-         "decimation must be an integer from 1 to #{@max_decimation}, got #{inspect(decimation)}"}
-    end
+    with {:ok, %{decimation: decimation}} <- Check.init_settings(option_specs(), @defaults, opts),
+         do: {:ok, decimation}
   end
 
   @impl VisionCore.Stereo.NxStage

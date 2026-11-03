@@ -10,6 +10,7 @@ defmodule VisionCore.Stereo.Stage.Quality do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
@@ -25,7 +26,10 @@ defmodule VisionCore.Stereo.Stage.Quality do
         "improvement. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(_opts, context), do: {:ok, %{size: {context.height, context.width}}}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: {:ok, %{size: {context.height, context.width}}}
+  end
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]

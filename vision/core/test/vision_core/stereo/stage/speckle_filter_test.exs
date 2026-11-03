@@ -52,10 +52,10 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilterTest do
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
 
-    assert {:error, "speckle_filter min_support" <> _} =
-             Stage.SpeckleFilter.init([min_support: 49], context)
+    assert Stage.SpeckleFilter.init([min_support: 49], context) ==
+             {:error, "min_support must be from 0 to 48, got 49"}
 
-    assert {:error, "speckle_filter max_diff" <> _} =
-             Stage.SpeckleFilter.init([max_diff: -1], context)
+    assert Stage.SpeckleFilter.init([max_diff: 100], context) ==
+             {:error, "max_diff must be from 0 to 8, got 100"}
   end
 end

@@ -10,6 +10,7 @@ defmodule VisionCore.Stereo.Stage.Depth do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @max_depth_mm 65_535
@@ -28,7 +29,9 @@ defmodule VisionCore.Stereo.Stage.Depth do
         "no depth. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(_opts, _context), do: {:ok, nil}
+  def init(opts, _context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts), do: {:ok, nil}
+  end
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]

@@ -83,12 +83,29 @@ defmodule VisionCore.Stereo.Stage.TemporalFilterTest do
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
 
-    assert {:error, "temporal_filter alpha" <> _} =
-             Stage.TemporalFilter.init([alpha: 0.0], context)
+    assert Stage.TemporalFilter.init([alpha: 0.01], context) ==
+             {:error, "alpha must be from 0.05 to 1, got 0.01"}
 
-    assert {:error, "temporal_filter delta" <> _} =
-             Stage.TemporalFilter.init([delta: -1], context)
+    assert Stage.TemporalFilter.init([delta: 30.0], context) ==
+             {:error, "delta must be from 0 to 8, got 30.0"}
 
-    assert {:error, "temporal_filter hold" <> _} = Stage.TemporalFilter.init([hold: -1], context)
+    assert Stage.TemporalFilter.init([hold: -1], context) ==
+             {:error, "hold must be from 0 to 10, got -1"}
+
+    assert Stage.TemporalFilter.init([hold: 300], context) ==
+             {:error, "hold must be from 0 to 10, got 300"}
+  end
+
+  test "lets a lost match go after the longest hold it takes, as after any other" do
+    %{range: {_shortest, longest}} = Stage.TemporalFilter.option_specs()[:hold]
+    {_, segment} = run(segment(alpha: 1.0, hold: longest), [10.0, 10.0, 10.0, 10.0])
+
+    {misses, _segment} =
+      Enum.map_reduce(1..(longest + 1), segment, fn _pair, segment ->
+        {[pixel | _], segment} = run(segment, [-1.0, 10.0, 10.0, 10.0])
+        {pixel, segment}
+      end)
+
+    assert misses == List.duplicate(10.0, longest) ++ [-1.0]
   end
 end
