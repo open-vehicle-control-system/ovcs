@@ -2,12 +2,22 @@ import { useEffect, useRef } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
-import ThemeSwitch from './components/ThemeSwitch.jsx'
 import Firmware from './components/Firmware.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import ExporterPage from './pages/ExporterPage.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
-import { OvcsCard, OvcsHeader, OvcsSaveBar, focusClass as FOCUS } from '@ovcs/ui/react'
+import {
+  OvcsCard,
+  OvcsMain,
+  OvcsSaveBar,
+  OvcsShell,
+  OvcsShellBody,
+  OvcsThemeSwitch,
+  OvcsTopBar,
+  OvcsTopBarEnd,
+  OvcsTopBarTitle,
+  focusClass as FOCUS
+} from '@ovcs/ui/react'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
@@ -164,26 +174,22 @@ export default function App() {
   const { page, selectedGroupId, exporterId } = useNavigationInUrl()
   const Page = PAGES[page]
 
-  // On a laptop the page is the screen: only a page's own content scrolls.
   return (
-    <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
-      <OvcsHeader className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2 lg:px-6">
-        <div className="flex flex-wrap items-baseline gap-x-3">
-          <h1 className="text-lg font-semibold text-ovcs-text">
-            OVCS <span className="font-normal text-ovcs-muted">Vision</span>
-          </h1>
+    <OvcsShell>
+      <OvcsTopBar>
+        <OvcsTopBarTitle product="Vision">
           <Firmware />
-        </div>
+        </OvcsTopBarTitle>
         <ParameterError />
-        <div className="ml-auto flex items-center gap-5">
+        <OvcsTopBarEnd>
           <UnitStatusBar />
-          <ThemeSwitch />
-        </div>
-      </OvcsHeader>
+          <OvcsThemeSwitch />
+        </OvcsTopBarEnd>
+      </OvcsTopBar>
 
-      <div className="flex flex-1 flex-col lg:min-h-0 lg:flex-row">
+      <OvcsShellBody>
         <Menu />
-        <main className="flex min-w-0 flex-1 flex-col p-4 lg:min-h-0 lg:p-6">
+        <OvcsMain>
           {page === 'exporter' ? (
             <ExporterPage id={exporterId} />
           ) : Page ? (
@@ -191,8 +197,8 @@ export default function App() {
           ) : (
             <PreviewsPage page={page} groupId={selectedGroupId} />
           )}
-        </main>
-      </div>
-    </div>
+        </OvcsMain>
+      </OvcsShellBody>
+    </OvcsShell>
   )
 }

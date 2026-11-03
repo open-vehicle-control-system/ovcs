@@ -35,8 +35,25 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsCard`, `OvcsHeader`, `OvcsStatus`, `OvcsBadge`, `OvcsDot`, `OvcsRow` | as the Vue ones |
   | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |
   | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard and Reset all |
+  | `OvcsThemeSwitch` | the light / dark switch; the browser keeps the choice under `ovcs-theme` |
 
-  It also exports `focusClass` (the focus ring utilities) and the helpers `formatValue`, `rangeStep` and `tidy`. The two parameter components, and `OvcsStatus` for the text colour of its label, use Tailwind utilities: add `../../libraries/ovcs_ui/react/**/*.{js,jsx}` (relative to the app) to its `content`.
+  The page frame the OVCS dashboards share: on a laptop the page is the screen and only the main content scrolls; on a narrow screen the menu stacks above it.
+
+  | Component | Props |
+  |---|---|
+  | `OvcsShell` | holds an `OvcsTopBar` and an `OvcsShellBody` |
+  | `OvcsTopBar` | the sticky top bar, holding an `OvcsTopBarTitle` and an `OvcsTopBarEnd` |
+  | `OvcsTopBarTitle` | `product`: "OVCS" and the product's name, then its `children` |
+  | `OvcsTopBarEnd` | the status and controls at the bar's end |
+  | `OvcsShellBody` | holds an `OvcsMenu` and an `OvcsMain` |
+  | `OvcsMenu` | `label`: the navigation, holding `OvcsMenuSection`s |
+  | `OvcsMenuSection` | `title`, which names it |
+  | `OvcsMenuList` | `label`: a list of `OvcsMenuItem`s, each in its `li` |
+  | `OvcsMenuItem` | `selected`: a menu button, with the selection bar and `aria-current="page"` when selected |
+  | `OvcsMain` | the main content |
+  | `OvcsPageFrame` | `title`, `summary`: a page's heading over its content, which scrolls on its own on a laptop |
+
+  It also exports `focusClass` (the focus ring utilities), `useOvcsTheme` (the current theme, `light` or `dark`) and the helpers `formatValue`, `rangeStep` and `tidy`. Most components use Tailwind utilities: add `../../libraries/ovcs_ui/react/**/*.{js,jsx}` (relative to the app) to its `content`. An app with `OvcsThemeSwitch` applies the stored choice before the first paint with an inline script in its `index.html`, as `vision/dashboard/index.html` does.
 
 ## Use
 

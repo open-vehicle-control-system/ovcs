@@ -1,15 +1,15 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-// The theme store reads the browser's choice when it loads, so each test loads it afresh.
+// The theme reads the browser's choice when it loads, so each test loads it afresh.
 async function showSwitch() {
   vi.resetModules()
-  const { default: ThemeSwitch } = await import('../ThemeSwitch.jsx')
-  render(<ThemeSwitch />)
+  const { default: OvcsThemeSwitch } = await import('./OvcsThemeSwitch.jsx')
+  render(<OvcsThemeSwitch />)
   return screen.getByRole('switch', { name: 'Dark mode' })
 }
 
-describe('ThemeSwitch', () => {
+describe('OvcsThemeSwitch', () => {
   beforeEach(() => {
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
@@ -20,7 +20,7 @@ describe('ThemeSwitch', () => {
     delete window.matchMedia
   })
 
-  it('switches to dark and back, and remembers the choice on this browser', async () => {
+  test('switches to dark and back, and remembers the choice on this browser', async () => {
     const toggle = await showSwitch()
     expect(toggle.getAttribute('aria-checked')).toBe('false')
 
@@ -35,19 +35,19 @@ describe('ThemeSwitch', () => {
     expect(window.localStorage.getItem('ovcs-theme')).toBe('light')
   })
 
-  it('starts from the theme chosen on this browser', async () => {
+  test('starts from the theme chosen on this browser', async () => {
     window.localStorage.setItem('ovcs-theme', 'dark')
 
     expect((await showSwitch()).getAttribute('aria-checked')).toBe('true')
   })
 
-  it("starts from the system's theme without a choice", async () => {
+  test("starts from the system's theme without a choice", async () => {
     window.matchMedia = vi.fn(() => ({ matches: true, addEventListener: vi.fn() }))
 
     expect((await showSwitch()).getAttribute('aria-checked')).toBe('true')
   })
 
-  it('still switches when the browser keeps no storage', async () => {
+  test('still switches when the browser keeps no storage', async () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('blocked')
     })

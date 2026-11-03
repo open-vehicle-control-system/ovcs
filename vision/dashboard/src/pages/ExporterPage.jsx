@@ -1,5 +1,4 @@
-import { OvcsCard, OvcsStatus } from '@ovcs/ui/react'
-import PageFrame from './PageFrame.jsx'
+import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
 import Ros2Page from './Ros2Page.jsx'
 import ApiPage from './ApiPage.jsx'
 import { exporterStatus, useExporters } from '../stores/exporters.js'
@@ -23,14 +22,14 @@ function GenericExporterPage({ id }) {
 
   if (!exporter) {
     return (
-      <PageFrame title="Exporter">
+      <OvcsPageFrame title="Exporter">
         <p className="text-sm text-ovcs-muted">The unit has not listed an exporter {id}.</p>
-      </PageFrame>
+      </OvcsPageFrame>
     )
   }
 
   return (
-    <PageFrame title={exporter.name} summary="What this exporter takes out of the unit.">
+    <OvcsPageFrame title={exporter.name} summary="What this exporter takes out of the unit.">
       <OvcsCard className="flex flex-wrap items-center gap-x-8 gap-y-2">
         <div className="flex flex-col">
           <span className="text-xs text-ovcs-muted">status</span>
@@ -68,7 +67,7 @@ function GenericExporterPage({ id }) {
           </table>
         )}
       </OvcsCard>
-    </PageFrame>
+    </OvcsPageFrame>
   )
 }
 

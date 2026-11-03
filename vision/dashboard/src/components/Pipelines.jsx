@@ -1,8 +1,8 @@
 import { useMemo } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { pipelines as pipelinesOf, unsavedByGroup, useParameters } from '../stores/parameters.js'
-import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
-import { SELECTED, STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
+import { OvcsBadge, OvcsMenuItem } from '@ovcs/ui/react'
+import { STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 import { computeTags } from '../compute.js'
 
@@ -19,15 +19,13 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
   const tags = computeTags(group.compute)
   return (
-    <button
-      type="button"
+    <OvcsMenuItem
+      selected={selected}
       aria-label={accessibleName(group, unsaved)}
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
-      className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 py-1 text-left text-sm ${style.border} ${
-        selected ? `${SELECTED} font-medium` : 'hover:bg-ovcs-bg'
-      } ${FOCUS}`}
+      className={`border py-1 ${style.border}`}
     >
       <span className="flex min-w-0 flex-col gap-0.5">
         <span translate="no">{group.name}</span>
@@ -45,7 +43,7 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
       <OvcsBadge tone="warn" aria-hidden="true" className={`min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'} ${group.status && style.dot ? '' : 'ml-auto'}`}>
         {unsaved}
       </OvcsBadge>
-    </button>
+    </OvcsMenuItem>
   )
 }
 
