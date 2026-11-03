@@ -12,6 +12,7 @@ const resources = (parameterId) => [
   ['POST', 'parameter-discards', 'Drops every unsaved change'],
   ['POST', 'parameter-resets', 'Sets a parameter, a stage or everything back to its built-in value'],
   ['GET', 'configuration', 'The active composer configuration'],
+  ['GET', 'firmware', 'The firmware: the commit it is built from, its target and its Nerves system'],
   ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered']
 ]
 

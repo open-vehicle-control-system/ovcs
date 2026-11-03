@@ -18,6 +18,7 @@ defmodule VisionApiWeb.Router do
     post "/parameter-discards", ParameterActionController, :discard
     post "/parameter-resets", ParameterActionController, :reset
     get "/configuration", ConfigurationController, :show
+    get "/firmware", FirmwareController, :show
     get "/ros2-node", Ros2NodeController, :show
   end
 

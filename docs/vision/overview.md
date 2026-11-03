@@ -84,6 +84,8 @@ The dashboard and the API are served from the board on port 4100:
 http://<vehicle>-vision.local:4100
 ```
 
+Next to the title, the dashboard names the commit the firmware is built from and the Nerves system the board runs, such as `ce99e251 · nerves_system_okdo_c100 0.3.0`; `-dirty` after the commit marks a build with uncommitted changes. `GET /api/firmware` returns both.
+
 On a unit with detection, the left video outlines each detected object with its label and distance, and its caption counts them. An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row; a larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.

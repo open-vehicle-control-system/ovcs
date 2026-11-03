@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchRos2Node } from '../unit.js'
+import { fetchFirmware, fetchRos2Node } from '../unit.js'
 
 const respond = (body) => ({ ok: true, status: 200, json: async () => body })
 
@@ -45,5 +45,13 @@ describe('unit service', () => {
       services: [{ name: '/vision/get_parameters', serviceType: 'rcl_interfaces/srv/GetParameters' }]
     })
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/ros2-node\?include=topics,services$/)
+  })
+
+  it("reads the firmware's commit, target and Nerves system", async () => {
+    const attributes = { revision: 'ce99e251', target: 'okdo_c100', nervesSystem: 'nerves_system_okdo_c100', nervesSystemVersion: '0.3.0' }
+    fetchMock.mockResolvedValue(respond({ data: { type: 'firmwares', id: 'current', attributes } }))
+
+    expect(await fetchFirmware()).toEqual(attributes)
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/firmware$/)
   })
 })

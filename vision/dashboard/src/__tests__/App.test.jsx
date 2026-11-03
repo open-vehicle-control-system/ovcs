@@ -9,7 +9,7 @@ import { dashboardSocket } from '../services/socket.js'
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
   dashboardSocket: {
-    channel: vi.fn(() => ({ on: () => {}, join: () => {}, off: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
+    channel: vi.fn(() => ({ on: () => {}, join: () => ({ receive() { return this } }), off: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
   }
 }))
 

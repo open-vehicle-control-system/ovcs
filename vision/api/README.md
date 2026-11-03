@@ -17,6 +17,7 @@ A write reads its document from a JSON body only: sent as a form or in the query
 | `POST /api/parameter-resets` | Resets the `target` relationship (a `stages` or `parameters` resource), or everything without one: 201 with the reset ids; 404 for an unknown target, 422 when a parameter's owner refuses, 409 for another `data.type`, 400 without one or for a target of another type. |
 | `GET /api/ros2-node` | The ROS 2 node, `ros2-nodes` identified by its node name: `name`, `zenohEndpoint`, `connected`, related `topics` (`ros2-topics`: `name`, `messageType`, `rateHz`) and `services` (`ros2-services`: `name`, `serviceType`), in `included` with `include=topics,services` or either alone; 400 for any other include. |
 | `GET /api/configuration` | The active vision configuration: `configurations` `current`, attribute `composer` holding `VisionCore.settings/0`, keyed by composer option names. |
+| `GET /api/firmware` | The firmware the unit runs (`VisionCore.Firmware`): `firmwares` `current`, with `revision`, the commit it is built from, after the latest `v` version tag once there is one and `-dirty` when built with uncommitted changes, `target`, its Nerves target (`host` on a host), and `nervesSystem` and `nervesSystemVersion`, the Nerves system its `/usr/lib/os-release` names, `null` on a host. |
 
 Channels:
 

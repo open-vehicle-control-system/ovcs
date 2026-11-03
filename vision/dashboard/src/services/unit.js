@@ -12,3 +12,9 @@ export async function fetchRos2Node() {
   const document = await request('ros2-node?include=topics,services')
   return { ...document.data.attributes, topics: related(document, 'topics'), services: related(document, 'services') }
 }
+
+/** The firmware the unit runs: `revision`, `target`, `nervesSystem` and `nervesSystemVersion`. */
+export async function fetchFirmware() {
+  const document = await request('firmware')
+  return document.data.attributes
+}

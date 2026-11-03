@@ -11,7 +11,7 @@ npm run test:unit
 
 The page is laid out for a laptop screen:
 
-- the header: the title, the parameters' error when there is one, the unit's status inline (Zenoh, Hailo, CPU and stereo load), and the dark mode switch, whose choice the browser keeps;
+- the header: the title with the firmware's commit and Nerves system, read again whenever the unit comes back, the parameters' error when there is one, the unit's status inline (Zenoh, Hailo, CPU and stereo load), and the dark mode switch, whose choice the browser keeps;
 - a menu on the left, in three sections: Main (Overview, Calibration), Pipelines (the stereo and detection pipelines, each a numbered flow of its steps, detection as one greyed line on a unit without a detector) and Exporters (ROS 2, API);
 - the Overview: the previews at the full width, the left and right cameras with their synchronisation, row alignment and sharpness between them, then the depth with its colour scale;
 - a step's page: one line on what it does, with How it works opening a paragraph on why it matters, what its settings change and what to watch, then its parameters with the save bar (Save, Discard, Reset all), beside the same previews, which keep playing when you go between it and the Overview;

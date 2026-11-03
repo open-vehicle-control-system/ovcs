@@ -3,6 +3,7 @@ import UnitStatus from './components/UnitStatus.jsx'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
 import ThemeSwitch from './components/ThemeSwitch.jsx'
+import Firmware from './components/Firmware.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import Ros2Page from './pages/Ros2Page.jsx'
 import ApiPage from './pages/ApiPage.jsx'
@@ -154,9 +155,12 @@ export default function App() {
   return (
     <div className="flex min-h-screen flex-col lg:h-screen lg:overflow-hidden">
       <OvcsHeader className="flex min-h-14 shrink-0 flex-wrap items-center gap-x-8 gap-y-2 px-4 py-2 lg:px-6">
-        <h1 className="text-lg font-semibold text-ovcs-text">
-          OVCS <span className="font-normal text-ovcs-muted">Vision</span>
-        </h1>
+        <div className="flex flex-wrap items-baseline gap-x-3">
+          <h1 className="text-lg font-semibold text-ovcs-text">
+            OVCS <span className="font-normal text-ovcs-muted">Vision</span>
+          </h1>
+          <Firmware />
+        </div>
         <ParameterError />
         <div className="ml-auto flex items-center gap-5">
           <UnitStatusBar />

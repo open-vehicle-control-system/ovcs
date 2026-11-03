@@ -65,6 +65,20 @@ end
 
 config :vision_firmware, vehicle: vehicle_name
 
+# The commit the firmware is built from, for `VisionCore.Firmware`: its hash,
+# after the latest `v` version tag once there is one, `-dirty` with
+# uncommitted changes.
+revision =
+  case System.cmd("git", ["describe", "--always", "--dirty", "--match", "v[0-9]*"],
+         cd: __DIR__,
+         stderr_to_stdout: true
+       ) do
+    {describe, 0} -> String.trim(describe)
+    {_error, _status} -> nil
+  end
+
+config :vision_core, :firmware, revision: revision, target: target
+
 # vision_api serves JSON:API; path deps' config is not loaded here.
 config :mime, :types, %{"application/vnd.api+json" => ["jsonapi"]}
 config :phoenix_template, :format_encoders, jsonapi: Jason
