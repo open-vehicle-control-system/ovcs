@@ -8,7 +8,7 @@ import { useBusSocket } from './useBusSocket'
 vi.mock('./useBusSocket', () => ({ useBusSocket: vi.fn() }))
 
 const sig = (node, source, name, value) => ({
-  node, source, name, value, unit: null, changed_at: 1000, published_at: 1000, stale: false
+  node, source, name, value, unit: null, changedAt: 1000, publishedAt: 1000, stale: false
 })
 
 const SIGNALS = [

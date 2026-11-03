@@ -29,8 +29,8 @@ defmodule OvcsBusGateway.EnvelopeTest do
              "name" => "speed",
              "value" => 12.5,
              "unit" => "km/h",
-             "changed_at" => 1_700_000_000_000,
-             "published_at" => 1_700_000_004_000,
+             "changedAt" => 1_700_000_000_000,
+             "publishedAt" => 1_700_000_004_000,
              "stale" => nil
            }
   end

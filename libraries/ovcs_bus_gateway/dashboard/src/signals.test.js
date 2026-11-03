@@ -11,7 +11,7 @@ describe('nodeStatus and signalCount', () => {
 })
 
 const sig = (node, source, name, value, changedAt = 1000, publishedAt = changedAt, stale = false) => ({
-  node, source, name, value, unit: null, changed_at: changedAt, published_at: publishedAt, stale
+  node, source, name, value, unit: null, changedAt, publishedAt, stale
 })
 
 const stateOf = (signals) => applyFrame(new Map(), { type: 'snapshot', signals })
@@ -29,7 +29,7 @@ describe('applyFrame', () => {
   test('an update published before the stored signal is ignored', () => {
     let s = stateOf([sig('vms', 'A', 'speed', 2, 2000, 3000)])
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 2, 2000, 2500)] })
-    expect(s.get('vms/A/speed').published_at).toBe(3000)
+    expect(s.get('vms/A/speed').publishedAt).toBe(3000)
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000)] })
     expect(s.get('vms/A/speed').value).toBe(2)
   })
@@ -59,7 +59,7 @@ describe('applyFrame', () => {
     expect(applyFrame(s, { type: 'other', signals: [] })).toBe(s)
   })
 
-  test('stamps changeSeenAt only when an update changes changed_at', () => {
+  test('stamps changeSeenAt only when an update changes changedAt', () => {
     let s = applyFrame(new Map(), { type: 'snapshot', signals: [sig('vms', 'A', 'speed', 1)] }, 5000)
     expect(s.get('vms/A/speed').changeSeenAt).toBeNull()
     s = applyFrame(s, { type: 'update', signals: [sig('vms', 'A', 'speed', 1, 1000, 2000)] }, 6000)

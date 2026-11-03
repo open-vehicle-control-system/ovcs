@@ -5,7 +5,7 @@ import BusDiagram from './BusDiagram.jsx'
 
 const NOW = 100_000
 
-const signal = (publishedAgo, stale = false) => ({ name: 'speed', stale, published_at: NOW - publishedAgo, changeSeenAt: null })
+const signal = (publishedAgo, stale = false) => ({ name: 'speed', stale, publishedAt: NOW - publishedAgo, changeSeenAt: null })
 
 const node = (name, connected, sources = []) => ({ node: name, connected, lastChange: null, sources })
 

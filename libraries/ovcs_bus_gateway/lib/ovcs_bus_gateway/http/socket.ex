@@ -1,7 +1,7 @@
 defmodule OvcsBusGateway.Http.Socket do
   @moduledoc """
-  Phoenix Channels socket of `OvcsBusGateway.Http`, mounted at `/socket`, with the `signals`
-  channel, `OvcsBusGateway.Http.SignalsChannel`.
+  Phoenix Channels socket of `OvcsBusGateway.Http`, mounted at `/sockets/dashboard`, with the
+  `signals` channel, `OvcsBusGateway.Http.SignalsChannel`.
   """
 
   use Phoenix.Socket

@@ -75,7 +75,7 @@ defmodule OvcsBusGateway.MqttTest do
     client_id = client_id()
     assert_receive {:pub, ^client_id, "ovcs/vms/A/speed", payload, opts}
 
-    assert %{"value" => 1, "published_at" => 5} = Jason.decode!(payload)
+    assert %{"value" => 1, "publishedAt" => 5} = Jason.decode!(payload)
     assert opts[:retain] == true
     assert opts[:qos] == 0
     assert opts[:timeout] == 0

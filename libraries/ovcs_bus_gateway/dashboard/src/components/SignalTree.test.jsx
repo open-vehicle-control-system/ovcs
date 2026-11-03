@@ -8,7 +8,7 @@ const NOW = 100_000
 
 const sig = (name, overrides = {}) => ({
   node: 'vms', source: 'OvcsMini.Vms.Speed', name, value: 1, unit: null,
-  changed_at: NOW - 5000, published_at: NOW - 500, stale: false, ...overrides
+  changedAt: NOW - 5000, publishedAt: NOW - 500, stale: false, ...overrides
 })
 
 const treeOf = (signals, filter = '') => groupTree(applyFrame(new Map(), { type: 'snapshot', signals }), filter)
@@ -57,13 +57,13 @@ describe('SignalTree', () => {
   })
 
   test('marks a signal whose firmware does not report publications', () => {
-    render(<Tree tree={treeOf([sig('speed', { published_at: null })])} />)
+    render(<Tree tree={treeOf([sig('speed', { publishedAt: null })])} />)
     expect(screen.getByTitle("This node's firmware does not report publications").textContent).toBe('—')
   })
 
   test('lights a row whose value changed within the live window', () => {
     let state = applyFrame(new Map(), { type: 'snapshot', signals: [sig('speed'), sig('limit')] })
-    state = applyFrame(state, { type: 'update', signals: [sig('speed', { value: 2, changed_at: NOW - 100 })] }, NOW - 500)
+    state = applyFrame(state, { type: 'update', signals: [sig('speed', { value: 2, changedAt: NOW - 100 })] }, NOW - 500)
     render(<Tree tree={groupTree(state, '')} />)
     expect(row('speed').classList).toContain('ovcs-row--live')
     expect(row('speed').querySelector('.ovcs-dot--on')).not.toBeNull()

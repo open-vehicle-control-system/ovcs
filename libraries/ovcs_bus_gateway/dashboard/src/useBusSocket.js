@@ -15,7 +15,7 @@ export function useBusSocket() {
   const [status, setStatus] = useState('connecting')
 
   useEffect(() => {
-    const socket = new Socket('/socket')
+    const socket = new Socket('/sockets/dashboard')
     let channel = null
     let rejoinTimer = null
     let disposed = false

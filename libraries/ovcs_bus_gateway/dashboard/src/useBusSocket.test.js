@@ -54,7 +54,7 @@ const phoenix = vi.hoisted(() => {
 vi.mock('phoenix', () => ({ Socket: phoenix.Socket }))
 
 const sig = (value, changedAt = 1000) => ({
-  node: 'vms', source: 'A', name: 'speed', value, unit: null, changed_at: changedAt, published_at: changedAt, stale: false
+  node: 'vms', source: 'A', name: 'speed', value, unit: null, changedAt, publishedAt: changedAt, stale: false
 })
 
 const socket = () => phoenix.sockets.at(-1)
@@ -67,9 +67,9 @@ describe('useBusSocket', () => {
   })
   afterEach(() => vi.useRealTimers())
 
-  test('joins the signals channel over /socket and is live from the first snapshot', () => {
+  test('joins the signals channel over /sockets/dashboard and is live from the first snapshot', () => {
     const { result } = renderHook(() => useBusSocket())
-    expect(socket().path).toBe('/socket')
+    expect(socket().path).toBe('/sockets/dashboard')
     expect(socket().connect).toHaveBeenCalled()
     expect(channel().topic).toBe('signals')
     expect(channel().joined).toBe(true)

@@ -16,9 +16,10 @@ defmodule OvcsBusGateway.Envelope do
   - `:stale` — set by `OvcsBusGateway.Collector`: `true` when the signal has not been received
     for its stale delay, `false` once it is received again, `nil` when unknown: presence
     signals and signals from a forwarder that does not refresh.
+
+  Every adapter sends it as the JSON object `to_json/1` returns, its keys in camelCase.
   """
 
-  @derive Jason.Encoder
   @enforce_keys [:node, :source, :name, :changed_at, :published_at]
   defstruct [:node, :source, :name, :value, :unit, :changed_at, :published_at, :stale]
 
@@ -48,6 +49,24 @@ defmodule OvcsBusGateway.Envelope do
       unit: if(message.unit, do: encode_text(message.unit)),
       changed_at: changed_at,
       published_at: published_at
+    }
+  end
+
+  @doc """
+  The JSON object of `envelope`: `node`, `source`, `name`, `value`, `unit`, `changedAt`,
+  `publishedAt` and `stale`.
+  """
+  @spec to_json(t()) :: map()
+  def to_json(%__MODULE__{} = envelope) do
+    %{
+      node: envelope.node,
+      source: envelope.source,
+      name: envelope.name,
+      value: envelope.value,
+      unit: envelope.unit,
+      changedAt: envelope.changed_at,
+      publishedAt: envelope.published_at,
+      stale: envelope.stale
     }
   end
 
@@ -89,4 +108,9 @@ defmodule OvcsBusGateway.Envelope do
   end
 
   defp encode_text(text), do: inspect(text)
+
+  defimpl Jason.Encoder do
+    def encode(envelope, opts),
+      do: Jason.Encode.map(OvcsBusGateway.Envelope.to_json(envelope), opts)
+  end
 end

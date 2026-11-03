@@ -69,14 +69,14 @@ const SignalRow = memo(function SignalRow({ signal, now }) {
       </span>
 
       <span className="flex justify-end gap-3 text-right text-xs tabular-nums text-ovcs-muted sm:contents">
-        <span title={`Changed ${dateTime(signal.changed_at)}`}>
+        <span title={`Changed ${dateTime(signal.changedAt)}`}>
           <span className="sm:hidden">changed </span>
-          {duration(now - signal.changed_at)}
+          {duration(now - signal.changedAt)}
         </span>
-        {signal.published_at != null ? (
-          <span className={publishedClass} title={`Published ${dateTime(signal.published_at)}`}>
+        {signal.publishedAt != null ? (
+          <span className={publishedClass} title={`Published ${dateTime(signal.publishedAt)}`}>
             <span className="sm:hidden">published </span>
-            {duration(now - signal.published_at)}
+            {duration(now - signal.publishedAt)}
           </span>
         ) : (
           <span title="This node's firmware does not report publications">—</span>

@@ -4,8 +4,8 @@ export const keyOf = ({ node, source, name }) => `${node}/${source}/${name}`
 export const PRESENCE_SOURCE = 'OvcsBusGateway.Collector'
 export const isPresence = (signal) => signal.source === PRESENCE_SOURCE && signal.name === 'connected'
 
-// A signal from a forwarder that does not report publish times has a null `published_at`.
-const publishedAt = (signal) => signal.published_at ?? signal.changed_at
+// A signal from a forwarder that does not report publish times has a null `publishedAt`.
+const publishedAt = (signal) => signal.publishedAt ?? signal.changedAt
 
 // Returns a new Map. A snapshot replaces the state; an update merges more recently published
 // signals into it. `changeSeenAt` is the browser time of the last update changing the value,
@@ -21,7 +21,7 @@ export function applyFrame(state, frame, receivedAt = Date.now()) {
       const key = keyOf(signal)
       const stored = next.get(key)
       if (stored && publishedAt(signal) < publishedAt(stored)) continue
-      const changeSeenAt = stored && signal.changed_at === stored.changed_at ? stored.changeSeenAt : receivedAt
+      const changeSeenAt = stored && signal.changedAt === stored.changedAt ? stored.changeSeenAt : receivedAt
       next.set(key, { ...signal, changeSeenAt })
     }
     return next
@@ -64,7 +64,7 @@ export function groupTree(state, filterText) {
       continue
     }
 
-    node.lastChange = Math.max(node.lastChange ?? 0, signal.changed_at)
+    node.lastChange = Math.max(node.lastChange ?? 0, signal.changedAt)
     if (!matches(signal)) continue
     node.shown = true
     if (!node.sources.has(signal.source)) node.sources.set(signal.source, [])
