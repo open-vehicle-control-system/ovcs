@@ -14,6 +14,11 @@ export function ago(ms) {
   return span === 'now' ? 'just now' : `${span} ago`
 }
 
+const DATE_TIME = new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' })
+
+/** A timestamp in milliseconds as the browser's locale writes a date and time. */
+export const dateTime = (ms) => DATE_TIME.format(ms)
+
 export function formatValue(value) {
   if (value === true) return { text: 'true', tone: 'ok' }
   if (value === false) return { text: 'false', tone: 'muted' }
