@@ -30,7 +30,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       and leaves more pixels unmatched on dark or textureless surfaces.
     * `:matcher` — `:native` matches natively, `:nx` compiles
       `NxStereo.sgm/3`, whatever the pipeline's `:compute`; by default,
-      as the pipeline's `:compute` says.
+      as the pipeline's `:compute` says. The pipeline's own `compute:`
+      option, which any Nx stage takes, does the same: given beside
+      `:matcher`, it must agree.
 
   `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
   they also change while running; `:num_disparities` and `:paths` are

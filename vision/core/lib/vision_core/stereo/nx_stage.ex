@@ -20,10 +20,15 @@ defmodule VisionCore.Stereo.NxStage do
   settings must be among its params, since the device cannot compile,
   and its build settings are fixed in the compiled function.
 
-  A stage `VisionCore.Stereo.NativeSegment` implements runs natively
-  instead when the pipeline computes with `compute: :native`, or when
-  its `compute/1` asks for it: consecutive native stages run as one
-  native segment, under the same names and settings.
+  A stage computes as the pipeline's `:compute` says, unless its options
+  in the stage list pin it (`compute: :nx` or `compute: :native`, which
+  the pipeline takes out before `init/2`) or its `compute/1` asks for
+  one; the pipeline refuses a pin and a `compute/1` that disagree. The
+  first of the pipeline's backends (`VisionCore.Stereo.Segment`) that
+  takes the stage runs it: under `:native`, a stage
+  `VisionCore.Stereo.NativeSegment` implements runs natively, and
+  consecutive native stages run as one native segment, under the same
+  names and settings.
   """
 
   alias VisionCore.Stereo.{Pair, Stage}
@@ -99,8 +104,8 @@ defmodule VisionCore.Stereo.NxStage do
 
   @doc """
   Where the stage, in `state`, asks to run: compiled with Nx (`:nx`),
-  natively (`:native`), or as the pipeline's `:compute` says (`nil`, the
-  default).
+  natively (`:native`), or as its `compute:` pin, else the pipeline's
+  `:compute`, says (`nil`, the default).
   """
   @callback compute(state()) :: :nx | :native | nil
 
@@ -121,11 +126,9 @@ defmodule VisionCore.Stereo.NxStage do
                       compute: 1,
                       device_only: 0
 
-  @doc "Whether `module` is an Nx stage."
+  @doc "Whether `module` is an Nx stage: it declares `@behaviour VisionCore.Stereo.NxStage`."
   @spec nx_stage?(module()) :: boolean()
-  def nx_stage?(module) do
-    Code.ensure_loaded?(module) and function_exported?(module, :step, 3)
-  end
+  def nx_stage?(module), do: Stage.implements?(module, __MODULE__)
 
   @doc """
   The sum of each image in `images`, one `{height, width}` image or a

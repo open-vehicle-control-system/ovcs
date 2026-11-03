@@ -6,7 +6,7 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline, Stage}
+  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline, Segment, Stage}
 
   @moduletag :stereo_match
   @moduletag :capture_log
@@ -53,24 +53,28 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
 
   # Every pair through one segment, in order, so carried values flow.
   defp run_nx(stages, context, pairs, compiler \\ Nx.Defn.Evaluator) do
-    {:ok, segment} = NxSegment.build(members(stages, context), context, compiler: compiler)
-    run_all(&NxSegment.run/2, segment, context, pairs)
+    {:ok, segment} =
+      NxSegment.build(members(stages, context), context, defn_options: [compiler: compiler])
+
+    run_all(NxSegment, segment, context, pairs)
   end
 
   defp run_native(stages, context, pairs) do
-    {:ok, segment} = NativeSegment.build(members(stages, context), context)
-    run_all(&NativeSegment.run/2, segment, context, pairs)
+    {:ok, segment} = NativeSegment.build(members(stages, context), context, [])
+    run_all(NativeSegment, segment, context, pairs)
   end
 
-  defp run_all(run, segment, context, pairs) do
+  defp run_all(backend, segment, context, pairs) do
     {pairs, _segment} =
       Enum.map_reduce(pairs, segment, fn pair, segment ->
-        {:ok, pair, segment} = run.(%{pair | geometry: context}, segment)
+        {:ok, pair, segment} = run(backend, %{pair | geometry: context}, segment)
         {pair, segment}
       end)
 
     pairs
   end
+
+  defp run(backend, pair, segment), do: Segment.run(backend, pair, segment, :infinity)
 
   defp frame(image) do
     {height, width} = Nx.shape(image)
@@ -478,67 +482,128 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
       [first, second] =
         for seed <- 1..2, do: %{disparity_pair(disparity(48, 64, seed)) | geometry: context}
 
-      {:ok, native} = NativeSegment.build(members(stages, context), context)
-      {:ok, _pair, native} = NativeSegment.run(first, native)
+      {:ok, native} = NativeSegment.build(members(stages, context), context, [])
+      {:ok, _pair, native} = run(NativeSegment, first, native)
       {:ok, speckle} = Stage.SpeckleFilter.set_option(hd(native.members).state, :min_support, 0)
 
       {:ok, native_second, _native} =
-        NativeSegment.run(second, NativeSegment.put_member_state(native, 0, speckle))
+        run(NativeSegment, second, NativeSegment.put_member_state(native, 0, speckle))
 
-      {:ok, nx} = NxSegment.build(members(stages, context), context, compiler: Nx.Defn.Evaluator)
-      {:ok, _pair, nx} = NxSegment.run(first, nx)
+      {:ok, nx} =
+        NxSegment.build(members(stages, context), context,
+          defn_options: [compiler: Nx.Defn.Evaluator]
+        )
+
+      {:ok, _pair, nx} = run(NxSegment, first, nx)
       nx = NxSegment.put_member_state(nx, 0, speckle)
-      {:ok, nx_second, _nx} = NxSegment.run(second, nx)
+      {:ok, nx_second, _nx} = run(NxSegment, second, nx)
 
       assert_same_tensor(native_second.disparity, nx_second.disparity, "disparity")
       [fresh] = run_native(stages, context, [second])
       refute Nx.to_binary(native_second.disparity) == Nx.to_binary(fresh.disparity)
     end
 
+    test "keep what they carry when a live setting changes while a pair is at the device" do
+      context = context(:stereo, 64, 48)
+      stages = [{Stage.SpeckleFilter, []}, {Stage.TemporalFilter, []}]
+
+      [first, second] =
+        for seed <- 1..2, do: %{disparity_pair(disparity(48, 64, seed)) | geometry: context}
+
+      {:ok, native} = NativeSegment.build(members(stages, context), context, [])
+      {:ok, speckle} = Stage.SpeckleFilter.set_option(hd(native.members).state, :min_support, 0)
+      {:ok, request_id} = NativeSegment.send_request(first, native)
+      changed = NativeSegment.put_member_state(native, 0, speckle)
+      {:ok, _outputs, replied, _done_ns} = NativeSegment.await(request_id, native, 60_000)
+
+      {:ok, native_second, _native} =
+        run(NativeSegment, second, NativeSegment.merge_carry(changed, replied))
+
+      {:ok, nx} =
+        NxSegment.build(members(stages, context), context,
+          defn_options: [compiler: Nx.Defn.Evaluator]
+        )
+
+      {:ok, ticket} = NxSegment.send_request(first, nx)
+      changed = NxSegment.put_member_state(nx, 0, speckle)
+      {:ok, _outputs, replied, _done_ns} = NxSegment.await(ticket, nx, 60_000)
+      {:ok, nx_second, _nx} = run(NxSegment, second, NxSegment.merge_carry(changed, replied))
+
+      assert_same_tensor(native_second.disparity, nx_second.disparity, "disparity")
+    end
+
     test "start over after a calibration reload, and after the Port exits" do
       context = context(:identity, 192, 108)
       stages = [{Stage.TemporalFilter, []}]
       [first, second | _] = for seed <- 1..2, do: disparity_pair(disparity(108, 192, seed))
-      {:ok, segment} = NativeSegment.build(members(stages, context), context)
+      {:ok, segment} = NativeSegment.build(members(stages, context), context, [])
       fresh = fn pair -> run_native(stages, context, [pair]) |> hd() end
 
-      {:ok, _pair, segment} = NativeSegment.run(%{first | geometry: context}, segment)
+      {:ok, _pair, segment} = run(NativeSegment, %{first | geometry: context}, segment)
       reloaded = NativeSegment.reload(segment, segment.members, context)
-      {:ok, pair, reloaded} = NativeSegment.run(%{second | geometry: context}, reloaded)
+      {:ok, pair, reloaded} = run(NativeSegment, %{second | geometry: context}, reloaded)
       assert Nx.to_binary(pair.disparity) == Nx.to_binary(fresh.(second).disparity)
 
-      {:ok, carried, _segment} = NativeSegment.run(%{first | geometry: context}, reloaded)
+      {:ok, carried, _segment} = run(NativeSegment, %{first | geometry: context}, reloaded)
       refute Nx.to_binary(carried.disparity) == Nx.to_binary(fresh.(first).disparity)
 
       %{port: port} = :sys.get_state(Matcher)
       Port.close(port)
       send(Process.whereis(Matcher), {port, {:exit_status, 1}})
 
-      {:ok, pair, _segment} = NativeSegment.run(%{first | geometry: context}, reloaded)
+      {:ok, pair, _segment} = run(NativeSegment, %{first | geometry: context}, reloaded)
       assert Nx.to_binary(pair.disparity) == Nx.to_binary(fresh.(first).disparity)
     end
   end
 
   test "take frames of another size as an error, and match the next pair" do
     context = context(:identity, 192, 108)
-    {:ok, segment} = NativeSegment.build(members([{Stage.Rectification, []}], context), context)
+
+    {:ok, segment} =
+      NativeSegment.build(members([{Stage.Rectification, []}], context), context, [])
+
     small = frames_pair(texture(48, 64, 1), texture(48, 64, 2))
 
-    assert {:error, {:frame_size, :left_frame, {48, 64}, {108, 192}}, segment} =
-             NativeSegment.run(%{small | geometry: context}, segment)
+    assert run(NativeSegment, %{small | geometry: context}, segment) ==
+             {:refused, {:frame_size, :left_frame, {48, 64}, {108, 192}}}
 
     good = frames_pair(texture(108, 192, 1), texture(108, 192, 2))
 
     assert {:ok, %Pair{left: %Nx.Tensor{shape: {108, 192}}}, _} =
-             NativeSegment.run(%{good | geometry: context}, segment)
+             run(NativeSegment, %{good | geometry: context}, segment)
   end
 
-  test "says which stages have a native implementation" do
+  test "takes the stages that have a native implementation, to compute natively" do
     optional = [{Stage.MedianFilter, []}]
 
-    for {module, _opts} <- optional ++ Pipeline.default_stages(),
-        do: assert(NativeSegment.supported?(module))
+    for {module, _opts} <- optional ++ Pipeline.default_stages() do
+      assert NativeSegment.accepts?(module, nil, :native)
+      refute NativeSegment.accepts?(module, nil, :nx)
+    end
 
-    refute NativeSegment.supported?(Stage.Decode)
+    refute NativeSegment.accepts?(Stage.Decode, nil, :native)
+  end
+
+  test "refuses a build option it does not know" do
+    context = context(:stereo, 64, 48)
+    members = members([{Stage.TemporalFilter, []}], context)
+
+    assert NativeSegment.build(members, context, matcher: Matcher) ==
+             {:error, "unknown build options [:matcher]"}
+  end
+
+  test "waits for a pair's outputs up to a timeout" do
+    context = context(:stereo, 64, 48)
+    stages = [{Stage.TemporalFilter, []}]
+    pair = %{disparity_pair(disparity(48, 64, 1)) | geometry: context}
+    {:ok, segment} = NativeSegment.build(members(stages, context), context, [])
+
+    {:ok, request_id} = NativeSegment.send_request(pair, segment)
+
+    assert {:ok, %{disparity: disparity}, _segment, _done_ns} =
+             NativeSegment.await(request_id, segment, 60_000)
+
+    [fresh] = run_native(stages, context, [pair])
+    assert_same_tensor(disparity, fresh.disparity, "disparity")
   end
 end

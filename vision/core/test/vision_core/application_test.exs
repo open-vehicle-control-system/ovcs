@@ -163,7 +163,8 @@ defmodule VisionCore.ApplicationTest do
         left_calibration_path: Path.join(@calibration_dir, "stereo_left.yaml"),
         right_calibration_path: Path.join(@calibration_dir, "stereo_right.yaml"),
         width: 64,
-        height: 48
+        height: 48,
+        defn_options: Application.fetch_env!(:vision_core, :nx_defn_options)
       )
 
     GenServer.stop(pipeline)

@@ -6,12 +6,12 @@ defmodule VisionCore.Stereo.NativeSegment do
   for a CPU, where the compiled Nx is many times slower, as on a
   Raspberry Pi 5.
 
-  Each stage `supported?/1` has a native implementation with the results
-  of its Nx step: integer outputs and the `f32` values it computes in the
-  same order are identical, and the sums the measuring stages reduce on
-  the device agree to the rounding of their order. The Port keeps what
-  the stages carry from one pair to the next and what depends only on
-  their settings, such as the rectification maps.
+  Each stage it `accepts?/3` has a native implementation with the
+  results of its Nx step: integer outputs and the `f32` values it
+  computes in the same order are identical, and the sums the measuring
+  stages reduce on the device agree to the rounding of their order. The
+  Port keeps what the stages carry from one pair to the next and what
+  depends only on their settings, such as the rectification maps.
 
   The Port is configured with each stage's kind and the numbers among
   its `options/1`, its build settings. A pair is then one request: the
@@ -29,24 +29,22 @@ defmodule VisionCore.Stereo.NativeSegment do
   releases it once that process exits.
 
   `send_request/2` sends a pair without waiting for its outputs, which
-  `response/3` recognises among the process's messages, so a process
-  can have several pairs at the Port: they are computed in the order
-  sent.
+  `response/3` recognises among the process's messages, or `await/3`
+  waits for, so a process can have several pairs at the Port: they are
+  computed in the order sent.
   """
 
   @behaviour VisionCore.Stereo.Segment
 
-  alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Matcher, NxSegment, NxStage, Pair, Stage}
+  alias VisionCore.Stereo.{Matcher, NxStage, Pair, Segment, Stage}
 
-  @enforce_keys [:id, :version, :members, :entry, :shapes, :configuration, :inputs, :context]
+  @enforce_keys [:id, :version, :members, :specs, :configuration, :inputs, :context]
   defstruct [
     :owner,
     :id,
     :version,
     :members,
-    :entry,
-    :shapes,
+    :specs,
     :configuration,
     :inputs,
     :context,
@@ -68,10 +66,6 @@ defmodule VisionCore.Stereo.NativeSegment do
     Stage.Quality => "quality"
   }
 
-  @frames [:left_frame, :right_frame]
-  @images [:left, :right]
-  @maps [:disparity]
-
   @configure 1
   @run 2
   @types %{0 => {:u, 8}, 1 => {:u, 16}, 2 => {:f, 32}, 3 => {:s, 32}}
@@ -90,36 +84,39 @@ defmodule VisionCore.Stereo.NativeSegment do
   @spec depth() :: pos_integer()
   def depth, do: 2
 
-  @doc "Whether `module` has a native implementation."
-  @spec supported?(module()) :: boolean()
-  def supported?(module), do: Map.has_key?(@kinds, module)
+  @doc "Whether `module` has a native implementation, for a stage to compute natively."
+  @impl VisionCore.Stereo.Segment
+  @spec accepts?(module(), term(), :nx | :native) :: boolean()
+  def accepts?(module, _state, compute), do: compute == :native and Map.has_key?(@kinds, module)
 
   @doc """
   The segment of `members`, initialised pipeline stages (`%{module:,
-  name:, state:}`) that are all `supported?/1`, for `context`.
+  name:, state:}`) that it `accepts?/3`, for `context`. It takes no
+  `opts`.
   """
-  @spec build([map()], Stage.context()) :: {:ok, t()} | {:error, String.t()}
-  def build(members, context) do
-    entry = NxSegment.entry_fields(members)
+  @impl VisionCore.Stereo.Segment
+  @spec build([map()], Stage.context(), keyword()) :: {:ok, t()} | {:error, String.t()}
+  def build(members, context, opts) do
+    case Keyword.validate(opts, []) do
+      {:ok, _opts} -> new_segment(members, context)
+      {:error, unknown} -> {:error, "unknown build options #{inspect(unknown)}"}
+    end
+  end
 
-    case Enum.reject(entry, &(&1 in @frames or &1 in @images or &1 in @maps)) do
-      [] ->
-        segment = %__MODULE__{
-          owner: self(),
-          id: rem(System.unique_integer([:positive]), 0x1_0000_0000),
-          version: 0,
-          members: members,
-          entry: entry,
-          shapes: nil,
-          configuration: nil,
-          inputs: nil,
-          context: context
-        }
+  defp new_segment(members, context) do
+    with {:ok, specs} <- Segment.entry_specs(members, context) do
+      segment = %__MODULE__{
+        owner: self(),
+        id: rem(System.unique_integer([:positive]), 0x1_0000_0000),
+        version: 0,
+        members: members,
+        specs: specs,
+        configuration: nil,
+        inputs: nil,
+        context: context
+      }
 
-        {:ok, configure(segment)}
-
-      [field | _] ->
-        {:error, "a native stage cannot read #{inspect(field)} from a CPU stage"}
+      {:ok, configure(segment)}
     end
   end
 
@@ -141,42 +138,23 @@ defmodule VisionCore.Stereo.NativeSegment do
     %{segment | members: members, inputs: inputs(members, segment.context)}
   end
 
-  @doc """
-  Runs the segment on `pair`, in the shape of
-  `c:VisionCore.Stereo.Stage.run/2`. The returned segment's `:times_us`
-  holds each member's time in the Port, in microseconds.
-  """
+  @doc "`current`: the Port keeps what the stages carry."
   @impl VisionCore.Stereo.Segment
-  @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
-  def run(%Pair{} = pair, %__MODULE__{} = segment) do
-    case dispatch(pair, segment) do
-      {:ok, outputs, segment} -> {:ok, collect(pair, outputs, segment), segment}
-      {:error, reason} -> {:error, reason, segment}
-    end
-  end
-
-  @doc "The first half of `run/2`: the Port's outputs for `pair`."
-  @spec dispatch(Pair.t(), t()) :: {:ok, map(), t()} | {:error, term()}
-  def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
-    with {:ok, request_id} <- send_request(pair, segment) do
-      case :gen_server.receive_response(request_id, :infinity) do
-        {:reply, reply} -> run_outputs(reply, segment)
-        {:error, {reason, _matcher}} -> {:error, {:matcher_down, reason}}
-      end
-    end
-  end
+  @spec merge_carry(t(), t()) :: t()
+  def merge_carry(%__MODULE__{} = current, %__MODULE__{}), do: current
 
   @doc """
-  `dispatch/2` without waiting: sends `pair` to the Port and returns the
-  request's id, which `response/3` recognises its reply by. Pairs a
-  process sends are computed in that order, which the stages that carry
-  values from one pair to the next rely on.
+  Takes `pair`'s inputs and sends them to the Port without waiting:
+  returns the request's id, which `response/3` and `await/3` recognise
+  its reply by; or why the inputs do not fit. Pairs a process sends are
+  computed in that order, which the stages that carry values from one
+  pair to the next rely on.
   """
   @impl VisionCore.Stereo.Segment
   @spec send_request(Pair.t(), t()) :: {:ok, :gen_server.request_id()} | {:error, term()}
   def send_request(%Pair{} = pair, %__MODULE__{} = segment) do
-    with {:ok, entries} <- entries(pair, segment) do
-      request = [<<@run, segment.id::little-32>>, segment.inputs, entries]
+    with {:ok, entry} <- Segment.entry_tensors(pair, segment.specs) do
+      request = [<<@run, segment.id::little-32>>, segment.inputs, encode_entries(entry)]
 
       {:ok,
        Matcher.send_run(
@@ -190,9 +168,10 @@ defmodule VisionCore.Stereo.NativeSegment do
   end
 
   @doc """
-  What `dispatch/2` returns for the pair sent as `request_id`, from
-  `segment` (the one it was sent with), with the monotonic time it is
-  received at, when `message` is its reply; `:no_reply` when it is
+  The Port's outputs for the pair sent as `request_id`, from `segment`
+  (the one it was sent with), whose `:times_us` holds each member's
+  time in the Port, in microseconds, with the monotonic time the reply
+  is received at, when `message` is its reply; `:no_reply` when it is
   another message.
   """
   @impl VisionCore.Stereo.Segment
@@ -200,17 +179,31 @@ defmodule VisionCore.Stereo.NativeSegment do
           {:ok, map(), t(), integer()} | {:error, term()} | :no_reply
   def response(message, request_id, %__MODULE__{} = segment) do
     case :gen_server.check_response(message, request_id) do
-      :no_reply ->
-        :no_reply
-
-      {:reply, reply} ->
-        with {:ok, outputs, segment} <- run_outputs(reply, segment),
-             do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
-
-      {:error, {reason, _matcher}} ->
-        {:error, {:matcher_down, reason}}
+      :no_reply -> :no_reply
+      response -> received(response, segment)
     end
   end
+
+  @doc """
+  What `response/3` returns for the pair sent as `request_id`, waiting
+  for its reply up to `timeout` ms, or `:timeout`.
+  """
+  @impl VisionCore.Stereo.Segment
+  @spec await(:gen_server.request_id(), t(), timeout()) ::
+          {:ok, map(), t(), integer()} | {:error, term()} | :timeout
+  def await(request_id, %__MODULE__{} = segment, timeout) do
+    case :gen_server.receive_response(request_id, timeout) do
+      :timeout -> :timeout
+      response -> received(response, segment)
+    end
+  end
+
+  defp received({:reply, reply}, segment) do
+    with {:ok, outputs, segment} <- run_outputs(reply, segment),
+         do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
+  end
+
+  defp received({:error, {reason, _matcher}}, _segment), do: {:error, {:matcher_down, reason}}
 
   @doc "Each member's name and time in the Port for the pair `segment` was returned with, in nanoseconds."
   @impl VisionCore.Stereo.Segment
@@ -225,21 +218,21 @@ defmodule VisionCore.Stereo.NativeSegment do
 
   defp run_outputs({:error, _reason} = error, _segment), do: error
 
-  @doc "The second half of `run/2`: fills `pair` from `outputs`."
+  @doc "Fills `pair` from `outputs`, which the reply brought back: there is nothing to download."
   @impl VisionCore.Stereo.Segment
-  @spec collect(Pair.t(), map(), t()) :: Pair.t()
-  def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment) do
+  @spec collect(Pair.t(), map(), t(), timeout()) :: {:ok, Pair.t()}
+  def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment, _timeout) do
     # Entry tensors pass through, as an Nx segment returns them.
-    outputs = pair |> Map.take(segment.entry -- @frames) |> Map.merge(outputs)
-    NxSegment.finish_members(segment.members, pair, outputs)
+    entry = Keyword.keys(segment.specs) -- Segment.frame_fields()
+    outputs = pair |> Map.take(entry) |> Map.merge(outputs)
+    {:ok, Segment.finish_members(segment.members, pair, outputs)}
   end
 
   defp configure(segment) do
     %{
       segment
       | configuration: configuration(segment),
-        inputs: inputs(segment.members, segment.context),
-        shapes: Map.new(segment.entry, &{&1, shape(&1, segment.context)})
+        inputs: inputs(segment.members, segment.context)
     }
   end
 
@@ -316,57 +309,19 @@ defmodule VisionCore.Stereo.NativeSegment do
     [byte_size(key), key]
   end
 
-  defp shape(field, context) when field in @frames,
-    do: {context.frame_height, context.frame_width}
+  defp encode_entries(entry) do
+    [
+      length(entry),
+      Enum.map(entry, fn {field, tensor} ->
+        {height, width} = Nx.shape(tensor)
 
-  defp shape(_field, context), do: {context.height, context.width}
-
-  defp entries(pair, segment) do
-    Enum.reduce_while(segment.entry, {:ok, [length(segment.entry)]}, fn field, {:ok, encoded} ->
-      expected = Map.fetch!(segment.shapes, field)
-
-      case entry(pair, field) do
-        {:ok, ^expected, type, binary} ->
-          {height, width} = expected
-
-          tensor = [
-            length_prefixed(field),
-            <<Map.fetch!(@type_codes, type), 2, height::little-32, width::little-32>>,
-            binary
-          ]
-
-          {:cont, {:ok, [encoded | tensor]}}
-
-        {:ok, shape, _type, _binary} ->
-          {:halt, {:error, {:frame_size, field, shape, expected}}}
-
-        {:error, _reason} = error ->
-          {:halt, error}
-      end
-    end)
-  end
-
-  defp entry(pair, field) when field in @frames do
-    case Map.fetch!(pair, field) do
-      %Frame{grey: grey, width: width, height: height} when is_binary(grey) ->
-        {:ok, {height, width}, {:u, 8}, grey}
-
-      frame ->
-        with {:ok, tensor} <- Frame.to_tensor(frame),
-             do: {:ok, Nx.shape(tensor), {:u, 8}, Nx.to_binary(tensor)}
-    end
-  end
-
-  defp entry(pair, field) do
-    type = if field in @images, do: {:u, 8}, else: {:f, 32}
-
-    case Map.fetch!(pair, field) do
-      %Nx.Tensor{} = tensor ->
-        {:ok, Nx.shape(tensor), type, tensor |> Nx.as_type(type) |> Nx.to_binary()}
-
-      other ->
-        {:error, {:not_a_tensor, field, other}}
-    end
+        [
+          length_prefixed(field),
+          <<Map.fetch!(@type_codes, Nx.type(tensor)), 2, height::little-32, width::little-32>>,
+          Nx.to_binary(tensor)
+        ]
+      end)
+    ]
   end
 
   defp decode(<<count, times::binary-size(count * 4), output_count, outputs::binary>>) do

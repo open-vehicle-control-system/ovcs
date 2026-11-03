@@ -8,26 +8,37 @@ defmodule VisionCore.Stereo.NxSegment do
   every tensor but the frames. Outputs come back to the CPU once, and
   each stage's `finish/3` fills the `Pair` from them.
 
-  It is compiled at the pipeline's size with the pipeline's
-  `:defn_options`. On a device that cannot compile, such as the OKdo
-  Nano C100, the module comes from the module cache built on a host
-  (`mix vision_core.nx_cache`); since calibration values are inputs, a
-  calibration reload needs no new module.
+  It is compiled at the pipeline's size with the `:defn_options` of its
+  build options (`build/3`), which the pipeline's default backends take
+  from its own `:defn_options`. On a device that cannot compile, such as
+  the OKdo Nano C100, the module comes from the module cache built on a
+  host (`mix vision_core.nx_cache`); since calibration values are
+  inputs, a calibration reload needs no new module.
+
+  `send_request/2` takes the pair's inputs and runs the function in a
+  `Task`. `collect/4` downloads the outputs in a `Task` of its own, so a
+  pair's download overlaps the next pair's device work. What the
+  function or the download raises fails that pair only, and the
+  pipeline's device timeout bounds both.
   """
 
   @behaviour VisionCore.Stereo.Segment
 
-  alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{NxStage, Pair, Stage}
+  alias VisionCore.Stereo.{NxStage, Pair, Segment, Stage}
 
-  @enforce_keys [:members, :entry, :shapes, :function, :params, :context]
-  defstruct [:members, :entry, :shapes, :function, :params, :context]
+  @enforce_keys [:members, :specs, :function, :params, :carried, :context, :defn_options]
+  defstruct [
+    :members,
+    :specs,
+    :function,
+    :params,
+    :carried,
+    :context,
+    :defn_options,
+    version: 0
+  ]
 
   @type t :: %__MODULE__{}
-
-  @frames [:left_frame, :right_frame]
-  @images [:left, :right]
-  @maps [:disparity]
 
   # The Vulkan features Mesa NVK supports on the OKdo Nano C100's GPU.
   @c100_vulkan_features ~w(spirv:v1.3 cap:Shader cap:StorageBuffer8BitAccess cap:Int8
@@ -55,16 +66,25 @@ defmodule VisionCore.Stereo.NxSegment do
 
   @doc """
   Compiles `members`, initialised pipeline stages (`%{module:, name:,
-  state:}`), for `context`.
+  state:}`), for `context`, with `opts`: `:defn_options` (`[]`, Nx's
+  own defaults), how; see `compile/3`.
   """
+  @impl VisionCore.Stereo.Segment
   @spec build([map()], Stage.context(), keyword()) :: {:ok, t()} | {:error, String.t()}
-  def build(members, context, defn_options) do
-    entry = entry_fields(members)
-    params = params(members, context)
-    entry_templates = Map.new(entry, &{&1, entry_template(&1, context)})
-    shapes = Map.new(entry_templates, fn {field, template} -> {field, Nx.shape(template)} end)
+  def build(members, context, opts) do
+    case Keyword.validate(opts, defn_options: []) do
+      {:ok, opts} -> compile_members(members, context, opts[:defn_options])
+      {:error, unknown} -> {:error, "unknown build options #{inspect(unknown)}"}
+    end
+  end
 
-    with {:ok, function} <-
+  defp compile_members(members, context, defn_options) do
+    params = params(members, context)
+
+    with {:ok, specs} <- Segment.entry_specs(members, context),
+         entry_templates =
+           Map.new(specs, fn {field, {shape, type}} -> {field, Nx.template(shape, type)} end),
+         {:ok, function} <-
            compile(
              &run_steps(members, &1, &2),
              [entry_templates, Nx.to_template(params)],
@@ -73,14 +93,20 @@ defmodule VisionCore.Stereo.NxSegment do
       {:ok,
        %__MODULE__{
          members: members,
-         entry: entry,
-         shapes: shapes,
+         specs: specs,
          function: function,
          params: params,
-         context: context
+         carried: carried(members, context),
+         context: context,
+         defn_options: defn_options
        }}
     end
   end
+
+  @doc "Every Nx stage, however it asks to compute: the backend for what no other takes."
+  @impl VisionCore.Stereo.Segment
+  @spec accepts?(module(), term(), :nx | :native) :: boolean()
+  def accepts?(module, _state, _compute), do: NxStage.nx_stage?(module)
 
   @doc """
   Compiles `function` for `templates` with `defn_options`, an
@@ -132,63 +158,21 @@ defmodule VisionCore.Stereo.NxSegment do
   end
 
   @doc """
-  Compiles everything the pipeline started with `pipeline_opts` compiles
-  (its segments, and any stage compiling its own function) into the
-  module cache `dir`, with the compiler and flags of its
-  `:defn_options`, without loading them: a host with EXLA builds it for
-  any device. Returns how many segments it compiled: none when every
-  stage computes natively.
+  The segment with `members` re-initialised for a new `context` of the
+  same size: the same function, with new inputs, and what the stages
+  carry started over.
   """
-  @spec build_cache(keyword(), Path.t()) :: {:ok, non_neg_integer()} | {:error, String.t()}
-  def build_cache(pipeline_opts, dir) do
-    File.mkdir_p!(dir)
-
-    defn_options =
-      pipeline_opts
-      |> Keyword.get(:defn_options, [])
-      |> Keyword.put(:iree_module_cache, dir)
-      |> Keyword.put(:cache_only, true)
-
-    opts =
-      pipeline_opts
-      |> Keyword.put(:defn_options, defn_options)
-      |> Keyword.put(:name, :nx_cache_pipeline)
-
-    compile_pipeline(opts)
-  end
-
-  # In a task, so the exit of a pipeline that fails to start stays there.
-  defp compile_pipeline(opts) do
-    Task.async(fn ->
-      Process.flag(:trap_exit, true)
-
-      with {:ok, pipeline} <- start_pipeline(opts) do
-        segments = Enum.count(:sys.get_state(pipeline).stages, &(&1.module == __MODULE__))
-        GenServer.stop(pipeline)
-        {:ok, segments}
-      end
-    end)
-    |> Task.await(:infinity)
-  end
-
-  defp start_pipeline(opts) do
-    case VisionCore.Stereo.Pipeline.start_link(opts) do
-      {:ok, pipeline} ->
-        {:ok, pipeline}
-
-      {:error, {%{__exception__: true} = error, _stacktrace}} ->
-        {:error, Exception.message(error)}
-
-      {:error, reason} ->
-        {:error, inspect(reason)}
-    end
-  end
-
-  @doc "The segment with `members` re-initialised for a new `context` of the same size."
   @impl VisionCore.Stereo.Segment
   @spec reload(t(), [map()], Stage.context()) :: t()
-  def reload(%__MODULE__{} = segment, members, context),
-    do: %{segment | members: members, params: params(members, context), context: context}
+  def reload(%__MODULE__{} = segment, members, context) do
+    %{
+      segment
+      | members: members,
+        params: params(members, context),
+        context: context,
+        version: segment.version + 1
+    }
+  end
 
   @doc """
   The segment with the member at `index` in a new `state`: its new
@@ -205,7 +189,7 @@ defmodule VisionCore.Stereo.NxSegment do
       |> NxStage.params(member.state, segment.context)
       |> Map.new(fn {key, value} -> {key, to_input(value)} end)
 
-    carried = Map.take(segment.params[index], Map.keys(carry(member, segment.context)))
+    carried = Map.take(segment.params[index], segment.carried[index])
 
     %{
       segment
@@ -214,60 +198,70 @@ defmodule VisionCore.Stereo.NxSegment do
     }
   end
 
-  @doc "Runs the segment on `pair`, in the shape of `c:VisionCore.Stereo.Stage.run/2`."
+  @doc """
+  `current` with the values `replied` carries, unless `current` was
+  reloaded since `replied`'s pair was sent: the reload started them over.
+  """
   @impl VisionCore.Stereo.Segment
-  @spec run(Pair.t(), t()) :: {:ok, Pair.t(), t()} | {:error, term(), t()}
-  def run(%Pair{} = pair, %__MODULE__{} = segment) do
-    case dispatch(pair, segment) do
-      {:ok, outputs, segment} -> {:ok, collect(pair, outputs, segment), segment}
-      {:error, reason} -> {:error, reason, segment}
-    end
+  @spec merge_carry(t(), t()) :: t()
+  def merge_carry(
+        %__MODULE__{version: version} = current,
+        %__MODULE__{version: version} = replied
+      ) do
+    params =
+      Map.new(current.params, fn {index, inputs} ->
+        carried = Map.take(Map.fetch!(replied.params, index), current.carried[index])
+        {index, Map.merge(inputs, carried)}
+      end)
+
+    %{current | params: params}
   end
 
+  def merge_carry(%__MODULE__{} = current, %__MODULE__{}), do: current
+
   @doc """
-  The first half of `run/2`: the segment's outputs for `pair`, left on
-  the device, and the segment carrying its stages' values to the next
-  pair (`c:VisionCore.Stereo.NxStage.carry/2`). It changes no process
-  state, so it may run in another process while the previous pair is
-  collected.
+  Takes `pair`'s inputs and runs the compiled function on them in a
+  `Task`, without waiting: returns the request, which `response/3` and
+  `await/3` recognise its outputs by; or why the inputs do not fit. A
+  pair sent before the previous one's response would start from the
+  values carried before that pair.
   """
-  @spec dispatch(Pair.t(), t()) :: {:ok, map(), t()} | {:error, term()}
-  def dispatch(%Pair{} = pair, %__MODULE__{} = segment) do
-    with {:ok, entry} <- entry_values(pair, segment) do
-      {carried, outputs} =
-        segment.function.(entry, segment.params)
+  @impl VisionCore.Stereo.Segment
+  @spec send_request(Pair.t(), t()) :: {:ok, Task.t()} | {:error, term()}
+  def send_request(%Pair{} = pair, %__MODULE__{} = segment) do
+    with {:ok, entry} <- Segment.entry_tensors(pair, segment.specs),
+         do: {:ok, Task.async(fn -> dispatch(Map.new(entry), segment) end)}
+  end
+
+  # The outputs stay on the device; the segment carries the stages' values to the next pair.
+  defp dispatch(entry, segment) do
+    with {:ok, results} <- call(segment, entry) do
+      {carry, outputs} =
+        results
         |> Map.drop(device_only(segment.members))
         |> Map.split_with(fn {key, _tensor} -> match?({:carry, _index, _name}, key) end)
 
       params =
-        Enum.reduce(carried, segment.params, fn {{:carry, index, name}, tensor}, params ->
+        Enum.reduce(carry, segment.params, fn {{:carry, index, name}, tensor}, params ->
           put_in(params, [index, name], tensor)
         end)
 
-      {:ok, outputs, %{segment | params: params}}
+      {:ok, outputs, %{segment | params: params}, System.monotonic_time(:nanosecond)}
     end
   end
 
-  @doc """
-  `dispatch/2` in a `Task`, without waiting: returns the request, which
-  `response/3` recognises its outputs by. A pair sent before the
-  previous one's response would start from the values carried before
-  that pair.
-  """
-  @impl VisionCore.Stereo.Segment
-  @spec send_request(Pair.t(), t()) :: {:ok, Task.t()}
-  def send_request(%Pair{} = pair, %__MODULE__{} = segment) do
-    {:ok,
-     Task.async(fn ->
-       with {:ok, outputs, segment} <- dispatch(pair, segment),
-            do: {:ok, outputs, segment, System.monotonic_time(:nanosecond)}
-     end)}
+  defp call(segment, entry) do
+    {:ok, segment.function.(entry, segment.params)}
+  rescue
+    error -> {:error, error}
   end
 
   @doc """
-  What `dispatch/2` returned for the pair sent as `task`, with the
-  monotonic time it returned at, when `message` is its reply;
-  `:no_reply` when it is another message.
+  The outputs of the pair sent as `task`, left on the device, the
+  segment carrying its stages' values to the next pair and the
+  monotonic time the device was done, or what the compiled function
+  raised, when `message` is its reply; `:no_reply` when it is another
+  message.
   """
   @impl VisionCore.Stereo.Segment
   @spec response(term(), Task.t(), t()) ::
@@ -278,6 +272,17 @@ defmodule VisionCore.Stereo.NxSegment do
   end
 
   def response(_message, %Task{}, %__MODULE__{}), do: :no_reply
+
+  @doc "What `response/3` returns for the pair sent as `task`, within `timeout` ms, or `:timeout`."
+  @impl VisionCore.Stereo.Segment
+  @spec await(Task.t(), t(), timeout()) ::
+          {:ok, map(), t(), integer()} | {:error, term()} | :timeout
+  def await(%Task{} = task, %__MODULE__{}, timeout) do
+    case Task.yield(task, timeout) do
+      {:ok, dispatched} -> dispatched
+      nil -> :timeout
+    end
+  end
 
   @doc """
   One pair: a pair's device work starts from the values the previous
@@ -292,16 +297,27 @@ defmodule VisionCore.Stereo.NxSegment do
   @spec member_times(t()) :: [{atom(), non_neg_integer()}]
   def member_times(%__MODULE__{}), do: []
 
-  @doc "The second half of `run/2`: downloads `outputs` and fills `pair` from them."
+  @doc """
+  Downloads `outputs` from the device, freeing them there, in a `Task`
+  that has `timeout` ms, and fills `pair` from them; or what the
+  download raised, or `:timeout`.
+  """
   @impl VisionCore.Stereo.Segment
-  @spec collect(Pair.t(), map(), t()) :: Pair.t()
-  def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment) do
-    outputs =
-      Map.new(outputs, fn {key, tensor} ->
-        {key, Nx.backend_transfer(tensor, Nx.BinaryBackend)}
-      end)
+  @spec collect(Pair.t(), map(), t(), timeout()) :: {:ok, Pair.t()} | {:error, term()} | :timeout
+  def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment, timeout) do
+    download = Task.async(fn -> download(outputs) end)
 
-    finish_members(segment.members, pair, outputs)
+    case Task.yield(download, timeout) do
+      {:ok, {:ok, outputs}} -> {:ok, Segment.finish_members(segment.members, pair, outputs)}
+      {:ok, {:error, _reason} = error} -> error
+      nil -> :timeout
+    end
+  end
+
+  defp download(outputs) do
+    {:ok, Map.new(outputs, fn {key, tensor} -> {key, Nx.backend_transfer(tensor)} end)}
+  rescue
+    error -> {:error, error}
   end
 
   defp run_steps(members, tensors, params) do
@@ -315,21 +331,7 @@ defmodule VisionCore.Stereo.NxSegment do
         entry -> entry
       end)
     end)
-    |> Map.drop(@frames)
-  end
-
-  @doc "The `Pair` fields `members` read that no member before the reader provides."
-  @spec entry_fields([map()]) :: [atom()]
-  def entry_fields(members) do
-    {entry, _provided} =
-      Enum.reduce(members, {[], MapSet.new()}, fn member, {entry, provided} ->
-        needed =
-          Enum.reject(member.module.requires(), &(MapSet.member?(provided, &1) or &1 in entry))
-
-        {entry ++ needed, MapSet.union(provided, MapSet.new(member.module.provides()))}
-      end)
-
-    entry
+    |> Map.drop(Segment.frame_fields())
   end
 
   defp params(members, context) do
@@ -341,6 +343,13 @@ defmodule VisionCore.Stereo.NxSegment do
 
       {index, Map.new(values, fn {key, value} -> {key, to_input(value)} end)}
     end)
+  end
+
+  # The names of the values each member carries, by its index.
+  defp carried(members, context) do
+    members
+    |> Enum.with_index()
+    |> Map.new(fn {member, index} -> {index, Map.keys(carry(member, context))} end)
   end
 
   defp device_only(members) do
@@ -360,85 +369,10 @@ defmodule VisionCore.Stereo.NxSegment do
   defp to_input(value) when is_number(value), do: Nx.tensor(value, type: :f32)
   defp to_input(value), do: value
 
-  defp entry_template(field, context) when field in @frames,
-    do: Nx.template({context.frame_height, context.frame_width}, :u8)
-
-  defp entry_template(field, context) when field in @images,
-    do: Nx.template({context.height, context.width}, :u8)
-
-  defp entry_template(field, context) when field in @maps,
-    do: Nx.template({context.height, context.width}, :f32)
-
-  defp entry_template(field, _context),
-    do: raise(ArgumentError, "an Nx stage cannot read #{inspect(field)} from a CPU stage")
-
-  # Each entry as a tensor of the shape the function was compiled for.
-  defp entry_values(pair, segment) do
-    Enum.reduce_while(segment.entry, {:ok, %{}}, fn field, {:ok, values} ->
-      expected = Map.fetch!(segment.shapes, field)
-
-      case entry_value(pair, field) do
-        {:ok, %Nx.Tensor{shape: ^expected} = tensor} ->
-          {:cont, {:ok, Map.put(values, field, tensor)}}
-
-        {:ok, tensor} ->
-          {:halt, {:error, {:frame_size, field, Nx.shape(tensor), expected}}}
-
-        {:error, _reason} = error ->
-          {:halt, error}
-      end
-    end)
-  end
-
-  defp entry_value(pair, field) when field in @frames,
-    do: Frame.to_tensor(Map.fetch!(pair, field))
-
-  defp entry_value(pair, field) do
-    case Map.fetch!(pair, field) do
-      %Nx.Tensor{} = tensor -> {:ok, tensor}
-      other -> {:error, {:not_a_tensor, field, other}}
-    end
-  end
-
-  @doc """
-  `pair` filled from a segment's `outputs` by each member's
-  `c:VisionCore.Stereo.NxStage.finish/3`, or with each output named like
-  a field the member provides.
-  """
-  @spec finish_members([map()], Pair.t(), map()) :: Pair.t()
-  def finish_members(members, pair, outputs),
-    do: Enum.reduce(members, pair, &finish(&1, &2, outputs))
-
-  defp finish(member, pair, outputs) do
-    if function_exported?(member.module, :finish, 3) do
-      member.module.finish(pair, outputs, member.state)
-    else
-      member.module.provides()
-      |> Enum.filter(&Map.has_key?(outputs, &1))
-      |> Enum.reduce(pair, &Map.put(&2, &1, Map.fetch!(outputs, &1)))
-    end
-  end
-
-  @doc """
-  The `:defn_options` of a pipeline `context`; for a context without
-  them, `config :vision_core, :nx_defn_options`, else EXLA where it is
-  loaded (a workstation), else Nx's evaluator.
-  """
-  @spec defn_options(map()) :: keyword()
-  def defn_options(context), do: Map.get_lazy(context, :defn_options, &default_defn_options/0)
-
-  defp default_defn_options do
-    cond do
-      options = Application.get_env(:vision_core, :nx_defn_options) -> options
-      Code.ensure_loaded?(EXLA) -> [compiler: EXLA]
-      true -> []
-    end
-  end
-
   @doc "Where the segment, or `defn_options`, run a segment, and with what."
   @impl VisionCore.Stereo.Segment
   @spec compute(t() | keyword()) :: VisionCore.Parameters.Group.compute()
-  def compute(%__MODULE__{context: context}), do: compute(defn_options(context))
+  def compute(%__MODULE__{defn_options: defn_options}), do: compute(defn_options)
 
   def compute(defn_options) do
     {runs_on, backend} =

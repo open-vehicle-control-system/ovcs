@@ -142,7 +142,8 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
         width: 64,
-        height: 48
+        height: 48,
+        defn_options: [compiler: EXLA]
       )
 
     {:ok, _} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 1.0)

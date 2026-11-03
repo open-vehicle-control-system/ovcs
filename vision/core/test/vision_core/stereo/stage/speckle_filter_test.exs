@@ -1,17 +1,22 @@
 defmodule VisionCore.Stereo.Stage.SpeckleFilterTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Stage}
+  alias VisionCore.Stereo.{NxSegment, Pair, Segment, Stage}
 
   defp filter(disparity, opts \\ []) do
     {height, width} = Nx.shape(disparity)
     context = %{height: height, width: width}
     {:ok, state} = Stage.SpeckleFilter.init(opts, context)
     member = %{module: Stage.SpeckleFilter, name: :speckle_filter, state: state}
-    {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
+    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
 
     {:ok, pair, _segment} =
-      NxSegment.run(%Pair{left_frame: nil, right_frame: nil, disparity: disparity}, segment)
+      Segment.run(
+        NxSegment,
+        %Pair{left_frame: nil, right_frame: nil, disparity: disparity},
+        segment,
+        :infinity
+      )
 
     pair.disparity
   end

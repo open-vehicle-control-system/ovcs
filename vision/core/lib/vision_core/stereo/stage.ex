@@ -32,18 +32,16 @@ defmodule VisionCore.Stereo.Stage do
   @typedoc """
   What every stage may use, fixed until the calibration is reloaded:
   the `:width` and `:height` the stages work at, the `:frame_width` and
-  `:frame_height` of the submitted frames, the `:defn_options` Nx code
-  is compiled with, each side's `CameraCalibration` scaled to the
-  working size (`:left_calibration`, `:right_calibration`), and the
-  stereo geometry derived from them (`:focal_length_px`, `:baseline_m`,
-  `:principal_point`).
+  `:frame_height` of the submitted frames, each side's
+  `CameraCalibration` scaled to the working size (`:left_calibration`,
+  `:right_calibration`), and the stereo geometry derived from them
+  (`:focal_length_px`, `:baseline_m`, `:principal_point`).
   """
   @type context :: %{
           width: pos_integer(),
           height: pos_integer(),
           frame_width: pos_integer(),
           frame_height: pos_integer(),
-          defn_options: keyword(),
           left_calibration: VisionCore.Ros2.CameraCalibration.t(),
           right_calibration: VisionCore.Ros2.CameraCalibration.t(),
           focal_length_px: float(),
@@ -106,4 +104,11 @@ defmodule VisionCore.Stereo.Stage do
   @callback set_option(state(), atom(), term()) :: {:ok, state()} | {:error, String.t()}
 
   @optional_callbacks summary: 0, explanation: 0, option_specs: 0, options: 1, set_option: 3
+
+  @doc "Whether `module` declares `behaviour` with `@behaviour`, as a stage or a segment does."
+  @spec implements?(module(), module()) :: boolean()
+  def implements?(module, behaviour) do
+    Code.ensure_loaded?(module) and
+      behaviour in Enum.concat(Keyword.get_values(module.module_info(:attributes), :behaviour))
+  end
 end

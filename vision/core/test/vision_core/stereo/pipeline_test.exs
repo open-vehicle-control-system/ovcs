@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{NativeSegment, NxSegment, Pipeline}
+  alias VisionCore.Stereo.{NativeSegment, NxSegment, Pair, Pipeline}
   alias VisionCore.Stereo.Stage
 
   @calibration Path.expand("../../support/calibration", __DIR__)
@@ -71,7 +71,141 @@ defmodule VisionCore.Stereo.PipelineTest do
     end
   end
 
+  # A compiled stage whose device work takes a while, on a product XLA cannot fold away.
+  defmodule Busy do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+
+    def step(tensors, _params, _state) do
+      busy = Nx.iota({1_000, 1_000}, type: :f32) |> Nx.add(Nx.sum(tensors.disparity))
+      busy = busy |> Nx.dot(busy) |> Nx.sum() |> Nx.multiply(0)
+      Map.update!(tensors, :disparity, &Nx.add(&1, busy))
+    end
+  end
+
+  # A CPU stage that reads and fills nothing.
+  defmodule Pass do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: []
+    def provides, do: []
+    def run(pair, state), do: {:ok, pair, state}
+  end
+
+  # Nx stages EagerSegment takes.
+  defmodule Tag do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+    def step(tensors, _params, _state), do: Map.update!(tensors, :disparity, &Nx.add(&1, 0.0))
+  end
+
+  defmodule FrameTag do
+    @behaviour VisionCore.Stereo.NxStage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:left_frame]
+    def provides, do: []
+    def step(tensors, _params, _state), do: tensors
+  end
+
+  # A CPU stage that claims what the listeners consume, after FrameTag.
+  defmodule FillAll do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: []
+    def provides, do: [:left, :right, :disparity, :disparity_range, :disparity_bytes, :depth]
+    def run(pair, state), do: {:ok, pair, state}
+  end
+
+  # A stage's callbacks without a stage behaviour.
+  defmodule Undeclared do
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:depth]
+    def provides, do: [:depth]
+    def step(tensors, _params, _state), do: tensors
+  end
+
+  # A backend of its own: runs Tag and FrameTag eagerly, in the pipeline's process, and
+  # replies a moment later. It fails the pairs captured at the times its `:fail` option
+  # lists, and tells its `:notify` process the capture time of each pair it is sent.
+  defmodule EagerSegment do
+    @behaviour VisionCore.Stereo.Segment
+
+    alias VisionCore.Stereo.{NxStage, Segment}
+
+    def build(members, context, opts) do
+      {:ok,
+       %{
+         members: members,
+         context: context,
+         fail: Keyword.get(opts, :fail, []),
+         notify: Keyword.get(opts, :notify)
+       }}
+    end
+
+    def accepts?(module, _state, _compute), do: module in [Tag, FrameTag]
+
+    def send_request(pair, segment) do
+      capture_ns = pair.left_frame.capture_ns
+      if segment.notify, do: send(segment.notify, {:sent, capture_ns})
+
+      reply =
+        if capture_ns in segment.fail,
+          do: {:error, :failed},
+          else: {:ok, steps(pair, segment), segment, now()}
+
+      ref = make_ref()
+      Process.send_after(self(), {ref, reply}, 20)
+      {:ok, ref}
+    end
+
+    def response({ref, reply}, ref, _segment), do: reply
+    def response(_message, _ref, _segment), do: :no_reply
+
+    def await(ref, _segment, timeout) do
+      receive do
+        {^ref, reply} -> reply
+      after
+        timeout -> :timeout
+      end
+    end
+
+    def collect(pair, outputs, segment, _timeout),
+      do: {:ok, Segment.finish_members(segment.members, pair, outputs)}
+
+    def depth, do: 1
+    def merge_carry(current, _replied), do: current
+    def member_times(_segment), do: []
+    def compute(_segment), do: %{runs_on: :cpu, implementation: :nx, backend: :evaluator}
+    def reload(segment, members, context), do: %{segment | members: members, context: context}
+
+    def put_member_state(segment, index, state),
+      do: %{segment | members: List.update_at(segment.members, index, &%{&1 | state: state})}
+
+    defp steps(pair, segment) do
+      tensors = Map.new(Segment.entry_fields(segment.members), &{&1, Map.fetch!(pair, &1)})
+
+      Enum.reduce(segment.members, tensors, fn member, tensors ->
+        params = NxStage.params(member.module, member.state, segment.context)
+        member.module.step(tensors, params, member.state)
+      end)
+    end
+
+    defp now, do: System.monotonic_time(:nanosecond)
+  end
+
   defp start(stages, opts \\ []) do
+    opts =
+      if opts[:backends], do: opts, else: Keyword.put_new(opts, :defn_options, compiler: EXLA)
+
     Pipeline.start_link(
       [
         name: :pipeline_test,
@@ -83,6 +217,9 @@ defmodule VisionCore.Stereo.PipelineTest do
       ] ++ opts
     )
   end
+
+  defp segment_modules(pipeline),
+    do: Enum.map(Pipeline.segments(pipeline), &{&1.name, &1.module})
 
   setup do
     Process.flag(:trap_exit, true)
@@ -163,6 +300,159 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     assert message ==
              "#{inspect(FixedGain)} declares the live settings [:gain] but no set_option/3"
+  end
+
+  test "recognises a stage by its behaviour, and refuses a module that declares none" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages() ++ [Undeclared])
+
+    assert message ==
+             "#{inspect(Undeclared)} implements neither VisionCore.Stereo.Stage " <>
+               "nor VisionCore.Stereo.NxStage"
+  end
+
+  test "pins an Nx stage with compute: among its options, which its init/2 does not see" do
+    {:ok, pipeline} = start(Pipeline.default_stages(sharpness: [compute: :nx]), compute: :native)
+
+    assert segment_modules(pipeline) == [
+             rectification: NativeSegment,
+             sharpness: NxSegment,
+             "disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality":
+               NativeSegment
+           ]
+
+    GenServer.stop(pipeline)
+
+    {:ok, pipeline} =
+      start(Pipeline.default_stages(disparity: [compute: :native, matcher: :native, paths: 3]))
+
+    assert segment_modules(pipeline) == [
+             "rectification+sharpness": NxSegment,
+             disparity: NativeSegment,
+             "speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality": NxSegment
+           ]
+  end
+
+  test "refuses a compute: pin the stage's own options contradict, on a CPU stage, or unknown" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(disparity: [matcher: :native, compute: :nx]))
+
+    assert message ==
+             "#{inspect(Stage.Disparity)} is pinned to compute: :nx, " <>
+               "but its own options ask for :native"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages() ++ [{Gain, compute: :nx}])
+
+    assert message == "#{inspect(Gain)} is not an Nx stage: compute: :nx does not apply to it"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(depth: [compute: :gpu]))
+
+    assert message == "#{inspect(Stage.Depth)}: compute is :nx or :native, got :gpu"
+  end
+
+  test "places each Nx stage in the first of its backends that takes it" do
+    backends = [EagerSegment, NativeSegment, {NxSegment, defn_options: [compiler: EXLA]}]
+
+    {:ok, pipeline} =
+      start(Pipeline.default_stages(disparity: [paths: 3]) ++ [Tag], backends: backends)
+
+    assert segment_modules(pipeline) == [
+             "rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality":
+               NxSegment,
+             tag: EagerSegment
+           ]
+
+    assert %{compute: %{runs_on: :cpu, implementation: :nx, backend: :evaluator}} =
+             Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :tag))
+
+    Pipeline.register_listener(pipeline, self())
+    assert [%Pair{disparity: %Nx.Tensor{}}] = submit_when_ready(pipeline, [textured_pair(23)])
+  end
+
+  test "refuses :defn_options beside :backends, a backend that is no Segment, an Nx stage none takes" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(),
+               backends: [NxSegment],
+               defn_options: [compiler: EXLA]
+             )
+
+    assert message =~ ":defn_options"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(), backends: [Gain])
+
+    assert message == "#{inspect(Gain)} is not a VisionCore.Stereo.Segment"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages(), backends: [EagerSegment])
+
+    assert message == "no backend takes #{inspect(Stage.Rectification)} to compute :nx"
+  end
+
+  test "stops once the device fails ten pairs in a row, a pair it gets through starting over" do
+    fail = Enum.to_list(1..9) ++ Enum.to_list(11..20)
+    {:ok, pipeline} = start([FrameTag, FillAll], backends: [{EagerSegment, fail: fail}])
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      for seed <- 1..19 do
+        [left, right] = textured_pair(seed)
+        Pipeline.submit(pipeline, left, right)
+        assert_receive :stereo_pipeline_ready, 5_000
+      end
+
+      [left, right] = textured_pair(20)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:EXIT, ^pipeline, {:device_failing, :frame_tag, :failed}}, 5_000
+    end)
+  end
+
+  test "once stopped, sends no queued pair and tells no submitter it is ready" do
+    backends = [{EagerSegment, fail: Enum.to_list(1..11), notify: self()}]
+    {:ok, pipeline} = start([FrameTag, FillAll], backends: backends)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      for seed <- 1..9 do
+        [left, right] = textured_pair(seed)
+        Pipeline.submit(pipeline, left, right)
+        assert_receive :stereo_pipeline_ready, 5_000
+      end
+
+      # The tenth failure stops it while the eleventh pair waits for the device.
+      for seed <- 10..11 do
+        [left, right] = textured_pair(seed)
+        Pipeline.submit(pipeline, left, right)
+      end
+
+      assert_receive {:EXIT, ^pipeline, {:device_failing, :frame_tag, :failed}}, 5_000
+    end)
+
+    assert_received {:sent, 10}
+    refute_received {:sent, 11}
+    refute_received :stereo_pipeline_ready
+  end
+
+  test "gives the stages a context without the compiler's options" do
+    context =
+      Pipeline.context(
+        left_calibration_path: Path.join(@calibration, "stereo_left.yaml"),
+        right_calibration_path: Path.join(@calibration, "stereo_right.yaml"),
+        width: 64,
+        height: 48,
+        defn_options: [compiler: EXLA]
+      )
+
+    refute Map.has_key?(context, :defn_options)
+  end
+
+  test "stops when a segment after the first does not answer in time" do
+    stages = [Pass | Pipeline.default_stages(disparity: [paths: 3])] ++ [Busy]
+    {:ok, pipeline} = start(stages, device_timeout_ms: 1)
+
+    [left, right] = textured_pair(24)
+    Pipeline.submit(pipeline, left, right)
+    assert_receive {:EXIT, ^pipeline, {:device_timeout, 1}}, 10_000
   end
 
   test "refuses a stage option out of its spec, or that it does not declare" do
@@ -290,7 +580,7 @@ defmodule VisionCore.Stereo.PipelineTest do
   end
 
   defp segments(pipeline),
-    do: :sys.get_state(pipeline).stages |> Enum.filter(&(&1.module == NxSegment))
+    do: pipeline |> Pipeline.segments() |> Enum.filter(&(&1.module == NxSegment))
 
   describe "with a compiled segment first" do
     defp textured_pair(seed) do
@@ -757,14 +1047,75 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 22}}}}, 10_000
     end
 
-    @tag :tmp_dir
-    test "a Port that exits fails the pairs at it, and the next pair is taken", %{tmp_dir: dir} do
+    # A stereo_match that reads its requests and never answers; returns the real one's path.
+    defp silent_port(dir) do
       path = Application.get_env(:vision_core, :stereo_match_path)
       on_exit(fn -> Application.put_env(:vision_core, :stereo_match_path, path) end)
       silent = Path.join(dir, "stereo_match")
       File.write!(silent, "#!/bin/sh\nexec cat > /dev/null\n")
       File.chmod!(silent, 0o755)
       Application.put_env(:vision_core, :stereo_match_path, silent)
+      path
+    end
+
+    @tag :tmp_dir
+    test "stops once the Port fails ten pairs in a row", %{tmp_dir: dir} do
+      # A stereo_match that echoes each request, which the Matcher reads as a refusal.
+      path = Application.get_env(:vision_core, :stereo_match_path)
+      on_exit(fn -> Application.put_env(:vision_core, :stereo_match_path, path) end)
+      echo = Path.join(dir, "stereo_match")
+      File.write!(echo, "#!/bin/sh\nexec cat\n")
+      File.chmod!(echo, 0o755)
+      Application.put_env(:vision_core, :stereo_match_path, echo)
+
+      {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
+
+      name =
+        :"rectification+sharpness+disparity+speckle_filter+row_alignment+temporal_filter+depth+point_cloud+quality"
+
+      reason = ExUnit.CaptureLog.with_log(fn -> submit_until_stopped(pipeline, 1..12) end)
+      assert {{:device_failing, ^name, :bad_request}, _log} = reason
+    end
+
+    # Submits a pair each time the pipeline is ready, until it stops; returns why it stopped.
+    defp submit_until_stopped(pipeline, seeds) do
+      stopped =
+        Enum.find_value(seeds, fn seed ->
+          [left, right] = textured_pair(seed)
+          Pipeline.submit(pipeline, left, right)
+
+          receive do
+            :stereo_pipeline_ready -> nil
+            {:EXIT, ^pipeline, reason} -> {:stopped, reason}
+          after
+            5_000 -> flunk("the pipeline neither took a pair nor stopped")
+          end
+        end)
+
+      case stopped do
+        {:stopped, reason} ->
+          reason
+
+        nil ->
+          assert_receive {:EXIT, ^pipeline, reason}, 5_000
+          reason
+      end
+    end
+
+    @tag :tmp_dir
+    test "stops when a native segment after the first does not answer in time", %{tmp_dir: dir} do
+      silent_port(dir)
+      stages = [Pass | Pipeline.default_stages(disparity: [paths: 3])]
+      {:ok, pipeline} = start(stages, compute: :native, device_timeout_ms: 200)
+
+      [left, right] = textured_pair(25)
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:EXIT, ^pipeline, {:device_timeout, 200}}, 2_000
+    end
+
+    @tag :tmp_dir
+    test "a Port that exits fails the pairs at it, and the next pair is taken", %{tmp_dir: dir} do
+      path = silent_port(dir)
 
       {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), compute: :native)
       Pipeline.register_listener(pipeline, self())

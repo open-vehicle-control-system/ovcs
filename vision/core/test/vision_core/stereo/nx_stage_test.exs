@@ -3,6 +3,24 @@ defmodule VisionCore.Stereo.NxStageTest do
 
   alias VisionCore.Stereo.NxStage
 
+  defmodule Declared do
+    @behaviour VisionCore.Stereo.NxStage
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: []
+    def provides, do: []
+    def step(tensors, _params, _state), do: tensors
+  end
+
+  defmodule Undeclared do
+    def step(tensors, _params, _state), do: tensors
+  end
+
+  test "recognises an Nx stage by its behaviour, not by its functions" do
+    assert NxStage.nx_stage?(Declared)
+    refute NxStage.nx_stage?(Undeclared)
+    refute NxStage.nx_stage?(VisionCore.Stereo.Stage.NoSuchStage)
+  end
+
   # The axes of each sum image_sums/1 traces for `shape`, the first one first.
   defp sum_axes(shape) do
     expression = Nx.Defn.debug_expr(&NxStage.image_sums/1).(Nx.template(shape, :s32))

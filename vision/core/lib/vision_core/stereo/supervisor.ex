@@ -108,8 +108,9 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:compute` (`:nx`) — `:native` computes every stage that has a
       native implementation in the `stereo_match` Port, for a CPU; see
       `VisionCore.Stereo.Pipeline`.
-    * `:defn_options` (`config :vision_core, :nx_defn_options`) — how the
-      pipeline compiles Nx stages; see `VisionCore.Stereo.NxSegment`.
+    * `:defn_options` (`config :vision_core, :nx_defn_options`, else
+      EXLA where it is loaded, as on a workstation, else Nx's evaluator) —
+      how the pipeline compiles Nx stages; see `VisionCore.Stereo.NxSegment`.
   """
   use Supervisor
   require Logger
@@ -195,11 +196,19 @@ defmodule VisionCore.Stereo.Supervisor do
       align_correction: Keyword.get(opts, :align_correction, true),
       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
       stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
-      defn_options: Keyword.get(opts, :defn_options),
+      defn_options: Keyword.get(opts, :defn_options) || default_defn_options(),
       compute: Keyword.get(opts, :compute, :nx),
       left: left,
       right: right
     }
+  end
+
+  defp default_defn_options do
+    cond do
+      options = Application.get_env(:vision_core, :nx_defn_options) -> options
+      Code.ensure_loaded?(EXLA) -> [compiler: EXLA]
+      true -> []
+    end
   end
 
   defp resolve_side_opts(side_opts, side, topic_prefix, calibration_dir) do
@@ -379,20 +388,16 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   defp pipeline_spec(config) do
-    opts = [
-      stages: config.stages,
-      left_calibration_path: config.left[:calibration_path],
-      right_calibration_path: config.right[:calibration_path],
-      width: config.match_width,
-      height: config.match_height,
-      frame_width: config.width,
-      frame_height: config.height,
-      compute: config.compute
-    ]
-
-    if config.defn_options,
-      do: {Pipeline, [{:defn_options, config.defn_options} | opts]},
-      else: {Pipeline, opts}
+    {Pipeline,
+     stages: config.stages,
+     left_calibration_path: config.left[:calibration_path],
+     right_calibration_path: config.right[:calibration_path],
+     width: config.match_width,
+     height: config.match_height,
+     frame_width: config.width,
+     frame_height: config.height,
+     compute: config.compute,
+     defn_options: config.defn_options}
   end
 
   defp publisher_spec(config) do

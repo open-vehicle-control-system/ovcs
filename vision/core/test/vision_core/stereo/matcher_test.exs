@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.MatcherTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{Matcher, NativeSegment, Pair, Pipeline, Stage}
+  alias VisionCore.Stereo.{Matcher, NativeSegment, Pair, Pipeline, Segment, Stage}
 
   @moduletag :stereo_match
   @moduletag :capture_log
@@ -25,9 +25,9 @@ defmodule VisionCore.Stereo.MatcherTest do
   defp match(left, right, opts, state_change \\ & &1) do
     {segment, pair} = disparity_segment(left, right, opts, state_change)
 
-    case NativeSegment.run(pair, segment) do
+    case Segment.run(NativeSegment, pair, segment, :infinity) do
       {:ok, pair, _segment} -> {:ok, pair.disparity}
-      {:error, reason, _segment} -> {:error, reason}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -47,7 +47,7 @@ defmodule VisionCore.Stereo.MatcherTest do
 
     {:ok, state} = Stage.Disparity.init(stage_opts, context)
     member = %{module: Stage.Disparity, name: :disparity, state: state_change.(state)}
-    {:ok, segment} = NativeSegment.build([member], context)
+    {:ok, segment} = NativeSegment.build([member], context, [])
     pair = %Pair{left_frame: nil, right_frame: nil, left: left, right: right, geometry: context}
     {segment, pair}
   end

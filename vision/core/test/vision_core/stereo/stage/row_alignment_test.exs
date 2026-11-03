@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair, Stage}
+  alias VisionCore.Stereo.{NxSegment, Pair, Segment, Stage}
 
   @height 64
   @width 128
@@ -28,7 +28,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
     context = %{height: @height, width: @width}
     {:ok, state} = Stage.RowAlignment.init([], context)
     member = %{module: Stage.RowAlignment, name: :row_alignment, state: state}
-    {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
+    {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
 
     pair = %Pair{
       left_frame: nil,
@@ -38,7 +38,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
       disparity: disparity
     }
 
-    {:ok, pair, _segment} = NxSegment.run(pair, segment)
+    {:ok, pair, _segment} = Segment.run(NxSegment, pair, segment, :infinity)
     pair
   end
 

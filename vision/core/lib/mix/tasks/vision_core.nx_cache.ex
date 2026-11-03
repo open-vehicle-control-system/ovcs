@@ -10,16 +10,17 @@ defmodule Mix.Tasks.VisionCore.NxCache do
 
   Run it in the vehicle's project, on the host, where `vision_firmware`
   brings EXLA. It reads the `:stereo` component of the composer's
-  `config(:target)` and compiles, with the compiler and flags of its
-  `:defn_options`, everything the pipeline compiles when it starts (see
-  `VisionCore.Stereo.NxSegment.build_cache/2`): with `compute: :native`,
-  only the stages without a native implementation, if any. The cache keys each
-  module on the stages, their options and the size: run it again after
-  changing any of them. A calibration change needs no new module.
+  `config(:target)` and starts its pipeline, with the compiler and flags
+  of its `:defn_options` writing each module to the cache without
+  loading it, so it compiles everything the pipeline compiles when it
+  starts: with `compute: :native`, only the stages without a native
+  implementation, if any. The cache keys each module on the stages,
+  their options and the size: run it again after changing any of them.
+  A calibration change needs no new module.
   """
   use Mix.Task
 
-  alias VisionCore.Stereo.{NxSegment, Supervisor}
+  alias VisionCore.Stereo.{NxSegment, Pipeline, Supervisor}
 
   @switches [composer: :string, out: :string]
 
@@ -34,7 +35,7 @@ defmodule Mix.Tasks.VisionCore.NxCache do
 
     pipeline_opts = composer |> stereo_options() |> Supervisor.pipeline_options()
 
-    case NxSegment.build_cache(pipeline_opts, cache_directory) do
+    case build_cache(pipeline_opts, cache_directory) do
       {:ok, 0} ->
         Mix.shell().info(
           "#{inspect(composer)}'s stereo stages compute natively: nothing to compile"
@@ -45,6 +46,49 @@ defmodule Mix.Tasks.VisionCore.NxCache do
 
       {:error, reason} ->
         Mix.raise(reason)
+    end
+  end
+
+  # How many compiled segments the pipeline has once its modules are in `dir`.
+  defp build_cache(pipeline_opts, dir) do
+    File.mkdir_p!(dir)
+
+    defn_options =
+      pipeline_opts
+      |> Keyword.fetch!(:defn_options)
+      |> Keyword.put(:iree_module_cache, dir)
+      |> Keyword.put(:cache_only, true)
+
+    pipeline_opts
+    |> Keyword.put(:defn_options, defn_options)
+    |> Keyword.put(:name, :nx_cache_pipeline)
+    |> compile_pipeline()
+  end
+
+  # In a task, so the exit of a pipeline that fails to start stays there.
+  defp compile_pipeline(opts) do
+    Task.async(fn ->
+      Process.flag(:trap_exit, true)
+
+      with {:ok, pipeline} <- start_pipeline(opts) do
+        compiled = pipeline |> Pipeline.segments() |> Enum.count(&(&1.module == NxSegment))
+        GenServer.stop(pipeline)
+        {:ok, compiled}
+      end
+    end)
+    |> Task.await(:infinity)
+  end
+
+  defp start_pipeline(opts) do
+    case Pipeline.start_link(opts) do
+      {:ok, pipeline} ->
+        {:ok, pipeline}
+
+      {:error, {%{__exception__: true} = error, _stacktrace}} ->
+        {:error, Exception.message(error)}
+
+      {:error, reason} ->
+        {:error, inspect(reason)}
     end
   end
 

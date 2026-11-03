@@ -5,7 +5,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Stage}
+  alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment, Stage}
 
   @calibration Path.expand("../../../support/calibration", __DIR__)
 
@@ -30,8 +30,11 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
         %{module: module, name: module, state: state}
       end
 
-    {:ok, segment} = NxSegment.build(members, context, compiler: EXLA)
-    {:ok, pair, _segment} = NxSegment.run(%{pair | geometry: context}, segment)
+    {:ok, segment} = NxSegment.build(members, context, defn_options: [compiler: EXLA])
+
+    {:ok, pair, _segment} =
+      Segment.run(NxSegment, %{pair | geometry: context}, segment, :infinity)
+
     pair
   end
 
@@ -247,8 +250,11 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     rectify = fn opts ->
       {:ok, state} = Stage.Rectification.init(opts, context)
       member = %{module: Stage.Rectification, name: :rectification, state: state}
-      {:ok, segment} = NxSegment.build([member], context, compiler: EXLA)
-      {:ok, pair, _segment} = NxSegment.run(%{input | geometry: context}, segment)
+      {:ok, segment} = NxSegment.build([member], context, defn_options: [compiler: EXLA])
+
+      {:ok, pair, _segment} =
+        Segment.run(NxSegment, %{input | geometry: context}, segment, :infinity)
+
       pair
     end
 
@@ -428,7 +434,8 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
           left_calibration_path: Path.join(@calibration, "identity_left.yaml"),
           right_calibration_path: Path.join(@calibration, "identity_right.yaml"),
           width: 192,
-          height: 108
+          height: 108,
+          defn_options: [compiler: EXLA]
         )
 
       Pipeline.register_listener(pipeline, self())

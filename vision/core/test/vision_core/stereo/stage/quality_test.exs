@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.Stage.QualityTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Stereo.{NxSegment, Pair}
+  alias VisionCore.Stereo.{NxSegment, Pair, Segment}
   alias VisionCore.Stereo.Stage.Quality
 
   @context %{width: 64, height: 48}
@@ -16,13 +16,13 @@ defmodule VisionCore.Stereo.Stage.QualityTest do
   defp segment do
     {:ok, state} = Quality.init([], @context)
     member = %{module: Quality, name: :quality, state: state}
-    {:ok, segment} = NxSegment.build([member], @context, compiler: EXLA)
+    {:ok, segment} = NxSegment.build([member], @context, defn_options: [compiler: EXLA])
     segment
   end
 
   defp run(segment, disparity) do
     pair = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
-    {:ok, pair, segment} = NxSegment.run(pair, segment)
+    {:ok, pair, segment} = Segment.run(NxSegment, pair, segment, :infinity)
     {Map.new(pair.metrics, fn {name, value, _unit} -> {name, value} end), segment}
   end
 
