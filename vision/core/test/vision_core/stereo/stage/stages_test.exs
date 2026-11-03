@@ -265,10 +265,10 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
 
   test "Disparity aggregates along 8 paths, or 3 when asked" do
     context = context(:identity, 192, 108)
-    assert {:ok, opts} = Stage.Disparity.init([], context)
-    assert opts[:paths] == 8
-    assert {:ok, opts} = Stage.Disparity.init([paths: 3], context)
-    assert opts[:paths] == 3
+    assert {:ok, state} = Stage.Disparity.init([], context)
+    assert Stage.Disparity.options(state).paths == 8
+    assert {:ok, state} = Stage.Disparity.init([paths: 3], context)
+    assert Stage.Disparity.options(state).paths == 3
 
     assert Stage.Disparity.init([paths: 4], context) ==
              {:error, "paths must be one of 3, 8, got 4"}
@@ -369,6 +369,34 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert_in_delta z, 1.0, 1.0e-6
     <<_::binary-size(47 * 12 + 8), unmatched_z::binary-size(4), _::binary>> = pair.cloud
     refute match?(<<_::little-float-32>>, unmatched_z)
+  end
+
+  test "PointCloud unprojects each point from the depth pixel it samples, at any size" do
+    # 4-pixel steps fit 27 times in 110 rows and 48 times in 194 columns, with a remainder.
+    context = context(:identity, 194, 110)
+    rows = Nx.iota({110, 194}, axis: 0, type: :f32)
+    columns = Nx.iota({110, 194}, axis: 1, type: :f32)
+    # A disparity, and so a depth, of its own at every pixel.
+    disparity = rows |> Nx.multiply(0.1) |> Nx.add(Nx.multiply(columns, 0.01)) |> Nx.add(4.0)
+    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
+    pair = run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, input)
+
+    assert pair.cloud_size == {27, 48}
+    {cx, cy} = context.principal_point
+    focal_length_px = context.focal_length_px
+    disparities = Nx.to_list(disparity)
+
+    points =
+      for <<x::little-float-32, y::little-float-32, z::little-float-32 <- pair.cloud>>,
+        do: {x, y, z}
+
+    for {{x, y, z}, index} <- Enum.with_index(points) do
+      {row, column} = {div(index, 48) * 4, rem(index, 48) * 4}
+      depth_m = focal_length_px * context.baseline_m / Enum.at(Enum.at(disparities, row), column)
+      assert_in_delta z, depth_m, 1.0e-5 * depth_m
+      assert_in_delta x, (column - cx) * depth_m / focal_length_px, 1.0e-4
+      assert_in_delta y, (row - cy) * depth_m / focal_length_px, 1.0e-4
+    end
   end
 
   test "Depth gives no depth beyond what 16-bit millimetres hold" do

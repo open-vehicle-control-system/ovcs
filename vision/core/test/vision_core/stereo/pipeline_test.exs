@@ -58,7 +58,6 @@ defmodule VisionCore.Stereo.PipelineTest do
     def init(_opts, _context), do: {:ok, nil}
     def requires, do: [:disparity]
     def provides, do: [:disparity]
-    def params(_state, _context), do: %{}
 
     def step(tensors, _params, _state) do
       busy = Nx.iota({2_500, 2_500}, type: :f32)

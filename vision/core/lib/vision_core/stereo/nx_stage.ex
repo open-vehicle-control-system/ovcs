@@ -40,12 +40,17 @@ defmodule VisionCore.Stereo.NxStage do
   @doc "The `Pair` fields the stage reads."
   @callback requires() :: [atom()]
 
-  @doc "The `Pair` fields the stage fills, once `finish/3` has run."
+  @doc """
+  The `Pair` fields the stage fills, once `finish/3` has run, and the
+  tensors it leaves on the device for the stages after it in its segment
+  (`c:device_only/0`).
+  """
   @callback provides() :: [atom()]
 
   @doc """
   The compiled function's inputs for this stage: tensors, numbers, or
-  maps of tensors such as a camera model.
+  maps of tensors such as a camera model. Without it, the stage takes
+  none.
   """
   @callback params(state(), Stage.context()) ::
               %{atom() => Nx.Tensor.t() | number() | %{atom() => Nx.Tensor.t()}}
@@ -58,8 +63,8 @@ defmodule VisionCore.Stereo.NxStage do
 
   @doc """
   Fills the `Pair` from the segment's outputs, on the CPU, after they
-  are downloaded. Without it, each output named like a `Pair` field is
-  copied there.
+  are downloaded. Without it, each output named like a field the stage
+  `provides/0` is copied there.
   """
   @callback finish(Pair.t(), outputs :: map(), state()) :: Pair.t()
 
@@ -107,6 +112,7 @@ defmodule VisionCore.Stereo.NxStage do
 
   @optional_callbacks summary: 0,
                       explanation: 0,
+                      params: 2,
                       finish: 3,
                       option_specs: 0,
                       options: 1,
@@ -119,6 +125,24 @@ defmodule VisionCore.Stereo.NxStage do
   @spec nx_stage?(module()) :: boolean()
   def nx_stage?(module) do
     Code.ensure_loaded?(module) and function_exported?(module, :step, 3)
+  end
+
+  @doc """
+  The sum of each image in `images`, one `{height, width}` image or a
+  stack of them, in two reductions: over axis 1 first, a stack's rows or
+  a single image's columns, then over the image's other axis. On the
+  C100's GPU, through `nx_iree`, a whole image reduced at once compiles
+  to a slow reduction, on one thread.
+  """
+  @spec image_sums(Nx.Tensor.t()) :: Nx.Tensor.t()
+  def image_sums(images) do
+    images |> Nx.sum(axes: [1]) |> Nx.sum(axes: [Nx.rank(images) - 2])
+  end
+
+  @doc "The inputs `module`, initialised to `state`, takes in `context`; see `c:params/2`."
+  @spec params(module(), term(), Stage.context()) :: map()
+  def params(module, state, context) do
+    if function_exported?(module, :params, 2), do: module.params(state, context), else: %{}
   end
 
   @doc "Where `module`, initialised to `state`, asks to run; see `c:compute/1`."

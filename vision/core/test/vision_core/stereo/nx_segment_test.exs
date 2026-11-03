@@ -9,7 +9,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def init(_opts, _context), do: {:ok, nil}
     def requires, do: [:left_frame]
     def provides, do: [:left]
-    def params(_state, _context), do: %{}
     def step(tensors, _params, _state), do: Map.put(tensors, :left, Nx.add(tensors.left_frame, 1))
   end
 
@@ -18,7 +17,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def init(_opts, _context), do: {:ok, nil}
     def requires, do: [:left]
     def provides, do: [:left]
-    def params(_state, _context), do: %{}
     def step(tensors, _params, _state), do: Map.put(tensors, :left, Nx.multiply(tensors.left, 2))
   end
 
@@ -58,7 +56,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def requires, do: [:left]
     def provides, do: [:left]
     def device_only, do: [:scratch]
-    def params(_state, _context), do: %{}
 
     def step(tensors, _params, _state),
       do: Map.put(tensors, :scratch, Nx.multiply(tensors.left, 3))

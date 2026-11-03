@@ -53,12 +53,6 @@ defmodule VisionCore.Stereo.Stage.Depth do
     |> Map.put(:depth_m, depth_m)
   end
 
-  # NxStereo.Depth saturates at 65535 mm: a depth beyond that is no depth.
-  defp clear_beyond_range(depth_mm, depth_m) do
-    beyond_range = depth_m |> Nx.multiply(1000) |> Nx.round() |> Nx.greater(@max_depth_mm)
-    Nx.select(beyond_range, Nx.u16(0), depth_mm)
-  end
-
   @impl VisionCore.Stereo.NxStage
   def device_only, do: [:depth_m]
 
@@ -69,5 +63,11 @@ defmodule VisionCore.Stereo.Stage.Depth do
       | disparity_bytes: Nx.to_binary(outputs.disparity),
         depth: Nx.to_binary(outputs.depth_mm)
     }
+  end
+
+  # NxStereo.Depth saturates at 65535 mm: a depth beyond that is no depth.
+  defp clear_beyond_range(depth_mm, depth_m) do
+    beyond_range = depth_m |> Nx.multiply(1000) |> Nx.round() |> Nx.greater(@max_depth_mm)
+    Nx.select(beyond_range, Nx.u16(0), depth_mm)
   end
 end

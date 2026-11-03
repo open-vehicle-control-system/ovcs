@@ -18,7 +18,7 @@ defmodule VisionCore.Stereo.NxSegment do
   @behaviour VisionCore.Stereo.Segment
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Pair, Stage}
+  alias VisionCore.Stereo.{NxStage, Pair, Stage}
 
   @enforce_keys [:members, :entry, :shapes, :function, :params, :context]
   defstruct [:members, :entry, :shapes, :function, :params, :context]
@@ -201,7 +201,8 @@ defmodule VisionCore.Stereo.NxSegment do
     member = Enum.at(members, index)
 
     inputs =
-      member.module.params(member.state, segment.context)
+      member.module
+      |> NxStage.params(member.state, segment.context)
       |> Map.new(fn {key, value} -> {key, to_input(value)} end)
 
     carried = Map.take(segment.params[index], Map.keys(carry(member, segment.context)))
@@ -335,7 +336,9 @@ defmodule VisionCore.Stereo.NxSegment do
     members
     |> Enum.with_index()
     |> Map.new(fn {member, index} ->
-      values = Map.merge(member.module.params(member.state, context), carry(member, context))
+      values =
+        Map.merge(NxStage.params(member.module, member.state, context), carry(member, context))
+
       {index, Map.new(values, fn {key, value} -> {key, to_input(value)} end)}
     end)
   end

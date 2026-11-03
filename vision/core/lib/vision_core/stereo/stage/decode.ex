@@ -35,9 +35,6 @@ defmodule VisionCore.Stereo.Stage.Decode do
   def provides, do: [:left, :right]
 
   @impl VisionCore.Stereo.NxStage
-  def params(_state, _context), do: %{}
-
-  @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, %{size: size}) do
     tensors
     |> Map.put(:left, NxStereo.Image.resize_area(tensors.left_frame, size))

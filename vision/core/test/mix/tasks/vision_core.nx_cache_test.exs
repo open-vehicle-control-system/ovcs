@@ -85,8 +85,8 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
     run_task(dir)
     modules = Path.wildcard(Path.join(dir, "*.nxiree"))
 
-    # The segment and Quality's statistics.
-    assert length(modules) == 2
+    # The default stages, all Nx, compile as one segment.
+    assert length(modules) == 1
 
     run_task(dir)
     assert Path.wildcard(Path.join(dir, "*.nxiree")) == modules

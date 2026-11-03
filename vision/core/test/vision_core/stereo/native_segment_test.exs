@@ -32,6 +32,18 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     )
   end
 
+  # Both cameras turned about their optical axis: rectification leaves black wedges at the edges.
+  defp turned(context, degrees) do
+    {cos, sin} = {:math.cos(degrees * :math.pi() / 180), :math.sin(degrees * :math.pi() / 180)}
+    turn = &%{&1 | rectification_matrix: [cos, -sin, 0.0, sin, cos, 0.0, 0.0, 0.0, 1.0]}
+
+    %{
+      context
+      | left_calibration: turn.(context.left_calibration),
+        right_calibration: turn.(context.right_calibration)
+    }
+  end
+
   defp members(stages, context) do
     for {module, opts} <- stages do
       {:ok, state} = module.init(opts, context)
@@ -155,16 +167,57 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
       end
     end
 
-    test "move the right image by right_row_offset rows" do
+    test "move the right image by right_row_offset rows, and measure the same sharpness" do
       context = context(:distorted, 64, 48, {96, 72})
       pairs = [frames_pair(texture(72, 96, 3), texture(72, 96, 4))]
-      stages = [{Stage.Rectification, [right_row_offset: -1.5]}]
+
+      for rows <- [-1.5, 6.5] do
+        stages = [{Stage.Rectification, [right_row_offset: rows]}, {Stage.Sharpness, []}]
+        [native] = run_native(stages, context, pairs)
+        [nx] = run_nx(stages, context, pairs)
+
+        assert_same_tensor(native.left, nx.left, "left")
+        assert_same_tensor(native.right, nx.right, "right")
+        assert native.sharpness == nx.sharpness
+      end
+    end
+
+    test "measure the same sharpness beside the black wedges of a turned calibration" do
+      context = turned(context(:identity, 64, 48, {96, 72}), 5)
+      stages = [{Stage.Rectification, []}, {Stage.Sharpness, []}]
+      pairs = [frames_pair(texture(72, 96, 5), texture(72, 96, 6))]
 
       [native] = run_native(stages, context, pairs)
       [nx] = run_nx(stages, context, pairs)
 
       assert_same_tensor(native.left, nx.left, "left")
       assert_same_tensor(native.right, nx.right, "right")
+
+      corners =
+        for row <- [0, 47], column <- [0, 63], do: Nx.to_number(native.left[[row, column]])
+
+      assert corners == [0, 0, 0, 0]
+      assert native.sharpness == nx.sharpness
+    end
+
+    test "count the same neighbours on a small image, and none on a black one" do
+      context = context(:identity, 5, 3)
+      left = Nx.tensor([[10, 13, 0, 7, 9], [0, 0, 4, 4, 200], [255, 1, 0, 0, 3]], type: :u8)
+      right = Nx.broadcast(Nx.u8(0), {3, 5})
+
+      pair = %Pair{
+        left_frame: nil,
+        right_frame: nil,
+        left: Nx.backend_transfer(left, Nx.BinaryBackend),
+        right: Nx.backend_transfer(right, Nx.BinaryBackend)
+      }
+
+      [native] = run_native([{Stage.Sharpness, []}], context, [pair])
+      [nx] = run_nx([{Stage.Sharpness, []}], context, [pair])
+
+      assert native.sharpness == nx.sharpness
+      assert native.sharpness.left > 0
+      assert native.sharpness.right == 0.0
     end
   end
 
@@ -276,29 +329,34 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     end
   end
 
-  test "Depth and PointCloud give the same depth and points" do
-    context = context(:identity, 192, 108)
-    stages = [{Stage.Depth, []}, {Stage.PointCloud, [decimation: 3]}]
-    disparity = disparity(108, 192, 7) |> Nx.multiply(8) |> Nx.max(-1.0)
-    # Depths beyond 20 m and below 5 cm, which the cloud leaves out.
-    disparity = Nx.put_slice(disparity, [0, 0], Nx.tensor([[0.05, 1.0e4, 0.5]]))
-    pairs = [disparity_pair(Nx.backend_transfer(disparity, Nx.BinaryBackend))]
+  # 194 × 270 holds 48 × 67 steps of 4, with a remainder each way.
+  for {width, height, decimation} <- [{192, 108, 3}, {194, 270, 4}] do
+    test "Depth and PointCloud give the same depth and points, #{width}x#{height} every #{decimation}" do
+      {width, height} = {unquote(width), unquote(height)}
+      context = context(:identity, width, height)
+      stages = [{Stage.Depth, []}, {Stage.PointCloud, [decimation: unquote(decimation)]}]
+      disparity = disparity(height, width, 7) |> Nx.multiply(8) |> Nx.max(-1.0)
+      # Depths beyond 20 m and below 5 cm, which the cloud leaves out.
+      disparity = Nx.put_slice(disparity, [0, 0], Nx.tensor([[0.05, 1.0e4, 0.5]]))
+      pairs = [disparity_pair(Nx.backend_transfer(disparity, Nx.BinaryBackend))]
 
-    [native] = run_native(stages, context, pairs)
-    [nx] = run_nx(stages, context, pairs)
+      [native] = run_native(stages, context, pairs)
+      [nx] = run_nx(stages, context, pairs)
 
-    assert native.depth == nx.depth
-    # 0.05 px is 240 m, beyond what 16-bit millimetres hold: no depth.
-    assert <<0::little-16, 1::little-16, 24_000::little-16, _::binary>> = native.depth
-    assert native.disparity_bytes == nx.disparity_bytes
-    assert native.cloud_size == nx.cloud_size
-    assert native.cloud_points == nx.cloud_points
-    assert native.cloud_points > 0
+      assert native.depth == nx.depth
+      # f·B is about 12 px·m: 0.05 px is beyond what 16-bit millimetres hold, no depth.
+      half_pixel_mm = round(context.focal_length_px * context.baseline_m / 0.5 * 1000)
+      assert <<0::little-16, 1::little-16, ^half_pixel_mm::little-16, _::binary>> = native.depth
+      assert native.disparity_bytes == nx.disparity_bytes
+      assert native.cloud_size == nx.cloud_size
+      assert native.cloud_points == nx.cloud_points
+      assert native.cloud_points > 0
 
-    # NaN points, outside the range, may differ in their bits.
-    as_points = &for(<<value::little-float-32 <- &1>>, do: value)
-    assert as_points.(native.cloud) == as_points.(nx.cloud)
-    assert byte_size(native.cloud) == byte_size(nx.cloud)
+      # NaN points, outside the range, may differ in their bits.
+      as_points = &for(<<value::little-float-32 <- &1>>, do: value)
+      assert as_points.(native.cloud) == as_points.(nx.cloud)
+      assert byte_size(native.cloud) == byte_size(nx.cloud)
+    end
   end
 
   test "Disparity matches as NxStereo.sgm/3" do

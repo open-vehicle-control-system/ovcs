@@ -37,7 +37,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   @behaviour VisionCore.Stereo.Segment
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Matcher, NxSegment, Pair, Stage}
+  alias VisionCore.Stereo.{Matcher, NxSegment, NxStage, Pair, Stage}
 
   @enforce_keys [:id, :version, :members, :entry, :shapes, :configuration, :inputs, :context]
   defstruct [
@@ -282,7 +282,8 @@ defmodule VisionCore.Stereo.NativeSegment do
     [
       length(members),
       Enum.map(members, fn member ->
-        values = member.module.params(member.state, context) |> flatten("") |> Enum.sort()
+        values =
+          member.module |> NxStage.params(member.state, context) |> flatten("") |> Enum.sort()
 
         [
           length(values),

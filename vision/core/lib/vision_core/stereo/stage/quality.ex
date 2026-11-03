@@ -1,17 +1,23 @@
 defmodule VisionCore.Stereo.Stage.Quality do
   @moduledoc """
   Measures the disparity on every pair, for the pipeline's log line: the
-  share of matched pixels, those with a positive disparity, the mean and
-  spread of their disparity, and the jitter, the mean pair-to-pair
-  disparity change over pixels matched in both (the matcher's noise on a
-  still scene). Its sums are taken on the device with the other Nx
-  stages, the previous disparity carried there; only five numbers come
-  back.
+  share of matched pixels, the mean and spread of their disparity, and
+  the jitter, the mean pair-to-pair disparity change over pixels matched
+  in both (the matcher's noise on a still scene). A pixel is matched
+  where its disparity is positive. Its sums are taken on the device with
+  the other Nx stages, the previous disparity carried there; only five
+  numbers come back.
+
+  It measures the disparity it is given. In the default stages that is
+  the final one, after `VisionCore.Stereo.Stage.TemporalFilter`, whose
+  held matches raise the matched share and whose smoothing lowers the
+  jitter; with that stage's `:alpha` at 1 and `:hold` at 0, it measures
+  the matcher alone.
   """
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.{NxStage, Pair}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Measures the share of matched pixels, the disparity spread and its jitter."
@@ -23,7 +29,9 @@ defmodule VisionCore.Stereo.Stage.Quality do
         "and its spread, and the jitter, how much a pixel's disparity changes from one pair " <>
         "to the next. These are the figures under the depth video. Use them when tuning the " <>
         "other steps: a change that raises Matched pixels without raising Jitter is an " <>
-        "improvement. It has no settings."
+        "improvement. They measure the final depth, after the temporal filter, whose hold " <>
+        "raises Matched pixels and whose smoothing lowers Jitter: to tune the matching " <>
+        "itself, set that filter's alpha to 1 and its hold to 0 first. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
@@ -36,9 +44,6 @@ defmodule VisionCore.Stereo.Stage.Quality do
 
   @impl VisionCore.Stereo.NxStage
   def provides, do: [:metrics]
-
-  @impl VisionCore.Stereo.NxStage
-  def params(_state, _context), do: %{}
 
   @impl VisionCore.Stereo.NxStage
   def carry(state, _context), do: %{previous: Nx.broadcast(Nx.f32(-1), state.size)}
@@ -68,7 +73,6 @@ defmodule VisionCore.Stereo.Stage.Quality do
     %{pair | metrics: pair.metrics ++ metrics}
   end
 
-  # Five image planes summed by rows first: other layouts compile to slow GPU reductions.
   defp sums(current, previous) do
     matched = current |> Nx.greater(0) |> Nx.as_type(:f32)
     both = previous |> Nx.greater(0) |> Nx.as_type(:f32) |> Nx.multiply(matched)
@@ -82,7 +86,6 @@ defmodule VisionCore.Stereo.Stage.Quality do
       current |> Nx.subtract(previous) |> Nx.abs() |> Nx.multiply(both)
     ]
     |> Nx.stack()
-    |> Nx.sum(axes: [1])
-    |> Nx.sum(axes: [1])
+    |> NxStage.image_sums()
   end
 end

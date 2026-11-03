@@ -1,7 +1,6 @@
 defmodule VisionCore.Stereo.Stage.MedianFilter do
   @moduledoc """
-  Median filter on the disparity, over each pixel's square window:
-  `:kernel_size` (`5`), 3 or 5.
+  Median filter on the disparity, over each pixel's square window.
 
   It is not a default stage: `NxStereo.sgm/3`, and so
   `VisionCore.Stereo.Stage.Disparity`, ends with a 3×3 median already.
@@ -14,10 +13,24 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   holes close, and thin or pointed matched areas wear away. Next to a
   hole the result can be a lower disparity, which reads farther, than
   the median of the matched pixels alone.
+
+  ## Options
+
+    * `:kernel_size` (`5`) — the window's width, 3 or 5; fixed in the
+      build.
   """
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
+
+  @option_specs [
+    kernel_size: %{
+      type: :integer,
+      values: [3, 5],
+      applies: :build,
+      description: "Width of the median filter's square window, in pixels"
+    }
+  ]
 
   @defaults %{kernel_size: 5}
 
@@ -38,7 +51,7 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   @impl VisionCore.Stereo.NxStage
   def init(opts, _context) do
     with {:ok, %{kernel_size: kernel_size}} <-
-           Check.init_settings(option_specs(), @defaults, opts),
+           Check.init_settings(@option_specs, @defaults, opts),
          do: {:ok, kernel_size}
   end
 
@@ -49,24 +62,12 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def params(_state, _context), do: %{}
+  def step(tensors, _params, kernel_size),
+    do: Map.put(tensors, :disparity, NxStereo.Image.median(tensors.disparity, kernel_size))
 
   @impl VisionCore.Stereo.NxStage
-  def option_specs do
-    [
-      kernel_size: %{
-        type: :integer,
-        values: [3, 5],
-        applies: :build,
-        description: "Width of the median filter's square window, in pixels"
-      }
-    ]
-  end
+  def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
   def options(kernel_size), do: %{kernel_size: kernel_size}
-
-  @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, kernel_size),
-    do: Map.put(tensors, :disparity, NxStereo.Image.median(tensors.disparity, kernel_size))
 end

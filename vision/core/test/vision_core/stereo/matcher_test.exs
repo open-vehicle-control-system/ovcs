@@ -167,7 +167,7 @@ defmodule VisionCore.Stereo.MatcherTest do
     {left, right} = textured_pair(2, {48, 64}, 8)
 
     assert {:error, :bad_request} =
-             match(left, right, sgm_opts([]), &Keyword.put(&1, :p2, 80))
+             match(left, right, sgm_opts([]), &%{&1 | p2: 80})
 
     assert {:ok, %Nx.Tensor{shape: {48, 64}}} = match(left, right, sgm_opts([]))
   end

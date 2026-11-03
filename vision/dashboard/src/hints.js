@@ -27,8 +27,9 @@ export const HINTS = {
   matched: {
     title: 'Matched pixels',
     text:
-      'Share of pixels where the same point was found in both images, so with a depth. The others are black: ' +
-      'too dark, plain surfaces with no texture, seen by one camera only, or dropped by the filters.'
+      'Share of pixels where the same point was found in both images, the only ones that can have a depth. ' +
+      'The others are black: too dark, plain surfaces with no texture, seen by one camera only, or dropped by ' +
+      'the filters.'
   },
   disparity: {
     title: 'Disparity',

@@ -61,7 +61,7 @@ The calibrations are inputs, not compiled in, so a new calibration needs no rebu
 
 ### 2. Sharpness
 
-Measures how sharp each rectified image is: the mean squared difference between horizontal neighbours, divided by the square of the mean grey so that a brightness difference between the cameras does not count. The absolute value depends on the scene; the ratio between the two cameras tells you whether one is out of focus. The dashboard shows it next to the synchronisation. Cost: under 1 ms.
+Measures how sharp each rectified image is: the mean squared difference between horizontal neighbours, divided by the square of the mean grey so that a brightness difference between the cameras does not count. The absolute value depends on the scene; the ratio between the two cameras tells you whether one is out of focus. A pair of neighbours counts only where neither pixel is black: Rectification writes black wherever it samples outside the camera frame, such as the rows `right_row_offset` moves out of it and the wedges a turned calibration leaves at the edges, and pixels the camera itself saw as black are left out with them. Both means are over the pairs an image counts, and an image without any reads 0. The dashboard shows it next to the synchronisation. Cost: under 1 ms.
 
 ### 3. Disparity
 
@@ -100,11 +100,11 @@ Cost: about 3 ms.
 
 ### 5. RowAlignment
 
-Measures how well the rectified images line up. A calibration that no longer fits the cameras, because a camera or a lens moved, breaks that first. Each matched pixel is compared with the right image at its disparity on the rows 2 above to 2 below its own, in four vertical bands; the row with the lowest difference is the offset there. The dashboard shows it as Row alignment: within half a row is good, a larger offset means recalibrate, and offsets that change from band to band mean a rotation. Cost: under 1 ms.
+Measures how well the rectified images line up. A calibration that no longer fits the cameras, because a camera or a lens moved, breaks that first. The matched pixels of one row in four are compared with the right image at their disparity on the rows 2 above to 2 below their own, in four vertical bands; the row with the lowest difference is the offset there. A band where fewer than 64 of these pixels matched, or where two rows share the lowest difference, reads no offset, and the whole image likewise. The dashboard shows it as Row alignment: within half a row is good, a larger offset means recalibrate, and offsets that change from band to band mean a rotation. Cost: under 1 ms.
 
 ### 6. TemporalFilter
 
-Smooths the disparity over time. Where a pixel matched in this pair and the previous one, within `delta` pixels of each other, it moves `alpha` of the way from the previous value to the new one; elsewhere it takes the new value, so motion and new edges show at once. A pixel that loses its match keeps its last disparity for up to `hold` pairs. On a still scene this removes most of the flicker of the subpixel estimates and the holes that come and go.
+Smooths the disparity over time. Where a pixel matched in this pair and the previous one, within `delta` pixels of each other, it moves `alpha` of the way from the previous value to the new one; elsewhere it takes the new value. A change within `delta` is therefore smoothed, and lags: a disparity that changes steadily by up to `alpha × delta` pixels a pair trails the matcher's by `(1 − alpha) / alpha` pairs, so an object approaching slowly reads farther than it is. Only a change beyond `delta`, such as a new edge, shows at once. A pixel that loses its match keeps its last disparity for up to `hold` pairs. On a still scene this removes most of the flicker of the subpixel estimates and the holes that come and go.
 
 | Setting | Kind | Meaning |
 |---|---|---|
@@ -120,7 +120,7 @@ Turns the disparity into depth with `Z = f × B / d`, taking `f` and `B` from th
 
 ### 8. PointCloud
 
-Unprojects one depth pixel every `decimation` in each direction into an `x, y, z` point in the left camera's optical frame. Points nearer than 5 cm or farther than 20 m, and unmatched pixels, are NaN, as ROS organized clouds mark them.
+Unprojects the depth pixel of every `decimation`-th row and column into an `x, y, z` point in the left camera's optical frame, each point from the pixel it samples. Points nearer than 5 cm or farther than 20 m, and unmatched pixels, are NaN, as ROS organized clouds mark them.
 
 | Setting | Kind | Meaning |
 |---|---|---|
@@ -130,7 +130,7 @@ Cost: under 1 ms.
 
 ### 9. Quality
 
-Measures the disparity on every pair: the share of matched pixels, those with a positive disparity, the mean and spread of their disparity, and the jitter, the mean change of a pixel's disparity from one pair to the next (the matcher's noise on a still scene). Its sums are taken on the device; only five numbers come back. The depth caption on the dashboard shows the matched share. Cost: about 1 ms.
+Measures the disparity on every pair: the share of matched pixels, the mean and spread of their disparity, and the jitter, the mean change of a pixel's disparity from one pair to the next (the matcher's noise on a still scene). A pixel is matched where its disparity is positive. In the default list it measures the final disparity, after TemporalFilter, whose held matches raise the matched share and whose smoothing lowers the jitter: with TemporalFilter's `alpha` at 1 and `hold` at 0, it measures the matcher alone. Its sums are taken on the device; only five numbers come back. The depth caption on the dashboard shows the matched share. Cost: about 1 ms.
 
 ## Adding a wider median filter
 

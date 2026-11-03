@@ -273,7 +273,7 @@ fn run_stage(
             );
             tensors.insert(
                 "sharpness_sums".into(),
-                Tensor::new(vec![5], Elements::F32(sums.to_vec())),
+                Tensor::new(vec![sums.len()], Elements::F32(sums.to_vec())),
             );
         }
         Stage::Disparity {

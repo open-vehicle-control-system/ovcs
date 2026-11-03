@@ -33,10 +33,10 @@ defmodule VisionCore.Stereo.Stage do
   What every stage may use, fixed until the calibration is reloaded:
   the `:width` and `:height` the stages work at, the `:frame_width` and
   `:frame_height` of the submitted frames, the `:defn_options` Nx code
-  is compiled with, each side's
-  `CameraCalibration` scaled to the working size (`:left_calibration`, `:right_calibration`), and
-  the stereo geometry derived from them (`:focal_length_px`,
-  `:baseline_m`, `:principal_point`).
+  is compiled with, each side's `CameraCalibration` scaled to the
+  working size (`:left_calibration`, `:right_calibration`), and the
+  stereo geometry derived from them (`:focal_length_px`, `:baseline_m`,
+  `:principal_point`).
   """
   @type context :: %{
           width: pos_integer(),

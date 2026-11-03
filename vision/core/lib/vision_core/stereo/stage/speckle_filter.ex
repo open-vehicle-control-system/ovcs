@@ -5,8 +5,9 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   `:min_support` of the 48 others in its 7x7 neighbourhood matched within
   `:max_diff` pixels of it; the others become unmatched. Isolated blobs
   too small to give their pixels that support are dropped, while
-  surfaces keep theirs up to their corners. It plays the part of OpenCV's `filterSpeckles`,
-  which labels connected regions instead, a poor fit for a GPU.
+  surfaces keep theirs up to their corners. It plays the part of
+  OpenCV's `filterSpeckles`, which labels connected regions instead, a
+  poor fit for a GPU.
 
   ## Options
 
@@ -62,7 +63,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: %{min_support: state.min_support, max_diff: state.max_diff}
+  def params(state, _context), do: options(state)
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, _state) do

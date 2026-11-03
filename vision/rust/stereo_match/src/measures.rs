@@ -3,27 +3,43 @@
 //! pair's measures. Image planes are summed down the columns first, then
 //! across, each partial sum rounded to `f32`, as their Nx steps do.
 
-/// `[left energy, right energy, left grey, right grey, samples]`: the
-/// squared differences between horizontal neighbours and the grey values
-/// summed over each image but its last column.
-pub fn sharpness_sums(left: &[u8], right: &[u8], width: usize) -> [f32; 5] {
-    let (left_energy, left_grey) = sharpness_planes(left, width);
-    let (right_energy, right_grey) = sharpness_planes(right, width);
-    let samples = (left.len() / width * (width - 1)) as f32;
-    [left_energy, right_energy, left_grey, right_grey, samples]
+/// `[left energy, right energy, left grey, right grey, left pairs, right
+/// pairs]`: over each pair of horizontal neighbours both above black, the
+/// squared difference and the grey of its left pixel, summed per image,
+/// then how many such pairs each image has. Rectification writes black
+/// where it samples outside the camera frame.
+pub fn sharpness_sums(left: &[u8], right: &[u8], width: usize) -> [f32; 6] {
+    let (left_energy, left_grey, left_pairs) = sharpness_planes(left, width);
+    let (right_energy, right_grey, right_pairs) = sharpness_planes(right, width);
+    [
+        left_energy,
+        right_energy,
+        left_grey,
+        right_grey,
+        left_pairs,
+        right_pairs,
+    ]
 }
 
-fn sharpness_planes(image: &[u8], width: usize) -> (f32, f32) {
+fn sharpness_planes(image: &[u8], width: usize) -> (f32, f32, f32) {
     let mut energy = vec![0u64; width - 1];
     let mut grey = vec![0u64; width - 1];
+    let mut pairs = vec![0u64; width - 1];
     for row in image.chunks_exact(width) {
         for (x, pair) in row.windows(2).enumerate() {
-            let difference = i64::from(pair[1]) - i64::from(pair[0]);
-            energy[x] += (difference * difference) as u64;
-            grey[x] += u64::from(pair[0]);
+            if pair[0] > 0 && pair[1] > 0 {
+                let difference = i64::from(pair[1]) - i64::from(pair[0]);
+                energy[x] += (difference * difference) as u64;
+                grey[x] += u64::from(pair[0]);
+                pairs[x] += 1;
+            }
         }
     }
-    (sum_columns(&energy), sum_columns(&grey))
+    (
+        sum_columns(&energy),
+        sum_columns(&grey),
+        sum_columns(&pairs),
+    )
 }
 
 /// The column sums, each rounded to `f32`, summed and rounded again.
@@ -130,10 +146,19 @@ mod tests {
 
     #[test]
     fn sharpness_sums_neighbour_differences_and_grey() {
-        let image = [10u8, 13, 13, 0, 0, 4];
+        let image = [10u8, 13, 13, 1, 1, 5];
         assert_eq!(
             sharpness_sums(&image, &image, 3),
-            [25.0, 25.0, 23.0, 23.0, 4.0]
+            [25.0, 25.0, 25.0, 25.0, 4.0, 4.0]
+        );
+    }
+
+    #[test]
+    fn sharpness_counts_only_neighbours_both_above_black() {
+        let image = [10u8, 13, 13, 0, 0, 4];
+        assert_eq!(
+            sharpness_sums(&image, &[0; 6], 3),
+            [9.0, 0.0, 23.0, 0.0, 2.0, 0.0]
         );
     }
 

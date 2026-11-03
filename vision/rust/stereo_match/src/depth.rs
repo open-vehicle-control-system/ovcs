@@ -62,8 +62,9 @@ pub struct Intrinsics {
 }
 
 /// The `height / decimation` x `width / decimation` grid of `x, y, z`
-/// points, one every `decimation` pixels sampled as OpenCV's nearest resize
-/// does, NaN outside the kept depths, and how many are kept.
+/// points, each unprojected from the pixel it samples, on every
+/// `decimation`-th row and column from the first, NaN outside the kept
+/// depths, and how many are kept.
 pub fn cloud(
     depth_m: &[f32],
     width: usize,
@@ -72,18 +73,14 @@ pub fn cloud(
     intrinsics: &Intrinsics,
 ) -> (Vec<f32>, usize) {
     let (grid_width, grid_height) = (width / decimation, height / decimation);
-    let source = |index: usize, size: usize, grid: usize| {
-        (index as f64 * (size as f64 / grid as f64)).floor() as usize
-    };
     let mut points = Vec::with_capacity(3 * grid_width * grid_height);
     let mut kept = 0;
-    for row in 0..grid_height {
-        let y = source(row, height, grid_height);
-        let v = row as f32 * decimation as f32;
-        for column in 0..grid_width {
-            let z = depth_m[y * width + source(column, width, grid_width)];
+    for y in (0..grid_height).map(|row| row * decimation) {
+        let v = y as f32;
+        for x in (0..grid_width).map(|column| column * decimation) {
+            let z = depth_m[y * width + x];
             if z > MIN_DEPTH_M && z < MAX_DEPTH_M {
-                let u = column as f32 * decimation as f32;
+                let u = x as f32;
                 let z_over_focal_length = z / intrinsics.focal_length_px;
                 points.extend([
                     (u - intrinsics.cx) * z_over_focal_length,
@@ -129,5 +126,23 @@ mod tests {
         assert_eq!(kept, 1);
         assert_eq!(&points[..3], &[-1.0, 0.0, 2.0]);
         assert!(points[3..].iter().all(|value| value.is_nan()));
+    }
+
+    #[test]
+    fn each_point_is_unprojected_from_the_pixel_it_samples() {
+        let intrinsics = Intrinsics {
+            focal_length_px: 2.0,
+            cx: 0.0,
+            cy: 0.0,
+        };
+        // 4-row steps fit twice in 11 rows, with a remainder; each row its own depth.
+        let (width, height) = (8, 11);
+        let depth_m: Vec<f32> = (0..width * height)
+            .map(|pixel| 1.0 + (pixel / width) as f32)
+            .collect();
+        let (points, kept) = cloud(&depth_m, width, height, 4, &intrinsics);
+        assert_eq!(kept, 4);
+        // The second row of points: the depth of row 4, unprojected at row 4.
+        assert_eq!(&points[6..12], &[0.0, 10.0, 5.0, 10.0, 10.0, 5.0]);
     }
 }
