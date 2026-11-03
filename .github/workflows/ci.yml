@@ -82,8 +82,8 @@ jobs:
               - controllers/**
 
   lock-drift:
-    # Shared dev tooling must be locked at one version across the 17
-    # Mix projects. vms/core silently sat 10 patch versions behind on
+    # Shared dev tooling must be locked at one version across the Mix
+    # projects. vms/core silently sat 10 patch versions behind on
     # credo, which only surfaced — as an unrelated-looking
     # Regex.CompileError — once the Elixir version moved.
     name: Elixir · lock drift
@@ -136,6 +136,7 @@ jobs:
           - libraries/ovcs_bus_gateway
           - libraries/ovcs_drivers
           - libraries/hailort
+          - libraries/ros2_zenoh
           - vms/core
           - vms/api
           - vms/firmware

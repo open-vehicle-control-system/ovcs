@@ -22,7 +22,7 @@ IO.puts("Subscribed to 0/imu_probe/** — waiting for a sample...")
 receive do
   %Zenohex.Sample{key_expr: key_expr, payload: payload} ->
     IO.puts("Got sample on #{key_expr} (#{byte_size(payload)} bytes total)")
-    {:ok, body} = Ros2.RmwZenoh.decode_payload(payload)
+    {:ok, body} = Ros2Zenoh.RmwZenoh.decode_payload(payload)
     IO.puts("Body (post CDR header strip): #{byte_size(body)} bytes")
     IO.puts("")
     IO.puts("hex_literal = <<")
@@ -44,7 +44,7 @@ receive do
     IO.puts(">>")
     IO.puts("")
 
-    case Ros2.SensorMsgs.Msg.Imu.parse(body) do
+    case Ros2Zenoh.SensorMsgs.Msg.Imu.parse(body) do
       {:ok, parsed, rest} ->
         IO.puts("Parse succeeded; rest = #{byte_size(rest)} bytes")
         IO.puts("parsed: " <> inspect(parsed, pretty: true))

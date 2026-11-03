@@ -7,8 +7,8 @@ defmodule RosBridge.Imu.ZenohTest do
   use ExUnit.Case, async: true
 
   alias OvcsDrivers.Imu.Sample
-  alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
-  alias Ros2.SensorMsgs.Msg.Imu
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Vector3}
+  alias Ros2Zenoh.SensorMsgs.Msg.Imu
 
   test "fans one message out into rotation, angular velocity and acceleration" do
     imu = %Imu{

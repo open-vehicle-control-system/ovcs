@@ -113,7 +113,7 @@ defmodule RosBridge.Components do
     [
       {RosBridge.Publishers.Heartbeat,
        topic: "ovcs_heartbeat",
-       message_module: Ros2.StdMsgs.Msg.String,
+       message_module: Ros2Zenoh.StdMsgs.Msg.String,
        interval_ms: Keyword.get(opts, :interval_ms, 1_000),
        build: &heartbeat_message/2}
     ]
@@ -179,7 +179,7 @@ defmodule RosBridge.Components do
   end
 
   defp heartbeat_message(counter, node_name) do
-    %Ros2.StdMsgs.Msg.String{
+    %Ros2Zenoh.StdMsgs.Msg.String{
       data: "#{node_name} heartbeat #{counter} @ #{System.system_time(:millisecond)}"
     }
   end

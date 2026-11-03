@@ -1,0 +1,178 @@
+defmodule Ros2Zenoh.RmwZenoh do
+  @moduledoc """
+  Wire-format helpers for talking to ROS 2 nodes via `rmw_zenoh`.
+
+  Handles the three things `rmw_zenoh` requires that raw Zenoh `put`s
+  don't give you:
+
+  1. **Keyexpr** — `<domain_id>/<topic>/<dds_type>/<type_hash>`. See
+     https://github.com/ros2/rmw_zenoh/blob/jazzy/docs/design.md.
+  2. **Payload** wrapped with the standard CDR encapsulation header
+     `00 01 00 00` (CDR little-endian, no options).
+  3. **Attachment** carrying the publisher's sequence number, source
+     timestamp (ns since epoch), and 16-byte GID. rmw_zenoh
+     subscribers drop samples without a well-formed attachment.
+
+  Each ROS message module under `Ros2Zenoh.*` is expected to expose
+  `dds_type/0`, `type_hash/0`, and `encode/1` so this module can
+  pack it without per-type knowledge.
+
+  A type hash is read from a live node, the `Topic type hash:` line of
+  `ros2 topic info -v <topic>` (for a service, its liveliness token),
+  and changes with the ROS distribution.
+  """
+
+  # CDR_LE, no options — all rmw_zenoh payloads use this.
+  @cdr_header <<0x00, 0x01, 0x00, 0x00>>
+
+  @doc """
+  Builds the rmw_zenoh keyexpr for a topic. Strips the leading `/`
+  from the topic to match the format rmw_zenoh's C++ side emits.
+  """
+  def key_expr(domain_id, topic, message_module) do
+    topic = String.trim_leading(topic, "/")
+    "#{domain_id}/#{topic}/#{message_module.dds_type()}/#{message_module.type_hash()}"
+  end
+
+  @doc """
+  CDR-encodes a message and prepends the encapsulation header. Result
+  goes straight into `Zenohex.Publisher.put/3` as the payload.
+  """
+  def encode_payload(%module{} = message), do: @cdr_header <> module.encode(message)
+
+  @doc """
+  Inverse of `encode_payload/1`: strips the 4-byte CDR encapsulation
+  header from an incoming `Zenohex.Sample.payload`, leaving just the
+  body for the message module's `parse/1`. Returns `{:ok, body}` on a
+  CDR-LE payload; rejects anything else (the only encoding we emit
+  or expect to consume).
+  """
+  def decode_payload(<<0x00, 0x01, 0x00, 0x00, body::binary>>), do: {:ok, body}
+  def decode_payload(_), do: {:error, :not_cdr_le}
+
+  @doc """
+  Builds the publisher attachment per the rmw_zenoh design doc:
+  8 bytes seq (i64 LE), 8 bytes source_timestamp ns (i64 LE),
+  1 byte GID length (always 16), 16 bytes GID. 33 bytes total.
+  """
+  def attachment(sequence_number, source_timestamp_ns, <<_::binary-size(16)>> = gid) do
+    <<sequence_number::little-signed-integer-size(64),
+      source_timestamp_ns::little-signed-integer-size(64), 16::unsigned-integer-size(8),
+      gid::binary>>
+  end
+
+  @doc "Generates a fresh 16-byte publisher GID."
+  def random_gid, do: :crypto.strong_rand_bytes(16)
+
+  @doc """
+  Builds the rmw_zenoh **liveliness token** keyexpr for a publisher.
+  Subscribers (graph cache, `foxglove_bridge`, `ros2 topic list`)
+  discover topics by subscribing to `@ros2_lv/**`; without this token,
+  our publisher is invisible to graph introspection even though its
+  data flows on the right keyexpr.
+
+  Format:
+
+      @ros2_lv/<domain>/<zid>/<nid>/<eid>/MP/<enclave>/<ns>/<node>/<topic>/<type>/<hash>/<qos>
+
+  Where `/` in enclave / namespace / topic is mangled to `%`. `nid`
+  and `eid` are session-local counters; we hardcode `0/0` for our
+  single publisher. `<qos>` is reliable, volatile, keep-last 10
+  (`::,10:,:,:,,`), the profile Nav2's publishers announce. An empty
+  depth is rmw_zenoh's system default, 42, which subscribers such as
+  foxglove_bridge then cap with a warning.
+  """
+  def liveliness_key(domain_id, zid, node_name, topic, message_module) do
+    build_liveliness_key(domain_id, zid, node_name, topic, message_module, "MP", "::,10:,:,:,,")
+  end
+
+  @doc """
+  Liveliness token for a **subscriber** (rmw_zenoh entity prefix
+  `MS`). Same field layout as the publisher token.
+
+  Without it the subscriber receives data but is **invisible in the ROS
+  graph as a consumer**, and that is not cosmetic: publishers that
+  only send when someone is listening — `image_transport`'s
+  compressed transports, and anything built on
+  `count_subscribers()` — never start.
+
+  Example, from an `rmw_zenoh_cpp` subscriber:
+
+      @ros2_lv/0/<zid>/0/4/MS/%/%/<node>/%probe_topic/std_msgs::msg::dds_::String_/RIHS01_.../::,10:,:,:,,
+
+  `eid` must be unique per entity within the session, so callers pass
+  their own counter rather than the hardcoded 0 the single publisher
+  path uses.
+  """
+  def subscriber_liveliness_key(domain_id, zid, node_name, topic, message_module, eid \\ 0) do
+    build_liveliness_key(
+      domain_id,
+      zid,
+      node_name,
+      topic,
+      message_module,
+      "MS",
+      "::,10:,:,:,,",
+      eid
+    )
+  end
+
+  @doc """
+  Liveliness token for the **node** itself (entity prefix `NN`, entity
+  id equal to the node id), in the root namespace.
+  """
+  def node_liveliness_key(domain_id, zid, node_name),
+    do: "@ros2_lv/#{domain_id}/#{zid}/0/0/NN/%/%/#{node_name}"
+
+  @doc """
+  Liveliness token for a **service server** (rmw_zenoh entity prefix
+  `SS`). Same field layout as the publisher token but with the
+  service-specific QoS profile (`::,10:,:,:,,`) — keep-last 10,
+  reliable, volatile, matching what rclpy's service servers emit.
+  Pass the service module (which must expose `dds_type/0` +
+  `type_hash/0`) as `service_module`.
+  """
+  def service_liveliness_key(domain_id, zid, node_name, service_name, service_module) do
+    build_liveliness_key(
+      domain_id,
+      zid,
+      node_name,
+      service_name,
+      service_module,
+      "SS",
+      "::,10:,:,:,,"
+    )
+  end
+
+  @doc """
+  Data keyexpr for a service queryable — same `<domain>/<name>/<type>/<hash>`
+  shape as a topic. Strips a leading `/` from the service name to
+  match rmw_zenoh's `strip_slashes` behavior.
+  """
+  defdelegate service_key_expr(domain_id, service_name, service_module),
+    to: __MODULE__,
+    as: :key_expr
+
+  defp build_liveliness_key(
+         domain_id,
+         zid,
+         node_name,
+         topic,
+         message_module,
+         entity,
+         qos,
+         eid \\ 0
+       ) do
+    enclave = mangle("/")
+    namespace = mangle("/")
+    mangled_topic = mangle(topic_with_leading_slash(topic))
+    nid = 0
+
+    "@ros2_lv/#{domain_id}/#{zid}/#{nid}/#{eid}/#{entity}/#{enclave}/#{namespace}/" <>
+      "#{node_name}/#{mangled_topic}/#{message_module.dds_type()}/#{message_module.type_hash()}/#{qos}"
+  end
+
+  defp mangle(path), do: String.replace(path, "/", "%")
+  defp topic_with_leading_slash("/" <> _ = topic), do: topic
+  defp topic_with_leading_slash(topic), do: "/" <> topic
+end

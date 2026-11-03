@@ -7,7 +7,7 @@ defmodule RosBridge.ComponentsTest do
     test "returns a single RosBridge.Publishers.Heartbeat child spec with defaults" do
       assert [{RosBridge.Publishers.Heartbeat, opts}] = Components.start(:heartbeat, [])
       assert opts[:topic] == "ovcs_heartbeat"
-      assert opts[:message_module] == Ros2.StdMsgs.Msg.String
+      assert opts[:message_module] == Ros2Zenoh.StdMsgs.Msg.String
       assert opts[:interval_ms] == 1_000
       assert is_function(opts[:build], 2)
     end

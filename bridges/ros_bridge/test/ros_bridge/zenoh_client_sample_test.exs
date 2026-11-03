@@ -23,7 +23,7 @@ defmodule RosBridge.ZenohClientSampleTest do
 
   alias RosBridge.ZenohClient
   alias RosBridge.ZenohClient.State
-  alias Ros2.GeometryMsgs.Msg.{Twist, TwistStamped}
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, TwistStamped}
 
   @key "0/cmd_vel_nav/**"
   # rmw_zenoh's CDR header: little-endian, no options.

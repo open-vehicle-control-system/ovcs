@@ -100,7 +100,7 @@ defmodule RosBridge.Clock do
   """
   use GenServer
 
-  alias Ros2.RosgraphMsgs.Msg.Clock, as: ClockMessage
+  alias Ros2Zenoh.RosgraphMsgs.Msg.Clock, as: ClockMessage
 
   require Logger
 

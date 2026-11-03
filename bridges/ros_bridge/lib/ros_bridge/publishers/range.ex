@@ -19,8 +19,8 @@ defmodule RosBridge.Publishers.Range do
   require Logger
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.SensorMsgs.Msg.Range
-  alias Ros2.StdMsgs.Msg.Header
+  alias Ros2Zenoh.SensorMsgs.Msg.Range
+  alias Ros2Zenoh.StdMsgs.Msg.Header
   alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)

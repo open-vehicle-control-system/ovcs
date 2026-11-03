@@ -46,7 +46,7 @@ defmodule RosBridge.Timing do
   timescale and this stays the only place that converts.
   """
 
-  alias Ros2.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
 
   @doc """
   Convert a monotonic capture timestamp (in nanoseconds) into a

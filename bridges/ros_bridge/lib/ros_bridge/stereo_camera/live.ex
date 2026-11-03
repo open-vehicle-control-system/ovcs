@@ -18,8 +18,8 @@ defmodule RosBridge.StereoCamera.Live do
 
   use GenServer
 
-  alias Ros2.DiagnosticMsgs.Msg.DiagnosticArray
-  alias Ros2.StdMsgs.Msg.{Float64, Header}
+  alias Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticArray
+  alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
   alias RosBridge.{Timing, ZenohClient}
   alias RosBridge.Camera.Frame
 

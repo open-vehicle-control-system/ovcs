@@ -49,7 +49,7 @@ defmodule RosBridge.Camera.Zenoh do
 
   require Logger
 
-  alias Ros2.SensorMsgs.Msg.CompressedImage
+  alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias RosBridge.Camera.Frame
   alias RosBridge.Timing
 

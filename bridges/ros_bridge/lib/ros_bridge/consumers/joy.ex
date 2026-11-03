@@ -87,7 +87,7 @@ defmodule RosBridge.Consumers.Joy do
   mitigation.
   """
   alias Cantastic.Emitter
-  alias Ros2.SensorMsgs.Msg.Joy
+  alias Ros2Zenoh.SensorMsgs.Msg.Joy
   alias RosBridge.Consumers.Joy.{Profile, State}
   alias RosBridge.InputWatchdog
 

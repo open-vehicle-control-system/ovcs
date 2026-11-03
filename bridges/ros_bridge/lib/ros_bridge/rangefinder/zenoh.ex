@@ -22,7 +22,7 @@ defmodule RosBridge.Rangefinder.Zenoh do
   require Logger
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.SensorMsgs.Msg.LaserScan
+  alias Ros2Zenoh.SensorMsgs.Msg.LaserScan
 
   def start_link(opts),
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.fetch!(opts, :name))

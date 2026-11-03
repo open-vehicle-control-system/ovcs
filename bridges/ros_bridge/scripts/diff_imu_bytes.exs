@@ -1,10 +1,10 @@
 # Byte-diffs one rclpy `/imu_probe` `Imu` sample against `Imu.encode/1` of the
 # same struct, to check CDR alignment. Needs a Zenoh router on 127.0.0.1:7447.
 
-alias Ros2.BuiltinInterfaces.Msg.Time
-alias Ros2.GeometryMsgs.Msg.{Quaternion, Vector3}
-alias Ros2.SensorMsgs.Msg.Imu
-alias Ros2.StdMsgs.Msg.Header
+alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Vector3}
+alias Ros2Zenoh.SensorMsgs.Msg.Imu
+alias Ros2Zenoh.StdMsgs.Msg.Header
 
 reference =
   %Imu{
@@ -41,7 +41,7 @@ IO.puts("Waiting for one /imu_probe sample…")
 
 receive do
   %Zenohex.Sample{payload: payload} ->
-    {:ok, their_bytes} = Ros2.RmwZenoh.decode_payload(payload)
+    {:ok, their_bytes} = Ros2Zenoh.RmwZenoh.decode_payload(payload)
 
     IO.puts("our_bytes:   #{byte_size(our_bytes)} B")
     IO.puts("their_bytes: #{byte_size(their_bytes)} B")

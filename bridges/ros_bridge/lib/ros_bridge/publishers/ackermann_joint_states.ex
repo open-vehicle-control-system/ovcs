@@ -45,8 +45,8 @@ defmodule RosBridge.Publishers.AckermannJointStates do
   use GenServer
 
   alias Cantastic.{Frame, Receiver, Signal}
-  alias Ros2.SensorMsgs.Msg.JointState
-  alias Ros2.StdMsgs.Msg.Header
+  alias Ros2Zenoh.SensorMsgs.Msg.JointState
+  alias Ros2Zenoh.StdMsgs.Msg.Header
   alias RosBridge.Publishers.AckermannJointStates.State
   alias RosBridge.{Timing, VehicleMotion}
 
@@ -68,7 +68,7 @@ defmodule RosBridge.Publishers.AckermannJointStates do
     }
 
     :ok = Receiver.subscribe(self(), :ovcs, VehicleMotion.frame_name())
-    Logger.info("#{__MODULE__} publishing Ros2.SensorMsgs.Msg.JointState on #{state.topic}")
+    Logger.info("#{__MODULE__} publishing Ros2Zenoh.SensorMsgs.Msg.JointState on #{state.topic}")
     {:ok, state}
   end
 

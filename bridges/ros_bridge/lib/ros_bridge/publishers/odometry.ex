@@ -91,7 +91,7 @@ defmodule RosBridge.Publishers.Odometry do
   alias Cantastic.{Frame, Receiver, Signal}
   alias OvcsDrivers.Imu.Sample
 
-  alias Ros2.GeometryMsgs.Msg.{
+  alias Ros2Zenoh.GeometryMsgs.Msg.{
     Point,
     Pose,
     PoseWithCovariance,
@@ -103,9 +103,9 @@ defmodule RosBridge.Publishers.Odometry do
     Vector3
   }
 
-  alias Ros2.NavMsgs.Msg.Odometry
-  alias Ros2.StdMsgs.Msg.Header
-  alias Ros2.Tf2Msgs.Msg.TFMessage
+  alias Ros2Zenoh.NavMsgs.Msg.Odometry
+  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Publishers.Odometry.State
   alias RosBridge.{Timing, VehicleMotion}
 
@@ -146,7 +146,7 @@ defmodule RosBridge.Publishers.Odometry do
     driver.register_listener(self())
 
     Logger.info(
-      "#{__MODULE__} publishing Ros2.NavMsgs.Msg.Odometry on #{state.topic} " <>
+      "#{__MODULE__} publishing Ros2Zenoh.NavMsgs.Msg.Odometry on #{state.topic} " <>
         "and #{state.odom_frame_id} -> #{state.base_frame_id} on tf"
     )
 

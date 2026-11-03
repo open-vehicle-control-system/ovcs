@@ -2,7 +2,7 @@ defmodule RosBridge.Rangefinder.ZenohTest do
   use ExUnit.Case, async: true
 
   alias OvcsDrivers.Rangefinder.Sample
-  alias Ros2.SensorMsgs.Msg.LaserScan
+  alias Ros2Zenoh.SensorMsgs.Msg.LaserScan
   alias RosBridge.Rangefinder.Zenoh
 
   defp fan(ranges),

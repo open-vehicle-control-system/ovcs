@@ -47,7 +47,7 @@ defmodule RosBridge.Camera.Calibration do
       with a zero first.
   """
 
-  alias Ros2.SensorMsgs.Msg.CameraInfo
+  alias Ros2Zenoh.SensorMsgs.Msg.CameraInfo
 
   defstruct [
     :width,

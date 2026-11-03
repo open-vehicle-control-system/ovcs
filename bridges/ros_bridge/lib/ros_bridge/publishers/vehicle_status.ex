@@ -22,8 +22,8 @@ defmodule RosBridge.Publishers.VehicleStatus do
   use GenServer
 
   alias Cantastic.{Frame, Receiver, Signal}
-  alias Ros2.StdMsgs.Msg.{Bool, Float64}
-  alias Ros2.StdMsgs.Msg.String, as: RosString
+  alias Ros2Zenoh.StdMsgs.Msg.{Bool, Float64}
+  alias Ros2Zenoh.StdMsgs.Msg.String, as: RosString
 
   require Logger
 

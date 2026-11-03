@@ -30,7 +30,7 @@ defmodule RosBridge.Parameters do
   use GenServer
   require Logger
 
-  alias Ros2.RclInterfaces.Parameters, as: Codec
+  alias Ros2Zenoh.RclInterfaces.Parameters, as: Codec
   alias RosBridge.ZenohClient
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)

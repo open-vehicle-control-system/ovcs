@@ -266,7 +266,7 @@ Because the compute node hands out the addresses, the router address is a consta
 
 ## Clock
 
-Every publisher on the fabric stamps its samples with a nanosecond source timestamp (`Ros2.RmwZenoh.attachment/3` on the Elixir side), and consumers act on them: Foxglove orders everything it displays by them, and the stereo calibrator pairs left and right frames within `APPROXIMATE_SYNC` (50 ms by default). The clocks have to agree *across machines*, not just be monotonic on each.
+Every publisher on the fabric stamps its samples with a nanosecond source timestamp (`Ros2Zenoh.RmwZenoh.attachment/3` on the Elixir side), and consumers act on them: Foxglove orders everything it displays by them, and the stereo calibrator pairs left and right frames within `APPROXIMATE_SYNC` (50 ms by default). The clocks have to agree *across machines*, not just be monotonic on each.
 
 The Nerves bridges get this from `nerves_time`, which also floors the clock at the firmware's build time so a network-less boot is stale rather than nonsense. The compute node needs the equivalent: NTP once the network is up, and the Pi 5's RTC battery fitted so the window before that isn't spent publishing timestamps from an arbitrary epoch.
 

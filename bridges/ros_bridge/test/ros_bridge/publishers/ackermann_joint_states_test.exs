@@ -1,7 +1,7 @@
 defmodule RosBridge.Publishers.AckermannJointStatesTest do
   use ExUnit.Case, async: true
 
-  alias Ros2.SensorMsgs.Msg.JointState
+  alias Ros2Zenoh.SensorMsgs.Msg.JointState
   alias RosBridge.Publishers.AckermannJointStates
   alias RosBridge.Publishers.AckermannJointStates.State
 

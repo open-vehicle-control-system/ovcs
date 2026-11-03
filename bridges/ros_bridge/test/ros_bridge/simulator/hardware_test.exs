@@ -1,7 +1,7 @@
 defmodule RosBridge.Simulator.HardwareTest do
   use ExUnit.Case, async: true
 
-  alias Ros2.SensorMsgs.Msg.JointState
+  alias Ros2Zenoh.SensorMsgs.Msg.JointState
   alias RosBridge.Simulator.Hardware
 
   @wheels ["left_wheel", "right_wheel"]

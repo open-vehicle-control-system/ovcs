@@ -43,9 +43,9 @@ defmodule RosBridge.Publishers.StaticTransform do
 
   require Logger
 
-  alias Ros2.GeometryMsgs.Msg.{Quaternion, Transform, TransformStamped, Vector3}
-  alias Ros2.StdMsgs.Msg.Header
-  alias Ros2.Tf2Msgs.Msg.TFMessage
+  alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Transform, TransformStamped, Vector3}
+  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias RosBridge.Timing
 
   @default_topic "/tf_static"
