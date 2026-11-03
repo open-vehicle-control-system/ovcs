@@ -1,8 +1,9 @@
-defmodule VisionCore.Ros2.Publishers.Detections do
+defmodule VisionCore.Ros2.Exporter.Detections do
   @moduledoc """
-  Publishes the 3D detections of `VisionCore.Detection.Pipeline`: a
-  `visualization_msgs/MarkerArray` (what Foxglove's 3D panel renders),
-  a `vision_msgs/Detection3DArray` (what nav2 will consume), and a 2D
+  The ROS 2 messages of the detections of `VisionCore.Detection.Pipeline`,
+  which `VisionCore.Ros2.Exporter` publishes: a
+  `visualization_msgs/MarkerArray` (what Foxglove's 3D panel renders), a
+  `vision_msgs/Detection3DArray` (what nav2 will consume), and a 2D
   overlay on the left raw image.
 
   ## Frames
@@ -25,8 +26,6 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
       promptly.
-    * `:outline_segments` (`4`) — how finely each box edge is
-      subdivided for the 2D overlay. See "Drawing on the raw image".
     * `:label_font_size` (`12.0`) — 2D overlay label size, in pixels.
 
   ## Drawing on the raw image
@@ -35,22 +34,15 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   vision core publishes — and the one the Foxglove Image panel shows — is
   `image_raw`. The two differ by several pixels on a typical lens, so
   drawing rectified coordinates straight onto the raw image puts the
-  box visibly beside the object.
-
-  Rather than publish a second, rectified image stream, each outline
-  vertex is mapped back through the left camera's calibration
-  (`VisionCore.Detection.Fusion.raw_points/2`). A
-  straight edge in rectified space is a curve in raw space, so edges
-  are subdivided (`:outline_segments`) and each vertex mapped
-  individually.
+  box visibly beside the object. The overlay draws each detection's
+  `:outline`, which the detection pipeline maps back to the raw image,
+  and writes its `:caption` above the outline's first vertex, the box's
+  top-left corner.
 
   The overlay is a `foxglove_msgs/ImageAnnotations` rather than a
   `visualization_msgs/ImageMarker`, because ImageMarker has no text
   type: a box drawn with it can never say what it is.
   """
-  use GenServer
-
-  require Logger
 
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Duration
   alias Ros2Zenoh.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion, Vector3}
@@ -67,99 +59,89 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   }
 
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
-  alias VisionCore.Detection.Fusion
-  alias VisionCore.Outputs
   alias VisionCore.Ros2.Stamp
   alias VisionCore.Stereo.Pair
 
   @default_topic_prefix "stereo"
   @default_marker_lifetime_ms 500
-  @default_outline_segments 4
   @default_label_font_size 12.0
 
   @namespace "detections"
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  @typedoc "A message to publish: its topic, its module and the message."
+  @type message :: {String.t(), module(), struct()}
 
-  @impl GenServer
-  def init(opts) do
-    topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
+  @typedoc "The topics, frame, marker lifetime and font size, from `new/1`."
+  @type t :: %{
+          markers_topic: String.t(),
+          detections_topic: String.t(),
+          overlay_topic: String.t(),
+          frame_id: String.t(),
+          marker_lifetime: struct(),
+          label_font_size: float()
+        }
 
-    state = %{
+  @doc "The topics and settings of the detection `options`; see the module doc."
+  @spec new(keyword()) :: t()
+  def new(options) do
+    topic_prefix = Keyword.get(options, :topic_prefix, @default_topic_prefix)
+
+    %{
       markers_topic: "#{topic_prefix}/detections/markers",
       detections_topic: "#{topic_prefix}/detections",
       overlay_topic: "#{topic_prefix}/left/detections",
-      frame_id: Keyword.get(opts, :frame_id, "#{topic_prefix}_left"),
+      frame_id: Keyword.get(options, :frame_id, "#{topic_prefix}_left"),
       marker_lifetime:
-        opts
+        options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
-      outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
-      label_font_size: Keyword.get(opts, :label_font_size, @default_label_font_size),
-      # Detection indexes drawn last frame; those not redrawn get an explicit DELETE.
-      previous_indexes: MapSet.new()
-    }
-
-    :ok = Outputs.subscribe({:detections, VisionCore.Detection.Pipeline})
-
-    Logger.info(
-      "#{__MODULE__} publishing markers on #{state.markers_topic} and " <>
-        "detections on #{state.detections_topic} (frame #{state.frame_id})"
-    )
-
-    {:ok, state}
-  end
-
-  @impl GenServer
-  def handle_cast({:detections, %Pair{} = pair, detections}, state),
-    do: {:noreply, publish(detections, pair, state)}
-
-  def handle_cast(_message, state), do: {:noreply, state}
-
-  defp publish(positioned, %Pair{} = pair, state) do
-    stamp = Stamp.stamp_from_monotonic(Pair.capture_ns(pair))
-    header = %Header{stamp: stamp, frame_id: state.frame_id}
-
-    publish_markers(positioned, header, state)
-    publish_detections(positioned, header, state)
-    publish_overlay(positioned, header, pair, state)
-
-    %{
-      state
-      | previous_indexes: MapSet.new(Enum.with_index(positioned), fn {_, index} -> index end)
+      label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size)
     }
   end
 
-  defp publish_markers(positioned, header, state) do
+  @doc """
+  The messages of `detections`, found on `pair`: the markers, the
+  detections and the overlay. The markers of the detections past the
+  last of these, among the `drawn` of the result before, are deleted:
+  a vanished box would otherwise stay on screen until its lifetime ends.
+  """
+  @spec messages([map()], Pair.t(), t(), non_neg_integer()) :: [message()]
+  def messages(detections, %Pair{} = pair, settings, drawn) do
+    header = %Header{
+      stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
+      frame_id: settings.frame_id
+    }
+
+    [
+      {settings.markers_topic, MarkerArray, markers(detections, header, settings, drawn)},
+      {settings.detections_topic, Detection3DArray, detection_array(detections, header)},
+      {settings.overlay_topic, ImageAnnotations, overlay(detections, header, settings)}
+    ]
+  end
+
+  defp markers(detections, header, settings, drawn) do
     markers =
-      positioned
+      detections
       |> Enum.with_index()
       |> Enum.flat_map(fn {detection, index} ->
         [
-          box_marker(detection, index, header, state),
-          label_marker(detection, index, header, state)
+          box_marker(detection, index, header, settings),
+          label_marker(detection, index, header, settings)
         ]
       end)
 
-    # A vanished box would otherwise stay on screen until its lifetime ends.
     stale_markers =
-      state.previous_indexes
-      |> Enum.reject(&(&1 < length(positioned)))
-      |> Enum.flat_map(fn index ->
+      Enum.flat_map(length(detections)..(drawn - 1)//1, fn index ->
         [
           %Marker{header: header, ns: @namespace, id: box_id(index), action: Marker.delete()},
           %Marker{header: header, ns: @namespace, id: label_id(index), action: Marker.delete()}
         ]
       end)
 
-    VisionCore.Ros2.ZenohClient.publish(
-      state.markers_topic,
-      MarkerArray,
-      %MarkerArray{markers: markers ++ stale_markers}
-    )
+    %MarkerArray{markers: markers ++ stale_markers}
   end
 
-  defp box_marker(detection, index, header, state) do
+  defp box_marker(detection, index, header, settings) do
     %Marker{
       header: header,
       ns: @namespace,
@@ -169,11 +151,11 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       pose: pose_for(detection),
       scale: %Vector3{x: detection.width, y: detection.height, z: detection.depth},
       color: colour_for(detection.score),
-      lifetime: state.marker_lifetime
+      lifetime: settings.marker_lifetime
     }
   end
 
-  defp label_marker(detection, index, header, state) do
+  defp label_marker(detection, index, header, settings) do
     %Marker{
       header: header,
       ns: @namespace,
@@ -195,10 +177,8 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       # height in metres.
       scale: %Vector3{x: 0.0, y: 0.0, z: 0.08},
       color: %ColorRGBA{r: 1.0, g: 1.0, b: 1.0, a: 0.9},
-      text:
-        "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
-          "#{:erlang.float_to_binary(detection.z, decimals: 2)}m",
-      lifetime: state.marker_lifetime
+      text: detection.caption,
+      lifetime: settings.marker_lifetime
     }
   end
 
@@ -206,9 +186,9 @@ defmodule VisionCore.Ros2.Publishers.Detections do
   defp box_id(index), do: index * 2
   defp label_id(index), do: index * 2 + 1
 
-  defp publish_detections(positioned, header, state) do
+  defp detection_array(detections, header) do
     detections =
-      positioned
+      detections
       |> Enum.with_index()
       |> Enum.map(fn {detection, index} ->
         %Detection3D{
@@ -230,35 +210,17 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         }
       end)
 
-    VisionCore.Ros2.ZenohClient.publish(
-      state.detections_topic,
-      Detection3DArray,
-      %Detection3DArray{header: header, detections: detections}
-    )
+    %Detection3DArray{header: header, detections: detections}
   end
 
   # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
-  defp publish_overlay(positioned, header, %Pair{} = pair, state) do
-    # Every box's outline then its label's anchor, just above its top-left corner, mapped to raw
-    # pixels like everything else in this message in one pass.
-    outline_length = 4 * state.outline_segments
-
-    raw =
-      positioned
-      |> Enum.flat_map(fn detection ->
-        Fusion.perimeter(detection.box, state.outline_segments) ++
-          [{detection.box.x0, detection.box.y0}]
-      end)
-      |> Fusion.raw_points(pair)
-      |> Enum.chunk_every(outline_length + 1)
-      |> Enum.map(&Enum.split(&1, outline_length))
-
+  defp overlay(detections, header, settings) do
     boxes =
-      Enum.map(Enum.zip(positioned, raw), fn {detection, {outline, _anchor}} ->
+      Enum.map(detections, fn detection ->
         %PointsAnnotation{
           timestamp: header.stamp,
           type: PointsAnnotation.line_loop(),
-          points: Enum.map(outline, fn {x, y} -> %Point2{x: x, y: y} end),
+          points: Enum.map(detection.outline, fn {x, y} -> %Point2{x: x, y: y} end),
           outline_color: overlay_colour(detection.score),
           outline_colors: [],
           fill_color: %Color{a: 0.0},
@@ -267,12 +229,12 @@ defmodule VisionCore.Ros2.Publishers.Detections do
       end)
 
     labels =
-      Enum.map(Enum.zip(positioned, raw), fn {detection, {_outline, [{x, y}]}} ->
+      Enum.map(detections, fn %{outline: [{x, y} | _rest]} = detection ->
         %TextAnnotation{
           timestamp: header.stamp,
           position: %Point2{x: x, y: max(y - 4.0, 10.0)},
-          text: label_text(detection),
-          font_size: state.label_font_size,
+          text: detection.caption,
+          font_size: settings.label_font_size,
           text_color: %Color{r: 1.0, g: 1.0, b: 1.0, a: 1.0},
           # A dark plate behind the text, so a label over a bright
           # part of the image is still readable.
@@ -280,22 +242,13 @@ defmodule VisionCore.Ros2.Publishers.Detections do
         }
       end)
 
-    VisionCore.Ros2.ZenohClient.publish(
-      state.overlay_topic,
-      ImageAnnotations,
-      %ImageAnnotations{
-        timestamp: header.stamp,
-        circles: [],
-        points: boxes,
-        texts: labels,
-        metadata: []
-      }
-    )
-  end
-
-  defp label_text(detection) do
-    "#{detection.label} #{:erlang.float_to_binary(detection.score, decimals: 2)} " <>
-      "#{:erlang.float_to_binary(detection.z, decimals: 2)}m"
+    %ImageAnnotations{
+      timestamp: header.stamp,
+      circles: [],
+      points: boxes,
+      texts: labels,
+      metadata: []
+    }
   end
 
   # The `colour_for/1` ramp as foxglove_msgs/Color (float64), not std_msgs/ColorRGBA.

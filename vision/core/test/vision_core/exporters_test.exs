@@ -5,6 +5,7 @@ defmodule VisionCore.ExportersTest do
 
   alias VisionCore.{Exporters, Outputs}
   alias VisionCore.Exporter.Runner
+  alias VisionCore.Exporters.Watch
 
   @moduletag :capture_log
   @pairs {:stereo_pair, VisionCore.Stereo.Pipeline}
@@ -63,6 +64,25 @@ defmodule VisionCore.ExportersTest do
 
     @impl VisionCore.Exporter
     def handle_output(:stereo_pair, _pair, _state), do: raise("cannot export")
+  end
+
+  # Exports each pair but `:crash`, on which it crashes.
+  defmodule CrashingOnce do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(:stereo_pair, :crash, _test), do: raise("cannot export")
+
+    def handle_output(:stereo_pair, pair, test) do
+      send(test, {:exported, pair})
+      {:ok, test}
+    end
   end
 
   defmodule Misnamed do
@@ -150,11 +170,16 @@ defmodule VisionCore.ExportersTest do
   defp exporter_ids,
     do: for({id, _pid, :supervisor, _modules} <- Supervisor.which_children(Exporters), do: id)
 
-  # Returns once the exporter's runner is done with its init/1, and so subscribed.
-  defp await_runner(id) do
+  defp runner_pid(id) do
     {Runner, runner, :worker, _modules} =
       id |> exporter_pid() |> Supervisor.which_children() |> List.keyfind(Runner, 0)
 
+    runner
+  end
+
+  # Returns once the exporter's runner is done with its init/1, and so subscribed.
+  defp await_runner(id) do
+    runner = runner_pid(id)
     :sys.get_state(runner)
     runner
   end
@@ -174,12 +199,142 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
-  test "the configuration names no exporter" do
-    assert Exporters.from_config(config()) == []
+  # Returns once the watcher has handled the stop of the exporter `id`, and logged it if it logs it.
+  defp await_watched_stop(id) do
+    {Watch, watch, :worker, _modules} =
+      Exporters |> Supervisor.which_children() |> List.keyfind(Watch, 0)
 
-    start_supervised!({Exporters, config: config()})
+    eventually(fn ->
+      watch
+      |> :sys.get_state()
+      |> Map.fetch!(:watched)
+      |> Map.values()
+      |> Enum.all?(fn
+        {^id, :exporter, _pid} -> false
+        _other -> true
+      end)
+    end)
+  end
 
-    assert exporter_ids() == []
+  # Returns once the watcher has seen every child of the exporter `id` running again.
+  defp await_watched_recovery(id) do
+    {Watch, watch, :worker, _modules} =
+      Exporters |> Supervisor.which_children() |> List.keyfind(Watch, 0)
+
+    eventually(fn ->
+      failing = watch |> :sys.get_state() |> Map.fetch!(:failing) |> Map.get(id)
+      failing in [nil, MapSet.new()]
+    end)
+  end
+
+  defp eventually(check, attempts \\ 200) do
+    cond do
+      check.() -> :ok
+      attempts == 0 -> flunk("condition not met")
+      true -> Process.sleep(10) && eventually(check, attempts - 1)
+    end
+  end
+
+  describe "from_config/1" do
+    test "lists the ROS 2 exporter, which the exporters run without :exporters" do
+      assert [{VisionCore.Ros2.Exporter, _options}] = Exporters.from_config(config())
+
+      start_supervised!({Exporters, config: config()})
+
+      assert exporter_ids() == [VisionCore.Ros2.Exporter]
+    end
+
+    test "gives the ROS 2 exporter what the components ask it to publish" do
+      config = %VisionCore.Config{
+        zenoh_endpoint_ip: "127.0.0.1",
+        node_name: "front_vision",
+        components: [
+          {:heartbeat, interval_ms: 500},
+          {:stereo,
+           driver: Camera,
+           width: 640,
+           height: 480,
+           fps: 15,
+           match_width: 320,
+           match_height: 240,
+           topic_prefix: "front",
+           calibration_dir: "/rom/calibration",
+           publish_rectified_image: true,
+           raw_image_max_hz: 5,
+           left: [device: "/dev/video0", frame_id: "front_left_optical", sync: :server],
+           right: [device: "/dev/video1"]},
+          {:hailo_detector,
+           hef_path: "/rom/model.hef", frame_id: "front_left_optical", marker_lifetime_ms: 300}
+        ]
+      }
+
+      assert Exporters.from_config(config) == [
+               {VisionCore.Ros2.Exporter,
+                name: VisionCore.Ros2.Exporter,
+                node_name: "front_vision",
+                heartbeat: [interval_ms: 500],
+                stereo: [
+                  driver: Camera,
+                  topic_prefix: "front",
+                  width: 640,
+                  height: 480,
+                  fps: 15,
+                  left: [
+                    frame_id: "front_left_optical",
+                    calibration_path: "/rom/calibration/front_left.yaml",
+                    sync: :server
+                  ],
+                  right: [
+                    frame_id: "front_right",
+                    calibration_path: "/rom/calibration/front_right.yaml"
+                  ],
+                  publish_rectified_image: true,
+                  raw_image_max_hz: 5
+                ],
+                detections: [frame_id: "front_left_optical", marker_lifetime_ms: 300]}
+             ]
+    end
+
+    @tag :tmp_dir
+    test "points the stereo unit's camera info at the stored calibration once both sides are stored",
+         %{tmp_dir: tmp_dir} do
+      for side <- ["left", "right"],
+          do: File.write!(Path.join(tmp_dir, "stereo_#{side}.yaml"), "")
+
+      config = %VisionCore.Config{
+        zenoh_endpoint_ip: "127.0.0.1",
+        components: [
+          {:stereo,
+           driver: Camera,
+           calibration_dir: "/rom/calibration",
+           calibration_store_dir: tmp_dir,
+           left: [],
+           right: []}
+        ]
+      }
+
+      assert [{VisionCore.Ros2.Exporter, options}] = Exporters.from_config(config)
+      assert options[:stereo][:left][:calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
+
+      assert options[:stereo][:right][:calibration_path] ==
+               Path.join(tmp_dir, "stereo_right.yaml")
+    end
+
+    test "a configuration without components gives the ROS 2 exporter nothing to publish" do
+      assert Exporters.from_config(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1"}) == [
+               {VisionCore.Ros2.Exporter,
+                name: VisionCore.Ros2.Exporter, node_name: "ovcs_vision"}
+             ]
+
+      assert [{VisionCore.Ros2.Exporter, options}] =
+               Exporters.from_config(%VisionCore.Config{
+                 zenoh_endpoint_ip: "127.0.0.1",
+                 components: [:heartbeat, :detector]
+               })
+
+      assert options[:heartbeat] == []
+      assert options[:detections] == []
+    end
   end
 
   test "an exporter that keeps crashing stops alone: the producer and the other exporters run on" do
@@ -203,7 +358,12 @@ defmodule VisionCore.ExportersTest do
     steady = exporter_pid(Steady)
     await_runner(Steady)
 
-    log = capture_log(fn -> produce_until_stopped(Crashing) end)
+    log =
+      capture_log(fn ->
+        produce_until_stopped(Crashing)
+        await_watched_stop(Crashing)
+      end)
+
     Producer.produce(:producer, :last)
 
     assert_receive {:exported, :last}
@@ -220,6 +380,39 @@ defmodule VisionCore.ExportersTest do
     log = capture_log(fn -> stop_supervised!(Exporters) end)
 
     refute log =~ "stopped"
+  end
+
+  test "an exporter stopped on purpose is not logged as one that kept failing" do
+    start_supervised!({Exporters, config: config(), exporters: [{Steady, test: self()}]})
+    await_runner(Steady)
+
+    log =
+      capture_log(fn ->
+        :ok = Supervisor.terminate_child(Exporters, Steady)
+        await_watched_stop(Steady)
+      end)
+
+    refute log =~ "kept failing"
+  end
+
+  test "an exporter that crashed and started again is not logged as failing when stopped on purpose" do
+    start_supervised!({Exporters, config: config(), exporters: [{CrashingOnce, test: self()}]})
+    runner = await_runner(CrashingOnce)
+
+    Outputs.publish(@pairs, {:stereo_pair, :crash})
+    eventually(fn -> is_pid(runner_pid(CrashingOnce)) and runner_pid(CrashingOnce) != runner end)
+    await_runner(CrashingOnce)
+    await_watched_recovery(CrashingOnce)
+    Outputs.publish(@pairs, {:stereo_pair, :pair})
+    assert_receive {:exported, :pair}
+
+    log =
+      capture_log(fn ->
+        :ok = Supervisor.terminate_child(Exporters, CrashingOnce)
+        await_watched_stop(CrashingOnce)
+      end)
+
+    refute log =~ "kept failing"
   end
 
   test "a second exporter under an id already taken is left out, logged, and the others start" do

@@ -2,27 +2,27 @@ defmodule VisionCore.Detection.LiveTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection.{Fusion, Live}
+  alias VisionCore.Detection.Live
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
-  # Matched at half the camera's size, with no calibration, so outlines only scale.
   defp pair do
     frame = %Frame{label: "left", width: 960, height: 540, capture_ns: 0, grey: <<>>}
-
-    %Pair{
-      left_frame: frame,
-      right_frame: frame,
-      geometry: %{width: 480, height: 270, left_calibration: nil}
-    }
+    %Pair{left_frame: frame, right_frame: frame, geometry: %{width: 480, height: 270}}
   end
 
+  # As the detection pipeline places it: its outline on the captured frame, in its pixels.
   defp person(x0, y0, x1, y1, z) do
     %{
       label: "person",
       score: 0.62,
       z: z,
-      box: %{x0: x0 / 1.0, y0: y0 / 1.0, x1: x1 / 1.0, y1: y1 / 1.0}
+      outline: [
+        {x0 / 1.0, y0 / 1.0},
+        {x1 / 1.0, y0 / 1.0},
+        {x1 / 1.0, y1 / 1.0},
+        {x0 / 1.0, y1 / 1.0}
+      ]
     }
   end
 
@@ -31,13 +31,13 @@ defmodule VisionCore.Detection.LiveTest do
   defp cast_detections(positioned), do: GenServer.cast(Live, {:detections, pair(), positioned})
 
   setup do
-    start_supervised!({Live, max_hz: 1_000, outline_segments: 1})
+    start_supervised!({Live, max_hz: 1_000})
     :ok
   end
 
   test "takes the results the detection pipeline publishes" do
     :ok = Live.subscribe()
-    positioned = [person(120, 54, 360, 216, 1.8)]
+    positioned = [person(240, 108, 720, 432, 1.8)]
 
     Outputs.publish(
       {:detections, VisionCore.Detection.Pipeline},
@@ -47,9 +47,9 @@ defmodule VisionCore.Detection.LiveTest do
     assert_receive {:vision_detections, [%{label: "person", distance_m: 1.8}]}
   end
 
-  test "sends each result to subscribers: label, score, distance and outline on the raw image" do
+  test "sends each result to subscribers: label, score, distance and outline as fractions of the frame" do
     :ok = Live.subscribe()
-    cast_detections([person(120, 54, 360, 216, 1.8)])
+    cast_detections([person(240, 108, 720, 432, 1.8)])
 
     assert_receive {:vision_detections, [detection]}
 
@@ -59,7 +59,7 @@ defmodule VisionCore.Detection.LiveTest do
 
   test "sends an empty result, so boxes from the last one go away" do
     :ok = Live.subscribe()
-    cast_detections([person(120, 54, 360, 216, 1.8)])
+    cast_detections([person(240, 108, 720, 432, 1.8)])
     assert_receive {:vision_detections, [_detection]}
 
     cast_detections([])
@@ -68,43 +68,17 @@ defmodule VisionCore.Detection.LiveTest do
 
   test "sends at most :max_hz results a second, then the latest one held meanwhile" do
     stop_supervised!(Live)
-    start_supervised!({Live, max_hz: 4, outline_segments: 1})
+    start_supervised!({Live, max_hz: 4})
     :ok = Live.subscribe()
 
-    cast_detections([person(120, 54, 360, 216, 1.8)])
-    cast_detections([person(120, 54, 360, 216, 2.5)])
+    cast_detections([person(240, 108, 720, 432, 1.8)])
+    cast_detections([person(240, 108, 720, 432, 2.5)])
     cast_detections([])
 
     assert_receive {:vision_detections, [_detection]}
     refute_receive {:vision_detections, _}, 150
     assert_receive {:vision_detections, []}, 300
     refute_receive {:vision_detections, _}, 300
-  end
-
-  test "maps each outline vertex back through the left calibration's lens model" do
-    calibration =
-      VisionCore.Ros2.CameraCalibration.load!(
-        Path.expand("../../support/calibration/distorted_left.yaml", __DIR__)
-      )
-
-    {width, height} = {calibration.width, calibration.height}
-    frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, grey: <<>>}
-
-    pair = %Pair{
-      left_frame: frame,
-      right_frame: frame,
-      geometry: %{width: width, height: height, left_calibration: calibration}
-    }
-
-    box = %{x0: width * 0.25, y0: height * 0.2, x1: width * 0.75, y1: height * 0.8}
-    :ok = Live.subscribe()
-    GenServer.cast(Live, {:detections, pair, [%{label: "person", score: 0.6, z: 2.0, box: box}]})
-
-    assert_receive {:vision_detections, [%{outline: [[x, y] | _]}]}
-    {raw_x, raw_y} = Fusion.raw_pixel(calibration, {box.x0, box.y0})
-    assert_in_delta x, raw_x / width, 1.0e-9
-    assert_in_delta y, raw_y / height, 1.0e-9
-    refute_in_delta x, 0.25, 1.0e-3
   end
 
   test "counts a process that subscribes twice once" do

@@ -125,6 +125,21 @@ defmodule VisionCore.Detection.Fusion do
 
   def raw_points(vertices, %Pair{} = pair), do: Enum.map(vertices, &to_frame_scale(&1, pair))
 
+  @doc """
+  The outline of each of `boxes` on `pair`'s left camera frame: its
+  perimeter (`perimeter/2`, `segments` pieces per edge) as pixels of the
+  frame (`raw_points/2`), every box mapped in one pass.
+  """
+  @spec outlines([map()], pos_integer(), Pair.t()) :: [[{float(), float()}]]
+  def outlines([], _segments, _pair), do: []
+
+  def outlines(boxes, segments, %Pair{} = pair) do
+    boxes
+    |> Enum.flat_map(&perimeter(&1, segments))
+    |> raw_points(pair)
+    |> Enum.chunk_every(4 * segments)
+  end
+
   # The calibration's inverse rectifying projection, distortion and camera matrix, as numbers.
   defp lens(calibration) do
     camera =

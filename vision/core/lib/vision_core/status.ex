@@ -15,7 +15,8 @@ defmodule VisionCore.Status do
 
   Started after the components in `VisionCore.Supervisor`. Without a `:stereo`
   component the cameras and sync are reported absent and the depth rate
-  is zero.
+  is zero; the sync is absent too while neither camera runs, as once the
+  stereo unit gave up.
 
   Rates are counted over the last tick, one second by default (`:tick_ms`),
   and every subscriber receives `{:vision_status, snapshot}` each tick.
@@ -23,7 +24,7 @@ defmodule VisionCore.Status do
   use GenServer
 
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.Stereo.Diagnostics
+  alias VisionCore.Ros2.Exporter.Diagnostics
   alias VisionCore.Ros2.ZenohClient
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias VisionCore.SystemLoad
@@ -237,10 +238,11 @@ defmodule VisionCore.Status do
 
   defp build_snapshot(state) do
     replies = state |> calls() |> call_all_within_timeout()
+    cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
 
     %{
-      cameras: %{left: camera(state, :left, replies), right: camera(state, :right, replies)},
-      sync: Map.get(replies, :sync, %{present: false}),
+      cameras: cameras,
+      sync: sync(cameras, replies),
       hailo: hailo(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
@@ -281,6 +283,10 @@ defmodule VisionCore.Status do
       do: Map.merge(%{present: true, fps: state.rates_hz[side]}, Map.get(replies, side, %{})),
       else: %{present: false}
   end
+
+  # Cameras that are not running have no sync, whatever their diagnostics measured last.
+  defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
+  defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
 
   defp hailo(%{hailo_configured?: false}, _replies), do: :absent
   defp hailo(_state, %{hailo: available?}), do: if(available?, do: :running, else: :failed)

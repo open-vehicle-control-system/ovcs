@@ -1,4 +1,4 @@
-defmodule VisionCore.Ros2.Stereo.Diagnostics do
+defmodule VisionCore.Ros2.Exporter.Diagnostics do
   @moduledoc """
   What a stereo unit's cameras actually do, next to the settings asked
   for in its parameters (`VisionCore.Stereo.Parameters`):
@@ -13,17 +13,38 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
       (`std_msgs/Float64`), five times a second, for plotting
 
   The sync offset is measured on every pair of frames taken less than
-  half a frame period apart, right minus left.
+  half a frame period apart, right minus left; `sync/1` answers it, and
+  answers no pair once the cameras formed none for two seconds, as when
+  they stopped.
+
+  `VisionCore.Ros2.Exporter` starts it as a helper under its own
+  supervisor when it publishes a stereo unit. It subscribes to the
+  cameras' frames itself: the exporter is handed the newest frame of
+  each camera only, and the sync is measured on every one. A camera that
+  is down, as when the stereo unit gave up, reads as stale.
+
+  ## Options
+
+    * `:driver` — the cameras' `VisionCore.Camera` module (required),
+      whose `name_for/1` names each side and whose `live/1`, when it has
+      one, reports what the camera applied.
+    * `:topic_prefix` (`"stereo"`), `:fps` (30).
+    * `:left`, `:right` — each camera's `:sync` role, when it has one.
+    * `:publish` (`&VisionCore.Ros2.ZenohClient.publish/4`) — sends one
+      message, as `VisionCore.Ros2.Exporter`'s does.
+    * `:name` (this module) — the name it registers under.
   """
 
   use GenServer
 
   alias Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticArray
   alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
-  alias VisionCore.Ros2.{Stamp, ZenohClient}
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
+  alias VisionCore.Ros2.{Stamp, ZenohClient}
 
+  @default_topic_prefix "stereo"
+  @default_fps 30
   @plot_period_ms 200
   @diagnostics_period_ms 1_000
   @stale_ms 2_000
@@ -31,14 +52,30 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
   @recent_frame_count 4
   @sync_window_size 150
 
+  @typedoc "A message to publish: its topic, its module and the message."
+  @type message :: {String.t(), module(), struct()}
+
+  @typedoc """
+  What each camera reported last (`live/1` of its driver), `nil` for a
+  camera that reported nothing.
+  """
+  @type live_metadata :: %{left: map() | nil, right: map() | nil}
+
   @doc "Starts listening to both cameras of the unit; see the module doc."
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts),
+    do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   @doc """
   The sync of the unit's recent frame pairs: the median and largest
   right minus left offset in ms, `nil` without pairs, and how many
-  pairs were measured.
+  pairs were measured. No pair is recent once the last one formed more
+  than two seconds ago.
   """
+  @spec sync(GenServer.server()) :: %{
+          offset_median_ms: float() | nil,
+          offset_max_ms: float() | nil,
+          pairs: non_neg_integer()
+        }
   def sync(server \\ __MODULE__), do: GenServer.call(server, :sync)
 
   @impl GenServer
@@ -57,20 +94,25 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
 
     {:ok,
      %{
-       prefix: Keyword.fetch!(opts, :topic_prefix),
+       prefix: Keyword.get(opts, :topic_prefix, @default_topic_prefix),
        driver: driver,
        servers: servers,
-       sync: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
-       half_period_ns: div(1_000_000_000, 2 * Keyword.get(opts, :fps, 30)),
+       roles: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
+       publish: Keyword.get(opts, :publish, &ZenohClient.publish/4),
+       half_period_ns: div(1_000_000_000, 2 * Keyword.get(opts, :fps, @default_fps)),
        recent: %{left: [], right: []},
        offsets_ms: [],
-       recent_offsets_ms: []
+       recent_offsets_ms: [],
+       last_pair_ms: nil
      }}
   end
 
   @impl GenServer
   def handle_call(:sync, _from, state) do
-    window = Enum.take(state.offsets_ms ++ state.recent_offsets_ms, @sync_window_size)
+    window =
+      if recent?(state.last_pair_ms),
+        do: Enum.take(state.offsets_ms ++ state.recent_offsets_ms, @sync_window_size),
+        else: []
 
     sync =
       if window == [],
@@ -89,14 +131,17 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
     side = String.to_existing_atom(label)
     other_side = if side == :left, do: :right, else: :left
 
-    offsets_ms =
+    state =
       case pair_offset(side, capture_ns, state.recent[other_side], state.half_period_ns) do
-        nil -> state.offsets_ms
-        offset_ns -> [offset_ns / 1.0e6 | state.offsets_ms]
+        nil ->
+          state
+
+        offset_ns ->
+          %{state | offsets_ms: [offset_ns / 1.0e6 | state.offsets_ms], last_pair_ms: now_ms()}
       end
 
     recent = Map.update!(state.recent, side, &Enum.take([capture_ns | &1], @recent_frame_count))
-    {:noreply, %{state | recent: recent, offsets_ms: offsets_ms}}
+    {:noreply, %{state | recent: recent}}
   end
 
   def handle_cast(_message, state), do: {:noreply, state}
@@ -105,13 +150,9 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
   def handle_info(:plot, state) do
     Process.send_after(self(), :plot, @plot_period_ms)
 
-    if state.offsets_ms != [],
-      do: publish_float("#{state.prefix}/live/sync_offset_ms", median(state.offsets_ms))
-
-    for {side, live_metadata} <- fetch_live_metadata(state), live_metadata do
-      for {key, value} <- Map.take(live_metadata, [:exposure_time_us, :analogue_gain]),
-          do: publish_float("#{state.prefix}/live/#{side}/#{key}", value)
-    end
+    state.prefix
+    |> plot_messages(state.offsets_ms, live_metadata(state))
+    |> Enum.each(&publish(state, &1))
 
     recent_offsets_ms = Enum.take(state.offsets_ms ++ state.recent_offsets_ms, @sync_window_size)
     {:noreply, %{state | offsets_ms: [], recent_offsets_ms: recent_offsets_ms}}
@@ -119,19 +160,18 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
 
   def handle_info(:diagnostics, state) do
     Process.send_after(self(), :diagnostics, @diagnostics_period_ms)
-    live_metadata = fetch_live_metadata(state)
-    now_ms = System.system_time(:millisecond)
 
-    statuses =
-      Enum.map([:left, :right], &camera_status(state, &1, live_metadata[&1], now_ms)) ++
-        [sync_status(state, live_metadata, now_ms)]
+    message =
+      diagnostic_array(
+        state.prefix,
+        state.roles,
+        state.recent_offsets_ms,
+        live_metadata(state),
+        System.system_time(:millisecond),
+        Stamp.stamp_from_monotonic(System.monotonic_time(:nanosecond))
+      )
 
-    message = %DiagnosticArray{
-      header: %Header{stamp: Stamp.stamp_from_monotonic(System.monotonic_time(:nanosecond))},
-      status: statuses
-    }
-
-    ZenohClient.publish("/diagnostics", DiagnosticArray, message)
+    publish(state, {"/diagnostics", DiagnosticArray, message})
     {:noreply, state}
   end
 
@@ -142,6 +182,7 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
   nearest of the other camera's `recent` frames, or nil when none is
   within `half_period_ns`. Pure.
   """
+  @spec pair_offset(:left | :right, integer(), [integer()], pos_integer()) :: integer() | nil
   def pair_offset(side, capture_ns, recent, half_period_ns) do
     case Enum.min_by(recent, &abs(&1 - capture_ns), fn -> nil end) do
       nil -> nil
@@ -151,20 +192,71 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
     end
   end
 
-  defp fetch_live_metadata(state) do
-    if function_exported?(state.driver, :live, 1),
-      do: Map.new(state.servers, fn {side, server} -> {side, state.driver.live(server)} end),
+  @doc """
+  The plotted values of the unit under `prefix`: the median of
+  `offsets_ms`, the offsets measured since the last plot, when there
+  are any, then each camera's exposure and gain in `live_metadata`.
+  """
+  @spec plot_messages(String.t(), [float()], live_metadata()) :: [message()]
+  def plot_messages(prefix, offsets_ms, live_metadata) do
+    sync =
+      if offsets_ms == [],
+        do: [],
+        else: [float_message("#{prefix}/live/sync_offset_ms", median(offsets_ms))]
+
+    cameras =
+      for side <- [:left, :right],
+          metadata = live_metadata[side],
+          key <- [:exposure_time_us, :analogue_gain],
+          is_number(metadata[key]),
+          do: float_message("#{prefix}/live/#{side}/#{key}", metadata[key])
+
+    sync ++ cameras
+  end
+
+  @doc """
+  The `/diagnostics` message of the unit under `prefix` at `now_ms`,
+  stamped `stamp`: one status per camera, from its `live_metadata` and
+  its sync role in `roles`, then the pair's sync over `offsets_ms`, the
+  recent right minus left offsets.
+  """
+  @spec diagnostic_array(
+          String.t(),
+          %{left: atom() | nil, right: atom() | nil},
+          [float()],
+          live_metadata(),
+          integer(),
+          struct()
+        ) :: struct()
+  def diagnostic_array(prefix, roles, offsets_ms, live_metadata, now_ms, stamp) do
+    statuses =
+      Enum.map([:left, :right], &camera_status(prefix, roles, &1, live_metadata[&1], now_ms)) ++
+        [sync_status(prefix, roles, offsets_ms, live_metadata, now_ms)]
+
+    %DiagnosticArray{header: %Header{stamp: stamp}, status: statuses}
+  end
+
+  defp live_metadata(%{driver: driver, servers: servers}) do
+    if function_exported?(driver, :live, 1),
+      do: Map.new(servers, fn {side, server} -> {side, live(driver, server)} end),
       else: %{left: nil, right: nil}
   end
 
-  defp camera_status(state, side, live_metadata, now_ms) do
-    base = %{name: "#{state.prefix} #{side} camera", hardware_id: "#{state.prefix}_#{side}"}
+  # A camera that is not running reported nothing.
+  defp live(driver, server) do
+    driver.live(server)
+  catch
+    :exit, _reason -> nil
+  end
+
+  defp camera_status(prefix, roles, side, live_metadata, now_ms) do
+    base = %{name: "#{prefix} #{side} camera", hardware_id: "#{prefix}_#{side}"}
 
     cond do
       is_nil(live_metadata) or now_ms - live_metadata.received_ms > @stale_ms ->
         Map.merge(base, %{level: :stale, message: "no frame metadata"})
 
-      state.sync[side] && live_metadata[:sync_ready] == false ->
+      roles[side] && live_metadata[:sync_ready] == false ->
         Map.merge(base, %{
           level: :warn,
           message: "waiting for camera sync",
@@ -205,14 +297,13 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
     |> Enum.map(fn {key, value} -> {key, format(value)} end)
   end
 
-  defp sync_status(state, live_metadata, now_ms) do
-    base = %{name: "#{state.prefix} camera sync", hardware_id: state.prefix}
-    window = state.recent_offsets_ms
-    roles = "left #{state.sync.left || "free"}, right #{state.sync.right || "free"}"
+  defp sync_status(prefix, roles, window, live_metadata, now_ms) do
+    base = %{name: "#{prefix} camera sync", hardware_id: prefix}
+    labels = "left #{roles.left || "free"}, right #{roles.right || "free"}"
 
     ready =
       for side <- [:left, :right],
-          state.sync[side],
+          roles[side],
           do: get_in(live_metadata, [side, :sync_ready])
 
     fresh =
@@ -221,7 +312,7 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
       end)
 
     values =
-      [{"roles", roles}] ++
+      [{"roles", labels}] ++
         if window == [],
           do: [],
           else: [
@@ -248,8 +339,14 @@ defmodule VisionCore.Ros2.Stereo.Diagnostics do
     Map.merge(base, %{level: level, message: message, values: values})
   end
 
-  defp publish_float(topic, value),
-    do: ZenohClient.publish(topic, Float64, %Float64{data: value * 1.0})
+  defp recent?(nil), do: false
+  defp recent?(pair_ms), do: now_ms() - pair_ms <= @stale_ms
+
+  defp now_ms, do: System.monotonic_time(:millisecond)
+
+  defp float_message(topic, value), do: {topic, Float64, %Float64{data: value * 1.0}}
+
+  defp publish(state, {topic, module, message}), do: state.publish.(topic, module, message, [])
 
   defp median(values) do
     sorted = Enum.sort(values)

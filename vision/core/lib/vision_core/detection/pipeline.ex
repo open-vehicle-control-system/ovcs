@@ -36,7 +36,18 @@ defmodule VisionCore.Detection.Pipeline do
   Each detection is a map with the box's position and size in metres in
   the left optical frame (`:x`, `:y`, `:z`, `:width`, `:height`,
   `:depth`), its 2D `:box` in rectified pixels, `:class_id`, `:label`
-  and `:score`.
+  and `:score`, and what every consumer draws of it, computed once here:
+
+    * `:outline` — the box's outline on the left camera frame as it is
+      captured, which the dashboard and the ROS 2 overlay draw on. The
+      box is in rectified pixels, so each vertex is mapped back through
+      the left calibration (`VisionCore.Detection.Fusion.outlines/3`): a
+      straight edge in rectified pixels is a curve on the captured
+      image, so each edge is cut into `:outline_segments` pieces that
+      follow the lens distortion. Its first vertex is the box's top-left
+      corner.
+    * `:caption` — its label, score and distance, as a viewer writes them
+      next to the box: `"person 0.62 1.80m"`.
 
   ## One inference in flight
 
@@ -58,6 +69,8 @@ defmodule VisionCore.Detection.Pipeline do
     * `:max_detections` (`20`).
     * `:depth_sample_fraction` (`0.5`) — central fraction of the box
       used for the depth median.
+    * `:outline_segments` (`4`) — pieces each edge of an outline is cut
+      into.
   """
   use GenServer
 
@@ -80,6 +93,7 @@ defmodule VisionCore.Detection.Pipeline do
   @default_max_detections 20
   @default_depth_sample_fraction 0.5
   @default_detect_every_n 1
+  @default_outline_segments 4
 
   @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
   @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
@@ -119,6 +133,7 @@ defmodule VisionCore.Detection.Pipeline do
       max_detections: Keyword.get(opts, :max_detections, @default_max_detections),
       depth_sample_fraction:
         Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
+      outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       sequence: 0,
       pair_count: 0,
       # The pair submitted with the in-flight inference: its boxes belong to that depth map.
@@ -235,6 +250,7 @@ defmodule VisionCore.Detection.Pipeline do
       |> Enum.take(state.max_detections)
       |> Enum.map(&position(&1, pair, state))
       |> Enum.reject(&is_nil/1)
+      |> outline(pair, state.outline_segments)
 
     Outputs.publish({:detections, __MODULE__}, {:detections, pair, positioned})
     {:noreply, %{state | pending: nil}}
@@ -244,6 +260,19 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp outline(positioned, pair, segments) do
+    outlines = positioned |> Enum.map(& &1.box) |> Fusion.outlines(segments, pair)
+
+    Enum.zip_with(positioned, outlines, fn detection, outline ->
+      Map.merge(detection, %{outline: outline, caption: caption(detection)})
+    end)
+  end
+
+  defp caption(detection) do
+    "#{detection.label} #{:erlang.float_to_binary(detection.score / 1, decimals: 2)} " <>
+      "#{:erlang.float_to_binary(detection.z / 1, decimals: 2)}m"
+  end
 
   defp position(detection, %Pair{} = pair, state) do
     {width, height} = Pair.size(pair)

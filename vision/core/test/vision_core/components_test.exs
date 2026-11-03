@@ -9,4 +9,8 @@ defmodule VisionCore.ComponentsTest do
       assert [%{restart: :transient}] = Components.start(component, [])
     end
   end
+
+  test "the heartbeat starts no process of its own: the ROS 2 exporter publishes it" do
+    assert Components.start(:heartbeat, interval_ms: 500) == []
+  end
 end

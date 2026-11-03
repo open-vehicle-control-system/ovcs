@@ -17,10 +17,11 @@ defmodule VisionCore.Application do
   Ports on the first request, so a unit that computes no stereo stage
   natively never starts `stereo_match`; the Matcher runs the binary and
   thread count of `config :vision_core, :stereo_match_path` and
-  `:stereo_match_threads`. `VisionCore.Ros2.Topics`, which counts what
-  the components publish, starts before them. `VisionCore.Status` and
-  `VisionCore.Preview`, the dashboard's sources, start after the
-  components, and `VisionCore.Exporters` last.
+  `:stereo_match_threads`. `VisionCore.Ros2.Topics`, which counts what is
+  published on ROS 2, starts before the components. `VisionCore.Status`
+  and `VisionCore.Preview`, the dashboard's sources, start after the
+  components, and `VisionCore.Exporters`, which runs the ROS 2 exporter
+  (`VisionCore.Ros2.Exporter`), last.
 
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
   on `VisionCore.Jpeg`, while `VisionCore.Preview` and the exporters
@@ -74,13 +75,12 @@ defmodule VisionCore.Application do
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
 
-    dashboard_children = [
+    consumer_children = [
       {VisionCore.Status, config: config},
       {VisionCore.Jpeg, name: @export_jpeg_codec},
-      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
+      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview},
+      {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec}
     ]
-
-    exporters_child = {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec}
 
     %{
       id: VisionCore.Supervisor,
@@ -88,7 +88,7 @@ defmodule VisionCore.Application do
       start:
         {Supervisor, :start_link,
          [
-           core_children ++ component_children ++ dashboard_children ++ [exporters_child],
+           core_children ++ component_children ++ consumer_children,
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}
     }

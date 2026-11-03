@@ -30,6 +30,47 @@ defmodule VisionCore.StatusTest do
     assert snapshot.depth_hz == 0.0
   end
 
+  describe "the sync" do
+    alias VisionCore.Ros2.Exporter.Diagnostics
+
+    defp stereo_config, do: config([{:stereo, driver: Camera, left: [], right: []}])
+
+    # One pair of frames measured by the diagnostics, the right one 0.2 ms after the left one.
+    defp measure_one_pair do
+      start_supervised!(
+        {Diagnostics, driver: Camera, publish: fn _topic, _module, _message, _options -> :ok end}
+      )
+
+      for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
+        frame = %Frame{label: label, width: 1, height: 1, capture_ns: capture_ns, grey: <<0>>}
+        Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
+      end
+
+      assert %{pairs: 1} = Diagnostics.sync()
+    end
+
+    defp run_camera(label) do
+      camera = spawn(fn -> Process.sleep(:infinity) end)
+      Process.register(camera, Camera.name_for(label))
+      on_exit(fn -> Process.exit(camera, :kill) end)
+    end
+
+    test "is the one the diagnostics measured while the cameras run" do
+      measure_one_pair()
+      for label <- ["left", "right"], do: run_camera(label)
+      start_supervised!({Status, config: stereo_config()})
+
+      assert %{present: true, pairs: 1} = Status.snapshot().sync
+    end
+
+    test "is absent while the cameras are not running, whatever was measured last" do
+      measure_one_pair()
+      start_supervised!({Status, config: stereo_config()})
+
+      assert Status.snapshot().sync == %{present: false}
+    end
+  end
+
   test "a configured Hailo detector that is not running is reported failed" do
     start_supervised!({Status, config: config([{:hailo_detector, hef_path: "/missing.hef"}])})
 

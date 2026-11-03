@@ -2,9 +2,9 @@ defmodule VisionCore.Detection.Supervisor do
   @moduledoc """
   Supervises the detection unit: an inference backend, the
   `VisionCore.Detection.Pipeline` that places its boxes in 3D with the
-  stereo depth, the `VisionCore.Ros2.Publishers.Detections` that
-  publishes them, and `VisionCore.Detection.Live`, which hands them to
-  the dashboard.
+  stereo depth, and `VisionCore.Detection.Live`, which hands them to the
+  dashboard. `VisionCore.Ros2.Exporter` publishes them on ROS 2, outside
+  the unit.
 
   Which backend is `:backend`, defaulting to the accelerator,
   `VisionCore.Detection.Backend.Hailo`. See `VisionCore.Detection.Backend`
@@ -27,14 +27,14 @@ defmodule VisionCore.Detection.Supervisor do
   the reverse: a backend is told where to reply on every call and holds
   nothing across one.
 
-  Options other than the backend's go to the pipeline and the
-  publisher, and `:max_hz` and `:outline_segments` to `Live` too; see
-  their docs.
+  The backend's options go to the backend, the pipeline's to the
+  pipeline and `:max_hz` to `Live`; see their docs. The ROS 2 exporter
+  reads `:topic_prefix`, `:frame_id`, `:marker_lifetime_ms` and
+  `:label_font_size` (`VisionCore.Ros2.Exporter.Detections`).
   """
   use Supervisor
 
   alias VisionCore.Detection.{Live, Pipeline}
-  alias VisionCore.Ros2.Publishers.Detections
 
   @default_backend VisionCore.Detection.Backend.Hailo
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
@@ -47,15 +47,12 @@ defmodule VisionCore.Detection.Supervisor do
   def init(opts) do
     {backend, backend_opts} = split_backend_options(opts)
 
-    rest = Keyword.drop(opts, [:backend | backend_keys()])
-
     children = [
       {backend, backend_opts},
       # The backend module is also its registered name, so the
       # pipeline needs nothing but the module to reach it.
-      {Pipeline, rest |> Keyword.take(pipeline_keys()) |> Keyword.put(:backend, backend)},
-      {Detections, Keyword.drop(rest, pipeline_keys())},
-      {Live, Keyword.take(rest, [:max_hz, :outline_segments])}
+      {Pipeline, opts |> Keyword.take(pipeline_keys()) |> Keyword.put(:backend, backend)},
+      {Live, Keyword.take(opts, [:max_hz])}
     ]
 
     Supervisor.init(children,
@@ -94,8 +91,10 @@ defmodule VisionCore.Detection.Supervisor do
     {backend, Keyword.take(opts, backend_keys())}
   end
 
-  defp pipeline_keys,
-    do: [:detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction]
+  defp pipeline_keys do
+    [:detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction] ++
+      [:outline_segments]
+  end
 
   # The options of `Backend.Hailo` and `Backend.Stub`.
   defp backend_keys do

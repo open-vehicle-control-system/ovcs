@@ -35,7 +35,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     def init(test), do: {:ok, test}
 
     @impl GenServer
-    def handle_cast({:publish, _topic, _module, _message, _payload, _opts} = request, test) do
+    def handle_cast({:publish, _topic, _module, _payload, _opts} = request, test) do
       send(test, request)
       {:noreply, test}
     end
@@ -131,7 +131,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       assert {:error, {:encode_raised, _reason}} =
                ZenohClient.publish(@topic, StringMessage, %{data: "not a struct"})
 
-      refute_receive {:publish, _topic, _module, _message, _payload, _opts}
+      refute_receive {:publish, _topic, _module, _payload, _opts}
     end
 
     test "is counted under its topic, apart from the publishes", %{topics: topics} do
@@ -189,7 +189,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       assert :ok = ZenohClient.publish(@topic, StringMessage, message)
 
-      assert_receive {:publish, @topic, StringMessage, ^message, payload, []}
+      assert_receive {:publish, @topic, StringMessage, payload, []}
       assert payload == RmwZenoh.encode_payload(message)
     end
 
@@ -210,7 +210,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     end
 
     defp hand_over_next_request(state) do
-      assert_receive {:publish, _topic, _module, _message, _payload, _opts} = request
+      assert_receive {:publish, _topic, _module, _payload, _opts} = request
       assert {:noreply, state} = ZenohClient.handle_cast(request, state)
       state
     end
@@ -256,7 +256,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       :ok = ZenohClient.publish(@topic, StringMessage, valid)
 
       state = state |> hand_over_next_request() |> hand_over_next_request()
-      refute_receive {:publish, _topic, _module, _message, _payload, _opts}
+      refute_receive {:publish, _topic, _module, _payload, _opts}
 
       assert [{1, _gid, _payload}, {2, _, _}] = received_puts(2)
       assert state.publishers[@topic].sequence_number == 2
@@ -264,7 +264,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
     test "drops a publish without payload, which its caller sent while it had no session",
          %{state: state} do
-      request = {:publish, @topic, StringMessage, %StringMessage{data: "alive"}, nil, []}
+      request = {:publish, @topic, StringMessage, nil, []}
 
       assert {:noreply, %State{drops_while_offline: 1, publishers: publishers}} =
                ZenohClient.handle_cast(request, state)
@@ -279,7 +279,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
     test "drops a publish and counts the drop" do
       :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "alive"})
-      assert_receive {:publish, _topic, _module, _message, _payload, _opts} = request
+      assert_receive {:publish, _topic, _module, _payload, _opts} = request
 
       assert {:noreply, %State{drops_while_offline: 1, publishers: publishers}} =
                ZenohClient.handle_cast(request, %State{})

@@ -12,27 +12,22 @@ defmodule VisionCore.Detection.Live do
   has passed, unless a newer one replaces it, so the latest always
   arrives. Each detection is `%{label:, score:, distance_m:, outline:}`, the
   outline a closed list of `[x, y]` vertices as fractions of the image's
-  width and height. The box is computed on the rectified image, so each
-  vertex is mapped back to the captured one through the left calibration
-  (`VisionCore.Detection.Fusion.raw_points/2`), like the ROS 2 overlay of
-  `VisionCore.Ros2.Publishers.Detections`, and its edges are subdivided
-  so they can follow the lens distortion.
+  width and height: the `:outline` the detection pipeline mapped to the
+  captured image, which the ROS 2 overlay draws too.
 
   Started by `VisionCore.Detection.Supervisor` after the pipeline.
 
   ## Options
 
     * `:max_hz` (`10`) — results a second sent to each subscriber.
-    * `:outline_segments` (`4`) — pieces each box edge is cut into.
   """
   use GenServer
 
-  alias VisionCore.Detection.{Fusion, Pipeline}
+  alias VisionCore.Detection.Pipeline
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
   @default_max_hz 10
-  @default_outline_segments 4
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -47,7 +42,6 @@ defmodule VisionCore.Detection.Live do
     {:ok,
      %{
        interval_ms: div(1_000, Keyword.get(opts, :max_hz, @default_max_hz)),
-       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
        subscribers: %{},
        sent_at_ms: nil,
        held: nil
@@ -66,7 +60,7 @@ defmodule VisionCore.Detection.Live do
       do: {:noreply, state}
 
   def handle_cast({:detections, %Pair{} = pair, positioned}, state) do
-    detections = describe(positioned, pair, state.outline_segments)
+    detections = describe(positioned, pair)
     now_ms = System.monotonic_time(:millisecond)
 
     cond do
@@ -103,15 +97,14 @@ defmodule VisionCore.Detection.Live do
   defp due?(%{sent_at_ms: nil}, _now_ms), do: true
   defp due?(state, now_ms), do: now_ms - state.sent_at_ms >= state.interval_ms
 
-  # Every outline mapped to the captured image in one pass.
-  defp describe(positioned, %Pair{left_frame: frame} = pair, outline_segments) do
-    positioned
-    |> Enum.flat_map(&Fusion.perimeter(&1.box, outline_segments))
-    |> Fusion.raw_points(pair)
-    |> Enum.map(fn {x, y} -> [x / frame.width, y / frame.height] end)
-    |> Enum.chunk_every(4 * outline_segments)
-    |> Enum.zip_with(positioned, fn outline, detection ->
-      %{label: detection.label, score: detection.score, distance_m: detection.z, outline: outline}
+  defp describe(positioned, %Pair{left_frame: frame}) do
+    Enum.map(positioned, fn detection ->
+      %{
+        label: detection.label,
+        score: detection.score,
+        distance_m: detection.z,
+        outline: Enum.map(detection.outline, fn {x, y} -> [x / frame.width, y / frame.height] end)
+      }
     end)
   end
 end

@@ -16,7 +16,7 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
                                                                  ├─ stereo_match Port (Pi 5)
                                                                  └─ GPU through nx_iree (C100)
 
- subscribers:  ROS 2 publishers ── Zenoh ──► the vehicle's ROS 2 graph
+ subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
                Detection pipeline ──► hailo_detect Port (Hailo-8)
                Status (rates, load, alignment, sharpness)
                Preview ──► jpeg_codec Port ──► dashboard channels
@@ -30,7 +30,7 @@ A Port's row below names the process that owns it.
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex) | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
-| ROS 2 publishers | [`VisionCore.Ros2.Publishers.Stereo`](../../vision/core/lib/vision_core/ros2/publishers/stereo.ex) | `VisionCore.Stereo.Supervisor` |
+| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) measuring the cameras' sync | `VisionCore.Exporters` |
 | Detection pipeline | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor` |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
@@ -47,7 +47,7 @@ The drivers, the Pipeline and the Detection pipeline publish their frames, pairs
 2. **Pairing.** The Pairer pairs a left and a right frame by their capture times, and submits a pair only when the Pipeline says it can take one. Pairs that are ready while the Pipeline is busy are dropped, not queued: a queue would only make the depth older.
 3. **Stages.** The Pipeline runs the stages in order. Consecutive stages that run on the same device form one segment, so a pair crosses to the GPU, or to the `stereo_match` Port, once and comes back once. The [stages guide](./stages.md) describes each one.
 4. **Subscribers.** The finished `Pair` goes to every subscriber as a message. On the BEAM, a large binary such as an image is shared between processes by reference, not copied, so five subscribers cost no more memory than one.
-5. **Publishing.** The ROS 2 publishers send the disparity, depth and point cloud of every pair, and the raw camera images as frames arrive, at most `:raw_image_max_hz` a second per side; detection runs on every `:detect_every_n`-th pair; the dashboard's previews are encoded only when a dashboard is open.
+5. **Publishing.** The ROS 2 exporter sends the disparity, depth and point cloud of every pair, and the raw camera images as frames arrive, at most `:raw_image_max_hz` a second per side; detection runs on every `:detect_every_n`-th pair; the dashboard's previews are encoded only when a dashboard is open.
 
 ## Two pairs in flight
 
@@ -78,13 +78,15 @@ Everything the unit publishes goes over Zenoh as ROS 2 messages, under the compo
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
 | `<prefix>/detections`, `<prefix>/detections/markers` | Detected objects with their position in metres, and markers for RViz or Foxglove. |
 
-Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Stereo.Supervisor`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./overview.md#dashboard-and-api)).
+Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Ros2.Exporter.Stereo`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./overview.md#dashboard-and-api)).
 
 ## Exporters
 
 An exporter takes the unit's outputs out of it, to a network or to storage. It is a module of plain functions implementing [`VisionCore.Exporter`](../../vision/core/lib/vision_core/exporter.ex): it names the outputs it reads (the stereo pairs, a camera's frames, the detections) and takes each value it is handed. [`VisionCore.Exporter.Runner`](../../vision/core/lib/vision_core/exporter/runner.ex) subscribes to those outputs and hands the exporter the newest value of each, at most the output's `:max_hz` times a second. A value that arrives while the exporter is busy replaces the one before it, so a slow exporter skips values instead of falling behind; an exporter whose transport answers later says it is busy with an output, and is handed its newest value once it says it is ready.
 
 [`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts last in `VisionCore.Supervisor`, after the components, the Status and the Preview, and runs each exporter under a supervisor with its own restart budget. An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts, without holding up the rest of the unit. One that keeps crashing stops alone, for good, with an error logged: the cameras, the pipelines and the other exporters keep running.
+
+The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), is one of them. It publishes the topics above, the cameras' diagnostics and a heartbeat, with what the `:heartbeat`, `:stereo` and detector components ask it to publish. The Zenoh session it publishes through, the parameter services and the topic counts belong to the unit's core and start before the components.
 
 ## The dashboard's previews
 

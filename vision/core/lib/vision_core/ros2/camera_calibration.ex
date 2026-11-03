@@ -7,7 +7,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
   Each matrix is kept as the YAML's flat row-major list; converting to Nx
   tensors is the consumer's responsibility. Two consumers:
 
-    * `VisionCore.Ros2.Publishers.Stereo` — populates the outgoing
+    * `VisionCore.Ros2.Exporter.Stereo` — populates the outgoing
       `sensor_msgs/CameraInfo` directly from these fields.
     * `VisionCore.Stereo.Stage.Rectification` — undistorts and rectifies with
       `NxStereo.Rectify`.

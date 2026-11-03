@@ -8,30 +8,17 @@ defmodule VisionCore.Stereo.Supervisor do
        disparity and depth through its stages.
     3. `VisionCore.Stereo.Pairer`, which pairs the drivers' frames and
        feeds the pipeline.
-    4. A `VisionCore.Ros2.Publishers.Stereo` that subscribes to both
-       drivers and the pipeline and publishes:
-         - per-side `<topic_prefix>/<side>/image_raw/compressed`
-           + `<topic_prefix>/<side>/camera_info`,
-         - `<topic_prefix>/disparity` (DisparityImage),
-         - `<topic_prefix>/depth/image_rect` (Image 16UC1, millimetres),
-         - `<topic_prefix>/depth/camera_info` — the same intrinsics as
-           the left camera, republished as a *sibling* of the depth
-           image. Consumers resolve a camera_info by convention from
-           the image's own namespace, so without this a viewer cannot
-           project the depth image and silently renders nothing,
-         - `<topic_prefix>/disparity/image` (Image 32FC1, pixels) only
-           when `:publish_disparity_image` is set — see below,
-         - `<topic_prefix>/{left,right}/image_rect/compressed` (JPEG)
-           only when `:publish_rectified_image` is set — see below.
-
-    5. With `:align_correction`, `VisionCore.Stereo.AlignmentCorrection`,
+    4. With `:align_correction`, `VisionCore.Stereo.AlignmentCorrection`,
        before the parameters that declare its switch.
-    6. `VisionCore.Stereo.Parameters`, which declares the unit's
+    5. `VisionCore.Stereo.Parameters`, which declares the unit's
        parameter groups in `VisionCore.Parameters`.
-    7. `VisionCore.Ros2.Stereo.Diagnostics`, what the cameras actually
-       apply and their sync, on `/diagnostics` and `<topic_prefix>/live/*`.
-    8. A `VisionCore.Ros2.Services.SetCameraInfoServer` per side with a
+    6. A `VisionCore.Ros2.Services.SetCameraInfoServer` per side with a
        calibration path, for `cameracalibrator`'s commit.
+
+  The unit publishes nothing itself: `VisionCore.Ros2.Exporter` takes
+  its frames and pairs to ROS 2, outside the unit, under the exporters
+  (`VisionCore.Exporters`), with the `:publish_*` and
+  `:raw_image_max_hz` options below.
 
   The children subscribe to the drivers' frames and the pipeline's pairs
   through `VisionCore.Outputs`, which holds a subscription across the
@@ -71,28 +58,15 @@ defmodule VisionCore.Stereo.Supervisor do
       and point cloud. Smaller than the capture size, the frames are
       shrunk to it while they are rectified; larger, the pipeline does
       not start.
-    * `:publish_disparity_image` (`false`) — also publish the
-      disparity pixels as a bare `sensor_msgs/Image`, because viewers
-      match on a topic's type and cannot render the `DisparityImage`
-      container. Off by default: a third uncompressed image per frame
-      can starve `depth/image_rect` on one Zenoh session, so this is a
-      debugging aid to switch on deliberately.
-    * `:publish_rectified_image` (`false`) — also publish the
-      rectified left image, pixel-aligned with the depth image and
-      stamped like it, for consumers that pair the two (RGB-D SLAM),
-      and the rectified right image, row-aligned with it, to see the
-      pair as the matcher does. The left one's intrinsics are
-      `<topic_prefix>/depth/camera_info`;
-      `<topic_prefix>/left/camera_info` describes the raw image.
-    * `:publish_raw_images` (`true`) — republish the camera frames on
-      `<topic_prefix>/<side>/image_raw/compressed`. Off when the cameras
-      already publish there, as a simulator's do.
-    * `:raw_image_max_hz` (10) — the most raw images a second, per side,
-      encoded from drivers that deliver grey frames; JPEG frames are
-      republished as they arrive.
-    * `:topic_prefix` (`"stereo"`) — root of every topic this
-      unit publishes. Also drives the default `frame_id` for each
-      side (`<prefix>_left`, `<prefix>_right`).
+    * `:publish_disparity_image` (`false`), `:publish_rectified_image`
+      (`false`), `:publish_raw_images` (`true`), `:raw_image_max_hz` (10)
+      — what `VisionCore.Ros2.Exporter` publishes of the unit, besides
+      the disparity, depth and point cloud; see
+      `VisionCore.Ros2.Exporter.Stereo`.
+    * `:topic_prefix` (`"stereo"`) — root of every topic the unit is
+      published under, and of its parameters and calibration files.
+      Also drives the default `frame_id` for each side
+      (`<prefix>_left`, `<prefix>_right`).
     * `:calibration_dir` — when set, the per-side
       `calibration_path` defaults to
       `<calibration_dir>/<topic_prefix>_<side>.yaml`.
@@ -127,9 +101,7 @@ defmodule VisionCore.Stereo.Supervisor do
   use Supervisor
   require Logger
 
-  alias VisionCore.Ros2.Publishers.Stereo, as: StereoPublisher
   alias VisionCore.Ros2.Services.SetCameraInfoServer
-  alias VisionCore.Ros2.Stereo.Diagnostics
 
   alias VisionCore.Stereo.{
     AlignmentCorrection,
@@ -143,7 +115,6 @@ defmodule VisionCore.Stereo.Supervisor do
 
   @default_width 1280
   @default_height 720
-  @default_raw_image_max_hz 10
   @default_fps 30
   @default_topic_prefix "stereo"
   @default_pair_tolerance_ms 33
@@ -168,6 +139,7 @@ defmodule VisionCore.Stereo.Supervisor do
   @impl Supervisor
   def init(opts) do
     config = build_config(opts)
+    log_stored_calibration(config)
 
     Supervisor.init(child_specs(config),
       strategy: :rest_for_one,
@@ -232,18 +204,38 @@ defmodule VisionCore.Stereo.Supervisor do
     pipeline_opts
   end
 
+  @doc """
+  The cameras of the stereo unit `opts`, the `:stereo` component's
+  options, describe: the driver, the topic prefix, the capture size and
+  rate, and each side's options with its frame id and calibration path
+  resolved as the unit resolves them, a stored calibration first
+  (`use_stored_calibration/4`). Unlike the unit's start, it checks
+  neither the stages nor the backends.
+  """
+  @spec camera_options(keyword()) :: keyword()
+  def camera_options(opts) do
+    topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
+
+    {left, right} =
+      sides(Keyword.get(opts, :left, []), Keyword.get(opts, :right, []), opts, topic_prefix)
+
+    [
+      driver: Keyword.get(opts, :driver),
+      topic_prefix: topic_prefix,
+      width: Keyword.get(opts, :width, @default_width),
+      height: Keyword.get(opts, :height, @default_height),
+      fps: Keyword.get(opts, :fps, @default_fps),
+      left: left,
+      right: right
+    ]
+  end
+
   defp build_config(opts) do
     topic_prefix = Keyword.get(opts, :topic_prefix, @default_topic_prefix)
-    calibration_dir = Keyword.get(opts, :calibration_dir)
-    store_directory = Keyword.get(opts, :calibration_store_dir)
 
-    left =
-      resolve_side_opts(Keyword.fetch!(opts, :left), :left, topic_prefix, calibration_dir)
+    {left, right} =
+      sides(Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right), opts, topic_prefix)
 
-    right =
-      resolve_side_opts(Keyword.fetch!(opts, :right), :right, topic_prefix, calibration_dir)
-
-    {left, right} = use_stored_calibration(left, right, store_directory, topic_prefix)
     width = Keyword.get(opts, :width, @default_width)
     height = Keyword.get(opts, :height, @default_height)
     stages = Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0)
@@ -258,11 +250,7 @@ defmodule VisionCore.Stereo.Supervisor do
       fps: Keyword.get(opts, :fps, @default_fps),
       topic_prefix: topic_prefix,
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
-      publish_disparity_image: Keyword.get(opts, :publish_disparity_image, false),
-      publish_rectified_image: Keyword.get(opts, :publish_rectified_image, false),
-      publish_raw_images: Keyword.get(opts, :publish_raw_images, true),
       align_correction: Keyword.get(opts, :align_correction, true),
-      raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
       stages: stages,
       backends: backends(opts),
       compute: Keyword.get(opts, :compute, :nx),
@@ -287,6 +275,24 @@ defmodule VisionCore.Stereo.Supervisor do
       Code.ensure_loaded?(EXLA) -> [compiler: EXLA]
       true -> []
     end
+  end
+
+  defp sides(left, right, opts, topic_prefix) do
+    calibration_dir = Keyword.get(opts, :calibration_dir)
+
+    use_stored_calibration(
+      resolve_side_opts(left, :left, topic_prefix, calibration_dir),
+      resolve_side_opts(right, :right, topic_prefix, calibration_dir),
+      Keyword.get(opts, :calibration_store_dir),
+      topic_prefix
+    )
+  end
+
+  defp log_stored_calibration(%{left: left}) do
+    store_path = left[:calibration_store_path]
+
+    if store_path && left[:calibration_path] == store_path,
+      do: Logger.info("#{__MODULE__} using the calibration stored in #{Path.dirname(store_path)}")
   end
 
   defp resolve_side_opts(side_opts, side, topic_prefix, calibration_dir) do
@@ -314,8 +320,6 @@ defmodule VisionCore.Stereo.Supervisor do
     right = Keyword.put(right, :calibration_store_path, right_store)
 
     if File.exists?(left_store) and File.exists?(right_store) do
-      Logger.info("#{__MODULE__} using the calibration stored in #{store_directory}")
-
       {Keyword.put(left, :calibration_path, left_store),
        Keyword.put(right, :calibration_path, right_store)}
     else
@@ -324,16 +328,16 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   @doc """
-  Reloads the pipeline's calibration and the raw camera info
-  `VisionCore.Ros2.Publishers.Stereo` publishes, and starts the row
-  correction (`VisionCore.Stereo.AlignmentCorrection`) over: a new
-  calibration lines the rows up itself, so the `right_row_offset` of the
-  stage that declares it (`VisionCore.Stereo.AlignmentCorrection.offset_stage/1`)
+  Reloads the pipeline's calibration, has `VisionCore.Ros2.Exporter` read
+  the raw camera info it publishes again, and starts the row correction
+  (`VisionCore.Stereo.AlignmentCorrection`) over: a new calibration lines
+  the rows up itself, so the `right_row_offset` of the stage that
+  declares it (`VisionCore.Stereo.AlignmentCorrection.offset_stage/1`)
   returns to 0 and its saved value under `prefix` is forgotten.
   """
   def reload_calibration(pipeline, prefix, paths \\ []) do
     with :ok <- Pipeline.reload_calibration(pipeline, paths) do
-      if Process.whereis(StereoPublisher), do: StereoPublisher.reload_calibration(paths)
+      :ok = VisionCore.Ros2.Exporter.reload_calibration(paths)
 
       case pipeline |> Pipeline.stage_options() |> AlignmentCorrection.offset_stage() do
         nil ->
@@ -381,8 +385,7 @@ defmodule VisionCore.Stereo.Supervisor do
       pipeline_spec(config),
       {Pairer,
        cameras: [{config.driver, "left"}, {config.driver, "right"}],
-       pair_tolerance_ms: config.pair_tolerance_ms},
-      publisher_spec(config)
+       pair_tolerance_ms: config.pair_tolerance_ms}
     ] ++
       alignment_correction_specs(config) ++
       [
@@ -398,15 +401,6 @@ defmodule VisionCore.Stereo.Supervisor do
            match_width: config.match_width,
            match_height: config.match_height},
           id: {:stereo, :parameters}
-        ),
-        Supervisor.child_spec(
-          {Diagnostics,
-           topic_prefix: config.topic_prefix,
-           driver: config.driver,
-           left: config.left,
-           right: config.right,
-           fps: config.fps},
-          id: {:stereo, :live}
         )
       ] ++ set_camera_info_specs(config)
   end
@@ -461,7 +455,7 @@ defmodule VisionCore.Stereo.Supervisor do
       |> Keyword.put_new(:width, config.width)
       |> Keyword.put_new(:height, config.height)
       |> Keyword.put_new(:fps, config.fps)
-      # Strip publisher-only keys so the driver doesn't see them.
+      # Not the driver's: the calibration is the pipeline's, the frame ids the exporter's.
       |> Keyword.delete(:calibration_path)
       |> Keyword.delete(:calibration_store_path)
       |> Keyword.delete(:frame_id)
@@ -480,30 +474,5 @@ defmodule VisionCore.Stereo.Supervisor do
      frame_height: config.height,
      compute: config.compute,
      backends: config.backends}
-  end
-
-  defp publisher_spec(config) do
-    publisher_opts = [
-      cameras: [{config.driver, "left"}, {config.driver, "right"}],
-      topic_prefix: config.topic_prefix,
-      left: config.left,
-      right: config.right,
-      width: config.width,
-      height: config.height,
-      disparity_topic: "#{config.topic_prefix}/disparity",
-      disparity_image_topic:
-        config.publish_disparity_image && "#{config.topic_prefix}/disparity/image",
-      depth_topic: "#{config.topic_prefix}/depth/image_rect",
-      depth_camera_info_topic: "#{config.topic_prefix}/depth/camera_info",
-      cloud_topic: "#{config.topic_prefix}/points",
-      rectified_image_topic:
-        config.publish_rectified_image && "#{config.topic_prefix}/left/image_rect/compressed",
-      right_rectified_image_topic:
-        config.publish_rectified_image && "#{config.topic_prefix}/right/image_rect/compressed",
-      publish_raw_images: config.publish_raw_images,
-      raw_image_max_hz: config.raw_image_max_hz
-    ]
-
-    {StereoPublisher, publisher_opts}
   end
 end

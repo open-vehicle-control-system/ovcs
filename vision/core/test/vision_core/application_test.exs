@@ -55,14 +55,17 @@ defmodule VisionCore.ApplicationTest do
     pid
   end
 
-  test "a composer's components start under VisionCore.Supervisor" do
+  test "the ROS 2 link starts under VisionCore.Supervisor, and the heartbeat is published through it" do
     start_pipeline(%VisionCore.Config{zenoh_endpoint_ip: "127.0.0.1", components: [:heartbeat]})
 
     ids = child_ids(VisionCore.Supervisor)
     assert VisionCore.Ros2.ZenohClient in ids
     assert VisionCore.Ros2.Parameters in ids
     assert VisionCore.Ros2.Topics in ids
-    assert VisionCore.Ros2.Publishers.Heartbeat in ids
+
+    assert eventually(fn ->
+             Enum.any?(VisionCore.Ros2.Topics.topics(), &(&1.name == "/ovcs_heartbeat"))
+           end)
   end
 
   test "the exporters start last, after the components, the dashboard's sources and their codec" do
@@ -81,7 +84,7 @@ defmodule VisionCore.ApplicationTest do
     assert for(
              {id, _pid, :supervisor, _} <- Supervisor.which_children(VisionCore.Exporters),
              do: id
-           ) == []
+           ) == [VisionCore.Ros2.Exporter]
   end
 
   test "the core starts the parameter storage and registry first, then the outputs registry, before the components" do
@@ -220,12 +223,17 @@ defmodule VisionCore.ApplicationTest do
     GenServer.stop(pipeline)
   end
 
-  test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
+  # A 64x48 frame as camera_capture writes it, taken at the kernel's time 0.
+  defp write_frame(tmp_dir) do
     jpeg = Evision.imencode(".jpg", Evision.Mat.zeros({48, 64}, :u8))
     frame = <<1, 64::little-16, 48::little-16, 0::little-64, byte_size(jpeg)::little-32>> <> jpeg
     frame_path = Path.join(tmp_dir, "frame.bin")
     File.write!(frame_path, <<byte_size(frame)::big-32>> <> frame)
+    frame_path
+  end
 
+  test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
+    frame_path = write_frame(tmp_dir)
     exiting = Path.join(tmp_dir, "exiting_camera.sh")
 
     File.write!(exiting, """
@@ -264,6 +272,18 @@ defmodule VisionCore.ApplicationTest do
 
     :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
     stereo = VisionCore.Stereo.Supervisor
+
+    assert stereo |> child_ids() |> Enum.reverse() == [
+             {:stereo, :driver, :left},
+             {:stereo, :driver, :right},
+             VisionCore.Stereo.Pipeline,
+             VisionCore.Stereo.Pairer,
+             VisionCore.Stereo.AlignmentCorrection,
+             {:stereo, :parameters},
+             {:stereo, :set_camera_info, :left},
+             {:stereo, :set_camera_info, :right}
+           ]
+
     first_driver = child_pid(stereo, {:stereo, :driver, :left})
     assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
 
@@ -278,11 +298,19 @@ defmodule VisionCore.ApplicationTest do
     assert_stereo_unit_down()
   end
 
-  test "a camera Port that keeps exiting stops the stereo unit, not the pipeline",
+  test "a camera Port that keeps exiting stops the stereo unit, not the pipeline nor the exporters",
        %{tmp_dir: tmp_dir} do
-    start_failing_cameras(tmp_dir, "sleep 0.3\nexit 3")
+    start_failing_cameras(tmp_dir, "cat \"#{write_frame(tmp_dir)}\"\nsleep 0.3\nexit 3")
     assert Process.whereis(VisionCore.Stereo.Supervisor)
+    exporter = Process.whereis(VisionCore.Ros2.Exporter)
+    assert is_pid(exporter)
+    assert eventually(fn -> VisionCore.Ros2.Exporter.Diagnostics.sync().pairs > 0 end)
+
     assert_stereo_unit_down()
+
+    assert Process.whereis(VisionCore.Ros2.Exporter) == exporter
+    assert VisionCore.Status.snapshot().sync == %{present: false}
+    assert eventually(fn -> VisionCore.Ros2.Exporter.Diagnostics.sync().pairs == 0 end, 80)
   end
 
   defp start_failing_cameras(tmp_dir, script) do
@@ -336,6 +364,14 @@ defmodule VisionCore.ApplicationTest do
 
       true ->
         flunk("#{inspect(name)} kept running")
+    end
+  end
+
+  defp eventually(check, attempts \\ 60) do
+    cond do
+      check.() -> true
+      attempts > 0 -> Process.sleep(50) && eventually(check, attempts - 1)
+      true -> false
     end
   end
 

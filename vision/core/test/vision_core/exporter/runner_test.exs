@@ -85,6 +85,64 @@ defmodule VisionCore.Exporter.RunnerTest do
     def handle_info(:sent, test), do: {:ready, :stereo_pair, test}
   end
 
+  # Busy with each output until told both are sent; the slot of its pairs opens five times a second.
+  defmodule SlowPair do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [stereo_pair: [max_hz: 5], detections: []]
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(output, value, test) do
+      send(test, {:exported, output, value, System.monotonic_time(:millisecond)})
+      {:busy, test}
+    end
+
+    @impl VisionCore.Exporter
+    def handle_info(:sent, test), do: {:ready, [:stereo_pair, :detections], test}
+  end
+
+  # Tells the test each time its init/1 runs.
+  defmodule Announcing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(options) do
+      test = Keyword.fetch!(options, :test)
+      send(test, {:initialised, self()})
+      {:ok, test}
+    end
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, test), do: {:ok, test}
+  end
+
+  # Exports no value, each for a reason of its own, and has no status to give.
+  defmodule Refusing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(:stereo_pair, pair, test) do
+      send(test, {:exported, :stereo_pair, pair})
+      {:error, {:refused, pair}, test}
+    end
+
+    @impl VisionCore.Exporter
+    def status(_test), do: raise("no link")
+  end
+
   defmodule FailingStatus do
     @behaviour VisionCore.Exporter
 
@@ -164,6 +222,13 @@ defmodule VisionCore.Exporter.RunnerTest do
     do: start_runner(Forwarder, options, Runner, config)
 
   defp publish_pair(pair), do: Outputs.publish(@pairs, {:stereo_pair, pair})
+
+  defp publish_detections(pair),
+    do:
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline},
+        {:detections, pair, []}
+      )
 
   defp publish_frame(%Frame{label: label} = frame),
     do: Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
@@ -341,6 +406,39 @@ defmodule VisionCore.Exporter.RunnerTest do
       assert_receive {:exported, :stereo_pair, 4}
       refute_received {:exported, :stereo_pair, 2}
     end
+
+    test "one ready message ends the busy hand-off of every output it names" do
+      runner = start_runner(SlowPair, [])
+      publish_pair(1)
+      publish_detections(1)
+      assert_receive {:exported, :stereo_pair, 1, _at}
+      assert_receive {:exported, :detections, {1, []}, _at}
+
+      publish_pair(2)
+      publish_detections(2)
+      :sys.get_state(runner)
+      refute_received {:exported, _output, _value, _at}
+
+      send(runner, :sent)
+      assert_receive {:exported, :detections, {2, []}, _at}
+      assert_receive {:exported, :stereo_pair, 2, _at}, 1_000
+    end
+
+    test "an output ready again before its slot opens is handed its newest value at the slot" do
+      runner = start_runner(SlowPair, [])
+      publish_pair(1)
+      assert_receive {:exported, :stereo_pair, 1, first_ms}
+
+      publish_pair(2)
+      publish_pair(3)
+      send(runner, :sent)
+
+      assert_receive {:exported, :stereo_pair, 3, third_ms}, 1_000
+
+      # Whole milliseconds, each read just after the runner's own reading: a tick may fall between.
+      assert third_ms - first_ms >= 200 - 1
+      refute_received {:exported, :stereo_pair, 2, _at}
+    end
   end
 
   describe "status" do
@@ -408,6 +506,37 @@ defmodule VisionCore.Exporter.RunnerTest do
       assert Runner.status(runner) == {:ok, "Running; 2 values not exported"}
       assert length(String.split(log, ":rejected")) == 2
     end
+
+    test "an output whose last value was not exported is a warning while another output exports" do
+      runner = start_forwarder(outputs: [:stereo_pair, :detections], reject: [1])
+      publish_pair(1)
+      assert_receive {:exported, :stereo_pair, 1, _at}
+      publish_detections(:pair)
+      assert_receive {:exported, :detections, {:pair, []}, _at}
+
+      assert Runner.status(runner) == {:warning, "1 values not exported, the last for :rejected"}
+
+      publish_pair(2)
+      assert_receive {:exported, :stereo_pair, 2, _at}
+
+      assert Runner.status(runner) == {:ok, "Running; 1 values not exported"}
+    end
+
+    test "values not exported for many reasons leave a failing status/1 still logged" do
+      runner = start_runner(Refusing, [])
+
+      log =
+        capture_log(fn ->
+          for pair <- 1..40 do
+            publish_pair(pair)
+            assert_receive {:exported, :stereo_pair, ^pair}
+          end
+
+          assert Runner.status(runner) == {:warning, "Status failed: no link"}
+        end)
+
+      assert log =~ "status failed: no link"
+    end
   end
 
   describe "start" do
@@ -432,6 +561,16 @@ defmodule VisionCore.Exporter.RunnerTest do
                {:warning, "Not started: the recordings directory is missing"}
 
       eventually(fn -> Runner.status(runner) == {:ok, "Running"} end)
+    end
+
+    test "a started exporter is not started again" do
+      runner = start_runner(Announcing, [])
+      assert_received {:initialised, ^runner}
+
+      send(runner, {Runner, :start_exporter})
+      :sys.get_state(runner)
+
+      refute_received {:initialised, _runner}
     end
   end
 

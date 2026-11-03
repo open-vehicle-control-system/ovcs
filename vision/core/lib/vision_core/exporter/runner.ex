@@ -19,12 +19,14 @@ defmodule VisionCore.Exporter.Runner do
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or
   raises, the runner logs it, reports `{:warning, "Not started: reason"}`
   and calls it again later, the delay doubling up to a cap. It subscribes
-  once `init/1` succeeds. Every failure, of `init/1`, of a value's export
-  or of `c:VisionCore.Exporter.status/1`, is logged the first time.
+  once `init/1` succeeds, and never calls `init/1` again. Every failure,
+  of `init/1`, of a value's export or of `c:VisionCore.Exporter.status/1`,
+  is logged the first time, up to a bound for each of the three.
 
   Without the exporter's own `c:VisionCore.Exporter.status/1`, the status
-  is `{:ok, "Running"}`, a warning while the last value handed over was
-  not exported, and the count of values not exported once some were.
+  is `{:ok, "Running"}`, a warning while the last value handed over of
+  any output was not exported, and the count of values not exported once
+  some were.
 
   `VisionCore.Exporter.Supervisor` starts it under the exporter's own
   supervisor.
@@ -96,9 +98,7 @@ defmodule VisionCore.Exporter.Runner do
            not_started: nil,
            retry_ms: @first_retry_ms,
            failures: 0,
-           last_failed: false,
-           last_failure: nil,
-           logged: MapSet.new()
+           logged: %{init: MapSet.new(), status: MapSet.new(), output: MapSet.new()}
          }, {:continue, :start_exporter}}
 
       {:error, reason} ->
@@ -124,7 +124,10 @@ defmodule VisionCore.Exporter.Runner do
   end
 
   @impl GenServer
-  def handle_info({__MODULE__, :start_exporter}, state), do: {:noreply, start_exporter(state)}
+  def handle_info({__MODULE__, :start_exporter}, %{started: false} = state),
+    do: {:noreply, start_exporter(state)}
+
+  def handle_info({__MODULE__, :start_exporter}, state), do: {:noreply, state}
 
   def handle_info({__MODULE__, :slot_open, output, timer}, state) do
     case state.slots do
@@ -180,7 +183,7 @@ defmodule VisionCore.Exporter.Runner do
         Process.send_after(self(), {__MODULE__, :start_exporter}, state.retry_ms)
 
         %{state | not_started: reason, retry_ms: min(state.retry_ms * 2, @max_retry_ms)}
-        |> log_once({:init, reason}, :warning, "#{inspect(exporter)} not started: #{reason}")
+        |> log_once(:init, reason, :warning, "#{inspect(exporter)} not started: #{reason}")
     end
   end
 
@@ -209,19 +212,23 @@ defmodule VisionCore.Exporter.Runner do
     kind, reason ->
       text = failure_text(kind, reason)
       message = "#{inspect(exporter)} status failed: #{text}"
-      {{:warning, "Status failed: " <> text}, log_once(state, {:status, text}, :error, message)}
+      {{:warning, "Status failed: " <> text}, log_once(state, :status, text, :error, message)}
   end
 
   defp default_status(%{failures: 0}), do: {:ok, "Running"}
 
-  defp default_status(%{last_failed: true} = state) do
-    last = inspect(state.last_failure)
-    {:warning, "#{state.failures} values not exported, the last for #{last}"}
+  defp default_status(state) do
+    case for(%{failed: {_count, _reason} = failed} <- Map.values(state.slots), do: failed) do
+      [] ->
+        {:ok, "Running; #{state.failures} values not exported"}
+
+      failed ->
+        {_count, reason} = Enum.max(failed)
+        {:warning, "#{state.failures} values not exported, the last for #{inspect(reason)}"}
+    end
   end
 
-  defp default_status(state), do: {:ok, "Running; #{state.failures} values not exported"}
-
-  # Per output: its :max_hz interval, last hand-over, held value, slot timer and busy flag.
+  # Per output: :max_hz interval, last hand-over, held value, slot timer, busy, last failure.
   defp slots(entries) do
     Enum.reduce_while(entries, {:ok, %{}}, fn entry, {:ok, slots} ->
       case entry_slot(entry) do
@@ -237,7 +244,15 @@ defmodule VisionCore.Exporter.Runner do
   defp entry_slot({output, options}) when is_list(options) do
     with true <- Exporter.output?(output),
          {:ok, interval_ms} <- interval_ms(options) do
-      {output, %{interval_ms: interval_ms, handed_ms: nil, held: nil, timer: nil, busy: false}}
+      {output,
+       %{
+         interval_ms: interval_ms,
+         handed_ms: nil,
+         held: nil,
+         timer: nil,
+         busy: false,
+         failed: nil
+       }}
     else
       _invalid -> nil
     end
@@ -343,33 +358,33 @@ defmodule VisionCore.Exporter.Runner do
 
     case exporter.handle_output(output, value, state.exporter_state) do
       {:ok, exporter_state} ->
-        %{state | exporter_state: exporter_state, last_failed: false}
+        state = put_in(state, [:slots, output, :failed], nil)
+        %{state | exporter_state: exporter_state}
 
       {:busy, exporter_state} ->
-        state = put_in(state, [:slots, output, :busy], true)
-        %{state | exporter_state: exporter_state, last_failed: false}
+        state = update_in(state, [:slots, output], &%{&1 | busy: true, failed: nil})
+        %{state | exporter_state: exporter_state}
 
       {:error, reason, exporter_state} ->
+        failures = state.failures + 1
         message = "#{inspect(exporter)} did not export #{inspect(output)}: #{inspect(reason)}"
 
-        %{
-          state
-          | exporter_state: exporter_state,
-            failures: state.failures + 1,
-            last_failed: true,
-            last_failure: reason
-        }
-        |> log_once({:output, reason}, :warning, message)
+        state
+        |> put_in([:slots, output, :failed], {failures, reason})
+        |> Map.merge(%{exporter_state: exporter_state, failures: failures})
+        |> log_once(:output, reason, :warning, message)
     end
   end
 
-  # Each distinct failure once, up to a bound, however often it recurs.
-  defp log_once(state, failure, level, message) do
-    if MapSet.member?(state.logged, failure) or MapSet.size(state.logged) >= @max_logged_failures do
+  # Each distinct failure of a `kind` once, up to a bound for that kind, however often it recurs.
+  defp log_once(state, kind, failure, level, message) do
+    logged = Map.fetch!(state.logged, kind)
+
+    if MapSet.member?(logged, failure) or MapSet.size(logged) >= @max_logged_failures do
       state
     else
       Logger.log(level, message)
-      %{state | logged: MapSet.put(state.logged, failure)}
+      put_in(state, [:logged, kind], MapSet.put(logged, failure))
     end
   end
 

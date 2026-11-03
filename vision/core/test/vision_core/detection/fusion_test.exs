@@ -224,6 +224,51 @@ defmodule VisionCore.Detection.FusionTest do
     end
   end
 
+  describe "outlines/3" do
+    alias VisionCore.Camera.Frame
+    alias VisionCore.Ros2.CameraCalibration
+    alias VisionCore.Stereo.Pair
+
+    test "outlines each box on the captured frame, through the left calibration's lens model" do
+      calibration =
+        CameraCalibration.load!(
+          Path.expand("../../support/calibration/distorted_left.yaml", __DIR__)
+        )
+
+      {width, height} = {calibration.width, calibration.height}
+      frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, grey: <<>>}
+
+      pair = %Pair{
+        left_frame: frame,
+        right_frame: frame,
+        geometry: %{width: width, height: height, left_calibration: calibration}
+      }
+
+      person = %{x0: width * 0.25, y0: height * 0.2, x1: width * 0.75, y1: height * 0.8}
+      car = box(10, 10, 20, 30)
+
+      assert [person_outline, car_outline] = Fusion.outlines([person, car], 2, pair)
+      assert person_outline == Fusion.raw_points(Fusion.perimeter(person, 2), pair)
+      assert car_outline == Fusion.raw_points(Fusion.perimeter(car, 2), pair)
+
+      [{x, y} | _rest] = person_outline
+      assert {x, y} == Fusion.raw_pixel(calibration, {person.x0, person.y0})
+      refute_in_delta x, width * 0.25, 1.0e-3
+    end
+
+    test "outlines no box without reading the calibration" do
+      frame = %Frame{label: "left", width: 960, height: 540, capture_ns: 0, grey: <<>>}
+
+      pair = %Pair{
+        left_frame: frame,
+        right_frame: frame,
+        geometry: %{width: 480, height: 270, left_calibration: %CameraCalibration{}}
+      }
+
+      assert Fusion.outlines([], 4, pair) == []
+    end
+  end
+
   defp matrix(values),
     do: values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) |> Evision.Mat.from_nx_2d()
 end

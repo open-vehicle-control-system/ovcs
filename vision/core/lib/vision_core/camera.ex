@@ -9,14 +9,14 @@ defmodule VisionCore.Camera do
   A driver MUST:
 
     * register each instance under `name_for/1` of its label, which the
-      stereo unit, its publishers and its parameters use to reach it;
+      stereo unit, its parameters and the exporters use to reach it;
     * publish each new frame through `VisionCore.Outputs` as
       `{:camera_frame, %VisionCore.Camera.Frame{}}`, under
       `{:camera_frame, name}`, `name` being the instance's registered name.
 
   Drivers stay in raw-capture vocabulary — libcamera/V4L2 details,
   framing, Port lifecycle. Application-side translation (to
-  `sensor_msgs/CompressedImage`, etc.) lives in publishers.
+  `sensor_msgs/CompressedImage`, etc.) lives in the exporters.
   """
 
   @doc "The registered name of the instance labelled `label`."

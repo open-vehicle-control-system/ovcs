@@ -5,7 +5,7 @@ defmodule VisionCore.Ros2.Camera do
   had captured them.
 
   This is what lets the whole perception stack run against Gazebo. The
-  stereo supervisor, the stereo pipeline, the publishers and the Hailo
+  stereo supervisor, the stereo pipeline, the exporters and the Hailo
   detector see `{:camera_frame, %Frame{}}` casts and cannot tell
   whether the pixels came from a sensor or a simulator — which is the
   point. Swapping `driver: VisionCore.Camera.LibCamera` for this module

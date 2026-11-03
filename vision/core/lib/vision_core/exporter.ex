@@ -63,8 +63,8 @@ defmodule VisionCore.Exporter do
       `{:ready, output, state}`, typically on the transport's
       acknowledgement. `{:error, reason, state}` counts a value not
       exported, which the default status shows.
-    * `c:status/1` is asked for by the listing of exporters; one that
-      raises is reported as a warning.
+    * `c:status/1` answers `VisionCore.Exporter.Runner.status/2`; one
+      that raises is reported as a warning.
     * `c:terminate/2`, when defined, makes the runner trap exits so that
       it is called on shutdown too; an exit of a linked process then
       stops the runner as it would without it, and `c:handle_info/2`
@@ -94,17 +94,11 @@ defmodule VisionCore.Exporter do
         end
 
         @impl VisionCore.Exporter
-        def handle_output(:stereo_pair, pair, state) do
-          :ok = MyCar.Mqtt.publish_async(state.prefix <> "/depth", pair.depth, :stereo_pair)
-          {:busy, state}
-        end
+        def handle_output(:stereo_pair, pair, state),
+          do: publish(state, "/depth", pair.depth, :stereo_pair)
 
-        def handle_output(:detections, {_pair, detections}, state) do
-          case MyCar.Mqtt.publish(state.prefix <> "/detections", Jason.encode!(detections)) do
-            :ok -> {:ok, state}
-            {:error, reason} -> {:error, reason, state}
-          end
-        end
+        def handle_output(:detections, {_pair, detections}, state),
+          do: publish(state, "/detections", Jason.encode!(detections), :detections)
 
         @impl VisionCore.Exporter
         def handle_info({:mqtt_published, output}, state), do: {:ready, output, state}
@@ -113,12 +107,22 @@ defmodule VisionCore.Exporter do
         @impl VisionCore.Exporter
         def status(%{link: :up}), do: {:ok, "Connected"}
         def status(_state), do: {:warning, "Broker unreachable"}
+
+        defp publish(state, topic, payload, output) do
+          case MyCar.Mqtt.publish_async(state.prefix <> topic, payload, output) do
+            :ok -> {:busy, state}
+            {:error, reason} -> {:error, reason, state}
+          end
+        end
       end
 
   started as `{MyCar.Vision.MqttExporter, broker: "10.0.0.2", prefix:
   "car/vision"}`. Its helper, `MyCar.Mqtt`, connects and reconnects on
   its own; `MyCar.Mqtt.attach/1` answers its link at once and has it
-  send the runner each change of link and each acknowledgement.
+  send the runner each change of link. `MyCar.Mqtt.publish_async/3`
+  returns at once, `{:error, :not_connected}` without a link, and has
+  the helper send `{:mqtt_published, output}` once the broker
+  acknowledges the message.
   """
 
   alias VisionCore.Camera.Frame

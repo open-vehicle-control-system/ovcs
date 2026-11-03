@@ -5,14 +5,17 @@ defmodule VisionCore.Detection.PipelineTest do
   alias VisionCore.Outputs
 
   describe "a pair through the backend" do
+    alias VisionCore.Camera.Frame
     alias VisionCore.Detection.Backend.Stub
     alias VisionCore.Stereo.Pair
 
     @moduletag :capture_log
 
-    # 40x20 pixels: the left half 2 m away, the right half without depth.
+    # Matched at 40x20 pixels, half the frames' size, without calibration: the left half 2 m
+    # away, the right half without depth.
     defp pair_with_depth do
       {width, height} = {40, 20}
+      frame = %Frame{label: "left", width: 80, height: 40, capture_ns: 0, grey: <<>>}
 
       depth =
         for _y <- 1..height,
@@ -21,8 +24,8 @@ defmodule VisionCore.Detection.PipelineTest do
             do: <<if(x < 20, do: 2000, else: 0)::little-16>>
 
       %Pair{
-        left_frame: nil,
-        right_frame: nil,
+        left_frame: frame,
+        right_frame: %Frame{frame | label: "right"},
         left: Nx.broadcast(Nx.u8(0), {height, width}),
         depth: depth,
         geometry: %{principal_point: {20.0, 10.0}, focal_length_px: 50.0}
@@ -62,6 +65,15 @@ defmodule VisionCore.Detection.PipelineTest do
       assert [%{label: "person", class_id: 0, score: 0.9} = person] = detections()
       assert_in_delta person.z, 2.0, 1.0e-6
       assert_in_delta person.x, -0.4, 1.0e-6
+      assert length(person.outline) == 16
+    end
+
+    test "outlines each box on the captured left frame, and captions it, for every consumer" do
+      start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], outline_segments: 1)
+
+      assert [person] = detections()
+      assert person.outline == [{0.0, 0.0}, {40.0, 0.0}, {40.0, 40.0}, {0.0, 40.0}]
+      assert person.caption == "person 0.90 2.00m"
     end
 
     test "keeps the highest scores, up to :max_detections" do

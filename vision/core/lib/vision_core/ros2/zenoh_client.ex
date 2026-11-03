@@ -56,10 +56,10 @@ defmodule VisionCore.Ros2.ZenohClient do
     * Tracking subscribers (`subscribe/4` / `unsubscribe/2`), monitoring
       their pids so a crashing consumer cleans up after itself.
 
-  The actual ROS 2 message generation (heartbeats, images, detections)
-  lives in caller GenServers — `VisionCore.Ros2.Publishers.Heartbeat`,
-  `VisionCore.Ros2.Publishers.Stereo` and friends — that use the API
-  exposed here, and so does the CDR encoding of what they publish.
+  The ROS 2 messages themselves (heartbeats, images, detections) are
+  built by `VisionCore.Ros2.Exporter`, which publishes them through
+  `publish/4` from its own processes, and so does the CDR encoding of
+  what it publishes.
 
   ## Subscriptions
 
@@ -176,9 +176,7 @@ defmodule VisionCore.Ros2.ZenohClient do
     case encode_unless_offline(message) do
       {:ok, payload} ->
         VisionCore.Ros2.Topics.count(topic, message_module)
-
-        # The client reads only the payload; the message goes along for the publishers' test doubles.
-        GenServer.cast(__MODULE__, {:publish, topic, message_module, message, payload, opts})
+        GenServer.cast(__MODULE__, {:publish, topic, message_module, payload, opts})
 
       {:error, {:encode_raised, reason}} = error ->
         drop_unencodable(topic, message_module, reason)
@@ -300,15 +298,16 @@ defmodule VisionCore.Ros2.ZenohClient do
     GenServer.call(__MODULE__, :link)
   catch
     :exit, _reason ->
-      %{node_name: configured_node_name(), connected: false, endpoint: nil, services: []}
+      node_name = configured_node_name(VisionCore.Application.active_config())
+      %{node_name: node_name, connected: false, endpoint: nil, services: []}
   end
 
-  defp configured_node_name do
-    case VisionCore.Application.active_config() do
-      %VisionCore.Config{node_name: node_name} when is_binary(node_name) -> node_name
-      _none -> @default_node_name
-    end
-  end
+  @doc "The node name the client runs under with `config`: its `:node_name`, else the default."
+  @spec configured_node_name(VisionCore.Config.t() | nil) :: String.t()
+  def configured_node_name(%VisionCore.Config{node_name: node_name}) when is_binary(node_name),
+    do: node_name
+
+  def configured_node_name(_config), do: @default_node_name
 
   @impl GenServer
   def init(opts) do
@@ -474,7 +473,7 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   # No payload: the caller saw no session. No session: it was lost since the caller looked.
   def handle_cast(
-        {:publish, _topic, _message_module, _message, payload, _opts},
+        {:publish, _topic, _message_module, payload, _opts},
         %State{session: session} = state
       )
       when is_nil(payload) or is_nil(session) do
@@ -484,7 +483,7 @@ defmodule VisionCore.Ros2.ZenohClient do
     {:noreply, %{state | drops_while_offline: state.drops_while_offline + 1}}
   end
 
-  def handle_cast({:publish, topic, message_module, _message, payload, _opts}, state) do
+  def handle_cast({:publish, topic, message_module, payload, _opts}, state) do
     case ensure_publisher(state, topic, message_module) do
       {:ok, state, publisher} ->
         publisher = %{publisher | sequence_number: publisher.sequence_number + 1}
