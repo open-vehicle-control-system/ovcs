@@ -36,13 +36,13 @@ jobs:
       elixir: ${{ steps.filter.outputs.elixir }}
       docs: ${{ steps.filter.outputs.docs }}
       cli: ${{ steps.filter.outputs.cli }}
-      vue: ${{ steps.filter.outputs.vue }}
+      vms_dashboard: ${{ steps.filter.outputs.vms_dashboard }}
       bus_gateway_dashboard: ${{ steps.filter.outputs.bus_gateway_dashboard }}
       ovcs_ui: ${{ steps.filter.outputs.ovcs_ui }}
       vision_dashboard: ${{ steps.filter.outputs.vision_dashboard }}
       vision_rust: ${{ steps.filter.outputs.vision_rust }}
-      flutter: ${{ steps.filter.outputs.flutter }}
-      platformio: ${{ steps.filter.outputs.platformio }}
+      infotainment_dashboard: ${{ steps.filter.outputs.infotainment_dashboard }}
+      generic_controller: ${{ steps.filter.outputs.generic_controller }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
@@ -78,7 +78,7 @@ jobs:
             cli:
               - *shared
               - cli/**
-            vue:
+            vms_dashboard:
               - *shared
               - vms/dashboard/**
             bus_gateway_dashboard:
@@ -95,10 +95,10 @@ jobs:
             vision_rust:
               - *shared
               - vision/rust/**
-            flutter:
+            infotainment_dashboard:
               - *shared
               - infotainment/dashboard/**
-            platformio:
+            generic_controller:
               - *shared
               - controllers/**
 
@@ -218,8 +218,8 @@ jobs:
         # changes without touching: check it against the compiled modules.
         run: mix dialyzer --force-check --format github
 
-  cli-build:
-    name: CLI · cargo build
+  cli:
+    name: Rust · cli
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.cli == 'true'
     runs-on: ubuntu-latest
@@ -256,10 +256,10 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: test -x cli/target/release/ovcs && file cli/target/release/ovcs | grep -q 'ELF .* executable'
 
-  vue-dashboard:
+  vms-dashboard:
     name: Vue · vms/dashboard
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.vue == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.vms_dashboard == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -393,10 +393,10 @@ jobs:
       - run: npm run test:unit -- --run
       - run: npm run build
 
-  flutter-dashboard:
+  infotainment-dashboard:
     name: Flutter · infotainment/dashboard
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.flutter == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.infotainment_dashboard == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -416,10 +416,10 @@ jobs:
       - run: flutter analyze
       - run: flutter test
 
-  platformio-controller:
-    name: PlatformIO · generic_controller
+  generic-controller:
+    name: PlatformIO · controllers/generic_controller
     needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.platformio == 'true'
+    if: github.event_name != 'pull_request' || needs.changes.outputs.generic_controller == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:

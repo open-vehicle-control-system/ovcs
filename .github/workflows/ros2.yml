@@ -70,7 +70,7 @@ jobs:
     # change; manual runs always build them. `ovcs compute stage` looks up
     # the last main commit that changed the same paths (IMAGE_SOURCES and
     # PUBLISHED_WITH in cli/src/commands/compute.rs) to name its tag.
-    name: image sources changed
+    name: Changed images
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -90,7 +90,7 @@ jobs:
               - .github/workflows/ros2.yml
 
   compose-config:
-    name: compose config
+    name: Compose · ${{ matrix.file }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -109,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: docker compose config
+      - name: Validate the compose file
         run: |
           # The local stacks read ZENOH_ENDPOINT_IP from a .env that is
           # deliberately not committed (it holds a site-specific vehicle
@@ -125,13 +125,13 @@ jobs:
           docker compose -f '${{ matrix.file }}' ${{ matrix.profiles }} config -q
 
   pins:
-    name: version pins agree
+    name: Zenoh · version pins
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
 
-      - name: zenoh is one version everywhere
+      - name: Check zenoh is one version everywhere
         run: |
           set -eu
           router=$(grep -ho 'eclipse/zenoh:[0-9.]*' compose/compute/docker-compose.yml compose/local/base.yml | sort -u)
@@ -142,7 +142,7 @@ jobs:
           [ "${router#eclipse/zenoh:}" = "${client#eclipse-zenoh==}" ] || { echo "router and python client disagree"; exit 1; }
 
   lint:
-    name: ruff
+    name: Python · ruff
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -156,17 +156,17 @@ jobs:
       # Configuration, including which paths are in scope, lives in
       # `ruff.toml` at the repo root so a local run matches this one.
       # `ruff format` is deliberately not checked — see that file.
-      - name: ruff check
+      - name: Run ruff
         run: ruff check --output-format=github .
 
   urdf:
-    name: expanded URDFs are current
+    name: Xacro · expanded URDFs
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
-      - name: mise run urdf
+      - name: Check the expanded URDFs are current
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo ros:lyrical-ros-base@sha256:0c19f326a339ed770ef1d4c0646a8b53bdb49dd5ff74b6de41ebdb8ac21e1806 bash -c '
             apt-get update -qq && apt-get install -y -qq --no-install-recommends ros-lyrical-xacro >/dev/null
@@ -176,7 +176,7 @@ jobs:
             || { echo "::error::an expanded URDF is stale: run \`mise run urdf\`"; exit 1; }
 
   image:
-    name: build ${{ matrix.image }} (${{ matrix.platform.arch }})
+    name: Docker · ${{ matrix.image }} on ${{ matrix.platform.arch }}
     needs: images-changed
     if: needs.images-changed.outputs.images == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ matrix.platform.runner }}
@@ -248,7 +248,7 @@ jobs:
           retention-days: 1
 
   manifest:
-    name: publish ${{ matrix.image }}
+    name: Docker · publish ${{ matrix.image }}
     if: github.event_name == 'push'
     needs: image
     runs-on: ubuntu-latest
