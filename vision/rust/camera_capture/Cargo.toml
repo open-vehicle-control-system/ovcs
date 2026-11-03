@@ -1,0 +1,15 @@
+[package]
+name = "camera_capture"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+device = ["dep:libcamera", "dep:libc"]
+
+[dependencies]
+framing = { path = "../framing" }
+libc = { version = "0.2", optional = true }
+libcamera = { version = "0.7", features = ["vendor_draft", "vendor_rpi"], optional = true }
+
+[build-dependencies]
+pkg-config = "0.3"

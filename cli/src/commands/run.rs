@@ -269,7 +269,7 @@ fn discover_addons(roles: &[Role]) -> Result<Vec<Addon>> {
             .and_then(|s| s.to_str())
             .unwrap_or("addon")
             .to_string();
-        for addon in vehicles::dev_addons(&role.cwd)? {
+        for addon in vehicles::dev_addons(&role.cwd, &role.env)? {
             let dir = role.cwd.join(&addon.dir);
             let dir = dir.canonicalize().unwrap_or(dir);
             addons.push(Addon {
@@ -358,7 +358,7 @@ fn tool_available(name: &str) -> bool {
 
 struct Role {
     /// Label used for the sname suffix and the log prefix (e.g. "vms",
-    /// "infotainment", "bridge-radio_control").
+    /// "infotainment", "vision", "bridge-radio_control").
     label: String,
     /// Directory to `cd` into before spawning the BEAM.
     cwd: PathBuf,
@@ -433,7 +433,7 @@ fn ensure_built(roles: &[Role], vehicle: &Vehicle) -> Result<()> {
 }
 
 /// A group of roles sharing a `build.sh` (all bridges roles share
-/// `bridges/firmware`; vms and infotainment are their own groups).
+/// `bridges/firmware`; vms, infotainment and vision are their own groups).
 struct BuildGroup {
     cwd: PathBuf,
     /// Role labels in the order they were declared — drives pane order.

@@ -7,6 +7,7 @@ defmodule OvcsBus.Cluster do
 
   * `vms` — every vehicle.
   * `infotainment` — vehicles that implement `infotainment/0`.
+  * `vision` — vehicles that implement `vision/0`.
   * `bridge-<id>` — one per entry in `bridge_firmwares/0`.
 
   Node-name shape is inferred from `Node.self()`:
@@ -78,7 +79,15 @@ defmodule OvcsBus.Cluster do
   """
   @spec peers_for(module()) :: [node()]
   def peers_for(vehicle_module) do
-    case Node.alive?() && String.split(Atom.to_string(Node.self()), "@", parts: 2) do
+    if Node.alive?(), do: peers_for(vehicle_module, Node.self()), else: []
+  end
+
+  @doc """
+  Derive the peer node list for `vehicle_module` as seen from `self_node`.
+  """
+  @spec peers_for(module(), node()) :: [node()]
+  def peers_for(vehicle_module, self_node) do
+    case String.split(Atom.to_string(self_node), "@", parts: 2) do
       [sname, hostname] ->
         vehicle_hyphen = vehicle_dir_hyphen(vehicle_module)
         roles = declared_roles(vehicle_module)
@@ -139,6 +148,9 @@ defmodule OvcsBus.Cluster do
     info_roles =
       if function_exported?(vehicle_module, :infotainment, 0), do: ["infotainment"], else: []
 
+    vision_roles =
+      if function_exported?(vehicle_module, :vision, 0), do: ["vision"], else: []
+
     bridge_roles =
       if function_exported?(vehicle_module, :bridge_firmwares, 0) do
         vehicle_module.bridge_firmwares()
@@ -148,7 +160,7 @@ defmodule OvcsBus.Cluster do
         []
       end
 
-    ["vms"] ++ info_roles ++ bridge_roles
+    ["vms"] ++ info_roles ++ vision_roles ++ bridge_roles
   end
 
   defp vehicle_dir_hyphen(vehicle_module) do

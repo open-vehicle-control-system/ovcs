@@ -1,0 +1,431 @@
+defmodule VisionCore.Stereo.Parameters do
+  @moduledoc """
+  Declares a stereo unit's parameter groups in `VisionCore.Parameters`,
+  the steps of its `:stereo` pipeline, under its prefix `<prefix>`:
+
+    * `<prefix>.cameras` — the capture settings of both cameras, with the
+      capture size, frame rate and each side's addressing as build
+      parameters. Exposure and gain are set by auto exposure while it is on,
+      and then read what the sensors apply; their defaults are the manual
+      settings. For a driver whose one set of controls drives both cameras
+      (`c:VisionCore.Camera.shared_controls?/0`), they are that driver's
+      controls. For a driver with controls per camera, each setting is
+      applied to both cameras and read from the left one; auto exposure and
+      auto gain are switches of their own, and the defaults are the
+      composer's settings for the left camera.
+    * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
+      pipeline order, with its settings. The first stage that provides the
+      images, `:left` and `:right`, also carries the matching size; the
+      stage that provides the pair's `:alignment` has as its status the
+      row offset `VisionCore.Status` measures.
+    * `<prefix>.<stage>.auto_row_offset`, before the `right_row_offset`
+      of the stage that declares it — switches
+      `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
+      a stage provides `:alignment`; on, it sets `right_row_offset` from
+      that stage's measure.
+
+  Stages are found by what they declare, not by name: with the default
+  stages, Rectification carries the matching size and
+  `<prefix>.rectification.auto_row_offset`, and RowAlignment the row
+  offset.
+
+  Declares nothing when the registry is not running.
+  """
+  use GenServer
+
+  alias VisionCore.Parameters.Check
+  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
+
+  @side_keys [:device, :camera_id, :sync, :sensor_mode, :format]
+  @half_row 0.5
+  @manual_keys [:exposure_time_us, :analogue_gain]
+  @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
+  @auto_switches [
+    {:auto_exposure, :exposure_time_us, "Let the camera choose the shutter time"},
+    {:auto_gain, :analogue_gain, "Let the camera choose the analogue gain"}
+  ]
+  @cameras_explanation "Both cameras capture with the same settings, so that a point looks alike " <>
+                         "in the two images, which matching relies on. Exposure and gain set the " <>
+                         "brightness: a longer exposure brightens the image but blurs what moves, " <>
+                         "and a higher gain brightens it but adds noise, which makes the images " <>
+                         "harder to match. The automatic modes choose them for the scene; switch " <>
+                         "them off to set them yourself. Where the lenses have a focus setting, " <>
+                         "Sharpness, right / left compares the two cameras' focus. The capture " <>
+                         "size, frame rate and each camera's addressing are fixed in the build. " <>
+                         "Watch the frame rate, exposure and gain under each video, and the " <>
+                         "synchronisation between them."
+
+  @doc """
+  Declares the unit's groups. Options: `:prefix`, `:driver`,
+  `:pipeline` (`VisionCore.Stereo.Pipeline`), `:left`, `:right`, `:width`,
+  `:height`, `:fps`, `:match_width` and `:match_height`.
+  """
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @impl GenServer
+  def init(opts) do
+    if Process.whereis(VisionCore.Parameters),
+      do: :ok = VisionCore.Parameters.declare(groups(opts))
+
+    {:ok, nil}
+  end
+
+  @doc "The unit's group declarations for `opts`; see `start_link/1`."
+  @spec groups(keyword()) :: [VisionCore.Parameters.group_declaration()]
+  def groups(opts) do
+    prefix = Keyword.fetch!(opts, :prefix)
+    pipeline = Keyword.get(opts, :pipeline, Pipeline)
+    stage_options = Pipeline.stage_options(pipeline)
+    offset = AlignmentCorrection.offset_stage(stage_options)
+    alignment = AlignmentCorrection.alignment_stage(stage_options)
+    images = Enum.find(stage_options, &provides_images?/1)
+
+    # The names of the stages whose groups carry more than their settings. The correction's
+    # switch needs the correction running, and a measure for it to follow.
+    roles = %{
+      switch: if(Process.whereis(AlignmentCorrection) && alignment && offset, do: offset.stage),
+      alignment: alignment && alignment.stage,
+      images: images && images.stage
+    }
+
+    stages =
+      stage_options
+      |> Enum.with_index(1)
+      |> Enum.map(fn {stage, position} ->
+        stage_group(prefix, pipeline, stage, position, opts, roles)
+      end)
+
+    camera_groups(prefix, opts) ++ stages
+  end
+
+  # The images at the matching size, which the first stage to provide them makes from the frames.
+  defp provides_images?(stage), do: Enum.all?([:left, :right], &(&1 in stage.module.provides()))
+
+  defp camera_groups(prefix, opts) do
+    driver = Keyword.fetch!(opts, :driver)
+    Code.ensure_loaded(driver)
+
+    cond do
+      function_exported?(driver, :shared_controls?, 0) and driver.shared_controls?() ->
+        [shared_cameras_group(prefix, driver, opts)]
+
+      function_exported?(driver, :control_specs, 0) ->
+        [paired_cameras_group(prefix, driver, opts)]
+
+      true ->
+        []
+    end
+  end
+
+  defp shared_cameras_group(prefix, driver, opts) do
+    id = "#{prefix}.cameras"
+    server = driver.name_for("left")
+    controls = driver.controls(server)
+
+    %{
+      id: id,
+      name: "Cameras",
+      summary: "Capture settings, applied to both cameras.",
+      explanation: @cameras_explanation,
+      kind: :component,
+      pipeline: :stereo,
+      position: 0,
+      parameters:
+        Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
+          camera_build_parameters(opts, [:left, :right])
+    }
+  end
+
+  # Each setting goes to both cameras' drivers; values are read from the left one.
+  defp paired_cameras_group(prefix, driver, opts) do
+    id = "#{prefix}.cameras"
+    servers = Enum.map(["left", "right"], &driver.name_for/1)
+    configured = Keyword.get(opts, :left, [])
+
+    %{
+      id: id,
+      name: "Cameras",
+      summary: "Capture settings, applied to both cameras.",
+      explanation: @cameras_explanation,
+      kind: :component,
+      pipeline: :stereo,
+      position: 0,
+      parameters:
+        Enum.map(@auto_switches, &auto_switch(&1, driver, servers)) ++
+          Enum.map(driver.control_specs(), &paired_control(&1, driver, servers, id, configured)) ++
+          camera_build_parameters(opts, [:left, :right])
+    }
+  end
+
+  defp auto_switch({name, key, description}, driver, [left | _] = servers) do
+    %{
+      name: Atom.to_string(name),
+      type: :bool,
+      get: fn -> automatic_value?(driver.controls(left)[key]) end,
+      set: &automatic_set(&1, driver, servers, key),
+      constraint: %{kind: :bool},
+      description: description
+    }
+  end
+
+  # Off is applied by the registry setting the controlled value first.
+  defp automatic_set(true, driver, servers, key), do: set_all(driver, servers, [{key, 0}])
+  defp automatic_set(false, _driver, _servers, _key), do: :ok
+
+  defp set_all(driver, servers, controls) do
+    Enum.reduce_while(servers, :ok, fn server, :ok ->
+      case set_result(driver.set_controls(server, controls)) do
+        :ok -> {:cont, :ok}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp automatic_value?(value), do: is_nil(value) or value == 0
+
+  defp paired_control(spec, driver, [left | _] = servers, group_id, configured) do
+    %{
+      name: Atom.to_string(spec.key),
+      type: spec.type,
+      get: side_get(spec.key, driver, left, configured[spec.key]),
+      set: &set_all(driver, servers, [{spec.key, &1}]),
+      constraint: side_constraint(spec),
+      applies: side_applies(spec.key, group_id),
+      description: side_description(spec)
+    }
+    |> put_configured_default(spec.key, configured[spec.key])
+  end
+
+  # While automatic and nothing is live, the manual setting (never 0): releasing it keeps the camera's value.
+  defp side_get(key, driver, server, configured) when key in @manual_keys do
+    fn ->
+      value = driver.controls(server)[key]
+
+      if automatic_value?(value) do
+        applied = live(driver, server)
+        (applied && applied[key]) || manual_value(configured)
+      else
+        value
+      end
+    end
+  end
+
+  # Until set, where libcamera holds the lens, as it reports it.
+  defp side_get(:lens_position, driver, server, _configured) do
+    fn ->
+      driver.controls(server)[:lens_position] ||
+        (live(driver, server) || %{})[:lens_position]
+    end
+  end
+
+  defp side_get(key, driver, server, _configured), do: fn -> driver.controls(server)[key] end
+
+  defp manual_value(configured), do: if(automatic_value?(configured), do: 1, else: configured)
+
+  defp side_applies(key, group_id) when key in @manual_keys,
+    do: {:auto, "#{group_id}.#{@auto_switch_of[key]}"}
+
+  defp side_applies(_key, _group_id), do: :live
+
+  # 0 is how the driver is told to go automatic, so a manual value starts at 1.
+  defp side_constraint(%{key: :exposure_time_us}),
+    do: %{kind: :range, min: 1, max: 1_000_000, step: nil}
+
+  defp side_constraint(%{key: :analogue_gain}), do: %{kind: :range, min: 1, max: 16, step: nil}
+  defp side_constraint(spec), do: Check.constraint(spec)
+
+  defp side_description(%{key: :exposure_time_us}),
+    do: "Shutter time in microseconds; set by auto exposure while it is on"
+
+  defp side_description(%{key: :analogue_gain}),
+    do: "Analogue gain; set by auto gain while it is on"
+
+  defp side_description(spec), do: spec.description
+
+  defp put_configured_default(declaration, key, value) when key in @manual_keys do
+    if automatic_value?(value), do: declaration, else: Map.put(declaration, :default, value)
+  end
+
+  defp put_configured_default(declaration, _key, _value), do: declaration
+
+  defp control(spec, driver, server, group_id, controls) do
+    %{
+      name: Atom.to_string(spec.key),
+      type: spec.type,
+      get: control_get(spec.key, driver, server),
+      set: &set_result(driver.set_controls(server, [{spec.key, &1}])),
+      constraint: control_constraint(spec),
+      applies: control_applies(spec.key, group_id),
+      description: spec.description
+    }
+    |> put_manual_default(spec.key, controls)
+  end
+
+  # Auto exposure's first values are not the built-in ones: the manual settings are.
+  defp put_manual_default(declaration, key, controls) when key in [:exposure_us, :analogue_gain],
+    do: put_present(declaration, :default, controls[key])
+
+  defp put_manual_default(declaration, _key, _controls), do: declaration
+
+  defp control_get(key, driver, server) when key in [:exposure_us, :analogue_gain] do
+    fn ->
+      controls = driver.controls(server)
+      applied = controls.auto_exposure && live(driver, server)
+      if applied, do: applied[live_key(key)] || controls[key], else: controls[key]
+    end
+  end
+
+  defp control_get(key, driver, server), do: fn -> driver.controls(server)[key] end
+
+  defp live(driver, server) do
+    if function_exported?(driver, :live, 1), do: driver.live(server)
+  end
+
+  defp live_key(:exposure_us), do: :exposure_time_us
+  defp live_key(:analogue_gain), do: :analogue_gain
+
+  defp control_constraint(%{key: :rotation}), do: %{kind: :choices, values: [0, 180]}
+  defp control_constraint(spec), do: Check.constraint(spec)
+
+  defp control_applies(key, group_id) when key in [:exposure_us, :analogue_gain],
+    do: {:auto, "#{group_id}.auto_exposure"}
+
+  defp control_applies(_key, _group_id), do: :live
+
+  defp camera_build_parameters(opts, sides) do
+    general =
+      for key <- [:width, :height, :fps], Keyword.has_key?(opts, key), do: {key, opts[key]}
+
+    per_side =
+      for side <- sides,
+          {key, value} <- Keyword.get(opts, side, []),
+          key in @side_keys,
+          do: {:"#{side}_#{key}", value}
+
+    Enum.map(general ++ per_side, &build_parameter/1)
+  end
+
+  defp stage_group(prefix, pipeline, stage, position, opts, roles) do
+    id = "#{prefix}.#{stage.stage}"
+
+    parameters =
+      Enum.map(stage.specs, fn {key, spec} ->
+        stage_parameter(pipeline, stage.stage, key, spec, prefix, roles)
+      end)
+
+    %{
+      id: id,
+      name: humanise(stage.stage),
+      summary: stage.summary,
+      kind: :stage,
+      pipeline: :stereo,
+      position: position,
+      values: fn -> stage_values(pipeline, stage.stage) end,
+      parameters:
+        leading_parameters(stage.stage, roles) ++
+          parameters ++ extra_parameters(stage.stage, roles, opts)
+    }
+    |> put_present(:explanation, stage[:explanation])
+    |> Map.merge(extra_group_fields(stage.stage, roles))
+    |> Map.merge(Map.take(stage, [:compute]))
+  end
+
+  defp stage_parameter(pipeline, stage, key, spec, prefix, roles) do
+    %{
+      name: Atom.to_string(key),
+      type: spec.type,
+      set: &set_result(Pipeline.set_options(pipeline, stage, [{key, &1}])),
+      constraint: Check.constraint(spec),
+      applies: stage_applies(stage, key, spec, prefix, roles)
+    }
+    |> put_present(:greater_than, spec[:greater_than] && Atom.to_string(spec.greater_than))
+    |> put_present(:description, spec[:description])
+  end
+
+  # Every setting of `stage` by name, in one call to the pipeline.
+  defp stage_values(pipeline, stage) do
+    case Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == stage)) do
+      nil -> %{}
+      options -> Map.new(options.values, fn {key, value} -> {Atom.to_string(key), value} end)
+    end
+  end
+
+  defp stage_applies(stage, :right_row_offset, _spec, prefix, %{switch: stage}),
+    do: {:auto, "#{prefix}.#{stage}.auto_row_offset"}
+
+  defp stage_applies(_stage, _key, spec, _prefix, _roles), do: Map.get(spec, :applies, :live)
+
+  # The automatic switch comes before the value it sets, as auto exposure does.
+  defp leading_parameters(stage, %{switch: stage}) do
+    [
+      %{
+        name: "auto_row_offset",
+        type: :bool,
+        get: fn -> AlignmentCorrection.enabled?() end,
+        set: &AlignmentCorrection.set_enabled/1,
+        constraint: %{kind: :bool},
+        description:
+          "Move the right image to keep the rows lined up, from the row alignment measure; " <>
+            "off, right_row_offset stays as set"
+      }
+    ]
+  end
+
+  defp leading_parameters(_stage, _roles), do: []
+
+  defp extra_parameters(stage, %{images: stage}, opts) do
+    for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
+      build_parameter({key, opts[key]})
+    end
+  end
+
+  defp extra_parameters(_stage, _roles, _opts), do: []
+
+  defp extra_group_fields(stage, %{alignment: stage}), do: %{status: &alignment_status/0}
+  defp extra_group_fields(_stage, _roles), do: %{}
+
+  defp alignment_status do
+    with pid when is_pid(pid) <- Process.whereis(VisionCore.Status),
+         %{offset_rows: offset} when is_number(offset) <- VisionCore.Status.alignment() do
+      rows = Float.round(offset * 1.0, 2)
+
+      if abs(rows) > @half_row,
+        do: {:warning, "rows off by #{rows}"},
+        else: {:ok, "#{rows} rows"}
+    else
+      _no_measurement -> nil
+    end
+  end
+
+  @doc "A build parameter declaration for `{key, value}`: read-only, fixed at start."
+  @spec build_parameter({atom(), term()}, String.t()) :: VisionCore.Parameters.declaration()
+  def build_parameter({key, value}, description \\ "Fixed at start") do
+    {type, value} = parameter_value(value)
+
+    %{
+      name: Atom.to_string(key),
+      type: type,
+      get: fn -> value end,
+      applies: :build,
+      description: description
+    }
+  end
+
+  defp parameter_value(value) when is_integer(value), do: {:integer, value}
+  defp parameter_value(value) when is_float(value), do: {:double, value}
+  defp parameter_value(value) when is_boolean(value), do: {:bool, value}
+  defp parameter_value({width, height}), do: {:string, "#{width}x#{height}"}
+  defp parameter_value({width, height, bits}), do: {:string, "#{width}x#{height}:#{bits}"}
+  defp parameter_value(value) when is_atom(value), do: {:string, Atom.to_string(value)}
+  defp parameter_value(value), do: {:string, to_string(value)}
+
+  defp humanise(name),
+    do: name |> Atom.to_string() |> String.replace("_", " ") |> String.capitalize()
+
+  defp put_present(map, _key, nil), do: map
+  defp put_present(map, key, value), do: Map.put(map, key, value)
+
+  # A set's reply as the registry takes it: `:ok`, or the refusal.
+  defp set_result({:ok, _values}), do: :ok
+  defp set_result({:error, _reason} = error), do: error
+end

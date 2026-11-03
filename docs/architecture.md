@@ -18,7 +18,7 @@ An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adopt
 
 ### The framework knows no vehicle
 
-The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_package.md) follows that selection through the boot sequence.
+The cores (`vms_core`, `infotainment_core`, `vision_core`), firmware shells, bridge libraries and shared libraries contain no vehicle-specific code. Every vehicle is a Mix package under `vehicles/<name>/` that implements `OvcsVehicle` and bundles its supervision tree, CAN topology YAMLs and Nerves targets. `VEHICLE`, set to the package's top-level module name, selects it at boot. [Your vehicle package](./vehicle_package.md) follows that selection through the boot sequence.
 
 ## Where the line is drawn
 
@@ -26,8 +26,9 @@ The cores (`vms_core`, `infotainment_core`), firmware shells, bridge libraries a
 |---|---|
 | `vms_core`: component drivers, managers, metrics, the `VmsCore.Vehicle` behaviour | `<Vehicle>.Vms.Composer` implementing it |
 | `infotainment_core`: layout model, the `InfotainmentCore.Vehicle` behaviour | `<Vehicle>.Infotainment.Composer` (optional) |
-| VMS and infotainment Phoenix APIs, Vue and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
-| Firmware shells (`vms/firmware`, `infotainment/firmware`, `bridges/firmware`) that read `VEHICLE` | Nerves targets per role (`vms_target/0`, `infotainment_target/0`) |
+| `vision_core`: camera drivers, stereo depth, detector backends, the `VisionCore.Composer` behaviour | `<Vehicle>.Vision.Composer` (optional) |
+| VMS, infotainment and vision Phoenix APIs, Vue, React and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
+| Firmware shells (`vms/firmware`, `infotainment/firmware`, `vision/firmware`, `bridges/firmware`) that read `VEHICLE` | Nerves targets per role (`vms_target/0`, `infotainment_target/0`, `vision_target/0`) |
 | Bridge libraries (`RadioControlBridge`, `RosBridge`) and the `OvcsBridge` contract | `bridge_firmwares/0`: which bridges to build, on which target |
 | Shared CAN frame specs in `ovcs_can` | CAN topology YAMLs under `priv/can/` |
 | The generic controller firmware and its adoption protocol | Controller pinout maps (`generic_controllers/0`) |
@@ -42,10 +43,11 @@ A running vehicle is a small fleet of BEAMs:
 
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
+- **Vision** (optional): stereo depth on a Raspberry Pi 5 or an OKdo Nano C100, and object detection where the Pi 5 has a Hailo-8, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/overview.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
 
-The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare.
+The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's React dashboard is served by its own API, from the unit, and shows its previews and its pipeline's parameters.
 
 ### One Erlang mesh, no broker
 
@@ -53,7 +55,7 @@ Every BEAM of a running vehicle joins one Erlang-distribution cluster through `O
 
 A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus_gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus.md).
 
-The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per Raspberry Pi over the vehicle LAN.
+The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per board over the vehicle LAN.
 
 On the host, the CLI starts each BEAM with `--sname <vehicle>-<role>` and your `~/.erlang.cookie`, which it creates with a random value if it is missing; the host BEAMs only dial each other, so nobody else on the network can join them. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
 
@@ -64,7 +66,7 @@ Erlang's own resolver knows nothing about mDNS. Each firmware enables mdns_lite'
 
 ## Three layers per system
 
-VMS and infotainment share one layered shape. Each layer is its own Mix project referencing the one below through a relative `path:` dependency; this is a monorepo, not an umbrella.
+VMS, infotainment and the vision unit share one layered shape. Each layer is its own Mix project referencing the one below through a relative `path:` dependency; this is a monorepo, not an umbrella.
 
 ```text
 +------------+     +------------+     +----------------+
@@ -75,13 +77,15 @@ VMS and infotainment share one layered shape. Each layer is its own Mix project 
                           |                    |
                     +-----+------+      +------+-------+
                     |  Dashboard |      |  Cantastic   |
-                    | (Vue/Dart) |      |  (CAN lib)   |
+                    | (Vue,      |      |  (CAN lib)   |
+                    |  React,    |      |              |
+                    |  Flutter)  |      |              |
                     +------------+      +--------------+
 ```
 
-- **Core**: component drivers, managers, and the `VmsCore.Vehicle` or `InfotainmentCore.Vehicle` behaviour. No web dependencies, no vehicle code.
+- **Core**: component drivers, managers, and the `VmsCore.Vehicle`, `InfotainmentCore.Vehicle` or `VisionCore.Composer` behaviour. No web dependencies, no vehicle code. `vision_core` has no CAN: it talks Zenoh instead of Cantastic.
 - **API**: a Phoenix project exposing a JSON API and WebSocket channels. Depends on Core.
-- **Dashboard**: Vue for the VMS debug dashboard, Flutter for the head unit.
+- **Dashboard**: Vue for the VMS debug dashboard, React for the vision dashboard, Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
 The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Framework components](./components.md).

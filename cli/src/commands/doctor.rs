@@ -171,9 +171,10 @@ pub fn run() -> Result<()> {
                 Ok((
                     vms_target,
                     vehicles::nerves_target(vehicle, "infotainment")?,
+                    vehicles::nerves_target(vehicle, "vision")?,
                 ))
             });
-            let (vms_target, infotainment_target) = match targets {
+            let (vms_target, infotainment_target, vision_target) = match targets {
                 Ok(targets) => targets,
                 Err(error) => {
                     let summary = error.to_string();
@@ -202,6 +203,9 @@ pub fn run() -> Result<()> {
                     }
                     if let Some(target) = &infotainment_target {
                         parts.push(format!("infotainment → {}", target));
+                    }
+                    if let Some(target) = &vision_target {
+                        parts.push(format!("vision → {}", target));
                     }
                     print_row(Mark::Ok, &vehicle.dir, &parts.join(", "));
                 }

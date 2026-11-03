@@ -20,11 +20,12 @@ Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.tom
 | `ovcs_base_can_system_rpi3a` | `bridges/firmware` (radio control) | v3.0.0-rc.1 |
 | `ovcs_base_can_system_rpi4` | `vms/firmware`, `bridges/firmware` (ROS) | v3.0.0-rc.1 |
 | `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.1 |
-| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception) | v3.0.0-rc.2 |
+| `rpi5` (`ovcs_bridges_system_rpi5`) | `bridges/firmware` (perception), `vision/firmware` | v3.0.0-rc.2 |
+| `okdo_c100` (`nerves_system_okdo_c100`) | `vision/firmware` | v0.3.0 |
 
-The perception system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
+The Pi 5 system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
 
-Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use all four between them.
+Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use the first four between them, and none builds `okdo_c100`, since none has a vision unit.
 
 Every system is pinned to a **tag**, never to a branch. A branch moves with each release on the fork, and the next `mix deps.update` would silently change the OTP major.
 
@@ -35,10 +36,10 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 The systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
 > [!NOTE]
-> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. Every system's kernel defaults to `performance` (`CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE`), and `OvcsVehicle.CpuGovernor` sets it again at boot in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so a system image with another default still runs `performance`.
+> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. The OVCS systems' kernels default to `performance` (`CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE`), and `OvcsVehicle.CpuGovernor` sets it again at boot in `vms_firmware`, `infotainment_firmware`, `bridge_firmware` and `vision_firmware`, on target only, so a system image with another default still runs `performance`.
 
 > [!WARNING]
-> **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware` and `bridge_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
+> **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware`, `bridge_firmware` and `vision_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.
 
 **Boot overlays come in A/B pairs.** `cmdline-a.txt` (rootfs on `mmcblk0p5`) and `cmdline-b.txt` (`mmcblk0p6`) live next to `config.txt`, both in each firmware's shared `<firmware>/targets/<target>/` and in a vehicle's `priv/firmware/<role>/` (`priv/firmware/bridges/<id>/` for bridges) when it overrides them. The pairs are not interchangeable between roles: infotainment boots with `console=tty3` and `logo.nologo`, radio control with `brcmfmac.feature_disable`. Derive a new pair from the same role's pair in `<firmware>/targets/<target>/`, never from another role, and keep the `mmcblk0p5` / `mmcblk0p6` root partitions.
 

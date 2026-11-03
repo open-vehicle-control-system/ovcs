@@ -9,6 +9,9 @@ defmodule OvcsVehicle.CpuGovernor do
   OVCS systems also default to `performance`; this keeps it so on a
   system image that does not.
 
+  `:glob` and `:devices` point it at other frequency governors, such as a
+  devfreq GPU's, and name them in its log line.
+
   Wired in as a `Task` child like `OvcsVehicle.FirmwareValidator`, and
   only on target:
 
@@ -43,8 +46,12 @@ defmodule OvcsVehicle.CpuGovernor do
     results = Enum.map(paths, &{&1, File.write(&1, @governor)})
 
     case Enum.reject(results, fn {_, result} -> result == :ok end) do
-      [] -> Logger.info("#{__MODULE__}: #{length(paths)} CPU(s) set to #{@governor}")
-      failed -> Logger.error("#{__MODULE__}: could not set #{@governor}: #{inspect(failed)}")
+      [] ->
+        devices = Keyword.get(opts, :devices, "CPU")
+        Logger.info("#{__MODULE__}: #{length(paths)} #{devices}(s) set to #{@governor}")
+
+      failed ->
+        Logger.error("#{__MODULE__}: could not set #{@governor}: #{inspect(failed)}")
     end
 
     :ok

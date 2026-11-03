@@ -1,0 +1,74 @@
+defmodule VisionCore.Ros2.CameraTest do
+  use ExUnit.Case, async: true
+
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
+  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
+  alias VisionCore.Ros2.Camera
+
+  # A real JPEG of random pixels: a flat fill compresses to an unrepresentative short scan.
+  defp jpeg(width, height) do
+    pixels = :crypto.strong_rand_bytes(width * height * 3)
+
+    pixels
+    |> Evision.Mat.from_binary({:u, 8}, height, width, 3)
+    |> then(&Evision.imencode(".jpg", &1))
+  end
+
+  describe "decode_dimensions/1" do
+    test "agrees with Evision on a real JPEG" do
+      for {width, height} <- [{480, 270}, {640, 360}, {1280, 720}, {17, 5}] do
+        assert {:ok, ^width, ^height} = Camera.decode_dimensions(jpeg(width, height)),
+               "failed for #{width}x#{height}"
+      end
+    end
+
+    test "rejects data that is not a JPEG" do
+      assert Camera.decode_dimensions(<<0, 1, 2, 3>>) == :error
+      assert Camera.decode_dimensions(<<>>) == :error
+      # PNG magic — a plausible mistake if a publisher changes format.
+      assert Camera.decode_dimensions(<<0x89, ?P, ?N, ?G, 13, 10, 26, 10>>) == :error
+    end
+
+    test "rejects a truncated JPEG rather than guessing" do
+      full = jpeg(480, 270)
+      assert Camera.decode_dimensions(binary_part(full, 0, 4)) == :error
+    end
+  end
+
+  test "publishes each image as a frame under its label, with its configured frame id" do
+    output = {:camera_frame, Camera.name_for("left")}
+    :ok = Outputs.subscribe(output)
+
+    state = %{
+      label: "left",
+      frame_id: "stereo_left_optical",
+      topic: "stereo/left/image_raw/compressed",
+      output: output,
+      frame_count: 0
+    }
+
+    header = %Header{stamp: %Time{sec: 1}, frame_id: "camera_left"}
+    image = %CompressedImage{header: header, format: "jpeg", data: jpeg(17, 5)}
+
+    assert {:noreply, _state} = Camera.handle_info({:ros_message, {state.topic, image}}, state)
+
+    assert_receive {:"$gen_cast",
+                    {:camera_frame,
+                     %Frame{label: "left", frame_id: "stereo_left_optical", width: 17, height: 5}}}
+  end
+
+  test "does not start without the ROS 2 link, and says so" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        assert {:error, {:shutdown, :no_ros2_link}} =
+                 Camera.start_link(label: "left", topic: "stereo/left/image_raw/compressed")
+      end)
+
+    assert log =~ "no ros2: section"
+  end
+end

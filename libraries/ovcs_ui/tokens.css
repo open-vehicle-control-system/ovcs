@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light dark;
   --ovcs-bg: #f3f4f6;
   --ovcs-surface: #ffffff;
   --ovcs-border: #d1d5db;
@@ -8,12 +9,20 @@
   --ovcs-ok: #16a34a;
   --ovcs-warn: #d97706;
   --ovcs-error: #dc2626;
+  /* The status and accent colours for text, dark enough to read on the light surfaces. */
+  --ovcs-ok-text: #15803d;
+  --ovcs-warn-text: #b45309;
+  --ovcs-error-text: #b91c1c;
+  --ovcs-accent-text: #c2410c;
   --ovcs-font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --ovcs-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Linux fonts by name: some browsers resolve the generic `monospace` to a serif fallback. */
+  --ovcs-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono",
+    "Ubuntu Mono", "Noto Sans Mono", monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --ovcs-bg: #111827;
     --ovcs-surface: #1f2937;
     --ovcs-border: #374151;
@@ -23,10 +32,19 @@
     --ovcs-ok: #4ade80;
     --ovcs-warn: #fbbf24;
     --ovcs-error: #f87171;
+    --ovcs-ok-text: var(--ovcs-ok);
+    --ovcs-warn-text: var(--ovcs-warn);
+    --ovcs-error-text: var(--ovcs-error);
+    --ovcs-accent-text: var(--ovcs-accent);
   }
 }
 
+[data-theme="light"] {
+  color-scheme: light;
+}
+
 [data-theme="dark"] {
+  color-scheme: dark;
   --ovcs-bg: #111827;
   --ovcs-surface: #1f2937;
   --ovcs-border: #374151;
@@ -36,4 +54,8 @@
   --ovcs-ok: #4ade80;
   --ovcs-warn: #fbbf24;
   --ovcs-error: #f87171;
+  --ovcs-ok-text: var(--ovcs-ok);
+  --ovcs-warn-text: var(--ovcs-warn);
+  --ovcs-error-text: var(--ovcs-error);
+  --ovcs-accent-text: var(--ovcs-accent);
 }

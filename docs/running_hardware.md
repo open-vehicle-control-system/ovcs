@@ -3,7 +3,7 @@ title: Running on hardware
 description: Build and burn your vehicle's Nerves firmware, update running boards over SSH or through NervesHub, keep SSH host keys stable across burns, and attach to the running boards.
 ---
 
-Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own Raspberry Pi. This guide covers building those images, getting them onto boards, updating them, and watching them run.
+Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own board. This guide covers building those images, getting them onto boards, updating them, and watching them run.
 
 The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. Everything that varies per vehicle (the Nerves target of each role, `.env.exs` with its keys and secrets, the SSH host keys, the CAN mapping) belongs to your vehicle package under `vehicles/<vehicle>/`. The commands below use the `ovcs1` and `ovcs_mini` reference vehicles; substitute your own package name and they work unchanged.
 
@@ -16,9 +16,11 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | `bridge-radio_control` (reference vehicles) | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | `bridge-ros` (reference vehicles) | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
 | `bridge-ros_vision` (OVCS Mini) | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `vision` | Raspberry Pi 5, optionally with a Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
+| `vision` | OKdo Nano C100 | [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) (Mix target `okdo_c100`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
-These are the reference vehicles' choices. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
+These are the reference vehicles' choices, except `vision`: none of them runs it, and its two rows are the boards `vision/firmware` builds for. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
@@ -33,12 +35,12 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 ```
 
 - `<vehicle>` is the snake_case directory name of a vehicle under `vehicles/`.
-- `<role>` is `vms`, `infotainment`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision/overview.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments are order-independent. A missing one opens an interactive picker; on a non-tty stdin the command exits with status 2.
 
 ## Build
 
-1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
+1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge or a vision unit, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
 2. **Generate stable SSH host keys**, once per vehicle ([below](#stable-ssh-host-keys-across-burns)):
 
    ```sh
@@ -65,7 +67,7 @@ A fresh SD-card burn regenerates the device's SSH host key, so every reflash tri
 ./ovcs host-keys generate ovcs1
 ```
 
-This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate; `./ovcs doctor` warns about any vehicle missing keys.
+This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, `vision/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate; `./ovcs doctor` warns about any vehicle missing keys.
 
 To share one identity across a team:
 
@@ -102,14 +104,14 @@ The default host is `<vehicle>-<role>.local`, with every underscore turned into 
 
 ## OTA updates via NervesHub
 
-The VMS firmware ships [NervesHubLink](https://hexdocs.pm/nerves_hub_link/), so deployed vehicles can pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
+The VMS and vision firmwares ship [NervesHubLink](https://hexdocs.pm/nerves_hub_link/), so deployed vehicles can pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
 
 - `NERVES_HUB_HOST`: the instance's device endpoint, a bare hostname (`wss` on port 443) or a full `wss://host:port` URL.
 - `NERVES_HUB_PRODUCT_KEY` and `NERVES_HUB_PRODUCT_SECRET`: the shared-secret pair from the product's settings on the instance.
 
 Without `NERVES_HUB_HOST`, the firmware never contacts NervesHub.
 
-**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name: `Ovcs1 - VMS`, `Ovcs Mini - VMS`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to, so create one product per vehicle with that name and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware.
+**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name and the firmware: `Ovcs1 - VMS`, `Ovcs Mini - VMS`, `<Vehicle> - Vision`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to, so create one product per vehicle with that name and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware. Both firmwares of a vehicle read that one pair, so it serves the VMS or the vision unit, not both.
 
 Publish with the [`nh` CLI](https://github.com/nerves-hub/nerves_hub_cli):
 

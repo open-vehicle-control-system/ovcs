@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::vehicles::{self, Vehicle};
 
 pub fn static_roles() -> &'static [&'static str] {
-    &["vms", "infotainment"]
+    &["vms", "infotainment", "vision"]
 }
 
 pub fn roles_for(vehicle: &Vehicle) -> Result<Vec<String>> {
@@ -29,14 +29,18 @@ pub struct FirmwareResolution {
     pub env: HashMap<String, String>,
 }
 
-pub fn resolve(vehicle: &Vehicle, role: &str) -> Result<FirmwareResolution> {
-    let static_dir = match role {
+/// Firmware project of a fixed role; `None` for bridge roles.
+fn static_firmware_dir(role: &str) -> Option<&'static str> {
+    match role {
         "vms" => Some("vms/firmware"),
         "infotainment" => Some("infotainment/firmware"),
+        "vision" => Some("vision/firmware"),
         _ => None,
-    };
+    }
+}
 
-    if let Some(dir) = static_dir {
+pub fn resolve(vehicle: &Vehicle, role: &str) -> Result<FirmwareResolution> {
+    if let Some(dir) = static_firmware_dir(role) {
         let mut env = HashMap::new();
         env.insert("VEHICLE".to_string(), vehicle.module.clone());
         if let Some(target) = vehicles::nerves_target(vehicle, role)? {
@@ -71,4 +75,25 @@ pub fn resolve(vehicle: &Vehicle, role: &str) -> Result<FirmwareResolution> {
         firmware_dir: "bridges/firmware".to_string(),
         env,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{static_firmware_dir, static_roles};
+
+    #[test]
+    fn resolve_vision_role_points_at_vision_firmware() {
+        assert_eq!(static_firmware_dir("vision"), Some("vision/firmware"));
+        assert_eq!(static_firmware_dir("vms"), Some("vms/firmware"));
+        assert_eq!(
+            static_firmware_dir("infotainment"),
+            Some("infotainment/firmware")
+        );
+        assert_eq!(static_firmware_dir("bridge-ros"), None);
+    }
+
+    #[test]
+    fn vision_is_a_static_role() {
+        assert!(static_roles().contains(&"vision"));
+    }
 }

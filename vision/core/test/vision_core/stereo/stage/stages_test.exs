@@ -1,0 +1,490 @@
+defmodule VisionCore.Stereo.Stage.StagesTest do
+  # OpenCV, through evision (a test dependency), is the reference the
+  # stages are measured against.
+  use ExUnit.Case, async: false
+
+  import VisionCore.Stereo.TestHelpers,
+    only: [
+      calibration_path: 2,
+      context: 3,
+      context: 4,
+      frame: 1,
+      frames_pair: 2,
+      run_nx: 3,
+      run_stage: 4,
+      start_pipeline: 1,
+      texture: 3
+    ]
+
+  alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
+  alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Stereo.{Pair, Pipeline, Stage}
+
+  # Smooth enough that bilinear sampling differs from OpenCV's fixed point
+  # by rounding only.
+  defp smooth(height, width) do
+    x = Nx.iota({height, width}, axis: 1, type: :f32)
+    y = Nx.iota({height, width}, axis: 0, type: :f32)
+
+    Nx.add(128, Nx.multiply(60, Nx.sin(Nx.divide(x, 7))))
+    |> Nx.add(Nx.multiply(60, Nx.cos(Nx.divide(y, 9))))
+    |> Nx.clip(0, 255)
+    |> Nx.round()
+    |> Nx.as_type(:u8)
+  end
+
+  defp to_tensor(matrix), do: matrix |> Evision.Mat.to_nx(Nx.BinaryBackend) |> Nx.squeeze()
+
+  defp max_difference(first, second) do
+    Nx.subtract(Nx.as_type(first, :f32), Nx.as_type(second, :f32))
+    |> Nx.abs()
+    |> Nx.reduce_max()
+    |> Nx.to_number()
+  end
+
+  # OpenCV's rectification maps, CV_16SC2 and its fraction table.
+  defp opencv_maps(%CameraCalibration{} = calibration) do
+    matrix = fn values -> values |> Nx.tensor(type: :f64) |> Nx.reshape({3, 3}) end
+
+    projection =
+      Enum.map([0, 1, 2, 4, 5, 6, 8, 9, 10], &Enum.at(calibration.projection_matrix, &1))
+
+    distortion = Enum.take(calibration.distortion_coefficients ++ List.duplicate(0.0, 5), 5)
+
+    Evision.initUndistortRectifyMap(
+      Evision.Mat.from_nx_2d(matrix.(calibration.camera_matrix)),
+      Evision.Mat.from_nx_2d(Nx.tensor([distortion], type: :f64)),
+      Evision.Mat.from_nx_2d(matrix.(calibration.rectification_matrix)),
+      Evision.Mat.from_nx_2d(matrix.(projection)),
+      {calibration.width, calibration.height},
+      Evision.Constant.cv_16SC2()
+    )
+  end
+
+  describe "against OpenCV" do
+    test "Decode shrinks 768x432 frames to 480x270 as INTER_AREA does" do
+      context = context(:stereo, 480, 270, {768, 432})
+      image = texture(432, 768, 1)
+
+      pair = run_stage(Stage.Decode, [], context, frames_pair(image, image))
+
+      reference =
+        image
+        |> Evision.Mat.from_nx_2d()
+        |> Evision.resize({480, 270}, interpolation: Evision.Constant.cv_INTER_AREA())
+        |> to_tensor()
+
+      assert Nx.shape(pair.left) == {270, 480}
+      assert max_difference(pair.left, reference) <= 1
+    end
+
+    test "Decode passes frames of the pipeline's size through" do
+      context = context(:stereo, 64, 48)
+      image = texture(48, 64, 2)
+
+      pair = run_stage(Stage.Decode, [], context, frames_pair(image, image))
+
+      assert Nx.to_list(pair.left) == Nx.to_list(image)
+    end
+
+    test "Rectification rectifies as initUndistortRectifyMap and remap do" do
+      context = context(:stereo, 480, 270)
+      image = smooth(270, 480)
+
+      pair = run_stage(Stage.Rectification, [], context, frames_pair(image, image))
+
+      for {rectified, calibration} <- [
+            {pair.left, context.left_calibration},
+            {pair.right, context.right_calibration}
+          ] do
+        {integer_map, fraction_map} = opencv_maps(calibration)
+
+        reference =
+          image
+          |> Evision.Mat.from_nx_2d()
+          |> Evision.remap(integer_map, fraction_map, Evision.Constant.cv_INTER_LINEAR())
+          |> to_tensor()
+
+        difference = Nx.subtract(Nx.as_type(rectified, :s16), Nx.as_type(reference, :s16))
+        within_one = difference |> Nx.abs() |> Nx.less_equal(1) |> Nx.mean() |> Nx.to_number()
+        assert within_one >= 0.999
+      end
+    end
+
+    test "Rectification shrinks 768x432 frames to 480x270 close to INTER_AREA then remap" do
+      context = context(:stereo, 480, 270, {768, 432})
+      image = smooth(432, 768)
+
+      pair = run_stage(Stage.Rectification, [], context, frames_pair(image, image))
+
+      assert Nx.shape(pair.left) == {270, 480}
+
+      shrunk =
+        image
+        |> Evision.Mat.from_nx_2d()
+        |> Evision.resize({480, 270}, interpolation: Evision.Constant.cv_INTER_AREA())
+
+      for {rectified, calibration} <- [
+            {pair.left, context.left_calibration},
+            {pair.right, context.right_calibration}
+          ] do
+        {integer_map, fraction_map} = opencv_maps(calibration)
+
+        reference =
+          shrunk
+          |> Evision.remap(integer_map, fraction_map, Evision.Constant.cv_INTER_LINEAR())
+          |> to_tensor()
+
+        # Away from the image's edge, where OpenCV blends with a zero border.
+        interior = fn tensor -> tensor[[20..249, 20..459]] end
+
+        difference =
+          Nx.subtract(
+            Nx.as_type(interior.(rectified), :s16),
+            Nx.as_type(interior.(reference), :s16)
+          )
+
+        within_two = difference |> Nx.abs() |> Nx.less_equal(2) |> Nx.mean() |> Nx.to_number()
+        assert within_two >= 0.999
+      end
+    end
+
+    test "MedianFilter filters as medianBlur does" do
+      context = context(:stereo, 64, 48)
+      disparity = Nx.divide(Nx.as_type(texture(48, 64, 3), :f32), 4)
+      pair = run_stage(Stage.MedianFilter, [], context, %{disparity: disparity})
+
+      reference = disparity |> Evision.Mat.from_nx_2d() |> Evision.medianBlur(5) |> to_tensor()
+      assert Nx.to_list(pair.disparity) == Nx.to_list(reference)
+    end
+  end
+
+  test "MedianFilter takes unmatched pixels for the lowest values of the window" do
+    context = context(:stereo, 64, 48)
+
+    # A 5x5 window of `middle` and its 24 `neighbours`, whose order does not matter.
+    window = fn middle, neighbours ->
+      {before_middle, after_middle} = Enum.split(neighbours, 12)
+      Nx.tensor(before_middle ++ [middle] ++ after_middle, type: :f32) |> Nx.reshape({5, 5})
+    end
+
+    unmatched = &List.duplicate(-1.0, &1)
+    at = &List.duplicate(&1, &2)
+
+    cases = [
+      {window.(30.0, unmatched.(13) ++ at.(30.0, 11)), -1.0},
+      {window.(30.0, unmatched.(12) ++ at.(30.0, 12)), 30.0},
+      {window.(-1.0, unmatched.(11) ++ at.(30.0, 13)), 30.0},
+      {window.(-1.0, unmatched.(12) ++ at.(30.0, 12)), -1.0},
+      {window.(30.0, unmatched.(10) ++ at.(20.0, 5) ++ at.(30.0, 9)), 20.0}
+    ]
+
+    matched = Nx.broadcast(Nx.f32(30.0), {48, 64})
+
+    disparity =
+      cases
+      |> Enum.with_index()
+      |> Enum.reduce(matched, fn {{patch, _expected}, index}, image ->
+        Nx.put_slice(image, [10, 10 * index + 4], patch)
+      end)
+
+    pair = run_stage(Stage.MedianFilter, [], context, %{disparity: disparity})
+
+    for {{_window, expected}, index} <- Enum.with_index(cases),
+        do: assert(Nx.to_number(pair.disparity[[12, 10 * index + 6]]) == expected)
+  end
+
+  test "Rectification moves the right image by right_row_offset rows, and only it" do
+    context = context(:identity, 96, 64)
+    image = smooth(64, 96)
+    input = frames_pair(image, image)
+    rectify = &run_stage(Stage.Rectification, &1, context, input)
+
+    {plain, shifted} = {rectify.([]), rectify.(right_row_offset: 1.0)}
+    assert Nx.to_list(shifted.left) == Nx.to_list(plain.left)
+    assert Nx.to_list(shifted.right[[10..50, ..]]) == Nx.to_list(plain.right[[11..51, ..]])
+
+    assert [right_row_offset: %{type: :double}] = Stage.Rectification.option_specs()
+    {:ok, state} = Stage.Rectification.init([], context)
+    assert {:ok, state} = Stage.Rectification.set_option(state, :right_row_offset, -2.5)
+    assert Stage.Rectification.options(state) == %{right_row_offset: -2.5}
+    assert {:error, _} = Stage.Rectification.set_option(state, :right_row_offset, 20)
+  end
+
+  test "Rectification refuses frames smaller than the working size: it only shrinks them" do
+    assert Stage.Rectification.init([], context(:identity, 96, 64, {64, 64})) ==
+             {:error,
+              "rectification only shrinks: 64x64 frames are smaller than the 96x64 working size"}
+
+    assert {:error, _reason} = Stage.Rectification.init([], context(:identity, 96, 64, {96, 48}))
+    assert {:ok, _state} = Stage.Rectification.init([], context(:identity, 96, 64, {192, 128}))
+  end
+
+  test "Disparity aggregates along 8 paths, or 3 when asked" do
+    context = context(:identity, 192, 108)
+    assert {:ok, state} = Stage.Disparity.init([], context)
+    assert Stage.Disparity.options(state).paths == 8
+    assert {:ok, state} = Stage.Disparity.init([paths: 3], context)
+    assert Stage.Disparity.options(state).paths == 3
+
+    assert Stage.Disparity.init([paths: 4], context) ==
+             {:error, "paths must be one of 3, 8, got 4"}
+  end
+
+  test "Disparity's matcher says where it runs, or leaves it to the pipeline" do
+    context = context(:identity, 192, 108)
+    {:ok, default} = Stage.Disparity.init([paths: 3], context)
+    {:ok, native} = Stage.Disparity.init([matcher: :native, paths: 3], context)
+    {:ok, nx} = Stage.Disparity.init([matcher: :nx, paths: 3], context)
+
+    assert Stage.Disparity.compute(default) == nil
+    assert Stage.Disparity.compute(native) == :native
+    assert Stage.Disparity.compute(nx) == :nx
+    assert Stage.Disparity.options(native) == Stage.Disparity.options(default)
+
+    assert {:error, "matcher must be :nx or :native, got :gpu"} =
+             Stage.Disparity.init([matcher: :gpu], context)
+  end
+
+  test "Disparity reads NxStereo.sgm/3's matches at disparity 0 as unmatched" do
+    context = context(:stereo, 64, 48)
+    texture = texture(48, 76, 4)
+    left = texture[[.., 0..63]]
+    # The upper half the same on both sides, at disparity 0; the lower half at 12.
+    right = Nx.concatenate([left[[0..23, ..]], texture[[24..47, 12..75]]])
+    sgm = Nx.Defn.jit_apply(&NxStereo.sgm(&1, &2, paths: 3), [left, right], compiler: EXLA)
+    assert Nx.to_number(Nx.any(Nx.equal(sgm, 0))) == 1
+    assert Nx.to_number(Nx.any(Nx.greater(sgm, 0))) == 1
+
+    pair = run_stage(Stage.Disparity, [paths: 3], context, %{left: left, right: right})
+
+    assert Nx.to_list(pair.disparity) == Nx.to_list(Nx.select(Nx.greater(sgm, 0), sgm, -1.0))
+  end
+
+  test "Disparity declares p2 above p1, and its disparities and paths as build settings" do
+    specs = Stage.Disparity.option_specs()
+
+    assert %{greater_than: :p1} = specs[:p2]
+    assert %{values: [64, 128], applies: :build} = specs[:num_disparities]
+    assert %{values: [3, 8], applies: :build} = specs[:paths]
+    assert %{values: [3, 5], applies: :build} = Stage.MedianFilter.option_specs()[:kernel_size]
+    assert %{type: :integer, applies: :build} = Stage.PointCloud.option_specs()[:decimation]
+  end
+
+  test "Disparity lists its build settings with the values it runs with" do
+    context = context(:identity, 192, 108)
+    {:ok, state} = Stage.Disparity.init([num_disparities: 64, paths: 3], context)
+
+    assert %{num_disparities: 64, paths: 3, p1: 8, p2: 64} = Stage.Disparity.options(state)
+
+    assert Stage.Disparity.params(state, context) |> Map.keys() |> Enum.sort() == [
+             :p1,
+             :p2,
+             :uniqueness
+           ]
+
+    {:ok, size} = Stage.MedianFilter.init([kernel_size: 3], context)
+    assert Stage.MedianFilter.options(size) == %{kernel_size: 3}
+    {:ok, decimation} = Stage.PointCloud.init([decimation: 2], context)
+    assert Stage.PointCloud.options(decimation) == %{decimation: 2}
+    assert {:error, _} = Stage.PointCloud.init([decimation: 0], context)
+  end
+
+  test "SpeckleFilter and TemporalFilter settings are named as their composer options" do
+    context = context(:identity, 192, 108)
+    {:ok, speckle} = Stage.SpeckleFilter.init([min_support: 10, max_diff: 2.0], context)
+    assert Stage.SpeckleFilter.options(speckle) == %{min_support: 10, max_diff: 2.0}
+    assert {:ok, speckle} = Stage.SpeckleFilter.set_option(speckle, :min_support, 6)
+    assert Stage.SpeckleFilter.options(speckle).min_support == 6
+    assert Keyword.keys(Stage.SpeckleFilter.option_specs()) == [:min_support, :max_diff]
+
+    {:ok, temporal} = Stage.TemporalFilter.init([alpha: 0.5, delta: 1.0, hold: 3], context)
+    assert Stage.TemporalFilter.options(temporal) == %{alpha: 0.5, delta: 1.0, hold: 3}
+    assert {:ok, temporal} = Stage.TemporalFilter.set_option(temporal, :hold, 0)
+    assert Stage.TemporalFilter.options(temporal).hold == 0
+    assert Keyword.keys(Stage.TemporalFilter.option_specs()) == [:alpha, :delta, :hold]
+  end
+
+  test "Depth and PointCloud measure f·B/d and keep the points from 5 cm to 20 m" do
+    context = context(:identity, 192, 108)
+    matched = Nx.iota({108, 192}, axis: 1) |> Nx.less(96)
+    disparity = Nx.select(matched, 12.0, -1.0)
+
+    [pair] =
+      run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, [%{disparity: disparity}])
+
+    depth_mm = Nx.from_binary(pair.depth, :u16) |> Nx.reshape({108, 192})
+    assert Nx.to_number(depth_mm[[0, 0]]) == 1000
+    assert Nx.to_number(depth_mm[[0, 191]]) == 0
+    assert pair.disparity_bytes == Nx.to_binary(disparity)
+
+    # One point every 4 pixels as an organized grid, NaN outside the matched half.
+    assert pair.cloud_size == {27, 48}
+    assert byte_size(pair.cloud) == 27 * 48 * 12
+    assert pair.cloud_points == 27 * 24
+    <<_x::little-float-32, _y::little-float-32, z::little-float-32, _rest::binary>> = pair.cloud
+    assert_in_delta z, 1.0, 1.0e-6
+    <<_::binary-size(47 * 12 + 8), unmatched_z::binary-size(4), _::binary>> = pair.cloud
+    refute match?(<<_::little-float-32>>, unmatched_z)
+  end
+
+  test "PointCloud unprojects each point from the depth pixel it samples, at any size" do
+    # 4-pixel steps fit 27 times in 110 rows and 48 times in 194 columns, with a remainder.
+    context = context(:identity, 194, 110)
+    rows = Nx.iota({110, 194}, axis: 0, type: :f32)
+    columns = Nx.iota({110, 194}, axis: 1, type: :f32)
+    # A disparity, and so a depth, of its own at every pixel.
+    disparity = rows |> Nx.multiply(0.1) |> Nx.add(Nx.multiply(columns, 0.01)) |> Nx.add(4.0)
+
+    [pair] =
+      run_nx([{Stage.Depth, []}, {Stage.PointCloud, []}], context, [%{disparity: disparity}])
+
+    assert pair.cloud_size == {27, 48}
+    {cx, cy} = context.principal_point
+    focal_length_px = context.focal_length_px
+    disparities = Nx.to_list(disparity)
+
+    points =
+      for <<x::little-float-32, y::little-float-32, z::little-float-32 <- pair.cloud>>,
+        do: {x, y, z}
+
+    for {{x, y, z}, index} <- Enum.with_index(points) do
+      {row, column} = {div(index, 48) * 4, rem(index, 48) * 4}
+      depth_m = focal_length_px * context.baseline_m / Enum.at(Enum.at(disparities, row), column)
+      assert_in_delta z, depth_m, 1.0e-5 * depth_m
+      assert_in_delta x, (column - cx) * depth_m / focal_length_px, 1.0e-4
+      assert_in_delta y, (row - cy) * depth_m / focal_length_px, 1.0e-4
+    end
+  end
+
+  test "Depth gives no depth beyond what 16-bit millimetres hold" do
+    context = context(:identity, 192, 108)
+    # f·B is 12 px·m: 0.2 px is 60 m, 12 / 65.535 px 65535 mm, 0.1 px 120 m.
+    disparities = Nx.tensor([[12.0, 0.2, 12 / 65.535, 0.1, 1.0e-6, 0.0]])
+    disparity = Nx.broadcast(Nx.f32(-1.0), {108, 192}) |> Nx.put_slice([0, 0], disparities)
+    pair = run_stage(Stage.Depth, [], context, %{disparity: disparity})
+
+    <<first_pixels::binary-size(12), _::binary>> = pair.depth
+
+    assert for(<<millimetres::little-16 <- first_pixels>>, do: millimetres) ==
+             [1000, 60_000, 65_535, 0, 0, 0]
+  end
+
+  describe "the default pipeline" do
+    setup do
+      Process.flag(:trap_exit, true)
+      texture = texture(108, 204, 5)
+      {:ok, left: frame(texture[[.., 0..191]]), right: frame(texture[[.., 12..203]])}
+    end
+
+    defp start(name) do
+      {:ok, pipeline} =
+        start_pipeline(
+          name: name,
+          stages: Pipeline.default_stages(),
+          left_calibration_path: calibration_path(:identity, :left),
+          right_calibration_path: calibration_path(:identity, :right),
+          width: 192,
+          height: 108,
+          defn_options: [compiler: EXLA]
+        )
+
+      :ok = Outputs.subscribe({:stereo_pair, name})
+      pipeline
+    end
+
+    defp measure(pipeline, left, right) do
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:"$gen_cast", {:stereo_pair, %Pair{} = pair}}, 60_000
+      assert_receive :stereo_pipeline_ready
+
+      depths =
+        for(<<millimetres::little-16 <- pair.depth>>, millimetres > 0, do: millimetres / 1000)
+        |> Enum.sort()
+
+      %{
+        share: length(depths) / div(byte_size(pair.depth), 2),
+        median_m: Enum.at(depths, div(length(depths), 2))
+      }
+    end
+
+    test "measures a known disparity", %{left: left, right: right} do
+      measured = start(:known) |> measure(left, right)
+
+      assert_in_delta measured.median_m, 1.0, 0.02
+      assert measured.share > 0.8
+    end
+
+    test "matches at least as much as OpenCV's StereoSGBM", %{left: left, right: right} do
+      measured = start(:against_sgbm) |> measure(left, right)
+
+      [left_mat, right_mat] =
+        for frame <- [left, right],
+            do: Evision.Mat.from_binary(frame.grey, {:u, 8}, 108, 192, 1)
+
+      sgbm_share =
+        Evision.StereoSGBM.create(minDisparity: 0, numDisparities: 64, blockSize: 5)
+        |> Evision.StereoSGBM.compute(left_mat, right_mat)
+        |> to_tensor()
+        |> Nx.greater(0)
+        |> Nx.mean()
+        |> Nx.to_number()
+
+      assert measured.share >= sgbm_share - 0.10
+    end
+
+    @tag :jpeg
+    test "decodes JPEG frames, as libcamera and ROS cameras deliver them", %{
+      left: left,
+      right: right
+    } do
+      start_supervised!(VisionCore.Jpeg)
+
+      [left, right] =
+        for frame <- [left, right] do
+          {:ok, jpeg} =
+            VisionCore.Jpeg.encode(frame.grey, frame.width, frame.height, 1, quality: 95)
+
+          %{frame | grey: nil, jpeg: jpeg}
+        end
+
+      assert_in_delta measure(start(:jpeg_frames), left, right).median_m, 1.0, 0.05
+    end
+
+    @tag :jpeg
+    test "a JPEG frame that does not decode fails its pair, the next goes through", %{
+      left: left,
+      right: right
+    } do
+      start_supervised!(VisionCore.Jpeg)
+      pipeline = start(:bad_jpeg)
+
+      jpeg = %Frame{
+        label: "left",
+        jpeg: <<0xFF, 0xD8, 0xFF, 0xD9>>,
+        width: 192,
+        height: 108,
+        capture_ns: 0
+      }
+
+      Pipeline.submit(pipeline, jpeg, jpeg)
+      assert_receive :stereo_pipeline_ready, 60_000
+      refute_received {:"$gen_cast", {:stereo_pair, _}}
+
+      Pipeline.submit(pipeline, left, right)
+      assert_receive {:"$gen_cast", {:stereo_pair, %Pair{}}}, 60_000
+    end
+
+    test "a featureless pair gives no depth and no points" do
+      pipeline = start(:featureless)
+      flat = frame(Nx.broadcast(Nx.tensor(90, type: :u8), {108, 192}))
+
+      Pipeline.submit(pipeline, flat, flat)
+      assert_receive {:"$gen_cast", {:stereo_pair, %Pair{} = pair}}, 60_000
+
+      assert pair.depth |> :binary.bin_to_list() |> Enum.uniq() == [0]
+      assert pair.cloud_points == 0
+    end
+  end
+end

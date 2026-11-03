@@ -7,7 +7,8 @@ erlang  = "29.1.2"
 elixir  = "1.20.4-otp-29"
 node    = "24"
 ruby    = "3.3"
-rust    = "1.90"
+# aarch64 for the vision unit's Port binaries (vision/core/Makefile).
+rust    = { version = "1.90", targets = "aarch64-unknown-linux-gnu" }
 flutter = "3.32.8"
 python  = "3.12"
 uv      = "latest"

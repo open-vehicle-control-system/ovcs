@@ -1,0 +1,154 @@
+defmodule VisionCore.Application do
+  @moduledoc """
+  Starts the vision pipeline the vehicle's `VisionCore.Composer` declares.
+
+  The composer is the `:vision_core, :vehicle` app env, set by the vision
+  firmware's `config/runtime.exs`. With none set nothing starts.
+
+  The pipeline is one `:rest_for_one` supervisor, `VisionCore.Supervisor`.
+  `VisionCore.Parameters.Storage` and the `VisionCore.Parameters` registry
+  come first, so saved values are loaded before any component declares its
+  parameters and a restart of anything after them keeps the unsaved changes.
+  `VisionCore.Outputs` follows them, before every process that publishes or
+  subscribes through it.
+
+  The ROS 2 link comes next, when the configuration has a `ros2:` section:
+  `VisionCore.Ros2.ZenohClient`, `VisionCore.Ros2.Parameters`,
+  `VisionCore.Ros2.Topics`, which counts what is published on ROS 2, and
+  with `simulator_clock:` `VisionCore.Ros2.Clock`. It starts before the
+  components: the clock holds every stamp back until the simulator's first
+  `/clock`, and a `VisionCore.Ros2.Camera` subscribes through the client
+  from its `init/1`, so it must restart with the client to get its
+  subscription back.
+
+  The Port servers, `VisionCore.Jpeg` and `VisionCore.Stereo.Matcher`,
+  start before the components and open their Ports on the first request,
+  so a unit that computes no stereo stage natively never starts
+  `stereo_match`; the Matcher runs the binary and thread count of
+  `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
+
+  After the components come `VisionCore.Exporters`, which runs the
+  configuration's exporters, then `VisionCore.Status`, which reports
+  their statuses, and `VisionCore.Preview`: a restart of the dashboard's
+  sources does not restart the exporters.
+
+  `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
+  on `VisionCore.Jpeg`, while the exporters and `VisionCore.Preview`
+  encode on `VisionCore.Jpeg.Export`, apart from those decodes. The
+  second starts after the components, before the exporters, so that its
+  restart reaches only what starts after it, its users among them, not
+  the cameras and pipelines.
+  """
+  use Application
+
+  # Not the app env: `stop/1` runs while the application controller is
+  # stopping the app, so a call to it from there times out.
+  @active_config {__MODULE__, :active_config}
+  @export_jpeg_codec VisionCore.Jpeg.Export
+
+  @impl Application
+  def start(_type, _args) do
+    children =
+      case Application.get_env(:vision_core, :vehicle) do
+        nil ->
+          []
+
+        composer ->
+          config = composer.config(VisionCore.arm())
+          :persistent_term.put(@active_config, config)
+          cluster_child() ++ [pipeline_child(config)]
+      end
+
+    Supervisor.start_link(children, strategy: :one_for_one, name: VisionCore.AppSupervisor)
+  end
+
+  @impl Application
+  def stop(_state), do: :persistent_term.erase(@active_config)
+
+  @doc "The `VisionCore.Config` the running pipeline started with, or `nil`."
+  @spec active_config() :: VisionCore.Config.t() | nil
+  def active_config, do: :persistent_term.get(@active_config, nil)
+
+  defp pipeline_child(%VisionCore.Config{} = config) do
+    core_children =
+      [VisionCore.Parameters.Storage, VisionCore.Parameters, VisionCore.Outputs] ++
+        ros2_children(config.ros2) ++
+        [
+          VisionCore.Jpeg,
+          {VisionCore.Stereo.Matcher,
+           path: Application.get_env(:vision_core, :stereo_match_path),
+           threads: Application.get_env(:vision_core, :stereo_match_threads)}
+        ]
+
+    component_children = Enum.flat_map(config.components, &resolve_component/1)
+
+    consumer_children = [
+      {VisionCore.Jpeg, name: @export_jpeg_codec},
+      {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec},
+      {VisionCore.Status, config: config},
+      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
+    ]
+
+    %{
+      id: VisionCore.Supervisor,
+      type: :supervisor,
+      start:
+        {Supervisor, :start_link,
+         [
+           core_children ++ component_children ++ consumer_children,
+           [strategy: :rest_for_one, name: VisionCore.Supervisor]
+         ]}
+    }
+  end
+
+  defp ros2_children(nil), do: []
+
+  defp ros2_children(ros2) do
+    check_ros2!(ros2)
+
+    [
+      {VisionCore.Ros2.ZenohClient, zenoh_client_options(ros2)},
+      VisionCore.Ros2.Parameters,
+      VisionCore.Ros2.Topics
+    ] ++ clock_children(Keyword.get(ros2, :simulator_clock))
+  end
+
+  defp check_ros2!(ros2) do
+    cond do
+      not (is_list(ros2) and Keyword.keyword?(ros2)) ->
+        raise ArgumentError,
+              "ros2: is a keyword list of the ROS 2 link's options, got #{inspect(ros2)}"
+
+      not is_binary(ros2[:zenoh_endpoint_ip]) ->
+        raise ArgumentError,
+              "ros2: needs :zenoh_endpoint_ip, the Zenoh router's address as text, got " <>
+                inspect(ros2[:zenoh_endpoint_ip])
+
+      true ->
+        :ok
+    end
+  end
+
+  # A key left out takes the client's default.
+  defp zenoh_client_options(ros2) do
+    [endpoint_ip: Keyword.fetch!(ros2, :zenoh_endpoint_ip)] ++
+      for key <- [:node_name, :domain_id], value = ros2[key], do: {key, value}
+  end
+
+  defp clock_children(clock) when clock in [nil, false], do: []
+  defp clock_children(true), do: [{VisionCore.Ros2.Clock, []}]
+  defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
+
+  defp resolve_component(name) when is_atom(name), do: VisionCore.Components.start(name, [])
+
+  defp resolve_component({name, opts}) when is_atom(name),
+    do: VisionCore.Components.start(name, opts)
+
+  # Without a selected vehicle the cluster has no peers to probe for.
+  defp cluster_child do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> []
+      vehicle_module -> [{OvcsBus.Cluster, vehicle: vehicle_module}]
+    end
+  end
+end
