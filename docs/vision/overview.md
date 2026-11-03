@@ -104,7 +104,7 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 
 Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
 
-The API follows [JSON:API](https://jsonapi.org/); its routes are listed in [`vision/api/README.md`](../../vision/api/README.md).
+The API follows [JSON:API](https://jsonapi.org/): [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels, and [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
 
 The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. The ROS 2 exporter and the API open pages of their own, another exporter a page with its status and the outputs it reads. The top bar shows the ROS 2 exporter's status, its link to the Zenoh router, on a unit that has one.
 
