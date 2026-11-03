@@ -1,6 +1,6 @@
-import PageFrame from './PageFrame.jsx'
+import { OvcsPageFrame } from '@ovcs/ui/react'
 
 /** The cameras' calibration; its tools are still to come. */
 export default function CalibrationPage() {
-  return <PageFrame title="Calibration" />
+  return <OvcsPageFrame title="Calibration" />
 }

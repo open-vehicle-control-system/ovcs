@@ -1,5 +1,4 @@
-import { OvcsCard } from '@ovcs/ui/react'
-import PageFrame from './PageFrame.jsx'
+import { OvcsCard, OvcsPageFrame } from '@ovcs/ui/react'
 import { orderedGroups, useParameters } from '../stores/parameters.js'
 
 // One parameter's path is shown, and linked, with the first of the unit's parameters once they are loaded.
@@ -31,7 +30,7 @@ export default function ApiPage() {
   const parameterId = useParameters((state) => orderedGroups(state).flatMap((group) => group.parameterIds)[0])
 
   return (
-    <PageFrame title="API" summary="How other programs reach this unit: its resources and its live channels.">
+    <OvcsPageFrame title="API" summary="How other programs reach this unit: its resources and its live channels.">
       <OvcsCard className="flex flex-col gap-3">
         <h3 className="font-semibold">Resources</h3>
         <p className="text-sm text-ovcs-muted">
@@ -87,6 +86,6 @@ export default function ApiPage() {
           </tbody>
         </table>
       </OvcsCard>
-    </PageFrame>
+    </OvcsPageFrame>
   )
 }

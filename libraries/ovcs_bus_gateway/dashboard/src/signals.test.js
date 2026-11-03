@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { applyFrame, groupTree, nodeStatus, PRESENCE_SOURCE, signalCount, splitSource, staleCount } from './signals'
+import { applyFrame, groupTree, nodeStatus, PRESENCE_SOURCE, shortNames, signalCount, splitSource, staleCount } from './signals'
 
 describe('nodeStatus and signalCount', () => {
   test('label the presence and count the signals of a node', () => {
@@ -139,6 +139,19 @@ describe('staleCount', () => {
       ''
     )
     expect(staleCount(node)).toBe(1)
+  })
+})
+
+describe('shortNames', () => {
+  test('names each source by its last segment, with more segments only where two would clash', () => {
+    const names = shortNames([
+      'VmsCore.Components.OVCS.RadioControl.Throttle',
+      'VmsCore.Components.OVCS.RosActuatorCommand.Throttle',
+      'VmsCore.Managers.Gear',
+      'OvcsMini.Vms',
+      'Standalone'
+    ])
+    expect([...names.values()]).toEqual(['RadioControl.Throttle', 'RosActuatorCommand.Throttle', 'Gear', 'Vms', 'Standalone'])
   })
 })
 

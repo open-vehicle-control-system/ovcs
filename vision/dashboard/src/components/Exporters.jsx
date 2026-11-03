@@ -1,6 +1,6 @@
 import { useShallow } from 'zustand/react/shallow'
-import { focusClass as FOCUS } from '@ovcs/ui/react'
-import { SELECTED, STATUS_STYLES } from './menu.js'
+import { OvcsMenuItem, OvcsMenuList } from '@ovcs/ui/react'
+import { STATUS_STYLES } from './menu.js'
 import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useStatus } from '../stores/status.js'
@@ -21,28 +21,25 @@ export default function Exporters() {
   const openExporter = useNavigation((state) => state.openExporter)
 
   return (
-    <ul aria-label="Exporters" className="flex flex-col gap-1">
+    <OvcsMenuList label="Exporters">
       {exporters.map((exporter, index) => {
         const [level, detail] = statuses.slice(2 * index, 2 * index + 2)
         const style = STATUS_STYLES[level] ?? STATUS_STYLES.ok
         return (
           <li key={exporter.id}>
-            <button
-              type="button"
+            <OvcsMenuItem
+              selected={selected === exporter.id}
               aria-label={level ? `${exporter.name}, ${level}: ${detail}` : exporter.name}
-              aria-current={selected === exporter.id ? 'page' : undefined}
               title={detail}
               onClick={() => openExporter(exporter.id)}
-              className={`flex min-h-9 w-full items-center gap-2 rounded border px-3 text-left text-sm ${style.border} ${
-                selected === exporter.id ? `${SELECTED} font-medium` : 'hover:bg-ovcs-bg'
-              } ${FOCUS}`}
+              className={`border ${style.border}`}
             >
               <span translate="no">{exporter.name}</span>
               {style.dot ? <span aria-hidden="true" className={`ml-auto ${style.dot}`} /> : null}
-            </button>
+            </OvcsMenuItem>
           </li>
         )
       })}
-    </ul>
+    </OvcsMenuList>
   )
 }

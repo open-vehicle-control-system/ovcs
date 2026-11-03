@@ -2,7 +2,7 @@
 # priv/static, which the gateway serves at /.
 
 STATIC := priv/static/index.html
-SOURCES := $(shell find dashboard/src ../ovcs_ui/vue -type f) \
+SOURCES := $(shell find dashboard/src ../ovcs_ui/react -type f) \
 	$(wildcard dashboard/*.js dashboard/*.json dashboard/index.html) \
 	$(wildcard ../ovcs_ui/*.css ../ovcs_ui/*.js ../ovcs_ui/package.json)
 

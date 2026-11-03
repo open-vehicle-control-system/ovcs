@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import { OvcsCard, OvcsStatus } from '@ovcs/ui/react'
-import PageFrame from './PageFrame.jsx'
+import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
 import { fetchRos2Node } from '../services/unit.js'
 import { formatNumber } from '../status.js'
 
@@ -35,7 +34,7 @@ export default function Ros2Page() {
   }, [])
 
   return (
-    <PageFrame title="ROS 2" summary="What this unit publishes to ROS 2, through Zenoh.">
+    <OvcsPageFrame title="ROS 2" summary="What this unit publishes to ROS 2, through Zenoh.">
       {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
       {node ? (
         <>
@@ -106,6 +105,6 @@ export default function Ros2Page() {
           </OvcsCard>
         </>
       ) : null}
-    </PageFrame>
+    </OvcsPageFrame>
   )
 }

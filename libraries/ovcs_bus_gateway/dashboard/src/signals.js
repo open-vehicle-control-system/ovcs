@@ -84,6 +84,24 @@ export function groupTree(state, filterText) {
     .sort(byName('node'))
 }
 
+/**
+ * A short name for each source of `sources`: its last segment, or as many trailing segments as it takes to tell it
+ * from the others (`RadioControl.Throttle` and `RosActuatorCommand.Throttle`).
+ */
+export function shortNames(sources) {
+  const segments = sources.map((source) => source.split('.'))
+  const tail = (parts, depth) => parts.slice(-depth).join('.')
+
+  return new Map(
+    segments.map((parts, index) => {
+      let depth = 1
+      const clashes = () => segments.some((other, at) => at !== index && tail(other, depth) === tail(parts, depth))
+      while (depth < parts.length && clashes()) depth++
+      return [sources[index], tail(parts, depth)]
+    })
+  )
+}
+
 export function splitSource(source) {
   const dot = source.lastIndexOf('.')
   return { namespace: source.slice(0, dot + 1), name: source.slice(dot + 1) }

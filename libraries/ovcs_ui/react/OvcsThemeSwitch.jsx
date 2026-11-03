@@ -1,5 +1,5 @@
-import { focusClass as FOCUS } from '@ovcs/ui/react'
-import { useTheme } from '../stores/theme.js'
+import { FOCUS } from './styles.js'
+import { toggleTheme, useOvcsTheme } from './theme.js'
 
 const SUN = (
   <svg aria-hidden="true" viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -14,10 +14,9 @@ const MOON = (
   </svg>
 )
 
-/** Switches the dashboard between its light and dark themes; the choice stays on this browser. */
-export default function ThemeSwitch() {
-  const dark = useTheme((state) => state.theme === 'dark')
-  const toggle = useTheme((state) => state.toggle)
+/** Switches the page between its light and dark themes; the choice stays on this browser. */
+export default function OvcsThemeSwitch() {
+  const dark = useOvcsTheme() === 'dark'
 
   return (
     <button
@@ -26,7 +25,7 @@ export default function ThemeSwitch() {
       aria-checked={dark}
       aria-label="Dark mode"
       title="Dark mode"
-      onClick={toggle}
+      onClick={toggleTheme}
       className={`relative flex h-7 w-12 shrink-0 items-center rounded-full border border-ovcs-border bg-ovcs-bg hover:border-ovcs-accent ${FOCUS}`}
     >
       <span

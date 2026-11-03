@@ -205,7 +205,7 @@ Two kinds live side by side under `libraries/`. **In-tree** libraries are framew
 | `ovcs_bus/` | `OvcsBus` | [in-tree](../libraries/ovcs_bus/README.md) | Per-firmware pub/sub, and the Erlang mesh joining the firmwares; see [The OVCS bus](./bus.md) |
 | `ovcs_bridge/` | `OvcsBridge` | [in-tree](../libraries/ovcs_bridge/README.md) | Behaviour and supervisor for bridge libraries |
 | `ovcs_bus_gateway/` | `OvcsBusGateway` | [in-tree](../libraries/ovcs_bus_gateway/README.md) | Library exposing the bus over MQTT, HTTP and Phoenix Channels, with a dashboard, run by a bridge firmware; see [Bus gateway](./bus_gateway.md) |
-| `ovcs_ui/` | `@ovcs/ui` | [in-tree](../libraries/ovcs_ui/README.md) | Design tokens, Tailwind preset, and Vue and React components shared by OVCS web UIs (npm package) |
+| `ovcs_ui/` | `@ovcs/ui` | [in-tree](../libraries/ovcs_ui/README.md) | Design tokens, Tailwind preset, and React components shared by OVCS web UIs (npm package) |
 | `ovcs_drivers/` | `OvcsDrivers` | [in-tree](../libraries/ovcs_drivers/README.md) | Hardware chip drivers grouped by kind: the BNO085 IMU, the RPLIDAR scanning lidar, the A02YYUW ultrasonic rangefinder |
 | `cantastic/` | `Cantastic` | [sideloaded](https://github.com/open-vehicle-control-system/cantastic) | CAN library: YAML frame specs, SocketCAN, emitter/receiver, ISO-TP, OBD2, `socketcand`, received-frame watchdog |
 | `express_lrs/` | `ExpressLrs` | [sideloaded](https://github.com/open-vehicle-control-system/express_lrs) | MAVLink decoder for ExpressLRS links |
