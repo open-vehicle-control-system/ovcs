@@ -207,6 +207,32 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
         assert_same_tensor(native.disparity, nx.disparity, "disparity")
       end
     end
+
+    test "TemporalFilter and Depth read a disparity of 0 as unmatched, pair after pair" do
+      context = context(:identity, 192, 108)
+      stages = [{Stage.TemporalFilter, []}, {Stage.Depth, []}]
+      # Every third pixel flickers between 0 and 1 px; f·B is 12 px·m.
+      flickering = Nx.iota({108, 192}) |> Nx.remainder(3) |> Nx.equal(0)
+
+      pairs =
+        for {flicker, seed} <- Enum.zip([0.0, 1.0, 0.0, 1.0], 1..4) do
+          disparity = Nx.select(flickering, flicker, disparity(108, 192, seed))
+          disparity_pair(Nx.backend_transfer(disparity, Nx.BinaryBackend))
+        end
+
+      native_pairs = run_native(stages, context, pairs)
+
+      for {native, nx} <- Enum.zip(native_pairs, run_nx(stages, context, pairs)) do
+        assert_same_tensor(native.disparity, nx.disparity, "disparity")
+        assert native.depth == nx.depth
+      end
+
+      flickering_depths =
+        for %Pair{depth: <<millimetres::little-16, _::binary>>} <- native_pairs, do: millimetres
+
+      # The first match is held through the next 0, and never blended with one.
+      assert flickering_depths == [0, 12_000, 12_000, 12_000]
+    end
   end
 
   describe "the measures" do
@@ -262,6 +288,8 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     [nx] = run_nx(stages, context, pairs)
 
     assert native.depth == nx.depth
+    # 0.05 px is 240 m, beyond what 16-bit millimetres hold: no depth.
+    assert <<0::little-16, 1::little-16, 24_000::little-16, _::binary>> = native.depth
     assert native.disparity_bytes == nx.disparity_bytes
     assert native.cloud_size == nx.cloud_size
     assert native.cloud_points == nx.cloud_points
@@ -291,6 +319,30 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
       assert_same_tensor(native.disparity, nx.disparity, "disparity #{inspect(opts)}")
       assert native.disparity_range == nx.disparity_range
     end
+  end
+
+  test "Disparity reads NxStereo.sgm/3's matches at disparity 0 as unmatched" do
+    context = context(:stereo, 64, 48)
+    image = texture(48, 76, 9)
+    left = image[[.., 0..63]]
+    # The upper half the same on both sides, at disparity 0; the lower half at 12.
+    right = Nx.concatenate([left[[0..23, ..]], image[[24..47, 12..75]]])
+
+    pair = %Pair{
+      left_frame: nil,
+      right_frame: nil,
+      left: Nx.backend_transfer(left, Nx.BinaryBackend),
+      right: Nx.backend_transfer(right, Nx.BinaryBackend)
+    }
+
+    [native] = run_native([{Stage.Disparity, [paths: 3]}], context, [pair])
+    [nx] = run_nx([{Stage.Disparity, [paths: 3]}], context, [pair], EXLA)
+
+    assert_same_tensor(native.disparity, nx.disparity, "disparity")
+    assert Nx.to_number(Nx.any(Nx.equal(native.disparity, 0))) == 0
+    share_of = fn pixels -> pixels |> Nx.mean() |> Nx.to_number() end
+    assert share_of.(Nx.equal(native.disparity[[0..19, ..]], -1)) > 0.9
+    assert share_of.(Nx.greater(native.disparity[[28..47, 16..63]], 0)) > 0.9
   end
 
   describe "the default stages" do

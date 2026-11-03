@@ -1,11 +1,12 @@
 defmodule VisionCore.Stereo.Stage.Quality do
   @moduledoc """
   Measures the disparity on every pair, for the pipeline's log line: the
-  share of matched pixels, the mean and spread of their disparity, and
-  the jitter, the mean pair-to-pair disparity change over pixels matched
-  in both (the matcher's noise on a still scene). Its sums are taken on
-  the device with the other Nx stages, the previous disparity carried
-  there; only five numbers come back.
+  share of matched pixels, those with a positive disparity, the mean and
+  spread of their disparity, and the jitter, the mean pair-to-pair
+  disparity change over pixels matched in both (the matcher's noise on a
+  still scene). Its sums are taken on the device with the other Nx
+  stages, the previous disparity carried there; only five numbers come
+  back.
   """
   @behaviour VisionCore.Stereo.NxStage
 

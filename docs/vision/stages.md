@@ -74,7 +74,7 @@ Matches the rectified pair with **semi-global matching** (SGM), the algorithm of
 4. **Selection.** Each pixel takes the disparity with the lowest total, refined to a fraction of a pixel from its two neighbours' costs. It is dropped when the second-best total is not at least `uniqueness` times higher, which rejects ambiguous matches on repetitive or textureless surfaces.
 5. **Consistency.** The match is repeated from the right image's point of view, and a pixel whose two matches disagree is dropped: typically a pixel the right camera cannot see. A 3 × 3 median ends the stage.
 
-Unmatched pixels carry a disparity of −1.
+Matched pixels carry a positive disparity, unmatched ones −1. A match at disparity 0, which `NxStereo.sgm/3` finds on points too far to measure and in the leftmost columns, has no depth, so this stage marks it unmatched.
 
 | Setting | Kind | Meaning |
 |---|---|---|
@@ -125,7 +125,7 @@ This stage carries the previous disparity from one pair to the next, on the devi
 
 ### 8. Depth
 
-Turns the disparity into depth with `Z = f × B / d`, taking `f` and `B` from the calibration. It fills the 16-bit millimetre depth the depth topic and detection use, and the 32-bit float disparity the disparity topic carries. It also computes the depth in metres for the stages after it in the same segment, PointCloud among them; that image stays on the device. Unmatched pixels have no depth (0). Cost: about 2 ms.
+Turns the disparity into depth with `Z = f × B / d`, taking `f` and `B` from the calibration. It fills the 16-bit millimetre depth the depth topic and detection use, and the 32-bit float disparity the disparity topic carries. It also computes the depth in metres for the stages after it in the same segment, PointCloud among them; that image stays on the device. Unmatched pixels have no depth (0), and so do depths beyond the 65.535 m that 16-bit millimetres hold. Cost: about 2 ms.
 
 ### 9. PointCloud
 
@@ -139,7 +139,7 @@ Cost: under 1 ms.
 
 ### 10. Quality
 
-Measures the disparity on every pair: the share of matched pixels, the mean and spread of their disparity, and the jitter, the mean change of a pixel's disparity from one pair to the next (the matcher's noise on a still scene). Its sums are taken on the device; only five numbers come back. The depth caption on the dashboard shows the matched share. Cost: about 1 ms.
+Measures the disparity on every pair: the share of matched pixels, those with a positive disparity, the mean and spread of their disparity, and the jitter, the mean change of a pixel's disparity from one pair to the next (the matcher's noise on a still scene). Its sums are taken on the device; only five numbers come back. The depth caption on the dashboard shows the matched share. Cost: about 1 ms.
 
 ## Your own stages
 

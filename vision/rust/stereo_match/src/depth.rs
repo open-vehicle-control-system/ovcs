@@ -1,11 +1,14 @@
-//! `VisionCore.Stereo.Stage.Depth` and `PointCloud`: `NxStereo.Depth`'s
-//! metric depth, and the decimated cloud of the points 5 cm to 20 m away.
+//! `VisionCore.Stereo.Stage.Depth` and `PointCloud`: the metric depth, and
+//! the decimated cloud of the points 5 cm to 20 m away.
 
 use crate::parallel::{on_threads, RowQueue, Shared};
 
+/// The farthest depth `u16` millimetres hold.
+const MAX_DEPTH_MM: f32 = 65_535.0;
+
 /// The depth `focal_length_px` × `baseline_m` / `disparity` as rounded
-/// millimetres, saturating at 65535, and as metres; 0 where unmatched.
-/// Rows are taken by `threads` threads as they come.
+/// millimetres and as metres, 0 where unmatched; the millimetres are 0 too
+/// beyond `MAX_DEPTH_MM`. Rows are taken by `threads` threads as they come.
 pub fn depth(
     disparity: &[f32],
     width: usize,
@@ -35,7 +38,12 @@ pub fn depth(
                 } else {
                     0.0
                 };
-                *millimetres = (*metres * 1000.0).round().clamp(0.0, 65_535.0) as u16;
+                let rounded = (*metres * 1000.0).round();
+                *millimetres = if rounded > MAX_DEPTH_MM {
+                    0
+                } else {
+                    rounded.clamp(0.0, MAX_DEPTH_MM) as u16
+                };
             }
         }
     });
@@ -99,7 +107,14 @@ mod tests {
     fn depth_is_focal_length_times_baseline_over_disparity() {
         let (millimetres, metres) = depth(&[10.0, 0.0, -1.0, 1.0e-4], 2, 100.0, 0.1, 2);
         assert_eq!(metres[..3], [1.0, 0.0, 0.0]);
-        assert_eq!(millimetres, [1000, 0, 0, 65_535]);
+        assert_eq!(millimetres, [1000, 0, 0, 0]);
+    }
+
+    #[test]
+    fn a_depth_beyond_what_u16_millimetres_hold_is_no_depth() {
+        // f·B is 65.535 px·m: 1 px is 65535 mm.
+        let (millimetres, _metres) = depth(&[1.0, 0.9999], 2, 65_535.0, 0.001, 1);
+        assert_eq!(millimetres, [65_535, 0]);
     }
 
     #[test]

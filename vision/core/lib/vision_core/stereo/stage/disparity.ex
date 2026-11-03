@@ -3,7 +3,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   Matches the rectified pair with `NxStereo.sgm/3`: libSGM's
   semi-global matching, as compute shaders on a Vulkan GPU through
   `nx_iree`, or compiled for the CPU. The disparity stays in `f32` pixels
-  (`disparity_scale` 1.0), -1 where unmatched.
+  (`disparity_scale` 1.0): positive where matched, -1 where unmatched. A
+  match at disparity 0, which `NxStereo.sgm/3` finds on points too far
+  to measure and in the leftmost columns, has no depth: it is unmatched.
 
   Natively (`VisionCore.Stereo.NativeSegment`), it matches with
   `NxStereo.sgm/3`'s results, many times faster on a CPU than the
@@ -166,7 +168,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, sgm_opts) do
     sgm_opts = sgm_opts |> Keyword.merge(Map.to_list(params)) |> Keyword.delete(:matcher)
-    Map.put(tensors, :disparity, NxStereo.sgm(tensors.left, tensors.right, sgm_opts))
+    disparity = NxStereo.sgm(tensors.left, tensors.right, sgm_opts)
+    Map.put(tensors, :disparity, Nx.select(Nx.greater(disparity, 0), disparity, -1.0))
   end
 
   @impl VisionCore.Stereo.NxStage

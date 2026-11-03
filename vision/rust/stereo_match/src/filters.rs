@@ -260,7 +260,7 @@ pub fn despeckle(
                             support.iter_mut().zip(neighbours).zip(centre)
                         {
                             let agrees =
-                                (neighbour >= 0.0) & ((neighbour - centre).abs() <= max_difference);
+                                (neighbour > 0.0) & ((neighbour - centre).abs() <= max_difference);
                             *support += u32::from(agrees);
                         }
                     }
@@ -270,7 +270,7 @@ pub fn despeckle(
                 for ((pixel, &centre), &support) in
                     despeckled_row.iter_mut().zip(centre).zip(&support)
                 {
-                    let kept = centre >= 0.0 && support as f32 >= min_support;
+                    let kept = centre > 0.0 && support as f32 >= min_support;
                     *pixel = if kept { centre } else { -1.0 };
                 }
             }
@@ -309,15 +309,15 @@ impl Temporal {
             .zip(self.previous.iter_mut())
             .zip(self.missed.iter_mut())
         {
-            let matched = *current >= 0.0;
-            let agree = matched && *previous >= 0.0 && (*current - *previous).abs() <= delta;
+            let matched = *current > 0.0;
+            let agree = matched && *previous > 0.0 && (*current - *previous).abs() <= delta;
             let smoothed = if agree {
                 alpha * *current + (1.0 - alpha) * *previous
             } else {
                 *current
             };
             let pairs_missed = if matched { 0.0 } else { *missed + 1.0 };
-            let held = !matched && *previous >= 0.0 && pairs_missed <= hold;
+            let held = !matched && *previous > 0.0 && pairs_missed <= hold;
             let filtered = if held { *previous } else { smoothed };
             *current = filtered;
             *previous = filtered;
@@ -379,6 +379,29 @@ mod tests {
         assert!(got[5 * width + 15..(5 + 1) * width]
             .iter()
             .all(|&d| d == -1.0));
+    }
+
+    #[test]
+    fn despeckle_reads_a_disparity_of_0_as_unmatched() {
+        let (width, height) = (12, 10);
+        let mut disparity = vec![0.0; width * height];
+        disparity[5 * width + 5] = 0.5;
+        let got = despeckle(&disparity, width, height, 12.0, 1.0, 2);
+        assert!(got.iter().all(|&d| d == -1.0));
+    }
+
+    #[test]
+    fn temporal_reads_a_disparity_of_0_as_unmatched() {
+        let settings = TemporalSettings {
+            alpha: 0.4,
+            delta: 2.0,
+            hold: 1.0,
+        };
+        let mut temporal = Temporal::new(2);
+        temporal.filter(&mut [10.0, 0.0], &settings);
+        let mut second = [0.0, 1.0];
+        temporal.filter(&mut second, &settings);
+        assert_eq!(second, [10.0, 1.0]);
     }
 
     #[test]

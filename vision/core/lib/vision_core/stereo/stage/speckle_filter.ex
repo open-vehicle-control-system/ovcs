@@ -125,12 +125,12 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
 
     support =
       Nx.logical_and(
-        Nx.greater_equal(neighbours, 0),
+        Nx.greater(neighbours, 0),
         Nx.less_equal(Nx.abs(Nx.subtract(neighbours, Nx.new_axis(disparity, -1))), max_diff)
       )
       |> Nx.sum(axes: [2])
 
-    kept = Nx.logical_and(Nx.greater_equal(disparity, 0), Nx.greater_equal(support, min_support))
+    kept = Nx.logical_and(Nx.greater(disparity, 0), Nx.greater_equal(support, min_support))
     Nx.select(kept, disparity, -1.0)
   end
 end

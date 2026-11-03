@@ -289,13 +289,18 @@ fn run_stage(
                 uniqueness: scalar(inputs, "uniqueness")?,
             };
             parameters.check(width, height)?;
-            let disparity = matcher.disparity(
-                u8_image(tensors, "left", size)?,
-                u8_image(tensors, "right", size)?,
-                width,
-                height,
-                &parameters,
-            );
+            // As the Nx stage, a match at disparity 0, which has no depth, is unmatched.
+            let disparity = matcher
+                .disparity(
+                    u8_image(tensors, "left", size)?,
+                    u8_image(tensors, "right", size)?,
+                    width,
+                    height,
+                    &parameters,
+                )
+                .into_iter()
+                .map(|disparity| if disparity > 0.0 { disparity } else { -1.0 })
+                .collect();
             tensors.insert("disparity".into(), image(Elements::F32(disparity)));
         }
         Stage::MedianFilter { kernel_size } => {
@@ -456,6 +461,45 @@ mod tests {
         assert_eq!(times.len(), 3);
         assert_eq!(outputs[0].1.elements, Elements::F32(vec![-1.0; 32 * 24]));
         assert_eq!(outputs[1].1.elements, Elements::U16(vec![1000; 32 * 24]));
+    }
+
+    #[test]
+    fn the_disparity_reads_a_match_at_disparity_0_as_unmatched() {
+        let geometry = geometry();
+        let (width, height) = (geometry.width, geometry.height);
+        let members = [(
+            "disparity".to_string(),
+            options(&[("num_disparities", 64.0), ("paths", 3.0)]),
+        )];
+        let mut segment = Segment::new(geometry, &members, 2).unwrap();
+        let parameters = crate::tests::parameters(64, 3);
+        let inputs: Vec<Inputs> = vec![[
+            ("p1", f32::from(parameters.p1)),
+            ("p2", f32::from(parameters.p2)),
+            ("uniqueness", parameters.uniqueness),
+        ]
+        .map(|(name, value)| (name.to_string(), vec![value]))
+        .into()];
+        // The upper half the same on both sides, at disparity 0; the lower half at 3.
+        let left = crate::tests::noise(width, height, 4);
+        let right: Vec<u8> = (0..width * height)
+            .map(|i| match (i % width, i / width) {
+                (_, y) if y < height / 2 => left[i],
+                (x, y) => left[y * width + (x + 3).min(width - 1)],
+            })
+            .collect();
+        let matched = Matcher::new(1).disparity(&left, &right, width, height, &parameters);
+        assert!(matched.contains(&0.0) && matched.contains(&3.0));
+        let tensors = Tensors::from([("left", left), ("right", right)].map(|(side, image)| {
+            let image = Tensor::new(vec![height, width], Elements::U8(image));
+            (side.to_string(), image)
+        }));
+        let (outputs, _times) = segment.run(&inputs, tensors).unwrap();
+        let unmatched_at_0 = matched
+            .iter()
+            .map(|&disparity| if disparity > 0.0 { disparity } else { -1.0 })
+            .collect();
+        assert_eq!(outputs[0].1.elements, Elements::F32(unmatched_at_0));
     }
 
     #[test]

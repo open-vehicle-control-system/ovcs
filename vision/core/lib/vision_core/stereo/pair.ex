@@ -14,7 +14,8 @@ defmodule VisionCore.Stereo.Pair do
       rectified, so a point lies on the same row in each. What a
       consumer that needs pixels rather than depth (the detector) uses.
     * `:disparity` — the matcher's disparity, an `f32` tensor in pixels
-      times `:disparity_scale`, negative where unmatched.
+      times `:disparity_scale`: positive where matched, -1 where
+      unmatched. A stage tests `> 0` for a match.
     * `:disparity_range` — `%{min_disparity: _, num_disparities: _,
       block_size: _}`, the matcher's search; see `disparity_bounds/1`
       and `valid_window/1`.
@@ -22,8 +23,8 @@ defmodule VisionCore.Stereo.Pair do
       what `stereo_msgs/DisparityImage.image` carries. Unmatched pixels
       stay below the minimum disparity rather than clamped to 0.
     * `:depth` — 16-bit depth in millimetres, row-major, 0 where there
-      is no measurement: the ROS depth-image convention, at half the
-      bytes of 32-bit metres.
+      is no measurement, unmatched or beyond the 65535 mm 16 bits hold:
+      the ROS depth-image convention, at half the bytes of 32-bit metres.
     * `:cloud`, `:cloud_size`, `:cloud_points` — an organized grid of
       `x, y, z` 32-bit float points in the left optical frame, row-major,
       its `{height, width}`, and how many points are measured: the others,

@@ -253,6 +253,22 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
              Stage.Disparity.init([matcher: :gpu], context)
   end
 
+  test "Disparity reads NxStereo.sgm/3's matches at disparity 0 as unmatched" do
+    context = context(:stereo, 64, 48)
+    texture = texture(48, 76, 4)
+    left = texture[[.., 0..63]]
+    # The upper half the same on both sides, at disparity 0; the lower half at 12.
+    right = Nx.concatenate([left[[0..23, ..]], texture[[24..47, 12..75]]])
+    sgm = Nx.Defn.jit_apply(&NxStereo.sgm(&1, &2, paths: 3), [left, right], compiler: EXLA)
+    assert Nx.to_number(Nx.any(Nx.equal(sgm, 0))) == 1
+    assert Nx.to_number(Nx.any(Nx.greater(sgm, 0))) == 1
+
+    input = %Pair{left_frame: nil, right_frame: nil, left: left, right: right}
+    pair = run_nx([{Stage.Disparity, [paths: 3]}], context, input)
+
+    assert Nx.to_list(pair.disparity) == Nx.to_list(Nx.select(Nx.greater(sgm, 0), sgm, -1.0))
+  end
+
   test "Disparity declares p2 above p1, and its disparities and paths as build settings" do
     specs = Stage.Disparity.option_specs()
 
@@ -317,6 +333,20 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert_in_delta z, 1.0, 1.0e-6
     <<_::binary-size(47 * 12 + 8), unmatched_z::binary-size(4), _::binary>> = pair.cloud
     refute match?(<<_::little-float-32>>, unmatched_z)
+  end
+
+  test "Depth gives no depth beyond what 16-bit millimetres hold" do
+    context = context(:identity, 192, 108)
+    # f·B is 12 px·m: 0.2 px is 60 m, 12 / 65.535 px 65535 mm, 0.1 px 120 m.
+    disparities = Nx.tensor([[12.0, 0.2, 12 / 65.535, 0.1, 1.0e-6, 0.0]])
+    disparity = Nx.broadcast(Nx.f32(-1.0), {108, 192}) |> Nx.put_slice([0, 0], disparities)
+    input = %Pair{left_frame: nil, right_frame: nil, disparity: disparity}
+    pair = run_nx([{Stage.Depth, []}], context, input)
+
+    <<first_pixels::binary-size(12), _::binary>> = pair.depth
+
+    assert for(<<millimetres::little-16 <- first_pixels>>, do: millimetres) ==
+             [1000, 60_000, 65_535, 0, 0, 0]
   end
 
   describe "the default pipeline" do

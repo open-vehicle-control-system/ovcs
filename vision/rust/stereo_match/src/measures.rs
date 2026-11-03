@@ -59,7 +59,8 @@ pub fn alignment_sums(
         for (band, sums) in sums.iter_mut().enumerate() {
             for x in band * band_width..(band + 1) * band_width {
                 let value = disparity[y * width + x];
-                if value < 0.0 {
+                let matched = value > 0.0;
+                if !matched {
                     continue;
                 }
                 let source_x = (x as f32 - value.round()).clamp(0.0, (width - 1) as f32) as usize;
@@ -159,6 +160,14 @@ mod tests {
                 (width / BANDS * height / ROW_STEP) as f32
             );
         }
+    }
+
+    #[test]
+    fn alignment_counts_no_pixel_at_disparity_0() {
+        let (width, height) = (32, 24);
+        let image = vec![90u8; width * height];
+        let sums = alignment_sums(&image, &image, &vec![0.0; width * height], width, height);
+        assert_eq!(sums, [[0.0; PLANES]; BANDS]);
     }
 
     #[test]

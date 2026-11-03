@@ -103,8 +103,10 @@ defmodule VisionCore.Stereo.MatcherTest do
 
   defp to_u8(image), do: image |> Nx.round() |> Nx.clip(0, 255) |> Nx.as_type(:u8)
 
+  # NxStereo.sgm/3 as the Disparity stage reads it: a match at disparity 0 is unmatched.
   defp nx_reference(left, right, opts) do
-    Nx.Defn.jit_apply(&NxStereo.sgm(&1, &2, opts), [left, right], compiler: EXLA)
+    disparity = Nx.Defn.jit_apply(&NxStereo.sgm(&1, &2, opts), [left, right], compiler: EXLA)
+    Nx.select(Nx.greater(disparity, 0), disparity, -1.0)
   end
 
   defp assert_matches_nx(left, right, opts) do
@@ -127,7 +129,7 @@ defmodule VisionCore.Stereo.MatcherTest do
     refute Enum.any?(pairs, fn {got, want} -> got != want end),
            "subpixel values differ for #{inspect(opts)}"
 
-    assert Enum.any?(reference, &(&1 >= 0))
+    assert Enum.any?(reference, &(&1 > 0))
   end
 
   for {size, disparities, paths} <- [

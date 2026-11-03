@@ -90,13 +90,13 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def step(tensors, params, _state) do
     current = tensors.disparity
     smoothed = smooth(current, params.previous, params.alpha, params.delta)
-    matched = Nx.greater_equal(current, 0)
+    matched = Nx.greater(current, 0)
     missed = Nx.select(matched, 0.0, Nx.add(params.missed, 1))
 
     held =
       Nx.logical_and(
         Nx.logical_not(matched),
-        Nx.logical_and(Nx.greater_equal(params.previous, 0), Nx.less_equal(missed, params.hold))
+        Nx.logical_and(Nx.greater(params.previous, 0), Nx.less_equal(missed, params.hold))
       )
 
     filtered = Nx.select(held, params.previous, smoothed)
@@ -132,7 +132,7 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   defp smooth(current, previous, alpha, delta) do
     agree =
       Nx.logical_and(
-        Nx.logical_and(Nx.greater_equal(current, 0), Nx.greater_equal(previous, 0)),
+        Nx.logical_and(Nx.greater(current, 0), Nx.greater(previous, 0)),
         Nx.less_equal(Nx.abs(Nx.subtract(current, previous)), delta)
       )
 

@@ -452,7 +452,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert %Nx.Tensor{shape: {48, 64}, type: {:f, 32}} = pair.disparity
       assert pair.disparity_scale == 1.0
       assert %{min_disparity: 0, num_disparities: 64, block_size: 9} = pair.disparity_range
-      assert pair.disparity |> Nx.greater_equal(0) |> Nx.sum() |> Nx.to_number() > 0
+      assert pair.disparity |> Nx.greater(0) |> Nx.sum() |> Nx.to_number() > 0
       assert byte_size(pair.depth) == 48 * 64 * 2
     end
 
@@ -466,9 +466,11 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert {:ok, %{p1: 2}} = Pipeline.set_options(pipeline, :disparity, p1: 2)
       second = receive_pair(pipeline, frames)
 
+      # NxStereo.sgm/3 as the Disparity stage reads it: a match at disparity 0 is unmatched.
       reference = fn p1 ->
         sgm = &NxStereo.sgm(&1, &2, disparities: 64, paths: 3, p1: p1, p2: 64)
-        sgm |> Nx.Defn.jit_apply([second.left, second.right], compiler: EXLA) |> Nx.to_binary()
+        disparity = Nx.Defn.jit_apply(sgm, [second.left, second.right], compiler: EXLA)
+        disparity |> Nx.greater(0) |> Nx.select(disparity, -1.0) |> Nx.to_binary()
       end
 
       assert Nx.to_binary(second.disparity) == reference.(2)

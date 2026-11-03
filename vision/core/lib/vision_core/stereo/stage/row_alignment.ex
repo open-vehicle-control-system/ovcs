@@ -94,7 +94,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
     sample = &Nx.slice(&1, [0, 0], [height, width], strides: [@row_step, 1])
     {left, disparity} = {sample.(left), sample.(disparity)}
     sampled_height = Nx.axis_size(left, 0)
-    matched = Nx.greater_equal(disparity, 0)
+    matched = Nx.greater(disparity, 0)
     columns = Nx.iota({sampled_height, width}, axis: 1)
     rows = Nx.multiply(Nx.iota({sampled_height, width}, axis: 0), @row_step)
     source_columns = columns |> Nx.subtract(Nx.round(disparity)) |> Nx.clip(0, width - 1)

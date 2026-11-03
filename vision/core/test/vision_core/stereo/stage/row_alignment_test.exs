@@ -7,7 +7,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
   @width 128
   @disparity 8
 
-  defp measure(row_offset, unmatched_columns \\ 0) do
+  defp measure(row_offset, unmatched_columns \\ 0, unmatched_disparity \\ -1.0) do
     {texture, _key} =
       Nx.Random.randint(Nx.Random.key(7), 0, 256,
         shape: {@height + 8, @width + @disparity},
@@ -19,7 +19,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
     left = Nx.slice(texture, [4, 0], [@height, @width])
     right = Nx.slice(texture, [4 - row_offset, @disparity], [@height, @width])
     matched = Nx.greater_equal(Nx.iota({@height, @width}, axis: 1), unmatched_columns)
-    disparity = Nx.select(matched, Nx.f32(@disparity), Nx.f32(-1))
+    disparity = Nx.select(matched, Nx.f32(@disparity), Nx.f32(unmatched_disparity))
 
     context = %{height: @height, width: @width}
     {:ok, state} = Stage.RowAlignment.init([], context)
@@ -51,6 +51,11 @@ defmodule VisionCore.Stereo.Stage.RowAlignmentTest do
 
   test "reads no offset in a band without a matched pixel" do
     assert [nil | rest] = measure(1, div(@width, 4)).alignment.band_offset_rows
+    for band <- rest, do: assert_in_delta(band, 1.0, 0.1)
+  end
+
+  test "reads a disparity of 0 as unmatched" do
+    assert [nil | rest] = measure(1, div(@width, 4), 0.0).alignment.band_offset_rows
     for band <- rest, do: assert_in_delta(band, 1.0, 0.1)
   end
 

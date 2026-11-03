@@ -73,6 +73,13 @@ defmodule VisionCore.Stereo.Stage.TemporalFilterTest do
     assert missed == -1.0
   end
 
+  test "reads a disparity of 0 as unmatched: holds the last match, and never blends with a 0" do
+    {_, segment} = run(segment(alpha: 0.4, delta: 2.0, hold: 1), [10.0, 0.0, 10.0, 10.0])
+    {[held, newly_matched | _], _segment} = run(segment, [0.0, 1.0, 10.0, 10.0])
+    assert held == 10.0
+    assert newly_matched == 1.0
+  end
+
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
 

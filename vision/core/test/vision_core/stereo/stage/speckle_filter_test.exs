@@ -44,6 +44,11 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilterTest do
     assert Nx.to_number(filter(disparity)[1][21]) == -1.0
   end
 
+  test "reads a disparity of 0 as unmatched: neither kept nor support for a neighbour" do
+    zeros = Nx.broadcast(Nx.f32(0.0), {20, 30}) |> Nx.put_slice([9, 14], Nx.tensor([[0.5]]))
+    assert filter(zeros) |> Nx.equal(-1.0) |> Nx.all() |> Nx.to_number() == 1
+  end
+
   test "refuses settings out of range" do
     context = %{height: 2, width: 4}
 
