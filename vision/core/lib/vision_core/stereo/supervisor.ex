@@ -105,7 +105,9 @@ defmodule VisionCore.Stereo.Supervisor do
     * `:stages` (`VisionCore.Stereo.Pipeline.default_stages/0`) — the
       pipeline's stages. The calibration paths and the capture size come
       from the options above, the matching size from `:match_width` and
-      `:match_height`.
+      `:match_height`. Two stages that declare `right_row_offset`, or
+      that provide `:alignment`, are refused
+      (`VisionCore.Stereo.AlignmentCorrection.check_stages!/1`).
     * `:compute` (`:nx`) — `:native` computes every stage that has a
       native implementation in the `stereo_match` Port, for a CPU; see
       `VisionCore.Stereo.Pipeline`.
@@ -196,6 +198,8 @@ defmodule VisionCore.Stereo.Supervisor do
     {left, right} = use_stored_calibration(left, right, store_directory, topic_prefix)
     width = Keyword.get(opts, :width, @default_width)
     height = Keyword.get(opts, :height, @default_height)
+    stages = Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0)
+    :ok = AlignmentCorrection.check_stages!(stages)
 
     %{
       driver: Keyword.fetch!(opts, :driver),
@@ -211,7 +215,7 @@ defmodule VisionCore.Stereo.Supervisor do
       publish_raw_images: Keyword.get(opts, :publish_raw_images, true),
       align_correction: Keyword.get(opts, :align_correction, true),
       raw_image_max_hz: Keyword.get(opts, :raw_image_max_hz, @default_raw_image_max_hz),
-      stages: Keyword.get_lazy(opts, :stages, &Pipeline.default_stages/0),
+      stages: stages,
       backends: backends(opts),
       compute: Keyword.get(opts, :compute, :nx),
       left: left,
@@ -275,17 +279,21 @@ defmodule VisionCore.Stereo.Supervisor do
   Reloads the pipeline's calibration and the raw camera info
   `VisionCore.Ros2.Publishers.Stereo` publishes, and starts the row
   correction (`VisionCore.Stereo.AlignmentCorrection`) over: a new
-  calibration lines the rows up itself, so Rectification's
-  `right_row_offset` returns to 0 and its saved value under `prefix` is
-  forgotten.
+  calibration lines the rows up itself, so the `right_row_offset` of the
+  stage that declares it (`VisionCore.Stereo.AlignmentCorrection.offset_stage/1`)
+  returns to 0 and its saved value under `prefix` is forgotten.
   """
   def reload_calibration(pipeline, prefix, paths \\ []) do
     with :ok <- Pipeline.reload_calibration(pipeline, paths) do
       if Process.whereis(StereoPublisher), do: StereoPublisher.reload_calibration(paths)
 
-      if Enum.any?(Pipeline.stage_options(pipeline), &(&1.stage == :rectification)) do
-        {:ok, _values} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 0.0)
-        forget_parameter("#{prefix}.rectification.right_row_offset")
+      case pipeline |> Pipeline.stage_options() |> AlignmentCorrection.offset_stage() do
+        nil ->
+          :ok
+
+        %{stage: stage} ->
+          {:ok, _values} = Pipeline.set_options(pipeline, stage, right_row_offset: 0.0)
+          forget_parameter("#{prefix}.#{stage}.right_row_offset")
       end
 
       :ok

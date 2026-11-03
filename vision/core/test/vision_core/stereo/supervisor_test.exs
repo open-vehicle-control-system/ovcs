@@ -2,7 +2,8 @@ defmodule VisionCore.Stereo.SupervisorTest do
   # One test changes the app env the defn options default to.
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pipeline}
+  alias VisionCore.Parameters.MemoryStore
+  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pipeline, VehicleRectification}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @moduletag :tmp_dir
@@ -106,21 +107,34 @@ defmodule VisionCore.Stereo.SupervisorTest do
         )
       end
     end
+
+    test "refuses two stages that declare right_row_offset" do
+      assert_raise ArgumentError, ~r/both declare right_row_offset/, fn ->
+        StereoSupervisor.pipeline_options(
+          @stereo ++ [stages: Pipeline.default_stages() ++ [VehicleRectification]]
+        )
+      end
+    end
   end
 
   describe "reload_calibration/3" do
-    test "starts the row correction over from the new calibration" do
+    defp start_pipeline(stages) do
       calibration = Path.expand("../../support/calibration", __DIR__)
 
-      {:ok, pipeline} =
-        Pipeline.start_link(
-          name: :reload_row_offset,
-          left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-          right_calibration_path: Path.join(calibration, "identity_right.yaml"),
-          width: 64,
-          height: 48,
-          defn_options: [compiler: EXLA]
-        )
+      start_supervised!(
+        {Pipeline,
+         name: :reload_row_offset,
+         stages: stages,
+         left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+         right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+         width: 64,
+         height: 48,
+         defn_options: [compiler: EXLA]}
+      )
+    end
+
+    test "starts the row correction over from the new calibration" do
+      pipeline = start_pipeline(Pipeline.default_stages())
 
       {:ok, _} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 2.0)
       {:ok, _} = Pipeline.set_options(pipeline, :disparity, p1: 5)
@@ -129,6 +143,23 @@ defmodule VisionCore.Stereo.SupervisorTest do
       values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
       assert values.rectification.right_row_offset == 0.0
       assert values.disparity.p1 == 5
+    end
+
+    test "resets the stage that declares right_row_offset, whatever its name, and forgets its saved value" do
+      start_supervised!(
+        {MemoryStore,
+         %{"stereo.vehicle_rectification.right_row_offset" => 2.0, "stereo.disparity.p1" => 5}}
+      )
+
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+      pipeline = start_pipeline([VehicleRectification | tl(Pipeline.default_stages())])
+
+      {:ok, _} = Pipeline.set_options(pipeline, :vehicle_rectification, right_row_offset: 2.0)
+      assert :ok = StereoSupervisor.reload_calibration(pipeline, "stereo")
+
+      values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
+      assert values.vehicle_rectification.right_row_offset == 0.0
+      assert MemoryStore.rows() == %{"stereo.disparity.p1" => 5}
     end
   end
 

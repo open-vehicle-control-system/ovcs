@@ -14,14 +14,20 @@ defmodule VisionCore.Stereo.Parameters do
       auto gain are switches of their own, and the defaults are the
       composer's settings for the left camera.
     * `<prefix>.<stage>` — each stage of `VisionCore.Stereo.Pipeline`, in
-      pipeline order, with its settings; Rectification also carries the matching
-      size.
-    * `<prefix>.rectification.auto_row_offset` — switches
+      pipeline order, with its settings. The first stage that provides the
+      images, `:left` and `:right`, also carries the matching size; the
+      stage that provides the pair's `:alignment` has as its status the
+      row offset `VisionCore.Status` measures.
+    * `<prefix>.<stage>.auto_row_offset`, before the `right_row_offset`
+      of the stage that declares it — switches
       `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
-      the pipeline has a RowAlignment stage; on, it sets `right_row_offset`
-      next to it from RowAlignment's measure. The row alignment group has
-      no settings: its status is the row offset `VisionCore.Status`
-      measures.
+      a stage provides `:alignment`; on, it sets `right_row_offset` from
+      that stage's measure.
+
+  Stages are found by what they declare, not by name: with the default
+  stages, Rectification carries the matching size and
+  `<prefix>.rectification.auto_row_offset`, and RowAlignment the row
+  offset.
 
   Declares nothing when the registry is not running.
   """
@@ -70,21 +76,30 @@ defmodule VisionCore.Stereo.Parameters do
     prefix = Keyword.fetch!(opts, :topic_prefix)
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
     stage_options = Pipeline.stage_options(pipeline)
+    offset = AlignmentCorrection.offset_stage(stage_options)
+    alignment = AlignmentCorrection.alignment_stage(stage_options)
+    images = Enum.find(stage_options, &provides_images?/1)
 
-    # The correction steers Rectification from RowAlignment's measure, so it needs both.
-    correction? =
-      Process.whereis(AlignmentCorrection) != nil and
-        Enum.any?(stage_options, &(&1.stage == :row_alignment))
+    # The names of the stages whose groups carry more than their settings. The correction's
+    # switch needs the correction running, and a measure for it to follow.
+    roles = %{
+      switch: if(Process.whereis(AlignmentCorrection) && alignment && offset, do: offset.stage),
+      alignment: alignment && alignment.stage,
+      images: images && images.stage
+    }
 
     stages =
       stage_options
       |> Enum.with_index(1)
       |> Enum.map(fn {stage, position} ->
-        stage_group(prefix, pipeline, stage, position, opts, correction?)
+        stage_group(prefix, pipeline, stage, position, opts, roles)
       end)
 
     camera_groups(prefix, opts) ++ stages
   end
+
+  # The images at the matching size, which the first stage to provide them makes from the frames.
+  defp provides_images?(stage), do: Enum.all?([:left, :right], &(&1 in stage.module.provides()))
 
   defp camera_groups(prefix, opts) do
     driver = Keyword.fetch!(opts, :driver)
@@ -290,12 +305,12 @@ defmodule VisionCore.Stereo.Parameters do
     Enum.map(general ++ per_side, &build_parameter/1)
   end
 
-  defp stage_group(prefix, pipeline, stage, position, opts, correction?) do
+  defp stage_group(prefix, pipeline, stage, position, opts, roles) do
     id = "#{prefix}.#{stage.stage}"
 
     parameters =
       Enum.map(stage.specs, fn {key, spec} ->
-        stage_parameter(pipeline, stage.stage, key, spec, prefix, correction?)
+        stage_parameter(pipeline, stage.stage, key, spec, prefix, roles)
       end)
 
     %{
@@ -307,21 +322,21 @@ defmodule VisionCore.Stereo.Parameters do
       position: position,
       values: fn -> stage_values(pipeline, stage.stage) end,
       parameters:
-        leading_parameters(stage.stage, correction?) ++
-          parameters ++ extra_parameters(stage.stage, opts)
+        leading_parameters(stage.stage, roles) ++
+          parameters ++ extra_parameters(stage.stage, roles, opts)
     }
     |> put_present(:explanation, stage[:explanation])
-    |> Map.merge(extra_group_fields(stage.stage))
+    |> Map.merge(extra_group_fields(stage.stage, roles))
     |> Map.merge(Map.take(stage, [:compute]))
   end
 
-  defp stage_parameter(pipeline, stage, key, spec, prefix, correction?) do
+  defp stage_parameter(pipeline, stage, key, spec, prefix, roles) do
     %{
       name: Atom.to_string(key),
       type: spec.type,
       set: &set_result(Pipeline.set_options(pipeline, stage, [{key, &1}])),
       constraint: Check.constraint(spec),
-      applies: stage_applies(stage, key, spec, prefix, correction?)
+      applies: stage_applies(stage, key, spec, prefix, roles)
     }
     |> put_present(:greater_than, spec[:greater_than] && Atom.to_string(spec.greater_than))
     |> put_present(:description, spec[:description])
@@ -335,14 +350,13 @@ defmodule VisionCore.Stereo.Parameters do
     end
   end
 
-  defp stage_applies(:rectification, :right_row_offset, _spec, prefix, true),
-    do: {:auto, "#{prefix}.rectification.auto_row_offset"}
+  defp stage_applies(stage, :right_row_offset, _spec, prefix, %{switch: stage}),
+    do: {:auto, "#{prefix}.#{stage}.auto_row_offset"}
 
-  defp stage_applies(_stage, _key, spec, _prefix, _correction?),
-    do: Map.get(spec, :applies, :live)
+  defp stage_applies(_stage, _key, spec, _prefix, _roles), do: Map.get(spec, :applies, :live)
 
   # The automatic switch comes before the value it sets, as auto exposure does.
-  defp leading_parameters(:rectification, true) do
+  defp leading_parameters(stage, %{switch: stage}) do
     [
       %{
         name: "auto_row_offset",
@@ -357,18 +371,18 @@ defmodule VisionCore.Stereo.Parameters do
     ]
   end
 
-  defp leading_parameters(_stage, _correction?), do: []
+  defp leading_parameters(_stage, _roles), do: []
 
-  defp extra_parameters(:rectification, opts) do
+  defp extra_parameters(stage, %{images: stage}, opts) do
     for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
       build_parameter({key, opts[key]})
     end
   end
 
-  defp extra_parameters(_stage, _opts), do: []
+  defp extra_parameters(_stage, _roles, _opts), do: []
 
-  defp extra_group_fields(:row_alignment), do: %{status: &alignment_status/0}
-  defp extra_group_fields(_stage), do: %{}
+  defp extra_group_fields(stage, %{alignment: stage}), do: %{status: &alignment_status/0}
+  defp extra_group_fields(_stage, _roles), do: %{}
 
   defp alignment_status do
     with pid when is_pid(pid) <- Process.whereis(VisionCore.Status),

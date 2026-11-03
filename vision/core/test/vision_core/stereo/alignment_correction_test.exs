@@ -1,7 +1,7 @@
 defmodule VisionCore.Stereo.AlignmentCorrectionTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
+  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline, Stage, VehicleRectification}
 
   defp start(offset \\ 0.0, opts \\ []) do
     test_pid = self()
@@ -134,24 +134,88 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
   end
 
   test "moves the pipeline's Rectification stage by default" do
+    pipeline = start_pipeline(Pipeline.default_stages())
+    assert_in_delta corrected_offset(pipeline, :rectification), 2.5, 1.0e-6
+  end
+
+  test "moves the stage that declares right_row_offset, whatever its name" do
+    pipeline = start_pipeline([VehicleRectification | tl(Pipeline.default_stages())])
+    assert_in_delta corrected_offset(pipeline, :vehicle_rectification), 2.5, 1.0e-6
+  end
+
+  defp start_pipeline(stages) do
     calibration = Path.expand("../../support/calibration", __DIR__)
 
-    {:ok, pipeline} =
-      Pipeline.start_link(
-        name: :alignment_correction_pipeline,
-        left_calibration_path: Path.join(calibration, "identity_left.yaml"),
-        right_calibration_path: Path.join(calibration, "identity_right.yaml"),
-        width: 64,
-        height: 48,
-        defn_options: [compiler: EXLA]
-      )
+    start_supervised!(
+      {Pipeline,
+       name: :alignment_correction_pipeline,
+       stages: stages,
+       left_calibration_path: Path.join(calibration, "identity_left.yaml"),
+       right_calibration_path: Path.join(calibration, "identity_right.yaml"),
+       width: 64,
+       height: 48,
+       defn_options: [compiler: EXLA]}
+    )
+  end
 
-    {:ok, _} = Pipeline.set_options(pipeline, :rectification, right_row_offset: 1.0)
+  # The right_row_offset of stage `name` once the correction followed an offset of a row from 1.
+  defp corrected_offset(pipeline, name) do
+    {:ok, _} = Pipeline.set_options(pipeline, name, right_row_offset: 1.0)
     {:ok, pid} = AlignmentCorrection.start_link(name: nil, subscribe: false, pipeline: pipeline)
     for _ <- 1..5, do: tick(pid, 1.0)
     :sys.get_state(pid)
 
-    rectification = Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :rectification))
-    assert_in_delta rectification.values.right_row_offset, 2.5, 1.0e-6
+    Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == name)).values.right_row_offset
+  end
+
+  test "finds the stage it moves and the one it follows by what they declare, whatever their names" do
+    stages = [
+      %{stage: :vehicle_rectification, module: VehicleRectification},
+      %{stage: :sharpness, module: Stage.Sharpness},
+      %{stage: :row_alignment, module: Stage.RowAlignment}
+    ]
+
+    assert %{stage: :vehicle_rectification} = AlignmentCorrection.offset_stage(stages)
+    assert %{stage: :row_alignment} = AlignmentCorrection.alignment_stage(stages)
+    assert AlignmentCorrection.offset_stage(tl(stages)) == nil
+    assert AlignmentCorrection.alignment_stage(Enum.take(stages, 2)) == nil
+  end
+
+  # A vehicle's own measure of the row offset.
+  defmodule AlignmentMeasure do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:left, :right, :disparity]
+    def provides, do: [:alignment]
+    def run(pair, state), do: {:ok, pair, state}
+  end
+
+  test "refuses two modules that declare right_row_offset or provide :alignment, leaving a module listed twice to the pipeline" do
+    assert AlignmentCorrection.check_stages!([
+             VehicleRectification | tl(Pipeline.default_stages())
+           ]) == :ok
+
+    assert_raise ArgumentError,
+                 "#{inspect(Stage.Rectification)} and #{inspect(VehicleRectification)} both " <>
+                   "declare right_row_offset: the row correction moves one stage's rows",
+                 fn ->
+                   AlignmentCorrection.check_stages!(
+                     Pipeline.default_stages() ++ [VehicleRectification]
+                   )
+                 end
+
+    assert_raise ArgumentError,
+                 "#{inspect(Stage.RowAlignment)} and #{inspect(AlignmentMeasure)} both " <>
+                   "provide :alignment: the row correction follows one stage's measure",
+                 fn ->
+                   AlignmentCorrection.check_stages!(
+                     Pipeline.default_stages() ++ [{AlignmentMeasure, []}]
+                   )
+                 end
+
+    assert AlignmentCorrection.check_stages!(
+             Pipeline.default_stages() ++ [Stage.Rectification, Stage.RowAlignment]
+           ) == :ok
   end
 end

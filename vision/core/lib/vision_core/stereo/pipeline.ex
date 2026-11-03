@@ -19,8 +19,12 @@ defmodule VisionCore.Stereo.Pipeline do
 
   A stage list is checked at start: every field a stage requires must be
   provided by a stage before it, and the stages together must provide
-  the disparity and depth listeners consume. Each stage is timed, and
-  the timings are logged with the metrics stages report.
+  the disparity and depth listeners consume. A stage is named after the
+  last segment of its module, underscored (`SpeckleFilter` is
+  `:speckle_filter`): `stage_options/1` lists it, `set_options/3` and
+  the timings address it by that name, so two stages of the same name
+  are refused. Each stage is timed, and the timings are logged with the
+  metrics stages report.
 
   Each Nx stage runs on the first of the pipeline's `:backends`, the
   `VisionCore.Stereo.Segment`s, that accepts it, and consecutive stages
@@ -246,6 +250,7 @@ defmodule VisionCore.Stereo.Pipeline do
       |> Enum.map(&normalise_stage/1)
 
     check_stages!(stages)
+    check_names!(stages)
     check_order!(stages)
     check_live_settings!(stages)
 
@@ -692,6 +697,23 @@ defmodule VisionCore.Stereo.Pipeline do
         true ->
           :ok
       end
+    end)
+  end
+
+  defp check_names!(stages) do
+    stages
+    |> Enum.group_by(& &1.name, & &1.module)
+    |> Enum.each(fn
+      {_name, [_module]} ->
+        :ok
+
+      {_name, [module, module | _]} ->
+        raise ArgumentError, "#{inspect(module)} is listed twice among the stages"
+
+      {name, [first, second | _]} ->
+        raise ArgumentError,
+              "#{inspect(first)} and #{inspect(second)} are both named #{inspect(name)}, " <>
+                "after the last segment of their modules"
     end)
   end
 

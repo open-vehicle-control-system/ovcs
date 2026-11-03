@@ -2,7 +2,7 @@ defmodule VisionCore.Stereo.ParametersTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Parameters.{Check, MemoryStore}
-  alias VisionCore.Stereo.{AlignmentCorrection, Parameters, Stage}
+  alias VisionCore.Stereo.{AlignmentCorrection, Parameters, Stage, VehicleRectification}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   # A pipeline answering with the stages it is given, and recording the settings it is sent.
@@ -91,14 +91,14 @@ defmodule VisionCore.Stereo.ParametersTest do
   defp stages do
     [
       stage(:rectification, Stage.Rectification, summary: "Rectifies"),
-      %{stage: :sharpness, summary: "Sharpness", specs: [], values: %{}},
+      %{stage: :sharpness, module: Stage.Sharpness, summary: "Sharpness", specs: [], values: %{}},
       stage(:disparity, Stage.Disparity, summary: "Matches"),
       stage(:median_filter, Stage.MedianFilter,
         summary: "Filters",
         explanation: "Replaces each disparity with its neighbours' median.",
         compute: %{runs_on: :cpu, implementation: :rust, backend: nil}
       ),
-      %{stage: :row_alignment, summary: "Measures", specs: [], values: %{}}
+      row_alignment(:row_alignment)
     ]
   end
 
@@ -109,7 +109,18 @@ defmodule VisionCore.Stereo.ParametersTest do
     specs =
       for {key, spec} <- module.option_specs(), do: {key, Map.put_new(spec, :applies, :live)}
 
-    Map.merge(%{stage: name, specs: specs, values: module.options(state)}, Map.new(fields))
+    Map.merge(
+      %{stage: name, module: module, specs: specs, values: module.options(state)},
+      Map.new(fields)
+    )
+  end
+
+  defp row_alignment(name),
+    do: %{stage: name, module: Stage.RowAlignment, summary: "Measures", specs: [], values: %{}}
+
+  defp use_stages(stages) do
+    stop_supervised!(Pipeline)
+    start_supervised!({Pipeline, stages})
   end
 
   defp groups(opts \\ []) do
@@ -558,8 +569,7 @@ defmodule VisionCore.Stereo.ParametersTest do
   end
 
   test "right_row_offset stays live without a row alignment stage to declare the correction" do
-    stop_supervised!(Pipeline)
-    start_supervised!({Pipeline, Enum.reject(stages(), &(&1.stage == :row_alignment))})
+    use_stages(Enum.reject(stages(), &(&1.stage == :row_alignment)))
     start_supervised!({AlignmentCorrection, subscribe: false})
 
     assert parameter(group("stereo.rectification"), "right_row_offset").applies == :live
@@ -598,6 +608,37 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert alignment.status.() == nil
   end
 
+  test "the stage of any name that declares right_row_offset carries the correction's switch" do
+    use_stages([
+      stage(:vehicle_rectification, VehicleRectification, summary: "Rectifies") | tl(stages())
+    ])
+
+    start_supervised!({AlignmentCorrection, subscribe: false})
+    rectification = group("stereo.vehicle_rectification")
+
+    assert %{name: "auto_row_offset", type: :bool} = hd(rectification.parameters)
+
+    assert parameter(rectification, "right_row_offset").applies ==
+             {:auto, "stereo.vehicle_rectification.auto_row_offset"}
+  end
+
+  test "the stage of any name that provides :alignment has the row offset as its status" do
+    use_stages(List.replace_at(stages(), -1, row_alignment(:vehicle_alignment)))
+    start_supervised!({AlignmentCorrection, subscribe: false})
+    start_supervised!({Status, %{alignment: %{offset_rows: 0.7, band_offset_rows: []}}})
+
+    assert group("stereo.vehicle_alignment").status.() == {:warning, "rows off by 0.7"}
+    assert parameter(group("stereo.rectification"), "auto_row_offset")
+  end
+
+  test "the stage that makes the images carries the matching size, as Decode without Rectification" do
+    decode = %{stage: :decode, module: Stage.Decode, summary: "Decodes", specs: [], values: %{}}
+    use_stages([decode | tl(stages())])
+
+    assert parameter(group("stereo.decode"), "match_width").get.() == 640
+    assert parameter(group("stereo.decode"), "match_height").get.() == 360
+  end
+
   test "declares its groups into the registry when it runs" do
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
     start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: Pipeline})
@@ -625,21 +666,21 @@ defmodule VisionCore.Stereo.ParametersTest do
              VisionCore.Parameters.get("stereo.cameras.analogue_gain")
   end
 
+  # A vehicle's stage whose setting has no constraint, values or range.
+  defmodule Blur do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, 2}
+    def requires, do: [:disparity]
+    def provides, do: [:disparity]
+    def run(pair, radius), do: {:ok, pair, radius}
+    def option_specs, do: [radius: %{type: :integer}]
+    def options(radius), do: %{radius: radius}
+    def set_option(_radius, :radius, radius), do: {:ok, radius}
+  end
+
   test "a stage setting without a type constraint, values or range takes any value of its type" do
-    stop_supervised!(Pipeline)
-
-    start_supervised!(
-      {Pipeline,
-       [
-         %{
-           stage: :blur,
-           summary: "Blurs",
-           specs: [radius: %{type: :integer}],
-           values: %{radius: 2}
-         }
-       ]}
-    )
-
+    use_stages([stage(:blur, Blur, summary: "Blurs")])
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
     start_supervised!({Parameters, topic_prefix: "stereo", driver: Driver, pipeline: Pipeline})
 

@@ -96,6 +96,16 @@ defmodule VisionCore.Stereo.PipelineTest do
     def run(pair, state), do: {:ok, pair, state}
   end
 
+  # A vehicle's stage of the same name as Quality.
+  defmodule Vehicle.Quality do
+    @behaviour VisionCore.Stereo.Stage
+
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: []
+    def provides, do: []
+    def run(pair, state), do: {:ok, pair, state}
+  end
+
   # Nx stages EagerSegment takes.
   defmodule Tag do
     @behaviour VisionCore.Stereo.NxStage
@@ -345,6 +355,20 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     assert message ==
              "#{inspect(FixedGain)} declares the live settings [:gain] but no set_option/3"
+  end
+
+  test "refuses two stages of the same name, naming both modules" do
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages() ++ [Vehicle.Quality])
+
+    assert message ==
+             "#{inspect(Stage.Quality)} and #{inspect(Vehicle.Quality)} are both named " <>
+               ":quality, after the last segment of their modules"
+
+    assert {:error, {%ArgumentError{message: message}, _}} =
+             start(Pipeline.default_stages() ++ [Stage.Quality])
+
+    assert message == "#{inspect(Stage.Quality)} is listed twice among the stages"
   end
 
   test "recognises a stage by its behaviour, and refuses a module that declares none" do
