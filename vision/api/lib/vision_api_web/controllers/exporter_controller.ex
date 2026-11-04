@@ -26,7 +26,8 @@ defmodule VisionApiWeb.ExporterController do
           output <- @preview_outputs ++ [:detections],
           VisionCore.Exporter.output_key(output) != nil,
           do: %{output: output, max_hz: channel_max_hz(output)}
-        )
+        ),
+      actions: []
     }
   end
 

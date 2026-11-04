@@ -14,7 +14,8 @@ defmodule VisionApiWeb.ExporterControllerTest do
                "name" => "ROS 2",
                "module" => "VisionCore.Ros2.Exporter",
                "status" => status,
-               "outputs" => []
+               "outputs" => [],
+               "actions" => []
              }
            } = ros2
 
@@ -31,7 +32,8 @@ defmodule VisionApiWeb.ExporterControllerTest do
                "name" => "API",
                "module" => "VisionApiWeb.Endpoint",
                "status" => %{"level" => "ok", "detail" => "Answering"},
-               "outputs" => []
+               "outputs" => [],
+               "actions" => []
              }
            }
   end
@@ -94,7 +96,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
         %{output: :detections, max_hz: nil}
-      ]
+      ],
+      actions: [%{name: :export, label: "Export", description: "Writes a zip."}]
     }
 
     assert %{data: [%{id: "recorder", attributes: attributes}]} =
@@ -108,7 +111,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
                %{name: "detections", maxHz: nil}
-             ]
+             ],
+             actions: [%{name: "export", label: "Export", description: "Writes a zip."}]
            }
   end
 end
