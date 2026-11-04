@@ -1,10 +1,12 @@
 import { useId, useState } from 'react'
-import { OvcsCard, OvcsPageFrame, OvcsStatus, focusClass as FOCUS } from '@ovcs/ui/react'
+import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
 import Ros2Page from './Ros2Page.jsx'
 import ApiPage from './ApiPage.jsx'
 import { runExporterAction } from '../services/unit.js'
+import { downloadFile } from '../services/download.js'
 import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useStatus } from '../stores/status.js'
+import { BUTTON } from '../styles.js'
 
 const OWN_PAGES = { ros2: Ros2Page, api: ApiPage }
 
@@ -15,18 +17,6 @@ const OUTPUT_NAMES = {
   'camera_frame:left': 'Left camera frames',
   'camera_frame:right': 'Right camera frames',
   detections: 'Detections'
-}
-
-const REVOKE_DELAY_MS = 10000
-
-const download = ({ blob, filename }) => {
-  const href = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = href
-  link.download = filename
-  link.click()
-  // Some browsers start the download after the click returns.
-  setTimeout(() => URL.revokeObjectURL(href), REVOKE_DELAY_MS)
 }
 
 /** The exporter's actions, one button each; a file result is downloaded, a JSON result and an error are shown. */
@@ -42,7 +32,7 @@ function Actions({ exporterId, actions }) {
     setResult(null)
     try {
       const answer = await runExporterAction(exporterId, name)
-      if (answer.kind === 'file') download(answer)
+      if (answer.kind === 'file') downloadFile(answer.blob, answer.filename)
       else setResult(answer.data)
     } catch (failure) {
       setError(failure.message)
@@ -62,7 +52,7 @@ function Actions({ exporterId, actions }) {
               disabled={running !== null}
               aria-describedby={`${descriptionId}-${action.name}`}
               onClick={() => run(action.name)}
-              className={`min-h-9 rounded border border-ovcs-border px-3 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
+              className={BUTTON}
             >
               {running === action.name ? 'Running…' : action.label}
             </button>

@@ -12,7 +12,10 @@ defmodule VisionCore.Status do
   (`Pair` `:sharpness`), and `:quality` the depth's quality
   (`VisionCore.Stereo.Stage.Quality`'s metrics: the share of matched
   pixels, the disparity's mean and spread, and its jitter), each averaged
-  over the tick's pairs; `nil` without any.
+  over the tick's pairs; `nil` without any. `:calibrated` is whether the
+  stereo unit has both calibration files
+  (`VisionCore.Stereo.Supervisor.calibrated?/1`), read at each snapshot;
+  `false` without a `:stereo` component.
 
   Started after the components and the exporters in `VisionCore.Supervisor`.
   A listing of the exporters that misses its deadline reports those
@@ -46,6 +49,7 @@ defmodule VisionCore.Status do
           cameras: %{left: camera(), right: camera()},
           sync: map(),
           hailo: :running | :absent | :failed,
+          calibrated: boolean(),
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -110,6 +114,7 @@ defmodule VisionCore.Status do
     {:ok,
      %{
        tick_ms: tick_ms,
+       config: config,
        cameras: StereoSupervisor.cameras(config),
        hailo_configured?: hailo_configured?(config),
        exporters: [],
@@ -266,6 +271,7 @@ defmodule VisionCore.Status do
       cameras: cameras,
       sync: sync(cameras, replies),
       hailo: hailo(state, replies),
+      calibrated: StereoSupervisor.calibrated?(state.config),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,

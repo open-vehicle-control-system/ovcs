@@ -34,6 +34,7 @@ defmodule VisionApiWeb.StatusJSON do
       },
       sync: rename(snapshot.sync, @sync_keys),
       hailo: Atom.to_string(snapshot.hailo),
+      calibrated: snapshot.calibrated,
       depthHz: snapshot.depth_hz,
       cpuPercent: snapshot.cpu_percent,
       stereoLoadPercent: snapshot.stereo_segment_percent,

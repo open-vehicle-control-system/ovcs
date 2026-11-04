@@ -689,7 +689,12 @@ defmodule VisionCore.Stereo.Pipeline do
 
   defp normalise_stage(module) when is_atom(module), do: normalise_stage({module, []})
 
-  defp stage_name(module),
+  @doc """
+  The name the stage `module` goes by in the pipeline, its parameters'
+  ids and `stage_options/1`: its last segment, underscored.
+  """
+  @spec stage_name(module()) :: atom()
+  def stage_name(module),
     do: module |> Module.split() |> List.last() |> Macro.underscore() |> String.to_atom()
 
   defp backends(opts) do

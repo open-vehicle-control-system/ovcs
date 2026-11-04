@@ -29,7 +29,7 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 | [nx_stereo](https://github.com/Spin42/nx_stereo) | Stereo in Nx: semi-global matching (libSGM's algorithm, with its stages as precompiled Vulkan compute shaders), rectification, area resizing, the median filter, depth, the point cloud and the turbo colour map. |
 | [nx_iree](https://github.com/Spin42/nx_iree) | Compiles Nx functions with IREE and runs them through IREE's runtime, on Vulkan (C100) or the CPU (Pi 5). Functions for the device are compiled on a host into a module cache, so the device needs neither EXLA nor the IREE compiler. |
 | [EXLA](https://github.com/elixir-nx/nx/tree/main/exla) | Development and tests only: runs the Nx stages on the CPU in tests, and lowers Nx functions for `nx_iree` when the module cache is built. |
-| [evision](https://github.com/cocoa-xu/evision) | Tests only: OpenCV, the reference the Nx stages are checked against. |
+| [evision](https://github.com/cocoa-xu/evision) | OpenCV: the cameras' calibration (`VisionCore.Calibration.*`), on the unit through its precompiled NIF, and in tests the reference the Nx stages are checked against. Nothing on the depth path calls it. |
 | [`ros2_zenoh`](../libraries/ros2_zenoh/README.md) | The ROS 2 message types, their CDR encoding and `rmw_zenoh`'s key expressions and attachments, shared with `ros_bridge`. |
 | [zenohex](https://github.com/biyooon-ex/zenohex) | Zenoh from Elixir: publishes and subscribes ROS 2 topics through the router `rmw_zenoh` uses. |
 | [yaml_elixir](https://github.com/KrisKennaway/yaml-elixir) | Reads the camera calibration files. |
