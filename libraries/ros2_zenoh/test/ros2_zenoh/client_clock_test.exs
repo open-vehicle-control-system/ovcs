@@ -42,6 +42,9 @@ defmodule Ros2Zenoh.ClientClockTest do
 
   def raising_check, do: raise("NervesTime is not running")
 
+  # The OS clock, `ahead_ms` (as a test sets it) past the BEAM's.
+  def os_time(agent), do: System.system_time(:millisecond) + Agent.get(agent, & &1)
+
   defp clock(synchronized) do
     agent = start_supervised!({Agent, fn -> synchronized end}, id: :clock)
     {agent, {__MODULE__, :synchronized?, [agent]}}
@@ -84,16 +87,18 @@ defmodule Ros2Zenoh.ClientClockTest do
     end
   end
 
-  defp start_client(check) do
+  defp start_client(check, opts \\ []) do
     session = local_session()
 
     client =
       start_supervised!(
         {Client,
-         endpoint_ip: "127.0.0.1",
-         node_name: "ros2_zenoh_test",
-         open_session: fn _endpoint_ip -> {:ok, session} end,
-         clock_synchronized?: check}
+         [
+           endpoint_ip: "127.0.0.1",
+           node_name: "ros2_zenoh_test",
+           open_session: fn _endpoint_ip -> {:ok, session} end,
+           clock_synchronized?: check
+         ] ++ opts}
       )
 
     await_connected()
@@ -141,6 +146,25 @@ defmodule Ros2Zenoh.ClientClockTest do
 
     assert log =~ "clock synchronized"
     assert log =~ "dropped 1"
+
+    publish()
+    assert_receive :encoded
+    assert_receive %Zenohex.Sample{}, 1_000
+  end
+
+  test "waits for the BEAM's clock to follow the OS clock NTP stepped" do
+    {_agent, check} = clock(true)
+    thirteen_days_ms = 13 * 24 * 3_600_000
+    os_clock = start_supervised!({Agent, fn -> thirteen_days_ms end}, id: :os_clock)
+    client = start_client(check, os_clock: {__MODULE__, :os_time, [os_clock]})
+
+    publish()
+    refute_receive :encoded, 300
+    assert %State{clock_synchronized: false} = :sys.get_state(Client)
+
+    Agent.update(os_clock, fn _ -> 0 end)
+    send(client, :check_clock)
+    assert %State{clock_synchronized: true} = :sys.get_state(Client)
 
     publish()
     assert_receive :encoded

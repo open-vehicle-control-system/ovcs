@@ -31,6 +31,8 @@ defmodule Ros2Zenoh.Client.State do
       attempt should it fail; `nil` when none is.
     * `clock_check`: the `{module, function, args}` that answers whether
       the board's clock is synchronized, or `nil` to publish from the start.
+    * `os_clock`: the `{module, function, args}` that reads the OS clock in
+      milliseconds, which the BEAM's must agree with.
     * `clock_synchronized`: whether publishing has begun; it never goes
       back to `false`.
     * `drops_before_clock_sync`: publishes dropped before then, logged
@@ -46,6 +48,7 @@ defmodule Ros2Zenoh.Client.State do
     :node_token,
     :connecting,
     :clock_check,
+    :os_clock,
     publishers: %{},
     subscriptions: %{},
     services: %{},
@@ -134,9 +137,17 @@ defmodule Ros2Zenoh.Client do
   `:clock_synchronized?` (default: the `:ros2_zenoh` application's
   `:clock_synchronized?`) names the check, an `{module, function, args}`
   answering a boolean; a check that raises or exits counts as
-  unsynchronized. Until it answers `true` every publish is dropped and
-  tallied, without being encoded, and the check runs again every second;
-  once it has, publishing never stops again. Without a check, as on a host
+  unsynchronized. Stamps come from the BEAM's system time, which follows a
+  step of the OS clock only when the runtime next notices it, tens of
+  seconds after NTP made it, so the BEAM's clock must also agree with the
+  OS clock within a second. Neither condition is enough alone: both clocks
+  agree on the stale time at boot. The BEAM follows a step only in
+  `+C multi_time_warp` mode, which both Nerves firmwares set; in any other
+  mode publishing would never begin.
+
+  Until both hold every publish is dropped and tallied, without being
+  encoded, and the check runs again every second; once they have,
+  publishing never stops again. Without a check, as on a host
   or against a simulator, publishing begins at once. Subscriptions and
   services are never held back, so commands still reach the vehicle.
 
@@ -177,6 +188,7 @@ defmodule Ros2Zenoh.Client do
   # The flags' table, owned by the client: it goes when the client does.
   @session_table __MODULE__
   @clock_check_interval_ms 1_000
+  @clock_agreement_ms 1_000
 
   @doc """
   Starts the client. Options: `:endpoint_ip`, the Zenoh router's address,
@@ -184,7 +196,9 @@ defmodule Ros2Zenoh.Client do
   required); `:domain_id`, the ROS domain, 0 by default; `:open_session`, a
   function from the router's address to `{:ok, session}` or
   `{:error, reason}`, a client-mode session to the router by default;
-  `:clock_synchronized?`, the clock check described in the moduledoc.
+  `:clock_synchronized?`, the clock check described in the moduledoc;
+  `:os_clock`, the OS clock it compares the BEAM's with,
+  `{:os, :system_time, [:millisecond]}` by default.
   """
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -360,13 +374,16 @@ defmodule Ros2Zenoh.Client do
         Application.get_env(:ros2_zenoh, :clock_synchronized?)
       end)
 
+    os_clock = Keyword.get(opts, :os_clock, {:os, :system_time, [:millisecond]})
+
     state = %State{
       endpoint_ip: Keyword.fetch!(opts, :endpoint_ip),
       node_name: Keyword.fetch!(opts, :node_name),
       domain_id: Keyword.get(opts, :domain_id, @default_domain_id),
       open_session: Keyword.get(opts, :open_session, &open_session/1),
       clock_check: clock_check,
-      clock_synchronized: clock_synchronized?(clock_check)
+      os_clock: os_clock,
+      clock_synchronized: clock_synchronized?(clock_check, os_clock)
     }
 
     :ets.new(@session_table, [:named_table, read_concurrency: true])
@@ -612,7 +629,7 @@ defmodule Ros2Zenoh.Client do
 
   @impl GenServer
   def handle_info(:check_clock, state) do
-    if clock_synchronized?(state.clock_check) do
+    if clock_synchronized?(state.clock_check, state.os_clock) do
       Logger.info(
         "#{__MODULE__} clock synchronized; publishing " <>
           "(dropped #{state.drops_before_clock_sync} publish(es) before)"
@@ -715,10 +732,12 @@ defmodule Ros2Zenoh.Client do
   @impl GenServer
   def terminate(_reason, state), do: teardown_session(state)
 
-  defp clock_synchronized?(nil), do: true
+  defp clock_synchronized?(nil, _os_clock), do: true
 
-  defp clock_synchronized?({module, function, args}) do
-    apply(module, function, args) == true
+  defp clock_synchronized?({module, function, args}, {os_module, os_function, os_args}) do
+    apply(module, function, args) == true and
+      abs(apply(os_module, os_function, os_args) - System.system_time(:millisecond)) <=
+        @clock_agreement_ms
   rescue
     _exception -> false
   catch
