@@ -177,7 +177,7 @@ services:
       # inactive until someone restarted the container.
       ZENOH_ROUTER_ADMIN_URL: http://127.0.0.1:8000
 
-  # Further onboard services — autonomy, perception, telemetry, ROS or
+  # Further onboard services — autonomy, telemetry, ROS or
   # not — go here as additional services, each with its own `build:`
   # pointing at its own directory under ./images. There is no
   # bind-mounted ./workspace on the vehicle — a node that runs on the

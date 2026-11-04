@@ -1,7 +1,7 @@
 defmodule Ros2Zenoh.CdrAlignmentTest do
   @moduledoc """
-  CDR alignment invariants for the message types the perception
-  pipeline puts on the wire.
+  CDR alignment invariants for the message types the vision unit puts
+  on the wire.
 
   Round-trip tests cannot catch an alignment bug: if the encoder and
   the parser make the same wrong assumption they agree with each other

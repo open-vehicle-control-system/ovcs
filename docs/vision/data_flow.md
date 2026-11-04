@@ -116,4 +116,3 @@ The depth preview is the depth image coloured by `jpeg_codec`, near red and far 
 
 - [Stereo stages](./stages.md)
 - [Where depth is computed](./compute.md)
-- [Perception: object detection](../bridges/perception.md): the ROS bridge's detector and its topics.

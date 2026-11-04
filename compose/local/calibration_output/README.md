@@ -8,7 +8,7 @@ not source-of-truth artifacts.
 
 ## One-shot stereo calibration workflow
 
-Prerequisite: the ROS bridge's stereo camera is already running so
+Prerequisite: the vision unit's stereo cameras are already running so
 that `/stereo/{left,right}/image_raw/compressed` are live. Verify
 with `docker compose exec ros2 ros2 topic list`.
 
@@ -48,13 +48,11 @@ with `docker compose exec ros2 ros2 topic list`.
    GUI writes `/output/calibrationdata.tar.gz` (i.e. this
    directory).
 
-6. **Click COMMIT** to apply it now. The bridge reloads the new
-   calibration live and keeps it across restarts: on the vehicle it
-   is stored in `/data/calibration/` (the firmware's own files are
-   read-only), which the bridge prefers at boot once both sides are
-   there. The bridge logs "using the calibration stored in
-   /data/calibration" when it does. The calibrator exits after
-   COMMIT.
+6. **Click COMMIT** to apply it now. The vision unit reloads the new
+   calibration live and keeps it across restarts in its
+   `:calibration_store_dir`, `/data/vision/calibration/` on the OVCS
+   Mini (the firmware's own files are read-only), which it prefers at
+   boot once both sides are there. The calibrator exits after COMMIT.
 
 7. **Install it in your vehicle package,** so a fresh firmware or
    a wiped data partition gets it too. Either extract the tarball:
@@ -65,8 +63,8 @@ with `docker compose exec ros2 ros2 topic list`.
    ```
    or copy the committed files off the vehicle:
    ```
-   sftp <perception-ip>:/data/calibration/stereo_left.yaml  ../../../vehicles/<vehicle>/priv/calibration/
-   sftp <perception-ip>:/data/calibration/stereo_right.yaml ../../../vehicles/<vehicle>/priv/calibration/
+   sftp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml  ../../../vehicles/<vehicle>/priv/calibration/
+   sftp <vehicle>-vision.local:/data/vision/calibration/stereo_right.yaml ../../../vehicles/<vehicle>/priv/calibration/
    ```
 
 ## Troubleshooting

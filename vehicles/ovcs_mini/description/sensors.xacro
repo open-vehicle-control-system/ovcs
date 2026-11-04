@@ -28,8 +28,8 @@
 
     `topic` is the Gazebo-side name; `ros_gz_bridge` carries it into
     ROS under the same name. It deliberately matches what the real
-    vehicle publishes, because that is the whole point: the perception
-    code should not be able to tell the difference.
+    vehicle publishes, because that is the whole point: the vision
+    unit should not be able to tell the difference.
   -->
   <xacro:macro name="sim_camera" params="name x y z topic width height focal_px rate">
     <link name="${name}_link">

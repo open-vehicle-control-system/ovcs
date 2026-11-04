@@ -4,10 +4,9 @@ Elixir bridge between the OVCS CAN bus and ROS 2, talking native
 [Zenoh](https://zenoh.io) via [`zenohex`](https://hex.pm/packages/zenohex).
 Hosted by `bridges/firmware`; vehicles opt in via `bridge_firmwares/0`.
 The guide, [ROS bridge](../../docs/bridges/ros.md), explains its components, how a
-vehicle configures it, the stereo tuning and the end-to-end check; this README keeps the
-developer details.
+vehicle configures it and the end-to-end check; this README keeps the developer details.
 
-The [vision unit](../../vision/core/README.md) runs stereo depth and detection as a role of its own, on a dedicated board, with a stereo stack of its own: this bridge matches with OpenCV's `StereoSGBM` through evision, the vision unit with Nx or its native `stereo_match` Port, without OpenCV.
+Stereo depth and detection are the [vision unit](../../vision/core/README.md)'s, a role of its own.
 
 ## Layout
 

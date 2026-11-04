@@ -61,9 +61,9 @@ sudo modprobe vcan
 
 ### The stereo pipeline never starts against the simulator
 
-**Check:** the environment the bridge was started with.
+**Check:** the environment the vision role was started with.
 
-**Cause:** the bridge firmware was started without `BRIDGE_FIRMWARE_ID`, and stops at boot with `bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID`, or with the id of an entry that runs no perception. **Fix:** `BRIDGE_FIRMWARE_ID=ros_vision` together with `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
+**Cause:** the vision role was started without `OVCS_SIM=1`, and the OVCS Mini reference vehicle's composer then runs no cameras on the host. **Fix:** `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
 
 ### Cantastic dies: "CAN network mappings are missing"
 
@@ -176,7 +176,7 @@ Host 10.42.0.*
 
 ### Stereo depth is empty, or coverage is a few percent
 
-**Cause:** the world has no texture (`empty.sdf` gives SGBM nothing to correlate), or the bridge uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
+**Cause:** the world has no texture (`empty.sdf` gives the matcher nothing to correlate), or the vision unit uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
 
 ### Nav2 drops every point cloud: "the timestamp on the message is earlier than all the data in the transform cache"
 

@@ -41,7 +41,7 @@ The VMS composer starts three children: an example generic controller (`OVCS.Gen
 ./ovcs run my_car
 ```
 
-The first run compiles every firmware project the vehicle uses, and with bridges enabled that includes native dependencies such as `evision`; it takes a while once, then it's incremental. `./ovcs run` creates `vcan0`, starts one BEAM per role (`my-car-vms` and `my-car-infotainment`, which join one Erlang mesh), and starts the dashboard add-on. Open `http://localhost:5173`: the Status page has one block, VMS, and it reads `Status FAILURE` and `Ready to drive false`.
+The first run compiles every firmware project the vehicle uses, and with bridges enabled that includes native dependencies such as `zenohex`; it takes a while once, then it's incremental. `./ovcs run` creates `vcan0`, starts one BEAM per role (`my-car-vms` and `my-car-infotainment`, which join one Erlang mesh), and starts the dashboard add-on. Open `http://localhost:5173`: the Status page has one block, VMS, and it reads `Status FAILURE` and `Ready to drive false`.
 
 That is the scaffold working as written. `MyCar.Vms` computes both values from one fact, whether the example controller is alive, and there is no controller on your laptop. The controller driver watches its alive frame, `0x701`, which a real board sends every 100 ms. Pretend to be the board:
 

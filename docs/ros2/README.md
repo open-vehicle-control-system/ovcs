@@ -1,12 +1,12 @@
 ---
 title: ROS 2
-description: The Zenoh fabric, who publishes which topic, simulator time, the command paths, the VMS driving Gazebo, Nav2 and perception.
+description: The Zenoh fabric, who publishes which topic, simulator time, the command paths, the VMS driving Gazebo, Nav2 and the vision unit.
 ---
 
 A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real. [Simulation](../../compose/local/simulation/README.md) tells you how to run the simulator; read it first.
 
 > [!NOTE]
-> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](../vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs the ROS bridge in two bridge firmwares (`ros` and `ros_vision`, which adds perception) and a compute node: treat its wiring as a worked example for your own.
+> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](../vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs the ROS bridge in its `ros` bridge firmware, stereo depth and detection in its vision unit, and a compute node: treat its wiring as a worked example for your own.
 
 ## The fabric: one Zenoh router, everything a client
 
@@ -54,14 +54,14 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/joint_states` | `sensor_msgs/JointState` | Gazebo; on the vehicle, `RosBridge.Publishers.AckermannJointStates` | `RosBridge.Simulator.Hardware` (the wheel speed), `robot_state_publisher` |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
-| `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `RosBridge.Camera.Zenoh` |
-| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the ROS bridge's stereo camera (from its calibration YAML) | Foxglove, the calibrator |
+| `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `VisionCore.Ros2.Camera` |
+| `/stereo/{left,right}/camera_info` | `sensor_msgs/CameraInfo` | Gazebo **and** the vision unit (from its calibration YAML) | Foxglove, the calibrator |
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |
 | `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `RosBridge.Consumers.Velocity` |
 | `/joy/<profile>` | `sensor_msgs/Joy` | the operator's `joy` service | `RosBridge.Consumers.Joy` |
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](./commands.md#ground-truth) | you, to compare with `/odom` |
-| `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the ROS bridge's perception components | Foxglove |
+| `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit | Nav2, Foxglove |
 | `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
 | `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
 
@@ -96,11 +96,11 @@ Each `/clock` sample gives a simulator time and, read alongside it, a local mono
 driver frame (capture_ns, Erlang monotonic) ─► Timing: capture_ns + offset ─► builtin_interfaces/Time
 ```
 
-Drivers never see simulator time: camera frames carry an Erlang-monotonic `capture_ns`, lidar and rangefinder samples carry system time, and `Timing` is the one place either is converted. `RosBridge.Camera.Zenoh` converts the other way, through `Timing.monotonic_from_ros_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
+Drivers never see simulator time: lidar and rangefinder samples carry system time, the other publishers stamp the Erlang-monotonic time they publish at, and `Timing` is the one place either is converted. The vision unit does the same with `VisionCore.Timing`, and its `VisionCore.Ros2.Camera` converts the other way, through `VisionCore.Timing.monotonic_from_export_time/1`: a simulated frame's `capture_ns` is Gazebo's render stamp, so both sides of a stereo pair carry the same time and pair exactly. Stamped on arrival instead, they arrive tens of milliseconds apart, enough to pair a frame with its neighbour's, which reads as phantom depth once the car moves. Without a `/clock` the offset is `nil` and `Timing` stamps wall clock, so the vehicle path is untouched.
 
 ### Two monotonic clocks, not one
 
-Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `Timing.monotonic_from_kernel/1` converts once, at the driver boundary.
+Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its own zero, about 5.8e17 ns away. libcamera's `SensorTimestamp` is kernel-monotonic. Project one clock's timestamp with the other's offset and it lands decades off, and `builtin_interfaces/Time.sec` is an `int32`, so it wraps negative. `VisionCore.Timing.monotonic_from_kernel/1` converts once, at the camera driver boundary.
 
 ### Why `Clock.init/1` blocks
 
@@ -110,7 +110,7 @@ Erlang's monotonic time is not the kernel's `CLOCK_MONOTONIC`: the VM picks its 
 the timestamp on the message is earlier than all the data in the transform cache
 ```
 
-and the costmaps ignore stereo for the whole run. Measured, the static-transform publisher wins that race by zero milliseconds. Blocking in `init/1`, with `:simulator_clock` listed before the transforms and the camera, makes the race unwinnable.
+and the costmaps ignore stereo for the whole run. Measured, the static-transform publisher wins that race by zero milliseconds. Blocking in `init/1`, with `:simulator_clock` listed before the transforms, makes the race unwinnable.
 
 ### Giving up is permanent
 
@@ -155,9 +155,9 @@ What is deliberately unusual:
 
 Gazebo's `AckermannSteering` quietly ignores commands it cannot execute. With `mppi::DiffDriveMotionModel` substituted in, the vehicle reached the tight goal *better* than the correct configuration (0.30 m against 0.53 m) while commanding **3.68×** the kinematic yaw-rate limit. Judge a configuration by what it *commands*, not by whether it arrives.
 
-## Perception against the simulator
+## The vision unit against the simulator
 
-The stereo stack and the detector run unchanged against Gazebo; only the camera driver differs, `RosBridge.Camera.Zenoh` in place of `RosBridge.Camera.LibCamera`. [Running perception against it](../../compose/local/simulation/README.md#running-perception-against-it) covers the wiring, why the images are compressed, and the simulator's own calibration. Detection and its backends are in [Perception](../bridges/perception.md).
+The vision unit runs unchanged against Gazebo; only the camera driver differs, `VisionCore.Ros2.Camera` in place of `VisionCore.Camera.LibCamera`. [Running the vision unit against it](../../compose/local/simulation/README.md#running-the-vision-unit-against-it) covers the wiring, why the images are compressed, and the simulator's own calibration.
 
 ## Per-vehicle bridge configuration
 
@@ -202,7 +202,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the launch order and bridged topics | `compose/local/simulation/launch/gazebo.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
 | the rmw_zenoh wire format | [`libraries/ros2_zenoh/README.md`](../../libraries/ros2_zenoh/README.md) | `libraries/ros2_zenoh/lib/ros2_zenoh/rmw_zenoh.ex`, `bridges/ros_bridge/lib/zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
-| what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
+| what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/1`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
@@ -210,6 +210,6 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | who commands the vehicle | [How the VMS works](../vms/how_it_works.md#control-levels) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | the vehicle's state on ROS | `bridges/ros_bridge/lib/ros_bridge/publishers/vehicle_status.ex` | `0x60C_control_status.yml`, `vms/core/lib/vms_core/components/ovcs/control_status.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
-| the perception pipeline | [Perception: object detection](../bridges/perception.md) | `bridges/ros_bridge/lib/ros_bridge/camera/zenoh.ex`, `stereo_camera/supervisor.ex` |
+| stereo depth and detection | [Vision unit](../vision/README.md) | `vision/core/lib/vision_core/ros2/camera.ex`, `stereo/supervisor.ex` |
 | the vehicle's ROS computer | [ROS compute node](./compute_node.md) | `compose/compute/`, [`compose/README.md`](../../compose/README.md) |
 | the model's geometry | `vehicles/ovcs_mini/description/ovcs_mini.urdf.xacro`, the OVCS Mini reference vehicle's | `gazebo_ackermann.xacro`, `simulation.yaml`; `ovcs_mini.urdf`, which `mise run urdf` expands from it and `OvcsMini.geometry/0` reads |

@@ -5,7 +5,7 @@ description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns s
 
 The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, takes the results out through its exporters, such as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2/compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
 
-A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs stereo depth and detection in its `ros_vision` bridge firmware instead, with the ROS bridge's own stack ([Perception](../bridges/perception.md)).
+A vehicle without cameras omits the role and nothing is built for it. The OVCS Mini reference vehicle runs one: a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`).
 
 ## Layers
 
@@ -18,8 +18,6 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
 | Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
-
-The [ROS bridge](../../bridges/ros_bridge/README.md) has stereo depth and detection components of its own, built on OpenCV: it matches with OpenCV's semi-global block matching (`StereoSGBM`), through evision. The vision unit runs no OpenCV: its stages are Nx, compiled for the board, or native in the `stereo_match` Port. A vehicle runs stereo in one or the other.
 
 ## Opting in
 
@@ -102,7 +100,7 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 - **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 
-Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
+Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved. The compute node's `foxglove_bridge` offers the parameters under `/ovcs_vision.stereo.`, which the Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows as sliders next to the depth and the cameras' sync, exposure and gain; its rectified camera panels need `publish_rectified_image: true` in the ROS 2 exporter's `stereo:` options.
 
 The API follows [JSON:API](https://jsonapi.org/): [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels, and [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
 
@@ -112,6 +110,37 @@ The dashboard's Exporters menu lists what takes the unit's outputs out of it, fr
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 
+## Detection models
+
+The `:hailo_detector` component runs the HEF its `:hef_path` names, compiled for the Hailo-8. **No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download. The OVCS Mini reference vehicle's models and what they require are described in [`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md).
+
+OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's history, which removing it from `HEAD` doesn't undo.
+
+The detection code isn't affected: `VisionCore.Detection.Backend.Hailo` runs the Hailo runtime and contains no Ultralytics code.
+
+Unsettled, and not legal advice:
+
+- whether neural network weights attract copyright at all (it differs between the US and the EU);
+- whether a compiled `.hef` is a derivative work of the weights it was built from (by analogy to compilation, probably; untested for models);
+- whether AGPL-3.0 §13 ("interacting with users remotely through a computer network") covers a vehicle publishing to Foxglove over Zenoh.
+
+For commercial use of YOLOv8 specifically, an Ultralytics Enterprise licence is the direct answer.
+
+### Permissive models
+
+Apache-2.0 unless noted; those with a prebuilt HAILO8 HEF in model zoo v2.15.0 are marked, with sizes as served:
+
+- **NanoDet-RepVGG**: in the zoo (6.7 MB). The OVCS Mini's.
+- **YOLOX** tiny / s-leaky: in the zoo (9.3 / 9.4 MB), different NMS op.
+- **DAMO-YOLO** tinynasL20_T: in the zoo (13.4 MB).
+- **SSD-MobileNet** v1/v2: in the zoo (6.7 MB), weaker but long-supported.
+- **CenterNet** ResNet-v1-18, **EfficientDet-lite0**: in the zoo.
+- **RT-DETR**: the original Baidu release, not the Ultralytics port.
+- **RF-DETR** (Roboflow), **D-FINE**.
+- torchvision's detectors (BSD-3).
+
+Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yolov6n.hef` is in the zoo), and YOLO-NAS (restrictive Deci licence).
+
 ## Running it on a workstation
 
 On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA, and `mix compile` builds `jpeg_codec` for the host, which decodes the cameras' JPEG frames, and `stereo_match`, for a pipeline computing with `compute: :native`.
@@ -119,6 +148,5 @@ On the host the composer's `:host` arm applies: it can read USB cameras through 
 ## See also
 
 - [Where depth is computed](./compute.md#rust-ports): the Rust Ports the core drives and how they are built.
-- [Perception: object detection](../bridges/perception.md): the ROS bridge's detector, its Hailo backend and its topics.
 - [ROS compute node](../ros2/compute_node.md): the router the unit peers with.
 - [Hardware](../hardware.md#bridges-and-extras): the boards, the cameras and the optional Hailo-8.

@@ -39,12 +39,11 @@ defmodule RosBridge do
   `c:ros_bridge_config/1` or `c:ros_bridge_config/2`, returning a
   `RosBridge.Config` that names the Zenoh router and the list of
   components to start (`RosBridge.Publishers.Heartbeat`,
-  `RosBridge.Consumers.Joy`, `RosBridge.Publishers.Imu`,
-  `RosBridge.Publishers.StereoCamera`, …). The bridge passes the active
-  `:host`/`:target` arm and the bridge firmware id, so vehicles
-  running this bridge in more than one bridge firmware (e.g. the IMU
-  on a Pi 4 and perception on a Pi 5) can return a different
-  component list per firmware.
+  `RosBridge.Consumers.Joy`, `RosBridge.Publishers.Imu`, …). The
+  bridge passes the active `:host`/`:target` arm and the bridge
+  firmware id, so vehicles running this bridge in more than one bridge
+  firmware (e.g. the IMU on one board and the lidar on another) can
+  return a different component list per firmware.
 
   Vehicles running it in a single bridge firmware can ignore the
   firmware id and keep implementing `ros_bridge_config/1`.
@@ -61,7 +60,7 @@ defmodule RosBridge do
 
   @doc """
   Per-deployment config that also takes the `bridge_firmwares/0`
-  entry id (e.g. `"ros"`, `"ros_vision"`), letting a single
+  entry id (e.g. `"ros"`), letting a single
   vehicle return a different `RosBridge.Config` per bridge BEAM.
   """
   @callback ros_bridge_config(
@@ -84,7 +83,7 @@ defmodule RosBridge do
   def children do
     config = resolve_config()
 
-    core_children = [{RosBridge.ZenohClient, zenoh_client_opts(config)}, RosBridge.Parameters]
+    core_children = [{RosBridge.ZenohClient, zenoh_client_opts(config)}]
     component_children = Enum.flat_map(config.components, &resolve_component/1)
 
     [

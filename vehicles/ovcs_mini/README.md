@@ -19,24 +19,24 @@ firmware is never built for this vehicle.
 | VMS | `OvcsMini.Vms.Composer` | `:ovcs_base_can_system_rpi4` |
 | Bridge firmware `radio_control` | `RadioControlBridge` | `:ovcs_base_can_system_rpi3a` |
 | Bridge firmware `ros` | `RosBridge`, plus the bus gateway | `:ovcs_base_can_system_rpi4` |
-| Bridge firmware `ros_vision` | `RosBridge` with its perception components | `:rpi5` |
+| Vision | `OvcsMini.Vision.Composer` | `:rpi5` |
 
 Two CAN buses: `ovcs` carries the VMS, the main generic controller and
 the CAN-connected bridges; `misc`, on the VMS's second SPI CAN
-controller, carries only the traction motor's VESC. The perception
-bridge has no CAN controller: it reaches the vehicle over Zenoh.
+controller, carries only the traction motor's VESC. The vision unit
+has no CAN controller: it reaches the vehicle over Zenoh.
 
 ## Quick start
 
 With the framework's `ovcs` CLI on your `PATH` ([Setup](https://ovcs.be/docs/getting-started)):
 
 ```sh
-ovcs run ovcs_mini                 # provision vcan + spawn VMS + bridge BEAMs
+ovcs run ovcs_mini                 # provision vcan + spawn VMS, vision + bridge BEAMs
 ovcs attach ovcs_mini
 ovcs build ovcs_mini vms
 ovcs build ovcs_mini bridge-radio_control
 ovcs build ovcs_mini bridge-ros
-ovcs build ovcs_mini bridge-ros_vision
+ovcs build ovcs_mini vision
 ```
 
 Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).
@@ -46,9 +46,11 @@ Before the first build, copy `.env.exs.example` to `.env.exs` (gitignored).
 ```
 lib/ovcs_mini.ex                   — OvcsVehicle impl
 lib/ovcs_mini/vms/                 — VMS-side composer + dashboard pages
+lib/ovcs_mini/vision/              — Vision unit composer
 priv/can/vms.yml                   — VMS CAN topology (`ovcs` and `misc` buses)
 priv/can/generic_controller/       — Per-controller frame wirings
-priv/firmware/{vms,bridges}/       — Per-side fwup overrides
+priv/calibration/                  — Stereo calibration (the cameras, and the simulator's)
+priv/firmware/{vms,vision,bridges}/ — Per-side fwup overrides
 nav2/                              — Nav2 parameters + behaviour trees (compute node, local stacks)
 description/                       — Gazebo model + simulation.yaml (simulator)
 foxglove/                          — Foxglove layouts

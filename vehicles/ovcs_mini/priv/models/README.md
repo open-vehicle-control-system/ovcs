@@ -1,7 +1,7 @@
 # models
 
-Compiled Hailo models (`.hef`) for the ROS bridge's detector in the Mini's
-`ros_vision` bridge firmware.
+Compiled Hailo models (`.hef`) for the detector of the Mini's vision unit,
+`OvcsMini.Vision.Composer`, which loads `nanodet_repvgg.hef`.
 
 **Nothing in this directory is committed.** Run
 
@@ -24,8 +24,8 @@ firmware build would be reproducible offline. That tradeoff is real and
 it has not gone away — you now need network access and one command
 before a first build. The licence is why it changed anyway.
 
-See `docs/bridges/perception.md` for the licensing note in full,
-including the permissively licensed models that are drop-in candidates.
+See the Detection models section of `docs/vision/README.md` for the
+licensing note in full, including the permissively licensed models.
 
 ## nanodet_repvgg.hef — the default
 
@@ -52,7 +52,7 @@ op.
 
 ## yolov8n.hef — the AGPL alternative
 
-Selected with `OVCS_HAILO_MODEL=yolov8n`. Its accuracy at this
+Selected by naming it in `OvcsMini.Vision.Composer`. Its accuracy at this
 resolution is the measured baseline, and it is the right choice for
 anyone holding an Ultralytics Enterprise licence.
 
@@ -72,23 +72,20 @@ pipeline running at ~15 Hz, so inference is not the constraint.
 
 ## Running without a model
 
-Nothing breaks. `Inference.Hailo` checks for the file before opening
-its Port and answers `{:error, :unavailable}` when it is absent;
-`Inference.Dnn` does the same for its `.onnx`. Both log once, and the
-stereo depth pipeline runs on regardless — losing detections is
-acceptable, taking depth down with it is not.
+The vision firmware does not build: the composer lists the model in
+`required_files/0`. On the unit, a detector that cannot start is left
+down with the reason logged, and stereo depth runs on.
 
 ## Adding another
 
 Add it to `scripts/models.tsv` — destination, sha256, licence, URL —
-and set `OVCS_HAILO_MODEL` to its basename.
+and name it in `OvcsMini.Vision.Composer`.
 
 What has to hold: a **square 3-channel input** and **in-graph NMS
 producing `HAILO_NMS_BY_CLASS`**. Size and class count do not, since
 `hailo_detect` reads both off the HEF. `yolov8s.hef` from the same zoo
 path is the accuracy step up and satisfies all of it. A model with a
-different NMS net flow, or none, does not — see
-`docs/bridges/perception.md` for what a swap would cost then.
+different NMS net flow, or none, does not.
 
 Checking is cheap and needs no device:
 

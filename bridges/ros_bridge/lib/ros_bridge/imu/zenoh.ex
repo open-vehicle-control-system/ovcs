@@ -9,8 +9,7 @@ defmodule RosBridge.Imu.Zenoh do
   casts the same `{:imu_sample, %Sample{}}` messages a `BNO085.I2C`
   does, so `Publishers.Imu` republishes on `/imu` and
   `Publishers.Odometry` reads its heading without either knowing the
-  difference — the same pattern as `RosBridge.Camera.Zenoh` for the
-  cameras, where swapping the driver is the entire difference between
+  difference: swapping the driver is the entire difference between
   the car and the simulated car.
 
   Two topics on purpose: Gazebo owns `imu_raw`, the bridge owns

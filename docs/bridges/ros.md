@@ -43,8 +43,6 @@ Apart from the Zenoh session, every feature is a component your vehicle opts int
 | `:static_transforms` | the vehicle's fixed frames on `/tf_static`, so frame ids in headers resolve |
 | `:lidar_publisher` | starts an `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial) and publishes `sensor_msgs/LaserScan` |
 | `:range_publisher` | one rangefinder (an A02YYUW ultrasonic sensor over USB serial) as `sensor_msgs/Range`; list it once per sensor |
-| `:stereo_camera` | two cameras, their images and `camera_info`, and depth from OpenCV's `StereoSGBM` through evision |
-| `:hailo_detector`, `:detector` | object detection fused with the stereo depth, on a Hailo-8 or on the CPU or GPU; see [Perception](./perception.md) |
 | `:simulator_clock`, `:simulated_hardware` | simulation only: follow `/clock`, and emulate the vehicle's hardware on CAN so the VMS drives a Gazebo model; see [Simulation](../../compose/local/simulation/README.md) |
 
 The [vision unit](../vision/README.md) is the other place stereo depth runs, as a role of its own on a dedicated board, without OpenCV. A vehicle runs stereo in one or the other.
@@ -81,7 +79,9 @@ end
 
 A bare atom is shorthand for `{atom, []}`. An unknown component name raises at boot, so a typo fails loudly instead of silently dropping a feature.
 
-A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead, which also receives the bridge firmware id, so each entry gets its own components. The OVCS Mini reference vehicle does, for its `ros` and `ros_vision` entries; its `ros` target configuration, abridged:
+A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead, which also receives the bridge firmware id, so each entry gets its own components.
+
+The OVCS Mini reference vehicle implements `ros_bridge_config/1`; its target configuration, abridged:
 
 ```elixir
 defp ros_bridge_target_config,
@@ -105,30 +105,7 @@ Order matters where one component reads another: `:odometry_publisher` comes aft
 
 - **Host and target.** The arm is fixed at compile time from `Mix.target()`. The `:host` arm swaps hardware drivers for dummies so `./ovcs run <vehicle>` works without sensors, and usually points at a router on loopback.
 - **The router's address.** On the target, `ZENOH_ENDPOINT_IP` at firmware build time sets `:zenoh_endpoint_ip`; your vehicle's `.env.exs` sets it to the compute node's address. Without a `.env.exs` the build fails, because the image would fall back to `127.0.0.1` and reach no router.
-- **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini runs `ovcs_bridge_ros` and `ovcs_bridge_ros_vision`.
-
-## Tune the stereo cameras at runtime
-
-The bridge's node serves ROS 2 parameters (`RosBridge.Parameters`), and every `:stereo_camera` unit declares its settings there (`RosBridge.StereoCamera.Parameters`), so you can change them while watching the images and the depth, from Foxglove's Parameters panel or the `ros2 param` CLI (`<node>` is the bridge's `node_name`):
-
-```bash
-ros2 param list /<node>
-ros2 param describe /<node> stereo.left.lens_position
-ros2 param set /<node> stereo.left.lens_position 1.2
-ros2 param dump /<node>
-```
-
-| Parameters | Settings |
-|---|---|
-| `<prefix>.left.*`, `<prefix>.right.*` | each camera's runtime controls (`RosBridge.Camera.LibCamera.control_specs/0`): exposure mode, shutter time and gain (0 for automatic), focus, brightness, contrast, sharpness, noise reduction |
-| `<prefix>.*` | the matching settings (`RosBridge.StereoCamera.OpenCV.option_specs/0`) |
-| read-only | each camera's addressing, sync role, sensor mode and calibration file, and the resolution and frame rate |
-
-Each parameter carries its type, range or accepted values and a description; a value outside them is refused with the reason.
-
-What the cameras actually apply goes to `/diagnostics` (`RosBridge.StereoCamera.Live`): per camera the shutter time, gains, focus, frame duration, colour temperature and sync state that libcamera reports, and for the pair the time between the two cameras' frames, with a warning above 1 ms. `<prefix>/live/sync_offset_ms` and each camera's `<prefix>/live/<side>/exposure_time_us` and `analogue_gain` (`std_msgs/Float64`) carry the same values for plotting.
-
-Changes last until the stereo unit restarts: copy the values you keep from `ros2 param dump` into your vehicle's configuration. The Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows both cameras, rectified so their rows align as the matcher sees them, and the depth next to the stereo parameters as sliders, menus and toggles (the [`parameter-sliders`](../../compose/local/foxglove/extensions/parameter-sliders) panel, installed once in Foxglove), the diagnostics and plots of the sync offset, exposure and gain.
+- **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini's is `ovcs_bridge_ros`, next to its vision unit's `ovcs_vision`.
 
 ## Check it end to end
 
@@ -137,5 +114,5 @@ With `./ovcs run <vehicle>` going and the local ROS 2 stack up, the bridge's `/o
 ## Where next
 
 - [ROS 2](../ros2/README.md): the Zenoh fabric, who publishes which topic, time, the command paths and Nav2.
-- [Perception](./perception.md): object detection fused with stereo depth.
+- [Vision unit](../vision/README.md): stereo depth and object detection, a role of their own.
 - [ROS compute node](../ros2/compute_node.md): the machine that runs the Zenoh router on the vehicle.

@@ -163,10 +163,9 @@
 
   <!-- ── Sensors ────────────────────────────────────────────────── -->
   <!-- Matches the real vehicle's capture: 480x270 at 30 Hz. The
-       resolution is not arbitrary — it is what the stereo pipeline was
-       tuned to, trading depth precision at range for a 0.36 m near
-       clip and half the SGBM cost. Simulating something else would
-       measure a pipeline the vehicle does not run.
+       resolution is not arbitrary — it is what the vision unit matches
+       at. Simulating anything else would measure a pipeline the
+       vehicle does not run.
 
        Measured off the vehicle:
 
@@ -180,7 +179,7 @@
        and biased every detection by that much.
 
        The bar also carries a third, FPV camera between the two. It is
-       not modelled: nothing in the perception path reads it. -->
+       not modelled: nothing in the vision unit reads it. -->
 
   <!-- From the vehicle's own calibration
        (vehicles/ovcs_mini/priv/calibration/stereo_left.yaml): the

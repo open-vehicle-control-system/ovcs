@@ -83,25 +83,6 @@ defmodule RosBridge.Components do
       plus `:topic` and `:interval_ms`. Without it, frame ids in
       message headers are labels a consumer cannot resolve — see
       `RosBridge.Publishers.StaticTransform`.
-    * `:stereo_camera` — self-contained stereo perception unit
-      (cameras + per-side image/camera_info publishers + SGBM
-      backend + disparity/depth publisher). All orchestration
-      lives in `RosBridge.StereoCamera.Supervisor`; see that
-      module's `@moduledoc` for the authoritative opts reference.
-      Minimal vehicle wiring looks like:
-
-          {:stereo_camera,
-           driver: RosBridge.Camera.GStreamer,
-           calibration_dir: :code.priv_dir(:ovcs_mini)
-                            |> Path.join("calibration"),
-           left:  [device: "/dev/video2"],
-           right: [device: "/dev/video0"]}
-
-      Resolution defaults to 1280×720@30, topic prefix to
-      `"stereo"` (matching the ROS `stereo_image_proc` convention),
-      and per-side `frame_id` / `calibration_path` to values
-      derived from `:topic_prefix` and `:calibration_dir`. The
-      stereo-depth backend is `RosBridge.StereoCamera.OpenCV`.
   """
 
   @doc """
@@ -163,19 +144,6 @@ defmodule RosBridge.Components do
 
   def start(:static_transforms, opts) do
     [{RosBridge.Publishers.StaticTransform, opts}]
-  end
-
-  def start(:hailo_detector, opts) do
-    start(:detector, Keyword.put_new(opts, :backend, RosBridge.Inference.Hailo))
-  end
-
-  def start(:detector, opts) do
-    # Its own supervisor, so a crashing detector cannot exhaust the bridge's restart budget.
-    [{RosBridge.Inference.Supervisor, opts}]
-  end
-
-  def start(:stereo_camera, opts) do
-    [{RosBridge.StereoCamera.Supervisor, opts}]
   end
 
   defp heartbeat_message(counter, node_name) do

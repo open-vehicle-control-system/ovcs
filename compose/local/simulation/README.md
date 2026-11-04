@@ -1,6 +1,6 @@
 ---
 title: Simulation
-description: Run your vehicle's VMS, ROS bridge, perception and Nav2 against a Gazebo model of it, over virtual CAN.
+description: Run your vehicle's VMS, ROS bridge, vision unit and Nav2 against a Gazebo model of it, over virtual CAN.
 ---
 
 A Gazebo **Jetty** container stack that simulates a vehicle from its model, driven by the vehicle's own VMS. The VMS runs on your machine as it does in `./ovcs run`, over virtual CAN, and simulated hardware in the vehicle's ROS bridge answers for the hardware it commands and moves the Gazebo model. Nav2, the gamepad, the stereo pipeline and the odometry all take the paths they take on the vehicle. No Nerves toolchain, no CAN hardware and no physical vehicle are needed. The OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) has a model and simulated hardware, so the commands below use it; they work the same on your vehicle once it has [both](#your-vehicle-in-the-simulator).
@@ -21,7 +21,7 @@ compose/local/
 vehicles/<vehicle>/
   description/            the URDF/xacro model and simulation.yaml, mounted into the container
   nav2/                   Nav2's parameters and behaviour trees, mounted into the nav2 service
-  lib/                    the ROS bridge's simulated hardware, in ros_bridge_config/2
+  lib/                    the ROS bridge's simulated hardware, in ros_bridge_config/1
 ```
 
 ```text
@@ -54,7 +54,7 @@ Details that read like bugs until you know them:
 
 - **`-s` is server-only.** The GUI is a separate service (`--profile gui`), because in a headless container Qt calls `qFatal` and takes the physics down with it.
 - **`-r` runs the world.** Without it the simulation loads paused, which looks exactly like a broken drive plugin.
-- **Cameras go through `image_bridge`**, for bandwidth ([Running perception against it](#running-perception-against-it)).
+- **Cameras go through `image_bridge`**, for bandwidth ([Running the vision unit against it](#running-the-vision-unit-against-it)).
 - **`use_sim_time: true`** on every node ([Time](../../../docs/ros2/README.md#time)).
 - **`GZ_IP=127.0.0.1`** on the `gazebo` and `gazebo-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
 - **`workshop.sdf` steps every 5 ms** (`empty.sdf` every 1 ms). Gazebo publishes `/clock` once per step, so the step is also the clock's rate, which every node with `use_sim_time` receives.
@@ -80,7 +80,7 @@ cd ../..
 OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 ./ovcs run ovcs_mini
 ```
 
-`OVCS_SIM=1` gives every bridge its simulated wiring: the ROS bridge runs the simulated hardware and reads the simulated IMU, and its perception components read the simulated cameras. Within seconds of the VMS appearing, the simulated radio's scripted switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
+`OVCS_SIM=1` gives every role its simulated wiring: the ROS bridge runs the simulated hardware and reads the simulated IMU, and the vision unit reads the simulated cameras. Within seconds of the VMS appearing, the simulated radio's scripted switches take it through `:radio` to `:ros` with the `autonomous` commander (`OVCS_SIMULATOR_COMMANDER=teleop` for the gamepad instead). Then:
 
 ```sh
 cd compose/local && docker compose -f simulation.yml --profile nav2 up -d nav2
@@ -118,44 +118,33 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 `/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports how far the wheel joints on `/joint_states` turned, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2/commands.md#ground-truth).
 
-## Running perception against it
+## Running the vision unit against it
 
-The stereo stack (SGBM, rectification, publishers, detector) is framework code in `bridges/ros_bridge` and runs unchanged against the simulator; `./ovcs run` with `OVCS_SIM=1` already starts it. Only the camera driver differs:
+The vision unit (`vision/core`) runs unchanged against the simulator; `./ovcs run` with `OVCS_SIM=1` already starts it. Only the camera driver differs:
 
 ```text
-Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed─► RosBridge.Camera.Zenoh
-  ─► StereoCamera.Supervisor ─► StereoCamera.OpenCV (SGBM) ─► Publishers.StereoCamera ─► fabric
-                             └─► detector (optional: Stub or Dnn) ─► /stereo/detections
+Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed─► VisionCore.Ros2.Camera
+  ─► VisionCore.Stereo.Supervisor ─► stereo stages ─► VisionCore.Ros2.Exporter ─► fabric
 ```
 
-`RosBridge.Camera.Zenoh` subscribes to a `CompressedImage` topic and emits the same `{:camera_frame, %Frame{}}` casts a physical driver does. Swapping it in for `RosBridge.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it (`ros_vision_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex`).
+`VisionCore.Ros2.Camera` subscribes to a `CompressedImage` topic and hands its frames on as a physical driver does. Swapping it in for `VisionCore.Camera.LibCamera` is the entire difference between the car and the simulated car; in the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it, with the simulator's clock (`OvcsMini.Vision.Composer`). No detector runs there: the vision unit detects on a Hailo-8, which a workstation does not have.
 
 - **Compressed, not raw.** A 480×270 rgb8 frame is 389 KB; at 30 Hz, 11.6 MB/s. Over Zenoh, a subscriber that cannot drain that receives one frame every fifteen seconds, which looks like a dead topic. JPEG is about 6.5 KB a frame. Compression belongs upstream of the fabric, as on the vehicle.
-- **One topic name, two roles.** `Publishers.StereoCamera` republishes each frame on `<topic_prefix>/<side>/image_raw/compressed`, and the prefix is `stereo`, so against the simulator the bridge publishes onto the name it consumes from `image_bridge`. The measured 30 Hz suggests a session does not hear its own publications; if the stereo rate ever looks doubled, look here first.
+- **One topic name, two roles.** The ROS 2 exporter publishes raw images on `<topic_prefix>/<side>/image_raw/compressed`, the names it consumes from `image_bridge`, so the simulated wiring turns `publish_raw_images` off.
 
 To run it on its own:
 
 ```sh
-./ovcs can setup ovcs_mini          # once; Cantastic needs vcan0 to exist (same on your vehicle)
-
-cd bridges/firmware
-VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 \
-  BRIDGE_FIRMWARE_ID=ros_vision CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
-  iex -S mix
+cd vision/firmware
+VEHICLE=OvcsMini OVCS_SIM=1 ZENOH_ENDPOINT_IP=127.0.0.1 iex -S mix
 ```
 
-Three details fail misleadingly if wrong:
-
-- **Start from `bridges/firmware`, not `bridges/ros_bridge`.** The library has no `config/`, so `CAN_NETWORK_MAPPINGS` is never read there and Cantastic dies with "CAN network mappings are missing from the Cantastic configuratiion". The firmware project is what `./ovcs run` starts; its `config/runtime.exs` consumes the variable.
-- **`BRIDGE_FIRMWARE_ID=ros_vision` is required.** Without it the bridge firmware stops at boot with `bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID`.
-- **`OVCS_SIM=1` selects the simulated wiring**, so it cannot be picked up by accident on the vehicle. No Hailo detector there, since a workstation has no accelerator; `OVCS_DETECTOR` picks a backend instead ([Perception: object detection](../../../docs/bridges/perception.md)).
-
-Measured against `workshop.sdf`: 30.3 Hz, 61.2 % depth coverage, median depth 0.81 m and p75 1.75 m, on the world's two boxes.
+`OVCS_SIM=1` selects the simulated wiring, so it cannot be picked up by accident on the vehicle. Without it, the Mini's vision unit runs no cameras on a workstation.
 
 Two things produce **no disparity at all**:
 
-- **An untextured world.** SGBM correlates local patches; a flat plane under a blank sky gives it nothing. Use `workshop.sdf`, the default, for anything involving depth.
-- **The vehicle's own calibration.** Gazebo renders an ideal pinhole, and real distortion coefficients and rectification rotations warp the views apart: 5.4 % coverage. The simulator's calibration, `vehicles/ovcs_mini/priv/calibration/simulation/`, has D = 0 and R = I, with the real focal length scaled to the capture resolution: the optics match the vehicle, the distortion model matches the simulator.
+- **An untextured world.** The matcher correlates local patches; a flat plane under a blank sky gives it nothing. Use `workshop.sdf`, the default, for anything involving depth.
+- **The vehicle's own calibration.** Gazebo renders an ideal pinhole, and real distortion coefficients and rectification rotations warp the views apart. The simulator's calibration, `vehicles/ovcs_mini/priv/calibration/simulation/`, has D = 0 and R = I, with the real focal length scaled to the capture resolution: the optics match the vehicle, the distortion model matches the simulator.
 
 ## Navigating with Nav2
 
@@ -180,7 +169,7 @@ The simulator reads three things from `vehicles/<vehicle>/`:
 | `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
 | `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 
-The ROS bridge needs two more things from the vehicle package: a `:simulated_hardware` in its host `ros_bridge_config/2` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_bridge_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
+The ROS bridge needs two more things from the vehicle package: a `:simulated_hardware` in its host `ros_bridge_config` against the simulator, listing a `RosBridge.Simulator.SimulatedComponent` for each piece of hardware the VMS drives, and their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`). The OVCS Mini's `ros_bridge_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example; hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
 
 The OVCS Mini reference vehicle's model is the worked example: [`vehicles/ovcs_mini/description/`](../../../vehicles/ovcs_mini/description/README.md) documents its dimensions and which of them are estimates, and `inertial_macros.xacro` comes from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic. A centre of gravity at half the body height rolls a model over in its first corner; the Mini carries its chassis mass in a low tub for that reason.
 
@@ -198,5 +187,5 @@ ROS 2 Jazzy supports only Gazebo Harmonic; Jetty, the current LTS, needs ROS 2 *
 ## Next steps
 
 - [ROS 2](../../../docs/ros2/README.md): how the simulator, the ROS bridge and the VMS fit together.
-- [Perception: object detection](../../../docs/bridges/perception.md): the stereo and detection pipeline.
+- [Vision unit](../../../docs/vision/README.md): the stereo and detection pipeline.
 - [Quickstart](../../../docs/quickstart.md): boot a reference vehicle on your laptop with virtual CAN.

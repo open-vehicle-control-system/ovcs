@@ -1,7 +1,8 @@
 defmodule OvcsMini.GeometryTest do
   @moduledoc """
   Keeps the URDF `OvcsMini` reads in step with the xacro it is expanded
-  from, and every frame the car's bridges stamp placed on `base_link`.
+  from, and every frame the car's bridges and vision unit stamp placed on
+  `base_link`.
   """
   use ExUnit.Case, async: false
 
@@ -65,17 +66,14 @@ defmodule OvcsMini.GeometryTest do
     end
   end
 
-  describe "the bridges stamp the URDF's links" do
+  describe "the ROS 2 nodes stamp the URDF's links" do
     # robot_state_publisher places only the URDF's links on base_link.
-    for {arm, simulation} <- [target: nil, host: "1"], firmware_id <- ["ros", "ros_vision"] do
-      test "#{arm}#{simulation && " simulation"} #{firmware_id}" do
+    for {arm, simulation} <- [target: nil, host: "1"], role <- [:ros, :vision] do
+      test "#{arm}#{simulation && " simulation"} #{role}" do
         if unquote(simulation), do: System.put_env("OVCS_SIM", unquote(simulation))
         on_exit(fn -> System.delete_env("OVCS_SIM") end)
 
-        %RosBridge.Config{components: components} =
-          OvcsMini.ros_bridge_config(unquote(arm), unquote(firmware_id))
-
-        stamped = stamped_frames(components)
+        stamped = unquote(role) |> components(unquote(arm)) |> stamped_frames()
 
         assert stamped != []
         assert Enum.reject(stamped, &(&1 in urdf_links())) == []
@@ -86,6 +84,9 @@ defmodule OvcsMini.GeometryTest do
       %{joints: joints} = urdf()
       joints |> Map.values() |> Enum.flat_map(&[&1.parent, &1.child]) |> MapSet.new()
     end
+
+    defp components(:ros, arm), do: OvcsMini.ros_bridge_config(arm).components
+    defp components(:vision, arm), do: OvcsMini.Vision.Composer.config(arm).components
 
     # `frame_id` options, the stereo unit's per side, and the IMU
     # publisher's default.
@@ -104,7 +105,7 @@ defmodule OvcsMini.GeometryTest do
 
   describe "joint states" do
     test "the car's bridge publishes the URDF's moving joints" do
-      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:target, "ros")
+      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:target)
       {:ackermann_joint_states, opts} = List.keyfind(components, :ackermann_joint_states, 0)
       {left, right} = opts[:steering_joints]
       %{joints: joints} = urdf()
@@ -118,7 +119,7 @@ defmodule OvcsMini.GeometryTest do
       System.put_env("OVCS_SIM", "1")
       on_exit(fn -> System.delete_env("OVCS_SIM") end)
 
-      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:host, "ros")
+      %RosBridge.Config{components: components} = OvcsMini.ros_bridge_config(:host)
       refute List.keymember?(components, :ackermann_joint_states, 0)
     end
   end
