@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
-import { nextLoads } from '../network.js'
+import LiveContent from '../components/LiveContent.jsx'
+import { formatBitrate, formatBytes, formatCount, isErrorCounter, nextLoads } from '../network.js'
 import { dashboardSocket } from '../services/socket.js'
 
 const STATE_TONES = { UP: 'ok', DOWN: 'error' }
@@ -114,7 +115,7 @@ function InterfacesTable({ interfaces, loads }) {
                   <td className="py-2 pr-3">
                     <OvcsStatus tone={STATE_TONES[statistics.operstate] ?? 'muted'}>{statistics.operstate}</OvcsStatus>
                   </td>
-                  <td className="py-2 pr-3 tabular-nums">{attributes.bitrate}</td>
+                  <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatBitrate(attributes.bitrate)}</td>
                   <td className="py-2 pr-3 tabular-nums">{statistics.txqlen}</td>
                   <td className="py-2">
                     <Load load={loads[statistics.ifindex]} />
@@ -126,6 +127,16 @@ function InterfacesTable({ interfaces, loads }) {
         </table>
       </div>
     </OvcsCard>
+  )
+}
+
+// A fault counter above zero is drawn in the error colour.
+function Counter({ field, value }) {
+  const fault = isErrorCounter(field) && value > 0
+  return (
+    <dd className={`tabular-nums ${fault ? 'font-semibold text-ovcs-error-text' : ''}`}>
+      {field === 'bytes' ? formatBytes(value) : formatCount(value)}
+    </dd>
   )
 }
 
@@ -141,7 +152,7 @@ function Counters({ networkInterface }) {
             {fields.map(([field, label]) => (
               <div key={field}>
                 <dt className="text-xs text-ovcs-muted">{label}</dt>
-                <dd className="tabular-nums">{stats64[direction][field]}</dd>
+                <Counter field={field} value={stats64[direction][field]} />
               </div>
             ))}
           </dl>
@@ -158,12 +169,12 @@ export default function NetworkPage() {
   return (
     <OvcsPageFrame title="Network" summary="The board's network interfaces, refreshed every second.">
       {interfaces ? (
-        <>
+        <LiveContent>
           <InterfacesTable interfaces={interfaces} loads={loads} />
           {interfaces.map((networkInterface) => (
             <Counters key={networkInterface.id} networkInterface={networkInterface} />
           ))}
-        </>
+        </LiveContent>
       ) : (
         <p className="text-sm text-ovcs-muted">Waiting for the network interfaces…</p>
       )}

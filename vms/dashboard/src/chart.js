@@ -25,21 +25,30 @@ export function themeColors() {
   }
 }
 
+/** Points stamped in milliseconds, as seconds before `now`. */
+export const relativePoints = (points, now) => points.map(([time, value]) => [(time - now) / 1000, value])
+
+const timeLabel = (seconds) => (seconds === 0 ? 'now' : `${seconds} s`)
+
+// The declared bounds, grown to show a value beyond them.
 const axis = ({ min, max, label, position }, colors) => ({
-  min,
-  max,
+  min: (extent) => Math.min(extent.min, min),
+  max: (extent) => Math.max(extent.max, max),
   ...(position ? { position } : {}),
   name: label,
   type: 'value',
   nameLocation: 'end',
   nameTextStyle: { align: 'right', padding: 10, color: colors.muted },
   axisLabel: { color: colors.muted },
-  axisLine: { lineStyle: { color: colors.border } },
+  axisLine: { onZero: false, lineStyle: { color: colors.border } },
   splitLine: { lineStyle: { color: colors.border } }
 })
 
-/** A line chart block's ECharts option; the series keep ECharts' own palette. */
-export function chartOption(block, buffers, colors) {
+/**
+ * A line chart block's ECharts option at `now`: the window of `serieMaxSize` refresh intervals, in seconds before now.
+ * The series keep ECharts' own palette.
+ */
+export function chartOption(block, buffers, colors, { refreshInterval, now }) {
   const series = chartSeries(block)
   return {
     animation: false,
@@ -57,14 +66,21 @@ export function chartOption(block, buffers, colors) {
       data: series.map(({ name }) => name),
       textStyle: { color: colors.text }
     },
-    xAxis: { type: 'time', axisLabel: { show: false }, axisLine: { lineStyle: { color: colors.border } } },
+    xAxis: {
+      type: 'value',
+      min: -(block.serieMaxSize * refreshInterval) / 1000,
+      max: 0,
+      axisLabel: { color: colors.muted, formatter: timeLabel, showMinLabel: false },
+      axisLine: { lineStyle: { color: colors.border } },
+      splitLine: { show: false }
+    },
     yAxis: block.yAxis.map((yAxis) => axis(yAxis, colors)),
     series: series.map(({ name, yAxisIndex }, index) => ({
       name,
       type: 'line',
       showSymbol: false,
       yAxisIndex,
-      data: buffers[index]
+      data: relativePoints(buffers[index], now)
     }))
   }
 }

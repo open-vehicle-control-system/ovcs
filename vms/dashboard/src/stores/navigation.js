@@ -3,11 +3,15 @@ import { create } from 'zustand'
 /** The route of the dashboard's own Network page, which shadows a vehicle page of the same id. */
 export const NETWORK = 'network'
 
-/** The route a path shows: the Network page, a page by its id, the first page for `/` or an unknown path. */
+/**
+ * The route a path shows, with or without a trailing slash: the Network page, a page by its id, the first page for `/`
+ * or an unknown path; `null` without pages, but for the Network page.
+ */
 export function routeOf(pathname, pages) {
+  const segment = pathname.slice(1).replace(/\/$/, '')
+  if (segment === NETWORK) return NETWORK
   if (!pages?.length) return null
-  if (pathname === `/${NETWORK}`) return NETWORK
-  const id = decoded(pathname.slice(1))
+  const id = decoded(segment)
   return pages.some((page) => page.id === id) ? id : pages[0].id
 }
 

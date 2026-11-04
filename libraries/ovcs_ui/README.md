@@ -23,6 +23,8 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsHeader` | |
   | `OvcsStatus` | `tone`: `ok`, `warn`, `error`, `muted` (default) |
   | `OvcsBadge` | `tone`: `neutral` (default), `warn`, `error` |
+  | `OvcsButton` | `variant`: `default` or `primary` (the action a view leads to); an outlined button that never submits a form |
+  | `OvcsSwitch` | `checked`, `label`, `onClick`: an on/off switch whose position is `checked` alone |
   | `OvcsDot` | `on` |
   | `OvcsRow` | `live`, `as` (element, default `div`) |
   | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |

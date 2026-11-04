@@ -34,5 +34,6 @@ export default function MetricValue({ row }) {
   if (isMultiline(value)) {
     return <pre className="whitespace-pre-wrap break-words text-left font-mono text-xs">{value}</pre>
   }
-  return <span className="tabular-nums">{displayValue(value, row, publisherUnit)}</span>
+  // A long value wraps only where it does not fit, rather than widening the table past its card.
+  return <span className="tabular-nums [overflow-wrap:anywhere]">{displayValue(value, row, publisherUnit)}</span>
 }

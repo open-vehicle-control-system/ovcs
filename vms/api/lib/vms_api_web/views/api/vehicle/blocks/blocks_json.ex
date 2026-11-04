@@ -71,7 +71,8 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSON do
       module: metric.module,
       key: metric.key,
       unit: metric[:unit],
-      placeholder: metric[:placeholder]
+      placeholder: metric[:placeholder],
+      hint: metric[:hint]
     }
   end
 

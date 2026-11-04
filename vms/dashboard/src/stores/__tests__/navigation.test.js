@@ -26,9 +26,15 @@ describe('navigation', () => {
     expect(routeOf('/%E0%A4%A', pages)).toBe('status')
   })
 
-  it('has no route without pages', () => {
+  it('has no route without pages, but the network page', () => {
     expect(routeOf('/', [])).toBe(null)
     expect(routeOf('/drive', null)).toBe(null)
+    expect(routeOf('/network', [])).toBe('network')
+  })
+
+  it('routes a path with a trailing slash to its page', () => {
+    expect(routeOf('/drive/', pages)).toBe('drive')
+    expect(routeOf('/network/', pages)).toBe('network')
   })
 
   it('serves the first page at / and the others at /<id>', () => {

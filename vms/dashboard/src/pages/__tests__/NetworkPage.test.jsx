@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, within, act } from '@testing-library/react'
 import NetworkPage from '../NetworkPage.jsx'
 import { dashboardSocket } from '../../services/socket.js'
+import { useConnection } from '../../stores/connection.js'
 
 vi.mock('../../services/socket.js', () => ({ dashboardSocket: { channel: vi.fn() } }))
 
@@ -61,6 +62,16 @@ describe('NetworkPage', () => {
     expect(within(row).getByText('10 %')).toBeTruthy()
   })
 
+  it('dims the last counters received while the dashboard is disconnected', () => {
+    useConnection.setState({ state: 'disconnected' })
+    render(<NetworkPage />)
+    act(() => update({ data: [can0(1000)] }))
+
+    expect(screen.getByRole('status').textContent).toMatch('last values received')
+    expect(screen.getByRole('heading', { level: 3, name: 'can0' }).closest('.opacity-50')).toBeTruthy()
+    act(() => useConnection.setState({ state: 'connected' }))
+  })
+
   it('shows no load before the second sample', () => {
     render(<NetworkPage />)
     act(() => update({ data: [can0(1000)] }))
@@ -75,5 +86,23 @@ describe('NetworkPage', () => {
     const card = screen.getByRole('heading', { level: 3, name: 'can0' }).closest('.ovcs-card')
     expect(within(card).getByText('Carrier changes').nextElementSibling.textContent).toBe('2')
     expect(within(card).getAllByText('Packets').map((label) => label.nextElementSibling.textContent)).toEqual(['42', '8'])
+    expect(within(card).getAllByText('Bytes').map((label) => label.nextElementSibling.textContent)).toEqual(['1 kB', '64 B'])
+  })
+
+  it('marks a counter that counts faults once it is not zero', () => {
+    render(<NetworkPage />)
+    act(() => update({ data: [can0(1000)] }))
+
+    const card = screen.getByRole('heading', { level: 3, name: 'can0' }).closest('.ovcs-card')
+    const [rxErrors] = within(card).getAllByText('Errors')
+    expect(rxErrors.nextElementSibling.className).toMatch('text-ovcs-error-text')
+    const [rxDropped] = within(card).getAllByText('Dropped')
+    expect(rxDropped.nextElementSibling.className).not.toMatch('text-ovcs-error-text')
+  })
+
+  it('shows the bitrate in kbit/s', () => {
+    render(<NetworkPage />)
+    act(() => update({ data: [can0(1000)] }))
+    expect(within(screen.getByRole('row', { name: /drivetrain/ })).getByText('500 kbit/s')).toBeTruthy()
   })
 })

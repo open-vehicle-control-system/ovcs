@@ -5,7 +5,7 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import { CanvasRenderer } from 'echarts/renderers'
 import { useOvcsTheme } from '@ovcs/ui/react'
 import { chartSeries } from '../blocks.js'
-import { appendPoint, chartOption, seedPoints, themeColors } from '../chart.js'
+import { appendPoint, chartOption, relativePoints, seedPoints, themeColors } from '../chart.js'
 import { useMetrics } from '../stores/metrics.js'
 
 use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer])
@@ -35,7 +35,7 @@ export default function RealTimeLineChart({ block, refreshInterval }) {
         appendPoint(buffers.current[index], [time, values[metric.key] ?? null], block.serieMaxSize)
         appended = true
       })
-      if (appended) instance.setOption({ series: buffers.current.map((points) => ({ data: points })) })
+      if (appended) instance.setOption({ series: buffers.current.map((points) => ({ data: relativePoints(points, time) })) })
     })
 
     const observer = new ResizeObserver(() => instance.resize())
@@ -51,7 +51,7 @@ export default function RealTimeLineChart({ block, refreshInterval }) {
 
   // Runs after the chart is created, and again with the theme's colours whenever it changes.
   useEffect(() => {
-    chart.current?.setOption(chartOption(block, buffers.current, themeColors()))
+    chart.current?.setOption(chartOption(block, buffers.current, themeColors(), { refreshInterval, now: Date.now() }))
   }, [block, refreshInterval, theme])
 
   return <div ref={container} className="h-[400px] w-full" />

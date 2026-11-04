@@ -1,20 +1,33 @@
 import { useEffect, useRef, useState } from 'react'
-import { focusClass as FOCUS } from '@ovcs/ui/react'
+import { OvcsButton, OvcsSwitch, focusClass as FOCUS } from '@ovcs/ui/react'
 import { liveValue } from '../format.js'
 import { postAction } from '../services/api.js'
 import { useMetrics } from '../stores/metrics.js'
 
-const BUTTON = `min-h-8 rounded border border-ovcs-accent px-3 text-sm font-semibold enabled:hover:bg-ovcs-bg disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
+const SENT_FOR_MS = 2000
 
-/** Posts a row's action: `pending` while in flight, `error` holding a refusal until the next attempt. */
+/**
+ * Posts a row's action: `pending` while in flight, `sent` for two seconds once it is accepted, `error` holding a
+ * refusal until the next attempt.
+ */
 export function useActionPost(row) {
   const [pending, setPending] = useState(false)
+  const [sent, setSent] = useState(false)
   const [error, setError] = useState(null)
+  const sentTimer = useRef(null)
+
+  useEffect(() => () => clearTimeout(sentTimer.current), [])
 
   const post = (value) => {
+    clearTimeout(sentTimer.current)
+    setSent(false)
     setError(null)
     setPending(true)
     postAction(row, value)
+      .then(() => {
+        setSent(true)
+        sentTimer.current = setTimeout(() => setSent(false), SENT_FOR_MS)
+      })
       .catch((reason) => {
         console.error(`Action ${row.action} failed:`, reason)
         setError(reason.message)
@@ -22,7 +35,7 @@ export function useActionPost(row) {
       .finally(() => setPending(false))
   }
 
-  return { post, pending, error }
+  return { post, pending, sent, error }
 }
 
 const useStatusValue = (row) =>
@@ -31,9 +44,9 @@ const useStatusValue = (row) =>
 /** A button that triggers the action. */
 export function ButtonAction({ row, action }) {
   return (
-    <button type="button" disabled={action.pending} onClick={() => action.post()} className={BUTTON}>
+    <OvcsButton variant="primary" disabled={action.pending} onClick={() => action.post()}>
       {row.inputName}
-    </button>
+    </OvcsButton>
   )
 }
 
@@ -71,9 +84,9 @@ export function NumberAction({ row, action }) {
         }}
         className={`w-24 rounded border border-ovcs-border bg-ovcs-bg px-2 py-1 text-right text-sm tabular-nums ${FOCUS}`}
       />
-      <button type="button" disabled={action.pending} onClick={submit} className={BUTTON}>
+      <OvcsButton variant="primary" disabled={action.pending} onClick={submit}>
         {row.inputName}
-      </button>
+      </OvcsButton>
     </div>
   )
 }
@@ -85,20 +98,5 @@ export function ToggleAction({ row, action }) {
 
   if (!published) return null
 
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label={row.name}
-      disabled={action.pending}
-      onClick={() => action.post()}
-      className={`inline-flex w-9 rounded-full p-0.5 transition-colors disabled:opacity-50 ${on ? 'bg-ovcs-accent' : 'bg-ovcs-border'} ${FOCUS}`}
-    >
-      <span
-        aria-hidden="true"
-        className={`size-4 rounded-full bg-ovcs-surface shadow transition-transform ${on ? 'translate-x-4' : 'translate-x-0'}`}
-      />
-    </button>
-  )
+  return <OvcsSwitch checked={on} label={row.name} disabled={action.pending} onClick={() => action.post()} />
 }

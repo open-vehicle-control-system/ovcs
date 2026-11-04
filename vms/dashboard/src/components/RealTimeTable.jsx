@@ -3,12 +3,17 @@ import MetricValue from './MetricValue.jsx'
 
 const ACTION_CONTROLS = { button: ButtonAction, number: NumberAction, toggle: ToggleAction }
 
-function Label({ row, error }) {
+function Label({ row, error, sent }) {
   return (
     <th scope="row" className="py-2 pr-3 text-left align-middle font-normal">
       <span className="block whitespace-nowrap font-semibold">{row.name}</span>
       {row.hint ? <span className="mt-0.5 block max-w-xs text-xs text-ovcs-muted">{row.hint}</span> : null}
       {error ? <span className="mt-0.5 block text-xs text-ovcs-error-text">{error}</span> : null}
+      {sent ? (
+        <span role="status" className="mt-0.5 block text-xs text-ovcs-ok-text">
+          Sent
+        </span>
+      ) : null}
     </th>
   )
 }
@@ -30,7 +35,7 @@ function ActionRow({ row }) {
 
   return (
     <tr>
-      <Label row={row} error={action.error} />
+      <Label row={row} error={action.error} sent={action.sent} />
       <td className="py-2 text-right align-middle">{Control ? <Control row={row} action={action} /> : null}</td>
     </tr>
   )

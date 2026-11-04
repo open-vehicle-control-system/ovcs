@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import RealTimeTable from '../RealTimeTable.jsx'
 import { useMetrics } from '../../stores/metrics.js'
@@ -42,11 +42,37 @@ describe('action rows', () => {
     useMetrics.setState({ data: {}, units: {} })
   })
 
+  afterEach(() => vi.useRealTimers())
+
   it('posts a button action', async () => {
     render(table([button]))
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
     expect(postAction).toHaveBeenCalledWith(button, undefined)
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reset' }).disabled).toBe(false))
+  })
+
+  it('confirms a sent action under the row for two seconds', async () => {
+    vi.useFakeTimers()
+    render(table([button]))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    await act(async () => {})
+    expect(screen.getByText('Sent')).toBeTruthy()
+
+    act(() => vi.advanceTimersByTime(2000))
+    expect(screen.queryByText('Sent')).toBe(null)
+  })
+
+  it('drops the confirmation on the next attempt', async () => {
+    let settle
+    render(table([button]))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(await screen.findByText('Sent')).toBeTruthy()
+
+    postAction.mockReturnValue(new Promise((resolve) => (settle = resolve)))
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }))
+    expect(screen.queryByText('Sent')).toBe(null)
+    await act(async () => settle(null))
   })
 
   it('disables the button while the action is in flight', async () => {

@@ -87,6 +87,20 @@ describe('App', () => {
     expect(dashboardSocket.channel).toHaveBeenCalledWith('network-interfaces', { interval: 1000 })
   })
 
+  it('shows the network page of a vehicle without pages', async () => {
+    fetchPages.mockResolvedValue([])
+    visit('/network')
+    render(<App />)
+    expect(await screen.findByRole('heading', { level: 2, name: 'Network' })).toBeTruthy()
+  })
+
+  it('rewrites a trailing slash away', async () => {
+    visit('/drive/')
+    render(<App />)
+    await screen.findByRole('heading', { level: 2, name: 'Drive' })
+    expect(window.location.pathname).toBe('/drive')
+  })
+
   it('rewrites an unknown path to /', async () => {
     visit('/nope')
     render(<App />)

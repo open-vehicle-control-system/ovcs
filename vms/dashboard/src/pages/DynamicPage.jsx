@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { OvcsPageFrame } from '@ovcs/ui/react'
-import Block from '../components/Block.jsx'
+import BlockGrid from '../components/BlockGrid.jsx'
+import LiveContent from '../components/LiveContent.jsx'
 import { pageMetrics } from '../blocks.js'
 import { fetchBlocks } from '../services/api.js'
 import { useMetrics } from '../stores/metrics.js'
@@ -42,11 +43,9 @@ export default function DynamicPage({ page }) {
           {error}
         </p>
       ) : blocks ? (
-        <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
-          {blocks.map((block) => (
-            <Block key={block.id} block={block} refreshInterval={refreshInterval} />
-          ))}
-        </div>
+        <LiveContent>
+          <BlockGrid blocks={blocks} refreshInterval={refreshInterval} />
+        </LiveContent>
       ) : (
         <p className="text-sm text-ovcs-muted">Loading…</p>
       )}

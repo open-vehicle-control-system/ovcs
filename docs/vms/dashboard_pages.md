@@ -13,7 +13,7 @@ Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flu
 | Behaviour | [`VmsCore.Vehicle`](../../vms/core/lib/vms_core/vehicle.ex) | [`InfotainmentCore.Vehicle`](../../infotainment/core/lib/infotainment_core/vehicle.ex) |
 | API | `vms/api`, port `4000` | `infotainment/api`, port `4001` in development |
 | Renderer | React in [`vms/dashboard/`](../../vms/dashboard/) | Flutter in [`infotainment/dashboard/`](../../infotainment/dashboard/) |
-| Layout | three-column flow of blocks | fixed grid, blocks placed by cell |
+| Layout | blocks dealt to three columns | fixed grid, blocks placed by cell |
 | Metric values from | the VMS bus, via `VmsCore.Metrics` | `status/0` of the module named in each metric |
 
 Both APIs expose the same four routes:
@@ -61,7 +61,7 @@ The API reads fields with either dot access (the key must exist, or the request 
 
 The menu lists your pages under **Pages**, then the dashboard's own **Network** page under **System**: it shows the board's network interfaces and needs no configuration. A page with the id `network` is hidden behind it. The dashboard uses the `@ovcs/ui` frame and colours shared by the OVCS dashboards, in a light or a dark theme.
 
-Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Each block is a card under its name; the cards flow into a three-column grid, and `full_width: true` makes one span all three. [`DynamicPage.jsx`](../../vms/dashboard/src/pages/DynamicPage.jsx) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
+Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Each block is a card under its name. The cards are dealt in order to three columns, each column stacking its own cards, so a short card never waits below a tall neighbour; `full_width: true` gives a card its own row across the three, and the cards after it are dealt from the first column again. On a narrow screen every card stacks in one column, in order. [`DynamicPage.jsx`](../../vms/dashboard/src/pages/DynamicPage.jsx) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
 
 ## Table blocks and rows
 
@@ -75,6 +75,7 @@ A `"table"` block has a `rows` list. Each row is a metric (show a value) or an a
 | `name` | no | Row label. |
 | `unit` | no | Overrides the unit the publisher attached. |
 | `placeholder` | no | Shown while the value is `nil`. Defaults to `—`. |
+| `hint` | no | Small text under the label. |
 
 [`format.js`](../../vms/dashboard/src/format.js) renders a value by its type: `true` and `false` become a check or a cross, numbers (including decimals, which arrive as strings) are rounded to two places and followed by the unit, lists are joined with commas, and a string containing a newline is shown as a monospace block. The unit `"fraction"` is shown as a percentage.
 
@@ -148,7 +149,7 @@ A `"lineChart"` block plots metrics against time with ECharts. It takes `serie_m
 }
 ```
 
-The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`: 300 × 70 ms is 21 seconds on the Mini. An axis may also set `position: "left"` or `"right"`; without it, ECharts puts the first axis on the left and the next on the right. Series take ECharts' default colours.
+The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`: 300 × 70 ms is 21 seconds on the Mini, labelled in seconds up to "now". An axis keeps its `min` and `max` unless a value goes beyond them; it then grows to show that value. An axis may also set `position: "left"` or `"right"`; without it, ECharts puts the first axis on the left and the next on the right. Series take ECharts' default colours.
 
 ## How a row finds its metric
 
