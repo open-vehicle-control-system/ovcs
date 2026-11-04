@@ -218,6 +218,48 @@ defmodule VisionCore.Exporter.RunnerTest do
     def terminate(reason, test), do: send(test, {:terminated, reason})
   end
 
+  # Answers `ping` at once, and `later` once the runner is sent `:finish`; `raise` raises and
+  # `malformed` answers no result. Its `:init` option replaces what its init/1 returns.
+  defmodule Acting do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def actions(_options),
+      do: [
+        %{name: :ping, label: "Ping", description: "Answers at once."},
+        %{name: :later, label: "Later", description: "Answers once told to finish."},
+        %{name: :raise, label: "Raise", description: "Raises."},
+        %{name: :malformed, label: "Malformed", description: "Answers no result."}
+      ]
+
+    @impl VisionCore.Exporter
+    def init(options),
+      do: Keyword.get(options, :init, {:ok, %{test: Keyword.fetch!(options, :test), from: nil}})
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+
+    @impl VisionCore.Exporter
+    def handle_action(:ping, _params, _from, state), do: {:reply, {:ok, %{pong: true}}, state}
+
+    def handle_action(:later, _params, from, state) do
+      send(state.test, :pending)
+      {:noreply, %{state | from: from}}
+    end
+
+    def handle_action(:raise, _params, _from, _state), do: raise("boom")
+    def handle_action(:malformed, _params, _from, state), do: {:ok, %{state | from: nil}}
+
+    @impl VisionCore.Exporter
+    def handle_info(:finish, state) do
+      :ok = VisionCore.Exporter.reply(state.from, {:ok, %{done: true}})
+      {:ok, %{state | from: nil}}
+    end
+  end
+
   defp config(components \\ [{:stereo, driver: Camera, left: [], right: []}, :detector]),
     do: %VisionCore.Config{components: components}
 
@@ -615,6 +657,77 @@ defmodule VisionCore.Exporter.RunnerTest do
       :sys.get_state(runner)
 
       refute_received {:initialised, _runner}
+    end
+  end
+
+  describe "actions" do
+    test "runs an action that answers at once" do
+      runner = start_runner(Acting, [])
+
+      assert Runner.action(runner, "ping", %{}, 1000) == {:ok, %{pong: true}}
+    end
+
+    test "runs an action that answers later, from handle_info" do
+      runner = start_runner(Acting, [])
+
+      task = Task.async(fn -> Runner.action(runner, "later", %{}, 1000) end)
+      assert_receive :pending
+      send(runner, :finish)
+
+      assert Task.await(task) == {:ok, %{done: true}}
+    end
+
+    test "answers its status while an action is pending" do
+      runner = start_runner(Acting, [])
+
+      task = Task.async(fn -> Runner.action(runner, "later", %{}, 1000) end)
+      assert_receive :pending
+
+      assert Runner.status(runner) == {:ok, "Running"}
+
+      send(runner, :finish)
+      assert Task.await(task) == {:ok, %{done: true}}
+    end
+
+    test "an action that raises answers why it failed, logged, and the runner runs on" do
+      runner = start_runner(Acting, [])
+
+      log =
+        capture_log(fn ->
+          assert Runner.action(runner, "raise", %{}, 1000) == {:error, {:failed, "boom"}}
+        end)
+
+      assert log =~ "boom"
+      assert Process.alive?(runner)
+      assert Runner.action(runner, "ping", %{}, 1000) == {:ok, %{pong: true}}
+    end
+
+    test "an action that answers no result fails, the exporter's state kept, and the runner runs on" do
+      runner = start_runner(Acting, [])
+      task = Task.async(fn -> Runner.action(runner, "later", %{}, 1000) end)
+      assert_receive :pending
+
+      assert {:error, {:failed, message}} = Runner.action(runner, "malformed", %{}, 1000)
+      assert message =~ "handle_action/4 returned"
+
+      send(runner, :finish)
+      assert Task.await(task) == {:ok, %{done: true}}
+      assert Process.alive?(runner)
+    end
+
+    test "refuses an action it does not declare, without creating an atom" do
+      runner = start_runner(Acting, [])
+      name = "zz_not_an_atom_#{System.unique_integer([:positive])}"
+
+      assert Runner.action(runner, name, %{}, 1000) == {:error, :unknown_action}
+      assert_raise ArgumentError, fn -> String.to_existing_atom(name) end
+      assert Runner.status(runner) == {:ok, "Running"}
+    end
+
+    test "answers not running before init/1 succeeds" do
+      runner = start_runner(Acting, init: {:error, :not_ready})
+
+      assert Runner.action(runner, "ping", %{}, 1000) == {:error, :not_running}
     end
   end
 

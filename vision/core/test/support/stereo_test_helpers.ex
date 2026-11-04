@@ -89,6 +89,25 @@ defmodule VisionCore.Stereo.TestHelpers do
   @spec stereo_match_path() :: Path.t()
   def stereo_match_path, do: Application.fetch_env!(:vision_core, :stereo_match_path)
 
+  @doc """
+  A `stereo_match` to start a `VisionCore.Stereo.Matcher` on, written
+  into `dir`: it reads its requests and never answers, until `dir` holds
+  an `answer` file; started from then on, it is the real one.
+  """
+  @spec silent_stereo_match(Path.t()) :: Path.t()
+  def silent_stereo_match(dir) do
+    silent = Path.join(dir, "stereo_match")
+
+    File.write!(silent, """
+    #!/bin/sh
+    if [ -e "#{Path.join(dir, "answer")}" ]; then exec "#{stereo_match_path()}" "$@"; fi
+    exec cat > /dev/null
+    """)
+
+    File.chmod!(silent, 0o755)
+    silent
+  end
+
   @doc "A `u8` `{height, width}` image of random noise, the same for the same `seed`."
   @spec texture(pos_integer(), pos_integer(), integer()) :: Nx.Tensor.t()
   def texture(height, width, seed) do

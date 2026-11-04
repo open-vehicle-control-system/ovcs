@@ -3,6 +3,20 @@
 {:ok, _apps} = Application.ensure_all_started(:exla)
 Application.put_env(:vision_core, :nx_defn_options, compiler: EXLA)
 
+# A segment that misses its deadline leaves its EXLA computation running in a dirty NIF, and
+# halting the VM under it crashes XLA's threads: the suite ends once the dirty schedulers are idle.
+ExUnit.after_suite(fn _results ->
+  normal_run_queues = :erlang.system_info(:schedulers)
+
+  dirty_busy? = fn ->
+    :erlang.statistics(:active_tasks_all) |> Enum.drop(normal_run_queues) |> Enum.sum() > 0
+  end
+
+  Enum.reduce_while(1..600, :ok, fn _attempt, :ok ->
+    if dirty_busy?.(), do: {:cont, Process.sleep(100)}, else: {:halt, :ok}
+  end)
+end)
+
 # The saved parameter values' database: one file per run, removed after it.
 database = Application.fetch_env!(:vision_core, VisionCore.Repo)[:database]
 remove_database = fn -> Enum.each(["", "-wal", "-shm"], &File.rm(database <> &1)) end

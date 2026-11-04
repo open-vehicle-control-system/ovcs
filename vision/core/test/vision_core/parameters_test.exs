@@ -231,6 +231,31 @@ defmodule VisionCore.ParametersTest do
     assert unsaved_count(server) == 0
   end
 
+  test "last_change/1 is nil until a value is applied, then the time of the latest",
+       %{server: server} do
+    start_owner(server, &match_groups/1)
+    assert Parameters.last_change(server) == nil
+
+    assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 10)
+    first = Parameters.last_change(server)
+    assert is_integer(first)
+
+    Process.sleep(2)
+    assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
+    assert Parameters.last_change(server) > first
+  end
+
+  test "last_change/1 moves when a re-declared group gets back the values set through the registry",
+       %{server: server} do
+    {owner, _agent} = start_owner(server, &match_groups/1)
+    assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
+
+    assert last_change_moves?(server, fn ->
+             stop_owner(owner)
+             start_owner(server, &match_groups/1)
+           end)
+  end
+
   test "a set the owner refuses, raises on or exits from is refused with its reason",
        %{server: server} do
     start_owner(server, &failing_groups/1)
@@ -438,6 +463,21 @@ defmodule VisionCore.ParametersTest do
                Parameters.get(server, "stereo.disparity.p1")
     end
 
+    @tag saved: %{"stereo.disparity.p1" => 10}
+    test "last_change/1 is the time saved values were applied to their owner", %{server: server} do
+      assert Parameters.last_change(server) == nil
+
+      start_owner(server, &match_groups/1)
+      assert is_integer(Parameters.last_change(server))
+    end
+
+    @tag saved: %{"failing.refuses" => 3}
+    test "last_change/1 stays nil when the owner fails to set a saved value", %{server: server} do
+      capture_log(fn -> start_owner(server, &failing_groups/1) end)
+
+      assert Parameters.last_change(server) == nil
+    end
+
     @tag saved: %{"failing.refuses" => 3}
     test "a saved value its owner fails to set is kept and not applied", %{server: server} do
       log = capture_log(fn -> start_owner(server, &failing_groups/1) end)
@@ -562,6 +602,20 @@ defmodule VisionCore.ParametersTest do
       assert unsaved_count(server) == 0
       assert {:ok, %{saved: 12, state: :saved}} = Parameters.get(server, "stereo.disparity.p1")
       assert Parameters.save(server) == {:ok, []}
+    end
+
+    test "last_change/1 moves on every value applied to an owner and on nothing else",
+         %{server: server} do
+      start_owner(server, &match_groups/1)
+      p1 = "stereo.disparity.p1"
+
+      assert last_change_moves?(server, fn -> Parameters.set_and_save(server, p1, 12) end)
+      assert last_change_moves?(server, fn -> Parameters.set(server, p1, 14) end)
+      assert last_change_moves?(server, fn -> Parameters.discard(server) end)
+      assert last_change_moves?(server, fn -> Parameters.reset(server, :all) end)
+      refute last_change_moves?(server, fn -> Parameters.set(server, p1, 500) end)
+      refute last_change_moves?(server, fn -> Parameters.save(server) end)
+      refute last_change_moves?(server, fn -> Parameters.forget(server, p1) end)
     end
 
     @tag saved: %{}
@@ -715,6 +769,14 @@ defmodule VisionCore.ParametersTest do
       assert {:ok, %{value: 10, saved: nil, state: :unsaved}} =
                Parameters.get(server, "stereo.disparity.p1")
     end
+  end
+
+  # The clock ticks in milliseconds: `fun` runs at least 2 ms after the first read.
+  defp last_change_moves?(server, fun) do
+    before = Parameters.last_change(server)
+    Process.sleep(2)
+    fun.()
+    Parameters.last_change(server) != before
   end
 
   defp unsaved_count(server) do

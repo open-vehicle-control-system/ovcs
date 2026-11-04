@@ -1,6 +1,8 @@
-import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
+import { useId, useState } from 'react'
+import { OvcsCard, OvcsPageFrame, OvcsStatus, focusClass as FOCUS } from '@ovcs/ui/react'
 import Ros2Page from './Ros2Page.jsx'
 import ApiPage from './ApiPage.jsx'
+import { runExporterAction } from '../services/unit.js'
 import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useStatus } from '../stores/status.js'
 
@@ -15,7 +17,72 @@ const OUTPUT_NAMES = {
   detections: 'Detections'
 }
 
-/** An exporter without a page of its own: its status, its module, and the outputs it reads with their rates. */
+const REVOKE_DELAY_MS = 10000
+
+const download = ({ blob, filename }) => {
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  link.click()
+  // Some browsers start the download after the click returns.
+  setTimeout(() => URL.revokeObjectURL(href), REVOKE_DELAY_MS)
+}
+
+/** The exporter's actions, one button each; a file result is downloaded, a JSON result and an error are shown. */
+function Actions({ exporterId, actions }) {
+  const descriptionId = useId()
+  const [running, setRunning] = useState(null)
+  const [error, setError] = useState(null)
+  const [result, setResult] = useState(null)
+
+  const run = async (name) => {
+    setRunning(name)
+    setError(null)
+    setResult(null)
+    try {
+      const answer = await runExporterAction(exporterId, name)
+      if (answer.kind === 'file') download(answer)
+      else setResult(answer.data)
+    } catch (failure) {
+      setError(failure.message)
+    } finally {
+      setRunning(null)
+    }
+  }
+
+  return (
+    <OvcsCard className="flex flex-col gap-3">
+      <h3 className="font-semibold">Actions</h3>
+      <ul className="flex flex-col gap-3">
+        {actions.map((action) => (
+          <li key={action.name} className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <button
+              type="button"
+              disabled={running !== null}
+              aria-describedby={`${descriptionId}-${action.name}`}
+              onClick={() => run(action.name)}
+              className={`min-h-9 rounded border border-ovcs-border px-3 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`}
+            >
+              {running === action.name ? 'Running…' : action.label}
+            </button>
+            <p id={`${descriptionId}-${action.name}`} className="min-w-0 flex-1 text-sm text-ovcs-muted">
+              {action.description}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
+      {result ? (
+        <pre role="status" className="max-h-96 overflow-auto rounded border border-ovcs-border p-2 font-mono text-xs">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      ) : null}
+    </OvcsCard>
+  )
+}
+
+/** An exporter without a page of its own: its status, its module, the outputs it reads with their rates, and its actions. */
 function GenericExporterPage({ id }) {
   const exporter = useExporters((state) => state.exporters.find((listed) => listed.id === id))
   const status = useStatus((state) => (exporter ? exporterStatus(exporter, state.snapshot) : null))
@@ -67,6 +134,7 @@ function GenericExporterPage({ id }) {
           </table>
         )}
       </OvcsCard>
+      {exporter.actions?.length > 0 ? <Actions exporterId={id} actions={exporter.actions} /> : null}
     </OvcsPageFrame>
   )
 }
@@ -74,5 +142,5 @@ function GenericExporterPage({ id }) {
 /** The page of the exporter `id`: its own for ROS 2 and the API, the generic one for the others. */
 export default function ExporterPage({ id }) {
   const Page = OWN_PAGES[id]
-  return Page ? <Page /> : <GenericExporterPage id={id} />
+  return Page ? <Page /> : <GenericExporterPage key={id} id={id} />
 }

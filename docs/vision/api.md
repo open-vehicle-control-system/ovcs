@@ -196,7 +196,7 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
 }
 ```
 
-`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter with its status and the outputs it reads, then the API itself. `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
+`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter with its status, the outputs it reads and the actions you can run on it, then the API itself. `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
 
 ```json
 {
@@ -213,7 +213,8 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
           {"name": "camera_frame:left", "maxHz": null},
           {"name": "camera_frame:right", "maxHz": null},
           {"name": "detections", "maxHz": null}
-        ]
+        ],
+        "actions": []
       }
     },
     {
@@ -228,7 +229,8 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
           {"name": "camera_frame:right", "maxHz": 10},
           {"name": "stereo_pair", "maxHz": 10},
           {"name": "detections", "maxHz": 10}
-        ]
+        ],
+        "actions": []
       }
     }
   ]
@@ -236,6 +238,28 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
 ```
 
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
+
+An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`, the action's parameters going in `attributes` when it takes any. This one runs the `export` action of an exporter whose id is `debug`, which answers a zip file ([Tune with exports](./tuning.md)), and saves it:
+
+```sh
+curl --fail-with-body -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "exporter-actions"}}' \
+  -o export.zip
+```
+
+`--fail-with-body` needs curl 7.76 or later: on an error answer, curl exits with 22 and `export.zip` holds the JSON error, not a zip, so check the exit status before using the file.
+
+An action that produces a file answers it with a 200 and `content-disposition: attachment`; one that answers JSON gets a 200 with an `exporter-actions` resource whose `attributes` hold the result. The request waits up to 60 s for the answer. The unit answers:
+
+- a 400 for a document without `data.type`, one sent as a form or in the query string, or `attributes` that are no object;
+- a 409 for another `data.type`, or when the exporter is busy;
+- a 404 for an exporter or an action it does not have;
+- a 503 when the exporter does not run;
+- a 504 when the action does not answer in time;
+- a 500 when the action fails.
+
+The error's `detail` says why.
 
 `GET /api/ros2-node?include=topics,services` describes the ROS 2 node: its Zenoh router, whether the session is open, the topics it has published with their rate over the last second, and the services it answers. A unit without the ROS 2 link answers a 404. Shortened to one topic and one service:
 

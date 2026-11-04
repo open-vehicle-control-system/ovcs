@@ -4,9 +4,10 @@ defmodule VisionCore.Exporter.Runner do
   names through `VisionCore.Outputs`, hands it the newest value of each,
   at most each output's `:max_hz` times a second and only while it is
   not busy with that output, passes it the messages sent to the runner
-  with `send/2`, and answers its status by a deadline (`status/2`).
-  Casts that are not outputs are dropped, and calls other than
-  `status/2`'s answered `{:error, :unknown_call}`.
+  with `send/2`, answers its status by a deadline (`status/2`), and
+  runs its actions (`action/4`). Casts that are not outputs are dropped,
+  and calls other than `status/2`'s and `action/4`'s answered
+  `{:error, :unknown_call}`.
 
   When the runner takes a value from its mailbox, the newest value of
   the same output waiting there replaces it, so a slow exporter skips
@@ -21,8 +22,9 @@ defmodule VisionCore.Exporter.Runner do
   raises, the runner logs it, reports `{:warning, "Not started: reason"}`
   and calls it again later, the delay doubling up to a cap. It subscribes
   once `init/1` succeeds, and never calls `init/1` again. Every failure,
-  of `init/1`, of a value's export or of `c:VisionCore.Exporter.status/1`,
-  is logged the first time, up to a bound for each of the three.
+  of `init/1`, of a value's export, of `c:VisionCore.Exporter.status/1` or
+  of `c:VisionCore.Exporter.handle_action/4`, is logged the first time,
+  up to a bound for each of the four.
 
   Without the exporter's own `c:VisionCore.Exporter.status/1`, the status
   is `{:ok, "Running"}`, a warning while the last value handed over of
@@ -78,6 +80,22 @@ defmodule VisionCore.Exporter.Runner do
     :exit, _reason -> {:off, "Not running"}
   end
 
+  @doc """
+  Runs the exporter's action named `name` with `params`
+  (`c:VisionCore.Exporter.handle_action/4`), waiting up to `timeout` for
+  its result: `{:error, :not_running}` before its
+  `c:VisionCore.Exporter.init/1` succeeds, `{:error, :unknown_action}`
+  for a name its `c:VisionCore.Exporter.actions/1` does not list, and
+  `{:error, {:failed, reason}}` when `handle_action/4` raises or answers
+  neither `{:reply, result, state}` nor `{:noreply, state}`, the
+  exporter's state kept as it was. It exits, as `GenServer.call/3` does,
+  when the runner stops or the deadline passes.
+  """
+  @spec action(GenServer.server(), String.t(), map(), timeout()) ::
+          Exporter.action_result() | {:error, :not_running | :unknown_action}
+  def action(runner, name, params, timeout),
+    do: GenServer.call(runner, {:action, name, params}, timeout)
+
   @impl GenServer
   def init(opts) do
     exporter = Code.ensure_loaded!(Keyword.fetch!(opts, :exporter))
@@ -100,7 +118,12 @@ defmodule VisionCore.Exporter.Runner do
            not_started: nil,
            retry_ms: @first_retry_ms,
            failures: 0,
-           logged: %{init: MapSet.new(), status: MapSet.new(), output: MapSet.new()}
+           logged: %{
+             init: MapSet.new(),
+             status: MapSet.new(),
+             output: MapSet.new(),
+             action: MapSet.new()
+           }
          }, {:continue, :start_exporter}}
 
       {:error, reason} ->
@@ -115,6 +138,16 @@ defmodule VisionCore.Exporter.Runner do
   def handle_call(:status, _from, state) do
     {status, state} = status_of(state)
     {:reply, status, state}
+  end
+
+  def handle_call({:action, _name, _params}, _from, %{started: false} = state),
+    do: {:reply, {:error, :not_running}, state}
+
+  def handle_call({:action, name, params}, from, %{exporter: exporter} = state) do
+    case Enum.find(Exporter.actions(exporter, state.options), &(Atom.to_string(&1.name) == name)) do
+      nil -> {:reply, {:error, :unknown_action}, state}
+      %{name: action} -> run_action(state, action, params, from)
+    end
   end
 
   def handle_call(_request, _from, state), do: {:reply, {:error, :unknown_call}, state}
@@ -199,6 +232,26 @@ defmodule VisionCore.Exporter.Runner do
     end
   catch
     kind, reason -> {:error, failure_text(kind, reason)}
+  end
+
+  defp run_action(%{exporter: exporter} = state, action, params, from) do
+    case exporter.handle_action(action, params, from, state.exporter_state) do
+      {:reply, result, exporter_state} ->
+        {:reply, result, %{state | exporter_state: exporter_state}}
+
+      {:noreply, exporter_state} ->
+        {:noreply, %{state | exporter_state: exporter_state}}
+
+      malformed ->
+        action_failed(state, action, "handle_action/4 returned " <> inspect(malformed))
+    end
+  catch
+    kind, reason -> action_failed(state, action, failure_text(kind, reason))
+  end
+
+  defp action_failed(%{exporter: exporter} = state, action, text) do
+    message = "#{inspect(exporter)} action #{action} failed: #{text}"
+    {:reply, {:error, {:failed, text}}, log_once(state, :action, text, :error, message)}
   end
 
   defp status_of(%{started: false} = state),

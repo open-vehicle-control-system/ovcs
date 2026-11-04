@@ -5,7 +5,8 @@ defmodule VisionApiWeb.ExporterJSON do
   `off`, and `detail`) and `outputs`, each output's `name`
   (`stereo_pair`, `detections`, `camera_frame:left` or
   `camera_frame:right`) and `maxHz`, the most values it takes a second,
-  `null` when unbounded.
+  `null` when unbounded, and `actions`, each with a `name`, a `label` and
+  a `description`.
   """
   alias VisionApiWeb.JsonApi
 
@@ -18,13 +19,17 @@ defmodule VisionApiWeb.ExporterJSON do
       name: exporter.name,
       module: inspect(exporter.module),
       status: status(exporter.status),
-      outputs: Enum.map(exporter.outputs, &output/1)
+      outputs: Enum.map(exporter.outputs, &output/1),
+      actions: Enum.map(exporter.actions, &action/1)
     })
   end
 
   @doc "An exporter's status: its `level`, as a string, and its `detail`."
   @spec status(VisionCore.Exporter.status()) :: %{level: String.t(), detail: String.t()}
   def status({level, detail}), do: %{level: Atom.to_string(level), detail: detail}
+
+  defp action(%{name: name, label: label, description: description}),
+    do: %{name: Atom.to_string(name), label: label, description: description}
 
   defp output(%{output: output, max_hz: max_hz}), do: %{name: output_name(output), maxHz: max_hz}
 

@@ -28,7 +28,7 @@ defmodule VisionApiWeb.Endpoint do
   plug Plug.Head
 
   if Application.compile_env(:vision_api, :allow_cross_origin, false) do
-    plug CORSPlug
+    plug CORSPlug, expose: ["content-disposition"]
   end
 
   plug VisionApiWeb.Router

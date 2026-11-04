@@ -13,7 +13,24 @@ defmodule VisionCore.ExporterTest do
     def outputs(options), do: Keyword.fetch!(options, :outputs)
   end
 
+  defmodule Acting do
+    def actions(_options), do: [%{name: :ping, label: "Ping", description: "Answers at once."}]
+  end
+
+  defmodule RaisingActions do
+    def actions(options), do: Keyword.fetch!(options, :actions)
+  end
+
   defp config(components), do: %VisionCore.Config{components: components}
+
+  test "the actions an exporter declares, none without actions/1 or when it raises" do
+    assert Exporter.actions(Acting, []) == [
+             %{name: :ping, label: "Ping", description: "Answers at once."}
+           ]
+
+    assert Exporter.actions(Reading, []) == []
+    assert Exporter.actions(RaisingActions, []) == []
+  end
 
   test "the outputs an exporter reads, each with the most values it takes a second, if bounded" do
     assert Exporter.output_specs(Reading,

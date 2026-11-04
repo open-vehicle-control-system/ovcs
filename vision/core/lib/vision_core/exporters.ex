@@ -55,7 +55,8 @@ defmodule VisionCore.Exporters do
           name: String.t(),
           module: module(),
           status: Exporter.status(),
-          outputs: [listed_output()]
+          outputs: [listed_output()],
+          actions: [Exporter.action()]
         }
 
   @doc "Starts the exporters; see the module doc for `opts`."
@@ -64,9 +65,10 @@ defmodule VisionCore.Exporters do
   @doc """
   The exporters the unit runs, in the order of its configuration: each
   one's id, as text, and name (`VisionCore.Exporter.identity/2`), its
-  module, its status (`VisionCore.Exporter.Runner.status/2`) and the
+  module, its status (`VisionCore.Exporter.Runner.status/2`), the
   outputs its runner reads, those the configuration produces
-  (`VisionCore.Exporter.output_specs/2`). An exporter that is not
+  (`VisionCore.Exporter.output_specs/2`), and its actions
+  (`VisionCore.Exporter.actions/2`). An exporter that is not
   running is off, saying why: not started, with the reason it was
   refused or failed to start, stopped because it kept failing, or not
   running. The statuses are asked all at once, and one that does not
@@ -85,6 +87,41 @@ defmodule VisionCore.Exporters do
     statuses = statuses(listed, timeout_ms)
 
     Enum.zip_with(listed, statuses, fn {_id, opts, _supervisor}, status -> entry(opts, status) end)
+  end
+
+  @doc """
+  Runs the action named `name`, with `params`, of the exporter whose id
+  `list/1` lists as `id`, waiting up to `timeout` for its result
+  (`VisionCore.Exporter.Runner.action/4`): `{:error, :not_found}` for an
+  id no exporter has, `{:error, :not_running}` when the exporter does
+  not run, or stops before answering, and `{:error, {:timeout, message}}`
+  when it does not answer within `timeout`.
+  """
+  @spec action(String.t(), String.t(), map(), timeout()) ::
+          Exporter.action_result() | {:error, :not_found | :not_running | :unknown_action}
+  def action(id, name, params, timeout) do
+    case List.keyfind(exporter_supervisors(), id, 0) do
+      nil -> {:error, :not_found}
+      {^id, supervisor} -> run_action(supervisor, name, params, timeout)
+    end
+  end
+
+  defp exporter_supervisors do
+    for {id, supervisor, :supervisor, _modules} <- children(__MODULE__),
+        do: {id_text(id), supervisor}
+  end
+
+  defp run_action(supervisor, name, params, timeout) do
+    case runner(supervisor) do
+      nil -> {:error, :not_running}
+      runner -> Runner.action(runner, name, params, timeout)
+    end
+  catch
+    :exit, {:timeout, _call} ->
+      {:error, {:timeout, "The exporter did not answer within #{timeout} ms"}}
+
+    :exit, _reason ->
+      {:error, :not_running}
   end
 
   @doc false
@@ -128,7 +165,8 @@ defmodule VisionCore.Exporters do
       name: name,
       module: exporter,
       status: status,
-      outputs: listed_outputs(exporter, options, config)
+      outputs: listed_outputs(exporter, options, config),
+      actions: Exporter.actions(exporter, options)
     }
   end
 
@@ -181,9 +219,18 @@ defmodule VisionCore.Exporters do
   end
 
   defp runner_status(supervisor, timeout_ms) do
+    case runner(supervisor) do
+      nil -> {:off, "Not running"}
+      runner -> Runner.status(runner, timeout_ms)
+    end
+  end
+
+  defp runner(:undefined), do: nil
+
+  defp runner(supervisor) do
     case List.keyfind(children(supervisor), Runner, 0) do
-      {Runner, runner, :worker, _modules} when is_pid(runner) -> Runner.status(runner, timeout_ms)
-      _not_running -> {:off, "Not running"}
+      {Runner, runner, :worker, _modules} when is_pid(runner) -> runner
+      _not_running -> nil
     end
   end
 

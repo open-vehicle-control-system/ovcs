@@ -47,6 +47,10 @@ defmodule VisionCore.Stereo.Pair do
       the GPU where they run there, and in native segments, in the
       `stereo_match` Port, less what overlaps the previous pair's, so
       successive pairs' times add up to the time the segments were busy.
+    * `:stage_ms` — `%{stage => milliseconds}`, the time each stage or
+      segment took for this pair, under the names the pipeline times
+      them by, the members of a native segment among them, and `:total`,
+      from the pipeline taking the pair to just before it is published.
   """
 
   @enforce_keys [:left_frame, :right_frame]
@@ -67,7 +71,8 @@ defmodule VisionCore.Stereo.Pair do
     cloud_points: 0,
     disparity_scale: 1.0,
     device_ms: 0.0,
-    metrics: []
+    metrics: [],
+    stage_ms: %{}
   ]
 
   @type t :: %__MODULE__{}

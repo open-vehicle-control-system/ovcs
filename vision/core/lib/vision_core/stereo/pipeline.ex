@@ -27,7 +27,7 @@ defmodule VisionCore.Stereo.Pipeline do
   `:speckle_filter`): `stage_options/1` lists it, `set_options/3` and
   the timings address it by that name, so two stages of the same name
   are refused. Each stage is timed, and the timings are logged with the
-  metrics stages report.
+  metrics stages report; each pair carries its own as `:stage_ms`.
 
   Each Nx stage runs on the first of the pipeline's `:backends`, the
   `VisionCore.Stereo.Segment`s, that accepts it, and consecutive stages
@@ -235,6 +235,15 @@ defmodule VisionCore.Stereo.Pipeline do
   def reload_calibration(server, paths \\ []),
     do: GenServer.call(server, {:reload_calibration, paths})
 
+  @doc """
+  The monotonic time, in milliseconds, of the pipeline's start, of its
+  latest `set_options/3` that changed a setting's value, or of its latest
+  `reload_calibration/2` that succeeded, whichever is later: the last time
+  what the stages compute changed.
+  """
+  @spec last_change(GenServer.server()) :: integer()
+  def last_change(server), do: GenServer.call(server, :last_change)
+
   @impl GenServer
   def init(opts) do
     context = context(opts)
@@ -269,6 +278,7 @@ defmodule VisionCore.Stereo.Pipeline do
        stages: stages,
        output: {:stereo_pair, Keyword.get(opts, :name, __MODULE__)},
        timer: StageTimer.new(window: 30, label: "pipeline"),
+       last_change_ms: System.monotonic_time(:millisecond),
        last_start_ns: nil,
        in_flight: :queue.new(),
        held: nil,
@@ -301,11 +311,20 @@ defmodule VisionCore.Stereo.Pipeline do
     {:reply, segments, state}
   end
 
+  def handle_call(:last_change, _from, state), do: {:reply, state.last_change_ms, state}
+
   def handle_call({:set_options, name, options}, _from, state) do
     with {:ok, location, stage} <- find_stage(state.stages, name),
          {:ok, stage_state} <- apply_options(stage, options) do
       stages = put_stage_state(state.stages, location, stage_state)
-      {:reply, {:ok, values(%{stage | state: stage_state})}, %{state | stages: stages}}
+
+      last_change_ms =
+        if changed?(stage, stage_state),
+          do: System.monotonic_time(:millisecond),
+          else: state.last_change_ms
+
+      state = %{state | stages: stages, last_change_ms: last_change_ms}
+      {:reply, {:ok, values(%{stage | state: stage_state})}, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
     end
@@ -322,7 +341,14 @@ defmodule VisionCore.Stereo.Pipeline do
         "baseline=#{Float.round(context.baseline_m, 4)} m)"
     )
 
-    {:reply, :ok, %{state | opts: opts, context: context, stages: stages}}
+    {:reply, :ok,
+     %{
+       state
+       | opts: opts,
+         context: context,
+         stages: stages,
+         last_change_ms: System.monotonic_time(:millisecond)
+     }}
   rescue
     error ->
       Logger.warning("#{__MODULE__}: reload_calibration failed: #{inspect(error)}")
@@ -523,10 +549,9 @@ defmodule VisionCore.Stereo.Pipeline do
     busy_ns = max(replied.done_ns - device_start_ns, 0) + collect_ns
     pair = %{pair | device_ms: busy_ns / 1_000_000}
 
-    timer =
-      state.timer
-      |> StageTimer.record(first.name, segment_ns)
-      |> record_members(module.member_times(replied.segment))
+    timings = [{first.name, segment_ns} | module.member_times(replied.segment)]
+    pair = put_stage_ms(pair, timings)
+    timer = record_timings(state.timer, timings)
 
     {outcome, rest, timer} = run_stages(pair, rest, timer, state.device_timeout_ms)
 
@@ -538,10 +563,12 @@ defmodule VisionCore.Stereo.Pipeline do
   end
 
   defp finish_pair(state, outcome, start_ns) do
+    total_ns = System.monotonic_time(:nanosecond) - start_ns
+
     state =
       case outcome do
         {:ok, %Pair{} = pair} ->
-          Outputs.publish(state.output, {:stereo_pair, pair})
+          Outputs.publish(state.output, {:stereo_pair, put_stage_ms(pair, total: total_ns)})
           %{state | failed_pairs: 0}
 
         {:error, module, reason} ->
@@ -561,7 +588,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
     timer =
       state.timer
-      |> StageTimer.record(:total, System.monotonic_time(:nanosecond) - start_ns)
+      |> StageTimer.record(:total, total_ns)
       |> StageTimer.record(:wall, elapsed_since(state.last_start_ns, start_ns))
       |> StageTimer.tick()
 
@@ -573,9 +600,9 @@ defmodule VisionCore.Stereo.Pipeline do
       Enum.reduce(stages, {{:ok, pair}, [], timer}, fn
         stage, {{:ok, pair}, done, timer} ->
           {elapsed_ns, result} = timed(fn -> run_stage(pair, stage, timeout_ms) end)
-          timer = StageTimer.record(timer, stage.name, elapsed_ns)
-          {outcome, stage, timer} = stage_outcome(stage, result, elapsed_ns, timer)
-          {outcome, [stage | done], timer}
+          {outcome, stage, member_times} = stage_outcome(stage, result, elapsed_ns)
+          timings = [{stage.name, elapsed_ns} | member_times]
+          {put_outcome_stage_ms(outcome, timings), [stage | done], record_timings(timer, timings)}
 
         stage, {error, done, timer} ->
           {error, [stage | done], timer}
@@ -590,35 +617,44 @@ defmodule VisionCore.Stereo.Pipeline do
 
   defp run_stage(pair, stage, _timeout_ms), do: stage.module.run(pair, stage.state)
 
-  defp stage_outcome(%{kind: :segment} = stage, {:ok, pair, segment}, elapsed_ns, timer) do
+  # The outcome, the stage to keep and the times of the members of a segment.
+  defp stage_outcome(%{kind: :segment} = stage, {:ok, pair, segment}, elapsed_ns) do
     pair = %{pair | device_ms: pair.device_ms + elapsed_ns / 1_000_000}
-    timer = record_members(timer, stage.module.member_times(segment))
-    {{:ok, pair}, %{stage | state: segment}, timer}
+    {{:ok, pair}, %{stage | state: segment}, stage.module.member_times(segment)}
   end
 
-  defp stage_outcome(stage, {:ok, pair, stage_state}, _elapsed_ns, timer),
-    do: {{:ok, pair}, %{stage | state: stage_state}, timer}
+  defp stage_outcome(stage, {:ok, pair, stage_state}, _elapsed_ns),
+    do: {{:ok, pair}, %{stage | state: stage_state}, []}
 
-  defp stage_outcome(stage, {:error, reason, stage_state}, _elapsed_ns, timer),
-    do: {{:error, stage.module, reason}, %{stage | state: stage_state}, timer}
+  defp stage_outcome(stage, {:error, reason, stage_state}, _elapsed_ns),
+    do: {{:error, stage.module, reason}, %{stage | state: stage_state}, []}
 
-  defp stage_outcome(stage, {:refused, reason}, _elapsed_ns, timer),
-    do: {{:error, stage.module, reason}, stage, timer}
+  defp stage_outcome(stage, {:refused, reason}, _elapsed_ns),
+    do: {{:error, stage.module, reason}, stage, []}
 
-  defp stage_outcome(stage, {:error, reason}, _elapsed_ns, timer),
-    do: {{:device_error, stage.module, stage.name, reason}, stage, timer}
+  defp stage_outcome(stage, {:error, reason}, _elapsed_ns),
+    do: {{:device_error, stage.module, stage.name, reason}, stage, []}
 
-  defp stage_outcome(stage, :timeout, _elapsed_ns, timer),
-    do: {{:device_timeout, stage.name}, stage, timer}
+  defp stage_outcome(stage, :timeout, _elapsed_ns),
+    do: {{:device_timeout, stage.name}, stage, []}
 
-  defp stage_outcome(stage, {:stop, reason}, _elapsed_ns, timer),
-    do: {{:device_refused, stage.name, reason}, stage, timer}
+  defp stage_outcome(stage, {:stop, reason}, _elapsed_ns),
+    do: {{:device_refused, stage.name, reason}, stage, []}
 
-  defp record_members(timer, member_times) do
-    Enum.reduce(member_times, timer, fn {name, duration_ns}, timer ->
+  defp record_timings(timer, timings) do
+    Enum.reduce(timings, timer, fn {name, duration_ns}, timer ->
       StageTimer.record(timer, name, duration_ns)
     end)
   end
+
+  # A member's time replaces the one of its segment when that has one stage and its name.
+  defp put_stage_ms(pair, timings) do
+    stage_ms = Map.new(timings, fn {name, duration_ns} -> {name, duration_ns / 1_000_000} end)
+    %{pair | stage_ms: Map.merge(pair.stage_ms, stage_ms)}
+  end
+
+  defp put_outcome_stage_ms({:ok, pair}, timings), do: {:ok, put_stage_ms(pair, timings)}
+  defp put_outcome_stage_ms(outcome, _timings), do: outcome
 
   defp record_metrics(timer, {:ok, %Pair{metrics: metrics}}) do
     Enum.reduce(metrics, timer, fn {name, value, unit}, timer ->
@@ -928,6 +964,13 @@ defmodule VisionCore.Stereo.Pipeline do
     if function_exported?(stage.module, :options, 1),
       do: stage.module.options(stage.state),
       else: %{}
+  end
+
+  # By the stage's settings, or by its state when it does not report them.
+  defp changed?(stage, stage_state) do
+    if function_exported?(stage.module, :options, 1),
+      do: values(stage) != values(%{stage | state: stage_state}),
+      else: stage.state != stage_state
   end
 
   # `{index, nil}` for a stage, `{index, member_index}` for a member of a segment.

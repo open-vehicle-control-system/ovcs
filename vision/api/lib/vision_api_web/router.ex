@@ -20,6 +20,7 @@ defmodule VisionApiWeb.Router do
     get "/configuration", ConfigurationController, :show
     get "/firmware", FirmwareController, :show
     get "/exporters", ExporterController, :index
+    post "/exporters/:id/actions/:name", ExporterActionController, :run
     get "/ros2-node", Ros2NodeController, :show
   end
 

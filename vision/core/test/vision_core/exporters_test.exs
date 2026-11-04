@@ -244,6 +244,38 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
+  # Answers `ping` at once, and `stall` never.
+  defmodule Acting do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def describe(_options), do: %{id: :acting, name: "Acting"}
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def actions(_options),
+      do: [
+        %{name: :ping, label: "Ping", description: "Answers at once."},
+        %{name: :stall, label: "Stall", description: "Never answers."}
+      ]
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, test), do: {:ok, test}
+
+    @impl VisionCore.Exporter
+    def handle_action(:ping, _params, _from, test), do: {:reply, {:ok, %{pong: true}}, test}
+
+    def handle_action(:stall, _params, _from, test) do
+      send(test, :stalled)
+      {:noreply, test}
+    end
+  end
+
   defp config(exporters \\ []),
     do: %VisionCore.Config{
       components: [{:stereo, driver: Camera, left: [], right: []}],
@@ -342,16 +374,25 @@ defmodule VisionCore.ExportersTest do
                  outputs: [
                    %{output: {:camera_frame, :left}, max_hz: nil},
                    %{output: :stereo_pair, max_hz: 5}
-                 ]
+                 ],
+                 actions: []
                },
                %{
                  id: "VisionCore.ExportersTest.Steady",
                  name: "VisionCore.ExportersTest.Steady",
                  module: Steady,
                  status: {:ok, "Running"},
-                 outputs: [%{output: :stereo_pair, max_hz: nil}]
+                 outputs: [%{output: :stereo_pair, max_hz: nil}],
+                 actions: []
                }
              ]
+    end
+
+    test "lists the actions each exporter declares" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+
+      assert [%{id: "acting", actions: actions}] = Exporters.list()
+      assert Enum.map(actions, & &1.name) == [:ping, :stall]
     end
 
     test "lists the outputs the configuration produces, as the runner reads them" do
@@ -410,6 +451,45 @@ defmodule VisionCore.ExportersTest do
 
     test "is empty while the exporters are not running" do
       assert Exporters.list() == []
+    end
+  end
+
+  describe "action/4" do
+    test "runs an action of the exporter its id names" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+      await_runner(:acting)
+
+      assert Exporters.action("acting", "ping", %{}, 1000) == {:ok, %{pong: true}}
+      assert Exporters.action("acting", "pong", %{}, 1000) == {:error, :unknown_action}
+    end
+
+    test "an id no exporter has is not found" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+
+      assert Exporters.action("unknown", "ping", %{}, 1000) == {:error, :not_found}
+    end
+
+    test "an action that does not answer within the timeout times out" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+      await_runner(:acting)
+
+      assert {:error, {:timeout, message}} = Exporters.action("acting", "stall", %{}, 50)
+      assert message =~ "50 ms"
+    end
+
+    test "an exporter that is not running, or whose runner stops before answering, is not running" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+      runner = await_runner(:acting)
+
+      task = Task.async(fn -> Exporters.action("acting", "stall", %{}, 1000) end)
+      assert_receive :stalled
+      Process.exit(runner, :kill)
+
+      assert Task.await(task) == {:error, :not_running}
+
+      :ok = Supervisor.terminate_child(Exporters, :acting)
+
+      assert Exporters.action("acting", "ping", %{}, 1000) == {:error, :not_running}
     end
   end
 
