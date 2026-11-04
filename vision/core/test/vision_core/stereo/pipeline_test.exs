@@ -288,6 +288,30 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert_receive {:"$gen_cast", {:stereo_pair, %Pair{left_frame: %{capture_ns: 1}}}}, 5_000
   end
 
+  test "a published pair carries each stage's time and its total" do
+    {:ok, pipeline} = start([Pass, FillAll])
+    subscribe_to_pairs()
+    [left, right] = textured_pair(1)
+
+    Pipeline.submit(pipeline, left, right)
+    assert_receive {:"$gen_cast", {:stereo_pair, %Pair{stage_ms: stage_ms}}}, 5_000
+
+    assert stage_ms |> Map.keys() |> Enum.sort() == [:fill_all, :pass, :total]
+    assert Enum.all?(Map.values(stage_ms), &(is_float(&1) and &1 >= 0.0))
+  end
+
+  test "a pair's stage times are those its pipeline's timer records, a segment's among them" do
+    {:ok, pipeline} = start([FrameTag, FillAll, Pass], backends: [{EagerSegment, []}])
+    subscribe_to_pairs()
+    [left, right] = textured_pair(2)
+
+    Pipeline.submit(pipeline, left, right)
+    assert_receive {:"$gen_cast", {:stereo_pair, %Pair{} = pair}}, 5_000
+
+    assert_timed_as_recorded(pipeline, pair)
+    assert Map.has_key?(pair.stage_ms, :frame_tag)
+  end
+
   test "refuses a stage whose inputs no stage before it provides" do
     stages = [Stage.Disparity, Stage.Decode, Stage.Depth]
 
@@ -901,6 +925,17 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert [%{left_frame: %{capture_ns: 20}}] = submit_when_ready(pipeline, [[left, right]])
   end
 
+  # The timer's :wall is the interval between pairs, not a stage's time.
+  defp assert_timed_as_recorded(pipeline, %Pair{stage_ms: stage_ms}) do
+    recorded = Map.delete(:sys.get_state(pipeline).timer.stages, :wall)
+
+    assert Enum.sort(Map.keys(stage_ms)) == Enum.sort(Map.keys(recorded))
+
+    for {name, [duration_ns]} <- recorded do
+      assert round(stage_ms[name] * 1_000_000) == duration_ns
+    end
+  end
+
   defp assert_timed(names, opts) do
     {:ok, pipeline} = start(Pipeline.default_stages(disparity: [paths: 3]), opts)
     subscribe_to_pairs()
@@ -962,6 +997,16 @@ defmodule VisionCore.Stereo.PipelineTest do
 
       assert pair.disparity |> Nx.greater(0) |> Nx.sum() |> Nx.to_number() > 0
       assert byte_size(pair.depth) == 48 * 64 * 2
+    end
+
+    test "a published pair carries the time the Port measured for a segment of one stage" do
+      {:ok, pipeline} = start(Pipeline.default_stages(disparity: [matcher: :native, paths: 3]))
+      subscribe_to_pairs()
+      pair = receive_pair(pipeline, textured_pair(7))
+
+      # The segment and its member are both named :disparity: the timer holds both times.
+      assert [member_ns, _segment_ns] = :sys.get_state(pipeline).timer.stages.disparity
+      assert round(pair.stage_ms.disparity * 1_000_000) == member_ns
     end
 
     test "applies a live p1 change from the next pair, as NxStereo.sgm/3 would" do
@@ -1208,6 +1253,20 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_timed([segment | members], compute: :native)
     end
 
+    test "a published pair carries the times of its segment and of each member" do
+      subscribe_to_pairs()
+
+      for before <- [[], [Pass]] do
+        stages = before ++ Pipeline.default_stages(disparity: [paths: 3])
+        {:ok, pipeline} = start(stages, compute: :native)
+        [pair] = submit_when_ready(pipeline, [textured_pair(21)])
+
+        assert_timed_as_recorded(pipeline, pair)
+        assert :speckle_filter in Map.keys(pair.stage_ms)
+        GenServer.stop(pipeline)
+      end
+    end
+
     test "publishes a pair once it is back when no other is at the Port" do
       {:ok, pipeline} =
         start(Pipeline.default_stages(disparity: [paths: 3]),
@@ -1350,6 +1409,31 @@ defmodule VisionCore.Stereo.PipelineTest do
 
       assert message =~ ":nx or :native"
     end
+  end
+
+  test "last_change/1 is the start, then moves on each accepted option change and calibration reload, not on a refused one" do
+    {:ok, pipeline} = start([FillAll, Gain])
+    started = Pipeline.last_change(pipeline)
+    assert is_integer(started)
+
+    # The clock ticks in milliseconds.
+    Process.sleep(2)
+    assert {:ok, _values} = Pipeline.set_options(pipeline, :gain, gain: 3)
+    changed = Pipeline.last_change(pipeline)
+    assert changed > started
+
+    Process.sleep(2)
+    assert {:error, _reason} = Pipeline.set_options(pipeline, :gain, gain: 20)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      assert {:error, _reason} =
+               Pipeline.reload_calibration(pipeline, left_calibration_path: "missing.yaml")
+    end)
+
+    assert Pipeline.last_change(pipeline) == changed
+
+    assert :ok = Pipeline.reload_calibration(pipeline)
+    assert Pipeline.last_change(pipeline) > changed
   end
 
   test "keeps settings changed at runtime across a calibration reload" do

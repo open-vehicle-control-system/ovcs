@@ -137,6 +137,15 @@ defmodule VisionCore.Parameters do
   @spec forget(GenServer.server(), id()) :: :ok
   def forget(server \\ __MODULE__, id), do: GenServer.call(server, {:forget, id})
 
+  @doc """
+  The monotonic time, in milliseconds, of the latest value applied to an
+  owner: by `set/3`, `set_and_save/3`, `discard/1` or `reset/2`, or when a
+  saved or unsaved value is applied as a group is declared. `nil` before
+  any.
+  """
+  @spec last_change(GenServer.server()) :: integer() | nil
+  def last_change(server \\ __MODULE__), do: GenServer.call(server, :last_change)
+
   @impl GenServer
   def init(opts) do
     store = Keyword.get(opts, :store, Store)
@@ -150,7 +159,8 @@ defmodule VisionCore.Parameters do
        defaults: %{},
        changed: %{},
        # Ids of saved values their owner failed to set.
-       unapplied_saved: MapSet.new()
+       unapplied_saved: MapSet.new(),
+       last_change_ms: nil
      }}
   end
 
@@ -184,6 +194,8 @@ defmodule VisionCore.Parameters do
 
     {:reply, groups, state}
   end
+
+  def handle_call(:last_change, _from, state), do: {:reply, state.last_change_ms, state}
 
   def handle_call({:get, id}, _from, state) do
     case find(state, id) do
@@ -245,7 +257,7 @@ defmodule VisionCore.Parameters do
     log_refused(refused, "not set back")
     kept = for {declared, _value, _reason} <- refused, do: declared.id
     state = %{state | changed: Map.take(state.changed, kept)} |> mark_applied(Map.keys(applied))
-    {:reply, {:ok, set_ids}, state}
+    {:reply, {:ok, set_ids}, touch(state, applied)}
   end
 
   def handle_call({:reset, scope}, _from, state) do
@@ -263,7 +275,9 @@ defmodule VisionCore.Parameters do
         log_refused(refused, "not reset")
 
         state =
-          %{state | changed: Map.merge(state.changed, applied)} |> mark_applied(Map.keys(applied))
+          %{state | changed: Map.merge(state.changed, applied)}
+          |> mark_applied(Map.keys(applied))
+          |> touch(applied)
 
         {:reply, reset_reply(set_ids, refused), state}
 
@@ -284,7 +298,7 @@ defmodule VisionCore.Parameters do
     {_values, state} = read_values(state, Enum.map(declared, & &1.id))
 
     saved = fn parameter, _values -> Map.fetch(state.saved, parameter.id) end
-    {_ids, _applied, refused} = apply_values(state, declared, saved, &apply_saved/4)
+    {_ids, saved_applied, refused} = apply_values(state, declared, saved, &apply_saved/4)
     {not_set, refused} = Enum.split_with(refused, &match?({_, _, {:owner, _}}, &1))
 
     log_refused(
@@ -306,10 +320,10 @@ defmodule VisionCore.Parameters do
       )
 
     changed = fn parameter, _values -> Map.fetch(state.changed, parameter.id) end
-    {_ids, _applied, refused} = apply_values(state, declared, changed, &apply_value/4)
+    {_ids, changed_applied, refused} = apply_values(state, declared, changed, &apply_value/4)
     log_refused(refused, "not set back")
 
-    {:noreply, state}
+    {:noreply, state |> touch(saved_applied) |> touch(changed_applied)}
   end
 
   @impl GenServer
@@ -330,7 +344,7 @@ defmodule VisionCore.Parameters do
         case apply_value(state, declared, value, values) do
           {:ok, applied} ->
             state = %{state | changed: Map.merge(state.changed, applied)}
-            state = mark_applied(state, Map.keys(applied))
+            state = state |> mark_applied(Map.keys(applied)) |> touch(applied)
             {parameter, state} = read_parameter(state, declared)
             {{:ok, parameter}, state}
 
@@ -343,6 +357,9 @@ defmodule VisionCore.Parameters do
 
   defp log_refused_set(id, value, reason),
     do: Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
+
+  defp touch(state, applied) when applied == %{}, do: state
+  defp touch(state, _applied), do: %{state | last_change_ms: System.monotonic_time(:millisecond)}
 
   # A parameter set again no longer waits for its saved value.
   defp mark_applied(state, ids),
