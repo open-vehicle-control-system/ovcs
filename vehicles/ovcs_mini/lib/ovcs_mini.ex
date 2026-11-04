@@ -194,7 +194,7 @@ defmodule OvcsMini do
   # Not measured: plausible figures for a 1/10 truck on a 2S pack.
   @simulated_battery_voltage 7.4
   @simulated_acceleration_per_ampere 0.5
-  # The Mini's VESC Tool setting, see docs/vesc_drivetrain.md.
+  # The Mini's VESC Tool setting, see docs/vms/drivers.md.
   @vesc_minimum_erpm 300
 
   @doc false
@@ -449,7 +449,7 @@ defmodule OvcsMini do
 
   # NanoDet-RepVGG by default, because it is Apache-2.0 and YOLOv8 is
   # AGPL-3.0 — see the Model licensing section of
-  # docs/ros2_perception.md. The swap needs no code: both
+  # docs/bridges/perception.md. The swap needs no code: both
   # carry the same in-graph NMS net flow, and `hailo_detect` reads the
   # input size and class count off the HEF rather than assuming them.
   #

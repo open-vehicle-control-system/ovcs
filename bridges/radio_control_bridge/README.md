@@ -6,64 +6,15 @@ MAVLink-compatible RC transmitter (ExpressLRS handsets, OpenTX radios,
 hosted by [`bridges/firmware`](../firmware) and opted into per vehicle
 through `bridge_firmwares/0`.
 
-## What it does
+The guide, [Radio control bridge](../../docs/bridges/radio_control.md), explains what it
+does, its components and how a vehicle configures it; this README keeps the developer
+details.
 
-- **MAVLink RC in** — reads MAVLink v2 `RC_CHANNELS_OVERRIDE` from a
-  UART connected to the RC receiver via [`express_lrs`](../../libraries/express_lrs)
-  and emits the eight raw channels on the OVCS bus as two
-  `radio_control_channels` frames. The vehicle's VMS turns channels into
-  throttle, steering, direction and control level.
-- **MSP OSD out** — a placeholder (`RadioControlBridge.MspOsdForwarder`)
-  that sends nothing yet. [`msp_osd`](../../libraries/msp_osd) provides
-  the MSP DisplayPort transport for VTXs (HDZero / Walksnail / DJI).
+## Adding a component
 
-## Components — per-vehicle configuration
-
-`RadioControlBridge.children/0` isn't hardcoded — every feature is a
-component the vehicle opts into via the `:components` field of its
-`%RadioControlBridge.Config{}`. The bridge resolves each entry into
-one or more child specs via `RadioControlBridge.Components.start/2`.
-
-Catalogue (extend by adding a clause to
-`lib/radio_control_bridge/components.ex`):
-
-| Component             | Opts                                                                                 | Child specs started |
-|-----------------------|--------------------------------------------------------------------------------------|---------------------|
-| `:mavlink_forwarder`  | `:uart_port`, `:uart_baud_rate` (both required) — the ExpressLRS receiver UART. Read by `bridges/firmware`'s `runtime.exs` to stamp `:express_lrs` Application env before `ExpressLrs.Application` boots. | `RadioControlBridge.MavlinkForwarder` (decoded MAVLink → CAN) |
-| `:msp_osd_forwarder`  | none | `RadioControlBridge.MspOsdForwarder` (placeholder) |
-
-UART pins live with the component that uses them — two forwarders
-that drive separate hardware (ExpressLRS receiver vs. MSP
-DisplayPort to a VTX) don't share a single global UART field.
-`ExpressLrs.Mavlink.Connector` is started by `ExpressLrs.Application`
-when `runtime.exs` has enabled it from the component opts; it's not a
-child of this bridge.
-
-## Vehicle-side configuration
-
-Vehicles declare RC config via the `RadioControlBridge` behaviour on
-their top-level module. The `:host` arm typically lists no
-components (no UART hardware); the `:target` arm enables
-`:mavlink_forwarder` with the Pi UART pin baked into its opts.
-
-```elixir
-@behaviour RadioControlBridge
-
-@impl RadioControlBridge
-def radio_control_bridge_config(:host),
-  do: %RadioControlBridge.Config{components: []}
-
-def radio_control_bridge_config(:target),
-  do: %RadioControlBridge.Config{
-    components: [
-      {:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}
-    ]
-  }
-```
-
-A bare atom is shorthand for `{atom, []}`. An unknown component
-name raises `FunctionClauseError` at supervisor boot — typos in the
-list fail loudly rather than silently dropping a feature.
+Each entry of `%RadioControlBridge.Config{components: ...}` resolves to child specs
+through `RadioControlBridge.Components.start/2`. A new component is one more clause in
+`lib/radio_control_bridge/components.ex`.
 
 ## Dependencies
 
@@ -73,4 +24,4 @@ list fail loudly rather than silently dropping a feature.
 
 The bridge is bundled into a firmware image via the vehicle's
 `bridge_firmwares/0` map — see
-[`docs/vehicle_package.md`](../../docs/vehicle_package.md#bridge-firmwares).
+[Bridge firmwares](../../docs/bridges/README.md#bridge-firmwares).

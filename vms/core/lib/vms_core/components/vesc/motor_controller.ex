@@ -160,7 +160,7 @@ defmodule VmsCore.Components.Vesc.MotorController do
   timeout longer than the emitters' 20 ms period, and a minimum
   speed-PID erpm below the slowest velocity in use. Its own current,
   rpm and duty limits stay in force below whatever is commanded here.
-  `docs/vesc_drivetrain.md` has the settings.
+  `docs/vms/drivers.md` has the settings.
   """
   use GenServer
   alias Decimal, as: D

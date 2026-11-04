@@ -3,7 +3,7 @@ title: "Perception: object detection"
 description: Object detection on a Hailo-8 fused with stereo depth into 3D detections, the topics it publishes, the CPU/GPU backends for the simulator, and model licensing.
 ---
 
-`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_vision` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The component reference is [`bridges/ros_bridge/README.md`](../bridges/ros_bridge/README.md).
+`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_vision` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The bridge itself is described in [ROS bridge](./ros.md).
 
 ## Why detection and not depth
 
@@ -53,7 +53,7 @@ Each detection draws two markers: a `CUBE` coloured red to green by score, and a
 
 **Why `foxglove_msgs`.** `visualization_msgs/ImageMarker` has no text type, so its boxes can't say what they are, and ROS 2 has no `ImageMarkerArray`: with one message per annotation topic, N detections would need N topics. `foxglove_msgs/ImageAnnotations` carries boxes and labels in one message, and `LINE_LOOP` closes a rectangle in four points where a `LINE_LIST` needs eight.
 
-The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](./ros2_compute_node.md#deploying)) before the overlay appears.
+The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](../ros2/compute_node.md#deploying)) before the overlay appears.
 
 **Boxes are mapped back into raw pixels.** Detection runs on the rectified image, but the panel shows `image_raw`. On the Mini the two differ by about 10 px on average and up to 23 px on a 480-wide frame, enough to put a box visibly beside its object. Each vertex is mapped back through OpenCV's rectification map, which costs nothing on the wire compared with a second rectified image stream.
 
@@ -213,6 +213,6 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 ## Next steps
 
-- [ROS 2 and the simulator](./ros2_simulator.md): the fabric and simulator time.
-- [ROS compute node](./ros2_compute_node.md): the router and `foxglove_bridge` these topics reach.
-- [Simulation](../compose/local/simulation/README.md): running perception against Gazebo.
+- [ROS 2](../ros2/README.md): the fabric and simulator time.
+- [ROS compute node](../ros2/compute_node.md): the router and `foxglove_bridge` these topics reach.
+- [Simulation](../../compose/local/simulation/README.md): running perception against Gazebo.

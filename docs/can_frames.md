@@ -31,7 +31,7 @@ can_networks:
 
 Every vehicle declares a network named `ovcs`. It is not a convention: the framework's own components address it by name. `VmsCore.Status` emits `vms_status` (0x1A0) on `:ovcs`, `OVCS.GenericController` talks to the controllers on it, the infotainment and the bridges read and write it. Your manufacturer buses are yours to name and size; OVCS1's five-bus layout is described in [Hardware](./hardware.md#worked-example-the-ovcs1-reference-vehicle).
 
-Each side of the vehicle runs its own Cantastic instance with its own file: `priv/can/vms.yml` for the VMS, `infotainment.yml` for the head unit, `bridges/<id>.yml` per bridge firmware. Each file declares only the frames that side uses, and a frame the VMS emits is a received frame in the infotainment's file. The directory layout is in [Hardware](./hardware.md#can-bus-configuration).
+Each side of the vehicle runs its own Cantastic instance with its own file: `priv/can/vms.yml` for the VMS, `infotainment.yml` for the head unit, `bridges/<id>.yml` per bridge firmware. Each file declares only the frames that side uses, and a frame the VMS emits is a received frame in the infotainment's file. [Package layout](./vehicle_package.md#package-layout) shows where the files sit in your package, and [Imports and the shared specs](#imports-and-the-shared-specs) how they reach the framework's shared frames.
 
 ## Frames
 
@@ -66,7 +66,7 @@ signals:
 | `required_on_time_frames` | On-time checks needed before a frame counts as alive | `5` |
 | `signals` | The signal list | `[]` |
 
-Any other key is rejected at boot with `[Yaml configuration error]`. An id above `0x7FF` without `extended: true` is rejected too. Standard and extended frames share a bus, and Cantastic keys specs on the SocketCAN `can_id` with the extended flag, so a standard and an extended frame with the same number are two different frames. The VESC frames on the Mini are extended, for example [`0x0901_vesc_status.yml`](../vehicles/ovcs_mini/priv/can/vesc/0x0901_vesc_status.yml); see [VESC drivetrain](./vesc_drivetrain.md#frames).
+Any other key is rejected at boot with `[Yaml configuration error]`. An id above `0x7FF` without `extended: true` is rejected too. Standard and extended frames share a bus, and Cantastic keys specs on the SocketCAN `can_id` with the extended flag, so a standard and an extended frame with the same number are two different frames. The VESC frames on the Mini are extended, for example [`0x0901_vesc_status.yml`](../vehicles/ovcs_mini/priv/can/vesc/0x0901_vesc_status.yml); see [VESC](./vms/drivers.md#frames).
 
 **Emitted frames** are sent every `frequency` ms by one `Cantastic.Emitter` process once your code configures and enables it. Their signals must be listed in bit order, contiguous from bit 0, and fill whole bytes, 64 bits at most. Gaps are filled with `static` signals. **Received frames** may describe only the bits you care about, and `frequency` is needed only if the frame is watched. A received frame shorter than its spec is dropped and logged; it does not crash the receiver.
 
@@ -205,7 +205,7 @@ That is DBC `21|12@1+`: the top three bits of byte 2 (DBC bits 21 to 23) are the
 - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
 ```
 
-[`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components) is grouped by manufacturer (`bosch/`, `nissan/`, `orion/`, `volkswagen/`, `evpt/`, `vesc/`, `obd2/`) plus `ovcs/` for the framework's own frames. Complete frames carry their id in the filename (`0x1DA_inverter_status.yml`). Where the id depends on your vehicle, the library ships only the signal list, and your vehicle wraps it in a local frame file: `*_signals.yml` for the VESC, whose id carries the VESC's CAN id, and `generic_controller/0x7X1_alive_signals.yml` and siblings, where `X` is the controller id (see [Generic controllers](./generic_controllers.md#how-can-ids-are-derived)). The Mini's [`0x701_main_controller_alive.yml`](../vehicles/ovcs_mini/priv/can/generic_controller/0x701_main_controller_alive.yml):
+[`libraries/ovcs_can/priv/can/components/`](../libraries/ovcs_can/priv/can/components) is grouped by manufacturer (`bosch/`, `nissan/`, `orion/`, `volkswagen/`, `evpt/`, `vesc/`, `obd2/`) plus `ovcs/` for the framework's own frames. Complete frames carry their id in the filename (`0x1DA_inverter_status.yml`). Where the id depends on your vehicle, the library ships only the signal list, and your vehicle wraps it in a local frame file: `*_signals.yml` for the VESC, whose id carries the VESC's CAN id, and `generic_controller/0x7X1_alive_signals.yml` and siblings, where `X` is the controller id (see [Generic controllers](./generic_controllers/README.md#how-can-ids-are-derived)). The Mini's [`0x701_main_controller_alive.yml`](../vehicles/ovcs_mini/priv/can/generic_controller/0x701_main_controller_alive.yml):
 
 ```yaml
 name: main_controller_alive
@@ -234,6 +234,6 @@ Cantastic does not route frames between networks on its own. The OVCS1 reference
 ## Next steps
 
 - [Testing with CAN](./testing_with_can.md): inject and watch the frames you declared, on virtual CAN.
-- [Generic controllers](./generic_controllers.md): the `0x7X*` frame family and controller ids.
-- [VESC drivetrain](./vesc_drivetrain.md): extended-id frames wrapped around shared signal specs.
+- [Generic controllers](./generic_controllers/README.md): the `0x7X*` frame family and controller ids.
+- [VESC](./vms/drivers.md#vesc): extended-id frames wrapped around shared signal specs.
 - [Cantastic README](https://github.com/open-vehicle-control-system/cantastic): the library's configuration options and the diagnostic codecs.

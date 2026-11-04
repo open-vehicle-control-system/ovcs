@@ -152,4 +152,4 @@ A stage is named after the last segment of its module in snake case, `speckle_fi
 
 - [Where depth is computed](./compute.md)
 - [Vision performance](./performance.md)
-- [Vision unit](./overview.md#dashboard-and-api): editing and saving settings from the dashboard.
+- [Vision unit](./README.md#dashboard-and-api): editing and saving settings from the dashboard.

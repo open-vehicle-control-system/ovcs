@@ -78,7 +78,7 @@ The exporters take the unit's outputs out of it ([Exporters](#exporters) below).
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
 | `<prefix>/detections`, `<prefix>/detections/markers` | Detected objects with their position in metres, and markers for RViz or Foxglove. |
 
-Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Ros2.Exporter.Stereo`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./overview.md#dashboard-and-api)).
+Topics that are off unless you turn them on, such as the rectified images, are listed in `VisionCore.Ros2.Exporter.Stereo`'s documentation. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./README.md#dashboard-and-api)).
 
 Each message is stamped with the frame id of what it comes from. The stereo component's sides set each camera's (`left: [frame_id: "stereo_left_optical"]`, `<prefix>_left` without one), every frame carries its camera's, and a pair's outputs and its detections are in the left camera's frame: one setting reaches every exporter.
 
@@ -114,4 +114,4 @@ The depth preview is the depth image coloured by `jpeg_codec`, near red and far 
 
 - [Stereo stages](./stages.md)
 - [Where depth is computed](./compute.md)
-- [Perception: object detection](../ros2_perception.md): the ROS bridge's detector and its topics.
+- [Perception: object detection](../bridges/perception.md): the ROS bridge's detector and its topics.

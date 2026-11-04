@@ -46,7 +46,7 @@ Everything lives under the [open-vehicle-control-system](https://github.com/open
 | [ovcs_base_can_system_rpi3a](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) | Nerves system: Raspberry Pi 3A with CAN, for bridge firmwares such as radio control |
 | [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 for bridge firmwares with stereo cameras and a Hailo-8 (perception) |
 
-`mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Framework components](./components.md).
+`mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Repository layout](./repository.md).
 
 ## Contributing
 

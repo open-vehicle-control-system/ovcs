@@ -21,7 +21,7 @@ defmodule <%= @module %> do
   `./ovcs build <%= @name %> bridge-<firmware-id>`, with its CAN topology in
   `priv/can/bridges/<firmware-id>.yml`. Both bridges start with no
   components; drop the entries your vehicle has no board for. See the
-  [vehicle package guide](https://ovcs.be/docs/vehicle_package).
+  [vehicle package guide](https://ovcs.be/docs/vehicle-package).
 <% end %>  """
   @behaviour OvcsVehicle<%= if @bridges do %>
   @behaviour RadioControlBridge

@@ -18,7 +18,7 @@ The goal is that this machine is immutable in the same sense the Nerves boards a
                  └──────────────────────────────────────────┘
 ```
 
-The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle nodes, the operator's laptop) is a Zenoh **client**, so the fabric survives the base station driving away. Compose files for both sides live in [`compose/`](../compose/README.md): what runs on the vehicle in `compose/compute/`, what stays on a workstation in `compose/local/`.
+The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle nodes, the operator's laptop) is a Zenoh **client**, so the fabric survives the base station driving away. Compose files for both sides live in [`compose/`](../../compose/README.md): what runs on the vehicle in `compose/compute/`, what stays on a workstation in `compose/local/`.
 
 ## Hardware
 
@@ -33,7 +33,7 @@ The vehicle is the router. Everything else (the Nerves bridges, the on-vehicle n
 Keep it a separate Pi:
 
 - The **VMS** is vehicle control. Coupling it to the ROS fabric puts a container runtime in the safety path.
-- **Perception** (on the Mini, the `ros_vision` bridge firmware on a Pi 5, whose ROS bridge runs stereo depth and Hailo detection in Elixir, see [Perception: object detection](./ros2_perception.md)) stays on Nerves and joins the fabric as a client like the other bridge firmwares.
+- **Perception** (on the Mini, the `ros_vision` bridge firmware on a Pi 5, whose ROS bridge runs stereo depth and Hailo detection in Elixir, see [Perception: object detection](../bridges/perception.md)) stays on Nerves and joins the fabric as a client like the other bridge firmwares.
 
 ## Operating system
 
@@ -155,14 +155,14 @@ The Nerves boards are dual-homed by their firmware: `eth0` takes its lease from 
 
 The compute node's uplink isn't load-bearing either. `method=shared` assigns the bridge address, starts dnsmasq and installs the NAT rule unconditionally; with the uplink down, clients still get leases and full vehicle-local connectivity, just no route off the vehicle.
 
-One piece of the vehicle network is a container rather than a keyfile: `bridge_no_nat` in [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml). balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0` forwards between `eth0` and the access point traverse iptables, where `method=shared`'s MASQUERADE rewrites anything not addressed to `10.42.0.0/24`, multicast included. A laptop's mDNS query then reaches the wire from the bridge's address on a random port, the board answers it as a legacy unicast query, and the laptop discards the reply for not coming from port 5353: `ovcs-mini-vms.local` resolves from the site Wi-Fi and fails from the access point, with nothing logged. The container inserts one rule ahead of NetworkManager's (traffic leaving through `ovcs0` isn't translated) and re-asserts it every 30 s, since NetworkManager rewrites its nat rules whenever the connection is re-activated.
+One piece of the vehicle network is a container rather than a keyfile: `bridge_no_nat` in [`compose/compute/docker-compose.yml`](../../compose/compute/docker-compose.yml). balena-engine switches `bridge-nf-call-iptables` on, so frames `ovcs0` forwards between `eth0` and the access point traverse iptables, where `method=shared`'s MASQUERADE rewrites anything not addressed to `10.42.0.0/24`, multicast included. A laptop's mDNS query then reaches the wire from the bridge's address on a random port, the board answers it as a legacy unicast query, and the laptop discards the reply for not coming from port 5353: `ovcs-mini-vms.local` resolves from the site Wi-Fi and fails from the access point, with nothing logged. The container inserts one rule ahead of NetworkManager's (traffic leaving through `ovcs0` isn't translated) and re-asserts it every 30 s, since NetworkManager rewrites its nat rules whenever the connection is re-activated.
 
 The vehicle's time comes from the compute node too: its `ntp` service serves the node's clock to `10.42.0.0/24`, and the Nerves firmwares ask the Zenoh router's address (`ZENOH_ENDPOINT_IP`) before the public pools. The boards have no battery-backed clock; until they synchronise they stamp messages with a date months off, and Nav2 discards a transform from the past. With the vehicle offline every board still shares the compute node's clock, which is the one Nav2 compares stamps against.
 
-Keyfile templates live in [`compose/compute/host/system-connections/`](../compose/compute/host/system-connections/); each file's comments explain its settings. Two constraints aren't obvious:
+Keyfile templates live in [`compose/compute/host/system-connections/`](../../compose/compute/host/system-connections/); each file's comments explain its settings. Two constraints aren't obvious:
 
 - **The bridge can't be called `br0`.** balenaOS's `NetworkManager.conf` lists `interface-name:br*` as unmanaged, so activation fails with `device is strictly unmanaged`.
-- **The 5 GHz access point needs `wifi_ap_radio`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_radio` service corrects it to 5775 MHz through the host supplicant's D-Bus interface, reapplies the 6 dBm TX limit, and restarts the AP when NetworkManager gives up on it. Deploy it before activating the AP profile, and delete balenaOS's `balena-wifi-01` profile, which would otherwise take the AX210 when the AP fails; see the [host instructions](../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
+- **The 5 GHz access point needs `wifi_ap_radio`.** On channel 149 at 80 MHz, NetworkManager 1.52 generates an invalid VHT center frequency (5770 MHz). The `wifi_ap_radio` service corrects it to 5775 MHz through the host supplicant's D-Bus interface, reapplies the 6 dBm TX limit, and restarts the AP when NetworkManager gives up on it. Deploy it before activating the AP profile, and delete balenaOS's `balena-wifi-01` profile, which would otherwise take the AX210 when the AP fails; see the [host instructions](../../compose/compute/host/README.md). Keep the configured regulatory country, and account for antenna gain when changing power.
 
 ### Reaching the vehicle network from the site Wi-Fi
 
@@ -192,7 +192,7 @@ Giving each board its own Wi-Fi removes the shared radio: real leases for everyo
 
 ### Installing it
 
-Prerequisite: deploy [`compose/compute/docker-compose.yml`](../compose/compute/docker-compose.yml) (at least `wifi_firmware` and `wifi_ap_radio`) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist, and the 5 GHz AP profile starts with an invalid centre frequency.
+Prerequisite: deploy [`compose/compute/docker-compose.yml`](../../compose/compute/docker-compose.yml) (at least `wifi_firmware` and `wifi_ap_radio`) and reboot once, or the AX210 has no driver bound and `wlP1p1s0` doesn't exist, and the 5 GHz AP profile starts with an invalid centre frequency.
 
 **Two directories are in play, on different filesystems.** `/mnt/boot/system-connections/` (vfat, the boot partition) is the source of truth: `balena-net-config` runs on every boot and does
 
@@ -272,13 +272,13 @@ The Nerves bridges get this from `nerves_time`, which also floors the clock at t
 
 ## Two update paths
 
-- Nerves firmwares: `./ovcs upload <vehicle> <role>` (see [Running on hardware](./running_hardware.md)).
+- Nerves firmwares: `./ovcs upload <vehicle> <role>` (see [Running on hardware](../running_hardware.md)).
 - The compute node: `./ovcs compute push <vehicle> <fleet-or-device>`, or an OTA from the fleet.
 
 The gamepad (`joy`) stays on the base station, in `compose/local/base.yml`: the round trip pad → ROS → Zenoh → `RosBridge.Consumers.Joy` → CAN is the price of keeping the controller with the operator.
 
 ## Next steps
 
-- [Perception: object detection](./ros2_perception.md): what the ROS bridge's perception components publish on the fabric this node routes.
-- [Running on hardware](./running_hardware.md): building and uploading the Nerves firmwares that join it.
-- [Troubleshooting](./troubleshooting.md): symptoms and fixes across the stack.
+- [Perception: object detection](../bridges/perception.md): what the ROS bridge's perception components publish on the fabric this node routes.
+- [Running on hardware](../running_hardware.md): building and uploading the Nerves firmwares that join it.
+- [Troubleshooting](../troubleshooting.md): symptoms and fixes across the stack.

@@ -24,7 +24,7 @@ These are the reference vehicles' choices, except `vision`: none of them runs it
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
-The generic controller firmware is a [PlatformIO](https://platformio.org/) project. It doesn't use the R4's built-in CAN peripheral, so any Arduino-compatible board with EEPROM and an external CAN transceiver works. Flashing and adoption are in [Generic controllers](./generic_controllers.md).
+The generic controller firmware is a [PlatformIO](https://platformio.org/) project. It doesn't use the R4's built-in CAN peripheral, so any Arduino-compatible board with EEPROM and an external CAN transceiver works. Flashing and adoption are in [Generic controllers](./generic_controllers/README.md).
 
 ## The `ovcs` CLI
 
@@ -35,7 +35,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 ```
 
 - `<vehicle>` is the snake_case directory name of a vehicle under `vehicles/`.
-- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision/overview.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision/README.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments are order-independent. A missing one opens an interactive picker; on a non-tty stdin the command exits with status 2.
 
 ## Build
@@ -155,7 +155,7 @@ Host 10.42.0.*
     StrictHostKeyChecking accept-new
 ```
 
-[Reaching the vehicle network](./ros2_compute_node.md#reaching-the-vehicle-network-from-the-site-wi-fi) explains that layout. Arduino controllers have no SSH or IEx and are skipped.
+[Reaching the vehicle network](./ros2/compute_node.md#reaching-the-vehicle-network-from-the-site-wi-fi) explains that layout. Arduino controllers have no SSH or IEx and are skipped.
 
 ## CAN interfaces
 
@@ -199,7 +199,7 @@ On a Nerves board, Cantastic sets the CAN interfaces up at boot (`setup_can_inte
 
 ## Next steps
 
-- [Generic controllers](./generic_controllers.md): flash and adopt the Arduino boards on the `ovcs` bus.
+- [Generic controllers](./generic_controllers/README.md): flash and adopt the Arduino boards on the `ovcs` bus.
 - [CLI reference](../cli/README.md): every subcommand, and how the attach TUI decodes frames.
 - [Toolchain and OTP](./toolchain_and_otp.md): why host and target OTP must agree, and what A/B firmware requires.
 - [Troubleshooting](./troubleshooting.md): the failures newcomers hit most.

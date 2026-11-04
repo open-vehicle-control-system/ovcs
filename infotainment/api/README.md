@@ -5,30 +5,8 @@ as [`vms_api`](../../vms/api) — a thin routing layer in front of
 [`infotainment_core`](../core) — but serves the Flutter dashboard
 (`../dashboard`) on the RPi 5 head unit instead of the Vue debug UI.
 
-See [`docs/components.md`](../../docs/components.md) for where this
-layer fits in the overall `core` / `api` / `firmware` / `dashboard` stack.
-
-## Endpoints
-
-### REST
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/api/vehicle` | Vehicle metadata |
-| `GET` | `/api/vehicle/pages` | Page list driving the touchscreen nav |
-| `GET` | `/api/vehicle/pages/:page_id/blocks` | Blocks rendered on a given page |
-| `POST` | `/api/actions` | Dispatch a UI action (gear change, settings toggle, …) |
-
-Layout is supplied by the active vehicle's composer
-(`<Vehicle>.Infotainment.Composer.infotainment_configuration/0`).
-
-### WebSocket
-
-Phoenix socket mounted at `/sockets/dashboard`. Channel:
-
-| Topic | Purpose |
-|-------|---------|
-| `metrics` | Streams metric updates for `{module, key}` pairs the client subscribes to |
+The guide, [Infotainment](../../docs/infotainment/README.md), lists the endpoints and
+places this app among the infotainment layers; this README keeps the developer details.
 
 ## Running locally
 

@@ -29,6 +29,17 @@ The first run takes a while. It fetches and builds every dependency of both firm
 
 Output is prefixed per role (`[vms] …`, `[bridge-ros] …`). The VMS API is on `http://localhost:4000`. `Ctrl+C` stops everything. The BEAMs find each other with no broker, the same way they do on a deployed vehicle: see [One Erlang mesh, no broker](./architecture.md#one-erlang-mesh-no-broker).
 
+On another vehicle, `./ovcs run` starts the roles that vehicle declares, each on its own port:
+
+| Role | BEAM | Serves |
+|---|---|---|
+| VMS | `<vehicle>-vms` | API on `http://localhost:4000`, dashboard on `http://localhost:5173` |
+| Infotainment, if the vehicle implements `infotainment/0` | `<vehicle>-infotainment` | API on `http://localhost:4001` |
+| Vision unit, if the vehicle implements `vision/0` | `<vehicle>-vision` | API on `http://localhost:4100`, dashboard on `http://localhost:5174` |
+| Each entry of `bridge_firmwares/0` | `<vehicle>-bridge-<id>` | whatever its bridges serve |
+
+Node names turn underscores into dashes, in `<vehicle>` and `<id>` alike. The infotainment's Flutter app needs its own terminal, because its hot reload is keyboard-driven: `mise run infotainment-dashboard`.
+
 ## Open the dashboard
 
 `./ovcs run` also starts each firmware's dev add-ons. For the VMS that is the Vue debug dashboard under Vite, with hot reload:
@@ -78,7 +89,7 @@ cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
 - On **Drivetrain**, **Spur Sensor** reads 0, **Motor Rotation** names `PulseRotationSensor` as its active source, and **Vehicle Motion** shows a speed of 0 km/h.
 - The **Speed & RPM** chart on **Dashboard** starts plotting.
 
-A known speed is also what lets the VMS change control level: every mode change needs a proven standstill. [Driving on the host bench](./vehicle_package.md#driving-on-the-host-bench) continues from here with the radio switch frames.
+A known speed is also what lets the VMS change control level: every mode change needs a proven standstill. [Driving on the host bench](./vms/how_it_works.md#driving-on-the-host-bench) continues from here with the radio switch frames.
 
 ### The motor controller
 
@@ -93,17 +104,23 @@ cangen vcan1 -e -I 901 -L 8 -D 000007D000000000 -g 20
 - **Motor Rotation** switches its active source to `Vesc`, the higher-priority sensor. **Vehicle Motion** turns that rotation into the wheel's through the Mini's gearing and wheel radius: about 85 wheel rpm, about 1.75 km/h.
 - After 1.5 s, **Cross-check Fault** turns true. The spur sensor still reports zero while the VESC reports 1000 rpm on the same shaft, and the VMS flags the disagreement.
 
-Stop the VESC stream with `Ctrl+C`. Its metrics go empty, **Motor Rotation** falls back to the spur sensor, and the fault clears. [VESC drivetrain](./vesc_drivetrain.md) explains the motor controller and its frames.
+Stop the VESC stream with `Ctrl+C`. Its metrics go empty, **Motor Rotation** falls back to the spur sensor, and the fault clears. [VESC](./vms/drivers.md#vesc) explains the motor controller and its frames.
 
 For your vehicle, pick frames its VMS **receives**, as declared in its `priv/can/vms.yml`, and follow the same pattern. [Testing with CAN](./testing_with_can.md) covers single frames, `candump` and replaying recorded traffic.
 
 ## Override the CAN mapping
 
-`CAN_NETWORK_MAPPINGS` in `./ovcs run`'s environment moves networks to other interfaces, such as a real adapter, for the VMS and the infotainment BEAM; bridges keep the host mapping from `bridge_firmwares/0`. See [Custom CAN mappings](./components.md#custom-can-mappings).
+`CAN_NETWORK_MAPPINGS` in `./ovcs run`'s environment moves networks to other interfaces, such as a real adapter, for the VMS and the infotainment BEAM; bridges keep the host mapping from `bridge_firmwares/0`. With the OVCS1 reference vehicle, putting `ovcs` on an adapter and the four manufacturer buses on virtual interfaces:
+
+```sh
+CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 ./ovcs run ovcs1
+```
+
+A mapping that names a network the side's YAML doesn't declare is refused at boot. [CAN interfaces](./running_hardware.md#can-interfaces) has the rules, and [A laptop on a real bus](./hardware.md#a-laptop-on-a-real-bus) brings an adapter up.
 
 ## Next steps
 
 - [Your first vehicle](./first_vehicle.md): scaffold your own vehicle with `./ovcs new` and make it do something.
 - [Architecture](./architecture.md): bus isolation, the vehicle contract, the Erlang mesh.
-- [Generic controllers](./generic_controllers.md): flash an Arduino and adopt it.
+- [Generic controllers](./generic_controllers/README.md): flash an Arduino and adopt it.
 - [Running on hardware](./running_hardware.md): build, burn and upload Nerves firmware.

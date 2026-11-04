@@ -3,7 +3,7 @@ title: Vision API
 description: How a program reads and changes the vision unit's parameters, follows its status, previews and detections, and finds what the unit exports, over HTTP and Phoenix channels.
 ---
 
-The vision unit serves its API next to the dashboard, on port 4100 (see [Vision unit](./overview.md#dashboard-and-api)):
+The vision unit serves its API next to the dashboard, on port 4100 (see [Vision unit](./README.md#dashboard-and-api)):
 
 ```text
 http://<vehicle>-vision.local:4100
@@ -149,7 +149,7 @@ A reset of the Disparity stage:
 }
 ```
 
-The same parameters are reachable over ROS 2 under the same ids ([Vision unit](./overview.md#dashboard-and-api)).
+The same parameters are reachable over ROS 2 under the same ids ([Vision unit](./README.md#dashboard-and-api)).
 
 ## The unit and its exports
 
@@ -302,7 +302,7 @@ status.join()
 }
 ```
 
-What each figure measures, and the values to aim for, is in [Vision unit](./overview.md#dashboard-and-api) and [Vision performance](./performance.md).
+What each figure measures, and the values to aim for, is in [Vision unit](./README.md#dashboard-and-api) and [Vision performance](./performance.md).
 
 ### Previews
 
