@@ -54,7 +54,7 @@ const SET_INTERVAL_MS = 150;
 function toDescriptor(raw: RawDescriptor): Descriptor {
   const float = raw.floating_point_range[0];
   const integer = raw.integer_range[0];
-  // RosBridge.Parameters gives "default: <value>; one of: <a>, <b>".
+  // VisionCore.Ros2.Parameters gives "default: <value>; one of: <a>, <b>".
   const parts = raw.additional_constraints.split("; ");
   const oneOf = parts.find((part) => part.startsWith("one of: "))?.slice("one of: ".length);
   const initial = parts.find((part) => part.startsWith("default: "))?.slice("default: ".length);

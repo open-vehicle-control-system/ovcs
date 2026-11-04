@@ -3,10 +3,7 @@ defmodule RosBridge.ZenohClient.State do
   `RosBridge.ZenohClient`'s state.
 
     * `node_token`: the node's own liveliness token, per session.
-      Without it rmw_zenoh infers the node from its entities, and the
-      inferred node of a closed session hides this one's services from
-      graph queries by node, such as foxglove_bridge's parameter
-      discovery.
+      Without it rmw_zenoh infers the node from its entities.
     * `publishers`: `%{topic => %{message_module, key_expr, gid,
       publisher_id, liveliness_token, sequence_number}}`. `gid` and
       `sequence_number` survive reconnects so subscribers see one
@@ -15,10 +12,6 @@ defmodule RosBridge.ZenohClient.State do
     * `subscriptions`: `%{key_expr => %{topic, message_module,
       subscribers: %{pid => monitor_ref}, subscriber_id,
       liveliness_token, eid}}`.
-    * `services`: `%{service_name => %{service_module, handler,
-      key_expr, liveliness_key, queryable_id, liveliness_token}}`. The
-      handler pid turns requests into responses; `queryable_id` and
-      `liveliness_token` are per session.
     * `monitors`: `%{monitor_ref => {key_expr, pid}}`, for `:DOWN`.
     * `drops_while_offline`: publishes dropped while no session is
       open, logged once on connect, then reset.
@@ -32,7 +25,6 @@ defmodule RosBridge.ZenohClient.State do
     :node_token,
     publishers: %{},
     subscriptions: %{},
-    services: %{},
     monitors: %{},
     drops_while_offline: 0
   ]
@@ -154,37 +146,8 @@ defmodule RosBridge.ZenohClient do
     GenServer.call(__MODULE__, {:unsubscribe, topic, pid})
   end
 
-  @doc """
-  Register a ROS 2 **service server** on `service_name` (e.g.
-  `"/<node_name>/list_parameters"`). The service module must
-  expose `dds_type/0`, `type_hash/0`, and a `Request.parse/1`
-  callable from the handler.
-
-  Incoming queries are forwarded to `handler_pid` as
-  `{:service_request, %{service_name, query, request_payload}}`,
-  where `query` is the raw `%Zenohex.Query{}` (so the handler can
-  pass it to `respond/3` once it has built the response).
-
-  Safe to call before the session is open; the queryable is
-  declared on the next successful connect and re-declared after any
-  reconnect.
-  """
-  def register_service(service_name, service_module, handler_pid \\ self()) do
-    GenServer.call(__MODULE__, {:register_service, service_name, service_module, handler_pid})
-  end
-
   @doc "The ROS node name this client declares its entities under."
   def node_name, do: GenServer.call(__MODULE__, :node_name)
-
-  @doc """
-  Reply to an in-flight service query with an already-encoded
-  response payload (CDR-LE encapsulated). `service_name` is the
-  same string passed to `register_service/3`; it's used to look up
-  the data keyexpr the reply should be tagged with.
-  """
-  def respond(service_name, %Zenohex.Query{} = query, response_payload) do
-    GenServer.cast(__MODULE__, {:respond, service_name, query, response_payload})
-  end
 
   @impl GenServer
   def init(opts) do
@@ -260,66 +223,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  def handle_call({:register_service, service_name, service_module, handler_pid}, _from, state) do
-    service = build_service_record(state, service_name, service_module, handler_pid)
-    state = put_in(state.services[service_name], service)
-
-    state =
-      if state.session do
-        case declare_service(state, service_name, service) do
-          {:ok, state, _service} -> state
-          {:error, _reason, state} -> state
-        end
-      else
-        state
-      end
-
-    {:reply, :ok, state}
-  end
-
   @impl GenServer
-  def handle_cast({:respond, service_name, query, response_payload}, state) do
-    case Map.get(state.services, service_name) do
-      nil ->
-        Logger.warning("#{__MODULE__} respond on unknown service #{service_name}; dropping")
-        {:noreply, state}
-
-      service ->
-        encapsulated_response = <<0x00, 0x01, 0x00, 0x00>> <> response_payload
-
-        # Echoes the request's sequence number so the client matches the
-        # reply; same layout as `Ros2Zenoh.RmwZenoh.attachment/3`.
-        attachment =
-          case query.attachment do
-            <<sequence_number::little-signed-integer-size(64), _source_timestamp::binary-size(8),
-              16::unsigned-integer-size(8), gid::binary-size(16)>> ->
-              RmwZenoh.attachment(sequence_number, System.system_time(:nanosecond), gid)
-
-            _ ->
-              # No or unparseable request attachment — synthesise one.
-              RmwZenoh.attachment(
-                0,
-                System.system_time(:nanosecond),
-                :crypto.strong_rand_bytes(16)
-              )
-          end
-
-        case Zenohex.Query.reply(query.zenoh_query, service.key_expr, encapsulated_response,
-               attachment: attachment
-             ) do
-          :ok ->
-            {:noreply, state}
-
-          {:error, reason} ->
-            Logger.warning(
-              "#{__MODULE__} reply on #{service.key_expr} failed: #{inspect(reason)}"
-            )
-
-            {:noreply, state}
-        end
-    end
-  end
-
   def handle_cast(
         {:publish, _topic, _message_module, _message, _opts},
         %State{session: nil} = state
@@ -392,7 +296,6 @@ defmodule RosBridge.ZenohClient do
         state = declare_node(state)
         state = redeclare_publishers(state)
         state = redeclare_subscribers(state)
-        state = redeclare_services(state)
         {:noreply, state}
 
       {:error, reason} ->
@@ -407,35 +310,6 @@ defmodule RosBridge.ZenohClient do
 
       :no_match ->
         Logger.debug("#{__MODULE__} sample with no matching subscription: #{key_expr}")
-    end
-
-    {:noreply, state}
-  end
-
-  def handle_info(%Zenohex.Query{key_expr: key_expr} = query, state) do
-    case match_service(state.services, key_expr) do
-      {:ok, service_name, service} ->
-        request_payload =
-          case RmwZenoh.decode_payload(query.payload || <<>>) do
-            {:ok, decoded} -> decoded
-            _ -> query.payload
-          end
-
-        Logger.debug(
-          "#{__MODULE__} query on #{service_name} " <>
-            "(payload #{byte_size(query.payload || <<>>)}B, " <>
-            "attachment #{byte_size(query.attachment || <<>>)}B)"
-        )
-
-        send(
-          service.handler,
-          {:service_request,
-           %{service_name: service_name, query: query, request_payload: request_payload}}
-        )
-
-      :no_match ->
-        Logger.debug("#{__MODULE__} query with no matching service: #{key_expr}")
-        Zenohex.Query.reply_error(query.zenoh_query, "no handler")
     end
 
     {:noreply, state}
@@ -626,82 +500,6 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  defp build_service_record(state, service_name, service_module, handler_pid) do
-    key_expr = RmwZenoh.service_key_expr(state.domain_id, service_name, service_module)
-
-    %{
-      service_module: service_module,
-      handler: handler_pid,
-      key_expr: key_expr,
-      liveliness_key: nil,
-      queryable_id: nil,
-      liveliness_token: nil
-    }
-  end
-
-  defp declare_service(state, service_name, service) do
-    with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(state.session),
-         {:ok, queryable_id} <-
-           Zenohex.Session.declare_queryable(
-             state.session,
-             service.key_expr,
-             self(),
-             complete: true
-           ),
-         liveliness_key <-
-           RmwZenoh.service_liveliness_key(
-             state.domain_id,
-             zid,
-             state.node_name,
-             service_name,
-             service.service_module
-           ),
-         {:ok, liveliness_token} <-
-           Zenohex.Liveliness.declare_token(state.session, liveliness_key) do
-      Logger.info(
-        "#{__MODULE__} service #{inspect(service.service_module)} on #{service.key_expr} " <>
-          "(liveliness #{liveliness_key})"
-      )
-
-      service = %{
-        service
-        | queryable_id: queryable_id,
-          liveliness_token: liveliness_token,
-          liveliness_key: liveliness_key
-      }
-
-      state = put_in(state.services[service_name], service)
-      {:ok, state, service}
-    else
-      {:error, reason} ->
-        Logger.warning("#{__MODULE__} declare service #{service_name} failed: #{inspect(reason)}")
-
-        {:error, reason, state}
-    end
-  end
-
-  defp redeclare_services(%State{session: nil} = state), do: state
-
-  defp redeclare_services(%State{} = state) do
-    Enum.reduce(state.services, state, fn {service_name, service}, updated_state ->
-      service = %{service | queryable_id: nil, liveliness_token: nil}
-
-      case declare_service(updated_state, service_name, service) do
-        {:ok, updated_state, _} -> updated_state
-        {:error, _reason, updated_state} -> updated_state
-      end
-    end)
-  end
-
-  # A service key_expr is concrete, so queries match it exactly.
-  defp match_service(services, query_key) do
-    Enum.find_value(services, :no_match, fn {service_name, service} ->
-      if service.key_expr == query_key do
-        {:ok, service_name, service}
-      end
-    end)
-  end
-
   defp ensure_publisher(state, topic, message_module) do
     case Map.get(state.publishers, topic) do
       nil ->
@@ -818,13 +616,6 @@ defmodule RosBridge.ZenohClient do
         do: Zenohex.Subscriber.undeclare(subscription.subscriber_id)
     end)
 
-    Enum.each(state.services, fn {_name, service} ->
-      if service.liveliness_token,
-        do: Zenohex.Liveliness.undeclare_token(service.liveliness_token)
-
-      if service.queryable_id, do: Zenohex.Queryable.undeclare(service.queryable_id)
-    end)
-
     if state.session, do: Zenohex.Session.close(state.session)
     :ok
   end
@@ -841,7 +632,7 @@ defmodule RosBridge.ZenohClient do
     end
   end
 
-  # Keeps gids, sequence numbers, subscribers and service handlers.
+  # Keeps gids, sequence numbers and subscribers.
   defp clear_session_handles(%State{} = state) do
     publishers =
       Map.new(state.publishers, fn {topic, publisher} ->
@@ -853,18 +644,12 @@ defmodule RosBridge.ZenohClient do
         {key_expr, %{subscription | subscriber_id: nil}}
       end)
 
-    services =
-      Map.new(state.services, fn {service_name, service} ->
-        {service_name, %{service | queryable_id: nil, liveliness_token: nil}}
-      end)
-
     %{
       state
       | session: nil,
         node_token: nil,
         publishers: publishers,
-        subscriptions: subscriptions,
-        services: services
+        subscriptions: subscriptions
     }
   end
 end
