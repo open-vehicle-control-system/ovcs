@@ -2,7 +2,7 @@ defmodule VisionApiWeb.Ros2NodeController do
   @moduledoc """
   The unit's ROS 2 node, a `ros2-nodes` singleton identified by its node
   name: its Zenoh endpoint and whether the session is open
-  (`VisionCore.Ros2.ZenohClient.link/0`), with its `topics`, every
+  (`VisionCore.Ros2.Node.link/0`), with its `topics`, every
   `ros2-topics` it has published with its type and rate
   (`VisionCore.Ros2.Topics`), and its `services`, the `ros2-services` it
   answers. `include=topics,services`, or either alone, puts them in
@@ -12,14 +12,14 @@ defmodule VisionApiWeb.Ros2NodeController do
   use VisionApiWeb, :controller
 
   alias VisionApiWeb.JsonApi
-  alias VisionCore.Ros2.{Topics, ZenohClient}
+  alias VisionCore.Ros2.{Node, Topics}
 
   @relationships ["topics", "services"]
 
   def show(conn, params) do
     with true <- ros2_link?(),
          {:ok, includes} <- includes(params) do
-      render(conn, :show, link: ZenohClient.link(), topics: Topics.topics(), includes: includes)
+      render(conn, :show, link: Node.link(), topics: Topics.topics(), includes: includes)
     else
       false ->
         JsonApi.error(conn, 404, "Not Found", "the unit has no ROS 2 link: no ros2: section")

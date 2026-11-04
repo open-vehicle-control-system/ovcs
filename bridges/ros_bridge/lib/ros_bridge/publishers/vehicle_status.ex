@@ -56,7 +56,7 @@ defmodule RosBridge.Publishers.VehicleStatus do
     name
     |> messages(signals)
     |> Enum.each(fn {topic, message_module, message} ->
-      RosBridge.ZenohClient.publish("#{state.topic_prefix}/#{topic}", message_module, message)
+      Ros2Zenoh.Client.publish("#{state.topic_prefix}/#{topic}", message_module, message)
     end)
 
     {:noreply, state}

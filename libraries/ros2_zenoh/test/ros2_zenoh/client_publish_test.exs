@@ -1,8 +1,8 @@
-defmodule VisionCore.Ros2.ZenohClientPublishTest do
+defmodule Ros2Zenoh.ClientPublishTest do
   @moduledoc """
   A message is encoded by the process that publishes it, never by the shared
-  client: a raise in the client restarts the cameras behind it (the unit's
-  supervisor is `:rest_for_one`), where a raise in the publisher costs one message.
+  client: a raise in the client restarts every consumer behind it (applications
+  supervise it `:rest_for_one`), where a raise in the publisher costs one message.
   While the client has no session nothing is encoded at all.
 
   The put is exercised on a local Zenoh session, which needs no router: the
@@ -14,22 +14,23 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
   import ExUnit.CaptureLog
 
+  alias Ros2Zenoh.Client
+  alias Ros2Zenoh.Client.State
   alias Ros2Zenoh.RmwZenoh
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
-  alias VisionCore.Ros2.{Topics, ZenohClient}
-  alias VisionCore.Ros2.ZenohClient.State
 
   @moduletag :capture_log
 
   @topic "ovcs_heartbeat"
+  @node_name "ros2_zenoh_test"
 
   # Stands in for the client process: hands every publish request to the test.
-  defmodule Client do
+  defmodule FakeClient do
     use GenServer
 
     def start_link(test),
-      do: GenServer.start_link(__MODULE__, test, name: VisionCore.Ros2.ZenohClient)
+      do: GenServer.start_link(__MODULE__, test, name: Ros2Zenoh.Client)
 
     @impl GenServer
     def init(test), do: {:ok, test}
@@ -58,18 +59,9 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
   defp occurrences(log, text), do: length(String.split(log, text)) - 1
 
-  setup do
-    %{topics: start_supervised!(Topics)}
-  end
-
   defp start_fake_client(_context) do
-    start_supervised!({Client, self()})
+    start_supervised!({FakeClient, self()})
     :ok
-  end
-
-  defp tick(topics) do
-    send(topics, :tick)
-    :sys.get_state(topics)
   end
 
   # A Zenoh session with a subscriber on it, which needs no router.
@@ -94,7 +86,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     session
   end
 
-  defp connected?, do: ZenohClient.link().connected
+  defp connected?, do: Client.link().connected
 
   # The client opens its session in a task of its own.
   defp await_connected(attempts \\ 150) do
@@ -141,40 +133,20 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
     test "is refused with an error, and never reaches the client" do
       assert {:error, {:encode_raised, reason}} =
-               ZenohClient.publish(@topic, StringMessage, unencodable())
+               Client.publish(@topic, StringMessage, unencodable())
 
       assert reason =~ "encode_string"
 
       assert {:error, {:encode_raised, _reason}} =
-               ZenohClient.publish(@topic, StringMessage, %{data: "not a struct"})
+               Client.publish(@topic, StringMessage, %{data: "not a struct"})
 
       refute_receive {:publish, _topic, _module, _payload, _opts}
-    end
-
-    test "is counted under its topic, apart from the publishes", %{topics: topics} do
-      for _ <- 1..2, do: ZenohClient.publish(@topic, StringMessage, unencodable())
-      tick(topics)
-
-      assert [
-               %{
-                 name: "/ovcs_heartbeat",
-                 type: "std_msgs/msg/String",
-                 rate_hz: +0.0,
-                 encode_failures: 2
-               }
-             ] = Topics.topics()
-
-      :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "alive"})
-      tick(topics)
-
-      assert [%{rate_hz: rate_hz, encode_failures: 2}] = Topics.topics()
-      assert rate_hz > 0
     end
 
     test "is logged once per topic and message type" do
       log =
         capture_log(fn ->
-          for _ <- 1..3, do: ZenohClient.publish(@topic, StringMessage, unencodable())
+          for _ <- 1..3, do: Client.publish(@topic, StringMessage, unencodable())
         end)
 
       assert occurrences(log, "cannot encode") == 1
@@ -182,18 +154,18 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       assert log =~ @topic
 
       other_topic =
-        capture_log(fn -> ZenohClient.publish("other", StringMessage, unencodable()) end)
+        capture_log(fn -> Client.publish("other", StringMessage, unencodable()) end)
 
       assert occurrences(other_topic, "cannot encode") == 1
       assert other_topic =~ "other"
 
       other_type =
-        capture_log(fn -> ZenohClient.publish(@topic, Float64, %Float64{data: nil}) end)
+        capture_log(fn -> Client.publish(@topic, Float64, %Float64{data: nil}) end)
 
       assert occurrences(other_type, "cannot encode") == 1
       assert other_type =~ "Ros2Zenoh.StdMsgs.Msg.Float64"
 
-      repeated = capture_log(fn -> ZenohClient.publish(@topic, StringMessage, unencodable()) end)
+      repeated = capture_log(fn -> Client.publish(@topic, StringMessage, unencodable()) end)
       assert occurrences(repeated, "cannot encode") == 0
     end
   end
@@ -204,18 +176,10 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     test "reaches the client with the payload its publisher encoded" do
       message = %StringMessage{data: "alive"}
 
-      assert :ok = ZenohClient.publish(@topic, StringMessage, message)
+      assert :ok = Client.publish(@topic, StringMessage, message)
 
       assert_receive {:publish, @topic, StringMessage, payload, []}
       assert payload == RmwZenoh.encode_payload(message)
-    end
-
-    test "is counted as a publish", %{topics: topics} do
-      :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "alive"})
-      tick(topics)
-
-      assert [%{name: "/ovcs_heartbeat", rate_hz: rate_hz, encode_failures: 0}] = Topics.topics()
-      assert rate_hz > 0
     end
   end
 
@@ -223,12 +187,12 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     setup :start_fake_client
 
     setup do
-      %{state: %State{session: local_session(), domain_id: 0, node_name: "vision_test"}}
+      %{state: %State{session: local_session(), domain_id: 0, node_name: @node_name}}
     end
 
     defp hand_over_next_request(state) do
       assert_receive {:publish, _topic, _module, _payload, _opts} = request
-      assert {:noreply, state} = ZenohClient.handle_cast(request, state)
+      assert {:noreply, state} = Client.handle_cast(request, state)
       state
     end
 
@@ -238,7 +202,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       caller_pid =
         Task.await(
           Task.async(fn ->
-            :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
+            :ok = Client.publish(@topic, Probe, %Probe{test: test})
             self()
           end)
         )
@@ -256,7 +220,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       state =
         Enum.reduce(1..3, state, fn _put, state ->
-          :ok = ZenohClient.publish(@topic, StringMessage, message)
+          :ok = Client.publish(@topic, StringMessage, message)
           hand_over_next_request(state)
         end)
 
@@ -268,9 +232,9 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     test "does not skip a number for a message that could not be encoded", %{state: state} do
       valid = %StringMessage{data: "alive"}
 
-      :ok = ZenohClient.publish(@topic, StringMessage, valid)
-      {:error, _reason} = ZenohClient.publish(@topic, StringMessage, unencodable())
-      :ok = ZenohClient.publish(@topic, StringMessage, valid)
+      :ok = Client.publish(@topic, StringMessage, valid)
+      {:error, _reason} = Client.publish(@topic, StringMessage, unencodable())
+      :ok = Client.publish(@topic, StringMessage, valid)
 
       state = state |> hand_over_next_request() |> hand_over_next_request()
       refute_receive {:publish, _topic, _module, _payload, _opts}
@@ -284,7 +248,7 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
       request = {:publish, @topic, StringMessage, nil, []}
 
       assert {:noreply, %State{drops_while_offline: 1, publishers: publishers}} =
-               ZenohClient.handle_cast(request, state)
+               Client.handle_cast(request, state)
 
       assert publishers == %{}
       refute_receive %Zenohex.Sample{}
@@ -295,31 +259,29 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
     setup :start_fake_client
 
     test "drops a publish and counts the drop" do
-      :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "alive"})
+      :ok = Client.publish(@topic, StringMessage, %StringMessage{data: "alive"})
       assert_receive {:publish, _topic, _module, _payload, _opts} = request
 
       assert {:noreply, %State{drops_while_offline: 1, publishers: publishers}} =
-               ZenohClient.handle_cast(request, %State{})
+               Client.handle_cast(request, %State{})
 
       assert publishers == %{}
     end
   end
 
   describe "a running client" do
-    test "drops a publish and counts it without encoding while it has no session",
-         %{topics: topics} do
-      start_supervised!({ZenohClient, endpoint_ip: "127.0.0.1", open_session: opener([])})
+    test "drops a publish and counts it without encoding while it has no session" do
+      start_supervised!(
+        {Client, endpoint_ip: "127.0.0.1", node_name: @node_name, open_session: opener([])}
+      )
+
       refute connected?()
 
-      assert :ok = ZenohClient.publish(@topic, Probe, %Probe{test: self()})
-      assert :ok = ZenohClient.publish(@topic, StringMessage, unencodable())
+      assert :ok = Client.publish(@topic, Probe, %Probe{test: self()})
+      assert :ok = Client.publish(@topic, StringMessage, unencodable())
 
       refute_receive {:encoded_in, _process}
-      assert %State{drops_while_offline: 2} = :sys.get_state(ZenohClient)
-
-      tick(topics)
-      assert [%{name: "/ovcs_heartbeat", rate_hz: rate_hz, encode_failures: 0}] = Topics.topics()
-      assert rate_hz > 0
+      assert %State{drops_while_offline: 2} = :sys.get_state(Client)
     end
 
     test "encodes once its session opens, and no more once the session is lost" do
@@ -328,33 +290,33 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       client =
         start_supervised!(
-          {ZenohClient,
+          {Client,
            endpoint_ip: "127.0.0.1",
-           node_name: "vision_test",
+           node_name: @node_name,
            open_session: opener([{:error, :unreachable}, {:ok, session}])}
         )
 
       refute connected?()
-      :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
+      :ok = Client.publish(@topic, Probe, %Probe{test: test})
       refute_receive {:encoded_in, _process}
 
       # What the reconnect timer sends.
       send(client, {:connect, 1_000})
       await_connected()
 
-      :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
+      :ok = Client.publish(@topic, Probe, %Probe{test: test})
       assert_receive {:encoded_in, ^test}
       assert {1, _gid, <<0, 1, 0, 0, "body">>} = received_put()
 
       # The client learns of the loss from a put, which it cannot make; that message is lost.
       Zenohex.Session.close(session)
-      :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
+      :ok = Client.publish(@topic, Probe, %Probe{test: test})
       assert_receive {:encoded_in, ^test}
       refute connected?()
 
-      :ok = ZenohClient.publish(@topic, Probe, %Probe{test: test})
+      :ok = Client.publish(@topic, Probe, %Probe{test: test})
       refute_receive {:encoded_in, _process}
-      assert %State{drops_while_offline: 1} = :sys.get_state(ZenohClient)
+      assert %State{drops_while_offline: 1} = :sys.get_state(Client)
     end
 
     test "puts only the newest of the publishes of a topic waiting for it" do
@@ -362,15 +324,17 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       client =
         start_supervised!(
-          {ZenohClient,
-           endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
+          {Client,
+           endpoint_ip: "127.0.0.1",
+           node_name: @node_name,
+           open_session: fn _endpoint -> {:ok, session} end}
         )
 
       await_connected()
       :ok = :sys.suspend(client)
 
       for data <- ["first", "second", "third"],
-          do: :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: data})
+          do: :ok = Client.publish(@topic, StringMessage, %StringMessage{data: data})
 
       :ok = :sys.resume(client)
 
@@ -384,17 +348,19 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       client =
         start_supervised!(
-          {ZenohClient,
-           endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
+          {Client,
+           endpoint_ip: "127.0.0.1",
+           node_name: @node_name,
+           open_session: fn _endpoint -> {:ok, session} end}
         )
 
       await_connected()
       :ok = :sys.suspend(client)
 
-      :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: "kept"}, keep: true)
+      :ok = Client.publish(@topic, StringMessage, %StringMessage{data: "kept"}, keep: true)
 
       for data <- ["second", "third"],
-          do: :ok = ZenohClient.publish(@topic, StringMessage, %StringMessage{data: data})
+          do: :ok = Client.publish(@topic, StringMessage, %StringMessage{data: data})
 
       :ok = :sys.resume(client)
 

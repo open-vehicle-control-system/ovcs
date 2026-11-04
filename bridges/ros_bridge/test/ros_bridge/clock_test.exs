@@ -2,7 +2,7 @@ defmodule RosBridge.ClockTest.AcquiringSubscriber do
   @moduledoc """
   `subscribe/2` runs inside `Clock.init/1`, where `self()` is the Clock
   process, so the sample is in its mailbox before the selective receive
-  runs. That tests the real lifecycle without a live ZenohClient.
+  runs. That tests the real lifecycle without a live Ros2Zenoh.Client.
   """
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.RosgraphMsgs.Msg.Clock, as: ClockMessage

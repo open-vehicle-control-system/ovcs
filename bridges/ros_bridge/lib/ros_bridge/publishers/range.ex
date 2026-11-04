@@ -46,7 +46,7 @@ defmodule RosBridge.Publishers.Range do
 
   @impl GenServer
   def handle_cast({:range_sample, %Sample{} = sample}, state) do
-    RosBridge.ZenohClient.publish(state.topic, Range, range(sample, state))
+    Ros2Zenoh.Client.publish(state.topic, Range, range(sample, state))
 
     {:noreply, state}
   end

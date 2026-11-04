@@ -1,7 +1,7 @@
 defmodule VisionCore.Ros2.Exporter do
   @moduledoc """
   Publishes the vision unit on ROS 2, through
-  `VisionCore.Ros2.ZenohClient`: a `VisionCore.Exporter`, which
+  `Ros2Zenoh.Client`: a `VisionCore.Exporter`, which
   `VisionCore.Exporters` runs under a supervisor and restart budget of
   its own, and lists as `ros2`, "ROS 2".
 
@@ -57,9 +57,9 @@ defmodule VisionCore.Ros2.Exporter do
       the time between two heartbeats.
     * `:node_name` (the node name of the configuration's `ros2:`) —
       the node the heartbeat names.
-    * `:publish` (`&VisionCore.Ros2.ZenohClient.publish/4`) — sends one
+    * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
       message: called with its topic, its module, the message and `[]`.
-    * `:register_service` (`&VisionCore.Ros2.ZenohClient.register_service/3`)
+    * `:register_service` (`&Ros2Zenoh.Client.register_service/3`)
       — registers each side's `set_camera_info` service.
     * `:jpeg_codec` (`VisionCore.Jpeg`) and `:config` (the active
       `VisionCore.Config`) — the `VisionCore.Jpeg` instance the raw and
@@ -74,7 +74,7 @@ defmodule VisionCore.Ros2.Exporter do
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.Exporter.{Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Services.SetCameraInfoServer
-  alias VisionCore.Ros2.ZenohClient
+  alias VisionCore.Ros2.{Node, Topics}
   alias VisionCore.Stereo.{Pair, StageTimer}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
@@ -137,7 +137,8 @@ defmodule VisionCore.Ros2.Exporter do
   end
 
   defp set_camera_info_children(cameras, topic_prefix, options) do
-    register_service = Keyword.get(options, :register_service, &ZenohClient.register_service/3)
+    register_service =
+      Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
     for {side, path} <- writable_calibration_paths(cameras) do
       Supervisor.child_spec(
@@ -205,13 +206,13 @@ defmodule VisionCore.Ros2.Exporter do
       %VisionCore.Config{}
   end
 
-  defp publish_function(options), do: Keyword.get(options, :publish, &ZenohClient.publish/4)
+  defp publish_function(options), do: Keyword.get(options, :publish, &Topics.publish/4)
 
   defp start_heartbeat(options, config) do
     interval_ms = Keyword.get(options[:heartbeat], :interval_ms, @default_heartbeat_interval_ms)
 
     node_name =
-      Keyword.get_lazy(options, :node_name, fn -> ZenohClient.configured_node_name(config) end)
+      Keyword.get_lazy(options, :node_name, fn -> Node.configured_node_name(config) end)
 
     Logger.info("#{__MODULE__} ticking a heartbeat on #{@heartbeat_topic} every #{interval_ms}ms")
     %{interval_ms: interval_ms, node_name: node_name, counter: 0}
@@ -268,7 +269,7 @@ defmodule VisionCore.Ros2.Exporter do
 
   @impl VisionCore.Exporter
   def status(_state) do
-    if ZenohClient.session_open?(), do: {:ok, "Connected"}, else: {:warning, "Disconnected"}
+    if Ros2Zenoh.Client.session_open?(), do: {:ok, "Connected"}, else: {:warning, "Disconnected"}
   end
 
   @impl VisionCore.Exporter

@@ -6,11 +6,11 @@ end
 defmodule RosBridge.Publishers.Heartbeat do
   @moduledoc """
   Periodic ROS 2 publisher that ticks a caller-supplied message
-  builder into `RosBridge.ZenohClient.publish/4`. Used by the bridge
+  builder into `Ros2Zenoh.Client.publish/4`. Used by the bridge
   to advertise its presence (`std_msgs/String` on `ovcs_heartbeat`)
   so consumers can see that the BEAM is alive even when no other
   topic is flowing. The builder gets the tick's counter and the
-  bridge's node name, read from `RosBridge.ZenohClient` once at start,
+  bridge's node name, read from `Ros2Zenoh.Client` once at start,
   so bridges sharing the topic tell themselves apart.
 
   Configured at start time:
@@ -40,7 +40,7 @@ defmodule RosBridge.Publishers.Heartbeat do
       message_module: Keyword.fetch!(opts, :message_module),
       interval_ms: Keyword.fetch!(opts, :interval_ms),
       build: Keyword.fetch!(opts, :build),
-      node_name: RosBridge.ZenohClient.node_name()
+      node_name: Ros2Zenoh.Client.node_name()
     }
 
     Logger.info(
@@ -57,7 +57,7 @@ defmodule RosBridge.Publishers.Heartbeat do
     counter = state.counter + 1
     message = state.build.(counter, state.node_name)
 
-    RosBridge.ZenohClient.publish(state.topic, state.message_module, message)
+    Ros2Zenoh.Client.publish(state.topic, state.message_module, message)
 
     Process.send_after(self(), :tick, state.interval_ms)
     {:noreply, %{state | counter: counter}}

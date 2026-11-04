@@ -1,6 +1,6 @@
-defmodule VisionCore.Ros2.ZenohClient.State do
+defmodule Ros2Zenoh.Client.State do
   @moduledoc """
-  `VisionCore.Ros2.ZenohClient`'s state.
+  `Ros2Zenoh.Client`'s state.
 
     * `node_token`: the node's own liveliness token, per session.
       Without it rmw_zenoh infers the node from its entities, and the
@@ -29,6 +29,14 @@ defmodule VisionCore.Ros2.ZenohClient.State do
     * `connecting`: the session being opened, `%{ref, backoff_ms}`: the
       reference of the task opening it and the delay before the next
       attempt should it fail; `nil` when none is.
+    * `clock_check`: the `{module, function, args}` that answers whether
+      the board's clock is synchronized, or `nil` to publish from the start.
+    * `os_clock`: the `{module, function, args}` that reads the OS clock in
+      milliseconds, which the BEAM's must agree with.
+    * `clock_synchronized`: whether publishing has begun; it never goes
+      back to `false`.
+    * `drops_before_clock_sync`: publishes dropped before then, logged
+      once when it begins.
   """
 
   defstruct [
@@ -39,18 +47,23 @@ defmodule VisionCore.Ros2.ZenohClient.State do
     :session,
     :node_token,
     :connecting,
+    :clock_check,
+    :os_clock,
     publishers: %{},
     subscriptions: %{},
     services: %{},
     monitors: %{},
-    drops_while_offline: 0
+    drops_while_offline: 0,
+    clock_synchronized: true,
+    drops_before_clock_sync: 0
   ]
 end
 
-defmodule VisionCore.Ros2.ZenohClient do
+defmodule Ros2Zenoh.Client do
   @moduledoc """
   Thin wrapper around a single `zenohex` session, shared by every
-  publisher and subscriber in `vision_core`. Handles three concerns:
+  publisher, subscriber and service of a BEAM that talks ROS 2, such as
+  the ROS bridge or the vision unit. Handles three concerns:
 
     * Connecting to the configured Zenoh router with bounded-backoff
       reconnect. The session opens in a task of its own, linked to the
@@ -63,10 +76,10 @@ defmodule VisionCore.Ros2.ZenohClient do
     * Tracking subscribers (`subscribe/4` / `unsubscribe/2`), monitoring
       their pids so a crashing consumer cleans up after itself.
 
-  The ROS 2 messages themselves (heartbeats, images, detections) are
-  built by `VisionCore.Ros2.Exporter`, which publishes them through
-  `publish/4` from its own processes, and so does the CDR encoding of
-  what it publishes.
+  The ROS 2 messages themselves (heartbeats, IMU samples, images) are
+  built by the application's own processes, which publish them through
+  `publish/4` and so also CDR-encode them. One client runs per BEAM,
+  registered under this module's name.
 
   ## Subscriptions
 
@@ -77,7 +90,7 @@ defmodule VisionCore.Ros2.ZenohClient do
   type-hash drift between ROS distributions does not matter: the
   message module's `parse/1` is the only type-aware step. The cost is
   that `/**` also matches copies a publisher addresses to *other*
-  subscribers, so a second consumer of the same topic makes the vision core
+  subscribers, so a second consumer of the same topic makes the client
   handle each sample twice; deduplicate on the header stamp rather
   than narrowing the pattern, since the buffer id is not predictable.
 
@@ -98,27 +111,52 @@ defmodule VisionCore.Ros2.ZenohClient do
   puts fall behind, the client puts each topic's newest message instead
   of queueing the older ones. The encoders are binary constructions
   guarded on the field types, so a `nil` where a number belongs raises.
-  In the client that raise would restart it and, `VisionCore.Supervisor`
-  being `:rest_for_one`, every consumer behind it, cameras included, at
-  the publisher's rate.
+  In the client that raise would restart it and, the applications
+  supervising it `:rest_for_one`, every consumer behind it, at the
+  publisher's rate.
   In the caller it costs one message: `publish/4` returns
-  `{:error, reason}`, logs once per topic and message type, and counts the
-  failure in `VisionCore.Ros2.Topics`.
+  `{:error, reason}` and logs once per topic and message type.
 
-  Nothing is encoded while the client has no session, since the client
-  would only drop it. The client keeps a flag in an ETS table it owns, set
-  when its session opens and cleared when the session is lost, and
-  `publish/4` reads it: without a session the client is handed the publish
-  without a payload and tallies the drop. A publish that raced a change of
-  the flag is dropped the same way. Where no client runs there is no flag,
-  and a publish is encoded.
+  Nothing is encoded while the client would only drop it: with no session,
+  or before the clock is synchronized. The client keeps both flags in an ETS
+  table it owns, and `publish/4` reads them: a publish it would drop is
+  handed over without a payload, and the client tallies the drop. A publish
+  that raced a change of a flag is dropped the same way. Where no client
+  runs there are no flags, and a publish is encoded.
+
+  ## The clock
+
+  Nothing is published before the board's clock is synchronized. A board
+  without a real-time clock boots on a time far in the past until NTP
+  corrects it, and a message stamped then reaches its consumers long before
+  any transform they hold: Nav2's `RangeSensorLayer` blocks on each such
+  reading until its transform tolerance runs out, falls behind the readings
+  that keep coming, and its costmaps stop publishing until Nav2 restarts.
+  Other consumers take the stamps as given.
+
+  `:clock_synchronized?` (default: the `:ros2_zenoh` application's
+  `:clock_synchronized?`) names the check, an `{module, function, args}`
+  answering a boolean; a check that raises or exits counts as
+  unsynchronized. Stamps come from the BEAM's system time, which follows a
+  step of the OS clock only when the runtime next notices it, tens of
+  seconds after NTP made it, so the BEAM's clock must also agree with the
+  OS clock within a second. Neither condition is enough alone: both clocks
+  agree on the stale time at boot. The BEAM follows a step only in
+  `+C multi_time_warp` mode, which both Nerves firmwares set; in any other
+  mode publishing would never begin.
+
+  Until both hold every publish is dropped and tallied, without being
+  encoded, and the check runs again every second; once they have,
+  publishing never stops again. Without a check, as on a host
+  or against a simulator, publishing begins at once. Subscriptions and
+  services are never held back, so commands still reach the vehicle.
 
   ## Parsing
 
   Every message module is entered through one guarded call. The
   parsers are binary pattern matches, and a short or malformed body
   raises (`FunctionClauseError`, `MatchError`, `ArgumentError`) rather
-  than returning a tagged error. `VisionCore.Supervisor` is `:rest_for_one`,
+  than returning a tagged error. The client is supervised `:rest_for_one`,
   so a raise would restart every consumer at the publisher's frequency; a
   malformed frame is data, not a fault.
 
@@ -132,12 +170,11 @@ defmodule VisionCore.Ros2.ZenohClient do
   """
   use GenServer
 
-  alias VisionCore.Ros2.ZenohClient.State
+  alias Ros2Zenoh.Client.State
   alias Ros2Zenoh.RmwZenoh
 
   require Logger
 
-  @default_node_name "ovcs_vision"
   @default_domain_id 0
   @reconnect_initial_ms 1_000
   @reconnect_max_ms 30_000
@@ -148,15 +185,20 @@ defmodule VisionCore.Ros2.ZenohClient do
   @surplus_alignment_slack_bytes 8
   # Logs a topic's first put, then one in this many.
   @debug_log_every_puts 30
-  # The session flag's table, owned by the client: it goes when the client does.
+  # The flags' table, owned by the client: it goes when the client does.
   @session_table __MODULE__
+  @clock_check_interval_ms 1_000
+  @clock_agreement_ms 1_000
 
   @doc """
-  Starts the client. Options: `:endpoint_ip`, the Zenoh router's address
-  (required); `:node_name` and `:domain_id`, what its entities are declared
-  under; `:open_session`, a function from the router's address to
-  `{:ok, session}` or `{:error, reason}`, a client-mode session to the router
-  by default.
+  Starts the client. Options: `:endpoint_ip`, the Zenoh router's address,
+  and `:node_name`, the ROS node its entities are declared under (both
+  required); `:domain_id`, the ROS domain, 0 by default; `:open_session`, a
+  function from the router's address to `{:ok, session}` or
+  `{:error, reason}`, a client-mode session to the router by default;
+  `:clock_synchronized?`, the clock check described in the moduledoc;
+  `:os_clock`, the OS clock it compares the BEAM's with,
+  `{:os, :system_time, [:millisecond]}` by default.
   """
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -170,16 +212,14 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   The message is CDR-encoded here, in the calling process. One that does
   not encode never reaches the client: `publish/4` returns
-  `{:error, {:encode_raised, reason}}`, logs it once per topic and message
-  type, and counts it with `VisionCore.Ros2.Topics.count_encode_failure/2`.
+  `{:error, {:encode_raised, reason}}` and logs it once per topic and
+  message type.
 
-  The message is fire-and-forget — calls while no session is open are dropped
-  silently and tallied, without being encoded (the heartbeat re-fires on its
-  own timer, a stream sends its next message soon after); the drop count is
-  logged once when the session opens. Returns `:ok` immediately.
-
-  Each message that encodes, and each one dropped for want of a session, is
-  counted in `VisionCore.Ros2.Topics`.
+  The message is fire-and-forget — calls while no session is open, or before
+  the clock is synchronized, are dropped silently and tallied, without being
+  encoded (the heartbeat re-fires on its own timer, a stream sends its next
+  message soon after); each drop count is logged once when publishing can go
+  ahead. Returns `:ok` immediately.
 
   A newer message of `topic` waiting behind this one stands in for it: the
   client puts the newer one alone. With `keep: true` the client puts this
@@ -189,9 +229,8 @@ defmodule VisionCore.Ros2.ZenohClient do
   @spec publish(String.t(), module(), struct(), keyword()) ::
           :ok | {:error, {:encode_raised, String.t()}}
   def publish(topic, message_module, message, opts \\ []) do
-    case encode_unless_offline(message) do
+    case encode_unless_dropped(message) do
       {:ok, payload} ->
-        VisionCore.Ros2.Topics.count(topic, message_module)
         GenServer.cast(__MODULE__, {:publish, topic, message_module, payload, opts})
 
       {:error, {:encode_raised, reason}} = error ->
@@ -200,19 +239,23 @@ defmodule VisionCore.Ros2.ZenohClient do
     end
   end
 
-  # With no session the client drops the publish: no payload, only the drop to tally.
-  defp encode_unless_offline(message) do
-    if offline?(), do: {:ok, nil}, else: encode_payload(message)
+  # A publish the client would drop goes without a payload, only the drop to tally.
+  defp encode_unless_dropped(message) do
+    if dropped?(), do: {:ok, nil}, else: encode_payload(message)
   end
 
-  # Only a client that says it has no session lets a publish go unencoded.
-  defp offline? do
-    not :ets.lookup_element(@session_table, :open, 2)
+  # Only a client that says it has no session, or no synchronized clock, lets a publish go unencoded.
+  defp dropped? do
+    not (:ets.lookup_element(@session_table, :open, 2) and
+           :ets.lookup_element(@session_table, :clock_synchronized, 2))
   rescue
     ArgumentError -> false
   end
 
   defp put_session_open(open?), do: :ets.insert(@session_table, {:open, open?})
+
+  defp put_clock_synchronized(synchronized?),
+    do: :ets.insert(@session_table, {:clock_synchronized, synchronized?})
 
   # A message that does not encode is dropped, not raised; see the moduledoc.
   defp encode_payload(message) do
@@ -223,7 +266,6 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   # One log line per topic and message type in each publishing process, not one per message.
   defp drop_unencodable(topic, message_module, reason) do
-    VisionCore.Ros2.Topics.count_encode_failure(topic, message_module)
     logged_key = {:encode_failure_logged, topic, message_module}
 
     if is_nil(Process.get(logged_key)) do
@@ -307,58 +349,52 @@ defmodule VisionCore.Ros2.ZenohClient do
   @doc """
   The node and its link to the router: the node name and ROS 2 domain,
   whether a session is open, the router endpoint, and the services this
-  client answers, by full name and ROS type, sorted by name. When the
-  client is not running, the node is the configured one, down, with no
-  endpoint and no service.
+  client answers, by full name and ROS type, sorted by name; `nil` when the
+  client is not running.
   """
-  @spec link() :: %{
-          node_name: String.t(),
-          domain_id: non_neg_integer(),
-          connected: boolean(),
-          endpoint: String.t() | nil,
-          services: [%{name: String.t(), type: String.t()}]
-        }
+  @spec link() ::
+          %{
+            node_name: String.t(),
+            domain_id: non_neg_integer(),
+            connected: boolean(),
+            endpoint: String.t(),
+            services: [%{name: String.t(), type: String.t()}]
+          }
+          | nil
   def link do
     GenServer.call(__MODULE__, :link)
   catch
-    :exit, _reason ->
-      config = VisionCore.Application.active_config()
-
-      %{
-        node_name: configured_node_name(config),
-        domain_id: configured_domain_id(config),
-        connected: false,
-        endpoint: nil,
-        services: []
-      }
+    :exit, _reason -> nil
   end
-
-  @doc """
-  The node name the client runs under with `config`: the `:node_name` of
-  its `ros2:` section, else the default.
-  """
-  @spec configured_node_name(VisionCore.Config.t() | nil) :: String.t()
-  def configured_node_name(%VisionCore.Config{ros2: ros2}) when is_list(ros2),
-    do: Keyword.get(ros2, :node_name) || @default_node_name
-
-  def configured_node_name(_config), do: @default_node_name
-
-  defp configured_domain_id(%VisionCore.Config{ros2: ros2}) when is_list(ros2),
-    do: Keyword.get(ros2, :domain_id) || @default_domain_id
-
-  defp configured_domain_id(_config), do: @default_domain_id
 
   @impl GenServer
   def init(opts) do
+    clock_check =
+      Keyword.get_lazy(opts, :clock_synchronized?, fn ->
+        Application.get_env(:ros2_zenoh, :clock_synchronized?)
+      end)
+
+    os_clock = Keyword.get(opts, :os_clock, {:os, :system_time, [:millisecond]})
+
     state = %State{
       endpoint_ip: Keyword.fetch!(opts, :endpoint_ip),
-      node_name: Keyword.get(opts, :node_name, @default_node_name),
+      node_name: Keyword.fetch!(opts, :node_name),
       domain_id: Keyword.get(opts, :domain_id, @default_domain_id),
-      open_session: Keyword.get(opts, :open_session, &open_session/1)
+      open_session: Keyword.get(opts, :open_session, &open_session/1),
+      clock_check: clock_check,
+      os_clock: os_clock,
+      clock_synchronized: clock_synchronized?(clock_check, os_clock)
     }
 
     :ets.new(@session_table, [:named_table, read_concurrency: true])
     put_session_open(false)
+    put_clock_synchronized(state.clock_synchronized)
+
+    unless state.clock_synchronized do
+      Logger.info("#{__MODULE__} waiting for the clock to synchronize before publishing")
+      Process.send_after(self(), :check_clock, @clock_check_interval_ms)
+    end
+
     send(self(), {:connect, @reconnect_initial_ms})
     {:ok, state}
   end
@@ -371,8 +407,8 @@ defmodule VisionCore.Ros2.ZenohClient do
       state.services
       |> Enum.map(fn {name, service} ->
         %{
-          name: VisionCore.Ros2.Topics.full_name(name),
-          type: VisionCore.Ros2.Topics.ros_type(service.service_module)
+          name: Ros2Zenoh.full_name(name),
+          type: Ros2Zenoh.ros_type(service.service_module)
         }
       end)
       |> Enum.sort_by(& &1.name)
@@ -510,6 +546,14 @@ defmodule VisionCore.Ros2.ZenohClient do
     end
   end
 
+  # Before the clock is synchronized every publish is dropped, with or without a payload.
+  def handle_cast(
+        {:publish, _topic, _message_module, _payload, _opts},
+        %State{clock_synchronized: false} = state
+      ) do
+    {:noreply, %{state | drops_before_clock_sync: state.drops_before_clock_sync + 1}}
+  end
+
   # No payload: the caller saw no session. No session: it was lost since the caller looked.
   def handle_cast(
         {:publish, _topic, _message_module, payload, _opts},
@@ -584,6 +628,21 @@ defmodule VisionCore.Ros2.ZenohClient do
   end
 
   @impl GenServer
+  def handle_info(:check_clock, state) do
+    if clock_synchronized?(state.clock_check, state.os_clock) do
+      Logger.info(
+        "#{__MODULE__} clock synchronized; publishing " <>
+          "(dropped #{state.drops_before_clock_sync} publish(es) before)"
+      )
+
+      put_clock_synchronized(true)
+      {:noreply, %{state | clock_synchronized: true, drops_before_clock_sync: 0}}
+    else
+      Process.send_after(self(), :check_clock, @clock_check_interval_ms)
+      {:noreply, state}
+    end
+  end
+
   def handle_info({:connect, _backoff_ms}, %State{} = state)
       when state.session != nil or state.connecting != nil,
       do: {:noreply, state}
@@ -672,6 +731,18 @@ defmodule VisionCore.Ros2.ZenohClient do
 
   @impl GenServer
   def terminate(_reason, state), do: teardown_session(state)
+
+  defp clock_synchronized?(nil, _os_clock), do: true
+
+  defp clock_synchronized?({module, function, args}, {os_module, os_function, os_args}) do
+    apply(module, function, args) == true and
+      abs(apply(os_module, os_function, os_args) - System.system_time(:millisecond)) <=
+        @clock_agreement_ms
+  rescue
+    _exception -> false
+  catch
+    :exit, _reason -> false
+  end
 
   defp subscription_key_expr(domain_id, topic) do
     # Wildcard, as explained in the moduledoc.

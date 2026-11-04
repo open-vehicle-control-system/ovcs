@@ -26,7 +26,7 @@ defmodule RosBridge.Publishers.StaticTransform do
 
   Static transforms conventionally rely on TRANSIENT_LOCAL durability
   so a late-joining subscriber receives the latched message;
-  `ZenohClient` publishes volatile, so that subscriber would wait for
+  `Ros2Zenoh.Client` publishes volatile, so that subscriber would wait for
   ever. Republishing fixes that.
 
   Republishing on `/tf` instead would not work. A transform on `/tf`
@@ -89,7 +89,7 @@ defmodule RosBridge.Publishers.StaticTransform do
         end)
     }
 
-    RosBridge.ZenohClient.publish(state.topic, TFMessage, message)
+    Ros2Zenoh.Client.publish(state.topic, TFMessage, message)
     Process.send_after(self(), :tick, state.interval_ms)
     {:noreply, state}
   end

@@ -39,7 +39,7 @@ defmodule RosBridge.Consumers.Velocity do
   between two velocity paths.
 
   Choosing the wrong one of the two is not loud, which is why
-  `ZenohClient` warns about surplus bytes after a successful parse:
+  `Ros2Zenoh.Client` warns about surplus bytes after a successful parse:
   `Twist.parse/1` accepts any body of 48 bytes or more, so a 72-byte
   `TwistStamped` body decodes as plausible nonsense — denormals near
   1.0e-273 — and the vehicle ignores every command while both
@@ -108,7 +108,7 @@ defmodule RosBridge.Consumers.Velocity do
         enable: true
       })
 
-    :ok = RosBridge.ZenohClient.subscribe(topic, message_module)
+    :ok = Ros2Zenoh.Client.subscribe(topic, message_module)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
 
     {:ok, %State{watchdog: InputWatchdog.new(timeout_ms), topic: topic}}

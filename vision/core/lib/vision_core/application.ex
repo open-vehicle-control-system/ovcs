@@ -13,7 +13,7 @@ defmodule VisionCore.Application do
   subscribes through it.
 
   The ROS 2 link comes next, when the configuration has a `ros2:` section:
-  `VisionCore.Ros2.ZenohClient`, `VisionCore.Ros2.Parameters`,
+  `Ros2Zenoh.Client`, `VisionCore.Ros2.Parameters`,
   `VisionCore.Ros2.Topics`, which counts what is published on ROS 2, and
   with `simulator_clock:` `VisionCore.Ros2.Clock`. It starts before the
   components: the clock holds every stamp back until the simulator's first
@@ -107,7 +107,7 @@ defmodule VisionCore.Application do
     check_ros2!(ros2)
 
     [
-      {VisionCore.Ros2.ZenohClient, zenoh_client_options(ros2)},
+      {Ros2Zenoh.Client, zenoh_client_options(ros2)},
       VisionCore.Ros2.Parameters,
       VisionCore.Ros2.Topics
     ] ++ clock_children(Keyword.get(ros2, :simulator_clock))
@@ -131,8 +131,10 @@ defmodule VisionCore.Application do
 
   # A key left out takes the client's default.
   defp zenoh_client_options(ros2) do
-    [endpoint_ip: Keyword.fetch!(ros2, :zenoh_endpoint_ip)] ++
-      for key <- [:node_name, :domain_id], value = ros2[key], do: {key, value}
+    [
+      endpoint_ip: Keyword.fetch!(ros2, :zenoh_endpoint_ip),
+      node_name: VisionCore.Ros2.Node.node_name(ros2)
+    ] ++ if(domain_id = ros2[:domain_id], do: [domain_id: domain_id], else: [])
   end
 
   defp clock_children(clock) when clock in [nil, false], do: []

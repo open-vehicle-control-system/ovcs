@@ -11,7 +11,7 @@ The ROS bridge, `RosBridge`, connects your vehicle to a ROS 2 graph. It speaks t
 ## How it works
 
 ```text
-ROS 2 graph ── Zenoh router ── RosBridge.ZenohClient
+ROS 2 graph ── Zenoh router ── Ros2Zenoh.Client
                                    │
               consumers  <─────────┤─────────>  publishers
    /joy/<profile>, cmd_vel         │      /vehicle/*, /imu, /odom, /scan, /proximity/*, /tf_static
@@ -20,7 +20,7 @@ ROS 2 graph ── Zenoh router ── RosBridge.ZenohClient
    ovcs bus: 0x2B0, 0x2B1          │    ovcs bus: 0x1A0, 0x600, 0x60B, 0x60C; drivers on the board
 ```
 
-- **One Zenoh session.** `RosBridge.ZenohClient` holds a client session with the vehicle's Zenoh router on `tcp/<zenoh_endpoint_ip>:7447`, reconnects with a backoff from 1 s to 30 s, and gives the rest of the bridge `publish` and `subscribe`. The router runs on the [compute node](../ros2/compute_node.md) on a vehicle, or in the local ROS 2 stack on a workstation.
+- **One Zenoh session.** `Ros2Zenoh.Client`, from [`libraries/ros2_zenoh`](../../libraries/ros2_zenoh/README.md), holds a client session with the vehicle's Zenoh router on `tcp/<zenoh_endpoint_ip>:7447`, reconnects with a backoff from 1 s to 30 s, and gives the rest of the bridge `publish` and `subscribe`. The router runs on the [compute node](../ros2/compute_node.md) on a vehicle, or in the local ROS 2 stack on a workstation.
 - **Consumers turn ROS commands into CAN.** `RosBridge.Consumers.Joy` turns a gamepad's `sensor_msgs/Joy`, read through a joystick profile, into the actuator command (`0x2B0`). `RosBridge.Consumers.Velocity` turns a planner's `geometry_msgs/TwistStamped` into the velocity command (`0x2B1`), and the VMS solves the kinematics against its own geometry. Both carry a sequence number; when it stops changing, the VMS zeroes the command.
 - **Publishers turn what the vehicle knows into topics.** Some read CAN frames the VMS emits (status, gear, control level, vehicle motion); others own a driver on the bridge's board (an IMU, a lidar, rangefinders, stereo cameras).
 - **Supervision.** The session, the node's parameter server and the components run under one `rest_for_one` supervisor, so a restarted Zenoh session restarts every component after it.

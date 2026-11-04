@@ -101,7 +101,7 @@ A yaw rate the steering cannot achieve collapses to full lock rather than an err
 
 ## Two things that fail silently
 
-- **The wrong message type decodes as nonsense.** `Twist.parse/1` accepts any body of 48 bytes or more, so a 72-byte `TwistStamped` decodes as six float64s read out of the header (denormals near 1.0e-273): the vehicle ignores every command while every watchdog reports a healthy stream. `ZenohClient` warns about surplus bytes after a successful parse, which catches it. The simulator's mirror image: a `Twist` bridge fed `TwistStamped` never fires, and a healthy-looking Nav2 moves nothing.
+- **The wrong message type decodes as nonsense.** `Twist.parse/1` accepts any body of 48 bytes or more, so a 72-byte `TwistStamped` decodes as six float64s read out of the header (denormals near 1.0e-273): the vehicle ignores every command while every watchdog reports a healthy stream. `Ros2Zenoh.Client` warns about surplus bytes after a successful parse, which catches it. The simulator's mirror image: a `Twist` bridge fed `TwistStamped` never fires, and a healthy-looking Nav2 moves nothing.
 - **A quiet commander leaves its last command on the bus.** The emitter retransmits on a timer; the `sequence` above is the defence.
 
 ## Where next

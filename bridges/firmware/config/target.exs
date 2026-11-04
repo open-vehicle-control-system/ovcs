@@ -58,6 +58,9 @@ config :cantastic,
 # config falls back to 127.0.0.1.
 config :ros_bridge, zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")
 
+# Nothing is published to ROS before NTP has set the clock (`Ros2Zenoh.Client`).
+config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}
+
 # The Zenoh router is the vehicle's compute node, which also serves the
 # vehicle network's time (`ntp` in compose/compute): every board then
 # stamps with the clock Nav2 compares against, with or without internet.

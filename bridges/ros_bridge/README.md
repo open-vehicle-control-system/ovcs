@@ -13,9 +13,8 @@ Stereo depth and detection are the [vision unit](../../vision/core/README.md)'s,
 ```
 lib/
   ros_bridge.ex              # OvcsBridge behaviour + child list (host / target)
-  zenoh_client.ex            # GenServer: Zenoh session + publish/subscribe API + rmw_zenoh liveliness
   ros_bridge/
-    heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via ZenohClient.publish/4
+    heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via Ros2Zenoh.Client.publish/4
     imu_publisher.ex         # OvcsDrivers.Imu consumer → sensor_msgs/Imu over Zenoh
     consumers/joy.ex         # ROS 2 /joy/<profile> → Cantastic emitter (steering, throttle, direction)
     consumers/joy/profile.ex # joy profile files: a controller's axes, pedals and gears
@@ -27,34 +26,20 @@ priv/joy/                    # the framework's joy profiles, one per controller
 The message codecs and the `rmw_zenoh` key expressions, payloads,
 attachments and liveliness tokens come from
 [`libraries/ros2_zenoh`](../../libraries/ros2_zenoh/README.md), which
-also explains how to add a message type. `RosBridge.ZenohClient` holds
-the Zenoh session and uses them to publish and subscribe.
-
-## `RosBridge.ZenohClient`
-
-A thin wrapper around a single `zenohex` session. Holds the TCP
-peering with the configured Zenoh router (`tcp/<endpoint_ip>:7447`
-in client mode), handles bounded-backoff reconnect (1 s → 30 s),
-and exposes a small API for the rest of the bridge:
-
-| Function | Purpose |
-|---|---|
-| `publish(topic, message_module, message, opts \\ [])` | Cast a CDR-encoded sample. First call for a topic lazily declares the underlying Zenoh publisher + its rmw_zenoh liveliness token; subsequent calls reuse them. Publisher GID + sequence number are stable across reconnects. |
-| `subscribe(topic, message_module, pid \\ self(), opts \\ [])` | Register `pid` for `{:ros_message, {key_expr, parsed}}` deliveries. The pid is monitored — when it dies its registration is cleaned up and, if no consumers remain, the Zenoh subscriber is undeclared. |
-| `unsubscribe(topic, pid \\ self())` | Symmetric. |
-
-Init opts: `:endpoint_ip` (required), `:node_name` (default
-`"ovcs_bridge"`), `:domain_id` (default `0`). Per-topic settings
+also explains how to add a message type. Its `Ros2Zenoh.Client` holds
+the Zenoh session the bridge publishes and subscribes through, started
+first in the bridge's `rest_for_one` subtree. Per-topic settings
 (message module, interval, etc.) live on the *caller* — see
 `RosBridge.Publishers.Heartbeat` for the smallest example.
 
-Vehicles set the endpoint and the node name through `%RosBridge.Config{}`;
+Vehicles set the endpoint and the node name (default `"ovcs_bridge"`)
+through `%RosBridge.Config{}`;
 [Configure it in your vehicle](../../docs/bridges/ros.md#configure-it-in-your-vehicle)
 explains both, including when two bridge firmwares need distinct node names.
 
 ## `RosBridge.Publishers.Heartbeat`
 
-Periodic publisher built on top of `ZenohClient.publish/4`. The
+Periodic publisher built on top of `Ros2Zenoh.Client.publish/4`. The
 default `:heartbeat` component ticks a `std_msgs/String` onto
 `/ovcs_heartbeat` every 1 s so consumers can see the bridge is
 alive; the same module works for any other periodic publish (just

@@ -54,9 +54,9 @@ defmodule RosBridge.Imu.Zenoh do
   def init(opts) do
     topic = Keyword.get(opts, :topic, @default_topic)
 
-    # Subscribing from `init/1` is safe: ZenohClient records the
+    # Subscribing from `init/1` is safe: Ros2Zenoh.Client records the
     # subscription and declares it on the next successful connect.
-    :ok = RosBridge.ZenohClient.subscribe(topic, Imu)
+    :ok = Ros2Zenoh.Client.subscribe(topic, Imu)
 
     Logger.info("#{__MODULE__} consuming #{topic}")
 

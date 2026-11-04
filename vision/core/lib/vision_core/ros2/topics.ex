@@ -3,9 +3,9 @@ defmodule VisionCore.Ros2.Topics do
   Every topic the vision core has published or tried to, with its message
   type, live rate and the count of its messages that could not be encoded.
 
-  `VisionCore.Ros2.ZenohClient.publish/4` calls `count/2`, or
-  `count_encode_failure/2` for a message it could not encode, from the
-  publishing process: one `:ets.update_counter/4` on a public table this
+  `publish/4` publishes through `Ros2Zenoh.Client` and calls `count/2`, or
+  `count_encode_failure/2` for a message that could not be encoded, from
+  the publishing process: one `:ets.update_counter/4` on a public table this
   process owns, so a publisher never waits on a server. Once a second the
   counts since the previous tick become each topic's rate. Names are full
   ROS names, with a leading `/`; types are the ROS type names
@@ -24,6 +24,25 @@ defmodule VisionCore.Ros2.Topics do
         }
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+
+  @doc """
+  Publishes `message` on `topic` with `Ros2Zenoh.Client.publish/4` and
+  counts it: as a publish when the client took it, dropped for want of a
+  session included, as an encode failure when it could not be encoded.
+  Answers what the client answered.
+  """
+  @spec publish(String.t(), module(), struct(), keyword()) ::
+          :ok | {:error, {:encode_raised, String.t()}}
+  def publish(topic, message_module, message, opts \\ []) do
+    case Ros2Zenoh.Client.publish(topic, message_module, message, opts) do
+      :ok ->
+        count(topic, message_module)
+
+      {:error, {:encode_raised, _reason}} = error ->
+        count_encode_failure(topic, message_module)
+        error
+    end
+  end
 
   @doc "Counts one publish of `message_module` on `topic`; a no-op while this process is down."
   @spec count(String.t(), module()) :: :ok
@@ -100,23 +119,6 @@ defmodule VisionCore.Ros2.Topics do
 
   defp schedule_tick, do: Process.send_after(self(), :tick, @tick_ms)
 
-  @doc "`topic` as a full ROS name, with a leading `/`."
-  @spec full_name(String.t()) :: String.t()
-  def full_name("/" <> _rest = name), do: name
-  def full_name(name), do: "/" <> name
-
-  @doc "The ROS type name of a message or service module (`sensor_msgs/msg/Image`), or its module name."
-  @spec ros_type(module()) :: String.t()
-  def ros_type(module) do
-    Code.ensure_loaded(module)
-
-    if function_exported?(module, :dds_type, 0) do
-      module.dds_type()
-      |> String.replace("::dds_::", "::")
-      |> String.replace("::", "/")
-      |> String.trim_trailing("_")
-    else
-      inspect(module)
-    end
-  end
+  defdelegate full_name(topic), to: Ros2Zenoh
+  defdelegate ros_type(module), to: Ros2Zenoh
 end

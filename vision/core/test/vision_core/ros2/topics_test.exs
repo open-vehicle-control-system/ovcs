@@ -2,6 +2,7 @@ defmodule VisionCore.Ros2.TopicsTest do
   use ExUnit.Case, async: false
 
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage}
+  alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias VisionCore.Ros2.Topics
 
   setup do
@@ -88,5 +89,42 @@ defmodule VisionCore.Ros2.TopicsTest do
     assert Topics.count("stereo/points", CameraInfo) == :ok
     assert Topics.count_encode_failure("stereo/points", CameraInfo) == :ok
     assert Topics.topics() == []
+  end
+
+  describe "publish/4" do
+    @describetag :capture_log
+
+    test "counts a message the client takes as a publish", %{topics: pid} do
+      assert :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      tick(pid)
+
+      assert [
+               %{
+                 name: "/ovcs_heartbeat",
+                 type: "std_msgs/msg/String",
+                 rate_hz: rate_hz,
+                 encode_failures: 0
+               }
+             ] =
+               Topics.topics()
+
+      assert rate_hz > 0
+    end
+
+    test "counts a message that cannot be encoded apart from the publishes", %{topics: pid} do
+      for _ <- 1..2 do
+        assert {:error, {:encode_raised, _reason}} =
+                 Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: nil})
+      end
+
+      tick(pid)
+      assert [%{rate_hz: +0.0, encode_failures: 2}] = Topics.topics()
+
+      :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      tick(pid)
+
+      assert [%{rate_hz: rate_hz, encode_failures: 2}] = Topics.topics()
+      assert rate_hz > 0
+    end
   end
 end

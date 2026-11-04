@@ -102,12 +102,12 @@ defmodule RosBridge.Publishers.PathPrediction do
       arc(curvature, length_m, state.step_m, state.base_offset)
       |> Enum.map(&%PoseStamped{header: header, pose: &1})
 
-    RosBridge.ZenohClient.publish(state.path_topic, Path, %Path{header: header, poses: poses})
+    Ros2Zenoh.Client.publish(state.path_topic, Path, %Path{header: header, poses: poses})
 
     if abs(speed) >= @moving_speed_m_s do
       pose = pose_at(curvature, speed * state.horizon_s, state.base_offset)
 
-      RosBridge.ZenohClient.publish(state.pose_topic, PoseStamped, %PoseStamped{
+      Ros2Zenoh.Client.publish(state.pose_topic, PoseStamped, %PoseStamped{
         header: header,
         pose: pose
       })

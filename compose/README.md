@@ -135,7 +135,7 @@ docker compose -f base.yml exec ros2 bash   # shell with ROS env pre-sourced
 ```
 
 Smoke-test against the bridge's heartbeat (published by
-`RosBridge.ZenohClient` on `/ovcs_heartbeat`):
+`RosBridge.Publishers.Heartbeat` on `/ovcs_heartbeat`):
 
 ```sh
 docker compose -f base.yml exec ros2 bash -lc '

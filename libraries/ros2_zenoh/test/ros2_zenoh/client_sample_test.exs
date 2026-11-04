@@ -1,15 +1,14 @@
-defmodule RosBridge.ZenohClientSampleTest do
+defmodule Ros2Zenoh.ClientSampleTest do
   @moduledoc """
   A malformed sample must not kill the client.
 
   This is the blast radius rather than the bug: consumers call
-  `ZenohClient.subscribe/2` from `init/1` only, and every supervisor in
-  the bridge is `:one_for_one`, so if the client dies it restarts with
-  an empty subscription map while the surviving consumers are never
-  re-subscribed. One short frame on one topic and the whole bridge goes
-  permanently deaf -- no joystick, no IMU, no heartbeat, no cameras --
-  until the BEAM restarts. The watchdogs then zero the throttle, with
-  nothing in the log naming the cause.
+  `Client.subscribe/2` from `init/1` only, so a client that dies restarts
+  with an empty subscription map, and every consumer has to restart with it
+  to subscribe again. One short frame on one topic, repeated at its
+  publisher's rate, keeps the whole BEAM restarting or deaf -- no joystick,
+  no IMU, no heartbeat, no cameras -- with nothing in the log naming the
+  cause.
 
   The parsers are built from binary pattern matches, so a truncated
   body raises (`FunctionClauseError` from a `parse_string/1` clause,
@@ -21,8 +20,8 @@ defmodule RosBridge.ZenohClientSampleTest do
 
   import ExUnit.CaptureLog
 
-  alias RosBridge.ZenohClient
-  alias RosBridge.ZenohClient.State
+  alias Ros2Zenoh.Client
+  alias Ros2Zenoh.Client.State
   alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, TwistStamped}
 
   @key "0/cmd_vel_nav/**"
@@ -43,7 +42,7 @@ defmodule RosBridge.ZenohClientSampleTest do
   end
 
   defp deliver_sample(state, body) do
-    ZenohClient.handle_info(
+    Client.handle_info(
       %Zenohex.Sample{key_expr: "0/cmd_vel_nav/msg", payload: @cdr_header <> body},
       state
     )

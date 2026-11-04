@@ -15,7 +15,7 @@ defmodule RosBridge.Publishers.Imu do
   @moduledoc """
   Coalesces samples from an `OvcsDrivers.Imu` driver into
   `sensor_msgs/Imu` messages and publishes them via
-  `RosBridge.ZenohClient.publish/4`.
+  `Ros2Zenoh.Client.publish/4`.
 
   Knows nothing about any specific chip — any module implementing
   the `OvcsDrivers.Imu` behaviour plugs in via the `:driver` option.
@@ -120,6 +120,6 @@ defmodule RosBridge.Publishers.Imu do
       linear_acceleration_covariance: @unknown_covariance
     }
 
-    RosBridge.ZenohClient.publish(state.topic, Imu, message)
+    Ros2Zenoh.Client.publish(state.topic, Imu, message)
   end
 end
