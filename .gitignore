@@ -30,3 +30,6 @@ compose/compute/host/system-connections/*.nmconnection
 # MIT grant cannot promise on behalf of. See scripts/models.tsv.
 vehicles/*/priv/models/*.hef
 vehicles/*/priv/models/*.onnx
+
+# Python bytecode
+__pycache__/

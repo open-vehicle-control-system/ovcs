@@ -9,6 +9,9 @@ defmodule OvcsMini.Vision.Composer do
   frames, which the pipeline matches at that size. Every stage runs
   natively in `stereo_match` (`compute: :native`).
 
+  The ROS 2 exporter publishes the rectified pair, which the cockpit
+  shows.
+
   On a workstation, `OVCS_SIM=1` reads the simulator's camera topics
   and stamps with its clock; without it, the unit runs no cameras.
 
@@ -38,7 +41,8 @@ defmodule OvcsMini.Vision.Composer do
       ],
       components: [stereo_component(), hailo_detector()],
       exporters: [
-        {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [], detections: []},
+        {VisionCore.Ros2.Exporter,
+         heartbeat: [], stereo: [publish_rectified_image: true], detections: []},
         {VisionCore.Debug.Exporter, []}
       ]
     }
@@ -68,7 +72,8 @@ defmodule OvcsMini.Vision.Composer do
          right: [frame_id: "stereo_right_optical", topic: "/stereo/right/image_raw/compressed"]}
       ],
       exporters: [
-        {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [publish_raw_images: false]}
+        {VisionCore.Ros2.Exporter,
+         heartbeat: [], stereo: [publish_raw_images: false, publish_rectified_image: true]}
       ]
     }
   end

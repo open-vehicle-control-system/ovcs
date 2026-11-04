@@ -40,7 +40,26 @@ The deadband zeroes noise; a vehicle whose `RosVelocityCommand` sets
 which place the frames the sensors are stamped with on `base_link`.
 `robot_state_publisher:=false` leaves it to the simulator, whose launch
 runs its own.
+
+`octomap_server` accumulates the stereo cloud into a 3D occupancy map in
+`odom`, for the displays rather than for Nav2. It runs only for a vehicle
+whose `nav2/` directory has an `octomap.yaml`, and reads `octomap_cloud`,
+the stereo camera's `/stereo/points` by default. Its occupied voxels'
+centres are on `/octomap/point_cloud_centers`, as a `PointCloud2`.
+
+Both sides are throttled to `octomap_rate`. It republishes the whole map
+after every cloud, which at the camera's rate is more than a display needs
+or a network carries; and it publishes each map a dozen times over, within
+milliseconds, so its own `/octomap_point_cloud_centers` is for the vehicle
+only.
+
+`point_cloud_transport` republishes `octomap_cloud` and the map compressed
+with Draco on `<cloud>/draco`, for displays over a wireless link: a raw
+stereo cloud is a few megabytes a second. It runs only for a vehicle whose
+`nav2/` directory has a `draco.yaml`, which sets the quantisation.
 """
+
+import os
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -50,6 +69,10 @@ from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
 CONFIG = "/opt/ovcs/config/nav2.yaml"
+OCTOMAP_CONFIG = "/opt/ovcs/config/octomap.yaml"
+OCTOMAP_INPUT = "/octomap/cloud_in"
+OCTOMAP_OUTPUT = "/octomap/point_cloud_centers"
+DRACO_CONFIG = "/opt/ovcs/config/draco.yaml"
 URDF = "/opt/ovcs/description/robot.urdf"
 
 NAV_CMD_VEL_RAW = "/cmd_vel_nav_raw"
@@ -67,11 +90,74 @@ SERVERS = [
 ]
 
 
+def _draco(name, cloud, use_sim_time):
+    """`cloud` republished compressed with Draco on `<cloud>/draco`."""
+    return Node(
+        package="point_cloud_transport",
+        executable="republish",
+        name=name,
+        output="screen",
+        parameters=[
+            DRACO_CONFIG,
+            use_sim_time,
+            {"in_transport": "raw", "out_transport": "draco"},
+        ],
+        # The plugin names its topic out/draco, not the remapped out's.
+        remappings=[("in", cloud), ("out/draco", [cloud, "/draco"])],
+    )
+
+
 def generate_launch_description():
     params = LaunchConfiguration("params_file")
     # A dict overlay wins over the file, which is what lets one file
     # serve wall clock and sim time both.
     use_sim_time = {"use_sim_time": LaunchConfiguration("use_sim_time")}
+
+    octomap = []
+    if os.path.exists(OCTOMAP_CONFIG):
+        octomap = [
+            Node(
+                package="topic_tools",
+                executable="throttle",
+                name="octomap_input_throttle",
+                output="screen",
+                arguments=[
+                    "messages",
+                    LaunchConfiguration("octomap_cloud"),
+                    LaunchConfiguration("octomap_rate"),
+                    OCTOMAP_INPUT,
+                ],
+                parameters=[use_sim_time],
+            ),
+            Node(
+                package="octomap_server",
+                executable="octomap_server_node",
+                name="octomap_server",
+                output="screen",
+                parameters=[OCTOMAP_CONFIG, use_sim_time],
+                remappings=[("cloud_in", OCTOMAP_INPUT)],
+            ),
+            Node(
+                package="topic_tools",
+                executable="throttle",
+                name="octomap_output_throttle",
+                output="screen",
+                arguments=[
+                    "messages",
+                    "/octomap_point_cloud_centers",
+                    LaunchConfiguration("octomap_rate"),
+                    OCTOMAP_OUTPUT,
+                ],
+                parameters=[use_sim_time],
+            ),
+        ]
+
+    draco = []
+    if os.path.exists(DRACO_CONFIG):
+        draco = [
+            _draco("point_cloud_draco", LaunchConfiguration("octomap_cloud"), use_sim_time),
+            _draco("octomap_draco", OCTOMAP_OUTPUT, use_sim_time),
+        ]
 
     return LaunchDescription(
         [
@@ -87,10 +173,22 @@ def generate_launch_description():
                 "true only against a simulator publishing /clock.",
             ),
             DeclareLaunchArgument(
+                "octomap_cloud",
+                default_value="/stereo/points",
+                description="The point cloud octomap_server maps, when the vehicle has an octomap.yaml.",
+            ),
+            DeclareLaunchArgument(
+                "octomap_rate",
+                default_value="2.0",
+                description="Clouds a second octomap_server maps.",
+            ),
+            DeclareLaunchArgument(
                 "robot_state_publisher",
                 default_value="true",
                 description="Publish the vehicle's URDF; false where something else does.",
             ),
+            *octomap,
+            *draco,
             Node(
                 package="robot_state_publisher",
                 executable="robot_state_publisher",

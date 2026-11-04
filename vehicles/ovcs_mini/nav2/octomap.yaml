@@ -1,0 +1,20 @@
+# octomap_server: the stereo cloud accumulated into a 3D occupancy map in
+# odom, for the displays (the cockpit, Foxglove), not for Nav2. Launched by
+# nav2.launch.py because this file exists.
+octomap_server:
+  ros__parameters:
+    frame_id: odom
+    base_frame_id: base_link
+    resolution: 0.05
+    # Stereo depth error grows with the square of range: only near points count.
+    sensor_model.max_range: 3.0
+    # Points this close to the floor are the floor; the map shows what stands on it.
+    point_cloud_min_z: 0.06
+    point_cloud_max_z: 1.5
+    occupancy_min_z: 0.06
+    occupancy_max_z: 1.5
+    filter_ground_plane: false
+    # Lone voxels are stereo mismatches more often than obstacles.
+    filter_speckles: true
+    publish_free_space: false
+    latch: false

@@ -14,7 +14,7 @@ The ROS bridge, `RosBridge`, connects your vehicle to a ROS 2 graph. It speaks t
 ROS 2 graph ── Zenoh router ── RosBridge.ZenohClient
                                    │
               consumers  <─────────┤─────────>  publishers
-   /joy/<profile>, cmd_vel         │      /vehicle/*, /imu, /odom, /scan, /stereo/*, /tf_static
+   /joy/<profile>, cmd_vel         │      /vehicle/*, /imu, /odom, /scan, /proximity/*, /tf_static
               │                    │                    ^
               v                    │                    │
    ovcs bus: 0x2B0, 0x2B1          │    ovcs bus: 0x1A0, 0x600, 0x60B, 0x60C; drivers on the board
@@ -40,8 +40,10 @@ Apart from the Zenoh session, every feature is a component your vehicle opts int
 | `:imu_publisher` | starts an `OvcsDrivers.Imu` driver (`OvcsDrivers.Imu.Dummy` on the host, the BNO085 on the target) and publishes `sensor_msgs/Imu` |
 | `:odometry_publisher` | dead-reckoned `/odom` and the `odom → base_link` transform, from the VMS's `vehicle_motion` frame (`0x60B`) and the IMU heading; list `:imu_publisher` first |
 | `:ackermann_joint_states` | an Ackermann vehicle's wheels on `/joint_states` from `vehicle_motion`, for `robot_state_publisher`; not against a simulator, which publishes its own |
+| `:path_prediction` | the arc the vehicle follows at its commanded steering angle on `/vehicle/predicted_path` (`nav_msgs/Path`), and, while it moves, where it will be in a second on `/vehicle/predicted_pose` (`geometry_msgs/PoseStamped`), from `vehicle_motion` and `gear_status` (`0x600`) |
 | `:static_transforms` | the vehicle's fixed frames on `/tf_static`, so frame ids in headers resolve |
 | `:lidar_publisher` | starts an `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial) and publishes `sensor_msgs/LaserScan` |
+| `:proximity` | the lidar's nearest return on `/proximity/nearest` (`sensor_msgs/Range`), and the nearest return of each sector labelled with its distance on `/proximity/labels` (`visualization_msgs/MarkerArray`), from `/scan` |
 | `:range_publisher` | one rangefinder (an A02YYUW ultrasonic sensor over USB serial) as `sensor_msgs/Range`; list it once per sensor |
 | `:simulator_clock`, `:simulated_hardware` | simulation only: follow `/clock`, and emulate the vehicle's hardware on CAN so the VMS drives a Gazebo model; see [Simulation](../../compose/local/simulation/README.md) |
 
