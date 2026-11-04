@@ -31,7 +31,7 @@ The framework never imports a vehicle. At boot each firmware reads one environme
 - **A CLI** that boots everything on a laptop with virtual CAN, builds and burns Nerves images, pushes firmware to a running board over SSH, and attaches a debugging TUI.
 - **Libraries** for CAN (Cantastic), PID control, ExpressLRS, MSP OSD, and shared CAN frame definitions for common automotive components.
 
-None of it knows which car it is in. [Architecture](./architecture.md) shows how the pieces fit; [Framework components](./components.md) is the inventory.
+None of it knows which car it is in. [Architecture](./architecture.md) shows how the pieces fit; [Repository layout](./repository.md) is the inventory.
 
 ## What a vehicle provides
 
@@ -56,7 +56,7 @@ All three are ordinary vehicles. Nothing in the framework treats them specially,
 
 ## How the documentation uses them
 
-Commands are shown on the reference vehicles because anyone can run them: `./ovcs run ovcs_mini`, `./ovcs build ovcs1 vms`. Every one works the same on your vehicle, with your package's name in their place. Vehicle-specific detail, such as OVCS1's five buses or the Mini's radio channel layout, is labelled as a worked example. [Architecture](./architecture.md), [Framework components](./components.md), [Hardware](./hardware.md) and [Toolchain and OTP](./toolchain_and_otp.md) describe what every vehicle inherits.
+Commands are shown on the reference vehicles because anyone can run them: `./ovcs run ovcs_mini`, `./ovcs build ovcs1 vms`. Every one works the same on your vehicle, with your package's name in their place. Vehicle-specific detail, such as OVCS1's five buses or the Mini's radio channel layout, is labelled as a worked example. [Architecture](./architecture.md), [Repository layout](./repository.md), [Hardware](./hardware.md) and [Toolchain and OTP](./toolchain_and_otp.md) describe what every vehicle inherits.
 
 ## Before you start
 
@@ -64,7 +64,7 @@ OVCS draws on three fields at once, and most readers know one or two of them. Pi
 
 - **A maker new to Elixir.** Learn enough Elixir to read a GenServer and a supervision tree: the [Elixir getting-started guide](https://hexdocs.pm/elixir/introduction.html) covers it, through processes and OTP. Then read [Architecture](./architecture.md) for how components talk over the bus, and [Hardware](./hardware.md) for the boards the framework targets.
 - **An Elixir developer new to CAN and Nerves.** CAN is a broadcast bus of small frames identified by id; the [Linux SocketCAN documentation](https://docs.kernel.org/networking/can.html) explains the model and the virtual `vcan` interfaces OVCS develops on. [Testing with CAN](./testing_with_can.md) shows how OVCS describes frames in YAML and how you inject them. For firmware, the [Nerves documentation](https://hexdocs.pm/nerves/getting-started.html) explains targets, systems and burning images, and [Toolchain and OTP](./toolchain_and_otp.md) explains why OVCS pins the host's OTP to each target's.
-- **An automotive engineer new to Elixir.** You know the buses; what changes is the runtime. Read [Architecture](./architecture.md) for the process model, where each component driver is a supervised process that its supervisor restarts when it crashes, then the [Elixir getting-started guide](https://hexdocs.pm/elixir/introduction.html) as far as processes and supervisors. [Framework components](./components.md) lists the drivers for familiar parts: a Nissan Leaf inverter, an Orion BMS, a Bosch iBooster.
+- **An automotive engineer new to Elixir.** You know the buses; what changes is the runtime. Read [Architecture](./architecture.md) for the process model, where each component driver is a supervised process that its supervisor restarts when it crashes, then the [Elixir getting-started guide](https://hexdocs.pm/elixir/introduction.html) as far as processes and supervisors. [Drivers](./vms/drivers.md) lists the drivers for familiar parts: a Nissan Leaf inverter, an Orion BMS, a Bosch iBooster.
 
 ## Build yours
 

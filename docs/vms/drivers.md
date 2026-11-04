@@ -1,11 +1,88 @@
 ---
-title: VESC drivetrain
-description: Drive a traction motor through a VESC over CAN with Vesc.MotorController, the VESC Tool settings, the extended-id frames, and how to fake the VESC on the host bench.
+title: Drivers
+description: Every component driver the framework ships, grouped by what it drives, with the network it talks on, the options it takes and what it publishes, and the VESC motor controller in depth.
 ---
 
-This guide covers driving a traction motor behind a VESC motor controller from the VMS over CAN, and what to set on the VESC for it. The component is `VmsCore.Components.Vesc.MotorController`; its frames are under [Frames](#frames). The OVCS Mini reference vehicle is the worked example: its numbers and names are the Mini's, the setup is the same for your vehicle.
+A driver is a GenServer in `vms_core` that manages one piece of hardware or one input, following the [component pattern](./how_it_works.md#the-component-pattern). The framework ships the drivers its reference vehicles need. Your VMS composer lists the ones your vehicle uses among its `children/0`, each with its options; for hardware the framework doesn't cover, you [add a component](./add_a_component.md) of your own. Module names are `VmsCore.Components.*`, aliased in composers as in the tables below.
 
-## Why a VESC rather than a hobby ESC
+## Using a framework driver
+
+Most drivers hard-code the network name they talk on, the name the OVCS1 reference vehicle uses for that bus. To use one, your topology YAML and `default_can_mapping/1` must declare a network with that name, carrying the frames the driver subscribes to and emits; [CAN frames and topology](../can_frames.md) shows how. Drivers that take `network:` name their bus in the options instead.
+
+In the tables, sources are the `*_source` options, which tell a driver which module publishes what it needs; "controller" means a [generic controller](../generic_controllers/README.md) process plus the pin options named. The moduledoc of each driver is the reference for its options, and the composers of the [OVCS1](../../vehicles/ovcs1/lib/ovcs1/vms/composer.ex) and [OVCS Mini](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex) reference vehicles are worked examples of every option.
+
+## Drivetrain and energy
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `Nissan.LeafAZE0.Inverter` | `network:` (`leaf_drive` in OVCS1) | control level, gear, contact sources; `controller`, `power_relay_pin`; `drive_max_torque_nm`, `reverse_max_torque_nm`, `effective_throttle_threshold` | rpm, torques, output voltage, temperatures, `:ready_to_drive` |
+| `Nissan.LeafAZE0.Charger` (no reference vehicle; not working, the charge does not start) | `network:` | `maximum_power_for_charger_source` | charge power, AC voltage, charging state |
+| `Vesc.MotorController` | `network:` (`misc` in OVCS Mini) | `process_name`, control level source, `max_rotation_per_minute`, `pole_pairs`, caps | rpm, direction, motor current, input voltage. See [VESC](#vesc) |
+| `Traxxas.MotorController` (no reference vehicle) | none, through a controller | `controller`, `external_pwm_id`, control level source | throttle, pulse width |
+| `Orion.Bms2` | `network:` (`orion_bms` in OVCS1) | `controller`, `ready_relay_pin` | pack voltage, current, SoC, temperatures, relay states, `:is_alive` |
+| `Evpt.Evpt23Charger` | `network:` (`orion_bms` in OVCS1) | none | output voltage and current, protection flags |
+| `OVCS.HighVoltageContactors` | none, through a controller | a controller and its pins, plus sources | `:ready_to_drive` |
+| `Matek.PM12S3` | none, through a controller | `controller`, `voltage_pin`; `current_pin` with the sensor's `current_scale` and `current_offset` | `:voltage`, `:current` |
+
+`OVCS.HighVoltageContactors` closes the negative contactor, then the precharge, waits for the voltages to equalise, then closes the positive and opens the precharge, which prevents inrush damage.
+
+## Brakes and steering
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level, contact sources; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, `:manual_braking`, `:status` |
+| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id`, `max_steering_angle_deg`; PID gains, input filter | angle, angular speed, calibration, PID gains |
+| `Traxxas.Steering` (no reference vehicle) | none, through a controller | `controller`, `external_pwm_id`, control level source | nothing |
+| `Volkswagen.Polo9N.PowerSteeringPump` | `network:` (`misc` in OVCS1) | gear source | nothing |
+
+The brake booster and the steering column close their loops with `OvcsControl.PID` from [`ovcs_control`](https://github.com/open-vehicle-control-system/ovcs_control), whose gains are among their options.
+
+## Body
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `Volkswagen.Polo9N.ABS`, `.IgnitionLock`, `.PassengerCompartment` | `network:` (`polo_drive` in OVCS1) | none | `:speed` and wheel speeds; `:contact`; door, beam and handbrake states |
+| `Volkswagen.Polo9N.Dashboard` | `network:` (`polo_drive` in OVCS1) | contact, rpm sources | nothing (drives the cluster) |
+| `Volkswagen.Polo9N.FakeOilPressureSensor` | none, through a controller | `controller`, `relay_pin`, rpm source | nothing (closes a relay above an rpm so the cluster raises no oil pressure warning) |
+| `OVCS.WaterPump` | none, through a controller | `controller`, `power_relay_pin`, gear source | nothing (on in drive or reverse) |
+
+## Inputs and commanders
+
+A commander is a component that requests throttle, steering or direction; [control levels](./how_it_works.md#control-levels) pick which one is in force.
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `OVCS.ThrottlePedal` | none, through a controller | `controller`, `throttle_a_pin`, `throttle_b_pin` | `:requested_throttle` and calibration |
+| `OVCS.InputCurve` | none, bus only | throttle source, `deadzone`, `expo` | shaped `:requested_throttle` |
+| `OVCS.RadioControl.Steering`, `.Throttle`, `.Direction`, `.RequestedControlLevel`, `.RequestedRosCommander` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
+| `OVCS.RosActuatorCommand.Steering`, `.Throttle`, `.Direction`, and `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
+| `OVCS.Infotainment` | `ovcs` | none | `:requested_gear` |
+
+The ROS commands carry a sequence number per ROS sample; when it stops changing, the command is zeroed, whether the bridge died or its input did.
+
+## Motion sensing
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `OVCS.PulseRotationSensor` | none, bus only | `controller`, `pulses_per_revolution` | `:rotation_per_minute` |
+| `OVCS.RotationFusion` | none, bus only | `process_name`, `sources`, the cross-check thresholds | fused rpm, `:cross_check_fault` |
+| `OVCS.VehicleMotion` | `ovcs` | rotation and control level sources, ratio, `wheel_radius_m`, `steering_limit_rad` | `:speed`, `:wheel_rotation_per_minute` |
+
+## Framework I/O and status
+
+| Driver | Network | Options | Publishes |
+|---|---|---|---|
+| `OVCS.GenericController` | `ovcs` | `process_name`, `control_digital_pins`, `control_other_pins`, `enabled_external_pwms` | `:is_alive`, `:status`, `received_*` / `requested_*` pins |
+| `VmsCore.Status` | `ovcs` | ready-to-drive and VMS status sources | the `vms_status` heartbeat (`0x1A0`), `:resetting` |
+| `OVCS.Status` | `ovcs` | BMS source | `pack_status` and `twelve_volt_battery_status` for the infotainment |
+| `OVCS.ControlStatus` | `ovcs` | `selected_control_level_source` | `control_status` (`0x60C`): the level, the ROS commander and the requests in force, for displays off the VMS |
+| `Managers.ControlLevel`, `Managers.Gear` | `ovcs` (Gear) | the source maps; see [How the VMS works](./how_it_works.md#managers) | selected level and sources; `:selected_gear` |
+
+## VESC
+
+This section covers driving a traction motor behind a VESC motor controller from the VMS over CAN, and what to set on the VESC for it. The component is `VmsCore.Components.Vesc.MotorController`; its frames are under [Frames](#frames). The OVCS Mini reference vehicle is the worked example: its numbers and names are the Mini's, the setup is the same for your vehicle.
+
+### Why a VESC rather than a hobby ESC
 
 A hobby ESC takes a servo pulse and gives nothing back. The VMS has to guess the edge of motion, can't ask for a speed, and can't brake and reverse without the ESC's own brake-then-reverse sequence getting in the way. A VESC on CAN closes all three gaps:
 
@@ -15,13 +92,13 @@ A hobby ESC takes a servo pulse and gives nothing back. The VMS has to guess the
 
 Use a sensored motor (Hall or encoder) for clean starts under load; a sensorless motor works but starts roughly.
 
-## Wiring
+### Wiring
 
 Put the VESC's CAN H and CAN L on one of the VMS's buses. On the Mini it is the `misc` bus on `spi1.0`, kept apart from the controller and bridge frames on `ovcs`. The VESC has no termination resistor of its own, so the bus keeps its existing terminations. Its CAN ground is the vehicle ground. The VESC's power stays on the traction battery; the VMS doesn't switch it.
 
 The VESC doesn't go through the generic controller: it is a CAN node of its own, commanded straight from the VMS. The controller keeps the steering servo and whatever else is on its pins.
 
-## VESC Tool settings
+### VESC Tool settings
 
 Set these once in VESC Tool, after motor detection:
 
@@ -41,7 +118,7 @@ The VESC id defaults to one derived from the board's serial number, so set it ex
 
 Motor current, battery current and erpm limits are set in VESC Tool's *Motor Settings* and hold whatever the VMS asks for. Set them for the motor and the battery first; the VMS's caps come on top.
 
-## Frames
+### Frames
 
 The packets are the VESC firmware's own (`vedderb/bldc`, `comm/comm_can.c`). Every VESC frame is a 29-bit extended frame whose identifier is `controller_id | (packet_type << 8)`: the low byte is the VESC id, the byte above it the packet type. Payloads are big-endian.
 
@@ -75,7 +152,7 @@ Exactly one command frame is emitted at a time, every 20 ms; `Vesc.MotorControll
 
 Zero velocity goes out as zero duty rather than zero rpm because the VESC only starts its speed loop above *Minimum ERPM*. Below it a running motor holds zero duty, but a released motor (what the release command and the timeout leave behind) stays released, and a zero rpm would never start it. Zero duty brakes from any state and leaves the motor running for the next setpoint.
 
-### Duty or current for hands
+#### Duty or current for hands
 
 `hand_control` picks how a hand's request (radio, joystick) reaches the motor:
 
@@ -86,7 +163,7 @@ Zero velocity goes out as zero duty rather than zero rpm because the VESC only s
 
 With `:current` the vehicle keeps accelerating while the request is held, up to what the VESC's own limits allow. Set `:min_current` just under the current the vehicle needs to start rolling, so the request's travel moves it rather than fights static friction. The OVCS Mini reference vehicle starts rolling at 4.3 A and uses `:current` from 4 A to 10 A.
 
-### Gears for hands
+#### Gears for hands
 
 With `selected_gear_source: Managers.Gear`, a hand's request no longer carries the direction; the gear does, as in a car. The radio's direction switch, or the gear a joy profile reads from the controller (the Xbox controller's triggers, the G923's shifter), requests `:drive` or `:reverse`, and the gear manager shifts only below 1 km/h with the trigger released.
 
@@ -97,7 +174,7 @@ With `selected_gear_source: Managers.Gear`, a hand's request no longer carries t
 
 A velocity ignores the gear: its sign is the direction.
 
-## Wiring it into a composer
+### Wiring it into a composer
 
 `Vesc.MotorController` takes the place of `Traxxas.MotorController` as the throttle actuator. The Mini's composer (`vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex`) is the worked example. Frame names follow the process name, so with `process_name: Vms.Vesc` the topology YAML declares the frames under the `vesc_` prefix on the VESC's network, each wrapping the shared signals with the VESC's id in the low byte:
 
@@ -187,15 +264,15 @@ A cross-check fault is published and logged, not acted on: on the Mini both sour
 
 `@max_speed_m_s` is the speed at a linear request of 1 on both sides (what `RosVelocityCommand` normalises against and what the motor rpm is derived from), so it is one constant in the composer. Unlike a PWM throttle's cap, it is a real speed: the VESC holds it.
 
-### Bench checks
+#### Bench checks
 
 The motor-to-wheel ratio and the pole pairs turn the planner's velocity into the motor rpm the VESC holds, so an error there drives the vehicle at the wrong speed. The check has to come from a source that doesn't depend on them: on the Mini, the pulse sensor on the spur, whose `:rotation_per_minute` is independent of anything the VESC reports. Lift the vehicle, command a known velocity through the ROS bridge (a `/cmd_vel` with a fixed `linear.x`) with the control level on `:ros` and the commander on `:autonomous`, and compare the motor controller's `:rotation_per_minute` with the spur sensor's times the spur-to-pinion ratio (54/13 on the Mini). The rotation fusion runs the same comparison continuously above `cross_check_from_rpm`. The fused `:speed` is derived from the motor-to-wheel ratio and proves nothing about it: that needs a measured distance.
 
 Then find the slowest speed the loop holds cleanly: with the vehicle lifted, step the rpm setpoint down until the wheels stutter or stop, and make sure *Minimum ERPM* sits below that and the planner's velocity floor (the smoother's deadband) above it.
 
-## On the host bench
+### On the host bench
 
-The speed still comes from the pulse counter frame, so the bench setup in [Driving on the host bench](./vehicle_package.md#driving-on-the-host-bench) applies unchanged. Nothing emits `vesc_status` on virtual CAN, so the motor controller's telemetry reads nil. To see it populated, synthesise a stationary VESC on its bus (`vcan1` is `misc` on the Mini's host mapping), with `cangen`'s extended flag:
+The speed still comes from the pulse counter frame, so the bench setup in [Driving on the host bench](./how_it_works.md#driving-on-the-host-bench) applies unchanged. Nothing emits `vesc_status` on virtual CAN, so the motor controller's telemetry reads nil. To see it populated, synthesise a stationary VESC on its bus (`vcan1` is `misc` on the Mini's host mapping), with `cangen`'s extended flag:
 
 ```bash
 cangen vcan1 -e -I 901 -L 8 -D 0000000000000000 -g 20

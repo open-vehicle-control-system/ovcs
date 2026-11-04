@@ -5,7 +5,7 @@ release. This directory, plus your vehicle's files staged into
 `vehicle/`, is the balena **source root**: `balena push` reads
 `docker-compose.yml` (that exact name, at the root) and tars up the
 rest as build context. What the machine is (see
-[`docs/ros2_compute_node.md`](../../docs/ros2_compute_node.md)) does not
+[`docs/ros2/compute_node.md`](../../docs/ros2/compute_node.md)) does not
 show in the layout, and neither does what the services are written in:
 `wifi_firmware` is not ROS, and the next onboard service need not be
 either.

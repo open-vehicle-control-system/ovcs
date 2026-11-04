@@ -3,7 +3,7 @@ title: Bus gateway
 description: The library that exposes every signal on the OVCS bus over MQTT, HTTP and Phoenix Channels, and how to enable it in your vehicle, with the OVCS Mini reference vehicle as the worked example.
 ---
 
-The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./bus.md) out of the Erlang mesh: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is a library in the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; your vehicle declares it among the `children:` of a `bridge_firmwares/0` entry to run it in that bridge firmware.
+The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./README.md) out of the Erlang mesh: to an MQTT broker, to HTTP clients, and to a browser dashboard. It is a library in the framework and contains nothing vehicle-specific. Any OVCS firmware can host it by adding its child spec, `{OvcsBusGateway, vehicle: ..., config: ...}`; your vehicle declares it among the `children:` of a `bridge_firmwares/0` entry to run it in that bridge firmware.
 
 ## How a signal gets out
 
@@ -15,7 +15,7 @@ The bus gateway, `OvcsBusGateway`, carries the signals of the [OVCS bus](./bus.m
                                               └──────────────────> Http (Phoenix)
 ```
 
-The gateway's `OvcsBusGateway.Collector` starts one [`OvcsBus.Forwarder`](./bus.md#seeing-the-bus-from-outside) on every node of the mesh, including nodes that join later, and receives their batches. Once a forwarder has skipped a tick, its running total appears on the gateway as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`, like any other signal.
+The gateway's `OvcsBusGateway.Collector` starts one [`OvcsBus.Forwarder`](./README.md#seeing-the-bus-from-outside) on every node of the mesh, including nodes that join later, and receives their batches. Once a forwarder has skipped a tick, its running total appears on the gateway as the `skipped_ticks` signal, sourced by `OvcsBus.Forwarder`, like any other signal.
 
 The collector turns each batch into `OvcsBusGateway.Envelope`s, stores the latest one per signal in `OvcsBusGateway.Cache`, and dispatches them to the adapters through `OvcsBusGateway.Subscribers`. The batch interval is `forward_interval` in the gateway config.
 
@@ -27,7 +27,7 @@ Nothing safety-relevant depends on the gateway. It only reads the bus. The gatew
 
 ## Enable it in your vehicle
 
-Your vehicle runs the gateway in a bridge firmware by listing its child spec in the `children:` of that firmware's `bridge_firmwares/0` entry. `OvcsBridge.Supervisor` starts these children after the entry's bridges; a `%{host: [...], target: [...]}` map picks them per build target. See [Your vehicle package](./vehicle_package.md) for bridge firmwares.
+Your vehicle runs the gateway in a bridge firmware by listing its child spec in the `children:` of that firmware's `bridge_firmwares/0` entry. `OvcsBridge.Supervisor` starts these children after the entry's bridges; a `%{host: [...], target: [...]}` map picks them per build target. See [Your vehicle package](../vehicle_package.md) for bridge firmwares.
 
 The child spec takes:
 
@@ -128,7 +128,7 @@ The broker also accepts MQTT over WebSocket at `ws://<broker>:9001`, for clients
 
 ## HTTP and Phoenix Channels
 
-With `:http` set, the gateway runs a Phoenix endpoint, `OvcsBusGateway.Http.Endpoint`, on port 4100, laid out as the [vision unit's API](./vision/api.md): resources under `/api`, which follow [JSON:API](https://jsonapi.org/), live channels on a Phoenix socket at `/sockets/dashboard`, and the [dashboard](#dashboard) on every other path.
+With `:http` set, the gateway runs a Phoenix endpoint, `OvcsBusGateway.Http.Endpoint`, on port 4100, laid out as the [vision unit's API](../vision/api.md): resources under `/api`, which follow [JSON:API](https://jsonapi.org/), live channels on a Phoenix socket at `/sockets/dashboard`, and the [dashboard](#dashboard) on every other path.
 
 | Route | Answer |
 |---|---|
@@ -304,17 +304,17 @@ The `status` channel pushes a `status` event after the join, then again whenever
 
 `libraries/ovcs_bus_gateway/dashboard/` is a React app fed by the `signals` and `status` channels. It draws the bus with every node plugged into it: a node's link pulses while it publishes and turns red and dashed when the node drops off. Under the bus, a table lists every signal by node and source; selecting a node, from the bus or the menu, narrows it to that node, with one tab per component. The menu also lists the adapters, each with its status and a page saying what it is set up with. The selection stays in the URL, and a filter box in the top bar narrows the tables. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
 
-Its page frame (top bar, menu, theme switch), components, design tokens and Tailwind preset come from [`@ovcs/ui`](../libraries/ovcs_ui/README.md), shared with the vision dashboard.
+Its page frame (top bar, menu, theme switch), components, design tokens and Tailwind preset come from [`@ovcs/ui`](../../libraries/ovcs_ui/README.md), shared with the vision dashboard.
 
 ## Developing on the host
 
-`./ovcs run <vehicle>` starts the bridge firmware with the gateway on the host, publishing to the broker your vehicle names for the host arm (`127.0.0.1` on the Mini). Start a broker without a vehicle with the `standalone` profile of [`compose/local`](../compose/README.md):
+`./ovcs run <vehicle>` starts the bridge firmware with the gateway on the host, publishing to the broker your vehicle names for the host arm (`127.0.0.1` on the Mini). Start a broker without a vehicle with the `standalone` profile of [`compose/local`](../../compose/README.md):
 
 ```sh
 docker compose -f compose/local/base.yml --profile standalone up -d mosquitto
 ```
 
-On a vehicle, the broker is the `mosquitto` service of the compute node's stack, [`compose/compute`](../compose/compute/README.md). It allows anonymous clients and keeps nothing on disk, because the vehicle network is the security boundary.
+On a vehicle, the broker is the `mosquitto` service of the compute node's stack, [`compose/compute`](../../compose/compute/README.md). It allows anonymous clients and keeps nothing on disk, because the vehicle network is the security boundary.
 
 To work on the dashboard with hot reload against a running gateway:
 

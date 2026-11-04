@@ -1,37 +1,41 @@
 # OVCS documentation
 
-These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index is the site's docs tree: its sections and their order are the site's navigation, and each guide's title and description come from its frontmatter.
+These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index is the site's docs tree: its sections, sub-sections and their order are the site's navigation, and each guide's title and description come from its frontmatter.
 
-## Start here
+## Introduction
 
 - [Framework and vehicles](./framework.md)
-- [Getting started](./getting_started.md)
-- [Quickstart](./quickstart.md)
-- [Your first vehicle](./first_vehicle.md)
-
-## The framework
-
 - [Architecture](./architecture.md)
-- [Framework components](./components.md)
-- [The OVCS bus](./bus.md)
-- [Bus gateway](./bus_gateway.md)
-- [Hardware you need](./hardware_you_need.md)
-- [Hardware](./hardware.md)
 
-## Build a vehicle
+## Getting started
 
+- [Setup](./getting_started.md)
+- [Quickstart](./quickstart.md)
+- [Simulation](../compose/local/simulation/README.md)
+- [Your first vehicle](./first_vehicle.md)
 - [Your vehicle package](./vehicle_package.md)
-- [Writing a component](./writing_components.md)
 - [CAN frames and topology](./can_frames.md)
-- [Dashboard pages](./dashboard_pages.md)
-- [Generic controllers](./generic_controllers.md)
 - [Testing with CAN](./testing_with_can.md)
+- [Hardware](./hardware.md)
 - [Running on hardware](./running_hardware.md)
-- [VESC drivetrain](./vesc_drivetrain.md)
 
-## Vision unit
+## Components
 
-- [Vision unit](./vision/overview.md)
+### VMS
+
+- [VMS](./vms/README.md)
+- [How the VMS works](./vms/how_it_works.md)
+- [Add a component](./vms/add_a_component.md)
+- [Dashboard pages](./vms/dashboard_pages.md)
+- [Drivers](./vms/drivers.md)
+
+### Infotainment
+
+- [Infotainment](./infotainment/README.md)
+
+### Vision
+
+- [Vision unit](./vision/README.md)
 - [Stereo vision basics](./vision/basics.md)
 - [How a pair flows](./vision/data_flow.md)
 - [Stereo stages](./vision/stages.md)
@@ -39,18 +43,35 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Vision performance](./vision/performance.md)
 - [Vision API](./vision/api.md)
 
-## ROS 2
+### Bus
 
-- [Simulation](../compose/local/simulation/README.md)
-- [ROS 2 and the simulator](./ros2_simulator.md)
-- [ROS compute node](./ros2_compute_node.md)
-- [Perception: object detection](./ros2_perception.md)
+- [The OVCS bus](./bus/README.md)
+- [Bus gateway](./bus/gateway.md)
 
-## Reference and help
+### Bridges
 
-- [OBD2 reference vehicle](./obd2.md)
+- [Bridges](./bridges/README.md)
+- [Write a bridge](./bridges/write_a_bridge.md)
+- [Radio control bridge](./bridges/radio_control.md)
+- [ROS bridge](./bridges/ros.md)
+- [Perception: object detection](./bridges/perception.md)
+
+### Generic controllers
+
+- [Generic controllers](./generic_controllers/README.md)
+
+### ROS 2
+
+- [ROS 2](./ros2/README.md)
+- [Command paths](./ros2/commands.md)
+- [ROS compute node](./ros2/compute_node.md)
+
+## Reference
+
 - [CLI reference](../cli/README.md)
-- [Glossary](./glossary.md)
+- [Repository layout](./repository.md)
+- [OBD2 reference vehicle](./obd2.md)
 - [Toolchain and OTP](./toolchain_and_otp.md)
+- [Glossary](./glossary.md)
 - [Troubleshooting](./troubleshooting.md)
 - [Community and talks](./community.md)

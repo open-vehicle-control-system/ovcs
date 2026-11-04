@@ -41,11 +41,11 @@ Nothing on the left changes when you add a vehicle. Everything on the right is y
 
 A running vehicle is a small fleet of BEAMs:
 
-- **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub.
+- **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub. See [VMS](./vms/README.md).
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
-- **Vision** (optional): stereo depth on a Raspberry Pi 5 or an OKdo Nano C100, and object detection where the Pi 5 has a Hailo-8, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/overview.md).
+- **Vision** (optional): stereo depth on a Raspberry Pi 5 or an OKdo Nano C100, and object detection where the Pi 5 has a Hailo-8, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/README.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
-- **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers.md).
+- **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers/README.md).
 
 The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's React dashboard is served by its own API, from the unit, and shows its previews and its pipeline's parameters.
 
@@ -53,13 +53,9 @@ The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. T
 
 Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. The nodes talk to each other directly: no broker, no relay between them.
 
-A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus_gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus.md).
+A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus/gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus/README.md).
 
-The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per board over the vehicle LAN.
-
-On the host, the CLI starts each BEAM with `--sname <vehicle>-<role>` and your `~/.erlang.cookie`, which it creates with a random value if it is missing; the host BEAMs only dial each other, so nobody else on the network can join them. A Nerves release boots without a node name, so on the first `OvcsBus.Cluster` tick `OvcsBus.Distribution` runs `epmd -daemon` and starts distribution as `nerves@<vehicle>-<role>.local` with long names. The hostname part is the device hostname set by erlinit's `hostname_pattern`, which mdns_lite also advertises. Every release's cookie is `ovcs`, passed to the VM by `-setcookie` in `rel/vm.args.eex`, so the devices authenticate each other. Starting distribution needs no IP address; a failed start is logged and retried on the next tick.
-
-Erlang's own resolver knows nothing about mDNS. Each firmware enables mdns_lite's DNS bridge on `127.0.0.53` and lists it first in VintageNet's `additional_name_servers`, so a lookup of `<vehicle>-<role>.local` is answered from mDNS. The bridge refuses every other name, and the resolver moves on to the DHCP-supplied servers.
+The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per board over the vehicle LAN. [The mesh](./bus/README.md#the-mesh) covers node names, cookies and how `.local` names resolve.
 
 > [!NOTE]
 > Nothing safety-relevant depends on the mesh. Commands from the radio link or the ROS bridge travel as CAN frames on the `ovcs` bus, where the VMS watches their freshness. The mesh carries metrics, status and coordination.
@@ -88,62 +84,9 @@ VMS, infotainment and the vision unit share one layered shape. Each layer is its
 - **Dashboard**: Vue for the VMS debug dashboard, React for the vision dashboard, Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
-The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Framework components](./components.md).
+The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Repository layout](./repository.md).
 
-## The component pattern
-
-Every hardware driver in `vms_core` is a GenServer with the same recipe:
-
-1. **Subscribes to CAN frames** with `Cantastic.Receiver.subscribe/3`, receiving `{:handle_frame, %Cantastic.Frame{}}`.
-2. **Subscribes to internal messages** with `OvcsBus.subscribe/1`, receiving `%OvcsBus.Message{}`.
-3. **Runs a periodic loop**, typically every 10 ms, to emit CAN frames and broadcast its metrics.
-4. **Exposes actions** through `trigger_action/2`, so a dashboard button can call into it.
-
-Components never import each other. A component that needs the vehicle speed is told, in the init configuration the composer gives it, which module publishes it, and matches on `source`:
-
-```elixir
-alias OvcsBus, as: Bus
-
-# Broadcasting a metric
-Bus.broadcast("messages", %Bus.Message{
-  name: :speed,
-  value: Decimal.new("45.2"),
-  source: VmsCore.Components.Volkswagen.Polo9N.ABS
-})
-
-# Receiving it in another component
-def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
-    when source == state.speed_source do
-  {:noreply, %{state | speed: speed}}
-end
-```
-
-A message reaches the subscribers of its own node; see [The OVCS bus](./bus.md). The framework ships drivers for the components its reference vehicles use (Leaf inverter, Bosch iBooster, Orion BMS, Polo body modules, VESC motor controller, Traxxas steering, …); your vehicle picks the ones it needs and adds its own the same way.
-
-### Managers
-
-Managers hold framework logic spanning several components:
-
-- `Managers.ControlLevel` arbitrates between commanders. It reads the requested control level (`:manual`, `:radio`, `:ros`) and, under `:ros`, the requested commander (`:teleop`, `:autonomous`), routes throttle, steering and direction from the sources the composer maps to each level, and refuses unsafe moves. Details in [Your vehicle package](./vehicle_package.md#control-levels-who-commands-and-which-ros-node).
-- `Managers.Gear` turns the requested direction into a gear and enforces shift constraints.
-
-## The VMS supervision tree
-
-```text
-VmsCore.Application                          (framework)
-├── VmsCore.Repo               SQLite: throttle calibration and other persisted data
-├── Ecto.Migrator              applies pending migrations on boot (skipped when RELEASE_NAME is set)
-├── VmsCore.Metrics            aggregates every bus message for the dashboard and API
-├── VmsCore.NetworkInterfaces  CAN interface statistics (errors, bus state)
-├── OvcsBus.Cluster            connects this BEAM to the vehicle's other firmwares
-└── composer children          (your package, selected by VEHICLE)
-    ├── VmsCore.Status         VMS heartbeat (0x1A0), ready-to-drive, controller reset (0x1AA)
-    ├── Components             hardware drivers (inverter, BMS, brakes, body, …)
-    ├── Managers               control level, gear
-    └── Generic controllers    Arduino I/O drivers
-```
-
-`OvcsBus`'s `Phoenix.PubSub` runs in its own OTP application, `:ovcs_bus`, so every BEAM that depends on the library reaches it by name.
+How the VMS works inside, from its supervision tree to the component pattern every driver follows and the managers, is in [How the VMS works](./vms/how_it_works.md).
 
 ## Safety mechanisms in the framework
 
@@ -174,4 +117,4 @@ Every vehicle gets these without writing them:
 - [Framework and vehicles](./framework.md): what the framework provides and what a vehicle supplies.
 - [Your vehicle package](./vehicle_package.md): how `VEHICLE` selects a vehicle and what each firmware boots.
 - [Hardware](./hardware.md): the boards the framework targets, with OVCS1's five buses as a worked example.
-- [Framework components](./components.md): every project and library in the monorepo.
+- [Repository layout](./repository.md): the monorepo, its libraries, and where each component is documented.

@@ -1,5 +1,5 @@
 ---
-title: Getting started
+title: Setup
 description: Set up a Linux workstation (or a VM on macOS) with mise, the system packages and the ovcs CLI, then check it with ./ovcs doctor and virtual CAN.
 ---
 
@@ -217,5 +217,5 @@ A green `./ovcs doctor` and `All interfaces up.` mean your toolchain works. Boot
 
 - [Quickstart](./quickstart.md): boot the OVCS Mini reference vehicle, open the dashboard, attach the TUI, send your first frames.
 - [Your first vehicle](./first_vehicle.md): scaffold your own vehicle and make it do something.
-- [Framework components](./components.md): each core, API, firmware shell and library.
+- [Repository layout](./repository.md): the monorepo, its libraries, and where each component is documented.
 - [Hardware](./hardware.md): the Raspberry Pis, the CAN hub and the Arduino controllers.

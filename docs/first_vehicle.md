@@ -218,7 +218,7 @@ defmodule MyCar.Vms.CoolantFan do
 end
 ```
 
-Three things are worth reading twice. Decoded `decimal` signals are `Decimal` structs, so compare them with `Decimal.compare/2`, not `>`. The emitter sends on its own timer; `Emitter.update/3` only changes the data it sends next. And a sensor that stops talking is treated as a missing reading, not as its last value: the fan runs. That is a choice for this example; your safe state depends on your hardware. [Writing a component](./writing_components.md) covers each call, the watchdog thresholds, and the framework drivers you can reuse instead of writing your own.
+Three things are worth reading twice. Decoded `decimal` signals are `Decimal` structs, so compare them with `Decimal.compare/2`, not `>`. The emitter sends on its own timer; `Emitter.update/3` only changes the data it sends next. And a sensor that stops talking is treated as a missing reading, not as its last value: the fan runs. That is a choice for this example; your safe state depends on your hardware. [Add a component](./vms/add_a_component.md) covers each call, the watchdog thresholds, and the framework drivers you can reuse instead of writing your own.
 
 Start it from the composer's `children/0`, before `{Vms, []}`:
 
@@ -253,7 +253,7 @@ The dashboard page is a map of blocks. Add a `cooling` block next to the scaffol
 }
 ```
 
-A `:metric` row names the message's `source` and `name`: every value your component broadcasts is already a metric. The `:action` row posts to `/api/actions`, which calls `MyCar.Vms.CoolantFan.trigger_action("set_on_threshold", %{"value" => "…"})`; the value arrives as a string, and the function must return `:ok`. [Dashboard pages](./dashboard_pages.md) lists every block and row type.
+A `:metric` row names the message's `source` and `name`: every value your component broadcasts is already a metric. The `:action` row posts to `/api/actions`, which calls `MyCar.Vms.CoolantFan.trigger_action("set_on_threshold", %{"value" => "…"})`; the value arrives as a string, and the function must return `:ok`. [Dashboard pages](./vms/dashboard_pages.md) lists every block and row type.
 
 ## Drive it on virtual CAN
 
@@ -284,16 +284,16 @@ curl -X POST http://localhost:4000/api/actions \
 
 The same package boots on a Raspberry Pi 4 with a CAN interface. The steps are in [Running on hardware](./running_hardware.md):
 
-1. Check the target side of the composer: `default_can_mapping(:target)` is `ovcs:spi0.0`, and `priv/firmware/vms/config.txt` must load the overlay that creates that interface for your HAT. [Hardware you need](./hardware_you_need.md) gives the `config.txt` line for common HATs.
+1. Check the target side of the composer: `default_can_mapping(:target)` is `ovcs:spi0.0`, and `priv/firmware/vms/config.txt` must load the overlay that creates that interface for your HAT. [Hardware](./hardware.md) gives the `config.txt` line for common HATs.
 2. Copy `.env.exs.example` to `.env.exs` and fill in your SSH key and Wi-Fi.
 3. `./ovcs host-keys generate my_car`, then `./ovcs build my_car vms` and `./ovcs burn my_car vms`.
 4. Boot the Pi and `./ovcs attach my_car`.
 
-To replace the fake alive frames with a real board, flash the generic controller firmware on an Arduino and adopt it: [Generic controllers](./generic_controllers.md). The example controller is controller 0, on `0x701`–`0x709`.
+To replace the fake alive frames with a real board, flash the generic controller firmware on an Arduino and adopt it: [Generic controllers](./generic_controllers/README.md). The example controller is controller 0, on `0x701`–`0x709`.
 
 ## Next steps
 
-- [Writing a component](./writing_components.md): every Cantastic and bus call, and the framework drivers you can reuse.
+- [Add a component](./vms/add_a_component.md): every Cantastic and bus call, and the framework drivers you can reuse.
 - [CAN frames and topology](./can_frames.md): the YAML format, imports, and DBC bit numbering.
-- [Dashboard pages](./dashboard_pages.md): charts, buttons, toggles and the head unit's blocks.
+- [Dashboard pages](./vms/dashboard_pages.md): charts, buttons, toggles and the head unit's blocks.
 - [Your vehicle package](./vehicle_package.md): the full contract, bridges and control levels.

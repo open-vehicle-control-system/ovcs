@@ -5,6 +5,9 @@ Linux on the Raspberry Pi 5 head unit. Layout is driven entirely by
 [`infotainment_api`](../api) — this project renders whatever pages +
 blocks the active vehicle's `InfotainmentCore.Vehicle` composer exposes.
 
+[Pages](../../docs/infotainment/README.md#pages) lists the block types it renders and what
+each reads.
+
 The firmware image (`../firmware`) bundles a cross-compiled build of this
 app via `nerves_flutter_support`, so production devices ship the static
 artifact — no live Flutter tooling on the Pi.

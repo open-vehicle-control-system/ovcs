@@ -1,187 +1,22 @@
 # VMS Core
 
-VMS Core is the central application of the Open Vehicle Control System. It manages all vehicle components, processes CAN bus communication, enforces safety logic, and provides a metrics/actions interface for the dashboard and API.
+`VmsCore`, the core of the Vehicle Management System: component drivers, managers, metrics and the `VmsCore.Vehicle` behaviour a vehicle's VMS composer implements. The guides, [VMS](../../docs/vms/README.md) and [How the VMS works](../../docs/vms/how_it_works.md), explain what it does and how; this README keeps the library's developer details.
 
-## Architecture
-
-VMS Core is built around four key patterns:
-
-### 1. Vehicle Composer
-
-Vehicles live outside `vms_core` in their own Mix packages under `vehicles/`. Each vehicle's VMS side implements the `VmsCore.Vehicle` behaviour:
+## Layout
 
 ```text
-VmsCore.Vehicle (behaviour)
-├── children/0                → List of child specs for the OTP supervisor
-├── generic_controllers/0     → Pin configurations for generic controllers (optional)
-├── dashboard_configuration/0 → UI layout for the web dashboard (optional)
-├── can_config_otp_app/0      → OTP app owning the CAN YAMLs
-├── can_config_path/0         → Path to the YAML inside that app's priv/
-└── default_can_mapping/1     → CAN_NETWORK_MAPPINGS when the variable is unset
+lib/vms_core/
+├── application.ex        supervision tree: Repo, Metrics, NetworkInterfaces, OvcsBus.Cluster, the composer's children
+├── vehicle.ex            the VmsCore.Vehicle behaviour
+├── components/           one directory per manufacturer, one module per driver
+├── managers/             ControlLevel, Gear
+├── metrics.ex, status.ex, network_interfaces.ex, normalised_request.ex, repo.ex
+└── models/               Ecto schemas
 ```
-
-The `VEHICLE` environment variable selects which vehicle package's
-composer is wired in at startup. See
-[Your vehicle package](../../docs/vehicle_package.md) for the boot flow.
-
-### 2. Component Pattern
-
-Every hardware driver is a GenServer that follows the same pattern:
-
-1. **Subscribes to CAN frames** via `Cantastic.Receiver.subscribe/3`
-2. **Subscribes to internal messages** via `OvcsBus.subscribe/1`
-3. **Runs a periodic loop** (typically every 10ms) to emit CAN frames and broadcast metrics
-4. **May expose actions** via `trigger_action/2` for dashboard control
-
-Components receive CAN data as `{:handle_frame, %Cantastic.Frame{}}` messages and internal data as `%OvcsBus.Message{}` messages.
-
-### 3. Bus System
-
-[`OvcsBus`](../../libraries/ovcs_bus) (shared across VMS, infotainment, and bridge firmwares) is a Phoenix PubSub-based message bus for inter-component communication. Components broadcast metrics:
-
-```elixir
-alias OvcsBus, as: Bus
-
-Bus.broadcast("messages", %Bus.Message{
-  name: :speed,
-  value: 45.2,
-  source: VmsCore.Components.Volkswagen.Polo9N.ABS
-})
-```
-
-and listen for messages from other components in their `handle_info/2`:
-
-```elixir
-def handle_info(%Bus.Message{name: :speed, value: speed, source: source}, state)
-    when source == state.abs_source do
-  {:noreply, %{state | speed: speed}}
-end
-```
-
-The `source` field enables decoupling: components don't import each other directly. Instead, they receive source module atoms through their init configuration from the Composer.
-
-Every BEAM in the vehicle (VMS, infotainment, each bridge) is joined into a distributed Erlang mesh by `OvcsBus.Cluster`. `OvcsBus.broadcast/2` stays on the local node. See [`OvcsBus`](../../libraries/ovcs_bus) for details.
-
-### 4. Manager Pattern
-
-Managers orchestrate cross-component logic:
-
-- **`Managers.ControlLevel`** — Selects the active control level (`:manual`, `:radio`, or `:ros`; under `:ros`, the `:teleop` or `:autonomous` commander) and routes throttle, steering, gear, and direction inputs from the appropriate source
-- **`Managers.Gear`** — Enforces gear shift safety constraints (speed near zero, throttle released, ready-to-drive status)
-
-## Supervision Tree
-
-```text
-VmsCore.Application
-├── VmsCore.Repo (SQLite - throttle calibration data)
-├── Ecto.Migrator (applies pending migrations on boot, except under a release start script)
-├── VmsCore.Metrics (aggregates all Bus messages for dashboard/API)
-├── VmsCore.NetworkInterfaces (CAN interface statistics)
-├── OvcsBus.Cluster (connects this BEAM to the vehicle's other firmwares via Erlang distribution)
-└── Vehicle Composer children (dynamic, based on VEHICLE env var):
-    ├── VmsCore.Status (VMS heartbeat, ready-to-drive, controller reset)
-    ├── Components (hardware drivers)
-    ├── Managers (control level, gear)
-    └── Generic Controllers (I/O board drivers)
-```
-
-`OvcsBus`'s own `Phoenix.PubSub` lives under its own OTP application
-(`:ovcs_bus`) and is reachable by name from every BEAM that depends on
-the library.
 
 ## Components
 
-### OVCS Custom Hardware
-
-| Module | File | Purpose |
-|--------|------|---------|
-| `Components.OVCS.GenericController` | `components/ovcs/generic_controller.ex` | Arduino R4 Minima I/O driver (digital, analog, PWM, DAC, external PWM) |
-| `Components.OVCS.HighVoltageContactors` | `components/ovcs/high_voltage_contactors.ex` | HV contactor precharge sequence (negative → precharge → positive) |
-| `Components.OVCS.ThrottlePedal` | `components/ovcs/throttle_pedal.ex` | Dual-channel analog throttle with calibration (persisted to SQLite) |
-| `Components.OVCS.SteeringColumn` | `components/ovcs/steering_column.ex` | Stepper motor steering with PID controller |
-| `Components.OVCS.WaterPump` | `components/ovcs/water_pump.ex` | Cooling water pump relay control |
-| `Components.OVCS.Infotainment` | `components/ovcs/infotainment.ex` | Infotainment CAN bridge (music control, turn signals) |
-| `Components.OVCS.PulseRotationSensor` | `components/ovcs/pulse_rotation_sensor.ex` | Rotation of a shaft from a pulse counted by a generic controller |
-| `Components.OVCS.RotationFusion` | `components/ovcs/rotation_fusion.ex` | One shaft's rotation from several sensors, with a cross-check fault when they disagree |
-| `Components.OVCS.VehicleMotion` | `components/ovcs/vehicle_motion.ex` | Vehicle speed from a driveline shaft's rotation, on the bus and on `vehicle_motion` (`0x60B`) |
-| `Components.OVCS.ControlStatus` | `components/ovcs/control_status.ex` | The control level, ROS commander and requested throttle and steering on `control_status` (`0x60C`), for displays off the VMS |
-| `Components.OVCS.InputCurve` | `components/ovcs/input_curve.ex` | Dead zone and expo applied to a throttle request |
-| `Components.OVCS.Status` | `components/ovcs/status.ex` | Forwards the battery state to the infotainment |
-
-### Radio Control
-
-| Module | Purpose |
-|--------|---------|
-| `Components.OVCS.RadioControl.Steering` | Steering input from RC transmitter |
-| `Components.OVCS.RadioControl.Throttle` | Throttle input from RC transmitter |
-| `Components.OVCS.RadioControl.Direction` | Forward/reverse from RC transmitter |
-| `Components.OVCS.RadioControl.RequestedControlLevel` | Control level switch (`:manual` / `:radio` / `:ros`) from RC transmitter |
-| `Components.OVCS.RadioControl.RequestedRosCommander` | ROS commander switch (`:teleop` / `:autonomous`) from RC transmitter |
-
-### ROS Commands
-
-| Module | Purpose |
-|--------|---------|
-| `Components.OVCS.RosActuatorCommand.Steering` | Steering from the ROS bridge's actuator command (`0x2B0`) |
-| `Components.OVCS.RosActuatorCommand.Throttle` | Throttle from the ROS bridge's actuator command, zeroed when stale |
-| `Components.OVCS.RosActuatorCommand.Direction` | Direction from the ROS bridge's actuator command |
-| `Components.OVCS.RosVelocityCommand` | Steering and throttle from a linear and angular velocity (`0x2B1`) |
-| `Components.OVCS.RosCommand.Freshness` | Detects a ROS command that stopped changing |
-
-### Nissan Leaf AZE0
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Nissan.LeafAZE0.Inverter` | Motor control, torque requests, speed feedback, regenerative braking |
-| `Components.Nissan.LeafAZE0.Charger` | AC charging control and monitoring. **Not working: the charge does not start.** |
-
-### Bosch
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Bosch.IBoosterGen2` | Electronic brake booster with PID-controlled rod position |
-
-### Orion BMS
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Orion.BMS2` | Battery management: cell voltages, temperatures, SOC, charge limits |
-
-### EVPT
-
-| Module | Purpose |
-|--------|---------|
-| `Components.EVPT.EVPT23Charger` | On-board charger control and monitoring |
-
-### Volkswagen Polo 9N
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Volkswagen.Polo9N.ABS` | ABS module: wheel speeds, brake pressure |
-| `Components.Volkswagen.Polo9N.Dashboard` | Original dashboard cluster communication |
-| `Components.Volkswagen.Polo9N.IgnitionLock` | Ignition key position detection |
-| `Components.Volkswagen.Polo9N.PassengerCompartment` | Turn signal stalk, wiper stalk |
-| `Components.Volkswagen.Polo9N.PowerSteeringPump` | Electric power steering pump control |
-| `Components.Volkswagen.Polo9N.FakeOilPressureSensor` | Simulated oil pressure signal (suppresses dashboard warning) |
-
-### Matek
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Matek.PM12S3` | Battery voltage and current from a PM12S-3 power module |
-
-### VESC
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Vesc.MotorController` | Traction motor controller running the VESC firmware, over CAN |
-
-### Traxxas
-
-| Module | Purpose |
-|--------|---------|
-| `Components.Traxxas.Steering` | Servo steering via external PWM |
-| `Components.Traxxas.MotorController` | Hobby ESC driving the motor via external PWM |
+One directory per manufacturer under `lib/vms_core/components/`, one module per driver. [Drivers](../../docs/vms/drivers.md) lists them with their networks, options and what they publish; each module's moduledoc is the reference.
 
 ## Infrastructure Modules
 
@@ -193,59 +28,6 @@ the library.
 | `VmsCore.Repo` | `repo.ex` | Ecto SQLite3 repository for persistent data |
 | `VmsCore.NetworkInterfaces` | `network_interfaces.ex` | CAN interface statistics (TX/RX errors, bus state) |
 
-## CAN Configuration
-
-Vehicle CAN topology files live in each vehicle package's `priv/can/`:
-
-```text
-vehicles/<name>/priv/can/
-├── vms.yml                 → read by vms_core
-├── infotainment.yml        → read by infotainment_core (optional)
-└── generic_controller/     → per-vehicle controller frame wirings
-```
-
-Shared per-component frame and signal definitions live in the [`ovcs_can`](../../libraries/ovcs_can) library under `priv/can/components/`. Vehicle topology YAMLs import components from the library via Cantastic's cross-app import syntax:
-
-```yaml
-- import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
-```
-
-## Dashboard System
-
-Each vehicle's Composer defines a declarative dashboard configuration consumed by the VMS API and rendered by the VMS Dashboard (Vue.js):
-
-```elixir
-%{
-  vehicle: %{
-    name: "My vehicle",
-    main_color: "#1a73e8",
-    refresh_interval: 100,
-    pages: %{
-      "drivetrain" => %{
-        name: "Drivetrain",
-        icon: "bolt",
-        order: 0,
-        blocks: [
-          %{type: "table", rows: [
-            %{type: :metric, label: "Speed", module: SomeModule, key: :speed, unit: "km/h"},
-            %{type: :action, label: "Enable", module: SomeModule, action: "enable"}
-          ]},
-          %{type: "lineChart", y_axis: [
-            %{label: "Torque", module: SomeModule, key: :torque, unit: "Nm"}
-          ]}
-        ]
-      }
-    }
-  }
-}
-```
-
-**Block types:**
-- `"table"` — Key-value metrics and action buttons
-- `"lineChart"` — Time-series charts with multiple Y-axis series
-
-**Action handling:** Components implement `trigger_action(action_name, params)` to handle dashboard button presses (e.g., "adopt" a controller, "calibrate" throttle, "enable" contactors).
-
 ## Running Locally
 
 ```sh
@@ -254,14 +36,6 @@ VEHICLE=Ovcs1 iex -S mix phx.server
 ```
 
 This runs the OVCS1 reference vehicle; set `VEHICLE` to your vehicle's top-level module the same way. The VMS Core starts as a dependency of the VMS API (Phoenix). The `VEHICLE` env var is required; `CAN_NETWORK_MAPPINGS` defaults to whatever `default_can_mapping(:host)` returns on the vehicle's VMS composer and only needs to be set to override it.
-
-## Key Safety Features
-
-- **HV contactor precharge sequence** — Prevents inrush current damage by following negative → precharge → (wait for voltage equalization) → positive → disable precharge
-- **VMS heartbeat watchdog** — Generic controllers shut down all outputs if the VMS heartbeat (`0x1A0`) is missing for too long
-- **Gear shift safety** — Gear manager enforces speed and throttle constraints before allowing shifts
-- **Manual brake override** — Pressing the brake pedal in radio or ROS mode forces manual control
-- **Radio takeover** — Pulling the radio trigger in reverse while ROS drives forces radio control
 
 ## License
 

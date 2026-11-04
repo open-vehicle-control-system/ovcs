@@ -55,10 +55,53 @@ published =
   |> Enum.map(&(Path.join("docs", &1) |> Path.expand() |> Path.relative_to_cwd()))
   |> Enum.uniq()
 
+# docs/superpowers/ holds design notes and plans, not guides.
 unindexed =
-  Path.wildcard("docs/*.md")
-  |> Enum.reject(&(&1 == index or &1 in published))
+  files
+  |> Enum.filter(&(String.starts_with?(&1, "docs/") and String.ends_with?(&1, ".md") and File.regular?(&1)))
+  |> Enum.reject(&(&1 == index or &1 in published or String.starts_with?(&1, "docs/superpowers/")))
+  |> Enum.sort()
   |> Enum.map(&"#{&1}: not linked from #{index}")
+
+# The site's tree: each ## section holds either entries or ### sub-sections.
+index_items =
+  index_text
+  |> String.split("\n")
+  |> Enum.with_index(1)
+  |> Enum.map_reduce(false, fn {line, n}, fenced ->
+    cond do
+      String.match?(line, ~r/^[ \t]*(```|~~~)/) -> {nil, not fenced}
+      fenced -> {nil, fenced}
+      title = Regex.run(~r/^## (.+?)\s*$/, line, capture: :all_but_first) -> {{:section, n, hd(title)}, fenced}
+      String.match?(line, ~r/^### /) -> {{:group, n}, fenced}
+      String.match?(line, ~r/^- \[/) -> {{:entry, n}, fenced}
+      true -> {nil, fenced}
+    end
+  end)
+  |> elem(0)
+  |> Enum.reject(&is_nil/1)
+
+{orphans, sectioned} = Enum.split_while(index_items, &(elem(&1, 0) != :section))
+
+index_shape =
+  Enum.map(orphans, &"#{index}:#{elem(&1, 1)}: entry or sub-section before the first section") ++
+    (sectioned
+     |> Enum.chunk_while(
+       [],
+       fn
+         {:section, _, _} = section, [] -> {:cont, [section]}
+         {:section, _, _} = section, acc -> {:cont, Enum.reverse(acc), [section]}
+         item, acc -> {:cont, [item | acc]}
+       end,
+       fn
+         [] -> {:cont, []}
+         acc -> {:cont, Enum.reverse(acc), []}
+       end
+     )
+     |> Enum.flat_map(fn [{:section, _, title} | items] ->
+       {direct, rest} = Enum.split_while(items, &(elem(&1, 0) == :entry))
+       if direct != [] and rest != [], do: ["#{index}: section #{title} mixes entries and sub-sections"], else: []
+     end))
 
 check_file = fn path ->
   if exists?.(path) do
@@ -116,7 +159,7 @@ check_file = fn path ->
   end
 end
 
-problems = unindexed ++ Enum.flat_map(published, check_file)
+problems = index_shape ++ unindexed ++ Enum.flat_map(published, check_file)
 
 if problems == [] do
   IO.puts("#{length(published)} published guides pass")

@@ -1,5 +1,5 @@
 ---
-# Controller 0's alive frame. Frame ids per controller id: docs/generic_controllers.md.
+# Controller 0's alive frame. Frame ids per controller id: docs/generic_controllers/README.md.
 name: example_controller_alive
 id: 0x701
 frequency: 100

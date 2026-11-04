@@ -6,22 +6,13 @@ libraries plus any other child an entry lists. A vehicle declares what
 each image runs, and on which Nerves target, via its
 `bridge_firmwares/0` callback — one Nerves image per entry.
 
-See [`docs/vehicle_package.md`](../../docs/vehicle_package.md#bridge-firmwares)
-for the boot flow and [`libraries/ovcs_bridge/README.md`](../../libraries/ovcs_bridge/README.md)
-for the supervision contract.
+The guide, [Bridges](../../docs/bridges/README.md), covers the `bridge_firmwares/0`
+entry, the targets and the boot sequence; this README keeps the developer details.
 
 ## Targets
 
-The `mix.exs` target-gates the bridge libraries it pulls in. An entry's
-`:target` picks one of:
-
-| Target | Board |
-|--------|-------|
-| `:ovcs_base_can_system_rpi3a` | Raspberry Pi 3A |
-| `:ovcs_base_can_system_rpi4` | Raspberry Pi 4 |
-| `:rpi5` | Raspberry Pi 5, with libcamera and the Hailo-8 driver (system `ovcs_bridges_system_rpi5`) |
-
-Custom Nerves systems live in their own repos under
+The `mix.exs` target-gates the bridge libraries it pulls in; [Targets](../../docs/bridges/README.md#targets)
+lists the boards. Custom Nerves systems live in their own repos under
 [`open-vehicle-control-system`](https://github.com/open-vehicle-control-system).
 
 ## Building
@@ -55,9 +46,5 @@ infotainment / bridges).
 
 ## How it boots
 
-`BridgeFirmware.Application` starts `OvcsBridge.Supervisor`, which:
-
-1. Reads `VEHICLE` + `BRIDGE_FIRMWARE_ID` from app env.
-2. Calls `vehicle.bridge_firmwares()[firmware_id]` to find the bundled bridge modules.
-3. Starts `OvcsBus.Cluster` so this BEAM joins the vehicle's distributed Erlang mesh.
-4. Flat-maps `children/0` from every bundled bridge and supervises them under `:one_for_one`.
+`BridgeFirmware.Application` starts `OvcsBridge.Supervisor`; [How a bridge firmware boots](../../docs/bridges/README.md#how-a-bridge-firmware-boots)
+walks through it.

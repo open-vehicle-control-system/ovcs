@@ -9,60 +9,20 @@ OVCS and some non-CAN world (radio-control link, ROS2 graph, lidar,
 Nerves image at `bridges/firmware/`, driven at boot by the active
 vehicle's `OvcsVehicle.bridge_firmwares/0` declaration.
 
-## Why a library and not a firmware per bridge
-
-One vehicle often runs several bridge firmwares on different SoCs
-(e.g. radio-control on rpi3a, ROS on rpi5). Keeping bridges as
-plain libraries means:
-
-- one shared Nerves image (`bridges/firmware/`) handles fwup, rootfs,
-  networking — you don't maintain N copies.
-- each vehicle composes its own subset of bridges per image via its
-  `bridge_firmwares/0` map.
-- a bridge library can be bundled into multiple firmware images
-  without duplication.
+The guide, [Bridges](../../docs/bridges/README.md), explains why bridges are libraries,
+the bridge firmware entry and the boot sequence; this README keeps the library's
+developer details.
 
 ## Behaviour
 
-```elixir
-defmodule MyBridge do
-  @behaviour OvcsBridge
-
-  @impl OvcsBridge
-  def children do
-    [
-      {MyBridge.SomeWorker, []},
-      {MyBridge.AnotherWorker, []}
-    ]
-  end
-end
-```
-
-- `children/0` — required; child specs added to the bridge
-  firmware's supervision tree when the bridge is bundled.
+`children/0` (required) and `apply_runtime_config/2` (optional), documented in
+`lib/ovcs_bridge.ex`. [Write a bridge](../../docs/bridges/write_a_bridge.md) builds one
+end to end.
 
 ## Runtime
 
-`OvcsBridge.Supervisor` is the root for a bridge firmware image.
-It reads `:ovcs_bridge` app env (set by `bridges/firmware/config/
-config.exs` from `VEHICLE` + `BRIDGE_FIRMWARE_ID`), looks up the
-matching entry in `vehicle.bridge_firmwares/0`, and:
-
-1. starts `OvcsBus.Cluster` so this BEAM joins the vehicle's
-   distributed Erlang mesh;
-2. ensures each bundled bridge's OTP application is started
-   (no-op on target; explicit on host dev where bridges are
-   `runtime: false`);
-3. flat-maps `children/0` from every bundled bridge module;
-4. adds the entry's own `children`, a list of child specs or a
-   `%{host: [...], target: [...]}` map picked per build target,
-   after starting each child module's OTP application;
-5. runs everything under `:one_for_one`.
-
-Bridge libraries get `OvcsBus` for free — this lib depends on
-`ovcs_bus`, so `OvcsBus.subscribe/1` and `broadcast/2` work out of
-the box. A broadcast stays on the bridge's BEAM (see
-[`OvcsBus`](../ovcs_bus)).
+`OvcsBridge.Supervisor` is the root of a bridge firmware image; [How a bridge firmware boots](../../docs/bridges/README.md#how-a-bridge-firmware-boots)
+lists what it starts, in order.
 
 ## Layout
 
@@ -82,11 +42,6 @@ lib/
 
 ## Why bridge libs are listed in `bridges/firmware/mix.exs`
 
-No firmware depends on a vehicle as a Mix dep — vehicles are reached
-at boot via `Code.prepend_path`. That means bridge libraries can't
-be pulled in transitively through the vehicle even if we wanted
-them to be. Each bridge library is listed directly in
-`bridges/firmware/mix.exs`, target-gated so a rpi3a build only
-compiles what rpi3a bridges actually need. Adding a new bridge
-library is a two-liner there + target-gate entry — the vehicle's
-`bridge_firmwares/0` then opts into it per firmware image.
+Vehicles are reached at boot through `Code.prepend_path`, never as a Mix dependency, so a
+bridge library can't arrive transitively; [List it in the bridge firmware](../../docs/bridges/write_a_bridge.md#list-it-in-the-bridge-firmware)
+shows the entry and the target gates.

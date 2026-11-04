@@ -4,7 +4,7 @@ Real-time debug dashboard for the Vehicle Management System. Vue 3 SPA that
 reads the layout (pages + blocks) published by [`vms_api`](../api) and
 renders metric tables and live line charts driven by Phoenix channels.
 
-Used during development and when a vehicle is bench-tested. The firmware
+[Dashboard pages](../../docs/vms/dashboard_pages.md) explains what it renders and how a vehicle declares it. Used during development and when a vehicle is bench-tested. The firmware
 build script (`../firmware/build.sh`) bundles this dashboard into the VMS
 Nerves image, so production hardware ships with the static build.
 

@@ -26,7 +26,7 @@ entry).
 ## Quick start
 
 See the [main README](https://github.com/open-vehicle-control-system/ovcs#quick-start) and
-[Getting Started](https://ovcs.be/docs/getting_started). In short, with the `ovcs` CLI on your `PATH`:
+[Setup](https://ovcs.be/docs/getting-started). In short, with the `ovcs` CLI on your `PATH`:
 
 ```sh
 ovcs run ovcs1                     # provision vcan + spawn one BEAM per firmware

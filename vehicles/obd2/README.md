@@ -22,7 +22,7 @@ renders them on the head unit.
 
 ## Quick start
 
-With the framework's `ovcs` CLI on your `PATH` ([Getting Started](https://ovcs.be/docs/getting_started)):
+With the framework's `ovcs` CLI on your `PATH` ([Setup](https://ovcs.be/docs/getting-started)):
 
 ```sh
 ovcs run obd2                      # provision vcan + spawn VMS + infotainment BEAMs

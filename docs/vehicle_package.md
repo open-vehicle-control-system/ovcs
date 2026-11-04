@@ -18,7 +18,7 @@ A standalone Mix package whose top-level module implements the `OvcsVehicle` beh
 | A VMS composer (`VmsCore.Vehicle`): which component drivers run, the CAN topology, dashboard pages, controller pinouts | `vms_core` with the component drivers, managers, metrics, and the dashboard API |
 | An optional infotainment composer (`InfotainmentCore.Vehicle`): head-unit pages and CAN topology | `infotainment_core`, its API, and the Flutter dashboard |
 | Optional bridge firmware entries: which bridge libraries to bundle, on which Pi, with which CAN mapping | The bridge libraries (`RadioControlBridge`, `RosBridge`) and `OvcsBridge.Supervisor` |
-| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and an optional detector, for a vision unit on a Raspberry Pi 5 or an OKdo Nano C100 ([Vision unit](./vision/overview.md)) | `vision_core`, its API and dashboard, and the Rust Ports for capture, stereo matching, JPEG and detection |
+| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and an optional detector, for a vision unit on a Raspberry Pi 5 or an OKdo Nano C100 ([Vision unit](./vision/README.md)) | `vision_core`, its API and dashboard, and the Rust Ports for capture, stereo matching, JPEG and detection |
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
 | `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
@@ -137,7 +137,7 @@ Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
    ```
 
    `resolve_side/4` takes the vehicle name baked in by `config.exs` (from `VEHICLE`, default `Ovcs1` on host), prepends the vehicle's ebin (`vehicles/<name>/_build/<env>/lib/<name>/ebin` on host, `<release>/lib/<name>-<vsn>/ebin` on target) and returns `{vehicle, composer}`, or `nil` under `MIX_ENV=test`.
-3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings. `VisionCore.Application` reads `:vision_core, :vehicle` the same way, but its composer returns a `VisionCore.Config` rather than children; see [Vision unit](./vision/overview.md).
+3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings. `VisionCore.Application` reads `:vision_core, :vehicle` the same way, but its composer returns a `VisionCore.Config` rather than children; see [Vision unit](./vision/README.md).
 
 Bridges follow the same pattern with `OvcsBridge.Supervisor` in place of a core application; the entry it reads is `vehicle.bridge_firmwares()[bridge_firmware_id]`.
 
@@ -154,70 +154,11 @@ The infotainment composer has the same shape, with `infotainment_configuration/0
 
 ## Bridge firmwares
 
-A bridge firmware is the Nerves image that hosts your vehicle's extensions next to the `ovcs` bus: bridges such as `RadioControlBridge` and `RosBridge`, and any other child. A vehicle declares its bridge firmwares in the optional `bridge_firmwares/0` callback. From the OVCS1 reference vehicle:
-
-```elixir
-@impl OvcsVehicle
-def bridge_firmwares do
-  %{
-    "radio_control" => %{
-      target: :ovcs_base_can_system_rpi3a,
-      bridges: [RadioControlBridge],
-      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-    },
-    "ros" => %{
-      target: :ovcs_base_can_system_rpi4,
-      bridges: [RosBridge],
-      default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:spi0.0"}
-    }
-  }
-end
-```
-
-Each key becomes a CLI role with the `bridge-` prefix:
-
-```sh
-./ovcs build ovcs1 bridge-radio_control
-./ovcs build my_car bridge-<id>
-```
-
-An entry can also list `required_files`, paths relative to your vehicle app, for files a bridge needs but the repository doesn't carry. The OVCS Mini's `ros_vision` entry names its detection model this way (`required_files: ["priv/models/nanodet_repvgg.hef"]`, fetched by `mise run fetch-models`), and the firmware build fails when one is missing rather than producing an image that boots without it.
-
-An entry's `children` are child specs the bridge firmware starts after its bridges, a list or a `%{host: [...], target: [...]}` map picked per build target. The OVCS Mini runs the [bus gateway](./bus_gateway.md) this way in its `"ros"` entry.
-
-The shared `bridges/firmware` image is built once per entry. At boot, `OvcsBridge.Supervisor` reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks up the entry, and supervises each listed bridge's `children/0`, then the entry's `children`.
-
-Each bundled bridge reads its configuration from a callback on your vehicle module (see [The five behaviours](#the-five-behaviours)). From the OVCS Mini reference vehicle:
-
-```elixir
-@behaviour RadioControlBridge
-
-@impl RadioControlBridge
-def radio_control_bridge_config(:host),
-  do: %RadioControlBridge.Config{components: []}
-
-def radio_control_bridge_config(:target),
-  do: %RadioControlBridge.Config{
-    components: [{:mavlink_forwarder, uart_port: "ttySC0", uart_baud_rate: 460_800}]
-  }
-```
-
-> [!NOTE]
-> A bare id such as `radio_control` is rejected, and the error lists the valid roles for that vehicle. The prefix is what tells `build`, `burn` and `upload` to target the bridge image.
+A bridge firmware is the Nerves image that hosts your vehicle's extensions next to the `ovcs` bus: bridges such as `RadioControlBridge` and `RosBridge`, and any other child. Your vehicle declares them in the optional `bridge_firmwares/0` callback, one entry per image, each addressed on the CLI as `bridge-<id>`; each bundled bridge reads its configuration from a callback on your vehicle module (see [The five behaviours](#the-five-behaviours)). [Bridge firmwares](./bridges/README.md#bridge-firmwares) covers the entry's keys, the targets and the boot sequence.
 
 ## Vision unit
 
-A vehicle with stereo cameras adds two optional callbacks to its top-level module:
-
-```elixir
-@impl OvcsVehicle
-def vision, do: MyCar.Vision.Composer
-
-@impl OvcsVehicle
-def vision_target, do: :rpi5
-```
-
-`vision_target/0` is `:rpi5` for a Raspberry Pi 5, with or without a Hailo-8 for detection, or `:okdo_c100` for an OKdo Nano C100. `vision/0` returns a module implementing `VisionCore.Composer`, whose `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm. The optional `required_files/0` lists files relative to your vehicle app, such as a detection model, and the firmware build fails when one is missing. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. See [Vision unit](./vision/overview.md).
+A vehicle with stereo cameras adds two optional callbacks to its top-level module: `vision/0` returns its `VisionCore.Composer`, and `vision_target/0` names the board, `:rpi5` or `:okdo_c100`. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. [Opting in](./vision/README.md#opting-in) covers the composer, its configuration arms and its required files.
 
 ## Bus wiring and node names
 
@@ -234,99 +175,9 @@ On the host, `./ovcs run` names each BEAM with `--sname`. A deployed firmware bo
 
 Every firmware release sets the cookie `ovcs` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`. On the host, `./ovcs run` and `./ovcs attach` use your `~/.erlang.cookie` instead, which the CLI creates with a random value if it is missing.
 
-## Control levels: who commands, and which ROS node
+## Control levels
 
-`VmsCore.Managers.ControlLevel` arbitrates between commanders. It reads two independent switches on the radio transmitter, because authority and autonomy are different questions:
-
-| Component | Values | Answers |
-|---|---|---|
-| `OVCS.RadioControl.RequestedControlLevel` | `:manual` / `:radio` / `:ros` | who has authority |
-| `OVCS.RadioControl.RequestedRosCommander` | `:teleop` / `:autonomous` | which ROS node, when ROS does |
-
-`:ros` means the vehicle takes its commands from the ROS bridge, **not** that it drives itself: a human on a gamepad and a planner reach the VMS over the same topics and CAN frames. The commander switch says which of them has the wheel.
-
-Both switches only *request*. The manager refuses unsafe moves: in motion, not ready to drive, or while a fault has forced a lower level. `:ros` is reachable only from `:radio`, so getting there takes two deliberate throws with the middle position in between. A refused request is logged once, with the reason.
-
-The radio trigger (`radio_braking_source`) drops `:ros` to `:radio`, and so does an optional `rotation_fault_source`: a `OVCS.RotationFusion` whose sources disagree (`:cross_check_fault`) means the odometry, and every costmap cell placed with it, can no longer be trusted. Either one forces `:radio` until the switch comes back to `:radio` or below, and `:ros` is refused while it lasts. The OVCS Mini reference vehicle wires its motor rotation fusion there.
-
-### Channel layout
-
-Which transmitter channel each component reads is a vehicle decision. The radio control bridge copies the receiver's channels 1 to 8 onto `0x2A0` and `0x2A1` unchanged, and each composer names the channel every component reads. The two reference vehicles with radio control use:
-
-| Purpose | OVCS Mini | OVCS1 |
-|---|---|---|
-| Steering | 1 | 1 |
-| Throttle (and `radio_braking`, the human takeover) | 2 | 2 |
-| Control level | 6 | 3 |
-| Direction (the reverse button, through `Managers.Gear`) | 7 | 4 |
-| ROS commander | 5 | not wired |
-
-Switch positions are 1000, 1500 and 2000 µs with a margin of 100. A position outside every margin falls back to the safe one: `:manual` for the level, `:teleop` for the commander, `:forward` for direction.
-
-The Mini's link is ExpressLRS in MAVLink mode, which forces Hybrid switch mode. Channel 5 is the link's arm channel and only carries 1000 or 2000; channels 6 to 8 are 3-position and reach the bus. Hence the three-position level on 6 and the two-position commander on 5.
-
-### Source maps
-
-Each `requested_*_sources` map in a composer is keyed by level; the `:ros` entry is itself keyed by commander:
-
-```elixir
-requested_throttle_sources: %{
-  manual: OVCS.ThrottlePedal,
-  radio: OVCS.RadioControl.Throttle,
-  ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
-}
-```
-
-A hand's throttle usually goes through an `OVCS.InputCurve` first, and the map names the curve: dead zone and expo belong to the hand, one curve per hand, while the actuator only applies its caps. In the OVCS Mini reference vehicle:
-
-```elixir
-{OVCS.InputCurve,
- %{
-   process_name: Vms.RadioThrottleInputCurve,
-   throttle_source: OVCS.RadioControl.Throttle,
-   deadzone: @throttle_deadzone,
-   expo: @throttle_expo
- }},
-...
-requested_throttle_sources: %{
-  manual: nil,
-  radio: Vms.RadioThrottleInputCurve,
-  ros: %{teleop: Vms.TeleopThrottleInputCurve, autonomous: OVCS.RosVelocityCommand}
-},
-radio_braking_source: OVCS.RadioControl.Throttle
-```
-
-A velocity is a physical quantity and is named directly, as is the takeover: `radio_braking` reads the raw trigger. A hand wired to an actuator without a curve gets no dead zone, and a trigger that drifts at rest creeps the vehicle.
-
-A missing key resolves to `nil`: nothing commands that actuator. That is the safe direction, and it is how a vehicle without a planner is expressed: `ros: %{teleop: ...}` leaves the autonomous position commanding nothing. Such a vehicle also omits `requested_ros_commander_source`, which pins the commander to `:teleop`.
-
-### Driving on the host bench
-
-On the host there is no radio receiver and no controller. The level starts at `default_control_level` (`:manual` in the OVCS Mini reference vehicle, where every source is `nil`); nothing emits `0x2A0`/`0x2A1`, and nothing emits the pulse counter frame `0x709`. Without that frame the speed is unknown, and the manager refuses every mode change with `:speed_unknown`. A bench session synthesises both.
-
-First the speed, as a stream in its own terminal: the frame watcher needs several on-time frames to declare `0x709` alive and drops it as soon as they stop. A count and frequency of zero is a stationary vehicle:
-
-```sh
-cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
-```
-
-Then the switches, in the Mini's channel layout. `0x2A0` carries channels 1 to 4 as little-endian `uint16`, two bytes each; `0x2A1` carries 5 to 8. 1500 is `DC05`, 2000 is `D007`, 1000 is `E803`:
-
-```sh
-# Steering and throttle centred (channels 1 and 2)
-cansend vcan0 2A0#DC05DC0500000000
-
-# Level -> :radio (channel 6 = 1500; channel 5 = 1000 keeps :teleop)
-cansend vcan0 2A1#E803DC0500000000
-
-# Level -> :ros (channel 6 = 2000). Two steps, in this order.
-cansend vcan0 2A1#E803D00700000000
-
-# Optional: hand it to the planner (channel 5 = 2000). Needs a standstill.
-cansend vcan0 2A1#D007D00700000000
-```
-
-Channels 7 and 8 read as 0 here, outside every margin, so they take the safe fallback. `ready_to_drive` is hardcoded `true` in the Mini (`OvcsMini.Vms`); where it comes from contactors or an inverter, it has to be true as well. For your vehicle, substitute the channels your composer names.
+Who commands the vehicle, the pedals, the radio transmitter or a ROS node, is the VMS's decision: `VmsCore.Managers.ControlLevel` makes it from the switches and source maps your VMS composer configures. [Control levels](./vms/how_it_works.md#control-levels) covers the two switches, the channel layout, the `requested_*_sources` maps and how to drive them on the host bench.
 
 ## Host development versus deployed
 
@@ -352,5 +203,5 @@ Each demonstrates a different shape. Copy the patterns, not the packages.
 
 - [`libraries/ovcs_vehicle/README.md`](../libraries/ovcs_vehicle/README.md): the `OvcsVehicle` behaviour and `ovcs new`.
 - [`libraries/ovcs_bus/README.md`](../libraries/ovcs_bus/README.md): the `OvcsBus` API and its Erlang-distribution transport.
-- [Framework components](./components.md): the core / API / firmware / dashboard split.
+- [VMS](./vms/README.md): the core / API / firmware / dashboard split.
 - [Running on hardware](./running_hardware.md): build, burn and upload flows.

@@ -12,11 +12,12 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [docs/framework.md](./docs/framework.md) — the framework / vehicle / reference-vehicle vocabulary.
 - [docs/architecture.md](./docs/architecture.md) — bus isolation, the vehicle contract, the Erlang mesh.
 - [docs/getting_started.md](./docs/getting_started.md) — toolchain setup (mise, CAN, Nerves).
-- [docs/components.md](./docs/components.md) — what each app/library is and how the layers fit together (VMS + Infotainment: firmware / api / core / dashboard).
-- [docs/hardware.md](./docs/hardware.md) — physical topology, CAN networks, controllers.
+- [docs/repository.md](./docs/repository.md) — the monorepo tree, where each component is documented, shared libraries, env vars.
+- One folder per component, its pages ordered what → how → extend → reference: [docs/vms/](./docs/vms/README.md) (drivers, components, dashboard pages, control levels), [docs/infotainment/](./docs/infotainment/README.md), [docs/vision/](./docs/vision/README.md), [docs/bus/](./docs/bus/README.md) (the OVCS bus, the mesh, the gateway), [docs/bridges/](./docs/bridges/README.md), [docs/generic_controllers/](./docs/generic_controllers/README.md), [docs/ros2/](./docs/ros2/README.md).
+- [docs/hardware.md](./docs/hardware.md) — what to buy, the boards and CAN interfaces, the reference vehicles' builds.
 - [docs/running_hardware.md](./docs/running_hardware.md) — build/burn/upload via the top-level `ovcs` Rust CLI (source in `cli/src/`, built to `cli/ovcs` via `mise run cli`; the binary is gitignored), runtime env vars (`VEHICLE`, `CAN_NETWORK_MAPPINGS`).
-- [docs/vehicle_package.md](./docs/vehicle_package.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, control levels, `ovcs new`.
-- [docs/testing_with_can.md](./docs/testing_with_can.md), [docs/generic_controllers.md](./docs/generic_controllers.md) — CAN + controller testing.
+- [docs/vehicle_package.md](./docs/vehicle_package.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, `ovcs new`.
+- [docs/testing_with_can.md](./docs/testing_with_can.md) — CAN testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
 
 Prefer updating these docs over duplicating their content here.
@@ -85,7 +86,7 @@ Rewrite the offending commits locally and push with `--force-with-lease` — on 
 
 ## Documentation is published on ovcs.be
 
-Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by the [website](https://github.com/open-vehicle-control-system/website) (https://ovcs.be/docs). The index's sections and order are the site's navigation; a new guide gets a line there. Write guides as public pages, not developer notes. `elixir scripts/check_docs.exs` enforces the rules below and runs in CI.
+Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by the [website](https://github.com/open-vehicle-control-system/website) (https://ovcs.be/docs). The index's sections, its `###` sub-sections and their order are the site's navigation; a new guide gets a line there. A component's guides live in its folder under `docs/`, with the overview as the folder's `README.md`; a guide's URL is its path under `docs/`, so renaming or moving one needs a redirect in the website's `lib/redirects.mjs`. Write guides as public pages, not developer notes. `elixir scripts/check_docs.exs` enforces the rules below and runs in CI.
 
 ### Vocabulary (non-negotiable)
 

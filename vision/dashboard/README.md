@@ -21,4 +21,4 @@ A step's page is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`),
 
 `src/stores/parameters.js` holds the groups and parameters; the controls and the save bar are `OvcsParameterControl` and `OvcsSaveBar` from `@ovcs/ui/react`.
 
-`vision/firmware/build.sh` runs the build before `mix firmware`. See [Vision unit](../../docs/vision/overview.md).
+`vision/firmware/build.sh` runs the build before `mix firmware`. See [Vision unit](../../docs/vision/README.md).

@@ -4,33 +4,10 @@ Phoenix 1.7 JSON + WebSocket server that exposes the VMS Core to the debug
 dashboard. Thin layer — all logic lives in [`vms_core`](../core); controllers
 and channels just route HTTP/WebSocket traffic to it.
 
-See [`docs/components.md`](../../docs/components.md) for the three-layer
-(`core` ← `api` ← `firmware`) architecture this app sits in.
+The guide, [VMS](../../docs/vms/README.md), lists the endpoints and channels and
+places this app among the VMS layers; this README keeps the developer details.
 
-## Endpoints
-
-### REST
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/api/vehicle` | Vehicle metadata (name, main color, refresh interval) |
-| `GET` | `/api/vehicle/pages` | Dashboard page list |
-| `GET` | `/api/vehicle/pages/:page_id/blocks` | Blocks rendered on a given page |
-| `POST` | `/api/actions` | Dispatch a control action to a component |
-
-Page/block layout comes from the active vehicle's composer
-(`<Vehicle>.Vms.Composer.dashboard_configuration/0`).
-
-### WebSocket
-
-Phoenix socket mounted at `/sockets/dashboard`. Channels:
-
-| Topic | Purpose |
-|-------|---------|
-| `metrics` | Streams `VmsCore.Metrics` updates for module/key pairs the client subscribes to |
-| `network-interfaces` | Streams `VmsCore.NetworkInterfaces` state (TX/RX stats, bus state) |
-
-### Dev-only
+## Dev-only routes
 
 - `/dev/dashboard` — Phoenix LiveDashboard (Erlang VM introspection)
 

@@ -72,7 +72,7 @@ bus, radio-control / ROS bridges, etc. Drivers live under
 `VmsCore.Components.*`. Mirror each component with a matching
 dashboard page under `lib/<%= @name %>/vms/composer/dashboard/` so
 the UI surfaces its state — see
-[`docs/components.md`](../../docs/components.md).
+[`docs/vms/dashboard_pages.md`](../../docs/vms/dashboard_pages.md).
 
 ### 2. Generic controllers (CAN)
 
@@ -175,7 +175,7 @@ kernel command lines point at the A/B rootfs partitions
 
 ## Further reading
 
-- [`docs/components.md`](../../docs/components.md) — how
+- [`docs/vms/README.md`](../../docs/vms/README.md) — how
   `core` / `api` / `firmware` / `dashboard` fit together.
 - [`docs/hardware.md`](../../docs/hardware.md)
   — physical topology, CAN networks, controller boards.
