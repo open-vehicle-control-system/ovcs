@@ -62,6 +62,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](./commands.md#ground-truth) | you, to compare with `/odom` |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit | Nav2, Foxglove |
+| `/stereo/{left,right}/image_rect/compressed` | `sensor_msgs/CompressedImage` | the vision unit, with `publish_rectified_image: true`; their intrinsics are `/stereo/depth/camera_info` | displays that draw over the image, Foxglove |
 | `/octomap/point_cloud_centers` | `sensor_msgs/PointCloud2` | the Nav2 image's `octomap_server`, from `/stereo/points`, for a vehicle with `nav2/octomap.yaml` | displays, Foxglove |
 | `<cloud>/draco` | `point_cloud_interfaces/CompressedPointCloud2` | the Nav2 image's `point_cloud_transport`, for `/stereo/points` and the OctoMap map, for a vehicle with `nav2/draco.yaml` | displays over a wireless link |
 | `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
