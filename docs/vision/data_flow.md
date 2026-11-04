@@ -104,7 +104,7 @@ An exporter can also declare **actions**, things people ask of it rather than ou
 
 The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), publishes the topics above, the cameras' diagnostics and a heartbeat, each part when its option is given, and answers `cameracalibrator`'s commit: a calibration the stereo unit refuses is taken back, the file holding what it held before, and the commit answered as failed. It reads the stereo unit's cameras in the configuration each time it starts, the calibration a commit stored first, so the camera info it publishes is the calibration the stereo unit uses.
 
-`GET /api/exporters` lists the exporters with their statuses, an exporter that does not run saying why, the outputs they read and their actions, the API last, as it is the one answering. The dashboard's Exporters menu is built from it, each entry with its status; the ROS 2 exporter and the API have pages of their own, another exporter a page with its status, its outputs and its actions as buttons. The bottom bar shows the ROS 2 exporter's status, its link to the Zenoh router.
+`GET /api/exporters` lists the exporters with their statuses, an exporter that does not run saying why, the outputs they read and their actions, the API last, as it is the one answering. The dashboard's Exporters menu is built from it, each entry with its status; the ROS 2 exporter and the API have pages of their own, another exporter a page with its status, its outputs and its actions as buttons.
 
 ## The dashboard's previews
 

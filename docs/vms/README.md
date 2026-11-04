@@ -50,8 +50,6 @@ POST /api/actions                         call an action on a component
 GET  /api/firmware                        the commit, target, Nerves system and vehicle the VMS runs
 ```
 
-The dashboard's top bar shows the firmware's version, system and vehicle, and its bottom bar whether it is connected to the VMS.
-
 A Phoenix socket at `/sockets/dashboard` carries two channels: `metrics` streams the values of the module and key pairs a client subscribes to, and `network-interfaces` streams each CAN interface's counters and bus state. In development, Phoenix LiveDashboard is at `/dev/dashboard`.
 
 ### The dashboard
