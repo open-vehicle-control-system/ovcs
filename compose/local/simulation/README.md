@@ -1,6 +1,6 @@
 ---
 title: Simulation
-description: Run your vehicle's VMS, ROS bridge, perception and Nav2 against a Gazebo model of it, over virtual CAN.
+description: Run your vehicle's VMS, ROS bridge, vision unit and Nav2 against a Gazebo model of it, over virtual CAN.
 ---
 
 A Gazebo **Jetty** container stack that simulates a vehicle from its model, driven by the vehicle's own VMS. The VMS runs on your machine as it does in `./ovcs run`, over virtual CAN, and simulated hardware in the vehicle's ROS bridge answers for the hardware it commands and moves the Gazebo model. Nav2, the gamepad, the stereo pipeline and the odometry all take the paths they take on the vehicle. No Nerves toolchain, no CAN hardware and no physical vehicle are needed. The OVCS Mini reference vehicle (a Traxxas Slash 4x4, 1/10 scale) has a model and simulated hardware, so the commands below use it; they work the same on your vehicle once it has [both](#your-vehicle-in-the-simulator).
@@ -54,7 +54,7 @@ Details that read like bugs until you know them:
 
 - **`-s` is server-only.** The GUI is a separate service (`--profile gui`), because in a headless container Qt calls `qFatal` and takes the physics down with it.
 - **`-r` runs the world.** Without it the simulation loads paused, which looks exactly like a broken drive plugin.
-- **Cameras go through `image_bridge`**, for bandwidth ([Running perception against it](#running-perception-against-it)).
+- **Cameras go through `image_bridge`**, for bandwidth ([Running the vision unit against it](#running-the-vision-unit-against-it)).
 - **`use_sim_time: true`** on every node ([Time](../../../docs/ros2/README.md#time)).
 - **`GZ_IP=127.0.0.1`** on the `gazebo` and `gazebo-gui` services. They share the host's network, which has several interfaces, and without it gz-transport discovery leaves some subscriptions unconnected: on about one start in two a bridged topic (`/clock`, `/simulator/odom`, `/imu_raw`) never reached ROS, for every subscriber, until another Gazebo subscriber to it appeared ([gz-transport#225](https://github.com/gazebosim/gz-transport/issues/225) has the same symptom). Pinned, ten starts out of ten delivered every topic.
 - **`workshop.sdf` steps every 5 ms** (`empty.sdf` every 1 ms). Gazebo publishes `/clock` once per step, so the step is also the clock's rate, which every node with `use_sim_time` receives.
@@ -118,7 +118,7 @@ The VMS takes the gamepad only with the `teleop` commander selected: run with `O
 
 `/odom` and `odom → base_link` are the ROS bridge's, from the VMS's `0x60B` (the wheel distance) and the IMU heading, as on the vehicle. The wheel distance is the simulated wheels': the simulated hardware reports how far the wheel joints on `/joint_states` turned, as the vehicle's motor and shaft sensors measure the wheels, so a wheel spinning in place reads as moving, and one the model's effort limit stalls against an obstacle reads as stopped. `/simulator/odom` is ground truth, the model's pose from the physics, which nothing navigates by: compare the two from a common start to see the dead reckoning drift. The steering system's own odometry follows the wheels rather than the body and is not bridged. See [Ground truth](../../../docs/ros2/commands.md#ground-truth).
 
-## Running perception against it
+## Running the vision unit against it
 
 The vision unit (`vision/core`) runs unchanged against the simulator; `./ovcs run` with `OVCS_SIM=1` already starts it. Only the camera driver differs:
 

@@ -122,7 +122,6 @@ Each of these is optional. On the reference vehicles each runs in a bridge firmw
 |---|---|---|
 | Radio control (`RadioControlBridge`) | Raspberry Pi 3A, an ExpressLRS receiver that outputs MAVLink, an ExpressLRS handset | The reference `config.txt` loads `sc16is75x-spi` for the SC16IS752; the vehicle's `radio_control_bridge_config(:target)` reads the receiver on `ttySC0` at 460800 baud ([`vehicles/ovcs_mini/lib/ovcs_mini.ex`](../vehicles/ovcs_mini/lib/ovcs_mini.ex), [radio control bridge](./bridges/radio_control.md)) |
 | ROS (`RosBridge`) | Raspberry Pi 4 (or 5), optional BNO085 IMU on I2C, optional SLAMTEC RPLIDAR C1 and DFRobot A02YYUW ultrasonic sensors on USB serial adapters | `{:imu_publisher, driver: BNO085.I2C}`, `{:lidar_publisher, driver: RPLidar.UART}` and one `{:range_publisher, driver: A02YYUW.UART}` per sensor on target, `OvcsDrivers.Imu.Dummy` on the host ([ROS bridge](./bridges/ros.md)) |
-| Perception (`RosBridge` components) | Raspberry Pi 5, two cameras on `cam0` and `cam1`, a Hailo-8 on a Hailo hat | No CAN controller: it maps `ovcs:vcan0` and reaches the vehicle over Zenoh ([Perception](./bridges/perception.md)) |
 | Vision unit (`vision` role) | Raspberry Pi 5 with two cameras on `cam0` and `cam1` and, for detection, a Hailo-8 on a Hailo hat; or an OKdo Nano C100 with two Camera Module 3 (IMX708), powered from a dedicated supply rather than over USB | No CAN controller: it reaches the vehicle over Zenoh. On the Pi 5, the default [`config.txt`](../vision/firmware/targets/rpi5/config.txt) detects the cameras (`camera_auto_detect=1`). The OVCS Mini reference vehicle runs one with two Camera Module 3 (IMX708) and a Hailo-8, declared in its own [`config.txt`](../vehicles/ovcs_mini/priv/firmware/vision/config.txt) ([Vision unit](./vision/README.md)) |
 | ROS compute node | Raspberry Pi 5 (8 GB), NVMe SSD in a USB enclosure, Intel AX210 on M.2, Pi 5 RTC battery | balenaOS, not Nerves; no CAN ([ROS compute node](./ros2/compute_node.md#hardware)) |
 | Infotainment | Raspberry Pi 5, a touchscreen (10-inch in OVCS1), one CAN controller on `ovcs` | The reference `config.txt` loads `mcp251xfd,spi0-0,oscillator=40000000,interrupt=25`; the composer maps `ovcs:can0` ([Infotainment](./infotainment/README.md)) |
@@ -161,7 +160,7 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 | Raspberry Pi 4 | Vehicle Management System (VMS) | All of the vehicle's CAN buses, through the multi-CAN SPI hub |
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
 | Raspberry Pi 3A | Bridge firmware running the radio control bridge (optional) | The `ovcs` bus |
-| Raspberry Pi 4 or 5 | Bridge firmware running the ROS bridge (optional) | The `ovcs` bus (one running only perception may have none and reach the vehicle over Zenoh) |
+| Raspberry Pi 4 or 5 | Bridge firmware running the ROS bridge (optional) | The `ovcs` bus |
 | Raspberry Pi 5, or OKdo Nano C100 | Vision unit (optional) | None; it reaches the vehicle over Zenoh |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
 | Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |

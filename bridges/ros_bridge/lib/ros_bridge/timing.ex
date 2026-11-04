@@ -7,26 +7,8 @@ defmodule RosBridge.Timing do
   system time and go through `stamp_from_system_time/1`.
   Monotonic time has no relation to wall clock, but every ROS
   message's `std_msgs/Header` expects a wall-clock stamp — otherwise
-  downstream `ApproximateTime` matchers (`stereo_image_proc`, `tf2`,
+  downstream `ApproximateTime` matchers (`message_filters`, `tf2`,
   …) compare nonsensical timestamps across topics.
-
-  ## Two monotonic clocks, not one
-
-  Erlang's monotonic time is *not* the kernel's `CLOCK_MONOTONIC`: the
-  VM picks its own zero at startup, so the two differ by a large fixed
-  offset (on the order of 5.8e17 ns — about 18 years — on a typical
-  Linux boot). A timestamp from one clock projected with the other's
-  offset lands nearly two decades off, and since
-  `builtin_interfaces/Time.sec` is an int32 the result silently wraps
-  negative.
-
-  So `system_time_from_monotonic/1` and `stamp_from_monotonic/1` take
-  Erlang monotonic time, and anything sourced from the kernel clock —
-  libcamera's
-  `SensorTimestamp`, or the C++ capture helper's `steady_clock`
-  fallback, both `CLOCK_MONOTONIC` — must go through
-  `monotonic_from_kernel/1` at the driver boundary, so that
-  `Frame.capture_ns` means exactly one thing everywhere.
 
   `system_time_from_monotonic/1` projects a monotonic capture time onto
   wall clock through `System.time_offset/1`, the VM's own offset between
@@ -52,26 +34,11 @@ defmodule RosBridge.Timing do
   Convert a monotonic capture timestamp (in nanoseconds) into a
   wall-clock timestamp (also in nanoseconds).
 
-  The input is whatever a driver wrote into
-  `RosBridge.Camera.Frame.capture_ns` (or any equivalent
-  monotonic timestamp). The output matches
-  `System.system_time(:nanosecond)`.
+  The input is an Erlang monotonic timestamp a driver took at
+  capture. The output matches `System.system_time(:nanosecond)`.
   """
   def system_time_from_monotonic(monotonic_nanoseconds) when is_integer(monotonic_nanoseconds),
     do: monotonic_nanoseconds + System.time_offset(:nanosecond)
-
-  @doc """
-  Convert a kernel `CLOCK_MONOTONIC` timestamp (in nanoseconds) into
-  the Erlang monotonic timescale the rest of this module expects.
-
-  `:os.perf_counter/1` reads `CLOCK_MONOTONIC` on Linux, so sampling
-  it alongside `System.monotonic_time/1` recovers the fixed offset
-  between the two clocks. Both samples are taken microseconds apart,
-  well inside the scheduling jitter.
-  """
-  def monotonic_from_kernel(kernel_nanoseconds) when is_integer(kernel_nanoseconds) do
-    kernel_nanoseconds - :os.perf_counter(:nanosecond) + System.monotonic_time(:nanosecond)
-  end
 
   @doc """
   Convert a monotonic capture timestamp into the timescale this
@@ -86,21 +53,9 @@ defmodule RosBridge.Timing do
   end
 
   @doc """
-  The inverse of `ros_time_from_monotonic/1`: a stamp on the timescale
-  this bridge publishes on, in nanoseconds, back to Erlang monotonic
-  time.
-  """
-  def monotonic_from_ros_time(ros_nanoseconds) when is_integer(ros_nanoseconds) do
-    case RosBridge.Clock.offset_ns() do
-      nil -> ros_nanoseconds - System.time_offset(:nanosecond)
-      offset_ns -> ros_nanoseconds - offset_ns
-    end
-  end
-
-  @doc """
   Build a `builtin_interfaces/Time` message from a monotonic
   capture timestamp. Most publishers want this directly — they
-  have a `frame.capture_ns` in hand and need a `%Time{sec,
+  have a monotonic timestamp in hand and need a `%Time{sec,
   nanosec}` to drop into a `std_msgs/Header`.
   """
   def stamp_from_monotonic(monotonic_nanoseconds),

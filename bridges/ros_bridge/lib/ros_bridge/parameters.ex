@@ -8,7 +8,7 @@ defmodule RosBridge.Parameters do
   removed when the declaring process exits, and declared again when it
   restarts. Each parameter is a map:
 
-    * `:name` — dotted, e.g. `"stereo.left.lens_position"`
+    * `:name` — dotted, e.g. `"<component>.<setting>"`
     * `:type` — `:bool`, `:integer`, `:double` or `:string`
     * `:value` — the value in force
     * `:description`, `:constraints` — free text for viewers
@@ -194,7 +194,7 @@ defmodule RosBridge.Parameters do
     |> Map.put(:constraints, constraints)
   end
 
-  # A default outside the accepted values (libcamera's "auto") cannot be set back.
+  # A default outside the accepted values cannot be set back.
   defp resettable?(parameter) do
     not is_nil(parameter[:default]) and not Map.get(parameter, :read_only, false) and
       match?({:ok, _}, check_type(parameter.type, parameter.default)) and

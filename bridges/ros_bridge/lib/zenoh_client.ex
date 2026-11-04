@@ -156,7 +156,7 @@ defmodule RosBridge.ZenohClient do
 
   @doc """
   Register a ROS 2 **service server** on `service_name` (e.g.
-  `"/stereo/left/set_camera_info"`). The service module must
+  `"/<node_name>/list_parameters"`). The service module must
   expose `dds_type/0`, `type_hash/0`, and a `Request.parse/1`
   callable from the handler.
 

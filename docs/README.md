@@ -54,7 +54,6 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Write a bridge](./bridges/write_a_bridge.md)
 - [Radio control bridge](./bridges/radio_control.md)
 - [ROS bridge](./bridges/ros.md)
-- [Perception: object detection](./bridges/perception.md)
 
 ### Generic controllers
 

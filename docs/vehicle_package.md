@@ -196,7 +196,7 @@ Who commands the vehicle, the pedals, the radio transmitter or a ROS node, is th
 Each demonstrates a different shape. Copy the patterns, not the packages.
 
 - [OVCS1](../vehicles/ovcs1/README.md): every side at once. VMS, infotainment, radio-control and ROS bridges, five isolated CAN buses meeting in the VMS.
-- [OVCS Mini](../vehicles/ovcs_mini/README.md): an `ovcs` bus plus a `misc` bus for the VESC, no infotainment side, three bridges (radio control, ROS, perception).
+- [OVCS Mini](../vehicles/ovcs_mini/README.md): an `ovcs` bus plus a `misc` bus for the VESC, no infotainment side, two bridges (radio control, ROS) and a vision unit.
 - [OBD2](../vehicles/obd2/README.md): no drivetrain and no bridges. VMS and infotainment only, for diagnostics.
 
 ## Further reading

@@ -19,8 +19,6 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
 
-The [ROS bridge](../../bridges/ros_bridge/README.md) has stereo depth and detection components of its own, built on OpenCV: it matches with OpenCV's semi-global block matching (`StereoSGBM`), through evision. The vision unit runs no OpenCV: its stages are Nx, compiled for the board, or native in the `stereo_match` Port. A vehicle runs stereo in one or the other.
-
 ## Opting in
 
 Two callbacks on your vehicle's `OvcsVehicle` module add the role:
@@ -112,6 +110,37 @@ The dashboard's Exporters menu lists what takes the unit's outputs out of it, fr
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 
+## Detection models
+
+The `:hailo_detector` component runs the HEF its `:hef_path` names, compiled for the Hailo-8. **No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download. The OVCS Mini reference vehicle's models and what they require are described in [`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md).
+
+OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's history, which removing it from `HEAD` doesn't undo.
+
+The detection code isn't affected: `VisionCore.Detection.Backend.Hailo` runs the Hailo runtime and contains no Ultralytics code.
+
+Unsettled, and not legal advice:
+
+- whether neural network weights attract copyright at all (it differs between the US and the EU);
+- whether a compiled `.hef` is a derivative work of the weights it was built from (by analogy to compilation, probably; untested for models);
+- whether AGPL-3.0 §13 ("interacting with users remotely through a computer network") covers a vehicle publishing to Foxglove over Zenoh.
+
+For commercial use of YOLOv8 specifically, an Ultralytics Enterprise licence is the direct answer.
+
+### Permissive models
+
+Apache-2.0 unless noted; those with a prebuilt HAILO8 HEF in model zoo v2.15.0 are marked, with sizes as served:
+
+- **NanoDet-RepVGG**: in the zoo (6.7 MB). The OVCS Mini's.
+- **YOLOX** tiny / s-leaky: in the zoo (9.3 / 9.4 MB), different NMS op.
+- **DAMO-YOLO** tinynasL20_T: in the zoo (13.4 MB).
+- **SSD-MobileNet** v1/v2: in the zoo (6.7 MB), weaker but long-supported.
+- **CenterNet** ResNet-v1-18, **EfficientDet-lite0**: in the zoo.
+- **RT-DETR**: the original Baidu release, not the Ultralytics port.
+- **RF-DETR** (Roboflow), **D-FINE**.
+- torchvision's detectors (BSD-3).
+
+Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yolov6n.hef` is in the zoo), and YOLO-NAS (restrictive Deci licence).
+
 ## Running it on a workstation
 
 On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA, and `mix compile` builds `jpeg_codec` for the host, which decodes the cameras' JPEG frames, and `stereo_match`, for a pipeline computing with `compute: :native`.
@@ -119,6 +148,5 @@ On the host the composer's `:host` arm applies: it can read USB cameras through 
 ## See also
 
 - [Where depth is computed](./compute.md#rust-ports): the Rust Ports the core drives and how they are built.
-- [Perception: object detection](../bridges/perception.md): the ROS bridge's detector, its Hailo backend and its topics.
 - [ROS compute node](../ros2/compute_node.md): the router the unit peers with.
 - [Hardware](../hardware.md#bridges-and-extras): the boards, the cameras and the optional Hailo-8.

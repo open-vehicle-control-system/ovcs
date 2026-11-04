@@ -4,7 +4,7 @@
   matcher can actually see.
 
   `empty.sdf` is fine for proving the vehicle drives, but it is
-  useless for perception: SGBM correlates local image patches, and a
+  useless for stereo depth: the matcher correlates local image patches, and a
   featureless ground plane under a blank sky offers nothing to
   correlate. Disparity comes back empty and it looks like a broken
   pipeline rather than an untextured scene.

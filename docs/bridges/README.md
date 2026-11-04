@@ -13,7 +13,7 @@ A bridge carries data between the `ovcs` CAN bus and a world that has no CAN: a 
 | Bridge | Module | Carries |
 |---|---|---|
 | [Radio control bridge](./radio_control.md) | `RadioControlBridge` | a MAVLink-capable transmitter's eight channels, from an ExpressLRS receiver on a UART, onto `0x2A0` and `0x2A1` |
-| [ROS bridge](./ros.md) | `RosBridge` | ROS 2 over native Zenoh: joystick and planner commands onto `0x2B0` and `0x2B1`; the vehicle's status, IMU, odometry, lidar, rangefinders and stereo depth onto ROS topics; [object detection](./perception.md) |
+| [ROS bridge](./ros.md) | `RosBridge` | ROS 2 over native Zenoh: joystick and planner commands onto `0x2B0` and `0x2B1`; the vehicle's status, IMU, odometry, lidar and rangefinders onto ROS topics |
 
 Commands from a bridge always reach the VMS as CAN frames on the `ovcs` bus, where the VMS checks their freshness and its [control levels](../vms/how_it_works.md#control-levels) decide whether they are in force. A bridge never commands an actuator directly.
 

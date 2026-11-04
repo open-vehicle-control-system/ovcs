@@ -39,7 +39,7 @@ defmodule VisionCore.Detection.Backend do
   A backend that cannot work — no accelerator, no model file — must
   start anyway, log once, and answer
   `{:error, :unavailable}` for every frame. Raising in `init/1` would
-  take down the supervision tree, and a perception node that loses
+  take down the supervision tree, and a vision unit that loses
   *stereo depth* because a detector could not find its model file is a
   far worse outcome than one that publishes no detections.
 

@@ -44,7 +44,7 @@ Everything lives under the [open-vehicle-control-system](https://github.com/open
 | [ovcs_base_can_system_rpi4](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) | Nerves system: Raspberry Pi 4 with CAN, for the VMS and bridge firmwares |
 | [ovcs_base_can_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) | Nerves system: Raspberry Pi 5 with CAN and display, for the infotainment |
 | [ovcs_base_can_system_rpi3a](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) | Nerves system: Raspberry Pi 3A with CAN, for bridge firmwares such as radio control |
-| [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 for bridge firmwares with stereo cameras and a Hailo-8 (perception) |
+| [ovcs_bridges_system_rpi5](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) | Nerves system: Raspberry Pi 5 with libcamera and the Hailo-8 driver, for the vision unit and bridge firmwares |
 
 `mise run libraries` sideloads the four libraries into `libraries/`, because they are useful outside OVCS. The framework-internal contracts (`ovcs_bridge`, `ovcs_bus`, `ovcs_can`, `ovcs_vehicle`, `ovcs_drivers`) live in the monorepo. See [Repository layout](./repository.md).
 
@@ -76,4 +76,4 @@ Before opening a pull request:
 > [!CAUTION]
 > OVCS is a hobby research project, provided as-is without warranty. It is not road-certified and does not meet the criteria to be. Use it at your own risk; the authors decline any responsibility for incidents resulting from its use.
 
-OVCS is released under the [MIT License](../LICENCE.txt), copyright Spin42 SRL. No neural-network weights are committed: the YOLOv8 weights the perception pipeline can use are AGPL-licensed and don't compose with MIT. `mise run fetch-models` downloads them and prints each licence first. The default Hailo model is the Apache-2.0 NanoDet-RepVGG.
+OVCS is released under the [MIT License](../LICENCE.txt), copyright Spin42 SRL. No neural-network weights are committed: the YOLOv8 weights the vision unit can use are AGPL-licensed and don't compose with MIT. `mise run fetch-models` downloads them and prints each licence first. The default Hailo model is the Apache-2.0 NanoDet-RepVGG.

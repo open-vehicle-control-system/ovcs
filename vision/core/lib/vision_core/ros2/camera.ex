@@ -4,7 +4,7 @@ defmodule VisionCore.Ros2.Camera do
   `sensor_msgs/CompressedImage` topic and hands the frames on as if it
   had captured them.
 
-  This is what lets the whole perception stack run against Gazebo. The
+  This is what lets the whole vision unit run against Gazebo. The
   stereo supervisor, the stereo pipeline, the exporters and the Hailo
   detector see `{:camera_frame, %Frame{}}` casts and cannot tell
   whether the pixels came from a sensor or a simulator — which is the

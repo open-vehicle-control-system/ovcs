@@ -9,7 +9,7 @@ You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole vehicle b
 > The OVCS Mini is a worked example, used because it is ready to run and small. Every command here takes any vehicle under `vehicles/`, including one you scaffold with `./ovcs new`: replace `ovcs_mini` with its name, and the frames with ones its `priv/can/` YAMLs declare. See [Framework and vehicles](./framework.md).
 
 > [!TIP]
-> Once it runs, [Simulation](../compose/local/simulation/README.md) puts the same VMS behind a Gazebo model of the OVCS Mini reference vehicle: Nav2, perception and the gamepad drive it over virtual CAN.
+> Once it runs, [Simulation](../compose/local/simulation/README.md) puts the same VMS behind a Gazebo model of the OVCS Mini reference vehicle: Nav2, the vision unit and the gamepad drive it over virtual CAN.
 
 ## Boot the vehicle
 
@@ -25,7 +25,7 @@ The CLI:
 2. Compiles, for the host, each framework firmware project the vehicle uses (`build.sh` with `MIX_TARGET=host`), in parallel: `vms/firmware`, `vision/firmware`, and `bridges/firmware` once for both bridges.
 3. Spawns one BEAM per role from that firmware's directory: `vms`, `vision`, then `bridge-radio_control` and `bridge-ros`.
 
-The first run takes a while. It fetches and builds every dependency of the firmware projects, the native ones (`evision`, `zenohex`, the vision unit's Ports) among them, and installs the VMS and vision dashboards' Node packages. Later runs only recompile what changed.
+The first run takes a while. It fetches and builds every dependency of the firmware projects, the native ones (`zenohex`, the vision unit's Ports) among them, and installs the VMS and vision dashboards' Node packages. Later runs only recompile what changed.
 
 Output is prefixed per role (`[vms] …`, `[bridge-ros] …`). The VMS API is on `http://localhost:4000`. `Ctrl+C` stops everything. The BEAMs find each other with no broker, the same way they do on a deployed vehicle: see [One Erlang mesh, no broker](./architecture.md#one-erlang-mesh-no-broker).
 

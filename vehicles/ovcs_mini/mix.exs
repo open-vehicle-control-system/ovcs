@@ -31,8 +31,6 @@ defmodule OvcsMini.MixProject do
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:vms_firmware, path: "../../vms/firmware"},
       {:vision_firmware, path: "../../vision/firmware"},
-      # vision_core's nx_stereo needs Nx 1.0; ros_bridge asks for 0.x.
-      {:nx, "~> 1.0", override: true},
       {:bridge_firmware, path: "../../bridges/firmware"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

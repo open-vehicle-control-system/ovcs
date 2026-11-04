@@ -24,8 +24,8 @@ firmware build would be reproducible offline. That tradeoff is real and
 it has not gone away — you now need network access and one command
 before a first build. The licence is why it changed anyway.
 
-See `docs/bridges/perception.md` for the licensing note in full,
-including the permissively licensed models that are drop-in candidates.
+See the Detection models section of `docs/vision/README.md` for the
+licensing note in full, including the permissively licensed models.
 
 ## nanodet_repvgg.hef — the default
 
@@ -85,8 +85,7 @@ What has to hold: a **square 3-channel input** and **in-graph NMS
 producing `HAILO_NMS_BY_CLASS`**. Size and class count do not, since
 `hailo_detect` reads both off the HEF. `yolov8s.hef` from the same zoo
 path is the accuracy step up and satisfies all of it. A model with a
-different NMS net flow, or none, does not — see
-`docs/bridges/perception.md` for what a swap would cost then.
+different NMS net flow, or none, does not.
 
 Checking is cheap and needs no device:
 
