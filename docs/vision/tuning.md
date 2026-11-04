@@ -3,7 +3,7 @@ title: Tune with exports
 description: How to record what the vision unit sees and computes as an export, change a parameter, export again and compare the two exports, step by step.
 ---
 
-Tuning the unit's parameters needs results you can keep and set side by side. The dashboard and the log show the unit as it is now; they keep nothing of what it did before your change. The debug exporter records an **export**: a burst of consecutive stereo pairs and the state the unit was in, as one zip of plain files. You take one export before a change and one after, then compare them. This guide is written to be followed step by step, by a person or by an agent.
+Tuning the unit's parameters needs results you can keep and set side by side. The dashboard and the log show the unit as it is now; they keep nothing of what it did before your change. The debug exporter records an **export**: a burst of stereo pairs and the state the unit was in, as one zip of plain files. You take one export before a change and one after, then compare them. This guide is written to be followed step by step, by a person or by an agent.
 
 An export tells you what a change did and by how much. It does not score the result: whether it is better is your decision.
 
@@ -64,7 +64,7 @@ From the dashboard, open Exporters in the menu, then Debug: its Actions card has
 An export lasts at least `burst_ms`. It runs in this order:
 
 1. **Settle.** The exporter waits until the last change to the unit is `settle_ms` old ([The settle time](#the-settle-time)).
-2. **Burst.** It records the pairs the stereo pipeline publishes, for at least `burst_ms` and at least `burst_pairs` pairs, whichever ends later. The pairs are consecutive as the pipeline published them; a pair it dropped while busy is not in the burst.
+2. **Burst.** It records the pairs the stereo pipeline publishes, for at least `burst_ms` and at least `burst_pairs` pairs, whichever ends later. The pairs are in the order the pipeline published them, but not always consecutive: a pair the pipeline dropped while busy, or one the exporter skipped while it was behind, is not in the burst. `intervalMs` is longer where a pair is missing.
 3. **Answer.** It collects the unit's state, encodes the zip and answers. The unit keeps nothing of it: no history, no list of exports.
 
 An export changes nothing on the unit, and the status of the exporter reads "Exporting" from the request until the answer. One export runs at a time. The API waits up to 60 s for the answer; after that it answers a 504 while the exporter goes on, and answers a 409 to the next request until it has finished. The unit answers:
@@ -138,7 +138,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 
 | Figure | In | Meaning |
 |---|---|---|
-| `intervalMs` | pairs | Time since the previous published pair, in milliseconds. The depth rate is 1000 divided by its mean. The burst's first pair has none. |
+| `intervalMs` | pairs | Time since the burst's previous pair, in milliseconds, longer where a pair is missing. The depth rate is 1000 divided by its mean. The burst's first pair has none. |
 | `deviceMs` | pairs | The time the pair kept the pipeline's compiled or native segments busy, in milliseconds. |
 | `sharpnessLeft`, `sharpnessRight` | pairs | Each rectified image's sharpness. The scene sets the absolute value; see [Stereo stages](./stages.md#2-sharpness). |
 | `alignmentOffsetRows` | pairs | How far the right image's rows sit from the left one's, in rows. Within half a row, the calibration fits. `null` when it cannot be measured. |
@@ -146,13 +146,14 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 | `matchedPercent` | pairs | The share of matched pixels. A pixel is matched when its disparity is above 0. |
 | `meanDisparityPx`, `spreadPx` | pairs | The mean and spread of the matched pixels' disparity, in pixels. |
 | `jitterPx` | pairs | How much a pixel's disparity changes from one pair to the next, in pixels: the matcher's noise on a still scene. |
+| `alignRows` | pairs | The RowAlignment stage's offset over the whole image, the same value as `alignmentOffsetRows`. |
 | `depthHz` | snapshots | Depth images computed in the last second. |
 | `stereoLoadPercent`, `cpuPercent` | snapshots | The share of the second the stereo stages took, and the processors' busy share. |
 | `leftCameraFps`, `rightCameraFps` | snapshots | Frames each camera delivered in the last second. |
 | `leftCameraExposureTimeUs`, `leftCameraAnalogueGain`, `leftCameraColourTemperature`, and the `rightCamera` ones | snapshots | What each camera reports, when it reports it. |
 | `syncPairs`, `syncOffsetMedianMs`, `syncOffsetMaxMs` | snapshots | The cameras' synchronisation, as on the dashboard. |
 
-`matchedPercent`, `meanDisparityPx`, `spreadPx` and `jitterPx` come from the Quality stage ([Stereo stages](./stages.md#9-quality)). It measures the final disparity, after the temporal filter: held matches raise `matchedPercent` and smoothing lowers `jitterPx`. To measure the matcher alone, set the temporal filter's `alpha` to 1 and `hold` to 0 for both exports.
+`matchedPercent`, `meanDisparityPx`, `spreadPx`, `jitterPx` and `alignRows` are metrics a stage reports, under the stage's name for them: any other figure of the pairs is one too, and the stage's module documents it. The first four come from the Quality stage ([Stereo stages](./stages.md#9-quality)). It measures the final disparity, after the temporal filter: held matches raise `matchedPercent` and smoothing lowers `jitterPx`. To measure the matcher alone, set the temporal filter's `alpha` to 1 and `hold` to 0 for both exports.
 
 A figure of the pairs has a sample for each pair of the burst. A status snapshot describes one second, so a figure of the snapshots has only a few samples, and the comparison task never judges it against its spread.
 
@@ -170,7 +171,7 @@ A list with one entry for each publication during the burst: the pair's `capture
 
 ## Compare two exports
 
-Unzip both exports, each into a directory that does not exist yet, and run the comparison task on the two zips ([The comparison task](#the-comparison-task)). It prints most of what the steps below read; the steps name the file each figure comes from, for what the task does not print.
+Run the commands of this section from the repository's root, with both zips there. Unzip both exports, each into a directory that does not exist yet, and run the comparison task on the two zips ([The comparison task](#the-comparison-task)). It prints most of what the steps below read; the steps name the file each figure comes from, for what the task does not print.
 
 ```sh
 unzip -q before.zip -d before
@@ -231,14 +232,13 @@ The colours of `last/disparity.png` span `colourRangePx` in the manifest: two ex
 
 ## The comparison task
 
-`vision_core` has a task for the host that prints the Exports, Parameters, Figures, Timings and pixel sections of the steps above. Run it from `vision/core` on your workstation, where `mix compile` works ([Running it on a workstation](./overview.md#running-it-on-a-workstation)); the paths are relative to that directory, and the example has the zips at the repository's root:
+`vision_core` has a task for the host that prints the Exports, Parameters, Figures, Timings and pixel sections of the steps above. It runs in `vision/core`, on a workstation where `mix compile` works ([Running it on a workstation](./overview.md#running-it-on-a-workstation)). From the repository's root, run it in a subshell, so that your shell stays at the root for the other commands; the paths the task takes are relative to `vision/core`:
 
 ```sh
-cd vision/core
-mix vision_core.compare_exports ../../before.zip ../../after.zip --out ../../compare-out
+(cd vision/core && mise exec -- mix vision_core.compare_exports ../../before.zip ../../after.zip --out ../../compare-out)
 ```
 
-It prints five sections, with B read against A, and writes the two difference images to the directory `--out` names, `compare-out` by default. Figures, timings and pixel differences carry 4 significant digits, and one under 0.0001 reads in scientific notation, as `3.699e-06`; parameter values print in full. The values below are illustrative:
+It prints five sections, with B read against A, and writes the two difference images to the directory `--out` names, `compare-out` by default. The paths it prints are the ones it was given, relative to `vision/core`: from the repository's root, the images of the example are in `compare-out/`. Figures, timings and pixel differences carry 4 significant digits, and one under 0.0001 reads in scientific notation, as `3.699e-06`; parameter values print in full. The values below are illustrative:
 
 ```text
 Exports

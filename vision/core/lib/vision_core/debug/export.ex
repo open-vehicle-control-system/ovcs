@@ -18,9 +18,10 @@ defmodule VisionCore.Debug.Export do
       parameters; each is written as `id`, `value`, `saved` and `state`.
     * `:configuration` — `VisionCore.settings/0`, written as it is.
     * `:calibration` — `%{left: yaml, right: yaml}`, the files in use.
-    * `:pairs` — one map per burst pair: `:capture_ns`, `:interval_ms` (since
-      the previous published pair, `nil` when unknown), `:device_ms`,
-      `:sharpness` and `:alignment` (as on `VisionCore.Stereo.Pair`), `:metrics`,
+    * `:pairs` — one map per burst pair, in the order the pipeline published
+      them, not always consecutive: `:capture_ns`, `:interval_ms` (since the
+      burst's previous pair, `nil` when unknown), `:device_ms`, `:sharpness`
+      and `:alignment` (as on `VisionCore.Stereo.Pair`), `:metrics`,
       `:stage_ms`, and `:frames`, the `{left, right}` `VisionCore.Camera.Frame`s
       as the cameras delivered them, `nil` for the pairs after the ones kept.
     * `:last_pair` — the last `VisionCore.Stereo.Pair`, with its rectified
@@ -29,8 +30,9 @@ defmodule VisionCore.Debug.Export do
     * `:detections` — what the detector published during the burst, `nil`
       for a unit without detection; written as given.
     * `:change_age_ms` — how long before the burst the last change was, `nil`
-      when none was recorded; `:changes_during_burst` — how many there were
-      during it; `:status_available` — whether `VisionCore.Status` ran.
+      when none was recorded; `:changes_during_burst` — 1 when something
+      changed during it, 0 otherwise; `:status_available` — whether
+      `VisionCore.Status` ran.
     * `:depth_coloured_jpeg` (optional) — the depth as the dashboard colours
       it, `VisionCore.Preview.encode_depth/3`; left out of the zip without it.
   """
@@ -335,11 +337,12 @@ defmodule VisionCore.Debug.Export do
 
     ## How it was taken
 
-    - The burst holds #{length(recording.pairs)} pairs, consecutive as the stereo pipeline \
-    published them. The raw frames of the first #{kept} are kept.
+    - The burst holds #{length(recording.pairs)} pairs, in the order the stereo pipeline \
+    published them. A pair the pipeline dropped while busy, or one the exporter skipped while \
+    it was behind, is not among them: `intervalMs` is longer there. The raw frames of the \
+    first #{kept} are kept.
     - #{change_age(recording.change_age_ms)}
-    - Changes to the unit's parameters or pipeline during the burst: \
-    #{recording.changes_during_burst}.
+    - Something changed during the burst: #{yes_no(recording.changes_during_burst)}.
     - #{snapshot_count(recording)}
 
     ## Files
@@ -366,6 +369,11 @@ defmodule VisionCore.Debug.Export do
     `Rows` says its unit. Stage names and parameter ids are the unit's own.
     - `std` is the population standard deviation. `n` counts the samples a figure was \
     measured on; a figure that was not measured on a pair is `null` for it and not counted.
+    - Besides `captureNs`, `intervalMs`, `deviceMs`, the sharpness and the alignment, a \
+    pair's figures are the metrics its stages report, under each stage's name for them: \
+    `matchedPercent`, `meanDisparityPx`, `spreadPx` and `jitterPx` from Quality, and \
+    `alignRows` from RowAlignment, the same offset as `alignmentOffsetRows`. Each stage's \
+    documentation describes its metrics.
     - `median` and `p95` are nearest-rank percentiles, as in the `[pipeline]` log line.
     - The figures of the status snapshots (`depthHz`, `stereoLoadPercent`, `cpuPercent`, \
     the cameras' and the sync's) have one sample a second: their `n` is small, so read \
@@ -378,6 +386,9 @@ defmodule VisionCore.Debug.Export do
   defp change_age(age_ms),
     do:
       "The last change to the unit's parameters or pipeline was #{round(age_ms)} ms before the burst."
+
+  defp yes_no(0), do: "no"
+  defp yes_no(_changes), do: "yes"
 
   defp snapshot_count(%{status_available: true, snapshots: snapshots}),
     do: "The burst holds #{length(snapshots)} status snapshots, one a second."

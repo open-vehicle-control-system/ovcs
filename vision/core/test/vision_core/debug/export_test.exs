@@ -195,6 +195,17 @@ defmodule VisionCore.Debug.ExportTest do
     assert manifest["statusAvailable"] == true
     assert files["README.md"] =~ "2150 ms"
     assert files["README.md"] =~ "3 pairs"
+    assert files["README.md"] =~ "Something changed during the burst: yes."
+    assert files(recording())["README.md"] =~ "Something changed during the burst: no."
+  end
+
+  test "says in the README that pairs can be skipped, and how to read the stages' metrics" do
+    readme = files(recording())["README.md"]
+
+    refute readme =~ "consecutive"
+    assert readme =~ "skipped"
+    assert readme =~ "`intervalMs`"
+    assert readme =~ "`alignRows`"
   end
 
   test "describes the burst, the unit and the binary files in the manifest" do

@@ -25,7 +25,9 @@ defmodule VisionCore.Debug.Exporter do
     2. **Burst.** It records the pairs the pipeline publishes for at least
        `:burst_ms` and at least `:burst_pairs` pairs, whichever ends
        later, the status snapshots whose window falls inside it, and the
-       detections published during it.
+       detections published during it. The runner hands over only the
+       newest pair waiting (`VisionCore.Exporter.Runner`), so a pair can be
+       skipped; a longer `intervalMs` shows where.
     3. **Answer.** It then collects the unit's state (`:unit_state`),
        encodes the export, off the runner, and answers. An export that
        raises, as on a unit whose stages leave the last pair without
