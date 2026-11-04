@@ -110,7 +110,7 @@ Behaviour callbacks, function signatures and module summaries belong in `@module
 
 ## Repo-specific notes for Claude
 
-- Polyglot **monorepo** (Elixir/Nerves, Phoenix, Vue, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.
+- Polyglot **monorepo** (Elixir/Nerves, Phoenix, React, Flutter, C++/Arduino, Ruby). Not an Elixir umbrella — each Elixir app is a standalone Mix project with `path:` deps to siblings.
 - Strict layer split in `{vms,infotainment}`: `core` (platform + component drivers, no web deps) ← `api` (Phoenix) ← `firmware` (Nerves); `dashboard` talks to `api` over HTTP + Phoenix Channels. Put logic in the layer it belongs to.
 - **Nothing outside `vehicles/` is vehicle-specific.** Cores, APIs, firmware, bridges, libraries, `compose/`, the CLI and scripts take whatever differs per vehicle from the vehicle package; a reference vehicle appears elsewhere only as an example in docs or tests.
 - **Vehicles are their own packages under `vehicles/<name>/`** — each bundles a VMS composer, an infotainment composer (optional), and its CAN topology YAMLs. A vehicle's top-level module implements `OvcsVehicle` and exposes `vms/0` + `infotainment/0`. `vms_core` and `infotainment_core` contain zero vehicle-specific code.

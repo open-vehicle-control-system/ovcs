@@ -3,7 +3,7 @@
 Phoenix 1.7 JSON + WebSocket server for the in-car touchscreen. Same shape
 as [`vms_api`](../../vms/api) — a thin routing layer in front of
 [`infotainment_core`](../core) — but serves the Flutter dashboard
-(`../dashboard`) on the RPi 5 head unit instead of the Vue debug UI.
+(`../dashboard`) on the RPi 5 head unit instead of the React debug UI.
 
 The guide, [Infotainment](../../docs/infotainment/README.md), lists the endpoints and
 places this app among the infotainment layers; this README keeps the developer details.
