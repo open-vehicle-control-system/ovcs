@@ -31,7 +31,7 @@ The exporter is off until your vehicle's composer lists it among its `exporters:
 }
 ```
 
-It is `VisionCore.Debug.Exporter`, with the id `debug` and the name "Debug". A change to the composer reaches the unit with a firmware upload ([Vision unit](./overview.md#build-burn-upload)). It reads the stereo unit's pairs, and the detections when the configuration has a detector, and does nothing with them between exports. Without a stereo unit it does not start: `GET /api/exporters` lists it at the level `off`, its `detail` reading "Not started: no stereo unit to export", and its action answers a 503.
+It is `VisionCore.Debug.Exporter`, with the id `debug` and the name "Debug". A change to the composer reaches the unit with a firmware upload ([Vision unit](./README.md#build-burn-upload)). It reads the stereo unit's pairs, and the detections when the configuration has a detector, and does nothing with them between exports. Without a stereo unit it does not start: `GET /api/exporters` lists it at the level `off`, its `detail` reading "Not started: no stereo unit to export", and its action answers a 503.
 
 Its options are the second element of the tuple, for example `{VisionCore.Debug.Exporter, burst_ms: 5_000}`:
 
@@ -232,7 +232,7 @@ The colours of `last/disparity.png` span `colourRangePx` in the manifest: two ex
 
 ## The comparison task
 
-`vision_core` has a task for the host that prints the Exports, Parameters, Figures, Timings and pixel sections of the steps above. It runs in `vision/core`, on a workstation where `mix compile` works ([Running it on a workstation](./overview.md#running-it-on-a-workstation)). From the repository's root, run it in a subshell, so that your shell stays at the root for the other commands; the paths the task takes are relative to `vision/core`:
+`vision_core` has a task for the host that prints the Exports, Parameters, Figures, Timings and pixel sections of the steps above. It runs in `vision/core`, on a workstation where `mix compile` works ([Running it on a workstation](./README.md#running-it-on-a-workstation)). From the repository's root, run it in a subshell, so that your shell stays at the root for the other commands; the paths the task takes are relative to `vision/core`:
 
 ```sh
 (cd vision/core && mise exec -- mix vision_core.compare_exports ../../before.zip ../../after.zip --out ../../compare-out)
