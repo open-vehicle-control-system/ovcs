@@ -15,7 +15,6 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
 | `bridge-radio_control` (reference vehicles) | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | `bridge-ros` (reference vehicles) | Raspberry Pi 4 | [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) |
-| `bridge-ros_vision` (OVCS Mini) | Raspberry Pi 5 + Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
 | `vision` | Raspberry Pi 5, optionally with a Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5) (Mix target `rpi5`) |
 | `vision` | OKdo Nano C100 | [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) (Mix target `okdo_c100`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
@@ -35,7 +34,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 ```
 
 - `<vehicle>` is the snake_case directory name of a vehicle under `vehicles/`.
-- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros`, `bridge-ros_vision` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision/README.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
+- `<role>` is `vms`, `infotainment`, `vision`, or `bridge-<id>` for any id in the vehicle's `bridge_firmwares/0` (`bridge-radio_control`, `bridge-ros` in the reference vehicles). `vision` exists when the vehicle implements `vision/0` ([Vision unit](./vision/README.md)). The `bridge-` prefix is required: a bare id is rejected, and the error lists the valid roles.
 - The two positional arguments are order-independent. A missing one opens an interactive picker; on a non-tty stdin the command exits with status 2.
 
 ## Build

@@ -6,7 +6,7 @@ description: The Zenoh fabric, who publishes which topic, simulator time, the co
 A map, not a manual: what runs when OVCS talks to ROS 2, who owns time, which command path is real. [Simulation](../../compose/local/simulation/README.md) tells you how to run the simulator; read it first.
 
 > [!NOTE]
-> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](../vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs the ROS bridge in two bridge firmwares (`ros` and `ros_vision`, which adds perception) and a compute node: treat its wiring as a worked example for your own.
+> The ROS bridge library, the Zenoh client, the message codecs, the VMS command components and the container images are framework. Which topics a bridge publishes and consumes, which drivers it uses and where the router lives are decided by the **vehicle**, in its `ros_bridge_config/1` or `/2` (see [Vehicle package](../vehicle_package.md)). Everything here was built and measured on the **OVCS Mini reference vehicle**, the one that runs the ROS bridge in its `ros` bridge firmware, perception in its vision unit, and a compute node: treat its wiring as a worked example for your own.
 
 ## The fabric: one Zenoh router, everything a client
 
@@ -202,7 +202,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the launch order and bridged topics | `compose/local/simulation/launch/gazebo.launch.py` (its docstrings are the design notes) | `compose/compute/images/nav2/launch/nav2.launch.py` |
 | the rmw_zenoh wire format | [`libraries/ros2_zenoh/README.md`](../../libraries/ros2_zenoh/README.md) | `libraries/ros2_zenoh/lib/ros2_zenoh/rmw_zenoh.ex`, `bridges/ros_bridge/lib/zenoh_client.ex` |
 | time | `bridges/ros_bridge/lib/ros_bridge/clock.ex` | `timing.ex`, `publishers/static_transform.ex` |
-| what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/2`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
+| what a vehicle's ROS bridge runs | `vehicles/ovcs_mini/lib/ovcs_mini.ex` (`ros_bridge_config/1`) | `bridges/ros_bridge/lib/ros_bridge/components.ex` |
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |

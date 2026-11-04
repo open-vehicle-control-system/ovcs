@@ -2,7 +2,8 @@ defmodule OvcsMini do
   @moduledoc """
   Top-level entry point for the OVCS Mini vehicle package.
 
-  OVCS Mini has no infotainment side.
+  OVCS Mini has no infotainment side. Its vision unit is a Raspberry Pi 5,
+  built with `./ovcs build ovcs_mini vision`; see `OvcsMini.Vision.Composer`.
   """
   @behaviour OvcsVehicle
   @behaviour RadioControlBridge
@@ -48,6 +49,10 @@ defmodule OvcsMini do
   def can_config_otp_app, do: :ovcs_mini
   @impl OvcsVehicle
   def vms_target, do: :ovcs_base_can_system_rpi4
+  @impl OvcsVehicle
+  def vision, do: OvcsMini.Vision.Composer
+  @impl OvcsVehicle
+  def vision_target, do: :rpi5
 
   @impl OvcsVehicle
   def bridge_firmwares do
@@ -68,23 +73,6 @@ defmodule OvcsMini do
           target: "can/bridges/ros.yml"
         },
         default_can_mapping: %{host: "ovcs:vcan0,misc:vcan1", target: "ovcs:spi0.0"}
-      },
-      # Perception: the ROS bridge's stereo Pi cameras + Hailo
-      # inference on a Pi 5 + Hailo hat. libcamera and the Hailo
-      # driver come from the system (see bridges/firmware/mix.exs),
-      # libhailort from libraries/hailort.
-      # No local CAN transceiver — this firmware joins the
-      # bus over Zenoh on a separate Pi. The target mapping still
-      # has to satisfy Cantastic's "valid network" contract, so we
-      # point it at a virtual CAN device. Cantastic auto-creates
-      # vcan0 at boot (`ip link add dev vcan0 type vcan`), so this
-      # is zero-config on the Pi 5; no SPI/MCP251xFD wait needed.
-      "ros_vision" => %{
-        target: :rpi5,
-        bridges: [RosBridge],
-        default_can_mapping: %{host: "ovcs:vcan0", target: "ovcs:vcan0"},
-        # Not committed: `mise run fetch-models`.
-        required_files: ["priv/models/#{hailo_model()}.hef"]
       }
     }
   end
@@ -107,21 +95,11 @@ defmodule OvcsMini do
     }
 
   @impl RosBridge
-  def ros_bridge_config(:host, "ros_vision") do
-    if simulation?(),
-      do: ros_vision_bridge_simulation_config(),
-      else: ros_vision_bridge_host_config()
-  end
-
-  def ros_bridge_config(:target, "ros_vision"),
-    do: ros_vision_bridge_target_config()
-
-  def ros_bridge_config(:host, _firmware_id) do
+  def ros_bridge_config(:host) do
     if simulation?(), do: ros_bridge_simulation_config(), else: ros_bridge_host_config()
   end
 
-  def ros_bridge_config(:target, _firmware_id),
-    do: ros_bridge_target_config()
+  def ros_bridge_config(:target), do: ros_bridge_target_config()
 
   defp bus_gateway(arm) do
     {OvcsBusGateway,
@@ -136,10 +114,6 @@ defmodule OvcsMini do
 
   defp simulation?, do: System.get_env("OVCS_SIM") in ["1", "true"]
 
-  # The Mini runs the ROS bridge in two bridge firmwares on one Zenoh
-  # fabric (`ros` and `ros_vision`), so each names its ROS node explicitly —
-  # otherwise both announce `ovcs_bridge` and the ROS graph cannot
-  # tell them apart.
   defp ros_bridge_host_config,
     do: %RosBridge.Config{
       zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
@@ -304,321 +278,5 @@ defmodule OvcsMini do
      topic: "ultrasound/rear_#{side}",
      frame_id: "ultrasound_rear_#{side}_link",
      beyond_range: :max_range}
-  end
-
-  defp ros_vision_bridge_host_config do
-    %RosBridge.Config{
-      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_ros_vision",
-      components: [
-        :heartbeat,
-        stereo_component(RosBridge.Camera.GStreamer, :host)
-      ]
-    }
-  end
-
-  # The same perception stack, fed by Gazebo instead of by cameras.
-  #
-  # Only the driver changes. The SGBM backend, the rectification, the
-  # publishers and the detector are the code that runs on the car, and
-  # that is the point of simulating at all — a pipeline that behaved
-  # differently under simulation would not be evidence of anything.
-  #
-  # No `:hailo_detector`: there is no accelerator on a workstation. It
-  # would start, log that it is unavailable and publish nothing, which
-  # is correct but pointless.
-  #
-  # Chosen with VEHICLE=OvcsMini and OVCS_SIM=1, so the simulation wiring
-  # cannot be selected by accident on the vehicle.
-  defp ros_vision_bridge_simulation_config do
-    %RosBridge.Config{
-      zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1"),
-      node_name: "ovcs_bridge_ros_vision",
-      components:
-        [
-          :heartbeat,
-          # Gazebo owns the clock: stamps on its time line up with /tf
-          # and /odom, which Nav2's costmaps require.
-          :simulator_clock,
-          stereo_component(RosBridge.Camera.Zenoh, :simulation)
-        ] ++ simulation_detector()
-    }
-  end
-
-  # Detection on a workstation, so the simulation runs the *whole* stack
-  # rather than everything-but-the-detector. Off unless a model is
-  # present: the ONNX weights are not in the repo, so the default
-  # remains a stereo-only simulation rather than a detector that logs a
-  # missing file on every start.
-  #
-  # OVCS_DETECTOR picks the backend, defaulting to the DNN one when a
-  # model exists:
-  #
-  #   dnn        CPU inference
-  #   gpu        the same model through OpenCL — see
-  #              `RosBridge.Inference.Dnn` on why that is worth less on
-  #              NVIDIA than CUDA would be
-  #   stub       fabricated boxes, for testing the depth fusion and the
-  #              markers with no model at all
-  #   off        no detector
-  #
-  # `detect_every_n: 3` because CPU inference shares this machine with
-  # SGBM and Gazebo. On the car the accelerator runs every frame.
-  defp simulation_detector do
-    case simulation_detector_choice() do
-      :off ->
-        []
-
-      :stub ->
-        [{:detector, backend: RosBridge.Inference.Stub, frame_id: "stereo_left_optical"}]
-
-      target ->
-        [
-          {:detector,
-           backend: RosBridge.Inference.Dnn,
-           model_path: simulation_model_path(),
-           target: target,
-           score_threshold: 0.4,
-           detect_every_n: 3,
-           frame_id: "stereo_left_optical"}
-        ]
-    end
-  end
-
-  defp simulation_detector_choice do
-    case System.get_env("OVCS_DETECTOR") do
-      "gpu" -> :opencl_fp16
-      "dnn" -> :cpu
-      "stub" -> :stub
-      "off" -> :off
-      # Unset: only if the weights are actually there.
-      _ -> if File.exists?(simulation_model_path()), do: :cpu, else: :off
-    end
-  end
-
-  defp simulation_model_path, do: Path.join(priv_models_dir(), "yolov8n.onnx")
-
-  defp ros_vision_bridge_target_config do
-    %RosBridge.Config{
-      zenoh_endpoint_ip: Application.get_env(:ros_bridge, :zenoh_endpoint_ip, "127.0.0.1"),
-      node_name: "ovcs_bridge_ros_vision",
-      components: [
-        :heartbeat,
-        stereo_component(RosBridge.Camera.LibCamera, :target),
-        # After :stereo_camera — the detector registers on that
-        # unit's backend while starting.
-        hailo_detector()
-      ]
-    }
-  end
-
-  # YOLO on the Hailo-8, fused with the stereo depth map. Target
-  # only: the accelerator is a physical card on the `ros_vision` Pi, and
-  # on the host the component would start, fail to find /dev/hailo0,
-  # and log an error every boot for no benefit.
-  #
-  # Costs the stereo path nothing worth reclaiming. Inference runs on
-  # silicon that is otherwise idle at 3.3 ms a frame, and the input is
-  # the rectified left image the backend already produced — no extra
-  # decode, no extra rectify. The only shared work is a median over
-  # each box.
-  #
-  # Grayscale in, deliberately: measured on the device against
-  # ultralytics' bus.jpg, gray scored within 0.01 of colour
-  # (person 0.881 vs 0.888), so the pipeline's existing gray frame is
-  # worth exactly as much here as a colour one we would have to decode
-  # separately.
-  defp hailo_detector do
-    {
-      :hailo_detector,
-      # 0.4 is where a yolov8n at this resolution stops reporting
-      # furniture as animals. Measured at 480x270 the model still
-      # scores real people at 0.74-0.91, so this leaves plenty of
-      # headroom above the noise.
-      #
-      # That measurement is yolov8n's. It has *not* been re-taken for
-      # the NanoDet default, so treat 0.4 as a starting point there
-      # rather than a tuned value.
-      # The stereo unit's own frame, since boxes are positioned in its
-      # rectified pixels.
-      hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
-      score_threshold: 0.4,
-      frame_id: "stereo_left_optical"
-    }
-  end
-
-  # NanoDet-RepVGG by default, because it is Apache-2.0 and YOLOv8 is
-  # AGPL-3.0 — see the Model licensing section of
-  # docs/bridges/perception.md. The swap needs no code: both
-  # carry the same in-graph NMS net flow, and `hailo_detect` reads the
-  # input size and class count off the HEF rather than assuming them.
-  #
-  # `OVCS_HAILO_MODEL=yolov8n` selects the original for anyone holding
-  # an Ultralytics licence. Whatever is named here has to be in
-  # `scripts/models.tsv` so `mise run fetch-models` can fetch it.
-  defp hailo_model, do: System.get_env("OVCS_HAILO_MODEL", "nanodet_repvgg")
-
-  defp priv_models_dir, do: :ovcs_mini |> :code.priv_dir() |> Path.join("models")
-
-  # Self-contained stereo perception block. Inherits most defaults
-  # from `RosBridge.StereoCamera.Supervisor` (backend
-  # `StereoCamera.OpenCV`, topic prefix `"stereo"`, calibration paths
-  # `<calibration_dir>/stereo_<side>.yaml`), with the URDF's optical
-  # frames as frame_ids. We override resolution
-  # and SGBM parameters here to keep the disparity rate usable on a
-  # laptop CPU (≈ 2 Hz at 640×480, vs ≈ 0.7 Hz at 1280×720).
-  #
-  # Host note: each USB camera must be on a *separate* USB
-  # controller. uvcvideo reserves isochronous bandwidth on the
-  # worst-case (uncompressed) basis, so two MJPEG streams on the
-  # same USB 2 hub will fail with "Buffer pool activation failed".
-  defp stereo_component(camera_driver, arm) do
-    {
-      :stereo_camera,
-      # 640×360 is 16:9 — the sensor's native aspect. Asking a 16:9
-      # sensor for a 4:3 buffer squeezed the full field of view into
-      # 480 rows, which showed up in the calibration as fy/fx = 1.334
-      # (anamorphic pixels) and cost 1.44x on the near clip, because
-      # rectification then inflates f from ~725 to 1046 restoring
-      # square pixels. Native aspect also means 25 % fewer pixels for
-      # SGBM, which scales with `width × height × num_disparities`.
-      #
-      # 480x270 keeps that 16:9 aspect and is a pure isotropic
-      # downscale, which is why the 640x360 calibration still applies:
-      # the backend scales K and P to the capture resolution, and for a
-      # proportional resize that scaling is exact (distortion
-      # coefficients are normalised). Changing the *aspect* is what
-      # requires a fresh calibration, not changing the size.
-      #
-      # Resolution is the best lever this pipeline has, because it cuts
-      # compute and improves near range at once: f scales with width,
-      # and the near clip is (f x baseline) / num_disparities. Measured
-      # offline on identical rectified frames, coverage held at ~38-39 %
-      # across 640/560/480/400 wide — SGBM's limit here is texture, not
-      # pixel count — while cost and near clip both fell:
-      #
-      #   640x360   f*B 46.0   clip 0.48 m   SGBM ~141 ms
-      #   480x270   f*B 34.5   clip 0.36 m   SGBM  ~79 ms
-      #
-      # The price is depth precision at distance, since dZ = Z^2 dd /
-      # (f*B): about 5.8 cm at 2 m against 4.3 cm at 640 wide. Fine for
-      # deciding whether to stop for something; not fine for mapping.
-      # Wide enough for the unsynchronized USB cameras on host;
-      # drop to 5 ms once the perception target has FSIN-tied CSI
-      # modules.
-      # num_disparities sets the *near* clip: Z_min = (f × baseline) /
-      # num_disparities. With the calibrated f·B of 93.9 px·m, 48
-      # disparities clipped at 2.0 m — everything closer was clamped
-      # there (measured: image centre pinned at exactly 2.00 m, 5 % of
-      # valid pixels at the ceiling), which is useless on a car whose
-      # obstacles live between 0.2 and 3 m. 96 brings the clip to
-      # ~0.98 m. SGBM cost scales roughly linearly with this, so it is
-      # bought with frame rate: 128 reached 0.74 m but pushed the Pi to
-      # load 5.7 on 4 cores, dropped disparity to 3.6 Hz and starved
-      # the capture path down to 26 Hz. It also blinds the leftmost
-      # `num_disparities` columns, so 128 costs 20 % of the image width
-      # against 15 % here. The real headroom is in capturing 16:9
-      # instead of 4:3 — the anamorphic squeeze inflates rectified f
-      # from 725 to 1046, and undoing it buys the same near clip for
-      # ~1.44x fewer disparities. Must stay a multiple of 16.
-      # block_size and speckle filtering are tuned against the failure
-      # that matters to the costmap: not missing pixels but confident
-      # wrong ones. Thin and repetitive structure (a pole, cabinet
-      # doors, shelving) false-matches to a disparity far too large,
-      # and reads as an obstacle about a metre ahead. A hole is honest;
-      # a phantom obstacle is not. Keep CLAHE: without it those
-      # phantoms multiply.
-      # The rectified pair, to check the calibration's row alignment.
-      # No raw images in simulation: Gazebo already publishes the frames
-      # Camera.Zenoh reads there.
-      driver: camera_driver,
-      calibration_dir: priv_calibration_dir(arm),
-      calibration_store_dir: calibration_store_dir(arm),
-      width: 480,
-      height: 270,
-      fps: 30,
-      pair_tolerance_ms: 100,
-      publish_rectified_image: true,
-      publish_raw_images: arm != :simulation,
-      backend_opts: [
-        num_disparities: 96,
-        block_size: 9,
-        speckle_window_size: 600,
-        speckle_range: 8,
-        # Rejects the ambiguous matches that land walls and furniture
-        # nearer than they are; the smoothness penalties fill in more,
-        # and wrongly without it.
-        uniqueness_ratio: 20,
-        clahe_clip_limit: 3.0
-      ],
-      left: [frame_id: "stereo_left_optical"] ++ camera_addressing(arm, :left),
-      right: [frame_id: "stereo_right_optical"] ++ camera_addressing(arm, :right)
-    }
-  end
-
-  defp camera_addressing(:host, :left), do: [device: "/dev/video2"]
-  defp camera_addressing(:host, :right), do: [device: "/dev/video0"]
-  # Both CSI modules are mounted right-way-up on the OVCS Mini stereo
-  # bar, so no in-pipeline rotation. They were previously upside down
-  # and carried `rotation: 180`; leaving that in place after the
-  # re-mount inverted every published frame — which the calibrator
-  # shows plainly, and which would have baked a wrong orientation into
-  # the intrinsics. Re-check this whenever the bar is re-mounted.
-  # libcamera's camera_id 0 is the physically *right* module on this
-  # bar, not the left. Verified two ways, because a transposed pair
-  # still yields a plausible-looking disparity map rather than an
-  # obvious failure: covering the left lens darkened /stereo/right,
-  # and ORB matches between the two frames put the median
-  # `x_left - x_right` at -86 px (0 of 292 matches positive, where a
-  # correctly ordered pair must be entirely positive).
-  #
-  # The left camera leads the software sync and the right one follows it.
-  # Short exposures: the normal mode's 30 ms smears the edges SGBM
-  # matches as soon as the car moves. Focus is fixed at 1 m, the
-  # distances the costmaps care about; the calibration is only valid
-  # for these positions. The 2304x1296 sensor mode bins the whole
-  # sensor; libcamera's own pick for this output is a centre crop with
-  # a third less field of view.
-  defp camera_addressing(:target, :left),
-    do: [
-      camera_id: 1,
-      sync: :server,
-      exposure_mode: :short,
-      lens_position: 1.0,
-      sensor_mode: {2304, 1296}
-    ]
-
-  defp camera_addressing(:target, :right),
-    do: [
-      camera_id: 0,
-      sync: :client,
-      exposure_mode: :short,
-      lens_position: 1.0,
-      sensor_mode: {2304, 1296}
-    ]
-
-  # In simulation the "camera" is a topic. Gazebo publishes on the
-  # same names the vehicle does, so left really is left here — the
-  # transposition that catches physical modules cannot happen.
-  defp camera_addressing(:simulation, side),
-    do: [topic: "/stereo/#{side}/image_raw/compressed"]
-
-  # The simulator gets its own calibration, and must: Gazebo renders an
-  # ideal pinhole, so applying the physical lens's distortion and
-  # rectification to it warps the two views apart rather than into
-  # alignment. Measured, that dropped stereo coverage to 5.4%.
-  defp priv_calibration_dir(:simulation), do: Path.join(priv_calibration_dir(), "simulation")
-  defp priv_calibration_dir(_arm), do: priv_calibration_dir()
-
-  # The firmware's root filesystem is read-only: a calibration
-  # committed from cameracalibrator goes to the data partition.
-  defp calibration_store_dir(:target), do: "/data/calibration"
-  defp calibration_store_dir(_arm), do: nil
-
-  defp priv_calibration_dir do
-    case :code.priv_dir(:ovcs_mini) do
-      {:error, :bad_name} -> "priv/calibration"
-      dir -> Path.join(List.to_string(dir), "calibration")
-    end
   end
 end

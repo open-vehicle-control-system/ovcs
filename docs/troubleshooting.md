@@ -61,9 +61,9 @@ sudo modprobe vcan
 
 ### The stereo pipeline never starts against the simulator
 
-**Check:** the environment the bridge was started with.
+**Check:** the environment the vision role was started with.
 
-**Cause:** the bridge firmware was started without `BRIDGE_FIRMWARE_ID`, and stops at boot with `bridge firmware: set VEHICLE and BRIDGE_FIRMWARE_ID`, or with the id of an entry that runs no perception. **Fix:** `BRIDGE_FIRMWARE_ID=ros_vision` together with `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
+**Cause:** the vision role was started without `OVCS_SIM=1`, and the OVCS Mini reference vehicle's composer then runs no cameras on the host. **Fix:** `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
 
 ### Cantastic dies: "CAN network mappings are missing"
 

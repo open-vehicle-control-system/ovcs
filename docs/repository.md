@@ -97,7 +97,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | Package | Top-level module | What it demonstrates |
 |---|---|---|
 | `vehicles/ovcs1/` | `Ovcs1` | Full-size EV conversion: VMS on five isolated buses, infotainment, radio-control and ROS bridges, generic controllers |
-| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on two buses (`ovcs`, and `misc` for the VESC): no infotainment side; the radio control and ROS bridges in three bridge firmwares (`radio_control`, `ros`, `ros_vision`); a compute node |
+| `vehicles/ovcs_mini/` | `OvcsMini` | RC car on two buses (`ovcs`, and `misc` for the VESC): no infotainment side; the radio control and ROS bridges in two bridge firmwares (`radio_control`, `ros`); a vision unit; a compute node |
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 
@@ -109,7 +109,7 @@ Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, fo
 |---|---|---|
 | `VEHICLE` | Top-level module name of the vehicle to load (case-sensitive) | `Ovcs1`, `OvcsMini`, `Obd2`, or your own |
 | `CAN_NETWORK_MAPPINGS` | Overrides the vehicle's `default_can_mapping/1` (host or target arm) | `ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2` |
-| `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros`, `ros_vision` |
+| `BRIDGE_FIRMWARE_ID` | Bridge firmware only: picks one entry from the vehicle's `bridge_firmwares/0` | `radio_control`, `ros` |
 
 ## Elsewhere
 

@@ -122,8 +122,8 @@ Each of these is optional. On the reference vehicles each runs in a bridge firmw
 |---|---|---|
 | Radio control (`RadioControlBridge`) | Raspberry Pi 3A, an ExpressLRS receiver that outputs MAVLink, an ExpressLRS handset | The reference `config.txt` loads `sc16is75x-spi` for the SC16IS752; the vehicle's `radio_control_bridge_config(:target)` reads the receiver on `ttySC0` at 460800 baud ([`vehicles/ovcs_mini/lib/ovcs_mini.ex`](../vehicles/ovcs_mini/lib/ovcs_mini.ex), [radio control bridge](./bridges/radio_control.md)) |
 | ROS (`RosBridge`) | Raspberry Pi 4 (or 5), optional BNO085 IMU on I2C, optional SLAMTEC RPLIDAR C1 and DFRobot A02YYUW ultrasonic sensors on USB serial adapters | `{:imu_publisher, driver: BNO085.I2C}`, `{:lidar_publisher, driver: RPLidar.UART}` and one `{:range_publisher, driver: A02YYUW.UART}` per sensor on target, `OvcsDrivers.Imu.Dummy` on the host ([ROS bridge](./bridges/ros.md)) |
-| Perception (`RosBridge` components) | Raspberry Pi 5, two Camera Module 3 (IMX708) on `cam0` and `cam1`, a Hailo-8 on a Hailo hat | No CAN controller: it maps `ovcs:vcan0` and reaches the vehicle over Zenoh ([Perception](./bridges/perception.md), [`ros_vision/config.txt`](../vehicles/ovcs_mini/priv/firmware/bridges/ros_vision/config.txt)) |
-| Vision unit (`vision` role) | Raspberry Pi 5 with two cameras on `cam0` and `cam1` and, for detection, a Hailo-8 on a Hailo hat; or an OKdo Nano C100 with two Camera Module 3 (IMX708), powered from a dedicated supply rather than over USB | No CAN controller: it reaches the vehicle over Zenoh. On the Pi 5, the default [`config.txt`](../vision/firmware/targets/rpi5/config.txt) detects the cameras (`camera_auto_detect=1`). No reference vehicle runs one ([Vision unit](./vision/README.md)) |
+| Perception (`RosBridge` components) | Raspberry Pi 5, two cameras on `cam0` and `cam1`, a Hailo-8 on a Hailo hat | No CAN controller: it maps `ovcs:vcan0` and reaches the vehicle over Zenoh ([Perception](./bridges/perception.md)) |
+| Vision unit (`vision` role) | Raspberry Pi 5 with two cameras on `cam0` and `cam1` and, for detection, a Hailo-8 on a Hailo hat; or an OKdo Nano C100 with two Camera Module 3 (IMX708), powered from a dedicated supply rather than over USB | No CAN controller: it reaches the vehicle over Zenoh. On the Pi 5, the default [`config.txt`](../vision/firmware/targets/rpi5/config.txt) detects the cameras (`camera_auto_detect=1`). The OVCS Mini reference vehicle runs one with two Camera Module 3 (IMX708) and a Hailo-8, declared in its own [`config.txt`](../vehicles/ovcs_mini/priv/firmware/vision/config.txt) ([Vision unit](./vision/README.md)) |
 | ROS compute node | Raspberry Pi 5 (8 GB), NVMe SSD in a USB enclosure, Intel AX210 on M.2, Pi 5 RTC battery | balenaOS, not Nerves; no CAN ([ROS compute node](./ros2/compute_node.md#hardware)) |
 | Infotainment | Raspberry Pi 5, a touchscreen (10-inch in OVCS1), one CAN controller on `ovcs` | The reference `config.txt` loads `mcp251xfd,spi0-0,oscillator=40000000,interrupt=25`; the composer maps `ovcs:can0` ([Infotainment](./infotainment/README.md)) |
 
@@ -269,7 +269,8 @@ The OVCS Mini reference vehicle runs the same framework on a Traxxas 4WD chassis
 | Steering | Traxxas servo on PWM hat output 0, 100 Hz |
 | Spur rotation | Hall-effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
 | Radio control | ExpressLRS receiver on a Pi 3A running the `radio_control` bridge firmware |
-| ROS 2 | The `ros` bridge firmware on a Pi 4; the `ros_vision` bridge firmware on a Pi 5 with two IMX708 cameras and a Hailo-8 |
+| ROS 2 | The `ros` bridge firmware on a Pi 4 |
+| Vision | The vision unit on a Pi 5 with two IMX708 cameras and a Hailo-8 |
 | Compute node | Raspberry Pi 5 running balenaOS from an NVMe SSD in a USB enclosure: Zenoh router, Foxglove bridge, Nav2, the vehicle's Wi-Fi access point. The bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply; see [ROS compute node, Boot media](./ros2/compute_node.md#boot-media) |
 
 The Mini's VMS has two buses:

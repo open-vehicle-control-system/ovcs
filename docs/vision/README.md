@@ -5,7 +5,7 @@ description: The vision role, a Raspberry Pi 5 or an OKdo Nano C100 that turns s
 
 The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5 or an OKdo Nano C100, takes the results out through its exporters, such as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2/compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
 
-A vehicle without cameras omits the role and nothing is built for it. None of the reference vehicles runs it yet: the OVCS Mini runs stereo depth and detection in its `ros_vision` bridge firmware instead, with the ROS bridge's own stack ([Perception](../bridges/perception.md)).
+A vehicle without cameras omits the role and nothing is built for it. The OVCS Mini reference vehicle runs one: a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`).
 
 ## Layers
 
@@ -102,7 +102,7 @@ A change is unsaved until you save it. Unsaved changes live on the unit, not in 
 - **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 
-Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
+Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved. The compute node's `foxglove_bridge` offers the parameters under `/ovcs_vision.stereo.`, which the Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows as sliders next to the depth and the cameras' sync, exposure and gain; its rectified camera panels need `publish_rectified_image: true` in the ROS 2 exporter's `stereo:` options.
 
 The API follows [JSON:API](https://jsonapi.org/): [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels, and [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
 

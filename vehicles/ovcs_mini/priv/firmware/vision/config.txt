@@ -1,21 +1,6 @@
-# Raspberry Pi 5 boot config for OvcsMini's `ros_vision` bridge firmware.
-#
-# Override of the rpi5 default (which doesn't exist yet — see
-# bridges/firmware/mix.exs for the nerves_system_rpi5 enablement
-# blocker). Loaded when the bridge_firmware build resolves
-# vehicle_firmware_dir = this directory because config.txt is
-# present here (see bridges/firmware/config/config.exs).
-#
-# What's different from the Pi 4 `ros` bridge firmware's config.txt:
-#   - No mcp251xfd dtoverlay: this Pi connects to the
-#     bus via the shared zenoh router on another Pi, not a local
-#     CAN transceiver.
-#   - Pi 5 firmware filenames are unused: the Pi 5 bootloader is
-#     in on-board EEPROM, no start4.elf / fixup4.dat needed.
-#   - dtoverlay=imx708 on both cam0 and cam1 to enable the two
-#     Camera Module 3 sensors over CSI for stereo capture.
-#   - dtoverlay=vc4-kms-v3d-pi5 (not the rpi4 variant) for the
-#     Pi 5 video subsystem.
+# Raspberry Pi 5 boot config for the OVCS Mini's vision unit: two Camera
+# Module 3 (IMX708) on the CSI ports and a Hailo-8 on PCIe. No CAN transceiver:
+# the unit reaches the vehicle through the Zenoh router.
 #
 # Useful references:
 #   http://rptl.io/configtxt
@@ -24,8 +9,7 @@
 # Disable the boot rainbow
 disable_splash=1
 
-# Enable I2C and SPI (cameras hang off the CSI ports but libcamera
-# still probes the IMX708 over I2C for sensor configuration).
+# Enable I2C and SPI (libcamera configures the sensors over I2C).
 dtparam=i2c_arm=on
 dtparam=spi=on
 

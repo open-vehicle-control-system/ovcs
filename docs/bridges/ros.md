@@ -81,7 +81,7 @@ end
 
 A bare atom is shorthand for `{atom, []}`. An unknown component name raises at boot, so a typo fails loudly instead of silently dropping a feature.
 
-A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead, which also receives the bridge firmware id, so each entry gets its own components. The OVCS Mini reference vehicle does, for its `ros` and `ros_vision` entries; its `ros` target configuration, abridged:
+A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead, which also receives the bridge firmware id, so each entry gets its own components. The OVCS Mini reference vehicle's target configuration, abridged:
 
 ```elixir
 defp ros_bridge_target_config,
@@ -105,7 +105,7 @@ Order matters where one component reads another: `:odometry_publisher` comes aft
 
 - **Host and target.** The arm is fixed at compile time from `Mix.target()`. The `:host` arm swaps hardware drivers for dummies so `./ovcs run <vehicle>` works without sensors, and usually points at a router on loopback.
 - **The router's address.** On the target, `ZENOH_ENDPOINT_IP` at firmware build time sets `:zenoh_endpoint_ip`; your vehicle's `.env.exs` sets it to the compute node's address. Without a `.env.exs` the build fails, because the image would fall back to `127.0.0.1` and reach no router.
-- **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini runs `ovcs_bridge_ros` and `ovcs_bridge_ros_vision`.
+- **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini's is `ovcs_bridge_ros`, next to its vision unit's `ovcs_vision`.
 
 ## Tune the stereo cameras at runtime
 
@@ -128,7 +128,7 @@ Each parameter carries its type, range or accepted values and a description; a v
 
 What the cameras actually apply goes to `/diagnostics` (`RosBridge.StereoCamera.Live`): per camera the shutter time, gains, focus, frame duration, colour temperature and sync state that libcamera reports, and for the pair the time between the two cameras' frames, with a warning above 1 ms. `<prefix>/live/sync_offset_ms` and each camera's `<prefix>/live/<side>/exposure_time_us` and `analogue_gain` (`std_msgs/Float64`) carry the same values for plotting.
 
-Changes last until the stereo unit restarts: copy the values you keep from `ros2 param dump` into your vehicle's configuration. The Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows both cameras, rectified so their rows align as the matcher sees them, and the depth next to the stereo parameters as sliders, menus and toggles (the [`parameter-sliders`](../../compose/local/foxglove/extensions/parameter-sliders) panel, installed once in Foxglove), the diagnostics and plots of the sync offset, exposure and gain.
+Changes last until the stereo unit restarts: copy the values you keep from `ros2 param dump` into your vehicle's configuration. The Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows both cameras, rectified so their rows align as the matcher sees them, and the depth next to the stereo parameters as sliders, menus and toggles (the [`parameter-sliders`](../../compose/local/foxglove/extensions/parameter-sliders) panel, installed once in Foxglove), the diagnostics and plots of the sync offset, exposure and gain. It reads the OVCS Mini's vision unit, `/ovcs_vision`: set the sliders panel's node to your bridge's `node_name`, and add that node to the `param_whitelist` of `compose/compute/images/ros2/docker/foxglove_bridge.sh`.
 
 ## Check it end to end
 

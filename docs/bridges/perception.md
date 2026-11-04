@@ -3,7 +3,7 @@ title: "Perception: object detection"
 description: Object detection on a Hailo-8 fused with stereo depth into 3D detections, the topics it publishes, the CPU/GPU backends for the simulator, and model licensing.
 ---
 
-`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. The OVCS Mini reference vehicle is the worked example: its `ros_vision` bridge (a Pi 5) runs SGBM stereo depth on the CPU and detection on a Hailo-8. Numbers on this page are measured on that board. The bridge itself is described in [ROS bridge](./ros.md).
+`RosBridge` can run object detection next to its stereo depth pipeline and fuse the two into 3D detections. Numbers on this page are measured on a Raspberry Pi 5 running SGBM stereo depth on the CPU and detection on a Hailo-8, with two Camera Module 3 at 480×270. No reference vehicle runs this stack: the OVCS Mini runs stereo depth and detection in its [vision unit](../vision/README.md). The bridge itself is described in [ROS bridge](./ros.md).
 
 ## Why detection and not depth
 
@@ -13,7 +13,7 @@ Detection is what the accelerator is good at, and what the CPU has no room for. 
 
 ## What it costs
 
-Measured on the Mini before and after enabling detection:
+Measured on that board before and after enabling detection:
 
 | Topic | Before | After |
 |---|---|---|
@@ -55,7 +55,7 @@ Each detection draws two markers: a `CUBE` coloured red to green by score, and a
 
 The cost is a dependency: `foxglove_msgs` isn't in a ROS base install, so `ros-lyrical-foxglove-msgs` is installed in `compose/compute/images/ros2/Dockerfile`. **Without it `foxglove_bridge` can't resolve the type and never advertises the topic.** The vehicle and local stacks build from that one Dockerfile; on the vehicle, redeploy the compute node (`balena push`, see [ROS compute node](../ros2/compute_node.md#deploying)) before the overlay appears.
 
-**Boxes are mapped back into raw pixels.** Detection runs on the rectified image, but the panel shows `image_raw`. On the Mini the two differ by about 10 px on average and up to 23 px on a 480-wide frame, enough to put a box visibly beside its object. Each vertex is mapped back through OpenCV's rectification map, which costs nothing on the wire compared with a second rectified image stream.
+**Boxes are mapped back into raw pixels.** Detection runs on the rectified image, but the panel shows `image_raw`. On that board the two differ by about 10 px on average and up to 23 px on a 480-wide frame, enough to put a box visibly beside its object. Each vertex is mapped back through OpenCV's rectification map, which costs nothing on the wire compared with a second rectified image stream.
 
 That map is `CV_16SC2`: interleaved int16 pairs per rectified pixel, with `map_y` being the interpolation table rather than a coordinate. Reading it as two single-channel float maps gives a plausible-looking 240 px mean displacement instead of the real 10.
 
@@ -63,15 +63,15 @@ A straight edge in rectified space is a curve in raw space, so each edge is subd
 
 ## Grayscale is fine
 
-The detector is fed the pipeline's existing grayscale frame. Against ultralytics' `bus.jpg`, grayscale scored within 0.01 of colour (person 0.881 vs 0.888; bus 0.87 vs 0.84); colour would mean a second JPEG decode for no measurable gain. Resolution isn't the limit either: at the Mini's 480×270 the model still scores people at 0.91 / 0.87 / 0.74.
+The detector is fed the pipeline's existing grayscale frame. Against ultralytics' `bus.jpg`, grayscale scored within 0.01 of colour (person 0.881 vs 0.888; bus 0.87 vs 0.84); colour would mean a second JPEG decode for no measurable gain. Resolution isn't the limit either: at 480×270 the model still scores people at 0.91 / 0.87 / 0.74.
 
 ## Wiring it into your vehicle
 
-The detector is a `RosBridge.Config` component of the bridge firmware that runs perception (`ros_vision` on the OVCS Mini), listed after `:stereo_camera` (it registers on that unit's backend while starting). The OVCS Mini's `vehicles/ovcs_mini/lib/ovcs_mini.ex`:
+The detector is a `RosBridge.Config` component of the bridge firmware that runs perception, listed after `:stereo_camera` (it registers on that unit's backend while starting):
 
 ```elixir
 {:hailo_detector,
- hef_path: Path.join(priv_models_dir(), "#{hailo_model()}.hef"),
+ hef_path: Application.app_dir(:my_car, "priv/models/nanodet_repvgg.hef"),
  score_threshold: 0.4,
  frame_id: "stereo_left_optical"}
 ```
@@ -108,14 +108,14 @@ A missing binary, missing HEF or absent accelerator logs once at boot and leaves
 
 ## Choosing the model
 
-The Hailo path loads `vehicles/ovcs_mini/priv/models/<model>.hef`, with `<model>` from `OVCS_HAILO_MODEL`:
+`:hef_path` names the model. `mise run fetch-models` downloads these into `vehicles/ovcs_mini/priv/models/`:
 
-| `OVCS_HAILO_MODEL` | Model | Licence |
+| File | Model | Licence |
 |---|---|---|
-| unset (`nanodet_repvgg`) | NanoDet-RepVGG | Apache-2.0 |
-| `yolov8n` | YOLOv8 nano, COCO | AGPL-3.0, see [Model licensing](#model-licensing) |
+| `nanodet_repvgg.hef` | NanoDet-RepVGG | Apache-2.0 |
+| `yolov8n.hef` | YOLOv8 nano, COCO | AGPL-3.0, see [Model licensing](#model-licensing) |
 
-Neither is committed: `mise run fetch-models` downloads both and verifies each against a sha256 in `scripts/models.tsv`. A model you add there becomes selectable the same way.
+Neither is committed: the task verifies each against a sha256 in `scripts/models.tsv`, where a model you add is fetched the same way.
 
 A HEF is compiled for one architecture: these are **HAILO8** builds and won't load on a Hailo-8L. `hailo_detect` reads the input size from `input_vstream.get_info().shape` and the class count from `nms_shape.number_of_classes`; its hard requirements are a square 3-channel input and an in-graph NMS producing `HAILO_NMS_BY_CLASS` output (net flow `HAILO_NET_FLOW_YOLOV8_NMS`), since it decodes no anchors. NanoDet-RepVGG and `yolov8n` meet them; `yolox_tiny` carries `HAILO_NET_FLOW_YOLOX_NMS` and doesn't.
 
@@ -145,28 +145,23 @@ Asking for OpenCL where no device is usable logs the reason and continues on the
 
 ### The ONNX model
 
-The DNN path needs an ONNX export of a YOLOv8-shaped model at `vehicles/ovcs_mini/priv/models/yolov8n.onnx`. It isn't committed and `scripts/models.tsv` doesn't list it, for the licensing reason below: export it yourself. Until it exists the simulator runs stereo-only, so the default is "no detector" rather than one that logs a missing file on every start.
+The DNN path needs an ONNX export of a YOLOv8-shaped model, named by `:model_path`. It isn't committed and `scripts/models.tsv` doesn't list it, for the licensing reason below: export it yourself.
 
 ### Choosing a backend in the simulator
 
-`OVCS_DETECTOR` selects it:
+Your vehicle names the backend in its host configuration, against the simulator:
 
-```sh
-cd bridges/firmware
-VEHICLE=OvcsMini OVCS_SIM=1 OVCS_DETECTOR=gpu ZENOH_ENDPOINT_IP=127.0.0.1 \
-  BRIDGE_FIRMWARE_ID=ros_vision CAN_NETWORK_MAPPINGS=ovcs:vcan0 \
-  iex -S mix
+```elixir
+{:detector,
+ backend: RosBridge.Inference.Dnn,
+ model_path: Application.app_dir(:my_car, "priv/models/yolov8n.onnx"),
+ target: :opencl_fp16,
+ score_threshold: 0.4,
+ detect_every_n: 3,
+ frame_id: "stereo_left_optical"}
 ```
 
-| Value | Backend |
-|---|---|
-| unset | `Dnn` on CPU if the ONNX model exists, otherwise no detector |
-| `dnn` | `Dnn`, CPU |
-| `gpu` | `Dnn`, OpenCL FP16 |
-| `stub` | `Stub`: fabricated boxes |
-| `off` | no detector |
-
-The simulator's `Dnn` wiring sets `detect_every_n: 3`, because CPU inference shares the machine with SGBM and Gazebo; the stub runs every frame, as does the accelerator on the vehicle.
+`detect_every_n: 3` leaves the CPU to SGBM and Gazebo; the stub and the accelerator run every frame.
 
 ### What the stub is good for
 
@@ -215,4 +210,4 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 - [ROS 2](../ros2/README.md): the fabric and simulator time.
 - [ROS compute node](../ros2/compute_node.md): the router and `foxglove_bridge` these topics reach.
-- [Simulation](../../compose/local/simulation/README.md): running perception against Gazebo.
+- [Vision unit](../vision/README.md): the OVCS Mini's stereo depth and detection.

@@ -68,7 +68,7 @@ An entry takes `target` and `bridges` (required), and optionally:
 | `default_can_mapping` | the `CAN_NETWORK_MAPPINGS` for the host and for the target |
 | `can_config_path` | the CAN topology under your vehicle's `priv/`, `can/bridges/<id>.yml` by default. A list of paths is merged; a `%{host: _, target: _}` map picks one per build target, so a host run can declare frames the burned firmware never needs |
 | `children` | child specs started after the bridges' children, as a list or a `%{host: [...], target: [...]}` map |
-| `required_files` | paths relative to your vehicle app, for files a bridge needs but the repository doesn't carry. The build fails when one is missing rather than producing an image that boots without it. The OVCS Mini's `ros_vision` entry names its detection model this way (`priv/models/nanodet_repvgg.hef`, fetched by `mise run fetch-models`) |
+| `required_files` | paths relative to your vehicle app, for files a bridge needs but the repository doesn't carry. The build fails when one is missing rather than producing an image that boots without it. A vision composer's `required_files/0` does the same for the vision firmware: the OVCS Mini's names its detection model (`priv/models/nanodet_repvgg.hef`, fetched by `mise run fetch-models`) |
 
 The [`OvcsVehicle`](../../libraries/ovcs_vehicle/lib/ovcs_vehicle.ex) moduledoc is the reference for the entry's type.
 
