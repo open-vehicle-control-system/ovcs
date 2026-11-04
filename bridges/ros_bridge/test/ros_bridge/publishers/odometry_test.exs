@@ -257,6 +257,26 @@ defmodule RosBridge.Publishers.OdometryTest do
     end
   end
 
+  # Only this module touches the publisher's named table, and its tests run one at a time.
+  describe "publishing?/1" do
+    test "is true where no odometry publisher runs" do
+      assert Odometry.publishing?(1_000)
+    end
+
+    test "is false until odom has been published" do
+      Odometry.open_record()
+      refute Odometry.publishing?(1_000)
+    end
+
+    test "is true within stale_after_ms of the last publish, false after it" do
+      Odometry.open_record()
+      Odometry.record_published(state(stale_after_ms: 300), 1_000)
+
+      assert Odometry.publishing?(1_300)
+      refute Odometry.publishing?(1_301)
+    end
+  end
+
   describe "yaw_from_quaternion/4" do
     test "recovers the yaw from a pure z rotation" do
       yaw = 0.7

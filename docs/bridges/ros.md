@@ -44,7 +44,7 @@ Apart from the Zenoh session, every feature is a component your vehicle opts int
 | `:static_transforms` | the vehicle's fixed frames on `/tf_static`, so frame ids in headers resolve |
 | `:lidar_publisher` | starts an `OvcsDrivers.Lidar` driver (an RPLIDAR over USB serial) and publishes `sensor_msgs/LaserScan` |
 | `:proximity` | the lidar's nearest return on `/proximity/nearest` (`sensor_msgs/Range`), and the nearest return of each sector labelled with its distance on `/proximity/labels` (`visualization_msgs/MarkerArray`), from `/scan` |
-| `:range_publisher` | one rangefinder (an A02YYUW ultrasonic sensor over USB serial) as `sensor_msgs/Range`; list it once per sensor |
+| `:range_publisher` | one rangefinder (an A02YYUW ultrasonic sensor over USB serial) as `sensor_msgs/Range`; list it once per sensor. While an `:odometry_publisher` runs, readings go out only while it publishes `odom → base_link` |
 | `:simulator_clock`, `:simulated_hardware` | simulation only: follow `/clock`, and emulate the vehicle's hardware on CAN so the VMS drives a Gazebo model; see [Simulation](../../compose/local/simulation/README.md) |
 
 The [vision unit](../vision/README.md) is the other place stereo depth runs, as a role of its own on a dedicated board, without OpenCV. A vehicle runs stereo in one or the other.

@@ -14,6 +14,9 @@ defmodule RosBridge.Publishers.Range do
       publishes: `:infinity` (default, REP 117) or `:max_range`, for
       Nav2's `RangeSensorLayer`, which drops infinities and clears only
       on a reading of exactly `max_range`
+
+  Readings are held back while `RosBridge.Publishers.Odometry` runs but
+  does not publish `odom → base_link`; its moduledoc says why.
   """
   use GenServer
   require Logger
@@ -21,6 +24,7 @@ defmodule RosBridge.Publishers.Range do
   alias OvcsDrivers.Rangefinder.Sample
   alias Ros2Zenoh.SensorMsgs.Msg.Range
   alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias RosBridge.Publishers.Odometry
   alias RosBridge.Timing
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
@@ -36,7 +40,8 @@ defmodule RosBridge.Publishers.Range do
       topic: Keyword.fetch!(opts, :topic),
       frame_id: Keyword.fetch!(opts, :frame_id),
       radiation_type: Keyword.get(opts, :radiation_type, :ultrasound),
-      beyond_range: Keyword.get(opts, :beyond_range, :infinity)
+      beyond_range: Keyword.get(opts, :beyond_range, :infinity),
+      held: false
     }
 
     driver.register_listener(Keyword.fetch!(opts, :name), self())
@@ -46,9 +51,22 @@ defmodule RosBridge.Publishers.Range do
 
   @impl GenServer
   def handle_cast({:range_sample, %Sample{} = sample}, state) do
-    Ros2Zenoh.Client.publish(state.topic, Range, range(sample, state))
+    held = not Odometry.publishing?()
 
-    {:noreply, state}
+    cond do
+      held and not state.held ->
+        Logger.info("#{__MODULE__} holding #{state.topic} while odometry is not published")
+
+      state.held and not held ->
+        Logger.info("#{__MODULE__} publishing #{state.topic} again")
+
+      true ->
+        :ok
+    end
+
+    unless held, do: Ros2Zenoh.Client.publish(state.topic, Range, range(sample, state))
+
+    {:noreply, %{state | held: held}}
   end
 
   @doc "The `Range` for `sample`. Pure."
