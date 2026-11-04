@@ -236,9 +236,10 @@ defmodule VisionCore.Stereo.Pipeline do
     do: GenServer.call(server, {:reload_calibration, paths})
 
   @doc """
-  The monotonic time, in milliseconds, of the pipeline's start or of its
-  latest `set_options/3` or `reload_calibration/2` that succeeded,
-  whichever is later: the last time what the stages compute changed.
+  The monotonic time, in milliseconds, of the pipeline's start, of its
+  latest `set_options/3` that changed a setting's value, or of its latest
+  `reload_calibration/2` that succeeded, whichever is later: the last time
+  what the stages compute changed.
   """
   @spec last_change(GenServer.server()) :: integer()
   def last_change(server), do: GenServer.call(server, :last_change)
@@ -316,7 +317,13 @@ defmodule VisionCore.Stereo.Pipeline do
     with {:ok, location, stage} <- find_stage(state.stages, name),
          {:ok, stage_state} <- apply_options(stage, options) do
       stages = put_stage_state(state.stages, location, stage_state)
-      state = %{state | stages: stages, last_change_ms: System.monotonic_time(:millisecond)}
+
+      last_change_ms =
+        if changed?(stage, stage_state),
+          do: System.monotonic_time(:millisecond),
+          else: state.last_change_ms
+
+      state = %{state | stages: stages, last_change_ms: last_change_ms}
       {:reply, {:ok, values(%{stage | state: stage_state})}, state}
     else
       {:error, _reason} = error -> {:reply, error, state}
@@ -957,6 +964,13 @@ defmodule VisionCore.Stereo.Pipeline do
     if function_exported?(stage.module, :options, 1),
       do: stage.module.options(stage.state),
       else: %{}
+  end
+
+  # By the stage's settings, or by its state when it does not report them.
+  defp changed?(stage, stage_state) do
+    if function_exported?(stage.module, :options, 1),
+      do: values(stage) != values(%{stage | state: stage_state}),
+      else: stage.state != stage_state
   end
 
   # `{index, nil}` for a stage, `{index, member_index}` for a member of a segment.

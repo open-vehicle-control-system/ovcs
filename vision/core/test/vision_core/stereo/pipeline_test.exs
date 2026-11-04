@@ -1436,6 +1436,17 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert Pipeline.last_change(pipeline) > changed
   end
 
+  test "last_change/1 does not move on an option set to the value in force" do
+    {:ok, pipeline} = start([FillAll, Gain])
+    assert {:ok, _values} = Pipeline.set_options(pipeline, :gain, gain: 3)
+    changed = Pipeline.last_change(pipeline)
+
+    # The clock ticks in milliseconds.
+    Process.sleep(2)
+    assert {:ok, %{gain: 3}} = Pipeline.set_options(pipeline, :gain, gain: 3)
+    assert Pipeline.last_change(pipeline) == changed
+  end
+
   test "keeps settings changed at runtime across a calibration reload" do
     {:ok, pipeline} = start(Pipeline.default_stages() ++ [Gain])
     {:ok, _} = Pipeline.set_options(pipeline, :gain, gain: 4)

@@ -92,7 +92,7 @@ A change to the unit does not show in the pairs at once. The temporal filter car
 A change is anything that alters what the stages compute or what the cameras deliver:
 
 - the stereo pipeline's start, which a reboot after a firmware upload includes;
-- any change of the pipeline's options: a parameter, the automatic row-offset correction (`stereo.rectification.auto_row_offset`, with the default prefix) or a calibration reload;
+- any change of the pipeline's options: a parameter, the automatic row-offset correction (`stereo.rectification.auto_row_offset`, with the default prefix) or a calibration reload. A setting set to the value it already has is not a change;
 - any parameter applied through `VisionCore.Parameters`, the camera controls included.
 
 The exporter takes the age of the later of the pipeline's last change and the parameters' last change. Under `settle_ms`, it waits until the age reaches it, then starts the burst. It records that age in the manifest as `changeAgeMs`, in milliseconds. If a change happens during the burst, the manifest's `changesDuringBurst` is 1, and the export is not comparable: take it again.
