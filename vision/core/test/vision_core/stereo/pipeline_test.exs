@@ -2,7 +2,13 @@ defmodule VisionCore.Stereo.PipelineTest do
   use ExUnit.Case, async: false
 
   import VisionCore.Stereo.TestHelpers,
-    only: [calibration_path: 2, start_pipeline: 1, stereo_match_path: 0, texture: 3]
+    only: [
+      calibration_path: 2,
+      silent_stereo_match: 1,
+      start_pipeline: 1,
+      stereo_match_path: 0,
+      texture: 3
+    ]
 
   alias VisionCore.Outputs
   alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pair, Pipeline}
@@ -1280,20 +1286,7 @@ defmodule VisionCore.Stereo.PipelineTest do
       assert_receive {:"$gen_cast", {:stereo_pair, %{left_frame: %{capture_ns: 22}}}}, 10_000
     end
 
-    # A stereo_match that reads its requests and never answers, until `dir` holds an `answer`
-    # file: started from then on, it is the real one.
-    defp silent_port(dir) do
-      silent = Path.join(dir, "stereo_match")
-
-      File.write!(silent, """
-      #!/bin/sh
-      if [ -e "#{Path.join(dir, "answer")}" ]; then exec "#{stereo_match_path()}" "$@"; fi
-      exec cat > /dev/null
-      """)
-
-      File.chmod!(silent, 0o755)
-      restart_matcher(silent)
-    end
+    defp silent_port(dir), do: restart_matcher(silent_stereo_match(dir))
 
     test "stops at its first pair when the Port refuses its configuration, saying why" do
       stages = List.insert_at(Pipeline.default_stages(disparity: [paths: 3]), 3, UnknownKind)
@@ -1382,6 +1375,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     end
 
     @tag :tmp_dir
+    @tag :capture_log
     test "a Port that exits fails the pairs at it, and the next pair is taken", %{tmp_dir: dir} do
       silent_port(dir)
 

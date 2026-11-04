@@ -138,6 +138,7 @@ defmodule VisionCore.Debug.ExporterTest do
 
     publish_pairs(runner, 1..2)
     eventually(fn -> recording(runner).duration_reached end)
+    eventually(fn -> recording(runner).status_available end)
     refute Task.yield(task, 0)
     publish_pair(runner, pair(3))
 
@@ -255,29 +256,39 @@ defmodule VisionCore.Debug.ExporterTest do
     assert json(files(zip), "manifest.json")["changesDuringBurst"] == 1
   end
 
-  test "keeps only the status snapshots that arrive a snapshot's window after the burst starts" do
-    test = self()
+  test "leaves out the status snapshots that arrive before a snapshot's window has passed" do
+    files = export_with_snapshots(60_000)
 
-    subscribe = fn runner ->
-      send(runner, {:vision_status, snapshot(1.0)})
-      send(test, :subscribed)
-    end
+    assert json(files, "manifest.json")["statusAvailable"] == true
+    assert json(files, "manifest.json")["statusSnapshots"] == 0
+    assert json(files, "figures.json")["snapshots"] == []
+  end
 
-    runner = start_debug(status: {subscribe, fn _runner -> :ok end}, snapshot_delay_ms: 300)
+  test "keeps the status snapshots that arrive once a snapshot's window has passed" do
+    files = export_with_snapshots(0)
+
+    assert json(files, "manifest.json")["statusAvailable"] == true
+    assert json(files, "manifest.json")["statusSnapshots"] == 2
+    assert [1.0, 2.0] = Enum.map(json(files, "figures.json")["snapshots"], & &1["depthHz"])
+  end
+
+  # The files of an export whose burst received two snapshots, one as it subscribed.
+  defp export_with_snapshots(snapshot_delay_ms) do
+    subscribe = fn runner -> send(runner, {:vision_status, snapshot(1.0)}) end
+
+    runner =
+      start_debug(
+        status: {subscribe, fn _runner -> :ok end},
+        snapshot_delay_ms: snapshot_delay_ms
+      )
+
     task = export(runner)
-    assert_receive :subscribed
-    started_ms = recording(runner).started_ms
-
+    eventually(fn -> recording(runner)[:status_available] == true end)
     send(runner, {:vision_status, snapshot(2.0)})
-    Process.sleep(max(started_ms + 300 - now_ms(), 0))
-    send(runner, {:vision_status, snapshot(3.0)})
     publish_pairs(runner, 1..3)
 
     assert {:file, _filename, _type, zip} = Task.await(task)
-    files = files(zip)
-    assert json(files, "manifest.json")["statusAvailable"] == true
-    assert json(files, "manifest.json")["statusSnapshots"] == 1
-    assert [3.0] = Enum.map(json(files, "figures.json")["snapshots"], & &1["depthHz"])
+    files(zip)
   end
 
   defp snapshot(depth_hz),

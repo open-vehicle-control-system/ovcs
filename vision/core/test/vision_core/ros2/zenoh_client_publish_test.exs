@@ -398,9 +398,8 @@ defmodule VisionCore.Ros2.ZenohClientPublishTest do
 
       :ok = :sys.resume(client)
 
-      assert {1, _gid, kept} = received_put()
+      assert [{1, _gid, kept}, {2, _, newest}] = received_puts(2)
       assert kept == RmwZenoh.encode_payload(%StringMessage{data: "kept"})
-      assert {2, _gid, newest} = received_put()
       assert newest == RmwZenoh.encode_payload(%StringMessage{data: "third"})
       refute_receive %Zenohex.Sample{}
     end

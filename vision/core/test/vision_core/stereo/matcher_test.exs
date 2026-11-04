@@ -1,7 +1,8 @@
 defmodule VisionCore.Stereo.MatcherTest do
   use ExUnit.Case, async: false
 
-  import VisionCore.Stereo.TestHelpers, only: [context: 3, stereo_match_path: 0]
+  import VisionCore.Stereo.TestHelpers,
+    only: [context: 3, silent_stereo_match: 1, stereo_match_path: 0]
 
   alias VisionCore.Stereo.{Matcher, NativeSegment, Pair, Segment, Stage}
 
@@ -301,11 +302,13 @@ defmodule VisionCore.Stereo.MatcherTest do
     assert {:ok, _disparity} = match(image, image, sgm_opts([]))
   end
 
-  test "a Port that exits fails every request waiting for it" do
-    {left, right} = textured_pair(7, {360, 480}, 8)
-    opts = sgm_opts(paths: 8, disparities: 128)
+  @tag :tmp_dir
+  test "a Port that exits fails every request waiting for it", %{tmp_dir: dir} do
+    stop_supervised!(Matcher)
+    start_supervised!({Matcher, path: silent_stereo_match(dir)})
+    {left, right} = textured_pair(7, {24, 48}, 8)
+    opts = sgm_opts([])
     {segment, pair} = disparity_segment(left, right, opts)
-    assert {:ok, _disparity} = match(left, right, opts)
 
     sent = send_pairs(segment, [pair, pair])
     {:os_pid, os_pid} = Port.info(:sys.get_state(Matcher).port, :os_pid)
@@ -314,6 +317,7 @@ defmodule VisionCore.Stereo.MatcherTest do
     assert [{:error, {:exited, _status}}, {:error, {:exited, _}}] =
              Enum.map(sent, &await_response(&1, segment))
 
+    File.touch!(Path.join(dir, "answer"))
     assert {:ok, %Nx.Tensor{}} = match(left, right, opts)
   end
 end
