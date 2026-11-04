@@ -1,5 +1,5 @@
 {
-  "name": "dashboard",
+  "name": "vms-dashboard",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,23 +10,19 @@
     "test:unit": "vitest"
   },
   "dependencies": {
-    "axios": "^1.6.7",
-    "dotenv": "^16.4.5",
+    "@ovcs/ui": "file:../../libraries/ovcs_ui",
     "echarts": "^6.1.0",
-    "pinia": "^2.1.7",
-    "vue": "^3.4.15",
-    "vue-echarts": "^8.2.0",
-    "vue-router": "^4.2.5"
+    "phoenix": "^1.7.11",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@headlessui/vue": "^1.7.19",
-    "@heroicons/vue": "^2.1.1",
-    "@tailwindcss/forms": "^0.5.7",
-    "@vitejs/plugin-vue": "^6.0.1",
-    "@vue/test-utils": "^2.4.4",
+    "@testing-library/dom": "^10.0.0",
+    "@testing-library/react": "^16.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.17",
     "jsdom": "^24.0.0",
-    "phoenix": "^1.7.11",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
     "vite": "^7.1.5",

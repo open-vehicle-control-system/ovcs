@@ -13,7 +13,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.DashboardPage do
   def definition(order: order) do
     %{
       name: "Dashboard",
-      icon: "HomeIcon",
       order: order,
       blocks: %{
         "vehicle-information" => %{

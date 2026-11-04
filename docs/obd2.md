@@ -55,7 +55,7 @@ Obd2.Vms.Diagnostics                    Obd2.Vms.Discovery
   broadcasts metrics on the bus
         │                                      │
         └──────────────► VmsCore.Metrics ◄─────┘
-                          → VmsApi metrics channel → Vue dashboard
+                          → VmsApi metrics channel → VMS dashboard
 ```
 
 Adding a metric is mostly "subscribe to one more Cantastic request, broadcast its decoded value". The dashboard composer then references it by `{module, key}` like any other metric.
@@ -272,6 +272,6 @@ When an ECU rejects a request (`0x7F SID NRC`), the subscribing GenServer receiv
 | Discovery (passive + DID probe) | `vehicles/obd2/lib/obd2/vms/discovery.ex` |
 | Composer | `vehicles/obd2/lib/obd2/vms/composer.ex` |
 | Dashboard pages | `vehicles/obd2/lib/obd2/vms/composer/dashboard/` |
-| Multi-line metric rendering | `vms/dashboard/src/components/tables/RealTimeTable.vue` |
+| Multi-line metric rendering | `vms/dashboard/src/components/MetricValue.jsx` |
 
 The Cantastic reference for every supported service, its YAML options and the negative-response table is the `Cantastic.OBD2` moduledoc in the [Cantastic repository](https://github.com/open-vehicle-control-system/cantastic).

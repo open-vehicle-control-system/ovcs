@@ -4,7 +4,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.SteeringColumnPage do
   def definition(order: order) do
     %{
       name: "Steering Column",
-      icon: "ArrowPathIcon",
       order: order,
       blocks: %{
         "status" => %{

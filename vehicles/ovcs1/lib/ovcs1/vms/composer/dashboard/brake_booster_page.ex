@@ -4,7 +4,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.BrakeBoosterPage do
   def definition(order: order) do
     %{
       name: "Brake Booster",
-      icon: "ExclamationCircleIcon",
       order: order,
       blocks: %{
         "status" => %{

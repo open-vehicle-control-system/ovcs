@@ -4,7 +4,6 @@ defmodule Obd2.Vms.Composer.Dashboard.DiscoveryPage do
   def definition(order: order) do
     %{
       name: "Discovery",
-      icon: "MagnifyingGlassIcon",
       order: order,
       blocks: %{
         "supported-pids" => %{

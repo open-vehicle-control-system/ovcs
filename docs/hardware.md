@@ -15,7 +15,7 @@ A Linux laptop runs a whole vehicle. `./ovcs run <vehicle>` creates the virtual 
 What works with zero hardware:
 
 - the VMS, the infotainment and the bridges, talking over `vcan` interfaces;
-- the Vue dashboard and `./ovcs attach <vehicle>`, which decodes every frame with your vehicle's YAMLs;
+- the VMS dashboard and `./ovcs attach <vehicle>`, which decodes every frame with your vehicle's YAMLs;
 - injecting and replaying traffic with `cansend`, `cangen` and `canplayer`, including real captures under `candumps/` ([Testing with CAN](./testing_with_can.md));
 - the Gazebo simulator, with Docker: the OVCS Mini reference vehicle's VMS drives its model over the same `vcan` interfaces ([Simulation](../compose/local/simulation/README.md)).
 
@@ -209,7 +209,7 @@ OVCS1 is a 2007 Volkswagen Polo 9N converted to an electric vehicle. It uses eve
 Every vehicle CAN bus terminates on the VMS Pi 4, so components on different buses never see each other's traffic and identifier collisions can't happen. The `ovcs` bus connects the VMS to the infotainment Pi, the two bridge firmwares and the Arduino controllers. The VMS, infotainment and bridge firmware BEAMs also form one Erlang-distribution mesh.
 
 ```text
-                 ExpressLRS handset       ROS 2 / Foxglove        Vue dashboard (laptop)
+                 ExpressLRS handset       ROS 2 / Foxglove        VMS dashboard (laptop)
                         | MAVLink UART         | Zenoh                 | HTTP + WebSocket
                         v                      v                       |
                radio_control firmware     ros firmware                 |

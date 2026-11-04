@@ -5,7 +5,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.ThrottlePedalPage do
   def definition(order: order) do
     %{
       name: "Throttle Pedal",
-      icon: "ChevronUpDownIcon",
       order: order,
       blocks: %{
         "status" => %{

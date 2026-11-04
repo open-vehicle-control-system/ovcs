@@ -81,6 +81,7 @@ jobs:
             vms_dashboard:
               - *shared
               - vms/dashboard/**
+              - libraries/ovcs_ui/**
             bus_gateway_dashboard:
               - *shared
               - libraries/ovcs_bus_gateway/dashboard/**
@@ -257,7 +258,7 @@ jobs:
         run: test -x cli/target/release/ovcs && file cli/target/release/ovcs | grep -q 'ELF .* executable'
 
   vms-dashboard:
-    name: Vue · vms/dashboard
+    name: React · vms/dashboard
     needs: changes
     if: github.event_name != 'pull_request' || needs.changes.outputs.vms_dashboard == 'true'
     runs-on: ubuntu-latest

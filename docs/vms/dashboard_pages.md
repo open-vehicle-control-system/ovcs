@@ -3,7 +3,7 @@ title: Dashboard pages
 description: The page, block and row model your composers return, every block and row type the dashboards render, and how a row finds its metric or action.
 ---
 
-Both dashboards in OVCS are generic: neither the Vue VMS dashboard nor the Flutter infotainment app knows anything about your vehicle. Your composers return a map of pages and blocks, the API serves it as JSON, and the dashboard renders whatever it finds. This guide covers the exact shape of that map, every block and row type each dashboard renders, how a row finds the value it shows, and how a button reaches your code. Everything here is framework behaviour and applies to your vehicle as it is; snippets come from the scaffold template and the reference vehicles, labelled as worked examples.
+Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flutter infotainment app knows anything about your vehicle. Your composers return a map of pages and blocks, the API serves it as JSON, and the dashboard renders whatever it finds. This guide covers the exact shape of that map, every block and row type each dashboard renders, how a row finds the value it shows, and how a button reaches your code. Everything here is framework behaviour and applies to your vehicle as it is; snippets come from the scaffold template and the reference vehicles, labelled as worked examples.
 
 ## Two dashboards, one pattern
 
@@ -12,7 +12,7 @@ Both dashboards in OVCS are generic: neither the Vue VMS dashboard nor the Flutt
 | Composer callback | `dashboard_configuration/0` on `<Vehicle>.Vms.Composer` | `infotainment_configuration/0` on `<Vehicle>.Infotainment.Composer` |
 | Behaviour | [`VmsCore.Vehicle`](../../vms/core/lib/vms_core/vehicle.ex) | [`InfotainmentCore.Vehicle`](../../infotainment/core/lib/infotainment_core/vehicle.ex) |
 | API | `vms/api`, port `4000` | `infotainment/api`, port `4001` in development |
-| Renderer | Vue 3 in [`vms/dashboard/`](../../vms/dashboard/) | Flutter in [`infotainment/dashboard/`](../../infotainment/dashboard/) |
+| Renderer | React in [`vms/dashboard/`](../../vms/dashboard/) | Flutter in [`infotainment/dashboard/`](../../infotainment/dashboard/) |
 | Layout | three-column flow of blocks | fixed grid, blocks placed by cell |
 | Metric values from | the VMS bus, via `VmsCore.Metrics` | `status/0` of the module named in each metric |
 
@@ -36,7 +36,6 @@ def dashboard_configuration do
   %{
     vehicle: %{
       name: "My Car",
-      main_color: "blue",
       refresh_interval: 100,
       pages: %{
         "status" => Dashboard.DashboardPage.definition(order: 0)
@@ -50,21 +49,19 @@ The API reads fields with either dot access (the key must exist, or the request 
 
 | Vehicle key | Required | Effect |
 |---|---|---|
-| `name` | yes | Sidebar heading and browser title (`<name> VMS`). |
-| `main_color` | yes | Tailwind colour for the sidebar and buttons. Only `orange`, `red`, `blue`, `indigo`, `gray`, `green`, `amber`, `rose` and `teal` are safelisted in [`tailwind.config.js`](../../vms/dashboard/tailwind.config.js); any other name renders unstyled. |
+| `name` | yes | Shown in the top bar after **OVCS VMS**, and in the browser title (`<name> VMS`). |
 | `refresh_interval` | yes | Milliseconds between metric pushes on the websocket, and the time step of every line chart. |
 | `pages` | yes | Map of page id to page. The id is the URL segment and the `:page_id` in the API. |
 
 | Page key | Required | Effect |
 |---|---|---|
-| `name` | yes | Sidebar entry and page heading. |
+| `name` | yes | Menu entry and page heading. |
 | `order` | yes | Sort position. The first page is served at `/`, the others at `/<page_id>`. |
-| `icon` | no | A component name from `@heroicons/vue/24/outline` (`"HomeIcon"`, `"CogIcon"`, `"ArrowPathIcon"`). Defaults to `GlobeAltIcon`. |
 | `blocks` | yes | Map of block id to block. |
 
-The dashboard appends a **Network** page after yours; it shows the board's network interfaces and needs no configuration.
+The menu lists your pages under **Pages**, then the dashboard's own **Network** page under **System**: it shows the board's network interfaces and needs no configuration. A page with the id `network` is hidden behind it. The dashboard uses the `@ovcs/ui` frame and colours shared by the OVCS dashboards, in a light or a dark theme.
 
-Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Blocks flow into a three-column grid; `full_width: true` makes one span all three. [`DynamicView.vue`](../../vms/dashboard/src/views/DynamicView.vue) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
+Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Each block is a card under its name; the cards flow into a three-column grid, and `full_width: true` makes one span all three. [`DynamicPage.jsx`](../../vms/dashboard/src/pages/DynamicPage.jsx) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
 
 ## Table blocks and rows
 
@@ -79,7 +76,7 @@ A `"table"` block has a `rows` list. Each row is a metric (show a value) or an a
 | `unit` | no | Overrides the unit the publisher attached. |
 | `placeholder` | no | Shown while the value is `nil`. Defaults to `—`. |
 
-[`RealTimeTable.vue`](../../vms/dashboard/src/components/tables/RealTimeTable.vue) renders a value by its type: `true` and `false` become a check or a cross, numbers (including decimals, which arrive as strings) are rounded to two places and followed by the unit, lists are joined with commas, and a string containing a newline is shown as a monospace block. The unit `"fraction"` is shown as a percentage.
+[`format.js`](../../vms/dashboard/src/format.js) renders a value by its type: `true` and `false` become a check or a cross, numbers (including decimals, which arrive as strings) are rounded to two places and followed by the unit, lists are joined with commas, and a string containing a newline is shown as a monospace block. The unit `"fraction"` is shown as a percentage.
 
 An action row has `type: :action` and one of three `input_type` values:
 
@@ -87,7 +84,7 @@ An action row has `type: :action` and one of three `input_type` values:
 |---|---|---|
 | `:button` | a button labelled `input_name` | `module`, `action`, `extra_parameters` |
 | `:number` | a number field, a "now" badge and a button | the same, plus `"value"` as a string |
-| `:toggle` | a switch | `module`, `action`, `extra_parameters` |
+| `:toggle` | a switch, on while its `status_metric_key` is true | `module`, `action`, `extra_parameters` |
 
 | Action row key | Required | Effect |
 |---|---|---|
@@ -98,7 +95,7 @@ An action row has `type: :action` and one of three `input_type` values:
 | `action` | yes | The action string passed as its first argument. |
 | `input_name` | no | Button label. |
 | `extra_parameters` | no | Map merged into the request body, for one action shared by several rows. |
-| `status_metric_key` | no | A key on the same `module` the row subscribes to. A `:number` row shows it as the current value and seeds the field from it; a `:toggle` row draws its position from it and needs it to render at all. |
+| `status_metric_key` | no | A key on the same `module` the row subscribes to. A `:number` row shows it as the current value and seeds the field from it; a `:toggle` row is on while it is true and needs it to render at all. Clicking the switch only posts the action: the switch moves when the metric does. |
 | `hint` | no | Small text under the label. |
 | `step` | no | Increment of a `:number` field. Defaults to `"0.01"`. |
 
@@ -151,7 +148,7 @@ A `"lineChart"` block plots metrics against time with ECharts. It takes `serie_m
 }
 ```
 
-The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`: 300 × 70 ms is 21 seconds on the Mini. Axes are emitted with only `min`, `max`, `label` and `series`; other keys, such as the `position: "right"` some reference pages set, are not forwarded by the API.
+The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`: 300 × 70 ms is 21 seconds on the Mini. An axis may also set `position: "left"` or `"right"`; without it, ECharts puts the first axis on the left and the next on the right. Series take ECharts' default colours.
 
 ## How a row finds its metric
 
@@ -180,10 +177,10 @@ An action row posts a JSON body to `POST /api/actions`:
 {"module": "Elixir.VmsCore.Components.OVCS.SteeringColumn", "action": "set_pid_parameter", "parameter": "kp", "value": "0.12"}
 ```
 
-[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) converts `module` to an existing atom and runs `:ok = module.trigger_action(action, params)`, where `params` is the whole body with string keys. Two rules follow:
+[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) converts `module` to an existing atom and runs `module.trigger_action(action, params)`, where `params` is the whole body with string keys. Two rules follow:
 
 - An action's `module` must be a real module that defines `trigger_action/2`. Unlike a metric source, a process name does not work.
-- `trigger_action/2` must return `:ok`. Anything else fails the match and the request returns an error. A `:number` value arrives as a string; convert it yourself.
+- `trigger_action/2` returns `:ok`, or `{:error, reason}` to refuse: the request then answers `422` and the dashboard shows the reason under the row. Anything else fails the request. A `:number` value arrives as a string; convert it yourself.
 
 The OBD2 reference vehicle's [`diagnostics.ex`](../../vehicles/obd2/lib/obd2/vms/diagnostics.ex) shows the usual shape, one clause per action string:
 
@@ -213,7 +210,6 @@ defmodule MyCar.Vms.Composer.Dashboard.DashboardPage do
   def definition(order: order) do
     %{
       name: "Status",
-      icon: "HomeIcon",
       order: order,
       blocks: %{
         "vms-status" => %{
@@ -275,7 +271,7 @@ curl -s http://localhost:4000/api/vehicle/pages
 curl -s http://localhost:4000/api/vehicle/pages/dashboard/blocks
 ```
 
-Pages come back as `{"type": "page", "id": …, "attributes": {"name", "icon"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`. To try an action without the UI, post the body the dashboard would send:
+Pages come back as `{"type": "page", "id": …, "attributes": {"name"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`. To try an action without the UI, post the body the dashboard would send:
 
 ```sh
 curl -s -X POST http://localhost:4000/api/actions \

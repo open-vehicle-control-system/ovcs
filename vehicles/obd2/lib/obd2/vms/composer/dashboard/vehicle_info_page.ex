@@ -4,7 +4,6 @@ defmodule Obd2.Vms.Composer.Dashboard.VehicleInfoPage do
   def definition(order: order) do
     %{
       name: "Vehicle info",
-      icon: "InformationCircleIcon",
       order: order,
       blocks: %{
         "identity" => %{

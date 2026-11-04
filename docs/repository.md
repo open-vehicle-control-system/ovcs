@@ -3,7 +3,7 @@ title: Repository layout
 description: The monorepo's tree, where each component is documented, the shared libraries, the vehicle packages and the environment variables the firmwares read.
 ---
 
-OVCS is a monorepo holding the framework's components and, under `vehicles/`, the vehicles built on it. The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, Vue and React apps, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build; the Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella.
+OVCS is a monorepo holding the framework's components and, under `vehicles/`, the vehicles built on it. The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, React apps, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build; the Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella.
 
 > [!NOTE]
 > Here, *component* means a piece of the framework, and *vehicle* means a package under `vehicles/`. Every component is vehicle-agnostic. See [Framework and vehicles](./framework.md).
@@ -15,7 +15,7 @@ ovcs/
 +-- vms/                      FRAMEWORK · Vehicle Management System
 |   +-- core/                   Elixir library: VMS platform + component drivers (no vehicle code)
 |   +-- api/                    Phoenix JSON API + WebSocket server for the debug dashboard
-|   +-- dashboard/              Vue.js real-time debug dashboard (Vite + ECharts + TailwindCSS)
+|   +-- dashboard/              React real-time debug dashboard (Vite + @ovcs/ui + ECharts)
 |   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 4
 +-- infotainment/             FRAMEWORK · Infotainment system
 |   +-- core/                   Elixir library: infotainment platform (no vehicle code)

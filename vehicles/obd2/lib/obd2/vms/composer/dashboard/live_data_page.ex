@@ -4,7 +4,6 @@ defmodule Obd2.Vms.Composer.Dashboard.LiveDataPage do
   def definition(order: order) do
     %{
       name: "Live data",
-      icon: "ChartBarIcon",
       order: order,
       blocks: %{
         "engine" => %{

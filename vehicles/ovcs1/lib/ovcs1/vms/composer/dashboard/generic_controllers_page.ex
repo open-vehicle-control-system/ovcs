@@ -5,7 +5,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.GenericControllersPage do
   def definition(order: order) do
     %{
       name: "Generic Controllers",
-      icon: "PuzzlePieceIcon",
       order: order,
       blocks: %{
         "front-controller" => %{

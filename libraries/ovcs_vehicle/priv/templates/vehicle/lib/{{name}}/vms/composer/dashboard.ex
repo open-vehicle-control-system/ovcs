@@ -10,7 +10,6 @@ defmodule <%= @module %>.Vms.Composer.Dashboard do
     %{
       vehicle: %{
         name: "<%= @display_name %>",
-        main_color: "blue",
         refresh_interval: 100,
         pages: %{
           "status" => Dashboard.DashboardPage.definition(order: 0)

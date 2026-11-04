@@ -5,7 +5,6 @@ defmodule Obd2.Vms.Composer.Dashboard do
     %{
       vehicle: %{
         name: "OBD2 Scanner",
-        main_color: "green",
         refresh_interval: 70,
         pages: %{
           "dashboard" => Dashboard.DashboardPage.definition(order: 0),

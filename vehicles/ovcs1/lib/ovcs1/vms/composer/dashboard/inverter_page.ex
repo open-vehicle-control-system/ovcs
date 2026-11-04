@@ -5,7 +5,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.InverterPage do
   def definition(order: order) do
     %{
       name: "Inverter",
-      icon: "BoltIcon",
       order: order,
       blocks: %{
         "status" => %{

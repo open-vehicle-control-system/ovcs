@@ -17,8 +17,8 @@ defmodule VmsFirmware do
     * `:ready_marker` — optional path under `:dir`; present ⇒ deps installed.
     * `:note` — optional one-line hint shown when it starts.
 
-  The VMS dashboard (`vms/dashboard`, a Vue/Vite app) runs as a live dev
-  server so `.vue` edits hot-reload without rebuilding the static bundle.
+  The VMS dashboard (`vms/dashboard`, a React/Vite app) runs as a live dev
+  server so edits hot-reload without rebuilding the static bundle.
   """
   def dev_addons do
     [

@@ -35,7 +35,7 @@ The VMS is four projects, each depending on the one below through a relative `pa
 |---|---|---|
 | Core | [`vms/core/`](../../vms/core/README.md) | `VmsCore`: the component drivers, the managers, `VmsCore.Metrics`, `VmsCore.Status` and the `VmsCore.Vehicle` behaviour. No web dependencies. Depends on `cantastic`, `ovcs_can`, `ovcs_bus`, `ovcs_control`, `ovcs_vehicle`, `ecto_sqlite3` |
 | API | [`vms/api/`](../../vms/api/README.md) | `VmsApi`: a Phoenix JSON API and WebSocket server in front of the core. Controllers and channels only route traffic to it |
-| Dashboard | [`vms/dashboard/`](../../vms/dashboard/README.md) | A Vue 3 single-page app (Vite, Pinia, ECharts, TailwindCSS) that renders the pages your composer declares |
+| Dashboard | [`vms/dashboard/`](../../vms/dashboard/README.md) | A React single-page app (Vite, `@ovcs/ui`, zustand, ECharts, TailwindCSS) that renders the pages your composer declares |
 | Firmware | [`vms/firmware/`](../../vms/firmware/README.md) | `VmsFirmware`: the Nerves shell that packages the API, the core and the prebuilt dashboard for the Pi 4 |
 
 At boot the firmware reads `VEHICLE`, prepends your vehicle package's compiled code to its path, and hands its VMS composer to the core. [Your vehicle package](../vehicle_package.md#boot-flow) follows that sequence.

@@ -27,7 +27,7 @@ The cores (`vms_core`, `infotainment_core`, `vision_core`), firmware shells, bri
 | `vms_core`: component drivers, managers, metrics, the `VmsCore.Vehicle` behaviour | `<Vehicle>.Vms.Composer` implementing it |
 | `infotainment_core`: layout model, the `InfotainmentCore.Vehicle` behaviour | `<Vehicle>.Infotainment.Composer` (optional) |
 | `vision_core`: camera drivers, stereo depth, detector backends, the `VisionCore.Composer` behaviour | `<Vehicle>.Vision.Composer` (optional) |
-| VMS, infotainment and vision Phoenix APIs, Vue, React and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
+| VMS, infotainment and vision Phoenix APIs, React and Flutter dashboards | `children/0`: which drivers and GenServers to supervise |
 | Firmware shells (`vms/firmware`, `infotainment/firmware`, `vision/firmware`, `bridges/firmware`) that read `VEHICLE` | Nerves targets per role (`vms_target/0`, `infotainment_target/0`, `vision_target/0`) |
 | Bridge libraries (`RadioControlBridge`, `RosBridge`) and the `OvcsBridge` contract | `bridge_firmwares/0`: which bridges to build, on which target |
 | Shared CAN frame specs in `ovcs_can` | CAN topology YAMLs under `priv/can/` |
@@ -47,7 +47,7 @@ A running vehicle is a small fleet of BEAMs:
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers/README.md).
 
-The Vue dashboard runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's React dashboard is served by its own API, from the unit, and shows its previews and its pipeline's parameters.
+The VMS dashboard, a React app, runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's React dashboard is served by its own API, from the unit, and shows its previews and its pipeline's parameters.
 
 ### One Erlang mesh, no broker
 
@@ -73,15 +73,15 @@ VMS, infotainment and the vision unit share one layered shape. Each layer is its
                           |                    |
                     +-----+------+      +------+-------+
                     |  Dashboard |      |  Cantastic   |
-                    | (Vue,      |      |  (CAN lib)   |
-                    |  React,    |      |              |
+                    | (React,    |      |  (CAN lib)   |
                     |  Flutter)  |      |              |
+                    |            |      |              |
                     +------------+      +--------------+
 ```
 
 - **Core**: component drivers, managers, and the `VmsCore.Vehicle`, `InfotainmentCore.Vehicle` or `VisionCore.Composer` behaviour. No web dependencies, no vehicle code. `vision_core` has no CAN: it talks Zenoh instead of Cantastic.
 - **API**: a Phoenix project exposing a JSON API and WebSocket channels. Depends on Core.
-- **Dashboard**: Vue for the VMS debug dashboard, React for the vision dashboard, Flutter for the head unit.
+- **Dashboard**: React for the VMS debug dashboard and the vision dashboard, both on the shared `@ovcs/ui` library; Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
 The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Repository layout](./repository.md).

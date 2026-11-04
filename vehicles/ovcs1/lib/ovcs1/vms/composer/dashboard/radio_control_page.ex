@@ -4,7 +4,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.RadioControlPage do
   def definition(order: order) do
     %{
       name: "Radio Control",
-      icon: "WifiIcon",
       order: order,
       blocks: %{
         "status" => %{
