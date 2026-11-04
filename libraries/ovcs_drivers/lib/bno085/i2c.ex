@@ -443,9 +443,7 @@ defmodule BNO085.I2C do
                 state
 
               _ ->
-                Logger.debug("#{__MODULE__} cargo #{inspect(cargo)}")
-                state = handle_cargo(state, cargo)
-                state
+                handle_cargo(state, cargo)
             end
 
           {:noreply, state}
