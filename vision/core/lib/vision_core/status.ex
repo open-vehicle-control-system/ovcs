@@ -77,7 +77,16 @@ defmodule VisionCore.Status do
   it exits or unsubscribes.
   """
   @spec subscribe() :: :ok
-  def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
+  def subscribe, do: subscribe(self())
+
+  @doc """
+  Sends `pid` `{:vision_status, snapshot}` now and every tick, until it
+  exits or is unsubscribed. The call builds a snapshot, which asks each
+  exporter's runner for its status, so a runner is subscribed from
+  another process.
+  """
+  @spec subscribe(pid()) :: :ok
+  def subscribe(pid), do: GenServer.call(__MODULE__, {:subscribe, pid})
 
   @doc "The row alignment of the last tick, without the snapshot's calls."
   @spec alignment() :: map() | nil
@@ -85,7 +94,11 @@ defmodule VisionCore.Status do
 
   @doc "Stops the caller's snapshots; one sent before may still arrive."
   @spec unsubscribe() :: :ok
-  def unsubscribe, do: GenServer.call(__MODULE__, {:unsubscribe, self()})
+  def unsubscribe, do: unsubscribe(self())
+
+  @doc "Stops `pid`'s snapshots; one sent before may still arrive."
+  @spec unsubscribe(pid()) :: :ok
+  def unsubscribe(pid), do: GenServer.call(__MODULE__, {:unsubscribe, pid})
 
   @impl GenServer
   def init(opts) do

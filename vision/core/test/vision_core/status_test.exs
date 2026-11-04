@@ -177,6 +177,19 @@ defmodule VisionCore.StatusTest do
     refute_receive {:vision_status, _snapshot}, 100
   end
 
+  test "another process subscribes and unsubscribes a process by its pid" do
+    start_supervised!({Status, config: config([]), tick_ms: 20})
+    test = self()
+
+    :ok = Task.await(Task.async(fn -> Status.subscribe(test) end))
+    assert_receive {:vision_status, _snapshot}, 500
+
+    :ok = Task.await(Task.async(fn -> Status.unsubscribe(test) end))
+    Process.sleep(30)
+    flush_snapshots()
+    refute_receive {:vision_status, _snapshot}, 100
+  end
+
   defp flush_snapshots do
     receive do
       {:vision_status, _snapshot} -> flush_snapshots()
