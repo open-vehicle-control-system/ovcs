@@ -16,7 +16,7 @@ Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flu
 | Layout | blocks dealt to three columns | fixed grid, blocks placed by cell |
 | Metric values from | the VMS bus, via `VmsCore.Metrics` | `status/0` of the module named in each metric |
 
-Both APIs expose the same four routes:
+Both APIs expose these four routes; the VMS also serves `GET /api/firmware`, which its dashboard's top bar reads:
 
 ```text
 GET  /api/vehicle                         vehicle name, colour, refresh interval
@@ -49,7 +49,7 @@ The API reads fields with either dot access (the key must exist, or the request 
 
 | Vehicle key | Required | Effect |
 |---|---|---|
-| `name` | yes | Shown in the top bar after **OVCS VMS**, and in the browser title (`<name> VMS`). |
+| `name` | yes | Returned by `GET /api/vehicle`. The VMS dashboard's top bar and browser title name the vehicle with your vehicle module's `name/0`, from `GET /api/firmware`. |
 | `refresh_interval` | yes | Milliseconds between metric pushes on the websocket, and the time step of every line chart. |
 | `pages` | yes | Map of page id to page. The id is the URL segment and the `:page_id` in the API. |
 

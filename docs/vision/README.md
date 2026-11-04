@@ -82,7 +82,7 @@ The dashboard and the API are served from the board on port 4100:
 http://<vehicle>-vision.local:4100
 ```
 
-Next to the title, the dashboard names the commit the firmware is built from and the Nerves system the board runs, such as `ce99e251 · nerves_system_okdo_c100 0.3.0`; `-dirty` after the commit marks a build with uncommitted changes. `GET /api/firmware` returns both.
+At the right of the top bar, the dashboard shows the firmware's Version, the commit it is built from, its System, the Nerves system the board runs, and your Vehicle; `-dirty` after the commit marks a build with uncommitted changes. `GET /api/firmware` returns them. The bottom bar says whether the dashboard is connected to the unit, then holds the unit's statuses.
 
 On a unit with detection, the left video outlines each detected object with its label and distance, and its caption counts them. An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.
 
@@ -104,7 +104,7 @@ Discard and Reset all ask first. The same actions are `VisionCore.Parameters.sav
 
 The API follows [JSON:API](https://jsonapi.org/): [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels, and [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
 
-The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. The ROS 2 exporter and the API open pages of their own, another exporter a page with its status, the outputs it reads and its actions as buttons. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them. The top bar shows the ROS 2 exporter's status, its link to the Zenoh router, on a unit that has one.
+The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. The ROS 2 exporter and the API open pages of their own, another exporter a page with its status, the outputs it reads and its actions as buttons. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them. The bottom bar shows the ROS 2 exporter's status, its link to the Zenoh router, on a unit that has one.
 
 `GET /api/ros2-node` describes what the unit exports over ROS 2: its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open, the topics it has published, each with its message type and rate over the last second, and the services it answers, the parameter services and each camera's `set_camera_info`. Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.ZenohClient.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent: it is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`. A unit without the ROS 2 link has no node: `GET /api/ros2-node` answers 404.
 

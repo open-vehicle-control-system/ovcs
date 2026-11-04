@@ -138,6 +138,7 @@ With `:http` set, the gateway runs a Phoenix endpoint, `OvcsBusGateway.Http.Endp
 | `GET /api/nodes/:id` | one node, by role; 404 when unknown |
 | `GET /api/adapters` | MQTT, then HTTP, each with its status |
 | `GET /api/configuration` | the gateway's configuration |
+| `GET /api/firmware` | the commit, target, Nerves system and vehicle of the firmware the gateway runs on, as the vision unit's |
 | `/sockets/dashboard` | the Phoenix socket, with the `signals` and `status` channels |
 
 The other routes take no query parameter: one answers a 400.
@@ -302,9 +303,9 @@ The `status` channel pushes a `status` event after the join, then again whenever
 
 ## Dashboard
 
-`libraries/ovcs_bus_gateway/dashboard/` is a React app fed by the `signals` and `status` channels. It draws the bus with every node plugged into it: a node's link pulses while it publishes and turns red and dashed when the node drops off. Under the bus, a table lists every signal by node and source; selecting a node, from the bus or the menu, narrows it to that node, with one tab per component. The menu also lists the adapters, each with its status and a page saying what it is set up with. The selection stays in the URL, and a filter box in the top bar narrows the tables. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
+`libraries/ovcs_bus_gateway/dashboard/` is a React app fed by the `signals` and `status` channels. It draws the bus with every node plugged into it: a node's link pulses while it publishes and turns red and dashed when the node drops off. Under the bus, a table lists every signal by node and source; selecting a node, from the bus or the menu, narrows it to that node, with one tab per component. The menu also lists the adapters, each with its status and a page saying what it is set up with. The selection stays in the URL, and a filter box in the top bar narrows the tables. The top bar also shows the firmware's version, system and vehicle; the bottom bar says whether the dashboard is connected and how many signals it holds. Each row shows how long ago the value last changed and was last published; a dot marks a value that changed in the last 2 seconds, and a signal the gateway flags as stale is muted and labelled. It is built into `priv/static` and served at `/` by the gateway. The library builds it whenever it is compiled for a Nerves target, so every bridge firmware that runs the gateway serves it at `http://<bridge-host>:4100/`; a host build skips it.
 
-Its page frame (top bar, menu, theme switch), components, design tokens and Tailwind preset come from [`@ovcs/ui`](../../libraries/ovcs_ui/README.md), shared with the vision dashboard.
+Its page frame (top bar, menu, bottom bar, theme switch), components, design tokens and Tailwind preset come from [`@ovcs/ui`](../../libraries/ovcs_ui/README.md), shared with the VMS and vision dashboards.
 
 ## Developing on the host
 
