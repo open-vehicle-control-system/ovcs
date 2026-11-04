@@ -8,6 +8,7 @@ defmodule VmsApiWeb.Router do
   scope "/api", VmsApiWeb.Api do
     pipe_through :api
     resources "/vehicle", VehicleController, only: [:show], singleton: true
+    resources "/firmware", FirmwareController, only: [:show], singleton: true
 
     scope "/vehicle", Vehicle do
       resources "/pages", PagesController, only: [:index]

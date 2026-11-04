@@ -35,6 +35,7 @@ defmodule OvcsBusGateway.MixProject do
   defp deps do
     [
       {:ovcs_bus, path: "../ovcs_bus"},
+      {:ovcs_vehicle, path: "../ovcs_vehicle"},
       {:jason, "~> 1.4"},
       {:decimal, "~> 2.0 or ~> 3.0"},
       {:bandit, "~> 1.14", optional: true},

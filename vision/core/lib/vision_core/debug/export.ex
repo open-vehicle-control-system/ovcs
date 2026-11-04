@@ -13,7 +13,7 @@ defmodule VisionCore.Debug.Export do
   ## The recording
 
     * `:hostname`, `:time` (a `DateTime`) and `:firmware` (a
-      `VisionCore.Firmware`).
+      `OvcsVehicle.FirmwareInfo`).
     * `:parameters` — `VisionCore.Parameters.groups/0`, or a flat list of
       parameters; each is written as `id`, `value`, `saved` and `state`.
     * `:configuration` — `VisionCore.settings/0`, written as it is.

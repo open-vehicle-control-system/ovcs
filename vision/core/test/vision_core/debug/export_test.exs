@@ -3,7 +3,7 @@ defmodule VisionCore.Debug.ExportTest do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Debug.Export
-  alias VisionCore.Firmware
+  alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Parameters.{Group, Parameter}
   alias VisionCore.Stereo.Pair
   alias VisionCore.TestPng
@@ -254,11 +254,12 @@ defmodule VisionCore.Debug.ExportTest do
     %{
       hostname: "unit-1",
       time: ~U[2026-11-03 14:05:09Z],
-      firmware: %Firmware{
+      firmware: %FirmwareInfo{
         revision: "abc123",
         target: "rpi5",
         nerves_system: "vision_rpi5",
-        nerves_system_version: "1.0.0"
+        nerves_system_version: "1.0.0",
+        vehicle: "OVCS Mini"
       },
       parameters: [
         %Group{

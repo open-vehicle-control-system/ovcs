@@ -65,7 +65,7 @@ end
 
 config :vision_firmware, vehicle: vehicle_name
 
-# The commit the firmware is built from, for `VisionCore.Firmware`: its hash,
+# The commit the firmware is built from, for `OvcsVehicle.FirmwareInfo`: its hash,
 # after the latest `v` version tag once there is one, `-dirty` with
 # uncommitted changes.
 revision =
@@ -77,7 +77,7 @@ revision =
     {_error, _status} -> nil
   end
 
-config :vision_core, :firmware, revision: revision, target: target
+config :ovcs_vehicle, :firmware, revision: revision, target: target
 
 # vision_api serves JSON:API; path deps' config is not loaded here.
 config :mime, :types, %{"application/vnd.api+json" => ["jsonapi"]}

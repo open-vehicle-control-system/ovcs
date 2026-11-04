@@ -236,9 +236,29 @@ defmodule OvcsBusGateway.Http.RouterTest do
            }
   end
 
+  test "describes the firmware it runs on, without a vehicle or Nerves system on a host" do
+    Application.put_env(:ovcs_vehicle, :firmware, revision: "ce99e251", target: "host")
+    on_exit(fn -> Application.delete_env(:ovcs_vehicle, :firmware) end)
+
+    assert body(get("/api/firmware")) == %{
+             "data" => %{
+               "type" => "firmwares",
+               "id" => "current",
+               "attributes" => %{
+                 "revision" => "ce99e251",
+                 "target" => "host",
+                 "nervesSystem" => nil,
+                 "nervesSystemVersion" => nil,
+                 "vehicle" => nil
+               }
+             }
+           }
+  end
+
   test "refuses a query parameter a route does not take" do
     assert_error(get("/api/adapters?sort=name"), 400, "unsupported query parameter sort")
     assert_error(get("/api/configuration?include=x"), 400, "unsupported query parameter include")
+    assert_error(get("/api/firmware?include=x"), 400, "unsupported query parameter include")
   end
 
   @tag :tmp_dir

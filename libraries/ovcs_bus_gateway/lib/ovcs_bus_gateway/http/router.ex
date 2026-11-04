@@ -1,7 +1,7 @@
 defmodule OvcsBusGateway.Http.Router do
   @moduledoc """
-  Routes of `OvcsBusGateway.Http`: the `signals`, `nodes`, `adapters` and `configurations`
-  resources under `/api`, following JSON:API, a JSON:API 404 for any other `/api` path, and the
+  Routes of `OvcsBusGateway.Http`: the `signals`, `nodes`, `adapters`, `configurations` and
+  `firmwares` resources under `/api`, following JSON:API, a JSON:API 404 for any other `/api` path, and the
   dashboard on every other path.
   """
 
@@ -23,6 +23,7 @@ defmodule OvcsBusGateway.Http.Router do
     get "/nodes/:id", NodesController, :show
     get "/adapters", AdaptersController, :index
     get "/configuration", ConfigurationController, :show
+    get "/firmware", FirmwareController, :show
   end
 
   scope "/api", OvcsBusGateway.Http do

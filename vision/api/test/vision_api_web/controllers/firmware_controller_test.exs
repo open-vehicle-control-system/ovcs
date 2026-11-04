@@ -4,8 +4,8 @@ defmodule VisionApiWeb.FirmwareControllerTest do
   alias VisionApiWeb.FirmwareJSON
 
   setup do
-    Application.put_env(:vision_core, :firmware, revision: "ce99e251", target: "host")
-    on_exit(fn -> Application.delete_env(:vision_core, :firmware) end)
+    Application.put_env(:ovcs_vehicle, :firmware, revision: "ce99e251", target: "host")
+    on_exit(fn -> Application.delete_env(:ovcs_vehicle, :firmware) end)
   end
 
   test "GET /api/firmware answers the commit and the target, without a Nerves system on a host",
@@ -21,25 +21,28 @@ defmodule VisionApiWeb.FirmwareControllerTest do
                  "revision" => "ce99e251",
                  "target" => "host",
                  "nervesSystem" => nil,
-                 "nervesSystemVersion" => nil
+                 "nervesSystemVersion" => nil,
+                 "vehicle" => nil
                }
              }
            }
   end
 
-  test "a board's firmware names its Nerves system" do
-    firmware = %VisionCore.Firmware{
+  test "a board's firmware names its Nerves system and its vehicle" do
+    firmware = %OvcsVehicle.FirmwareInfo{
       revision: "ce99e251",
       target: "okdo_c100",
       nerves_system: "nerves_system_okdo_c100",
-      nerves_system_version: "0.3.0"
+      nerves_system_version: "0.3.0",
+      vehicle: "OVCS Mini"
     }
 
     assert %{
              data: %{
                attributes: %{
                  nervesSystem: "nerves_system_okdo_c100",
-                 nervesSystemVersion: "0.3.0"
+                 nervesSystemVersion: "0.3.0",
+                 vehicle: "OVCS Mini"
                }
              }
            } =

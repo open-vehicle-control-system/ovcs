@@ -81,7 +81,7 @@ defmodule VisionCore.Debug.Exporter do
     * `:unit_state` — `(-> map())`, the unit's `:firmware`, `:parameters`,
       `:configuration`, `:calibration` and `:hostname`, as
       `VisionCore.Debug.Export` takes them; by default
-      `VisionCore.Firmware.current/0`, `VisionCore.Parameters.groups/0`,
+      `OvcsVehicle.FirmwareInfo.current/0`, `VisionCore.Parameters.groups/0`,
       `VisionCore.settings/0`, the stereo unit's calibration files
       (`VisionCore.Stereo.Supervisor.camera_options/1`) and
       `:inet.gethostname/0`.
@@ -98,7 +98,8 @@ defmodule VisionCore.Debug.Exporter do
   """
   @behaviour VisionCore.Exporter
 
-  alias VisionCore.{Firmware, Parameters, Preview, Status}
+  alias OvcsVehicle.FirmwareInfo
+  alias VisionCore.{Parameters, Preview, Status}
   alias VisionCore.Debug.Export
   alias VisionCore.Stereo.{Pair, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
@@ -482,7 +483,7 @@ defmodule VisionCore.Debug.Exporter do
 
   defp unit_state(config) do
     %{
-      firmware: Firmware.current(),
+      firmware: FirmwareInfo.current(),
       parameters: Parameters.groups(),
       configuration: VisionCore.settings(),
       calibration: calibration(config),

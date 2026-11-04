@@ -75,6 +75,20 @@ System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_dir)
 
 config :nerves, :firmware, fwup_conf: resolve_firmware_file.("fwup.conf")
 
+# The commit the firmware is built from, for `OvcsVehicle.FirmwareInfo`: its
+# hash, after the latest `v` version tag once there is one, `-dirty` with
+# uncommitted changes.
+revision =
+  case System.cmd("git", ["describe", "--always", "--dirty", "--match", "v[0-9]*"],
+         cd: __DIR__,
+         stderr_to_stdout: true
+       ) do
+    {describe, 0} -> String.trim(describe)
+    {_error, _status} -> nil
+  end
+
+config :ovcs_vehicle, :firmware, revision: revision, target: target
+
 # `OvcsBridge.Supervisor` reads both keys via `Application.get_env/2`
 # at boot. Setting them here (compile-time) bakes the values into
 # `sys.config`, which is how a released Nerves image knows its

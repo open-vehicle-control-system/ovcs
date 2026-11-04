@@ -72,6 +72,14 @@ return the module atom (or `nil` in `MIX_ENV=test`). Without this
 step, the firmware BEAM can't dereference the vehicle module — the
 vehicle is not a Mix dep of the firmware.
 
+### `OvcsVehicle.FirmwareInfo`
+
+What a firmware runs, for the dashboards' top bar: `current/1` answers
+the commit and Nerves target each firmware's `config/config.exs` records
+under `:ovcs_vehicle, :firmware`, the Nerves system the board's
+`/usr/lib/os-release` names, and the vehicle's `name/0`. The VMS, the
+vision unit and the bus gateway serve it at `GET /api/firmware`.
+
 Cross-firmware messaging uses `OvcsBus.Cluster` (in `ovcs_bus`) —
 each firmware's `Application` supervises one at boot and the BEAMs
 form a distributed Erlang mesh. No per-vehicle wiring is needed in
@@ -107,6 +115,7 @@ lib/
   ovcs_vehicle.ex            — the OvcsVehicle behaviour
   ovcs_vehicle/
     firmware.ex              — resolve_vehicle/3 (for runtime.exs)
+    firmware_info.ex         — what a firmware runs, for GET /api/firmware
     scaffold.ex              — `ovcs new` template renderer
 priv/
   templates/vehicle/         — EEx-rendered new-vehicle template
