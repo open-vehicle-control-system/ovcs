@@ -10,7 +10,10 @@ defmodule VisionCore.Application do
   come first, so saved values are loaded before any component declares its
   parameters and a restart of anything after them keeps the unsaved changes.
   `VisionCore.Outputs` follows them, before every process that publishes or
-  subscribes through it.
+  subscribes through it, then the `VisionCore.Calibration.Tasks`
+  `Task.Supervisor`, which runs the calibration's detections, solves,
+  commits and resets: a commit, which may restart the stereo unit,
+  outlives a restart of the components or the exporters.
 
   The ROS 2 link comes next, when the configuration has a `ros2:` section:
   `Ros2Zenoh.Client`, `VisionCore.Ros2.Parameters`,
@@ -36,8 +39,10 @@ defmodule VisionCore.Application do
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
   After the components come `VisionCore.Exporters`, which runs the
-  configuration's exporters, then `VisionCore.Status`, which reports
-  their statuses, `VisionCore.Preview` and `VisionCore.Video`: a restart
+  configuration's exporters, then, with a `:stereo` component,
+  `VisionCore.Calibration.Session`, then `VisionCore.Status`, which
+  reports the exporters' statuses, `VisionCore.Preview` and
+  `VisionCore.Video`: a restart
   of the dashboard's sources does not restart the exporters.
 
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
@@ -85,7 +90,7 @@ defmodule VisionCore.Application do
   defp pipeline_child(%VisionCore.Config{} = config) do
     core_children =
       [VisionCore.Parameters.Storage, VisionCore.Parameters, VisionCore.Outputs] ++
-        [VisionCore.Processes] ++
+        [VisionCore.Processes, {Task.Supervisor, name: VisionCore.Calibration.Tasks}] ++
         ros2_children(config.ros2) ++
         [
           {VisionCore.Jpeg, ports: 1},
@@ -101,14 +106,19 @@ defmodule VisionCore.Application do
     check_camera_names!(component_children)
     check_jpeg!(config.jpeg)
 
-    consumer_children = [
-      {VisionCore.Jpeg, [name: @export_jpeg_codec] ++ config.jpeg},
-      {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec},
-      {VisionCore.Status, config: config},
-      {VisionCore.Preview,
-       [config: config, jpeg_codec: @export_jpeg_codec] ++ Keyword.delete(config.preview, :videos)},
-      {VisionCore.Video, config: config, videos: Keyword.get(config.preview, :videos, [])}
-    ]
+    consumer_children =
+      [
+        {VisionCore.Jpeg, [name: @export_jpeg_codec] ++ config.jpeg},
+        {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec}
+      ] ++
+        calibration_children(config) ++
+        [
+          {VisionCore.Status, config: config},
+          {VisionCore.Preview,
+           [config: config, jpeg_codec: @export_jpeg_codec] ++
+             Keyword.delete(config.preview, :videos)},
+          {VisionCore.Video, config: config, videos: Keyword.get(config.preview, :videos, [])}
+        ]
 
     %{
       id: VisionCore.Supervisor,
@@ -120,6 +130,12 @@ defmodule VisionCore.Application do
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}
     }
+  end
+
+  defp calibration_children(%VisionCore.Config{components: components} = config) do
+    if Enum.any?(components, &(&1 == :stereo or match?({:stereo, _opts}, &1))),
+      do: [{VisionCore.Calibration.Session, config: config}],
+      else: []
   end
 
   defp ros2_children(nil), do: []

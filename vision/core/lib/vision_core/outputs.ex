@@ -4,8 +4,9 @@ defmodule VisionCore.Outputs do
   consume it, through a `Registry` of subscriptions.
 
   A producer publishes under the key of its output, `{output, name}`:
-  `output` is its kind and `name` the producer's registered name, or its
-  pipeline's name, so two producers of one kind stay apart.
+  `output` is its kind and `name` the producer's registered name, its
+  pipeline's name, or the stereo unit's prefix for a calibration, so two
+  producers of one kind stay apart.
 
     * `{:camera_frame, name}` — `{:camera_frame, %VisionCore.Camera.Frame{}}`
       from the `VisionCore.Camera` driver instance registered as `name`;
@@ -21,6 +22,9 @@ defmodule VisionCore.Outputs do
     * `{:segmentation, name}` — `{output, {frame, labels, clouds}}` from
       the segmentation pipeline `name`
       (`VisionCore.Segmentation.Pipeline`), `output` being the key.
+    * `{:stereo_calibration, prefix}` — `{:stereo_calibration_changed, prefix}`
+      from `VisionCore.Stereo.Calibration`, after each change of the
+      calibration of the stereo unit `prefix`.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. One that takes messages out of its mailbox itself matches
@@ -43,6 +47,7 @@ defmodule VisionCore.Outputs do
   @type key ::
           {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
           | {:camera_frame, atom(), atom()}
+          | {:stereo_calibration, String.t()}
 
   @doc "Starts the registry."
   @spec start_link(keyword()) :: Supervisor.on_start()

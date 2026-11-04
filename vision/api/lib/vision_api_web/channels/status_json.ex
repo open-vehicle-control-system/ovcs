@@ -44,6 +44,7 @@ defmodule VisionApiWeb.StatusJSON do
       pair: checks(snapshot.pair),
       depth: checks(snapshot.depth),
       npu: npu(snapshot.npu),
+      calibrated: snapshot.calibrated,
       depthHz: snapshot.depth_hz,
       stereoLoadPercent: snapshot.stereo_segment_percent,
       alignment: alignment(snapshot.alignment),

@@ -34,7 +34,7 @@ Everything containerised lives under `compose/`, split by one question: is it pu
 | `foxglove_bridge` | `compose/compute` | Foxglove Studio attaches over the LAN on port 8765 |
 | `nav2` | `compose/compute` | the planner survives the base station leaving, like the router |
 | `wifi_firmware`, `wifi_ap_radio`, `bridge_no_nat`, `ntp` | `compose/compute` | host plumbing for the compute node's network; not ROS |
-| `ros2` (tooling shell), `joy`, `calibrator` (profile `calibration`) | `compose/local/base.yml` | the operator's side: CLI, game controller, stereo calibration GUI |
+| `ros2` (tooling shell), `joy`, `calibrator` (profile `calibration`) | `compose/local/base.yml` | the operator's side: CLI, game controller, `cameracalibrator`'s stereo calibration GUI |
 | `zenohd`, `foxglove_bridge` (profile `standalone`), `nav2` (profile `nav2`) | `compose/local/base.yml` | stand-ins for the vehicle's own, when none is on the LAN |
 | `gazebo`, `gazebo-gui`, `nav2` | `compose/local/simulation.yml` | Gazebo, its viewer, and Nav2 on its clock |
 
@@ -45,6 +45,8 @@ The vehicle's images are built only from `compose/compute/images/`, and the loca
 A stand-in must not run while a vehicle is on the LAN: two routers are two fabrics.
 
 The profile table is in [`compose/README.md`](../../compose/README.md). The compute node itself is described in [ROS compute node](./compute_node.md).
+
+The `calibrator` is one of two ways to calibrate the vision unit's stereo cameras. The unit's dashboard calibrates them on its own, with the same OpenCV steps, and needs neither ROS 2 nor an X display; both commit through the same code on the unit. [Calibrate the cameras](../vision/calibration.md) covers the two.
 
 ## What the simulator starts
 

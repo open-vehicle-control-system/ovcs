@@ -17,7 +17,10 @@ defmodule VisionCore.Status do
   (`Pair` `:sharpness`), and `:quality` the depth's quality
   (`VisionCore.Stereo.Stage.Quality`'s metrics: the share of matched
   pixels, the disparity's mean and spread, and its jitter), each averaged
-  over the tick's pairs; `nil` without any.
+  over the tick's pairs; `nil` without any. `:calibrated` is whether the
+  stereo unit has both calibration files
+  (`VisionCore.Stereo.Supervisor.calibrated?/1`), read at each snapshot;
+  `false` without a `:stereo` component.
 
   `:pair` judges the cameras together (`VisionCore.Stereo.PairCheck`):
   their timing, their rows, with the row correction the stage declaring
@@ -79,6 +82,7 @@ defmodule VisionCore.Status do
               pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
             }
             | nil,
+          calibrated: boolean(),
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -150,6 +154,7 @@ defmodule VisionCore.Status do
     {:ok,
      %{
        tick_ms: tick_ms,
+       config: config,
        cameras: StereoSupervisor.cameras(config),
        own_cameras: own_cameras,
        npu_backends: npu_backends(config),
@@ -363,6 +368,7 @@ defmodule VisionCore.Status do
       pair: pair,
       depth: depth,
       npu: npu(state, replies),
+      calibrated: StereoSupervisor.calibrated?(state.config),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,

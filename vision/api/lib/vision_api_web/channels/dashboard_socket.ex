@@ -1,5 +1,5 @@
 defmodule VisionApiWeb.DashboardSocket do
-  @moduledoc "The dashboard's socket: the `status`, `preview:<stream>`, `video:<camera>`, `detections:<name>` and `segmentation:<name>` channels."
+  @moduledoc "The dashboard's socket: the `status`, `preview:<stream>`, `video:<camera>`, `detections:<name>`, `segmentation:<name>` and `calibration` channels."
   use Phoenix.Socket
 
   channel "status", VisionApiWeb.StatusChannel
@@ -7,6 +7,7 @@ defmodule VisionApiWeb.DashboardSocket do
   channel "video:*", VisionApiWeb.VideoChannel
   channel "detections:*", VisionApiWeb.DetectionChannel
   channel "segmentation:*", VisionApiWeb.SegmentationChannel
+  channel "calibration", VisionApiWeb.CalibrationChannel
 
   @impl Phoenix.Socket
   def connect(_params, socket, _connect_info), do: {:ok, socket}

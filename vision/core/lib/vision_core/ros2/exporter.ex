@@ -53,7 +53,9 @@ defmodule VisionCore.Ros2.Exporter do
   helper under its supervisor, writes the calibration to the stereo
   unit's store, or without one to the side's calibration path, has the
   stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
-  exporter, which reads its camera info again.
+  exporter, which reads its camera info again. It reads it again too
+  after a change from the dashboard
+  (`VisionCore.Stereo.Calibration.changed_key/1`).
 
   ## Cameras of their own
 
@@ -121,13 +123,13 @@ defmodule VisionCore.Ros2.Exporter do
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Unit}
-  alias VisionCore.{Detection, Segmentation}
+  alias VisionCore.{Detection, Outputs, Segmentation}
   alias VisionCore.Ros2.Exporter.{Camera, Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Exporter.Segmentation, as: SegmentationMessages
   alias VisionCore.Segmentation.Supervisor, as: SegmentationSupervisor
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Stamp, Topics}
-  alias VisionCore.Stereo.{Pair, StageTimer}
+  alias VisionCore.Stereo.{Calibration, Pair, StageTimer}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @heartbeat_topic "ovcs_heartbeat"
@@ -516,6 +518,7 @@ defmodule VisionCore.Ros2.Exporter do
       }
 
       if stereo, do: notify_on_commit(options[:stereo], cameras)
+      if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
       notify_cameras_on_commit(state.cameras)
       if transform_message(state), do: send(self(), :publish_transforms)
       if state.heartbeat, do: Process.send_after(self(), :heartbeat, state.heartbeat.interval_ms)
@@ -830,6 +833,9 @@ defmodule VisionCore.Ros2.Exporter do
         {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
     end
   end
+
+  def handle_info({:stereo_calibration_changed, _prefix}, state),
+    do: reload_stereo_calibration(state)
 
   def handle_info(_message, state), do: {:ok, state}
 

@@ -232,10 +232,8 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert diagnostics[:publish] == publish
     end
 
-    @tag :tmp_dir
-    test "answers set_camera_info for each side, writing the calibration to the store when there is one",
-         %{tmp_dir: tmp_dir} do
-      config = config(Camera, calibration_store_dir: tmp_dir)
+    test "answers set_camera_info for each side of the stereo unit it publishes" do
+      config = config(Camera)
 
       assert [_diagnostics, left, right] =
                Exporter.children(stereo: [topic_prefix: "front"], config: config)
@@ -246,31 +244,12 @@ defmodule VisionCore.Ros2.ExporterTest do
              } = left
 
       assert left_options[:service_name] == "front/left/set_camera_info"
-      assert left_options[:calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
-      assert left_options[:camera_name] == "stereo_left"
-
-      assert left_options[:reload] ==
-               {VisionCore.Stereo.Supervisor, :reload_stored_calibration,
-                [
-                  VisionCore.Stereo.Pipeline,
-                  "stereo",
-                  Path.join(tmp_dir, "stereo_left.yaml"),
-                  Path.join(tmp_dir, "stereo_right.yaml")
-                ]}
+      assert left_options[:side] == :left
+      assert left_options[:config] == config
 
       assert %{start: {SetCameraInfoServer, :start_link, [right_options]}} = right
       assert right_options[:service_name] == "front/right/set_camera_info"
-    end
-
-    test "without a store, set_camera_info writes the calibration file the stereo unit reads" do
-      assert [_diagnostics, left, _right] = Exporter.children(stereo: [], config: config(Camera))
-      %{start: {SetCameraInfoServer, :start_link, [left_options]}} = left
-
-      assert left_options[:calibration_path] == Path.join(@calibration, "stereo_left.yaml")
-
-      assert left_options[:reload] ==
-               {VisionCore.Stereo.Supervisor, :reload_calibration,
-                [VisionCore.Stereo.Pipeline, "stereo"]}
+      assert right_options[:side] == :right
     end
 
     test "no helper without a stereo unit to publish" do
@@ -505,6 +484,48 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       refute left_camera_info().d == before.d
     end
+  end
+
+  @tag :tmp_dir
+  test "publishes the camera info of a calibration changed while it runs", %{tmp_dir: tmp_dir} do
+    paths =
+      for side <- ["left", "right"] do
+        path = Path.join(tmp_dir, "stereo_#{side}.yaml")
+        File.cp!(Path.join(@calibration, "stereo_#{side}.yaml"), path)
+        path
+      end
+
+    config =
+      config(OtherCamera,
+        left: [calibration_path: hd(paths)],
+        right: [calibration_path: List.last(paths)]
+      )
+
+    options =
+      OtherCamera
+      |> options(stereo: [camera_info_interval_frames: 1])
+      |> Keyword.put(:config, config)
+
+    runner = start_runner(options, config)
+    assert left_camera_info().k == CameraCalibration.load!(hd(paths)).camera_matrix
+
+    camera_matrix = [60.0, 0.0, 30.0, 0.0, 60.0, 22.0, 0.0, 0.0, 1.0]
+
+    File.write!(
+      hd(paths),
+      hd(paths)
+      |> CameraCalibration.load!()
+      |> Map.put(:camera_matrix, camera_matrix)
+      |> CameraCalibration.to_yaml("stereo_left")
+    )
+
+    Outputs.publish(
+      VisionCore.Stereo.Calibration.changed_key("stereo"),
+      {:stereo_calibration_changed, "stereo"}
+    )
+
+    :sys.get_state(runner)
+    assert left_camera_info().k == camera_matrix
   end
 
   defp eventually(check, attempts \\ 100) do

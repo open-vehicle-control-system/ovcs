@@ -1,6 +1,6 @@
 ---
 title: Vision API
-description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTPS.
+description: How a program reads and changes the vision unit's parameters, calibrates its cameras, and reads its configuration, firmware and exports, over HTTPS.
 ---
 
 The vision unit serves its API next to the dashboard, over HTTPS:
@@ -396,6 +396,94 @@ A unit without the ROS 2 link answers a 404. The example is shortened to one top
   ]
 }
 ```
+
+## Calibration
+
+The calibration routes do what the dashboard's Calibration page does; [Calibrate the cameras](./calibration.md) explains the steps and the files. On a unit without a `:stereo` component, each answers a 404.
+
+`GET /api/calibration` returns the calibration in use: `source` is `builtIn`, `stored` or `none`, `storedAt` the time a stored calibration was stored, `canReset` whether you can return to the built-in one, which is while anything is stored, a side stored alone included, and a built-in calibration exists, `baselineM` the rectified baseline, `rectifiedFx` the left camera's rectified focal length, the one a solve's `fxPx` is, and per camera its image size, `fx`, `fy`, `cx`, `cy`, its distortion coefficients and its YAML file, each `null` without a file. On the OVCS Mini, the YAML shortened:
+
+```json
+{
+  "data": {
+    "type": "calibrations",
+    "id": "stereo",
+    "attributes": {
+      "source": "builtIn",
+      "storedAt": null,
+      "canReset": false,
+      "prefix": "stereo",
+      "baselineM": 0.09,
+      "rectifiedFx": 378.65,
+      "left": {
+        "imageWidth": 480,
+        "imageHeight": 270,
+        "fx": 344.48,
+        "fy": 343.86,
+        "cx": 233.18,
+        "cy": 141.23,
+        "distortion": [0.0899, -0.0749, 0.0027, -0.008, 0.0],
+        "yaml": "image_width: 480\nimage_height: 270\ncamera_name: stereo_left\n…"
+      },
+      "right": {
+        "imageWidth": 480,
+        "imageHeight": 270,
+        "fx": 345.1,
+        "fy": 344.93,
+        "cx": 240.82,
+        "cy": 137.82,
+        "distortion": [0.1133, -0.1296, 0.002, -0.0037, 0.0],
+        "yaml": "image_width: 480\nimage_height: 270\ncamera_name: stereo_right\n…"
+      }
+    }
+  }
+}
+```
+
+A new calibration is made by a session, one per unit and shared by every client, driven by action resources as the parameters are. Each is a `POST` whose document carries `data.type`, answered with a 201 holding the session as it is after the action:
+
+| Route | Does | Refused with |
+|---|---|---|
+| `POST /api/calibration-sessions` | Starts capturing views of the board in `data.attributes.board`: `columns` and `rows` in inner corners, `squareMm` the side of a square in millimetres. | 422 for an invalid board or while the cameras do not run, 409 while a session runs |
+| `POST /api/calibration-solves` | Computes the calibration from the samples. | 422 before they are good enough |
+| `POST /api/calibration-applies` | Has the unit take the solved calibration. | 422 before a solve |
+| `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 409 while a calibration is being applied |
+| `POST /api/calibration-resets` | Deletes the stored calibration and returns to the built-in one. | 422 without a store, with nothing stored or without a built-in calibration, 500 when the reset fails |
+
+Each also answers a 503 while the unit's calibration session does not run, a 409 for another `data.type`, and a 400 for a document sent as a form or in the query string, or without `data.type`. Start a session for a board of 8 × 6 inner corners and 25 mm squares:
+
+```sh
+curl -X POST http://<vehicle>-vision.local:4100/api/calibration-sessions \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "calibration-sessions", "attributes": {"board": {"columns": 8, "rows": 6, "squareMm": 25}}}}'
+```
+
+```json
+{
+  "data": {
+    "type": "calibration-sessions",
+    "id": "41",
+    "attributes": {
+      "phase": "capturing",
+      "board": {"columns": 8, "rows": 6, "squareMm": 25.0},
+      "samples": 0,
+      "progress": {"x": 0.0, "y": 0.0, "size": 0.0, "skew": 0.0},
+      "goodEnough": false,
+      "detection": null,
+      "result": null,
+      "error": null
+    }
+  }
+}
+```
+
+- `phase` goes from `idle` to `capturing`, `solving`, `solved`, then `applying` and back to `idle`; a failed solve goes back to `capturing`.
+- `progress` is the coverage of each axis from 0 to 1; `goodEnough` turns true at 40 samples or with every axis at 1.
+- `detection` is the last pair looked at: each side's corners as `[x, y]` fractions of the image's width and height, `null` where the board was not found, and `sample`, whether the pair became a sample.
+- `result`, once solved, holds `leftRmsPx`, `rightRmsPx`, `stereoRmsPx`, `baselineM`, `fxPx`, the left camera's rectified focal length, `samples`, and each side's YAML in `left.yaml` and `right.yaml`.
+- `error` is why the last solve or apply failed.
+
+The unit looks for the board only while a client is joined to the [calibration channel](#calibration-channel): a session started over HTTP alone captures nothing. An apply answers at once, with the phase `applying`, and its outcome comes on the channel: the phase `idle` and the new calibration in use when the unit takes it, or `solved` with `error` set when it refuses it. A reset answers once the unit has taken the built-in calibration.
 
 ## Live channels
 

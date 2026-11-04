@@ -15,6 +15,12 @@ defmodule VisionCore.Stereo.Supervisor do
     5. `VisionCore.Stereo.Parameters`, which declares the unit's
        parameter groups in `VisionCore.Parameters`.
 
+  A unit with neither side's calibration file (`calibrated?/1`) is
+  uncalibrated: it starts the two drivers alone, so that the cameras can
+  be calibrated, and logs so. `VisionCore.Stereo.Calibration` restarts it
+  once both files are written. With one side's file alone, the pipeline
+  refuses to start, and so does the unit.
+
   The unit exports nothing itself: the exporters
   (`VisionCore.Exporters`), outside the unit, read its frames and pairs,
   each frame and pair carrying the cameras' frame ids, and
@@ -75,11 +81,12 @@ defmodule VisionCore.Stereo.Supervisor do
       `calibration_path` defaults to
       `<calibration_dir>/<prefix>_<side>.yaml`.
     * `:calibration_store_dir` — a writable directory for
-      calibrations committed at runtime (`cameracalibrator`'s
-      COMMIT, through the ROS 2 exporter), as `<prefix>_<side>.yaml`.
+      calibrations committed at runtime (from the dashboard, or
+      `cameracalibrator`'s COMMIT through the ROS 2 exporter; see
+      `VisionCore.Stereo.Calibration`), as `<prefix>_<side>.yaml`.
       When both sides are stored there they take precedence over
       `calibration_path`, so a calibration survives a restart on a
-      read-only root filesystem. Without it, COMMIT writes to
+      read-only root filesystem. Without it, a commit writes to
       `calibration_path`.
     * `:pair_tolerance_ms` (33) — see `VisionCore.Stereo.Pairer`.
     * `:align_correction` (`true`) — keep the rectified rows lined up
@@ -159,6 +166,7 @@ defmodule VisionCore.Stereo.Supervisor do
   def init(opts) do
     config = build_config(opts)
     log_stored_calibration(config)
+    log_uncalibrated(config)
 
     Supervisor.init(child_specs(config),
       strategy: :rest_for_one,
@@ -212,6 +220,42 @@ defmodule VisionCore.Stereo.Supervisor do
           {{:camera_frame, :left}, {:camera_frame, left}},
           {{:camera_frame, :right}, {:camera_frame, right}}
         ]
+    end
+  end
+
+  @doc """
+  Whether both sides of the stereo unit in `config`, the active
+  `VisionCore.Config`, have a calibration file where the unit resolves
+  it (`camera_options/1`). `false` without a `:stereo` component, or with
+  one whose cameras cannot be read.
+  """
+  @spec calibrated?(VisionCore.Config.t()) :: boolean()
+  def calibrated?(config) do
+    case camera_options(config) do
+      {:ok, cameras} -> Enum.all?([cameras[:left], cameras[:right]], &calibration_file?/1)
+      {:error, _reason} -> false
+    end
+  end
+
+  defp calibration_file?(side_opts) do
+    path = side_opts[:calibration_path]
+    is_binary(path) and File.exists?(path)
+  end
+
+  defp uncalibrated?(config),
+    do: not Enum.any?([config.left, config.right], &calibration_file?/1)
+
+  defp log_uncalibrated(config) do
+    if uncalibrated?(config) do
+      missing =
+        case for(side <- [config.left, config.right], path = side[:calibration_path], do: path) do
+          [] -> "no calibration path"
+          paths -> "no calibration at " <> Enum.join(paths, " nor ")
+        end
+
+      Logger.warning(
+        "#{__MODULE__} uncalibrated, #{missing}: the cameras run without the depth pipeline"
+      )
     end
   end
 
@@ -448,31 +492,43 @@ defmodule VisionCore.Stereo.Supervisor do
 
         %{stage: stage} ->
           {:ok, _values} = Pipeline.set_options(pipeline, stage, right_row_offset: 0.0)
-          forget_parameter("#{prefix}.#{stage}.right_row_offset")
+          forget_row_offset(prefix, stage)
       end
 
       :ok
     end
   end
 
-  defp forget_parameter(id) do
-    if Process.whereis(VisionCore.Parameters), do: VisionCore.Parameters.forget(id)
+  @doc """
+  Forgets the saved `right_row_offset` of the stage that declares it among
+  the stages of the stereo unit in `config`, the active
+  `VisionCore.Config`, as `reload_calibration/3` does: called before the
+  unit restarts on a new calibration, so that the offset saved under the
+  previous one is not applied as it starts. Nothing to forget without a
+  `:stereo` component or such a stage.
+  """
+  @spec forget_row_offset(VisionCore.Config.t()) :: :ok
+  def forget_row_offset(%VisionCore.Config{components: components}) do
+    with opts when is_list(opts) <- Enum.find_value(components, &stereo_options/1),
+         %{stage: stage} <-
+           opts
+           |> Keyword.get_lazy(:stages, &Pipeline.default_stages/0)
+           |> Enum.flat_map(&stage_module/1)
+           |> Enum.map(&%{stage: Pipeline.stage_name(&1), module: &1})
+           |> AlignmentCorrection.offset_stage() do
+      forget_row_offset(Keyword.get(opts, :prefix, @default_prefix), stage)
+    end
+
+    :ok
   end
 
-  @doc """
-  Reloads the pipeline from the stored calibration once both sides
-  are stored, as `reload_calibration/3`. COMMIT stores one side at a
-  time.
-  """
-  def reload_stored_calibration(pipeline, prefix, left_store, right_store) do
-    if File.exists?(left_store) and File.exists?(right_store) do
-      reload_calibration(pipeline, prefix,
-        left_calibration_path: left_store,
-        right_calibration_path: right_store
-      )
-    else
-      :ok
-    end
+  defp stage_module({module, _opts}) when is_atom(module), do: [module]
+  defp stage_module(module) when is_atom(module), do: [module]
+  defp stage_module(_stage), do: []
+
+  defp forget_row_offset(prefix, stage) do
+    if Process.whereis(VisionCore.Parameters),
+      do: VisionCore.Parameters.forget("#{prefix}.#{stage}.right_row_offset")
   end
 
   defp default_calibration_path(nil, _prefix, _side), do: nil
@@ -482,9 +538,12 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   defp child_specs(config) do
+    drivers = [camera_driver_spec(config, :left), camera_driver_spec(config, :right)]
+    if uncalibrated?(config), do: drivers, else: drivers ++ pipeline_specs(config)
+  end
+
+  defp pipeline_specs(config) do
     [
-      camera_driver_spec(config, :left),
-      camera_driver_spec(config, :right),
       pipeline_spec(config),
       {Pairer,
        cameras: [{config.driver, "left"}, {config.driver, "right"}],
