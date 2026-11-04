@@ -9,6 +9,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   |---|---|
   | `ovcs-card` | bordered block on the surface colour; an `a.ovcs-card` highlights on hover |
   | `ovcs-header` | sticky top bar |
+  | `ovcs-footer` | bottom bar |
   | `ovcs-status` + `--ok` / `--warn` / `--error` | coloured dot followed by its label, muted without a modifier |
   | `ovcs-badge` + `--warn` / `--error` | short uppercase label |
   | `ovcs-dot` + `--on` | small accent dot marking a row |
@@ -35,19 +36,20 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
 
   | Component | Props |
   |---|---|
-  | `OvcsShell` | holds an `OvcsTopBar` and an `OvcsShellBody` |
-  | `OvcsTopBar` | the sticky top bar, holding an `OvcsTopBarTitle` and an `OvcsTopBarEnd` |
-  | `OvcsTopBarTitle` | `product`: "OVCS" and the product's name, then its `children` |
-  | `OvcsTopBarEnd` | the status and controls at the bar's end |
+  | `OvcsShell` | `product`: holds an `OvcsTopBar`, an `OvcsShellBody` and an `OvcsBottomBar`, which name the product |
+  | `OvcsTopBar` | `firmware`: the sticky top bar, the same on every dashboard: "OVCS" and the shell's product, its `children`, then at its end the firmware's Version (its commit), System (its Nerves system, or target) and Vehicle, each after its label, and the `OvcsThemeSwitch`, last; it titles the browser tab `OVCS <product> · <vehicle>` |
   | `OvcsShellBody` | holds an `OvcsMenu` and an `OvcsMain` |
   | `OvcsMenu` | `label`: the navigation, holding `OvcsMenuSection`s |
   | `OvcsMenuSection` | `title`, which names it |
   | `OvcsMenuList` | `label`: a list of `OvcsMenuItem`s, each in its `li` |
   | `OvcsMenuItem` | `selected`: a menu button, with the selection bar and `aria-current="page"` when selected |
   | `OvcsMain` | the main content |
+  | `OvcsBottomBar` | the list of statuses, each an `OvcsBottomBarItem`, spread evenly over its width and wrapping on a narrow screen; at the screen's foot on a laptop, the page's end on a narrow screen |
+  | `OvcsBottomBarItem` | `label`: a status's label, saying what it is about, then its value |
+  | `OvcsConnectionStatus` | `state`: `connecting`, `connected` or `disconnected`, as `useOvcsConnection(socket)` answers it for a Phoenix socket; `hint`: an element after the label. The bottom bar item for the live connection, labelled with the shell's product |
   | `OvcsPageFrame` | `title`, `summary`: a page's heading over its content, which scrolls on its own on a laptop |
 
-  It also exports `focusClass` (the focus ring utilities), `useOvcsTheme` (the current theme, `light` or `dark`) and the helpers `formatValue`, `rangeStep` and `tidy`. Most components use Tailwind utilities: add this package's `react/**/*.{js,jsx}`, relative to the app, to its `content`. An app with `OvcsThemeSwitch` applies the stored choice before the first paint with an inline script in its `index.html`, as `vision/dashboard/index.html` does.
+  It also exports `useOvcsFirmware(fetchFirmware, readWhen)` (the firmware for the top bar, read again each time `readWhen` turns truthy), `useOvcsProduct` (the shell's product), `useOvcsConnection` (a Phoenix socket's connection state), `firmwareFacts` (a firmware's labelled facts in the top bar), `focusClass` (the focus ring utilities), `useOvcsTheme` (the current theme, `light` or `dark`) and the helpers `formatValue`, `rangeStep` and `tidy`. Most components use Tailwind utilities: add this package's `react/**/*.{js,jsx}`, relative to the app, to its `content`. An app with `OvcsThemeSwitch` applies the stored choice before the first paint with an inline script in its `index.html`, as `vision/dashboard/index.html` does.
 
 ## Use
 

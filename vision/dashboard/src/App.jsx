@@ -1,23 +1,26 @@
 import { useEffect, useRef } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
+import Hint from './components/Hint.jsx'
+import { HINTS } from './hints.js'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
-import Firmware from './components/Firmware.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import ExporterPage from './pages/ExporterPage.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
 import {
+  OvcsBottomBar,
   OvcsCard,
+  OvcsConnectionStatus,
   OvcsMain,
   OvcsSaveBar,
   OvcsShell,
   OvcsShellBody,
-  OvcsThemeSwitch,
   OvcsTopBar,
-  OvcsTopBarEnd,
-  OvcsTopBarTitle,
-  focusClass as FOCUS
+  focusClass as FOCUS,
+  useOvcsConnection,
+  useOvcsFirmware
 } from '@ovcs/ui/react'
+import { fetchFirmware } from './services/unit.js'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
@@ -75,13 +78,16 @@ function useScrollPaddingFor(ref) {
   }, [ref])
 }
 
-/** The parameters' error: a failed load until the next one succeeds, a failed action until dismissed. */
-function ParameterError() {
+/**
+ * The parameters' error: a failed action until dismissed, a failed load until the next one succeeds. A load fails
+ * while the unit is unreachable, which the bottom bar already says, so a failed load shows only while connected.
+ */
+function ParameterError({ connection }) {
   const error = useParameters((state) => state.error)
   const errorSource = useParameters((state) => state.errorSource)
   const dismissError = useParameters((state) => state.dismissError)
 
-  if (!error) return null
+  if (!error || (errorSource === 'load' && connection !== 'connected')) return null
 
   return (
     <div role="alert" className="flex min-w-0 items-center gap-2 rounded border border-ovcs-error px-2 py-1 text-sm">
@@ -121,9 +127,10 @@ function ParameterSaveBar() {
   )
 }
 
-// The top bar's figures, which a status renders alone.
-function UnitStatusBar() {
+// The bottom bar's figures, which a status renders alone; the last snapshot is stale once disconnected.
+function UnitStatusBar({ connection }) {
   const snapshot = useStatus((state) => state.snapshot)
+  if (connection !== 'connected' || !snapshot) return null
   return <UnitStatus status={snapshot} />
 }
 
@@ -171,20 +178,17 @@ export default function App() {
 
   useExportersListed()
 
+  // Each join reads the firmware again, as after an upload.
+  const joins = useStatus((state) => state.joins)
+  const firmware = useOvcsFirmware(fetchFirmware, joins)
+  const connection = useOvcsConnection(dashboardSocket)
   const { page, selectedGroupId, exporterId } = useNavigationInUrl()
   const Page = PAGES[page]
 
   return (
-    <OvcsShell>
-      <OvcsTopBar>
-        <OvcsTopBarTitle product="Vision">
-          <Firmware />
-        </OvcsTopBarTitle>
-        <ParameterError />
-        <OvcsTopBarEnd>
-          <UnitStatusBar />
-          <OvcsThemeSwitch />
-        </OvcsTopBarEnd>
+    <OvcsShell product="Vision">
+      <OvcsTopBar firmware={firmware}>
+        <ParameterError connection={connection} />
       </OvcsTopBar>
 
       <OvcsShellBody>
@@ -199,6 +203,11 @@ export default function App() {
           )}
         </OvcsMain>
       </OvcsShellBody>
+
+      <OvcsBottomBar>
+        <OvcsConnectionStatus state={connection} hint={<Hint hint={HINTS.connection} />} />
+        <UnitStatusBar connection={connection} />
+      </OvcsBottomBar>
     </OvcsShell>
   )
 }

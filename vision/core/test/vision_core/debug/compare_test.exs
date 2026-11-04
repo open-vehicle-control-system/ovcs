@@ -2,7 +2,7 @@ defmodule VisionCore.Debug.CompareTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Debug.{Compare, Export, Png}
-  alias VisionCore.Firmware
+  alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Parameters.Parameter
   alias VisionCore.Stereo.Pair
   alias VisionCore.TestPng
@@ -359,11 +359,12 @@ defmodule VisionCore.Debug.CompareTest do
   defp parameter(id, value), do: %Parameter{id: id, value: value, saved: nil, state: :builtin}
 
   defp firmware(revision),
-    do: %Firmware{
+    do: %FirmwareInfo{
       revision: revision,
       target: "rpi5",
       nerves_system: "vision_rpi5",
-      nerves_system_version: "1.0.0"
+      nerves_system_version: "1.0.0",
+      vehicle: "OVCS Mini"
     }
 
   defp altered(zip, changes) do

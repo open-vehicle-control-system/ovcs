@@ -6,6 +6,9 @@ import { applyFrame } from './signals'
 import { useBusSocket } from './useBusSocket'
 
 vi.mock('./useBusSocket', () => ({ useBusSocket: vi.fn() }))
+vi.mock('./firmware', () => ({
+  fetchFirmware: vi.fn(async () => ({ revision: 'ce99e251', target: 'rpi5', nervesSystem: null, vehicle: 'OVCS Mini' }))
+}))
 
 const sig = (node, source, name, value) => ({
   node, source, name, value, unit: null, changedAt: 1000, publishedAt: 1000, stale: false
@@ -68,13 +71,14 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('OVCS Bus Gateway')
     expect(screen.getByText('Loading signals…')).toBeTruthy()
-    expect(screen.getByText('Connecting…')).toBeTruthy()
+    expect(within(screen.getByRole('contentinfo')).getByText('Connecting…')).toBeTruthy()
   })
 
   test('shows every node on the bus and in the menu, and every signal under the bus', () => {
     connect('live', SIGNALS)
     render(<App />)
-    expect(screen.getByText('Live · 2 signals')).toBeTruthy()
+    const footer = screen.getByRole('contentinfo')
+    expect(footer.textContent).toBe('Bus GatewayConnectedSignals2')
     expect(within(bus()).getAllByRole('button').map((node) => node.getAttribute('aria-label'))).toEqual([
       'bridge-ros, Connected, Presence only',
       'vms, Connected, 2 components · 2 signals'
@@ -190,6 +194,14 @@ describe('App', () => {
   test('reports a lost connection', () => {
     connect('disconnected')
     render(<App />)
-    expect(screen.getByText('Disconnected, retrying')).toBeTruthy()
+    expect(screen.getByRole('contentinfo').textContent).toBe('Bus GatewayDisconnected')
+  })
+
+  test('names the firmware and its vehicle in the top bar once live', async () => {
+    connect('live', SIGNALS)
+    render(<App />)
+    const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
+    expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
+    expect(document.title).toBe('OVCS Bus Gateway · OVCS Mini')
   })
 })

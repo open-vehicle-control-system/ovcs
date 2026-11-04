@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="OVCS logo">
+  <title>OVCS</title>
+  <defs>
+    <linearGradient id="ovcs-g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5aa8ff"/>
+      <stop offset="1" stop-color="#7cf0d0"/>
+    </linearGradient>
+  </defs>
+  <g stroke="url(#ovcs-g)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M8 41 L8 34 Q8 31 11 31 L53 31 Q56 31 56 34 L56 41" stroke-width="2.6"/>
+    <path d="M20 31 L25 23 Q26 22 28 22 L37 22 Q39 22 40 23 L45 31" stroke-width="2.6"/>
+    <path d="M32 31 L19 41 M32 31 L45 41" stroke-width="1.5" opacity="0.85"/>
+  </g>
+  <g fill="url(#ovcs-g)">
+    <circle cx="19" cy="41" r="4.6"/>
+    <circle cx="45" cy="41" r="4.6"/>
+    <circle cx="32" cy="31" r="3.3"/>
+  </g>
+  <g fill="#05070d">
+    <circle cx="19" cy="41" r="1.7"/>
+    <circle cx="45" cy="41" r="1.7"/>
+  </g>
+</svg>

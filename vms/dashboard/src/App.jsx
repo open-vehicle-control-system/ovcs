@@ -1,18 +1,18 @@
 import { useEffect } from 'react'
 import {
+  OvcsBottomBar,
+  OvcsConnectionStatus,
   OvcsMain,
   OvcsShell,
   OvcsShellBody,
-  OvcsThemeSwitch,
   OvcsTopBar,
-  OvcsTopBarEnd,
-  OvcsTopBarTitle,
-  focusClass as FOCUS
+  focusClass as FOCUS,
+  useOvcsFirmware
 } from '@ovcs/ui/react'
-import ConnectionStatus from './components/ConnectionStatus.jsx'
 import Menu from './components/Menu.jsx'
 import DynamicPage from './pages/DynamicPage.jsx'
 import NetworkPage from './pages/NetworkPage.jsx'
+import { fetchFirmware } from './services/api.js'
 import { dashboardSocket } from './services/socket.js'
 import { useConnection } from './stores/connection.js'
 import { useMetrics } from './stores/metrics.js'
@@ -44,12 +44,6 @@ function useMetricsChannel(refreshInterval) {
     if (refreshInterval == null) return undefined
     return listen(dashboardSocket, refreshInterval)
   }, [listen, refreshInterval])
-}
-
-function useBrowserTitle(vehicle) {
-  useEffect(() => {
-    if (vehicle) document.title = `${vehicle.name} VMS`
-  }, [vehicle])
 }
 
 function LoadError({ error }) {
@@ -88,6 +82,9 @@ export default function App() {
   const pages = useVehicle((state) => state.pages)
   const load = useVehicle((state) => state.load)
   const watchConnection = useConnection((state) => state.watch)
+  const connection = useConnection((state) => state.state)
+  // Each connection reads the firmware again, as after an upload.
+  const firmware = useOvcsFirmware(fetchFirmware, connection === 'connected')
 
   useEffect(() => {
     load()
@@ -96,19 +93,10 @@ export default function App() {
   useEffect(() => watchConnection(dashboardSocket), [watchConnection])
   useCanonicalPath(pages)
   useMetricsChannel(vehicle?.refreshInterval)
-  useBrowserTitle(vehicle)
 
   return (
-    <OvcsShell>
-      <OvcsTopBar>
-        <OvcsTopBarTitle product="VMS">
-          {vehicle ? <p className="text-sm text-ovcs-muted">{vehicle.name}</p> : null}
-        </OvcsTopBarTitle>
-        <OvcsTopBarEnd>
-          <ConnectionStatus />
-          <OvcsThemeSwitch />
-        </OvcsTopBarEnd>
-      </OvcsTopBar>
+    <OvcsShell product="VMS">
+      <OvcsTopBar firmware={firmware} />
 
       <OvcsShellBody>
         <Menu pages={pages ?? NO_PAGES} />
@@ -116,6 +104,10 @@ export default function App() {
           <Content pages={pages} />
         </OvcsMain>
       </OvcsShellBody>
+
+      <OvcsBottomBar>
+        <OvcsConnectionStatus state={connection} />
+      </OvcsBottomBar>
     </OvcsShell>
   )
 }

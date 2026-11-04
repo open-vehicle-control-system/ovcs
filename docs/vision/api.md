@@ -153,7 +153,7 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
 
 ## The unit and its exports
 
-`GET /api/firmware` returns the firmware the unit runs: the commit it is built from, its Nerves target and the Nerves system the board runs.
+`GET /api/firmware` returns the firmware the unit runs: the commit it is built from, its Nerves target, the Nerves system the board runs and the name of your vehicle, `null` without `VEHICLE`.
 
 ```json
 {
@@ -164,7 +164,8 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
       "revision": "ce99e251",
       "target": "rpi5",
       "nervesSystem": "ovcs_bridges_system_rpi5",
-      "nervesSystemVersion": "3.0.0-rc.2"
+      "nervesSystemVersion": "3.0.0-rc.2",
+      "vehicle": "OVCS Mini"
     }
   }
 }

@@ -47,6 +47,7 @@ GET  /api/vehicle                         vehicle name, main colour, refresh int
 GET  /api/vehicle/pages                   the dashboard's pages
 GET  /api/vehicle/pages/:page_id/blocks   the blocks of one page
 POST /api/actions                         call an action on a component
+GET  /api/firmware                        the commit, target, Nerves system and vehicle the VMS runs
 ```
 
 A Phoenix socket at `/sockets/dashboard` carries two channels: `metrics` streams the values of the module and key pairs a client subscribes to, and `network-interfaces` streams each CAN interface's counters and bus state. In development, Phoenix LiveDashboard is at `/dev/dashboard`.

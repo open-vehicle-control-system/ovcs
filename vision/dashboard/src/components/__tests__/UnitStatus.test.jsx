@@ -22,7 +22,9 @@ describe('UnitStatus and the pair status', () => {
   const show = (status) =>
     render(
       <>
-        <UnitStatus status={status} />
+        <ul>
+          <UnitStatus status={status} />
+        </ul>
         <Previews status={status} socket={socket} />
       </>
     )
@@ -128,11 +130,5 @@ describe('UnitStatus and the pair status', () => {
     expect(widest('cpu')).toBe('100 %')
     expect(widest('segment')).toBe('100 %')
     for (const id of ['ros2', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
-  })
-
-  it('waits for the first status', () => {
-    show(null)
-
-    expect(screen.getByText(/Waiting/)).toBeTruthy()
   })
 })

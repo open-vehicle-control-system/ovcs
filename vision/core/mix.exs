@@ -36,6 +36,7 @@ defmodule VisionCore.MixProject do
   defp deps do
     [
       {:ovcs_bus, path: "../../libraries/ovcs_bus"},
+      {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:ros2_zenoh, path: "../../libraries/ros2_zenoh"},
       {:hailort, path: "../../libraries/hailort", targets: [:host, :rpi5]},
       {:zenohex, "~> 0.8.0"},

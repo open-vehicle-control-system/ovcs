@@ -1,33 +1,43 @@
-defmodule VisionCore.Firmware do
+defmodule OvcsVehicle.FirmwareInfo do
   @moduledoc """
-  What the unit runs: the commit the firmware is built from and its Nerves
-  target, which the firmware records under `:vision_core, :firmware` when it
-  is built, and the Nerves system the board's `/usr/lib/os-release` names.
-  A host has no Nerves system.
+  What a firmware runs, as each dashboard's top bar shows it: the commit it
+  is built from and its Nerves target, which the firmware's `config.exs`
+  records under `:ovcs_vehicle, :firmware`, the Nerves system the board's
+  `/usr/lib/os-release` names, and the name of the vehicle `VEHICLE`
+  selects. A host has no Nerves system.
   """
 
-  @enforce_keys [:revision, :target, :nerves_system, :nerves_system_version]
+  @enforce_keys [:revision, :target, :nerves_system, :nerves_system_version, :vehicle]
   defstruct @enforce_keys
 
   @type t :: %__MODULE__{
           revision: String.t() | nil,
           target: String.t() | nil,
           nerves_system: String.t() | nil,
-          nerves_system_version: String.t() | nil
+          nerves_system_version: String.t() | nil,
+          vehicle: String.t() | nil
         }
 
-  @doc "The firmware the unit runs, with the Nerves system `os_release` names."
+  @doc "The firmware this node runs, with the Nerves system `os_release` names; no vehicle without `VEHICLE`."
   @spec current(Path.t()) :: t()
   def current(os_release \\ "/usr/lib/os-release") do
-    build = Application.get_env(:vision_core, :firmware, [])
+    build = Application.get_env(:ovcs_vehicle, :firmware, [])
     release = read_os_release(os_release)
 
     %__MODULE__{
       revision: build[:revision],
       target: build[:target],
       nerves_system: release["NERVES_SYSTEM_NAME"],
-      nerves_system_version: release["NERVES_SYSTEM_VERSION"]
+      nerves_system_version: release["NERVES_SYSTEM_VERSION"],
+      vehicle: vehicle_name()
     }
+  end
+
+  defp vehicle_name do
+    case Application.get_env(:ovcs_vehicle, :module) do
+      nil -> nil
+      vehicle -> vehicle.name()
+    end
   end
 
   defp read_os_release(path) do

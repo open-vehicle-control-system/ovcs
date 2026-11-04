@@ -74,6 +74,20 @@ config :vms_firmware,
   vehicle: vehicle_name,
   default_can_environment: if(Mix.target() == :host, do: :host, else: :target)
 
+# The commit the firmware is built from, for `OvcsVehicle.FirmwareInfo`: its
+# hash, after the latest `v` version tag once there is one, `-dirty` with
+# uncommitted changes.
+revision =
+  case System.cmd("git", ["describe", "--always", "--dirty", "--match", "v[0-9]*"],
+         cd: __DIR__,
+         stderr_to_stdout: true
+       ) do
+    {describe, 0} -> String.trim(describe)
+    {_error, _status} -> nil
+  end
+
+config :ovcs_vehicle, :firmware, revision: revision, target: target
+
 # Cantastic: on firmware it owns CAN interface setup; on host the CLI
 # (`ensure_host_can`) provisions vcan interfaces and rootless
 # containers can't `ip link` anyway.

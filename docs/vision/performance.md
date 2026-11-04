@@ -11,8 +11,8 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 |---|---|---|
 | Dashboard, depth caption | depth rate | Depth images computed in the last second. |
 | Dashboard, camera captions | fps | Frames each camera delivered in the last second. |
-| Dashboard, top bar | CPU | Busy share of all processor cores. |
-| Dashboard, top bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
+| Dashboard, bottom bar | CPU | Busy share of all processor cores. |
+| Dashboard, bottom bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
 | Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
 
