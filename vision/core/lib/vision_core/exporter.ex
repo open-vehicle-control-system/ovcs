@@ -42,8 +42,9 @@ defmodule VisionCore.Exporter do
 
   ## Callbacks
 
-  `c:init/1`, `c:handle_output/3`, `c:handle_info/2`, `c:status/1` and
-  `c:terminate/2` run in the runner's process, and each returns at once:
+  `c:init/1`, `c:handle_output/3`, `c:handle_info/2`,
+  `c:handle_action/4`, `c:status/1` and `c:terminate/2` run in the
+  runner's process, and each returns at once:
 
     * `c:init/1` must not block. It is called after the runner starts,
       and again, after a growing delay, until it returns `{:ok, state}`;
@@ -90,9 +91,18 @@ defmodule VisionCore.Exporter do
 
   These return at once, as `c:children/1` does: `c:check/1`,
   `c:children/1` and `c:describe/1` run while `VisionCore.Exporters`
-  starts, which the vision unit's start waits for, and `c:describe/1`
-  and `c:outputs/1` again at each listing, which `VisionCore.Status`
-  makes every second.
+  starts, which the vision unit's start waits for, and `c:describe/1`,
+  `c:outputs/1` and `c:actions/1` again at each listing, which
+  `VisionCore.Status` makes every second.
+
+  `c:actions/1` lists what people can ask of the exporter, such as an
+  export to download, each run by `VisionCore.Exporters.action/4` through
+  the runner. The runner answers `{:error, :not_running}` until
+  `c:init/1` succeeds and `{:error, :unknown_action}` for a name the
+  exporter does not list, without calling it; otherwise it hands the
+  action to `c:handle_action/4`, which returns at once: with its result,
+  or with `{:noreply, state}` and answers later with `reply/2`, from any
+  process.
 
   ## Example
 
@@ -169,6 +179,21 @@ defmodule VisionCore.Exporter do
   @typedoc "The exporter's own state, from `c:init/1`."
   @type state :: term()
 
+  @typedoc """
+  An action people can run on the exporter: its `name`, then a `label`
+  and a `description` for them.
+  """
+  @type action :: %{name: atom(), label: String.t(), description: String.t()}
+
+  @typedoc """
+  What an action answers: a JSON object, a file to download, or why it
+  did not run.
+  """
+  @type action_result ::
+          {:ok, map()}
+          | {:file, filename :: String.t(), content_type :: String.t(), binary()}
+          | {:error, :busy | {:timeout, String.t()} | {:failed, String.t()}}
+
   @doc "The outputs the exporter reads, given its options; it returns at once."
   @callback outputs(options :: keyword()) :: [output_spec()]
 
@@ -227,12 +252,29 @@ defmodule VisionCore.Exporter do
   """
   @callback describe(options :: keyword()) :: %{id: atom(), name: String.t()}
 
+  @doc """
+  The actions people can run on the exporter, given its options.
+  Without it, none. It answers at once: each listing waits for it.
+  """
+  @callback actions(options :: keyword()) :: [action()]
+
+  @doc """
+  Runs `name`, one of `c:actions/1`, with `params`, without waiting:
+  `{:reply, result, state}`, or `{:noreply, state}` to answer `from`
+  later with `reply/2`. One that raises, or returns anything else,
+  answers `{:error, {:failed, reason}}`, the state kept as it was.
+  """
+  @callback handle_action(name :: atom(), params :: map(), from :: GenServer.from(), state()) ::
+              {:reply, action_result(), state()} | {:noreply, state()}
+
   @optional_callbacks handle_info: 2,
                       status: 1,
                       children: 1,
                       terminate: 2,
                       check: 1,
-                      describe: 1
+                      describe: 1,
+                      actions: 1,
+                      handle_action: 4
 
   @doc "Whether `term` is one of the outputs an exporter can name."
   @spec output?(term()) :: boolean()
@@ -297,6 +339,27 @@ defmodule VisionCore.Exporter do
   rescue
     _exception -> %{id: Keyword.get(options, :id, exporter), name: inspect(exporter)}
   end
+
+  @doc """
+  The actions people can run on `exporter` with `options`, those of its
+  `c:actions/1`; none without it, or when it raises.
+  """
+  @spec actions(module(), keyword()) :: [action()]
+  def actions(exporter, options) do
+    if Code.ensure_loaded?(exporter) and function_exported?(exporter, :actions, 1),
+      do: exporter.actions(options),
+      else: []
+  rescue
+    _exception -> []
+  end
+
+  @doc """
+  Answers the action `from` asked for, after `c:handle_action/4` returned
+  `{:noreply, state}`. It can be called from any process, such as a task
+  the exporter starts.
+  """
+  @spec reply(GenServer.from(), action_result()) :: :ok
+  def reply(from, result), do: GenServer.reply(from, result)
 
   @doc """
   The `VisionCore.Outputs` key `output` is published under on the unit
