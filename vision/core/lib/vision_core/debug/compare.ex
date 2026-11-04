@@ -42,6 +42,7 @@ defmodule VisionCore.Debug.Compare do
               a: summary(),
               b: summary(),
               delta: number(),
+              status: boolean(),
               within_spread: boolean()
             }
           ],
@@ -66,7 +67,7 @@ defmodule VisionCore.Debug.Compare do
           images: %{String.t() => binary()}
         }
 
-  @doc "How many samples a figure needs in both exports for its spread to count."
+  @doc "How many samples a figure of the pairs needs in both exports for its spread to count."
   @spec minimum_samples() :: pos_integer()
   def minimum_samples, do: @minimum_samples
 
@@ -82,10 +83,13 @@ defmodule VisionCore.Debug.Compare do
     * `:parameters` — `{id, a, b}` for each parameter whose value differs,
       by id. A parameter one export lacks reads `nil` in it.
     * `:figures` — for each figure both exports measured, by name,
-      `%{name, a, b, delta, within_spread}`: `a` and `b` are the figure's
-      summaries `%{mean, min, max, std, n}`, `delta` is `b.mean - a.mean`,
-      and `within_spread` is `abs(delta) <= max(a.std, b.std)`, always
-      `true` when either figure has fewer than 3 samples.
+      `%{name, a, b, delta, status, within_spread}`: `a` and `b` are the
+      figure's summaries `%{mean, min, max, std, n}`, `delta` is
+      `b.mean - a.mean`, `status` is `true` for a figure of the status
+      snapshots (`figures.json`'s `snapshots`, in either export), and
+      `within_spread` is `abs(delta) <= max(a.std, b.std)`. A status figure
+      is never judged, and neither is a figure with fewer than 3 samples in
+      either export: their `within_spread` is always `true`.
     * `:timings` — for each stage both exports timed, by name,
       `%{stage, a_median, b_median, a_p95, b_p95}`.
     * `:figures_only_in`, `:timings_only_in` — the names of the figures and
@@ -120,7 +124,7 @@ defmodule VisionCore.Debug.Compare do
       exports: %{a: a.info, b: b.info},
       parameters: parameters(a.parameters, b.parameters),
       figures: figures(a.figures, b.figures),
-      figures_only_in: only_in(a.figures, b.figures),
+      figures_only_in: only_in(a.figures.summaries, b.figures.summaries),
       timings: timings(a.timings, b.timings),
       timings_only_in: only_in(a.timings, b.timings),
       pixels: %{
@@ -229,10 +233,14 @@ defmodule VisionCore.Debug.Compare do
 
   defp check_parameters(_parameters), do: {:error, "is not a list of parameters"}
 
-  defp check_figures(%{"summary" => summary}) when is_map(summary) do
+  defp check_figures(%{"summary" => summary} = figures) when is_map(summary) do
     case Enum.find(summary, fn {_name, figure} -> not numbers?(figure, ~w(mean min max std n)) end) do
       nil ->
-        {:ok, Map.new(summary, fn {name, figure} -> {name, summary(figure)} end)}
+        {:ok,
+         %{
+           summaries: Map.new(summary, fn {name, figure} -> {name, summary(figure)} end),
+           status_names: status_names(figures["snapshots"])
+         }}
 
       {name, _figure} ->
         {:error, "summary of #{name} lacks a number for mean, min, max, std or n"}
@@ -243,6 +251,11 @@ defmodule VisionCore.Debug.Compare do
 
   defp summary(%{"mean" => mean, "min" => min, "max" => max, "std" => std, "n" => n}),
     do: %{mean: mean, min: min, max: max, std: std, n: n}
+
+  defp status_names(snapshots) when is_list(snapshots),
+    do: for(%{} = snapshot <- snapshots, name <- Map.keys(snapshot), into: MapSet.new(), do: name)
+
+  defp status_names(_snapshots), do: MapSet.new()
 
   defp check_timings(timings) when is_map(timings) do
     case Enum.find(timings, fn {_stage, timing} -> not numbers?(timing, ~w(median p95)) end) do
@@ -283,13 +296,23 @@ defmodule VisionCore.Debug.Compare do
         do: {id, values_a[id], values_b[id]}
   end
 
-  defp figures(summaries_a, summaries_b) do
-    for name <- common_names(summaries_a, summaries_b) do
-      a = summaries_a[name]
-      b = summaries_b[name]
-      delta = b.mean - a.mean
+  defp figures(figures_a, figures_b) do
+    status_names = MapSet.union(figures_a.status_names, figures_b.status_names)
 
-      %{name: name, a: a, b: b, delta: delta, within_spread: within_spread?(a, b, delta)}
+    for name <- common_names(figures_a.summaries, figures_b.summaries) do
+      a = figures_a.summaries[name]
+      b = figures_b.summaries[name]
+      delta = b.mean - a.mean
+      status = MapSet.member?(status_names, name)
+
+      %{
+        name: name,
+        a: a,
+        b: b,
+        delta: delta,
+        status: status,
+        within_spread: status or within_spread?(a, b, delta)
+      }
     end
   end
 

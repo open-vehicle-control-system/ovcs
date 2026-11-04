@@ -154,7 +154,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 
 `matchedPercent`, `meanDisparityPx`, `spreadPx` and `jitterPx` come from the Quality stage ([Stereo stages](./stages.md#9-quality)). It measures the final disparity, after the temporal filter: held matches raise `matchedPercent` and smoothing lowers `jitterPx`. To measure the matcher alone, set the temporal filter's `alpha` to 1 and `hold` to 0 for both exports.
 
-A figure of the pairs has a sample for each pair of the burst. A status snapshot describes one second, so a figure of the snapshots has only a few samples.
+A figure of the pairs has a sample for each pair of the burst. A status snapshot describes one second, so a figure of the snapshots has only a few samples, and the comparison task never judges it against its spread.
 
 ### timings.json
 
@@ -206,11 +206,11 @@ diff before/*/calibration/right.yaml after/*/calibration/right.yaml
 
 ### 3. The figures, against their spreads
 
-Compare each figure's `summary` in `figures.json`. Its change is B's mean minus A's. The rule is the comparison task's: a change counts only when it is larger than the larger of the two `std`, and never when either figure has fewer than 3 samples. A change smaller than the spread is noise; a figure with too few samples has no spread to judge by.
+Compare each figure's `summary` in `figures.json`. Its change is B's mean minus A's. The rule is the comparison task's: a change counts only when it is larger than the larger of the two `std`, never for a figure of the status snapshots, and never when either figure has fewer than 3 samples. A change smaller than the spread is noise. A figure with too few samples has no spread to judge by, and the spread of a status figure, over a few snapshots, is too rough to judge by.
 
 - Read the figures of the pairs first: they have a sample for each pair of the burst. `intervalMs` gives the depth rate; `matchedPercent` and `jitterPx` tell how complete and how steady the depth is. On a fixed scene, a change beyond the spread in `meanDisparityPx` or `spreadPx` comes from the unit, not from the scene.
-- Read the figures of the status as indications. They have a few samples each, and the comparison task does not call a difference significant on fewer than 3: it reads `too few samples`. For the depth rate, use `intervalMs`.
-- Check the cameras' exposure and gain by their values, not by a spread. `leftCameraExposureTimeUs`, `leftCameraAnalogueGain` and the `rightCamera` ones are status figures, with a few samples and no spread the task judges. Compare their `mean`, `min` and `max` in `figures.json`; the Figures table shows the means. With auto exposure off, the values are equal in both exports. With it on, a difference between the means means the light moved: take the exports again once it is steady ([Traps](#traps)).
+- Read the figures of the status as indications. They have a few samples each, and the comparison task never judges them, however many there are: it reads `status figure, not judged`. For the depth rate, use `intervalMs`.
+- Check the cameras' exposure and gain by their values, not by a spread. `leftCameraExposureTimeUs`, `leftCameraAnalogueGain` and the `rightCamera` ones are status figures, which the task never judges. Compare their `mean`, `min` and `max` in `figures.json`; the Figures table shows the means. With auto exposure off, the values are equal in both exports. With it on, a difference between the means means the light moved: take the exports again once it is steady ([Traps](#traps)).
 - A figure that only one export measured is named under the table, as `Figures only in A: ...` or `Figures only in B: ...`, and is not compared. Find out why: for example, the status was unavailable in one export, or a stage that reports it is in one unit's stages only.
 
 ### 4. The timings
@@ -238,7 +238,7 @@ cd vision/core
 mix vision_core.compare_exports ../../before.zip ../../after.zip --out ../../compare-out
 ```
 
-It prints five sections, with B read against A, and writes the two difference images to the directory `--out` names, `compare-out` by default. The values below are illustrative:
+It prints five sections, with B read against A, and writes the two difference images to the directory `--out` names, `compare-out` by default. Figures, timings and pixel differences carry 4 significant digits, and one under 0.0001 reads in scientific notation, as `3.699e-06`; parameter values print in full. The values below are illustrative:
 
 ```text
 Exports
@@ -251,25 +251,26 @@ parameter            A  B
 stereo.disparity.p1  8  10
 
 Figures, change is B - A
-figure                    A mean     A std  A n  B mean     B std  B n  change  against spread
-intervalMs                38.412     1.907  29   38.601     2.114  29   0.189   within spread
-jitterPx                  0.087      0.011  30   0.052      0.009  30   -0.035  beyond spread
-leftCameraExposureTimeUs  33013.000  0.000  2    33013.000  0.000  2    0.000   too few samples
-matchedPercent            64.700     0.812  30   68.100     0.790  30   3.400   beyond spread
-stereoLoadPercent         97.500     0.500  2    98.000     0.000  2    0.500   too few samples
+figure                    A mean    A std      A n  B mean    B std      B n  change     against spread
+intervalMs                38.41     1.907      29   38.6      2.114      29   0.189      within spread
+jitterPx                  0.087     0.011      30   0.052     0.009      30   -0.035     beyond spread
+leftCameraExposureTimeUs  33013     0          2    33013     0          2    0          status figure, not judged
+matchedPercent            64.7      0.812      30   68.1      0.79       30   3.4        beyond spread
+sharpnessLeft             0.004592  3.699e-06  30   0.004594  3.912e-06  30   2.000e-06  within spread
+stereoLoadPercent         97.5      0.5        2    98.0      0          2    0.5        status figure, not judged
 
 Timings, in milliseconds
-stage           A median  B median  A p95   B p95
-disparity       30.512    30.480    31.904  31.877
-speckle_filter  3.301     3.296     3.512   3.540
-total           61.250    61.190    66.402  66.310
+stage           A median  B median  A p95  B p95
+disparity       30.51     30.48     31.9   31.88
+speckle_filter  3.301     3.296     3.512  3.54
+total           61.25     61.19     66.4   66.31
 
 Last pairs' pixels
 matched in both                         60112
 matched in A only                       1204
 matched in B only                       3871
 mean absolute disparity difference, px  0.412
-mean absolute depth difference, mm      18.640
+mean absolute depth difference, mm      18.64
 
 Difference images:
   ../../compare-out/depth-diff.png
@@ -288,7 +289,7 @@ Stages only in B: median_filter
 |---|---|
 | Exports | For A, then B, what the manifest says: `hostname`, `time`, `firmware` (the revision), the last change before the burst, the changes during the burst, whether the status was available, and the file you gave. `-` where the manifest lacks a value. |
 | Parameters | Each parameter whose `value` differs, by id, under `Parameters that differ`; `-` where an export lacks the parameter. When none differs, the section is the single line `Parameters: none differ`. |
-| Figures | Each figure that both exports measured: the summaries side by side and the change. The last column reads `within spread`, `beyond spread`, or `too few samples` when either export has fewer than 3 samples. A figure only one export measured is named below the table, as `Figures only in A: ...` or `Figures only in B: ...`. |
+| Figures | Each figure that both exports measured: the summaries side by side and the change. The last column reads `within spread` or `beyond spread`; `status figure, not judged` for a figure of the status snapshots; or `too few samples` for a figure of the pairs when either export has fewer than 3 samples of it. A figure only one export measured is named below the table, as `Figures only in A: ...` or `Figures only in B: ...`. |
 | Timings | The median and the 95th percentile of each stage that both exports timed. A stage only one export timed is named below the table, as `Stages only in A: ...` or `Stages only in B: ...`. |
 | Last pairs' pixels | The counts of matched pixels and the mean differences of step 5. `-` where no pixel counts. |
 
@@ -305,7 +306,7 @@ The task stops with a message that names the export and the file when a file is 
 - **Light.** Daylight, a cloud, a lamp that you switch: any of them changes the images, and the matched pixels with them. Keep the light steady, and use the noise floor ([The loop](#the-loop)) to see what one setup does by itself.
 - **An open dashboard.** The unit encodes the previews only while a dashboard is showing them, and the encoding takes processor time. A dashboard open for one export and closed for the other moves the depth rate and the load figures. Take both exports with the same pages open, or with none: use the API.
 - **What else runs.** The other exporters, the detection and the dashboard load the unit too: keep them the same for both exports.
-- **Status figures.** The depth rate of the status, the stereo load, the CPU and the cameras' rates have only a few samples per export, and the comparison task does not call their differences significant. Read them as indications; use `intervalMs` for the depth rate.
+- **Status figures.** The depth rate of the status, the stereo load, the CPU and the cameras' rates have only a few samples per export, and the comparison task never judges their differences. Read them as indications; use `intervalMs` for the depth rate.
 - **A change during the burst.** A parameter you set, or the automatic row-offset correction moving, while the burst runs makes `changesDuringBurst` 1. Take the export again.
 - **A firmware upload.** The unit reboots and drops its unsaved parameters; the new export's `parameters.json` shows what is in force. The pipeline's start counts as a change, so the export waits `settle_ms` after it.
 - **A different working size.** Exports with different `imageSize` cannot be compared by the task.

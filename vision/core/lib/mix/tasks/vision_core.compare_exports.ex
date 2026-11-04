@@ -17,9 +17,11 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
   `disparity-diff.png` and `depth-diff.png`, to `DIR`, `compare-out` by
   default. See `VisionCore.Debug.Compare` for what each holds.
 
-  Read a figure's change as noise when it is within the spread. A figure
-  measured on fewer than 3 samples in either export, such as the status
-  snapshots' figures, has no spread to judge by and reads `too few samples`.
+  Read a figure's change as noise when it is within the spread. The
+  figures of the status snapshots are never judged: they read `status
+  figure, not judged`. A figure of the pairs measured on fewer than 3
+  samples in either export has no spread to judge by and reads `too few
+  samples`. Numbers are printed with 4 significant digits.
   """
   use Mix.Task
 
@@ -27,6 +29,8 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
 
   @usage "mix vision_core.compare_exports A.zip B.zip [--out DIR]"
   @minimum_samples Compare.minimum_samples()
+  @significant_digits 4
+  @smallest_fixed 1.0e-4
 
   @impl Mix.Task
   def run(args) do
@@ -129,7 +133,8 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
 
   defp parameter_value(nil), do: "-"
   defp parameter_value(value) when is_binary(value), do: value
-  defp parameter_value(value) when is_number(value), do: number(value)
+  defp parameter_value(value) when is_float(value), do: :erlang.float_to_binary(value, [:short])
+  defp parameter_value(value) when is_integer(value), do: Integer.to_string(value)
   defp parameter_value(value), do: inspect(value)
 
   defp figure_table(figures, only_in) do
@@ -161,6 +166,8 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
         end
       ) <> only_in_lines("Figures", only_in)
   end
+
+  defp against_spread(%{status: true}), do: "status figure, not judged"
 
   defp against_spread(%{a: %{n: n_a}, b: %{n: n_b}}) when min(n_a, n_b) < @minimum_samples,
     do: "too few samples"
@@ -203,7 +210,15 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
 
   defp number(nil), do: "-"
   defp number(count) when is_integer(count), do: Integer.to_string(count)
-  defp number(value) when is_float(value), do: :erlang.float_to_binary(value, decimals: 3)
+  defp number(value) when value == 0, do: "0"
+
+  defp number(value) when abs(value) < @smallest_fixed,
+    do: :erlang.float_to_binary(value, scientific: @significant_digits - 1)
+
+  defp number(value) do
+    decimals = max(@significant_digits - 1 - floor(:math.log10(abs(value))), 0)
+    :erlang.float_to_binary(value, [{:decimals, decimals}, :compact])
+  end
 
   defp table(header, rows), do: table([header | rows])
 

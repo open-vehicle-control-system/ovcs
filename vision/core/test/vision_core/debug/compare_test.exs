@@ -89,6 +89,25 @@ defmodule VisionCore.Debug.CompareTest do
     assert figures == Enum.sort_by(figures, & &1.name)
   end
 
+  test "never judges a figure of the status snapshots, however many samples it has" do
+    a = export(depth_hz: [29, 30, 31, 30], cpu_percent: [40.0, 41.0, 40.0, 41.0])
+
+    b =
+      export(
+        depth_hz: [49, 50, 51, 50],
+        cpu_percent: [40.0, 41.0, 40.0, 41.0],
+        matched: [100.0, 100.0, 100.0]
+      )
+
+    %{figures: figures} = Compare.compare(a, b)
+
+    assert %{a: %{n: 4}, b: %{n: 4}, delta: 20.0, status: true, within_spread: true} =
+             figure(figures, "depthHz")
+
+    assert %{a: %{n: 4}, status: true} = figure(figures, "cpuPercent")
+    assert %{delta: 8.0, status: false, within_spread: false} = figure(figures, "matchedPercent")
+  end
+
   test "compares the stages' timings" do
     a = export(total_ms: [30.0, 31.0, 32.0])
     b = export(total_ms: [40.0, 41.0, 42.0])
@@ -273,7 +292,7 @@ defmodule VisionCore.Debug.CompareTest do
       assert output =~ ~r/matchedPercent.*within spread/
       assert output =~ ~r/sharpnessLeft.*beyond spread/
       assert output =~ ~r/intervalMs.*too few samples/
-      assert output =~ ~r/total\s+31\.000\s+31\.000/
+      assert output =~ ~r/total\s+31\.0\s+31\.0/
       assert output =~ ~r/both\s+3/
       assert output =~ out
 
@@ -282,6 +301,25 @@ defmodule VisionCore.Debug.CompareTest do
 
       assert {:ok, %{width: 4, height: 3}} =
                out |> Path.join("depth-diff.png") |> File.read!() |> Png.decode()
+    end
+
+    test "prints small figures with their significant digits, and status figures unjudged",
+         %{tmp_dir: directory} do
+      a_path = Path.join(directory, "a.zip")
+      b_path = Path.join(directory, "b.zip")
+      status = [depth_hz: [29, 30, 31, 30], cpu_percent: [nil, nil, nil, nil]]
+      File.write!(a_path, export([sharpness: [0.004588, 0.004592, 0.004596]] ++ status))
+      File.write!(b_path, export([sharpness: [0.005374, 0.005378, 0.005382]] ++ status))
+
+      output = compare_output(a_path, b_path, directory)
+
+      assert output =~
+               ~r/sharpnessLeft\s+0\.004592\s+3\.266e-06\s+3\s+0\.005378\s+3\.266e-06\s+3\s+0\.000786\s+beyond spread/
+
+      assert output =~
+               ~r/depthHz\s+30\.0\s+0\.7071\s+4\s+30\.0\s+0\.7071\s+4\s+0\s+status figure, not judged/
+
+      assert compare_output(b_path, a_path, directory) =~ ~r/sharpnessLeft.*\s-0\.000786\s/
     end
 
     test "turns a malformed export into an error naming the problem", %{tmp_dir: directory} do
@@ -308,6 +346,12 @@ defmodule VisionCore.Debug.CompareTest do
         Mix.Tasks.VisionCore.CompareExports.run([missing, missing, "--out", directory])
       end
     end
+  end
+
+  defp compare_output(a_path, b_path, directory) do
+    ExUnit.CaptureIO.capture_io(fn ->
+      Mix.Tasks.VisionCore.CompareExports.run([a_path, b_path, "--out", directory])
+    end)
   end
 
   defp figure(figures, name), do: Enum.find(figures, &(&1.name == name))
