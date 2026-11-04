@@ -16,7 +16,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias VisionCore.Ros2.Exporter
   alias VisionCore.Ros2.Exporter.Diagnostics
   alias VisionCore.Ros2.Services.SetCameraInfoServer
-  alias VisionCore.Ros2.ZenohClient
+  alias Ros2Zenoh.Client
   alias VisionCore.Stereo.Pair
 
   @moduletag :capture_log
@@ -244,10 +244,13 @@ defmodule VisionCore.Ros2.ExporterTest do
     session = local_session()
 
     start_supervised!(
-      {ZenohClient, endpoint_ip: "127.0.0.1", open_session: fn _endpoint -> {:ok, session} end}
+      {Client,
+       endpoint_ip: "127.0.0.1",
+       node_name: "vision_test",
+       open_session: fn _endpoint -> {:ok, session} end}
     )
 
-    assert eventually(fn -> ZenohClient.link().connected end)
+    assert eventually(fn -> Client.link().connected end)
     assert Exporter.status(state) == {:ok, "Connected"}
   end
 

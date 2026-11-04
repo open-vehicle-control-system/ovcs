@@ -50,7 +50,7 @@ defmodule RosBridge.Publishers.LaserScan do
 
   @impl GenServer
   def handle_cast({:lidar_scan, %Scan{} = scan}, state) do
-    RosBridge.ZenohClient.publish(
+    Ros2Zenoh.Client.publish(
       state.topic,
       LaserScan,
       laser_scan(scan, state.bins, state.frame_id)

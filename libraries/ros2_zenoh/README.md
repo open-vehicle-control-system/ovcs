@@ -2,7 +2,7 @@
 
 ROS 2 messages over [Zenoh](https://zenoh.io), without ROS installed: CDR codecs for the standard message types and the [`rmw_zenoh`](https://github.com/ros2/rmw_zenoh) wire format, so an Elixir process with a plain Zenoh session publishes and subscribes to topics that ROS 2 nodes, `ros2 topic echo` and Foxglove see as native.
 
-It is pure Elixir with no runtime dependencies and holds no Zenoh session: the caller brings its own client, such as [`zenohex`](https://github.com/biyooon-ex/zenohex). In OVCS, `RosBridge.ZenohClient` and `VisionCore.Ros2.ZenohClient` are that client.
+The codecs are pure Elixir. `Ros2Zenoh.Client` holds the one [`zenohex`](https://github.com/biyooon-ex/zenohex) session a BEAM talks ROS 2 through: the ROS bridge and the vision unit each run it, and publish, subscribe and serve through it.
 
 ## What it covers
 
@@ -13,6 +13,7 @@ It is pure Elixir with no runtime dependencies and holds no Zenoh session: the c
 | `Ros2Zenoh.Cdr` | Lower-level CDR helpers shared by the codecs |
 | `Ros2Zenoh.RmwZenoh` | Key expressions, the encapsulation header, publisher attachments and liveliness tokens |
 | `Ros2Zenoh.RclInterfaces.Parameters` | The `rcl_interfaces` parameter services, for a node that serves parameters |
+| `Ros2Zenoh.Client` | The session: connects to the router and reconnects, publishes (encoding in the caller), subscribes, answers services and declares the liveliness tokens that make all of them visible in the ROS graph. With `config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}`, as the Nerves firmwares set it, it publishes nothing until the board's clock is synchronized |
 
 The packages are `builtin_interfaces`, `diagnostic_msgs`, `foxglove_msgs`, `geometry_msgs`, `nav_msgs`, `rosgraph_msgs`, `sensor_msgs`, `std_msgs`, `stereo_msgs`, `tf2_msgs`, `vision_msgs` and `visualization_msgs`, each with the message types something here publishes or reads; `lib/ros2_zenoh/` lists them. Type hashes are those of ROS 2 Lyrical.
 

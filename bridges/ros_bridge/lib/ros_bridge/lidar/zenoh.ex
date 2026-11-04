@@ -37,7 +37,7 @@ defmodule RosBridge.Lidar.Zenoh do
   @impl GenServer
   def init(opts) do
     topic = Keyword.get(opts, :topic, @default_topic)
-    :ok = RosBridge.ZenohClient.subscribe(topic, LaserScan)
+    :ok = Ros2Zenoh.Client.subscribe(topic, LaserScan)
     Logger.info("#{__MODULE__} consuming #{topic}")
     {:ok, %{listeners: []}}
   end

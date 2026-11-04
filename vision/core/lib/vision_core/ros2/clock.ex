@@ -88,7 +88,7 @@ defmodule VisionCore.Ros2.Clock do
   timescales in one run is the failure this module exists to prevent,
   so a run that has started on wall clock finishes on wall clock.
   "Permanent" means for the life of this process: the vision core subtree
-  is `:rest_for_one` behind `ZenohClient`, so a client crash restarts
+  is `:rest_for_one` behind `Ros2Zenoh.Client`, so a client crash restarts
   this too and the wait for `/clock` runs again from scratch.
 
   Which makes the timeout a real deadline rather than a nicety, and
@@ -147,8 +147,8 @@ defmodule VisionCore.Ros2.Clock do
     opts = Map.new(opts || [])
     timeout_ms = Map.get(opts, :acquire_timeout_ms, @default_acquire_timeout_ms)
     # Injected so the lifecycle can be tested without a live
-    # ZenohClient — see the note on `terminate/2`.
-    subscriber = Map.get(opts, :subscriber, VisionCore.Ros2.ZenohClient)
+    # Ros2Zenoh.Client — see the note on `terminate/2`.
+    subscriber = Map.get(opts, :subscriber, Ros2Zenoh.Client)
 
     # So `terminate/2` actually runs. Without this a supervisor's
     # ordinary `exit(pid, :shutdown)` skips it entirely, and the

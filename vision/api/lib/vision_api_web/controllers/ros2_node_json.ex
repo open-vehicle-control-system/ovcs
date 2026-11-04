@@ -1,13 +1,13 @@
 defmodule VisionApiWeb.Ros2NodeJSON do
   @moduledoc """
-  The unit's ROS 2 node (`VisionCore.Ros2.ZenohClient.link/0`) as a
+  The unit's ROS 2 node (`VisionCore.Ros2.Node.link/0`) as a
   `ros2-nodes` JSON:API resource, with its `ros2-topics` and
   `ros2-services`.
   """
   alias VisionApiWeb.JsonApi
 
   @doc """
-  The node of `link` (`VisionCore.Ros2.ZenohClient.link/0`), related to its
+  The node of `link` (`VisionCore.Ros2.Node.link/0`), related to its
   `topics` and services, with those `includes` names, `"topics"` or
   `"services"`, in `included`.
   """

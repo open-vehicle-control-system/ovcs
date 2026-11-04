@@ -58,7 +58,7 @@ defmodule RosBridge.Simulator.Hardware do
       opts |> Map.fetch!(:simulated_components) |> Enum.map(&SimulatedComponent.start/1)
 
     wheel_joints = Map.get(opts, :wheel_joints, [])
-    if wheel_joints != [], do: :ok = RosBridge.ZenohClient.subscribe("joint_states", JointState)
+    if wheel_joints != [], do: :ok = Ros2Zenoh.Client.subscribe("joint_states", JointState)
 
     {:ok, _timer} = :timer.send_interval(@period_ms, :step)
 
@@ -140,7 +140,7 @@ defmodule RosBridge.Simulator.Hardware do
       angular: %Vector3{x: 0.0, y: 0.0, z: Vehicle.yaw_rate(vehicle)}
     }
 
-    RosBridge.ZenohClient.publish("simulator/drive", Twist, twist)
+    Ros2Zenoh.Client.publish("simulator/drive", Twist, twist)
   end
 
   defp now_ms, do: System.monotonic_time(:millisecond)

@@ -25,18 +25,17 @@ defmodule VisionCore.Ros2.Parameters do
 
   alias Ros2Zenoh.RclInterfaces.Parameters, as: Codec
   alias VisionCore.Parameters.Parameter
-  alias VisionCore.Ros2.ZenohClient
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl GenServer
   def init(opts) do
-    node_name = ZenohClient.node_name()
+    node_name = Ros2Zenoh.Client.node_name()
 
     services =
       Map.new(Codec.services(), fn {service, module} ->
         name = "/#{node_name}/#{service}"
-        :ok = ZenohClient.register_service(name, module, self())
+        :ok = Ros2Zenoh.Client.register_service(name, module, self())
         {name, service}
       end)
 
@@ -48,7 +47,12 @@ defmodule VisionCore.Ros2.Parameters do
         {:service_request, %{service_name: service, query: query, request_payload: payload}},
         state
       ) do
-    ZenohClient.respond(service, query, respond(state.services[service], payload, state.registry))
+    Ros2Zenoh.Client.respond(
+      service,
+      query,
+      respond(state.services[service], payload, state.registry)
+    )
+
     {:noreply, state}
   end
 

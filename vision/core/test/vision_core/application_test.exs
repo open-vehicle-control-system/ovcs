@@ -57,7 +57,7 @@ defmodule VisionCore.ApplicationTest do
 
   @ros2 [zenoh_endpoint_ip: "127.0.0.1"]
   @ros2_processes [
-    VisionCore.Ros2.ZenohClient,
+    Ros2Zenoh.Client,
     VisionCore.Ros2.Parameters,
     VisionCore.Ros2.Topics,
     VisionCore.Ros2.Clock
@@ -79,7 +79,7 @@ defmodule VisionCore.ApplicationTest do
     })
 
     ids = child_ids(VisionCore.Supervisor)
-    assert VisionCore.Ros2.ZenohClient in ids
+    assert Ros2Zenoh.Client in ids
     assert VisionCore.Ros2.Parameters in ids
     assert VisionCore.Ros2.Topics in ids
 
@@ -94,7 +94,7 @@ defmodule VisionCore.ApplicationTest do
     })
 
     assert %{endpoint: "tcp/127.0.0.2:7447", node_name: "front_vision", domain_id: 7} =
-             VisionCore.Ros2.ZenohClient.link()
+             VisionCore.Ros2.Node.link()
   end
 
   test "boots with ros2: while the Zenoh router does not answer" do
@@ -103,7 +103,7 @@ defmodule VisionCore.ApplicationTest do
 
     assert Process.alive?(Process.whereis(VisionCore.Ros2.Parameters))
     assert Process.alive?(Process.whereis(VisionCore.Status))
-    assert %{connected: false} = VisionCore.Ros2.ZenohClient.link()
+    assert %{connected: false} = VisionCore.Ros2.Node.link()
   end
 
   test "a ros2: that is no keyword list, or without the router's address, fails the start saying so" do
@@ -181,7 +181,7 @@ defmodule VisionCore.ApplicationTest do
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
-             VisionCore.Ros2.ZenohClient,
+             Ros2Zenoh.Client,
              VisionCore.Ros2.Parameters,
              VisionCore.Ros2.Topics,
              VisionCore.Ros2.Clock,
@@ -231,7 +231,7 @@ defmodule VisionCore.ApplicationTest do
     assert {:ok, %{state: :unsaved}} = VisionCore.Parameters.set("test.sample.value", 5)
 
     preview = Process.whereis(VisionCore.Preview)
-    Process.exit(Process.whereis(VisionCore.Ros2.ZenohClient), :kill)
+    Process.exit(Process.whereis(Ros2Zenoh.Client), :kill)
     wait_for_restart(VisionCore.Preview, preview)
 
     assert {:ok, %{value: 5, state: :unsaved}} = VisionCore.Parameters.get("test.sample.value")
@@ -314,7 +314,7 @@ defmodule VisionCore.ApplicationTest do
     Process.sleep(2_000)
 
     assert Process.whereis(VisionCore.Supervisor) |> Process.alive?()
-    assert Process.whereis(VisionCore.Ros2.ZenohClient) |> Process.alive?()
+    assert Process.whereis(Ros2Zenoh.Client) |> Process.alive?()
   end
 
   # The first start of a 64x48 pipeline compiles the Nx stages with EXLA,

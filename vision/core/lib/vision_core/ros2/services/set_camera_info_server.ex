@@ -26,17 +26,17 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
       unit has taken the calibration. Lets the calling
       supervisor wire in the stereo pipeline's reload without
       coupling this module to it.
-    * `:register_service` (`&VisionCore.Ros2.ZenohClient.register_service/3`)
+    * `:register_service` (`&Ros2Zenoh.Client.register_service/3`)
       — registers the service, called with its name, its module and
       this server's pid.
-    * `:respond` (`&VisionCore.Ros2.ZenohClient.respond/3`) — answers a
+    * `:respond` (`&Ros2Zenoh.Client.respond/3`) — answers a
       request, called with the service name, the query and the encoded
       response.
   """
   use GenServer
   require Logger
 
-  alias VisionCore.Ros2.{CameraCalibration, ZenohClient}
+  alias VisionCore.Ros2.CameraCalibration
   alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo
   alias Ros2Zenoh.SensorMsgs.Srv.SetCameraInfo.{Request, Response}
 
@@ -63,7 +63,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
     calibration_path = Keyword.fetch!(opts, :calibration_path)
     camera_name = Keyword.get(opts, :camera_name, Path.basename(calibration_path, ".yaml"))
     reload = Keyword.get(opts, :reload)
-    register_service = Keyword.get(opts, :register_service, &ZenohClient.register_service/3)
+    register_service = Keyword.get(opts, :register_service, &Ros2Zenoh.Client.register_service/3)
 
     register_service.(service_name, SetCameraInfo, self())
 
@@ -75,7 +75,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
        calibration_path: calibration_path,
        camera_name: camera_name,
        reload: reload,
-       respond: Keyword.get(opts, :respond, &ZenohClient.respond/3),
+       respond: Keyword.get(opts, :respond, &Ros2Zenoh.Client.respond/3),
        notified: nil
      }}
   end

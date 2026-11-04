@@ -7,13 +7,13 @@ defmodule RosBridge.Config do
 
     * `:zenoh_endpoint_ip` — the Zenoh router this bridge peers with.
     * `:components` — the list of `ros_bridge` features the vehicle
-      wants on top of the always-on `ZenohClient`. Each entry is
+      wants on top of the always-on `Ros2Zenoh.Client`. Each entry is
       either a bare component atom (`:heartbeat`) or a `{name, opts}`
       tuple (`{:imu_publisher, driver: BNO085.I2C}`). See
       `RosBridge.Components` for the catalogue.
     * `:node_name` — the ROS 2 node name this bridge announces in its
-      rmw_zenoh liveliness tokens. Defaults to `ZenohClient`'s
-      `"ovcs_bridge"`. Set it per firmware whenever more than one
+      rmw_zenoh liveliness tokens. Defaults to `"ovcs_bridge"`. Set it
+      per firmware whenever more than one
       bridge firmware of a vehicle runs this bridge on the same fabric:
       two sharing a name collide in the ROS graph, and `ros2 node list` warns about
       it while Foxglove merges them into one entry.
@@ -74,8 +74,10 @@ defmodule RosBridge do
   # `:host` at runtime, which would pick the wrong config arm.
   @arm if Mix.target() == :host, do: :host, else: :target
 
+  @default_node_name "ovcs_bridge"
+
   @doc """
-  One `:rest_for_one` subtree with `ZenohClient` first. Consumers
+  One `:rest_for_one` subtree with `Ros2Zenoh.Client` first. Consumers
   subscribe only from `init/1`, so they must restart with the client
   to get their subscriptions back.
   """
@@ -83,7 +85,7 @@ defmodule RosBridge do
   def children do
     config = resolve_config()
 
-    core_children = [{RosBridge.ZenohClient, zenoh_client_opts(config)}]
+    core_children = [{Ros2Zenoh.Client, zenoh_client_opts(config)}]
     component_children = Enum.flat_map(config.components, &resolve_component/1)
 
     [
@@ -100,12 +102,8 @@ defmodule RosBridge do
     ]
   end
 
-  # Omit `:node_name` when unset so `ZenohClient` applies its default.
-  defp zenoh_client_opts(%RosBridge.Config{node_name: nil} = config),
-    do: [endpoint_ip: config.zenoh_endpoint_ip]
-
   defp zenoh_client_opts(%RosBridge.Config{} = config),
-    do: [endpoint_ip: config.zenoh_endpoint_ip, node_name: config.node_name]
+    do: [endpoint_ip: config.zenoh_endpoint_ip, node_name: config.node_name || @default_node_name]
 
   defp resolve_config do
     vehicle_module = vehicle()

@@ -147,6 +147,6 @@ defmodule RosBridge.Publishers.AckermannJointStates do
 
   defp publish(state) do
     stamp = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
-    RosBridge.ZenohClient.publish(state.topic, JointState, joint_state(state, stamp))
+    Ros2Zenoh.Client.publish(state.topic, JointState, joint_state(state, stamp))
   end
 end

@@ -326,8 +326,8 @@ defmodule RosBridge.Publishers.Odometry do
       }
     }
 
-    RosBridge.ZenohClient.publish(state.topic, Odometry, odometry)
-    RosBridge.ZenohClient.publish("tf", TFMessage, %TFMessage{transforms: [transform]})
+    Ros2Zenoh.Client.publish(state.topic, Odometry, odometry)
+    Ros2Zenoh.Client.publish("tf", TFMessage, %TFMessage{transforms: [transform]})
   end
 
   defp now_ms, do: System.monotonic_time(:millisecond)

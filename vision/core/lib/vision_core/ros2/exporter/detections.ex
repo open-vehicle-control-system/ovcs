@@ -68,7 +68,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
   @typedoc """
   A message to publish: its topic, its module and the message, and for the
-  markers the options `VisionCore.Ros2.ZenohClient.publish/4` takes.
+  markers the options `Ros2Zenoh.Client.publish/4` takes.
   """
   @type message :: {String.t(), module(), struct()} | {String.t(), module(), struct(), keyword()}
 

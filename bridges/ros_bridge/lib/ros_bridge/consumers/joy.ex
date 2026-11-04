@@ -14,7 +14,7 @@ end
 defmodule RosBridge.Consumers.Joy do
   @moduledoc """
   Subscribes to ROS 2 `sensor_msgs/Joy` topics via the native-Zenoh
-  client (`RosBridge.ZenohClient.subscribe/2`) and translates each
+  client (`Ros2Zenoh.Client.subscribe/2`) and translates each
   sample into the `ros_actuator_command` frame (`0x2B0`): the
   operator's axes as normalised positions.
 
@@ -127,7 +127,7 @@ defmodule RosBridge.Consumers.Joy do
 
     Logger.info("#{__MODULE__} profiles on #{profiles |> Map.keys() |> Enum.join(", ")}")
 
-    for topic <- Map.keys(profiles), do: :ok = RosBridge.ZenohClient.subscribe(topic, Joy)
+    for topic <- Map.keys(profiles), do: :ok = Ros2Zenoh.Client.subscribe(topic, Joy)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
 
     {:ok, %State{watchdog: InputWatchdog.new(timeout_ms()), profiles: profiles}}

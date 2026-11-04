@@ -1,12 +1,29 @@
 defmodule Ros2Zenoh do
   @moduledoc """
   ROS 2 messages over Zenoh, without ROS installed: CDR codecs for the
-  standard message types (`Ros2Zenoh.<Package>.Msg.<Name>`) and the
-  `rmw_zenoh` wire format (`Ros2Zenoh.RmwZenoh`), so plain Zenoh
-  publishers and subscribers interoperate with ROS 2 nodes that run
-  `rmw_zenoh`.
-
-  The library holds no Zenoh session: callers publish and subscribe
-  through their own client, such as `zenohex`.
+  standard message types (`Ros2Zenoh.<Package>.Msg.<Name>`), the
+  `rmw_zenoh` wire format (`Ros2Zenoh.RmwZenoh`), and `Ros2Zenoh.Client`,
+  the one Zenoh session a BEAM publishes, subscribes and serves through,
+  so that it interoperates with ROS 2 nodes that run `rmw_zenoh`.
   """
+
+  @doc "`name` as a full ROS name, with a leading `/`."
+  @spec full_name(String.t()) :: String.t()
+  def full_name("/" <> _rest = name), do: name
+  def full_name(name), do: "/" <> name
+
+  @doc "The ROS type name of a message or service module (`sensor_msgs/msg/Image`), or its module name."
+  @spec ros_type(module()) :: String.t()
+  def ros_type(module) do
+    Code.ensure_loaded(module)
+
+    if function_exported?(module, :dds_type, 0) do
+      module.dds_type()
+      |> String.replace("::dds_::", "::")
+      |> String.replace("::", "/")
+      |> String.trim_trailing("_")
+    else
+      inspect(module)
+    end
+  end
 end

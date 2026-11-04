@@ -44,7 +44,7 @@ defmodule RosBridge.Publishers.Proximity do
     }
 
     scan_topic = Keyword.get(opts, :scan_topic, "scan")
-    :ok = RosBridge.ZenohClient.subscribe(scan_topic, LaserScan)
+    :ok = Ros2Zenoh.Client.subscribe(scan_topic, LaserScan)
     Logger.info("#{__MODULE__} on #{scan_topic}: #{state.nearest_topic}, #{state.labels_topic}")
     {:ok, state}
   end
@@ -52,8 +52,8 @@ defmodule RosBridge.Publishers.Proximity do
   @impl GenServer
   def handle_info({:ros_message, {_key_expr, %LaserScan{} = scan}}, state) do
     returns = returns_within(scan, state.within_m)
-    RosBridge.ZenohClient.publish(state.nearest_topic, Range, nearest(scan, returns))
-    RosBridge.ZenohClient.publish(state.labels_topic, MarkerArray, labels(scan, returns, state))
+    Ros2Zenoh.Client.publish(state.nearest_topic, Range, nearest(scan, returns))
+    Ros2Zenoh.Client.publish(state.labels_topic, MarkerArray, labels(scan, returns, state))
     {:noreply, state}
   end
 

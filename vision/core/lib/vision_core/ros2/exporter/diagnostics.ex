@@ -34,7 +34,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
       one, reports what the camera applied.
     * `:topic_prefix` (`"stereo"`), `:fps` (30).
     * `:left`, `:right` — each camera's `:sync` role, when it has one.
-    * `:publish` (`&VisionCore.Ros2.ZenohClient.publish/4`) — sends one
+    * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
       message, as `VisionCore.Ros2.Exporter`'s does.
     * `:name` (this module) — the name it registers under.
   """
@@ -45,7 +45,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.{Stamp, ZenohClient}
+  alias VisionCore.Ros2.{Stamp, Topics}
   alias VisionCore.Stereo.Sync
 
   @default_topic_prefix "stereo"
@@ -88,7 +88,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
        driver: driver,
        servers: servers,
        roles: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
-       publish: Keyword.get(opts, :publish, &ZenohClient.publish/4),
+       publish: Keyword.get(opts, :publish, &Topics.publish/4),
        sync: Sync.new(Keyword.get(opts, :fps, @default_fps)),
        offsets_ms: []
      }}

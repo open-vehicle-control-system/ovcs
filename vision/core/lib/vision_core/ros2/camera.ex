@@ -20,7 +20,7 @@ defmodule VisionCore.Ros2.Camera do
     * `:frame_id` — the optical frame each frame carries, `nil`
       without it; the image header's frame id is not read.
 
-  It reads through `VisionCore.Ros2.ZenohClient`, the ROS 2 link of the
+  It reads through `Ros2Zenoh.Client`, the ROS 2 link of the
   configuration's `ros2:` section: without it, it does not start, with
   an error logged, and neither does its stereo unit.
 
@@ -58,7 +58,6 @@ defmodule VisionCore.Ros2.Camera do
   alias Ros2Zenoh.SensorMsgs.Msg.CompressedImage
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.ZenohClient
   alias VisionCore.Timing
 
   def start_link(opts) do
@@ -75,11 +74,11 @@ defmodule VisionCore.Ros2.Camera do
     label = Keyword.fetch!(opts, :label)
     topic = Keyword.fetch!(opts, :topic)
 
-    if Process.whereis(ZenohClient) do
-      # Subscribing from `init/1` is safe: ZenohClient records the
+    if Process.whereis(Ros2Zenoh.Client) do
+      # Subscribing from `init/1` is safe: Ros2Zenoh.Client records the
       # subscription and declares it on the next successful connect, so
       # a camera that starts before the session is up still works.
-      :ok = ZenohClient.subscribe(topic, CompressedImage)
+      :ok = Ros2Zenoh.Client.subscribe(topic, CompressedImage)
 
       Logger.info("#{__MODULE__}[#{label}] consuming #{topic}")
 

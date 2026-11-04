@@ -12,11 +12,13 @@ defmodule Ros2Zenoh.MixProject do
   end
 
   def application do
-    []
+    [extra_applications: [:logger]]
   end
 
   defp deps do
     [
+      # `Ros2Zenoh.Client`'s session.
+      {:zenohex, "~> 0.8.0"},
       # The golden CDR fixtures in test/support.
       {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

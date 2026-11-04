@@ -37,7 +37,7 @@ defmodule RosBridge.Rangefinder.Zenoh do
   @impl GenServer
   def init(opts) do
     topic = Keyword.fetch!(opts, :topic)
-    :ok = RosBridge.ZenohClient.subscribe(topic, LaserScan)
+    :ok = Ros2Zenoh.Client.subscribe(topic, LaserScan)
     Logger.info("#{__MODULE__} #{Keyword.fetch!(opts, :name)} consuming #{topic}")
     {:ok, %{listeners: []}}
   end
