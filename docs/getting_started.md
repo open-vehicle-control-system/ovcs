@@ -18,7 +18,7 @@ Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by 
 | Erlang/OTP | 29.1.2 | Runtime for Elixir | mise |
 | Elixir | 1.20.4-otp-29 | The primary language | mise |
 | Rust | 1.90 | Compiles the `ovcs` CLI | mise |
-| Node.js | 24 | VMS debug dashboard (Vue) | mise |
+| Node.js | 24 | The React dashboards (VMS, vision, bus gateway) | mise |
 | Ruby | 3.3 | Utility scripts under `scripts/` | mise |
 | Python | 3.12 | PlatformIO | mise |
 | Flutter | 3.32.8 | Infotainment dashboard | mise |

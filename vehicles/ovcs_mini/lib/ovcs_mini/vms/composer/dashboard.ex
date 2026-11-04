@@ -5,8 +5,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard do
     %{
       vehicle: %{
         name: "OVCS Mini",
-        # One of orange|red|blue|indigo|gray|green|amber|rose|teal
-        main_color: "orange",
         refresh_interval: 70,
         # Each page shows what its own components produce, one block per
         # component. The main dashboard is the exception: it summarises

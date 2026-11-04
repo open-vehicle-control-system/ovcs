@@ -5,7 +5,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard.BatteryPage do
   def definition(order: order) do
     %{
       name: "Battery",
-      icon: "Battery50Icon",
       order: order,
       blocks: %{
         "bms-status" => %{

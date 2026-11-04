@@ -42,7 +42,7 @@ Node names turn underscores into dashes, in `<vehicle>` and `<id>` alike. The in
 
 ## Open the dashboard
 
-`./ovcs run` also starts each firmware's dev add-ons. For the VMS that is the Vue debug dashboard under Vite, with hot reload:
+`./ovcs run` also starts each firmware's dev add-ons. For the VMS that is the React debug dashboard under Vite, with hot reload:
 
 ```text
 http://localhost:5173

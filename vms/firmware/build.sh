@@ -31,7 +31,7 @@ export MIX_TARGET VEHICLE NERVES_FW_APPLICATION_PART0_TARGET
 step() { printf "\n\033[1;36m==> %s\033[0m\n" "$*"; }
 
 if [ "$MIX_TARGET" != "host" ]; then
-  step "Building the Vue.js debug dashboard"
+  step "Building the React debug dashboard"
   (
     cd ../dashboard
     npm install

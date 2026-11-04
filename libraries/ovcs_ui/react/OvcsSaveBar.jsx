@@ -1,8 +1,5 @@
 import { useState } from 'react'
-import { FOCUS } from './styles.js'
-
-const BUTTON = `min-h-9 rounded border border-ovcs-border px-3 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
-const PRIMARY = `${BUTTON} enabled:border-ovcs-accent font-semibold`
+import OvcsButton from './OvcsButton.jsx'
 
 const RUNNING = { save: 'Saving…', discard: 'Discarding…', reset: 'Resetting…' }
 
@@ -14,9 +11,9 @@ function Alert({ text, dismissLabel, onDismiss }) {
       <p className="ovcs-status ovcs-status--error min-w-0 flex-1 break-words">
         <span className="text-ovcs-text">{text}</span>
       </p>
-      <button type="button" aria-label={dismissLabel} onClick={onDismiss} className={BUTTON}>
+      <OvcsButton aria-label={dismissLabel} onClick={onDismiss}>
         Dismiss
-      </button>
+      </OvcsButton>
     </div>
   )
 }
@@ -70,15 +67,20 @@ export default function OvcsSaveBar({
         <p aria-live="polite" className="mr-auto text-sm tabular-nums">
           {unsaved > 0 ? changes(unsaved, 'unsaved ') : 'No unsaved changes'}
         </p>
-        <button type="button" disabled={unsaved === 0 || running != null} onClick={() => run('save', onSave)} className={`${PRIMARY} tabular-nums`}>
+        <OvcsButton
+          variant="primary"
+          disabled={unsaved === 0 || running != null}
+          onClick={() => run('save', onSave)}
+          className="tabular-nums"
+        >
           {label('save', unsaved > 0 ? `Save ${changes(unsaved)}` : 'Save')}
-        </button>
-        <button type="button" disabled={unsaved === 0 || running != null} onClick={discard} className={`${BUTTON} tabular-nums`}>
+        </OvcsButton>
+        <OvcsButton disabled={unsaved === 0 || running != null} onClick={discard} className="tabular-nums">
           {label('discard', unsaved > 0 ? `Discard ${changes(unsaved)}` : 'Discard')}
-        </button>
-        <button type="button" disabled={running != null} onClick={resetAll} className={BUTTON}>
+        </OvcsButton>
+        <OvcsButton disabled={running != null} onClick={resetAll}>
           {label('reset', 'Reset all')}
-        </button>
+        </OvcsButton>
       </div>
       {error ? <Alert text={error} dismissLabel="Dismiss error" onDismiss={onDismissError} /> : null}
     </div>

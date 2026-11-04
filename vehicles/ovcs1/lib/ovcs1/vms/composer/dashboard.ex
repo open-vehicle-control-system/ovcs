@@ -5,8 +5,6 @@ defmodule Ovcs1.Vms.Composer.Dashboard do
     %{
       vehicle: %{
         name: "OVCS1",
-        # One of orange|red|blue|indigo|gray|green|amber|rose|teal
-        main_color: "indigo",
         refresh_interval: 70,
         pages: %{
           "dashboard" => Dashboard.DashboardPage.definition(order: 0),

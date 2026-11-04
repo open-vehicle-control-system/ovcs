@@ -189,7 +189,7 @@ end
 
 /// A dev-time companion process a firmware declares via `dev_addons/0`.
 /// The CLI launches these alongside the BEAM on host runs; it stays
-/// agnostic about what they are (a Vue dev server, a Flutter app, …).
+/// agnostic about what they are (a Vite dev server, a Flutter app, …).
 pub struct DevAddon {
     /// Short name, unique within the firmware (e.g. "dashboard"). Combined
     /// with the firmware family for the log prefix.

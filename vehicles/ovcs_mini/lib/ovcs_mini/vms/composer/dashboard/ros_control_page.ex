@@ -7,7 +7,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard.ROSControlPage do
   def definition(order: order) do
     %{
       name: "ROS Control",
-      icon: "CpuChipIcon",
       order: order,
       blocks: %{
         "status" => %{

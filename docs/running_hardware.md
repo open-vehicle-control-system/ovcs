@@ -56,7 +56,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
    ./ovcs build my_car vms                   # the same for your own vehicle
    ```
 
-A VMS build also builds the Vue dashboard and bundles it into the image. The image lands under the firmware project's `_build/<target>_dev/nerves/images/`, for example `vms/firmware/_build/ovcs_base_can_system_rpi4_dev/nerves/images/vms_firmware.fw`.
+A VMS build also builds the React dashboard and bundles it into the image. The image lands under the firmware project's `_build/<target>_dev/nerves/images/`, for example `vms/firmware/_build/ovcs_base_can_system_rpi4_dev/nerves/images/vms_firmware.fw`.
 
 ### Stable SSH host keys across burns
 

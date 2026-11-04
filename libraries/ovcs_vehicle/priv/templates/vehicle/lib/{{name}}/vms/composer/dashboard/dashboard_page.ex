@@ -12,7 +12,6 @@ defmodule <%= @module %>.Vms.Composer.Dashboard.DashboardPage do
   def definition(order: order) do
     %{
       name: "Status",
-      icon: "HomeIcon",
       order: order,
       blocks: %{
         "vms-status" => %{

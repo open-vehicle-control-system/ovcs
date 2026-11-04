@@ -2,7 +2,6 @@
   "recommendations": [
     "jakebecker.elixir-ls",
     "phoenixframework.phoenix",
-    "vue.volar",
     "dbaeumer.vscode-eslint",
     "esbenp.prettier-vscode",
     "bradlc.vscode-tailwindcss",

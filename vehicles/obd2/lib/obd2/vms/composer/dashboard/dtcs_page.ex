@@ -4,7 +4,6 @@ defmodule Obd2.Vms.Composer.Dashboard.DtcsPage do
   def definition(order: order) do
     %{
       name: "DTCs",
-      icon: "ExclamationTriangleIcon",
       order: order,
       blocks: %{
         "obd2-dtcs" => %{

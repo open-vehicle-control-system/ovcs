@@ -6,7 +6,6 @@ defmodule OvcsMini.Vms.Composer.Dashboard.DrivetrainPage do
   def definition(order: order) do
     %{
       name: "Drivetrain",
-      icon: "CogIcon",
       order: order,
       blocks: %{
         "gear" => %{

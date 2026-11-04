@@ -10,6 +10,13 @@ defmodule VmsApiWeb.Api.Vehicle.Page.BlocksJSONTest do
              BlocksJSON.render("y_axis.json", %{y_axis: Map.put(@y_axis, :position, "right")})
   end
 
+  test "a metric row forwards its hint" do
+    assert %{hint: "Measured at the wheels"} =
+             BlocksJSON.render("metric.json", %{
+               metric: %{module: Motion, key: :speed, hint: "Measured at the wheels"}
+             })
+  end
+
   test "a y-axis without a position sends none" do
     refute Map.has_key?(BlocksJSON.render("y_axis.json", %{y_axis: @y_axis}), :position)
   end

@@ -39,7 +39,7 @@ The CLI resolves the vehicle module, sets `VEHICLE` + `MIX_TARGET` (reading
 
 Invoking the scripts directly also works — `build.sh` requires `VEHICLE`
 and defaults `MIX_TARGET` to `ovcs_base_can_system_rpi4`. It builds the
-Vue.js dashboard (`../dashboard`) first, then runs `mix firmware`. The
+React dashboard (`../dashboard`) first, then runs `mix firmware`. The
 resulting `.fw` lands in `_build/${MIX_TARGET}_dev/nerves/images/`.
 
 ## Required env vars
