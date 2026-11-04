@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchExporters, fetchFirmware, fetchRos2Node } from '../unit.js'
+import { fetchExporters, fetchFirmware, fetchRos2Node, runExporterAction } from '../unit.js'
 
 const respond = (body) => ({ ok: true, status: 200, json: async () => body })
 
@@ -66,5 +66,73 @@ describe('unit service', () => {
 
     expect(await fetchExporters()).toEqual([{ id: 'ros2', ...attributes }])
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/exporters$/)
+  })
+
+  describe('runExporterAction', () => {
+    const MEDIA_TYPE = 'application/vnd.api+json'
+    const answer = (status, headers, rest) => ({ ok: status < 400, status, headers: new Headers(headers), ...rest })
+
+    it('posts the action as an exporter-actions document', async () => {
+      fetchMock.mockResolvedValue(answer(200, { 'content-type': MEDIA_TYPE }, { json: async () => ({ data: { attributes: {} } }) }))
+
+      await runExporterAction('debug', 'export')
+
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toMatch(/\/api\/exporters\/debug\/actions\/export$/)
+      expect(options.method).toBe('POST')
+      expect(options.headers['Content-Type']).toBe(MEDIA_TYPE)
+      expect(JSON.parse(options.body)).toEqual({ data: { type: 'exporter-actions' } })
+    })
+
+    it('answers the file of a download, named by its content-disposition', async () => {
+      const blob = new Blob(['zip'])
+      fetchMock.mockResolvedValue(
+        answer(200, { 'content-type': 'application/zip', 'content-disposition': 'attachment; filename="vision-export-unit-2026.zip"' }, { blob: async () => blob })
+      )
+
+      expect(await runExporterAction('debug', 'export')).toEqual({ kind: 'file', blob, filename: 'vision-export-unit-2026.zip' })
+    })
+
+    it('answers a file whose content-disposition the browser hides, under a fallback name', async () => {
+      const blob = new Blob(['zip'])
+      fetchMock.mockResolvedValue(answer(200, { 'content-type': 'application/zip' }, { blob: async () => blob }))
+
+      expect(await runExporterAction('debug', 'export')).toEqual({ kind: 'file', blob, filename: 'download' })
+    })
+
+    it('decodes a filename the API percent-encoded', async () => {
+      fetchMock.mockResolvedValue(
+        answer(200, { 'content-disposition': 'attachment; filename="my%20export.zip"; filename*=utf-8\'\'my%20export.zip' }, { blob: async () => new Blob([]) })
+      )
+
+      expect((await runExporterAction('debug', 'export')).filename).toBe('my export.zip')
+    })
+
+    it("answers the attributes of a JSON result", async () => {
+      const document = { data: { type: 'exporter-actions', id: '1', attributes: { cleared: 3 } } }
+      fetchMock.mockResolvedValue(answer(200, { 'content-type': MEDIA_TYPE }, { json: async () => document }))
+
+      expect(await runExporterAction('debug', 'clear')).toEqual({ kind: 'json', data: { cleared: 3 } })
+    })
+
+    it('answers JSON whatever charset its content-type carries', async () => {
+      const document = { data: { type: 'exporter-actions', id: '1', attributes: { cleared: 3 } } }
+      fetchMock.mockResolvedValue(answer(200, { 'content-type': 'application/json; charset=utf-8' }, { json: async () => document }))
+
+      expect(await runExporterAction('debug', 'clear')).toEqual({ kind: 'json', data: { cleared: 3 } })
+    })
+
+    it("throws the error's detail", async () => {
+      const errors = [{ status: '409', title: 'Busy', detail: 'exporter debug is busy' }]
+      fetchMock.mockResolvedValue(answer(409, { 'content-type': MEDIA_TYPE }, { json: async () => ({ errors }) }))
+
+      await expect(runExporterAction('debug', 'export')).rejects.toThrow('exporter debug is busy')
+    })
+
+    it('throws that the unit cannot be reached', async () => {
+      fetchMock.mockRejectedValue(new TypeError('Failed to fetch'))
+
+      await expect(runExporterAction('debug', 'export')).rejects.toThrow('Cannot reach the vision unit')
+    })
   })
 })

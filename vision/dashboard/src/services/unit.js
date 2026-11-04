@@ -24,3 +24,29 @@ export async function fetchExporters() {
   const document = await request('exporters')
   return document.data.map((resource) => ({ id: resource.id, ...resource.attributes }))
 }
+
+const FILENAME = /filename="([^"]*)"/
+const JSON_ANSWER = /^application\/(vnd\.api\+)?json\b/
+
+// `content-disposition` is not readable across origins unless the API exposes it, so a file is told from a JSON
+// result by its readable content type.
+const answerAction = async (response) => {
+  if (JSON_ANSWER.test(response.headers.get('content-type') ?? '')) {
+    const document = await response.json()
+    return { kind: 'json', data: document.data.attributes }
+  }
+  const named = FILENAME.exec(response.headers.get('content-disposition') ?? '')
+  return { kind: 'file', blob: await response.blob(), filename: named ? decodeURIComponent(named[1]) : 'download' }
+}
+
+/**
+ * Runs the action `name` of the exporter `id`: the file it answers, as `{kind: 'file', blob, filename}`, or its JSON
+ * result, as `{kind: 'json', data}`. Throws the error's message when it fails.
+ */
+export function runExporterAction(id, name) {
+  return request(`exporters/${encodeURIComponent(id)}/actions/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    body: { data: { type: 'exporter-actions' } },
+    answer: answerAction
+  })
+}

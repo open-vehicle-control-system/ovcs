@@ -2,11 +2,13 @@ const MEDIA_TYPE = 'application/vnd.api+json'
 
 const url = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
 
+const readDocument = (response) => response.json().catch(() => ({}))
+
 /**
- * Sends a JSON:API request and answers its document; throws the first error's detail, else the status, or that the
- * unit cannot be reached.
+ * Sends a JSON:API request and answers its document, or what `answer` makes of an ok response; throws the first
+ * error's detail, else the status, or that the unit cannot be reached.
  */
-export async function request(path, { method = 'GET', body } = {}) {
+export async function request(path, { method = 'GET', body, answer = readDocument } = {}) {
   const response = await fetch(url(path), {
     method,
     headers: { Accept: MEDIA_TYPE, 'Content-Type': MEDIA_TYPE },
@@ -15,11 +17,11 @@ export async function request(path, { method = 'GET', body } = {}) {
     // fetch rejects with a TypeError, worded by each browser, when no answer came back.
     throw error instanceof TypeError ? new Error('Cannot reach the vision unit', { cause: error }) : error
   })
-  const document = await response.json().catch(() => ({}))
   if (!response.ok) {
+    const document = await readDocument(response)
     throw new Error(document.errors?.[0]?.detail ?? `${method} /api/${path}: ${response.status}`)
   }
-  return document
+  return answer(response)
 }
 
 const relatedId = (resource, name) => resource.relationships?.[name]?.data?.id ?? null
