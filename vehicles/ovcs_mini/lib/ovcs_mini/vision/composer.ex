@@ -95,8 +95,12 @@ defmodule OvcsMini.Vision.Composer do
   defp camera_options,
     do: [exposure_mode: :short, lens_position: 1.0, sensor_mode: {2304, 1296}, format: :grey]
 
-  defp stages,
-    do: Pipeline.default_stages(disparity: [num_disparities: 64, paths: 3, uniqueness: 1.2])
+  defp stages do
+    Pipeline.default_stages(
+      disparity: [num_disparities: 64, paths: 3, p1: 24, p2: 79, uniqueness: 1.1],
+      speckle_filter: [min_support: 24]
+    )
+  end
 
   defp hailo_detector do
     {:hailo_detector,
