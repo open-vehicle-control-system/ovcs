@@ -1,14 +1,18 @@
+import { OvcsProductContext } from './product.js'
 import { classNames } from './styles.js'
 
 /**
- * The page's frame: an `OvcsTopBar` over an `OvcsShellBody`. On a laptop the page is the screen and only the main
- * content scrolls; on a narrow screen the page scrolls as a whole.
+ * The page's frame: an `OvcsTopBar`, an `OvcsShellBody` and an `OvcsBottomBar`. Its `product`, such as "Vision", is the
+ * name the bars show. On a laptop the page is the screen and only the main content scrolls; on a narrow screen the page
+ * scrolls as a whole.
  */
-export default function OvcsShell({ className, children, ...props }) {
+export default function OvcsShell({ product = null, className, children, ...props }) {
   return (
-    <div className={classNames('flex min-h-screen flex-col lg:h-screen lg:overflow-hidden', className)} {...props}>
-      {children}
-    </div>
+    <OvcsProductContext value={product}>
+      <div className={classNames('flex min-h-screen flex-col lg:h-screen lg:overflow-hidden', className)} {...props}>
+        {children}
+      </div>
+    </OvcsProductContext>
   )
 }
 

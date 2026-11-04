@@ -22,6 +22,12 @@ a.ovcs-card:hover {
   background-color: var(--ovcs-surface);
 }
 
+/* The page's bottom bar, holding its statuses. */
+.ovcs-footer {
+  border-top: 1px solid var(--ovcs-border);
+  background-color: var(--ovcs-surface);
+}
+
 /* A coloured dot followed by its label: <span class="ovcs-status ovcs-status--ok">Connected</span>. */
 .ovcs-status {
   display: inline-flex;

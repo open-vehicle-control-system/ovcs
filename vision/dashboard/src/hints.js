@@ -22,7 +22,7 @@ export const HINTS = {
     title: 'Depth rate',
     text:
       'Depth maps the unit computed in the last second. Each needs a left and right image, so it cannot exceed ' +
-      'the cameras’ rate; well below it, the pipeline is the bottleneck (see Stereo load in the top bar).'
+      'the cameras’ rate; well below it, the pipeline is the bottleneck (see Stereo load in the bottom bar).'
   },
   matched: {
     title: 'Matched pixels',
@@ -74,6 +74,12 @@ export const HINTS = {
     text:
       "The ROS 2 exporter's link to the Zenoh router that carries its topics. Disconnected, nothing reaches ROS 2. " +
       'Its page, under Exporters, lists the topics and their rates.'
+  },
+  connection: {
+    title: 'Connection',
+    text:
+      "The dashboard's live link to the unit, which carries the statuses beside it and the previews. " +
+      'Disconnected, the page shows nothing new until the link comes back.'
   },
   hailo: {
     title: 'Hailo',

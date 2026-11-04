@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchBlocks, fetchPages, fetchVehicle, postAction } from '../api.js'
+import { fetchBlocks, fetchFirmware, fetchPages, fetchVehicle, postAction } from '../api.js'
 import { actionBody } from '../../format.js'
 
 const answer = (status, body = '') =>
@@ -62,5 +62,13 @@ describe('api', () => {
     expect(await fetchVehicle()).toEqual({ name: 'Mini', refreshInterval: 70 })
     expect(await fetchPages()).toEqual([{ id: 'status', name: 'Status' }])
     expect(await fetchBlocks('status')).toEqual([{ id: 'motion', name: 'Motion', subtype: 'table', rows: [] }])
+  })
+
+  it('reads the firmware from its resource', async () => {
+    const attributes = { revision: 'ce99e251', target: 'rpi4', nervesSystem: 'nerves_system_rpi4', nervesSystemVersion: '1.30.0', vehicle: 'OVCS1' }
+    fetch.mockImplementation(() => answer(200, JSON.stringify({ data: { type: 'firmware', id: 'current', attributes } })))
+
+    expect(await fetchFirmware()).toEqual(attributes)
+    expect(fetch.mock.calls[0][0]).toMatch(/\/api\/firmware$/)
   })
 })

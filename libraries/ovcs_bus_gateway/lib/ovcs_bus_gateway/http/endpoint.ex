@@ -13,7 +13,7 @@ defmodule OvcsBusGateway.Http.Endpoint do
   plug Plug.Static,
     at: "/",
     from: {:ovcs_bus_gateway, "priv/static"},
-    only: ~w(assets favicon.ico)
+    only: ~w(assets favicon.svg)
 
   plug Plug.Head
   plug OvcsBusGateway.Http.Router

@@ -1,4 +1,4 @@
-import { OvcsStatus } from '@ovcs/ui/react'
+import { OvcsBottomBarItem, OvcsStatus } from '@ovcs/ui/react'
 import { unitStatus } from '../status.js'
 import Hint from './Hint.jsx'
 
@@ -51,20 +51,23 @@ export function StatusValue({ item, className = 'text-base' }) {
   )
 }
 
-/** The unit's links and load, inline for the top bar, each explained by its hint; a value changing does not move the line. */
+/** The unit's links and load, as the bottom bar's items, each explained by its hint; a value changing does not move the line. */
 export default function UnitStatus({ status }) {
-  if (!status) return <p className="text-sm text-ovcs-muted">Waiting for the vision unit…</p>
-
   return (
-    <ul aria-label="Unit status" className="flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
+    <>
       {unitStatus(status).map((item) => {
         const tone = item.tone ?? (item.healthy ? 'ok' : 'error')
         return (
-          <li key={item.id} data-card={item.id} className="flex items-center gap-2">
-            <span className="flex items-center gap-1 text-ovcs-muted">
-              {item.title}
-              <Hint hint={item.hint} />
-            </span>
+          <OvcsBottomBarItem
+            key={item.id}
+            data-card={item.id}
+            label={
+              <>
+                {item.title}
+                <Hint hint={item.hint} />
+              </>
+            }
+          >
             <OvcsStatus tone={tone} className="font-medium tabular-nums">
               <Widest widest={item.widest} align={item.align}>
                 {item.value}
@@ -74,9 +77,9 @@ export default function UnitStatus({ status }) {
                 {tone === 'error' ? WARNING : null}
               </span>
             </OvcsStatus>
-          </li>
+          </OvcsBottomBarItem>
         )
       })}
-    </ul>
+    </>
   )
 }

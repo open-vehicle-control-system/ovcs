@@ -10,6 +10,11 @@ import { dashboardSocket } from '../services/socket.js'
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
   dashboardSocket: {
+    isConnected: vi.fn(() => true),
+    onOpen: () => 'open',
+    onClose: () => 'close',
+    onError: () => 'error',
+    off: () => {},
     channel: vi.fn(() => ({ on: () => {}, join: () => ({ receive() { return this } }), off: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
   }
 }))
@@ -43,6 +48,7 @@ describe('App', () => {
   beforeEach(() => {
     actions = { startPolling: vi.fn(), stopPolling: vi.fn() }
     dashboardSocket.channel.mockClear()
+    dashboardSocket.isConnected.mockReturnValue(true)
     useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
     useExporters.setState({ exporters })
     visit('/')
@@ -129,6 +135,20 @@ describe('App', () => {
     expect(alert.closest('header')).not.toBeNull()
     expect(alert.textContent).toContain('Cannot reach the vision unit')
     expect(screen.queryByRole('button', { name: 'Dismiss error' })).toBeNull()
+  })
+
+  it('leaves a failed load to the bottom bar while the unit is unreachable', () => {
+    dashboardSocket.isConnected.mockReturnValue(false)
+    useParameters.setState({ groups, error: 'Cannot reach the vision unit', errorSource: 'load' })
+    render(<App />)
+
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(within(screen.getByRole('contentinfo')).getByText('Connecting…')).toBeTruthy()
+  })
+
+  it('says in the bottom bar that the unit is connected', () => {
+    render(<App />)
+    expect(within(screen.getByRole('contentinfo')).getByText('Connected')).toBeTruthy()
   })
 
   it('lands on the overview, with no stage selected and no save bar', () => {

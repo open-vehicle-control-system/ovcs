@@ -13,7 +13,7 @@ export async function fetchRos2Node() {
   return { ...document.data.attributes, topics: related(document, 'topics'), services: related(document, 'services') }
 }
 
-/** The firmware the unit runs: `revision`, `target`, `nervesSystem` and `nervesSystemVersion`. */
+/** The firmware the unit runs: `revision`, `target`, `nervesSystem`, `nervesSystemVersion` and `vehicle`. */
 export async function fetchFirmware() {
   const document = await request('firmware')
   return document.data.attributes

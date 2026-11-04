@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import App from '../App.jsx'
-import { fetchBlocks, fetchPages, fetchVehicle } from '../services/api.js'
+import { fetchBlocks, fetchFirmware, fetchPages, fetchVehicle } from '../services/api.js'
 import { useVehicle } from '../stores/vehicle.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useConnection } from '../stores/connection.js'
@@ -31,6 +31,7 @@ vi.mock('../services/socket.js', () => {
 })
 
 const vehicle = { name: 'Mini', refreshInterval: 70 }
+const firmware = { revision: 'ce99e251', target: 'host', nervesSystem: null, nervesSystemVersion: null, vehicle: 'OVCS Mini' }
 const pages = [
   { id: 'status', name: 'Status' },
   { id: 'drive', name: 'Drive' }
@@ -48,6 +49,7 @@ describe('App', () => {
     fetchVehicle.mockResolvedValue(vehicle)
     fetchPages.mockResolvedValue(pages)
     fetchBlocks.mockResolvedValue([])
+    fetchFirmware.mockResolvedValue(firmware)
     useVehicle.setState({ vehicle: null, pages: null, error: null })
     useConnection.setState({ state: 'connecting' })
     document.title = 'OVCS VMS'
@@ -57,13 +59,18 @@ describe('App', () => {
   it('renders the OVCS VMS top bar', async () => {
     render(<App />)
     expect(screen.getByRole('heading', { level: 1 }).textContent).toMatch(/OVCS\s*VMS/)
-    await screen.findByText('Mini')
+    await screen.findByRole('heading', { level: 2, name: 'Status' })
   })
 
-  it('shows the vehicle name and sets the browser title', async () => {
+  it('reads the firmware once connected, for the top bar and the browser title', async () => {
     render(<App />)
-    expect(await screen.findByText('Mini')).toBeTruthy()
-    expect(document.title).toBe('Mini VMS')
+    await screen.findByRole('heading', { level: 2, name: 'Status' })
+    expect(fetchFirmware).not.toHaveBeenCalled()
+
+    act(() => useConnection.setState({ state: 'connected' }))
+    const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
+    expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
+    expect(document.title).toBe('OVCS VMS · OVCS Mini')
   })
 
   it('shows the first page at /', async () => {
@@ -121,13 +128,17 @@ describe('App', () => {
 
   it("joins the metrics channel with the vehicle's refresh interval", async () => {
     render(<App />)
-    await screen.findByText('Mini')
+    await screen.findByRole('heading', { level: 2, name: 'Status' })
     expect(dashboardSocket.channel).toHaveBeenCalledWith('metrics', { interval: 70 })
   })
 
-  it('shows whether the dashboard is connected', async () => {
+  it('shows in the bottom bar whether the dashboard is connected to the VMS', async () => {
     render(<App />)
-    expect(screen.getByText('Connecting…')).toBeTruthy()
-    await screen.findByText('Mini')
+    const footer = screen.getByRole('contentinfo')
+    expect(footer.textContent).toBe('VMSConnecting…')
+
+    act(() => useConnection.setState({ state: 'connected' }))
+    expect(within(footer).getByText('Connected')).toBeTruthy()
+    await screen.findByRole('heading', { level: 2, name: 'Status' })
   })
 })

@@ -1,23 +1,28 @@
 import {
+  OvcsBottomBar,
+  OvcsBottomBarItem,
+  OvcsConnectionStatus,
   OvcsMain,
   OvcsShell,
   OvcsShellBody,
-  OvcsThemeSwitch,
   OvcsTopBar,
-  OvcsTopBarEnd,
-  OvcsTopBarTitle
+  useOvcsFirmware
 } from '@ovcs/ui/react'
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
 import AdapterPage from './components/AdapterPage.jsx'
 import BusMenu from './components/BusMenu.jsx'
 import BusPage from './components/BusPage.jsx'
-import { ConnectionStatus, FilterInput } from './components/TopBarControls.jsx'
+import FilterInput from './components/FilterInput.jsx'
+import { fetchFirmware } from './firmware'
 import { groupTree } from './signals'
 import { useBusSocket } from './useBusSocket'
 import { useSelection } from './useSelection'
 
 const TICK_MS = 500
+
+// The socket's status as the shared connection status names it; an overloaded channel waits for a fresh snapshot.
+const CONNECTION = { live: 'connected', connecting: 'connecting', disconnected: 'disconnected' }
 
 function useNow() {
   const [now, setNow] = useState(() => Date.now())
@@ -57,16 +62,13 @@ export default function App() {
     [signals, deferredFilter, nodes, bus]
   )
   const count = signals.size
+  // Each fresh snapshot reads the firmware again, as after an upload.
+  const firmware = useOvcsFirmware(fetchFirmware, status === 'live')
 
   return (
-    <OvcsShell>
-      <OvcsTopBar>
-        <OvcsTopBarTitle product="Bus Gateway" />
-        <OvcsTopBarEnd className="flex-wrap">
-          <ConnectionStatus status={status} count={count} />
-          <FilterInput ref={filterInput} filter={filter} onFilterChange={setFilter} />
-          <OvcsThemeSwitch />
-        </OvcsTopBarEnd>
+    <OvcsShell product="Bus Gateway">
+      <OvcsTopBar firmware={firmware}>
+        <FilterInput ref={filterInput} filter={filter} onFilterChange={setFilter} />
       </OvcsTopBar>
 
       <OvcsShellBody>
@@ -94,6 +96,15 @@ export default function App() {
           )}
         </OvcsMain>
       </OvcsShellBody>
+
+      <OvcsBottomBar>
+        <OvcsConnectionStatus state={CONNECTION[status]} />
+        {status === 'live' ? (
+          <OvcsBottomBarItem label="Signals">
+            <span className="font-medium tabular-nums text-ovcs-text">{count}</span>
+          </OvcsBottomBarItem>
+        ) : null}
+      </OvcsBottomBar>
     </OvcsShell>
   )
 }
