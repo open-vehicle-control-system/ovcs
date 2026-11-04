@@ -37,7 +37,10 @@ defmodule OvcsMini.Vision.Composer do
         zenoh_endpoint_ip: Application.get_env(:vision_core, :zenoh_endpoint_ip, "127.0.0.1")
       ],
       components: [stereo_component(), hailo_detector()],
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [], stereo: [], detections: []}]
+      exporters: [
+        {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [], detections: []},
+        {VisionCore.Debug.Exporter, []}
+      ]
     }
   end
 
