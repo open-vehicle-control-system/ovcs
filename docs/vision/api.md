@@ -239,14 +239,16 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
 
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
-An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`, the action's parameters going in `attributes` when it takes any. This one runs the `export` action of an exporter whose id is `debug`, which answers a zip file, and saves it:
+An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`, the action's parameters going in `attributes` when it takes any. This one runs the `export` action of an exporter whose id is `debug`, which answers a zip file ([Tune with exports](./tuning.md)), and saves it:
 
 ```sh
-curl -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
+curl --fail-with-body -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "exporter-actions"}}' \
   -o export.zip
 ```
+
+`--fail-with-body` needs curl 7.76 or later: on an error answer, curl exits with 22 and `export.zip` holds the JSON error, not a zip, so check the exit status before using the file.
 
 An action that produces a file answers it with a 200 and `content-disposition: attachment`; one that answers JSON gets a 200 with an `exporter-actions` resource whose `attributes` hold the result. The request waits up to 60 s for the answer. The unit answers:
 
