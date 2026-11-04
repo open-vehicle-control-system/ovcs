@@ -5,6 +5,8 @@ defmodule VisionCore.ApplicationTest do
 
   alias VisionCore.Camera.{Frame, LibCamera}
   alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Stereo.Calibration
   alias VisionCore.Repo
 
   @moduletag :tmp_dir
@@ -170,17 +172,18 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(VisionCore.Exporters) == exporters
   end
 
-  test "the core starts the parameter storage and registry, the outputs registry, then the ROS 2 link, before the Port servers" do
+  test "the core starts the parameter storage and registry, the outputs registry, the calibration tasks, then the ROS 2 link, before the Port servers" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2 ++ [simulator_clock: [acquire_timeout_ms: 10]]
     })
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 9) == [
+    assert Enum.take(ids, 10) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
+             VisionCore.Calibration.Tasks,
              Ros2Zenoh.Client,
              VisionCore.Ros2.Parameters,
              VisionCore.Ros2.Topics,
@@ -470,6 +473,109 @@ defmodule VisionCore.ApplicationTest do
         Process.sleep(20)
         crash_loop(exporter, child)
     end
+  end
+
+  # Idle cameras without a calibration file; the commits write to `<tmp_dir>/calibration`.
+  defp start_uncalibrated_unit(tmp_dir) do
+    idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
+    {:stereo, options} = stereo_component(idle, idle, startup_timeout_ms: 60_000)
+
+    stereo =
+      Keyword.merge(options,
+        calibration_dir: Path.join(tmp_dir, "calibration"),
+        left: Keyword.delete(options[:left], :calibration_path),
+        right: Keyword.delete(options[:right], :calibration_path)
+      )
+
+    config = %VisionCore.Config{components: [stereo: stereo]}
+    start_pipeline(config)
+    config
+  end
+
+  defp fixture_calibrations do
+    Map.new([:left, :right], fn side ->
+      {side, CameraCalibration.load!(Path.join(@calibration_dir, "stereo_#{side}.yaml"))}
+    end)
+  end
+
+  defp stereo_child_ids, do: stereo_processes() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
+
+  test "with a :stereo component, the calibration session starts after the exporters, before Status",
+       %{tmp_dir: tmp_dir} do
+    start_idle_unit(tmp_dir)
+
+    assert Enum.take(child_ids(VisionCore.Supervisor), 4) == [
+             VisionCore.Preview,
+             VisionCore.Status,
+             VisionCore.Calibration.Session,
+             VisionCore.Exporters
+           ]
+  end
+
+  test "without a :stereo component, no calibration session starts" do
+    start_pipeline(%VisionCore.Config{})
+
+    refute VisionCore.Calibration.Session in child_ids(VisionCore.Supervisor)
+  end
+
+  test "a restart of the components leaves a running commit's task alive", %{tmp_dir: tmp_dir} do
+    start_idle_unit(tmp_dir)
+
+    task =
+      Task.Supervisor.async_nolink(VisionCore.Calibration.Tasks, fn ->
+        Process.sleep(:infinity)
+      end)
+
+    stereo = Process.whereis(VisionCore.Stereo.Supervisor)
+
+    Process.exit(stereo, :kill)
+    wait_for_restart(VisionCore.Stereo.Supervisor, stereo)
+
+    assert Process.alive?(task.pid)
+    Task.shutdown(task, :brutal_kill)
+  end
+
+  test "an uncalibrated stereo unit runs its cameras alone, and a commit restarts it with its pipeline",
+       %{tmp_dir: tmp_dir} do
+    config = start_uncalibrated_unit(tmp_dir)
+
+    assert stereo_child_ids() == [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
+    refute VisionCore.Status.snapshot().calibrated
+    status = Process.whereis(VisionCore.Status)
+    exporters = Process.whereis(VisionCore.Exporters)
+    session = Process.whereis(VisionCore.Calibration.Session)
+
+    assert :ok = Calibration.commit(config, fixture_calibrations())
+
+    assert VisionCore.Stereo.Supervisor |> child_ids() |> Enum.reverse() == [
+             {:stereo, :driver, :left},
+             {:stereo, :driver, :right},
+             VisionCore.Stereo.Pipeline,
+             VisionCore.Stereo.Pairer,
+             VisionCore.Stereo.AlignmentCorrection,
+             {:stereo, :parameters}
+           ]
+
+    assert VisionCore.Status.snapshot().calibrated
+    assert Process.whereis(VisionCore.Status) == status
+    assert Process.whereis(VisionCore.Exporters) == exporters
+    assert Process.whereis(VisionCore.Calibration.Session) == session
+  end
+
+  test "an uncalibrated stereo unit whose pipeline refuses a commit runs its cameras alone again, without the files",
+       %{tmp_dir: tmp_dir} do
+    config = start_uncalibrated_unit(tmp_dir)
+
+    # A projection that is not 3×4.
+    calibrations =
+      Map.new(fixture_calibrations(), fn {side, calibration} ->
+        {side, %{calibration | projection_matrix: [1.0]}}
+      end)
+
+    assert {:error, message} = Calibration.commit(config, calibrations)
+    assert message == "the stereo unit did not start with this calibration; the log says why"
+    assert File.ls!(Path.join(tmp_dir, "calibration")) == []
+    assert stereo_child_ids() == [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
   end
 
   test "a ROS 2 exporter that keeps crashing stops alone: the stereo unit runs on as it was",

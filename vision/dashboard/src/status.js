@@ -8,6 +8,9 @@ import { HINTS } from './hints.js'
 
 export const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))
 
+/** A length in metres, shown in millimetres. */
+export const millimetres = (metres) => (metres == null ? '–' : `${formatNumber(metres * 1000)} mm`)
+
 export function cameraFigures(camera) {
   if (!camera || !camera.present) return [{ label: 'camera', value: 'absent', tone: 'error', hint: HINTS.cameraRate }]
   const figures = [
@@ -124,9 +127,16 @@ function ros2Status(exporters) {
   ]
 }
 
+// Shown only on a unit without a calibration, which computes no depth.
+function calibrationStatus(calibrated) {
+  if (calibrated !== false) return []
+  return [{ id: 'calibration', title: 'Calibration', value: 'uncalibrated', healthy: false, hint: HINTS.calibration }]
+}
+
 /** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
+    ...calibrationStatus(status.calibrated),
     ...ros2Status(status.exporters),
     // Absent is a unit built without an accelerator, not a fault.
     {

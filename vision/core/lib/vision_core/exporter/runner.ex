@@ -3,11 +3,13 @@ defmodule VisionCore.Exporter.Runner do
   Runs a `VisionCore.Exporter`: starts it, subscribes to the outputs it
   names through `VisionCore.Outputs`, hands it the newest value of each,
   at most each output's `:max_hz` times a second and only while it is
-  not busy with that output, passes it the messages sent to the runner
-  with `send/2`, answers its status by a deadline (`status/2`), and
-  runs its actions (`action/4`). Casts that are not outputs are dropped,
-  and calls other than `status/2`'s and `action/4`'s answered
-  `{:error, :unknown_call}`.
+  not busy with that output, answers its status by a deadline
+  (`status/2`), and runs its actions (`action/4`). It passes the
+  exporter's `c:VisionCore.Exporter.handle_info/2` the messages sent to
+  the runner with `send/2` and the casts that are not outputs, such as
+  those of the keys the exporter subscribed to from its
+  `c:VisionCore.Exporter.init/1`. Calls other than `status/2`'s and
+  `action/4`'s are answered `{:error, :unknown_call}`.
 
   When the runner takes a value from its mailbox, the newest value of
   the same output waiting there replaces it, so a slow exporter skips
@@ -155,7 +157,7 @@ defmodule VisionCore.Exporter.Runner do
   @impl GenServer
   def handle_cast(message, state) do
     case route(message, state.routes) do
-      nil -> {:noreply, state}
+      nil -> handle_message(message, state)
       output -> {:noreply, offer(state, output, newest(output, payload(message)))}
     end
   end
@@ -178,9 +180,11 @@ defmodule VisionCore.Exporter.Runner do
 
   def handle_info({:EXIT, _pid, :normal}, state), do: {:noreply, state}
   def handle_info({:EXIT, _pid, reason}, state), do: {:stop, reason, state}
-  def handle_info(_message, %{started: false} = state), do: {:noreply, state}
+  def handle_info(message, state), do: handle_message(message, state)
 
-  def handle_info(message, %{exporter: exporter} = state) do
+  defp handle_message(_message, %{started: false} = state), do: {:noreply, state}
+
+  defp handle_message(message, %{exporter: exporter} = state) do
     if function_exported?(exporter, :handle_info, 2) do
       case exporter.handle_info(message, state.exporter_state) do
         {:ok, exporter_state} ->

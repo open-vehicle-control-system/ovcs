@@ -13,10 +13,10 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 
 | Layer | Path | What it is |
 |---|---|---|
-| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
-| API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
+| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), the cameras' calibration, detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
+| API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters, the calibration and the active configuration as JSON:API resources, with channels that stream status, camera previews and the calibration session. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5` and `okdo_c100` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, the unit as its pipeline with each box's parameters, and the cameras' calibration. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
 
 ## Opting in
@@ -54,6 +54,7 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 The stereo stages turn each pair of camera frames into a disparity, the horizontal shift of each point between the two images, then a depth image and a point cloud; [Stereo vision basics](./basics.md) explains the principle, from the lens up. Where they run depends on the board: on the C100's GPU, compiled from Nx, or on the Raspberry Pi 5's CPU cores, in native code. The guides of this section explain them:
 
 - [Stereo vision basics](./basics.md): lens, baseline, rectification, disparity, depth and point cloud, with diagrams and a worked example.
+- [Calibrate the cameras](./calibration.md): from the dashboard or with ROS 2's `cameracalibrator`, where the unit keeps the calibration, and how to ship it in your vehicle package.
 - [How a pair flows](./data_flow.md): the processes a pair goes through, from the cameras to the ROS 2 topics and the dashboard.
 - [Stereo stages](./stages.md): what each stage does, what it reads and fills, and its settings.
 - [Where depth is computed](./compute.md): Nx, `nx_iree`, the `stereo_match` Port, and how each uses the GPU, the CPU cores and memory.
@@ -85,6 +86,8 @@ http://<vehicle>-vision.local:4100
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
 On a unit with detection, the left video outlines each detected object with its label and distance, and its caption counts them. An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.
+
+The Calibration page shows the calibration the cameras use and where it comes from, returns to the built-in one, and calibrates the cameras from views of a chessboard with the unit alone ([Calibrate the cameras](./calibration.md)). A unit without a calibration runs its cameras without depth, and the top bar reads uncalibrated until one is applied.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right; a band with too little matched texture to measure shows a dash. A calibration that still fits the cameras reads within half a row; a larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 

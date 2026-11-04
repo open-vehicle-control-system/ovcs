@@ -131,4 +131,14 @@ describe('UnitStatus and the pair status', () => {
     expect(widest('segment')).toBe('100 %')
     for (const id of ['ros2', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
   })
+
+  it('says an uncalibrated unit is uncalibrated, and nothing about a calibrated one', () => {
+    show({ ...snapshot, calibrated: false })
+    expect(card('calibration').textContent).toContain('uncalibrated')
+    expect(card('calibration').querySelector('.ovcs-status--error')).not.toBeNull()
+    cleanup()
+
+    show({ ...snapshot, calibrated: true })
+    expect(card('calibration')).toBeNull()
+  })
 })

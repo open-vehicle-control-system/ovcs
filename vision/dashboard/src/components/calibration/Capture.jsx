@@ -1,0 +1,145 @@
+import { useId, useState } from 'react'
+import { focusClass as FOCUS } from '@ovcs/ui/react'
+import Preview from '../Preview.jsx'
+import CornerOverlay from './CornerOverlay.jsx'
+import Coverage from './Coverage.jsx'
+import Section from './Section.jsx'
+import { SessionError } from './Errors.jsx'
+import { useCalibration } from '../../stores/calibration.js'
+import { loadBoard, saveBoard } from '../../services/calibration.js'
+import { BUTTON, PRIMARY } from '../../styles.js'
+
+const FIELDS = [
+  { key: 'columns', label: 'Inner corners (columns)', step: 1, valid: (count) => Number.isInteger(count) && count >= 2 },
+  { key: 'rows', label: 'Inner corners (rows)', step: 1, valid: (count) => Number.isInteger(count) && count >= 2 },
+  { key: 'squareMm', label: 'Square size (mm)', step: 'any', valid: (millimetres) => millimetres > 0 }
+]
+
+const LEFT_CORNERS = <CornerOverlay side="left" />
+const RIGHT_CORNERS = <CornerOverlay side="right" />
+
+const asFields = (board) => Object.fromEntries(FIELDS.map(({ key }) => [key, String(board[key])]))
+
+const BOARD_RULE = 'Columns and rows must be different whole numbers of 2 or more; the square size must be above 0.'
+
+// The board the fields describe, or null while the unit cannot detect it; equal counts make its orientation ambiguous.
+function boardOf(fields) {
+  const board = Object.fromEntries(FIELDS.map(({ key }) => [key, fields[key].trim() === '' ? NaN : Number(fields[key])]))
+  return FIELDS.every(({ key, valid }) => valid(board[key])) && board.columns !== board.rows ? board : null
+}
+
+/** The board to look for, in inner corners, remembered in this browser; Start begins capturing. */
+export function BoardForm() {
+  const id = useId()
+  const [fields, setFields] = useState(() => asFields(loadBoard()))
+  const busy = useCalibration((state) => state.busy)
+  const start = useCalibration((state) => state.start)
+  const board = boardOf(fields)
+
+  const submit = (event) => {
+    event.preventDefault()
+    if (!board) return
+    saveBoard(board)
+    start(board)
+  }
+
+  return (
+    <Section title="Calibrate">
+      <p className="text-sm text-ovcs-muted">
+        Count the inner corners, where four squares meet, not the squares: a board of 9 × 7 squares has 8 × 6 inner
+        corners.
+      </p>
+      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
+        {FIELDS.map(({ key, label, step }) => (
+          <label key={key} htmlFor={`${id}-${key}`} className="flex flex-col gap-1 text-sm">
+            <span className="text-ovcs-muted">{label}</span>
+            <input
+              id={`${id}-${key}`}
+              type="number"
+              inputMode={step === 1 ? 'numeric' : 'decimal'}
+              min={step === 1 ? 2 : 0}
+              step={step}
+              required
+              value={fields[key]}
+              onChange={(event) => setFields((current) => ({ ...current, [key]: event.target.value }))}
+              className={`min-h-9 w-36 rounded border border-ovcs-border bg-ovcs-bg px-2 tabular-nums ${FOCUS}`}
+            />
+          </label>
+        ))}
+        <button type="submit" disabled={busy || !board} aria-describedby={board ? undefined : `${id}-rule`} className={PRIMARY}>
+          Start
+        </button>
+      </form>
+      {board ? null : (
+        <p id={`${id}-rule`} className="text-sm text-ovcs-error-text">
+          {BOARD_RULE}
+        </p>
+      )}
+    </Section>
+  )
+}
+
+// Shown while neither camera finds the board: the usual cause is a board entered in squares.
+function BoardHint() {
+  const searching = useCalibration((state) => !state.session?.detection?.left && !state.session?.detection?.right)
+  const columns = useCalibration((state) => state.session?.board?.columns)
+  const rows = useCalibration((state) => state.session?.board?.rows)
+
+  return searching ? (
+    <p role="status" className="text-sm text-ovcs-muted">
+      {`Looking for a board with ${columns} × ${rows} inner corners, which is ${columns + 1} × ${rows + 1} squares.`}
+    </p>
+  ) : null
+}
+
+/** Both cameras with the board corners found, the samples' coverage, then Calibrate once it is good enough. */
+export function Capturing({ socket }) {
+  const goodEnough = useCalibration((state) => state.session?.goodEnough === true)
+  const busy = useCalibration((state) => state.busy)
+  const solve = useCalibration((state) => state.solve)
+  const cancel = useCalibration((state) => state.cancel)
+
+  return (
+    <Section title="Calibrate">
+      <p className="text-sm text-ovcs-muted">
+        Hold the board in view of both cameras and move it: across the image, nearer and farther, tilted. A view becomes
+        a sample when it differs enough from the ones kept.
+      </p>
+      <BoardHint />
+      <div className="grid gap-3 md:grid-cols-2">
+        <Preview stream="left" socket={socket} overlay={LEFT_CORNERS} />
+        <Preview stream="right" socket={socket} overlay={RIGHT_CORNERS} />
+      </div>
+      <Coverage />
+      <SessionError />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
+          Calibrate
+        </button>
+        <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
+          Cancel
+        </button>
+      </div>
+    </Section>
+  )
+}
+
+/** The unit computing the calibration from the samples; Cancel goes back to the board. */
+export function Solving() {
+  const samples = useCalibration((state) => state.session?.samples ?? 0)
+  const busy = useCalibration((state) => state.busy)
+  const cancel = useCalibration((state) => state.cancel)
+
+  return (
+    <Section title="Calibrate">
+      <p role="status" className="text-sm">
+        {`Calibrating from ${samples} samples…`}
+      </p>
+      <div>
+        <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
+          Cancel
+        </button>
+      </div>
+    </Section>
+  )
+}

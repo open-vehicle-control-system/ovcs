@@ -18,6 +18,7 @@ defmodule VisionApiWeb.StatusJSONTest do
       },
       sync: %{present: true, pairs: 150, offset_max_ms: 0.7, offset_median_ms: -0.01},
       hailo: :absent,
+      calibrated: true,
       depth_hz: 29.9,
       cpu_percent: 61.0,
       stereo_segment_percent: 96.5,
@@ -41,6 +42,7 @@ defmodule VisionApiWeb.StatusJSONTest do
              },
              sync: %{present: true, pairs: 150, offsetMaxMs: 0.7, offsetMedianMs: -0.01},
              hailo: "absent",
+             calibrated: true,
              depthHz: 29.9,
              cpuPercent: 61.0,
              stereoLoadPercent: 96.5,
@@ -63,6 +65,7 @@ defmodule VisionApiWeb.StatusJSONTest do
       cameras: %{left: %{present: false}, right: %{present: false}},
       sync: %{present: false},
       hailo: :running,
+      calibrated: false,
       depth_hz: 0.0,
       cpu_percent: nil,
       stereo_segment_percent: 0.0,
@@ -79,6 +82,7 @@ defmodule VisionApiWeb.StatusJSONTest do
              sharpness: nil,
              quality: nil,
              hailo: "running",
+             calibrated: false,
              exporters: []
            } = StatusJSON.status(snapshot)
   end

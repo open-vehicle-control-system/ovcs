@@ -37,12 +37,12 @@ defmodule VisionCore.Ros2.Exporter do
   commit stored first, as the stereo unit reads it. A restart publishes
   the calibration in force.
 
-  It answers `cameracalibrator`'s COMMIT for each side with a
-  calibration path: a `VisionCore.Ros2.Services.SetCameraInfoServer`, a
-  helper under its supervisor, writes the calibration to the stereo
-  unit's store, or without one to the side's calibration path, has the
-  stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
-  exporter, which reads its camera info again.
+  It answers `cameracalibrator`'s COMMIT for each side: a
+  `VisionCore.Ros2.Services.SetCameraInfoServer`, a helper under its
+  supervisor, commits the calibration through
+  `VisionCore.Stereo.Calibration`. Each change of the stereo unit's
+  calibration, from COMMIT or the dashboard, has the exporter read its
+  camera info again (`VisionCore.Stereo.Calibration.changed_key/1`).
 
   ## Options
 
@@ -72,10 +72,11 @@ defmodule VisionCore.Ros2.Exporter do
 
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias VisionCore.Camera.Frame
+  alias VisionCore.Outputs
   alias VisionCore.Ros2.Exporter.{Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Topics}
-  alias VisionCore.Stereo.{Pair, StageTimer}
+  alias VisionCore.Stereo.{Calibration, Pair, StageTimer}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @heartbeat_topic "ovcs_heartbeat"
@@ -130,50 +131,25 @@ defmodule VisionCore.Ros2.Exporter do
         Keyword.take(cameras, [:driver, :fps, :left, :right]) ++
           [topic_prefix: topic_prefix, publish: publish_function(options)]
 
-      [{Diagnostics, diagnostics} | set_camera_info_children(cameras, topic_prefix, options)]
+      [{Diagnostics, diagnostics} | set_camera_info_children(topic_prefix, options)]
     else
       _nothing_to_publish -> []
     end
   end
 
-  defp set_camera_info_children(cameras, topic_prefix, options) do
+  defp set_camera_info_children(topic_prefix, options) do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
-    for {side, path} <- writable_calibration_paths(cameras) do
+    for side <- [:left, :right] do
       Supervisor.child_spec(
         {SetCameraInfoServer,
-         service_name: set_camera_info_service(topic_prefix, side),
-         calibration_path: path,
-         camera_name: "#{cameras[:prefix]}_#{side}",
-         reload: reload_callback(cameras),
+         service_name: "#{topic_prefix}/#{side}/set_camera_info",
+         side: side,
+         config: config(options),
          register_service: register_service},
         id: {SetCameraInfoServer, side}
       )
-    end
-  end
-
-  # Where a commit writes each side's calibration: the stereo unit's store, else its calibration path.
-  defp writable_calibration_paths(cameras) do
-    for side <- [:left, :right],
-        path =
-          Keyword.get(cameras[side], :calibration_store_path, cameras[side][:calibration_path]),
-        do: {side, path}
-  end
-
-  defp set_camera_info_service(topic_prefix, side), do: "#{topic_prefix}/#{side}/set_camera_info"
-
-  # Once both sides are stored the stereo unit reloads from its store; without one, from its own paths.
-  defp reload_callback(cameras) do
-    pipeline = VisionCore.Stereo.Pipeline
-
-    case {cameras[:left][:calibration_store_path], cameras[:right][:calibration_store_path]} do
-      {nil, nil} ->
-        {StereoSupervisor, :reload_calibration, [pipeline, cameras[:prefix]]}
-
-      {left_store, right_store} ->
-        {StereoSupervisor, :reload_stored_calibration,
-         [pipeline, cameras[:prefix], left_store, right_store]}
     end
   end
 
@@ -195,7 +171,7 @@ defmodule VisionCore.Ros2.Exporter do
         last_pair_at_ns: nil
       }
 
-      if stereo, do: notify_on_commit(options[:stereo], cameras)
+      if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
       if state.heartbeat, do: Process.send_after(self(), :heartbeat, state.heartbeat.interval_ms)
       {:ok, state}
     end
@@ -236,18 +212,6 @@ defmodule VisionCore.Ros2.Exporter do
     )
 
     {:ok, stereo}
-  end
-
-  # The servers outlive the runner's restarts: each start tells them where to send.
-  defp notify_on_commit(stereo_options, {:ok, cameras}) do
-    topic_prefix = Keyword.get(stereo_options, :topic_prefix, cameras[:prefix])
-
-    for {side, _path} <- writable_calibration_paths(cameras) do
-      topic_prefix
-      |> set_camera_info_service(side)
-      |> SetCameraInfoServer.name_for()
-      |> SetCameraInfoServer.notify(self())
-    end
   end
 
   defp start_detections(options, cameras) do
@@ -344,7 +308,7 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, %{state | heartbeat: %{heartbeat | counter: counter}}}
   end
 
-  def handle_info({:calibration_committed, _service_name}, %{stereo: stereo} = state)
+  def handle_info({:stereo_calibration_changed, _prefix}, %{stereo: stereo} = state)
       when stereo != nil do
     case StereoSupervisor.camera_options(state.config) do
       {:ok, cameras} ->

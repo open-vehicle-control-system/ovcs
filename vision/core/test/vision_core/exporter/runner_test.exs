@@ -260,6 +260,29 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  # Subscribes from its init/1 to a key that is none of its outputs, and tells the test what it is sent.
+  defmodule Subscribing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(options) do
+      :ok = Outputs.subscribe({:stereo_calibration, "runner_test"})
+      {:ok, Keyword.fetch!(options, :test)}
+    end
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, test), do: {:ok, test}
+
+    @impl VisionCore.Exporter
+    def handle_info(message, test) do
+      send(test, {:handed, message})
+      {:ok, test}
+    end
+  end
+
   defp config(components \\ [{:stereo, driver: Camera, left: [], right: []}, :detector]),
     do: %VisionCore.Config{components: components}
 
@@ -746,6 +769,17 @@ defmodule VisionCore.Exporter.RunnerTest do
 
     assert_receive :ticked
     assert {:ok, _running} = Runner.status(forwarder)
+  end
+
+  test "hands the exporter a publication it subscribed to that is none of its outputs, through its handle_info/2" do
+    start_runner(Subscribing, [])
+
+    Outputs.publish(
+      {:stereo_calibration, "runner_test"},
+      {:stereo_calibration_changed, "runner_test"}
+    )
+
+    assert_receive {:handed, {:stereo_calibration_changed, "runner_test"}}
   end
 
   test "calls the exporter's terminate/2 when its supervisor shuts it down" do

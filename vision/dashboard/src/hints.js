@@ -75,6 +75,12 @@ export const HINTS = {
       "The ROS 2 exporter's link to the Zenoh router that carries its topics. Disconnected, nothing reaches ROS 2. " +
       'Its page, under Exporters, lists the topics and their rates.'
   },
+  calibration: {
+    title: 'Calibration',
+    text:
+      'The unit has no calibration for its cameras, so it computes no depth. Calibrate them on the Calibration ' +
+      'page: depth starts once a calibration is applied.'
+  },
   connection: {
     title: 'Connection',
     text:
