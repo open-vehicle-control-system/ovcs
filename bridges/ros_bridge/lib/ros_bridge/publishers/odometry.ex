@@ -68,6 +68,16 @@ defmodule RosBridge.Publishers.Odometry do
   same reason: the vehicle's path during the outage is unknown, and a
   silent position jump is worse than a pause.
 
+  ## Range readings wait for odometry
+
+  `RosBridge.Publishers.Range` publishes a reading only while
+  `publishing?/1` holds. Nav2's `RangeSensorLayer` waits on each reading
+  it cannot place in `odom` until its transform tolerance runs out; a
+  stream of readings across a gap in `odom → base_link`, a VMS reboot
+  say, leaves it further behind with every reading and its costmaps stop
+  publishing. Laser scans go through Nav2's message filters, which drop
+  what they cannot place, and are not held back.
+
   ## Options
 
     * `:topic` (`"odom"`), `:odom_frame_id` (`"odom"`),
@@ -142,6 +152,7 @@ defmodule RosBridge.Publishers.Odometry do
       twist_covariance: diagonal(Keyword.get(opts, :twist_variance, @default_twist_variance))
     }
 
+    open_record()
     :ok = Receiver.subscribe(self(), :ovcs, VehicleMotion.frame_name())
     driver.register_listener(self())
 
@@ -179,8 +190,10 @@ defmodule RosBridge.Publishers.Odometry do
         at_ms: received_at_ms
       })
 
-    if next_state.sequence != state.sequence and publishable?(next_state, received_at_ms),
-      do: publish(next_state)
+    if next_state.sequence != state.sequence and publishable?(next_state, received_at_ms) do
+      publish(next_state)
+      record_published(next_state, received_at_ms)
+    end
 
     {:noreply, next_state}
   end
@@ -264,6 +277,29 @@ defmodule RosBridge.Publishers.Odometry do
     state.speed_valid and not is_nil(state.yaw) and not is_nil(state.last_fresh_at_ms) and
       now_ms - state.last_fresh_at_ms <= state.stale_after_ms
   end
+
+  @doc """
+  Whether `odom → base_link` went out within the publisher's
+  `:stale_after_ms` of `now_ms` (monotonic milliseconds). True where no
+  odometry publisher runs, so a vehicle without one publishes its range
+  readings as they come.
+  """
+  def publishing?(now_ms \\ now_ms()) do
+    case :ets.lookup(__MODULE__, :published) do
+      [{:published, at_ms, stale_after_ms}] -> now_ms - at_ms <= stale_after_ms
+      [] -> false
+    end
+  rescue
+    # No table: no odometry publisher.
+    ArgumentError -> true
+  end
+
+  @doc false
+  def open_record, do: :ets.new(__MODULE__, [:named_table, read_concurrency: true])
+
+  @doc false
+  def record_published(%State{stale_after_ms: stale_after_ms}, at_ms),
+    do: :ets.insert(__MODULE__, {:published, at_ms, stale_after_ms})
 
   @doc """
   The yaw of a quaternion. Planar odometry: the pose's orientation
