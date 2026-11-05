@@ -13,7 +13,7 @@ The codecs are pure Elixir. `Ros2Zenoh.Client` holds the one [`zenohex`](https:/
 | `Ros2Zenoh.Cdr` | Lower-level CDR helpers shared by the codecs |
 | `Ros2Zenoh.RmwZenoh` | Key expressions, the encapsulation header, publisher attachments and liveliness tokens |
 | `Ros2Zenoh.RclInterfaces.Parameters` | The `rcl_interfaces` parameter services, for a node that serves parameters |
-| `Ros2Zenoh.Client` | The session: connects to the router and reconnects, publishes (encoding in the caller), subscribes, answers services and declares the liveliness tokens that make all of them visible in the ROS graph. With `config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}`, as the Nerves firmwares set it, it publishes nothing until the board's clock is synchronized |
+| `Ros2Zenoh.Client` | The session: connects to the router and reconnects, publishes (encoding in the caller), subscribes, answers services and declares the liveliness tokens that make all of them visible in the ROS graph. With `config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}`, as the Nerves firmwares set it, it publishes nothing until the board's clock is synchronized. Images and point clouds go out at a lower Zenoh priority than every other message (`Ros2Zenoh.priority/1`) |
 
 The packages are `builtin_interfaces`, `diagnostic_msgs`, `foxglove_msgs`, `geometry_msgs`, `nav_msgs`, `rosgraph_msgs`, `sensor_msgs`, `std_msgs`, `stereo_msgs`, `tf2_msgs`, `vision_msgs` and `visualization_msgs`, each with the message types something here publishes or reads; `lib/ros2_zenoh/` lists them. Type hashes are those of ROS 2 Lyrical.
 

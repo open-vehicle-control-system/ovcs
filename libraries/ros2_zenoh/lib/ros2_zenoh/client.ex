@@ -1021,7 +1021,10 @@ defmodule Ros2Zenoh.Client do
     gid = RmwZenoh.random_gid()
 
     with {:ok, %Zenohex.Session.Info{zid: zid}} <- Zenohex.Session.info(state.session),
-         {:ok, publisher_id} <- Zenohex.Session.declare_publisher(state.session, key_expr, []),
+         {:ok, publisher_id} <-
+           Zenohex.Session.declare_publisher(state.session, key_expr,
+             priority: Ros2Zenoh.priority(message_module)
+           ),
          liveliness_key <-
            RmwZenoh.liveliness_key(
              state.domain_id,
