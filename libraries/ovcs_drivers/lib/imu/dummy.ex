@@ -38,7 +38,11 @@ defmodule OvcsDrivers.Imu.Dummy do
 
   @impl GenServer
   def handle_info(:loop, state) do
+    now_ns = System.monotonic_time(:nanosecond)
+
     Enum.each(@samples, fn sample ->
+      sample = %{sample | captured_at_ns: now_ns, received_at_ns: now_ns}
+
       Enum.each(state.listeners, fn listener ->
         GenServer.cast(listener, {:imu_sample, sample})
       end)

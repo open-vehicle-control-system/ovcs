@@ -109,6 +109,14 @@ Order matters where one component reads another: `:odometry_publisher` comes aft
 - **The router's address.** On the target, `ZENOH_ENDPOINT_IP` at firmware build time sets `:zenoh_endpoint_ip`; your vehicle's `.env.exs` sets it to the compute node's address. Without a `.env.exs` the build fails, because the image would fall back to `127.0.0.1` and reach no router.
 - **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini's is `ovcs_bridge_ros`, next to its vision unit's `ovcs_vision`.
 
+## BNO085 reporting
+
+The BNO085 driver enables acceleration, calibrated angular velocity and the game rotation vector at 50 Hz by default. The game vector excludes the magnetometer, so heading is relative and still needs an external position/heading reference for long runs. The driver watches each report independently, retries missing enables and resets an unresponsive stream. A reset changes the sample's orientation reference.
+
+Samples retain calibration accuracy, sequence and local monotonic capture/receipt times. SH-2 base/rebase and delay fields correct the capture estimate, but the I²C polling time is its anchor; hardware interrupt timing and wheel/IMU clock alignment still require measurement. Accuracy is a sensor status, not a covariance estimate. Keep the vehicle stationary during startup calibration and inspect the status and gyro bias before driving.
+
+Driver options include `report_interval_us`, `poll_interval_ms`, `max_packets_per_poll` and `stream_timeout_ms`; pass them as `driver_opts` on `:imu_publisher`. Verify real stream rates and I²C load before selecting 100 Hz.
+
 ## Check it end to end
 
 With `./ovcs run <vehicle>` going and the local ROS 2 stack up, the bridge's `/ovcs_heartbeat` appears in `ros2 topic list` and in Foxglove. [Verifying end to end](../ros2/README.md#verifying-end-to-end) has the commands.

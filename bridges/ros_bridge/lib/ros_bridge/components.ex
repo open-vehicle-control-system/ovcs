@@ -40,6 +40,7 @@ defmodule RosBridge.Components do
       `RosBridge.Publishers.Imu`. Opts:
         * `:driver` (required, module — `OvcsDrivers.Imu.Dummy`,
           `BNO085.I2C`, etc.)
+        * `:driver_opts` — forwarded to the driver.
         * `:topic`, `:frame_id`, `:publish_interval_ms` — forwarded
           to `RosBridge.Publishers.Imu` (see its defaults).
     * `:lidar_publisher` — starts the named driver (any
@@ -122,7 +123,7 @@ defmodule RosBridge.Components do
 
   def start(:imu_publisher, opts) do
     driver = Keyword.fetch!(opts, :driver)
-    [{driver, []}, {RosBridge.Publishers.Imu, opts}]
+    [{driver, Keyword.get(opts, :driver_opts, [])}, {RosBridge.Publishers.Imu, opts}]
   end
 
   def start(:lidar_publisher, opts) do
