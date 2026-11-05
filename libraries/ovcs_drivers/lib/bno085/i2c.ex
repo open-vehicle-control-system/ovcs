@@ -13,6 +13,17 @@ defmodule BNO085.I2C do
   and the accelerometer alone: indoors, a magnetometer-corrected heading
   jumps tens of degrees near steel or a motor. The heading drifts slowly
   instead, relative to where the chip started.
+
+  Options: `:report_interval_us` (20_000), `:poll_interval_ms` (5),
+  `:max_packets_per_poll` (8), `:stream_timeout_ms` (500), and `:bus`
+  ("i2c-1"). Each requested stream is watched independently, with
+  bounded enable retries followed by a reset. A reset changes the
+  samples' orientation `reference`; consumers must not join headings
+  across it. Uncalibrated gyro reports are not enabled.
+
+  Capture times include SH-2 signed base/rebase and report delay, anchored
+  to the host poll time. Without an interrupt timestamp, polling and
+  transport latency remain; these are estimates, not hardware clock sync.
   """
   @behaviour OvcsDrivers.Imu
 
@@ -37,64 +48,54 @@ defmodule BNO085.I2C do
   @executable_channel 0x01
   @sensor_hub_control_channel 0x02
   @inport_sensor_reports_channel 0x03
-  # SH-2 Q-point scaling — see the BNO085 datasheet's "Sensor report
-  # data" section. Applied here so listeners receive SI units and
-  # never have to know the chip emits fixed-point int16s.
   @accelerometer_scale 1.0 / (1 <<< 8)
   @gyroscope_scale 1.0 / (1 <<< 9)
   @quaternion_scale 1.0 / (1 <<< 14)
-
-  # Reports we translate into `BNO085.Sample`s for listeners. Others
-  # (uncalibrated gyro, timebase, command responses, product-id) are
-  # still parsed for diagnostics but not broadcast.
   @imu_sample_ids [
     @accelerometer_report,
     @calibrated_gyroscope_report,
     @game_rotation_vector_report
   ]
-
-  # The chip announces "reset complete" at the *start* of its usable
-  # window, and silently drops feature commands sent in that instant.
-  # Draining the queue there is therefore not enough on its own: it
-  # was observed on a cold power-cycle to leave `chip_ready?: true`
-  # with an empty queue and not one report ever arriving — no error
-  # anywhere, just a topic that never appears. So we verify that the
-  # enables actually took, and re-send them if no report shows up.
   @enable_verify_ms 500
   @max_enable_attempts 5
-
-  # A chip that is absent, unpowered, or strapped to the other address
-  # never answers the reset, so `chip_ready?` stays false and the
-  # enable queue is never drained — the verification pass above would
-  # never even be scheduled. This is the backstop for that case.
   @chip_ready_timeout_ms 5_000
 
   @impl GenServer
-  def init(_args) do
-    {:ok, i2c} = Circuits.I2C.open("i2c-1")
-    :ok = GenServer.cast(self(), :reset)
-    {:ok, _} = :timer.send_interval(10, :loop)
-    Process.send_after(self(), :verify_chip_ready, @chip_ready_timeout_ms)
+  def init(opts) do
+    transport = Keyword.get(opts, :transport, Circuits.I2C)
+    {:ok, i2c} = transport.open(Keyword.get(opts, :bus, "i2c-1"))
+    state = new_state(i2c, opts)
+    GenServer.cast(self(), :reset)
+    Process.send_after(self(), :loop, state.poll_interval_ms)
+    {:ok, state}
+  end
 
-    {:ok,
-     %{
-       i2c: i2c,
-       listeners: [],
-       # The chip soft-resets at boot (see :reset cast in init) and
-       # silently drops feature-enable commands during its ~150 ms
-       # reboot window. We buffer enables until we see the executable
-       # channel's "reset complete" response, then drain the queue.
-       chip_ready?: false,
-       pending_enables: [],
-       # Sensors we have asked the chip to stream. Kept after sending
-       # so the verification pass can re-send the same set.
-       requested_enables: [],
-       # Flipped by the first broadcast sample and never cleared —
-       # it is the only proof the enables were actually accepted.
-       streaming?: false,
-       enable_attempts: 0,
-       verify_ref: nil
-     }}
+  @doc false
+  def new_state(i2c, opts) do
+    %{
+      i2c: i2c,
+      transport: Keyword.get(opts, :transport, Circuits.I2C),
+      report_interval_us: positive_option!(opts, :report_interval_us, 20_000),
+      poll_interval_ms: positive_option!(opts, :poll_interval_ms, 5),
+      max_packets_per_poll: positive_option!(opts, :max_packets_per_poll, 8),
+      stream_timeout_ms: positive_option!(opts, :stream_timeout_ms, 500),
+      listeners: [],
+      chip_ready?: false,
+      pending_enables: [],
+      requested_enables: [],
+      last_reports: %{},
+      reference: make_ref(),
+      enable_attempts: 0,
+      verify_ref: nil,
+      ready_ref: nil,
+      channel_sequences: %{}
+    }
+  end
+
+  defp positive_option!(opts, key, default) do
+    option = Keyword.get(opts, key, default)
+    if not is_integer(option) or option <= 0, do: raise(ArgumentError, "#{key} must be positive")
+    option
   end
 
   def start_link(args) do
@@ -200,9 +201,9 @@ defmodule BNO085.I2C do
          <<report_id::integer, report_data::binary>> = report_bytes,
          @inport_sensor_reports_channel
        )
-       when report_id == @timebase_reference_report and bit_size(report_bytes) >= 4 * 8 do
+       when report_id in [@timebase_reference_report, 0xFA] and byte_size(report_bytes) >= 5 do
     <<
-      base_delta::little-integer-size(32),
+      base_delta::little-signed-integer-size(32),
       rest::binary
     >> = report_data
 
@@ -279,7 +280,7 @@ defmodule BNO085.I2C do
          <<report_id::integer, report_data::binary>> = report_bytes,
          @sensor_hub_control_channel
        )
-       when report_id == @product_id_response and bit_size(report_bytes) >= 16 do
+       when report_id == @product_id_response and byte_size(report_bytes) >= 16 do
     <<
       reset_cause,
       sw_version_major,
@@ -384,138 +385,158 @@ defmodule BNO085.I2C do
   def handle_info(:verify_chip_ready, %{chip_ready?: true} = state), do: {:noreply, state}
 
   def handle_info(:verify_chip_ready, state) do
-    Logger.error(
-      "#{__MODULE__} no reset-complete response #{@chip_ready_timeout_ms}ms after boot — " <>
-        "#{length(state.pending_enables)} enable(s) still queued and nothing will stream. " <>
-        "Check the device answers at 0x#{Integer.to_string(@address, 16)} " <>
-        "(`Circuits.I2C.detect_devices(\"i2c-1\")`)."
-    )
-
-    {:noreply, state}
-  end
-
-  def handle_info(:verify_enables, %{streaming?: true} = state) do
-    {:noreply, %{state | verify_ref: nil}}
-  end
-
-  def handle_info(:verify_enables, %{requested_enables: []} = state) do
-    {:noreply, %{state | verify_ref: nil}}
+    Logger.error("#{__MODULE__} reset response missing; retrying reset")
+    handle_cast(:reset, state)
   end
 
   def handle_info(:verify_enables, state) do
-    attempts = state.enable_attempts + 1
-    state = %{state | verify_ref: nil, enable_attempts: attempts}
+    missing = missing_sensors(state, System.monotonic_time(:nanosecond))
+    state = %{state | verify_ref: nil}
 
-    if attempts >= @max_enable_attempts do
-      Logger.error(
-        "#{__MODULE__} no sensor reports after #{attempts} enable attempt(s) — " <>
-          "the chip is not streaming #{inspect(state.requested_enables)}. " <>
-          "Check the device answers at 0x#{Integer.to_string(@address, 16)} " <>
-          "(`Circuits.I2C.detect_devices(\"i2c-1\")`)."
-      )
+    cond do
+      state.requested_enables == [] ->
+        {:noreply, state}
 
-      {:noreply, state}
-    else
-      Logger.warning(
-        "#{__MODULE__} no sensor reports #{@enable_verify_ms}ms after enabling " <>
-          "#{inspect(state.requested_enables)}; re-sending (attempt #{attempts + 1})"
-      )
+      missing == [] ->
+        {:noreply, schedule_enable_verify(%{state | enable_attempts: 0})}
 
-      Enum.each(state.requested_enables, &send_enable(state, &1))
-      {:noreply, schedule_enable_verify(state)}
+      state.enable_attempts >= @max_enable_attempts ->
+        Logger.error("#{__MODULE__} sensor streams missing #{inspect(missing)}; resetting")
+        handle_cast(:reset, state)
+
+      true ->
+        Logger.warning("#{__MODULE__} enabling missing sensor streams #{inspect(missing)}")
+        state = Enum.reduce(missing, state, &send_enable(&2, &1))
+        {:noreply, schedule_enable_verify(%{state | enable_attempts: state.enable_attempts + 1})}
     end
   end
 
   def handle_info(:loop, state) do
-    with {:ok, header_bytes} <- Circuits.I2C.read(state.i2c, @address, 4) do
-      case parse_header_bytes(header_bytes) do
-        {:ok, nil} ->
-          {:noreply, state}
+    state = drain_packets(state, state.max_packets_per_poll)
+    Process.send_after(self(), :loop, state.poll_interval_ms)
+    {:noreply, state}
+  end
 
-        {:ok, %{cargo_length: cargo_length} = _header} when cargo_length > 0 ->
-          {:ok, cargo_bytes} = Circuits.I2C.read(state.i2c, @address, cargo_length)
-          {:ok, cargo} = parse_cargo(cargo_bytes)
+  defp drain_packets(state, 0), do: state
 
-          state =
-            case cargo do
-              nil ->
-                Logger.warning("#{__MODULE__} skip empty cargo")
-                state
+  defp drain_packets(state, remaining) do
+    received_at_ns = System.monotonic_time(:nanosecond)
 
-              _ ->
-                handle_cargo(state, cargo)
-            end
-
-          {:noreply, state}
-
-        _ ->
-          Logger.error("#{__MODULE__} header parsing error: #{header_bytes}")
-          {:noreply, state}
-      end
+    with {:ok, header_bytes} <- state.transport.read(state.i2c, @address, 4),
+         {:ok, %{cargo_length: length}} when length > 4 and length <= 4096 <-
+           parse_header_bytes(header_bytes),
+         {:ok, cargo_bytes} <- state.transport.read(state.i2c, @address, length),
+         true <- byte_size(cargo_bytes) == length,
+         {:ok, cargo} <- parse_cargo(cargo_bytes) do
+      state = if cargo, do: handle_cargo(state, cargo, received_at_ns), else: state
+      drain_packets(state, remaining - 1)
     else
-      {:error, error} ->
-        Logger.error("#{__MODULE__} I2C error: #{error |> inspect}")
-        {:noreply, state}
+      {:ok, nil} ->
+        state
+
+      _failure ->
+        state
     end
   end
 
-  # Per-cargo dispatch: pull out the bits we care about (IMU sensor
-  # samples, reset-complete on the executable channel) and ignore
-  # the rest. State threading lets the reset-complete path mark the
-  # chip ready and drain any enables the publisher queued before
-  # the device finished booting.
-  defp handle_cargo(state, cargo) do
-    state =
-      Enum.reduce(cargo.reports, state, fn report, acc ->
-        cond do
-          cargo.header.channel == @inport_sensor_reports_channel and
-              report.id in @imu_sample_ids ->
-            if broadcast_sample(acc, report), do: %{acc | streaming?: true}, else: acc
+  @doc false
+  def handle_cargo(
+        state,
+        %{header: %{channel: @inport_sensor_reports_channel}, reports: reports},
+        received_at_ns
+      )
+      when state.chip_ready? do
+    {state, _reference_delta} =
+      Enum.reduce(reports, {state, 0}, fn report, {state, reference_delta} ->
+        case report do
+          %{id: @timebase_reference_report, base_delta: delta} ->
+            {state, -delta}
 
-          cargo.header.channel == @executable_channel and
-            report.id == @reset_complete_response and
-              not acc.chip_ready? ->
-            Logger.info(
-              "#{__MODULE__} chip ready; draining #{length(acc.pending_enables)} pending enable(s)"
-            )
+          %{id: 0xFA, base_delta: delta} ->
+            {state, reference_delta + delta}
 
-            Enum.each(acc.pending_enables, &send_enable(acc, &1))
+          %{id: id} when id in @imu_sample_ids ->
+            {receive_sample(state, report, received_at_ns, reference_delta), reference_delta}
 
-            %{
-              acc
-              | chip_ready?: true,
-                pending_enables: [],
-                requested_enables: Enum.uniq(acc.requested_enables ++ acc.pending_enables),
-                enable_attempts: 0
-            }
-            |> schedule_enable_verify()
-
-          true ->
-            acc
+          _ ->
+            {state, reference_delta}
         end
       end)
 
     state
   end
 
-  # Returns true when a sample was actually broadcast, which is what
-  # tells `handle_cargo/2` the feature enables took effect.
-  defp broadcast_sample(state, report) do
-    sample = build_sample(report)
+  def handle_cargo(
+        state,
+        %{header: %{channel: @executable_channel}, reports: reports},
+        _received_at_ns
+      ) do
+    if Enum.any?(reports, &(&1.id == @reset_complete_response)) do
+      if state.ready_ref, do: Process.cancel_timer(state.ready_ref)
+      sensors = Enum.uniq(state.requested_enables ++ state.pending_enables)
 
-    if sample do
-      Enum.each(state.listeners, fn listener ->
-        GenServer.cast(listener, {:imu_sample, sample})
-      end)
+      state = %{
+        state
+        | chip_ready?: true,
+          pending_enables: [],
+          requested_enables: sensors,
+          last_reports: %{},
+          reference: make_ref(),
+          enable_attempts: 0,
+          ready_ref: nil,
+          channel_sequences: %{}
+      }
 
-      true
+      state = Enum.reduce(sensors, state, &send_enable(&2, &1))
+      schedule_enable_verify(state)
     else
-      false
+      state
     end
   end
 
-  # Exposed (with @doc false) so unit tests can exercise the
-  # Q-point scaling without standing up the GenServer.
+  def handle_cargo(state, _cargo, _received_at_ns), do: state
+
+  defp receive_sample(state, report, received_at_ns, reference_delta) do
+    previous = state.last_reports[report.id]
+
+    if previous && previous.sequence == report.sequence_number do
+      state
+    else
+      delay_ticks = ((report.status &&& 0xFC) <<< 6) + report.delay
+
+      captured_at_ns =
+        min(received_at_ns, received_at_ns + (reference_delta + delay_ticks) * 100_000)
+
+      sample = %{
+        build_sample(report)
+        | captured_at_ns: captured_at_ns,
+          received_at_ns: received_at_ns,
+          accuracy: report.status &&& 3,
+          sequence: report.sequence_number,
+          reference: state.reference
+      }
+
+      Enum.each(state.listeners, &GenServer.cast(&1, {:imu_sample, sample}))
+
+      %{
+        state
+        | last_reports:
+            Map.put(state.last_reports, report.id, %{
+              at_ns: captured_at_ns,
+              sequence: report.sequence_number
+            })
+      }
+    end
+  end
+
+  @doc false
+  def missing_sensors(state, now_ns) do
+    Enum.reject(state.requested_enables, fn sensor ->
+      report = state.last_reports[report_id(sensor)]
+      report && now_ns - report.at_ns <= state.stream_timeout_ms * 1_000_000
+    end)
+  end
+
   @doc false
   def build_sample(%{id: id, x: x, y: y, z: z}) when id == @accelerometer_report do
     %Sample{
@@ -548,63 +569,67 @@ defmodule BNO085.I2C do
 
   def build_sample(_), do: nil
 
-  # Verification pass: if nothing has streamed by the time this fires,
-  # the chip swallowed the feature commands — re-send them. Gives up
-  # after @max_enable_attempts with a loud error, because the silent
-  # version of this failure is a topic that simply never appears.
   defp schedule_enable_verify(state) do
     if state.verify_ref, do: Process.cancel_timer(state.verify_ref)
     %{state | verify_ref: Process.send_after(self(), :verify_enables, @enable_verify_ms)}
   end
 
+  defp report_id(:accelerometer), do: @accelerometer_report
+  defp report_id(:uncalibrated_gyroscope), do: @uncalibrated_gyroscope_report
+  defp report_id(:calibrated_gyroscope), do: @calibrated_gyroscope_report
+  defp report_id(:game_rotation_vector), do: @game_rotation_vector_report
+
   defp send_enable(state, sensor) do
-    report_id =
-      case sensor do
-        :accelerometer -> @accelerometer_report
-        :uncalibrated_gyroscope -> @uncalibrated_gyroscope_report
-        :calibrated_gyroscope -> @calibrated_gyroscope_report
-        :game_rotation_vector -> @game_rotation_vector_report
-      end
-
-    Logger.debug("#{__MODULE__} enable #{sensor}")
-
     send_command(
       state,
       @sensor_hub_control_channel,
-      <<@set_feature_request, report_id, 0x00, 0x00, 0x00, 0x60, 0xEA, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00>>
+      <<@set_feature_request, report_id(sensor), 0, 0, 0,
+        state.report_interval_us::little-unsigned-32, 0::64>>
     )
   end
 
-  def send_command(state, channel, data) do
-    cargo_length = byte_size(data) + 4
-    <<cargo_length_msb::8, cargo_length_lsb::8>> = <<cargo_length::16>>
-    sequence_number = 0x01
-    cargo = <<cargo_length_lsb, cargo_length_msb, channel, sequence_number, data::binary>>
-    Logger.debug("#{__MODULE__} send command #{inspect(cargo)}")
-    Circuits.I2C.write(state.i2c, @address, cargo)
+  defp send_command(state, channel, payload) do
+    sequence = Map.get(state.channel_sequences, channel, 0)
+    cargo_length = byte_size(payload) + 4
+    cargo = <<cargo_length::little-16, channel, sequence, payload::binary>>
+
+    case state.transport.write(state.i2c, @address, cargo) do
+      :ok -> :ok
+      {:error, reason} -> Logger.warning("#{__MODULE__} I2C write failed: #{inspect(reason)}")
+    end
+
+    %{
+      state
+      | channel_sequences: Map.put(state.channel_sequences, channel, rem(sequence + 1, 256))
+    }
   end
 
   @impl GenServer
   def handle_cast(:reset, state) do
-    send_command(state, @executable_channel, <<0x01>>)
-    {:noreply, state}
+    if state.verify_ref, do: Process.cancel_timer(state.verify_ref)
+    if state.ready_ref, do: Process.cancel_timer(state.ready_ref)
+    state = send_command(state, @executable_channel, <<0x01>>)
+
+    {:noreply,
+     %{
+       state
+       | chip_ready?: false,
+         last_reports: %{},
+         reference: make_ref(),
+         verify_ref: nil,
+         ready_ref: Process.send_after(self(), :verify_chip_ready, @chip_ready_timeout_ms)
+     }}
   end
 
   @impl GenServer
   def handle_cast(:request_product_id, state) do
-    send_command(state, @sensor_hub_control_channel, <<@product_id_request, 0x00>>)
-    {:noreply, state}
+    {:noreply, send_command(state, @sensor_hub_control_channel, <<@product_id_request, 0x00>>)}
   end
 
-  # If the chip has finished resetting, push the feature command
-  # straight to the bus; otherwise queue it for the reset-complete
-  # handler to drain. Buffering inside the driver means callers can
-  # `enable/0` from their own init/1 without racing the chip's boot.
   @impl GenServer
   def handle_cast({:enable, sensor}, state) do
     if state.chip_ready? do
-      send_enable(state, sensor)
+      state = send_enable(state, sensor)
 
       state = %{
         state
@@ -625,7 +650,6 @@ defmodule BNO085.I2C do
   @impl OvcsDrivers.Imu
   def enable do
     :ok = GenServer.cast(__MODULE__, {:enable, :accelerometer})
-    :ok = GenServer.cast(__MODULE__, {:enable, :uncalibrated_gyroscope})
     :ok = GenServer.cast(__MODULE__, {:enable, :calibrated_gyroscope})
     :ok = GenServer.cast(__MODULE__, {:enable, :game_rotation_vector})
     :ok

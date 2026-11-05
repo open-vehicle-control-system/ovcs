@@ -102,4 +102,126 @@ defmodule BNO085.I2CTest do
       assert_in_delta sample.z, -88 / 256, 1.0e-12
     end
   end
+
+  defmodule Transport do
+    @moduledoc false
+    def write(_bus, _address, bytes) do
+      send(self(), {:i2c_write, bytes})
+      :ok
+    end
+
+    def read(_bus, _address, _length) do
+      case Process.get(:i2c_reads, []) do
+        [packet | remaining] ->
+          Process.put(:i2c_reads, remaining)
+          packet
+
+        [] ->
+          {:error, :read_failed}
+      end
+    end
+  end
+
+  defp streaming_state do
+    %{
+      I2C.new_state(:bus, transport: Transport)
+      | chip_ready?: true,
+        listeners: [self()],
+        requested_enables: [:accelerometer, :calibrated_gyroscope, :game_rotation_vector]
+    }
+  end
+
+  defp cargo(reports), do: %{header: %{channel: 3}, reports: reports}
+
+  defp gyro(sequence, status \\ 3, delay \\ 0),
+    do: %{id: 2, sequence_number: sequence, status: status, delay: delay, x: 0, y: 0, z: 512}
+
+  test "timestamps include signed base, rebase and the high delay bits" do
+    bytes = <<9, 0, 3, 0, 0xFB, -10::little-signed-32>>
+    assert {:ok, %{reports: [%{base_delta: -10}]}} = I2C.parse_cargo(bytes)
+    reports = [%{id: 0xFB, base_delta: 300}, %{id: 0xFA, base_delta: 10}, gyro(1, 7, 2)]
+    state = streaming_state()
+    I2C.handle_cargo(state, cargo(reports), 1_000_000_000)
+    assert_receive {:"$gen_cast", {:imu_sample, sample}}
+    assert sample.captured_at_ns == 996_800_000
+    assert sample.received_at_ns == 1_000_000_000
+    assert sample.accuracy == 3
+    assert sample.sequence == 1
+    assert sample.reference == state.reference
+  end
+
+  test "duplicate reports cannot refresh sensor health" do
+    state = I2C.handle_cargo(streaming_state(), cargo([gyro(255)]), 0)
+    assert_receive {:"$gen_cast", {:imu_sample, _sample}}
+    state = I2C.handle_cargo(state, cargo([gyro(255)]), 600_000_000)
+    refute_receive {:"$gen_cast", {:imu_sample, _sample}}
+    assert :calibrated_gyroscope in I2C.missing_sensors(state, 600_000_000)
+    I2C.handle_cargo(state, cargo([gyro(0)]), 600_000_000)
+    assert_receive {:"$gen_cast", {:imu_sample, %Sample{sequence: 0}}}
+  end
+
+  test "one live report kind does not hide missing streams" do
+    state = I2C.handle_cargo(streaming_state(), cargo([gyro(1)]), 0)
+    assert I2C.missing_sensors(state, 100_000_000) == [:accelerometer, :game_rotation_vector]
+    assert length(I2C.missing_sensors(state, 501_000_000)) == 3
+  end
+
+  test "a runtime reset renews the orientation reference and reenables every requested stream" do
+    state = streaming_state()
+    reset = %{header: %{channel: 1}, reports: [%{id: 1}]}
+    next = I2C.handle_cargo(state, reset, 0)
+    assert next.reference != state.reference
+    assert next.last_reports == %{}
+    assert next.chip_ready?
+
+    for {id, sequence} <- [{1, 0}, {2, 1}, {8, 2}] do
+      assert_receive {:i2c_write,
+                      <<21, 0, 2, ^sequence, 0xFD, ^id, 0, 0, 0, 20_000::little-32, 0::64>>}
+    end
+
+    Process.cancel_timer(next.verify_ref)
+  end
+
+  test "repeated stream failures reset instead of abandoning recovery" do
+    {:noreply, state} =
+      I2C.handle_info(:verify_enables, %{streaming_state() | enable_attempts: 5})
+
+    refute state.chip_ready?
+    assert_receive {:i2c_write, <<5, 0, 1, 0, 1>>}
+    assert state.ready_ref != nil
+    Process.cancel_timer(state.ready_ref)
+  end
+
+  test "transport errors preserve the driver for the next bounded poll" do
+    state = streaming_state()
+    assert {:noreply, ^state} = I2C.handle_info(:loop, state)
+  end
+
+  test "each poll drains at most its packet budget" do
+    packets =
+      Enum.flat_map(0..8, fn sequence ->
+        [
+          {:ok, <<14, 0, 3, sequence>>},
+          {:ok, <<14, 0, 3, sequence, 2, sequence, 3, 0, 0, 0, 0, 0, 0, 2>>}
+        ]
+      end)
+
+    Process.put(:i2c_reads, packets)
+    {:noreply, state} = I2C.handle_info(:loop, streaming_state())
+    assert state.last_reports[2].sequence == 7
+    assert length(Process.get(:i2c_reads)) == 2
+    {:noreply, state} = I2C.handle_info(:loop, state)
+    assert state.last_reports[2].sequence == 8
+  end
+
+  test "report intervals are configurable and validated" do
+    state = I2C.new_state(:bus, transport: Transport, report_interval_us: 10_000)
+
+    {:noreply, state} =
+      I2C.handle_cast({:enable, :game_rotation_vector}, %{state | chip_ready?: true})
+
+    assert_receive {:i2c_write, <<21, 0, 2, 0, 0xFD, 8, 0, 0, 0, 10_000::little-32, 0::64>>}
+    Process.cancel_timer(state.verify_ref)
+    assert_raise ArgumentError, fn -> I2C.new_state(:bus, report_interval_us: 0) end
+  end
 end
