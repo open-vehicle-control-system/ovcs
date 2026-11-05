@@ -11,7 +11,12 @@ defmodule RosBridge.Imu.ZenohTest do
   alias Ros2Zenoh.SensorMsgs.Msg.Imu
 
   test "fans one message out into rotation, angular velocity and acceleration" do
+    captured_at_ns = System.monotonic_time(:nanosecond) - 20_000_000
+
     imu = %Imu{
+      header: %Ros2Zenoh.StdMsgs.Msg.Header{
+        stamp: RosBridge.Timing.stamp_from_monotonic(captured_at_ns)
+      },
       orientation: %Quaternion{x: 0.0, y: 0.0, z: 0.3826834, w: 0.9238795},
       angular_velocity: %Vector3{x: 0.01, y: -0.02, z: 0.5},
       linear_acceleration: %Vector3{x: 0.1, y: 0.0, z: 9.81}
@@ -22,5 +27,7 @@ defmodule RosBridge.Imu.ZenohTest do
              %Sample{kind: :angular_velocity, x: 0.01, y: -0.02, z: 0.5},
              %Sample{kind: :acceleration, x: 0.1, y: +0.0, z: 9.81}
            ] = RosBridge.Imu.Zenoh.samples(imu)
+
+    assert Enum.all?(RosBridge.Imu.Zenoh.samples(imu), &(&1.captured_at_ns == captured_at_ns))
   end
 end

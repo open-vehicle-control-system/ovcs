@@ -8,6 +8,16 @@ defmodule RosBridge.Publishers.Odometry.State do
     :pose_covariance,
     :twist_covariance,
     base_offset: 0.0,
+    tf_frame_id: nil,
+    tf_base_offset: nil,
+    imu_mount: {0.0, 0.0, 0.0, 1.0},
+    imu_stale_after_ms: 200,
+    minimum_imu_accuracy: 0,
+    imu_reference: nil,
+    imu_reset: false,
+    yaw_at_ms: nil,
+    yaw_rate_at_ms: nil,
+    last_step_yaw: nil,
     x: 0.0,
     y: 0.0,
     yaw: nil,
@@ -34,7 +44,8 @@ defmodule RosBridge.Publishers.Odometry do
     * the IMU driver's rotation vector: the heading.
 
   Position integrates the distance rolled between two *fresh* frames
-  along the IMU heading, `x += Δd·cos(ψ), y += Δd·sin(ψ)` — the frame's
+  along the constant-curvature arc between successive IMU headings.
+  Heading differences wrap at ±π. The frame's
   `sequence` is what distinguishes a new sample from
   `Cantastic.Emitter`'s retransmission of the last one. `Δd` is the
   difference of the frame's distance counter, which carries no
@@ -62,7 +73,10 @@ defmodule RosBridge.Publishers.Odometry do
   Publishing stops — no `/odom`, no `/tf` — whenever the estimate is
   not trustworthy: `speed_valid` is false (the VMS lost its own speed),
   no fresh frame has arrived within `:stale_after_ms`, or no rotation
-  sample has arrived yet. tf lookups never extrapolate past the newest
+  or angular-velocity sample is fresh. Each IMU stream expires separately.
+  A changed IMU orientation reference latches publication off until this
+  publisher is restarted with navigation stopped; a sensor reset cannot
+  silently rotate an existing odometry frame. tf lookups never extrapolate past the newest
   stamp, so a stopped publisher halts Nav2 rather than letting it plan
   against a frozen pose. Integration across a gap is skipped for the
   same reason: the vehicle's path during the outage is unknown, and a
@@ -87,6 +101,15 @@ defmodule RosBridge.Publishers.Odometry do
     * `:base_ahead_of_rear_axle` (default 0.0) — metres from the rear
       axle forward to `base_link`. Zero when `base_link` is on the
       rear axle.
+    * `:tf_frame_id`, `:tf_ahead_of_rear_axle` — optionally publish TF
+      for another rigidly attached frame while odometry describes
+      `:base_frame_id`. Defaults to that frame and its axle offset.
+      The URDF must supply the fixed relationship between them.
+    * `:imu_mount_rpy` — sensor mount rotation into the vehicle frame,
+      default `{0.0, 0.0, 0.0}`; applied to orientation and gyro.
+    * `:imu_stale_after_ms` (200), `:minimum_imu_accuracy` (0) — age
+      and calibration-status gates. A positive accuracy threshold
+      requires the driver to supply a status for each consumed kind.
     * `:pose_variance`, `:twist_variance` — the covariance diagonals,
       in the order x, y, z, roll, pitch, yaw. The defaults suit a car
       on flat ground: tight in the plane, and the axes it cannot move
@@ -116,6 +139,7 @@ defmodule RosBridge.Publishers.Odometry do
   alias Ros2Zenoh.NavMsgs.Msg.Odometry
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
+  alias RosBridge.Imu.Mount
   alias RosBridge.Publishers.Odometry.State
   alias RosBridge.{Timing, VehicleMotion}
 
@@ -140,10 +164,18 @@ defmodule RosBridge.Publishers.Odometry do
     driver = Keyword.fetch!(opts, :driver)
     base_offset = Keyword.get(opts, :base_ahead_of_rear_axle, 0.0) * 1.0
 
+    tf_base_offset = Keyword.get(opts, :tf_ahead_of_rear_axle, base_offset)
+
     state = %State{
-      # The integrated point is the rear axle; base_link starts at the origin.
+      # The TF base starts at the origin; position integrates the rear axle.
       base_offset: base_offset,
-      x: -base_offset,
+      x: -tf_base_offset,
+      tf_frame_id:
+        Keyword.get(opts, :tf_frame_id, Keyword.get(opts, :base_frame_id, "base_link")),
+      tf_base_offset: tf_base_offset,
+      imu_mount: Mount.quaternion(Keyword.get(opts, :imu_mount_rpy, {0.0, 0.0, 0.0})),
+      imu_stale_after_ms: Keyword.get(opts, :imu_stale_after_ms, 200),
+      minimum_imu_accuracy: Keyword.get(opts, :minimum_imu_accuracy, 0),
       topic: Keyword.get(opts, :topic, @default_topic),
       odom_frame_id: Keyword.get(opts, :odom_frame_id, "odom"),
       base_frame_id: Keyword.get(opts, :base_frame_id, "base_link"),
@@ -158,7 +190,7 @@ defmodule RosBridge.Publishers.Odometry do
 
     Logger.info(
       "#{__MODULE__} publishing Ros2Zenoh.NavMsgs.Msg.Odometry on #{state.topic} " <>
-        "and #{state.odom_frame_id} -> #{state.base_frame_id} on tf"
+        "and #{state.odom_frame_id} -> #{state.tf_frame_id} on tf"
     )
 
     {:ok, state}
@@ -193,6 +225,8 @@ defmodule RosBridge.Publishers.Odometry do
     if next_state.sequence != state.sequence and publishable?(next_state, received_at_ms) do
       publish(next_state)
       record_published(next_state, received_at_ms)
+    else
+      if not publishable?(next_state, received_at_ms), do: invalidate_record()
     end
 
     {:noreply, next_state}
@@ -202,27 +236,75 @@ defmodule RosBridge.Publishers.Odometry do
   # recoverable, a crashed publisher restarts the whole bridge subtree.
   def handle_info(_message, state), do: {:noreply, state}
 
-  # IMU drivers deliver samples as casts — see `OvcsDrivers.Imu`.
   @impl GenServer
-  def handle_cast({:imu_sample, %Sample{kind: :rotation, x: x, y: y, z: z, w: w}}, state) do
-    yaw = yaw_from_quaternion(x, y, z, w)
-    yaw_offset = state.yaw_offset || yaw
-    {:noreply, %{state | yaw: yaw - yaw_offset, yaw_offset: yaw_offset}}
+  def handle_cast({:imu_sample, %Sample{} = sample}, state) do
+    state = observe_imu(state, sample, System.monotonic_time(:nanosecond))
+    if state.imu_reset, do: invalidate_record()
+    {:noreply, state}
   end
 
-  def handle_cast({:imu_sample, %Sample{kind: :angular_velocity, z: yaw_rate}}, state) do
-    {:noreply, %{state | yaw_rate: yaw_rate}}
+  @doc false
+  def observe_imu(state, %Sample{kind: kind} = sample, now_ns)
+      when kind in [:rotation, :angular_velocity] do
+    captured_at_ms =
+      Integer.floor_div(sample.captured_at_ns || sample.received_at_ns || now_ns, 1_000_000)
+
+    reference_changed =
+      not is_nil(state.imu_reference) and sample.reference != state.imu_reference
+
+    cond do
+      state.imu_reset ->
+        state
+
+      reference_changed ->
+        Logger.error("IMU orientation reference changed; stop navigation and restart odometry")
+        %{state | imu_reset: true, last_step_yaw: nil}
+
+      not acceptable_imu?(state, sample, captured_at_ms, now_ns / 1_000_000) ->
+        state
+
+      true ->
+        state = %{state | imu_reference: sample.reference}
+        apply_imu(state, sample, captured_at_ms)
+    end
   end
 
-  def handle_cast({:imu_sample, %Sample{}}, state), do: {:noreply, state}
+  def observe_imu(state, _sample, _now_ns), do: state
+
+  defp acceptable_imu?(state, sample, at_ms, now_ms) do
+    accuracy = sample.accuracy || 0
+    previous = if sample.kind == :rotation, do: state.yaw_at_ms, else: state.yaw_rate_at_ms
+
+    accuracy >= state.minimum_imu_accuracy and fresh?(at_ms, now_ms, state.imu_stale_after_ms) and
+      (is_nil(previous) or at_ms > previous)
+  end
+
+  defp apply_imu(state, %Sample{kind: :rotation} = sample, at_ms) do
+    case Mount.orientation(sample, state.imu_mount) do
+      nil ->
+        state
+
+      {x, y, z, w} ->
+        yaw = yaw_from_quaternion(x, y, z, w)
+        yaw_offset = state.yaw_offset || yaw
+        %{state | yaw: wrap(yaw - yaw_offset), yaw_offset: yaw_offset, yaw_at_ms: at_ms}
+    end
+  end
+
+  defp apply_imu(state, sample, at_ms) do
+    {_x, _y, yaw_rate} = Mount.vector(sample, state.imu_mount)
+    %{state | yaw_rate: yaw_rate, yaw_rate_at_ms: at_ms}
+  end
 
   @doc """
   The state after a `vehicle_motion` sample. A retransmission (same
-  sequence) changes nothing. A fresh sample integrates the distance
-  covered since the previous fresh sample along the current heading,
+  sequence) cannot add distance or restore validity. A fresh sample
+  integrates the arc between its heading and the previous sample's,
   unless the gap is too wide to trust or the estimate is not valid.
   """
-  def observe(%State{sequence: sequence} = state, %{sequence: sequence}), do: state
+  def observe(%State{sequence: sequence} = state, %{sequence: sequence} = sample) do
+    if sample.speed_valid, do: state, else: %{state | speed_valid: false, last_step_yaw: nil}
+  end
 
   def observe(%State{} = state, sample) do
     elapsed_s = step_seconds(state.last_fresh_at_ms, sample.at_ms)
@@ -231,11 +313,8 @@ defmodule RosBridge.Publishers.Odometry do
 
     state =
       if step_m do
-        %{
-          state
-          | x: state.x + step_m * :math.cos(state.yaw),
-            y: state.y + step_m * :math.sin(state.yaw)
-        }
+        {dx, dy} = arc_step(step_m, state.last_step_yaw, state.yaw)
+        %{state | x: state.x + dx, y: state.y + dy}
       else
         state
       end
@@ -248,7 +327,8 @@ defmodule RosBridge.Publishers.Odometry do
         distance: Map.get(sample, :distance),
         distance_valid: Map.get(sample, :distance_valid, false),
         sequence: sample.sequence,
-        last_fresh_at_ms: sample.at_ms
+        last_fresh_at_ms: sample.at_ms,
+        last_step_yaw: if(sample.speed_valid and imu_fresh?(state, sample.at_ms), do: state.yaw)
     }
   end
 
@@ -268,38 +348,70 @@ defmodule RosBridge.Publishers.Odometry do
   defp step_seconds(last_ms, now_ms), do: (now_ms - last_ms) / 1000
 
   defp integrable?(state, sample, elapsed_s) do
-    state.speed_valid and sample.speed_valid and not is_nil(state.yaw) and
-      not is_nil(elapsed_s) and elapsed_s <= @max_step_s
+    state.speed_valid and sample.speed_valid and not is_nil(state.last_step_yaw) and
+      imu_fresh?(state, sample.at_ms) and not is_nil(elapsed_s) and elapsed_s > 0 and
+      elapsed_s <= min(@max_step_s, state.imu_stale_after_ms / 1000)
   end
 
   @doc false
   def publishable?(%State{} = state, now_ms) do
-    state.speed_valid and not is_nil(state.yaw) and not is_nil(state.last_fresh_at_ms) and
-      now_ms - state.last_fresh_at_ms <= state.stale_after_ms
+    state.speed_valid and imu_fresh?(state, now_ms) and
+      fresh?(state.last_fresh_at_ms, now_ms, state.stale_after_ms)
   end
+
+  defp imu_fresh?(state, now_ms) do
+    not state.imu_reset and not is_nil(state.yaw) and
+      fresh?(state.yaw_at_ms, now_ms, state.imu_stale_after_ms) and
+      fresh?(state.yaw_rate_at_ms, now_ms, state.imu_stale_after_ms)
+  end
+
+  defp fresh?(nil, _now_ms, _timeout_ms), do: false
+  defp fresh?(at_ms, now_ms, timeout_ms), do: now_ms >= at_ms and now_ms - at_ms <= timeout_ms
+
+  @doc false
+  def arc_step(distance, previous_yaw, yaw) do
+    half_turn = wrap(yaw - previous_yaw) / 2
+    chord_factor = if abs(half_turn) < 1.0e-9, do: 1.0, else: :math.sin(half_turn) / half_turn
+    heading = previous_yaw + half_turn
+    {distance * chord_factor * :math.cos(heading), distance * chord_factor * :math.sin(heading)}
+  end
+
+  defp wrap(angle), do: :math.atan2(:math.sin(angle), :math.cos(angle))
 
   @doc """
   Whether `odom → base_link` went out within the publisher's
   `:stale_after_ms` of `now_ms` (monotonic milliseconds). True where no
   odometry publisher runs, so a vehicle without one publishes its range
-  readings as they come.
+  readings as they come. Pass `false` as the second argument to require
+  a running publisher, as the autonomous velocity consumer does.
   """
-  def publishing?(now_ms \\ now_ms()) do
+  def publishing?(now_ms \\ now_ms(), without_publisher \\ true) do
     case :ets.lookup(__MODULE__, :published) do
       [{:published, at_ms, stale_after_ms}] -> now_ms - at_ms <= stale_after_ms
       [] -> false
     end
   rescue
     # No table: no odometry publisher.
-    ArgumentError -> true
+    ArgumentError -> without_publisher
+  end
+
+  defp invalidate_record do
+    :ets.delete(__MODULE__, :published)
+  rescue
+    ArgumentError -> false
   end
 
   @doc false
   def open_record, do: :ets.new(__MODULE__, [:named_table, read_concurrency: true])
 
   @doc false
-  def record_published(%State{stale_after_ms: stale_after_ms}, at_ms),
-    do: :ets.insert(__MODULE__, {:published, at_ms, stale_after_ms})
+  def record_published(state, at_ms) do
+    imu_remaining_ms =
+      min(state.yaw_at_ms, state.yaw_rate_at_ms) + state.imu_stale_after_ms - at_ms
+
+    timeout_ms = min(state.stale_after_ms, imu_remaining_ms)
+    :ets.insert(__MODULE__, {:published, at_ms, timeout_ms})
+  end
 
   @doc """
   The yaw of a quaternion. Planar odometry: the pose's orientation
@@ -323,8 +435,9 @@ defmodule RosBridge.Publishers.Odometry do
         do: if(row == column, do: Enum.at(variances, row) * 1.0, else: 0.0)
   end
 
-  defp publish(%State{} = state) do
-    stamp = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
+  @doc false
+  def messages(%State{} = state) do
+    stamp = Timing.stamp_from_monotonic(round(state.last_fresh_at_ms * 1_000_000))
     {x, y} = base_position(state)
 
     orientation = %Quaternion{
@@ -353,15 +466,24 @@ defmodule RosBridge.Publishers.Odometry do
       }
     }
 
+    tf_offset = state.tf_base_offset || state.base_offset
+    tf_x = state.x + tf_offset * :math.cos(state.yaw)
+    tf_y = state.y + tf_offset * :math.sin(state.yaw)
+
     transform = %TransformStamped{
       header: %Header{stamp: stamp, frame_id: state.odom_frame_id},
-      child_frame_id: state.base_frame_id,
+      child_frame_id: state.tf_frame_id || state.base_frame_id,
       transform: %Transform{
-        translation: %Vector3{x: x, y: y, z: 0.0},
+        translation: %Vector3{x: tf_x, y: tf_y, z: 0.0},
         rotation: orientation
       }
     }
 
+    {odometry, transform}
+  end
+
+  defp publish(state) do
+    {odometry, transform} = messages(state)
     Ros2Zenoh.Client.publish(state.topic, Odometry, odometry)
     Ros2Zenoh.Client.publish("tf", TFMessage, %TFMessage{transforms: [transform]})
   end

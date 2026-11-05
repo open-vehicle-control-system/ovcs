@@ -117,6 +117,16 @@ Samples retain calibration accuracy, sequence and local monotonic capture/receip
 
 Driver options include `report_interval_us`, `poll_interval_ms`, `max_packets_per_poll` and `stream_timeout_ms`; pass them as `driver_opts` on `:imu_publisher`. Verify real stream rates and I²C load before selecting 100 Hz.
 
+## IMU freshness and odometry
+
+The IMU publisher requires fresh, newly received samples of all three kinds. It stamps `/imu` with the orientation capture time and limits the time difference between the three kinds; it does not repeatedly publish a cached heading as a new measurement. The simulator driver preserves the incoming ROS capture stamp through the bridge's clock conversion.
+
+Odometry requires fresh orientation and gyro as well as fresh wheel motion. With `require_odometry: true`, the velocity consumer also zeros commands at the earliest input-expiry deadline, even if a planner continues sending commands. The OVCS Mini enables this gate on its autonomous command path. The sensor mount's rotation is applied to both orientation and angular velocity; set `imu_mount_rpy` from your vehicle's URDF. The OVCS Mini reference vehicle also requires nonzero BNO calibration status. Its declared mount is still a physical measurement to verify.
+
+A BNO reset invalidates the heading reference and latches odometry off. Stop navigation, stop the vehicle, restart the odometry publisher and clear or restart navigation's rolling costmaps before rearming. Do not resume a goal against the old odometry reference. Ordinary short stream interruptions recover without integrating distance across the missing interval.
+
+Position uses the wheel-distance counter and a constant-curvature arc between successive headings. Wheel frames are still timestamped on arrival, so measuring CAN latency and aligning wheel and IMU acquisition clocks remain necessary for more precise motion estimates. Default odometry covariance values are model assumptions; measure them before adding an EKF, and do not count this IMU-derived heading as an independent sensor alongside `/imu`.
+
 ## Check it end to end
 
 With `./ovcs run <vehicle>` going and the local ROS 2 stack up, the bridge's `/ovcs_heartbeat` appears in `ros2 topic list` and in Foxglove. [Verifying end to end](../ros2/README.md#verifying-end-to-end) has the commands.

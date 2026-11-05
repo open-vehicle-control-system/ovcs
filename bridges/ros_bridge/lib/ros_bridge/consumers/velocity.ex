@@ -1,6 +1,6 @@
 defmodule RosBridge.Consumers.Velocity.State do
   @moduledoc false
-  defstruct [:watchdog, :topic, holonomic_warned: false, sequence: 0]
+  defstruct [:watchdog, :topic, holonomic_warned: false, sequence: 0, require_odometry: false]
 end
 
 defmodule RosBridge.Consumers.Velocity do
@@ -54,17 +54,16 @@ defmodule RosBridge.Consumers.Velocity do
   well, to zero the emitted value and to say why; see
   `RosBridge.InputWatchdog`.
 
-  The default timeout is deliberately tighter than the joystick's
-  default. A planner publishes on its own control period — Nav2's
-  `controller_frequency` is 20 Hz in the simulator — and unlike a
-  human on a stick there is nobody watching the vehicle when it stops
-  publishing.
+  The default timeout is tighter than the joystick's default because
+  an autonomous commander must continuously demonstrate liveness.
 
   ## Options
 
     * `:topic` (`"cmd_vel"`) — what to subscribe to.
     * `:message` (`TwistStamped`) — `Twist` for an unstamped publisher.
     * `:timeout_ms` (`300`).
+    * `:require_odometry` (`false`) — zero commands while the odometry
+      publisher is missing or any of its input streams has expired.
   """
   use GenServer
 
@@ -72,6 +71,7 @@ defmodule RosBridge.Consumers.Velocity do
   alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, TwistStamped}
   alias RosBridge.Consumers.Velocity.State
   alias RosBridge.InputWatchdog
+  alias RosBridge.Publishers.Odometry
 
   require Logger
 
@@ -111,7 +111,12 @@ defmodule RosBridge.Consumers.Velocity do
     :ok = Ros2Zenoh.Client.subscribe(topic, message_module)
     {:ok, _timer} = :timer.send_interval(@check_period_ms, :check_input)
 
-    {:ok, %State{watchdog: InputWatchdog.new(timeout_ms), topic: topic}}
+    {:ok,
+     %State{
+       watchdog: InputWatchdog.new(timeout_ms),
+       topic: topic,
+       require_odometry: Map.get(opts, :require_odometry, false)
+     }}
   end
 
   @impl GenServer
@@ -125,7 +130,8 @@ defmodule RosBridge.Consumers.Velocity do
 
   def handle_info(:check_input, state) do
     {transition, watchdog} = InputWatchdog.check(state.watchdog)
-    {:noreply, handle_transition(transition, %{state | watchdog: watchdog})}
+    state = handle_transition(transition, %{state | watchdog: watchdog})
+    {:noreply, if(commands_allowed?(state), do: state, else: zero_velocity(state))}
   end
 
   def handle_info({:ros_message, {key_expr, message}}, state) do
@@ -137,7 +143,16 @@ defmodule RosBridge.Consumers.Velocity do
   def handle_info(_message, state), do: {:noreply, state}
 
   # Forwards linear.x and angular.z only; the rest trips `warn_if_holonomic/3`.
-  defp command(%Twist{linear: linear, angular: angular}, state) do
+  defp command(twist, state) do
+    if commands_allowed?(state), do: emit_command(twist, state), else: zero_velocity(state)
+  end
+
+  @doc false
+  def commands_allowed?(state, now_ms \\ System.monotonic_time(:millisecond)) do
+    not state.require_odometry or Odometry.publishing?(now_ms, false)
+  end
+
+  defp emit_command(%Twist{linear: linear, angular: angular}, state) do
     state = warn_if_holonomic(linear, angular, state)
     linear_x = wire_value(linear.x / 1.0, "linear")
     angular_z = wire_value(angular.z / 1.0, "angular")
