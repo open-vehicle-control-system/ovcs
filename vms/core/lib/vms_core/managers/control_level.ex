@@ -42,7 +42,9 @@ defmodule VmsCore.Managers.ControlLevel do
   ## Rotation fault
 
   An optional `rotation_fault_source` publishes `:cross_check_fault`
-  (`OVCS.RotationFusion`). While it is true, `:ros` drops to `:radio`
+  and `:rotation_healthy` (`OVCS.RotationFusion`). A fault, missing primary
+  source or health heartbeat older than `:rotation_health_timeout_ms`
+  (default 300) makes `:ros` drop to `:radio`
   and is refused: odometry and every costmap cell placed with it rest
   on the rotation, so a planner cannot drive on sources that disagree.
 
@@ -146,6 +148,9 @@ defmodule VmsCore.Managers.ControlLevel do
        radio_braking: false,
        rotation_fault_source: rotation_fault_source,
        rotation_fault: false,
+       rotation_healthy: false,
+       rotation_health_at_ms: nil,
+       rotation_health_timeout_ms: Map.get(args, :rotation_health_timeout_ms, 300),
        forced_control_level: nil,
        requested_control_level: nil,
        selected_control_level: default_control_level,
@@ -225,6 +230,16 @@ defmodule VmsCore.Managers.ControlLevel do
       )
       when not is_nil(source) and source == state.rotation_fault_source do
     {:noreply, %{state | rotation_fault: cross_check_fault == true}}
+  end
+
+  def handle_info(%Bus.Message{name: :rotation_healthy, value: healthy, source: source}, state)
+      when not is_nil(source) and source == state.rotation_fault_source do
+    {:noreply,
+     %{
+       state
+       | rotation_healthy: healthy == true,
+         rotation_health_at_ms: System.monotonic_time(:millisecond)
+     }}
   end
 
   def handle_info(
@@ -319,7 +334,18 @@ defmodule VmsCore.Managers.ControlLevel do
     end
   end
 
-  defp ros_overridden?(state), do: state.radio_braking or state.rotation_fault
+  defp ros_overridden?(state) do
+    state.radio_braking or state.rotation_fault or not rotation_healthy?(state) or
+      is_nil(state.speed)
+  end
+
+  defp rotation_healthy?(%{rotation_fault_source: nil}), do: true
+
+  defp rotation_healthy?(state) do
+    state.rotation_healthy and not is_nil(state.rotation_health_at_ms) and
+      System.monotonic_time(:millisecond) - state.rotation_health_at_ms <=
+        state.rotation_health_timeout_ms
+  end
 
   defp refusal_reason(state) do
     cond do
@@ -346,6 +372,9 @@ defmodule VmsCore.Managers.ControlLevel do
 
       state.requested_control_level == :ros && state.rotation_fault ->
         :rotation_fault
+
+      state.requested_control_level == :ros && not rotation_healthy?(state) ->
+        :rotation_unhealthy
 
       state.requested_control_level == :ros && state.selected_control_level == :manual ->
         :ros_only_reachable_from_radio

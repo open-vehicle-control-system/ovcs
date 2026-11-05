@@ -274,15 +274,15 @@ defmodule OvcsMini.Vms.Composer do
        %{
          process_name: Vms.MotorRotation,
          sources: [
-           %{source: Vms.Vesc, ratio: 1, signed: true, noise_rpm: 5},
+           %{source: Vms.Vesc, ratio: 1, signed: true, noise_rpm: 5, stale_after_ms: 300},
            %{
              source: OVCS.PulseRotationSensor,
              ratio: @spur_teeth / @pinion_teeth,
-             signed: false
+             signed: false,
+             stale_after_ms: 300
            }
          ],
          direction_source: Vms.Vesc,
-         # The VESC's minimum speed-loop rpm: where the planner drives.
          cross_check_from_rpm: 450,
          cross_check_tolerance: 0.1,
          # Past the spur sensor's decay after a hard stop.
@@ -297,6 +297,7 @@ defmodule OvcsMini.Vms.Composer do
          rotation_source: Vms.MotorRotation,
          # The VESC's tachometer, the motor's turns: the distance on 0x60B.
          revolution_source: Vms.Vesc,
+         stale_after_ms: 300,
          rotation_to_wheel_ratio: @motor_to_wheel_ratio,
          rotation_signed: true,
          wheel_radius_m: OvcsMini.geometry().wheel_radius,

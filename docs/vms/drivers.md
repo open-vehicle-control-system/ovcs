@@ -260,7 +260,7 @@ The motor controller knows nothing about the vehicle: it takes the motor rpm at 
  }}
 ```
 
-A cross-check fault is published and logged, not acted on: on the Mini both sources sit upstream of the slipper clutch, so a gap means a sensor or the gear mesh has failed.
+The Mini wires the fusion health and cross-check fault into `Managers.ControlLevel`. A missing primary source, stale health heartbeat or sustained disagreement forces ROS control back to radio and requires the operator to rearm it. The pulse fallback remains available for diagnostics; it cannot restore ROS control. Each rotation source and the cumulative revolution counter expire independently after 300 ms without an update. Both sensors sit upstream of the slipper clutch, so agreement does not detect clutch slip or wheel slip.
 
 `@max_speed_m_s` is the speed at a linear request of 1 on both sides (what `RosVelocityCommand` normalises against and what the motor rpm is derived from), so it is one constant in the composer. Unlike a PWM throttle's cap, it is a real speed: the VESC holds it.
 
