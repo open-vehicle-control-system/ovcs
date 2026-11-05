@@ -125,7 +125,11 @@ defmodule OvcsMini do
         # Nav2 publishes TwistStamped on /cmd_vel_nav, the planner path
         # on 0x2B1; the joystick path stays on 0x2B0.
         {:velocity_interpreter,
-         %{topic: "cmd_vel_nav", message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped}},
+         %{
+           topic: "cmd_vel_nav",
+           message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped,
+           require_odometry: true
+         }},
         {:imu_publisher, driver: OvcsDrivers.Imu.Dummy},
         # After :imu_publisher, which starts the driver this listens
         # to. Reads the VMS's vehicle_motion frame off CAN and
@@ -154,7 +158,11 @@ defmodule OvcsMini do
         :vehicle_status_publisher,
         :joy_interpreter,
         {:velocity_interpreter,
-         %{topic: "cmd_vel_nav", message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped}},
+         %{
+           topic: "cmd_vel_nav",
+           message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped,
+           require_odometry: true
+         }},
         {:imu_publisher, driver: RosBridge.Imu.Zenoh},
         {:odometry_publisher,
          driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
@@ -241,11 +249,18 @@ defmodule OvcsMini do
         # burned firmware runs, so the planner path exists on the
         # vehicle only if it is declared here as well.
         {:velocity_interpreter,
-         %{topic: "cmd_vel_nav", message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped}},
+         %{
+           topic: "cmd_vel_nav",
+           message: Ros2Zenoh.GeometryMsgs.Msg.TwistStamped,
+           require_odometry: true
+         }},
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
         {:odometry_publisher,
-         driver: BNO085.I2C, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+         driver: BNO085.I2C,
+         base_ahead_of_rear_axle: base_ahead_of_rear_axle(),
+         imu_mount_rpy: URDF.joint!(@urdf, "imu_joint").rpy,
+         minimum_imu_accuracy: 1},
         # RPLIDAR C1 on the bridge's USB port, found by its adapter's
         # serial number. It measures about every 0.72 degrees, 500
         # points a revolution: one bin each.

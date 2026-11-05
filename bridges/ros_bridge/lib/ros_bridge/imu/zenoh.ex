@@ -83,6 +83,9 @@ defmodule RosBridge.Imu.Zenoh do
 
   @doc false
   def samples(%Imu{} = imu) do
+    received_at_ns = System.monotonic_time(:nanosecond)
+    captured_at_ns = RosBridge.Timing.monotonic_from_stamp(imu.header.stamp)
+
     [
       %Sample{
         kind: :rotation,
@@ -104,5 +107,6 @@ defmodule RosBridge.Imu.Zenoh do
         z: imu.linear_acceleration.z
       }
     ]
+    |> Enum.map(&%{&1 | captured_at_ns: captured_at_ns, received_at_ns: received_at_ns})
   end
 end

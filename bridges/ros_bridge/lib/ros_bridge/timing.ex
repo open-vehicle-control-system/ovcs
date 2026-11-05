@@ -72,6 +72,12 @@ defmodule RosBridge.Timing do
     end
   end
 
+  @doc "Convert a ROS stamp on the bridge's clock back to local monotonic nanoseconds."
+  def monotonic_from_stamp(%Time{sec: seconds, nanosec: nanoseconds}) do
+    offset_ns = RosBridge.Clock.offset_ns() || System.time_offset(:nanosecond)
+    seconds * 1_000_000_000 + nanoseconds - offset_ns
+  end
+
   # Floored: `nanosec` is unsigned, and simulator time goes negative after a world reset.
   defp stamp(nanoseconds) do
     %Time{

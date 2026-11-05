@@ -15,7 +15,10 @@ defmodule RosBridge.Publishers.OdometryTest do
         topic: "odom",
         odom_frame_id: "odom",
         base_frame_id: "base_link",
-        stale_after_ms: 300
+        stale_after_ms: 300,
+        yaw_at_ms: Keyword.get(overrides, :last_fresh_at_ms, 900),
+        yaw_rate_at_ms: Keyword.get(overrides, :last_fresh_at_ms, 900),
+        last_step_yaw: Keyword.get(overrides, :yaw)
       },
       overrides
     )
@@ -152,7 +155,12 @@ defmodule RosBridge.Publishers.OdometryTest do
           step_state =
             Odometry.observe(step_state, sample(%{sequence: step, at_ms: step * step_ms}))
 
-          %{step_state | yaw: step * step_ms / 1000}
+          %{
+            step_state
+            | yaw: step * step_ms / 1000,
+              yaw_at_ms: step * step_ms,
+              yaw_rate_at_ms: step * step_ms
+          }
         end)
 
       {x, y} = Odometry.base_position(final_state)
@@ -268,13 +276,140 @@ defmodule RosBridge.Publishers.OdometryTest do
       refute Odometry.publishing?(1_000)
     end
 
+    test "the velocity gate expires at the oldest IMU stream's deadline" do
+      alias RosBridge.Consumers.Velocity
+      gate = %Velocity.State{require_odometry: true}
+      refute Velocity.commands_allowed?(gate, 1000)
+      Odometry.open_record()
+      Odometry.record_published(state(yaw_at_ms: 1000, yaw_rate_at_ms: 850), 1000)
+      assert Velocity.commands_allowed?(gate, 1050)
+      refute Velocity.commands_allowed?(gate, 1051)
+      assert Velocity.commands_allowed?(%Velocity.State{}, 1051)
+    end
+
     test "is true within stale_after_ms of the last publish, false after it" do
       Odometry.open_record()
-      Odometry.record_published(state(stale_after_ms: 300), 1_000)
+
+      Odometry.record_published(
+        state(
+          stale_after_ms: 300,
+          imu_stale_after_ms: 300,
+          yaw_at_ms: 1000,
+          yaw_rate_at_ms: 1000
+        ),
+        1_000
+      )
 
       assert Odometry.publishing?(1_300)
       refute Odometry.publishing?(1_301)
     end
+  end
+
+  describe "IMU validity" do
+    alias OvcsDrivers.Imu.Sample
+
+    defp rotation(reference, at_ms, yaw \\ 0.0, accuracy \\ 3) do
+      %Sample{
+        kind: :rotation,
+        x: 0.0,
+        y: 0.0,
+        z: :math.sin(yaw / 2),
+        w: :math.cos(yaw / 2),
+        reference: reference,
+        captured_at_ns: at_ms * 1_000_000,
+        accuracy: accuracy
+      }
+    end
+
+    test "heading and gyro expire independently while motion remains fresh" do
+      ready =
+        state(
+          speed_valid: true,
+          yaw: 0.0,
+          last_fresh_at_ms: 1000,
+          yaw_at_ms: 1000,
+          yaw_rate_at_ms: 1000
+        )
+
+      assert Odometry.publishable?(ready, 1000)
+      refute Odometry.publishable?(%{ready | yaw_at_ms: 799}, 1000)
+      refute Odometry.publishable?(%{ready | yaw_rate_at_ms: 799}, 1000)
+      assert Odometry.observe(%{ready | yaw_at_ms: 700}, sample(%{at_ms: 1100})).x == 0.0
+    end
+
+    test "stale or low-accuracy samples cannot initialize the heading" do
+      state = state(minimum_imu_accuracy: 1, yaw_at_ms: nil)
+      reference = make_ref()
+      state = Odometry.observe_imu(state, rotation(reference, 100, 1.0, 0), 100_000_000)
+      assert state.yaw_offset == nil
+      state = Odometry.observe_imu(state, rotation(reference, 100, 1.0), 500_000_000)
+      assert state.yaw_offset == nil
+      state = Odometry.observe_imu(state, rotation(reference, 500, 1.0), 500_000_000)
+      assert_in_delta state.yaw_offset, 1.0, 1.0e-9
+    end
+
+    test "out-of-order samples cannot rewind heading" do
+      reference = make_ref()
+      state = state(yaw_at_ms: nil)
+      state = Odometry.observe_imu(state, rotation(reference, 500), 500_000_000)
+      state = Odometry.observe_imu(state, rotation(reference, 600, 0.2), 600_000_000)
+      assert Odometry.observe_imu(state, rotation(reference, 550, 1.0), 600_000_000) == state
+    end
+
+    test "a reset latches odometry off instead of splicing two heading references" do
+      state = state(yaw_at_ms: nil, speed_valid: true, last_fresh_at_ms: 600, yaw_rate_at_ms: 600)
+      state = Odometry.observe_imu(state, rotation(make_ref(), 500), 500_000_000)
+      state = Odometry.observe_imu(state, rotation(make_ref(), 600), 600_000_000)
+      assert state.imu_reset
+      refute Odometry.publishable?(state, 600)
+      assert Odometry.observe(state, sample(%{at_ms: 700})).x == 0.0
+    end
+
+    test "invalid flags on a repeated CAN sequence revoke validity" do
+      state = state(sequence: 2, speed_valid: true, yaw: 0.0)
+      refute Odometry.observe(state, sample(%{speed_valid: false})).speed_valid
+    end
+  end
+
+  test "a finite quarter circle integrates its arc, including backwards" do
+    {dx, dy} = Odometry.arc_step(:math.pi() / 2, 0.0, :math.pi() / 2)
+    assert_in_delta dx, 1.0, 1.0e-9
+    assert_in_delta dy, 1.0, 1.0e-9
+    {dx, dy} = Odometry.arc_step(-:math.pi() / 2, 0.0, :math.pi() / 2)
+    assert_in_delta dx, -1.0, 1.0e-9
+    assert_in_delta dy, -1.0, 1.0e-9
+  end
+
+  test "heading wrap uses the short turn through pi" do
+    {dx, dy} = Odometry.arc_step(0.2, :math.pi() - 0.1, -:math.pi() + 0.1)
+    assert_in_delta dx, -2 * :math.sin(0.1), 1.0e-9
+    assert_in_delta dy, 0.0, 1.0e-9
+  end
+
+  test "rear-axle odometry and a forward TF base describe the same rigid body" do
+    state =
+      state(
+        base_frame_id: "rear_axle",
+        tf_frame_id: "base_link",
+        base_offset: 0.0,
+        tf_base_offset: 0.162,
+        x: 1.0,
+        y: 2.0,
+        yaw: :math.pi() / 2,
+        yaw_rate: 1.0,
+        speed: 0.5,
+        last_fresh_at_ms: System.monotonic_time(:millisecond)
+      )
+
+    {odometry, transform} = Odometry.messages(state)
+    assert odometry.child_frame_id == "rear_axle"
+    assert odometry.pose.pose.position.x == 1.0
+    assert odometry.pose.pose.position.y == 2.0
+    assert odometry.twist.twist.linear.y == 0.0
+    assert transform.child_frame_id == "base_link"
+    assert_in_delta transform.transform.translation.x, 1.0, 1.0e-9
+    assert_in_delta transform.transform.translation.y, 2.162, 1.0e-9
+    assert odometry.header.stamp == transform.header.stamp
   end
 
   describe "yaw_from_quaternion/4" do

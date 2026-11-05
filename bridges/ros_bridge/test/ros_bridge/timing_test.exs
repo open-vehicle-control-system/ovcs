@@ -16,6 +16,13 @@ defmodule RosBridge.TimingTest do
     end
   end
 
+  test "ROS timestamps round trip to their capture time" do
+    captured_at_ns = System.monotonic_time(:nanosecond) - 123_456_789
+
+    assert captured_at_ns |> Timing.stamp_from_monotonic() |> Timing.monotonic_from_stamp() ==
+             captured_at_ns
+  end
+
   describe "stamp_from_monotonic/1" do
     test "builds a Time message with a nanosec field inside one second" do
       message = Timing.stamp_from_monotonic(System.monotonic_time(:nanosecond))
