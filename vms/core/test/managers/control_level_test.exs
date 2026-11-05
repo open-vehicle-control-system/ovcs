@@ -82,6 +82,42 @@ defmodule VmsCore.Managers.ControlLevelTest do
     state |> request(:radio) |> request(:ros)
   end
 
+  describe "rotation health" do
+    test "unknown primary health refuses ROS control" do
+      state = manager(%{rotation_fault_source: MotorRotation}) |> request(:radio) |> request(:ros)
+      assert state.selected_control_level == :radio
+    end
+
+    test "loss of primary health latches radio until the switch rearms" do
+      state =
+        manager(%{rotation_fault_source: MotorRotation})
+        |> deliver(:rotation_healthy, true, MotorRotation)
+        |> in_ros()
+
+      assert state.selected_control_level == :ros
+      state = state |> deliver(:rotation_healthy, false, MotorRotation) |> tick()
+      assert state.selected_control_level == :radio
+      assert state.forced_control_level == :radio
+      state = state |> deliver(:rotation_healthy, true, MotorRotation) |> tick()
+      assert state.selected_control_level == :radio
+    end
+
+    test "a silent fusion process cannot leave ROS armed" do
+      state =
+        manager(%{rotation_fault_source: MotorRotation})
+        |> deliver(:rotation_healthy, true, MotorRotation)
+        |> in_ros()
+
+      state = %{state | rotation_health_at_ms: System.monotonic_time(:millisecond) - 301}
+      assert tick(state).selected_control_level == :radio
+    end
+
+    test "a missing speed forces ROS back to radio" do
+      state = in_ros() |> deliver(:speed, nil, Abs) |> tick()
+      assert state.selected_control_level == :radio
+    end
+  end
+
   describe "the authority axis" do
     test "starts in the default level, with that level's sources" do
       state = manager()
@@ -296,6 +332,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
     test "drops :ros to :radio mid-drive and forces it there" do
       state =
         manager(%{rotation_fault_source: Rotation})
+        |> deliver(:rotation_healthy, true, Rotation)
         |> in_ros()
         |> deliver(:requested_ros_commander, :autonomous, RadioCommander)
         |> tick()
@@ -310,6 +347,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
     test "refuses :ros while it lasts, and says why" do
       state =
         manager(%{rotation_fault_source: Rotation})
+        |> deliver(:rotation_healthy, true, Rotation)
         |> request(:radio)
         |> deliver(:cross_check_fault, true, Rotation)
 
@@ -328,6 +366,7 @@ defmodule VmsCore.Managers.ControlLevelTest do
 
       state =
         manager(%{rotation_fault_source: Rotation})
+        |> deliver(:rotation_healthy, true, Rotation)
         |> in_ros()
         |> deliver(:cross_check_fault, true, Other)
         |> tick()

@@ -31,7 +31,7 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
       raises `:cross_check_fault`. The hold must outlast the slowest
       source's lag: a pulse sensor measuring the time between pulses
       still reads its last speed for a while after the shaft stops. The
-      fault is reported, not acted on.
+      control-level manager can use the fault to refuse ROS control.
 
   The priority picks a source rather than averaging: a fine source mixed
   with a coarse one would only get worse.
@@ -40,7 +40,9 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
 
   `:rotation_per_minute` of the output shaft, `:active_source`,
   `:cross_check_gap` (the largest gap, nil while not checked) and
-  `:cross_check_fault`.
+  `:cross_check_fault` and `:rotation_healthy`. Health requires the primary
+  source to be fresh and the cross-check fault to be clear. Fallback
+  rotation remains available for diagnostics; it does not restore health.
 
   ## Options
 
@@ -49,7 +51,8 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
     * `:sources` — in priority order, each
       `%{source: name, ratio: number, signed: boolean, noise_rpm: number}`:
       `ratio` is output-shaft turns per source turn, `noise_rpm` defaults
-      to 0.
+      to 0. `stale_after_ms` defaults to 300 and expires a silent source
+      independently of its upstream frame watcher.
     * `:direction_source` — optional, an actuator publishing a signed
       `:throttle`.
     * `:cross_check_from_rpm`, `:cross_check_tolerance`,
@@ -74,12 +77,14 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
   @impl GenServer
   def init(%{process_name: process_name, sources: sources} = args) do
     Bus.subscribe("messages")
+    {:ok, _timer} = :timer.send_interval(50, :check_freshness)
 
     {:ok,
      %{
        process_name: process_name,
        sources: Enum.map(sources, &source_settings/1),
        readings: %{},
+       received_at_ms: %{},
        direction_source: Map.get(args, :direction_source),
        sign: 1,
        cross_check_from_rpm: decimal(Map.fetch!(args, :cross_check_from_rpm)),
@@ -101,18 +106,37 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
         {:noreply, state}
 
       source_settings ->
+        previous_source = active_source(state)
+
         state =
           state
+          |> expire(now_ms())
           |> record(source_settings, rotation_per_minute)
           |> track_sign(source_settings, rotation_per_minute)
 
         case active_source(state) do
-          # A sample of the source in use, or the last source dying.
-          ^source -> {:noreply, publish(state, now_ms())}
-          nil -> {:noreply, publish(state, now_ms())}
-          _ -> {:noreply, state}
+          ^source ->
+            {:noreply, publish(state, now_ms())}
+
+          active ->
+            if active != previous_source do
+              broadcast(state, :rotation_per_minute, nil, Units.revolution_per_minute())
+            end
+
+            {:noreply, publish_health(state, now_ms())}
         end
     end
+  end
+
+  def handle_info(:check_freshness, state) do
+    previous_source = active_source(state)
+    state = expire(state, now_ms())
+
+    if active_source(state) != previous_source do
+      broadcast(state, :rotation_per_minute, nil, Units.revolution_per_minute())
+    end
+
+    {:noreply, publish_health(state, now_ms())}
   end
 
   def handle_info(%Bus.Message{name: :throttle, value: throttle, source: source}, state)
@@ -127,6 +151,12 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
   defp publish(state, now_ms) do
     {rotation, state} = compute(state, now_ms)
     broadcast(state, :rotation_per_minute, rotation, Units.revolution_per_minute())
+    publish_health(state, now_ms)
+  end
+
+  defp publish_health(state, now_ms) do
+    state = cross_check(state, now_ms)
+    broadcast(state, :rotation_healthy, healthy?(state))
     broadcast(state, :active_source, source_label(active_source(state)))
     broadcast(state, :cross_check_gap, state.gap, Units.fraction())
     broadcast(state, :cross_check_fault, state.fault)
@@ -138,7 +168,7 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
   on the monotonic clock.
   """
   def compute(state, now_ms) do
-    state = cross_check(state, now_ms)
+    state = state |> expire(now_ms) |> cross_check(now_ms)
     {rotation(state), state}
   end
 
@@ -230,12 +260,44 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
         |> D.round(3)
   end
 
-  defp record(state, source_settings, nil),
-    do: %{state | readings: Map.delete(state.readings, source_settings.source)}
+  @doc false
+  def expire(state, now_ms) do
+    live_sources =
+      Enum.filter(state.sources, fn source ->
+        received_at = state.received_at_ms[source.source]
+        not is_nil(received_at) and now_ms - received_at <= source.stale_after_ms
+      end)
+      |> Enum.map(& &1.source)
+
+    %{
+      state
+      | readings: Map.take(state.readings, live_sources),
+        received_at_ms: Map.take(state.received_at_ms, live_sources)
+    }
+  end
+
+  @doc false
+  def healthy?(state) do
+    primary = hd(state.sources).source
+    Map.has_key?(state.readings, primary) and not state.fault
+  end
+
+  defp record(state, source_settings, nil) do
+    %{
+      state
+      | readings: Map.delete(state.readings, source_settings.source),
+        received_at_ms: Map.delete(state.received_at_ms, source_settings.source)
+    }
+  end
 
   defp record(state, source_settings, rotation_per_minute) do
     reading = rotation_per_minute |> decimal() |> D.mult(source_settings.ratio)
-    %{state | readings: Map.put(state.readings, source_settings.source, reading)}
+
+    %{
+      state
+      | readings: Map.put(state.readings, source_settings.source, reading),
+        received_at_ms: Map.put(state.received_at_ms, source_settings.source, now_ms())
+    }
   end
 
   # Without an actuator, a signed source above its noise sets the sign for the unsigned ones.
@@ -268,7 +330,8 @@ defmodule VmsCore.Components.OVCS.RotationFusion do
       source: source,
       ratio: decimal(ratio),
       signed: signed,
-      noise_rpm: decimal(Map.get(source_options, :noise_rpm, 0))
+      noise_rpm: decimal(Map.get(source_options, :noise_rpm, 0)),
+      stale_after_ms: Map.get(source_options, :stale_after_ms, 300)
     }
   end
 

@@ -39,7 +39,10 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
         revolution_source: @sensor,
         distance_factor: VehicleMotion.distance_factor(@shaft_to_wheel_ratio, @wheel_radius_m),
         revolutions: nil,
-        sequence: 0
+        sequence: 0,
+        stale_after_ms: 300,
+        rotation_at_ms: nil,
+        revolutions_at_ms: nil
       },
       overrides
     )
@@ -210,6 +213,27 @@ defmodule VmsCore.Components.OVCS.VehicleMotionTest do
       {:noreply, state} = VehicleMotion.handle_info(%{message | source: @sensor}, state)
       assert D.eq?(state.revolutions, D.new(5))
     end
+  end
+
+  test "rotation and distance expire independently without advancing the sequence" do
+    state =
+      state(%{
+        rotation_per_minute: D.new(100),
+        revolutions: D.new(20),
+        rotation_at_ms: 500,
+        revolutions_at_ms: 100,
+        sequence: 7
+      })
+
+    state = VehicleMotion.expire(state, 500)
+    assert state.revolutions == nil
+    assert D.eq?(state.rotation_per_minute, D.new(100))
+    assert state.sequence == 7
+
+    state = VehicleMotion.expire(state, 801)
+    assert state.rotation_per_minute == nil
+    assert VehicleMotion.speed_km_h(state) == nil
+    assert state.sequence == 7
   end
 
   describe "the steering angle" do

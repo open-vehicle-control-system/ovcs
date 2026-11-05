@@ -80,6 +80,7 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     * `:steering_limit_rad` — at full lock, from `geometry/0`.
     * `:steering_sign` — `1` or `-1`, matching the sign given to
       `RosVelocityCommand`. Default `1`.
+    * `:stale_after_ms` — maximum age of each input independently (default 300).
     * `:revolution_source` — optional, publishes `:revolutions` of the
       same shaft as `:rotation_source`; see "Distance".
   """
@@ -152,12 +153,16 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
        revolution_source: Map.get(args, :revolution_source),
        distance_factor: distance_factor(rotation_to_wheel_ratio, wheel_radius_m),
        revolutions: nil,
-       sequence: 0
+       sequence: 0,
+       stale_after_ms: Map.get(args, :stale_after_ms, 300),
+       rotation_at_ms: nil,
+       revolutions_at_ms: nil
      }}
   end
 
   @impl GenServer
   def handle_info(:loop, state) do
+    state = expire(state, System.monotonic_time(:millisecond))
     speed = speed_km_h(state)
 
     :ok =
@@ -198,12 +203,19 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
     sequence =
       if is_nil(rotation_per_minute), do: state.sequence, else: rem(state.sequence + 1, 256)
 
-    {:noreply, %{state | rotation_per_minute: rotation_per_minute, sequence: sequence}}
+    {:noreply,
+     %{
+       state
+       | rotation_per_minute: rotation_per_minute,
+         sequence: sequence,
+         rotation_at_ms: System.monotonic_time(:millisecond)
+     }}
   end
 
   def handle_info(%Bus.Message{name: :revolutions, value: revolutions, source: source}, state)
       when source == state.revolution_source and not is_nil(source) do
-    {:noreply, %{state | revolutions: revolutions}}
+    {:noreply,
+     %{state | revolutions: revolutions, revolutions_at_ms: System.monotonic_time(:millisecond)}}
   end
 
   # The same source-following the actuators do: the manager names the
@@ -252,6 +264,21 @@ defmodule VmsCore.Components.OVCS.VehicleMotion do
   def handle_info(%Bus.Message{}, state) do
     {:noreply, state}
   end
+
+  @doc false
+  def expire(state, now_ms) do
+    rotation_fresh = fresh?(state.rotation_at_ms, now_ms, state.stale_after_ms)
+    distance_fresh = fresh?(state.revolutions_at_ms, now_ms, state.stale_after_ms)
+
+    %{
+      state
+      | rotation_per_minute: if(rotation_fresh, do: state.rotation_per_minute),
+        revolutions: if(distance_fresh, do: state.revolutions)
+    }
+  end
+
+  defp fresh?(nil, _now_ms, _timeout_ms), do: false
+  defp fresh?(at_ms, now_ms, timeout_ms), do: now_ms - at_ms <= timeout_ms
 
   @doc """
   The sign of `requested_throttle`. Zero keeps `last_sign`: a released

@@ -19,15 +19,23 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
       %{
         process_name: @fusion,
         sources: [
-          %{source: @vesc, ratio: D.new(1), signed: true, noise_rpm: D.new(5)},
+          %{
+            source: @vesc,
+            ratio: D.new(1),
+            signed: true,
+            noise_rpm: D.new(5),
+            stale_after_ms: 300
+          },
           %{
             source: @spur,
             ratio: D.from_float(54 / 13),
             signed: false,
-            noise_rpm: D.new(0)
+            noise_rpm: D.new(0),
+            stale_after_ms: 300
           }
         ],
         readings: %{},
+        received_at_ms: %{},
         direction_source: nil,
         sign: 1,
         cross_check_from_rpm: D.new(450),
@@ -141,7 +149,13 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
         state(%{
           direction_source: @actuator,
           sources: [
-            %{source: @spur, ratio: D.new(1), signed: false, noise_rpm: D.new(0)}
+            %{
+              source: @spur,
+              ratio: D.new(1),
+              signed: false,
+              noise_rpm: D.new(0),
+              stale_after_ms: 300
+            }
           ]
         })
 
@@ -201,6 +215,44 @@ defmodule VmsCore.Components.OVCS.RotationFusionTest do
       # above the check speed, and the gap is a fraction of it.
       state = RotationFusion.cross_check(readings(3, 450), 0)
       assert D.gt?(state.gap, D.new("0.9"))
+    end
+  end
+
+  describe "freshness and health" do
+    test "a silent primary expires without a nil message or a fabricated fallback sample" do
+      state = state() |> then(&rotation(@vesc, D.new(500), &1))
+      state = rotation(@spur, D.new(120), state)
+      now_ms = System.monotonic_time(:millisecond)
+      state = %{state | received_at_ms: %{@vesc => now_ms - 301, @spur => now_ms}}
+      flush()
+
+      {:noreply, state} = RotationFusion.handle_info(:check_freshness, state)
+      assert RotationFusion.active_source(state) == @spur
+      assert published_rotation() == {:ok, nil}
+      refute RotationFusion.healthy?(state)
+      assert_receive %Message{name: :rotation_healthy, value: false, source: @fusion}
+    end
+
+    test "health heartbeats do not advance motion sample counts" do
+      state = rotation(@vesc, D.new(0), state())
+      flush()
+      {:noreply, state} = RotationFusion.handle_info(:check_freshness, state)
+      assert RotationFusion.healthy?(state)
+      assert published_rotation() == :none
+      assert_receive %Message{name: :rotation_healthy, value: true, source: @fusion}
+    end
+
+    test "a stale secondary cannot raise a mismatch" do
+      state =
+        state(%{
+          readings: %{@vesc => D.new(1000), @spur => D.new(0)},
+          received_at_ms: %{@vesc => 400, @spur => 0}
+        })
+
+      {_rotation, state} = RotationFusion.compute(state, 400)
+      assert state.gap == nil
+      refute state.fault
+      assert RotationFusion.healthy?(state)
     end
   end
 
