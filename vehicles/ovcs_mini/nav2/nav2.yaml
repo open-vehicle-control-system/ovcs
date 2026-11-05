@@ -1,55 +1,5 @@
-# Nav2 for the OVCS Mini — the one parameter file, for the vehicle and
-# the simulator both.
-#
-# `ovcs compute push` bakes it into the compute node's Nav2 image; the
-# local stacks mount it. The values written here are
-# the vehicle's truth — `use_sim_time: false` in particular — and the
-# launch file overlays `use_sim_time:=true` for a simulated run rather
-# than this file carrying two copies that would drift apart. If sim and
-# vehicle ever need a genuinely different value, that difference goes
-# through a launch argument, visibly, not through a fork of this file.
-#
-# ## Why there is no map here
-#
-# No map_server and no AMCL. Every frame is `odom`, and both costmaps use
-# a rolling window, so the car navigates relative to where it is rather
-# than inside a prior. That keeps this configuration honest about what it
-# proves — that Nav2's velocity output can drive an Ackermann vehicle —
-# without dragging in the map/SLAM decision, which is the largest open
-# piece of the real-vehicle track.
-#
-# It also avoids publishing a fake static `map -> odom` transform, which
-# is the usual shortcut and is worse: it looks like localisation.
-#
-# ## Ackermann is not the default
-#
-# `mppi::AckermannMotionModel` clamps yaw rate to `|vx| / min_turning_r`
-# inside the sampler, so infeasible arcs are never considered rather
-# than merely penalised.
-#
-# Leaving `motion_model` unset does not silently pick something wrong —
-# it is fatal, which is the good outcome. MPPI defaults the value to the
-# instance name `diff_drive`, and with no `FollowPath.diff_drive.plugin`
-# to resolve, controller_server refuses to configure. (The plugin XML's
-# description claims Omni is "the default model when no plugin is
-# explicitly configured"; that is not what the code does. Measured.)
-#
-# What *is* silent is naming a valid but wrong model. Substituting
-# `mppi::DiffDriveMotionModel` loads cleanly and removes the radius
-# constraint entirely; the simulator still arrives at goals with it.
-#
-# min_turning_r comes from the vehicle: wheelbase / tan(steering_limit)
-# = 0.324 / tan(0.52) = 0.566 m, rounded up to 0.6 for margin.
-#
-# ## The planner knows the turning radius
-#
-# The global plan comes from Smac's Hybrid-A*, searching Reeds-Shepp
-# curves at a radius wider than min_turning_r, so it only contains arcs
-# this car can drive. A grid planner such as NavFn plans corners and
-# sideways steps that MPPI then shuffles forward and back against.
-# Reverse is penalised and kept short: a forward-only (Dubins) search
-# finds no way out when the car faces an obstacle, and an unbounded
-# one reverses whole stretches when that is shortest.
+# OVCS Mini uses rear-axle Ackermann kinematics and rolling odom-frame costmaps.
+# The simulator overlays use_sim_time; calibration and validation are in README.md.
 
 controller_server:
   ros__parameters:
@@ -71,6 +21,7 @@ controller_server:
     PathHandler:
       plugin: "nav2_controller::FeasiblePathHandler"
       enforce_path_inversion: true
+      prune_distance: 2.0
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
@@ -109,10 +60,8 @@ controller_server:
       time_steps: 20
       model_dt: 0.1
       batch_size: 1000
-      # The candidates on /controller_server/candidate_trajectories, for
-      # the ovcs_nav2 layout: one in 50 of the batch, every fourth step,
-      # so the markers stay light over the Wi-Fi.
-      visualize: true
+      # Enable trajectory markers only during tuning.
+      visualize: false
       TrajectoryVisualizer:
         trajectory_step: 50
         time_step: 4
@@ -120,8 +69,6 @@ controller_server:
       # Wide enough to sample the yaw rate a planned arc needs at speed;
       # wider shows up as wobble in the chosen command.
       wz_std: 0.4
-      # About 0.4 m to stop for a newly seen obstacle (reaction plus
-      # braking), against the stereo's 3 m and the lidar's 4 m.
       vx_max: 0.8
       # Behind the car only the lidar and the rear ultrasonics see, so
       # reverse stays slow; PreferForwardCritic keeps it a last resort.
@@ -135,8 +82,6 @@ controller_server:
       iteration_count: 1
       temperature: 0.3
       gamma: 0.015
-      prune_distance: 2.0
-      transform_tolerance: 0.2
       regenerate_noises: true
 
       critics:
@@ -175,6 +120,7 @@ controller_server:
         near_goal_distance: 1.0
       PathAlignCritic:
         enabled: true
+        use_path_orientations: true
         cost_power: 1
         cost_weight: 14.0
         max_path_occupancy_ratio: 0.05
@@ -189,6 +135,7 @@ controller_server:
         threshold_to_consider: 0.6
       PathAngleCritic:
         enabled: true
+        mode: 2
         cost_power: 1
         cost_weight: 2.0
         offset_from_furthest: 4
@@ -200,18 +147,10 @@ local_costmap:
     ros__parameters:
       use_sim_time: false
       global_frame: odom
-      robot_base_frame: base_link
-      # How long activation waits for the odom -> base_link transform
-      # before erroring, raised from the 60 s default. On the vehicle
-      # the always-on planner races the VMS, which must boot its CAN
-      # stack and stream 0x709 before odometry exists, and
-      # lifecycle_manager does not retry a timed-out activation — so a
-      # planner that comes up first would sit inactive for good. Five
-      # minutes covers any healthy boot; the controller re-adoption
-      # that can delay 0x709 further is a one-time setup step, not a
-      # normal boot. (Zero is not "wait forever" — it still errors;
-      # measured.)
+      robot_base_frame: base_rear_axle
+      # Allow the VMS and odometry publisher to finish booting.
       initial_transform_timeout: 300.0
+      transform_tolerance: 0.2
       update_frequency: 10.0
       publish_frequency: 5.0
       # Foxglove draws the full grid only, not costmap_updates.
@@ -220,10 +159,9 @@ local_costmap:
       width: 6
       height: 6
       resolution: 0.05
-      # The 568 mm body and 341 mm wheel envelope around base_link, which
-      # sits midway between the axles, plus 2 cm.
-      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["stvl_layer", "denoise_layer", "lidar_layer", "range_layer", "inflation_layer"]
+      # Body envelope expressed at the rear axle, including clearance.
+      footprint: "[[0.462, 0.19], [0.462, -0.19], [-0.138, -0.19], [-0.138, 0.19]]"
+      plugins: ["stvl_layer", "denoise_layer", "lidar_layer", "range_left_layer", "range_right_layer", "inflation_layer"]
       stvl_layer:
         # The camera looks forward only, so a mark that leaves its view
         # is never seen again; voxels expire instead of persisting.
@@ -233,8 +171,7 @@ local_costmap:
         decay_model: 0
         voxel_size: 0.05
         track_unknown_space: true
-        # A voxel is an obstacle once three clouds have hit it: stereo
-        # mismatches rarely land in the same voxel that often.
+        # Occupied vertical voxels required in a projected column.
         mark_threshold: 2
         update_footprint_enabled: true
         combination_method: 1
@@ -252,7 +189,7 @@ local_costmap:
           # Above the glossy floor's reflections, which read 7-10 cm high.
           min_obstacle_height: 0.12
           max_obstacle_height: 0.6
-          expected_update_rate: 0.0
+          expected_update_rate: 0.5
           observation_persistence: 0.0
           inf_is_valid: false
           filter: "passthrough"
@@ -264,6 +201,7 @@ local_costmap:
           # It starts at the stereo's near limit, f * B / num_disparities,
           # so an obstacle too close to be measured is not cleared.
           topic: /stereo/points
+          expected_update_rate: 0.5
           data_type: PointCloud2
           marking: false
           clearing: true
@@ -274,8 +212,7 @@ local_costmap:
           decay_acceleration: 5.0
           model_type: 0
       denoise_layer:
-        # Drops obstacle groups smaller than this many cells, which walls
-        # and furniture never are.
+        # Tune the minimum physical cluster area at this grid resolution.
         plugin: "nav2_costmap_2d::DenoiseLayer"
         minimal_group_size: 5
         group_connectivity_type: 8
@@ -286,6 +223,7 @@ local_costmap:
         observation_sources: scan
         scan:
           topic: /scan
+          expected_update_rate: 0.3
           data_type: "LaserScan"
           marking: true
           clearing: true
@@ -294,13 +232,15 @@ local_costmap:
           obstacle_max_range: 4.0
           raytrace_max_range: 5.0
           max_obstacle_height: 0.6
-      range_layer:
-        # The rear ultrasonics, below the lidar's plane. After
-        # denoise_layer: a close obstacle is an arc of two or three cells.
-        # `beyond_range: :max_range` on the bridge makes an empty reading
-        # clear the cone.
+      range_left_layer:
         plugin: "nav2_costmap_2d::RangeSensorLayer"
-        topics: ["/ultrasound/rear_left", "/ultrasound/rear_right"]
+        topics: ["/ultrasound/rear_left"]
+        no_readings_timeout: 0.5
+        clear_on_max_reading: true
+      range_right_layer:
+        plugin: "nav2_costmap_2d::RangeSensorLayer"
+        topics: ["/ultrasound/rear_right"]
+        no_readings_timeout: 0.5
         clear_on_max_reading: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -314,8 +254,9 @@ global_costmap:
     ros__parameters:
       use_sim_time: false
       global_frame: odom
-      robot_base_frame: base_link
+      robot_base_frame: base_rear_axle
       initial_transform_timeout: 300.0
+      transform_tolerance: 0.2
       update_frequency: 2.0
       publish_frequency: 1.0
       # Foxglove draws the full grid only, not costmap_updates.
@@ -326,8 +267,8 @@ global_costmap:
       width: 30
       height: 30
       resolution: 0.1
-      footprint: "[[0.30, 0.19], [0.30, -0.19], [-0.30, -0.19], [-0.30, 0.19]]"
-      plugins: ["obstacle_layer", "denoise_layer", "lidar_layer", "range_layer", "inflation_layer"]
+      footprint: "[[0.462, 0.19], [0.462, -0.19], [-0.138, -0.19], [-0.138, 0.19]]"
+      plugins: ["obstacle_layer", "denoise_layer", "lidar_layer", "range_left_layer", "range_right_layer", "inflation_layer"]
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         # One cloud, two sources. Heights are in odom, whose z is the
@@ -337,6 +278,7 @@ global_costmap:
         observation_sources: stereo_marking stereo_clearing
         stereo_marking:
           topic: /stereo/points
+          expected_update_rate: 0.5
           data_type: "PointCloud2"
           marking: true
           clearing: false
@@ -346,6 +288,7 @@ global_costmap:
           obstacle_max_range: 3.0
         stereo_clearing:
           topic: /stereo/points
+          expected_update_rate: 0.5
           data_type: "PointCloud2"
           marking: false
           clearing: true
@@ -353,10 +296,9 @@ global_costmap:
           max_obstacle_height: 0.6
           raytrace_max_range: 3.5
       denoise_layer:
-        # Drops obstacle groups smaller than this many cells, which walls
-        # and furniture never are.
+        # Tune the minimum physical cluster area at this grid resolution.
         plugin: "nav2_costmap_2d::DenoiseLayer"
-        minimal_group_size: 5
+        minimal_group_size: 2
         group_connectivity_type: 8
       lidar_layer:
         # The RPLIDAR's 360° scan, after denoise_layer: its returns are not
@@ -365,6 +307,7 @@ global_costmap:
         observation_sources: scan
         scan:
           topic: /scan
+          expected_update_rate: 0.3
           data_type: "LaserScan"
           marking: true
           clearing: true
@@ -373,13 +316,15 @@ global_costmap:
           obstacle_max_range: 4.0
           raytrace_max_range: 5.0
           max_obstacle_height: 0.6
-      range_layer:
-        # The rear ultrasonics, below the lidar's plane. After
-        # denoise_layer: a close obstacle is an arc of two or three cells.
-        # `beyond_range: :max_range` on the bridge makes an empty reading
-        # clear the cone.
+      range_left_layer:
         plugin: "nav2_costmap_2d::RangeSensorLayer"
-        topics: ["/ultrasound/rear_left", "/ultrasound/rear_right"]
+        topics: ["/ultrasound/rear_left"]
+        no_readings_timeout: 0.5
+        clear_on_max_reading: true
+      range_right_layer:
+        plugin: "nav2_costmap_2d::RangeSensorLayer"
+        topics: ["/ultrasound/rear_right"]
+        no_readings_timeout: 0.5
         clear_on_max_reading: true
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
@@ -422,7 +367,7 @@ bt_navigator:
   ros__parameters:
     use_sim_time: false
     global_frame: odom
-    robot_base_frame: base_link
+    robot_base_frame: base_rear_axle
     odom_topic: /odom
     transform_tolerance: 0.2
     # How long a tree node waits for a server to accept its request. The
@@ -444,29 +389,21 @@ behavior_server:
     use_sim_time: false
     local_frame: odom
     global_frame: odom
-    robot_base_frame: base_link
+    robot_base_frame: base_rear_axle
     transform_tolerance: 0.2
     local_costmap_topic: local_costmap/costmap_raw
     local_footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    # `spin` is loaded but never invoked. bt_navigator resolves every
-    # action server in *both* of its trees at activation, and the stock
-    # navigate_through_poses tree references Spin — without the server
-    # present it fails with "Action server spin not available" and the
-    # whole stack refuses to come up. Keeping the server costs nothing;
-    # what matters is that no tree here calls it. See the BT XMLs.
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
-    spin:
-      plugin: "nav2_behaviors::Spin"
+    behavior_plugins: ["backup", "drive_on_heading", "wait"]
     # `minimum_speed` floors the ramp down at the end of a drive, which
     # would otherwise slow below the VESC's Minimum ERPM and stall short
     # of the distance.
     backup:
       plugin: "nav2_behaviors::BackUp"
-      minimum_speed: 0.10
+      minimum_speed: 0.15
     drive_on_heading:
       plugin: "nav2_behaviors::DriveOnHeading"
-      minimum_speed: 0.10
+      minimum_speed: 0.15
     wait:
       plugin: "nav2_behaviors::Wait"
 
@@ -477,7 +414,7 @@ velocity_smoother:
     # vehicle (/cmd_vel_nav), see the launch file. Limits are MPPI's
     # above, in [x, y, theta].
     smoothing_frequency: 20.0
-    scale_velocities: false
+    scale_velocities: true
     feedback: "OPEN_LOOP"
     max_velocity: [0.8, 0.0, 2.5]
     min_velocity: [-0.3, 0.0, -2.5]
