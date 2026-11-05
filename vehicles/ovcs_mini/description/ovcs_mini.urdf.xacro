@@ -88,7 +88,7 @@
   <!-- As the VMS composer's maximum motor current and the simulated
        hardware's acceleration per ampere (`OvcsMini`); geometry_test.exs
        checks both. -->
-  <xacro:property name="max_motor_current" value="10" />
+  <xacro:property name="max_motor_current" value="20" />
   <xacro:property name="simulated_acceleration_per_ampere" value="0.5" />
   <!-- The drive force at the maximum current, shared by the four wheels:
        a wheel held back stalls instead of spinning at the commanded speed. -->

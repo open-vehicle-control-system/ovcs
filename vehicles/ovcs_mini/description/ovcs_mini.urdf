@@ -332,7 +332,7 @@
     <origin rpy="-1.5707963267948966 0 0" xyz="-0.162 0.148 0.0522"/>
     <axis xyz="0 0 1"/>
     <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
-    <limit effort="0.15725250000000002" velocity="1000"/>
+    <limit effort="0.31450500000000003" velocity="1000"/>
     <dynamics damping="0.01" friction="0.0"/>
   </joint>
   <link name="rear_right_wheel">
@@ -379,7 +379,7 @@
     <origin rpy="-1.5707963267948966 0 0" xyz="-0.162 -0.148 0.0522"/>
     <axis xyz="0 0 1"/>
     <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
-    <limit effort="0.15725250000000002" velocity="1000"/>
+    <limit effort="0.31450500000000003" velocity="1000"/>
     <dynamics damping="0.01" friction="0.0"/>
   </joint>
   <link name="front_left_steering_link">
@@ -449,7 +449,7 @@
     <origin rpy="-1.5707963267948966 0 0" xyz="0 0 0"/>
     <axis xyz="0 0 1"/>
     <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
-    <limit effort="0.15725250000000002" velocity="1000"/>
+    <limit effort="0.31450500000000003" velocity="1000"/>
     <dynamics damping="0.01" friction="0.0"/>
   </joint>
   <link name="front_right_steering_link">
@@ -519,7 +519,7 @@
     <origin rpy="-1.5707963267948966 0 0" xyz="0 0 0"/>
     <axis xyz="0 0 1"/>
     <!-- URDF requires a velocity with the effort; the drive's own limit applies. -->
-    <limit effort="0.15725250000000002" velocity="1000"/>
+    <limit effort="0.31450500000000003" velocity="1000"/>
     <dynamics damping="0.01" friction="0.0"/>
   </joint>
   <!-- ── Sensors ────────────────────────────────────────────────── -->
