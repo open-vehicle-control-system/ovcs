@@ -37,11 +37,11 @@ defmodule OvcsMini.Vms.Composer do
   @throttle_expo Decimal.new("0.5")
   # Amperes of motor current at full stick, in drive and in reverse
   # gear: a torque, so easing off coasts rather than brakes.
-  @max_motor_current 10
+  @max_motor_current 20
   # Amperes at the smallest stick: the Mini starts rolling at 4.3 A.
   @min_motor_current 4
   # Amperes of braking current at full stick back.
-  @max_brake_current 10
+  @max_brake_current 30
 
   # Motor turns per wheel turn: Traxxas's stock ratio, for the stock
   # 13-tooth pinion on the 54-tooth spur.
