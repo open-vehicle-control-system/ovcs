@@ -13,7 +13,7 @@
   the RecoveryNode burns a retry. With Spin first in the list, a single
   transient planning failure is enough to abort the whole action.
 
-  `BackUp` reverses 30 cm at 0.10 m/s, checked against the lidar and the
+  `BackUp` reverses 30 cm at 0.15 m/s, checked against the lidar and the
   rear ultrasonics: without it a car that cannot turn tighter than its
   radius stays stuck facing an obstacle.
   `Wait` is for a costmap that will clear on its own (a moving
@@ -59,7 +59,7 @@
           <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
         </Sequence>
         <!-- No Spin: this vehicle cannot execute one. -->
-        <BackUp backup_dist="0.30" backup_speed="0.10"/>
+        <BackUp backup_dist="0.30" backup_speed="0.15"/>
         <Wait wait_duration="2.0"/>
       </RoundRobin>
     </RecoveryNode>

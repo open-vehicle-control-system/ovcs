@@ -127,3 +127,5 @@ python3 vehicles/ovcs_mini/description/generate_meshes.py
 
 Keep the STL assets with the model so viewers do not need Python or a mesh editor
 to load them. These are visual surfaces, not watertight manufacturing meshes.
+
+Nav2 uses the fixed `base_rear_axle` frame, behind `base_link` by half the wheelbase. The bridge publishes rear-axle `/odom` and the existing `odom → base_link` TF; the URDF supplies their fixed relationship. See [navigation validation](../nav2/README.md).

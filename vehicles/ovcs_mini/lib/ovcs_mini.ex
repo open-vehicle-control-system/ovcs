@@ -135,8 +135,7 @@ defmodule OvcsMini do
         # to. Reads the VMS's vehicle_motion frame off CAN and
         # publishes /odom and odom -> base_link, which is everything
         # Nav2 needs in the map-less setup.
-        {:odometry_publisher,
-         driver: OvcsDrivers.Imu.Dummy, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        odometry_publisher(OvcsDrivers.Imu.Dummy),
         path_prediction(),
         ackermann_joint_states()
       ]
@@ -164,8 +163,7 @@ defmodule OvcsMini do
            require_odometry: true
          }},
         {:imu_publisher, driver: RosBridge.Imu.Zenoh},
-        {:odometry_publisher,
-         driver: RosBridge.Imu.Zenoh, base_ahead_of_rear_axle: base_ahead_of_rear_axle()},
+        odometry_publisher(RosBridge.Imu.Zenoh),
         {:lidar_publisher, driver: RosBridge.Lidar.Zenoh, bins: 500, frame_id: "lidar_link"},
         :proximity,
         path_prediction(),
@@ -256,11 +254,7 @@ defmodule OvcsMini do
          }},
         {:imu_publisher, driver: BNO085.I2C},
         # Same ordering constraint as the host config.
-        {:odometry_publisher,
-         driver: BNO085.I2C,
-         base_ahead_of_rear_axle: base_ahead_of_rear_axle(),
-         imu_mount_rpy: URDF.joint!(@urdf, "imu_joint").rpy,
-         minimum_imu_accuracy: 1},
+        odometry_publisher(BNO085.I2C, minimum_imu_accuracy: 1),
         # RPLIDAR C1 on the bridge's USB port, found by its adapter's
         # serial number. It measures about every 0.72 degrees, 500
         # points a revolution: one bin each.
@@ -278,6 +272,21 @@ defmodule OvcsMini do
         ackermann_joint_states()
       ]
     }
+
+  defp odometry_publisher(driver, opts \\ []) do
+    {:odometry_publisher,
+     Keyword.merge(
+       [
+         driver: driver,
+         base_frame_id: "base_rear_axle",
+         base_ahead_of_rear_axle: 0.0,
+         tf_frame_id: "base_link",
+         tf_ahead_of_rear_axle: base_ahead_of_rear_axle(),
+         imu_mount_rpy: URDF.joint!(@urdf, "imu_joint").rpy
+       ],
+       opts
+     )}
+  end
 
   defp path_prediction do
     {:path_prediction,
