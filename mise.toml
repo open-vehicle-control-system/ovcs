@@ -71,6 +71,11 @@ for repo in \
 done
 """
 
+[tasks.secrets]
+description = "Scan commits for leaked secrets with gitleaks (default range: origin/main..HEAD)"
+tools = { gitleaks = "8.30.1" }
+run = 'gitleaks git --redact --no-banner --log-opts="${SECRETS_RANGE:-origin/main..HEAD}"'
+
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"

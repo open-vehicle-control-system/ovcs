@@ -103,6 +103,21 @@ jobs:
               - *shared
               - controllers/**
 
+  secrets:
+    # Scans the commits this run adds, not the whole history.
+    name: Secrets · gitleaks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-mise
+      - run: mise run secrets
+        env:
+          # The pull request's commits, the pushed commits, or the last one.
+          SECRETS_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || github.event_name == 'push' && format('{0}..{1}', github.event.before, github.sha) || 'HEAD~1..HEAD' }}
+
   lock-drift:
     # Shared dev tooling must be locked at one version across the Mix
     # projects. vms/core silently sat 10 patch versions behind on
