@@ -1,11 +1,11 @@
     #include <ExpansionBoard.h>
 
     bool ExpansionBoard::begin() {
-      _board.begin();
+      return _board.begin();
     };
 
     uint8_t ExpansionBoard::lastError() {
-      _board.lastError();
+      return _board.lastError();
     };
 
     void ExpansionBoard::pinMode(uint8_t pin, PinMode mode) {
