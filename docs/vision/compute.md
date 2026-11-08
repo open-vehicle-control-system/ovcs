@@ -36,7 +36,7 @@ The compiler comes from the `:defn_options` of the `:stereo` component, which go
 | [`nx_iree`](https://github.com/Spin42/nx_iree) with `vulkan-spirv` | compiled on your workstation, run on the C100's GPU | `c100_defn_options/1` |
 | `nx_iree` with `llvm-cpu` | compiled on your workstation, run on the Pi 5's cores | `rpi5_defn_options/1`, for the Nx stages that have no native implementation |
 
-`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs. A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
+`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs. The matching is the exception on a Vulkan GPU: `NxStereo.sgm/3` exists both as Nx and as hand-written compute shaders derived from libSGM (`priv/spirv` in `nx_stereo`). When `nx_iree` compiles for Vulkan, it runs those shaders through its Vulkan runtime instead of compiling the Nx version, so IREE generates the code of every stage but the matching. The two implementations give the same matches, subpixel values aside in their last bit; the shaders depend on the GPU's subgroup operations, so a new GPU needs them checked against the Nx version. A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
 
 ```sh
 cd vehicles/<vehicle>
