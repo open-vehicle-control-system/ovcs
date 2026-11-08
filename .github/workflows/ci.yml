@@ -192,6 +192,16 @@ jobs:
             ${{ matrix.project }}/_build
           key: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
           restore-keys: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
+      # Precompiled NIFs (zenohex) otherwise come from GitHub releases
+      # whenever deps/ and _build/ miss. The directory must exist for the
+      # cache to save in projects without one.
+      - name: Create the precompiled NIF cache directory
+        run: mkdir -p ~/.cache/rustler_precompiled
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/rustler_precompiled
+          key: rustler-precompiled-${{ matrix.project }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: rustler-precompiled-${{ matrix.project }}-
       - name: Locate the Erlang and Elixir PLTs
         id: core-plts
         run: echo "dir=$(elixir -e 'IO.puts(Mix.Utils.mix_home())')" >> "$GITHUB_OUTPUT"
