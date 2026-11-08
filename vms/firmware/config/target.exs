@@ -39,6 +39,14 @@ if config_env() in [:dev, :test, :prod] do
               "Set CI=true to build with defaults anyway."
     end
   end
+
+  if System.get_env("CI") != "true" and byte_size(System.get_env("SECRET_KEY_BASE", "")) < 64 do
+    IO.warn(
+      "SECRET_KEY_BASE in vehicles/#{vehicle_dir}/.env.exs is shorter than 64 bytes: " <>
+        "replace it with the output of `mix phx.gen.secret`.",
+      []
+    )
+  end
 end
 
 # Use Ringlogger as the logger backend and remove :console.
