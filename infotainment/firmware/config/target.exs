@@ -39,6 +39,14 @@ if config_env() in [:dev, :test, :prod] do
               "Set CI=true to build with defaults anyway."
     end
   end
+
+  if System.get_env("CI") != "true" and byte_size(System.get_env("SECRET_KEY_BASE", "")) < 64 do
+    IO.warn(
+      "SECRET_KEY_BASE in vehicles/#{vehicle_dir}/.env.exs is shorter than 64 bytes: " <>
+        "replace it with the output of `mix phx.gen.secret`.",
+      []
+    )
+  end
 end
 
 config :logger, backends: [RingLogger]
@@ -129,9 +137,16 @@ config :ovcs_bus, :distribution, domain: "local"
 config :infotainment_api,
   generators: [timestamp_type: :utc_datetime]
 
+# The infotainment app runs on the same device, so the API listens on
+# localhost unless the vehicle's .env.exs opens it to the network.
+infotainment_api_http =
+  if System.get_env("INFOTAINMENT_API_ON_ALL_INTERFACES") == "true",
+    do: [port: 4001],
+    else: [ip: {127, 0, 0, 1}, port: 4001]
+
 config :infotainment_api, InfotainmentApiWeb.Endpoint,
   url: [host: vehicle_host],
-  http: [port: 4001],
+  http: infotainment_api_http,
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
   check_origin: false,
   server: true,

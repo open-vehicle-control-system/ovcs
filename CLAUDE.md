@@ -39,7 +39,7 @@ These steps apply to every contributor; the code rules they rely on are in [CODE
 - **Test first.** A failing test that shows the missing behaviour comes before the code that adds it; see [Tests](./CODE_STYLING.md#tests).
 - **Debug from the root cause.** Reproduce, find why it happens, capture it in a failing test, then fix. No fix by trial and error.
 - **Evidence before claims.** Run the checks and read their output before stating that something works, passes or is fixed; say plainly what could not be verified.
-- **Checks before review:** `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in every project touched, and `elixir scripts/check_docs.exs` when docs change.
+- **Checks before review:** `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in every project touched, `elixir scripts/check_docs.exs` when docs change, and `mise run secrets` (gitleaks over your commits since `origin/main`).
 - **Review by someone other than the author.** Verify each review finding against the code before applying it; push back with the reason when it is wrong.
 - **Assistants** use the superpowers process skills (brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion, requesting-code-review, receiving-code-review) and the clean-code skills when they are installed. Where a skill and this repository's guides disagree, the guides win.
 
