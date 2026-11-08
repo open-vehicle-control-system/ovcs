@@ -19,6 +19,7 @@ Before making changes, read the relevant docs rather than rediscovering the proj
 - [docs/vehicle_package.md](./docs/vehicle_package.md) — your vehicle package: how `VEHICLE` selects it, what each firmware boots, the behaviours in play, `ovcs new`.
 - [docs/testing_with_can.md](./docs/testing_with_can.md) — CAN testing.
 - [vehicles/ovcs1/WIRING.md](./vehicles/ovcs1/WIRING.md) — OVCS1 wiring.
+- [backlog/](./backlog) — the work queue, managed with [Backlog.md](https://github.com/MrLesk/Backlog.md) (`backlog task list --plain`).
 
 Prefer updating these docs over duplicating their content here.
 
@@ -27,6 +28,20 @@ Prefer updating these docs over duplicating their content here.
 - **Go straight to the point.** In replies, code comments and docs alike: say what matters, once, and stop. No preamble, no recap, no restating what the reader just saw, no filler. If a sentence adds nothing, cut it; if nothing needs saying, say nothing.
 
 - **Don't commit until the user validates.** Make the edits, run whatever sanity checks are possible locally, and stop. Wait for the user to confirm the change works on their end before running `git commit`. Small follow-up tweaks can be squashed into the eventual commit.
+
+## Development process
+
+These steps apply to every contributor; the code rules they rely on are in [CODE_STYLING.md](./CODE_STYLING.md).
+
+- **Work starts from a backlog task.** Pick one whose dependencies are done (`backlog task list --plain`, `backlog task <id> --plain`), set it `In Progress` with yourself as assignee, and write its acceptance criteria before the code. Work found on the way becomes a new task, not extra scope. Task files change in the PR that does the work; a task is `Done` when its PR merges.
+- **Design before code** for anything that adds or changes behaviour: the problem, the options considered and the one chosen go in the task, agreed before implementation starts.
+- **Plan large work as a sequence of small PRs**, each a backlog task with its dependencies, each shippable on its own (see [Commits and pull requests](./CODE_STYLING.md#commits-and-pull-requests)).
+- **Test first.** A failing test that shows the missing behaviour comes before the code that adds it; see [Tests](./CODE_STYLING.md#tests).
+- **Debug from the root cause.** Reproduce, find why it happens, capture it in a failing test, then fix. No fix by trial and error.
+- **Evidence before claims.** Run the checks and read their output before stating that something works, passes or is fixed; say plainly what could not be verified.
+- **Checks before review:** `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in every project touched, and `elixir scripts/check_docs.exs` when docs change.
+- **Review by someone other than the author.** Verify each review finding against the code before applying it; push back with the reason when it is wrong.
+- **Assistants** use the superpowers process skills (brainstorming, writing-plans, test-driven-development, systematic-debugging, verification-before-completion, requesting-code-review, receiving-code-review) and the clean-code skills when they are installed. Where a skill and this repository's guides disagree, the guides win.
 
 ## Git commit and PR policy
 
