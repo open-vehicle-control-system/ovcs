@@ -178,9 +178,10 @@ An action row posts a JSON body to `POST /api/actions`:
 {"module": "Elixir.VmsCore.Components.OVCS.SteeringColumn", "action": "set_pid_parameter", "parameter": "kp", "value": "0.12"}
 ```
 
-[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) converts `module` to an existing atom and runs `module.trigger_action(action, params)`, where `params` is the whole body with string keys. Two rules follow:
+[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) looks the `module` and `action` pair up among the action rows of your `dashboard_configuration/0` and runs `module.trigger_action(action, params)`, where `params` is the whole body with string keys. Three rules follow:
 
-- An action's `module` must be a real module that defines `trigger_action/2`. Unlike a metric source, a process name does not work.
+- Only what your pages declare is callable. A pair no row declares answers `404`, even when the module defines that action, so the API cannot reach code your dashboard does not expose; call anything else from IEx.
+- An action's `module` must be a real module that defines `trigger_action/2`, or the request answers `404`. Unlike a metric source, a process name does not work.
 - `trigger_action/2` returns `:ok`, or `{:error, reason}` to refuse: the request then answers `422` and the dashboard shows the reason under the row. Anything else fails the request. A `:number` value arrives as a string; convert it yourself.
 
 The OBD2 reference vehicle's [`diagnostics.ex`](../../vehicles/obd2/lib/obd2/vms/diagnostics.ex) shows the usual shape, one clause per action string:
@@ -272,7 +273,7 @@ curl -s http://localhost:4000/api/vehicle/pages
 curl -s http://localhost:4000/api/vehicle/pages/dashboard/blocks
 ```
 
-Pages come back as `{"type": "page", "id": …, "attributes": {"name"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`. To try an action without the UI, post the body the dashboard would send:
+Pages come back as `{"type": "page", "id": …, "attributes": {"name"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`. To try an action without the UI, post the body the dashboard would send for one of your action rows; on the OVCS1 and OVCS Mini reference vehicles, the status block of the dashboard page declares this one:
 
 ```sh
 curl -s -X POST http://localhost:4000/api/actions \
@@ -280,7 +281,7 @@ curl -s -X POST http://localhost:4000/api/actions \
   -d '{"module": "Elixir.VmsCore.Status", "action": "reset_status"}'
 ```
 
-A `201` means `trigger_action/2` returned `:ok`. For the infotainment side, use port `4001` on a vehicle with an infotainment composer (`./ovcs run obd2` or `./ovcs run ovcs1`), and start the Flutter app in its own terminal as the [CLI reference](../../cli/README.md) describes. Open the VMS dashboard on the Vite dev server at `http://localhost:5173`, which hot-reloads; `:4000` serves the last prebuilt bundle.
+A `201` means `trigger_action/2` returned `:ok`; a `404` means no row declares that pair. For the infotainment side, use port `4001` on a vehicle with an infotainment composer (`./ovcs run obd2` or `./ovcs run ovcs1`), and start the Flutter app in its own terminal as the [CLI reference](../../cli/README.md) describes. Open the VMS dashboard on the Vite dev server at `http://localhost:5173`, which hot-reloads; `:4000` serves the last prebuilt bundle.
 
 ## Next steps
 
