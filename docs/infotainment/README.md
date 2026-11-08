@@ -27,7 +27,7 @@ On your workstation, `./ovcs run <vehicle>` starts it as the `<vehicle>-infotain
 mise run infotainment-dashboard   # cd infotainment/dashboard && flutter run -d linux
 ```
 
-The app talks to `localhost:4001`, which on the vehicle is the Phoenix endpoint on the same Pi.
+The app talks to `localhost:4001`, which on the vehicle is the Phoenix endpoint on the same Pi. On the firmware that endpoint listens on localhost only; to reach it from another host, for example the app running on your workstation against the vehicle, set `INFOTAINMENT_API_ON_ALL_INTERFACES` to `true` in the vehicle's `.env.exs`.
 
 ## Four layers
 
