@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
+defmodule SimulatorCore.SimulatedComponents.Vesc.MotorController do
   @moduledoc """
   A traction motor behind a VESC, the inverse of
   `VmsCore.Components.Vesc.MotorController`.
@@ -29,9 +29,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
       `:acceleration_per_ampere` (`0.5`), `:command_timeout_ms` (`1_000`),
       `:input_voltage` (`12.0`).
   """
-  @behaviour RosBridge.Simulator.SimulatedComponent
+  @behaviour SimulatorCore.SimulatedComponent
 
-  import RosBridge.Simulator.SimulatedComponent, only: [decimal: 2, float: 2]
+  import SimulatorCore.SimulatedComponent, only: [decimal: 2, float: 2]
 
   @defaults %{
     name: "vesc",
@@ -45,7 +45,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
 
   @commands [:set_duty, :set_current, :set_current_brake, :set_rpm]
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def init(opts) do
     opts = Map.merge(@defaults, Map.new(opts))
     _ = {Map.fetch!(opts, :pole_pairs), Map.fetch!(opts, :motor_to_wheel_ratio)}
@@ -70,7 +70,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     {state, received, emitted}
   end
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def handle_frame(name, signals, state, now_ms) do
     command =
       case state.commands[name] do
@@ -83,7 +83,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     %{state | command: command, command_at_ms: now_ms}
   end
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def actuations(state, vehicle, now_ms) do
     case active_command(state, now_ms) do
       {:rpm, erpm} when abs(erpm) < state.min_erpm -> [{:speed, 0.0}]
@@ -95,7 +95,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.Vesc.MotorController do
     end
   end
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def report(state, vehicle, now_ms) do
     motor_turns = vehicle.wheel_turns_step * state.motor_to_wheel_ratio
     state = %{state | tachometer: state.tachometer + motor_turns * 6 * state.pole_pairs}
