@@ -147,22 +147,27 @@ first, evidence before a claim, small reviewed PRs) is in
 
 Code is safety-relevant when its failure can move, stop, steer or
 energise the vehicle against what its operator commanded. It is kept
-apart from the rest (dashboards, metrics, infotainment, bridges'
-non-actuating paths). These rules are firm, not preferences.
+apart from the rest (dashboards, metrics, infotainment, bridges).
+These rules are firm, not preferences.
 
-- **Each module says whether it is safety-relevant.** Every module in
+- **Safety-relevant code lives in the VMS and the generic controllers.**
+  Every other node (bridges, infotainment, vision, the ROS compute node)
+  is an untrusted source: the VMS detects its failures itself, from a
+  counter or sequence number that stops changing, a frame that stops
+  arriving or a value out of range, and no safety decision relies on that
+  node's own checks.
+- **Each module says - **Each module says whether it is safety-relevant.** Every module in
   `vms/core/lib/vms_core/` (its managers, components and top-level
-  modules), in a vehicle's `lib/<vehicle>/vms.ex` and
-  `lib/<vehicle>/vms/`, and in `bridges/radio_control_bridge/` declares
-  it in its module documentation, next to `@moduledoc`:
+  modules) and in a vehicle's `lib/<vehicle>/vms.ex` and
+  `lib/<vehicle>/vms/` declares it in its module documentation:
   `@moduledoc safety: :relevant` or `@moduledoc safety: :none`. A module
   without the declaration is treated as safety-relevant, never as "not
-  safety", and the declaration moves with the file. A module that reads an input a safety
-  decision uses (speed, standstill, battery state) is safety-relevant.
-  The generic controller firmware (`controllers/generic_controller/`) is
-  safety-relevant as a whole, and so are the CAN frames a
-  safety-relevant module sends or receives.
-- **Decisions live in pure modules.** A safety decision (a torque
+  safety", and the declaration moves with the file. A module that reads
+  an input a safety decision uses (speed, standstill, battery state) is
+  safety-relevant. The generic controller firmware
+  (`controllers/generic_controller/`) is safety-relevant as a whole, and
+  so are the CAN frames a safety-relevant module sends or receives.
+ pure modules.** A safety decision (a torque
   limit, an override, a freshness check, an interlock, ready-to-drive)
   is a plain module that takes inputs and returns a decision: no
   process, IO, Repo, Bus or Logger. The driver around it does the CAN
