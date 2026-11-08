@@ -267,7 +267,7 @@ Publish metrics on the loop even when they have not changed: a dashboard opened 
 
 ## Actions
 
-A dashboard button calls `POST /api/actions`. [`VmsApiWeb.Api.ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) turns `params["module"]` into an existing atom and calls `module.trigger_action(action, params)`, matching the result against `:ok`. Return exactly `:ok`; anything else is a server error.
+A dashboard button calls `POST /api/actions`. [`VmsApiWeb.Api.ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) calls `module.trigger_action(action, params)` when an action row of your dashboard declares that `module` and `action`, and answers `404` otherwise. Return `:ok`, or `{:error, reason}` to refuse; anything else is a server error.
 
 The call runs in the HTTP request process, not your component's, so real drivers forward it with a `GenServer.call`. From [`OVCS.SteeringColumn`](../../vms/core/lib/vms_core/components/ovcs/steering_column.ex):
 
