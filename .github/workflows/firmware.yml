@@ -14,6 +14,7 @@ on:
       - 'vms/**'
       - 'infotainment/**'
       - 'libraries/**'
+      - 'scripts/libraries.*'
       - 'mise.toml'
       - '.github/workflows/firmware.yml'
       - '.github/actions/setup-mise/**'
