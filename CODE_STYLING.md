@@ -150,18 +150,18 @@ energise the vehicle against what its operator commanded. It is kept
 apart from the rest (dashboards, metrics, infotainment, bridges'
 non-actuating paths). These rules are firm, not preferences.
 
-- **Safety-relevant paths are declared.** They are:
-  - `vms/core/lib/vms_core/managers/` and `vms/core/lib/vms_core/status.ex`;
-  - the drivers that command an actuator or read an input a safety
-    decision uses: `components/nissan/`, `components/bosch/`,
-    `components/vesc/`, `components/traxxas/`, `components/orion/`,
-    `components/volkswagen/polo_9n/abs.ex`, and in `components/ovcs/`
-    the throttle pedal, input curve, generic controller, high-voltage
-    contactors, steering column, status, radio control and ROS command
-    modules;
-  - each vehicle's `lib/<vehicle>/vms.ex` and `lib/<vehicle>/vms/composer.ex`;
-  - `controllers/generic_controller/` and `bridges/radio_control_bridge/`;
-  - the CAN YAMLs of the frames those modules send or receive.
+- **Each module says whether it is safety-relevant.** Every module in
+  `vms/core/lib/vms_core/` (its managers, components and top-level
+  modules), in a vehicle's `lib/<vehicle>/vms.ex` and
+  `lib/<vehicle>/vms/`, and in `bridges/radio_control_bridge/` declares
+  it in its module documentation, next to `@moduledoc`:
+  `@moduledoc safety: :relevant` or `@moduledoc safety: :none`. A module
+  without the declaration is treated as safety-relevant, never as "not
+  safety", and the declaration moves with the file. A module that reads an input a safety
+  decision uses (speed, standstill, battery state) is safety-relevant.
+  The generic controller firmware (`controllers/generic_controller/`) is
+  safety-relevant as a whole, and so are the CAN frames a
+  safety-relevant module sends or receives.
 - **Decisions live in pure modules.** A safety decision (a torque
   limit, an override, a freshness check, an interlock, ready-to-drive)
   is a plain module that takes inputs and returns a decision: no
