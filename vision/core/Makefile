@@ -8,12 +8,19 @@ ifeq ($(MIX_TARGET),okdo_c100)
 BINARIES := v4l2_capture jpeg_codec
 FEATURES :=
 TARGET_CPU_FLAGS :=
+else ifeq ($(MIX_TARGET),arduino_ventuno_q)
+BINARIES := v4l2_capture jpeg_codec
+FEATURES :=
+TARGET_CPU_FLAGS := -C target-cpu=cortex-a78
 else
 BINARIES := camera_capture hailo_detect jpeg_codec stereo_match
 FEATURES := --features device
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a76
 endif
 CARGO ?= cargo
+# Every Port binary: priv/ is shared by the host and every target, so a
+# target build removes the ones it does not build.
+ALL_BINARIES := camera_capture hailo_detect jpeg_codec stereo_match v4l2_capture
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
 RUST_TARGET := $(TARGET_ARCH)-unknown-$(TARGET_OS)-$(TARGET_ABI)
@@ -63,12 +70,13 @@ all:
 else
 all: cargo
 	mkdir -p $(PRIV_DIR)
+	rm -f $(addprefix $(PRIV_DIR)/,$(filter-out $(BINARIES),$(ALL_BINARIES)))
 	for binary in $(BINARIES); do install -m 755 $(RUST_OUT)/$$binary $(PRIV_DIR)/$$binary; done
 endif
 
 # Phony: cargo decides what is stale.
 cargo:
-	@test -n "$(SYSROOT)" || { echo "NERVES_SDK_SYSROOT is unset: compile through vision/firmware with MIX_TARGET=rpi5 or okdo_c100" >&2; exit 1; }
+	@test -n "$(SYSROOT)" || { echo "NERVES_SDK_SYSROOT is unset: compile through vision/firmware with MIX_TARGET=rpi5, okdo_c100 or arduino_ventuno_q" >&2; exit 1; }
 	@test -d "$(CXX_INCLUDE)" || { echo "no C++ headers at $(CXX_INCLUDE)" >&2; exit 1; }
 	cd $(RUST_DIR) && $(CARGO_ENV) $(CARGO) build --release --locked $(FEATURES) \
 		--target $(RUST_TARGET) $(addprefix -p ,$(BINARIES))

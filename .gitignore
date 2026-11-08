@@ -33,3 +33,8 @@ vehicles/*/priv/models/*.onnx
 
 # Python bytecode
 __pycache__/
+
+# Qualcomm's AI Runtime for the VENTUNO Q vision firmware, written by
+# `mise run fetch-qairt`. Qualcomm's licence allows shipping it only inside
+# a firmware.
+vision/firmware/rootfs_overlay_qairt/

@@ -3,7 +3,7 @@ defmodule VisionFirmware.MixProject do
 
   @app :vision_firmware
   @version "0.1.0"
-  @all_targets [:rpi5, :okdo_c100]
+  @all_targets [:rpi5, :okdo_c100, :arduino_ventuno_q]
 
   def project do
     [
@@ -80,6 +80,14 @@ defmodule VisionFirmware.MixProject do
        tag: "v0.3.0",
        runtime: false,
        targets: :okdo_c100,
+       nerves: [compile: false]},
+      # The Arduino VENTUNO Q: CAMSS for `v4l2_capture`, Mesa Turnip for
+      # `nx_stereo` on Vulkan, and FastRPC for the NPU `qnn_detect` drives.
+      {:nerves_system_arduino_ventuno_q,
+       github: "Spin42/nerves_system_arduino_ventuno_q",
+       tag: "v0.1.0",
+       runtime: false,
+       targets: :arduino_ventuno_q,
        nerves: [compile: false]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

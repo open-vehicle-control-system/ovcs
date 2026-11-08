@@ -20,7 +20,10 @@ defmodule VisionCore.MixProject do
   # The Port binaries: built for the host's tests, cross-built for the vision targets.
   defp compilers do
     base = Mix.compilers()
-    if Mix.target() in [:host, :rpi5, :okdo_c100], do: [:elixir_make] ++ base, else: base
+
+    if Mix.target() in [:host, :rpi5, :okdo_c100, :arduino_ventuno_q],
+      do: [:elixir_make] ++ base,
+      else: base
   end
 
   defp elixirc_paths(:test), do: ["lib", "test/support"]

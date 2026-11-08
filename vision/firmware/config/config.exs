@@ -11,7 +11,6 @@ Application.start(:nerves_bootstrap)
 
 # Nerves-only apps are not in the host dep tree.
 if Mix.target() != :host do
-  config :nerves, :firmware, rootfs_overlay: "rootfs_overlay"
   config :nerves, source_date_epoch: "1761523200"
 end
 
@@ -55,6 +54,23 @@ vehicle_firmware_directory =
     else: target_default_absolute
 
 System.put_env("VEHICLE_FIRMWARE_DIR", vehicle_firmware_directory)
+
+# Overlays, later ones winning: the firmware's own, the vehicle's
+# (`/boot/cameras.cfg` on the VENTUNO Q) and Qualcomm's AI Runtime, which
+# `mise run fetch-qairt` writes and no repository carries.
+if Mix.target() != :host do
+  rootfs_overlays =
+    Enum.filter(
+      [
+        "rootfs_overlay",
+        Path.join(vehicle_override_relative, "rootfs_overlay"),
+        "rootfs_overlay_qairt"
+      ],
+      &File.dir?(Path.expand("../#{&1}", __DIR__))
+    )
+
+  config :nerves, :firmware, rootfs_overlay: rootfs_overlays
+end
 
 fwup_conf = resolve_firmware_file.("fwup.conf")
 
