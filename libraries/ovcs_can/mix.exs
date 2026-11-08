@@ -17,10 +17,6 @@ defmodule OvcsCan.MixProject do
 
   defp deps do
     [
-      # Tests load every frame through Cantastic, as a firmware does at boot.
-      {:cantastic, path: "../cantastic", only: :test, runtime: false},
-      {:yaml_elixir, "~> 2.12", only: :test},
-      {:jason, "~> 1.4", only: [:dev, :test]},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
