@@ -8,6 +8,19 @@ defmodule OvcsMini.CanTopologyTest do
 
   alias Cantastic.{ConfigurationStore, Interface}
 
+  @cantastic_env [:otp_app, :priv_can_config_path, :can_network_mappings]
+
+  setup do
+    previous = Map.new(@cantastic_env, &{&1, Application.fetch_env(:cantastic, &1)})
+
+    on_exit(fn ->
+      Enum.each(previous, fn
+        {key, {:ok, value}} -> Application.put_env(:cantastic, key, value)
+        {key, :error} -> Application.delete_env(:cantastic, key)
+      end)
+    end)
+  end
+
   for composer <- [OvcsMini.Vms.Composer] do
     test "#{inspect(composer)} topology loads" do
       assert [_ | _] = load_topology(:ovcs_mini, unquote(composer).can_config_path())
