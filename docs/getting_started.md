@@ -169,7 +169,7 @@ mise install
 `mise install` installs every pinned runtime, then runs a hook that does two more things:
 
 - `mise run bootstrap`: installs hex, rebar and the `nerves_bootstrap` archive.
-- `mise run libraries`: clones `cantastic`, `express_lrs`, `msp_osd` and `ovcs_control` into `libraries/`. Existing clones are left alone, so your local edits there survive.
+- `mise run libraries`: clones `cantastic`, `express_lrs`, `msp_osd`, `ovcs_control` and `arduino_router_ex` into `libraries/`, each at the commit pinned in `scripts/libraries.tsv`. Existing clones are left alone, so your local edits there survive; `mise run libraries-check` reports any clone that is not at its pin.
 
 From now on, entering the directory activates the pinned versions. Reinstalling Elixir later fires the same hook.
 

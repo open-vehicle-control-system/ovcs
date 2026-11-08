@@ -68,7 +68,7 @@ Each component's own README keeps its developer details: build, tests and source
 
 ## Shared libraries
 
-Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you.
+Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you, at the commits pinned in `scripts/libraries.tsv`. A change to one of them reaches OVCS through a change to its pin.
 
 | Library | Module | Source | Purpose |
 |---|---|---|---|

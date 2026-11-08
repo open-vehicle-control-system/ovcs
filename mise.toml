@@ -48,28 +48,15 @@ mix archive.install hex nerves_bootstrap --force
 """
 
 # External libraries live in their own repos and are sideloaded into
-# `libraries/` (see libraries/.gitignore). This task clones any that
-# are missing; existing clones are left alone so you can pull/edit
-# them without the task stomping.
+# `libraries/` (see libraries/.gitignore) at the commits pinned in
+# scripts/libraries.tsv.
 [tasks.libraries]
-description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex) into libraries/"
-run = """
-set -e
-for repo in \
-  open-vehicle-control-system/cantastic \
-  open-vehicle-control-system/express_lrs \
-  open-vehicle-control-system/msp_osd \
-  open-vehicle-control-system/ovcs_control \
-  Spin42/arduino_router_ex; do
-  lib=${repo#*/}
-  if [ ! -d "libraries/$lib/.git" ]; then
-    echo "→ cloning $lib"
-    git clone "https://github.com/$repo.git" "libraries/$lib"
-  else
-    echo "✓ $lib already cloned"
-  fi
-done
-"""
+description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex) into libraries/ at their pinned commits"
+run = "./scripts/libraries.sh clone"
+
+[tasks.libraries-check]
+description = "Fail when a clone in libraries/ is not at its pinned commit"
+run = "./scripts/libraries.sh check"
 
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
