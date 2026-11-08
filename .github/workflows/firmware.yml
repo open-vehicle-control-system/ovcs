@@ -29,6 +29,9 @@ on:
 permissions:
   contents: read
 
+env:
+  FWUP_VERSION: 1.15.0
+
 concurrency:
   # A pull request's runs share a group, so a new push cancels the last.
   # Every other run gets its commit's own group: GitHub keeps one waiting
@@ -109,14 +112,24 @@ jobs:
             build-essential automake autoconf git squashfs-tools ssh-askpass \
             pkg-config curl unzip libssl-dev libmnl-dev
 
+      - uses: actions/cache@v5
+        id: fwup-cache
+        with:
+          path: ${{ runner.temp }}/fwup.deb
+          key: fwup-${{ env.FWUP_VERSION }}-${{ runner.arch }}
+
       - name: Install fwup
+        env:
+          FWUP_CACHED: ${{ steps.fwup-cache.outputs.cache-hit }}
         run: |
           # Not in apt — pull the upstream .deb. Same approach as
           # docs/getting_started.md's "Install system-level tools" step.
-          fwup_version=1.15.0
-          curl -fsSL --retry 5 --retry-delay 10 -o /tmp/fwup.deb \
-            "https://github.com/fwup-home/fwup/releases/download/v${fwup_version}/fwup_${fwup_version}_$(dpkg --print-architecture).deb"
-          sudo dpkg -i /tmp/fwup.deb
+          deb="$RUNNER_TEMP/fwup.deb"
+          if [ "$FWUP_CACHED" != "true" ]; then
+            curl -fsSL --retry 5 --retry-delay 10 -o "$deb" \
+              "https://github.com/fwup-home/fwup/releases/download/v${FWUP_VERSION}/fwup_${FWUP_VERSION}_$(dpkg --print-architecture).deb"
+          fi
+          sudo dpkg -i "$deb"
           fwup --version
 
       # Two caches, deliberately with different reuse rules.
@@ -154,6 +167,18 @@ jobs:
           key: nerves-dl-${{ matrix.target }}-${{ steps.system.outputs.rev }}
           restore-keys: |
             nerves-dl-${{ matrix.target }}-
+
+      # Precompiled NIFs (zenohex) otherwise come from GitHub releases
+      # whenever deps/ and _build/ miss. The directory must exist for the
+      # cache to save in projects without one.
+      - name: Create the precompiled NIF cache directory
+        run: mkdir -p ~/.cache/rustler_precompiled
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/rustler_precompiled
+          key: rustler-precompiled-${{ matrix.app }}-${{ matrix.target }}-${{ hashFiles(format('{0}/mix.lock', matrix.app)) }}
+          restore-keys: |
+            rustler-precompiled-${{ matrix.app }}-${{ matrix.target }}-
 
       - name: Build firmware
         working-directory: ${{ matrix.app }}
