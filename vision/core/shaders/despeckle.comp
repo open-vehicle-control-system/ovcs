@@ -1,0 +1,37 @@
+#version 450
+// Stage.SpeckleFilter: a matched pixel stays when at least min_support of
+// the 48 others in its 7x7 neighbourhood matched within max_diff of it;
+// the others become unmatched, -1. Outside the image counts as unmatched.
+layout(local_size_x = 64) in;
+
+layout(constant_id = 0) const int WIDTH = 364;
+layout(constant_id = 1) const int HEIGHT = 272;
+
+layout(set = 0, binding = 0) readonly buffer Disparity { float disparity[]; };
+// min_support, max_diff
+layout(set = 0, binding = 1) readonly buffer Params { float params[]; };
+layout(set = 0, binding = 2) writeonly buffer Output { float despeckled[]; };
+
+const int RADIUS = 3;
+
+void main() {
+  int i = int(gl_GlobalInvocationID.x);
+  if (i >= WIDTH * HEIGHT) return;
+  int x = i % WIDTH, y = i / WIDTH;
+  float d = disparity[i];
+  float max_diff = params[1];
+
+  int support = 0;
+  for (int dy = -RADIUS; dy <= RADIUS; ++dy) {
+    int ny = y + dy;
+    if (ny < 0 || ny >= HEIGHT) continue;
+    for (int dx = -RADIUS; dx <= RADIUS; ++dx) {
+      int nx = x + dx;
+      if ((dx == 0 && dy == 0) || nx < 0 || nx >= WIDTH) continue;
+      float n = disparity[ny * WIDTH + nx];
+      if (n > 0.0 && abs(n - d) <= max_diff) support += 1;
+    }
+  }
+
+  despeckled[i] = (d > 0.0 && float(support) >= params[0]) ? d : -1.0;
+}

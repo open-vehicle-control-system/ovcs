@@ -14,7 +14,7 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{NxStage, Pair}
+  alias VisionCore.Stereo.{Kernels, NxStage, Pair}
 
   @min_depth_m 0.05
   @max_depth_m 20.0
@@ -69,7 +69,21 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, decimation) do
-    sampled = sample(tensors.depth_m, decimation)
+    settings = [params.focal_length_px, params.cx, params.cy]
+
+    {grid, kept} =
+      Kernels.point_cloud(tensors.depth_m, settings, decimation, fn depth_m, [f, cx, cy] ->
+        grid(depth_m, %{focal_length_px: f, cx: cx, cy: cy}, decimation)
+      end)
+
+    tensors
+    |> Map.put(:cloud_grid, grid)
+    |> Map.put(:cloud_points, Nx.as_type(kept, :s32))
+  end
+
+  # The points of the pixels sampled and how many are kept, as f32.
+  defp grid(depth_m, params, decimation) do
+    sampled = sample(depth_m, decimation)
     in_range = Nx.logical_and(Nx.greater(sampled, @min_depth_m), Nx.less(sampled, @max_depth_m))
     # NaN depth unprojects to a NaN point: x and y scale with z.
     grid = in_range |> Nx.select(sampled, Nx.Constants.nan(:f32)) |> unproject(params, decimation)
@@ -78,12 +92,10 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
       grid[[.., .., 2]]
       |> Nx.is_nan()
       |> Nx.logical_not()
-      |> Nx.as_type(:s32)
+      |> Nx.as_type(:f32)
       |> NxStage.image_sums()
 
-    tensors
-    |> Map.put(:cloud_grid, grid)
-    |> Map.put(:cloud_points, kept)
+    {grid, kept}
   end
 
   @impl VisionCore.Stereo.NxStage

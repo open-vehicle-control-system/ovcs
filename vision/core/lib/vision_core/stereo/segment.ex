@@ -31,11 +31,12 @@ defmodule VisionCore.Stereo.Segment do
   """
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Pair, Stage}
+  alias VisionCore.Stereo.{Packing, Pair, Stage}
 
   @frames [:left_frame, :right_frame]
   @images [:left, :right]
   @maps [:disparity]
+  @packable @frames ++ @images
 
   @type t :: %{required(:members) => [map()], optional(atom()) => term()}
 
@@ -180,19 +181,40 @@ defmodule VisionCore.Stereo.Segment do
   `:right_frame`) as `u8` at the frame size, the rectified images
   (`:left`, `:right`) as `u8` and `:disparity` as `f32` at the working
   size. Another field, which only a CPU stage fills, cannot enter one.
+
+  With `packed: true`, the frames and images enter as `u32` words of four
+  pixels each (`VisionCore.Stereo.Packing`), at a quarter of their width,
+  which must be a multiple of 4.
   """
-  @spec entry_specs([map()], Stage.context()) ::
+  @spec entry_specs([map()], Stage.context(), keyword()) ::
           {:ok, [{atom(), entry_spec()}]} | {:error, String.t()}
-  def entry_specs(members, context) do
+  def entry_specs(members, context, opts \\ []) do
+    packed? = Keyword.get(opts, :packed, false)
+
     members
     |> entry_fields()
     |> Enum.reduce_while({:ok, []}, fn field, {:ok, specs} ->
       case entry_spec(field, context) do
-        {:ok, spec} -> {:cont, {:ok, specs ++ [{field, spec}]}}
-        :error -> {:halt, {:error, "a segment cannot read #{inspect(field)} from a CPU stage"}}
+        {:ok, spec} when packed? and field in @packable ->
+          case packed_spec(field, spec) do
+            {:ok, spec} -> {:cont, {:ok, specs ++ [{field, spec}]}}
+            {:error, _message} = error -> {:halt, error}
+          end
+
+        {:ok, spec} ->
+          {:cont, {:ok, specs ++ [{field, spec}]}}
+
+        :error ->
+          {:halt, {:error, "a segment cannot read #{inspect(field)} from a CPU stage"}}
       end
     end)
   end
+
+  defp packed_spec(_field, {{height, width}, {:u, 8}}) when rem(width, 4) == 0,
+    do: {:ok, {{height, div(width, 4)}, {:u, 32}}}
+
+  defp packed_spec(field, {{_height, width}, _type}),
+    do: {:error, "#{inspect(field)} is #{width} pixels wide: packing needs a multiple of 4"}
 
   defp entry_spec(field, context) when field in @frames,
     do: {:ok, {{context.frame_height, context.frame_width}, {:u, 8}}}
@@ -222,8 +244,8 @@ defmodule VisionCore.Stereo.Segment do
   def entry_tensors(%Pair{} = pair, specs) do
     Enum.reduce_while(specs, {:ok, []}, fn {field, {expected, type}}, {:ok, tensors} ->
       with {:ok, tensor} <- field_tensor(pair, field),
-           :ok <- check_shape(field, Nx.shape(tensor), expected) do
-        {:cont, {:ok, tensors ++ [{field, Nx.as_type(tensor, type)}]}}
+           {:ok, tensor} <- entry_tensor(field, tensor, expected, type) do
+        {:cont, {:ok, tensors ++ [{field, tensor}]}}
       else
         {:error, _reason} = error -> {:halt, error}
       end
@@ -246,6 +268,20 @@ defmodule VisionCore.Stereo.Segment do
       %Nx.Tensor{} = tensor -> {:ok, tensor}
       other -> {:error, {:not_a_tensor, field, other}}
     end
+  end
+
+  # A packed field: the u8 image's bytes as u32 words.
+  defp entry_tensor(field, tensor, {height, words}, {:u, 32})
+       when field in @packable do
+    with :ok <- check_shape(field, Nx.shape(tensor), {height, words * 4}),
+         do:
+           {:ok,
+            tensor |> Nx.as_type({:u, 8}) |> Nx.to_binary() |> Packing.pack(words * 4, height)}
+  end
+
+  defp entry_tensor(field, tensor, expected, type) do
+    with :ok <- check_shape(field, Nx.shape(tensor), expected),
+         do: {:ok, Nx.as_type(tensor, type)}
   end
 
   defp check_shape(_field, shape, shape), do: :ok

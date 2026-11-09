@@ -27,6 +27,7 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
+  alias VisionCore.Stereo.Kernels
 
   @max_hold 10
   # The missed count stops here, above the longest hold, so that every hold ends.
@@ -101,23 +102,21 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, _state) do
-    current = tensors.disparity
-    smoothed = smooth(current, params.previous, params.alpha, params.delta)
-    matched = Nx.greater(current, 0)
-    missed = Nx.select(matched, 0.0, Nx.add(params.missed, 1))
+    settings = [params.alpha, params.delta, params.hold]
 
-    held =
-      Nx.logical_and(
-        Nx.logical_not(matched),
-        Nx.logical_and(Nx.greater(params.previous, 0), Nx.less_equal(missed, params.hold))
+    {filtered, missed} =
+      Kernels.temporal_filter(
+        tensors.disparity,
+        params.previous,
+        params.missed,
+        settings,
+        &filter/4
       )
-
-    filtered = Nx.select(held, params.previous, smoothed)
 
     tensors
     |> Map.put(:disparity, filtered)
     |> Map.put({:carry, :previous}, filtered)
-    |> Map.put({:carry, :missed}, Nx.min(missed, @max_missed))
+    |> Map.put({:carry, :missed}, missed)
   end
 
   @impl VisionCore.Stereo.NxStage
@@ -130,6 +129,20 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
+  end
+
+  defp filter(current, previous, missed, [alpha, delta, hold]) do
+    smoothed = smooth(current, previous, alpha, delta)
+    matched = Nx.greater(current, 0)
+    missed = Nx.select(matched, 0.0, Nx.add(missed, 1))
+
+    held =
+      Nx.logical_and(
+        Nx.logical_not(matched),
+        Nx.logical_and(Nx.greater(previous, 0), Nx.less_equal(missed, hold))
+      )
+
+    {Nx.select(held, previous, smoothed), Nx.min(missed, @max_missed)}
   end
 
   defp smooth(current, previous, alpha, delta) do

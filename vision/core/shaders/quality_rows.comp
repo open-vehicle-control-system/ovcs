@@ -1,0 +1,48 @@
+#version 450
+// Stage.Quality's sums for one row: the matched pixels, their disparity
+// and its square, the pixels matched in this pair and the previous one,
+// and their absolute change. column_sums.comp adds the rows.
+#define GROUP 64
+layout(local_size_x = GROUP) in;
+
+layout(constant_id = 0) const int WIDTH = 364;
+
+layout(set = 0, binding = 0) readonly buffer Current { float current[]; };
+layout(set = 0, binding = 1) readonly buffer Previous { float previous[]; };
+layout(set = 0, binding = 2) writeonly buffer Partials { float partials[]; };
+
+shared float sums[5][GROUP];
+
+void main() {
+  int y = int(gl_WorkGroupID.x);
+  uint t = gl_LocalInvocationID.x;
+  uint matched = 0u, both = 0u;
+  float values = 0.0, squares = 0.0, change = 0.0;
+
+  for (int x = int(t); x < WIDTH; x += GROUP) {
+    float c = current[y * WIDTH + x];
+    if (!(c > 0.0)) continue;
+    float p = previous[y * WIDTH + x];
+    matched += 1u;
+    values += c;
+    squares += c * c;
+    if (p > 0.0) {
+      both += 1u;
+      change += abs(c - p);
+    }
+  }
+
+  sums[0][t] = float(matched);
+  sums[1][t] = values;
+  sums[2][t] = squares;
+  sums[3][t] = float(both);
+  sums[4][t] = change;
+  barrier();
+  for (uint stride = GROUP / 2; stride > 0u; stride >>= 1) {
+    if (t < stride) {
+      for (int k = 0; k < 5; ++k) sums[k][t] += sums[k][t + stride];
+    }
+    barrier();
+  }
+  if (t < 5u) partials[y * 5 + int(t)] = sums[t][0];
+}

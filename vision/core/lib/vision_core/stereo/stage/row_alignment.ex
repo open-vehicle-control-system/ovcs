@@ -21,7 +21,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.{Kernels, Pair}
 
   @bands 4
   @reach 2
@@ -62,7 +62,8 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, _state) do
-    Map.put(tensors, :alignment_sums, band_sums(tensors.left, tensors.right, tensors.disparity))
+    sums = Kernels.row_alignment(tensors.left, tensors.right, tensors.disparity, &band_sums/3)
+    Map.put(tensors, :alignment_sums, sums)
   end
 
   @impl VisionCore.Stereo.NxStage

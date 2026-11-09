@@ -11,7 +11,7 @@ defmodule VisionCore.Stereo.Stage.Depth do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.{Kernels, Pair}
 
   @max_depth_mm 65_535
 
@@ -49,10 +49,10 @@ defmodule VisionCore.Stereo.Stage.Depth do
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, _state) do
     {depth_mm, depth_m} =
-      NxStereo.Depth.depth(tensors.disparity, params.focal_length_px, params.baseline_m)
+      Kernels.depth(tensors.disparity, params.focal_length_px, params.baseline_m, &depth/3)
 
     tensors
-    |> Map.put(:depth_mm, clear_beyond_range(depth_mm, depth_m))
+    |> Map.put(:depth_mm, depth_mm)
     |> Map.put(:depth_m, depth_m)
   end
 
@@ -66,6 +66,11 @@ defmodule VisionCore.Stereo.Stage.Depth do
       | disparity_bytes: Nx.to_binary(outputs.disparity),
         depth: Nx.to_binary(outputs.depth_mm)
     }
+  end
+
+  defp depth(disparity, focal_length_px, baseline_m) do
+    {depth_mm, depth_m} = NxStereo.Depth.depth(disparity, focal_length_px, baseline_m)
+    {clear_beyond_range(depth_mm, depth_m), depth_m}
   end
 
   # NxStereo.Depth saturates at 65535 mm: a depth beyond that is no depth.

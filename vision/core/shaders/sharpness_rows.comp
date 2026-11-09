@@ -1,0 +1,62 @@
+#version 450
+// Stage.Sharpness's sums, per row: for each pair of horizontal neighbours
+// both above black, their squared difference, the left one's grey and 1,
+// summed exactly in 32-bit integers, for the left image then the right.
+// Writes a row's sums as [left energy, right energy, left grey, right grey,
+// left pairs, right pairs]; column_sums.comp adds the rows.
+//
+// WORDS=1 reads 32-bit pixels; WORDS=0 reads an 8-bit image as words.
+#define GROUP 64
+layout(local_size_x = GROUP) in;
+
+layout(constant_id = 0) const int WIDTH = 364;
+layout(constant_id = 1) const int HEIGHT = 272;
+
+#if WORDS
+layout(set = 0, binding = 0) readonly buffer Left { int left_image[]; };
+layout(set = 0, binding = 1) readonly buffer Right { int right_image[]; };
+uint left_pixel(int i) { return uint(left_image[i]); }
+uint right_pixel(int i) { return uint(right_image[i]); }
+#else
+layout(set = 0, binding = 0) readonly buffer Left { uint left_words[]; };
+layout(set = 0, binding = 1) readonly buffer Right { uint right_words[]; };
+uint left_pixel(int i) { return (left_words[i >> 2] >> ((i & 3) * 8)) & 255u; }
+uint right_pixel(int i) { return (right_words[i >> 2] >> ((i & 3) * 8)) & 255u; }
+#endif
+layout(set = 0, binding = 2) writeonly buffer Partials { float partials[]; };
+
+shared uint sums[6][GROUP];
+
+void main() {
+  int y = int(gl_WorkGroupID.x);
+  uint t = gl_LocalInvocationID.x;
+  uint acc[6] = uint[6](0u, 0u, 0u, 0u, 0u, 0u);
+
+  for (int x = int(t); x < WIDTH - 1; x += GROUP) {
+    int i = y * WIDTH + x;
+    uint lp = left_pixel(i), ln = left_pixel(i + 1);
+    if (lp > 0u && ln > 0u) {
+      int d = int(ln) - int(lp);
+      acc[0] += uint(d * d);
+      acc[2] += lp;
+      acc[4] += 1u;
+    }
+    uint rp = right_pixel(i), rn = right_pixel(i + 1);
+    if (rp > 0u && rn > 0u) {
+      int d = int(rn) - int(rp);
+      acc[1] += uint(d * d);
+      acc[3] += rp;
+      acc[5] += 1u;
+    }
+  }
+
+  for (int k = 0; k < 6; ++k) sums[k][t] = acc[k];
+  barrier();
+  for (uint stride = GROUP / 2; stride > 0u; stride >>= 1) {
+    if (t < stride) {
+      for (int k = 0; k < 6; ++k) sums[k][t] += sums[k][t + stride];
+    }
+    barrier();
+  }
+  if (t < 6u) partials[y * 6 + int(t)] = float(sums[t][0]);
+}

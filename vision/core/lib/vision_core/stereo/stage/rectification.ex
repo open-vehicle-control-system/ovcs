@@ -18,6 +18,7 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Stereo.{Kernels, Packing}
 
   @max_row_offset 8
 
@@ -71,14 +72,27 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, %{size: size}) do
     tensors
-    |> Map.put(
-      :left,
-      NxStereo.Rectify.rectify(tensors.left_frame, params.left, size: size)
-    )
-    |> Map.put(
-      :right,
-      NxStereo.Rectify.rectify(tensors.right_frame, params.right, size: size)
-    )
+    |> put_image(:left, rectify(tensors.left_frame, params.left, size))
+    |> put_image(:right, rectify(tensors.right_frame, params.right, size))
+  end
+
+  defp put_image(tensors, key, {image, packed}),
+    do: tensors |> Map.put(key, image) |> Map.put({:packed, key}, packed)
+
+  defp put_image(tensors, key, image), do: Map.put(tensors, key, image)
+
+  defp rectify(frame, camera, size) do
+    Kernels.rectify(frame, Kernels.camera_vector(camera), size, fn frame, vector ->
+      camera = Kernels.camera_map(vector)
+
+      if Nx.type(frame) == {:u, 32} do
+        image = frame |> Packing.unpack({:u, 8}) |> NxStereo.Rectify.rectify(camera, size: size)
+        image = Nx.as_type(image, :s32)
+        {image, Packing.pack_image(image)}
+      else
+        NxStereo.Rectify.rectify(frame, camera, size: size)
+      end
+    end)
   end
 
   @impl VisionCore.Stereo.NxStage

@@ -20,6 +20,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
+  alias VisionCore.Stereo.Kernels
 
   @radius 3
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
@@ -76,7 +77,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
     Map.put(
       tensors,
       :disparity,
-      despeckle(tensors.disparity, params.min_support, params.max_diff)
+      Kernels.despeckle(tensors.disparity, params.min_support, params.max_diff, &despeckle/3)
     )
   end
 

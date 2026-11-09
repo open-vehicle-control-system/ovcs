@@ -4,7 +4,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
   import ExUnit.CaptureLog
 
   import VisionCore.Stereo.TestHelpers,
-    only: [calibration_path: 2, members: 2, start_pipeline: 1]
+    only: [calibration_path: 2, members: 2, start_pipeline: 1, frames_pair: 2, texture: 3]
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
@@ -575,6 +575,49 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     end
   end
 
+  describe "without byte buffers on the device" do
+    test "the default stages give the same outputs as with byte buffers" do
+      context = VisionCore.Stereo.TestHelpers.context(:identity, 192, 108)
+      stages = Pipeline.default_stages(disparity: [paths: 3])
+
+      outputs =
+        for defn_options <- [[compiler: EXLA], [compiler: EXLA, byte_storage: false]] do
+          {:ok, segment} =
+            NxSegment.build(members(stages, context), context, defn_options: defn_options)
+
+          frame_types =
+            for {field, {_shape, type}} <- segment.specs,
+                field in [:left_frame, :right_frame],
+                do: type
+
+          expected_type = if defn_options[:byte_storage] == false, do: {:u, 32}, else: {:u, 8}
+          assert frame_types != [] and Enum.all?(frame_types, &(&1 == expected_type))
+
+          {pairs, _segment} =
+            Enum.map_reduce(1..3, segment, fn seed, segment ->
+              image = texture(108, 200, seed)
+              pair = frames_pair(image[[.., 0..191]], image[[.., 8..199]])
+              {:ok, pair, segment} = run(%{pair | geometry: context}, segment)
+              {pair, segment}
+            end)
+
+          pairs
+        end
+
+      [with_bytes, packed] = outputs
+
+      for {expected, actual} <- Enum.zip(with_bytes, packed) do
+        assert actual.left == expected.left
+        assert actual.right == expected.right
+
+        assert Nx.all_close(actual.disparity, expected.disparity, atol: 1.0e-4) ==
+                 Nx.tensor(1, type: :u8)
+
+        assert actual.cloud == expected.cloud
+      end
+    end
+  end
+
   describe "on Vulkan through NxIREE" do
     @describetag :vulkan
     @describetag :tmp_dir
@@ -609,7 +652,11 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     @describetag :iree
     @describetag :tmp_dir
 
-    for {target, options} <- [c100: :c100_defn_options, rpi5: :rpi5_defn_options] do
+    for {target, options} <- [
+          c100: :c100_defn_options,
+          rpi5: :rpi5_defn_options,
+          ventuno_q: :ventuno_q_defn_options
+        ] do
       test "writes the #{target} module without a device to load it on", %{tmp_dir: dir} do
         defn_options =
           NxSegment

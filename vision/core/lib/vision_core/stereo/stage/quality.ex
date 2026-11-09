@@ -17,7 +17,7 @@ defmodule VisionCore.Stereo.Stage.Quality do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{NxStage, Pair}
+  alias VisionCore.Stereo.{Kernels, NxStage, Pair}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Measures the share of matched pixels, the disparity spread and its jitter."
@@ -56,7 +56,7 @@ defmodule VisionCore.Stereo.Stage.Quality do
     current = tensors.disparity
 
     tensors
-    |> Map.put(:quality_sums, sums(current, params.previous))
+    |> Map.put(:quality_sums, Kernels.quality(current, params.previous, &sums/2))
     |> Map.put({:carry, :previous}, current)
   end
 

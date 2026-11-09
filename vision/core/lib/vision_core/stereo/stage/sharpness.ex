@@ -18,7 +18,7 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{NxStage, Pair}
+  alias VisionCore.Stereo.{Kernels, NxStage, Pair}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Measures each rectified image's sharpness, to compare the cameras' focus."
@@ -49,7 +49,7 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, _params, _state),
-    do: Map.put(tensors, :sharpness_sums, sums(tensors.left, tensors.right))
+    do: Map.put(tensors, :sharpness_sums, Kernels.sharpness(tensors.left, tensors.right, &sums/2))
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do

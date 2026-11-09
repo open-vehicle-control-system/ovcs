@@ -24,7 +24,7 @@ defmodule VisionCore.Stereo.NxSegment do
 
   @behaviour VisionCore.Stereo.Segment
 
-  alias VisionCore.Stereo.{NxStage, Pair, Segment, Stage}
+  alias VisionCore.Stereo.{NxStage, Packing, Pair, Segment, Stage}
 
   @enforce_keys [:members, :specs, :function, :params, :carried, :context, :defn_options]
   defstruct [
@@ -35,6 +35,7 @@ defmodule VisionCore.Stereo.NxSegment do
     :carried,
     :context,
     :defn_options,
+    packed: false,
     version: 0
   ]
 
@@ -80,13 +81,15 @@ defmodule VisionCore.Stereo.NxSegment do
 
   defp compile_members(members, context, defn_options) do
     params = params(members, context)
+    {byte_storage?, defn_options} = Keyword.pop(defn_options, :byte_storage, true)
+    packed? = not byte_storage?
 
-    with {:ok, specs} <- Segment.entry_specs(members, context),
+    with {:ok, specs} <- Segment.entry_specs(members, context, packed: packed?),
          entry_templates =
            Map.new(specs, fn {field, {shape, type}} -> {field, Nx.template(shape, type)} end),
          {:ok, function} <-
            compile(
-             &run_steps(members, &1, &2),
+             &run_packed(members, &1, &2, packed?),
              [entry_templates, Nx.to_template(params)],
              defn_options
            ) do
@@ -98,7 +101,8 @@ defmodule VisionCore.Stereo.NxSegment do
          params: params,
          carried: carried(members, context),
          context: context,
-         defn_options: defn_options
+         defn_options: defn_options,
+         packed: packed?
        }}
     end
   end
@@ -136,6 +140,36 @@ defmodule VisionCore.Stereo.NxSegment do
 
   defp cache_only_function(2),
     do: fn _input, _params -> raise "compiled for the module cache only" end
+
+  # Mesa Turnip's features on the VENTUNO Q's Adreno 623, less Int8: without
+  # 8-bit storage, IREE emits invalid stores for 8-bit values when it is declared.
+  # Its segments pack bytes in 32-bit words.
+  @ventuno_q_vulkan_features ~w(spirv:v1.3 cap:Shader cap:Int16 cap:Int64 cap:Float16
+                                cap:StorageBuffer16BitAccess ext:SPV_KHR_16bit_storage
+                                cap:GroupNonUniform cap:GroupNonUniformVote
+                                cap:GroupNonUniformArithmetic cap:GroupNonUniformBallot
+                                cap:GroupNonUniformShuffle cap:GroupNonUniformShuffleRelative
+                                cap:VariablePointers cap:VariablePointersStorageBuffer)
+
+  @doc """
+  The defn options for the Arduino VENTUNO Q's GPU: `nx_iree` compiling
+  for Vulkan with the features Mesa Turnip supports on its Adreno 623,
+  loading modules from `module_cache`, a directory or `{app, path}` in
+  that app. The GPU has no 8-bit storage, so `byte_storage: false` makes
+  the segment move its images as packed 32-bit words.
+  """
+  @spec ventuno_q_defn_options(Path.t() | {atom(), Path.t()}) :: keyword()
+  def ventuno_q_defn_options(module_cache) do
+    [
+      compiler: NxIREE.Compiler,
+      iree_compiler_flags: [
+        "--iree-hal-target-backends=vulkan-spirv",
+        "--iree-vulkan-target-features=" <> Enum.join(@ventuno_q_vulkan_features, ",")
+      ],
+      iree_module_cache: module_cache,
+      byte_storage: false
+    ]
+  end
 
   @doc """
   The defn options for the Raspberry Pi 5's CPU: `nx_iree` compiling for
@@ -315,9 +349,42 @@ defmodule VisionCore.Stereo.NxSegment do
   end
 
   defp download(outputs) do
-    {:ok, Map.new(outputs, fn {key, tensor} -> {key, Nx.backend_transfer(tensor)} end)}
+    {:ok,
+     Map.new(outputs, fn
+       {{:packed, key}, tensor} ->
+         {key, tensor |> Nx.backend_transfer() |> Packing.unpack_download()}
+
+       {key, tensor} ->
+         {key, Nx.backend_transfer(tensor)}
+     end)}
   rescue
     error -> {:error, error}
+  end
+
+  # Without byte storage, frames and images cross as 32-bit words; frames go to Rectification packed.
+  defp run_packed(members, tensors, params, false), do: run_steps(members, tensors, params)
+
+  defp run_packed(members, tensors, params, true) do
+    frames = Segment.frame_fields()
+
+    outputs =
+      tensors
+      |> Map.new(fn {key, tensor} ->
+        if key not in frames and Nx.type(tensor) == {:u, 32},
+          do: {key, Packing.unpack(tensor, {:s, 32})},
+          else: {key, tensor}
+      end)
+      |> then(&run_steps(members, &1, params))
+
+    Enum.reduce([:left, :right], outputs, fn key, outputs ->
+      case Map.pop(outputs, key) do
+        {%Nx.Tensor{type: {:s, 32}} = image, rest} ->
+          Map.put_new_lazy(rest, {:packed, key}, fn -> Packing.pack_image(image) end)
+
+        _other ->
+          outputs
+      end
+    end)
   end
 
   defp run_steps(members, tensors, params) do
