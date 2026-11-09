@@ -13,6 +13,8 @@ defmodule OvcsVehicle.CpuGovernor do
   devfreq GPU's, and name them in its log line. A devfreq device that
   offers no `performance` governor, such as the Adreno GPU of the Arduino
   VENTUNO Q, is pinned instead: its `min_freq` is set to its `max_freq`.
+  `:await` waits up to that many milliseconds for a device whose driver
+  probes after the VM starts, as a GPU's does.
 
   Wired in as a `Task` child like `OvcsVehicle.FirmwareValidator`, and
   only on target:
@@ -43,7 +45,8 @@ defmodule OvcsVehicle.CpuGovernor do
   Never raises: a board without cpufreq keeps its current governor.
   """
   def apply_governor(opts \\ []) do
-    paths = opts |> Keyword.get(:glob, @default_glob) |> Path.wildcard()
+    glob = Keyword.get(opts, :glob, @default_glob)
+    paths = await_paths(glob, System.monotonic_time(:millisecond) + Keyword.get(opts, :await, 0))
     devices = Keyword.get(opts, :devices, "CPU")
 
     results =
@@ -71,6 +74,21 @@ defmodule OvcsVehicle.CpuGovernor do
     end
 
     :ok
+  end
+
+  defp await_paths(glob, deadline) do
+    case Path.wildcard(glob) do
+      [] ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(100)
+          await_paths(glob, deadline)
+        else
+          []
+        end
+
+      paths ->
+        paths
+    end
   end
 
   # A devfreq device beside `governor_path` runs at its maximum once its minimum is raised to it.

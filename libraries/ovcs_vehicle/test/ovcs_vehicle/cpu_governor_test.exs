@@ -60,6 +60,23 @@ defmodule OvcsVehicle.CpuGovernorTest do
     assert log =~ "1 GPU(s) pinned at their maximum frequency"
   end
 
+  test "waits up to :await milliseconds for a device that is not there yet", %{tmp_dir: dir} do
+    path = Path.join([dir, "gpu", "governor"])
+
+    spawn_link(fn ->
+      Process.sleep(200)
+      File.mkdir_p!(Path.dirname(path))
+      File.write!(path <> ".new", "simple_ondemand")
+      File.rename!(path <> ".new", path)
+    end)
+
+    ExUnit.CaptureLog.capture_log(fn ->
+      CpuGovernor.apply_governor(glob: path, devices: "GPU", await: 2_000)
+    end)
+
+    assert File.read!(path) == "performance"
+  end
+
   test "is a no-op when no governor file exists", %{tmp_dir: dir} do
     assert :ok = CpuGovernor.apply_governor(glob: Path.join(dir, "cpu*/scaling_governor"))
   end
