@@ -54,6 +54,56 @@ defmodule VisionCore.Camera.V4L2Test do
     assert map_size(settings) == length(V4L2.control_specs())
   end
 
+  # Answers `media-ctl -p` with a CAMSS graph captured on the Arduino VENTUNO Q.
+  defp media_runner(fixture) do
+    text = File.read!(Path.expand("../../fixtures/camss/#{fixture}", __DIR__))
+    fn _command, args -> if "-p" in args, do: {text, 0}, else: {"", 0} end
+  end
+
+  test "CSI PHY options route both sides and pass their nodes to the Port" do
+    assert {:ok, opts} =
+             V4L2.routed(
+               width: 728,
+               height: 544,
+               fps: 30,
+               left_csiphy: 0,
+               right_csiphy: 1,
+               media_runner: media_runner("media-ctl-p.txt")
+             )
+
+    arguments = opts |> V4L2.port_arguments() |> Enum.chunk_every(2) |> Map.new(&List.to_tuple/1)
+
+    assert Map.take(arguments, ~w(--left-video --left-sensor --right-video --right-sensor)) == %{
+             "--left-video" => "msm_vfe0_video0",
+             "--left-sensor" => "imx296 5-001a",
+             "--right-video" => "msm_vfe1_video0",
+             "--right-sensor" => "imx296 7-001a"
+           }
+  end
+
+  test "a CSI PHY without a sensor is a startup error naming the PHY" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      capture_log(fn ->
+        assert {:error, message} =
+                 V4L2.start_link(
+                   label: "left",
+                   width: 728,
+                   height: 544,
+                   fps: 30,
+                   left_csiphy: 0,
+                   right_csiphy: 2,
+                   media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
+                   executable: "/bin/true"
+                 )
+
+        assert message =~ "msm_csiphy2"
+      end)
+
+    assert log =~ "msm_csiphy2"
+  end
+
   test "settings become name=value commands, checked against their specs" do
     assert V4L2.control_commands(rotation: 180, gamma: 1.8, auto_exposure: false) ==
              {:ok, ["rotation=180", "gamma=1.8", "auto_exposure=false"]}
