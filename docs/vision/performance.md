@@ -67,11 +67,11 @@ The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm ap
 
 | Figure | Measured |
 |---|---|
-| Depth rate, `search: "coarse_to_fine"`, 8 paths | 18 to 19 Hz |
-| Depth rate, `search: "coarse_to_fine"`, 3 paths | about 26 Hz |
+| One pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` | 39 ms: depth at 25 Hz |
+| One pair, `search: "coarse_to_fine"`, `paths: 3` | 32 ms: depth at the cameras' 30 Hz |
 | Each camera | 29.97 frames a second |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
-| One detection request, letterbox included | 17 to 22 ms, on every pair |
+| One detection request, letterbox included | 17 to 22 ms, on nearly every pair at 30 Hz |
 | Generating the context binary, first boot only | about 2.4 s |
 
 ## What to change
@@ -83,6 +83,7 @@ Each setting trades rate against something else. The matching dominates, and its
 | Working size | `:width`, `:height`, or `:match_width`, `:match_height` on the `:stereo` component | The strongest lever: half the pixels, about half the matching time. Smaller images measure far points less precisely: the focal length in pixels shrinks with the width. Keep the sensor's aspect ratio, or the image is squeezed and the calibration no longer fits. On a GPU without 8-bit storage, such as the Arduino VENTUNO Q's, the width must be a multiple of 4. |
 | `num_disparities` | Disparity, build | 128 measures nearer than 64 (the nearest distance is `f × B / num_disparities`) and costs about twice the matching time. |
 | `paths` | Disparity, build | 3 is much faster than 8 on a CPU, and leaves more holes on dark or textureless surfaces. |
+| `coarse_paths` | Disparity, build | With `search: "coarse_to_fine"`, the half-size match's paths, `paths` by default. It only places each pixel's band, so 3 costs little: on the 2006 Middlebury pairs about one point more of pixels off by over a pixel. |
 | `search: "coarse_to_fine"` | Disparity, build | Matches the pair shrunk 2x over 64 disparities, then each pixel within 16 disparities of that match at full size: a fraction of the full search's cost at the same range and size. It needs 128 disparities and an even working size, and runs on a GPU or Nx, not natively. On the 2006 Middlebury pairs at half size it agreed with the full search within a pixel on 96 to 99.8% of the pixels both matched; a structure too thin for the half-size pair, such as a cable, can take the background's disparity. |
 | `format: :grey` | each camera | Avoids encoding every frame to JPEG and decoding it again. Always use it on the Pi 5. |
 | `:stereo_match_threads` | `config :vision_core` | One per core by default, which measured fastest; fewer threads leave room for other work at a lower rate. |
