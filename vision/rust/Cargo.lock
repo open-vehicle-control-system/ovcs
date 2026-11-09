@@ -84,6 +84,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "detection"
+version = "0.1.0"
+
+[[package]]
 name = "drm-fourcc"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -122,6 +126,7 @@ name = "hailo_detect"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "detection",
  "framing",
 ]
 

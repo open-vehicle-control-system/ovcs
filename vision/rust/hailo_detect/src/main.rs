@@ -9,13 +9,10 @@
 #[cfg(feature = "device")]
 mod hailo;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
-mod letterbox;
-#[cfg_attr(not(feature = "device"), allow(dead_code))]
-mod nms;
-#[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod outcome;
-#[cfg_attr(not(feature = "device"), allow(dead_code))]
-mod protocol;
+
+#[cfg_attr(not(feature = "device"), allow(unused_imports))]
+use detection::{letterbox, nms, protocol};
 
 use std::process::exit;
 
