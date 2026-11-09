@@ -61,6 +61,13 @@ config :nerves, :erlinit,
   update_clock: true,
   hostname_pattern: vehicle_host
 
+# The VENTUNO Q has the memory for 512 MiB Vulkan slabs, which keep a stereo
+# segment's transient buffers pooled instead of allocated on every pair. IREE
+# reads the size with getenv, which System.put_env does not reach: erlinit
+# sets it before the VM starts.
+if config_target() == :arduino_ventuno_q,
+  do: config(:nerves, :erlinit, env: "IREE_HAL_VULKAN_SLAB_SIZE=#{512 * 1024 * 1024}")
+
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
   # See vms/firmware/config/target.exs (NervesSSH 1.3.0 / OTP 27
