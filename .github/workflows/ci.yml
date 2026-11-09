@@ -57,6 +57,7 @@ jobs:
               - *shared
               - .credo.exs
               - scripts/check_lock_drift.exs
+              - scripts/libraries.*
               - libraries/**
               - vms/core/**
               - vms/api/**
@@ -195,6 +196,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: ./.github/actions/setup-mise
+      - name: Check external library pins
+        working-directory: ${{ github.workspace }}
+        run: mise run libraries-check
       - name: Install system deps for Nerves NIFs
         # Firmware projects and vehicles (transitive firmware deps) both
         # need libmnl-dev for nerves_uevent's NIF.
@@ -205,8 +209,8 @@ jobs:
           path: |
             ${{ matrix.project }}/deps
             ${{ matrix.project }}/_build
-          key: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
-          restore-keys: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml') }}-
+          key: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml', 'scripts/libraries.tsv') }}-${{ hashFiles(format('{0}/mix.lock', matrix.project)) }}
+          restore-keys: elixir-${{ matrix.project }}-${{ hashFiles('mise.toml', 'scripts/libraries.tsv') }}-
       # Precompiled NIFs (zenohex) otherwise come from GitHub releases
       # whenever deps/ and _build/ miss. The directory must exist for the
       # cache to save in projects without one.
