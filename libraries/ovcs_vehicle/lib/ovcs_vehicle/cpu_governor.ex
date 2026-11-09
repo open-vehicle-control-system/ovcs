@@ -10,7 +10,9 @@ defmodule OvcsVehicle.CpuGovernor do
   system image that does not.
 
   `:glob` and `:devices` point it at other frequency governors, such as a
-  devfreq GPU's, and name them in its log line.
+  devfreq GPU's, and name them in its log line. A devfreq device that
+  offers no `performance` governor, such as the Adreno GPU of the Arduino
+  VENTUNO Q, is pinned instead: its `min_freq` is set to its `max_freq`.
 
   Wired in as a `Task` child like `OvcsVehicle.FirmwareValidator`, and
   only on target:
@@ -42,18 +44,44 @@ defmodule OvcsVehicle.CpuGovernor do
   """
   def apply_governor(opts \\ []) do
     paths = opts |> Keyword.get(:glob, @default_glob) |> Path.wildcard()
+    devices = Keyword.get(opts, :devices, "CPU")
 
-    results = Enum.map(paths, &{&1, File.write(&1, @governor)})
+    results =
+      Enum.map(paths, fn path ->
+        case File.write(path, @governor) do
+          :ok -> {path, :governor}
+          error -> {path, pin_maximum(path, error)}
+        end
+      end)
 
-    case Enum.reject(results, fn {_, result} -> result == :ok end) do
+    count = fn outcome -> Enum.count(results, &(elem(&1, 1) == outcome)) end
+
+    case Enum.reject(results, fn {_, outcome} -> outcome in [:governor, :pinned] end) do
       [] ->
-        devices = Keyword.get(opts, :devices, "CPU")
-        Logger.info("#{__MODULE__}: #{length(paths)} #{devices}(s) set to #{@governor}")
+        Logger.info("#{__MODULE__}: #{count.(:governor)} #{devices}(s) set to #{@governor}")
+
+        if count.(:pinned) > 0,
+          do:
+            Logger.info(
+              "#{__MODULE__}: #{count.(:pinned)} #{devices}(s) pinned at their maximum frequency"
+            )
 
       failed ->
         Logger.error("#{__MODULE__}: could not set #{@governor}: #{inspect(failed)}")
     end
 
     :ok
+  end
+
+  # A devfreq device beside `governor_path` runs at its maximum once its minimum is raised to it.
+  defp pin_maximum(governor_path, error) do
+    directory = Path.dirname(governor_path)
+
+    with {:ok, maximum} <- File.read(Path.join(directory, "max_freq")),
+         :ok <- File.write(Path.join(directory, "min_freq"), String.trim(maximum)) do
+      :pinned
+    else
+      _ -> error
+    end
   end
 end
