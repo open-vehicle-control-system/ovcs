@@ -71,16 +71,29 @@ defmodule VisionCore.Stereo.Kernels do
   `NxStereo.Rectify.rectify/3` does: the `u8` image of a `u8` frame, or,
   of a frame packed as `u32` words (`VisionCore.Stereo.Packing`), the
   `s32` image and its packed `u32` words. `default` takes the frame and
-  the vector and gives the same off Vulkan. The width must be a multiple
-  of 4.
+  the vector and gives the same off Vulkan. The kernel writes 4 pixels
+  per word: a `u8` frame rectified to another width runs `default`, a
+  packed one raises.
   """
   @spec rectify(Nx.Tensor.t(), Nx.Tensor.t(), {pos_integer(), pos_integer()}, function()) ::
           Nx.Tensor.t() | {Nx.Tensor.t(), Nx.Tensor.t()}
-  def rectify(frame, vector, {height, width}, default) do
-    if rem(width, 4) != 0,
-      do: raise(ArgumentError, "rectifying needs a width that is a multiple of 4, got #{width}")
-
+  def rectify(frame, vector, {_height, width} = size, default) do
     words? = Nx.type(frame) == {:u, 32}
+
+    cond do
+      rem(width, 4) == 0 ->
+        rectify_kernel(frame, vector, size, words?, default)
+
+      words? ->
+        raise ArgumentError,
+              "rectifying packed frames needs a width that is a multiple of 4, got #{width}"
+
+      true ->
+        default.(frame, vector)
+    end
+  end
+
+  defp rectify_kernel(frame, vector, {height, width}, words?, default) do
     {frame_height, row} = Nx.shape(frame)
     frame_width = if words?, do: row * 4, else: row
     packed = Nx.template({height, div(width, 4)}, :u32)
@@ -252,18 +265,21 @@ defmodule VisionCore.Stereo.Kernels do
   `Stage.Depth`'s depths of the `f32` `disparity` with the focal length
   `f` in pixels and the baseline `b` in metres: the `u16` millimetres, 0
   beyond 65535 mm, and the `f32` metres, `f × b / d` where `d` is
-  positive and 0 elsewhere. The number of pixels must be even. `default`
-  takes the same arguments, `f` and `b` as `f32`, and gives the same off
-  Vulkan.
+  positive and 0 elsewhere. `default` takes the same arguments, `f` and
+  `b` as `f32`, and gives the same off Vulkan; it also runs on an odd
+  number of pixels, as the kernel writes two `u16` per word.
   """
   @spec depth(Nx.Tensor.t(), Nx.Tensor.t(), Nx.Tensor.t(), function()) ::
           {Nx.Tensor.t(), Nx.Tensor.t()}
   def depth(disparity, f, b, default) do
+    if rem(Nx.size(disparity), 2) == 0,
+      do: depth_kernel(disparity, f, b, default),
+      else: default.(disparity, Nx.as_type(f, :f32), Nx.as_type(b, :f32))
+  end
+
+  defp depth_kernel(disparity, f, b, default) do
     shape = Nx.shape(disparity)
     pixels = Tuple.product(shape)
-
-    if rem(pixels, 2) != 0,
-      do: raise(ArgumentError, "depth needs an even number of pixels, got #{inspect(shape)}")
 
     kernel = %Kernel{
       spirv: Map.fetch!(@spirv, :depth),

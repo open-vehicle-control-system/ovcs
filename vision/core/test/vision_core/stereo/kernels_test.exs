@@ -322,25 +322,42 @@ defmodule VisionCore.Stereo.KernelsSizesTest do
 
   alias VisionCore.Stereo.Kernels
 
-  test "rectification refuses a width that is not a multiple of 4" do
+  test "rectification refuses a packed frame to a width that is not a multiple of 4" do
     rectify = fn frame, camera ->
-      Kernels.rectify(frame, camera, {272, 362}, fn frame, _camera -> frame end)
+      Kernels.rectify(frame, camera, {272, 362}, fn _frame, _camera ->
+        {Nx.broadcast(Nx.s32(0), {272, 362}), Nx.broadcast(Nx.u32(0), {272, 90})}
+      end)
     end
 
     assert_raise ArgumentError, ~r/multiple of 4/, fn ->
-      Nx.Defn.jit(rectify).(Nx.broadcast(Nx.u8(0), {544, 728}), Nx.broadcast(Nx.f32(0), {23}))
+      Nx.Defn.jit(rectify).(Nx.broadcast(Nx.u32(0), {544, 182}), Nx.broadcast(Nx.f32(0), {23}))
     end
   end
 
-  test "depth refuses an odd number of pixels" do
+  test "rectification of an 8-bit frame to another width runs the default" do
+    rectify = fn frame, camera ->
+      Kernels.rectify(frame, camera, {272, 362}, fn _frame, _camera ->
+        Nx.broadcast(Nx.u8(7), {272, 362})
+      end)
+    end
+
+    image =
+      Nx.Defn.jit(rectify).(Nx.broadcast(Nx.u8(0), {544, 728}), Nx.broadcast(Nx.f32(0), {23}))
+
+    assert image == Nx.broadcast(Nx.u8(7), {272, 362})
+  end
+
+  test "depth of an odd number of pixels runs the default" do
     depth = fn disparity, f, b ->
       Kernels.depth(disparity, f, b, fn disparity, _f, _b ->
         {Nx.as_type(disparity, :u16), disparity}
       end)
     end
 
-    assert_raise ArgumentError, ~r/even number of pixels/, fn ->
-      Nx.Defn.jit(depth).(Nx.broadcast(Nx.f32(1), {3, 5}), Nx.f32(400), Nx.f32(0.2))
-    end
+    {depth_mm, depth_m} =
+      Nx.Defn.jit(depth).(Nx.broadcast(Nx.f32(3), {3, 5}), Nx.f32(400), Nx.f32(0.2))
+
+    assert depth_mm == Nx.broadcast(Nx.u16(3), {3, 5})
+    assert depth_m == Nx.broadcast(Nx.f32(3), {3, 5})
   end
 end

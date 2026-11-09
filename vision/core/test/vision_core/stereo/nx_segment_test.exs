@@ -653,6 +653,34 @@ defmodule VisionCore.Stereo.NxSegmentTest do
         assert actual.cloud == expected.cloud
       end
     end
+
+    test "a working width that is not a multiple of 4 is an error, not a raise" do
+      context = VisionCore.Stereo.TestHelpers.context(:identity, 190, 108, {192, 108})
+      members = members(Pipeline.default_stages(disparity: [paths: 3]), context)
+
+      assert {:error, message} =
+               NxSegment.build(members, context,
+                 defn_options: [compiler: EXLA, byte_storage: false]
+               )
+
+      assert message =~ "multiple of 4"
+    end
+  end
+
+  describe "with byte buffers on the device" do
+    test "a working size of any width and an odd number of pixels runs" do
+      context = VisionCore.Stereo.TestHelpers.context(:identity, 191, 107)
+      members = members(Pipeline.default_stages(disparity: [paths: 3]), context)
+
+      {:ok, segment} = NxSegment.build(members, context, defn_options: [compiler: EXLA])
+
+      image = texture(107, 199, 1)
+      pair = frames_pair(image[[.., 0..190]], image[[.., 8..198]])
+      {:ok, pair, _segment} = run(%{pair | geometry: context}, segment)
+
+      assert Nx.shape(pair.left) == {107, 191}
+      assert byte_size(pair.depth) == 107 * 191 * 2
+    end
   end
 
   describe "on Vulkan through NxIREE" do

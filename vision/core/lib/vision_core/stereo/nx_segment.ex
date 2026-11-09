@@ -90,7 +90,7 @@ defmodule VisionCore.Stereo.NxSegment do
          entry_templates =
            Map.new(specs, fn {field, {shape, type}} -> {field, Nx.template(shape, type)} end),
          run = &run_packed(members, &1, &2, packed?),
-         layout = layout(run, entry_templates, params, members),
+         {:ok, layout} <- layout(run, entry_templates, params, members),
          {:ok, function} <-
            compile(
              &bundle(run.(&1, &2), layout),
@@ -134,7 +134,9 @@ defmodule VisionCore.Stereo.NxSegment do
       words = words_for(Nx.shape(tensor), Nx.type(tensor))
       {{key, Nx.shape(tensor), Nx.type(tensor), offset}, offset + words}
     end)
-    |> elem(0)
+    |> then(&{:ok, elem(&1, 0)})
+  rescue
+    error -> {:error, compile_error_message(error)}
   end
 
   # A section's words, rounded up so the next starts on a 256-byte boundary: IREE may
