@@ -29,30 +29,72 @@ impl Tone {
     }
 }
 
-/// Averages each 2x2 RGGB cell of 10-bit little-endian samples into one grey
-/// pixel through `tone`, halving both dimensions; `rotate_180` turns the image
-/// for a sensor mounted upside down. Rows start every `row_stride` bytes, at
-/// least `width * 2`, and `raw` holds `height` of them.
+/// How a row's 10-bit samples are stored.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Layout {
+    /// Two little-endian bytes per sample (V4L2's `RG10`).
+    Unpacked16,
+    /// Five bytes per four samples: their high 8 bits, then a byte of their
+    /// low 2 bits each, the first sample's lowest (V4L2's `pRAA`).
+    Packed10,
+}
+
+impl Layout {
+    /// The bytes `width` samples take.
+    pub fn row_bytes(self, width: usize) -> usize {
+        match self {
+            Layout::Unpacked16 => width * 2,
+            Layout::Packed10 => width * 5 / 4,
+        }
+    }
+}
+
+/// The 10-bit samples of one row, `out.len()` of them, a multiple of 4.
+fn samples(row: &[u8], layout: Layout, out: &mut [u16]) {
+    match layout {
+        Layout::Unpacked16 => {
+            for (sample, bytes) in out.iter_mut().zip(row.chunks_exact(2)) {
+                *sample = u16::from_le_bytes([bytes[0], bytes[1]]);
+            }
+        }
+        Layout::Packed10 => {
+            for (four, bytes) in out.chunks_exact_mut(4).zip(row.chunks_exact(5)) {
+                for (i, sample) in four.iter_mut().enumerate() {
+                    *sample = (u16::from(bytes[i]) << 2) | u16::from((bytes[4] >> (2 * i)) & 3);
+                }
+            }
+        }
+    }
+}
+
+/// Averages each 2x2 RGGB cell of 10-bit samples stored as `layout` into one
+/// grey pixel through `tone`, halving both dimensions; `rotate_180` turns the
+/// image for a sensor mounted upside down. Rows start every `row_stride`
+/// bytes, at least `layout.row_bytes(width)`, and `raw` holds `height` of them.
 pub fn grey_half(
     raw: &[u8],
     width: usize,
     height: usize,
     row_stride: usize,
+    layout: Layout,
     tone: &Tone,
     rotate_180: bool,
 ) -> Vec<u8> {
-    let row_bytes = width * 2;
+    let row_bytes = layout.row_bytes(width);
     let mut grey = Vec::with_capacity((width / 2) * (height / 2));
+    let (mut top_samples, mut bottom_samples) = (vec![0u16; width], vec![0u16; width]);
     for rows in raw[..row_stride * height].chunks_exact(row_stride * 2) {
         let (top, bottom) = rows.split_at(row_stride);
-        for (top_pair, bottom_pair) in top[..row_bytes]
-            .chunks_exact(4)
-            .zip(bottom[..row_bytes].chunks_exact(4))
+        samples(&top[..row_bytes], layout, &mut top_samples);
+        samples(&bottom[..row_bytes], layout, &mut bottom_samples);
+        for (top_pair, bottom_pair) in top_samples
+            .chunks_exact(2)
+            .zip(bottom_samples.chunks_exact(2))
         {
-            let sum = u32::from(u16::from_le_bytes([top_pair[0], top_pair[1]]))
-                + u32::from(u16::from_le_bytes([top_pair[2], top_pair[3]]))
-                + u32::from(u16::from_le_bytes([bottom_pair[0], bottom_pair[1]]))
-                + u32::from(u16::from_le_bytes([bottom_pair[2], bottom_pair[3]]));
+            let sum = u32::from(top_pair[0])
+                + u32::from(top_pair[1])
+                + u32::from(bottom_pair[0])
+                + u32::from(bottom_pair[1]);
             grey.push(tone.grey((sum / 4) as u16));
         }
     }
@@ -75,7 +117,7 @@ mod tests {
     fn averages_each_rggb_cell_into_one_grey_byte() {
         let raw = little_endian_samples(&[1023, 1023, 400, 800, 1023, 1023, 800, 400]);
         assert_eq!(
-            grey_half(&raw, 4, 2, 8, &Tone::new(0, 1.0), false),
+            grey_half(&raw, 4, 2, 8, Layout::Unpacked16, &Tone::new(0, 1.0), false),
             [255, 150]
         );
     }
@@ -88,6 +130,7 @@ mod tests {
                 2,
                 2,
                 4,
+                Layout::Unpacked16,
                 &Tone::imx708(),
                 false
             ),
@@ -111,8 +154,42 @@ mod tests {
         let raw = little_endian_samples(&[
             64, 64, 64, 64, 1023, 1023, 1023, 1023, 64, 64, 64, 64, 1023, 1023, 1023, 1023,
         ]);
-        assert_eq!(grey_half(&raw, 8, 2, 16, &tone, false), [0, 0, 255, 255]);
-        assert_eq!(grey_half(&raw, 8, 2, 16, &tone, true), [255, 255, 0, 0]);
+        assert_eq!(
+            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, false),
+            [0, 0, 255, 255]
+        );
+        assert_eq!(
+            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, true),
+            [255, 255, 0, 0]
+        );
+    }
+
+    // Four samples to five bytes: their high 8 bits, then their low 2 bits each.
+    fn packed10(samples: &[u16]) -> Vec<u8> {
+        samples
+            .chunks_exact(4)
+            .flat_map(|four| {
+                let mut bytes: Vec<u8> = four.iter().map(|s| (s >> 2) as u8).collect();
+                bytes.push(
+                    four.iter()
+                        .enumerate()
+                        .fold(0u8, |low, (i, s)| low | (((s & 3) as u8) << (2 * i))),
+                );
+                bytes
+            })
+            .collect()
+    }
+
+    #[test]
+    fn packed_and_unpacked_rows_give_the_same_grey() {
+        let samples = [1023, 513, 402, 801, 1022, 1021, 803, 399];
+        let tone = Tone::new(0, 1.0);
+        let unpacked = little_endian_samples(&samples);
+        let packed = packed10(&samples);
+        assert_eq!(
+            grey_half(&packed, 4, 2, 5, Layout::Packed10, &tone, false),
+            grey_half(&unpacked, 4, 2, 8, Layout::Unpacked16, &tone, false)
+        );
     }
 
     #[test]
@@ -124,8 +201,8 @@ mod tests {
             .flat_map(|row| [row, &[0xff; 8][..]].concat())
             .collect();
         assert_eq!(
-            grey_half(&padded, 4, 2, 16, &tone, false),
-            grey_half(&packed, 4, 2, 8, &tone, false)
+            grey_half(&padded, 4, 2, 16, Layout::Unpacked16, &tone, false),
+            grey_half(&packed, 4, 2, 8, Layout::Unpacked16, &tone, false)
         );
     }
 }
