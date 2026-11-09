@@ -27,12 +27,14 @@ defmodule VisionCore.Components do
       `:stages` replaces the pipeline's default stages; see
       `VisionCore.Stereo.Pipeline.default_stages/1`.
     * `:detector` — `VisionCore.Detection.Supervisor`: the `:backend`
-      given in the opts (`VisionCore.Detection.Backend.Hailo` or
+      given in the opts (`VisionCore.Detection.Backend.Hailo`, `.Qnn` or
       `.Stub`) and the `VisionCore.Detection.Pipeline` placing its boxes
       in 3D. The detection pipeline subscribes to the stereo pipeline's
       pairs through `VisionCore.Outputs`, whichever of the two starts
       first.
     * `:hailo_detector` — `:detector` with the Hailo backend.
+    * `:qnn_detector` — `:detector` with the QNN backend
+      (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.
   """
 
   @doc """
@@ -43,6 +45,10 @@ defmodule VisionCore.Components do
   @spec start(atom(), keyword()) :: [Supervisor.child_spec()]
   def start(:hailo_detector, opts) do
     start(:detector, Keyword.put_new(opts, :backend, VisionCore.Detection.Backend.Hailo))
+  end
+
+  def start(:qnn_detector, opts) do
+    start(:detector, Keyword.put_new(opts, :backend, VisionCore.Detection.Backend.Qnn))
   end
 
   def start(:detector, opts) do
