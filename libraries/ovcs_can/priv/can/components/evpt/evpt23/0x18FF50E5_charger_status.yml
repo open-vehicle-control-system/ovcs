@@ -1,6 +1,7 @@
 ---
 name: charger_status
 id: 0x18FF50E5
+extended: true
 frequency: 1000
 signals:
   - name: output_voltage
