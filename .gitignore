@@ -38,3 +38,6 @@ __pycache__/
 # `mise run fetch-qairt`. Qualcomm's licence allows shipping it only inside
 # a firmware.
 vision/firmware/rootfs_overlay_qairt/
+
+# Generated GPU module caches (mix vision_core.nx_cache)
+vehicles/*/priv/nx_iree_cache/
