@@ -7,14 +7,14 @@ This guide follows one pair of frames through the vision unit. What disparity an
 
 ## The processes
 
-Each box below is a process on the BEAM, or a Port: a separate program the BEAM drives over pipes. A Port that crashes cannot take the BEAM down. The diagram shows the Pi 5; on the C100, one `v4l2_capture` Port captures both cameras and sends their frames as pairs.
+Each box below is a process on the BEAM, or a Port: a separate program the BEAM drives over pipes. A Port that crashes cannot take the BEAM down. The diagram shows the Pi 5; on the C100 and the VENTUNO Q, one `v4l2_capture` Port captures both cameras and sends their frames as pairs, and on the VENTUNO Q detection runs in the `qnn_detect` Port, on the NPU.
 
 ```text
  left camera Port ──► LibCamera / V4L2 driver ─┐
                                                 ├─► Pairer ──► Pipeline ──► subscribers
  right camera Port ─► LibCamera / V4L2 driver ─┘                │
                                                                  ├─ stereo_match Port (Pi 5)
-                                                                 └─ GPU through nx_iree (C100)
+                                                                 └─ GPU through nx_iree (C100, VENTUNO Q)
 
  subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
                Detection pipeline ──► hailo_detect Port (Hailo-8)
@@ -26,13 +26,14 @@ A Port's row below names the process that owns it.
 
 | Box | Process | Started by |
 |---|---|---|
-| LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100, one per side | `VisionCore.Stereo.Supervisor` |
+| LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
 | ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
 | Detection pipeline | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor` |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
+| `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
 | Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
 | `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, the Preview and the exporters encode on `VisionCore.Jpeg.Export` | `VisionCore.Supervisor` |

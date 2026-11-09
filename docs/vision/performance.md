@@ -61,6 +61,19 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 | `camera_capture`, both cameras | about 0.7 |
 | `jpeg_codec`, previews and raw images | about 0.3 |
 
+## Measured on an Arduino VENTUNO Q
+
+The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm apart, matched at 728 × 544 over 128 disparities on the Adreno 623, with YOLOX detecting on the NPU. These are measurements on one unit, not guarantees.
+
+| Figure | Measured |
+|---|---|
+| Depth rate, `search: "coarse_to_fine"`, 8 paths | 18 to 19 Hz |
+| Depth rate, `search: "coarse_to_fine"`, 3 paths | about 26 Hz |
+| Each camera | 29.97 frames a second |
+| Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
+| One detection request, letterbox included | 17 to 22 ms, on every pair |
+| Generating the context binary, first boot only | about 2.4 s |
+
 ## What to change
 
 Each setting trades rate against something else. The matching dominates, and its cost grows with **width × height × disparities**.

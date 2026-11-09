@@ -24,6 +24,14 @@ defmodule Ovcs1.VisionComposerTest do
     assert disparity[:search] == "coarse_to_fine"
   end
 
+  test "detection runs on the NPU" do
+    %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
+    detector = Keyword.fetch!(components, :qnn_detector)
+
+    assert String.ends_with?(detector[:dlc_path], "priv/models/yolox_w8a8.dlc")
+    assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
+  end
+
   test "the nominal calibration gives a 20 cm baseline" do
     dir = Application.app_dir(:ovcs1, "priv/calibration")
 

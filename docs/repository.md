@@ -30,8 +30,8 @@ ovcs/
 |   +-- core/                   Elixir library: cameras, Nx stereo stages, detectors, Zenoh publishers (no vehicle code)
 |   +-- api/                    Phoenix endpoint for the dashboard
 |   +-- dashboard/              React dashboard
-|   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5 and OKdo Nano C100
-|   +-- rust/                   camera_capture, v4l2_capture, hailo_detect, jpeg_codec and stereo_match Ports
+|   +-- firmware/               Nerves firmware shell targeting Raspberry Pi 5, OKdo Nano C100 and Arduino VENTUNO Q
+|   +-- rust/                   camera_capture, v4l2_capture, hailo_detect, qnn_detect, jpeg_codec and stereo_match Ports
 +-- controllers/              FRAMEWORK
 |   +-- generic_controller/     PlatformIO C++ project for Arduino R4 Minima
 +-- libraries/                FRAMEWORK · Shared Elixir libraries (in-tree and sideloaded)

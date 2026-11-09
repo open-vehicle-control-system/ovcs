@@ -3,33 +3,50 @@
 Nerves firmware image for a vehicle's vision unit. Wraps
 [`vision_api`](../api) (and through it [`vision_core`](../core), the
 dashboard build and the active vehicle package) into a deployable image
-for a Raspberry Pi 5 or an OKdo Nano C100.
+for a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q.
 
 ## Targets
 
-`MIX_TARGET` is `rpi5` or `okdo_c100`; `./ovcs` sets it from the
+`MIX_TARGET` is `rpi5`, `okdo_c100` or `arduino_ventuno_q`; `./ovcs`
+sets it from the
 vehicle's `vision_target/0`.
 
 | Target | Board | System |
 |---|---|---|
 | `rpi5` | Raspberry Pi 5, optionally with a Hailo-8 | [`ovcs_bridges_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_bridges_system_rpi5): libcamera with the PiSP pipeline, and the Hailo-8 driver |
 | `okdo_c100` | OKdo Nano C100 | [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100): the CSI camera drivers, and Mesa NVK for Vulkan |
+| `arduino_ventuno_q` | Arduino VENTUNO Q | [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q): CAMSS for the CSI cameras, Mesa Turnip for Vulkan, and FastRPC for the NPU |
 
 Compiling `vision_core` for a target cross-builds that target's Port
 binaries from [`../rust`](../rust) into its `priv/` (see
 `../core/Makefile`): `camera_capture`, `hailo_detect`, `jpeg_codec` and
 `stereo_match` for `rpi5`, `v4l2_capture` and `jpeg_codec` for
-`okdo_c100`. That needs the `aarch64-unknown-linux-gnu` Rust target
-(installed by `mise install`), and for `rpi5` a host libclang for
-bindgen and `libhailort`, which comes from
-[`libraries/hailort`](../../libraries/hailort).
+`okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`.
+That needs the `aarch64-unknown-linux-gnu` Rust target (installed by
+`mise install`), a host libclang for bindgen on `rpi5` and
+`arduino_ventuno_q`, `libhailort` for `rpi5`, which comes from
+[`libraries/hailort`](../../libraries/hailort), and for
+`arduino_ventuno_q` the QAIRT archive `mise run fetch-qairt` caches:
+`qnn_detect`'s bindings are generated from its QNN headers at build
+time, and nothing derived from them is committed.
 
 Per-target defaults (`fwup.conf`, `config.txt`, `cmdline-a.txt`,
-`cmdline-b.txt`) live under `targets/rpi5/`; `okdo_c100` has none and
-uses its system's `fwup.conf`. A vehicle overrides `fwup.conf` by
-dropping its own into `vehicles/<name>/priv/firmware/vision/`. The boot
-files are taken as a set: once that directory holds a `config.txt`,
-`config.txt`, `cmdline-a.txt` and `cmdline-b.txt` are all read from it.
+`cmdline-b.txt`) live under `targets/rpi5/`; `okdo_c100` and
+`arduino_ventuno_q` have none and use their system's `fwup.conf`. A
+vehicle overrides `fwup.conf` by dropping its own into
+`vehicles/<name>/priv/firmware/vision/`. The boot files are taken as a
+set: once that directory holds a `config.txt`, `config.txt`,
+`cmdline-a.txt` and `cmdline-b.txt` are all read from it.
+
+The root filesystem takes up to three overlays, later ones winning: the
+firmware's `rootfs_overlay/`, the vehicle's
+`priv/firmware/vision/rootfs_overlay/` (the VENTUNO Q's
+`/boot/cameras.cfg`, which names the sensor on each CSI connector), and
+`rootfs_overlay_qairt/`, where `mise run fetch-qairt` writes QAIRT as
+`/opt/qairt`. Run it with `VEHICLE` set; QAIRT's licence allows shipping
+it only inside a firmware, so no repository carries it. On
+`arduino_ventuno_q` only, erlinit sets `IREE_HAL_VULKAN_SLAB_SIZE` to
+512 MiB.
 
 The image's hostname is `<vehicle>-vision`, every underscore of the
 vehicle's directory name turned into a dash. Its product name is
@@ -60,7 +77,7 @@ then runs `mix firmware`.
 | Variable | Required | Purpose |
 |----------|:-:|---------|
 | `VEHICLE` | yes | Top-level vehicle module (`<Vehicle>`). `config/runtime.exs` resolves its vision composer with `OvcsVehicle.Firmware.resolve_side/4` and writes it to `:vision_core, :vehicle` |
-| `MIX_TARGET` | no | Nerves target atom, `rpi5` or `okdo_c100` (default: `rpi5`) |
+| `MIX_TARGET` | no | Nerves target atom, `rpi5`, `okdo_c100` or `arduino_ventuno_q` (default: `rpi5`) |
 
 `AUTHORIZED_SSH_KEYS`, `SECRET_KEY_BASE`, `ZENOH_ENDPOINT_IP`, `WIFI_NETWORKS`
 and the NervesHub settings live in `vehicles/<vehicle>/.env.exs`
