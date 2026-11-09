@@ -78,7 +78,7 @@ defmodule Ovcs1.Vision.Composer do
        calibration_store_dir: "/data/vision/calibration",
        stages:
          Pipeline.default_stages(
-           disparity: [num_disparities: 128, search: "coarse_to_fine", coarse_paths: 3]
+           disparity: [num_disparities: 128, search: "coarse_to_fine", paths: 3]
          ),
        defn_options: NxSegment.ventuno_q_defn_options({:ovcs1, "priv/nx_iree_cache"}),
        left: [
