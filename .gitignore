@@ -41,3 +41,6 @@ vision/firmware/rootfs_overlay_qairt/
 
 # Generated GPU module caches (mix vision_core.nx_cache)
 vehicles/*/priv/nx_iree_cache/
+
+# Fetched by scripts/fetch_models.sh
+vehicles/*/priv/models/*.dlc

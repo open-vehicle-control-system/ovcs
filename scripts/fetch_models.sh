@@ -45,6 +45,7 @@ fail() { printf '\033[31m✗\033[0m %s\n' "$1" >&2; }
 
 command -v curl    >/dev/null || { fail "curl is required"; exit 1; }
 command -v sha256sum >/dev/null || { fail "sha256sum is required"; exit 1; }
+command -v unzip   >/dev/null || { fail "unzip is required"; exit 1; }
 
 fetched=0
 skipped=0
@@ -52,7 +53,7 @@ failed=0
 
 # Tab-separated; comments and blank lines ignored. IFS is set to a tab
 # only, so the licence column may contain spaces.
-while IFS=$'\t' read -r dest sha licence url; do
+while IFS=$'\t' read -r dest sha licence url member; do
   case "${dest// /}" in ''|'#'*) continue ;; esac
   [ -n "${url:-}" ] || { fail "malformed manifest line for '$dest'"; failed=$((failed + 1)); continue; }
 
@@ -71,6 +72,7 @@ while IFS=$'\t' read -r dest sha licence url; do
   info "Fetching $name"
   printf '    licence: %s\n' "$licence"
   printf '    from:    %s\n' "$url"
+  [ -z "${member:-}" ] || printf '    member:  %s\n' "$member"
 
   mkdir -p "$(dirname "$target")"
   # To a temporary file first: a half-downloaded model that happens to
@@ -82,6 +84,17 @@ while IFS=$'\t' read -r dest sha licence url; do
     rm -f "$tmp"
     failed=$((failed + 1))
     continue
+  fi
+
+  # A zip release: the model is one member, and the checksum is the member's.
+  if [ -n "${member:-}" ]; then
+    if ! unzip -p "$tmp" "$member" > "$tmp.member"; then
+      fail "no $member in $url"
+      rm -f "$tmp" "$tmp.member"
+      failed=$((failed + 1))
+      continue
+    fi
+    mv "$tmp.member" "$tmp"
   fi
 
   actual="$(sha256sum "$tmp" | cut -d' ' -f1)"
