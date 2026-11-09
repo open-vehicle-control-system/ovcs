@@ -34,6 +34,9 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       mostly its matches; a structure too thin to survive the shrink can
       take the background's disparity. It needs 128 disparities and an
       even working size, and runs as Nx: it has no native matcher.
+    * `:coarse_paths` (`:paths`) — the coarse matching's paths, 8 or 3,
+      with `search: "coarse_to_fine"`: it only places each pixel's band,
+      so 3 costs little accuracy for much less time.
     * `:matcher` — `:native` matches natively, `:nx` compiles
       `NxStereo.sgm/3`, whatever the pipeline's `:compute`; by default,
       as the pipeline's `:compute` says. The pipeline's own `compute:`
@@ -41,8 +44,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       `:matcher`, it must agree.
 
   `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
-  they also change while running; `:num_disparities`, `:paths` and
-  `:search` are fixed in it (`option_specs/0`).
+  they also change while running; `:num_disparities`, `:paths`,
+  `:search` and `:coarse_paths` are fixed in it (`option_specs/0`).
   """
   @behaviour VisionCore.Stereo.NxStage
 
@@ -85,6 +88,14 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       values: [3, 8],
       applies: :build,
       description: "Aggregation paths; 3 is faster and leaves more pixels unmatched"
+    },
+    coarse_paths: %{
+      type: :integer,
+      values: [3, 8],
+      applies: :build,
+      # coarse_to_fine has no native matcher.
+      native: false,
+      description: "Aggregation paths of coarse_to_fine's half-size match; 3 is faster"
     },
     search: %{
       type: :string,
@@ -129,7 +140,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
     {matcher, opts} = Keyword.pop(opts, :matcher)
 
     with :ok <- check_matcher(matcher),
-         {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         defaults = Map.put(@defaults, :coarse_paths, Keyword.get(opts, :paths, @defaults.paths)),
+         {:ok, settings} <- Check.init_settings(@option_specs, defaults, opts),
          :ok <- check_search(settings, matcher, context),
          do: {:ok, Map.put(settings, :matcher, matcher)}
   end
@@ -158,8 +170,15 @@ defmodule VisionCore.Stereo.Stage.Disparity do
 
     disparity =
       case state.search do
-        "full" -> NxStereo.sgm(tensors.left, tensors.right, opts)
-        "coarse_to_fine" -> NxStereo.sgm_coarse_to_fine(tensors.left, tensors.right, opts)
+        "full" ->
+          NxStereo.sgm(tensors.left, tensors.right, opts)
+
+        "coarse_to_fine" ->
+          NxStereo.sgm_coarse_to_fine(
+            tensors.left,
+            tensors.right,
+            [coarse_paths: state.coarse_paths] ++ opts
+          )
       end
 
     Map.put(tensors, :disparity, Nx.select(Nx.greater(disparity, 0), disparity, -1.0))

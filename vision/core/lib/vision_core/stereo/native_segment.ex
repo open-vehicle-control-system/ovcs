@@ -272,6 +272,7 @@ defmodule VisionCore.Stereo.NativeSegment do
     build =
       for {key, spec} <- option_specs(member.module),
           Map.get(spec, :applies, :live) == :build,
+          Map.get(spec, :native, true),
           is_number(values[key]) or is_boolean(values[key]),
           do: {key, setting_float(values[key])}
 

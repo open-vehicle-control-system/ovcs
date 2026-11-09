@@ -282,6 +282,38 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Nx.to_number(Nx.sum(Nx.greater(pair.disparity, 36.5))) > 2000
   end
 
+  test "Disparity's coarse_paths sets the coarse matching's paths, as paths by default" do
+    context = context(:stereo, 128, 48)
+    texture = texture(48, 168, 5)
+    left = texture[[.., 0..127]]
+    right = texture[[.., 37..164]]
+    opts = [search: "coarse_to_fine", num_disparities: 128, paths: 8, coarse_paths: 3]
+
+    expected =
+      Nx.Defn.jit_apply(
+        &NxStereo.sgm_coarse_to_fine(&1, &2, paths: 8, coarse_paths: 3),
+        [left, right],
+        compiler: EXLA
+      )
+
+    pair = run_stage(Stage.Disparity, opts, context, %{left: left, right: right})
+
+    assert Nx.to_list(pair.disparity) ==
+             Nx.to_list(Nx.select(Nx.greater(expected, 0), expected, -1.0))
+
+    for {opts, coarse_paths} <- [[paths: 3], [paths: 8], [paths: 8, coarse_paths: 3]] do
+      opts = [search: "coarse_to_fine", num_disparities: 128] ++ opts
+      assert {:ok, state} = Stage.Disparity.init(opts, context)
+      assert Stage.Disparity.options(state).coarse_paths == coarse_paths
+    end
+
+    assert {:error, _} =
+             Stage.Disparity.init(
+               [search: "coarse_to_fine", num_disparities: 128, coarse_paths: 4],
+               context
+             )
+  end
+
   test "Disparity searches coarse to fine only over 128 disparities, at an even size, as Nx" do
     context = context(:identity, 192, 108)
 
