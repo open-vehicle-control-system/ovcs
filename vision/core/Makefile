@@ -9,9 +9,15 @@ BINARIES := v4l2_capture jpeg_codec
 FEATURES :=
 TARGET_CPU_FLAGS :=
 else ifeq ($(MIX_TARGET),arduino_ventuno_q)
-BINARIES := v4l2_capture jpeg_codec
+BINARIES := v4l2_capture jpeg_codec qnn_detect
 FEATURES :=
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a78
+# qnn_detect's bindings come from the QNN headers of the QAIRT archive the
+# firmware's overlay is fetched from (`mise run fetch-qairt`); none is committed.
+QAIRT_VERSION := 2.50.0.260828
+QAIRT_ZIP ?= $(HOME)/.cache/nerves_system_arduino_ventuno_q/qairt-$(QAIRT_VERSION).zip
+QAIRT_INCLUDE := $(MIX_BUILD_PATH)/qairt_include
+QAIRT_HEADERS := $(QAIRT_INCLUDE)/qairt/$(QAIRT_VERSION)/include/QNN
 else
 BINARIES := camera_capture hailo_detect jpeg_codec stereo_match
 FEATURES := --features device
@@ -20,7 +26,7 @@ endif
 CARGO ?= cargo
 # Every Port binary: priv/ is shared by the host and every target, so a
 # target build removes the ones it does not build.
-ALL_BINARIES := camera_capture hailo_detect jpeg_codec stereo_match v4l2_capture
+ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect stereo_match v4l2_capture
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
 RUST_TARGET := $(TARGET_ARCH)-unknown-$(TARGET_OS)-$(TARGET_ABI)
@@ -51,6 +57,7 @@ CARGO_ENV := env -u CC -u CXX -u AR -u CFLAGS -u CXXFLAGS -u LDFLAGS \
 	CXXFLAGS_$(RUST_TARGET_ENV)="$(CXXFLAGS)" \
 	HAILORT_INCLUDE_DIR="$(HAILORT_DIR)/native/include" \
 	HAILORT_LINK_DIR="$(HAILORT_DIR)/native/lib" \
+	QAIRT_INCLUDE_DIR="$(QAIRT_HEADERS)" \
 	PKG_CONFIG_ALLOW_CROSS=1 \
 	PKG_CONFIG_SYSROOT_DIR_$(RUST_TARGET_ENV)="$(SYSROOT)" \
 	PKG_CONFIG_PATH_$(RUST_TARGET_ENV)= \
@@ -72,6 +79,16 @@ all: cargo
 	mkdir -p $(PRIV_DIR)
 	rm -f $(addprefix $(PRIV_DIR)/,$(filter-out $(BINARIES),$(ALL_BINARIES)))
 	for binary in $(BINARIES); do install -m 755 $(RUST_OUT)/$$binary $(PRIV_DIR)/$$binary; done
+endif
+
+ifneq ($(QAIRT_HEADERS),)
+cargo: $(QAIRT_HEADERS)/QnnInterface.h
+
+$(QAIRT_HEADERS)/QnnInterface.h:
+	@test -f "$(QAIRT_ZIP)" || { echo "no QAIRT archive at $(QAIRT_ZIP): run mise run fetch-qairt" >&2; exit 1; }
+	mkdir -p $(QAIRT_INCLUDE)
+	unzip -q -o $(QAIRT_ZIP) 'qairt/$(QAIRT_VERSION)/include/QNN/*' -d $(QAIRT_INCLUDE)
+	touch $@
 endif
 
 # Phony: cargo decides what is stale.

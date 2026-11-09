@@ -6,7 +6,7 @@ Stereo depth and object detection for a vehicle, taken out of the unit by its ex
 
 `VisionCore.Application` starts the composer set in `:vision_core, :vehicle` under `VisionCore.Supervisor`: the saved parameters' storage and the parameter registry first, then the ROS 2 link when the configuration has one, the components, the exporters, and the dashboard's sources. With no composer it starts nothing.
 
-On a vision target, compiling this app cross-builds the Ports from [`../rust`](../rust) through `Makefile` into `priv/`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` on `rpi5`, `v4l2_capture` and `jpeg_codec` on `okdo_c100`.
+On a vision target, compiling this app cross-builds the Ports from [`../rust`](../rust) through `Makefile` into `priv/`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` on `rpi5`, `v4l2_capture` and `jpeg_codec` on `okdo_c100`, and those two with `qnn_detect` on `arduino_ventuno_q`, whose QNN bindings are generated from the QAIRT archive `mise run fetch-qairt` caches.
 
 The stereo stages (`VisionCore.Stereo.Pipeline.default_stages/1`) are written in Nx and compiled through `nx_iree`, for a Vulkan GPU or a CPU. The tests run them on EXLA and check them against OpenCV (evision, a test dependency); `--include vulkan` also runs them on the host's Vulkan devices, `--include iree` compiles them with IREE. The first build compiles the IREE runtime with CMake. With `compute: :native` the stages run natively in the `stereo_match` Port instead (`VisionCore.Stereo.NativeSegment`), whose tests compare each stage with its Nx implementation on the same inputs: on Nx's evaluator, bit for bit, and the disparity with `NxStereo.sgm/3` on EXLA.
 

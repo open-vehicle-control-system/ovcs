@@ -74,9 +74,70 @@ pub fn class_end(offset: usize, count: usize) -> Option<usize> {
     count.checked_mul(FLOATS_PER_BOX)?.checked_add(offset)
 }
 
+/// The intersection over union of two `[x0, y0, x1, y1]` boxes.
+fn iou(a: &Detection, b: &Detection) -> f32 {
+    let width = (a.x1.min(b.x1) - a.x0.max(b.x0)).max(0.0);
+    let height = (a.y1.min(b.y1) - a.y0.max(b.y0)).max(0.0);
+    let intersection = width * height;
+    let union = (a.x1 - a.x0) * (a.y1 - a.y0) + (b.x1 - b.x0) * (b.y1 - b.y0) - intersection;
+    if union > 0.0 {
+        intersection / union
+    } else {
+        0.0
+    }
+}
+
+/// Greedy non-maximum suppression per class: the detections by falling
+/// score, without any that overlaps a kept one of its class by more than `threshold`.
+pub fn suppress(mut detections: Vec<Detection>, threshold: f32) -> Vec<Detection> {
+    detections.sort_by(|a, b| b.score.total_cmp(&a.score));
+    let mut kept: Vec<Detection> = Vec::new();
+    for candidate in detections {
+        if kept
+            .iter()
+            .all(|k| k.class_id != candidate.class_id || iou(k, &candidate) <= threshold)
+        {
+            kept.push(candidate);
+        }
+    }
+    kept
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn detection(class_id: u16, score: f32, x0: f32) -> Detection {
+        Detection {
+            class_id,
+            score,
+            x0,
+            y0: 0.0,
+            x1: x0 + 10.0,
+            y1: 10.0,
+        }
+    }
+
+    #[test]
+    fn suppresses_the_weaker_of_two_overlapping_boxes_of_a_class() {
+        let kept = suppress(
+            vec![
+                detection(0, 0.5, 1.0),
+                detection(0, 0.9, 0.0),
+                detection(1, 0.4, 0.0),
+                detection(0, 0.3, 50.0),
+            ],
+            0.45,
+        );
+        assert_eq!(
+            kept,
+            vec![
+                detection(0, 0.9, 0.0),
+                detection(1, 0.4, 0.0),
+                detection(0, 0.3, 50.0)
+            ]
+        );
+    }
     use crate::letterbox::letterbox_for;
 
     fn assert_near(detection: &Detection, want: [f32; 4]) {
