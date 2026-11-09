@@ -74,6 +74,37 @@ defmodule VisionCore.Camera.CamssTest do
     assert message =~ "msm_csiphy2"
   end
 
+  test "waits up to :await milliseconds for a media device that is not there yet" do
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    text = File.read!(Path.join(@fixtures, "media-ctl-p.txt"))
+
+    runner = fn _command, args ->
+      if "-p" in args and Agent.get_and_update(attempts, &{&1, &1 + 1}) < 2,
+        do: {"Failed to enumerate /dev/media0 (-2)", 1},
+        else: {text, 0}
+    end
+
+    assert {:error, _} = Camss.route(1, runner: runner)
+    Agent.update(attempts, fn _ -> 0 end)
+    assert {:ok, %{sensor: "imx296 7-001a"}} = Camss.route(1, runner: runner, await: 2_000)
+  end
+
+  test "waits up to :await milliseconds for the sensor to join the graph" do
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    early = File.read!(Path.join(@fixtures, "media-ctl-p-no-csiphy2-sensor.txt"))
+    late = File.read!(Path.join(@fixtures, "media-ctl-p.txt"))
+
+    runner = fn _command, args ->
+      cond do
+        "-p" not in args -> {"", 0}
+        Agent.get_and_update(attempts, &{&1, &1 + 1}) < 2 -> {early, 0}
+        true -> {late, 0}
+      end
+    end
+
+    assert {:ok, %{sensor: "imx477 3-001a"}} = Camss.route(2, runner: runner, await: 2_000)
+  end
+
   test "a media-ctl that fails is an error with its output" do
     runner = fn _command, _args -> {"Failed to enumerate /dev/media0 (-2)", 1} end
 

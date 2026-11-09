@@ -64,8 +64,10 @@ defmodule VisionCore.Camera.V4L2 do
     * `:left_csiphy`, `:right_csiphy` — on a CAMSS board such as the
       Arduino VENTUNO Q, the CSI PHY each side's sensor is wired to (left):
       `VisionCore.Camera.Camss` routes it, at twice `:width` × `:height`,
-      and names its nodes, in place of the four options above. A PHY
-      without a sensor stops the camera at startup with an error naming it.
+      and names its nodes, in place of the four options above. Startup
+      waits up to 30 s for the media device and the sensor on each PHY,
+      which register some seconds after boot; a PHY still without a
+      sensor then stops the camera with an error naming it.
     * `:media_runner` — runs `media-ctl` for the routing, as
       `VisionCore.Camera.Camss.route/2`'s `:runner` (tests).
     * any setting of `control_specs/0`, by its key (left).
@@ -85,6 +87,8 @@ defmodule VisionCore.Camera.V4L2 do
   @watchdog_interval_ms 1_000
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
+  # How long CAMSS and the sensors may take to register after the VM starts.
+  @media_timeout_ms 30_000
   # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
   @default_nodes [
     left_video: "54080000.vi-output-0",
@@ -189,7 +193,11 @@ defmodule VisionCore.Camera.V4L2 do
   @spec routed(keyword()) :: {:ok, keyword()} | {:error, String.t()}
   def routed(opts) do
     route_opts =
-      [width: 2 * Keyword.fetch!(opts, :width), height: 2 * Keyword.fetch!(opts, :height)] ++
+      [
+        width: 2 * Keyword.fetch!(opts, :width),
+        height: 2 * Keyword.fetch!(opts, :height),
+        await: @media_timeout_ms
+      ] ++
         if runner = opts[:media_runner], do: [runner: runner], else: []
 
     Enum.reduce_while([left: :left_csiphy, right: :right_csiphy], {:ok, opts}, fn
