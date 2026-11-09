@@ -20,6 +20,7 @@ defmodule RosBridge.MixProject do
       {:ovcs_bridge, path: "../../libraries/ovcs_bridge"},
       {:ovcs_drivers, path: "../../libraries/ovcs_drivers"},
       {:ros2_zenoh, path: "../../libraries/ros2_zenoh"},
+      {:simulator_core, path: "../../simulator/core"},
       {:zenohex, "~> 0.8.0"},
       # Joy profiles (`RosBridge.Consumers.Joy.Profile`).
       {:yaml_elixir, "~> 2.12"},

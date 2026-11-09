@@ -66,6 +66,7 @@ jobs:
               - infotainment/api/**
               - infotainment/firmware/**
               - bridges/**
+              - simulator/**
               - vehicles/**
               - vision/core/**
               - vision/api/**
@@ -184,6 +185,7 @@ jobs:
           - bridges/firmware
           - bridges/radio_control_bridge
           - bridges/ros_bridge
+          - simulator/core
           - vehicles/ovcs1
           - vehicles/ovcs_mini
           - vehicles/obd2

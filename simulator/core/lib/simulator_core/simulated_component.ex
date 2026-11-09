@@ -1,17 +1,17 @@
-defmodule RosBridge.Simulator.SimulatedComponent do
+defmodule SimulatorCore.SimulatedComponent do
   @moduledoc """
   One piece of a vehicle's hardware, emulated on the CAN bus for
   `RosBridge.Simulator.Hardware`: a motor controller, a generic
   controller, a steering servo, a radio receiver.
 
   A simulated component reads the frames the VMS sends it, acts on
-  `RosBridge.Simulator.Vehicle` through actuations, and reports what
+  `SimulatorCore.Vehicle` through actuations, and reports what
   the real hardware would from the vehicle's motion. It is the inverse
   of the VMS component that drives the same hardware, is named after
   it, and reads that component's frames by the same names.
   """
 
-  alias RosBridge.Simulator.Vehicle
+  alias SimulatorCore.Vehicle
 
   @typedoc "A frame on a network, as the bridge firmware's topology names it."
   @type frame :: {network :: atom(), frame_name :: String.t()}
@@ -19,7 +19,7 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   @typedoc "Signal values to merge into an emitted frame."
   @type update :: {network :: atom(), frame_name :: String.t(), signals :: map()}
 
-  @typedoc "See `RosBridge.Simulator.Vehicle`."
+  @typedoc "See `SimulatorCore.Vehicle`."
   @type actuation ::
           {:acceleration, float()}
           | {:deceleration, float()}
@@ -49,7 +49,7 @@ defmodule RosBridge.Simulator.SimulatedComponent do
   Reports the vehicle's motion over the last tick as the hardware it
   stands in for would: the new state and the signals to emit, counters
   from `wheel_turns_step` and rates from `measured_speed_m_s`; see
-  `RosBridge.Simulator.Vehicle`.
+  `SimulatorCore.Vehicle`.
   """
   @callback report(state :: term(), Vehicle.t(), now_ms :: integer()) ::
               {term(), [update()]}

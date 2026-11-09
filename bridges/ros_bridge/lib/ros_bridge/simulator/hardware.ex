@@ -5,8 +5,8 @@ defmodule RosBridge.Simulator.Hardware do
   **Simulation only.**
 
   Every `@period_ms` it collects the actuations of the vehicle's
-  simulated components (`RosBridge.Simulator.SimulatedComponent`),
-  advances `RosBridge.Simulator.Vehicle`, lets each report the motion as
+  simulated components (`SimulatorCore.SimulatedComponent`),
+  advances `SimulatorCore.Vehicle`, lets each report the motion as
   the hardware it stands in for would, and publishes the vehicle's speed
   and Ackermann yaw rate to the simulator as a `geometry_msgs/Twist` on
   `simulator/drive`. The simulator's own drive plugin moves the vehicle;
@@ -17,7 +17,7 @@ defmodule RosBridge.Simulator.Hardware do
   and shaft sensors do. How far they turned is the `:wheel_joints`'
   mean position on `joint_states`, which the simulator integrates, and
   how fast is that distance per second of the wall clock the VMS
-  measures against (see `RosBridge.Simulator.Vehicle`): the counters
+  measures against (see `SimulatorCore.Vehicle`): the counters
   match the simulator, and the rates match the counters, however fast
   the simulator runs. The positions are cumulative, so samples arriving
   late or in bursts lose nothing. Before the first one, or without
@@ -25,7 +25,7 @@ defmodule RosBridge.Simulator.Hardware do
 
   ## Options
 
-    * `:vehicle` (required) — `RosBridge.Simulator.Vehicle.new/1`'s
+    * `:vehicle` (required) — `SimulatorCore.Vehicle.new/1`'s
       parameters.
     * `:simulated_components` (required) — `{module, opts}` per
       simulated component.
@@ -40,7 +40,7 @@ defmodule RosBridge.Simulator.Hardware do
   alias Cantastic.Frame
   alias Ros2Zenoh.GeometryMsgs.Msg.{Twist, Vector3}
   alias Ros2Zenoh.SensorMsgs.Msg.JointState
-  alias RosBridge.Simulator.{SimulatedComponent, Vehicle}
+  alias SimulatorCore.{SimulatedComponent, Vehicle}
 
   require Logger
 

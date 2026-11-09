@@ -37,11 +37,11 @@ Nav2 ── /cmd_vel_nav ──► Consumers.Velocity ── 0x2B1 ──► VMS
                                                       Gazebo ─────────────────────┘
 ```
 
-The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `RosBridge.Simulator.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `RosBridge.Simulator.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_bridge_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
+The simulated hardware is framework; what it emulates is the vehicle's. Each piece of hardware is a `SimulatorCore.SimulatedComponent`, the inverse of the VMS component that drives it, named after it and reading and writing its frames by name: `SimulatedComponents.Vesc.MotorController`, `SimulatedComponents.OVCS.GenericController`, `SimulatedComponents.Traxxas.Steering` and `SimulatedComponents.OVCS.RadioControl` are the OVCS Mini reference vehicle's set. A vehicle with other hardware adds simulated components; `SimulatorCore.Vehicle`, the motion they act on, knows none of them. The OVCS Mini wires it into its `ros` bridge with `OVCS_SIM`, in `ros_bridge_simulation_config/0`, and declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
 
 A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
 
-1. Each simulated component turns its command into actuations on `RosBridge.Simulator.Vehicle`: a speed setpoint, an acceleration from a motor current, a deceleration from a brake, a steering angle.
+1. Each simulated component turns its command into actuations on `SimulatorCore.Vehicle`: a speed setpoint, an acceleration from a motor current, a deceleration from a brake, a steering angle.
 2. The vehicle steps, in three parts:
    - **What to ask for.** The actuations become a commanded speed and steering angle. A setpoint is taken as it is; otherwise the speed changes by the drive, less any brake and the rolling resistance, over the tick.
    - **What the wheels did.** Their turn since the last tick is the change in the `:wheel_joints`' mean position on `/joint_states`, cumulative, so samples arriving late or in bursts lose nothing. The measured speed is that distance per wall second, smoothed by a filter that keeps the total.
@@ -49,7 +49,7 @@ A frame from the VMS only updates the command its simulated component holds. The
 3. Each simulated component reports what its hardware would measure: counters from the wheel turns and rates from the measured speed, into its CAN frames, which Cantastic sends on their own timers.
 4. The commanded speed and its Ackermann yaw rate go to Gazebo on `/simulator/drive`.
 
-`RosBridge.Simulator.Vehicle`'s documentation works three of these steps through with the OVCS Mini's numbers.
+`SimulatorCore.Vehicle`'s documentation works three of these steps through with the OVCS Mini's numbers.
 
 Three things are particular to the simulator:
 

@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.SimulatedComponentsTest do
+defmodule SimulatorCore.SimulatedComponentsTest do
   @moduledoc """
   The simulated components against the VMS components they invert:
   the frames the VMS components emit are fed in, and what the simulated
@@ -9,10 +9,10 @@ defmodule RosBridge.Simulator.SimulatedComponentsTest do
   use ExUnit.Case, async: true
 
   alias Cantastic.Signal
-  alias RosBridge.Simulator.SimulatedComponents.OVCS.{GenericController, RadioControl}
-  alias RosBridge.Simulator.SimulatedComponents.Traxxas.Steering
-  alias RosBridge.Simulator.SimulatedComponents.Vesc.MotorController
-  alias RosBridge.Simulator.Vehicle
+  alias SimulatorCore.SimulatedComponents.OVCS.{GenericController, RadioControl}
+  alias SimulatorCore.SimulatedComponents.Traxxas.Steering
+  alias SimulatorCore.SimulatedComponents.Vesc.MotorController
+  alias SimulatorCore.Vehicle
 
   @dt 0.01
   @pole_pairs 2
