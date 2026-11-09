@@ -294,6 +294,27 @@ defmodule VisionCore.Stereo.KernelsTest do
     assert close(gpu.disparity, reference.disparity, 1.0e-5) >= 0.999
     assert gpu.left == reference.left
   end
+
+  @tag timeout: 300_000
+  test "a pipeline searching coarse to fine on the GPU gives its Nx steps' matches", %{
+    tmp_dir: dir
+  } do
+    context = context(:identity, 728, 544, nil)
+    left = texture(544, 728, 17)
+    right = left |> Nx.pad(0, [{0, 0, 0}, {0, 41, 0}]) |> Nx.slice([0, 41], [544, 728])
+    pair = frames_pair(left, right)
+
+    stages =
+      VisionCore.Stereo.Pipeline.default_stages(
+        disparity: [num_disparities: 128, search: "coarse_to_fine"]
+      )
+
+    reference = run(stages, context, pair, compiler: EXLA)
+    gpu = run(stages, context, pair, vulkan_options(dir, true))
+
+    assert close(gpu.disparity, reference.disparity, 1.0e-5) >= 0.999
+    assert Nx.to_number(Nx.mean(Nx.greater(gpu.disparity, 40.5))) > 0.8
+  end
 end
 
 defmodule VisionCore.Stereo.KernelsSizesTest do
