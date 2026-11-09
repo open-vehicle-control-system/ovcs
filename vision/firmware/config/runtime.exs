@@ -26,6 +26,12 @@ case OvcsVehicle.Firmware.resolve_side(
     end
 end
 
+# The VENTUNO Q has the memory for 512 MiB Vulkan slabs, which keep a stereo
+# segment's transient buffers pooled instead of allocated on every pair; IREE
+# reads the size when nx_iree creates its devices, after this file runs.
+if config_target() == :arduino_ventuno_q,
+  do: System.put_env("IREE_HAL_VULKAN_SLAB_SIZE", Integer.to_string(512 * 1024 * 1024))
+
 if System.get_env("PHX_SERVER") do
   config :vision_api, VisionApiWeb.Endpoint, server: true
 end
