@@ -136,6 +136,20 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     def __to_backend__(_opts), do: {Nx.BinaryBackend, []}
   end
 
+  # Outputs of three widths: a 32-bit float and a 16-bit integer image from the 8-bit one.
+  defmodule Widen do
+    @behaviour VisionCore.Stereo.NxStage
+    def init(_opts, _context), do: {:ok, nil}
+    def requires, do: [:left]
+    def provides, do: [:disparity, :depth]
+
+    def step(tensors, _params, _state) do
+      tensors
+      |> Map.put(:disparity, Nx.multiply(Nx.as_type(tensors.left, :f32), 0.5))
+      |> Map.put(:depth, tensors.left |> Nx.as_type(:u16) |> Nx.multiply(300))
+    end
+  end
+
   # Compiles, and fails every call, as a device that errors on a pair.
   defmodule FailingDevice do
     @behaviour Nx.Defn.Compiler
@@ -212,6 +226,12 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     NxSegment.await(ticket, segment, 5_000)
   end
 
+  # The left image the outputs a pair left on the device hold.
+  defp left(outputs, segment) do
+    {:ok, filled} = NxSegment.collect(grey_pair(List.duplicate(0, 8)), outputs, segment, 5_000)
+    Nx.to_list(filled.left)
+  end
+
   test "runs consecutive steps as one function" do
     {:ok, segment} = NxSegment.build(members([AddOne, Double], context()), context(), [])
     {:ok, pair, _segment} = run(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
@@ -256,12 +276,29 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     assert next.left |> Nx.to_flat_list() |> Enum.uniq() == [2.0]
   end
 
+  test "leaves a pair's outputs on the device as one tensor, which fills the pair once downloaded" do
+    {:ok, segment} = NxSegment.build(members([AddOne, Widen], context()), context(), [])
+    pair = grey_pair([0, 1, 2, 3, 4, 5, 6, 7])
+    {:ok, outputs, segment, _done_ns} = reply(pair, segment)
+
+    assert Map.keys(outputs) == [:published]
+    assert Nx.type(outputs.published) == {:u, 32}
+
+    {:ok, filled} = NxSegment.collect(pair, outputs, segment, 5_000)
+    assert Nx.to_list(filled.left) == [[1, 2, 3, 4], [5, 6, 7, 8]]
+    assert Nx.to_list(filled.disparity) == [[0.5, 1.0, 1.5, 2.0], [2.5, 3.0, 3.5, 4.0]]
+    assert Nx.type(filled.depth) == {:u, 16}
+    assert Nx.to_list(filled.depth) == [[300, 600, 900, 1200], [1500, 1800, 2100, 2400]]
+  end
+
   test "leaves the tensors a stage fills for the device only out of its outputs" do
     {:ok, segment} = NxSegment.build(members([AddOne, Scratch], context()), context(), [])
-    {:ok, outputs, _segment, _done_ns} = reply(grey_pair(List.duplicate(0, 8)), segment)
+    pair = grey_pair(List.duplicate(0, 8))
+    {:ok, outputs, segment, _done_ns} = reply(pair, segment)
+    {:ok, filled} = NxSegment.collect(pair, outputs, segment, 5_000)
 
-    assert Map.has_key?(outputs, :left)
-    refute Map.has_key?(outputs, :scratch)
+    assert Nx.to_list(filled.left) == [[1, 1, 1, 1], [1, 1, 1, 1]]
+    refute Enum.any?(NxSegment.published(segment), &(&1 == :scratch))
   end
 
   test "sends a pair without waiting, and recognises its outputs among other messages" do
@@ -271,7 +308,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
 
     assert {:ok, outputs, _segment, done_ns} = await_response(ticket, segment)
     assert done_ns <= System.monotonic_time(:nanosecond)
-    assert Nx.to_list(outputs.left) == [[2, 4, 6, 8], [10, 12, 14, 16]]
+    assert left(outputs, segment) == [[2, 4, 6, 8], [10, 12, 14, 16]]
     refute_received {:DOWN, _ref, :process, _pid, _reason}
     assert NxSegment.member_times(segment) == []
   end
@@ -281,7 +318,7 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     {:ok, ticket} = NxSegment.send_request(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
 
     assert {:ok, outputs, _segment, _done_ns} = NxSegment.await(ticket, segment, 5_000)
-    assert Nx.to_list(outputs.left) == [[2, 4, 6, 8], [10, 12, 14, 16]]
+    assert left(outputs, segment) == [[2, 4, 6, 8], [10, 12, 14, 16]]
   end
 
   test "returns what the device raises as the pair's error" do

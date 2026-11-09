@@ -36,6 +36,8 @@ defmodule VisionCore.Stereo.NxSegment do
     :context,
     :defn_options,
     packed: false,
+    layout: [],
+    placement: nil,
     version: 0
   ]
 
@@ -87,24 +89,123 @@ defmodule VisionCore.Stereo.NxSegment do
     with {:ok, specs} <- Segment.entry_specs(members, context, packed: packed?),
          entry_templates =
            Map.new(specs, fn {field, {shape, type}} -> {field, Nx.template(shape, type)} end),
+         run = &run_packed(members, &1, &2, packed?),
+         layout = layout(run, entry_templates, params, members),
          {:ok, function} <-
            compile(
-             &run_packed(members, &1, &2, packed?),
+             &bundle(run.(&1, &2), layout),
              [entry_templates, Nx.to_template(params)],
              defn_options
            ) do
+      placement = placement(defn_options)
+
       {:ok,
        %__MODULE__{
          members: members,
          specs: specs,
          function: function,
-         params: params,
+         params: place(params, placement),
          carried: carried(members, context),
          context: context,
          defn_options: defn_options,
-         packed: packed?
+         packed: packed?,
+         layout: layout,
+         placement: placement
        }}
     end
+  end
+
+  @doc "The fields a pair's outputs hold once downloaded, in the order they are packed."
+  @spec published(t()) :: [term()]
+  def published(%__MODULE__{layout: layout}), do: Enum.map(layout, &elem(&1, 0))
+
+  # Each downloaded output's shape, type and offset in 32-bit words of the bundle.
+  defp layout(run, entry_templates, params, members) do
+    device_only = device_only(members)
+
+    run
+    |> Nx.Defn.debug_expr()
+    |> apply([entry_templates, Nx.to_template(params)])
+    |> Enum.reject(fn {key, _tensor} ->
+      match?({:carry, _index, _name}, key) or key in device_only
+    end)
+    |> Enum.sort_by(&elem(&1, 0))
+    |> Enum.map_reduce(0, fn {key, tensor}, offset ->
+      words = words_for(Nx.shape(tensor), Nx.type(tensor))
+      {{key, Nx.shape(tensor), Nx.type(tensor), offset}, offset + words}
+    end)
+    |> elem(0)
+  end
+
+  # A section's words, rounded up so the next starts on a 256-byte boundary: IREE may
+  # have a kernel write its output straight into the bundle, which needs an aligned offset.
+  @section_words 64
+  defp words_for(shape, {_kind, bits}) do
+    words = div(Tuple.product(shape) * bits + 31, 32)
+    div(words + @section_words - 1, @section_words) * @section_words
+  end
+
+  # Outputs as one u32 `:published` vector: each device transfer has a fixed cost.
+  defp bundle(results, []),
+    do: Map.filter(results, fn {key, _} -> match?({:carry, _, _}, key) end)
+
+  defp bundle(results, layout) do
+    words =
+      Enum.map(layout, fn {key, shape, type, _offset} ->
+        section = results |> Map.fetch!(key) |> to_words()
+        Nx.pad(section, 0, [{0, words_for(shape, type) - Nx.size(section), 0}])
+      end)
+
+    results
+    |> Map.filter(fn {key, _tensor} -> match?({:carry, _index, _name}, key) end)
+    |> Map.put(:published, Nx.concatenate(words))
+  end
+
+  # A tensor's bytes as little-endian u32 words, its last word zero-padded.
+  defp to_words(tensor) do
+    {_kind, bits} = Nx.type(tensor)
+    flat = tensor |> Nx.bitcast({:u, bits}) |> Nx.flatten()
+
+    case bits do
+      32 ->
+        flat
+
+      bits when bits in [8, 16] ->
+        lanes = div(32, bits)
+        padding = rem(lanes - rem(Nx.size(flat), lanes), lanes)
+
+        flat
+        |> Nx.pad(0, [{0, padding, 0}])
+        |> Nx.as_type({:u, 32})
+        |> Nx.reshape({:auto, lanes})
+        |> then(fn grouped ->
+          for lane <- 0..(lanes - 1) do
+            grouped
+            |> Nx.slice_along_axis(lane, 1, axis: 1)
+            |> Nx.flatten()
+            |> Nx.left_shift(lane * bits)
+          end
+        end)
+        |> Enum.reduce(&Nx.bitwise_or/2)
+    end
+  end
+
+  # On an IREE device, inputs live there between pairs, so each call reads them in place.
+  defp placement(defn_options) do
+    if Keyword.get(defn_options, :compiler) == NxIREE.Compiler and
+         not Keyword.get(defn_options, :cache_only, false) do
+      device = defn_options |> Keyword.get(:iree_runtime_options, []) |> Keyword.get(:device)
+      {NxIREE.Backend, device: NxIREE.Device.fetch!(device)}
+    end
+  end
+
+  defp place(container, nil), do: container
+
+  defp place(container, placement) do
+    Nx.Defn.Composite.traverse(container, fn
+      %Nx.Tensor{data: %NxIREE.Backend{}} = tensor -> tensor
+      %Nx.Tensor{} = tensor -> Nx.backend_transfer(tensor, placement)
+    end)
   end
 
   @doc "Every Nx stage, to compile it."
@@ -202,7 +303,7 @@ defmodule VisionCore.Stereo.NxSegment do
     %{
       segment
       | members: members,
-        params: params(members, context),
+        params: place(params(members, context), segment.placement),
         context: context,
         version: segment.version + 1
     }
@@ -222,6 +323,7 @@ defmodule VisionCore.Stereo.NxSegment do
       member.module
       |> NxStage.params(member.state, segment.context)
       |> Map.new(fn {key, value} -> {key, to_input(value)} end)
+      |> place(segment.placement)
 
     carried = Map.take(segment.params[index], segment.carried[index])
 
@@ -269,7 +371,7 @@ defmodule VisionCore.Stereo.NxSegment do
 
   # The outputs stay on the device; the segment carries the stages' values to the next pair.
   defp dispatch(entry, segment) do
-    with {:ok, results} <- call(segment, entry) do
+    with {:ok, results} <- call(segment, place(entry, segment.placement)) do
       {carry, outputs} =
         results
         |> Map.drop(device_only(segment.members))
@@ -339,7 +441,7 @@ defmodule VisionCore.Stereo.NxSegment do
   @impl VisionCore.Stereo.Segment
   @spec collect(Pair.t(), map(), t(), timeout()) :: {:ok, Pair.t()} | {:error, term()} | :timeout
   def collect(%Pair{} = pair, outputs, %__MODULE__{} = segment, timeout) do
-    download = Task.async(fn -> download(outputs) end)
+    download = Task.async(fn -> download(outputs, segment.layout) end)
 
     case Task.yield(download, timeout) do
       {:ok, {:ok, outputs}} -> {:ok, Segment.finish_members(segment.members, pair, outputs)}
@@ -348,17 +450,27 @@ defmodule VisionCore.Stereo.NxSegment do
     end
   end
 
-  defp download(outputs) do
-    {:ok,
-     Map.new(outputs, fn
-       {{:packed, key}, tensor} ->
-         {key, tensor |> Nx.backend_transfer() |> Packing.unpack_download()}
+  defp download(outputs, layout) do
+    {bundle, loose} = Map.pop(outputs, :published)
 
-       {key, tensor} ->
-         {key, Nx.backend_transfer(tensor)}
+    unbundled =
+      if bundle, do: unbundle(Nx.to_binary(Nx.backend_transfer(bundle)), layout), else: []
+
+    {:ok,
+     (Enum.map(loose, fn {key, tensor} -> {key, Nx.backend_transfer(tensor)} end) ++ unbundled)
+     |> Map.new(fn
+       {{:packed, key}, tensor} -> {key, Packing.unpack_download(tensor)}
+       entry -> entry
      end)}
   rescue
     error -> {:error, error}
+  end
+
+  defp unbundle(binary, layout) do
+    for {key, shape, {_kind, bits} = type, offset} <- layout do
+      bytes = div(Tuple.product(shape) * bits, 8)
+      {key, binary |> binary_part(offset * 4, bytes) |> Nx.from_binary(type) |> Nx.reshape(shape)}
+    end
   end
 
   # Without byte storage, frames and images cross as 32-bit words; frames go to Rectification packed.

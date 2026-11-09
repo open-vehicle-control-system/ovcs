@@ -275,6 +275,25 @@ defmodule VisionCore.Stereo.KernelsTest do
 
     assert close(on_gpu(sums, [current, previous], dir), reference, 1.0e-4) == 1.0
   end
+
+  # EXLA's reference at 728x544 with 128 disparities is slow on a loaded host.
+  @tag timeout: 300_000
+  test "a pipeline's published outputs come back from the GPU as its Nx steps give them", %{
+    tmp_dir: dir
+  } do
+    context = context(:identity, 728, 544, nil)
+    left = texture(544, 728, 16)
+    right = left |> Nx.pad(0, [{0, 0, 0}, {0, 9, 0}]) |> Nx.slice([0, 9], [544, 728])
+    pair = frames_pair(left, right)
+    stages = VisionCore.Stereo.Pipeline.default_stages(disparity: [num_disparities: 128])
+
+    reference = run(stages, context, pair, compiler: EXLA)
+    gpu = run(stages, context, pair, vulkan_options(dir, true))
+
+    # Subpixel values may differ in their last bits: a GPU's division is not correctly rounded.
+    assert close(gpu.disparity, reference.disparity, 1.0e-5) >= 0.999
+    assert gpu.left == reference.left
+  end
 end
 
 defmodule VisionCore.Stereo.KernelsSizesTest do
