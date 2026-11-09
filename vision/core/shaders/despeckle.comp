@@ -2,8 +2,10 @@
 // Stage.SpeckleFilter: a matched pixel stays when at least min_support of
 // the 48 others in its 7x7 neighbourhood matched within max_diff of it;
 // the others become unmatched, -1. Outside the image counts as unmatched.
-// A workgroup covers a TILE x TILE block of pixels, read once into shared
-// memory with the RADIUS-pixel border its neighbourhoods reach.
+// A workgroup covers a TILE_WIDTH x TILE_HEIGHT block of pixels, read once
+// into shared memory with the RADIUS-pixel border its neighbourhoods reach;
+// a thread takes QUAD consecutive pixels of a row and reads each row of their
+// neighbourhoods once for all of them.
 layout(local_size_x = 16, local_size_y = 16) in;
 
 layout(constant_id = 0) const int WIDTH = 364;
@@ -15,34 +17,47 @@ layout(set = 0, binding = 1) readonly buffer Params { float params[]; };
 layout(set = 0, binding = 2) writeonly buffer Output { float despeckled[]; };
 
 const int RADIUS = 3;
-const int TILE = 16;
-const int SPAN = TILE + 2 * RADIUS;
+const int QUAD = 4;
+const int TILE_WIDTH = 16 * QUAD;
+const int TILE_HEIGHT = 16;
+const int SPAN_X = TILE_WIDTH + 2 * RADIUS;
+const int SPAN_Y = TILE_HEIGHT + 2 * RADIUS;
 
-shared float tile[SPAN * SPAN];
+shared float tile[SPAN_Y * SPAN_X];
 
 void main() {
-  int x0 = int(gl_WorkGroupID.x) * TILE - RADIUS;
-  int y0 = int(gl_WorkGroupID.y) * TILE - RADIUS;
-  for (int m = int(gl_LocalInvocationIndex); m < SPAN * SPAN; m += TILE * TILE) {
-    int x = x0 + m % SPAN, y = y0 + m / SPAN;
+  int x0 = int(gl_WorkGroupID.x) * TILE_WIDTH - RADIUS;
+  int y0 = int(gl_WorkGroupID.y) * TILE_HEIGHT - RADIUS;
+  for (int m = int(gl_LocalInvocationIndex); m < SPAN_X * SPAN_Y; m += 256) {
+    int x = x0 + m % SPAN_X, y = y0 + m / SPAN_X;
     tile[m] = x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT ? disparity[y * WIDTH + x] : -1.0;
   }
   barrier();
 
-  int lx = int(gl_LocalInvocationID.x), ly = int(gl_LocalInvocationID.y);
-  int x = x0 + RADIUS + lx, y = y0 + RADIUS + ly;
-  if (x >= WIDTH || y >= HEIGHT) return;
-  float d = tile[(ly + RADIUS) * SPAN + lx + RADIUS];
+  int lx = int(gl_LocalInvocationID.x) * QUAD, ly = int(gl_LocalInvocationID.y);
   float max_diff = params[1];
-
-  int support = 0;
+  float d[QUAD];
+  int support[QUAD];
+  for (int p = 0; p < QUAD; ++p) {
+    d[p] = tile[(ly + RADIUS) * SPAN_X + lx + p + RADIUS];
+    support[p] = 0;
+  }
   for (int dy = 0; dy <= 2 * RADIUS; ++dy) {
-    for (int dx = 0; dx <= 2 * RADIUS; ++dx) {
-      if (dx == RADIUS && dy == RADIUS) continue;
-      float n = tile[(ly + dy) * SPAN + lx + dx];
-      if (n > 0.0 && abs(n - d) <= max_diff) support += 1;
+    float row[QUAD + 2 * RADIUS];
+    for (int i = 0; i < QUAD + 2 * RADIUS; ++i) row[i] = tile[(ly + dy) * SPAN_X + lx + i];
+    for (int p = 0; p < QUAD; ++p) {
+      for (int dx = 0; dx <= 2 * RADIUS; ++dx) {
+        if (dx == RADIUS && dy == RADIUS) continue;
+        float n = row[p + dx];
+        if (n > 0.0 && abs(n - d[p]) <= max_diff) support[p] += 1;
+      }
     }
   }
 
-  despeckled[y * WIDTH + x] = (d > 0.0 && float(support) >= params[0]) ? d : -1.0;
+  int y = y0 + RADIUS + ly;
+  for (int p = 0; p < QUAD; ++p) {
+    int x = x0 + RADIUS + lx + p;
+    if (x < WIDTH && y < HEIGHT)
+      despeckled[y * WIDTH + x] = (d[p] > 0.0 && float(support[p]) >= params[0]) ? d[p] : -1.0;
+  }
 }

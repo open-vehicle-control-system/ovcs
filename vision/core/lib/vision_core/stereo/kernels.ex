@@ -176,10 +176,10 @@ defmodule VisionCore.Stereo.Kernels do
   def despeckle(disparity, min_support, max_diff, default) do
     {height, width} = shape = Nx.shape(disparity)
 
-    # The shader's workgroups cover 16 x 16 pixels.
+    # The shader's workgroups cover 64 x 16 pixels.
     kernel = %Kernel{
       spirv: Map.fetch!(@spirv, :despeckle),
-      workgroups: {ceil_div(width, 16), ceil_div(height, 16), 1},
+      workgroups: {ceil_div(width, 64), ceil_div(height, 16), 1},
       specialization: %{0 => width, 1 => height}
     }
 
