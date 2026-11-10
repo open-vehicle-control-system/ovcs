@@ -31,10 +31,12 @@ defmodule RosBridge.Components do
       **Simulation only.** Without it every stamp is wall clock, which
       is correct on a vehicle and wrong against Gazebo — see
       `RosBridge.Clock` for what that breaks.
-    * `:simulated_hardware` — `RosBridge.Simulator.Hardware`, emulating the
-      vehicle's hardware on CAN so the VMS drives a simulated vehicle.
-      **Simulation only.** Opts: `:vehicle`, `:simulated_components`
-      (required), `:drive_topic`, `:wheel_joints`; see the module.
+    * `:simulated_hardware` — `SimulatorCore.Hardware` with
+      `RosBridge.Simulator.World` as its world, emulating the vehicle's
+      hardware on CAN so the VMS drives a simulated vehicle in Gazebo.
+      **Simulation only.**
+      Opts: `:vehicle`, `:simulated_components` (required), and the
+      world's `:wheel_joints`; see the modules.
     * `:imu_publisher` — starts the named driver (any
       `OvcsDrivers.Imu` implementation) followed by
       `RosBridge.Publishers.Imu`. Opts:
@@ -115,7 +117,11 @@ defmodule RosBridge.Components do
 
   def start(:simulator_clock, opts), do: [{RosBridge.Clock, opts}]
 
-  def start(:simulated_hardware, opts), do: [{RosBridge.Simulator.Hardware, opts}]
+  def start(:simulated_hardware, opts) do
+    {wheel_joints, opts} = opts |> Map.new() |> Map.pop(:wheel_joints, [])
+    world = {RosBridge.Simulator.World, wheel_joints: wheel_joints}
+    [{SimulatorCore.Hardware, Map.put(opts, :world, world)}]
+  end
 
   def start(:joy_interpreter, opts), do: [{RosBridge.Consumers.Joy, opts}]
 

@@ -61,6 +61,25 @@ defmodule RosBridge.ComponentsTest do
     end
   end
 
+  describe "start/2 — :simulated_hardware" do
+    test "runs the simulator's loop against Gazebo, which reads the wheel joints" do
+      vehicle = %{wheelbase_m: 0.3, wheel_radius_m: 0.05}
+
+      assert [{SimulatorCore.Hardware, opts}] =
+               Components.start(:simulated_hardware,
+                 vehicle: vehicle,
+                 simulated_components: [],
+                 wheel_joints: ["rear_wheel"]
+               )
+
+      assert opts == %{
+               vehicle: vehicle,
+               simulated_components: [],
+               world: {RosBridge.Simulator.World, wheel_joints: ["rear_wheel"]}
+             }
+    end
+  end
+
   test "unknown component raises FunctionClauseError at boot" do
     assert_raise FunctionClauseError, fn -> Components.start(:not_a_component, []) end
   end

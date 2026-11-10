@@ -1,6 +1,6 @@
 defmodule SimulatorCore.Vehicle do
   @moduledoc """
-  The simulated vehicle's motion, as `RosBridge.Simulator.Hardware`'s
+  The simulated vehicle's motion, as `SimulatorCore.Hardware`'s
   simulated components see it: a commanded speed along the heading, a
   steering angle, and how far and how fast the wheels turned.
 
@@ -31,8 +31,8 @@ defmodule SimulatorCore.Vehicle do
     * `wheel_turns_step` — how far they turned in the step, for their
       counters.
 
-  The wheel turns are the simulator's wheel joints when `step/4` is
-  given them, the command otherwise. The measured speed is the step's
+  The wheel turns are the world's measurement when `step/4` is given
+  one, the command otherwise. The measured speed is the step's
   distance smoothed over `@speed_time_constant_s`, by a filter whose
   output integrates back to the distance; under `@standstill_m_s` it is
   zero, so physics jitter at rest does not keep the VMS's standstill
@@ -134,10 +134,6 @@ defmodule SimulatorCore.Vehicle do
         wheel_turns_step: wheel_turns_step
     }
   end
-
-  @doc "The yaw rate of an Ackermann vehicle at its commanded speed and steering."
-  def yaw_rate(vehicle),
-    do: vehicle.commanded_speed_m_s * :math.tan(vehicle.steering_rad) / vehicle.wheelbase_m
 
   defp circumference(vehicle), do: 2 * :math.pi() * vehicle.wheel_radius_m
 

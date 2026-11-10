@@ -1,7 +1,7 @@
 defmodule SimulatorCore.SimulatedComponent do
   @moduledoc """
   One piece of a vehicle's hardware, emulated on the CAN bus for
-  `RosBridge.Simulator.Hardware`: a motor controller, a generic
+  `SimulatorCore.Hardware`: a motor controller, a generic
   controller, a steering servo, a radio receiver.
 
   A simulated component reads the frames the VMS sends it, acts on
@@ -56,7 +56,7 @@ defmodule SimulatorCore.SimulatedComponent do
 
   @optional_callbacks handle_frame: 4, actuations: 3, report: 3
 
-  @typedoc "A running simulated component, as `RosBridge.Simulator.Hardware` holds it."
+  @typedoc "A running simulated component, as `SimulatorCore.Hardware` holds it."
   @type running :: %{module: module(), state: term(), received: MapSet.t(frame())}
 
   @doc """

@@ -13,8 +13,8 @@ Starts, in the order they depend on each other:
 
 Nothing here commands the vehicle. The VMS does, over virtual CAN,
 through the simulated hardware in the vehicle's ROS bridge
-(``RosBridge.Simulator.Hardware``), which hands Gazebo the resulting motion
-on ``/simulator/drive``. The bridge also owns ``/odom`` and
+(``SimulatorCore.Hardware`` with ``RosBridge.Simulator.World``), which hands
+Gazebo the resulting motion on ``/simulator/drive``. The bridge also owns ``/odom`` and
 ``odom -> base_link``, so the steering system's own odometry is not
 bridged.
 

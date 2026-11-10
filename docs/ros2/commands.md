@@ -23,7 +23,7 @@ On the vehicle (OVCS Mini)
 
 ## The VMS drives the simulator
 
-In the simulator the same loop drives Gazebo. Simulated hardware (`RosBridge.Simulator.Hardware`, the `:simulated_hardware` component) stands in for the hardware on virtual CAN: it reads what the VMS commands, hands Gazebo the resulting motion, and reports what the real hardware would.
+In the simulator the same loop drives Gazebo. Simulated hardware (the `:simulated_hardware` component: `SimulatorCore.Hardware` with `RosBridge.Simulator.World` as its world) stands in for the hardware on virtual CAN: it reads what the VMS commands, hands Gazebo the resulting motion, and reports what the real hardware would.
 
 ```text
 Nav2 ── /cmd_vel_nav ──► Consumers.Velocity ── 0x2B1 ──► VMS ── 0x60B ──► Publishers.Odometry ── /odom, /tf ──► Nav2
