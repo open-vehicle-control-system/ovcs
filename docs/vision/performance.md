@@ -82,7 +82,7 @@ The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm ap
 mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --search coarse_to_fine --paths 8 --coarse-paths 3
 ```
 
-It compiles the stages for the board, copies them there with a textured pair of frames, stops the live stereo unit, and prints how each output differs from EXLA's and the time of each pair. `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware; reboot the board afterwards. Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
+It compiles the stages for the board, copies them there with a textured pair of frames, stops the live stereo unit, and prints how each output differs from EXLA's and the time of each pair. `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware; reboot the board afterwards. `--compute native --search full` times the stages in `stereo_match` on the board's CPU instead. Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
 
 ## What to change
 

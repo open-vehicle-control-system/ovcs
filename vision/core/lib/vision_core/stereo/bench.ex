@@ -5,7 +5,8 @@ defmodule VisionCore.Stereo.Bench do
   runs it.
 
   `prepare/2` runs on your workstation: it compiles the default stages
-  for the board into a module cache, makes a textured pair of frames, and
+  for the board into a module cache, unless they are to be computed
+  natively, makes a textured pair of frames, and
   records EXLA's outputs for it. `run/1` runs on the board, from the
   directory `prepare/2` wrote: it runs the pair through the cached
   modules, compares each output with EXLA's, and times successive pairs,
@@ -14,7 +15,7 @@ defmodule VisionCore.Stereo.Bench do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{NxSegment, Pair, Pipeline, Segment}
+  alias VisionCore.Stereo.{NativeSegment, NxSegment, Pair, Pipeline, Segment}
 
   @boards %{"ventuno_q" => :ventuno_q_defn_options, "c100" => :c100_defn_options}
   @outputs [:left, :right, :disparity, :depth, :cloud, :sharpness, :alignment, :metrics]
@@ -31,6 +32,8 @@ defmodule VisionCore.Stereo.Bench do
       default.
     * `:disparity` - the Disparity stage's options.
     * `:pairs` - how many pairs `run/1` times. Defaults to 10.
+    * `:compute` - `:nx` (the default), compiled for the board's GPU, or
+      `:native`, in the board's `stereo_match`.
   """
   @spec prepare(Path.t(), keyword()) :: :ok
   def prepare(dir, opts) do
@@ -40,16 +43,18 @@ defmodule VisionCore.Stereo.Bench do
     {frame_width, frame_height} = Keyword.get(opts, :frame_size, {width, height})
     File.mkdir_p!(dir)
     write_calibration(dir, frame_width, frame_height)
-    settings = Keyword.take(opts, [:board, :size, :frame_size, :disparity, :pairs])
+    settings = Keyword.take(opts, [:board, :size, :frame_size, :disparity, :pairs, :compute])
     context = context(dir, settings)
     members = members(settings, context)
     cache = Path.join(dir, "cache")
     File.rm_rf!(cache)
 
-    {:ok, _segment} =
-      NxSegment.build(members, context,
-        defn_options: Keyword.put(defn_options(board, cache), :cache_only, true)
-      )
+    if Keyword.get(opts, :compute, :nx) == :nx do
+      {:ok, _segment} =
+        NxSegment.build(members, context,
+          defn_options: Keyword.put(defn_options(board, cache), :cache_only, true)
+        )
+    end
 
     frames = frames(frame_width, frame_height, Keyword.get(opts, :disparity, []))
     {:ok, segment} = NxSegment.build(members, context, defn_options: [compiler: EXLA])
@@ -68,14 +73,13 @@ defmodule VisionCore.Stereo.Bench do
       dir |> Path.join("bench.term") |> File.read!() |> :erlang.binary_to_term()
 
     context = context(dir, settings)
-    options = defn_options(settings[:board], Path.join(dir, "cache"))
-    {:ok, segment} = NxSegment.build(members(settings, context), context, defn_options: options)
-    {:ok, result, segment} = Segment.run(NxSegment, pair(frames, context), segment, :infinity)
+    {backend, segment} = segment(settings, context, Path.join(dir, "cache"))
+    {:ok, result, segment} = Segment.run(backend, pair(frames, context), segment, :infinity)
 
     {times, _segment} =
       Enum.map_reduce(1..Keyword.get(settings, :pairs, 10), segment, fn _, segment ->
         started = System.monotonic_time(:microsecond)
-        {:ok, _, segment} = Segment.run(NxSegment, pair(frames, context), segment, :infinity)
+        {:ok, _, segment} = Segment.run(backend, pair(frames, context), segment, :infinity)
         {System.monotonic_time(:microsecond) - started, segment}
       end)
 
@@ -87,6 +91,35 @@ defmodule VisionCore.Stereo.Bench do
   end
 
   defp defn_options(board, cache), do: apply(NxSegment, Map.fetch!(@boards, board), [cache])
+
+  # The unit's matcher server, or one of the benchmark's own where none runs.
+  defp matcher do
+    case Process.whereis(VisionCore.Stereo.Matcher) do
+      nil ->
+        path = Application.get_env(:vision_core, :stereo_match_path)
+        {:ok, matcher} = VisionCore.Stereo.Matcher.start_link(name: nil, path: path)
+        matcher
+
+      matcher ->
+        matcher
+    end
+  end
+
+  # The backend and segment the stages run in: compiled from the cache, or in stereo_match.
+  defp segment(settings, context, cache) do
+    members = members(settings, context)
+
+    case Keyword.get(settings, :compute, :nx) do
+      :nx ->
+        options = defn_options(settings[:board], cache)
+        {:ok, segment} = NxSegment.build(members, context, defn_options: options)
+        {NxSegment, segment}
+
+      :native ->
+        {:ok, segment} = NativeSegment.build(members, context, matcher: matcher())
+        {NativeSegment, segment}
+    end
+  end
 
   defp context(dir, settings) do
     {width, height} = settings[:size]

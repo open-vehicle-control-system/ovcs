@@ -1,5 +1,5 @@
 defmodule Mix.Tasks.VisionCore.BoardBench do
-  @shortdoc "Times the default stereo stages on a vision board's GPU against EXLA"
+  @shortdoc "Times the default stereo stages on a vision board against EXLA"
   @moduledoc """
   Compiles the default stereo stages for a vision board on this machine,
   copies them to the board with a textured pair of frames and EXLA's
@@ -9,12 +9,16 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
       mix vision_core.board_bench --host 192.168.1.50 [--key ~/.ssh/id_ed25519]
         [--board ventuno_q] [--size 728x544] [--frame 728x544]
         [--disparities 128] [--search coarse_to_fine] [--paths 8] [--coarse-paths 3]
-        [--pairs 10] [--hot] [--ssh-option OPTION ...]
+        [--pairs 10] [--compute nx|native] [--hot] [--ssh-option OPTION ...]
 
   The board runs the vision firmware and accepts SSH with `--key`; each
   `--ssh-option` is passed to `ssh` and `sftp` as `-o`. The
   live stereo unit stops while the benchmark runs, so the GPU is the
   benchmark's, and restarts after it.
+
+  `--compute native` computes the stages in the board's `stereo_match`, on
+  its CPU, instead of compiling them for its GPU; the coarse-to-fine
+  search has no native matcher, so give it `--search full`.
 
   `--hot` also loads this project's `nx_stereo` modules on the board, its
   shaders among them, so a change to them is measured without building a
@@ -40,6 +44,7 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
     coarse_paths: :integer,
     pairs: :integer,
     hot: :boolean,
+    compute: :string,
     ssh_option: :keep
   ]
 
@@ -60,7 +65,8 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
         size: size,
         frame_size: if(opts[:frame], do: dimensions(opts[:frame]), else: size),
         disparity: disparity(opts),
-        pairs: opts[:pairs] || 10
+        pairs: opts[:pairs] || 10,
+        compute: compute(opts[:compute])
       )
 
     beams = Path.join(dir, "beams")
@@ -69,6 +75,11 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
     copy(dir, host, opts)
     Mix.shell().info(remote(host, opts, expression(opts[:hot])))
   end
+
+  defp compute(nil), do: :nx
+  defp compute("nx"), do: :nx
+  defp compute("native"), do: :native
+  defp compute(other), do: Mix.raise("--compute is nx or native, got #{inspect(other)}")
 
   defp dimensions(text) do
     [width, height] = text |> String.split("x") |> Enum.map(&String.to_integer/1)
