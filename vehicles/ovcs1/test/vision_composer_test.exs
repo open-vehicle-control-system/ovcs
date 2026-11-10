@@ -22,7 +22,8 @@ defmodule Ovcs1.VisionComposerTest do
     disparity = stereo[:stages][VisionCore.Stereo.Stage.Disparity]
     assert disparity[:num_disparities] == 128
     assert disparity[:search] == "coarse_to_fine"
-    assert disparity[:paths] == 3
+    assert disparity[:coarse_paths] == 3
+    refute disparity[:paths]
   end
 
   test "detection runs on the NPU" do
