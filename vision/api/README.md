@@ -29,7 +29,7 @@ Channels:
 
 Any other path serves the dashboard.
 
-The endpoint listens on port 4100. In development it also answers cross-origin requests, for the dashboard's Vite dev server (`:allow_cross_origin` in `config/dev.exs`). `vision_api` holds no vehicle knowledge; [`../firmware`](../firmware) boots it with the vehicle's composer. See [Vision unit](../../docs/vision/README.md).
+The endpoint listens on port 4100 on the vehicle, and on 4101 in development, where a bridge's bus gateway takes 4100. In development it also answers cross-origin requests, for the dashboard's Vite dev server (`:allow_cross_origin` in `config/dev.exs`). `vision_api` holds no vehicle knowledge; [`../firmware`](../firmware) boots it with the vehicle's composer. See [Vision unit](../../docs/vision/README.md).
 
 ```sh
 mix deps.get

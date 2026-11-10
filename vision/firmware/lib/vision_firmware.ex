@@ -20,7 +20,7 @@ defmodule VisionFirmware do
         run: ["npm", "run", "dev"],
         install: ["npm", "install"],
         ready_marker: "node_modules",
-        note: "open http://localhost:5174, not :4100"
+        note: "open http://localhost:5174, not :4101"
       }
     ]
   end

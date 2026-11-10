@@ -34,6 +34,8 @@ ovcs/
 |   +-- rust/                   camera_capture, v4l2_capture, hailo_detect, qnn_detect, jpeg_codec and stereo_match Ports
 +-- controllers/              FRAMEWORK
 |   +-- generic_controller/     PlatformIO C++ project for Arduino R4 Minima
++-- simulator/                FRAMEWORK · Simulated hardware a VMS drives over virtual CAN
+|   +-- core/                   Elixir library: simulated components and the motion model they act on
 +-- libraries/                FRAMEWORK · Shared Elixir libraries (in-tree and sideloaded)
 +-- cli/                      FRAMEWORK · Rust source for the `ovcs` CLI
 +-- compose/                  FRAMEWORK · Container stacks: compute/ (the vehicle's compute node) and local/
@@ -61,6 +63,7 @@ Each major system follows the Firmware → API → Core layering described in [A
 | The OVCS bus and its gateway | `libraries/ovcs_bus/`, `libraries/ovcs_bus_gateway/` | [The OVCS bus](./bus/README.md) |
 | Bridges | `bridges/`, `libraries/ovcs_bridge/` | [Bridges](./bridges/README.md) |
 | Generic controller | `controllers/generic_controller/` | [Generic controllers](./generic_controllers/README.md) |
+| Simulator | `simulator/core/`, `bridges/ros_bridge/lib/ros_bridge/simulator/` | [Simulation](../compose/local/simulation/README.md) |
 | Compute node and local stacks | `compose/` | [ROS 2](./ros2/README.md), [ROS compute node](./ros2/compute_node.md) |
 | The `ovcs` CLI | `cli/` | [CLI reference](../cli/README.md) |
 
@@ -68,7 +71,7 @@ Each component's own README keeps its developer details: build, tests and source
 
 ## Shared libraries
 
-Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you.
+Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you, at the commits pinned in `scripts/libraries.tsv`. A change to one of them reaches OVCS through a change to its pin.
 
 | Library | Module | Source | Purpose |
 |---|---|---|---|

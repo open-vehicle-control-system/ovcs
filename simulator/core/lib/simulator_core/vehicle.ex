@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.Vehicle do
+defmodule SimulatorCore.Vehicle do
   @moduledoc """
   The simulated vehicle's motion, as `RosBridge.Simulator.Hardware`'s
   simulated components see it: a commanded speed along the heading, a
@@ -52,7 +52,7 @@ defmodule RosBridge.Simulator.Vehicle do
 
   The OVCS Mini's geometry, a 20 ms step, starting at 0.30 m/s:
 
-      iex> alias RosBridge.Simulator.Vehicle
+      iex> alias SimulatorCore.Vehicle
       iex> circumference = 2 * :math.pi() * 0.0522
       iex> cruising = %{Vehicle.new(%{wheelbase_m: 0.324, wheel_radius_m: 0.0522}) |
       ...>   commanded_speed_m_s: 0.3, measured_speed_m_s: 0.3}
@@ -68,7 +68,7 @@ defmodule RosBridge.Simulator.Vehicle do
   Held against a wall, the wheels do not turn and the command stops at
   the lead:
 
-      iex> alias RosBridge.Simulator.Vehicle
+      iex> alias SimulatorCore.Vehicle
       iex> stalled = Vehicle.new(%{wheelbase_m: 0.324, wheel_radius_m: 0.0522})
       iex> Vehicle.step(stalled, [{:speed, 1.0}], 0.02, 0.0).commanded_speed_m_s
       0.25

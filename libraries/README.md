@@ -11,7 +11,8 @@ side-by-side:
   or [`Spin42`](https://github.com/Spin42).
   They are gitignored here (see [`.gitignore`](./.gitignore)) and
   cloned on demand by `mise run libraries` (invoked automatically by
-  the `mise install` postinstall hook).
+  the `mise install` postinstall hook) at the commits pinned in
+  [`scripts/libraries.tsv`](../scripts/libraries.tsv).
 
 ## Catalogue
 
