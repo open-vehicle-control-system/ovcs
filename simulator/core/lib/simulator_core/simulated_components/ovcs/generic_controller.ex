@@ -1,4 +1,4 @@
-defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
+defmodule SimulatorCore.SimulatedComponents.OVCS.GenericController do
   @moduledoc """
   An OVCS generic controller, the inverse of
   `VmsCore.Components.OVCS.GenericController`: alive with status `OK`,
@@ -7,7 +7,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
 
   It drives nothing itself. An actuator wired to one of its outputs is
   a simulated component of its own that reads the controller's request frame, such
-  as `RosBridge.Simulator.SimulatedComponents.Traxxas.Steering`.
+  as `SimulatorCore.SimulatedComponents.Traxxas.Steering`.
 
   ## Options
 
@@ -19,9 +19,9 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
       `%{shaft_turns_per_wheel_turn: ratio, pulses_per_revolution: n}`.
       Without it no pulse counter frame is emitted.
   """
-  @behaviour RosBridge.Simulator.SimulatedComponent
+  @behaviour SimulatorCore.SimulatedComponent
 
-  import RosBridge.Simulator.SimulatedComponent, only: [decimal: 2]
+  import SimulatorCore.SimulatedComponent, only: [decimal: 2]
 
   # The VMS reads the status and the board errors, never the counter.
   @alive %{
@@ -38,7 +38,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
   @pulse_timeout_ms 2_000
   @counter_range 65_536
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def init(opts) do
     opts = Map.new(opts)
     name = Map.get(opts, :name, "main_controller")
@@ -66,7 +66,7 @@ defmodule RosBridge.Simulator.SimulatedComponents.OVCS.GenericController do
     {state, [], emitted}
   end
 
-  @impl RosBridge.Simulator.SimulatedComponent
+  @impl SimulatorCore.SimulatedComponent
   def report(state, vehicle, now_ms) do
     case state.pulse do
       nil ->

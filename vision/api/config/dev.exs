@@ -1,8 +1,8 @@
 import Config
 
-# 4000 is the VMS API's.
+# 4000 is the VMS API's, 4100 a bridge's bus gateway.
 config :vision_api, VisionApiWeb.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 4100],
+  http: [ip: {127, 0, 0, 1}, port: 4101],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

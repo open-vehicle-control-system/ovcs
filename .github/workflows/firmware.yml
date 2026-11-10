@@ -11,9 +11,11 @@ on:
     tags: ['v*']
     paths: &firmware-inputs
       - 'bridges/**'
+      - 'simulator/**'
       - 'vms/**'
       - 'infotainment/**'
       - 'libraries/**'
+      - 'scripts/libraries.*'
       - 'mise.toml'
       - '.github/workflows/firmware.yml'
       - '.github/actions/setup-mise/**'

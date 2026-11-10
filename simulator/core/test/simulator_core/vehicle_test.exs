@@ -1,7 +1,7 @@
-defmodule RosBridge.Simulator.VehicleTest do
+defmodule SimulatorCore.VehicleTest do
   use ExUnit.Case, async: true
 
-  alias RosBridge.Simulator.Vehicle
+  alias SimulatorCore.Vehicle
 
   doctest Vehicle
 

@@ -35,7 +35,7 @@ On another vehicle, `./ovcs run` starts the roles that vehicle declares, each on
 |---|---|---|
 | VMS | `<vehicle>-vms` | API on `http://localhost:4000`, dashboard on `http://localhost:5173` |
 | Infotainment, if the vehicle implements `infotainment/0` | `<vehicle>-infotainment` | API on `http://localhost:4001` |
-| Vision unit, if the vehicle implements `vision/0` | `<vehicle>-vision` | API on `http://localhost:4100`, dashboard on `http://localhost:5174` |
+| Vision unit, if the vehicle implements `vision/0` | `<vehicle>-vision` | API on `http://localhost:4101`, dashboard on `http://localhost:5174` |
 | Each entry of `bridge_firmwares/0` | `<vehicle>-bridge-<id>` | whatever its bridges serve |
 
 Node names turn underscores into dashes, in `<vehicle>` and `<id>` alike. The infotainment's Flutter app needs its own terminal, because its hot reload is keyboard-driven: `mise run infotainment-dashboard`.
