@@ -1,7 +1,7 @@
 ---
 id: TASK-62
 title: Find why native rectification differs from Nx by one grey level
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-10 20:00'
