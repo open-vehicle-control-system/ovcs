@@ -59,7 +59,7 @@
   "nx": {:hex, :nx, "1.0.0", "83d586079cb37d11a4cf8c0edaf2eccafe88aa2369e35ebdb1c3d78c43c8eb33", [:mix], [{:complex, "~> 1.0", [hex: :complex, repo: "hexpm", optional: false]}, {:telemetry, "~> 0.4.0 or ~> 1.0", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "e06c7587efff7a3dfc1e2c92705943e319db20070359e9850c3921aaf26d6998"},
   "nx_hailo": {:git, "https://github.com/vittoriabitton/nx_hailo.git", "c8cdc5f7e18b476d4b5cd8b59e7564d82f2c4a0c", []},
   "nx_iree": {:git, "https://github.com/Spin42/nx_iree.git", "d4bb1136fadbcfd7a7a67eb8eabbb3ed3b7bcc12", [branch: "feat/vulkan-slab-size"]},
-  "nx_stereo": {:git, "https://github.com/Spin42/nx_stereo.git", "3ed7f99b1a48d3cc4eb211d7f4b99740d561982f", [branch: "perf/adreno-matching"]},
+  "nx_stereo": {:git, "https://github.com/Spin42/nx_stereo.git", "cff2a869167a8bce8b92f43f5a94bcdf4235b549", [branch: "perf/adreno-matching"]},
   "observer_cli": {:hex, :observer_cli, "1.8.7", "dcc571b78470e5c6b969a9463f3b2e4646d2df4ef2309856518da7659f680ee3", [:mix, :rebar3], [{:recon, "~> 2.5.6", [hex: :recon, repo: "hexpm", optional: false]}], "hexpm", "7b66e22ad7f961684e2dc9deebde1e18e31e573ad7e826bfd0173e0d0f386b91"},
   "one_dhcpd": {:hex, :one_dhcpd, "2.0.3", "224f8a4cd06d73c9e481dd92766d3e831f8dc4d29d2cd50b9459135b32845da0", [:make, :mix], [{:elixir_make, "~> 0.6", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "a5902e4ed956bcfaa975bcda7adb2fc35303695a496eafecea69392a26cbf9ff"},
   "ovcs_base_can_system_rpi3a": {:git, "https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a.git", "02fd7fca9d8e4963c77505a1fa5fc76661d1a19e", [tag: "v3.0.0-rc.1"]},
