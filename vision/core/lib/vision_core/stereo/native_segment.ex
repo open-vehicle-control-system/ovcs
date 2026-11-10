@@ -116,9 +116,7 @@ defmodule VisionCore.Stereo.NativeSegment do
   @impl VisionCore.Stereo.Segment
   @spec collect(Pair.t(), map(), t(), timeout()) :: {:ok, Pair.t()}
   def collect(%Pair{} = pair, outputs, %NxStereo.NativeSegment{} = segment, _timeout) do
-    # Entry fields pass through, as an Nx segment returns them.
-    entry = Keyword.keys(segment.specs) -- Segment.frame_fields()
-    outputs = pair |> Map.take(entry) |> Map.merge(outputs)
+    outputs = Segment.with_entries(pair, segment.specs, outputs)
     {:ok, Segment.finish_members(segment.members, pair, outputs)}
   end
 end

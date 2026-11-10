@@ -56,7 +56,7 @@ defmodule VisionCore.Stereo.NxSegment do
   @doc """
   Compiles `members`, initialised pipeline stages (`%{module:, name:,
   state:}`), for `context`, with `opts`: `:defn_options` (`[]`, Nx's
-  own defaults), how; see `NxStereo.NxSegment.compile/3`. A missing
+  own defaults), how; see `NxStereo.NxSegment`. A missing
   module names the command that builds the module cache.
   """
   @impl VisionCore.Stereo.Segment
@@ -209,7 +209,13 @@ defmodule VisionCore.Stereo.NxSegment do
   @spec collect(Pair.t(), map(), t(), timeout()) :: {:ok, Pair.t()} | {:error, term()} | :timeout
   def collect(%Pair{} = pair, outputs, %NxStereo.NxSegment{} = segment, timeout) do
     with {:ok, outputs} <- NxStereo.NxSegment.collect(outputs, segment, timeout),
-         do: {:ok, Segment.finish_members(segment.members, pair, outputs)}
+         do:
+           {:ok,
+            Segment.finish_members(
+              segment.members,
+              pair,
+              Segment.with_entries(pair, segment.specs, outputs)
+            )}
   end
 
   @doc """

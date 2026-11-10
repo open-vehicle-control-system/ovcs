@@ -211,6 +211,16 @@ defmodule VisionCore.Stereo.Segment do
   defp field_value(pair, field), do: {:ok, Map.fetch!(pair, field)}
 
   @doc """
+  A segment's `outputs` with `pair`'s entry fields but the frames, which the
+  stages read as they were given unless they replaced them.
+  """
+  @spec with_entries(Pair.t(), [{atom(), term()}], map()) :: map()
+  def with_entries(%Pair{} = pair, specs, outputs) do
+    entry = Keyword.keys(specs) -- frame_fields()
+    pair |> Map.take(entry) |> Map.merge(outputs)
+  end
+
+  @doc """
   `pair` filled from a segment's `outputs` by each member's
   `c:VisionCore.Stereo.NxStage.finish/3`, or with each output named like
   a field the member provides.

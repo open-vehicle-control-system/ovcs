@@ -590,9 +590,9 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
   test "takes the stages that declare a native kind, to compute natively" do
     declared = [{Stage.MedianFilter, []}, {VehicleDepth, []}]
 
-    for {module, _opts} <- declared ++ Pipeline.default_stages() do
-      assert NativeSegment.accepts?(module, nil, :native)
-      refute NativeSegment.accepts?(module, nil, :nx)
+    for member <- members(declared ++ Pipeline.default_stages(), context(:identity, 64, 48)) do
+      assert NativeSegment.accepts?(member.module, member.state, :native)
+      refute NativeSegment.accepts?(member.module, member.state, :nx)
     end
 
     refute NativeSegment.accepts?(Stage.Decode, nil, :native)

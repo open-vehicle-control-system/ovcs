@@ -142,21 +142,21 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       do: Process.sleep(:infinity)
   end
 
-  # Compiles to a function whose `:left` output is an UnreadableBuffer, read as its `:read` says.
+  # Compiles to a function whose published bundle is an UnreadableBuffer, read as its `:read` says.
   defmodule UnreadableDevice do
     @behaviour Nx.Defn.Compiler
 
     def __jit__(_key, _vars, _fun, _args, _opts), do: raise("only compiled")
 
     def __compile__(_key, _vars, _fun, opts) do
-      left = %Nx.Tensor{
+      published = %Nx.Tensor{
         data: %UnreadableBuffer{read: opts[:read]},
-        shape: {2, 4},
-        type: {:u, 8},
-        names: [nil, nil]
+        shape: {64},
+        type: {:u, 32},
+        names: [nil]
       }
 
-      fn _args -> [%{left: left}] end
+      fn _args -> [%{published: published}] end
     end
 
     def __partitions_options__(opts), do: [opts]
