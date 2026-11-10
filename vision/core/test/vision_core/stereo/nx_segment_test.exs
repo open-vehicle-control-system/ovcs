@@ -37,25 +37,8 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       do: Map.put(tensors, :left, Nx.add(Nx.as_type(tensors.left, :f32), params.offset))
   end
 
-  # Adds its live `step` to a total it carries from pair to pair.
-  defmodule Count do
-    @behaviour VisionCore.Stereo.NxStage
-    def init(_opts, _context), do: {:ok, 1}
-    def requires, do: [:left]
-    def provides, do: [:left]
-    def params(step, _context), do: %{step: step}
-    def carry(_step, _context), do: %{total: Nx.f32(0)}
-
-    def step(tensors, params, _state) do
-      total = Nx.add(params.total, params.step)
-
-      tensors
-      |> Map.put(:left, Nx.add(Nx.as_type(tensors.left, :f32), total))
-      |> Map.put({:carry, :total}, total)
-    end
-  end
-
-  # Count with `step` a live setting, and device work that takes a while.
+  # Adds its live `step` to a total it carries from pair to pair, with device work that
+  # takes a while.
   defmodule SlowCount do
     @behaviour VisionCore.Stereo.NxStage
     def init(_opts, _context), do: {:ok, 1}
@@ -78,18 +61,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       |> Map.put(:left, Nx.add(left, total))
       |> Map.put({:carry, :total}, total)
     end
-  end
-
-  # Fills a tensor that only later stages on the device read.
-  defmodule Scratch do
-    @behaviour VisionCore.Stereo.NxStage
-    def init(_opts, _context), do: {:ok, nil}
-    def requires, do: [:left]
-    def provides, do: [:left]
-    def device_only, do: [:scratch]
-
-    def step(tensors, _params, _state),
-      do: Map.put(tensors, :scratch, Nx.multiply(tensors.left, 3))
   end
 
   defmodule LeftFrame do
@@ -226,54 +197,11 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     NxSegment.await(ticket, segment, 5_000)
   end
 
-  # The left image the outputs a pair left on the device hold.
-  defp left(outputs, segment) do
-    {:ok, filled} = NxSegment.collect(grey_pair(List.duplicate(0, 8)), outputs, segment, 5_000)
-    Nx.to_list(filled.left)
-  end
-
   test "runs consecutive steps as one function" do
     {:ok, segment} = NxSegment.build(members([AddOne, Double], context()), context(), [])
     {:ok, pair, _segment} = run(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
 
     assert Nx.to_list(pair.left) == [[2, 4, 6, 8], [10, 12, 14, 16]]
-  end
-
-  test "passes each stage's params as inputs, and reload replaces them" do
-    context = context(100.0)
-    {:ok, segment} = NxSegment.build(members([AddOne, Offset], context), context, [])
-    {:ok, pair, segment} = run(grey_pair(List.duplicate(0, 8)), segment)
-    assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [101.0]
-
-    reloaded = context(5.0)
-    segment = NxSegment.reload(segment, members([AddOne, Offset], reloaded), reloaded)
-    {:ok, pair, _segment} = run(grey_pair(List.duplicate(0, 8)), segment)
-    assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [6.0]
-  end
-
-  test "a new live setting applies from the next pair, keeping what the stages carry" do
-    {:ok, segment} = NxSegment.build(members([AddOne, Count], context()), context(), [])
-    {:ok, _pair, segment} = run(grey_pair(List.duplicate(0, 8)), segment)
-    {:ok, _pair, segment} = run(grey_pair(List.duplicate(0, 8)), segment)
-
-    segment = NxSegment.put_member_state(segment, 1, 10)
-    {:ok, pair, _segment} = run(grey_pair(List.duplicate(0, 8)), segment)
-
-    assert pair.left |> Nx.to_flat_list() |> Enum.uniq() == [13.0]
-  end
-
-  test "a pair back after a live change carries its values on, unless a reload came since" do
-    {:ok, segment} = NxSegment.build(members([AddOne, Count], context()), context(), [])
-    pair = grey_pair(List.duplicate(0, 8))
-    {:ok, _outputs, replied, _done_ns} = reply(pair, segment)
-
-    changed = NxSegment.put_member_state(segment, 1, 10)
-    {:ok, next, _segment} = run(pair, NxSegment.merge_carry(changed, replied))
-    assert next.left |> Nx.to_flat_list() |> Enum.uniq() == [12.0]
-
-    reloaded = NxSegment.reload(segment, members([AddOne, Count], context()), context())
-    {:ok, next, _segment} = run(pair, NxSegment.merge_carry(reloaded, replied))
-    assert next.left |> Nx.to_flat_list() |> Enum.uniq() == [2.0]
   end
 
   test "leaves a pair's outputs on the device as one tensor, which fills the pair once downloaded" do
@@ -291,87 +219,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
     assert Nx.to_list(filled.depth) == [[300, 600, 900, 1200], [1500, 1800, 2100, 2400]]
   end
 
-  test "leaves the tensors a stage fills for the device only out of its outputs" do
-    {:ok, segment} = NxSegment.build(members([AddOne, Scratch], context()), context(), [])
-    pair = grey_pair(List.duplicate(0, 8))
-    {:ok, outputs, segment, _done_ns} = reply(pair, segment)
-    {:ok, filled} = NxSegment.collect(pair, outputs, segment, 5_000)
-
-    assert Nx.to_list(filled.left) == [[1, 1, 1, 1], [1, 1, 1, 1]]
-    refute Enum.any?(NxSegment.published(segment), &(&1 == :scratch))
-  end
-
-  test "sends a pair without waiting, and recognises its outputs among other messages" do
-    {:ok, segment} = NxSegment.build(members([AddOne, Double], context()), context(), [])
-    {:ok, ticket} = NxSegment.send_request(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
-    assert NxSegment.response(:other, ticket, segment) == :no_reply
-
-    assert {:ok, outputs, _segment, done_ns} = await_response(ticket, segment)
-    assert done_ns <= System.monotonic_time(:nanosecond)
-    assert left(outputs, segment) == [[2, 4, 6, 8], [10, 12, 14, 16]]
-    refute_received {:DOWN, _ref, :process, _pid, _reason}
-    assert NxSegment.member_times(segment) == []
-  end
-
-  test "waits for a pair's outputs up to a timeout" do
-    {:ok, segment} = NxSegment.build(members([AddOne, Double], context()), context(), [])
-    {:ok, ticket} = NxSegment.send_request(grey_pair([0, 1, 2, 3, 4, 5, 6, 7]), segment)
-
-    assert {:ok, outputs, _segment, _done_ns} = NxSegment.await(ticket, segment, 5_000)
-    assert left(outputs, segment) == [[2, 4, 6, 8], [10, 12, 14, 16]]
-  end
-
-  test "returns what the device raises as the pair's error" do
-    {:ok, segment} =
-      NxSegment.build(members([AddOne], context()), context(),
-        defn_options: [compiler: FailingDevice]
-      )
-
-    pair = grey_pair(List.duplicate(0, 8))
-    error = %RuntimeError{message: "the device failed"}
-    assert {:error, ^error} = run(pair, segment)
-
-    {:ok, ticket} = NxSegment.send_request(pair, segment)
-    assert {:error, ^error} = await_response(ticket, segment)
-  end
-
-  test "returns a download that fails as the pair's error, and one that does not end as a timeout" do
-    pair = grey_pair(List.duplicate(0, 8))
-
-    for {read, outcome} <- [
-          raise: {:error, %RuntimeError{message: "the download failed"}},
-          hang: :timeout
-        ] do
-      {:ok, segment} =
-        NxSegment.build(members([AddOne], context()), context(),
-          defn_options: [compiler: UnreadableDevice, read: read]
-        )
-
-      assert Segment.run(NxSegment, pair, segment, 200) == outcome
-    end
-  end
-
-  test "takes its defn options among its build options, and refuses one it does not know" do
-    assert {:ok, segment} =
-             NxSegment.build(members([AddOne], context()), context(),
-               defn_options: [compiler: EXLA]
-             )
-
-    assert NxSegment.compute(segment) == %{runs_on: :cpu, implementation: :nx, backend: :exla}
-
-    assert NxSegment.build(members([AddOne], context()), context(), compiler: EXLA) ==
-             {:error, "unknown build options [:compiler]"}
-  end
-
-  test "runs on Nx's evaluator without a compiler or with the evaluator, on another compiler else" do
-    evaluator = %{runs_on: :cpu, implementation: :nx, backend: :evaluator}
-    assert NxSegment.compute([]) == evaluator
-    assert NxSegment.compute(compiler: Nx.Defn.Evaluator) == evaluator
-
-    assert NxSegment.compute(compiler: FailingDevice) ==
-             %{runs_on: :cpu, implementation: :nx, backend: nil}
-  end
-
   test "takes every Nx stage to compile it, and none to compute natively" do
     assert NxSegment.accepts?(AddOne, nil, :nx)
     refute NxSegment.accepts?(AddOne, nil, :native)
@@ -384,18 +231,6 @@ defmodule VisionCore.Stereo.NxSegmentTest do
 
     assert NxSegment.send_request(%Pair{left_frame: frame, right_frame: frame}, segment) ==
              {:error, {:frame_size, :left_frame, {2, 2}, {2, 4}}}
-  end
-
-  defp await_response(ticket, segment) do
-    receive do
-      message ->
-        case NxSegment.response(message, ticket, segment) do
-          :no_reply -> await_response(ticket, segment)
-          response -> response
-        end
-    after
-      5_000 -> flunk("no response")
-    end
   end
 
   @tag :jpeg

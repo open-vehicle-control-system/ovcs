@@ -37,8 +37,11 @@ defmodule VisionCore.Stereo.Stage.Quality do
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: {:ok, %{size: {context.height, context.width}}}
+         do: NxStereo.Stage.Quality.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -47,19 +50,13 @@ defmodule VisionCore.Stereo.Stage.Quality do
   def provides, do: [:metrics]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "quality"
+  defdelegate native_kind, to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
-  def carry(state, _context), do: %{previous: Nx.broadcast(Nx.f32(-1), state.size)}
+  defdelegate carry(state, context), to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    current = tensors.disparity
-
-    tensors
-    |> Map.put(:quality_sums, Diagnostics.disparity_sums(current, params.previous))
-    |> Map.put({:carry, :previous}, current)
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, %{size: {height, width}}) do

@@ -179,11 +179,15 @@ defmodule VisionCore.Stereo.TestHelpers do
   pair.
   """
   @spec run_segment(Segment.t(), input()) :: {Pair.t(), Segment.t()}
-  def run_segment(%backend{context: context} = segment, input) do
+  def run_segment(segment, input) do
+    {backend, context} = backend(segment)
     pair = %{to_pair(input) | geometry: context}
     {:ok, pair, segment} = Segment.run(backend, pair, segment, :infinity)
     {pair, segment}
   end
+
+  defp backend(%NxStereo.NxSegment{geometry: context}), do: {NxSegment, context}
+  defp backend(%NxStereo.NativeSegment{geometry: context}), do: {NativeSegment, context}
 
   @doc """
   Runs `inputs`, in order, through one `VisionCore.Stereo.NxSegment` of

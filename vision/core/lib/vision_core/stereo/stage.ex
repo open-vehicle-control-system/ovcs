@@ -54,8 +54,7 @@ defmodule VisionCore.Stereo.Stage do
   `{min, max}` with an optional `:step`, or its `:values`, the setting of
   the same stage it must exceed (`:greater_than`), whether it changes
   while running (`applies: :live`, the default) or is fixed at start
-  (`:build`), whether a native implementation takes it (`native: false`
-  keeps a build setting out of `stereo_match`), and a `:description`.
+  (`:build`), and a `:description`.
   """
   @type option_spec :: %{
           required(:type) => :integer | :double | :bool,
@@ -64,7 +63,6 @@ defmodule VisionCore.Stereo.Stage do
           optional(:values) => [term()],
           optional(:greater_than) => atom(),
           optional(:applies) => :live | :build,
-          optional(:native) => boolean(),
           optional(:description) => String.t()
         }
 

@@ -35,9 +35,13 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
         "where it reaches past a camera's frame. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts), do: {:ok, nil}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: NxStereo.Stage.Sharpness.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Sharpness
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left, :right]
@@ -46,11 +50,10 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   def provides, do: [:sharpness]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "sharpness"
+  defdelegate native_kind, to: NxStereo.Stage.Sharpness
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, _state),
-    do: Map.put(tensors, :sharpness_sums, Diagnostics.sharpness_sums(tensors.left, tensors.right))
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Sharpness
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state),

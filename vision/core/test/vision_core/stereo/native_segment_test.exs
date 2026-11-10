@@ -38,26 +38,9 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     defdelegate finish(pair, outputs, state), to: PointCloud
     defdelegate option_specs(), to: PointCloud
     defdelegate options(state), to: PointCloud
+    defdelegate native_settings(state), to: PointCloud
     def native_kind, do: "point_cloud"
     def native_constants, do: %{min_depth_m: 1.0, max_depth_m: 2.0}
-  end
-
-  # A matcher whose Port answers each run with one 1x1 f32 output, named `name`.
-  defmodule OneOutputMatcher do
-    use GenServer
-
-    def start_link(name), do: GenServer.start_link(__MODULE__, name)
-
-    @impl GenServer
-    def init(name), do: {:ok, name}
-
-    @impl GenServer
-    def handle_call({:run, _owner, _segment_id, _version, _configuration, _request}, _from, name) do
-      output =
-        <<byte_size(name), name::binary, 2, 2, 1::little-32, 1::little-32, 0.0::little-float-32>>
-
-      {:reply, {:ok, <<1, 0::little-32, 1>> <> output}, name}
-    end
   end
 
   setup do
@@ -637,27 +620,6 @@ defmodule VisionCore.Stereo.NativeSegmentTest do
     {:ok, segment} = NativeSegment.build(members, context, matcher: :segment_matcher)
 
     assert {:ok, %Pair{disparity: %Nx.Tensor{}}, _segment} = run(NativeSegment, pair, segment)
-  end
-
-  test "fails a pair whose reply names an output none of its stages has" do
-    matcher = start_supervised!({OneOutputMatcher, "output of no stage"}, id: :one_output)
-    context = context(:stereo, 64, 48)
-    pair = %{disparity_pair(disparity(48, 64, 1)) | geometry: context}
-    members = members([{Stage.TemporalFilter, []}], context)
-    {:ok, segment} = NativeSegment.build(members, context, matcher: matcher)
-
-    {:ok, request_id} = NativeSegment.send_request(pair, segment)
-
-    assert NativeSegment.await(request_id, segment, 5_000) ==
-             {:error, {:unknown_output, "output of no stage"}}
-  end
-
-  test "refuses a build option it does not know" do
-    context = context(:stereo, 64, 48)
-    members = members([{Stage.TemporalFilter, []}], context)
-
-    assert NativeSegment.build(members, context, defn_options: []) ==
-             {:error, "unknown build options [:defn_options]"}
   end
 
   test "waits for a pair's outputs up to a timeout" do

@@ -135,6 +135,21 @@ defmodule VisionCore.Stereo.NxStage do
   """
   @callback native_constants() :: %{atom() => number()}
 
+  @doc """
+  The numeric build settings the stage's native implementation takes,
+  by name, which the `stereo_match` Port is configured with; without it,
+  none. A vehicle's module that wraps a core stage delegates it.
+  """
+  @callback native_settings(state()) :: keyword(number())
+
+  @doc """
+  The `NxStereo.Stage` that computes the stage: its computation callbacks
+  (`params/2`, `step/3`, `carry/2`, `device_only/0`, `compute/1`,
+  `native_kind/0`, `native_constants/0`, `native_settings/1`) are that
+  stage's, delegated.
+  """
+  @callback stereo_stage() :: module()
+
   @optional_callbacks summary: 0,
                       explanation: 0,
                       params: 2,
@@ -146,7 +161,9 @@ defmodule VisionCore.Stereo.NxStage do
                       compute: 1,
                       device_only: 0,
                       native_kind: 0,
-                      native_constants: 0
+                      native_constants: 0,
+                      native_settings: 1,
+                      stereo_stage: 0
 
   @doc "Whether `module` is an Nx stage: it declares `@behaviour VisionCore.Stereo.NxStage`."
   @spec nx_stage?(module()) :: boolean()

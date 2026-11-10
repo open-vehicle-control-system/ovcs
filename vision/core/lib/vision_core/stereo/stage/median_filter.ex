@@ -49,11 +49,13 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
         "mostly surrounded by holes is dropped."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    with {:ok, %{kernel_size: kernel_size}} <-
-           Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, kernel_size}
+  def init(opts, context) do
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: NxStereo.Stage.MedianFilter.init(Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.MedianFilter
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -62,15 +64,17 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "median_filter"
+  defdelegate native_kind, to: NxStereo.Stage.MedianFilter
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, kernel_size),
-    do: Map.put(tensors, :disparity, NxStereo.Image.median(tensors.disparity, kernel_size))
+  defdelegate native_settings(state), to: NxStereo.Stage.MedianFilter
+
+  @impl VisionCore.Stereo.NxStage
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.MedianFilter
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(kernel_size), do: %{kernel_size: kernel_size}
+  def options(state), do: %{kernel_size: state.kernel_size}
 end

@@ -10,8 +10,13 @@ defmodule VisionCore.Stereo.Segment do
   `c:build/3`. A segment's state holds its `:members`, initialised
   pipeline stages (`%{module:, name:, state:}`).
 
+  Both backends run nx_stereo's segments (`NxStereo.Segment`) on a
+  `Pair`: a pair's camera frames are decoded into the segment's entries
+  (`entries/2`), and each member's `finish/3` fills the pair from the
+  outputs (`finish_members/3`).
+
   A pair goes through a segment in three steps: `c:send_request/2`
-  takes the pair's inputs (`entry_tensors/2`) and hands them to the
+  takes the pair's inputs (`entries/2`) and hands them to the
   device without waiting, the device's reply comes back as a message,
   and `c:collect/4` downloads what the device left there and fills the
   pair. The first segment's reply is one of the pipeline's messages,
@@ -31,13 +36,9 @@ defmodule VisionCore.Stereo.Segment do
   """
 
   alias VisionCore.Camera.Frame
-  alias NxStereo.Packing
   alias VisionCore.Stereo.{Pair, Stage}
 
   @frames [:left_frame, :right_frame]
-  @images [:left, :right]
-  @maps [:disparity]
-  @packable @frames ++ @images
 
   @type t :: %{required(:members) => [map()], optional(atom()) => term()}
 
@@ -52,7 +53,7 @@ defmodule VisionCore.Stereo.Segment do
           | {:stop, term()}
 
   @typedoc "The shape and type a `Pair` field enters a segment with."
-  @type entry_spec :: {tuple(), Nx.Type.t()}
+  @type entry_spec :: NxStereo.Segment.entry_spec()
 
   @doc """
   The segment of `members`, initialised pipeline stages that
@@ -164,96 +165,39 @@ defmodule VisionCore.Stereo.Segment do
 
   @doc "The `Pair` fields `members` read that no member before the reader provides."
   @spec entry_fields([map()]) :: [atom()]
-  def entry_fields(members) do
-    {entry, _provided} =
-      Enum.reduce(members, {[], MapSet.new()}, fn member, {entry, provided} ->
-        needed =
-          Enum.reject(member.module.requires(), &(MapSet.member?(provided, &1) or &1 in entry))
-
-        {entry ++ needed, MapSet.union(provided, MapSet.new(member.module.provides()))}
-      end)
-
-    entry
-  end
+  defdelegate entry_fields(members), to: NxStereo.Segment
 
   @doc """
   Each of the `entry_fields/1` of `members` with the shape and type it
-  enters a segment with in `context`: the camera frames (`:left_frame`,
-  `:right_frame`) as `u8` at the frame size, the rectified images
-  (`:left`, `:right`) as `u8` and `:disparity` as `f32` at the working
-  size. Another field, which only a CPU stage fills, cannot enter one.
-
-  With `packed: true`, the frames and images enter as `u32` words of four
-  pixels each (`NxStereo.Packing`), at a quarter of their width,
-  which must be a multiple of 4.
+  enters a segment with in `context`; see `NxStereo.Segment.entry_specs/3`.
   """
   @spec entry_specs([map()], Stage.context(), keyword()) ::
           {:ok, [{atom(), entry_spec()}]} | {:error, String.t()}
-  def entry_specs(members, context, opts \\ []) do
-    packed? = Keyword.get(opts, :packed, false)
-
-    members
-    |> entry_fields()
-    |> Enum.reduce_while({:ok, []}, fn field, {:ok, specs} ->
-      case entry_spec(field, context) do
-        {:ok, spec} when packed? and field in @packable ->
-          case packed_spec(field, spec) do
-            {:ok, spec} -> {:cont, {:ok, specs ++ [{field, spec}]}}
-            {:error, _message} = error -> {:halt, error}
-          end
-
-        {:ok, spec} ->
-          {:cont, {:ok, specs ++ [{field, spec}]}}
-
-        :error ->
-          {:halt, {:error, "a segment cannot read #{inspect(field)} from a CPU stage"}}
-      end
-    end)
-  end
-
-  defp packed_spec(_field, {{height, width}, {:u, 8}}) when rem(width, 4) == 0,
-    do: {:ok, {{height, div(width, 4)}, {:u, 32}}}
-
-  defp packed_spec(field, {{_height, width}, _type}),
-    do: {:error, "#{inspect(field)} is #{width} pixels wide: packing needs a multiple of 4"}
-
-  defp entry_spec(field, context) when field in @frames,
-    do: {:ok, {{context.frame_height, context.frame_width}, {:u, 8}}}
-
-  defp entry_spec(field, context) when field in @images,
-    do: {:ok, {{context.height, context.width}, {:u, 8}}}
-
-  defp entry_spec(field, context) when field in @maps,
-    do: {:ok, {{context.height, context.width}, {:f, 32}}}
-
-  defp entry_spec(_field, _context), do: :error
+  defdelegate entry_specs(members, context, opts \\ []), to: NxStereo.Segment
 
   @doc "The camera frames among the entry fields, which a segment reads and returns nothing of."
   @spec frame_fields() :: [atom()]
-  def frame_fields, do: @frames
+  defdelegate frame_fields, to: NxStereo.Segment
 
   @doc """
-  The fields of `pair` that `specs`, from `entry_specs/2`, name, each a
-  tensor of its shape and type, a camera frame decoded; or why not: a
-  field of another size (`{:frame_size, field, shape, expected}`), a
-  grey frame whose bytes do not fill its size (`{:frame_bytes, field,
-  bytes, expected}`), a frame that does not decode, or a field that
-  holds no tensor.
+  The fields of `pair` that `specs`, from `entry_specs/3`, name, as a
+  segment's entries: each camera frame decoded to a tensor, every other
+  field as it is; or why a frame does not decode: a grey frame whose
+  bytes do not fill its size (`{:frame_bytes, field, bytes, expected}`),
+  or a frame the decoder refuses.
   """
-  @spec entry_tensors(Pair.t(), [{atom(), entry_spec()}]) ::
-          {:ok, [{atom(), Nx.Tensor.t()}]} | {:error, term()}
-  def entry_tensors(%Pair{} = pair, specs) do
-    Enum.reduce_while(specs, {:ok, []}, fn {field, {expected, type}}, {:ok, tensors} ->
-      with {:ok, tensor} <- field_tensor(pair, field),
-           {:ok, tensor} <- entry_tensor(field, tensor, expected, type) do
-        {:cont, {:ok, tensors ++ [{field, tensor}]}}
-      else
+  @spec entries(Pair.t(), [{atom(), entry_spec()}]) ::
+          {:ok, [{atom(), term()}]} | {:error, term()}
+  def entries(%Pair{} = pair, specs) do
+    Enum.reduce_while(specs, {:ok, []}, fn {field, _spec}, {:ok, entries} ->
+      case field_value(pair, field) do
+        {:ok, value} -> {:cont, {:ok, entries ++ [{field, value}]}}
         {:error, _reason} = error -> {:halt, error}
       end
     end)
   end
 
-  defp field_tensor(pair, field) when field in @frames do
+  defp field_value(pair, field) when field in @frames do
     case Map.fetch!(pair, field) do
       %Frame{grey: grey, width: width, height: height}
       when is_binary(grey) and byte_size(grey) != width * height ->
@@ -264,31 +208,7 @@ defmodule VisionCore.Stereo.Segment do
     end
   end
 
-  defp field_tensor(pair, field) do
-    case Map.fetch!(pair, field) do
-      %Nx.Tensor{} = tensor -> {:ok, tensor}
-      other -> {:error, {:not_a_tensor, field, other}}
-    end
-  end
-
-  # A packed field: the u8 image's bytes as u32 words.
-  defp entry_tensor(field, tensor, {height, words}, {:u, 32})
-       when field in @packable do
-    with :ok <- check_shape(field, Nx.shape(tensor), {height, words * 4}),
-         do:
-           {:ok,
-            tensor |> Nx.as_type({:u, 8}) |> Nx.to_binary() |> Packing.pack(words * 4, height)}
-  end
-
-  defp entry_tensor(field, tensor, expected, type) do
-    with :ok <- check_shape(field, Nx.shape(tensor), expected),
-         do: {:ok, Nx.as_type(tensor, type)}
-  end
-
-  defp check_shape(_field, shape, shape), do: :ok
-
-  defp check_shape(field, shape, expected),
-    do: {:error, {:frame_size, field, shape, expected}}
+  defp field_value(pair, field), do: {:ok, Map.fetch!(pair, field)}
 
   @doc """
   `pair` filled from a segment's `outputs` by each member's

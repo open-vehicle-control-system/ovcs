@@ -21,7 +21,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
 
   alias VisionCore.Parameters.Check
 
-  @radius 3
+  @radius NxStereo.Stage.SpeckleFilter.native_constants().radius
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
 
   @option_specs [
@@ -54,7 +54,13 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
         "scattered dots in open space."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context), do: Check.init_settings(@option_specs, @defaults, opts)
+  def init(opts, context) do
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: NxStereo.Stage.SpeckleFilter.init(Map.to_list(settings), context)
+  end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -63,26 +69,16 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "speckle_filter"
+  defdelegate native_kind, to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{radius: @radius}
+  defdelegate native_constants, to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: options(state)
+  defdelegate params(state, context), to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    Map.put(
-      tensors,
-      :disparity,
-      NxStereo.Filter.despeckle(tensors.disparity,
-        min_support: params.min_support,
-        max_diff: params.max_diff,
-        radius: @radius
-      )
-    )
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs

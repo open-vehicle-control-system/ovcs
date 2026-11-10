@@ -24,9 +24,6 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
-  @bands 4
-  @reach 2
-  @row_step 4
   @min_matched_pixels 64
 
   @impl VisionCore.Stereo.NxStage
@@ -45,9 +42,13 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
         "has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts), do: {:ok, nil}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: NxStereo.Stage.RowAlignment.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.RowAlignment
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left, :right, :disparity]
@@ -56,22 +57,13 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   def provides, do: [:alignment, :metrics]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "row_alignment"
+  defdelegate native_kind, to: NxStereo.Stage.RowAlignment
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{bands: @bands, reach: @reach, row_step: @row_step}
+  defdelegate native_constants, to: NxStereo.Stage.RowAlignment
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, _state) do
-    sums =
-      Diagnostics.row_alignment_sums(tensors.left, tensors.right, tensors.disparity,
-        bands: @bands,
-        reach: @reach,
-        row_step: @row_step
-      )
-
-    Map.put(tensors, :alignment_sums, sums)
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.RowAlignment
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do

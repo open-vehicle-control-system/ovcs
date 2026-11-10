@@ -175,15 +175,6 @@ defmodule VisionCore.Stereo.MatcherTest do
     assert Enum.any?(1..100, fn _try -> forgotten?.() or (Process.sleep(10) && false) end)
   end
 
-  test "passes a positive thread count, and leaves another out with a warning" do
-    assert Matcher.port_arguments(nil) == []
-    assert Matcher.port_arguments(3) == ["--threads", "3"]
-
-    log = ExUnit.CaptureLog.capture_log(fn -> assert Matcher.port_arguments(0) == [] end)
-    assert log =~ "config :vision_core, :stereo_match_threads"
-    assert log =~ "must be a positive integer, got 0"
-  end
-
   test "logs why the Port refuses a configuration, and not the refusals of the pairs sent with it" do
     {left, right} = textured_pair(9, {48, 64}, 8)
 

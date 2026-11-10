@@ -70,8 +70,11 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, Map.put(settings, :size, {context.height, context.width})}
+         do: NxStereo.Stage.TemporalFilter.init(Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -80,37 +83,19 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "temporal_filter"
+  defdelegate native_kind, to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{max_missed: NxStereo.Filter.max_missed() * 1.0}
+  defdelegate native_constants, to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: options(state)
-
-  # `missed`: pairs since the pixel last matched.
-  @impl VisionCore.Stereo.NxStage
-  def carry(state, _context) do
-    %{
-      previous: Nx.broadcast(Nx.f32(-1), state.size),
-      missed: Nx.broadcast(Nx.f32(0), state.size)
-    }
-  end
+  defdelegate params(state, context), to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    {filtered, missed} =
-      NxStereo.Filter.temporal(tensors.disparity, params.previous, params.missed,
-        alpha: params.alpha,
-        delta: params.delta,
-        hold: params.hold
-      )
+  defdelegate carry(state, context), to: NxStereo.Stage.TemporalFilter
 
-    tensors
-    |> Map.put(:disparity, filtered)
-    |> Map.put({:carry, :previous}, filtered)
-    |> Map.put({:carry, :missed}, missed)
-  end
+  @impl VisionCore.Stereo.NxStage
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
