@@ -81,7 +81,7 @@ The Pi 5 has 4 Cortex-A76 cores at 2.4 GHz, a VideoCore VII GPU and LPDDR4X memo
 
 ### The `stereo_match` Port
 
-With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`, a Rust program the BEAM drives as a Port:
+With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`, the Rust program [`nx_stereo`](https://github.com/Spin42/nx_stereo) computes its stages with on a CPU, which the BEAM drives as a Port:
 
 ```elixir
 {:stereo,
@@ -94,10 +94,10 @@ With `compute: :native` on the `:stereo` component, every default stage runs in 
 
 | Elixir side | Role |
 |---|---|
-| `VisionCore.Stereo.NativeSegment` | The counterpart of `NxSegment`: a run of consecutive native stages, configured once in the Port and run on each pair. |
-| `VisionCore.Stereo.Matcher` | The process that owns the Port, queues requests and matches each reply to its request. It reopens the Port if it exits; a request with no reply within 5 s closes it. |
+| `VisionCore.Stereo.NativeSegment` | The counterpart of `NxSegment`: a run of consecutive native stages, configured once in the Port and run on each pair. It runs nx_stereo's `NxStereo.NativeSegment` on the pipeline's pairs, as `NxSegment` runs `NxStereo.NxSegment`. |
+| `VisionCore.Stereo.Matcher` | The `NxStereo.Matcher` process that owns the Port, queues requests and matches each reply to its request. It reopens the Port if it exits; a request with no reply within 5 s closes it. |
 
-The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair, and again after a calibration reload or a restart of the Port, which loses every segment's state. The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range, so each is written once, in the stage. The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take: the pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused before, when the pipeline starts, by Rectification. The protocol has three requests, configure, run and release, each one length-prefixed record over the pipes; `vision/rust/stereo_match/src/protocol.rs` defines it.
+The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair, and again after a calibration reload or a restart of the Port, which loses every segment's state. The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range, so each is written once, in the stage. The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take: the pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused before, when the pipeline starts, by Rectification. The protocol has three requests, configure, run and release, each one length-prefixed record over the pipes; nx_stereo's `native/stereo_match/src/protocol.rs` defines it.
 
 The stages keep their names, settings and outputs, so the exporters, the dashboard and detection work the same. A stage can override the component's choice with `compute: :native` or `compute: :nx` among its options: `Pipeline.default_stages(disparity: [compute: :native])` matches natively in a pipeline otherwise compiled with Nx, and `compute: :nx` compiles a stage in a native one. `Disparity`'s `matcher:` option does the same for the matching, and must agree with a `compute:` given beside it. A stage asked to compute natively that no backend computes natively is refused at start.
 
@@ -156,12 +156,12 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 |---|---|---|
 | `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG; takes camera controls on stdin. |
 | `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. |
-| `stereo_match` | Pi 5, workstation | The native stereo stages. |
+| `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
 | `jpeg_codec` | every board | Encodes grey images and coloured depth previews as JPEG, and decodes JPEG frames to grey. |
 | `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
 
-Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`. On a workstation, `mix compile` builds `jpeg_codec` and `stereo_match` for the host. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. Each crate is described in [`vision/rust/README.md`](../../vision/rust/README.md).
+Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect` and `jpeg_codec` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`. On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. Each crate is described in [`vision/rust/README.md`](../../vision/rust/README.md).
 
 ## Grey frames on the Pi 5
 

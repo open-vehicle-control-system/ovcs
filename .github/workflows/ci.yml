@@ -382,25 +382,6 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
 
-  vision-rust-arm64:
-    # stereo_match's NEON winner search is compiled and tested only on an arm64 host.
-    name: Rust · vision/rust on arm64
-    needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.vision_rust == 'true'
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: vision/rust
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the Rust version mise.toml pins
-        run: |
-          version=$(sed -n 's/^rust *= *{ *version *= *"\([^"]*\)".*/\1/p' ../../mise.toml)
-          rustup toolchain install "$version" --profile minimal
-          rustup default "$version"
-      - run: cargo test -p stereo_match
-
   vision-dashboard:
     name: React · vision/dashboard
     needs: changes

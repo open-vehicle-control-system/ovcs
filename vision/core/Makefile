@@ -19,14 +19,14 @@ QAIRT_ZIP ?= $(HOME)/.cache/nerves_system_arduino_ventuno_q/qairt-$(QAIRT_VERSIO
 QAIRT_INCLUDE := $(MIX_BUILD_PATH)/qairt_include
 QAIRT_HEADERS := $(QAIRT_INCLUDE)/qairt/$(QAIRT_VERSION)/include/QNN
 else
-BINARIES := camera_capture hailo_detect jpeg_codec stereo_match
+BINARIES := camera_capture hailo_detect jpeg_codec
 FEATURES := --features device
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a76
 endif
 CARGO ?= cargo
 # Every Port binary: priv/ is shared by the host and every target, so a
 # target build removes the ones it does not build.
-ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect stereo_match v4l2_capture
+ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect v4l2_capture
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
 RUST_TARGET := $(TARGET_ARCH)-unknown-$(TARGET_OS)-$(TARGET_ABI)
@@ -67,9 +67,8 @@ CARGO_ENV := env -u CC -u CXX -u AR -u CFLAGS -u CXXFLAGS -u LDFLAGS \
 	CARGO_TARGET_$(RUST_TARGET_ENV_UPPER)_RUSTFLAGS="-C link-arg=--sysroot=$(SYSROOT) $(TARGET_CPU_FLAGS)"
 
 ifeq ($(MIX_TARGET),host)
-# A workstation run builds jpeg_codec natively, for JPEG camera frames, and
-# stereo_match, for a pipeline matching on the CPU.
-HOST_BINARIES := jpeg_codec stereo_match
+# A workstation run builds jpeg_codec natively, for JPEG camera frames.
+HOST_BINARIES := jpeg_codec
 all:
 	cd $(RUST_DIR) && $(CARGO) build --release --locked $(addprefix -p ,$(HOST_BINARIES))
 	mkdir -p $(PRIV_DIR)
