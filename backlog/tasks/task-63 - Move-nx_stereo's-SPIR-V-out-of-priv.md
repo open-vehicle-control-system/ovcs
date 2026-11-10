@@ -1,7 +1,7 @@
 ---
 id: TASK-63
 title: Move nx_stereo's SPIR-V out of priv
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-10 23:30'
@@ -25,7 +25,7 @@ Chosen: the binaries move to `shaders/spirv/`, beside their GLSL sources; the so
 - [x] #1 The SPIR-V binaries are in `shaders/spirv/`, where `mix nx_stereo.shaders` writes them, and nx_stereo has no source `priv/`
 - [x] #2 A fresh build's `priv/` holds only `stereo_match`, and the Makefile no longer copies a source priv
 - [x] #3 The package files, README and `docs/optimizing.md` name the new place
-- [ ] #4 nx_stereo's suite passes with Vulkan and native, and OVCS pins nx_stereo at the merged change
+- [x] #4 nx_stereo's suite passes with Vulkan and native, and OVCS pins nx_stereo at the merged change
 <!-- AC:END -->
 
 ## Implementation Notes
