@@ -31,7 +31,8 @@ defmodule VisionCore.Stereo.Segment do
   """
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Stereo.{Packing, Pair, Stage}
+  alias NxStereo.Packing
+  alias VisionCore.Stereo.{Pair, Stage}
 
   @frames [:left_frame, :right_frame]
   @images [:left, :right]
@@ -183,7 +184,7 @@ defmodule VisionCore.Stereo.Segment do
   size. Another field, which only a CPU stage fills, cannot enter one.
 
   With `packed: true`, the frames and images enter as `u32` words of four
-  pixels each (`VisionCore.Stereo.Packing`), at a quarter of their width,
+  pixels each (`NxStereo.Packing`), at a quarter of their width,
   which must be a multiple of 4.
   """
   @spec entry_specs([map()], Stage.context(), keyword()) ::

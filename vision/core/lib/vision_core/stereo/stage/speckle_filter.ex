@@ -20,7 +20,6 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.Kernels
 
   @radius 3
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
@@ -77,7 +76,11 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
     Map.put(
       tensors,
       :disparity,
-      Kernels.despeckle(tensors.disparity, params.min_support, params.max_diff, &despeckle/3)
+      NxStereo.Filter.despeckle(tensors.disparity,
+        min_support: params.min_support,
+        max_diff: params.max_diff,
+        radius: @radius
+      )
     )
   end
 
@@ -91,43 +94,5 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
-  end
-
-  # One gather of all 48 neighbours, unmatched outside the image, compiles to one pass.
-  defp despeckle(disparity, min_support, max_diff) do
-    {height, width} = Nx.shape(disparity)
-    padded_width = width + 2 * @radius
-
-    flat =
-      disparity
-      |> Nx.pad(-1.0, [{@radius, @radius, 0}, {@radius, @radius, 0}])
-      |> Nx.reshape({:auto, 1})
-
-    offsets =
-      for dy <- -@radius..@radius,
-          dx <- -@radius..@radius,
-          {dy, dx} != {0, 0},
-          do: dy * padded_width + dx
-
-    centres =
-      Nx.iota({height, width, 1}, axis: 0)
-      |> Nx.add(@radius)
-      |> Nx.multiply(padded_width)
-      |> Nx.add(Nx.add(Nx.iota({height, width, 1}, axis: 1), @radius))
-
-    neighbours =
-      flat
-      |> Nx.gather(Nx.new_axis(Nx.add(centres, Nx.tensor([[offsets]], type: :s32)), -1))
-      |> Nx.reshape({height, width, @neighbours})
-
-    support =
-      Nx.logical_and(
-        Nx.greater(neighbours, 0),
-        Nx.less_equal(Nx.abs(Nx.subtract(neighbours, Nx.new_axis(disparity, -1))), max_diff)
-      )
-      |> Nx.sum(axes: [2])
-
-    kept = Nx.logical_and(Nx.greater(disparity, 0), Nx.greater_equal(support, min_support))
-    Nx.select(kept, disparity, -1.0)
   end
 end

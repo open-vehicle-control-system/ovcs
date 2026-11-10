@@ -24,7 +24,8 @@ defmodule VisionCore.Stereo.NxSegment do
 
   @behaviour VisionCore.Stereo.Segment
 
-  alias VisionCore.Stereo.{NxStage, Packing, Pair, Segment, Stage}
+  alias NxStereo.Packing
+  alias VisionCore.Stereo.{NxStage, Pair, Segment, Stage}
 
   @enforce_keys [:members, :specs, :function, :params, :carried, :context, :defn_options]
   defstruct [

@@ -27,10 +27,9 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.Kernels
 
   @max_hold 10
-  # The missed count stops here, above the longest hold, so that every hold ends.
+  # Where NxStereo.Filter.temporal/4 stops the missed count, above the longest hold.
   @max_missed 255.0
 
   @option_specs [
@@ -102,15 +101,11 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, _state) do
-    settings = [params.alpha, params.delta, params.hold]
-
     {filtered, missed} =
-      Kernels.temporal_filter(
-        tensors.disparity,
-        params.previous,
-        params.missed,
-        settings,
-        &filter/4
+      NxStereo.Filter.temporal(tensors.disparity, params.previous, params.missed,
+        alpha: params.alpha,
+        delta: params.delta,
+        hold: params.hold
       )
 
     tensors
@@ -129,30 +124,5 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
-  end
-
-  defp filter(current, previous, missed, [alpha, delta, hold]) do
-    smoothed = smooth(current, previous, alpha, delta)
-    matched = Nx.greater(current, 0)
-    missed = Nx.select(matched, 0.0, Nx.add(missed, 1))
-
-    held =
-      Nx.logical_and(
-        Nx.logical_not(matched),
-        Nx.logical_and(Nx.greater(previous, 0), Nx.less_equal(missed, hold))
-      )
-
-    {Nx.select(held, previous, smoothed), Nx.min(missed, @max_missed)}
-  end
-
-  defp smooth(current, previous, alpha, delta) do
-    agree =
-      Nx.logical_and(
-        Nx.logical_and(Nx.greater(current, 0), Nx.greater(previous, 0)),
-        Nx.less_equal(Nx.abs(Nx.subtract(current, previous)), delta)
-      )
-
-    blended = Nx.add(Nx.multiply(alpha, current), Nx.multiply(Nx.subtract(1, alpha), previous))
-    Nx.select(agree, blended, current)
   end
 end

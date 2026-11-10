@@ -14,7 +14,7 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{Kernels, NxStage, Pair}
+  alias VisionCore.Stereo.Pair
 
   @min_depth_m 0.05
   @max_depth_m 20.0
@@ -69,33 +69,16 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @impl VisionCore.Stereo.NxStage
   def step(tensors, params, decimation) do
-    settings = [params.focal_length_px, params.cx, params.cy]
-
     {grid, kept} =
-      Kernels.point_cloud(tensors.depth_m, settings, decimation, fn depth_m, [f, cx, cy] ->
-        grid(depth_m, %{focal_length_px: f, cx: cx, cy: cy}, decimation)
-      end)
+      NxStereo.Depth.point_cloud(tensors.depth_m, params.focal_length_px, params.cx, params.cy,
+        decimation: decimation,
+        min_depth_m: @min_depth_m,
+        max_depth_m: @max_depth_m
+      )
 
     tensors
     |> Map.put(:cloud_grid, grid)
-    |> Map.put(:cloud_points, Nx.as_type(kept, :s32))
-  end
-
-  # The points of the pixels sampled and how many are kept, as f32.
-  defp grid(depth_m, params, decimation) do
-    sampled = sample(depth_m, decimation)
-    in_range = Nx.logical_and(Nx.greater(sampled, @min_depth_m), Nx.less(sampled, @max_depth_m))
-    # NaN depth unprojects to a NaN point: x and y scale with z.
-    grid = in_range |> Nx.select(sampled, Nx.Constants.nan(:f32)) |> unproject(params, decimation)
-
-    kept =
-      grid[[.., .., 2]]
-      |> Nx.is_nan()
-      |> Nx.logical_not()
-      |> Nx.as_type(:f32)
-      |> NxStage.image_sums()
-
-    {grid, kept}
+    |> Map.put(:cloud_points, kept)
   end
 
   @impl VisionCore.Stereo.NxStage
@@ -115,26 +98,4 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
 
   @impl VisionCore.Stereo.NxStage
   def options(decimation), do: %{decimation: decimation}
-
-  defp sample(depth_m, decimation) do
-    {height, width} = Nx.shape(depth_m)
-    lengths = [div(height, decimation) * decimation, div(width, decimation) * decimation]
-    Nx.slice(depth_m, [0, 0], lengths, strides: [decimation, decimation])
-  end
-
-  # Point (i, j) from the pixel sample/2 took, (i × decimation, j × decimation).
-  defp unproject(z, params, decimation) do
-    u = z |> Nx.shape() |> Nx.iota(axis: 1, type: :f32) |> Nx.multiply(decimation)
-    v = z |> Nx.shape() |> Nx.iota(axis: 0, type: :f32) |> Nx.multiply(decimation)
-    z_over_focal_length = Nx.divide(z, params.focal_length_px)
-
-    Nx.stack(
-      [
-        Nx.multiply(Nx.subtract(u, params.cx), z_over_focal_length),
-        Nx.multiply(Nx.subtract(v, params.cy), z_over_focal_length),
-        z
-      ],
-      axis: -1
-    )
-  end
 end

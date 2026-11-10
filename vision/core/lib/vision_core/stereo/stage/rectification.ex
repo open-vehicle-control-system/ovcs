@@ -18,7 +18,6 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Stereo.{Kernels, Packing}
 
   @max_row_offset 8
 
@@ -81,18 +80,11 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   defp put_image(tensors, key, image), do: Map.put(tensors, key, image)
 
+  # A frame packed as 32-bit words gives the s32 image and its packing.
   defp rectify(frame, camera, size) do
-    Kernels.rectify(frame, Kernels.camera_vector(camera), size, fn frame, vector ->
-      camera = Kernels.camera_map(vector)
-
-      if Nx.type(frame) == {:u, 32} do
-        image = frame |> Packing.unpack({:u, 8}) |> NxStereo.Rectify.rectify(camera, size: size)
-        image = Nx.as_type(image, :s32)
-        {image, Packing.pack_image(image)}
-      else
-        NxStereo.Rectify.rectify(frame, camera, size: size)
-      end
-    end)
+    if Nx.type(frame) == {:u, 32},
+      do: NxStereo.Rectify.rectify_packed(frame, camera, size: size),
+      else: NxStereo.Rectify.rectify(frame, camera, size: size)
   end
 
   @impl VisionCore.Stereo.NxStage

@@ -152,18 +152,6 @@ defmodule VisionCore.Stereo.NxStage do
   @spec nx_stage?(module()) :: boolean()
   def nx_stage?(module), do: Stage.implements?(module, __MODULE__)
 
-  @doc """
-  The sum of each image in `images`, one `{height, width}` image or a
-  stack of them, in two reductions: over axis 1 first, a stack's rows or
-  a single image's columns, then over the image's other axis. On the
-  C100's GPU, through `nx_iree`, a whole image reduced at once compiles
-  to a slow reduction, on one thread.
-  """
-  @spec image_sums(Nx.Tensor.t()) :: Nx.Tensor.t()
-  def image_sums(images) do
-    images |> Nx.sum(axes: [1]) |> Nx.sum(axes: [Nx.rank(images) - 2])
-  end
-
   @doc "The inputs `module`, initialised to `state`, takes in `context`; see `c:params/2`."
   @spec params(module(), term(), Stage.context()) :: map()
   def params(module, state, context) do
