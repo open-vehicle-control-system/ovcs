@@ -29,8 +29,6 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   alias VisionCore.Parameters.Check
 
   @max_hold 10
-  # Where NxStereo.Filter.temporal/4 stops the missed count, above the longest hold.
-  @max_missed 255.0
 
   @option_specs [
     alpha: %{
@@ -85,7 +83,7 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def native_kind, do: "temporal_filter"
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{max_missed: @max_missed}
+  def native_constants, do: %{max_missed: NxStereo.Filter.max_missed() * 1.0}
 
   @impl VisionCore.Stereo.NxStage
   def params(state, _context), do: options(state)
