@@ -51,7 +51,7 @@ mix archive.install hex nerves_bootstrap --force
 # `libraries/` (see libraries/.gitignore) at the commits pinned in
 # scripts/libraries.tsv.
 [tasks.libraries]
-description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex) into libraries/ at their pinned commits"
+description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex, nx_iree, nx_stereo) into libraries/ at their pinned commits"
 run = "./scripts/libraries.sh clone"
 
 [tasks.libraries-check]

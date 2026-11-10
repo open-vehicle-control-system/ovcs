@@ -71,7 +71,7 @@ Each component's own README keeps its developer details: build, tests and source
 
 ## Shared libraries
 
-Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you, at the commits pinned in `scripts/libraries.tsv`. A change to one of them reaches OVCS through a change to its pin.
+Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you, at the commits pinned in `scripts/libraries.tsv`. A change to one of them reaches OVCS through a change to its pin; to try one first, edit its clone in `libraries/` and build, then push it and update the pin.
 
 | Library | Module | Source | Purpose |
 |---|---|---|---|
@@ -86,6 +86,8 @@ Two kinds live side by side under `libraries/`. **In-tree** libraries are framew
 | `express_lrs/` | `ExpressLrs` | [sideloaded](https://github.com/open-vehicle-control-system/express_lrs) | MAVLink decoder for ExpressLRS links |
 | `msp_osd/` | `MspOsd` | [sideloaded](https://github.com/open-vehicle-control-system/msp_osd) | MSP / DisplayPort OSD stack for HDZero, Walksnail and DJI VTXs |
 | `ovcs_control/` | `OvcsControl` | [sideloaded](https://github.com/open-vehicle-control-system/ovcs_control) | PID controller, input filters, interactive tuning simulator |
+| `nx_stereo/` | `NxStereo` | [sideloaded](https://github.com/Spin42/nx_stereo) | Stereo depth in Nx: rectification, semi-global matching, filters, depth, point clouds and rig diagnostics, with Vulkan shaders for each |
+| `nx_iree/` | `NxIREE` | [sideloaded](https://github.com/Spin42/nx_iree) | Compiles Nx functions with IREE, for a Vulkan GPU or a CPU, and runs them on the board |
 
 A vehicle's topology YAMLs import shared component specs with Cantastic's cross-app syntax:
 
