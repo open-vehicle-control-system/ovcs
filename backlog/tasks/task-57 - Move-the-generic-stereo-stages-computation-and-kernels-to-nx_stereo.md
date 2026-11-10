@@ -24,14 +24,14 @@ Every one of these computations is a generic stereo operation rather than OVCS l
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 The design below is agreed before implementation starts
-- [ ] #2 NxStereo.Rectify.rectify/3, NxStereo.Depth.depth/3 and the point cloud run hand-written Vulkan kernels when compiled for Vulkan, as NxStereo.sgm/3 does, including frames packed as 32-bit words for a GPU without 8-bit storage
-- [ ] #3 The speckle filter and the temporal filter, with their kernels, are nx_stereo functions
-- [ ] #4 Sharpness, row alignment and disparity statistics, with their kernels, are nx_stereo functions returning finished measures; vision_core keeps only their thresholds, wording and reporting
-- [ ] #5 vision_core carries no shader, SPIR-V or kernel module; its stages call nx_stereo
-- [ ] #6 nx_stereo has a committed benchmark that runs the full stereo pipeline (rectify, match, filters, depth, point cloud, diagnostics) on a Vulkan device, reports each stage's time (each Nx.block compiled alone, less an empty call's) and checks the results against the Nx code
-- [ ] #7 stereo_match's parity tests, nx_stereo's and vision_core's suites (--include vulkan) pass, and the VENTUNO Q board gives the same results and depth rate as before the move
+- [x] #2 NxStereo.Rectify.rectify/3, NxStereo.Depth.depth/3 and the point cloud run hand-written Vulkan kernels when compiled for Vulkan, as NxStereo.sgm/3 does, including frames packed as 32-bit words for a GPU without 8-bit storage
+- [x] #3 The speckle filter and the temporal filter, with their kernels, are nx_stereo functions
+- [x] #4 Sharpness, row alignment and disparity statistics, with their kernels, are nx_stereo functions returning finished measures; vision_core keeps only their thresholds, wording and reporting
+- [x] #5 vision_core carries no shader, SPIR-V or kernel module; its stages call nx_stereo
+- [x] #6 nx_stereo has a committed benchmark that runs the full stereo pipeline (rectify, match, filters, depth, point cloud, diagnostics) on a Vulkan device, reports each stage's time (each Nx.block compiled alone, less an empty call's) and checks the results against the Nx code
+- [x] #7 stereo_match's parity tests, nx_stereo's and vision_core's suites (--include vulkan) pass, and the VENTUNO Q board gives the same results and depth rate as before the move
 - [ ] #8 The nx_stereo changes are merged into Spin42/nx_stereo and vision_core pins that version
-- [ ] #9 The scripts that hot-load a build on the VENTUNO Q and time its segment are committed in OVCS
+- [x] #9 The scripts that hot-load a build on the VENTUNO Q and time its segment are committed in OVCS
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -59,3 +59,9 @@ Steps (separate PRs):
 
 Starts after nx_stereo#2 and the VENTUNO Q PR merge.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+On the Arduino VENTUNO Q with OVCS1's stages (728x544, 128 disparities coarse to fine, 8 fine paths): live depth at 29.97 Hz, the stereo segment busy 84 to 87% of each frame; `mix vision_core.board_bench` gives every output equal to EXLA's and 30.4 ms a pair (median of 20).
+<!-- SECTION:NOTES:END -->
