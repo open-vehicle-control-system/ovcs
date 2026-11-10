@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-09 22:16'
-updated_date: '2026-11-10 00:02'
+updated_date: '2026-11-10 01:08'
 labels: []
 dependencies: []
 ordinal: 55000
@@ -25,8 +25,6 @@ On the Arduino VENTUNO Q, OVCS1's default stages at 728x544 over 128 disparities
 - [x] #4 nx_stereo and vision_core suites pass with --include vulkan, credo clean, every change committed and pushed with its measured gain
 <!-- AC:END -->
 
-
-
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
@@ -40,5 +38,5 @@ At least 30 pairs a second with 8 paths; once reached, keep improving (more marg
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Board, 728x544, 128 disparities, coarse 3 / fine 8 paths, detection on: live depth 29.97 Hz over a minute (12 samples), 300 stereo pairs and 300 detections in 10 s, CPU 13-21%, stereo segment busy 93% of the frame time. One pair 31 to 33 ms (was 38.1); 3/3 27 to 30 ms. Every change equal to EXLA (0/396032 pixels differ). nx_stereo: packed-byte barrel in the band scans (scans 9.4 -> 8.0 ms), 6-bit band costs (fine block 16.3 -> 15.6 ms), coarse selection unrolled with direct reads (2.11 -> 0.98 ms), 3-path selection inside the vertical scan (2.21 -> 1.81 ms); earlier: consistency shared row, band bases per coarse pixel, OVCS speckle 4 px a thread. The fine block is now bound by memory traffic (~18 GB/s of a ~19 GB/s copy ceiling).
+Board, 728x544, 128 disparities, coarse 3 / fine 8 paths, detection on: live depth 29.97 Hz held over a 15-minute soak (1-second samples 28.97 to 30.97), 300 stereo pairs and 300 detections in 10 s, stereo segment busy 84 to 89% of the frame time (93% at first), CPU 13 to 20%, GPU 36 to 40 C at a steady 877 MHz (its top frequency). One pair 28 to 30 ms (was 38.1); 3/3 24 to 26 ms. Every change equal to EXLA (0/396032 pixels differ). nx_stereo: packed-byte barrel in the band scans (scans 9.4 -> 8.0 ms), 6-bit band costs (fine block 16.3 -> 15.6 ms), coarse selection unrolled with direct reads (2.11 -> 0.98 ms), 3-path selection inside the vertical scan (2.21 -> 1.81 ms), direct cost transpose (1.88 -> 0.74 ms), 8-line full-range workgroups (coarse 5.59 -> 5.31 ms), folded diagonal scans (1.78/1.77 -> 1.61/1.57 ms). The fine block is bound by memory traffic: the GPU copies at about 19 GB/s and the vertical scans reach 18. About 2 ms of each call is fixed IREE and host overhead (a stage-1-only segment takes 2.5 to 3 ms for 0.8 ms of kernels).
 <!-- SECTION:NOTES:END -->
