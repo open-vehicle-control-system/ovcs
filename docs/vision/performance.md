@@ -67,7 +67,7 @@ The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm ap
 
 | Figure | Measured |
 |---|---|
-| One pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 to 30 ms: depth at the cameras' 30 Hz, the GPU busy about 88% of the time |
+| One pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 to 30 ms: depth at the cameras' 30 Hz, the stereo segment busy about 85% of each frame |
 | One pair, `search: "coarse_to_fine"`, `paths: 3` | 24 to 26 ms |
 | Each camera | 29.97 frames a second |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
