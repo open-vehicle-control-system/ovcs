@@ -225,6 +225,25 @@ defmodule VisionCore.Stereo.KernelsTest do
     nan |> Nx.logical_or(near) |> Nx.mean() |> Nx.to_number()
   end
 
+  test "the temporal filter of a pixel count not a multiple of 4 runs the default", %{
+    tmp_dir: dir
+  } do
+    filter = fn current, previous, missed ->
+      settings = [Nx.f32(0.5), Nx.f32(1.0), Nx.f32(2.0)]
+
+      Kernels.temporal_filter(current, previous, missed, settings, fn current,
+                                                                      _previous,
+                                                                      missed,
+                                                                      _settings ->
+        {Nx.add(current, 100), missed}
+      end)
+    end
+
+    image = Nx.broadcast(Nx.f32(3), {3, 5})
+    {filtered, _missed} = on_gpu(filter, [image, image, Nx.broadcast(Nx.f32(0), {3, 5})], dir)
+    assert filtered == Nx.broadcast(Nx.f32(103), {3, 5})
+  end
+
   test "the depth kernel measures f·B/d as the Nx step does", %{tmp_dir: dir} do
     # Down to 0.001 px, whose depth is beyond 16-bit millimetres.
     disparity = disparity(272, 364, 12) |> Nx.put_slice([0, 0], Nx.tensor([[0.001, 0.0]]))

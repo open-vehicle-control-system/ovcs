@@ -1,32 +1,26 @@
 #version 450
 // NxStereo.Depth.depth/3 and Stage.Depth for two pixels: the depth in
 // metres, f × B / d where the disparity d is positive and 0 elsewhere, and
-// in millimetres as 16-bit words, 0 beyond 65535 mm.
+// in millimetres as 16-bit words, 0 beyond 65535 mm. The pixel count is
+// even; a thread's loads and stores are whole vec2s.
 layout(local_size_x = 64) in;
 
 layout(constant_id = 0) const int PIXELS = 99008;
 
-layout(set = 0, binding = 0) readonly buffer Disparity { float disparity[]; };
+layout(set = 0, binding = 0) readonly buffer Disparity { vec2 disparity[]; };
 // focal_length_px, baseline_m
 layout(set = 0, binding = 1) readonly buffer Params { float params[]; };
 layout(set = 0, binding = 2) writeonly buffer DepthMm { uint depth_mm[]; };
-layout(set = 0, binding = 3) writeonly buffer DepthM { float depth_m[]; };
+layout(set = 0, binding = 3) writeonly buffer DepthM { vec2 depth_m[]; };
 
 void main() {
   int pair = int(gl_GlobalInvocationID.x);
   if (pair * 2 >= PIXELS) return;
   precise float fb = params[0] * params[1];
-  uint word = 0u;
-
-  for (int k = 0; k < 2; ++k) {
-    int i = pair * 2 + k;
-    if (i >= PIXELS) break;
-    float d = disparity[i];
-    float m = d > 0.0 ? fb / d : 0.0;
-    depth_m[i] = m;
-    // Nx.round rounds halves away from zero; the depth is never negative.
-    float mm = floor(m * 1000.0 + 0.5);
-    word |= (mm > 65535.0 ? 0u : uint(mm)) << (16 * k);
-  }
-  depth_mm[pair] = word;
+  vec2 d = disparity[pair];
+  vec2 m = vec2(d.x > 0.0 ? fb / d.x : 0.0, d.y > 0.0 ? fb / d.y : 0.0);
+  depth_m[pair] = m;
+  // Nx.round rounds halves away from zero; the depth is never negative.
+  vec2 mm = floor(m * 1000.0 + 0.5);
+  depth_mm[pair] = (mm.x > 65535.0 ? 0u : uint(mm.x)) | ((mm.y > 65535.0 ? 0u : uint(mm.y)) << 16);
 }

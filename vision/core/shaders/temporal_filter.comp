@@ -1,35 +1,41 @@
 #version 450
-// Stage.TemporalFilter for one pixel: where it matched in this pair and
-// the previous one within delta, it moves alpha of the way from the
+// Stage.TemporalFilter for four pixels: where a pixel matched in this pair
+// and the previous one within delta, it moves alpha of the way from the
 // previous disparity to the new one; a pixel that lost its match keeps the
 // previous one for up to hold pairs. Writes the filtered disparity and the
-// pairs each pixel has gone unmatched, up to 255.
+// pairs each pixel has gone unmatched, up to 255. The pixel count is a
+// multiple of 4; a thread's loads and stores are whole vec4s.
 layout(local_size_x = 64) in;
 
 layout(constant_id = 0) const int PIXELS = 99008;
 
-layout(set = 0, binding = 0) readonly buffer Current { float current[]; };
-layout(set = 0, binding = 1) readonly buffer Previous { float previous[]; };
-layout(set = 0, binding = 2) readonly buffer Missed { float missed[]; };
+layout(set = 0, binding = 0) readonly buffer Current { vec4 current[]; };
+layout(set = 0, binding = 1) readonly buffer Previous { vec4 previous[]; };
+layout(set = 0, binding = 2) readonly buffer Missed { vec4 missed[]; };
 // alpha, delta, hold
 layout(set = 0, binding = 3) readonly buffer Params { float params[]; };
-layout(set = 0, binding = 4) writeonly buffer Filtered { float filtered[]; };
-layout(set = 0, binding = 5) writeonly buffer MissedOut { float missed_out[]; };
+layout(set = 0, binding = 4) writeonly buffer Filtered { vec4 filtered[]; };
+layout(set = 0, binding = 5) writeonly buffer MissedOut { vec4 missed_out[]; };
 
 void main() {
-  int i = int(gl_GlobalInvocationID.x);
-  if (i >= PIXELS) return;
-  float c = current[i], p = previous[i];
+  int quad = int(gl_GlobalInvocationID.x);
+  if (quad * 4 >= PIXELS) return;
+  vec4 c = current[quad], p = previous[quad], m = missed[quad];
   float alpha = params[0], delta = params[1], hold = params[2];
+  vec4 filtered_quad, missed_quad;
 
-  bool matched = c > 0.0;
-  bool agree = matched && p > 0.0 && abs(c - p) <= delta;
-  precise float blended = alpha * c + (1.0 - alpha) * p;
-  float smoothed = agree ? blended : c;
+  for (int k = 0; k < 4; ++k) {
+    bool matched = c[k] > 0.0;
+    bool agree = matched && p[k] > 0.0 && abs(c[k] - p[k]) <= delta;
+    precise float blended = alpha * c[k] + (1.0 - alpha) * p[k];
+    float smoothed = agree ? blended : c[k];
 
-  float misses = matched ? 0.0 : missed[i] + 1.0;
-  bool held = !matched && p > 0.0 && misses <= hold;
+    float misses = matched ? 0.0 : m[k] + 1.0;
+    bool held = !matched && p[k] > 0.0 && misses <= hold;
 
-  filtered[i] = held ? p : smoothed;
-  missed_out[i] = min(misses, 255.0);
+    filtered_quad[k] = held ? p[k] : smoothed;
+    missed_quad[k] = min(misses, 255.0);
+  }
+  filtered[quad] = filtered_quad;
+  missed_out[quad] = missed_quad;
 }

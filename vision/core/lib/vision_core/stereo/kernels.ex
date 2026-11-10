@@ -241,22 +241,35 @@ defmodule VisionCore.Stereo.Kernels do
   `previous` and the `f32` count of pairs each pixel has `missed`, with
   `settings` its `[alpha, delta, hold]`: the filtered disparity and the
   new counts, up to 255. `default` takes `current`, `previous`,
-  `missed` and the settings, as `f32`, and gives the same off Vulkan.
+  `missed` and the settings, as `f32`, and gives the same off Vulkan; it
+  also runs on a pixel count that is not a multiple of 4, as the kernel
+  filters four pixels a thread.
   """
   @spec temporal_filter(Nx.Tensor.t(), Nx.Tensor.t(), Nx.Tensor.t(), [Nx.Tensor.t()], function()) ::
           {Nx.Tensor.t(), Nx.Tensor.t()}
   def temporal_filter(current, previous, missed, settings, default) do
-    shape = Nx.shape(current)
-    template = Nx.template(shape, :f32)
+    if rem(Nx.size(current), 4) == 0,
+      do: temporal_kernel(current, previous, missed, settings, default),
+      else: default.(current, previous, missed, Enum.map(settings, &Nx.as_type(&1, :f32)))
+  end
 
-    pipeline =
-      per_pixel(
-        :temporal_filter,
-        [:current, :previous, :missed, :params],
-        [filtered: template, missed_out: template],
-        shape,
-        %{0 => Tuple.product(shape)}
-      )
+  defp temporal_kernel(current, previous, missed, settings, default) do
+    shape = Nx.shape(current)
+    pixels = Tuple.product(shape)
+    template = Nx.template(shape, :f32)
+    inputs = [:current, :previous, :missed, :params]
+
+    kernel = %Kernel{
+      spirv: Map.fetch!(@spirv, :temporal_filter),
+      workgroups: {ceil_div(ceil_div(pixels, 4), @group), 1, 1},
+      specialization: %{0 => pixels}
+    }
+
+    pipeline = %Pipeline{
+      inputs: inputs,
+      stages: [{kernel, inputs, [filtered: template, missed_out: template]}],
+      outputs: [:filtered, :missed_out]
+    }
 
     Nx.block(
       pipeline,
@@ -381,17 +394,6 @@ defmodule VisionCore.Stereo.Kernels do
                                                                        previous ->
       default.(current, previous)
     end)
-  end
-
-  # One kernel run once per pixel of `shape`, reading `inputs` and writing `outputs`.
-  defp per_pixel(name, inputs, outputs, shape, specialization) do
-    kernel = %Kernel{
-      spirv: Map.fetch!(@spirv, name),
-      workgroups: {ceil_div(Tuple.product(shape), @group), 1, 1},
-      specialization: specialization
-    }
-
-    %Pipeline{inputs: inputs, stages: [{kernel, inputs, outputs}], outputs: Keyword.keys(outputs)}
   end
 
   # Scalar settings as the f32 vector a kernel reads them from.
