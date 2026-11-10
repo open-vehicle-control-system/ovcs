@@ -74,6 +74,16 @@ The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm ap
 | One detection request, letterbox included | 17 to 22 ms, on every pair at 30 Hz |
 | Generating the context binary, first boot only | about 2.4 s |
 
+### Measuring a change on the board
+
+`mix vision_core.board_bench` measures the default stages on a vision board without its cameras. Run it in `vision/core` on your workstation, with the board on your network:
+
+```shell
+mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --search coarse_to_fine --paths 8 --coarse-paths 3
+```
+
+It compiles the stages for the board, copies them there with a textured pair of frames, stops the live stereo unit, and prints how each output differs from EXLA's and the time of each pair. `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware; reboot the board afterwards. Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
+
 ## What to change
 
 Each setting trades rate against something else. The matching dominates, and its cost grows with **width × height × disparities**.
