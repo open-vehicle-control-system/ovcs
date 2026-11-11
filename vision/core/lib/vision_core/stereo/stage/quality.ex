@@ -14,10 +14,9 @@ defmodule VisionCore.Stereo.Stage.Quality do
   jitter; with that stage's `:alpha` at 1 and `:hold` at 0, it measures
   the matcher alone.
   """
-  @behaviour VisionCore.Stereo.NxStage
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.Quality
 
   alias NxStereo.Diagnostics
-  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
@@ -35,28 +34,7 @@ defmodule VisionCore.Stereo.Stage.Quality do
         "itself, set that filter's alpha to 1 and its hold to 0 first. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: NxStereo.Stage.Quality.init([], context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.Quality
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
   def provides, do: [:metrics]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.Quality
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate carry(state, context), to: NxStereo.Stage.Quality
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, %{size: {height, width}}) do
