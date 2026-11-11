@@ -34,7 +34,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the nominal calibration gives a 20 cm baseline" do
+  test "the calibration gives the rig's 20 cm baseline" do
     dir = Application.app_dir(:ovcs1, "priv/calibration")
 
     for side <- ["left", "right"],
@@ -46,6 +46,7 @@ defmodule Ovcs1.VisionComposerTest do
 
     right = VisionCore.Ros2.CameraCalibration.load!(Path.join(dir, "stereo_right.yaml"))
     [fx, _, _, tx | _] = right.projection_matrix
-    assert_in_delta -tx / fx, 0.2, 1.0e-3
+    # A calibration measures the mounting's spacing, a few millimetres off it.
+    assert_in_delta -tx / fx, 0.2, 5.0e-3
   end
 end
