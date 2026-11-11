@@ -127,19 +127,22 @@ defmodule VisionCore.Ros2.Exporter do
   def check(options) do
     config = config(options)
 
-    cond do
-      config.ros2 == nil ->
-        {:error,
-         "the vision configuration has no ros2: section, the ROS 2 link it publishes through"}
+    with :ok <- check_link(config), do: check_stereo(options[:stereo], config)
+  end
 
-      options[:stereo] == nil ->
-        :ok
+  defp check_link(%VisionCore.Config{ros2: nil}),
+    do:
+      {:error,
+       "the vision configuration has no ros2: section, the ROS 2 link it publishes through"}
 
-      true ->
-        case StereoSupervisor.camera_options(config) do
-          {:ok, _cameras} -> :ok
-          {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
-        end
+  defp check_link(_config), do: :ok
+
+  defp check_stereo(nil, _config), do: :ok
+
+  defp check_stereo(_stereo_options, config) do
+    case StereoSupervisor.camera_options(config) do
+      {:ok, _cameras} -> :ok
+      {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
     end
   end
 
