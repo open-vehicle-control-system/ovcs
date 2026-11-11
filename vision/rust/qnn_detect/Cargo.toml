@@ -6,7 +6,4 @@ edition = "2021"
 [dependencies]
 detection = { path = "../detection" }
 framing = { path = "../framing" }
-libloading = "0.8"
-
-[build-dependencies]
-bindgen = "0.70"
+qnn = { path = "../qnn" }

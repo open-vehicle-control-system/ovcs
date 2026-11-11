@@ -12,7 +12,7 @@ else ifeq ($(MIX_TARGET),arduino_ventuno_q)
 BINARIES := v4l2_capture jpeg_codec qnn_detect
 FEATURES :=
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a78
-# qnn_detect's bindings come from the QNN headers of the QAIRT archive the
+# The qnn crate's bindings come from the QNN headers of the QAIRT archive the
 # firmware's overlay is fetched from (`mise run fetch-qairt`); none is committed.
 QAIRT_VERSION := 2.50.0.260828
 QAIRT_ZIP ?= $(HOME)/.cache/nerves_system_arduino_ventuno_q/qairt-$(QAIRT_VERSION).zip

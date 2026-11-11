@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "qnn_detect", "v4l2_capture"]
-# qnn_detect needs the QAIRT headers, which only an arduino_ventuno_q build extracts.
+members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "qnn", "qnn_detect", "v4l2_capture"]
+# qnn and the Ports on it need the QAIRT headers, which only an arduino_ventuno_q build extracts.
 default-members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "v4l2_capture"]
 
 # A panic ends the program at once, so its Elixir driver sees the exit; the

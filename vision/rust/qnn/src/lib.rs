@@ -1,7 +1,7 @@
 //! A QNN context binary run on the HTP backend, through QAIRT's shared
 //! libraries loaded at run time from the library path. Each execution is timed
 //! by QNN's basic profiling, the HTP's own execution time, or by the wall time
-//! around `graphExecute` when the profile is unavailable.
+//! around `graphExecute` when the profile is unavailable; `TimeLog` says which.
 
 #[allow(
     non_upper_case_globals,
@@ -13,6 +13,10 @@
 mod ffi {
     include!(concat!(env!("OUT_DIR"), "/qnn.rs"));
 }
+
+mod time_log;
+
+pub use time_log::TimeLog;
 
 use std::ffi::{c_void, CStr};
 use std::ops::Range;

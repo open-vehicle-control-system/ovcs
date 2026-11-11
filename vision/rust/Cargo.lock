@@ -311,13 +311,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "qnn_detect"
+name = "qnn"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "libloading",
+]
+
+[[package]]
+name = "qnn_detect"
+version = "0.1.0"
+dependencies = [
  "detection",
  "framing",
- "libloading",
+ "qnn",
 ]
 
 [[package]]
