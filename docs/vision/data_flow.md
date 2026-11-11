@@ -19,7 +19,7 @@ The diagram shows the Pi 5. The other boards differ:
 - A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
-A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model; the diagram shows one.
+A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model; the diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames as well as the pairs, whose depth it projects into the camera's image.
 
 ```text
  left camera Port ──► LibCamera / V4L2 driver ─┐
@@ -96,7 +96,8 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 | `<prefix>/depth/camera_info` | The left camera's rectified intrinsics, next to the depth image so viewers can project it. |
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
 | `<prefix>/detections`, `<prefix>/detections/markers`, `<prefix>/left/detections` | Detected objects with their position in metres, markers for RViz or Foxglove, and the 2D overlay on the left image. |
-| `<prefix>/<name>/detections`, `<prefix>/<name>/detections/markers`, `<prefix>/<name>/annotations` | The same for the named detection pipeline `<name>`, with its markers in the namespace `<name>`; its 2D overlay on the left image is `<prefix>/<name>/annotations`. |
+| `<prefix>/<name>/detections`, `<prefix>/<name>/detections/markers`, `<prefix>/<name>/annotations` | The same for the named detection pipeline `<name>`, with its markers in the namespace `<name>`; its 2D overlay on the left image is `<prefix>/<name>/annotations`. A pipeline on a camera of its own publishes those with a distance there, in the camera's frame, and its overlay over the camera's image. |
+| `<prefix>/<name>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
 
 A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline).
 
@@ -107,6 +108,7 @@ Each message is stamped with the frame id of what it comes from:
 - The stereo component's sides set each camera's frame id (`left: [frame_id: "stereo_left_optical"]`, `<prefix>_left` without one).
 - Every frame carries its camera's frame id.
 - A pair's outputs and its detections are in the left camera's frame.
+- A camera of its own's detections are in that camera's frame.
 
 One setting therefore reaches every exporter.
 

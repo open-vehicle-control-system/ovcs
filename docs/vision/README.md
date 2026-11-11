@@ -174,7 +174,7 @@ The pose comes from pictures of a chessboard that both the stereo left camera an
    ```
 
    It leaves out a pair in which it does not find the board in both images, refuses images of several sizes, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures, and recording again helps.
-4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's.
+4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's, and a detection pipeline on the camera places its boxes with the stereo depth ([Detection on a camera of its own](#detection-on-a-camera-of-its-own)).
 
 ## Depth
 
@@ -211,7 +211,7 @@ http://<vehicle>-vision.local:4100
 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
-On a unit with detection, an object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out of the detections.
+On a unit with detection, an object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out of a stereo pipeline's detections. A pipeline on a camera of its own keeps it, without a distance.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
@@ -274,6 +274,24 @@ The Hailo-8 serves one pipeline: a second Hailo pipeline is left down, with "the
 The NPU in the top bar shows its kind and its load, and each detection pipeline's Inference box its mean inference time. Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second. A pipeline's inference time is the mean over the second's frames; the load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator and at most 100 %. On the Hailo-8 the time runs from writing the input to reading the output, so it holds the device's work and the PCIe transfer. On the Hexagon it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free, so two pipelines sharing it are not counted twice; where profiling is unavailable it is the wall time around the graph's execution, which includes the FastRPC call and overstates the NPU's work. The load is blank until a Port has reported a time; a pipeline's time is blank in a second without a frame, never 0.
 
 Each exporter takes the pipelines it publishes: the ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
+
+## Detection on a camera of its own
+
+A named detector with `source: {:camera, name}` detects on the camera of its own `name` instead of the stereo pair's left image, and places its boxes in 3D with the stereo depth seen from that camera. The default pipeline, `:detection`, stays the stereo pair's. With the OVCS1 reference vehicle's HQ camera, `:hq`, it reads as below; it works the same with your camera and backend:
+
+```elixir
+{:qnn_detector,
+ name: :hq_objects,
+ source: {:camera, :hq},
+ dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox.dlc")}
+```
+
+- **Input.** Each frame goes to the backend whole, in colour (in grey for a camera that delivers JPEG, as `VisionCore.Camera.GStreamer` does), and the backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames.
+- **Placement.** The pipeline keeps the last 4 stereo pairs and matches the frame with the one whose left capture time is closest, within half the pairs' period. It projects that pair's depth into the camera's image through the camera's calibration and pose ([A camera's calibration and pose](#a-cameras-calibration-and-pose)), every `reprojection_stride`-th pixel and row (3), and gives each box the median depth projected in its middle, as on the stereo source. The stereo pipeline publishes a pair well after its capture, which can be after the frame's boxes, so they wait for the pair captured closest to it, at most `pair_wait_ms` (500 ms), and the camera's frames that come meanwhile are skipped: the pipeline detects at most once per stereo latency. Only a frame with at least one box is projected.
+- **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped: its position and size are `nil`, and its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, azimuth positive to the right and elevation positive up, says where it is seen. A camera without a pose, or one whose pose or calibration cannot be read, runs its pipeline with every detection without a distance, with a warning logged once; without a calibration it has no bearing either.
+- **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`, those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels on `<prefix>/<name>/detections_2d`, and all of them on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). The dashboard draws them on the camera's preview.
+
+A calibration committed through the camera's `set_camera_info` reaches the pipeline when it restarts.
 
 ## Detection models
 

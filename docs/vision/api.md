@@ -284,7 +284,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "camera_frame:right", "maxHz": 10},
           {"name": "stereo_pair", "maxHz": 10},
           {"name": "camera_frame:hq", "maxHz": 10},
-          {"name": "detections", "maxHz": 10}
+          {"name": "detections", "maxHz": 10, "source": "left"}
         ],
         "actions": []
       }
@@ -295,7 +295,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 
 The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:hq`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them.
 
-A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API.
+A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `hq` for a pipeline on the camera `hq`.
 
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
@@ -467,7 +467,7 @@ depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.l
 
 ### Detections
 
-On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline, whose vertices are `[x, y]` fractions of the left image's width and height.
+On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline, whose vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image, and an object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
