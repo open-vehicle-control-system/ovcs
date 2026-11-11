@@ -69,6 +69,18 @@ describe('UnitStatus and the pair status', () => {
     expect(card('npu').querySelector('.ovcs-status--ok')).not.toBeNull()
   })
 
+  it("shows the NPU's load beside its kind", () => {
+    show({ ...snapshot, npu: { kind: 'Hexagon', state: 'running', loadPercent: 63.6, pipelines: {} } })
+    expect(card('npu').textContent).toContain('Hexagon 64 %')
+    expect(card('npu').querySelector('.ovcs-status--ok')).not.toBeNull()
+  })
+
+  it('shows the NPU by its kind alone while no load is known', () => {
+    show({ ...snapshot, npu: { kind: 'Hexagon', state: 'running', loadPercent: null, pipelines: {} } })
+    expect(card('npu').textContent).toContain('Hexagon')
+    expect(card('npu').textContent).not.toContain('%')
+  })
+
   it('shows an NPU that failed by its kind, in red', () => {
     show({ ...snapshot, npu: { kind: 'Hexagon', state: 'failed' } })
     expect(card('npu').textContent).toContain('Hexagon')
@@ -170,11 +182,11 @@ describe('UnitStatus and the pair status', () => {
   })
 
   it('keeps each top bar value as wide as its widest form, warning sign included, so the line does not move', () => {
-    show({ ...snapshot, stereoLoadPercent: 98 })
+    show({ ...snapshot, npu: { kind: 'Hexagon', state: 'running', loadPercent: 5, pipelines: {} }, stereoLoadPercent: 98 })
 
     const widest = (id) => card(id).querySelector('[data-widest]').dataset.widest
     expect(widest('ros2')).toBe('not answering')
-    expect(widest('npu')).toBe('Hexagon')
+    expect(widest('npu')).toBe('Hexagon 100 %')
     expect(widest('segment')).toBe('100 %')
     for (const id of ['ros2', 'npu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
   })

@@ -4,24 +4,36 @@ import { pipelines as pipelinesOf, unsavedByGroup, useParameters } from '../stor
 import { OvcsBadge, OvcsMenuItem } from '@ovcs/ui/react'
 import { STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
+import { useStatus } from '../stores/status.js'
+import { formatNumber } from '../status.js'
 import { computeTags } from '../compute.js'
 
-function accessibleName(group, unsaved) {
+function accessibleName(group, unsaved, figure) {
   const parts = [group.name]
   const tags = computeTags(group.compute)
   if (tags.length > 0) parts.push(`on ${tags.join(', ')}`)
+  if (figure) parts.push(figure)
   if (unsaved > 0) parts.push(`${unsaved} unsaved`)
   if (group.status) parts.push(group.status.detail ? `${group.status.level}: ${group.status.detail}` : group.status.level)
   return parts.join(', ')
 }
 
+// A detection pipeline's Inference step shows the mean time its accelerator took per frame, as the unit status reports it.
+function useInferenceFigure(group) {
+  const ms = useStatus((state) =>
+    group.id === `${group.pipeline}.inference` ? state.snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
+  )
+  return ms == null ? null : `${formatNumber(ms)} ms`
+}
+
 function GroupBox({ group, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
   const tags = computeTags(group.compute)
+  const figure = useInferenceFigure(group)
   return (
     <OvcsMenuItem
       selected={selected}
-      aria-label={accessibleName(group, unsaved)}
+      aria-label={accessibleName(group, unsaved, figure)}
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
@@ -36,6 +48,11 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
                 {tag}
               </span>
             ))}
+          </span>
+        ) : null}
+        {figure ? (
+          <span aria-hidden="true" data-figure className="text-[10px] font-normal leading-none tabular-nums text-ovcs-muted">
+            {figure}
           </span>
         ) : null}
       </span>

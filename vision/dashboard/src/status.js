@@ -161,6 +161,12 @@ function ros2Status(exporters) {
   ]
 }
 
+// The NPU's kind, with its load once known; none on a unit without one.
+function npuValue(npu) {
+  if (!npu) return 'none'
+  return npu.loadPercent == null ? npu.kind : `${npu.kind} ${formatNumber(npu.loadPercent, 0)} %`
+}
+
 /** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
@@ -169,8 +175,8 @@ export function unitStatus(status) {
     {
       id: 'npu',
       title: 'NPU',
-      value: status.npu?.kind ?? 'none',
-      widest: 'Hexagon',
+      value: npuValue(status.npu),
+      widest: 'Hexagon 100 %',
       healthy: status.npu?.state === 'running',
       tone: status.npu ? undefined : 'muted',
       hint: HINTS.npu
