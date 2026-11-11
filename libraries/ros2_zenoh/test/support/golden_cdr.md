@@ -1,7 +1,7 @@
 # golden_cdr.json — provenance
 
 CDR bodies (no encapsulation header) for the message shapes exercised
-by `marker_test.exs`, `detection3d_test.exs`,
+by `marker_test.exs`, `detection3d_test.exs`, `detection2d_test.exs`,
 `sensor_msgs/msg/camera_info_test.exs`,
 `stereo_msgs/disparity_image_test.exs` and
 `foxglove_msgs/image_annotations_test.exs`. They are this
@@ -107,3 +107,13 @@ against "bicycle 0.77" — so both residues occur in normal use.
 `fox_points_empty` pins the empty-sequence rule from further up this
 file: no alignment padding at all when the count is zero.
 
+
+## The 2D detection vectors
+
+`detection2d*` cover `vision_msgs/Detection2DArray`, the boxes a detector
+cannot place in 3D. `Detection2D` has `Detection3D`'s shape with a
+`BoundingBox2D` of five `float64`s, so it carries the same hazard: the
+array re-aligns to 4 between elements, and `detection2d_array_two` has
+two elements of differing `class_id` and `id` lengths to pin it. All
+three are validated by deserialising them with `rclpy`, checking every
+field.
