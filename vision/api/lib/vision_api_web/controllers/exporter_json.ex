@@ -4,10 +4,12 @@ defmodule VisionApiWeb.ExporterJSON do
   by its id: `name`, `module`, `status` (`level`, `ok`, `warning` or
   `off`, and `detail`) and `outputs`, each output's `name`
   (`stereo_pair`, `camera_frame:left`, `camera_frame:right`,
-  `camera_frame:<name>` for the camera `<name>`'s frames, `detections` for
-  the default detection pipeline's, or `detections:<name>` for the pipeline
-  `<name>`'s) and `maxHz`, the most values it takes a second, `null` when
-  unbounded, and `actions`, each with a `name`, a `label` and a
+  `camera_frame:<name>` for the camera `<name>`'s frames, `detections`
+  for the default detection pipeline's, or `detections:<name>` for the
+  pipeline `<name>`'s) and `maxHz`, the most values it takes a second,
+  `null` when unbounded, and for the API's detection outputs `source`,
+  the preview the pipeline's boxes are drawn on, `left` or a camera's
+  name, and `actions`, each with a `name`, a `label` and a
   `description`.
   """
   alias VisionApiWeb.JsonApi
@@ -33,7 +35,12 @@ defmodule VisionApiWeb.ExporterJSON do
   defp action(%{name: name, label: label, description: description}),
     do: %{name: Atom.to_string(name), label: label, description: description}
 
-  defp output(%{output: output, max_hz: max_hz}), do: %{name: output_name(output), maxHz: max_hz}
+  defp output(%{output: output, max_hz: max_hz} = entry),
+    do:
+      Map.merge(
+        %{name: output_name(output), maxHz: max_hz},
+        Map.take(entry, [:source])
+      )
 
   defp output_name({output, name}), do: "#{output}:#{name}"
   defp output_name(output), do: Atom.to_string(output)

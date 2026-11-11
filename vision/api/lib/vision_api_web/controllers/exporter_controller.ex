@@ -10,7 +10,9 @@ defmodule VisionApiWeb.ExporterController do
   detection pipeline's detections,
   in the order of the configuration's detectors: `:detections` for the
   default pipeline and `{:detections, name}` for a named one, each at
-  its pipeline's `VisionCore.Detection.Live.max_hz/1`.
+  its pipeline's `VisionCore.Detection.Live.max_hz/1` and with its
+  source, the preview its boxes are drawn on: `"left"` for the stereo
+  pair, the camera's name for a camera of its own.
   """
   use VisionApiWeb, :controller
 
@@ -29,10 +31,8 @@ defmodule VisionApiWeb.ExporterController do
       module: VisionApiWeb.Endpoint,
       status: {:ok, "Answering"},
       outputs:
-        Enum.map(
-          outputs ++ camera_outputs(config) ++ detection_outputs(config),
-          &%{output: &1, max_hz: channel_max_hz(&1)}
-        ),
+        Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++
+          detection_outputs(config),
       actions: []
     }
   end
@@ -44,8 +44,13 @@ defmodule VisionApiWeb.ExporterController do
 
   defp detection_outputs(nil), do: []
 
-  defp detection_outputs(config),
-    do: for({output, _key} <- VisionCore.Detection.Supervisor.outputs(config), do: output)
+  defp detection_outputs(config) do
+    for {output, source} <- VisionCore.Detection.Supervisor.sources(config),
+        do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source)}
+  end
+
+  defp source_name(:stereo), do: "left"
+  defp source_name({:camera, name}), do: Atom.to_string(name)
 
   # A channel whose process is not running carries nothing to bound.
   defp channel_max_hz(:detections), do: call_or_nil(&VisionCore.Detection.Live.max_hz/0)
