@@ -264,9 +264,7 @@ defmodule VisionCore.Detection.Pipeline do
       ) do
     positioned =
       detections
-      |> Enum.filter(&(&1.score >= state.min_score))
-      |> Enum.sort_by(& &1.score, :desc)
-      |> Enum.take(state.max_detections)
+      |> select(state)
       |> Enum.map(&position(&1, pair, state))
       |> Enum.reject(&is_nil/1)
       |> outline(pair, state.outline_segments)
@@ -283,6 +281,16 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp select(detections, state) do
+    detections
+    |> Enum.filter(&(&1.score >= state.min_score))
+    |> Enum.sort_by(& &1.score, :desc)
+    |> Enum.take(state.max_detections)
+  end
+
+  defp label(detection, state),
+    do: Enum.at(state.labels, detection.class_id, "class_#{detection.class_id}")
 
   defp detections_message(:detection, pair, positioned), do: {:detections, pair, positioned}
   defp detections_message(name, pair, positioned), do: {:detections, pair, positioned, name}
@@ -317,7 +325,7 @@ defmodule VisionCore.Detection.Pipeline do
         |> Map.merge(%{
           box: detection,
           class_id: detection.class_id,
-          label: Enum.at(state.labels, detection.class_id, "class_#{detection.class_id}"),
+          label: label(detection, state),
           score: detection.score,
           # One view cannot measure extent along the optical axis; a
           # thin slab marks where the surface is, not how deep it goes.
