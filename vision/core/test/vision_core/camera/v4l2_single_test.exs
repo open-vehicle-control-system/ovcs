@@ -196,6 +196,8 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert settings["--red-gain"] == "2.0"
     assert settings["--blue-gain"] == "1.0"
     assert settings["--gamma"] == "2.2"
+    assert settings["--ccm"] == "true"
+    assert settings["--denoise"] == "true"
     refute Map.has_key?(settings, "--focus")
     assert map_size(settings) == length(V4L2Single.control_specs())
     assert "10" in arguments(arguments)

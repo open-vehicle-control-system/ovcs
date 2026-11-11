@@ -31,9 +31,14 @@ defmodule VisionCore.Camera.V4L2Single do
   The settings of `control_specs/0`, given in the opts and changed while
   running through `set_controls/2`. Those `VisionCore.Camera.V4L2`
   shares apply as they do to the pair, but `black_level`, a 12-bit
-  sample, and the auto exposure, which steers the green channel's mean.
-  `awb` balances the white on each frame from the previous one;
-  `red_gain` and `blue_gain` apply while it is off.
+  sample, and the auto exposure, which steers the mean green. `awb`
+  balances the white on each frame from the previous one; `red_gain` and
+  `blue_gain` apply while it is off. On a sensor with a tuning, the
+  IMX477, auto exposure measures the green after lens shading and white
+  balance, through the tuning's contrast curve, before the colour matrix
+  and the denoise; `ccm` and `denoise` switch its colour correction
+  matrix and its chroma denoise, and `gamma` only sets how far auto
+  exposure steps, the contrast curve encoding the image.
 
   ## Opts
 
@@ -89,7 +94,10 @@ defmodule VisionCore.Camera.V4L2Single do
       default: 256,
       description: "Raw 12-bit sample value of black"
     },
-    gamma: %{description: "Gamma the image is encoded with"}
+    gamma: %{
+      description:
+        "Gamma the image is encoded with and auto exposure steps by; on a sensor with a tuning (IMX477), only the steps"
+    }
   }
 
   @settings for(
@@ -117,6 +125,19 @@ defmodule VisionCore.Camera.V4L2Single do
                 range: {0.5, 4},
                 default: 1.0,
                 description: "Blue channel gain while automatic white balance is off"
+              },
+              %{
+                key: :ccm,
+                type: :bool,
+                default: true,
+                description: "Colour correction matrix of the sensor's tuning (IMX477)"
+              },
+              %{
+                key: :denoise,
+                type: :bool,
+                default: true,
+                description:
+                  "Chroma denoise against coloured speckle at high gain, on a sensor with a tuning (IMX477)"
               }
             ])
 
