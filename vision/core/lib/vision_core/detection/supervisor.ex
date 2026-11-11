@@ -6,9 +6,10 @@ defmodule VisionCore.Detection.Supervisor do
   dashboard. `VisionCore.Ros2.Exporter` publishes them on ROS 2, outside
   the unit.
 
-  Which backend is `:backend`, defaulting to the accelerator,
-  `VisionCore.Detection.Backend.Hailo`. See `VisionCore.Detection.Backend`
-  for `Stub`, for plumbing only.
+  Which backend is `:backend`, defaulting to the Hailo-8 accelerator,
+  `VisionCore.Detection.Backend.Hailo`; `VisionCore.Detection.Backend.Qnn`
+  runs on a Qualcomm Hexagon NPU. See `VisionCore.Detection.Backend` for
+  `Stub`, for plumbing only.
 
   Exists to contain failure rather than to organise code. The vision
   core's own supervisor is `:rest_for_one` with the default restart
@@ -142,9 +143,10 @@ defmodule VisionCore.Detection.Supervisor do
       [:outline_segments]
   end
 
-  # The options of `Backend.Hailo` and `Backend.Stub`.
+  # The options of `Backend.Hailo`, `Backend.Qnn` and `Backend.Stub`.
   defp backend_keys do
     [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
+      [:dlc_path, :qairt_dir, :dsp_library_path, :cache_dir] ++
       [:infer_timeout_ms, :reopen_delays_ms, :boxes]
   end
 end

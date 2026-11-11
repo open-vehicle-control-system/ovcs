@@ -1,19 +1,13 @@
 defmodule VisionCore.Stereo.Stage.Depth do
   @moduledoc """
-  Turns the disparity in pixels into metric depth, `Z = f × B / d`:
-  fills the 32-bit float disparity and the 16-bit millimetre depth, and
-  gives the stages after it in the same segment the depth in metres
-  (`:depth_m`). Unmatched pixels have no depth, 0, and neither has the
-  16-bit depth beyond the 65535 mm it holds. The focal length and
-  baseline are inputs, so a reloaded calibration needs no new compiled
-  module.
+  Turns the disparity in pixels into metric depth with
+  `NxStereo.Stage.Depth`, and fills the 32-bit float disparity and the
+  16-bit millimetre depth from it.
   """
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
-
-  @max_depth_mm 65_535
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Turns the disparity into metric depth."
@@ -29,9 +23,13 @@ defmodule VisionCore.Stereo.Stage.Depth do
         "beyond the 65.5 m it holds, have no depth. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts), do: {:ok, nil}
+  def init(opts, context) do
+    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
+         do: NxStereo.Stage.Depth.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -40,24 +38,16 @@ defmodule VisionCore.Stereo.Stage.Depth do
   def provides, do: [:disparity_bytes, :depth, :depth_m]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "depth"
+  defdelegate native_kind, to: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
-  def params(_state, context),
-    do: %{focal_length_px: context.focal_length_px, baseline_m: context.baseline_m}
+  defdelegate params(state, context), to: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    {depth_mm, depth_m} =
-      NxStereo.Depth.depth(tensors.disparity, params.focal_length_px, params.baseline_m)
-
-    tensors
-    |> Map.put(:depth_mm, clear_beyond_range(depth_mm, depth_m))
-    |> Map.put(:depth_m, depth_m)
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
-  def device_only, do: [:depth_m]
+  defdelegate device_only, to: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do
@@ -66,11 +56,5 @@ defmodule VisionCore.Stereo.Stage.Depth do
       | disparity_bytes: Nx.to_binary(outputs.disparity),
         depth: Nx.to_binary(outputs.depth_mm)
     }
-  end
-
-  # NxStereo.Depth saturates at 65535 mm: a depth beyond that is no depth.
-  defp clear_beyond_range(depth_mm, depth_m) do
-    beyond_range = depth_m |> Nx.multiply(1000) |> Nx.round() |> Nx.greater(@max_depth_mm)
-    Nx.select(beyond_range, Nx.u16(0), depth_mm)
   end
 end

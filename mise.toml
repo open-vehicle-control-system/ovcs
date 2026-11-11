@@ -51,7 +51,7 @@ mix archive.install hex nerves_bootstrap --force
 # `libraries/` (see libraries/.gitignore) at the commits pinned in
 # scripts/libraries.tsv.
 [tasks.libraries]
-description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex) into libraries/ at their pinned commits"
+description = "Clone external libraries (cantastic, express_lrs, msp_osd, ovcs_control, arduino_router_ex, nx_iree, nx_stereo) into libraries/ at their pinned commits"
 run = "./scripts/libraries.sh clone"
 
 [tasks.libraries-check]
@@ -66,6 +66,11 @@ run = 'gitleaks git --redact --no-banner --log-opts="${SECRETS_RANGE:-origin/mai
 [tasks.fetch-models]
 description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"
+
+[tasks.fetch-qairt]
+description = "Download Qualcomm's AI Runtime for the VENTUNO Q vision firmware (not vendored: Qualcomm's licence allows it only inside a firmware)"
+dir = "vision/firmware"
+run = 'test -n "$VEHICLE" || { echo "VEHICLE=<Vehicle> mise run fetch-qairt" >&2; exit 1; }; MIX_TARGET=arduino_ventuno_q mix deps.get && deps/nerves_system_arduino_ventuno_q/scripts/fetch-qairt.sh rootfs_overlay_qairt'
 
 [tasks.urdf]
 description = "Expand each vehicle's xacro into the URDF its package reads (needs ROS's xacro on the PATH)"

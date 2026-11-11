@@ -77,6 +77,20 @@ defmodule VisionCore.Detection.SupervisorTest do
               [hef_path: "/models/m.hef", executable: "/bin/hailo_detect"]}
   end
 
+  test "keeps every QNN option to the backend" do
+    qnn = [
+      dlc_path: "/models/m.dlc",
+      qairt_dir: "/opt/qairt",
+      dsp_library_path: "/dsp",
+      cache_dir: "/data/qnn",
+      score_threshold: 0.4
+    ]
+
+    assert Supervisor.split_backend_options(
+             [backend: VisionCore.Detection.Backend.Qnn, outline_segments: 2] ++ qnn
+           ) == {VisionCore.Detection.Backend.Qnn, qnn}
+  end
+
   describe "the detection unit of a config" do
     defp config(components),
       do: %VisionCore.Config{components: components}

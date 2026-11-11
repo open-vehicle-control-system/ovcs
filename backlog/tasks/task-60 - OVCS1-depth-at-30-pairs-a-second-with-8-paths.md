@@ -1,0 +1,42 @@
+---
+id: TASK-60
+title: OVCS1 depth at 30 pairs a second with 8 paths
+status: In Progress
+assignee:
+  - '@claude'
+created_date: '2026-11-09 22:16'
+updated_date: '2026-11-10 01:08'
+labels: []
+dependencies: []
+ordinal: 55000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+On the Arduino VENTUNO Q, OVCS1's default stages at 728x544 over 128 disparities, coarse to fine with 8 fine paths, keep up with the cameras' 30 frames a second, detection running. Measured 2026-11-09: 38.1 ms a pair (26/s) with 8 fine and 3 coarse paths; 31.6 ms with 3 and 3.
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 One pair of the default stages with paths: 8 (coarse_paths 3 or more) takes at most 33 ms on the board, one pair at a time
+- [x] #2 OVCS1's live unit with paths: 8 reports depth at 29.97 Hz with detection running
+- [x] #3 Every board result equals EXLA's (0 pixels differ, matched counts equal) or, for a change of algorithm, the 2006 Middlebury half-size evaluation shows agreement with the current coarse-to-fine within 0.5 point and bad1 within 0.5 point
+- [x] #4 nx_stereo and vision_core suites pass with --include vulkan, credo clean, every change committed and pushed with its measured gain
+<!-- AC:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+At least 30 pairs a second with 8 paths; once reached, keep improving (more margin, 8 coarse paths, a wider band, fewer holes). Profile every kernel on the board with the capture compiler and vkrun, attack the largest, measure each change on the board against EXLA, commit and push it with its gain.
+1. Small kernels with poor throughput: band_base (0.7 ms), fine consistency (1.4 ms), coarse selection (2.4 ms), speckle filter (1.3 ms).
+2. A third pyramid level: quarter-size full matching, half-size band, full-size band, if the Middlebury evaluation holds.
+3. Overlap a pair's uploads and downloads with the GPU work of the previous one.
+4. Fuse kernels that pass a full volume through memory (selection with consistency and median, scans with the cost computation).
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Board, 728x544, 128 disparities, coarse 3 / fine 8 paths, detection on: live depth 29.97 Hz held over a 15-minute soak (1-second samples 28.97 to 30.97), 300 stereo pairs and 300 detections in 10 s, stereo segment busy 84 to 89% of the frame time (93% at first), CPU 13 to 20%, GPU 36 to 40 C at a steady 877 MHz (its top frequency). One pair 28 to 30 ms (was 38.1); 3/3 24 to 26 ms. Every change equal to EXLA (0/396032 pixels differ). nx_stereo: packed-byte barrel in the band scans (scans 9.4 -> 8.0 ms), 6-bit band costs (fine block 16.3 -> 15.6 ms), coarse selection unrolled with direct reads (2.11 -> 0.98 ms), 3-path selection inside the vertical scan (2.21 -> 1.81 ms), direct cost transpose (1.88 -> 0.74 ms), 8-line full-range workgroups (coarse 5.59 -> 5.31 ms), folded diagonal scans (1.78/1.77 -> 1.61/1.57 ms). The fine block is bound by memory traffic: the GPU copies at about 19 GB/s and the vertical scans reach 18. About 2 ms of each call is fixed IREE and host overhead (a stage-1-only segment takes 2.5 to 3 ms for 0.8 ms of kernels).
+<!-- SECTION:NOTES:END -->

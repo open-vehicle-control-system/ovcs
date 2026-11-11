@@ -133,6 +133,7 @@ Range and precision both come from `f × B`:
 | Wider baseline (larger `B`) | better | farther | more surfaces seen by only one camera |
 | Larger image (larger `f` in pixels) | better | farther | more pixels to match: slower |
 | More `num_disparities` | same | nearer | slower |
+| `search: "coarse_to_fine"` instead of a smaller image | same as the full size | same | much faster than the full search; thin structures can be missed |
 
 For a vehicle that must stop for obstacles between 0.5 and 3 m, a short `f × B` and enough disparities matter more than far precision; for mapping farther away, the opposite.
 

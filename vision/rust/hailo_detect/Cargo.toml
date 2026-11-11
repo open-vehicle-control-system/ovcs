@@ -7,6 +7,7 @@ edition = "2021"
 device = ["dep:bindgen"]
 
 [dependencies]
+detection = { path = "../detection" }
 framing = { path = "../framing" }
 
 [build-dependencies]

@@ -15,7 +15,8 @@ The vision unit: stereo depth and, optionally, object detection on a single boar
 | Target | Board | Capture | Stereo matching | Detection |
 |---|---|---|---|---|
 | `rpi5` | Raspberry Pi 5, optionally with a Hailo-8 | libcamera, frames synced by the Pi's camera sync | native, in the `stereo_match` Port on the CPU (`compute: :native`) | HailoRT, when the Hailo-8 is fitted |
-| `okdo_c100` | OKdo Nano C100 (Jetson Nano module) | raw V4L2, right sensor phase-locked to the left | `nx_stereo` on the GPU (Vulkan) | none yet |
+| `okdo_c100` | OKdo Nano C100 (Jetson Nano module) | raw V4L2, right sensor phase-locked to the left | `nx_stereo` on the GPU (Vulkan) | none |
+| `arduino_ventuno_q` | Arduino VENTUNO Q (Qualcomm QCS8300) | raw V4L2 through CAMSS, right sensor phase-locked to the left | `nx_stereo` on the GPU (Vulkan) | QNN, on the Hexagon NPU |
 
 A vehicle picks the board with `vision_target/0`, and the capture driver, the stereo stages' options and the compiler options for its board in its vision composer.
 
@@ -27,14 +28,14 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 |---|---|
 | [Nx](https://github.com/elixir-nx/nx) | Tensors, and the Nx stereo stages: resizing, rectification, matching, filtering, depth and the point cloud. |
 | [nx_stereo](https://github.com/Spin42/nx_stereo) | Stereo in Nx: semi-global matching (libSGM's algorithm, with its stages as precompiled Vulkan compute shaders), rectification, area resizing, the median filter, depth, the point cloud and the turbo colour map. |
-| [nx_iree](https://github.com/Spin42/nx_iree) | Compiles Nx functions with IREE and runs them through IREE's runtime, on Vulkan (C100) or the CPU (Pi 5). Functions for the device are compiled on a host into a module cache, so the device needs neither EXLA nor the IREE compiler. |
+| [nx_iree](https://github.com/Spin42/nx_iree) | Compiles Nx functions with IREE and runs them through IREE's runtime, on Vulkan (C100, VENTUNO Q) or the CPU (Pi 5). Functions for the device are compiled on a host into a module cache, so the device needs neither EXLA nor the IREE compiler. |
 | [EXLA](https://github.com/elixir-nx/nx/tree/main/exla) | Development and tests only: runs the Nx stages on the CPU in tests, and lowers Nx functions for `nx_iree` when the module cache is built. |
 | [evision](https://github.com/cocoa-xu/evision) | Tests only: OpenCV, the reference the Nx stages are checked against. |
 | [`ros2_zenoh`](../libraries/ros2_zenoh/README.md) | The ROS 2 message types, their CDR encoding and `rmw_zenoh`'s key expressions and attachments, shared with `ros_bridge`. |
 | [zenohex](https://github.com/biyooon-ex/zenohex) | Zenoh from Elixir: publishes and subscribes ROS 2 topics through the router `rmw_zenoh` uses. |
 | [yaml_elixir](https://github.com/KrisKennaway/yaml-elixir) | Reads the camera calibration files. |
 | [Phoenix](https://www.phoenixframework.org/), [Bandit](https://github.com/mtrudel/bandit) | The API: the HTTP endpoint, the JSON:API resources and the status and preview channels. |
-| [Nerves](https://nerves-project.org/) | The firmware image, on `ovcs_bridges_system_rpi5` or `nerves_system_okdo_c100`. |
+| [Nerves](https://nerves-project.org/) | The firmware image, on `ovcs_bridges_system_rpi5`, `nerves_system_okdo_c100` or `nerves_system_arduino_ventuno_q`. |
 
 ### Rust
 
@@ -43,7 +44,8 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 | [libcamera-rs](https://github.com/lit-robotics/libcamera-rs) | `camera_capture` on the Pi: the camera pipeline, its controls and the Pi's camera sync. |
 | [TurboJPEG](https://libjpeg-turbo.org/) | `camera_capture`: JPEG encoding of each frame, over FFI. |
 | [HailoRT](https://github.com/hailo-ai/hailort) | `hailo_detect`: inference on the Hailo-8, through its C API (bindgen). |
-| [libc](https://github.com/rust-lang/libc) | `v4l2_capture` on the C100: the V4L2 ioctls, mmap and poll. |
+| [libc](https://github.com/rust-lang/libc) | `v4l2_capture` on the C100 and the VENTUNO Q: the V4L2 ioctls, mmap and poll. |
+| QNN, from Qualcomm's AI Runtime (QAIRT) | `qnn_detect`: inference on the Hexagon NPU, through its C API, loaded at run time with [libloading](https://github.com/nagisa/rust_libloading); the bindings are generated with bindgen from QAIRT's headers at build time. |
 
 ### Dashboard
 

@@ -25,8 +25,11 @@ defmodule VisionCore.Stereo.Stage.Decode do
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: {:ok, %{size: {context.height, context.width}}}
+         do: NxStereo.Stage.Decode.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Decode
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left_frame, :right_frame]
@@ -35,9 +38,5 @@ defmodule VisionCore.Stereo.Stage.Decode do
   def provides, do: [:left, :right]
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, _params, %{size: size}) do
-    tensors
-    |> Map.put(:left, NxStereo.Image.resize_area(tensors.left_frame, size))
-    |> Map.put(:right, NxStereo.Image.resize_area(tensors.right_frame, size))
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Decode
 end

@@ -2,9 +2,9 @@ defmodule Ovcs1 do
   @moduledoc """
   Top-level entry point for the OVCS1 vehicle package.
 
-  Links the VMS side (`Ovcs1.Vms`) and the infotainment side
-  (`Ovcs1.Infotainment`) so consumers can dispatch through a single
-  module reference.
+  Links the VMS side (`Ovcs1.Vms`), the infotainment side
+  (`Ovcs1.Infotainment`) and the vision unit (`Ovcs1.Vision`) so
+  consumers can dispatch through a single module reference.
   """
   @behaviour OvcsVehicle
   @behaviour RadioControlBridge
@@ -22,6 +22,10 @@ defmodule Ovcs1 do
   def vms_target, do: :ovcs_base_can_system_rpi4
   @impl OvcsVehicle
   def infotainment_target, do: :ovcs_base_can_system_rpi5
+  @impl OvcsVehicle
+  def vision, do: Ovcs1.Vision.Composer
+  @impl OvcsVehicle
+  def vision_target, do: :arduino_ventuno_q
 
   @impl OvcsVehicle
   def bridge_firmwares do

@@ -43,24 +43,36 @@ defmodule VisionCore.Stereo.NxStageTest do
     refute NxStage.nx_stage?(VisionCore.Stereo.Stage.NoSuchStage)
   end
 
-  # The axes of each sum image_sums/1 traces for `shape`, the first one first.
-  defp sum_axes(shape) do
-    expression = Nx.Defn.debug_expr(&NxStage.image_sums/1).(Nx.template(shape, :s32))
-    reductions(expression, [])
-  end
+  @computation [
+    params: 2,
+    step: 3,
+    carry: 2,
+    device_only: 0,
+    compute: 1,
+    native_kind: 0,
+    native_constants: 0,
+    native_settings: 1
+  ]
 
-  defp reductions(%Nx.Tensor{data: %Nx.Defn.Expr{op: :sum, args: [inner, opts]}}, axes),
-    do: reductions(inner, [opts[:axes] | axes])
+  test "a stage computed by nx_stereo exports exactly its stage's computation callbacks" do
+    modules =
+      Enum.map(VisionCore.Stereo.Pipeline.default_stages(), &elem(&1, 0)) ++
+        [VisionCore.Stereo.Stage.MedianFilter, VisionCore.Stereo.Stage.Decode]
 
-  defp reductions(%Nx.Tensor{}, axes), do: axes
+    stages =
+      for module <- modules,
+          Code.ensure_loaded?(module),
+          function_exported?(module, :stereo_stage, 0),
+          do: module
 
-  test "sums each image of a stack in two reductions, down the columns first" do
-    assert Nx.to_list(NxStage.image_sums(Nx.iota({2, 3, 4}))) == [66, 210]
-    assert sum_axes({2, 3, 4}) == [[1], [1]]
-  end
+    assert length(stages) == length(modules)
 
-  test "sums one image in two reductions, along its rows first" do
-    assert Nx.to_number(NxStage.image_sums(Nx.iota({3, 4}))) == 66
-    assert sum_axes({3, 4}) == [[1], [0]]
+    for module <- stages, {name, arity} <- @computation do
+      stage = module.stereo_stage()
+      Code.ensure_loaded!(stage)
+
+      assert function_exported?(module, name, arity) == function_exported?(stage, name, arity),
+             "#{inspect(module)}.#{name}/#{arity} against #{inspect(stage)}"
+    end
   end
 end

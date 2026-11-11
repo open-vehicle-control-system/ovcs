@@ -1,5 +1,5 @@
-//! Captures two IMX708 sensors (Raspberry Pi Camera Module 3) over raw V4L2,
-//! locks the right sensor's frame starts to the left one's, and writes grey
+//! Captures two IMX708 (Raspberry Pi Camera Module 3) or IMX296 sensors over
+//! raw V4L2, locks the right sensor's frame starts to the left one's, and writes grey
 //! frame pairs as `{:packet, 4}` records on stdout. The command line names
 //! each side's capture node and sensor subdevice. Records on stdin change a
 //! setting each (`name=value`, see `settings`); stdin EOF stops it.
@@ -23,6 +23,7 @@ use exposure::AutoExposure;
 use framing::{log_record, metadata_record, pair_record, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
+use sensor::SensorModel;
 use settings::Settings;
 use v4l2::{Capture, Node};
 
@@ -99,11 +100,13 @@ fn wait_for_node(name: &str) -> io::Result<String> {
 }
 
 fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<Camera> {
+    let has_lens = SensorModel::for_sensor(&nodes.sensor).has_lens();
     let open = || -> io::Result<Camera> {
         host_present()?;
         let sensor = Node::open(&wait_for_node(&nodes.sensor)?)?;
         let node = Node::open(&wait_for_node(&nodes.video)?)?;
         let lens = sensor::lens_name(&nodes.sensor)
+            .filter(|_| has_lens)
             .and_then(|name| v4l2::node_named(&name).ok())
             .and_then(|path| Node::open(&path).ok());
         Ok(Camera {
@@ -123,6 +126,7 @@ fn run(
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.width * 2, arguments.height * 2);
+    let model = SensorModel::for_sensor(&arguments.left.sensor);
     let left = open_camera(&arguments.left, sensor_width, sensor_height)?;
     let right = open_camera(&arguments.right, sensor_width, sensor_height)?;
 
@@ -138,15 +142,12 @@ fn run(
     let max_exposure_lines = sensor_height as i32 + nominal_vblank - EXPOSURE_MARGIN_LINES;
     let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
         let lines = ((exposure_us * 1_000.0 / line_ns).round() as i32).clamp(1, max_exposure_lines);
-        let code = sensor::imx708_gain_code(gain, gain_range.0, gain_range.1);
+        let code = model.gain_code(gain, gain_range.0, gain_range.1);
         for camera in [&left, &right] {
             camera.sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
             camera.sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
         }
-        Ok((
-            f64::from(lines) * line_ns / 1_000.0,
-            sensor::imx708_gain(code),
-        ))
+        Ok((f64::from(lines) * line_ns / 1_000.0, model.gain(code)))
     };
     // Tells the host the exposure and gain just applied, stamped with the left frame start.
     let report_exposure = |(exposure_us, gain): (f64, f64), capture_ns: i64| -> io::Result<()> {
@@ -276,6 +277,7 @@ fn run(
                     sensor_width as usize,
                     sensor_height as usize,
                     camera.capture.row_stride,
+                    camera.capture.layout,
                     &tone,
                     settings.rotation == 180,
                 );

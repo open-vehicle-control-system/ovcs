@@ -8,7 +8,9 @@ defmodule Ovcs1.MixProject do
       elixir: "~> 1.15",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      dialyzer: [plt_add_apps: [:infotainment_core, :radio_control_bridge, :ros_bridge]]
+      dialyzer: [
+        plt_add_apps: [:infotainment_core, :radio_control_bridge, :ros_bridge, :vision_core]
+      ]
     ]
   end
 
@@ -34,6 +36,7 @@ defmodule Ovcs1.MixProject do
       {:vms_firmware, path: "../../vms/firmware"},
       {:infotainment_firmware, path: "../../infotainment/firmware"},
       {:bridge_firmware, path: "../../bridges/firmware"},
+      {:vision_firmware, path: "../../vision/firmware"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

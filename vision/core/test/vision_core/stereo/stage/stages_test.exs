@@ -262,12 +262,92 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Nx.to_list(pair.disparity) == Nx.to_list(Nx.select(Nx.greater(sgm, 0), sgm, -1.0))
   end
 
+  test "Disparity searches coarse to fine when asked, as NxStereo.sgm_coarse_to_fine/3" do
+    context = context(:stereo, 128, 48)
+    texture = texture(48, 168, 5)
+    left = texture[[.., 0..127]]
+    right = texture[[.., 37..164]]
+    opts = [search: "coarse_to_fine", num_disparities: 128, paths: 3]
+
+    expected =
+      Nx.Defn.jit_apply(&NxStereo.sgm_coarse_to_fine(&1, &2, paths: 3), [left, right],
+        compiler: EXLA
+      )
+
+    pair = run_stage(Stage.Disparity, opts, context, %{left: left, right: right})
+
+    assert Nx.to_list(pair.disparity) ==
+             Nx.to_list(Nx.select(Nx.greater(expected, 0), expected, -1.0))
+
+    assert Nx.to_number(Nx.sum(Nx.greater(pair.disparity, 36.5))) > 2000
+  end
+
+  test "Disparity's coarse_paths sets the coarse matching's paths, as paths by default" do
+    context = context(:stereo, 128, 48)
+    texture = texture(48, 168, 5)
+    left = texture[[.., 0..127]]
+    right = texture[[.., 37..164]]
+    opts = [search: "coarse_to_fine", num_disparities: 128, paths: 8, coarse_paths: 3]
+
+    expected =
+      Nx.Defn.jit_apply(
+        &NxStereo.sgm_coarse_to_fine(&1, &2, paths: 8, coarse_paths: 3),
+        [left, right],
+        compiler: EXLA
+      )
+
+    pair = run_stage(Stage.Disparity, opts, context, %{left: left, right: right})
+
+    assert Nx.to_list(pair.disparity) ==
+             Nx.to_list(Nx.select(Nx.greater(expected, 0), expected, -1.0))
+
+    for {opts, coarse_paths} <- [[paths: 3], [paths: 8], [paths: 8, coarse_paths: 3]] do
+      opts = [search: "coarse_to_fine", num_disparities: 128] ++ opts
+      assert {:ok, state} = Stage.Disparity.init(opts, context)
+      assert Stage.Disparity.options(state).coarse_paths == coarse_paths
+    end
+
+    assert {:error, _} =
+             Stage.Disparity.init(
+               [search: "coarse_to_fine", num_disparities: 128, coarse_paths: 4],
+               context
+             )
+  end
+
+  test "Disparity searches coarse to fine only over 128 disparities, at an even size, as Nx" do
+    context = context(:identity, 192, 108)
+
+    assert {:ok, state} =
+             Stage.Disparity.init([search: "coarse_to_fine", num_disparities: 128], context)
+
+    assert Stage.Disparity.compute(state) == :nx
+    assert Stage.Disparity.options(state).search == "coarse_to_fine"
+
+    assert {:error, "coarse_to_fine searches 128 disparities, got 64"} =
+             Stage.Disparity.init([search: "coarse_to_fine"], context)
+
+    assert {:error, "coarse_to_fine needs an even width and height, got 191x108"} =
+             Stage.Disparity.init(
+               [search: "coarse_to_fine", num_disparities: 128],
+               context(:identity, 191, 108)
+             )
+
+    assert {:error, "coarse_to_fine has no native matcher"} =
+             Stage.Disparity.init(
+               [search: "coarse_to_fine", num_disparities: 128, matcher: :native],
+               context
+             )
+
+    assert {:error, _} = Stage.Disparity.init([search: "fast"], context)
+  end
+
   test "Disparity declares p2 above p1, and its disparities and paths as build settings" do
     specs = Stage.Disparity.option_specs()
 
     assert %{greater_than: :p1} = specs[:p2]
     assert %{values: [64, 128], applies: :build} = specs[:num_disparities]
     assert %{values: [3, 8], applies: :build} = specs[:paths]
+    assert %{values: ["full", "coarse_to_fine"], applies: :build} = specs[:search]
     assert %{values: [3, 5], applies: :build} = Stage.MedianFilter.option_specs()[:kernel_size]
     assert %{type: :integer, applies: :build} = Stage.PointCloud.option_specs()[:decimation]
   end

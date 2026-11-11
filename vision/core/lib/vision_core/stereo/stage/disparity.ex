@@ -27,6 +27,16 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       best, 1 to 3.
     * `:paths` (8) — aggregation paths, 8 or 3: 3 takes much less time
       and leaves more pixels unmatched on dark or textureless surfaces.
+    * `:search` (`"full"`) — `"coarse_to_fine"` matches with
+      `NxStereo.sgm_coarse_to_fine/3`: the pair shrunk 2x over half the
+      disparities, then each pixel within a band of 16 disparities at
+      full resolution, for a fraction of the full search's cost and
+      mostly its matches; a structure too thin to survive the shrink can
+      take the background's disparity. It needs 128 disparities and an
+      even working size, and runs as Nx: it has no native matcher.
+    * `:coarse_paths` (`:paths`) — the coarse matching's paths, 8 or 3,
+      with `search: "coarse_to_fine"`: it only places each pixel's band,
+      so 3 costs little accuracy for much less time.
     * `:matcher` — `:native` matches natively, `:nx` compiles
       `NxStereo.sgm/3`, whatever the pipeline's `:compute`; by default,
       as the pipeline's `:compute` says. The pipeline's own `compute:`
@@ -34,8 +44,8 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       `:matcher`, it must agree.
 
   `:p1`, `:p2` and `:uniqueness` are inputs of the compiled function, so
-  they also change while running; `:num_disparities` and `:paths` are
-  fixed in it (`option_specs/0`).
+  they also change while running; `:num_disparities`, `:paths`,
+  `:search` and `:coarse_paths` are fixed in it (`option_specs/0`).
   """
   @behaviour VisionCore.Stereo.NxStage
 
@@ -47,8 +57,6 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   @census_height 7
   # Path costs are bytes in the shaders: NxStereo.sgm/3 bounds P2 so they cannot overflow.
   @max_penalty 79
-
-  @live [:p1, :p2, :uniqueness]
 
   @option_specs [
     p1: %{
@@ -78,10 +86,30 @@ defmodule VisionCore.Stereo.Stage.Disparity do
       values: [3, 8],
       applies: :build,
       description: "Aggregation paths; 3 is faster and leaves more pixels unmatched"
+    },
+    coarse_paths: %{
+      type: :integer,
+      values: [3, 8],
+      applies: :build,
+      description: "Aggregation paths of coarse_to_fine's half-size match; 3 is faster"
+    },
+    search: %{
+      type: :string,
+      values: ["full", "coarse_to_fine"],
+      applies: :build,
+      description:
+        "full searches every disparity; coarse_to_fine refines a half-size match, much faster"
     }
   ]
 
-  @defaults %{p1: 8, p2: 64, uniqueness: 1.0526315789473684, num_disparities: 64, paths: 8}
+  @defaults %{
+    p1: 8,
+    p2: 64,
+    uniqueness: 1.0526315789473684,
+    num_disparities: 64,
+    paths: 8,
+    search: "full"
+  }
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Matches the rectified pair into a disparity with semi-global matching."
@@ -98,16 +126,22 @@ defmodule VisionCore.Stereo.Stage.Disparity do
         "than the next, as on repetitive patterns. A 3 × 3 median filter ends the stage and " <>
         "removes isolated wrong pixels. Fixed in the build, num_disparities is the " <>
         "search range, which sets the nearest distance measured, and more paths leave fewer " <>
-        "holes but take longer. Watch Matched pixels and Jitter under the depth video."
+        "holes but take longer. search coarse_to_fine matches a half-size pair first, then " <>
+        "refines each pixel near that match at full size: much faster, with nearly the same " <>
+        "depth, though a pole or cable too thin for the half-size pair can be missed. Watch " <>
+        "Matched pixels and Jitter under the depth video."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
+  def init(opts, context) do
     {matcher, opts} = Keyword.pop(opts, :matcher)
+    defaults = Map.put(@defaults, :coarse_paths, Keyword.get(opts, :paths, @defaults.paths))
 
-    with :ok <- check_matcher(matcher),
-         {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, Map.put(settings, :matcher, matcher)}
+    with {:ok, settings} <- Check.init_settings(@option_specs, defaults, opts),
+         do: NxStereo.Stage.Disparity.init([matcher: matcher] ++ Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Disparity
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left, :right]
@@ -116,24 +150,16 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   def provides, do: [:disparity, :disparity_range]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "disparity"
+  defdelegate native_kind, to: NxStereo.Stage.Disparity
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: Map.take(state, @live)
+  defdelegate native_settings(state), to: NxStereo.Stage.Disparity
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, state) do
-    disparity =
-      NxStereo.sgm(tensors.left, tensors.right,
-        disparities: state.num_disparities,
-        paths: state.paths,
-        p1: params.p1,
-        p2: params.p2,
-        uniqueness: params.uniqueness
-      )
+  defdelegate params(state, context), to: NxStereo.Stage.Disparity
 
-    Map.put(tensors, :disparity, Nx.select(Nx.greater(disparity, 0), disparity, -1.0))
-  end
+  @impl VisionCore.Stereo.NxStage
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Disparity
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, state) do
@@ -151,23 +177,17 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   end
 
   @impl VisionCore.Stereo.NxStage
-  def compute(state), do: state.matcher
+  defdelegate compute(state), to: NxStereo.Stage.Disparity
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(state), do: Map.delete(state, :matcher)
+  def options(state), do: Map.take(state, Keyword.keys(@option_specs))
 
   @impl VisionCore.Stereo.NxStage
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
   end
-
-  # The matcher is an option, not a setting: it picks how the disparity is computed.
-  defp check_matcher(matcher) when matcher in [nil, :nx, :native], do: :ok
-
-  defp check_matcher(matcher),
-    do: {:error, "matcher must be :nx or :native, got #{inspect(matcher)}"}
 end

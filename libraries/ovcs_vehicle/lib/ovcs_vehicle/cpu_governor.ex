@@ -10,7 +10,11 @@ defmodule OvcsVehicle.CpuGovernor do
   system image that does not.
 
   `:glob` and `:devices` point it at other frequency governors, such as a
-  devfreq GPU's, and name them in its log line.
+  devfreq GPU's, and name them in its log line. A devfreq device that
+  offers no `performance` governor, such as the Adreno GPU of the Arduino
+  VENTUNO Q, is pinned instead: its `min_freq` is set to its `max_freq`.
+  `:await` waits up to that many milliseconds for a device whose driver
+  probes after the VM starts, as a GPU's does.
 
   Wired in as a `Task` child like `OvcsVehicle.FirmwareValidator`, and
   only on target:
@@ -41,19 +45,61 @@ defmodule OvcsVehicle.CpuGovernor do
   Never raises: a board without cpufreq keeps its current governor.
   """
   def apply_governor(opts \\ []) do
-    paths = opts |> Keyword.get(:glob, @default_glob) |> Path.wildcard()
+    glob = Keyword.get(opts, :glob, @default_glob)
+    paths = await_paths(glob, System.monotonic_time(:millisecond) + Keyword.get(opts, :await, 0))
+    devices = Keyword.get(opts, :devices, "CPU")
 
-    results = Enum.map(paths, &{&1, File.write(&1, @governor)})
+    results =
+      Enum.map(paths, fn path ->
+        case File.write(path, @governor) do
+          :ok -> {path, :governor}
+          error -> {path, pin_maximum(path, error)}
+        end
+      end)
 
-    case Enum.reject(results, fn {_, result} -> result == :ok end) do
+    count = fn outcome -> Enum.count(results, &(elem(&1, 1) == outcome)) end
+
+    case Enum.reject(results, fn {_, outcome} -> outcome in [:governor, :pinned] end) do
       [] ->
-        devices = Keyword.get(opts, :devices, "CPU")
-        Logger.info("#{__MODULE__}: #{length(paths)} #{devices}(s) set to #{@governor}")
+        Logger.info("#{__MODULE__}: #{count.(:governor)} #{devices}(s) set to #{@governor}")
+
+        if count.(:pinned) > 0,
+          do:
+            Logger.info(
+              "#{__MODULE__}: #{count.(:pinned)} #{devices}(s) pinned at their maximum frequency"
+            )
 
       failed ->
         Logger.error("#{__MODULE__}: could not set #{@governor}: #{inspect(failed)}")
     end
 
     :ok
+  end
+
+  defp await_paths(glob, deadline) do
+    case Path.wildcard(glob) do
+      [] ->
+        if System.monotonic_time(:millisecond) < deadline do
+          Process.sleep(100)
+          await_paths(glob, deadline)
+        else
+          []
+        end
+
+      paths ->
+        paths
+    end
+  end
+
+  # A devfreq device beside `governor_path` runs at its maximum once its minimum is raised to it.
+  defp pin_maximum(governor_path, error) do
+    directory = Path.dirname(governor_path)
+
+    with {:ok, maximum} <- File.read(Path.join(directory, "max_freq")),
+         :ok <- File.write(Path.join(directory, "min_freq"), String.trim(maximum)) do
+      :pinned
+    else
+      _ -> error
+    end
   end
 end

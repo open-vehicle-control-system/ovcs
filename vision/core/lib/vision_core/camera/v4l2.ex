@@ -61,6 +61,15 @@ defmodule VisionCore.Camera.V4L2 do
     * `:left_video`, `:left_sensor`, `:right_video`, `:right_sensor` — the
       V4L2 names (`/sys/class/video4linux/*/name`) of each side's capture
       node and sensor subdevice (left); the C100's CSI ports by default.
+    * `:left_csiphy`, `:right_csiphy` — on a CAMSS board such as the
+      Arduino VENTUNO Q, the CSI PHY each side's sensor is wired to (left):
+      `VisionCore.Camera.Camss` routes it, at twice `:width` × `:height`,
+      and names its nodes, in place of the four options above. Startup
+      waits up to 30 s for the media device and the sensor on each PHY,
+      which register some seconds after boot; a PHY still without a
+      sensor then stops the camera with an error naming it.
+    * `:media_runner` — runs `media-ctl` for the routing, as
+      `VisionCore.Camera.Camss.route/2`'s `:runner` (tests).
     * any setting of `control_specs/0`, by its key (left).
     * `:executable` — the capture program (default `priv/v4l2_capture`).
   """
@@ -69,7 +78,7 @@ defmodule VisionCore.Camera.V4L2 do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Frame, LibCamera}
+  alias VisionCore.Camera.{Camss, Frame, LibCamera}
   alias VisionCore.{Outputs, Timing}
 
   @pair_tag 4
@@ -78,6 +87,8 @@ defmodule VisionCore.Camera.V4L2 do
   @watchdog_interval_ms 1_000
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
+  # How long CAMSS and the sensors may take to register after the VM starts.
+  @media_timeout_ms 30_000
   # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
   @default_nodes [
     left_video: "54080000.vi-output-0",
@@ -173,6 +184,43 @@ defmodule VisionCore.Camera.V4L2 do
   """
   @impl VisionCore.Camera
   def control_specs, do: @settings
+
+  @doc """
+  `opts` with each side's nodes named after routing the sensor on its CSI
+  PHY (`:left_csiphy`, `:right_csiphy`), or unchanged without those
+  options; the routing's error otherwise.
+  """
+  @spec routed(keyword()) :: {:ok, keyword()} | {:error, String.t()}
+  def routed(opts) do
+    route_opts =
+      [
+        width: 2 * Keyword.fetch!(opts, :width),
+        height: 2 * Keyword.fetch!(opts, :height),
+        await: @media_timeout_ms
+      ] ++
+        if runner = opts[:media_runner], do: [runner: runner], else: []
+
+    Enum.reduce_while([left: :left_csiphy, right: :right_csiphy], {:ok, opts}, fn
+      {side, key}, {:ok, opts} ->
+        case Keyword.fetch(opts, key) do
+          :error ->
+            {:cont, {:ok, opts}}
+
+          {:ok, csiphy} ->
+            case Camss.route(csiphy, route_opts) do
+              {:ok, route} ->
+                {:cont,
+                 {:ok,
+                  opts
+                  |> Keyword.put(:"#{side}_video", "msm_vfe#{csiphy}_video0")
+                  |> Keyword.put(:"#{side}_sensor", route.sensor)}}
+
+              {:error, message} ->
+                {:halt, {:error, "#{side} camera: #{message}"}}
+            end
+        end
+    end)
+  end
 
   @doc false
   def port_arguments(opts) do
@@ -303,7 +351,14 @@ defmodule VisionCore.Camera.V4L2 do
     }
 
     if label == "left" do
-      {:ok, open_port(state, opts)}
+      case routed(opts) do
+        {:ok, opts} ->
+          {:ok, open_port(state, opts)}
+
+        {:error, message} ->
+          Logger.error("#{__MODULE__}: #{message}")
+          {:stop, message}
+      end
     else
       {:ok, state}
     end

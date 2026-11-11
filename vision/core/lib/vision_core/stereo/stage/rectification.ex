@@ -48,10 +48,12 @@ defmodule VisionCore.Stereo.Stage.Rectification do
 
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
-    with :ok <- check_frame_size(context),
-         {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, Map.put(settings, :size, {context.height, context.width})}
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: NxStereo.Stage.Rectification.init(Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Rectification
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:left_frame, :right_frame]
@@ -60,26 +62,22 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   def provides, do: [:left, :right]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "rectification"
+  defdelegate native_kind, to: NxStereo.Stage.Rectification
 
+  # The cameras from the context's calibrations.
   @impl VisionCore.Stereo.NxStage
   def params(state, context) do
-    right = context.right_calibration |> camera() |> move_rows(state.right_row_offset)
-    %{left: camera(context.left_calibration), right: right}
+    geometry =
+      Map.merge(context, %{
+        left_camera: camera(context.left_calibration),
+        right_camera: camera(context.right_calibration)
+      })
+
+    NxStereo.Stage.Rectification.params(state, geometry)
   end
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, %{size: size}) do
-    tensors
-    |> Map.put(
-      :left,
-      NxStereo.Rectify.rectify(tensors.left_frame, params.left, size: size)
-    )
-    |> Map.put(
-      :right,
-      NxStereo.Rectify.rectify(tensors.right_frame, params.right, size: size)
-    )
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Rectification
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
@@ -91,22 +89,6 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
-  end
-
-  defp check_frame_size(context) do
-    if context.frame_width < context.width or context.frame_height < context.height,
-      do:
-        {:error,
-         "rectification only shrinks: #{context.frame_width}x#{context.frame_height} frames " <>
-           "are smaller than the #{context.width}x#{context.height} working size"},
-      else: :ok
-  end
-
-  # Sampling row v + rows: the inverse projection's row column, times rows, joins its constant one.
-  defp move_rows(camera, rows) do
-    inverse = camera.inverse_pr
-    constant = Nx.add(inverse[[.., 2]], Nx.multiply(rows, inverse[[.., 1]]))
-    %{camera | inverse_pr: Nx.put_slice(inverse, [0, 2], Nx.reshape(constant, {3, 1}))}
   end
 
   defp camera(%CameraCalibration{} = calibration) do

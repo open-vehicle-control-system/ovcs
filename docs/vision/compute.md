@@ -5,12 +5,12 @@ description: How the vision unit runs its stereo stages, compiled from Nx for a 
 
 The [stereo stages](./stages.md) are written once and run one of two ways, depending on the board:
 
-| | OKdo Nano C100 | Raspberry Pi 5 |
-|---|---|---|
-| Stages | Nx, compiled by `nx_iree` into Vulkan compute shaders | Native Rust, in the `stereo_match` Port |
-| Runs on | the GPU: 128 Maxwell cores | the CPU: 4 Cortex-A76 cores |
-| Composer | `defn_options: VisionCore.Stereo.NxSegment.c100_defn_options/1` | `compute: :native` |
-| Detection | none | the Hailo-8, through `hailo_detect` |
+| | OKdo Nano C100 | Arduino VENTUNO Q | Raspberry Pi 5 |
+|---|---|---|---|
+| Stages | Nx, compiled by `nx_iree` into Vulkan compute shaders | Nx, compiled by `nx_iree` into Vulkan compute shaders | Native Rust, in the `stereo_match` Port |
+| Runs on | the GPU: 128 Maxwell cores | the GPU: an Adreno 623 | the CPU: 4 Cortex-A76 cores |
+| Composer | `defn_options: VisionCore.Stereo.NxSegment.c100_defn_options/1` | `defn_options: VisionCore.Stereo.NxSegment.ventuno_q_defn_options/1` | `compute: :native` |
+| Detection | none | the Hexagon NPU, through `qnn_detect` | the Hailo-8, through `hailo_detect` |
 
 Both give the same results: the native stages are tested against the Nx ones, image for image.
 
@@ -34,9 +34,12 @@ The compiler comes from the `:defn_options` of the `:stereo` component, which go
 |---|---|---|
 | EXLA (XLA) | your workstation | development and the tests; the default when EXLA is loaded |
 | [`nx_iree`](https://github.com/Spin42/nx_iree) with `vulkan-spirv` | compiled on your workstation, run on the C100's GPU | `c100_defn_options/1` |
+| `nx_iree` with `vulkan-spirv` | compiled on your workstation, run on the VENTUNO Q's GPU | `ventuno_q_defn_options/1` |
 | `nx_iree` with `llvm-cpu` | compiled on your workstation, run on the Pi 5's cores | `rpi5_defn_options/1`, for the Nx stages that have no native implementation |
 
-`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs. A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
+`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs. On a Vulkan GPU, the stages run hand-written compute shaders rather than code IREE generates: each stage's step is an `Nx.block` whose Vulkan implementation is a shader, and whose default, run everywhere else, is the stage's Nx code. Every stage's computation and shader ships with [`nx_stereo`](https://github.com/Spin42/nx_stereo): the matching's, derived from libSGM, and those of rectification, the filters, depth, the point cloud and the sharpness, row alignment and quality measures. Each stage in `vision_core` adds its settings, its dashboard text and what it publishes. IREE generates only the few operations between the blocks. The shaders read and write 32-bit words only, so they also run on GPUs without 8-bit storage, such as the Adreno of the Arduino VENTUNO Q, where code IREE generates for 8-bit values gives wrong results. For such a GPU, the defn options carry `byte_storage: false`, as `ventuno_q_defn_options/1` does: the segment's 8-bit frames and images then cross to and from the device as 32-bit words, four pixels each (`NxStereo.Packing`), so no 8-bit buffer reaches the GPU.
+
+The shaders give the Nx code's results, except where floating-point rounding differs: a rectified pixel can be 1 grey level off where a sample falls on a rounding half, the subpixel disparity follows, and depths and points can differ in their last bits, as a GPU's division is not correctly rounded. In `nx_stereo`, `mix test --include vulkan` checks each shader against its Nx code on your workstation's GPU, and `mix run bench/pipeline.exs` times each stage there; in `vision_core`, it checks the stages and a whole pipeline against EXLA. The matching shaders depend on the GPU's subgroup operations, so a new GPU needs them checked against the Nx version. A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
 
 ```sh
 cd vehicles/<vehicle>
@@ -60,6 +63,15 @@ The Jetson Nano module of the C100 has 4 Cortex-A57 cores and a 128-core Maxwell
 
 While one pair's outputs are collected, the next pair's GPU work already runs. The CPU's part is capture, the copies and publishing; the GPU does the arithmetic. The dashboard's Stereo load is the share of each second the segment takes, waits for the GPU included.
 
+## On the VENTUNO Q's GPU
+
+The QCS8300 of the Arduino VENTUNO Q has 4 Cortex-A78C and 4 Cortex-A55 cores and an Adreno 623 GPU, sharing 16 GB of memory. Its system runs Vulkan through Mesa's Turnip driver.
+
+A pair goes through the same steps as on the C100, packed into 32-bit words on its way to the GPU and unpacked on its way back, since the Adreno has no 8-bit storage. Two settings of the vision firmware serve the GPU, on this target only:
+
+- **Vulkan pool slabs.** The firmware sets `IREE_HAL_VULKAN_SLAB_SIZE` to 512 MiB through erlinit: larger slabs keep a stereo segment's transient buffers pooled.
+- **GPU clock.** `OvcsVehicle.CpuGovernor` pins the GPU at its maximum frequency, 877 MHz. It waits for the GPU's devfreq device, which appears seconds after boot.
+
 ## On the Raspberry Pi 5's CPU
 
 The Pi 5 has 4 Cortex-A76 cores at 2.4 GHz, a VideoCore VII GPU and LPDDR4X memory on a 32-bit bus. The stages run on the CPU cores, in native code:
@@ -69,7 +81,7 @@ The Pi 5 has 4 Cortex-A76 cores at 2.4 GHz, a VideoCore VII GPU and LPDDR4X memo
 
 ### The `stereo_match` Port
 
-With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`, a Rust program the BEAM drives as a Port:
+With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`, the Rust program [`nx_stereo`](https://github.com/Spin42/nx_stereo) computes its stages with on a CPU, which the BEAM drives as a Port:
 
 ```elixir
 {:stereo,
@@ -82,10 +94,10 @@ With `compute: :native` on the `:stereo` component, every default stage runs in 
 
 | Elixir side | Role |
 |---|---|
-| `VisionCore.Stereo.NativeSegment` | The counterpart of `NxSegment`: a run of consecutive native stages, configured once in the Port and run on each pair. |
-| `VisionCore.Stereo.Matcher` | The process that owns the Port, queues requests and matches each reply to its request. It reopens the Port if it exits; a request with no reply within 5 s closes it. |
+| `VisionCore.Stereo.NativeSegment` | The counterpart of `NxSegment`: a run of consecutive native stages, configured once in the Port and run on each pair. It runs nx_stereo's `NxStereo.NativeSegment` on the pipeline's pairs, as `NxSegment` runs `NxStereo.NxSegment`. |
+| `VisionCore.Stereo.Matcher` | The `NxStereo.Matcher` process that owns the Port, queues requests and matches each reply to its request. It reopens the Port if it exits; a request with no reply within 5 s closes it. |
 
-The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair, and again after a calibration reload or a restart of the Port, which loses every segment's state. The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range, so each is written once, in the stage. The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take: the pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused before, when the pipeline starts, by Rectification. The protocol has three requests, configure, run and release, each one length-prefixed record over the pipes; `vision/rust/stereo_match/src/protocol.rs` defines it.
+The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair, and again after a calibration reload or a restart of the Port, which loses every segment's state. The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range, so each is written once, in the stage. The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take: the pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused before, when the pipeline starts, by Rectification. The protocol has three requests, configure, run and release, each one length-prefixed record over the pipes; nx_stereo's `native/stereo_match/src/protocol.rs` defines it.
 
 The stages keep their names, settings and outputs, so the exporters, the dashboard and detection work the same. A stage can override the component's choice with `compute: :native` or `compute: :nx` among its options: `Pipeline.default_stages(disparity: [compute: :native])` matches natively in a pipeline otherwise compiled with Nx, and `compute: :nx` compiles a stage in a native one. `Disparity`'s `matcher:` option does the same for the matching, and must agree with a `compute:` given beside it. A stage asked to compute natively that no backend computes natively is refused at start.
 
@@ -143,12 +155,13 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | Port | Board | What it does |
 |---|---|---|
 | `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG; takes camera controls on stdin. |
-| `v4l2_capture` | C100 | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. |
-| `stereo_match` | Pi 5, workstation | The native stereo stages. |
-| `jpeg_codec` | both | Encodes grey images and coloured depth previews as JPEG, and decodes JPEG frames to grey. |
+| `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. |
+| `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
+| `jpeg_codec` | every board | Encodes grey images and coloured depth previews as JPEG, and decodes JPEG frames to grey. |
 | `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
+| `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
 
-Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`. On a workstation, `mix compile` builds `jpeg_codec` and `stereo_match` for the host. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. Each crate is described in [`vision/rust/README.md`](../../vision/rust/README.md).
+Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect` and `jpeg_codec` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`. On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. Each crate is described in [`vision/rust/README.md`](../../vision/rust/README.md).
 
 ## Grey frames on the Pi 5
 

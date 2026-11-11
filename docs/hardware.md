@@ -122,7 +122,7 @@ Each of these is optional. On the reference vehicles each runs in a bridge firmw
 |---|---|---|
 | Radio control (`RadioControlBridge`) | Raspberry Pi 3A, an ExpressLRS receiver that outputs MAVLink, an ExpressLRS handset | The reference `config.txt` loads `sc16is75x-spi` for the SC16IS752; the vehicle's `radio_control_bridge_config(:target)` reads the receiver on `ttySC0` at 460800 baud ([`vehicles/ovcs_mini/lib/ovcs_mini.ex`](../vehicles/ovcs_mini/lib/ovcs_mini.ex), [radio control bridge](./bridges/radio_control.md)) |
 | ROS (`RosBridge`) | Raspberry Pi 4 (or 5), optional BNO085 IMU on I2C, optional SLAMTEC RPLIDAR C1 and DFRobot A02YYUW ultrasonic sensors on USB serial adapters | `{:imu_publisher, driver: BNO085.I2C}`, `{:lidar_publisher, driver: RPLidar.UART}` and one `{:range_publisher, driver: A02YYUW.UART}` per sensor on target, `OvcsDrivers.Imu.Dummy` on the host ([ROS bridge](./bridges/ros.md)) |
-| Vision unit (`vision` role) | Raspberry Pi 5 with two cameras on `cam0` and `cam1` and, for detection, a Hailo-8 on a Hailo hat; or an OKdo Nano C100 with two Camera Module 3 (IMX708), powered from a dedicated supply rather than over USB | No CAN controller: it reaches the vehicle over Zenoh. On the Pi 5, the default [`config.txt`](../vision/firmware/targets/rpi5/config.txt) detects the cameras (`camera_auto_detect=1`). The OVCS Mini reference vehicle runs one with two Camera Module 3 (IMX708) and a Hailo-8, declared in its own [`config.txt`](../vehicles/ovcs_mini/priv/firmware/vision/config.txt) ([Vision unit](./vision/README.md)) |
+| Vision unit (`vision` role) | Raspberry Pi 5 with two cameras on `cam0` and `cam1` and, for detection, a Hailo-8 on a Hailo hat; or an OKdo Nano C100 with two Camera Module 3 (IMX708), powered from a dedicated supply rather than over USB; or an Arduino VENTUNO Q with two cameras on its CSI connectors, detecting on its own NPU | No CAN controller: it reaches the vehicle over Zenoh. On the Pi 5, the default [`config.txt`](../vision/firmware/targets/rpi5/config.txt) detects the cameras (`camera_auto_detect=1`). The OVCS Mini reference vehicle runs one with two Camera Module 3 (IMX708) and a Hailo-8, declared in its own [`config.txt`](../vehicles/ovcs_mini/priv/firmware/vision/config.txt). On the VENTUNO Q, `/boot/cameras.cfg` in the vehicle's rootfs overlay names the sensor on each connector; the OVCS1 reference vehicle runs one with two Raspberry Pi Global Shutter Cameras (IMX296), declared in its [`cameras.cfg`](../vehicles/ovcs1/priv/firmware/vision/rootfs_overlay/boot/cameras.cfg) ([Vision unit](./vision/README.md)) |
 | ROS compute node | Raspberry Pi 5 (8 GB), NVMe SSD in a USB enclosure, Intel AX210 on M.2, Pi 5 RTC battery | balenaOS, not Nerves; no CAN ([ROS compute node](./ros2/compute_node.md#hardware)) |
 | Infotainment | Raspberry Pi 5, a touchscreen (10-inch in OVCS1), one CAN controller on `ovcs` | The reference `config.txt` loads `mcp251xfd,spi0-0,oscillator=40000000,interrupt=25`; the composer maps `ovcs:can0` ([Infotainment](./infotainment/README.md)) |
 
@@ -151,7 +151,7 @@ For termination, grounding and supply on your own buses, follow the documentatio
 
 ## What the framework targets
 
-The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares, with an OKdo Nano C100 as the vision unit's other board, and Arduino R4 Minimas for I/O, joined by CAN interface boards. Every vehicle shares that. Two principles shape it: each manufacturer's CAN bus stays isolated, bridged only through the VMS ([Architecture](./architecture.md#bus-isolation)), and the parts stay off the shelf, so the kit is affordable and accessible.
+The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares, with an OKdo Nano C100 and an Arduino VENTUNO Q as the vision unit's other boards, and Arduino R4 Minimas for I/O, joined by CAN interface boards. Every vehicle shares that. Two principles shape it: each manufacturer's CAN bus stays isolated, bridged only through the VMS ([Architecture](./architecture.md#bus-isolation)), and the parts stay off the shelf, so the kit is affordable and accessible.
 
 ### Computing devices
 
@@ -161,7 +161,7 @@ The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwar
 | Raspberry Pi 5 | Infotainment (optional) | The `ovcs` bus |
 | Raspberry Pi 3A | Bridge firmware running the radio control bridge (optional) | The `ovcs` bus |
 | Raspberry Pi 4 or 5 | Bridge firmware running the ROS bridge (optional) | The `ovcs` bus |
-| Raspberry Pi 5, or OKdo Nano C100 | Vision unit (optional) | None; it reaches the vehicle over Zenoh |
+| Raspberry Pi 5, OKdo Nano C100, or Arduino VENTUNO Q | Vision unit (optional) | None; it reaches the vehicle over Zenoh |
 | Raspberry Pi 5 (8 GB) | ROS compute node: balenaOS, not Nerves (optional) | None; it runs the Zenoh router the bridges peer with |
 | Arduino R4 Minima | Generic controllers, as many as the vehicle declares | The `ovcs` bus |
 
@@ -182,14 +182,14 @@ The framework's `ovcs` bus carries controller adoption, heartbeats, infotainment
 | Infotainment | Raspberry Pi 5 | [`ovcs_base_can_system_rpi5`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi5) |
 | Bridge firmware running the radio control bridge | Raspberry Pi 3A | [`ovcs_base_can_system_rpi3a`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi3a) |
 | Bridge firmware running the ROS bridge | Raspberry Pi 4 or 5 | `ovcs_base_can_system_rpi4`, or `rpi5` (the `ovcs_bridges_system_rpi5` system) |
-| Vision unit | Raspberry Pi 5, or OKdo Nano C100 | `rpi5` (the `ovcs_bridges_system_rpi5` system), or `okdo_c100` (the [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) system) |
+| Vision unit | Raspberry Pi 5, OKdo Nano C100, or Arduino VENTUNO Q | `rpi5` (the `ovcs_bridges_system_rpi5` system), `okdo_c100` (the [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) system), or `arduino_ventuno_q` (the [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q) system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, `vision_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware (the vision firmware falls back to the system's own), and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
 
 ## Worked example: the OVCS1 reference vehicle
 
-OVCS1 is a 2007 Volkswagen Polo 9N converted to an electric vehicle. It uses every role the framework offers: VMS, infotainment, two bridges and generic controllers, on five isolated buses. Pin-level notes are in the [OVCS1 wiring reference](../vehicles/ovcs1/WIRING.md).
+OVCS1 is a 2007 Volkswagen Polo 9N converted to an electric vehicle. It uses every role the framework offers: VMS, infotainment, vision, two bridges and generic controllers, on five isolated buses. Pin-level notes are in the [OVCS1 wiring reference](../vehicles/ovcs1/WIRING.md).
 
 ### Components
 
@@ -250,6 +250,7 @@ The hub gives OVCS1's VMS five MCP2517FD controllers: `spi0.0` (`ovcs`), `spi0.1
 | VMS | Raspberry Pi 4 with the custom hub: five MCP2517FD, `spi0.0` `ovcs` (1 Mbps), `spi0.1` `leaf_drive`, `spi1.0` `polo_drive`, `spi1.1` `orion_bms`, `spi1.2` `misc` (500 kbps each) |
 | Infotainment | Raspberry Pi 5 with a touchscreen |
 | Bridges | Radio control on a Pi 3A; ROS on a Pi 4 with a BNO085 IMU |
+| Vision | Arduino VENTUNO Q with two Raspberry Pi Global Shutter Cameras (IMX296), 6 mm lenses, 20 cm apart, on Camera 0 and Camera 1 |
 | Controllers | Three Arduino R4 Minima: front (id 0), rear (id 1), controls (id 2) |
 | Drivetrain | Nissan Leaf AZE0 inverter and motor; NV200 cells in custom enclosures |
 | Battery and charging | Orion BMS2; EVPT23 charger |

@@ -16,6 +16,8 @@
 #   sha256
 #   licence
 #   url
+#   member (optional): the url is a zip, the model is this member of it,
+#     and the sha256 is the member's
 #
 # The sha256 is not optional. A binary fetched over the network with no
 # integrity check is a worse position than a committed one, not a
@@ -32,3 +34,7 @@ vehicles/ovcs_mini/priv/models/nanodet_repvgg.hef	001f01e35e5a568ddfc5ddd881efdb
 # because its accuracy at this resolution is the measured baseline.
 # Set OVCS_HAILO_MODEL=yolov8n to use it.
 vehicles/ovcs_mini/priv/models/yolov8n.hef	4f250daa6ac16e030cfaaf164e1cbdfe83e5852c81ae6c339c94857dd2b7b8d2	AGPL-3.0 (Ultralytics YOLOv8) — commercial use requires an Ultralytics Enterprise licence	https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8/yolov8n.hef
+
+# OVCS1's detector on the VENTUNO Q's NPU: YOLOX Small, quantised w8a8 for QNN
+# by Qualcomm AI Hub. The release is a zip; the DLC is its member.
+vehicles/ovcs1/priv/models/yolox_w8a8.dlc	7b72b64a3935432956c3d27e6d074c7c4f434ee4370677094ce7ef1634852f0b	Apache-2.0 (YOLOX, Qualcomm AI Hub)	https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/yolox/releases/v0.66.0/yolox-qnn_dlc-w8a8.zip	yolox-qnn_dlc-w8a8/yolox.dlc

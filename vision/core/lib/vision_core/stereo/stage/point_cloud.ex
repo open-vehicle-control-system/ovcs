@@ -14,10 +14,8 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   @behaviour VisionCore.Stereo.NxStage
 
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{NxStage, Pair}
+  alias VisionCore.Stereo.Pair
 
-  @min_depth_m 0.05
-  @max_depth_m 20.0
   @max_decimation 16
 
   @option_specs [
@@ -44,10 +42,13 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
         "detail. Points too near, too far or without depth are left empty, as ROS expects."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context) do
-    with {:ok, %{decimation: decimation}} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, decimation}
+  def init(opts, context) do
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: NxStereo.Stage.PointCloud.init(Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.PointCloud
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:depth_m]
@@ -56,38 +57,22 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   def provides, do: [:cloud, :cloud_points, :cloud_size]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "point_cloud"
+  defdelegate native_kind, to: NxStereo.Stage.PointCloud
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{min_depth_m: @min_depth_m, max_depth_m: @max_depth_m}
+  defdelegate native_settings(state), to: NxStereo.Stage.PointCloud
 
   @impl VisionCore.Stereo.NxStage
-  def params(_state, context) do
-    {cx, cy} = context.principal_point
-    %{focal_length_px: context.focal_length_px, cx: cx, cy: cy}
-  end
+  defdelegate native_constants, to: NxStereo.Stage.PointCloud
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, decimation) do
-    sampled = sample(tensors.depth_m, decimation)
-    in_range = Nx.logical_and(Nx.greater(sampled, @min_depth_m), Nx.less(sampled, @max_depth_m))
-    # NaN depth unprojects to a NaN point: x and y scale with z.
-    grid = in_range |> Nx.select(sampled, Nx.Constants.nan(:f32)) |> unproject(params, decimation)
-
-    kept =
-      grid[[.., .., 2]]
-      |> Nx.is_nan()
-      |> Nx.logical_not()
-      |> Nx.as_type(:s32)
-      |> NxStage.image_sums()
-
-    tensors
-    |> Map.put(:cloud_grid, grid)
-    |> Map.put(:cloud_points, kept)
-  end
+  defdelegate params(state, context), to: NxStereo.Stage.PointCloud
 
   @impl VisionCore.Stereo.NxStage
-  def finish(%Pair{} = pair, outputs, _decimation) do
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.PointCloud
+
+  @impl VisionCore.Stereo.NxStage
+  def finish(%Pair{} = pair, outputs, _state) do
     {height, width, 3} = Nx.shape(outputs.cloud_grid)
 
     %{
@@ -102,27 +87,5 @@ defmodule VisionCore.Stereo.Stage.PointCloud do
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(decimation), do: %{decimation: decimation}
-
-  defp sample(depth_m, decimation) do
-    {height, width} = Nx.shape(depth_m)
-    lengths = [div(height, decimation) * decimation, div(width, decimation) * decimation]
-    Nx.slice(depth_m, [0, 0], lengths, strides: [decimation, decimation])
-  end
-
-  # Point (i, j) from the pixel sample/2 took, (i × decimation, j × decimation).
-  defp unproject(z, params, decimation) do
-    u = z |> Nx.shape() |> Nx.iota(axis: 1, type: :f32) |> Nx.multiply(decimation)
-    v = z |> Nx.shape() |> Nx.iota(axis: 0, type: :f32) |> Nx.multiply(decimation)
-    z_over_focal_length = Nx.divide(z, params.focal_length_px)
-
-    Nx.stack(
-      [
-        Nx.multiply(Nx.subtract(u, params.cx), z_over_focal_length),
-        Nx.multiply(Nx.subtract(v, params.cy), z_over_focal_length),
-        z
-      ],
-      axis: -1
-    )
-  end
+  def options(state), do: %{decimation: state.decimation}
 end

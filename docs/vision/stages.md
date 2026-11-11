@@ -36,7 +36,7 @@ They run in this order. Each stage declares what it reads from the pair and what
 | 8 | [PointCloud](../../vision/core/lib/vision_core/stereo/stage/point_cloud.ex) | depth in metres | `cloud` | Decimated 3D points |
 | 9 | [Quality](../../vision/core/lib/vision_core/stereo/stage/quality.ex) | `disparity` | metrics | Statistics for the log line |
 
-Below, **the device** is wherever the stages run: the GPU on the C100, the `stereo_match` Port on the Pi 5. Values that stay on the device are not sent back to the BEAM.
+Below, **the device** is wherever the stages run: the GPU on the C100 and the VENTUNO Q, the `stereo_match` Port on the Pi 5. Values that stay on the device are not sent back to the BEAM.
 
 A setting is either **live** or **build**:
 

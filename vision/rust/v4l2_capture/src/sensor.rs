@@ -5,14 +5,49 @@ pub fn line_ns(sensor_width: u32, hblank: u32, pixel_rate_hz: u64) -> f64 {
     f64::from(sensor_width + hblank) * 1e9 / pixel_rate_hz as f64
 }
 
-/// The IMX708's analogue gain code for `gain`, where gain = 1024 / (1024 - code).
-pub fn imx708_gain_code(gain: f64, min_code: i32, max_code: i32) -> i32 {
-    ((1024.0 - 1024.0 / gain).round() as i32).clamp(min_code, max_code)
+/// What differs between the sensors `v4l2_capture` drives.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SensorModel {
+    /// Raspberry Pi Camera Module 3, with a lens actuator.
+    Imx708,
+    /// Global-shutter IMX296, fixed focus.
+    Imx296,
 }
 
-/// The gain an IMX708 analogue gain `code` stands for: the inverse of `imx708_gain_code`.
-pub fn imx708_gain(code: i32) -> f64 {
-    1024.0 / f64::from(1024 - code)
+impl SensorModel {
+    /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`);
+    /// the IMX708 for any other.
+    pub fn for_sensor(name: &str) -> SensorModel {
+        if name.starts_with("imx296") {
+            SensorModel::Imx296
+        } else {
+            SensorModel::Imx708
+        }
+    }
+
+    /// The analogue gain code for `gain`, within the control's range.
+    pub fn gain_code(self, gain: f64, min_code: i32, max_code: i32) -> i32 {
+        let code = match self {
+            // gain = 1024 / (1024 - code)
+            SensorModel::Imx708 => 1024.0 - 1024.0 / gain,
+            // 0.1 dB a code: gain = 10^(code / 200)
+            SensorModel::Imx296 => 200.0 * gain.log10(),
+        };
+        (code.round() as i32).clamp(min_code, max_code)
+    }
+
+    /// The gain an analogue gain `code` stands for: the inverse of `gain_code`.
+    pub fn gain(self, code: i32) -> f64 {
+        match self {
+            SensorModel::Imx708 => 1024.0 / f64::from(1024 - code),
+            SensorModel::Imx296 => 10f64.powf(f64::from(code) / 200.0),
+        }
+    }
+
+    /// Whether the camera has a lens actuator to focus.
+    pub fn has_lens(self) -> bool {
+        self == SensorModel::Imx708
+    }
 }
 
 /// The V4L2 name of the lens actuator on the Camera Module 3 whose sensor is
@@ -44,21 +79,45 @@ mod tests {
     #[test]
     fn a_gain_code_reads_back_as_the_gain_it_stands_for() {
         for gain in [2.0, 4.0, 8.0] {
-            let code = imx708_gain_code(gain, 112, 960);
-            assert!((imx708_gain(code) - gain).abs() < 0.02);
+            let code = SensorModel::Imx708.gain_code(gain, 112, 960);
+            assert!((SensorModel::Imx708.gain(code) - gain).abs() < 0.02);
         }
     }
 
     #[test]
     fn a_gain_below_the_lowest_code_reads_back_as_that_code_gain() {
-        let code = imx708_gain_code(1.0, 112, 960);
-        assert!((imx708_gain(code) - 1024.0 / 912.0).abs() < 1e-9);
+        let code = SensorModel::Imx708.gain_code(1.0, 112, 960);
+        assert!((SensorModel::Imx708.gain(code) - 1024.0 / 912.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn imx296_gain_codes_round_trip() {
+        let model = SensorModel::Imx296;
+        for gain in [1.0, 2.0, 8.0, 16.0] {
+            let code = model.gain_code(gain, 0, 480);
+            assert!((model.gain(code) / gain - 1.0).abs() < 0.006, "gain {gain}");
+        }
+        assert_eq!(model.gain_code(1.0, 0, 480), 0);
+    }
+
+    #[test]
+    fn the_model_follows_the_sensor_name() {
+        assert_eq!(
+            SensorModel::for_sensor("imx296 5-001a"),
+            SensorModel::Imx296
+        );
+        assert_eq!(
+            SensorModel::for_sensor("imx708 6-001a"),
+            SensorModel::Imx708
+        );
+        assert!(SensorModel::Imx708.has_lens());
+        assert!(!SensorModel::Imx296.has_lens());
     }
 
     #[test]
     fn imx708_gain_codes() {
-        assert_eq!(imx708_gain_code(1.0, 112, 960), 112);
-        assert_eq!(imx708_gain_code(2.0, 112, 960), 512);
-        assert_eq!(imx708_gain_code(8.0, 112, 960), 896);
+        assert_eq!(SensorModel::Imx708.gain_code(1.0, 112, 960), 112);
+        assert_eq!(SensorModel::Imx708.gain_code(2.0, 112, 960), 512);
+        assert_eq!(SensorModel::Imx708.gain_code(8.0, 112, 960), 896);
     }
 }

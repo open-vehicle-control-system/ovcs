@@ -61,15 +61,40 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 | `camera_capture`, both cameras | about 0.7 |
 | `jpeg_codec`, previews and raw images | about 0.3 |
 
+## Measured on an Arduino VENTUNO Q
+
+The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm apart, matched at 728 × 544 over 128 disparities on the Adreno 623, with YOLOX detecting on the NPU. These are measurements on one unit, not guarantees.
+
+| Figure | Measured |
+|---|---|
+| One pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 ms: depth at about 34.5 Hz of the cameras' 35, the stereo segment busy about 98% of the time |
+| One pair, `search: "coarse_to_fine"`, `paths: 3` | 25 ms |
+| Each camera | 35 frames a second |
+| Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
+| One detection request, letterbox included | 17 to 22 ms, on about 92% of the pairs at 35 Hz |
+| Generating the context binary, first boot only | about 2.4 s |
+
+### Measuring a change on the board
+
+`mix vision_core.board_bench` measures the default stages on a vision board without its cameras. Run it in `vision/core` on your workstation, with the board on your network:
+
+```shell
+mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --search coarse_to_fine --paths 8 --coarse-paths 3
+```
+
+It compiles the stages for the board, copies them there with a textured pair of frames, stops the live stereo unit, and prints how each output differs from EXLA's and the time of each pair. `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware; reboot the board afterwards. `--compute native --search full` times the stages in `stereo_match` on the board's CPU instead. Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
+
 ## What to change
 
 Each setting trades rate against something else. The matching dominates, and its cost grows with **width × height × disparities**.
 
 | Setting | Where | Effect |
 |---|---|---|
-| Working size | `:width`, `:height`, or `:match_width`, `:match_height` on the `:stereo` component | The strongest lever: half the pixels, about half the matching time. Smaller images measure far points less precisely: the focal length in pixels shrinks with the width. Keep the sensor's aspect ratio, or the image is squeezed and the calibration no longer fits. |
+| Working size | `:width`, `:height`, or `:match_width`, `:match_height` on the `:stereo` component | The strongest lever: half the pixels, about half the matching time. Smaller images measure far points less precisely: the focal length in pixels shrinks with the width. Keep the sensor's aspect ratio, or the image is squeezed and the calibration no longer fits. On a GPU without 8-bit storage, such as the Arduino VENTUNO Q's, the width must be a multiple of 4. |
 | `num_disparities` | Disparity, build | 128 measures nearer than 64 (the nearest distance is `f × B / num_disparities`) and costs about twice the matching time. |
 | `paths` | Disparity, build | 3 is much faster than 8 on a CPU, and leaves more holes on dark or textureless surfaces. |
+| `coarse_paths` | Disparity, build | With `search: "coarse_to_fine"`, the half-size match's paths, `paths` by default. It only places each pixel's band, so 3 costs little: on the 2006 Middlebury pairs about one point more of pixels off by over a pixel. |
+| `search: "coarse_to_fine"` | Disparity, build | Matches the pair shrunk 2x over 64 disparities, then each pixel within 16 disparities of that match at full size: a fraction of the full search's cost at the same range and size. It needs 128 disparities and an even working size, and runs on a GPU or Nx, not natively. On the 2006 Middlebury pairs at half size it agreed with the full search within a pixel on 96 to 99.8% of the pixels both matched; a structure too thin for the half-size pair, such as a cable, can take the background's disparity. |
 | `format: :grey` | each camera | Avoids encoding every frame to JPEG and decoding it again. Always use it on the Pi 5. |
 | `:stereo_match_threads` | `config :vision_core` | One per core by default, which measured fastest; fewer threads leave room for other work at a lower rate. |
 | `:raw_image_max_hz`, the preview's `:max_hz` | the ROS 2 exporter's `stereo:` options, `VisionCore.Config` | Fewer JPEG encodes for the raw image topics and the dashboard previews. |

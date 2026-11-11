@@ -147,6 +147,7 @@ defmodule VisionCore.Stereo.Stage.SettingsTest do
   defp live?(spec), do: Map.get(spec, :applies, :live) == :live
 
   # A spec's lowest and highest values, and those just outside its range.
+  defp bounds(%{type: :string, values: values}), do: {values, ["not_a_choice", 1]}
   defp bounds(%{values: values}), do: {values, [Enum.min(values) - 1, Enum.max(values) + 1]}
 
   defp bounds(%{type: :integer, range: {min, max}} = spec),
@@ -164,10 +165,14 @@ defmodule VisionCore.Stereo.Stage.SettingsTest do
   defp highest(%{range: {_min, max}}), do: max
 
   # The settings ordered against `key`, where they leave it free to reach both of its bounds.
+  # Other settings a value of `key` is only taken with: Disparity searches coarse to fine
+  # over 128 disparities.
+  @needs %{search: [num_disparities: 128]}
+
   defp related(specs, key) do
     lower = for {^key, %{greater_than: other}} <- specs, do: {other, lowest(specs[other])}
     higher = for {other, %{greater_than: ^key}} <- specs, do: {other, highest(specs[other])}
-    lower ++ higher
+    lower ++ higher ++ Map.get(@needs, key, [])
   end
 
   defp lowest(%{range: {min, _max}}), do: min
@@ -175,6 +180,7 @@ defmodule VisionCore.Stereo.Stage.SettingsTest do
   defp within?(%{type: :integer} = spec, value) when is_integer(value), do: accepts?(spec, value)
   defp within?(%{type: :double} = spec, value) when is_float(value), do: accepts?(spec, value)
   defp within?(%{type: :bool}, value), do: is_boolean(value)
+  defp within?(%{type: :string} = spec, value) when is_binary(value), do: accepts?(spec, value)
   defp within?(_spec, _value), do: false
 
   defp accepts?(%{values: values}, value), do: value in values

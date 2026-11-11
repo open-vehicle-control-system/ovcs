@@ -21,7 +21,7 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
 
   alias VisionCore.Parameters.Check
 
-  @radius 3
+  @radius NxStereo.Stage.SpeckleFilter.native_constants().radius
   @neighbours (2 * @radius + 1) * (2 * @radius + 1) - 1
 
   @option_specs [
@@ -54,7 +54,13 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
         "scattered dots in open space."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, _context), do: Check.init_settings(@option_specs, @defaults, opts)
+  def init(opts, context) do
+    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
+         do: NxStereo.Stage.SpeckleFilter.init(Map.to_list(settings), context)
+  end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -63,22 +69,16 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "speckle_filter"
+  defdelegate native_kind, to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{radius: @radius}
+  defdelegate native_constants, to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: options(state)
+  defdelegate params(state, context), to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    Map.put(
-      tensors,
-      :disparity,
-      despeckle(tensors.disparity, params.min_support, params.max_diff)
-    )
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.SpeckleFilter
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
@@ -90,43 +90,5 @@ defmodule VisionCore.Stereo.Stage.SpeckleFilter do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
-  end
-
-  # One gather of all 48 neighbours, unmatched outside the image, compiles to one pass.
-  defp despeckle(disparity, min_support, max_diff) do
-    {height, width} = Nx.shape(disparity)
-    padded_width = width + 2 * @radius
-
-    flat =
-      disparity
-      |> Nx.pad(-1.0, [{@radius, @radius, 0}, {@radius, @radius, 0}])
-      |> Nx.reshape({:auto, 1})
-
-    offsets =
-      for dy <- -@radius..@radius,
-          dx <- -@radius..@radius,
-          {dy, dx} != {0, 0},
-          do: dy * padded_width + dx
-
-    centres =
-      Nx.iota({height, width, 1}, axis: 0)
-      |> Nx.add(@radius)
-      |> Nx.multiply(padded_width)
-      |> Nx.add(Nx.add(Nx.iota({height, width, 1}, axis: 1), @radius))
-
-    neighbours =
-      flat
-      |> Nx.gather(Nx.new_axis(Nx.add(centres, Nx.tensor([[offsets]], type: :s32)), -1))
-      |> Nx.reshape({height, width, @neighbours})
-
-    support =
-      Nx.logical_and(
-        Nx.greater(neighbours, 0),
-        Nx.less_equal(Nx.abs(Nx.subtract(neighbours, Nx.new_axis(disparity, -1))), max_diff)
-      )
-      |> Nx.sum(axes: [2])
-
-    kept = Nx.logical_and(Nx.greater(disparity, 0), Nx.greater_equal(support, min_support))
-    Nx.select(kept, disparity, -1.0)
   end
 end

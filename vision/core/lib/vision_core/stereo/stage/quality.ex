@@ -16,8 +16,9 @@ defmodule VisionCore.Stereo.Stage.Quality do
   """
   @behaviour VisionCore.Stereo.NxStage
 
+  alias NxStereo.Diagnostics
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{NxStage, Pair}
+  alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Measures the share of matched pixels, the disparity spread and its jitter."
@@ -36,8 +37,11 @@ defmodule VisionCore.Stereo.Stage.Quality do
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: {:ok, %{size: {context.height, context.width}}}
+         do: NxStereo.Stage.Quality.init([], context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -46,49 +50,25 @@ defmodule VisionCore.Stereo.Stage.Quality do
   def provides, do: [:metrics]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "quality"
+  defdelegate native_kind, to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
-  def carry(state, _context), do: %{previous: Nx.broadcast(Nx.f32(-1), state.size)}
+  defdelegate carry(state, context), to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    current = tensors.disparity
-
-    tensors
-    |> Map.put(:quality_sums, sums(current, params.previous))
-    |> Map.put({:carry, :previous}, current)
-  end
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.Quality
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, %{size: {height, width}}) do
-    [matched, total, squares, both, change] = Nx.to_flat_list(outputs.quality_sums)
-    mean = total / max(matched, 1)
-    variance = max(squares / max(matched, 1) - mean * mean, 0.0)
+    stats = Diagnostics.disparity_stats(outputs.quality_sums, height * width)
 
     metrics = [
-      {:matched_percent, 100.0 * matched / (height * width), "%"},
-      {:mean_disparity_px, mean, "px"},
-      {:spread_px, :math.sqrt(variance), "px"},
-      {:jitter_px, change / max(both, 1), "px"}
+      {:matched_percent, 100.0 * stats.matched, "%"},
+      {:mean_disparity_px, stats.mean_px, "px"},
+      {:spread_px, stats.spread_px, "px"},
+      {:jitter_px, stats.jitter_px, "px"}
     ]
 
     %{pair | metrics: pair.metrics ++ metrics}
-  end
-
-  defp sums(current, previous) do
-    matched = current |> Nx.greater(0) |> Nx.as_type(:f32)
-    both = previous |> Nx.greater(0) |> Nx.as_type(:f32) |> Nx.multiply(matched)
-    values = Nx.multiply(current, matched)
-
-    [
-      matched,
-      values,
-      Nx.multiply(values, values),
-      both,
-      current |> Nx.subtract(previous) |> Nx.abs() |> Nx.multiply(both)
-    ]
-    |> Nx.stack()
-    |> NxStage.image_sums()
   end
 end

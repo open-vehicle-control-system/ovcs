@@ -18,7 +18,7 @@ A standalone Mix package whose top-level module implements the `OvcsVehicle` beh
 | A VMS composer (`VmsCore.Vehicle`): which component drivers run, the CAN topology, dashboard pages, controller pinouts | `vms_core` with the component drivers, managers, metrics, and the dashboard API |
 | An optional infotainment composer (`InfotainmentCore.Vehicle`): head-unit pages and CAN topology | `infotainment_core`, its API, and the Flutter dashboard |
 | Optional bridge firmware entries: which bridge libraries to bundle, on which Pi, with which CAN mapping | The bridge libraries (`RadioControlBridge`, `RosBridge`) and `OvcsBridge.Supervisor` |
-| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and an optional detector, for a vision unit on a Raspberry Pi 5 or an OKdo Nano C100 ([Vision unit](./vision/README.md)) | `vision_core`, its API and dashboard, and the Rust Ports for capture, stereo matching, JPEG and detection |
+| An optional vision composer (`VisionCore.Composer`): cameras, calibration, stereo tuning and an optional detector, for a vision unit on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q ([Vision unit](./vision/README.md)) | `vision_core`, its API and dashboard, and the Rust Ports for capture, stereo matching, JPEG and detection |
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
 | `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
@@ -158,7 +158,7 @@ A bridge firmware is the Nerves image that hosts your vehicle's extensions next 
 
 ## Vision unit
 
-A vehicle with stereo cameras adds two optional callbacks to its top-level module: `vision/0` returns its `VisionCore.Composer`, and `vision_target/0` names the board, `:rpi5` or `:okdo_c100`. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`. [Opting in](./vision/README.md#opting-in) covers the composer, its configuration arms and its required files.
+A vehicle with stereo cameras adds two optional callbacks to its top-level module: `vision/0` returns its `VisionCore.Composer`, and `vision_target/0` names the board, `:rpi5`, `:okdo_c100` or `:arduino_ventuno_q`. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`, its root filesystem files, such as the VENTUNO Q's `/boot/cameras.cfg`, in `priv/firmware/vision/rootfs_overlay/`. [Opting in](./vision/README.md#opting-in) covers the composer, its configuration arms and its required files.
 
 ## Bus wiring and node names
 

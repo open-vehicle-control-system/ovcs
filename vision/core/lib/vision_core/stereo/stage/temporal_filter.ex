@@ -29,8 +29,6 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   alias VisionCore.Parameters.Check
 
   @max_hold 10
-  # The missed count stops here, above the longest hold, so that every hold ends.
-  @max_missed 255.0
 
   @option_specs [
     alpha: %{
@@ -72,8 +70,11 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   @impl VisionCore.Stereo.NxStage
   def init(opts, context) do
     with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: {:ok, Map.put(settings, :size, {context.height, context.width})}
+         do: NxStereo.Stage.TemporalFilter.init(Map.to_list(settings), context)
   end
+
+  @impl VisionCore.Stereo.NxStage
+  def stereo_stage, do: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
   def requires, do: [:disparity]
@@ -82,43 +83,19 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def provides, do: [:disparity]
 
   @impl VisionCore.Stereo.NxStage
-  def native_kind, do: "temporal_filter"
+  defdelegate native_kind, to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def native_constants, do: %{max_missed: @max_missed}
+  defdelegate native_constants, to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def params(state, _context), do: options(state)
-
-  # `missed`: pairs since the pixel last matched.
-  @impl VisionCore.Stereo.NxStage
-  def carry(state, _context) do
-    %{
-      previous: Nx.broadcast(Nx.f32(-1), state.size),
-      missed: Nx.broadcast(Nx.f32(0), state.size)
-    }
-  end
+  defdelegate params(state, context), to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
-  def step(tensors, params, _state) do
-    current = tensors.disparity
-    smoothed = smooth(current, params.previous, params.alpha, params.delta)
-    matched = Nx.greater(current, 0)
-    missed = Nx.select(matched, 0.0, Nx.add(params.missed, 1))
+  defdelegate carry(state, context), to: NxStereo.Stage.TemporalFilter
 
-    held =
-      Nx.logical_and(
-        Nx.logical_not(matched),
-        Nx.logical_and(Nx.greater(params.previous, 0), Nx.less_equal(missed, params.hold))
-      )
-
-    filtered = Nx.select(held, params.previous, smoothed)
-
-    tensors
-    |> Map.put(:disparity, filtered)
-    |> Map.put({:carry, :previous}, filtered)
-    |> Map.put({:carry, :missed}, Nx.min(missed, @max_missed))
-  end
+  @impl VisionCore.Stereo.NxStage
+  defdelegate step(tensors, params, state), to: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
   def option_specs, do: @option_specs
@@ -130,16 +107,5 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   def set_option(state, key, value) do
     with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
          do: {:ok, %{state | key => value}}
-  end
-
-  defp smooth(current, previous, alpha, delta) do
-    agree =
-      Nx.logical_and(
-        Nx.logical_and(Nx.greater(current, 0), Nx.greater(previous, 0)),
-        Nx.less_equal(Nx.abs(Nx.subtract(current, previous)), delta)
-      )
-
-    blended = Nx.add(Nx.multiply(alpha, current), Nx.multiply(Nx.subtract(1, alpha), previous))
-    Nx.select(agree, blended, current)
   end
 end

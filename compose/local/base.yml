@@ -139,10 +139,10 @@ services:
       XAUTHORITY: /root/.Xauthority
       # Chessboard dimensions used by cameracalibrator. The defaults
       # match the standard 9×7 ROS calibration target (count of
-      # *inner* corners), with 25 mm squares — override via env if
+      # *inner* corners), with 30 mm squares — override via env if
       # you printed a different board.
       CHESSBOARD_INNER_CORNERS: ${CHESSBOARD_INNER_CORNERS:-8x6}
-      CHESSBOARD_SQUARE_M: ${CHESSBOARD_SQUARE_M:-0.025}
+      CHESSBOARD_SQUARE_M: ${CHESSBOARD_SQUARE_M:-0.030}
       # Allowed time delta (seconds) between left/right frames the
       # calibrator will pair. Our USB cameras aren't HW-synced; 0.05
       # is a good starting point.

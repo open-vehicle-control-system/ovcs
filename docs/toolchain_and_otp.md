@@ -13,7 +13,7 @@ Nerves checks the major: a firmware build stops with `Major version mismatch bet
 
 ## Current pins
 
-Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.toml` pins Erlang 29.1.2 / Elixir 1.20.4-otp-29 to match. Those entries are exact, not minimums.
+Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18, 7.3 on the VENTUNO Q), and `mise.toml` pins Erlang 29.1.2 / Elixir 1.20.4-otp-29 to match. Those entries are exact, not minimums.
 
 | Target | Used by | System release |
 |---|---|---|
@@ -22,10 +22,11 @@ Every system is on OTP 29 (`nerves_system_br` 1.35.3, Linux 6.18), and `mise.tom
 | `ovcs_base_can_system_rpi5` | `infotainment/firmware` | v3.0.0-rc.1 |
 | `rpi5` (`ovcs_bridges_system_rpi5`) | `vision/firmware`, `bridges/firmware` | v3.0.0-rc.2 |
 | `okdo_c100` (`nerves_system_okdo_c100`) | `vision/firmware` | v0.3.0 |
+| `arduino_ventuno_q` (`nerves_system_arduino_ventuno_q`) | `vision/firmware` | v0.1.0 |
 
 The Pi 5 system ships the Hailo-8 kernel driver and firmware but not the userspace library: `libraries/hailort` builds `libhailort` from source, at the same HailoRT version as the driver.
 
-Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use the first four between them, and none builds `okdo_c100`, since none has a vision unit.
+Which of these your vehicle builds depends on the targets its `OvcsVehicle` module declares; the reference vehicles use the first four between them, plus `arduino_ventuno_q` for the OVCS1 reference vehicle's vision unit; none builds `okdo_c100`.
 
 Every system is pinned to a **tag**, never to a branch. A branch moves with each release on the fork, and the next `mix deps.update` would silently change the OTP major.
 
@@ -36,7 +37,7 @@ Every system is pinned to a **tag**, never to a branch. A branch moves with each
 The systems use A/B firmware slots on the MicroSD/eMMC with automatic rollback. Two consequences are easy to break by accident.
 
 > [!NOTE]
-> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. The OVCS systems' kernels default to `performance` (`CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE`), and `OvcsVehicle.CpuGovernor` sets it again at boot in `vms_firmware`, `infotainment_firmware`, `bridge_firmware` and `vision_firmware`, on target only, so a system image with another default still runs `performance`.
+> **Every firmware pins the CPUs to the `performance` governor.** Under `schedutil`, Linux's default, interrupt latency at low clock speeds overruns the FIFO of an SPI-attached UART such as the radio control bridge's SC16IS752, and control input arrives late. The OVCS systems' kernels default to `performance` (`CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE`), and `OvcsVehicle.CpuGovernor` sets it again at boot in `vms_firmware`, `infotainment_firmware`, `bridge_firmware` and `vision_firmware`, on target only, so a system image with another default still runs `performance`. A devfreq GPU without a `performance` governor, such as the VENTUNO Q's Adreno, is pinned at its maximum frequency instead ([On the VENTUNO Q's GPU](./vision/compute.md#on-the-ventuno-qs-gpu)).
 
 > [!WARNING]
 > **Firmware must mark itself good.** An image that doesn't call `Nerves.Runtime.validate_firmware/0` is reverted on the next boot. `OvcsVehicle.FirmwareValidator` does this in `vms_firmware`, `infotainment_firmware`, `bridge_firmware` and `vision_firmware`, on target only, so every vehicle gets it for free. Remove it and every OTA update silently rolls back, NervesHub's included.

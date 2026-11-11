@@ -84,6 +84,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "detection"
+version = "0.1.0"
+
+[[package]]
 name = "drm-fourcc"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -122,6 +126,7 @@ name = "hailo_detect"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "detection",
  "framing",
 ]
 
@@ -306,6 +311,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qnn_detect"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "detection",
+ "framing",
+ "libloading",
+]
+
+[[package]]
 name = "quote"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -372,13 +387,6 @@ name = "smallvec"
 version = "1.16.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0d5d4b1981b8bbbb7aed204cae5726d683d5d6ac7e74ec54122ea28f315e7c8"
-
-[[package]]
-name = "stereo_match"
-version = "0.1.0"
-dependencies = [
- "framing",
-]
 
 [[package]]
 name = "syn"
