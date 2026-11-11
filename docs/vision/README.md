@@ -74,7 +74,7 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second, matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 paths, which keeps depth at the cameras' 30 pairs a second, and YOLOX detects objects on nearly every pair. The same composer shape works on your own vehicle with your cameras and connectors.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 35 frames a second, matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at about 34.5 pairs a second, and YOLOX detects objects on more than 9 pairs in 10. The same composer shape works on your own vehicle with your cameras and connectors.
 
 Its `priv/calibration` holds a nominal calibration until the rig is calibrated: a focal length of 869.6 px from the lens and the pixel pitch, no distortion, and the 20 cm baseline. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then either replace the two YAML files and rebuild, or commit the calibration through the ROS 2 exporter's `set_camera_info` services, as `cameracalibrator` does: with `calibration_store_dir` set on the `:stereo` component, `/data/vision/calibration` on OVCS1, a calibration committed for both sides is stored there and takes precedence over the files (`VisionCore.Stereo.Supervisor`).
 

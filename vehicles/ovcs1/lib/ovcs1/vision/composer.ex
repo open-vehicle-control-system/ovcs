@@ -69,7 +69,7 @@ defmodule Ovcs1.Vision.Composer do
        driver: VisionCore.Camera.V4L2,
        width: 728,
        height: 544,
-       fps: 30,
+       fps: 35,
        match_width: 728,
        match_height: 544,
        # The Port pairs frames whose starts are within 1 ms.
