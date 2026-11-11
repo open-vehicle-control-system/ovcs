@@ -66,7 +66,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   @doc """
-  Submit a `u8` `{height, width}` (or `{height, width, 3}` BGR) tensor
+  Submit a `u8` `{height, width}` (or `{height, width, 3}` RGB) tensor
   for detection: `:ok` when handed to the NPU, `{:error, :busy}` while a
   frame is in flight, `{:error, :unavailable}` without a Port.
   """

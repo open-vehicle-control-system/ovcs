@@ -5,7 +5,7 @@
 //! `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
 //! Records are `hailo_detect`'s (`detection::protocol`): a request carries a
-//! sequence, the image's size, 1 (grey) or 3 (BGR) channels and its pixels;
+//! sequence, the image's size, 1 (grey) or 3 (RGB) channels and its pixels;
 //! the reply the detections in the image's pixels and, when the graph ran, its
 //! time on the HTP from QNN's profile, or the wall time around its execution
 //! when the profile is unavailable; or a LOG record.

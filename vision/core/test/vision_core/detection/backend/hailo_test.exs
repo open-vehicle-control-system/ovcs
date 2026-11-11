@@ -53,6 +53,15 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert_in_delta detection.score, 0.9, 1.0e-6
   end
 
+  # The fake Port's class id is the channel count it was sent, less one.
+  test "sends an RGB frame's three channels", %{tmp_dir: tmp_dir} do
+    start_backend(tmp_dir, "answer")
+
+    assert Hailo.detect(7, Nx.iota({2, 3, 3}, type: :u8)) == :ok
+    assert_receive {:inference_detections, 7, [detection]}, 2_000
+    assert %{class_id: 2, x1: 3.0, y1: 2.0} = detection
+  end
+
   test "sums the inference times the replies carry and starts over once they are read", %{
     tmp_dir: tmp_dir
   } do

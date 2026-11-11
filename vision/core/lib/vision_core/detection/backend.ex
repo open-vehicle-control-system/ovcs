@@ -89,8 +89,9 @@ defmodule VisionCore.Detection.Backend do
   @type server :: GenServer.server()
 
   @doc """
-  Submit one image, a `u8` `{height, width}` tensor, for detection,
-  tagged with `sequence`.
+  Submit one image, a `u8` tensor, `{height, width}` grey or
+  `{height, width, 3}` RGB, for detection, tagged with `sequence`. The
+  backend shrinks it whole to its model's input, letterboxed.
 
   `:ok` means the frame was accepted and a reply will follow.
   `{:error, :busy}` means one is already in flight and this frame was

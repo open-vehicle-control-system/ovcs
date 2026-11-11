@@ -31,7 +31,7 @@ fn scaled_size(width: i32, height: i32, scale: f32) -> (i32, i32) {
     )
 }
 
-/// Bilinear resize of `source` (gray or BGR) into `destination`, a `model`x`model` RGB buffer
+/// Bilinear resize of `source` (gray or RGB) into `destination`, a `model`x`model` RGB buffer
 /// padded with 114, YOLO's conventional letterbox fill.
 pub fn letterbox_into(
     source: &[u8],
@@ -80,7 +80,7 @@ pub fn letterbox_into(
                 if channels == 1 {
                     destination[pixel..pixel + 3].fill(sample);
                 } else {
-                    destination[pixel + 2 - channel] = sample;
+                    destination[pixel + channel] = sample;
                 }
             }
         }
@@ -179,12 +179,12 @@ mod tests {
     }
 
     #[test]
-    fn bgr_is_swapped_to_rgb() {
+    fn rgb_is_copied_as_is() {
         let source = [1u8, 2, 3];
         let letterbox = letterbox_for(1, 1, 1);
         let mut destination = [0u8; 3];
         letterbox_into(&source, 1, 1, 3, &mut destination, 1, &letterbox);
-        assert_eq!(destination, [3, 2, 1]);
+        assert_eq!(destination, [1, 2, 3]);
     }
 
     #[test]

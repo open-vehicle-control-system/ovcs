@@ -1,6 +1,6 @@
 //! Port records: a detect request in, a detections record out. Scalars are little-endian.
 //!
-//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 BGR), pixels.
+//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 RGB), pixels.
 //! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
 //! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 

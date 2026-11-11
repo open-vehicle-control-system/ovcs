@@ -85,7 +85,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   @doc """
-  Submit a `u8` `{height, width}` (or `{height, width, 3}` BGR) tensor
+  Submit a `u8` `{height, width}` (or `{height, width, 3}` RGB) tensor
   for detection. Returns `:ok` when the frame was handed to the
   accelerator, `{:error, :busy}` when one is already in flight, and
   `{:error, :unavailable}` when the Port never started.

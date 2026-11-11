@@ -1,7 +1,7 @@
 //! `hailo_detect <model.hef> [score_threshold]`: the Port behind `VisionCore.Detection.Backend.Hailo`.
 //! The HEF carries its NMS in-graph, so this binary letterboxes pixels in and reads boxes back out.
 //!
-//! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
+//! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 RGB), pixels.
 //! Response (stdout): u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
 //! in the caller's pixel coordinates, then, when the frame was inferred, a u32 inference time
 //! in µs (the input's write and the output's read); or a LOG record (`framing::log_record`).
