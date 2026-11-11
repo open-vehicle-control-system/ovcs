@@ -12,6 +12,10 @@ defmodule Ovcs1.Vision.Composer do
   disparities, coarse to fine.
 
   `priv/calibration` holds the rig's calibration, from `cameracalibrator`.
+  The cameras deliver grey frames, which the ROS 2 exporter encodes to
+  JPEG; it publishes every pair (`raw_image_max_hz` at the capture rate),
+  so a consumer pairing left and right images gets frames of the same
+  capture.
 
   The GPU modules are compiled on a host into `priv/nx_iree_cache`, for
   the stages, their options and the matching size; rebuild it after
@@ -47,7 +51,9 @@ defmodule Ovcs1.Vision.Composer do
         stereo_component(),
         {:qnn_detector, dlc_path: Application.app_dir(:ovcs1, @dlc), score_threshold: 0.4}
       ],
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [], stereo: [], detections: []}]
+      exporters: [
+        {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [raw_image_max_hz: 35], detections: []}
+      ]
     }
   end
 
