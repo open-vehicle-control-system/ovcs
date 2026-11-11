@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { ISSUE_WORDING, PAIR_ISSUES, issueWording } from '../pairIssues.js'
+import { DEPTH_ISSUES, ISSUE_ACTION, ISSUE_WORDING, PAIR_ISSUES, issueWording } from '../issues.js'
 
-describe('pair issues', () => {
-  it('words every issue the unit raises', () => {
-    for (const issue of Object.values(PAIR_ISSUES)) expect(ISSUE_WORDING[issue]).toBeTruthy()
+describe('issues', () => {
+  it('words every issue the unit raises, and names what to do about it', () => {
+    for (const issue of [...Object.values(PAIR_ISSUES), ...Object.values(DEPTH_ISSUES)]) {
+      expect(ISSUE_WORDING[issue]).toBeTruthy()
+      expect(ISSUE_ACTION[issue]).toBeTruthy()
+    }
   })
 
   it("shows an issue it does not know by the unit's code", () => {

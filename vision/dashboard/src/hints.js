@@ -63,6 +63,26 @@ export const HINTS = {
       'Which camera is less sharp than the other, and by how much. The unit warns when their focus differs ' +
       'enough to cost matching; the softer camera shows the warning.'
   },
+  brightness: {
+    title: 'Brightness',
+    text:
+      'Which camera’s image is brighter than the other’s, and by how much, at the same exposure and gain. ' +
+      'A camera much brighter than the other sees through a hazy, dirty or different lens: the unit warns, and ' +
+      'that camera shows the warning.'
+  },
+  dropped: {
+    title: 'Dropped',
+    text:
+      'The share of the pairs the cameras deliver that never become depth, because the stereo work takes longer ' +
+      'than a frame. The unit warns past 5 %: lower the cameras’ frame rate or the stereo work.'
+  },
+  tooNear: {
+    title: 'Too near',
+    text:
+      'The share of the matched pixels in the nearest band the depth measures, and the distance that range ' +
+      'stops at. Anything nearer is out of range and matched wrongly: the unit warns when much of the scene ' +
+      'is there. Move back, or widen the disparity range.'
+  },
   colourScale: {
     title: 'Colour scale',
     text:
