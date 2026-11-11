@@ -375,13 +375,14 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`; it is `null` on a unit without one.
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`; it is `null` on a unit without one.
 
 ```json
 {
   "cameras": {
     "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
-    "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]}
+    "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]},
+    "hq": {"present": true, "fps": 10.0, "exposureTimeUs": 12000, "analogueGain": 4}
   },
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
   "pair": {

@@ -15,7 +15,8 @@ defmodule VisionApiWeb.StatusJSONTest do
           colour_temperature: 5_000,
           issues: []
         },
-        right: %{present: false, issues: [:large_row_correction]}
+        right: %{present: false, issues: [:large_row_correction]},
+        hq: %{present: true, fps: 10.0, exposure_time_us: 4_000, analogue_gain: 1.5}
       },
       sync: %{present: true, pairs: 150, offset_max_ms: 0.7, offset_median_ms: -0.01},
       pair: %{
@@ -69,7 +70,8 @@ defmodule VisionApiWeb.StatusJSONTest do
                  colourTemperature: 5_000,
                  issues: []
                },
-               right: %{present: false, issues: [:large_row_correction]}
+               right: %{present: false, issues: [:large_row_correction]},
+               hq: %{present: true, fps: 10.0, exposureTimeUs: 4_000, analogueGain: 1.5}
              },
              sync: %{present: true, pairs: 150, offsetMaxMs: 0.7, offsetMedianMs: -0.01},
              pair: %{

@@ -305,6 +305,68 @@ defmodule VisionCore.StatusTest do
                    500
   end
 
+  # A camera of its own: registered under its name, answering `live/1` with the figures of its capture.
+  defmodule NamedCamera do
+    use GenServer
+
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def live(server), do: GenServer.call(server, :live)
+
+    def start_link(name), do: GenServer.start_link(__MODULE__, nil, name: name_for(name))
+
+    @impl GenServer
+    def init(_), do: {:ok, nil}
+
+    @impl GenServer
+    def handle_call(:live, _from, state),
+      do:
+        {:reply,
+         %{
+           exposure_time_us: 8_000,
+           analogue_gain: 2.0,
+           colour_temperature: 5_000,
+           received_ms: 1
+         }, state}
+  end
+
+  describe "a camera of its own" do
+    defp hq_config, do: config([{:camera, name: :hq, driver: NamedCamera}])
+
+    test "is absent while it is not running" do
+      start_supervised!({Status, config: hq_config()})
+
+      assert Status.snapshot().cameras.hq == %{present: false}
+    end
+
+    test "reports its rate over the tick and the figures its driver's live/1 gives" do
+      start_supervised!(%{id: :hq, start: {NamedCamera, :start_link, ["hq"]}})
+      start_supervised!({Status, config: hq_config(), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      frame = %Frame{label: "hq", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
+
+      for _ <- 1..4,
+          do: Outputs.publish({:camera_frame, NamedCamera.name_for("hq")}, {:camera_frame, frame})
+
+      assert_receive {:vision_status, %{cameras: %{hq: %{fps: fps} = hq}}} when fps > 0.0, 500
+
+      assert hq == %{
+               present: true,
+               fps: fps,
+               exposure_time_us: 8_000,
+               analogue_gain: 2.0,
+               colour_temperature: 5_000
+             }
+    end
+
+    test "leaves the stereo sides' entries as they are" do
+      start_supervised!({Status, config: hq_config()})
+
+      assert %{left: %{present: false, issues: []}, right: %{present: false, issues: []}} =
+               Status.snapshot().cameras
+    end
+  end
+
   test "each tick reports the row alignment averaged over its pairs" do
     start_supervised!({Status, config: config([]), tick_ms: 200})
     :ok = Status.subscribe()

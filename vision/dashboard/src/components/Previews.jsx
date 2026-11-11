@@ -155,8 +155,8 @@ function useCameraNames() {
     .filter((name) => !STEREO_SIDES.includes(name))
 }
 
-/** A preview for each camera of its own, titled by its name, sharing the depth's row and height. */
-function CameraPreviews({ socket }) {
+/** A preview for each camera of its own, titled by its name, with its rate, exposure and gain, sharing the depth's row and height. */
+function CameraPreviews({ status, socket }) {
   return useCameraNames().map((name) => (
     <Preview
       key={name}
@@ -164,7 +164,9 @@ function CameraPreviews({ socket }) {
       socket={socket}
       className="lg:flex lg:min-h-0 lg:flex-col"
       frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
-    />
+    >
+      {status?.cameras?.[name] ? <Figures id={name} figures={cameraFigures(status.cameras[name])} /> : null}
+    </Preview>
   ))
 }
 
@@ -264,7 +266,7 @@ export default function Previews({ status, socket }) {
       </div>
       <div data-cameras className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)]">
         <DepthPreview status={status} socket={socket} />
-        <CameraPreviews socket={socket} />
+        <CameraPreviews status={status} socket={socket} />
       </div>
     </section>
   )

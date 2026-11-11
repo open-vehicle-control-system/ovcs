@@ -177,6 +177,20 @@ describe('Previews', () => {
       expect(figure('usb')).not.toBeNull()
     })
 
+    it("puts a camera of its own's rate, exposure and gain under its preview, nothing while the status has none", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
+      const hq = { present: true, fps: 9.8, exposureTimeUs: 12000, analogueGain: 4.0 }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, hq } }} socket={socket} />)
+
+      const shown = (label) => card('hq').querySelector(`[data-figure="${label}"]`).textContent
+      expect(figure('hq').contains(card('hq'))).toBe(true)
+      expect(shown('rate')).toBe('rate9.8 fps')
+      expect(shown('exposure')).toBe('exposure12.0 ms')
+      expect(shown('gain')).toBe('gain4.0')
+      expect(card('usb')).toBeNull()
+    })
+
     it('shows none without a camera of its own, the depth alone filling the row below the pair', () => {
       listed('camera_frame:left', 'camera_frame:right', 'stereo_pair')
       const { socket } = liveSocket()

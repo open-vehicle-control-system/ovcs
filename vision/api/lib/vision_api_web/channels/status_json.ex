@@ -1,7 +1,8 @@
 defmodule VisionApiWeb.StatusJSON do
   @moduledoc """
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
-  same fields with camelCase keys, states as strings, and
+  same fields with camelCase keys (`cameras` holds the sides and each camera
+  of its own, by name), states as strings, and
   `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
   without one. A camera's or the sync's fields that were not measured
   are left out. Each exporter's status is a `level` and a `detail`, as
@@ -34,10 +35,8 @@ defmodule VisionApiWeb.StatusJSON do
   @spec status(VisionCore.Status.snapshot()) :: map()
   def status(snapshot) do
     %{
-      cameras: %{
-        left: rename(snapshot.cameras.left, @camera_keys),
-        right: rename(snapshot.cameras.right, @camera_keys)
-      },
+      cameras:
+        Map.new(snapshot.cameras, fn {name, camera} -> {name, rename(camera, @camera_keys)} end),
       sync: rename(snapshot.sync, @sync_keys),
       pair: checks(snapshot.pair),
       depth: checks(snapshot.depth),
