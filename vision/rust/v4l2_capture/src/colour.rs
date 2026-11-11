@@ -37,14 +37,19 @@ impl ContrastTable {
 
     /// The table of `curve`, from a 16-bit linear input to a 16-bit output.
     pub fn from_curve(curve: impl Fn(f64) -> f64) -> ContrastTable {
-        let last = (CONTRAST_ENTRIES - 1) as f64;
         let table = Box::new(std::array::from_fn(|entry| {
-            let input = entry as f64 * f64::from(LINEAR_MAX) / last;
+            let input = f64::from((entry as u32) << CONTRAST_SHIFT);
             (curve(input) * 255.0 / f64::from(LINEAR_MAX))
                 .round()
                 .clamp(0.0, 255.0) as u8
         }));
         ContrastTable { table }
+    }
+
+    /// The 8-bit output of the linear value `linear`.
+    #[cfg(test)]
+    pub fn shown(&self, linear: i32) -> u8 {
+        self.output(entry(linear))
     }
 
     /// The output of the table's `entry`th entry.
@@ -53,9 +58,11 @@ impl ContrastTable {
     }
 }
 
-/// The contrast table's entry of the linear value `linear`.
+/// The contrast table's entry nearest the linear value `linear`.
 fn entry(linear: i32) -> u16 {
-    (linear.clamp(0, LINEAR_MAX as i32) >> CONTRAST_SHIFT) as u16
+    let half = 1 << (CONTRAST_SHIFT - 1);
+    ((linear.clamp(0, LINEAR_MAX as i32) + half) >> CONTRAST_SHIFT).min(CONTRAST_ENTRIES as i32 - 1)
+        as u16
 }
 
 /// How a frame's raw samples become colour.
@@ -732,6 +739,24 @@ mod tests {
             rgb_full(&frame, &colour, false, &mut buffers),
             full(&frame, &colour, false)
         );
+    }
+
+    #[test]
+    fn a_linear_value_takes_the_contrast_entry_nearest_it() {
+        // Black at the entry of 1600, white at the entry of 1616.
+        let step = ContrastTable::from_curve(|x| if x < 1608.0 { 0.0 } else { 65535.0 });
+        assert_eq!(step.shown(1607), 0);
+        assert_eq!(step.shown(1608), 255);
+        assert_eq!(step.shown(-50), 0);
+        assert_eq!(step.shown(70_000), 255);
+    }
+
+    #[test]
+    fn each_contrast_entry_is_the_curve_at_16_times_its_index() {
+        let step = ContrastTable::from_curve(|x| if x <= 16_000.0 { 0.0 } else { 65535.0 });
+        assert_eq!(step.shown(16_000), 0);
+        assert_eq!(step.shown(16_016), 255);
+        assert_eq!(linear().shown(65_535), 255);
     }
 
     fn full(frame: &RawFrame, colour: &Colour, rotate_180: bool) -> Vec<u8> {
