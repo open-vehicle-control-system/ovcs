@@ -1,5 +1,7 @@
 //! Conversions between physical settings and the sensor's V4L2 controls.
 
+use crate::tuning::{self, Tuning};
+
 /// Line time in nanoseconds: the line length in pixels over the pixel rate.
 pub fn line_ns(sensor_width: u32, hblank: u32, pixel_rate_hz: u64) -> f64 {
     f64::from(sensor_width + hblank) * 1e9 / pixel_rate_hz as f64
@@ -51,6 +53,14 @@ impl SensorModel {
     /// Whether the camera has a lens actuator to focus.
     pub fn has_lens(self) -> bool {
         self == SensorModel::Imx708
+    }
+
+    /// The colour tuning of the sensor, if it has one.
+    pub fn tuning(self) -> Option<&'static Tuning> {
+        match self {
+            SensorModel::Imx477 => Some(&tuning::imx477::TUNING),
+            SensorModel::Imx708 | SensorModel::Imx296 => None,
+        }
     }
 
     /// The bits per sample of the mode `v4l2_capture` captures.
@@ -134,6 +144,13 @@ mod tests {
         assert_eq!(model.sample_bits(), 12);
         assert_eq!(SensorModel::Imx708.sample_bits(), 10);
         assert_eq!(SensorModel::Imx296.sample_bits(), 10);
+    }
+
+    #[test]
+    fn only_the_imx477_has_a_colour_tuning() {
+        assert!(SensorModel::Imx477.tuning().is_some());
+        assert!(SensorModel::Imx708.tuning().is_none());
+        assert!(SensorModel::Imx296.tuning().is_none());
     }
 
     #[test]

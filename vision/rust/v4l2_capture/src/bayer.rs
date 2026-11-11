@@ -69,6 +69,14 @@ impl Layout {
             Layout::Packed12 => width * 3 / 2,
         }
     }
+
+    /// The bits of each sample.
+    pub fn sample_bits(self) -> u32 {
+        match self {
+            Layout::Unpacked16 | Layout::Packed10 => 10,
+            Layout::Packed12 => 12,
+        }
+    }
 }
 
 /// The samples of one row, `out.len()` of them: a multiple of 4 for `Packed10`, of 2 for `Packed12`.

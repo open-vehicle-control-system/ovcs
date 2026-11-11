@@ -8,6 +8,7 @@
 
 mod arguments;
 mod bayer;
+mod colour;
 mod exposure;
 mod input;
 mod lock;
@@ -15,6 +16,7 @@ mod pairing;
 mod sensor;
 mod settings;
 mod single;
+mod tuning;
 mod v4l2;
 mod white_balance;
 

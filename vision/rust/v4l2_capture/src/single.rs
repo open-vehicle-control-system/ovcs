@@ -1,7 +1,9 @@
 //! A single colour camera: captures its raw RGGB frames, demosaics them at
 //! the capture's size or each 2x2 cell into one pixel, with grey-world white
 //! balance, runs auto exposure on the green of the RGGB cells, and writes
-//! RGB_FRAME records on stdout.
+//! RGB_FRAME records on stdout. A sensor with a tuning takes its colour path
+//! (`colour`): lens shading, white balance, the colour correction matrix and
+//! the contrast curve of its colour temperature; another one its gamma.
 
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
@@ -10,10 +12,12 @@ use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
 
 use crate::arguments::{Output, SingleArguments};
 use crate::bayer::{self, RawFrame, Tone};
+use crate::colour::{self, Colour, ContrastTable};
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
+use crate::tuning::Tuning;
 use crate::v4l2;
-use crate::white_balance;
+use crate::white_balance::{self, Gains};
 use crate::{
     auto_exposure, auto_exposure_from, input, open_camera, pollfd, resume_point,
     EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
@@ -69,6 +73,10 @@ pub fn run(
             model.sample_bits(),
         )
     };
+    let tuned = model.tuning().map(|tuning| TunedColour {
+        tuning,
+        contrast: ContrastTable::new(tuning),
+    });
     let mut settings = arguments.settings.clone();
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
@@ -137,10 +145,14 @@ pub fn run(
                 LogLevel::Info,
                 &format!(
                     "last {STATISTICS_EVERY_S} s: frames {}, incomplete {}, \
-                     {} us per conversion, white balance {gains:?}",
+                     {} us per conversion, white balance {gains:?}{}",
                     statistics[0],
                     statistics[1],
-                    conversion_ns / 1_000 / u128::from(statistics[0].max(1))
+                    conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
+                    tuned
+                        .as_ref()
+                        .map(|tuned| format!(", {:.0} K", tuned.tuning.colour_temperature(gains)))
+                        .unwrap_or_default()
                 ),
             );
             statistics = [0; 2];
@@ -162,18 +174,15 @@ pub fn run(
                 row_stride: camera.capture.row_stride,
                 layout: camera.capture.layout,
             };
-            let rotate_180 = settings.capture.rotation == 180;
-            let rgb = match arguments.output {
-                Output::Full => bayer::rgb_full(&raw, &tone, gains, rotate_180),
-                Output::Half => bayer::rgb_half(&raw, &tone, gains, rotate_180),
+            let (rgb, means) = match &tuned {
+                Some(tuned) => develop_tuned(&raw, arguments.output, &settings, gains, tuned),
+                None => develop(&raw, arguments.output, &settings, gains, &tone),
             };
             frames += 1;
             let exposure_mean = (settings.capture.auto_exposure
                 && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES))
             .then(|| bayer::toned_green_mean(&raw, &tone, MEASURED_ROW_STEP));
-            if settings.awb {
-                let means =
-                    bayer::channel_means(&raw, settings.capture.black_level, MEASURED_ROW_STEP);
+            if let Some(means) = means {
                 gains = white_balance::grey_world(means, gains);
             }
             conversion_ns += converting.elapsed().as_nanos();
@@ -190,4 +199,70 @@ pub fn run(
             ])?;
         }
     }
+}
+
+/// A sensor's tuning, and the table of its contrast curve.
+struct TunedColour {
+    tuning: &'static Tuning,
+    contrast: ContrastTable,
+}
+
+/// `raw` in RGB at the size of `output`, through `tuned`'s colour path at
+/// the colour temperature of `gains`, and with `settings.awb` the channel
+/// means white balance measures after lens shading.
+fn develop_tuned(
+    raw: &RawFrame,
+    output: Output,
+    settings: &ColourSettings,
+    gains: Gains,
+    tuned: &TunedColour,
+) -> (Vec<u8>, Option<[f64; 3]>) {
+    let kelvin = tuned.tuning.colour_temperature(gains);
+    let shading = tuned.tuning.lens_shading(kelvin);
+    let colour = Colour {
+        black_level: settings.capture.black_level,
+        shading: &shading,
+        white_balance: gains,
+        matrix: if settings.ccm {
+            tuned.tuning.colour_matrix(kelvin)
+        } else {
+            colour::IDENTITY
+        },
+        contrast: &tuned.contrast,
+    };
+    let rotate_180 = settings.capture.rotation == 180;
+    let rgb = match output {
+        Output::Full => colour::rgb_full(raw, &colour, rotate_180),
+        Output::Half => colour::rgb_half(raw, &colour, rotate_180),
+    };
+    let means = settings.awb.then(|| {
+        colour::shaded_channel_means(
+            raw,
+            settings.capture.black_level,
+            &shading,
+            MEASURED_ROW_STEP,
+        )
+    });
+    (rgb, means)
+}
+
+/// `raw` in RGB at the size of `output`, white balanced by `gains` then
+/// through `tone`, and with `settings.awb` the channel means white balance
+/// measures.
+fn develop(
+    raw: &RawFrame,
+    output: Output,
+    settings: &ColourSettings,
+    gains: Gains,
+    tone: &Tone,
+) -> (Vec<u8>, Option<[f64; 3]>) {
+    let rotate_180 = settings.capture.rotation == 180;
+    let rgb = match output {
+        Output::Full => bayer::rgb_full(raw, tone, gains, rotate_180),
+        Output::Half => bayer::rgb_half(raw, tone, gains, rotate_180),
+    };
+    let means = settings
+        .awb
+        .then(|| bayer::channel_means(raw, settings.capture.black_level, MEASURED_ROW_STEP));
+    (rgb, means)
 }

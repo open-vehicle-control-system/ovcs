@@ -85,7 +85,7 @@ impl Settings {
 }
 
 /// The settings of a colour camera: those of `Settings`, the black level in
-/// 12 bits, and white balance.
+/// 12 bits, white balance and colour correction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColourSettings {
     pub capture: Settings,
@@ -93,6 +93,8 @@ pub struct ColourSettings {
     pub awb: bool,
     pub red_gain: f64,
     pub blue_gain: f64,
+    /// The tuning's colour correction matrix, on sensors with a tuning.
+    pub ccm: bool,
 }
 
 impl Default for ColourSettings {
@@ -105,6 +107,7 @@ impl Default for ColourSettings {
             awb: true,
             red_gain: 1.0,
             blue_gain: 1.0,
+            ccm: true,
         }
     }
 }
@@ -119,6 +122,7 @@ impl ColourSettings {
         };
         match name {
             "awb" => self.awb = boolean(value).ok_or_else(invalid)?,
+            "ccm" => self.ccm = boolean(value).ok_or_else(invalid)?,
             "red_gain" => self.red_gain = gain()?,
             "blue_gain" => self.blue_gain = gain()?,
             "black_level" => {
@@ -239,6 +243,16 @@ mod tests {
         );
         assert_eq!(settings.capture.black_level, 4094);
         assert_eq!(settings.capture.rotation, 180);
+    }
+
+    #[test]
+    fn a_colour_camera_corrects_colours_with_its_matrix_unless_told_not_to() {
+        let mut settings = ColourSettings::default();
+        assert!(settings.ccm);
+        settings.apply(b"ccm=false").unwrap();
+        assert!(!settings.ccm);
+        assert!(settings.apply(b"ccm=sometimes").is_err());
+        assert!(!settings.ccm);
     }
 
     #[test]
