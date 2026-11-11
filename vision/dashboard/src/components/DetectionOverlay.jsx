@@ -2,10 +2,13 @@ import { useFrameSize } from './Preview.jsx'
 import { formatNumber } from '../status.js'
 
 const distance = (detection) => `${formatNumber(detection.distanceM)}\u00a0m`
+const caption = (detection) => (detection.distanceM == null ? detection.label : `${detection.label} ${distance(detection)}`)
+const described = (detection) =>
+  detection.distanceM == null ? detection.label : `${detection.label} at ${distance(detection)}`
 
 /**
  * The detected objects over a preview's frame: each outline, given as fractions of the image, and a label with its
- * distance. The view box is the frame's own size, fitted like the frame, so the boxes stay on it at any size.
+ * distance, when it has one. The view box is the frame's own size, fitted like the frame, so the boxes stay on it at any size.
  */
 export default function DetectionOverlay({ detections }) {
   const { width, height } = useFrameSize()
@@ -13,7 +16,7 @@ export default function DetectionOverlay({ detections }) {
   // What it draws, said in words; with nothing drawn it is hidden.
   const description =
     detections.length > 0
-      ? `Detected: ${detections.map((detection) => `${detection.label} at ${distance(detection)}`).join(', ')}`
+      ? `Detected: ${detections.map(described).join(', ')}`
       : undefined
 
   return (
@@ -42,7 +45,7 @@ export default function DetectionOverlay({ detections }) {
               strokeWidth={fontSize / 5}
               paintOrder="stroke"
             >
-              {`${detection.label} ${distance(detection)}`}
+              {caption(detection)}
             </text>
           </g>
         )

@@ -216,14 +216,16 @@ describe('Previews', () => {
       outline: [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
     }
 
-    function showLeftFrame(push) {
-      URL.createObjectURL = vi.fn(() => 'blob:left')
+    function showFrame(push, stream) {
+      URL.createObjectURL = vi.fn(() => `blob:${stream}`)
       URL.revokeObjectURL = vi.fn()
-      push('preview:left', 'frame', new Uint8Array([1]).buffer)
-      const image = screen.getByRole('img', { name: 'left preview' })
+      push(`preview:${stream}`, 'frame', new Uint8Array([1]).buffer)
+      const image = screen.getByRole('img', { name: `${stream} preview` })
       Object.defineProperties(image, { naturalWidth: { value: 480 }, naturalHeight: { value: 270 } })
       fireEvent.load(image)
     }
+
+    const showLeftFrame = (push) => showFrame(push, 'left')
 
     it("labels an object above its outline's top-left, whichever vertex comes first", () => {
       listed('detections')
@@ -335,6 +337,72 @@ describe('Previews', () => {
         expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
         expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-label')).toBe('Detected: person at 1.8 m')
         expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
+      })
+    })
+
+    describe('on a camera of its own', () => {
+      // The API names each pipeline's source: "left" for the stereo pair, a camera's name for its own.
+      const listedWithSources = () =>
+        useExporters.setState({
+          exporters: [
+            {
+              id: 'api',
+              name: 'API',
+              outputs: [
+                { name: 'camera_frame:left', maxHz: 5 },
+                { name: 'camera_frame:hq', maxHz: 5 },
+                { name: 'detections', maxHz: 5, source: 'left' },
+                { name: 'detections:hq_people', maxHz: 5, source: 'hq' }
+              ]
+            }
+          ]
+        })
+
+      const car = { label: 'car', score: 0.7, distanceM: null, outline: [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]] }
+
+      it("draws a camera pipeline's boxes on that camera's preview, not the left one, joining each channel once", () => {
+        listedWithSources()
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showFrame(push, 'left')
+        showFrame(push, 'hq')
+
+        push('detections:hq_people', 'detections', { detections: [car, person] })
+        push('detections', 'detections', { detections: [person] })
+
+        const topics = socket.channel.mock.calls.map(([topic]) => topic).filter((topic) => topic.startsWith('detections'))
+        expect(topics.sort()).toEqual(['detections', 'detections:hq_people'])
+        expect(figure('hq').querySelectorAll('svg[data-detections]')).toHaveLength(1)
+        expect(figure('hq').querySelectorAll('svg[data-detections] polygon')).toHaveLength(2)
+        expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(1)
+        expect(card('hq').querySelector('[data-figure="objects"]').textContent).toBe('objects2')
+        expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
+      })
+
+      it('captions an object without a distance by its label alone', () => {
+        listedWithSources()
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showFrame(push, 'hq')
+
+        push('detections:hq_people', 'detections', { detections: [car] })
+
+        const overlay = figure('hq').querySelector('svg[data-detections]')
+        expect(overlay.querySelector('text').textContent).toBe('car')
+        expect(overlay.getAttribute('aria-label')).toBe('Detected: car')
+      })
+
+      it('draws a pipeline whose source the API does not name on the left preview', () => {
+        listed('camera_frame:hq', 'detections:road_signs')
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showFrame(push, 'left')
+        showFrame(push, 'hq')
+
+        push('detections:road_signs', 'detections', { detections: [person] })
+
+        expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
+        expect(figure('hq').querySelector('svg[data-detections]')).toBeNull()
       })
     })
   })

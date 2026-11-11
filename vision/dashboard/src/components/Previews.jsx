@@ -134,11 +134,30 @@ const needsAction = ({ actions }) => actions.length > 0
 
 const DETECTIONS = 'detections'
 
-/** The detection channels to join: each `detections` output the API exporter lists, the default pipeline's and every named one's. */
-function useDetectionTopics() {
+/**
+ * The detection channels to join on the preview of `source`, `left` or a camera's name: each `detections` output the
+ * API exporter lists whose pipeline's source it is, `left` when the API names none.
+ */
+function useDetectionTopics(source) {
   const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
 
-  return (outputs ?? []).map(({ name }) => name).filter((name) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
+  return (outputs ?? [])
+    .filter(({ name }) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
+    .filter((output) => (output.source ?? 'left') === source)
+    .map(({ name }) => name)
+}
+
+/** The latest results of the detection channels drawn on the preview of `source`: their overlays, and all their objects, `null` before any answers. */
+function useSourceDetections(socket, source) {
+  const topics = useDetectionTopics(source)
+  const latest = useDetections(socket, topics.join(' '))
+  const answered = topics.filter((topic) => latest[topic])
+
+  return {
+    overlay:
+      answered.length > 0 ? answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />) : null,
+    detections: answered.length > 0 ? answered.flatMap((topic) => latest[topic]) : null
+  }
 }
 
 const CAMERA_FRAME = 'camera_frame:'
@@ -155,19 +174,27 @@ function useCameraNames() {
     .filter((name) => !STEREO_SIDES.includes(name))
 }
 
-/** A preview for each camera of its own, titled by its name, with its rate, exposure and gain, sharing the depth's row and height. */
-function CameraPreviews({ status, socket }) {
-  return useCameraNames().map((name) => (
+/** A camera of its own, titled by its name, with its rate, exposure and gain, and the objects its pipelines detect drawn over it and counted. */
+function CameraPreview({ name, status, socket }) {
+  const { overlay, detections } = useSourceDetections(socket, name)
+  const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
+
+  return (
     <Preview
-      key={name}
       stream={name}
       socket={socket}
+      overlay={overlay}
       className="lg:flex lg:min-h-0 lg:flex-col"
       frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
     >
-      {status?.cameras?.[name] ? <Figures id={name} figures={cameraFigures(status.cameras[name])} /> : null}
+      {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
     </Preview>
-  ))
+  )
+}
+
+/** A preview for each camera of its own, sharing the depth's row and height. */
+function CameraPreviews({ status, socket }) {
+  return useCameraNames().map((name) => <CameraPreview key={name} name={name} status={status} socket={socket} />)
 }
 
 /** The latest detection result of each channel in `topics`, a space-separated list, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
@@ -193,22 +220,15 @@ function useDetections(socket, topics) {
   return detections
 }
 
-/** The left camera with every pipeline's detected objects drawn over it and counted; their results re-render it alone. */
+/** The left camera with the stereo pipelines' detected objects drawn over it and counted; their results re-render it alone. */
 function LeftPreview({ status, socket }) {
-  const topics = useDetectionTopics()
-  const latest = useDetections(socket, topics.join(' '))
-  const answered = topics.filter((topic) => latest[topic])
-  const detections = answered.length > 0 ? answered.flatMap((topic) => latest[topic]) : null
+  const { overlay, detections } = useSourceDetections(socket, 'left')
 
   return (
     <Preview
       stream="left"
       socket={socket}
-      overlay={
-        answered.length > 0
-          ? answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />)
-          : null
-      }
+      overlay={overlay}
       badge={badges(cameraIssues(status?.cameras?.left))}
       alert={needsAction(cameraIssues(status?.cameras?.left))}
     >
