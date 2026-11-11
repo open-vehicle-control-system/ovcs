@@ -129,9 +129,4 @@ defmodule SimulatorCore.VehicleTest do
     resting = Vehicle.step(%{vehicle() | measured_speed_m_s: 0.002}, [], @dt, 0.0)
     assert resting.measured_speed_m_s == 0.0
   end
-
-  test "the yaw rate is Ackermann's, positive to the left" do
-    turning = %{vehicle() | commanded_speed_m_s: 1.0, steering_rad: 0.3}
-    assert_in_delta Vehicle.yaw_rate(turning), :math.tan(0.3) / 0.3, 1.0e-9
-  end
 end

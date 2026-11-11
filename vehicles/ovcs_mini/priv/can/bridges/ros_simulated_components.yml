@@ -1,6 +1,6 @@
 ---
 # Merged into the `ros` bridge's topology on the host: the hardware
-# RosBridge.Simulator.Hardware answers for, mirrored from vms.yml. Its
+# SimulatorCore.Hardware answers for, mirrored from vms.yml. Its
 # frames are emitted only while it runs, with OVCS_SIM.
 can_networks:
   ovcs:

@@ -51,7 +51,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/clock` | `rosgraph_msgs/Clock` | Gazebo | every node, `RosBridge.Clock` |
 | `/odom`, `/tf` (`odom → base_link`) | `nav_msgs/Odometry`, `tf2_msgs/TFMessage` | `RosBridge.Publishers.Odometry` | Nav2, Foxglove |
 | `/tf_static` | `tf2_msgs/TFMessage` | `robot_state_publisher` | Nav2, Foxglove |
-| `/joint_states` | `sensor_msgs/JointState` | Gazebo; on the vehicle, `RosBridge.Publishers.AckermannJointStates` | `RosBridge.Simulator.Hardware` (the wheel speed), `robot_state_publisher` |
+| `/joint_states` | `sensor_msgs/JointState` | Gazebo; on the vehicle, `RosBridge.Publishers.AckermannJointStates` | `RosBridge.Simulator.World` (the wheel speed), `robot_state_publisher` |
 | `/imu_raw` | `sensor_msgs/Imu` | the model's IMU sensor | `RosBridge.Imu.Zenoh`, republished on `/imu` by `Publishers.Imu` |
 | a ray sensor's `*_raw` topic | `sensor_msgs/LaserScan` | a `gpu_lidar` in the model | `RosBridge.Lidar.Zenoh` for a lidar, `RosBridge.Rangefinder.Zenoh` for a fan standing in for one rangefinder beam; republished as on the vehicle |
 | `/stereo/{left,right}/image_raw/compressed` | `sensor_msgs/CompressedImage` | `image_bridge` | `VisionCore.Ros2.Camera` |
@@ -59,7 +59,7 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/cmd_vel_nav_raw` | `geometry_msgs/TwistStamped` | Nav2 `controller_server`, `behavior_server` | Nav2 `velocity_smoother` |
 | `/cmd_vel_nav` | `geometry_msgs/TwistStamped` | Nav2 `velocity_smoother` | `RosBridge.Consumers.Velocity` |
 | `/joy/<profile>` | `sensor_msgs/Joy` | the operator's `joy` service | `RosBridge.Consumers.Joy` |
-| `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.Hardware` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
+| `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.World` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](./commands.md#ground-truth) | you, to compare with `/odom` |
 | `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit | Nav2, Foxglove |
 | `/stereo/{left,right}/image_rect/compressed` | `sensor_msgs/CompressedImage` | the vision unit, with `publish_rectified_image: true`; their intrinsics are `/stereo/depth/camera_info` | displays that draw over the image, Foxglove |
@@ -211,7 +211,7 @@ Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovc
 | the actuator command path | `bridges/ros_bridge/lib/ros_bridge/consumers/joy.ex` | `libraries/ovcs_can/priv/can/components/ovcs/0x2B0_ros_actuator_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_actuator_command/` |
 | the velocity command path | `bridges/ros_bridge/lib/ros_bridge/consumers/velocity.ex` | `0x2B1_ros_velocity_command.yml`, `vms/core/lib/vms_core/components/ovcs/ros_velocity_command.ex` |
 | odometry on the vehicle | `bridges/ros_bridge/lib/ros_bridge/publishers/odometry.ex` | `0x60B_vehicle_motion.yml`, `vms/core/lib/vms_core/components/ovcs/vehicle_motion.ex` |
-| the VMS in the simulator's loop | `bridges/ros_bridge/lib/ros_bridge/simulator/hardware.ex` | `simulator/vehicle.ex`, `simulator/simulated_components/`, `ros_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
+| the VMS in the simulator's loop | `simulator/core/lib/simulator_core/hardware.ex` | `bridges/ros_bridge/lib/ros_bridge/simulator/world.ex` (Gazebo), `simulator/core/lib/simulator_core/vehicle.ex`, `simulator/core/lib/simulator_core/simulated_components/`, `ros_bridge_simulation_config/0` in `vehicles/ovcs_mini/lib/ovcs_mini.ex` |
 | who commands the vehicle | [How the VMS works](../vms/how_it_works.md#control-levels) | `vms/core/lib/vms_core/managers/control_level.ex` |
 | the vehicle's state on ROS | `bridges/ros_bridge/lib/ros_bridge/publishers/vehicle_status.ex` | `0x60C_control_status.yml`, `vms/core/lib/vms_core/components/ovcs/control_status.ex` |
 | Nav2's configuration | `vehicles/ovcs_mini/nav2/nav2.yaml`, the OVCS Mini reference vehicle's (heavily commented) | `nav2_ackermann_bt.xml` beside it |
