@@ -4,8 +4,12 @@ defmodule VisionCore.Detection.Pipeline do
   hands the rectified left image of every `:detect_every_n`-th
   `VisionCore.Stereo.Pair` to a `VisionCore.Detection.Backend`, fuses
   the boxes it returns with that pair's depth map, and publishes the
-  result as `{:detections, pair, detections}` through
-  `VisionCore.Outputs`, under `{:detections, VisionCore.Detection.Pipeline}`.
+  result through `VisionCore.Outputs` under `{:detections, server}`,
+  `server` being the name it is registered under
+  (`VisionCore.Detection.server/2`). The default pipeline, `:detection`,
+  publishes `{:detections, pair, detections}` under
+  `{:detections, VisionCore.Detection.Pipeline}`; a named one
+  `{:detections, pair, detections, name}`.
 
   Subscribes to the pairs of `VisionCore.Stereo.Pipeline`, so it sees
   the pairs every other consumer does, rectified left image and metric
@@ -60,8 +64,13 @@ defmodule VisionCore.Detection.Pipeline do
 
   ## Options
 
+    * `:name` (`:detection`) — the pipeline's name: it registers as
+      `VisionCore.Detection.server(VisionCore.Detection.Pipeline, name)`
+      and declares its parameter groups as `<name>.*`.
     * `:backend` (`VisionCore.Detection.Backend.Hailo`) — the detection
-      backend module, which is also its registered name.
+      backend module.
+    * `:backend_server` (the `:backend` module) — the name the backend is
+      registered under.
     * `:detect_every_n` (`1`) — run inference on every nth pair.
     * `:labels` (COCO 80) — class id to name.
     * `:min_score` (`0.4`) — the backend filters at its own threshold
@@ -74,6 +83,7 @@ defmodule VisionCore.Detection.Pipeline do
   """
   use GenServer
 
+  alias VisionCore.Detection
   alias VisionCore.Detection.Fusion
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
@@ -117,16 +127,22 @@ defmodule VisionCore.Detection.Pipeline do
                            "guessed distance. Watch the outlines and distances on the left " <>
                            "video."
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts) do
+    name = Detection.pipeline_name(opts)
+    GenServer.start_link(__MODULE__, opts, name: Detection.server(__MODULE__, name))
+  end
 
   @doc "The COCO class names, indexed by class id."
   def labels, do: @coco_labels
 
   @impl GenServer
   def init(opts) do
+    backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
+
     state = %{
-      # Doubles as the server name: every backend registers under its own module.
-      backend: Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo),
+      name: Detection.pipeline_name(opts),
+      backend: backend,
+      backend_server: Keyword.get(opts, :backend_server, backend),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
       labels: Keyword.get(opts, :labels, @coco_labels),
       min_score: Keyword.get(opts, :min_score, @default_min_score),
@@ -149,13 +165,15 @@ defmodule VisionCore.Detection.Pipeline do
 
   @doc """
   The detection pipeline's steps around the inference, for a running
-  `state`: their parameter groups, with their settings fixed at start. The
-  backend declares the inference step itself (`inference_group/1`).
+  `state`: their parameter groups, `<name>.input`, `<name>.filtering` and
+  `<name>.placement` in the pipeline `name`, with their settings fixed at
+  start. The backend declares the inference step itself
+  (`inference_group/2`).
   """
   @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
   def groups(state) do
     [
-      step("input", "Input", 101, %{
+      step(state.name, "input", "Input", 101, %{
         summary: "Hands the rectified left image of every nth stereo pair to the detector.",
         explanation: @input_explanation,
         compute: @on_the_beam,
@@ -163,7 +181,7 @@ defmodule VisionCore.Detection.Pipeline do
           build_parameter(state, :detect_every_n, "Pairs per detection; 1 detects on every pair")
         ]
       }),
-      step("filtering", "Filtering", 103, %{
+      step(state.name, "filtering", "Filtering", 103, %{
         summary: "Keeps the most confident detections.",
         explanation: @filtering_explanation,
         compute: @on_the_beam,
@@ -172,7 +190,7 @@ defmodule VisionCore.Detection.Pipeline do
           build_parameter(state, :max_detections, "Most detections passed on per image")
         ]
       }),
-      step("placement", "Placement", 104, %{
+      step(state.name, "placement", "Placement", 104, %{
         summary: "Places each box in 3D with the median depth in its middle.",
         explanation: @placement_explanation,
         compute: @on_the_beam,
@@ -188,20 +206,21 @@ defmodule VisionCore.Detection.Pipeline do
   end
 
   @doc """
-  The detection pipeline's inference step, between its input and its
-  filtering. The backend running the model declares it, `fields` giving
-  its summary, explanation, compute and parameters.
+  The inference step of the detection pipeline `pipeline`,
+  `<pipeline>.inference`, between its input and its filtering. The
+  backend running the model declares it, `fields` giving its summary,
+  explanation, compute and parameters.
   """
-  @spec inference_group(map()) :: VisionCore.Parameters.group_declaration()
-  def inference_group(fields), do: step("inference", "Inference", 102, fields)
+  @spec inference_group(atom(), map()) :: VisionCore.Parameters.group_declaration()
+  def inference_group(pipeline, fields), do: step(pipeline, "inference", "Inference", 102, fields)
 
-  defp step(id, name, position, fields) do
+  defp step(pipeline, id, name, position, fields) do
     Map.merge(
       %{
-        id: "detection.#{id}",
+        id: "#{pipeline}.#{id}",
         name: name,
         kind: :stage,
-        pipeline: :detection,
+        pipeline: pipeline,
         position: position
       },
       fields
@@ -229,7 +248,7 @@ defmodule VisionCore.Detection.Pipeline do
   defp submit(pair, state) do
     sequence = state.sequence + 1
 
-    case state.backend.detect(state.backend, sequence, pair.left) do
+    case state.backend.detect(state.backend_server, sequence, pair.left) do
       :ok -> %{state | sequence: sequence, pending: pair}
       # Busy or unavailable: skip this pair silently. The backend logs
       # the unavailable case once at startup; a per-frame log here
@@ -252,7 +271,11 @@ defmodule VisionCore.Detection.Pipeline do
       |> Enum.reject(&is_nil/1)
       |> outline(pair, state.outline_segments)
 
-    Outputs.publish({:detections, __MODULE__}, {:detections, pair, positioned})
+    Outputs.publish(
+      {:detections, Detection.server(__MODULE__, state.name)},
+      detections_message(state.name, pair, positioned)
+    )
+
     {:noreply, %{state | pending: nil}}
   end
 
@@ -260,6 +283,9 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp detections_message(:detection, pair, positioned), do: {:detections, pair, positioned}
+  defp detections_message(name, pair, positioned), do: {:detections, pair, positioned, name}
 
   defp outline(positioned, pair, segments) do
     outlines = positioned |> Enum.map(& &1.box) |> Fusion.outlines(segments, pair)

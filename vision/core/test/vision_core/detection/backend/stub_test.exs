@@ -16,4 +16,17 @@ defmodule VisionCore.Detection.Backend.StubTest do
              parameters: []
            } = Enum.find(VisionCore.Parameters.groups(), &(&1.id == "detection.inference"))
   end
+
+  test "a named pipeline's backend runs under its server name and declares that pipeline's step" do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_supervised!({Stub, name: Stub.Road, pipeline: :road})
+
+    assert Stub.detect(Stub.Road, 3, Nx.iota({2, 4}, type: :u8)) == :ok
+    assert_receive {:inference_detections, 3, [%{class_id: 0}]}
+    assert Stub.available?(Stub.Road)
+    refute Process.whereis(Stub)
+
+    assert %{pipeline: :road, position: 102} =
+             Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
+  end
 end

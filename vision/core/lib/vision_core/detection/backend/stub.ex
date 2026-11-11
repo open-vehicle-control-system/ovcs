@@ -23,6 +23,9 @@ defmodule VisionCore.Detection.Backend.Stub do
 
   ## Options
 
+    * `:name` (the module) — the name it registers under.
+    * `:pipeline` (`:detection`) — the detection pipeline whose inference
+      step it declares.
     * `:boxes` — a list of `{class_id, score, {x0, y0, x1, y1}}` with
       the coordinates as 0.0–1.0 fractions of width/height. Defaults to
       a single centred box classed as `person` (COCO 0).
@@ -65,12 +68,15 @@ defmodule VisionCore.Detection.Backend.Stub do
     if Process.whereis(VisionCore.Parameters) do
       :ok =
         VisionCore.Parameters.declare([
-          VisionCore.Detection.Pipeline.inference_group(%{
-            summary: "Returns fixed boxes, without a model, to test the plumbing.",
-            explanation: @explanation,
-            compute: %{runs_on: :cpu, implementation: :elixir, backend: nil},
-            parameters: []
-          })
+          VisionCore.Detection.Pipeline.inference_group(
+            Keyword.get(opts, :pipeline, :detection),
+            %{
+              summary: "Returns fixed boxes, without a model, to test the plumbing.",
+              explanation: @explanation,
+              compute: %{runs_on: :cpu, implementation: :elixir, backend: nil},
+              parameters: []
+            }
+          )
         ])
     end
 

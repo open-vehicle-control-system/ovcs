@@ -20,17 +20,42 @@ defmodule VisionCore.Detection.SupervisorTest do
     {:ok, {_flags, children}} = Supervisor.init(@options)
 
     assert [
-             %{start: {Stub, :start_link, [[boxes: [{0, 0.9, _box}]]]}},
+             %{start: {Stub, :start_link, [backend_options]}},
              %{start: {Pipeline, :start_link, [pipeline_options]}},
-             %{start: {Live, :start_link, [[max_hz: 4]]}}
+             %{start: {Live, :start_link, [live_options]}}
            ] = children
 
-    assert Enum.sort(pipeline_options) == [backend: Stub, min_score: 0.6, outline_segments: 2]
+    assert [boxes: [{0, 0.9, _box}], name: Stub, pipeline: :detection] =
+             Enum.sort(backend_options)
+
+    assert Enum.sort(pipeline_options) == [
+             backend: Stub,
+             backend_server: Stub,
+             min_score: 0.6,
+             name: :detection,
+             outline_segments: 2
+           ]
+
+    assert Enum.sort(live_options) == [max_hz: 4, name: :detection]
+  end
+
+  test "names a named unit's backend, pipeline and Live after it" do
+    {:ok, {_flags, children}} = Supervisor.init(@options ++ [name: :road])
+
+    assert [
+             %{start: {Stub, :start_link, [backend_options]}},
+             %{start: {Pipeline, :start_link, [pipeline_options]}},
+             %{start: {Live, :start_link, [live_options]}}
+           ] = children
+
+    assert {backend_options[:name], backend_options[:pipeline]} == {Stub.Road, :road}
+    assert {pipeline_options[:name], pipeline_options[:backend_server]} == {:road, Stub.Road}
+    assert live_options[:name] == :road
   end
 
   test "takes an option given twice, as a keyword list may hold it" do
     assert {:ok, {_flags, [_backend, _pipeline, live]}} = Supervisor.init(@options ++ [max_hz: 2])
-    assert %{start: {Live, :start_link, [[max_hz: 4, max_hz: 2]]}} = live
+    assert %{start: {Live, :start_link, [[max_hz: 4, max_hz: 2, name: :detection]]}} = live
   end
 
   test "starts the backend, then the pipeline, then Live" do
@@ -38,6 +63,47 @@ defmodule VisionCore.Detection.SupervisorTest do
 
     assert unit |> Elixir.Supervisor.which_children() |> Enum.map(&elem(&1, 0)) ==
              [Live, Pipeline, Stub]
+
+    assert Process.whereis(Supervisor) == unit
+  end
+
+  test "registers a named unit and its processes under its name, beside the default one" do
+    default = start_supervised!({Supervisor, @options})
+
+    road =
+      start_supervised!(
+        Elixir.Supervisor.child_spec({Supervisor, @options ++ [name: :road]}, id: :road)
+      )
+
+    assert Process.whereis(Supervisor.Road) == road
+    assert Process.whereis(Supervisor) == default
+
+    for module <- [Stub, Pipeline, Live] do
+      assert Process.whereis(Module.concat(module, Road))
+      assert Process.whereis(module)
+    end
+  end
+
+  test "is left down, saying why, with a name that is no valid pipeline name" do
+    Process.flag(:trap_exit, true)
+
+    for name <- [:"front-cam", :stereo] do
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
+
+      assert log =~ "failed to start"
+      assert log =~ "^[a-z][a-z0-9_]*$"
+      assert log =~ inspect(name)
+    end
+  end
+
+  test "a named unit that fails to start names its pipeline in the log" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      capture_log(fn -> assert Supervisor.start_link(backend: Hailo, name: :road) == :ignore end)
+
+    assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
   end
 
   test "is left down, saying why, with an option it does not take, naming where a moved one went" do
@@ -106,17 +172,40 @@ defmodule VisionCore.Detection.SupervisorTest do
       assert Supervisor.outputs(config([{:stereo, []}])) == []
     end
 
-    test "its backend: the one the component names, the Hailo one by default" do
-      assert Supervisor.backend(config([{:stereo, []}, :qnn_detector])) ==
-               VisionCore.Detection.Backend.Qnn
+    test "each pipeline's output, in config order, a named one's keyed by its name" do
+      components = [
+        {:detector, backend: Stub, name: :road},
+        {:stereo, []},
+        :qnn_detector,
+        {:hailo_detector, name: :signs}
+      ]
 
-      assert Supervisor.backend(config([{:hailo_detector, hef_path: "/m.hef"}])) == Hailo
-      assert Supervisor.backend(config([{:detector, backend: Stub}])) == Stub
-      assert Supervisor.backend(config([:detector])) == Hailo
+      assert Supervisor.outputs(config(components)) == [
+               {{:detections, :road}, {:detections, VisionCore.Detection.Pipeline.Road}},
+               {:detections, {:detections, VisionCore.Detection.Pipeline}},
+               {{:detections, :signs}, {:detections, VisionCore.Detection.Pipeline.Signs}}
+             ]
+    end
+
+    test "its backends: the one each component names, the Hailo one by default, with its server" do
+      assert Supervisor.backends(config([{:stereo, []}, :qnn_detector])) ==
+               [{VisionCore.Detection.Backend.Qnn, VisionCore.Detection.Backend.Qnn}]
+
+      assert Supervisor.backends(config([{:hailo_detector, hef_path: "/m.hef"}])) ==
+               [{Hailo, Hailo}]
+
+      assert Supervisor.backends(config([{:detector, backend: Stub}])) == [{Stub, Stub}]
+      assert Supervisor.backends(config([:detector])) == [{Hailo, Hailo}]
+    end
+
+    test "each pipeline's backend, in config order, a named one's server named after it" do
+      components = [{:detector, backend: Stub, name: :road}, {:hailo_detector, []}]
+
+      assert Supervisor.backends(config(components)) == [{Stub, Stub.Road}, {Hailo, Hailo}]
     end
 
     test "no backend without a component starting the unit" do
-      assert Supervisor.backend(config([{:stereo, []}])) == nil
+      assert Supervisor.backends(config([{:stereo, []}])) == []
     end
   end
 end

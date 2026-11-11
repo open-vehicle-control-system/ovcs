@@ -27,6 +27,9 @@ defmodule VisionCore.Application do
   `stereo_match`; the Matcher runs the binary and thread count of
   `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
 
+  A configuration with two detectors of one name (`VisionCore.Detection`)
+  fails the start, naming it.
+
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
   their statuses, and `VisionCore.Preview`: a restart of the dashboard's
@@ -81,6 +84,7 @@ defmodule VisionCore.Application do
         ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
+    check_detector_names!(component_children)
 
     consumer_children = [
       {VisionCore.Jpeg, name: @export_jpeg_codec},
@@ -140,6 +144,22 @@ defmodule VisionCore.Application do
   defp clock_children(clock) when clock in [nil, false], do: []
   defp clock_children(true), do: [{VisionCore.Ros2.Clock, []}]
   defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
+
+  # Two units of one name would share their processes' names; the supervisor would refuse them less clearly.
+  defp check_detector_names!(children) do
+    names =
+      for %{start: {VisionCore.Detection.Supervisor, _function, [opts]}} <- children,
+          do: VisionCore.Detection.pipeline_name(opts)
+
+    case names -- Enum.uniq(names) do
+      [] ->
+        :ok
+
+      [name | _others] ->
+        raise ArgumentError,
+              "two detectors are named #{inspect(name)}: give each its own :name"
+    end
+  end
 
   defp resolve_component(name) when is_atom(name), do: VisionCore.Components.start(name, [])
 

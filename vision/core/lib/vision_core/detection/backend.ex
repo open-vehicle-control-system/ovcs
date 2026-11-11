@@ -53,10 +53,17 @@ defmodule VisionCore.Detection.Backend do
 
   ## The inference step
 
-  A backend declares the detection pipeline's inference step in
-  `VisionCore.Parameters` when it starts, built with
-  `VisionCore.Detection.Pipeline.inference_group/1`: what it runs, where,
-  and its settings.
+  A backend declares the inference step of its detection pipeline, its
+  `:pipeline` option, in `VisionCore.Parameters` when it starts, built
+  with `VisionCore.Detection.Pipeline.inference_group/2`: what it runs,
+  where, and its settings.
+
+  ## Its name
+
+  A backend registers under its `:name` option, the module by default;
+  `VisionCore.Detection.Supervisor` gives each pipeline's backend its own
+  (`VisionCore.Detection.server/2`), and `detect/3` and `available?/1`
+  take it.
   """
 
   @typedoc "A 2D box in the submitted image's pixel coordinates."

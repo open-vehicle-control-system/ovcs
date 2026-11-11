@@ -1,11 +1,12 @@
 defmodule VisionCore.Detection.Live do
   @moduledoc """
-  The latest detections of `VisionCore.Detection.Pipeline`, for the
+  The latest detections of a `VisionCore.Detection.Pipeline`, for the
   dashboard: each object's label, score, distance in metres and outline
   on the left camera's image as it is captured, which the left preview
-  shows.
+  shows. Each pipeline has its own, registered as
+  `VisionCore.Detection.server(VisionCore.Detection.Live, name)`.
 
-  A subscriber (`subscribe/0`) receives `{:vision_detections,
+  A subscriber (`subscribe/1`) receives `{:vision_detections,
   detections}` after a detection result, at most `:max_hz` times a
   second, an empty list included, so the boxes of the last result go
   away. A result that comes sooner is held and sent once the interval
@@ -19,29 +20,40 @@ defmodule VisionCore.Detection.Live do
 
   ## Options
 
+    * `:name` (`:detection`) — the pipeline whose results it hands on.
     * `:max_hz` (`10`) — results a second sent to each subscriber.
   """
   use GenServer
 
+  alias VisionCore.Detection
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
   @default_max_hz 10
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts) do
+    name = Detection.pipeline_name(opts)
+    GenServer.start_link(__MODULE__, opts, name: Detection.server(__MODULE__, name))
+  end
 
-  @doc "Sends the calling process every later result, until it exits."
-  @spec subscribe() :: :ok
-  def subscribe, do: GenServer.call(__MODULE__, {:subscribe, self()})
+  @doc """
+  Sends the calling process every later result of the pipeline `name`,
+  until it exits.
+  """
+  @spec subscribe(atom()) :: :ok
+  def subscribe(name \\ :detection),
+    do: GenServer.call(Detection.server(__MODULE__, name), {:subscribe, self()})
 
-  @doc "The most results a subscriber receives a second, its `:max_hz`."
-  @spec max_hz() :: pos_integer()
-  def max_hz, do: GenServer.call(__MODULE__, :max_hz)
+  @doc "The most results a subscriber of the pipeline `name` receives a second, its `:max_hz`."
+  @spec max_hz(atom()) :: pos_integer()
+  def max_hz(name \\ :detection), do: GenServer.call(Detection.server(__MODULE__, name), :max_hz)
 
   @impl GenServer
   def init(opts) do
-    :ok = Outputs.subscribe({:detections, Pipeline})
+    :ok =
+      Outputs.subscribe({:detections, Detection.server(Pipeline, Detection.pipeline_name(opts))})
+
     max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
 
     {:ok,
@@ -63,11 +75,19 @@ defmodule VisionCore.Detection.Live do
   end
 
   @impl GenServer
-  def handle_cast({:detections, _pair, _positioned}, %{subscribers: subscribers} = state)
-      when map_size(subscribers) == 0,
-      do: {:noreply, state}
+  def handle_cast({:detections, pair, positioned}, state),
+    do: hand_on(pair, positioned, state)
 
-  def handle_cast({:detections, %Pair{} = pair, positioned}, state) do
+  def handle_cast({:detections, pair, positioned, _name}, state),
+    do: hand_on(pair, positioned, state)
+
+  def handle_cast(_message, state), do: {:noreply, state}
+
+  defp hand_on(_pair, _positioned, %{subscribers: subscribers} = state)
+       when map_size(subscribers) == 0,
+       do: {:noreply, state}
+
+  defp hand_on(%Pair{} = pair, positioned, state) do
     detections = describe(positioned, pair)
     now_ms = System.monotonic_time(:millisecond)
 
@@ -83,8 +103,6 @@ defmodule VisionCore.Detection.Live do
         {:noreply, %{state | held: detections}}
     end
   end
-
-  def handle_cast(_message, state), do: {:noreply, state}
 
   @impl GenServer
   def handle_info(:send_held, %{held: nil} = state), do: {:noreply, state}

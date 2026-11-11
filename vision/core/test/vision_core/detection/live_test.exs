@@ -101,6 +101,49 @@ defmodule VisionCore.Detection.LiveTest do
     assert subscriber_count() == 0
   end
 
+  describe "a named pipeline's" do
+    setup do
+      start_supervised!(Supervisor.child_spec({Live, name: :road, max_hz: 5}, id: :road_live))
+      :ok
+    end
+
+    test "answers its own :max_hz" do
+      assert Live.max_hz(:road) == 5
+      assert Live.max_hz() == 1_000
+    end
+
+    test "sends its subscribers that pipeline's results only, and the default's never reach them" do
+      road_subscriber = self()
+
+      spawn_link(fn ->
+        :ok = Live.subscribe(:road)
+        send(road_subscriber, :subscribed)
+
+        receive do: ({:vision_detections, detections} ->
+                       send(road_subscriber, {:road, detections}))
+      end)
+
+      assert_receive :subscribed
+      :ok = Live.subscribe()
+
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline.Road},
+        {:detections, pair(), [person(240, 108, 720, 432, 3.0)], :road}
+      )
+
+      assert_receive {:road, [%{distance_m: 3.0}]}
+      refute_receive {:vision_detections, _detections}, 100
+
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline},
+        {:detections, pair(), [person(240, 108, 720, 432, 1.8)]}
+      )
+
+      assert_receive {:vision_detections, [%{distance_m: 1.8}]}
+      refute_receive {:road, _detections}, 100
+    end
+  end
+
   test "forgets a subscriber that exits" do
     subscriber = spawn(fn -> Live.subscribe() && Process.sleep(:infinity) end)
     Process.sleep(50)

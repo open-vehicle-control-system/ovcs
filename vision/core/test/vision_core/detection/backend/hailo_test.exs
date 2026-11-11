@@ -106,6 +106,32 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert {threshold.name, threshold.value} == {"score_threshold", 0.3}
   end
 
+  test "a named pipeline's backend runs under its server name and declares that pipeline's step",
+       %{tmp_dir: tmp_dir} do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_backend(tmp_dir, "answer", name: Hailo.Road, pipeline: :road)
+
+    assert Hailo.detect(Hailo.Road, 7, @image) == :ok
+    assert_receive {:inference_detections, 7, [_detection]}, 2_000
+    assert Hailo.available?(Hailo.Road)
+    refute Process.whereis(Hailo)
+
+    assert %{pipeline: :road, position: 102} =
+             Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
+  end
+
+  test "log lines name a named pipeline, the default's do not", %{tmp_dir: tmp_dir} do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(tmp_dir, "answer", name: Hailo.Road, pipeline: :road)
+        eventually(fn -> Hailo.available?(Hailo.Road) end)
+      end)
+
+    assert log =~ "#{inspect(Hailo)} (road) loaded model.hef"
+  end
+
   test "stays unavailable without its model", %{tmp_dir: tmp_dir} do
     start_supervised!(
       {Hailo, hef_path: Path.join(tmp_dir, "missing.hef"), executable: @executable}

@@ -26,7 +26,13 @@ defmodule VisionCore.Detection.Backend.Qnn do
       overlay installs it.
     * `:dsp_library_path` (`"/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"`)
       — the board's DSP libraries.
-    * `:cache_dir` (`"/data/vision/qnn"`) — where the context binary is kept.
+    * `:name` (the module) — the name it registers under.
+    * `:pipeline` (`:detection`) — the detection pipeline whose inference
+      step it declares.
+    * `:cache_dir` (`"/data/vision/qnn"`, `"/data/vision/qnn/<pipeline>"`
+      for a pipeline other than `:detection`) — where the context binary
+      is kept. `VisionCore.Detection.QnnContext` removes every other
+      binary in it, so two pipelines never share one.
     * `:executable` — the program (default `priv/qnn_detect`).
     * `:infer_timeout_ms` (`2000`), `:reopen_delays_ms`
       (`[1000, 2000, 5000, 10000, 30000]`, the last repeated).
@@ -56,7 +62,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
   @default_infer_timeout_ms 2_000
   @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts),
+    do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   @doc """
   Submit a `u8` `{height, width}` (or `{height, width, 3}` BGR) tensor
@@ -85,14 +92,17 @@ defmodule VisionCore.Detection.Backend.Qnn do
   def init(opts) do
     Process.flag(:trap_exit, true)
 
+    pipeline = Keyword.get(opts, :pipeline, :detection)
+
     state = %{
       port: nil,
+      pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
       qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
       dsp_library_path:
         Keyword.get(opts, :dsp_library_path, "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"),
-      cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn"),
+      cache_dir: Keyword.get_lazy(opts, :cache_dir, fn -> default_cache_dir(pipeline) end),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       infer_timeout_ms: Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms),
       reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
@@ -106,8 +116,11 @@ defmodule VisionCore.Detection.Backend.Qnn do
     {:ok, state, {:continue, :open}}
   end
 
+  defp label(%{pipeline: :detection}), do: inspect(__MODULE__)
+  defp label(%{pipeline: pipeline}), do: "#{inspect(__MODULE__)} (#{pipeline})"
+
   defp inference_group(state) do
-    Pipeline.inference_group(%{
+    Pipeline.inference_group(state.pipeline, %{
       summary: "Finds objects in the image on the Hexagon NPU.",
       explanation: @explanation,
       compute: %{runs_on: :npu, implementation: :rust, backend: nil},
@@ -129,14 +142,14 @@ defmodule VisionCore.Detection.Backend.Qnn do
     case open_port(state) do
       {:ok, port} ->
         Logger.info(
-          "#{__MODULE__} loaded #{Path.basename(state.dlc_path)} (score >= #{state.score_threshold})"
+          "#{label(state)} loaded #{Path.basename(state.dlc_path)} (score >= #{state.score_threshold})"
         )
 
         {:noreply, %{state | port: port}}
 
       {:error, reason} ->
         Logger.error(
-          "#{__MODULE__} unavailable: #{inspect(reason)}. The stereo pipeline " <>
+          "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
             "continues; no detections will be published."
         )
 
@@ -205,7 +218,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl GenServer
   def handle_info({port, {:data, <<@log_tag, level, message::binary>>}}, %{port: port} = state) do
-    Logger.log(log_level(level), "#{__MODULE__} qnn_detect: #{message}")
+    Logger.log(log_level(level), "#{label(state)} qnn_detect: #{message}")
     {:noreply, state}
   end
 
@@ -218,7 +231,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   def handle_info({:infer_timeout, sequence}, %{inflight: %{sequence: sequence}} = state) do
     Logger.warning(
-      "#{__MODULE__} frame #{sequence} not answered in #{state.infer_timeout_ms} ms; " <>
+      "#{label(state)} frame #{sequence} not answered in #{state.infer_timeout_ms} ms; " <>
         "restarting qnn_detect"
     )
 
@@ -229,12 +242,12 @@ defmodule VisionCore.Detection.Backend.Qnn do
   def handle_info({:infer_timeout, _stale_sequence}, state), do: {:noreply, state}
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error("#{__MODULE__} qnn_detect exited with status #{status}")
+    Logger.error("#{label(state)} qnn_detect exited with status #{status}")
     {:noreply, port_down(state)}
   end
 
   def handle_info({:EXIT, port, reason}, %{port: port} = state) do
-    Logger.error("#{__MODULE__} Port died: #{inspect(reason)}")
+    Logger.error("#{label(state)} Port died: #{inspect(reason)}")
     {:noreply, port_down(state)}
   end
 
@@ -283,6 +296,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
       {height, width, channels} -> {height, width, channels}
     end
   end
+
+  defp default_cache_dir(:detection), do: "/data/vision/qnn"
+  defp default_cache_dir(pipeline), do: "/data/vision/qnn/#{pipeline}"
 
   defp default_executable_path, do: :vision_core |> :code.priv_dir() |> Path.join("qnn_detect")
 end

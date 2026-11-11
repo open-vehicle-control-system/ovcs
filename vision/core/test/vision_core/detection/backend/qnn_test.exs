@@ -59,6 +59,59 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert Qnn.detect(2, @image) == {:error, :busy}
   end
 
+  test "a named pipeline's backend runs under its server name and declares that pipeline's step",
+       %{tmp_dir: dir} do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_backend(dir, "answer", name: Qnn.Road, pipeline: :road)
+    eventually(fn -> Qnn.available?(Qnn.Road) end)
+
+    assert Qnn.detect(Qnn.Road, 7, @image) == :ok
+    assert_receive {:inference_detections, 7, [_detection]}, 2_000
+    refute Process.whereis(Qnn)
+
+    assert %{pipeline: :road, position: 102} =
+             Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
+  end
+
+  test "log lines name a named pipeline", %{tmp_dir: dir} do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(dir, "answer", name: Qnn.Road, pipeline: :road)
+        eventually(fn -> Qnn.available?(Qnn.Road) end)
+      end)
+
+    assert log =~ "#{inspect(Qnn)} (road) loaded model.dlc"
+  end
+
+  test "log lines of the default pipeline carry no pipeline name", %{tmp_dir: dir} do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(dir, "answer")
+        eventually(fn -> Qnn.available?() end)
+      end)
+
+    assert log =~ "#{inspect(Qnn)} loaded model.dlc"
+  end
+
+  # The context cache removes every other binary in its directory, so each pipeline has its own.
+  test "keeps the default pipeline's context binary in /data/vision/qnn, a named one's in a directory of its own",
+       %{tmp_dir: dir} do
+    missing = [dlc_path: Path.join(dir, "missing.dlc"), executable: @detector]
+
+    for {opts, cache_dir} <- [
+          {[], "/data/vision/qnn"},
+          {[name: Qnn.Road, pipeline: :road], "/data/vision/qnn/road"},
+          {[name: Qnn.Road, pipeline: :road, cache_dir: dir], dir}
+        ] do
+      backend = start_supervised!({Qnn, missing ++ opts})
+
+      assert :sys.get_state(backend).cache_dir == cache_dir
+      stop_supervised!(Qnn)
+    end
+  end
+
   test "a missing DLC or QAIRT leaves the backend unavailable", %{tmp_dir: dir} do
     backend =
       start_supervised!(

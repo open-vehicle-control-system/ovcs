@@ -31,11 +31,14 @@ defmodule VisionCore.Components do
       `.Stub`) and the `VisionCore.Detection.Pipeline` placing its boxes
       in 3D. The detection pipeline subscribes to the stereo pipeline's
       pairs through `VisionCore.Outputs`, whichever of the two starts
-      first.
+      first. Several detectors run side by side, each with its own
+      `:name` (`VisionCore.Detection`), the child id of its unit.
     * `:hailo_detector` — `:detector` with the Hailo backend.
     * `:qnn_detector` — `:detector` with the QNN backend
       (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.
   """
+
+  alias VisionCore.Detection
 
   @doc """
   Returns the child specs to start `component` with `opts`. Raises on
@@ -52,8 +55,10 @@ defmodule VisionCore.Components do
   end
 
   def start(:detector, opts) do
+    id = Detection.server(Detection.Supervisor, Detection.pipeline_name(opts))
+
     # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
-    [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, restart: :transient)]
+    [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]
   end
 
   def start(:stereo, opts) do

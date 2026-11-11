@@ -305,6 +305,37 @@ defmodule VisionCore.ApplicationTest do
     assert Process.alive?(Process.whereis(VisionCore.Preview))
   end
 
+  test "a named detector that cannot start leaves the other detectors running" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:detector, backend: VisionCore.Detection.Backend.Stub},
+            {:hailo_detector, name: :road}
+          ]
+        })
+      end)
+
+    assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
+    refute Process.whereis(VisionCore.Detection.Supervisor.Road)
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Pipeline))
+  end
+
+  test "two detectors of one name fail the start, naming it" do
+    for {components, name} <- [
+          {[{:detector, backend: VisionCore.Detection.Backend.Stub}, :hailo_detector],
+           ":detection"},
+          {[{:detector, name: :road}, {:qnn_detector, name: :road}], ":road"}
+        ] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{components: components})
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
+      assert inspect(reason) =~ "two detectors are named #{name}"
+    end
+  end
+
   test "the pipeline keeps running with no Zenoh router" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,

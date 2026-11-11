@@ -165,6 +165,39 @@ defmodule VisionCore.StatusTest do
     answer_available()
   end
 
+  test "a Hailo pipeline beside a stub one reports the Hailo-8" do
+    available = spawn(&answer_available/0)
+    Process.register(available, VisionCore.Detection.Backend.Hailo.Road)
+    on_exit(fn -> Process.exit(available, :kill) end)
+
+    start_supervised!(
+      {Status,
+       config:
+         config([
+           {:detector, backend: VisionCore.Detection.Backend.Stub},
+           {:hailo_detector, name: :road}
+         ])}
+    )
+
+    assert Status.snapshot().npu == %{kind: "Hailo-8", state: :running}
+  end
+
+  test "two QNN pipelines report a running Hexagon while both backends are available, failed when one is not" do
+    available = spawn(&answer_available/0)
+    Process.register(available, VisionCore.Detection.Backend.Qnn)
+    on_exit(fn -> Process.exit(available, :kill) end)
+    two_pipelines = config([:qnn_detector, {:qnn_detector, name: :road}])
+    start_supervised!({Status, config: two_pipelines})
+
+    assert Status.snapshot().npu == %{kind: "Hexagon", state: :failed}
+
+    road = spawn(&answer_available/0)
+    Process.register(road, VisionCore.Detection.Backend.Qnn.Road)
+    on_exit(fn -> Process.exit(road, :kill) end)
+
+    assert Status.snapshot().npu == %{kind: "Hexagon", state: :running}
+  end
+
   test "a detector whose backend runs on no accelerator reports no NPU" do
     start_supervised!(
       {Status, config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}])}

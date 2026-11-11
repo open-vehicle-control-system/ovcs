@@ -1,10 +1,16 @@
 defmodule VisionCore.Detection.Supervisor do
   @moduledoc """
-  Supervises the detection unit: an inference backend, the
-  `VisionCore.Detection.Pipeline` that places its boxes in 3D with the
-  stereo depth, and `VisionCore.Detection.Live`, which hands them to the
-  dashboard. `VisionCore.Ros2.Exporter` publishes them on ROS 2, outside
-  the unit.
+  Supervises a detection unit, one detection pipeline: an inference
+  backend, the `VisionCore.Detection.Pipeline` that places its boxes in
+  3D with the stereo depth, and `VisionCore.Detection.Live`, which hands
+  them to the dashboard. `VisionCore.Ros2.Exporter` publishes them on
+  ROS 2, outside the unit.
+
+  `:name` (`:detection`) names the pipeline (`VisionCore.Detection`): the
+  unit, its backend, pipeline and `Live` register under it
+  (`VisionCore.Detection.server/2`), so a unit runs several pipelines,
+  each under its own supervisor, with its own backend and model. A name
+  that is not a valid pipeline name leaves the unit down.
 
   Which backend is `:backend`, defaulting to the Hailo-8 accelerator,
   `VisionCore.Detection.Backend.Hailo`; `VisionCore.Detection.Backend.Qnn`
@@ -42,6 +48,7 @@ defmodule VisionCore.Detection.Supervisor do
   use Supervisor
   require Logger
 
+  alias VisionCore.Detection
   alias VisionCore.Detection.{Live, Pipeline}
 
   @default_backend VisionCore.Detection.Backend.Hailo
@@ -55,9 +62,12 @@ defmodule VisionCore.Detection.Supervisor do
   when it fails to start, so the vision core starts without it.
   """
   def start_link(opts) do
-    case Supervisor.start_link(__MODULE__, opts, name: __MODULE__) do
+    name = Detection.pipeline_name(opts)
+    server = Detection.server(__MODULE__, name)
+
+    case Supervisor.start_link(__MODULE__, opts, name: server) do
       {:error, reason} ->
-        Logger.error("#{__MODULE__} failed to start, detection down: #{failure_text(reason)}")
+        Logger.error("#{inspect(server)} failed to start, #{name} down: #{failure_text(reason)}")
         :ignore
 
       started ->
@@ -73,14 +83,16 @@ defmodule VisionCore.Detection.Supervisor do
   @impl Supervisor
   def init(opts) do
     check_options!(opts)
+    name = opts |> Detection.pipeline_name() |> Detection.name!()
     {backend, backend_opts} = split_backend_options(opts)
+    backend_server = Detection.server(backend, name)
 
     children = [
-      {backend, backend_opts},
-      # The backend module is also its registered name, so the
-      # pipeline needs nothing but the module to reach it.
-      {Pipeline, opts |> Keyword.take(pipeline_keys()) |> Keyword.put(:backend, backend)},
-      {Live, Keyword.take(opts, [:max_hz])}
+      {backend, backend_opts ++ [name: backend_server, pipeline: name]},
+      {Pipeline,
+       Keyword.take(opts, pipeline_keys()) ++
+         [backend: backend, backend_server: backend_server, name: name]},
+      {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
     ]
 
     Supervisor.init(children,
@@ -91,40 +103,45 @@ defmodule VisionCore.Detection.Supervisor do
   end
 
   @doc """
-  The output of the detection unit in `config`, with its
-  `VisionCore.Outputs` key: the detection pipeline's detections, as
-  `VisionCore.Exporter` names them. `[]` when no component of `config`
-  starts the unit, as `VisionCore.Components` resolves them.
+  The outputs of the detection units in `config`, in config order, with
+  their `VisionCore.Outputs` keys: each pipeline's detections, as
+  `VisionCore.Exporter` names them, `:detections` for the default
+  pipeline and `{:detections, name}` for a named one. `[]` when no
+  component of `config` starts a unit, as `VisionCore.Components`
+  resolves them.
   """
   @spec outputs(VisionCore.Config.t()) :: [
-          {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
+          {VisionCore.Exporter.output() | {:detections, atom()}, VisionCore.Outputs.key()}
         ]
   def outputs(config) do
-    if unit_options(config), do: [detections: {:detections, Pipeline}], else: []
-  end
-
-  @doc """
-  The backend module of the detection unit in `config`, `nil` when no
-  component of `config` starts the unit.
-  """
-  @spec backend(VisionCore.Config.t()) :: module() | nil
-  def backend(config) do
-    case unit_options(config) do
-      nil -> nil
-      opts -> opts |> split_backend_options() |> elem(0)
+    for opts <- units_options(config) do
+      name = Detection.pipeline_name(opts)
+      {output(name), {:detections, Detection.server(Pipeline, name)}}
     end
   end
 
-  # The options of the unit `config`'s components start, as `VisionCore.Components` resolves them.
-  defp unit_options(%VisionCore.Config{components: components}) do
-    Enum.find_value(components, fn component ->
-      {name, opts} = if is_atom(component), do: {component, []}, else: component
+  defp output(:detection), do: :detections
+  defp output(name), do: {:detections, name}
 
-      Enum.find_value(VisionCore.Components.start(name, opts), fn
-        %{start: {__MODULE__, _function, [unit_opts]}} -> unit_opts
-        _child -> nil
-      end)
-    end)
+  @doc """
+  The backend of each detection unit in `config`, in config order: its
+  module and the name it is registered under. `[]` when no component of
+  `config` starts a unit.
+  """
+  @spec backends(VisionCore.Config.t()) :: [{module(), server :: module()}]
+  def backends(config) do
+    for opts <- units_options(config) do
+      {backend, _backend_opts} = split_backend_options(opts)
+      {backend, Detection.server(backend, Detection.pipeline_name(opts))}
+    end
+  end
+
+  # The options of the units `config`'s components start, as `VisionCore.Components` resolves them.
+  defp units_options(%VisionCore.Config{components: components}) do
+    for component <- components,
+        {name, opts} = if(is_atom(component), do: {component, []}, else: component),
+        %{start: {__MODULE__, _function, [unit_opts]}} <- VisionCore.Components.start(name, opts),
+        do: unit_opts
   end
 
   defp check_options!(opts) do
@@ -144,7 +161,7 @@ defmodule VisionCore.Detection.Supervisor do
 
   defp refused_option(option), do: "it has no option #{inspect(option)}"
 
-  defp options, do: [:backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
+  defp options, do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
 
   @doc false
   def split_backend_options(opts) do

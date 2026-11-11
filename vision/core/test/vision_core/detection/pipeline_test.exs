@@ -92,10 +92,62 @@ defmodule VisionCore.Detection.PipelineTest do
       refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 200
       assert [_person] = detections()
     end
+
+    test "a named pipeline infers on its own backend and publishes under its own key, its name in the message" do
+      start_supervised!(
+        Supervisor.child_spec({Stub, name: Stub.Road, pipeline: :road, boxes: []}, id: :road_stub)
+      )
+
+      start_supervised!({Pipeline, name: :road, backend: Stub, backend_server: Stub.Road})
+      :ok = Outputs.subscribe({:detections, Pipeline.Road})
+
+      publish_pair()
+
+      assert_receive {:"$gen_cast", {:detections, %Pair{}, [], :road}}, 1_000
+      assert Process.whereis(Pipeline.Road)
+      refute Process.whereis(Pipeline)
+    end
+
+    test "two pipelines side by side each publish only under their own key" do
+      start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
+
+      start_supervised!(
+        Supervisor.child_spec({Stub, name: Stub.Road, pipeline: :road, boxes: []}, id: :road_stub)
+      )
+
+      start_supervised!(
+        Supervisor.child_spec(
+          {Pipeline, name: :road, backend: Stub, backend_server: Stub.Road},
+          id: :road_pipeline
+        )
+      )
+
+      road_listener = self()
+
+      spawn_link(fn ->
+        :ok = Outputs.subscribe({:detections, Pipeline.Road})
+        send(road_listener, :subscribed)
+        receive do: ({:"$gen_cast", message} -> send(road_listener, {:road, message}))
+      end)
+
+      assert_receive :subscribed
+      publish_pair()
+
+      assert_receive {:"$gen_cast", {:detections, %Pair{}, [%{label: "person"}]}}, 1_000
+      assert_receive {:road, {:detections, %Pair{}, [], :road}}, 1_000
+      refute_receive {:"$gen_cast", {:detections, _pair, _detections, :road}}, 100
+    end
   end
 
   test "declares the steps around the inference, in the detection pipeline, their settings fixed at start" do
-    state = %{detect_every_n: 2, min_score: 0.5, max_detections: 10, depth_sample_fraction: 0.25}
+    state = %{
+      name: :detection,
+      detect_every_n: 2,
+      min_score: 0.5,
+      max_detections: 10,
+      depth_sample_fraction: 0.25
+    }
+
     groups = Pipeline.groups(state)
 
     assert Enum.map(groups, &{&1.id, &1.name, &1.position}) == [
@@ -129,6 +181,25 @@ defmodule VisionCore.Detection.PipelineTest do
              pipeline: :detection,
              position: 102,
              summary: "Infers"
-           } = Pipeline.inference_group(%{summary: "Infers", parameters: []})
+           } = Pipeline.inference_group(:detection, %{summary: "Infers", parameters: []})
+  end
+
+  test "a named pipeline's steps carry its name, at the same positions" do
+    state = %{
+      name: :road,
+      detect_every_n: 1,
+      min_score: 0.5,
+      max_detections: 10,
+      depth_sample_fraction: 0.5
+    }
+
+    groups = Pipeline.groups(state) ++ [Pipeline.inference_group(:road, %{parameters: []})]
+
+    assert Enum.map(groups, &{&1.id, &1.pipeline, &1.position}) == [
+             {"road.input", :road, 101},
+             {"road.filtering", :road, 103},
+             {"road.placement", :road, 104},
+             {"road.inference", :road, 102}
+           ]
   end
 end

@@ -1,9 +1,10 @@
 defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
-  frame rate and exposure, the pair's sync, the NPU detection runs on,
-  the depth rate, each exporter's status (`VisionCore.Exporters.list/1`),
-  the CPU's busy share (`OvcsVehicle.SystemLoad`) and the share of time
+  frame rate and exposure, the pair's sync, the NPU the detection
+  pipelines run on (`:npu`: the kind of the first one's, failed while any
+  of their backends is unavailable), the depth rate, each exporter's
+  status (`VisionCore.Exporters.list/1`), the CPU's busy share (`OvcsVehicle.SystemLoad`) and the share of time
   the stereo
   pipeline spent in its compiled Nx or native segments
   (`Pair` `:device_ms`). Where they run on the GPU, that time
@@ -121,7 +122,7 @@ defmodule VisionCore.Status do
      %{
        tick_ms: tick_ms,
        cameras: StereoSupervisor.cameras(config),
-       npu_backend: npu_backend(config),
+       npu_backends: npu_backends(config),
        exporters: [],
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
@@ -346,11 +347,11 @@ defmodule VisionCore.Status do
     |> Map.merge(stereo_calls(state))
   end
 
-  defp npu_calls(%{npu_backend: nil}), do: %{}
-
-  # A backend is registered under its module.
-  defp npu_calls(%{npu_backend: backend}),
-    do: %{npu: {fn -> backend.available?(backend) end, false}}
+  defp npu_calls(%{npu_backends: backends}) do
+    Map.new(backends, fn {backend, server} ->
+      {{:npu, server}, {fn -> backend.available?(server) end, false}}
+    end)
+  end
 
   # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
   defp exporters do
@@ -392,15 +393,20 @@ defmodule VisionCore.Status do
   defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
   defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
 
-  defp npu(%{npu_backend: nil}, _replies), do: nil
+  defp npu(%{npu_backends: []}, _replies), do: nil
 
-  defp npu(%{npu_backend: backend}, %{npu: available?}),
-    do: %{kind: backend.npu_kind(), state: if(available?, do: :running, else: :failed)}
+  defp npu(%{npu_backends: [{first, _server} | _others] = backends}, replies) do
+    available? =
+      Enum.all?(backends, fn {_backend, server} -> Map.fetch!(replies, {:npu, server}) end)
 
-  # The detection unit's backend, when it runs on an accelerator.
-  defp npu_backend(config) do
-    backend = VisionCore.Detection.Supervisor.backend(config)
-    if backend && backend.npu_kind(), do: backend
+    %{kind: first.npu_kind(), state: if(available?, do: :running, else: :failed)}
+  end
+
+  # The detection units' backends that run on an accelerator.
+  defp npu_backends(config) do
+    for {backend, _server} = backend_server <- VisionCore.Detection.Supervisor.backends(config),
+        backend.npu_kind(),
+        do: backend_server
   end
 
   defp now_ms, do: System.monotonic_time(:millisecond)

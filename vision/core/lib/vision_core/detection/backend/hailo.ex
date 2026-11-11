@@ -41,6 +41,9 @@ defmodule VisionCore.Detection.Backend.Hailo do
   ## Options
 
     * `:hef_path` — the model (required).
+    * `:name` (the module) — the name it registers under.
+    * `:pipeline` (`:detection`) — the detection pipeline whose inference
+      step it declares.
     * `:score_threshold` (`0.4`) — the lowest score `hailo_detect` reports.
     * `:executable` — the program (default `priv/hailo_detect`).
     * `:working_directory` (`"/data"`) — where `hailo_detect` runs;
@@ -78,7 +81,8 @@ defmodule VisionCore.Detection.Backend.Hailo do
   @default_infer_timeout_ms 2_000
   @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  def start_link(opts),
+    do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
 
   @doc """
   Submit a `u8` `{height, width}` (or `{height, width, 3}` BGR) tensor
@@ -117,6 +121,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
     state = %{
       port: nil,
+      pipeline: Keyword.get(opts, :pipeline, :detection),
       executable: executable,
       hef_path: hef_path,
       score_threshold: score_threshold,
@@ -135,7 +140,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
     case open_port(state) do
       {:ok, port} ->
         Logger.info(
-          "#{__MODULE__} loaded #{Path.basename(hef_path)} " <>
+          "#{label(state)} loaded #{Path.basename(hef_path)} " <>
             "(score >= #{score_threshold})"
         )
 
@@ -143,7 +148,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
       {:error, reason} ->
         Logger.error(
-          "#{__MODULE__} unavailable: #{inspect(reason)}. The stereo pipeline " <>
+          "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
             "continues; no detections will be published."
         )
 
@@ -151,8 +156,11 @@ defmodule VisionCore.Detection.Backend.Hailo do
     end
   end
 
+  defp label(%{pipeline: :detection}), do: inspect(__MODULE__)
+  defp label(%{pipeline: pipeline}), do: "#{inspect(__MODULE__)} (#{pipeline})"
+
   defp inference_group(state) do
-    Pipeline.inference_group(%{
+    Pipeline.inference_group(state.pipeline, %{
       summary: "Finds objects in the image on the Hailo-8.",
       explanation: @explanation,
       compute: %{runs_on: :npu, implementation: :rust, backend: nil},
@@ -234,7 +242,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   @impl GenServer
   def handle_info({port, {:data, <<@log_tag, level, message::binary>>}}, %{port: port} = state) do
-    Logger.log(log_level(level), "#{__MODULE__} hailo_detect: #{message}")
+    Logger.log(log_level(level), "#{label(state)} hailo_detect: #{message}")
     {:noreply, state}
   end
 
@@ -247,7 +255,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   def handle_info({:infer_timeout, sequence}, %{inflight: %{sequence: sequence}} = state) do
     Logger.warning(
-      "#{__MODULE__} frame #{sequence} not answered in #{state.infer_timeout_ms} ms; " <>
+      "#{label(state)} frame #{sequence} not answered in #{state.infer_timeout_ms} ms; " <>
         "restarting hailo_detect"
     )
 
@@ -258,23 +266,23 @@ defmodule VisionCore.Detection.Backend.Hailo do
   def handle_info({:infer_timeout, _stale_sequence}, state), do: {:noreply, state}
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error("#{__MODULE__} hailo_detect exited with status #{status}")
+    Logger.error("#{label(state)} hailo_detect exited with status #{status}")
     {:noreply, port_down(state)}
   end
 
   def handle_info({:EXIT, port, reason}, %{port: port} = state) do
-    Logger.error("#{__MODULE__} Port died: #{inspect(reason)}")
+    Logger.error("#{label(state)} Port died: #{inspect(reason)}")
     {:noreply, port_down(state)}
   end
 
   def handle_info(:reopen, state) do
     case open_port(state) do
       {:ok, port} ->
-        Logger.info("#{__MODULE__} reopened hailo_detect")
+        Logger.info("#{label(state)} reopened hailo_detect")
         {:noreply, %{state | port: port}}
 
       {:error, reason} ->
-        Logger.error("#{__MODULE__} unavailable: #{inspect(reason)}")
+        Logger.error("#{label(state)} unavailable: #{inspect(reason)}")
         {:noreply, state}
     end
   end
