@@ -49,7 +49,12 @@ defmodule VisionApiWeb.StatusJSONTest do
         },
         range: %{level: :off, camera: nil, issues: []}
       },
-      npu: %{kind: "Hexagon", state: :running},
+      npu: %{
+        kind: "Hexagon",
+        state: :running,
+        load_percent: 64.5,
+        pipelines: %{detection: %{inference_ms: 21.5}, road: %{inference_ms: nil}}
+      },
       depth_hz: 29.9,
       cpu_percent: 61.0,
       stereo_segment_percent: 96.5,
@@ -104,7 +109,12 @@ defmodule VisionApiWeb.StatusJSONTest do
                },
                range: %{level: :off, camera: nil, issues: []}
              },
-             npu: %{kind: "Hexagon", state: "running"},
+             npu: %{
+               kind: "Hexagon",
+               state: "running",
+               loadPercent: 64.5,
+               pipelines: %{detection: %{inferenceMs: 21.5}, road: %{inferenceMs: nil}}
+             },
              depthHz: 29.9,
              cpuPercent: 61.0,
              stereoLoadPercent: 96.5,

@@ -375,7 +375,7 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`; it is `null` on a unit without one.
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each detection pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
 
 ```json
 {
@@ -405,7 +405,7 @@ status.join()
   "depthHz": 26.0,
   "stereoLoadPercent": 98.0,
   "cpuPercent": 84.8,
-  "npu": {"kind": "Hexagon", "state": "running"},
+  "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 64.5, "pipelines": {"detection": {"inferenceMs": 21.5}}},
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}}]
 }
 ```

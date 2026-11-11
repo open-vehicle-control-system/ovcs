@@ -69,7 +69,16 @@ defmodule VisionApiWeb.StatusJSON do
   end
 
   defp npu(nil), do: nil
-  defp npu(npu), do: %{kind: npu.kind, state: Atom.to_string(npu.state)}
+
+  defp npu(npu) do
+    %{
+      kind: npu.kind,
+      state: Atom.to_string(npu.state),
+      loadPercent: npu.load_percent,
+      pipelines:
+        Map.new(npu.pipelines, fn {name, %{inference_ms: ms}} -> {name, %{inferenceMs: ms}} end)
+    }
+  end
 
   defp alignment(nil), do: nil
 
