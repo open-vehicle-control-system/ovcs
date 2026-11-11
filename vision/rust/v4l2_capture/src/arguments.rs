@@ -25,12 +25,34 @@ pub struct Arguments {
 /// The command line of a single colour camera.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SingleArguments {
-    /// The capture size; the output is half of it in each axis.
+    /// The capture size.
     pub sensor_width: u32,
     pub sensor_height: u32,
     pub fps: u32,
     pub camera: Nodes,
+    pub output: Output,
     pub settings: ColourSettings,
+}
+
+/// The size of a single camera's RGB frames.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum Output {
+    /// The capture size, every sample a pixel.
+    #[default]
+    Full,
+    /// Half the capture size in each axis, every RGGB cell a pixel.
+    Half,
+}
+
+impl Output {
+    /// The width and height of the frames from a `sensor_width` by
+    /// `sensor_height` capture.
+    pub fn size(self, sensor_width: u32, sensor_height: u32) -> (u32, u32) {
+        match self {
+            Output::Full => (sensor_width, sensor_height),
+            Output::Half => (sensor_width / 2, sensor_height / 2),
+        }
+    }
 }
 
 /// The V4L2 names of one camera's capture node and sensor subdevice.
@@ -67,11 +89,13 @@ pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
 }
 
 /// Parses a single camera's arguments: its capture size and rate, its nodes,
-/// then any setting as `--name value`, with dashes for underscores. The
-/// error is the message to log.
+/// its `--output` (`full`, the default, or `half`), then any setting as
+/// `--name value`, with dashes for underscores. The error is the message to
+/// log.
 pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let (mut sensor_width, mut sensor_height, mut fps) = (None, None, None);
     let (mut video, mut sensor) = (None, None);
+    let mut output = Output::default();
     let mut settings = ColourSettings::default();
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
@@ -84,6 +108,13 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
             "--fps" => fps = Some(number(flag, value)?),
             "--video" => video = Some(value.clone()),
             "--sensor" => sensor = Some(value.clone()),
+            "--output" => {
+                output = match value.as_str() {
+                    "full" => Output::Full,
+                    "half" => Output::Half,
+                    _ => return Err(format!("{flag}: full or half, got {value}")),
+                }
+            }
             setting => match setting.strip_prefix("--") {
                 Some(name) => settings.set(&name.replace('-', "_"), value)?,
                 None => return Err(format!("unknown argument {flag}")),
@@ -98,6 +129,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
             video: video.ok_or("missing --video")?,
             sensor: sensor.ok_or("missing --sensor")?,
         },
+        output,
         settings,
     })
 }
@@ -265,6 +297,24 @@ mod tests {
         assert!(!arguments.settings.awb);
         assert_eq!(arguments.settings.red_gain, 1.8);
         assert_eq!(arguments.settings.capture.black_level, 256);
+    }
+
+    #[test]
+    fn a_single_camera_writes_full_size_frames_unless_asked_for_half() {
+        let parsed = |extra: &[&str]| parse_single(&single_command_line(extra));
+        assert_eq!(parsed(&[]).unwrap().output, Output::Full);
+        assert_eq!(parsed(&["--output", "half"]).unwrap().output, Output::Half);
+        assert_eq!(parsed(&["--output", "full"]).unwrap().output, Output::Full);
+        assert_eq!(
+            parsed(&["--output", "quarter"]),
+            Err("--output: full or half, got quarter".to_string())
+        );
+    }
+
+    #[test]
+    fn the_output_size_is_the_capture_size_or_half_of_it() {
+        assert_eq!(Output::Full.size(2028, 1520), (2028, 1520));
+        assert_eq!(Output::Half.size(2028, 1520), (1014, 760));
     }
 
     #[test]

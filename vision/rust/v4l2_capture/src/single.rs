@@ -1,36 +1,37 @@
-//! A single colour camera: captures its raw RGGB frames, demosaics each 2x2
-//! cell into one RGB pixel with grey-world white balance, runs auto exposure
-//! on the green channel, and writes RGB_FRAME records on stdout.
+//! A single colour camera: captures its raw RGGB frames, demosaics them at
+//! the capture's size or each 2x2 cell into one pixel, with grey-world white
+//! balance, runs auto exposure on the green of the RGGB cells, and writes
+//! RGB_FRAME records on stdout.
 
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
 
 use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
 
-use crate::arguments::SingleArguments;
+use crate::arguments::{Output, SingleArguments};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance;
 use crate::{
-    auto_exposure, auto_exposure_from, exposure, input, open_camera, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, EXPOSURE_SAMPLE_STRIDE,
-    STATISTICS_EVERY_S,
+    auto_exposure, auto_exposure_from, input, open_camera, pollfd, resume_point,
+    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
 };
 
-/// White balance measures every this many rows of RGGB cells.
-const WHITE_BALANCE_ROW_STEP: usize = 4;
+/// White balance and auto exposure measure every this many rows of RGGB
+/// cells, the same cells whatever the output's size.
+const MEASURED_ROW_STEP: usize = 4;
 
 /// Captures the camera `arguments` names at its full sensor size until the
-/// host closes stdin, writing each frame at half that size in each axis.
+/// host closes stdin, writing each frame at the size of `arguments.output`.
 pub fn run(
     arguments: &SingleArguments,
     writer: &Writer,
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.sensor_width, arguments.sensor_height);
-    let (width, height) = (sensor_width / 2, sensor_height / 2);
+    let (width, height) = arguments.output.size(sensor_width, sensor_height);
     let model = SensorModel::for_sensor(&arguments.camera.sensor);
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
@@ -83,9 +84,9 @@ pub fn run(
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} {:?}, line {line_ns:.1} ns, vblank {vblank}, \
-             period {period_ns} ns, {settings:?}",
-            camera.capture.layout
+            "{sensor_width}x{sensor_height} {:?} to {width}x{height} {:?}, line {line_ns:.1} ns, \
+             vblank {vblank}, period {period_ns} ns, {settings:?}",
+            camera.capture.layout, arguments.output
         ),
     );
 
@@ -161,21 +162,24 @@ pub fn run(
                 row_stride: camera.capture.row_stride,
                 layout: camera.capture.layout,
             };
-            let rgb = bayer::rgb_half(&raw, &tone, gains, settings.capture.rotation == 180);
+            let rotate_180 = settings.capture.rotation == 180;
+            let rgb = match arguments.output {
+                Output::Full => bayer::rgb_full(&raw, &tone, gains, rotate_180),
+                Output::Half => bayer::rgb_half(&raw, &tone, gains, rotate_180),
+            };
+            frames += 1;
+            let exposure_mean = (settings.capture.auto_exposure
+                && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES))
+            .then(|| bayer::toned_green_mean(&raw, &tone, MEASURED_ROW_STEP));
             if settings.awb {
-                let means = bayer::channel_means(
-                    &raw,
-                    settings.capture.black_level,
-                    WHITE_BALANCE_ROW_STEP,
-                );
+                let means =
+                    bayer::channel_means(&raw, settings.capture.black_level, MEASURED_ROW_STEP);
                 gains = white_balance::grey_world(means, gains);
             }
             conversion_ns += converting.elapsed().as_nanos();
             camera.capture.queue(frame.index)?;
             last_ns = Some(frame.start_ns);
-            frames += 1;
-            if settings.capture.auto_exposure && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES) {
-                let mean = green_mean(&rgb, EXPOSURE_SAMPLE_STRIDE);
+            if let Some(mean) = exposure_mean {
                 if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
                     report_exposure(set_exposure(exposure_us, gain)?, frame.start_ns)?;
                 }
@@ -185,23 +189,5 @@ pub fn run(
                 &rgb,
             ])?;
         }
-    }
-}
-
-/// The mean green of every `stride`-th pixel of 8-bit RGB `rgb`.
-fn green_mean(rgb: &[u8], stride: usize) -> f64 {
-    exposure::mean(rgb.get(1..).unwrap_or_default(), 3 * stride)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn auto_exposure_measures_the_green_channel() {
-        let rgb = [10, 100, 20, 30, 200, 40, 250, 60, 250];
-        assert_eq!(green_mean(&rgb, 1), 120.0);
-        assert_eq!(green_mean(&rgb, 2), 80.0);
-        assert_eq!(green_mean(&[], 1), 0.0);
     }
 }
