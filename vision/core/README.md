@@ -2,7 +2,7 @@
 
 Stereo depth and object detection for a vehicle, taken out of the unit by its exporters, such as ROS 2 messages over native Zenoh.
 
-`vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming the components to run (`:stereo`, `:detector`, `:hailo_detector`, `:qnn_detector`; see `VisionCore.Components`), the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.Exporter`) and, for ROS 2, the Zenoh router and the node name.
+`vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming the components to run (`:stereo`, `:detector`, `:hailo_detector`, `:qnn_detector`, each of which may be listed several times under its own `:name` to run named detection pipelines; see `VisionCore.Components` and `VisionCore.Detection`), the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.Exporter`) and, for ROS 2, the Zenoh router and the node name.
 
 `VisionCore.Application` starts the composer set in `:vision_core, :vehicle` under `VisionCore.Supervisor`: the saved parameters' storage and the parameter registry first, then the ROS 2 link when the configuration has one, the components, the exporters, and the dashboard's sources. With no composer it starts nothing.
 

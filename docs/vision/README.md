@@ -156,7 +156,7 @@ The vision parameters are the unit's own settings, grouped by component and pipe
 
 Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
 
-The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. The detection pipeline is its input, inference, filtering and placement. The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
+The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. Each detection pipeline is its input, inference, filtering and placement: `<name>.input`, `<name>.inference`, `<name>.filtering` and `<name>.placement` for a named one, `detection.*` for the default. The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
 
 A box's panel lists its parameters with their constraints and defaults:
 
@@ -193,6 +193,14 @@ Add `?include=topics,services`, or either alone, to get the topics and services 
 The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
+
+## Several detection pipelines
+
+A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`: a lowercase atom such as `:vehicle_detection`, defaulting to `:detection`. Each named pipeline has its own supervisor, backend, model and parameter groups, and the dashboard's menu draws it as its own flow. Names that collide with a ROS 2 topic segment under the prefix, the stereo pipeline's name, or the Hailo-8 claim are reserved, and two detectors with the same name are refused; `VisionCore.Detection` lists the reserved names.
+
+The Hailo-8 serves one pipeline: a second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged, and the status `npu` shows `failed` because it covers every pipeline's backend and is `failed` when any of them is unavailable. Two QNN pipelines each run on the Hexagon, and a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
+
+Each exporter takes the pipelines it publishes: the ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
 
 ## Detection models
 

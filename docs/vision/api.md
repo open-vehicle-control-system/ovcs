@@ -292,6 +292,8 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
+A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API.
+
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
 An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`. The action's parameters go in `attributes` when it takes any.
@@ -472,3 +474,5 @@ On a unit with detection, `detections` pushes each result, at most ten a second,
 ```
 
 On a unit without detection, the join is refused with `{"reason": "unavailable"}`.
+
+`detections` carries the default pipeline. A pipeline named in the vehicle's composer, `:vehicle_detection` for instance, has its own channel, `detections:vehicle_detection`, which pushes the same `detections` event with the same payload. `detections:detection` and a name no pipeline runs under are refused with `{"reason": "unavailable"}`. The names come from `GET /api/exporters`, whose API outputs list each `detections:<name>`.
