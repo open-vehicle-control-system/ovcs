@@ -14,6 +14,14 @@ defmodule VisionCore.Status do
   pixels, the disparity's mean and spread, and its jitter), each averaged
   over the tick's pairs; `nil` without any.
 
+  `:pair` judges the cameras together (`VisionCore.Stereo.PairCheck`):
+  their timing, their rows, with the row correction the stage declaring
+  `right_row_offset` applies, their focus and their brightness; each
+  camera's `:issues` are those of the checks pointing at it. `:depth`
+  judges how well the unit turns pairs into depth
+  (`VisionCore.Stereo.DepthCheck`): the pairs it drops and how much of
+  the last pair is nearer than it measures.
+
   Started after the components and the exporters in `VisionCore.Supervisor`.
   A listing of the exporters that misses its deadline reports those
   listed last as not answering.
@@ -28,7 +36,7 @@ defmodule VisionCore.Status do
   use GenServer
 
   alias VisionCore.{Exporter, Exporters, Outputs}
-  alias VisionCore.Stereo.Pairer
+  alias VisionCore.Stereo.{AlignmentCorrection, DepthCheck, PairCheck, Pairer, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias OvcsVehicle.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
@@ -51,6 +59,8 @@ defmodule VisionCore.Status do
           cpu_percent: float() | nil,
           stereo_segment_percent: float(),
           alignment: %{offset_rows: float(), band_offset_rows: [float() | nil]} | nil,
+          pair: PairCheck.t(),
+          depth: DepthCheck.t(),
           sharpness: %{left: float(), right: float()} | nil,
           quality:
             %{
@@ -123,6 +133,12 @@ defmodule VisionCore.Status do
        alignment: nil,
        sharpnesses: [],
        sharpness: nil,
+       brightnesses: [],
+       brightness: nil,
+       last_pair: nil,
+       near: nil,
+       pair: nil,
+       depth: nil,
        qualities: [],
        quality: nil,
        window_start_ms: now_ms(),
@@ -160,6 +176,8 @@ defmodule VisionCore.Status do
        state
        | alignments: prepend(pair.alignment, state.alignments),
          sharpnesses: prepend(pair.sharpness, state.sharpnesses),
+         brightnesses: prepend(pair.brightness, state.brightnesses),
+         last_pair: pair,
          qualities: prepend(quality(pair.metrics), state.qualities)
      }}
   end
@@ -203,6 +221,10 @@ defmodule VisionCore.Status do
         alignments: [],
         sharpness: mean_sharpness(state.sharpnesses),
         sharpnesses: [],
+        brightness: mean_sharpness(state.brightnesses),
+        brightnesses: [],
+        near: state.last_pair && DepthCheck.near(state.last_pair),
+        last_pair: nil,
         quality: mean_quality(state.qualities),
         qualities: []
     }
@@ -260,11 +282,42 @@ defmodule VisionCore.Status do
   defp build_snapshot(state) do
     replies = state |> calls() |> call_all_within_timeout()
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
+    sync = sync(cameras, replies)
     state = listed(state, replies.exporters)
 
+    pair =
+      PairCheck.check(
+        %{
+          cameras: cameras,
+          sync: sync,
+          alignment: state.alignment,
+          sharpness: state.sharpness,
+          brightness: state.brightness,
+          row_correction: Map.get(replies, :row_correction)
+        },
+        state.pair
+      )
+
+    depth =
+      DepthCheck.check(
+        %{
+          cameras: cameras,
+          depth_hz: state.rates_hz.depth,
+          load_percent: state.stereo_segment_percent,
+          near: state.near
+        },
+        state.depth
+      )
+
+    issues = PairCheck.camera_issues(pair)
+    state = %{state | pair: pair, depth: depth}
+
     snapshot = %{
-      cameras: cameras,
-      sync: sync(cameras, replies),
+      cameras:
+        Map.new(cameras, fn {side, camera} -> {side, Map.put(camera, :issues, issues[side])} end),
+      sync: sync,
+      pair: pair,
+      depth: depth,
       hailo: hailo(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
@@ -305,11 +358,20 @@ defmodule VisionCore.Status do
 
   defp stereo_calls(%{cameras: cameras}) do
     sync = {fn -> Map.put(Pairer.sync(), :present, true) end, %{present: false}}
+    row_correction = {&row_correction/0, nil}
 
     for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
         function_exported?(driver, :live, 1),
-        into: %{sync: sync},
+        into: %{sync: sync, row_correction: row_correction},
         do: {side, {fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end, %{}}}
+  end
+
+  # The rows the stage declaring `right_row_offset` moves the right image by, as the row correction sets them.
+  defp row_correction do
+    case AlignmentCorrection.offset_stage(Pipeline.stage_options(Pipeline)) do
+      nil -> nil
+      stage -> stage.values[:right_row_offset]
+    end
   end
 
   defp camera(%{cameras: []}, _side, _replies), do: %{present: false}

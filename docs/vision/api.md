@@ -333,10 +333,24 @@ status.join()
 ```json
 {
   "cameras": {
-    "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177},
-    "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155}
+    "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
+    "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]}
   },
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
+  "pair": {
+    "timing": {"level": "ok", "camera": null, "issues": [], "gauge": -0.02, "later": "left", "offsetMs": 0.02, "maxOffsetMs": 0.77, "pairs": 150},
+    "rows": {"level": "ok", "camera": null, "issues": [], "gauge": 0.42, "direction": "lower", "misalignmentRows": 0.09,
+             "offsetRows": 0.09, "correctionRows": 0.0, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14], "bandSpreadRows": 0.42},
+    "focus": {"level": "warning", "camera": "right", "issues": ["focus_mismatch"], "gauge": 1.0, "softer": "right",
+              "differencePercent": 38, "ratio": 0.62, "left": 0.0052, "right": 0.0032},
+    "brightness": {"level": "ok", "camera": null, "issues": [], "gauge": 0.2, "brighter": "right",
+                   "differencePercent": 4, "left": 96.1, "right": 99.9}
+  },
+  "depth": {
+    "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.24, "droppedPercent": 1.2,
+             "depthHz": 34.4, "cameraHz": 34.8, "loadPercent": 98.0},
+    "range": {"level": "warning", "camera": null, "issues": ["too_near"], "gauge": 1.5, "nearPercent": 22.5, "nearestM": 1.39}
+  },
   "alignment": {"offsetRows": 0.09, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14]},
   "sharpness": {"left": 0.0048, "right": 0.0056},
   "quality": {"matchedPercent": 64.7, "jitterPx": 0.087, "meanDisparityPx": 11.9, "spreadPx": 7.7},
@@ -347,6 +361,28 @@ status.join()
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}}]
 }
 ```
+
+`pair` judges the two cameras together, so a reader computes nothing: each check has a `level`, `ok`, `warning` as soon as it has an issue, or `off` with nothing to judge, the `camera` its issues point at (`left`, `right` or `null`), its `issues`, its `gauge`, and its figures with their direction already worked out. The `gauge` places the check against its threshold: 0 at best, 1 at the threshold, negative toward the left camera and positive toward the right; `rows` takes the worst of its three measures, toward the right camera, whose image the correction moves.
+
+| Check | Figures | Issue | Raised when |
+|---|---|---|---|
+| `timing` | `later`, the camera whose capture starts later, by `offsetMs`, the median, and `maxOffsetMs` over `pairs` | `timing_offset` | the median offset is over 1 ms; points at the later camera |
+| `rows` | `misalignmentRows`, how far the right image sits from where the calibration puts it, `lower` or `higher` (`direction`): the measured `offsetRows` plus the `correctionRows` the automatic row correction moves it by; `bandOffsetRows` and their spread, `bandSpreadRows` | `row_offset` | the measured offset is over half a row |
+| | | `large_row_correction` | the correction moves the right image more than 3 rows: recalibrate |
+| | | `uneven_rows` | the four bands are more than 1 row apart: a camera turned, recalibrate |
+| `focus` | `softer`, the less sharp camera, by `differencePercent`; `ratio`, right over left, and each camera's sharpness | `focus_mismatch` | the ratio is outside 0.8 to 1.25; points at the softer camera |
+| `brightness` | `brighter`, the brighter camera, by `differencePercent`; each camera's mean grey, 0 to 255 | `brightness_mismatch` | one camera is more than 20% brighter than the other at the same exposure and gain, as through a hazy or dirty lens; points at the brighter camera |
+
+Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stereo.PairCheck` holds the thresholds and the issues.
+
+`depth` judges how well the unit turns pairs into depth, with checks shaped as `pair`'s; they point at no camera, and their `gauge` runs from 0 to 1 at the threshold.
+
+| Check | Figures | Issue | Raised when |
+|---|---|---|---|
+| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that do not become depth, at `depthHz`; `loadPercent`, the stereo segment's busy share | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
+| `range` | `nearPercent`, the share of the last pair's matched pixels in the nearest 15% of the disparity range; `nearestM`, the nearest depth that range measures | `too_near` | more than 15% of the matches are in that band: the scene is nearer than the unit measures, so widen the range or move back |
+
+`VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
 
 What each figure measures, and the values to aim for, is in [Vision unit](./README.md#dashboard-and-api) and [Vision performance](./performance.md).
 

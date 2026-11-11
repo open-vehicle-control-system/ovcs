@@ -1,4 +1,5 @@
 import { HINTS } from './hints.js'
+import { issueActions, issueWording } from './issues.js'
 
 /**
  * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, tone, detail, hint }` items, `tone`
@@ -27,22 +28,26 @@ export function objectFigures(detections) {
   return detections ? [{ label: 'objects', value: String(detections.length), hint: HINTS.objects }] : []
 }
 
-export function syncStatus(sync) {
-  if (!sync || !sync.present) return { id: 'sync', title: 'Synchronisation', value: 'absent', healthy: false }
-  if (sync.offsetMedianMs == null) return { id: 'sync', title: 'Synchronisation', value: 'no pairs', healthy: false }
-  return {
-    id: 'sync',
-    title: 'Synchronisation',
-    value: `${formatNumber(sync.offsetMedianMs, 2)} ms`,
-    healthy: Math.abs(sync.offsetMedianMs) <= 1,
-    detail: `max ${formatNumber(sync.offsetMaxMs, 2)} ms over ${sync.pairs} pairs`,
-    hint: HINTS.sync
-  }
+// A depth check's figure, toned by the unit's level; none while the check has nothing to judge.
+function depthCheckFigure(label, check, value, hint) {
+  if (!check || check.level === 'off') return []
+  return [{ label, value: value(check), tone: check.level === 'ok' ? 'ok' : 'error', hint }]
 }
 
-// After the rate, the quality stage's averages: pixels matched, disparity mean and spread, and jitter, the matcher's noise on a still scene.
-export function depthFigures(hz, quality) {
-  const figures = [{ label: 'rate', value: `${formatNumber(hz)} Hz`, tone: hz > 0 ? 'ok' : 'error', hint: HINTS.depthRate }]
+// After the rate, the depth checks' figures, then the quality stage's averages: pixels matched, disparity mean and
+// spread, and jitter, the matcher's noise on a still scene.
+export function depthFigures(status) {
+  const { depthHz: hz, quality, depth } = status
+  const figures = [
+    { label: 'rate', value: `${formatNumber(hz)} Hz`, tone: hz > 0 ? 'ok' : 'error', hint: HINTS.depthRate },
+    ...depthCheckFigure('dropped', depth?.rate, (check) => `${formatNumber(check.droppedPercent, 0)} %`, HINTS.dropped),
+    ...depthCheckFigure(
+      'too near',
+      depth?.range,
+      (check) => `${formatNumber(check.nearPercent, 0)} % < ${formatNumber(check.nearestM)} m`,
+      HINTS.tooNear
+    )
+  ]
   if (!quality) return figures
   return [
     ...figures,
@@ -75,37 +80,69 @@ function loadStatus(id, title, percent) {
   }
 }
 
-// Rows the right image is offset by; past half a row the calibration no longer fits.
-function alignmentStatus(alignment) {
-  if (!alignment) return { id: 'alignment', title: 'Row alignment', value: '–', healthy: false }
+// A check of the unit's `pair`, as its item: a dash while it has nothing to judge, the unit's level as its health;
+// `describe` gives the value, its short `detail` and the `more` figures of a check that has them.
+function checkItem({ id, title, hint, widest }, check, describe) {
+  const blank = { id, title, widest, hint, value: '–', detail: '', more: '', healthy: false, tone: 'muted', camera: null, issues: [] }
+  if (!check || check.level === 'off') return blank
+  const [value, detail, more] = describe(check)
   return {
-    id: 'alignment',
-    title: 'Row alignment',
-    value: `${formatNumber(alignment.offsetRows)} rows`,
-    healthy: Math.abs(alignment.offsetRows) <= 0.5,
-    hint: HINTS.alignment,
-    detail: `left to right ${alignment.bandOffsetRows.map((rows) => formatNumber(rows)).join(' · ')}`
+    ...blank,
+    value,
+    detail,
+    more,
+    healthy: check.level === 'ok',
+    tone: undefined,
+    gauge: check.gauge,
+    camera: check.camera,
+    issues: check.issues.map(issueWording)
   }
 }
 
-// The right camera's sharpness over the left's; far from 1, their focus differs.
-function sharpnessStatus(sharpness) {
-  if (!sharpness || !sharpness.left) return { id: 'sharpness', title: 'Sharpness, right / left', value: '–', healthy: false }
-  const ratio = sharpness.right / sharpness.left
-  return {
-    id: 'sharpness',
-    title: 'Sharpness, right / left',
-    value: formatNumber(ratio, 2),
-    healthy: ratio >= 0.8 && ratio <= 1.25,
-    hint: HINTS.sharpness,
-    detail: `left ${formatNumber(sharpness.left, 4)} · right ${formatNumber(sharpness.right, 4)}`
-  }
-}
+export const PAIR_CHECKS = [
+  { id: 'timing', title: 'Timing', hint: HINTS.timing, widest: '00.00 ms' },
+  { id: 'rows', title: 'Rows', hint: HINTS.rows, widest: '00.0 rows' },
+  { id: 'focus', title: 'Focus', hint: HINTS.focus, widest: '100 %' },
+  { id: 'brightness', title: 'Brightness', hint: HINTS.brightness, widest: '100 %' }
+]
 
-/** How the two cameras compare: their sync, row alignment and sharpness. */
+/** How the cameras work together, as the unit judges them (`pair`): their timing, rows, focus and brightness. */
 export function pairStatus(status) {
-  return [syncStatus(status.sync), alignmentStatus(status.alignment), sharpnessStatus(status.sharpness)]
+  const { timing, rows, focus, brightness } = status.pair ?? {}
+  const [timingCheck, rowsCheck, focusCheck, brightnessCheck] = PAIR_CHECKS
+
+  return [
+    checkItem(timingCheck, timing, (check) => [
+      `${formatNumber(check.offsetMs, 2)} ms`,
+      `${check.later} later · max ${formatNumber(check.maxOffsetMs, 2)}`,
+      `over ${check.pairs} pairs`
+    ]),
+    checkItem(rowsCheck, rows, (check) => [
+      `${formatNumber(check.misalignmentRows)} rows`,
+      `right ${check.direction} · corrected ${formatNumber(check.correctionRows)}`,
+      `left to right ${check.bandOffsetRows.map((band) => formatNumber(band)).join(' · ')}`
+    ]),
+    checkItem(focusCheck, focus, (check) => [
+      `${check.differencePercent} %`,
+      `${check.softer} softer`,
+      `left ${formatNumber(check.left, 4)} · right ${formatNumber(check.right, 4)}`
+    ]),
+    checkItem(brightnessCheck, brightness, (check) => [
+      `${check.differencePercent} %`,
+      `${check.brighter} brighter`,
+      `left ${formatNumber(check.left, 0)} · right ${formatNumber(check.right, 0)} grey`
+    ])
+  ]
 }
+
+const actionsFor = (issues) => ({ actions: issueActions(issues), wording: issues.map(issueWording) })
+
+/** What the unit found wrong with one camera: the `actions` it calls for and their full `wording`. */
+export const cameraIssues = (camera) => actionsFor(camera?.issues ?? [])
+
+/** What the unit found wrong with its depth (`depth`'s checks), as `cameraIssues` gives a camera's. */
+export const depthIssues = (status) =>
+  actionsFor(Object.values(status?.depth ?? {}).flatMap((check) => check.issues ?? []))
 
 // The ROS 2 exporter's status, lower-cased like the other values; none on a unit without a ROS 2 exporter.
 function ros2Status(exporters) {

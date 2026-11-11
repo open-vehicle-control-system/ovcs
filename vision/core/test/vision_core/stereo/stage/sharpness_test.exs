@@ -43,6 +43,20 @@ defmodule VisionCore.Stereo.Stage.SharpnessTest do
     assert_in_delta right / left, 1.0, 0.05
   end
 
+  test "reads each image's brightness, its mean grey" do
+    image = texture()
+    context = %{height: 64, width: 96}
+
+    %{left: left, right: right} =
+      run_stage(Stage.Sharpness, [], context, %{
+        left: u8(image),
+        right: u8(Nx.multiply(image, 0.5))
+      }).brightness
+
+    assert_in_delta left, Nx.to_number(Nx.mean(u8(image))), 1.0
+    assert_in_delta right / left, 0.5, 0.01
+  end
+
   test "leaves out each pair of neighbours a black pixel is in, as Rectification's borders" do
     # The texture has no black pixel of its own.
     image = u8(texture())
