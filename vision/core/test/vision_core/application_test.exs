@@ -364,6 +364,36 @@ defmodule VisionCore.ApplicationTest do
     end
   end
 
+  test "a detector whose name is not a valid pipeline name fails the start, stating the rule" do
+    for name <- ["road", nil, :"front-cam", :stereo] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+        components: [{:detector, name: name, backend: VisionCore.Detection.Backend.Stub}]
+      })
+
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~ "a detection pipeline's name is an atom matching"
+      assert message =~ "got #{inspect(name)}"
+    end
+  end
+
+  test "two detectors whose names give their processes one name fail the start, naming both" do
+    Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+      components: [{:detector, name: :road_2}, {:detector, name: :road2}]
+    })
+
+    Application.put_env(:vision_core, :vehicle, Composer)
+
+    assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
+    assert inspect(reason) =~ "detectors :road_2 and :road2"
+    assert inspect(reason) =~ "VisionCore.Detection.Supervisor.Road2"
+  end
+
   test "the pipeline keeps running with no Zenoh router" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,

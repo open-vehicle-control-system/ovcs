@@ -27,8 +27,9 @@ defmodule VisionCore.Application do
   `stereo_match`; the Matcher runs the binary and thread count of
   `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
 
-  A configuration with two detectors of one name (`VisionCore.Detection`)
-  fails the start, naming it.
+  A configuration with two detectors of one name, or of two names whose
+  processes would be registered alike (`VisionCore.Detection.server/2`:
+  `:road_2` and `:road2`), fails the start, naming them.
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
@@ -43,6 +44,8 @@ defmodule VisionCore.Application do
   the cameras and pipelines.
   """
   use Application
+
+  alias VisionCore.Detection
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
@@ -145,19 +148,26 @@ defmodule VisionCore.Application do
   defp clock_children(true), do: [{VisionCore.Ros2.Clock, []}]
   defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
 
-  # Two units of one name would share their processes' names; the supervisor would refuse them less clearly.
+  # Two units whose processes would share their names; the supervisor would refuse them less clearly.
   defp check_detector_names!(children) do
-    names =
-      for %{start: {VisionCore.Detection.Supervisor, _function, [opts]}} <- children,
-          do: VisionCore.Detection.pipeline_name(opts)
-
-    case names -- Enum.uniq(names) do
-      [] ->
+    children
+    |> Enum.flat_map(fn
+      %{start: {Detection.Supervisor, _function, [opts]}} -> [Detection.pipeline_name(opts)]
+      _child -> []
+    end)
+    |> Enum.group_by(&Detection.server(Detection.Supervisor, &1))
+    |> Enum.find(fn {_server, names} -> length(names) > 1 end)
+    |> case do
+      nil ->
         :ok
 
-      [name | _others] ->
+      {_server, [name, name | _others]} ->
+        raise ArgumentError, "two detectors are named #{inspect(name)}: give each its own :name"
+
+      {server, [first, second | _others]} ->
         raise ArgumentError,
-              "two detectors are named #{inspect(name)}: give each its own :name"
+              "detectors #{inspect(first)} and #{inspect(second)} would both run as " <>
+                "#{inspect(server)}: give them names that camelize apart"
     end
   end
 

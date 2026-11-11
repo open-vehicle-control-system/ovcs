@@ -6,15 +6,32 @@ defmodule VisionCore.Detection do
   pipeline under its own `VisionCore.Detection.Supervisor`, named by its
   `:name` option, `:detection` without one. The name keys the pipeline's
   processes (`server/2`), its `VisionCore.Outputs` key, its parameter
-  groups (`<name>.*`) and its exporters' outputs. The default pipeline,
-  `:detection`, keeps its processes registered under their modules.
+  groups (`<name>.*`), its exporters' outputs and its ROS 2 topics
+  (`<prefix>/<name>/…`). The default pipeline, `:detection`, keeps its
+  processes registered under their modules.
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
-  and is not `:stereo`, the stereo pipeline's.
+  and is none of the reserved names: `:stereo`, the stereo pipeline's;
+  `:left`, `:right`, `:depth`, `:disparity`, `:points`, `:detections`
+  and `:live`, the first segments of the topics the ROS 2 exporter
+  publishes under `<prefix>/`; and `:device`, whose Hailo backend
+  process would take the name of the Hailo-8 claim
+  (`VisionCore.Detection.Backend.Hailo.Device`).
   """
 
   @default_name :detection
   @name_pattern ~r/^[a-z][a-z0-9_]*$/
+  @reserved_names [
+    :stereo,
+    :left,
+    :right,
+    :depth,
+    :disparity,
+    :points,
+    :detections,
+    :live,
+    :device
+  ]
 
   @doc """
   The name `module`'s process of the pipeline `name` is registered under:
@@ -38,16 +55,21 @@ defmodule VisionCore.Detection do
   def output(@default_name), do: :detections
   def output(name), do: {:detections, name}
 
-  @doc "Whether `name` is a valid pipeline name: an atom matching `^[a-z][a-z0-9_]*$`, not `:stereo`."
+  @doc """
+  Whether `name` is a valid pipeline name: an atom matching
+  `^[a-z][a-z0-9_]*$`, none of the reserved names (see the module doc).
+  """
   @spec name?(term()) :: boolean()
   def name?(name),
-    do: is_atom(name) and name != :stereo and Regex.match?(@name_pattern, Atom.to_string(name))
+    do:
+      is_atom(name) and name not in [nil, true, false | @reserved_names] and
+        Regex.match?(@name_pattern, Atom.to_string(name))
 
   @doc """
   `name` when it is a valid pipeline name (`name?/1`). Raises
   `ArgumentError` stating the rule otherwise.
   """
-  @spec name!(atom()) :: atom()
+  @spec name!(term()) :: atom()
   def name!(name) do
     if name?(name),
       do: name,
@@ -55,7 +77,7 @@ defmodule VisionCore.Detection do
         raise(
           ArgumentError,
           "a detection pipeline's name is an atom matching ^[a-z][a-z0-9_]*$, " <>
-            "not :stereo, got #{inspect(name)}"
+            "not one of #{Enum.map_join(@reserved_names, ", ", &inspect/1)}, got #{inspect(name)}"
         )
   end
 end

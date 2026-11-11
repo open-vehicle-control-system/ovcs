@@ -4,10 +4,10 @@ defmodule VisionCore.Status do
   frame rate and exposure, the pair's sync, the NPU the detection
   pipelines run on (`:npu`: the kind of the first one's, failed while any
   of their backends is unavailable), the depth rate, each exporter's
-  status (`VisionCore.Exporters.list/1`), the CPU's busy share (`OvcsVehicle.SystemLoad`) and the share of time
-  the stereo
-  pipeline spent in its compiled Nx or native segments
-  (`Pair` `:device_ms`). Where they run on the GPU, that time
+  status (`VisionCore.Exporters.list/1`), the CPU's busy share
+  (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
+  spent in its compiled Nx or native segments (`Pair` `:device_ms`).
+  Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
   not the GPU's busy share. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness

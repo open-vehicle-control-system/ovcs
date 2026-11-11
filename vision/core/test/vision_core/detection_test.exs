@@ -24,8 +24,13 @@ defmodule VisionCore.DetectionTest do
   test "tells a valid pipeline name from an invalid one" do
     assert Detection.name?(:road_signs)
     refute Detection.name?(:stereo)
+    refute Detection.name?(:left)
+    refute Detection.name?(:device)
     refute Detection.name?(:"front-cam")
     refute Detection.name?("road")
+    refute Detection.name?(nil)
+    refute Detection.name?(true)
+    refute Detection.name?(false)
   end
 
   test "takes a lowercase name of letters, digits and underscores" do
@@ -38,7 +43,7 @@ defmodule VisionCore.DetectionTest do
     for name <- [:"front-cam", :"front.cam", :Road, :"2nd", :stereo, "road"] do
       error = assert_raise ArgumentError, fn -> Detection.name!(name) end
       assert error.message =~ "^[a-z][a-z0-9_]*$"
-      assert error.message =~ "not :stereo"
+      assert error.message =~ "not one of :stereo"
       assert error.message =~ inspect(name)
     end
   end

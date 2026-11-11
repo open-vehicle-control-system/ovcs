@@ -55,7 +55,11 @@ defmodule VisionCore.Components do
   end
 
   def start(:detector, opts) do
-    id = Detection.server(Detection.Supervisor, Detection.pipeline_name(opts))
+    id =
+      Detection.server(
+        Detection.Supervisor,
+        opts |> Detection.pipeline_name() |> Detection.name!()
+      )
 
     # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
     [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]

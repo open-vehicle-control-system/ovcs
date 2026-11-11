@@ -97,6 +97,21 @@ defmodule VisionCore.Detection.SupervisorTest do
     end
   end
 
+  # Each a first segment of the ROS 2 topics under the stereo prefix, or the Hailo-8 claim's name.
+  test "is left down, saying why, with a name the unit's other processes or topics already take" do
+    Process.flag(:trap_exit, true)
+
+    for name <- [:stereo, :left, :right, :depth, :disparity, :points, :detections, :live, :device] do
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
+
+      assert log =~ "failed to start"
+      assert log =~ "^[a-z][a-z0-9_]*$"
+      assert log =~ "not one of :stereo, :left"
+      assert log =~ "got #{inspect(name)}"
+    end
+  end
+
   test "a named unit that fails to start names its pipeline in the log" do
     Process.flag(:trap_exit, true)
 
