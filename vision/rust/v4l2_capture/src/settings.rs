@@ -95,6 +95,8 @@ pub struct ColourSettings {
     pub blue_gain: f64,
     /// The tuning's colour correction matrix, on sensors with a tuning.
     pub ccm: bool,
+    /// The chroma denoise, on sensors with a tuning.
+    pub denoise: bool,
 }
 
 impl Default for ColourSettings {
@@ -108,6 +110,7 @@ impl Default for ColourSettings {
             red_gain: 1.0,
             blue_gain: 1.0,
             ccm: true,
+            denoise: true,
         }
     }
 }
@@ -123,6 +126,7 @@ impl ColourSettings {
         match name {
             "awb" => self.awb = boolean(value).ok_or_else(invalid)?,
             "ccm" => self.ccm = boolean(value).ok_or_else(invalid)?,
+            "denoise" => self.denoise = boolean(value).ok_or_else(invalid)?,
             "red_gain" => self.red_gain = gain()?,
             "blue_gain" => self.blue_gain = gain()?,
             "black_level" => {
@@ -253,6 +257,16 @@ mod tests {
         assert!(!settings.ccm);
         assert!(settings.apply(b"ccm=sometimes").is_err());
         assert!(!settings.ccm);
+    }
+
+    #[test]
+    fn a_colour_camera_denoises_its_chroma_unless_told_not_to() {
+        let mut settings = ColourSettings::default();
+        assert!(settings.denoise);
+        settings.apply(b"denoise=false").unwrap();
+        assert!(!settings.denoise);
+        assert!(settings.apply(b"denoise=sometimes").is_err());
+        assert!(!settings.denoise);
     }
 
     #[test]

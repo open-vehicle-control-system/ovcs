@@ -3,8 +3,8 @@
 //! balance, runs auto exposure on the green of the RGGB cells as the image
 //! tones it, and writes RGB_FRAME records on stdout. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
-//! correction matrix and the contrast curve of its colour temperature;
-//! another one its gamma.
+//! correction matrix of its colour temperature, the chroma denoise and the
+//! contrast curve; another one its gamma.
 
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
@@ -263,6 +263,7 @@ fn develop_tuned<'a>(
             colour::IDENTITY
         },
         contrast: &tuned.contrast,
+        denoise: settings.denoise,
     };
     let exposure_mean = measure_exposure
         .then(|| colour::shown_green_mean(raw, &colour, MEASURED_ROW_STEP, buffers));
