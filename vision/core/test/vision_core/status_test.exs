@@ -139,34 +139,151 @@ defmodule VisionCore.StatusTest do
   test "a configured Hailo detector that is not running is reported as a failed Hailo-8" do
     start_supervised!({Status, config: config([{:hailo_detector, hef_path: "/missing.hef"}])})
 
-    assert Status.snapshot().npu == %{kind: "Hailo-8", state: :failed}
+    assert Status.snapshot().npu == %{
+             kind: "Hailo-8",
+             state: :failed,
+             load_percent: nil,
+             pipelines: %{detection: %{inference_ms: nil}}
+           }
   end
 
   test "a configured QNN detector that is not running is reported as a failed Hexagon" do
     start_supervised!({Status, config: config([{:qnn_detector, dlc_path: "/missing.dlc"}])})
 
-    assert Status.snapshot().npu == %{kind: "Hexagon", state: :failed}
+    assert Status.snapshot().npu == %{
+             kind: "Hexagon",
+             state: :failed,
+             load_percent: nil,
+             pipelines: %{detection: %{inference_ms: nil}}
+           }
   end
 
   test "a QNN detector whose backend is available is reported as a running Hexagon" do
-    available = spawn(&answer_available/0)
+    available = spawn(&answer_backend/0)
     Process.register(available, VisionCore.Detection.Backend.Qnn)
     on_exit(fn -> Process.exit(available, :kill) end)
     start_supervised!({Status, config: config([:qnn_detector])})
 
-    assert Status.snapshot().npu == %{kind: "Hexagon", state: :running}
+    assert Status.snapshot().npu == %{
+             kind: "Hexagon",
+             state: :running,
+             load_percent: nil,
+             pipelines: %{detection: %{inference_ms: nil}}
+           }
   end
 
-  defp answer_available do
+  # A backend that is available and reports `times` as its inference times.
+  defp answer_backend(times \\ nil) do
     receive do
       {:"$gen_call", from, :available?} -> GenServer.reply(from, true)
+      {:"$gen_call", from, :inference_times} -> GenServer.reply(from, times)
     end
 
-    answer_available()
+    answer_backend(times)
+  end
+
+  defp register_backend(name, times) do
+    backend = spawn(fn -> answer_backend(times) end)
+    Process.register(backend, name)
+    on_exit(fn -> Process.exit(backend, :kill) end)
+  end
+
+  defp next_load(timeout \\ 1_000) do
+    assert_receive {:vision_status, %{npu: %{load_percent: load}} = snapshot}, timeout
+    if is_nil(load), do: next_load(timeout), else: snapshot.npu
+  end
+
+  test "a QNN pipeline's inference times over a tick give the Hexagon's load and its mean time" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 100_000, count: 4})
+    start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 200})
+    :ok = Status.subscribe()
+
+    npu = next_load()
+
+    assert npu.kind == "Hexagon"
+    assert_in_delta npu.load_percent, 50.0, 25.0
+    assert %{detection: %{inference_ms: 25.0}} = npu.pipelines
+  end
+
+  test "two QNN pipelines' times add up in the load, each keeping its own mean time" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
+    register_backend(VisionCore.Detection.Backend.Qnn.Road, %{sum_us: 40_000, count: 2})
+
+    start_supervised!(
+      {Status, config: config([:qnn_detector, {:qnn_detector, name: :road}]), tick_ms: 200}
+    )
+
+    :ok = Status.subscribe()
+
+    npu = next_load()
+
+    assert_in_delta npu.load_percent, 35.0, 5.0
+    assert %{detection: %{inference_ms: 10.0}, road: %{inference_ms: 20.0}} = npu.pipelines
+  end
+
+  test "the load adds up only the pipelines on the reported accelerator's kind" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
+    register_backend(VisionCore.Detection.Backend.Hailo.Road, %{sum_us: 80_000, count: 2})
+
+    start_supervised!(
+      {Status, config: config([:qnn_detector, {:hailo_detector, name: :road}]), tick_ms: 200}
+    )
+
+    :ok = Status.subscribe()
+    npu = next_load()
+
+    assert npu.kind == "Hexagon"
+    assert_in_delta npu.load_percent, 15.0, 3.0
+    assert %{detection: %{inference_ms: 10.0}, road: %{inference_ms: 40.0}} = npu.pipelines
+  end
+
+  test "the load is clamped to 100" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 900_000_000, count: 1})
+    start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
+    :ok = Status.subscribe()
+
+    assert next_load().load_percent == 100.0
+  end
+
+  test "a window without an inference is a load of zero and no mean time" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 0, count: 0})
+    start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
+    :ok = Status.subscribe()
+
+    assert %{load_percent: +0.0, pipelines: %{detection: %{inference_ms: nil}}} = next_load()
+  end
+
+  test "a backend that reports no times leaves the load and the mean time nil" do
+    register_backend(VisionCore.Detection.Backend.Qnn, nil)
+    start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
+    :ok = Status.subscribe()
+
+    assert_receive {:vision_status, %{npu: %{state: :running}}}
+    Process.sleep(250)
+
+    assert %{load_percent: nil, pipelines: %{detection: %{inference_ms: nil}}} =
+             Status.snapshot().npu
+  end
+
+  test "a snapshot asked between ticks does not take the backends' times" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 100_000, count: 4})
+    start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 60_000})
+
+    assert %{load_percent: nil} = Status.snapshot().npu
+  end
+
+  test "the stub's pipeline has no load" do
+    start_supervised!(
+      {Status,
+       config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 100}
+    )
+
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, %{npu: nil}}
   end
 
   test "a Hailo pipeline beside a stub one reports the Hailo-8" do
-    available = spawn(&answer_available/0)
+    available = spawn(&answer_backend/0)
     Process.register(available, VisionCore.Detection.Backend.Hailo.Road)
     on_exit(fn -> Process.exit(available, :kill) end)
 
@@ -179,23 +296,38 @@ defmodule VisionCore.StatusTest do
          ])}
     )
 
-    assert Status.snapshot().npu == %{kind: "Hailo-8", state: :running}
+    assert Status.snapshot().npu == %{
+             kind: "Hailo-8",
+             state: :running,
+             load_percent: nil,
+             pipelines: %{road: %{inference_ms: nil}}
+           }
   end
 
   test "two QNN pipelines report a running Hexagon while both backends are available, failed when one is not" do
-    available = spawn(&answer_available/0)
+    available = spawn(&answer_backend/0)
     Process.register(available, VisionCore.Detection.Backend.Qnn)
     on_exit(fn -> Process.exit(available, :kill) end)
     two_pipelines = config([:qnn_detector, {:qnn_detector, name: :road}])
     start_supervised!({Status, config: two_pipelines})
 
-    assert Status.snapshot().npu == %{kind: "Hexagon", state: :failed}
+    assert Status.snapshot().npu == %{
+             kind: "Hexagon",
+             state: :failed,
+             load_percent: nil,
+             pipelines: %{detection: %{inference_ms: nil}, road: %{inference_ms: nil}}
+           }
 
-    road = spawn(&answer_available/0)
+    road = spawn(&answer_backend/0)
     Process.register(road, VisionCore.Detection.Backend.Qnn.Road)
     on_exit(fn -> Process.exit(road, :kill) end)
 
-    assert Status.snapshot().npu == %{kind: "Hexagon", state: :running}
+    assert Status.snapshot().npu == %{
+             kind: "Hexagon",
+             state: :running,
+             load_percent: nil,
+             pipelines: %{detection: %{inference_ms: nil}, road: %{inference_ms: nil}}
+           }
   end
 
   test "a detector whose backend runs on no accelerator reports no NPU" do

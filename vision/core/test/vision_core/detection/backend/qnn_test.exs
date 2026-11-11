@@ -51,6 +51,46 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert %{class_id: 0, x0: +0.0, y0: +0.0, x1: 3.0, y1: 2.0} = detection
   end
 
+  test "sums the inference times the replies carry and starts over once they are read", %{
+    tmp_dir: dir
+  } do
+    start_backend(dir, "answer")
+    eventually(&Qnn.available?/0)
+
+    for sequence <- [1, 2] do
+      assert Qnn.detect(sequence, @image) == :ok
+      assert_receive {:inference_detections, ^sequence, _detections}, 2_000
+    end
+
+    assert Qnn.inference_times() == %{sum_us: 3_000, count: 2}
+    assert Qnn.inference_times() == %{sum_us: 0, count: 0}
+  end
+
+  test "reports no inference times while the replies carry none", %{tmp_dir: dir} do
+    start_backend(dir, "answer_untimed")
+    eventually(&Qnn.available?/0)
+
+    assert Qnn.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, [_detection]}, 2_000
+    assert Qnn.inference_times() == nil
+  end
+
+  test "reports no inference times once the Port went down", %{tmp_dir: dir} do
+    start_backend(dir, "answer_once", reopen_delays_ms: [60_000])
+    eventually(&Qnn.available?/0)
+
+    assert Qnn.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, _detections}, 2_000
+    eventually(fn -> not Qnn.available?() end)
+    assert Qnn.inference_times() == nil
+  end
+
+  test "reports no inference times without a Port" do
+    start_supervised!({Qnn, dlc_path: "/missing.dlc", executable: "/missing"})
+
+    assert Qnn.inference_times() == nil
+  end
+
   test "busy while a request is in flight", %{tmp_dir: dir} do
     start_backend(dir, "hang", infer_timeout_ms: 5_000)
     eventually(&Qnn.available?/0)

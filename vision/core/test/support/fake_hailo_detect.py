@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Stands in for hailo_detect. The HEF file's text picks what it does: "answer"
-# replies to each request with one detection spanning the image, "exit" exits
+# replies to each request with one detection spanning the image and a 1500 us
+# inference time, "answer_once" the same for one request, then exits, "answer_untimed" the same without the time, "exit" exits
 # with status 1 at once, "hang" reads requests and never replies. A program that
 # runs logs "ready" first. Each start appends a line to <hef>.starts.
 import struct, sys
@@ -27,5 +28,9 @@ while True:
         continue
     detection = struct.pack("<Hfffff", 0, 0.9, 0.0, 0.0, float(width), float(height))
     reply = struct.pack("<BIH", 1, sequence, 1) + detection
+    if mode != "answer_untimed":
+        reply += struct.pack("<I", 1500)
     sys.stdout.buffer.write(struct.pack(">I", len(reply)) + reply)
     sys.stdout.buffer.flush()
+    if mode == "answer_once":
+        sys.exit(0)

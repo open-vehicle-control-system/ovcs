@@ -3,7 +3,8 @@ defmodule VisionCore.Status do
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the NPU the detection
   pipelines run on (`:npu`: the kind of the first one's, failed while any
-  of their backends is unavailable), the depth rate, each exporter's
+  of their backends is unavailable, its `:load_percent` and each
+  pipeline's `:inference_ms`), the depth rate, each exporter's
   status (`VisionCore.Exporters.list/1`), the CPU's busy share
   (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
   spent in its compiled Nx or native segments (`Pair` `:device_ms`).
@@ -37,6 +38,14 @@ defmodule VisionCore.Status do
   driver's `live/1` gives, but no `:issues`, as the pair checks do not
   judge it.
 
+  The NPU's load is the share of the last tick its pipelines spent
+  inferring, summed over them and clamped to 100, and a pipeline's
+  inference time the mean over the tick's frames, both from the
+  accelerator times the backends report
+  (`VisionCore.Detection.Backend.inference_times/1`), which each tick
+  reads and starts over, a snapshot asked between two not. Both are `nil`
+  while no backend has reported a time.
+
   Rates are counted over the last tick, one second by default (`:tick_ms`),
   and every subscriber receives `{:vision_status, snapshot}` each tick.
   """
@@ -59,7 +68,14 @@ defmodule VisionCore.Status do
   @type snapshot :: %{
           cameras: %{required(atom()) => camera()},
           sync: map(),
-          npu: %{kind: String.t(), state: :running | :failed} | nil,
+          npu:
+            %{
+              kind: String.t(),
+              state: :running | :failed,
+              load_percent: float() | nil,
+              pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
+            }
+            | nil,
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -134,6 +150,8 @@ defmodule VisionCore.Status do
        cameras: StereoSupervisor.cameras(config),
        own_cameras: own_cameras,
        npu_backends: npu_backends(config),
+       npu_times: nil,
+       window_ms: 0,
        exporters: [],
        subscribers: %{},
        counts: zero_counts(own_names),
@@ -206,7 +224,7 @@ defmodule VisionCore.Status do
   @impl GenServer
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, state.tick_ms)
-    {snapshot, state} = state |> close_window() |> build_snapshot()
+    {snapshot, state} = state |> close_window() |> build_snapshot(:tick)
     Enum.each(Map.keys(state.subscribers), &send(&1, {:vision_status, snapshot}))
     {:noreply, state}
   end
@@ -232,6 +250,7 @@ defmodule VisionCore.Status do
       | rates_hz: rates_hz,
         counts: Map.new(state.counts, fn {key, _count} -> {key, 0} end),
         window_start_ms: now,
+        window_ms: elapsed_ms,
         cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
         cpu_times: cpu_times,
         stereo_segment_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
@@ -298,8 +317,9 @@ defmodule VisionCore.Status do
     end
   end
 
-  defp build_snapshot(state) do
-    replies = state |> calls() |> call_all_within_timeout()
+  defp build_snapshot(state, moment \\ :between_ticks) do
+    replies = state |> calls(moment) |> call_all_within_timeout()
+    state = npu_times(state, replies)
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
     sync = sync(cameras, replies)
     state = listed(state, replies.exporters)
@@ -361,16 +381,25 @@ defmodule VisionCore.Status do
   defp listed(state, exporters), do: %{state | exporters: exporters}
 
   # What the snapshot asks other processes, by key: the function and its answer when it fails.
-  defp calls(state) do
+  defp calls(state, moment) do
     %{exporters: {&exporters/0, :late}}
-    |> Map.merge(npu_calls(state))
+    |> Map.merge(npu_calls(state, moment))
     |> Map.merge(stereo_calls(state))
     |> Map.merge(own_calls(state))
   end
 
-  defp npu_calls(%{npu_backends: backends}) do
-    Map.new(backends, fn {backend, server} ->
-      {{:npu, server}, {fn -> backend.available?(server) end, false}}
+  defp npu_calls(%{npu_backends: backends}, moment) do
+    available =
+      Map.new(backends, fn {_name, backend, server} ->
+        {{:npu, server}, {fn -> backend.available?(server) end, false}}
+      end)
+
+    if moment == :tick, do: Map.merge(available, npu_times_calls(backends)), else: available
+  end
+
+  defp npu_times_calls(backends) do
+    Map.new(backends, fn {_name, backend, server} ->
+      {{:npu_times, server}, {fn -> backend.inference_times(server) end, nil}}
     end)
   end
 
@@ -438,19 +467,61 @@ defmodule VisionCore.Status do
 
   defp npu(%{npu_backends: []}, _replies), do: nil
 
-  defp npu(%{npu_backends: [{first, _server} | _others] = backends}, replies) do
+  defp npu(%{npu_backends: [{_name, first, _server} | _others] = backends} = state, replies) do
     available? =
-      Enum.all?(backends, fn {_backend, server} -> Map.fetch!(replies, {:npu, server}) end)
+      Enum.all?(backends, fn {_name, _backend, server} -> Map.fetch!(replies, {:npu, server}) end)
 
-    %{kind: first.npu_kind(), state: if(available?, do: :running, else: :failed)}
+    %{
+      kind: first.npu_kind(),
+      state: if(available?, do: :running, else: :failed),
+      load_percent: state.npu_times && state.npu_times.load_percent,
+      pipelines: pipelines(state)
+    }
   end
 
-  # The detection units' backends that run on an accelerator.
+  defp pipelines(%{npu_backends: backends, npu_times: nil}),
+    do: Map.new(backends, fn {name, _backend, _server} -> {name, %{inference_ms: nil}} end)
+
+  defp pipelines(%{npu_times: %{pipelines: pipelines}}), do: pipelines
+
+  # The detection units' backends that run on an accelerator, with their pipeline's name.
   defp npu_backends(config) do
-    for {backend, _server} = backend_server <- VisionCore.Detection.Supervisor.backends(config),
+    for {_name, backend, _server} = pipeline <-
+          VisionCore.Detection.Supervisor.pipelines(config),
         backend.npu_kind(),
-        do: backend_server
+        do: pipeline
   end
+
+  # What the tick's replies make of the backends' inference times; other snapshots keep the last tick's.
+  defp npu_times(%{npu_backends: []} = state, _replies), do: state
+
+  defp npu_times(state, replies) do
+    times =
+      for {name, backend, server} <- state.npu_backends,
+          do: {name, backend, Map.get(replies, {:npu_times, server}, :unasked)}
+
+    if Enum.any?(times, fn {_name, _backend, reply} -> reply == :unasked end),
+      do: state,
+      else: %{state | npu_times: window_times(times, state.window_ms)}
+  end
+
+  # The load is the first accelerator's own: only the pipelines on its kind add up.
+  defp window_times([{_name, first, _reply} | _others] = times, window_ms) do
+    reported =
+      for {_name, backend, %{sum_us: sum_us}} <- times,
+          backend.npu_kind() == first.npu_kind(),
+          do: sum_us
+
+    %{
+      load_percent:
+        if(reported != [], do: min(100 * Enum.sum(reported) / 1_000 / window_ms, 100.0)),
+      pipelines:
+        Map.new(times, fn {name, _backend, reply} -> {name, %{inference_ms: mean_ms(reply)}} end)
+    }
+  end
+
+  defp mean_ms(%{count: count, sum_us: sum_us}) when count > 0, do: sum_us / count / 1_000
+  defp mean_ms(_none), do: nil
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 

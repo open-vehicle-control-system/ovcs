@@ -51,6 +51,15 @@ defmodule VisionCore.Detection.Backend do
   `npu_kind/0` names the accelerator a backend runs on, as the
   dashboard shows it, or `nil` for a backend that runs on none.
 
+  ## The inference time
+
+  A backend whose Port reports the accelerator time of each inference
+  keeps the sum and the count of those times, and `inference_times/1`
+  hands them over and starts them again: the status reads them once per
+  tick. It answers `nil` until the Port has reported a time, as a backend
+  without a Port, or one of an older build, never does. What the time is
+  depends on the accelerator: see `docs/vision/README.md`.
+
   ## The inference step
 
   A backend declares the inference step of its detection pipeline, its
@@ -62,8 +71,8 @@ defmodule VisionCore.Detection.Backend do
 
   A backend registers under its `:name` option, the module by default;
   `VisionCore.Detection.Supervisor` gives each pipeline's backend its own
-  (`VisionCore.Detection.server/2`), and `detect/3` and `available?/1`
-  take it.
+  (`VisionCore.Detection.server/2`), and `detect/3`, `available?/1` and
+  `inference_times/1` take it.
   """
 
   @typedoc "A 2D box in the submitted image's pixel coordinates."
@@ -96,4 +105,11 @@ defmodule VisionCore.Detection.Backend do
 
   @doc "The kind of accelerator the backend runs on, `nil` without one."
   @callback npu_kind() :: String.t() | nil
+
+  @doc """
+  The inference times, in microseconds, of the frames answered since the
+  last call: their sum and their count. Starts them again.
+  """
+  @callback inference_times(server()) ::
+              %{sum_us: non_neg_integer(), count: non_neg_integer()} | nil
 end

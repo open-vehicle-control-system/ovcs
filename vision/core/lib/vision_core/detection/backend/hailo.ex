@@ -108,6 +108,18 @@ defmodule VisionCore.Detection.Backend.Hailo do
     :exit, _ -> false
   end
 
+  @doc """
+  The sum and the count of the inference times `hailo_detect` reported since the
+  last call, in microseconds, which this starts again; `nil` until it has
+  reported one since the Port last opened, and when the backend is gone.
+  """
+  @impl VisionCore.Detection.Backend
+  def inference_times(server \\ __MODULE__) do
+    GenServer.call(server, :inference_times)
+  catch
+    :exit, _ -> nil
+  end
+
   @impl VisionCore.Detection.Backend
   def npu_kind, do: "Hailo-8"
 
@@ -131,6 +143,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
       reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
       failures: 0,
       inflight: nil,
+      times: nil,
       dropped: 0
     }
 
@@ -207,13 +220,15 @@ defmodule VisionCore.Detection.Backend.Hailo do
     if state.inflight, do: Process.cancel_timer(state.inflight.timer)
     delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
     Process.send_after(self(), :reopen, delay_ms)
-    %{state | port: nil, inflight: nil, failures: state.failures + 1}
+    %{state | port: nil, inflight: nil, times: nil, failures: state.failures + 1}
   end
 
   @impl GenServer
   def handle_call(:available?, _from, state) do
     {:reply, not is_nil(state.port), state}
   end
+
+  def handle_call(:inference_times, _from, state), do: take_times(state)
 
   def handle_call({:detect, _sequence, _image, _reply_to}, _from, %{port: nil} = state) do
     {:reply, {:error, :unavailable}, state}
@@ -248,8 +263,11 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_detections(packet) do
-      {:ok, sequence, detections} -> {:noreply, deliver(state, sequence, detections)}
-      :error -> {:noreply, state}
+      {:ok, sequence, detections, time_us} ->
+        {:noreply, deliver(state, sequence, detections, time_us)}
+
+      :error ->
+        {:noreply, state}
     end
   end
 
@@ -289,28 +307,47 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp deliver(%{inflight: %{sequence: sequence} = inflight} = state, sequence, detections) do
+  defp deliver(
+         %{inflight: %{sequence: sequence} = inflight} = state,
+         sequence,
+         detections,
+         time_us
+       ) do
     Process.cancel_timer(inflight.timer)
     send(inflight.reply_to, {:inference_detections, sequence, detections})
-    %{state | inflight: nil, failures: 0}
+    %{state | inflight: nil, failures: 0, times: add_time(state.times, time_us)}
   end
 
   # Late reply for a timed-out frame: dropped.
-  defp deliver(state, _stale_sequence, _detections), do: state
+  defp deliver(state, _stale_sequence, _detections, _time_us), do: state
+
+  defp add_time(times, nil), do: times
+  defp add_time(nil, time_us), do: %{sum_us: time_us, count: 1}
+  defp add_time(times, time_us), do: %{sum_us: times.sum_us + time_us, count: times.count + 1}
+
+  # Once a time has been reported, a window without one is zero, not unknown.
+  defp take_times(%{times: nil} = state), do: {:reply, nil, state}
+  defp take_times(state), do: {:reply, state.times, %{state | times: %{sum_us: 0, count: 0}}}
 
   defp parse_detections(
          <<@detections_reply_tag, sequence::little-32, count::little-16, rest::binary>>
        ) do
-    {:ok, sequence, take_detections(rest, count, [])}
+    parse_body(sequence, take_detections(rest, count, []))
   end
 
   defp parse_detections(_packet), do: :error
+
+  # The detections may be followed by the inference time, a `u32` in microseconds.
+  defp parse_body(sequence, {detections, <<time_us::little-32, _rest::binary>>}),
+    do: {:ok, sequence, detections, time_us}
+
+  defp parse_body(sequence, {detections, _no_time}), do: {:ok, sequence, detections, nil}
 
   defp log_level(0), do: :info
   defp log_level(1), do: :warning
   defp log_level(_level), do: :error
 
-  defp take_detections(_rest, 0, detections), do: Enum.reverse(detections)
+  defp take_detections(rest, 0, detections), do: {Enum.reverse(detections), rest}
 
   defp take_detections(
          <<class_id::little-16, score::little-float-32, x0::little-float-32, y0::little-float-32,
@@ -322,7 +359,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
     take_detections(rest, count - 1, [detection | detections])
   end
 
-  defp take_detections(_malformed, _count, detections), do: Enum.reverse(detections)
+  defp take_detections(_malformed, _count, detections), do: {Enum.reverse(detections), <<>>}
 
   # A grey image is a 2-tuple shape.
   defp image_shape(image) do

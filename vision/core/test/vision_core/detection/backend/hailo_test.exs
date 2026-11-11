@@ -53,6 +53,43 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert_in_delta detection.score, 0.9, 1.0e-6
   end
 
+  test "sums the inference times the replies carry and starts over once they are read", %{
+    tmp_dir: tmp_dir
+  } do
+    start_backend(tmp_dir, "answer")
+
+    for sequence <- [1, 2] do
+      assert Hailo.detect(sequence, @image) == :ok
+      assert_receive {:inference_detections, ^sequence, _detections}, 2_000
+    end
+
+    assert Hailo.inference_times() == %{sum_us: 3_000, count: 2}
+    assert Hailo.inference_times() == %{sum_us: 0, count: 0}
+  end
+
+  test "reports no inference times while the replies carry none", %{tmp_dir: tmp_dir} do
+    start_backend(tmp_dir, "answer_untimed")
+
+    assert Hailo.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, [_detection]}, 2_000
+    assert Hailo.inference_times() == nil
+  end
+
+  test "reports no inference times once the Port went down", %{tmp_dir: tmp_dir} do
+    start_backend(tmp_dir, "answer_once", reopen_delays_ms: [60_000])
+
+    assert Hailo.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, _detections}, 2_000
+    eventually(fn -> not Hailo.available?() end)
+    assert Hailo.inference_times() == nil
+  end
+
+  test "reports no inference times while the Port is down", %{tmp_dir: tmp_dir} do
+    start_backend(tmp_dir, "exit", reopen_delays_ms: [60_000])
+
+    assert Hailo.inference_times() == nil
+  end
+
   test "hands hailo_detect's log lines to the Logger", %{tmp_dir: tmp_dir} do
     log =
       ExUnit.CaptureLog.capture_log(fn ->

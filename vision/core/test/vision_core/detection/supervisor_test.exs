@@ -278,6 +278,13 @@ defmodule VisionCore.Detection.SupervisorTest do
       assert Supervisor.backends(config(components)) == [{Stub, Stub.Road}, {Hailo, Hailo}]
     end
 
+    test "its pipelines: each one's name with its backend and server, in config order" do
+      components = [{:detector, backend: Stub, name: :road}, {:hailo_detector, []}]
+
+      assert Supervisor.pipelines(config(components)) ==
+               [{:road, Stub, Stub.Road}, {:detection, Hailo, Hailo}]
+    end
+
     test "no backend without a component starting the unit" do
       assert Supervisor.backends(config([{:stereo, []}])) == []
     end

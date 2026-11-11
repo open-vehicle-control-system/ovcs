@@ -139,9 +139,19 @@ defmodule VisionCore.Detection.Supervisor do
   """
   @spec backends(VisionCore.Config.t()) :: [{module(), server :: module()}]
   def backends(config) do
+    for {_name, backend, server} <- pipelines(config), do: {backend, server}
+  end
+
+  @doc """
+  Each detection unit in `config`, in config order, as its pipeline name,
+  its backend module and the name the backend is registered under.
+  """
+  @spec pipelines(VisionCore.Config.t()) :: [{atom(), module(), server :: module()}]
+  def pipelines(config) do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)
-      {backend, Detection.server(backend, Detection.pipeline_name(opts))}
+      name = Detection.pipeline_name(opts)
+      {name, backend, Detection.server(backend, name)}
     end
   end
 
