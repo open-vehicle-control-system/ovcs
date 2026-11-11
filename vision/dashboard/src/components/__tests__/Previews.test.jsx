@@ -5,8 +5,16 @@ import Previews from '../Previews.jsx'
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
-  cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
+  cameras: {
+    left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0, issues: [] },
+    right: { present: false }
+  },
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
+  pair: {
+    timing: { level: 'ok', camera: null, issues: [], later: 'right', offsetMs: 0.12, maxOffsetMs: 0.4, pairs: 150 },
+    rows: { level: 'off', camera: null, issues: [] },
+    focus: { level: 'warning', camera: 'right', issues: ['focus_mismatch'], softer: 'right', differencePercent: 30, left: 0.0312, right: 0.0218 }
+  },
   depthHz: 12.8,
   quality: { matchedPercent: 61.6, meanDisparityPx: 18.43, spreadPx: 6.08, jitterPx: 0.318 }
 }
@@ -48,15 +56,28 @@ describe('Previews', () => {
     expect(card('right').textContent).toContain('absent')
   })
 
-  it('puts the sync, row alignment and sharpness between the two camera previews', () => {
+  it("puts the cameras' timing, rows and focus between the two camera previews", () => {
     render(<Previews status={snapshot} socket={socket} />)
 
     const pair = screen.getByRole('list', { name: 'Camera pair' })
     const row = [...pair.parentElement.children]
     expect(row).toEqual([figure('left'), pair, figure('right')])
-    for (const id of ['sync', 'alignment', 'sharpness']) expect(pair.contains(card(id))).toBe(true)
-    expect(card('sync').textContent).toContain('0.12 ms')
+    for (const id of ['timing', 'rows', 'focus']) expect(pair.contains(card(id))).toBe(true)
+    expect(card('timing').textContent).toContain('0.12 ms')
   })
+
+  it("badges the frame of a camera with something to do, and rings it, its text and layout unchanged", () => {
+    const right = { present: true, fps: 29.6, issues: ['focus_mismatch', 'large_row_correction', 'uneven_rows'] }
+    render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, right } }} socket={socket} />)
+
+    const badges = [...figure('right').querySelectorAll('[data-badge]')]
+    expect(badges.map((badge) => badge.textContent)).toEqual(['Refocus', 'Recalibrate'])
+    expect(badges[0].title).toContain('Softer than the other camera: refocus it')
+    expect(figure('right').querySelector('[data-alert]')).not.toBeNull()
+    expect(figure('left').querySelector('[data-badge]')).toBeNull()
+    expect(figure('left').querySelector('[data-alert]')).toBeNull()
+  })
+
 
   it('puts the depth rate under the depth preview', () => {
     render(<Previews status={snapshot} socket={socket} />)
@@ -89,7 +110,7 @@ describe('Previews', () => {
     expect(screen.getAllByRole('figure')).toHaveLength(3)
     expect(card('left')).toBeNull()
     expect(card('depth').querySelector('[data-figure="rate"]')).toBeNull()
-    for (const id of ['sync', 'alignment', 'sharpness']) expect(card(id).textContent).toContain('–')
+    for (const id of ['timing', 'rows', 'focus']) expect(card(id).textContent).toContain('–')
   })
 
   describe('colour range', () => {

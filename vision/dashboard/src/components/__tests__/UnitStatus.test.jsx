@@ -14,7 +14,33 @@ const snapshot = {
   cpuPercent: 37.25,
   stereoLoadPercent: 81.5,
   alignment: { offsetRows: -1.43, bandOffsetRows: [-1.9, -1.6, -1.2, -1.0] },
-  sharpness: { left: 0.0312, right: 0.0218 }
+  sharpness: { left: 0.0312, right: 0.0218 },
+  pair: {
+    timing: { level: 'ok', camera: null, issues: [], gauge: 0.12, later: 'right', offsetMs: 0.12, maxOffsetMs: 0.4, pairs: 150 },
+    rows: {
+      gauge: 2.5,
+      level: 'warning',
+      camera: 'right',
+      issues: ['row_offset', 'large_row_correction'],
+      direction: 'higher',
+      misalignmentRows: 7.43,
+      offsetRows: -1.43,
+      correctionRows: -6.0,
+      bandOffsetRows: [-1.9, -1.6, -1.2, -1.0],
+      bandSpreadRows: 0.9
+    },
+    focus: {
+      gauge: 1.2,
+      level: 'warning',
+      camera: 'right',
+      issues: ['focus_mismatch'],
+      softer: 'right',
+      differencePercent: 30,
+      ratio: 0.7,
+      left: 0.0312,
+      right: 0.0218
+    }
+  }
 }
 
 describe('UnitStatus and the pair status', () => {
@@ -68,48 +94,68 @@ describe('UnitStatus and the pair status', () => {
     expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About Stereo load')
   })
 
-  it('shows the row alignment, overall and from left to right', () => {
+  it("shows each check's value and short detail, its figures and issues on hover", () => {
     show(snapshot)
 
-    expect(card('alignment').textContent).toContain('-1.4 rows')
-    expect(card('alignment').textContent).toContain('left to right -1.9 · -1.6 · -1.2 · -1.0')
-    expect(card('alignment').querySelector('.ovcs-status--error')).not.toBeNull()
+    expect(card('rows').textContent).toContain('Rows')
+    expect(card('rows').textContent).toContain('7.4 rows')
+    expect(card('rows').querySelector('.ovcs-status--error')).not.toBeNull()
+    expect(card('rows').querySelector('[data-detail]').textContent).toBe('right higher · corrected -6.0')
+    expect(card('rows').title).toBe(
+      'left to right -1.9 · -1.6 · -1.2 · -1.0\nRows apart: recalibrate\nRows held by a large correction: recalibrate'
+    )
   })
 
-  it('shows an alignment within half a row as healthy', () => {
-    show({ ...snapshot, alignment: { offsetRows: 0.2, bandOffsetRows: [0.1, 0.2, 0.2, 0.3] } })
-
-    expect(card('alignment').querySelector('.ovcs-status--ok')).not.toBeNull()
-  })
-
-  it('shows an alignment not yet measured as a dash', () => {
-    show({ ...snapshot, alignment: null })
-
-    expect(card('alignment').textContent).toContain('–')
-  })
-
-  it("compares the cameras' sharpness, right to left", () => {
+  it("puts each check's cursor where the unit places it, toward the camera it concerns, held at the track's ends", () => {
     show(snapshot)
 
-    expect(card('sharpness').textContent).toContain('0.70')
-    expect(card('sharpness').textContent).toContain('left 0.0312 · right 0.0218')
-    expect(card('sharpness').querySelector('.ovcs-status--error')).not.toBeNull()
+    const cursor = (id) => card(id).querySelector('[data-cursor]')
+    expect(cursor('timing').style.left).toBe('53%')
+    expect(cursor('focus').style.left).toBe('80%')
+    expect(cursor('rows').style.left).toBe('100%')
+    expect(cursor('rows').classList).toContain('bg-ovcs-warn')
+    expect(cursor('timing').classList).toContain('bg-ovcs-ok')
   })
 
-  it('shows matching sharpness as healthy', () => {
-    show({ ...snapshot, sharpness: { left: 0.03, right: 0.028 } })
+  it('shows a check the unit judges ok as healthy', () => {
+    show({ ...snapshot, pair: { ...snapshot.pair, rows: { ...snapshot.pair.rows, level: 'ok', camera: null, issues: [] } } })
 
-    expect(card('sharpness').querySelector('.ovcs-status--ok')).not.toBeNull()
+    expect(card('rows').querySelector('.ovcs-status--ok')).not.toBeNull()
+    expect(card('rows').querySelector('[data-cursor]').classList).toContain('bg-ovcs-ok')
+  })
+
+  it('shows a check with nothing to judge as a dash, its gauge without a cursor', () => {
+    show({ ...snapshot, pair: { ...snapshot.pair, rows: { level: 'off', camera: null, issues: [] } } })
+
+    expect(card('rows').textContent).toContain('–')
+    expect(card('rows').querySelector('[data-cursor]')).toBeNull()
+  })
+
+  it('shows the focus difference and the softer camera, each sharpness on hover', () => {
+    show(snapshot)
+
+    expect(card('focus').textContent).toContain('30 %')
+    expect(card('focus').querySelector('[data-detail]').textContent).toBe('right softer')
+    expect(card('focus').title).toContain('left 0.0312 · right 0.0218')
+    expect(card('focus').querySelector('.ovcs-status--error')).not.toBeNull()
+  })
+
+  it('shows the timing offset and the later camera, the pairs on hover', () => {
+    show(snapshot)
+
+    expect(card('timing').textContent).toContain('0.12 ms')
+    expect(card('timing').querySelector('[data-detail]').textContent).toBe('right later · max 0.40')
+    expect(card('timing').title).toBe('over 150 pairs')
   })
 
   it('marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader', () => {
     show(snapshot)
 
-    for (const id of ['ros2', 'alignment', 'sharpness', 'right']) {
+    for (const id of ['ros2', 'rows', 'focus', 'right']) {
       expect(card(id).querySelector('[data-warning]')).not.toBeNull()
       expect(card(id).textContent).toContain(', unhealthy')
     }
-    for (const id of ['hailo', 'segment', 'sync', 'left']) {
+    for (const id of ['hailo', 'segment', 'timing', 'left']) {
       expect(card(id).querySelector('[data-warning]')).toBeNull()
       expect(card(id).textContent).not.toContain('unhealthy')
     }
