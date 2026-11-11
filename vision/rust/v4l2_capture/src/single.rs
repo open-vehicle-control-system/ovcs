@@ -11,7 +11,7 @@ use std::os::fd::{AsFd, AsRawFd};
 
 use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
 
-use crate::arguments::{Output, SingleArguments};
+use crate::arguments::SingleArguments;
 use crate::bands::{Conversion, Developed};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
@@ -80,7 +80,7 @@ pub fn run(
         contrast: ContrastTable::new(tuning),
     });
     let mut buffers = colour::Buffers::default();
-    let mut fallback_rgb = Vec::new();
+    let mut fallback_buffers = bayer::Buffers::default();
     let mut settings = arguments.settings.clone();
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
@@ -196,14 +196,7 @@ pub fn run(
                 Some(tuned) => {
                     develop_tuned(&raw, &conversion, &settings, gains, tuned, &mut buffers)
                 }
-                None => develop(
-                    &raw,
-                    &conversion,
-                    &settings,
-                    gains,
-                    &tone,
-                    &mut fallback_rgb,
-                ),
+                None => bayer::develop(&raw, &tone, gains, &conversion, &mut fallback_buffers),
             };
             if let Some(means) = channel_means {
                 gains = white_balance::grey_world(means, gains);
@@ -256,31 +249,4 @@ fn develop_tuned<'a>(
         denoise: settings.denoise,
     };
     colour::develop(raw, &colour, conversion, buffers)
-}
-
-/// `raw` in RGB as `conversion` asks, in `rgb`, white balanced by `gains`
-/// then through `tone`, measuring the channel means above the black level of
-/// `settings` and the toned green.
-fn develop<'a>(
-    raw: &RawFrame,
-    conversion: &Conversion,
-    settings: &ColourSettings,
-    gains: Gains,
-    tone: &Tone,
-    rgb: &'a mut Vec<u8>,
-) -> Developed<'a> {
-    *rgb = match conversion.output {
-        Output::Full => bayer::rgb_full(raw, tone, gains, conversion.rotate_180),
-        Output::Half => bayer::rgb_half(raw, tone, gains, conversion.rotate_180),
-    };
-    let black_level = settings.capture.black_level;
-    Developed {
-        rgb,
-        channel_means: conversion
-            .channel_means
-            .then(|| bayer::channel_means(raw, black_level, conversion.row_step)),
-        green_mean: conversion
-            .green_mean
-            .then(|| bayer::toned_green_mean(raw, tone, conversion.row_step)),
-    }
 }

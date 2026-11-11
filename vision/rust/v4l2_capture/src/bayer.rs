@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use crate::arguments::Output;
+use crate::bands::{self, Conversion, Developed, Sums};
 use crate::white_balance::Gains;
 
 /// Maps a raw sample to 8 bits: the sensor's black level to 0, full scale
@@ -183,67 +185,126 @@ impl RawFrame<'_> {
     }
 }
 
-/// Turns each 2x2 RGGB cell of `frame` into one pixel: red, the mean of both
-/// greens, and blue, each through `tone`, red and blue scaled by `gains`
-/// first. Halves both dimensions; `rotate_180` turns the image for a sensor
-/// mounted upside down. Returns 8-bit red, green and blue per pixel, row-major.
-pub fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
-    let (red_q12, blue_q12) = (q12(gains.red), q12(gains.blue));
-    let mut rgb = Vec::with_capacity((frame.width / 2) * (frame.height / 2) * 3);
-    frame.cell_rows(0..frame.cell_row_count(), 1, |_, top, bottom| {
-        for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
-            let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
-            rgb.extend_from_slice(&[
-                tone.scaled(top_pair[0], red_q12),
-                tone.grey(green as u16),
-                tone.scaled(bottom_pair[1], blue_q12),
-            ]);
-        }
-    });
-    if rotate_180 {
-        // Reversing the bytes reverses the pixels but turns each into blue,
-        // green, red; the swap restores red, green, blue.
-        rgb.reverse();
-        for pixel in rgb.chunks_exact_mut(3) {
-            pixel.swap(0, 2);
-        }
-    }
-    rgb
+/// What the colour path of a sensor without a tuning keeps from one frame
+/// to the next: the image it writes, and the rows each band of it
+/// demosaics.
+#[derive(Default)]
+pub struct Buffers {
+    rgb: Vec<u8>,
+    bands: Vec<DemosaicRows<u8>>,
 }
 
-/// Demosaics `frame` at its own size: each pixel keeps its own sample and
-/// takes each missing colour as the mean of its nearest samples of that
-/// colour, the 4 axial ones for green, the 2 axial or 4 diagonal ones for
-/// red and blue; at the image's edges the nearest sample of a colour stands
-/// in for the neighbour beyond it. `rotate_180` turns the image for a sensor
-/// mounted upside down. Returns 8-bit red, green and blue per pixel,
-/// row-major.
+/// `frame` in RGB, in `buffers`, at the size of `conversion.output`, each
+/// sample through `tone`, red and blue scaled by `gains` first. At its own
+/// size, each pixel keeps its own sample and takes each missing colour as
+/// the mean of its nearest samples of that colour, the 4 axial ones for
+/// green, the 2 axial or 4 diagonal ones for red and blue; at the image's
+/// edges the nearest sample of a colour stands in for the neighbour beyond
+/// it. At half size, each 2x2 RGGB cell is one pixel: red, the mean of both
+/// greens, and blue. Measures what `conversion` asks for (`measure`).
 ///
-/// White balance by `gains`, then the tone, then interpolation: one lookup
-/// per sample instead of three per pixel, invisible between neighbours.
-pub fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
-    let scaled_table = |gain: f64| -> Vec<u8> {
-        let gain_q12 = q12(gain);
-        (0..tone.table.len())
-            .map(|sample| tone.scaled(sample as u16, gain_q12))
-            .collect()
+/// At its own size, white balance by `gains`, then the tone, then
+/// interpolation: one lookup per sample instead of three per pixel,
+/// invisible between neighbours.
+pub fn develop<'b>(
+    frame: &RawFrame,
+    tone: &Tone,
+    gains: Gains,
+    conversion: &Conversion,
+    buffers: &'b mut Buffers,
+) -> Developed<'b> {
+    let Buffers { rgb, bands } = buffers;
+    let rotate_180 = conversion.rotate_180;
+    let sums = match conversion.output {
+        Output::Full => {
+            let scaled_table = |gain: f64| -> Vec<u8> {
+                let gain_q12 = q12(gain);
+                (0..tone.table.len())
+                    .map(|sample| tone.scaled(sample as u16, gain_q12))
+                    .collect()
+            };
+            let (red, blue) = (scaled_table(gains.red), scaled_table(gains.blue));
+            let tables = ChannelTables {
+                red: &red,
+                green: &tone.table,
+                blue: &blue,
+            };
+            rgb.resize(frame.width * frame.cell_row_count() * 2 * 3, 0);
+            bands::convert(
+                rgb,
+                frame.width,
+                2,
+                rotate_180,
+                bands,
+                |cells, image, demosaic| {
+                    let sums = measure(frame, tone, conversion, cells.clone());
+                    full_band(frame, &tables, cells, image, demosaic);
+                    sums
+                },
+            )
+        }
+        Output::Half => {
+            let gains_q12 = (q12(gains.red), q12(gains.blue));
+            rgb.resize(frame.width / 2 * frame.cell_row_count() * 3, 0);
+            bands::convert(
+                rgb,
+                frame.width / 2,
+                1,
+                rotate_180,
+                bands,
+                |cells, image, _| {
+                    let sums = measure(frame, tone, conversion, cells.clone());
+                    half_band(frame, tone, gains_q12, cells, image);
+                    sums
+                },
+            )
+        }
     };
-    let (red, blue) = (scaled_table(gains.red), scaled_table(gains.blue));
-    let tables = ChannelTables {
-        red: &red,
-        green: &tone.table,
-        blue: &blue,
-    };
-    let mut rgb = vec![0u8; frame.width * frame.height * 3];
-    let mut image = Image::new(&mut rgb, frame.width, rotate_180);
+    Developed::new(rgb, sums, conversion, 1.0)
+}
+
+/// Writes the rows of RGGB cells `cells` of `frame` at its own size into
+/// `image`, each sample through `tables`, through `demosaic`.
+fn full_band(
+    frame: &RawFrame,
+    tables: &ChannelTables,
+    cells: Range<usize>,
+    mut image: Image,
+    demosaic: &mut DemosaicRows<u8>,
+) {
     demosaic_full(
         frame,
-        &mut DemosaicRows::default(),
-        0..frame.height,
+        demosaic,
+        2 * cells.start..2 * cells.end,
         |row, samples, toned: &mut [u8]| tables.tone_row(samples, row.is_multiple_of(2), toned),
         |y, values| image.write(y, |out| out.copy_from_slice(values)),
     );
-    rgb
+}
+
+/// Writes the rows of RGGB cells `cells` of `frame` into `image`, each cell
+/// one pixel, through `tone`, red and blue scaled by `gains_q12`, red's and
+/// blue's gains in 1/4096ths, first.
+fn half_band(
+    frame: &RawFrame,
+    tone: &Tone,
+    (red_q12, blue_q12): (u32, u32),
+    cells: Range<usize>,
+    mut image: Image,
+) {
+    frame.cell_rows(cells, 1, |row, top, bottom| {
+        image.write(row / 2, |out| {
+            for ((top_pair, bottom_pair), pixel) in top
+                .chunks_exact(2)
+                .zip(bottom.chunks_exact(2))
+                .zip(out.chunks_exact_mut(3))
+            {
+                let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
+                pixel[0] = tone.scaled(top_pair[0], red_q12);
+                pixel[1] = tone.grey(green as u16);
+                pixel[2] = tone.scaled(bottom_pair[1], blue_q12);
+            }
+        });
+    });
 }
 
 /// Rows of an 8-bit red, green and blue image written a row at a time,
@@ -256,12 +317,6 @@ pub(crate) struct Image<'a> {
 }
 
 impl<'a> Image<'a> {
-    /// The image of `rgb`, rows of `width` pixels.
-    pub(crate) fn new(rgb: &'a mut [u8], width: usize, rotate_180: bool) -> Image<'a> {
-        let height = rgb.len() / (width * 3).max(1);
-        Image::band(rgb, width, 0..height, rotate_180)
-    }
-
     /// Rows `rows` of an image of rows of `width` pixels, held in `rgb`
     /// where the image has them: in their order, or with `rotate_180` in
     /// reverse.
@@ -334,7 +389,7 @@ impl Sample for u16 {
     }
 }
 
-/// Demosaics rows `rows` of `frame` at its own size as `rgb_full` does, in
+/// Demosaics rows `rows` of `frame` at its own size as `develop` does, in
 /// `buffers`, on the values `develop_row(row, samples, values)` gives the
 /// samples of those rows and of the rows next to them, and hands each row of
 /// pixels' red, green and blue values, top to bottom, to `pixel_row(y,
@@ -468,40 +523,38 @@ fn q12(gain: f64) -> u32 {
     (gain * 4096.0).round() as u32
 }
 
-/// The mean green of `rgb_half`'s pixels over every `row_step`-th row of
-/// RGGB cells of `frame`: each cell's two greens averaged, through `tone`.
-pub fn toned_green_mean(frame: &RawFrame, tone: &Tone, row_step: usize) -> f64 {
-    let (mut sum, mut cells) = (0u64, 0u64);
-    frame.cell_rows(0..frame.cell_row_count(), row_step, |_, top, bottom| {
-        for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
-            let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
-            sum += u64::from(tone.grey(green as u16));
-            cells += 1;
-        }
-    });
-    sum as f64 / cells.max(1) as f64
-}
-
-/// The mean red, green and blue above `black_level` over every `row_step`-th
-/// row of RGGB cells of `frame`.
-pub fn channel_means(frame: &RawFrame, black_level: u16, row_step: usize) -> [f64; 3] {
-    let mut sums = [0u64; 3];
-    let mut cells = 0u64;
-    let signal = |sample: u16| u64::from(sample.saturating_sub(black_level));
-    frame.cell_rows(0..frame.cell_row_count(), row_step, |_, top, bottom| {
-        for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
-            sums[0] += signal(top_pair[0]);
-            sums[1] += signal(top_pair[1]) + signal(bottom_pair[0]);
-            sums[2] += signal(bottom_pair[1]);
-            cells += 1;
-        }
-    });
-    let cells = cells.max(1) as f64;
-    [
-        sums[0] as f64 / cells,
-        sums[1] as f64 / 2.0 / cells,
-        sums[2] as f64 / cells,
-    ]
+/// What `conversion` asks to measure of every `conversion.row_step`-th row
+/// of RGGB cells of `frame` within `cells`: for auto exposure, each cell's
+/// two greens averaged through `tone`, as the half-size image has them; for
+/// white balance, each cell's red, greens and blue above `tone`'s black
+/// level.
+fn measure(frame: &RawFrame, tone: &Tone, conversion: &Conversion, cells: Range<usize>) -> Sums {
+    let mut sums = Sums::default();
+    if conversion.green_mean {
+        let mut measured = 0u64;
+        frame.cell_rows(cells.clone(), conversion.row_step, |_, top, bottom| {
+            for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
+                let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
+                sums.green += u64::from(tone.grey(green as u16));
+                measured += 1;
+            }
+        });
+        sums.cells = measured;
+    }
+    if conversion.channel_means {
+        let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
+        let mut measured = 0u64;
+        frame.cell_rows(cells, conversion.row_step, |_, top, bottom| {
+            for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
+                sums.channels[0] += signal(top_pair[0]);
+                sums.channels[1] += signal(top_pair[1]) + signal(bottom_pair[0]);
+                sums.channels[2] += signal(bottom_pair[1]);
+                measured += 1;
+            }
+        });
+        sums.cells = measured;
+    }
+    sums
 }
 
 #[cfg(test)]
@@ -640,6 +693,55 @@ pub(crate) mod tests {
                 ]
             })
             .collect()
+    }
+
+    fn conversion(output: Output, rotate_180: bool) -> Conversion {
+        Conversion {
+            output,
+            rotate_180,
+            channel_means: true,
+            green_mean: true,
+            row_step: 1,
+        }
+    }
+
+    fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
+        let conversion = conversion(Output::Half, rotate_180);
+        develop(frame, tone, gains, &conversion, &mut Buffers::default())
+            .rgb
+            .to_vec()
+    }
+
+    fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
+        let conversion = conversion(Output::Full, rotate_180);
+        develop(frame, tone, gains, &conversion, &mut Buffers::default())
+            .rgb
+            .to_vec()
+    }
+
+    // The mean green of the half-size image's pixels over every
+    // `row_step`-th row of RGGB cells.
+    fn toned_green_mean(frame: &RawFrame, tone: &Tone, row_step: usize) -> f64 {
+        let conversion = Conversion {
+            row_step,
+            ..conversion(Output::Half, false)
+        };
+        develop(frame, tone, UNITY, &conversion, &mut Buffers::default())
+            .green_mean
+            .unwrap()
+    }
+
+    // The mean red, green and blue above `black_level` over every
+    // `row_step`-th row of RGGB cells.
+    fn channel_means(frame: &RawFrame, black_level: u16, row_step: usize) -> [f64; 3] {
+        let tone = Tone::with_sample_bits(black_level, 1.0, frame.layout.sample_bits());
+        let conversion = Conversion {
+            row_step,
+            ..conversion(Output::Half, false)
+        };
+        develop(frame, &tone, UNITY, &conversion, &mut Buffers::default())
+            .channel_means
+            .unwrap()
     }
 
     fn linear_tone() -> Tone {
