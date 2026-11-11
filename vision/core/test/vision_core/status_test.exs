@@ -66,7 +66,7 @@ defmodule VisionCore.StatusTest do
              right: %{present: false, issues: []}
            }
 
-    for {_name, check} <- snapshot.pair,
+    for {_name, check} <- Map.merge(snapshot.pair, snapshot.depth),
         do: assert(check == %{level: :off, camera: nil, issues: []})
 
     assert snapshot.sync == %{present: false}
@@ -292,6 +292,43 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{sharpness: %{left: left, right: right}}}, 500
     assert_in_delta left, 0.04, 1.0e-9
     assert_in_delta right, 0.03, 1.0e-9
+  end
+
+  test "each tick judges the brightness averaged over its pairs" do
+    start_supervised!({Status, config: config([]), tick_ms: 200})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, _first}
+
+    for right <- [110.0, 130.0] do
+      GenServer.cast(Status, {:stereo_pair, %{pair() | brightness: %{left: 100.0, right: right}}})
+    end
+
+    # No camera runs, so the check is off, but the window's mean reaches it.
+    assert_receive {:vision_status, %{pair: %{brightness: %{level: :off}}}}, 500
+    assert %{brightness: %{left: 100.0, right: 120.0}} = :sys.get_state(Status)
+  end
+
+  test "each tick measures how near the last pair's depth reaches, then forgets the pair" do
+    start_supervised!({Status, config: config([]), tick_ms: 200})
+    :ok = Status.subscribe()
+    assert_receive {:vision_status, _first}
+
+    disparity = Nx.tensor([[120.0, 10.0]], type: :f32)
+
+    GenServer.cast(
+      Status,
+      {:stereo_pair,
+       %{
+         pair()
+         | disparity: disparity,
+           disparity_scale: 1.0,
+           disparity_range: %{min_disparity: 0, num_disparities: 128},
+           geometry: %{focal_length_px: 896.0, baseline_m: 0.2}
+       }}
+    )
+
+    assert_receive {:vision_status, _snapshot}, 500
+    assert %{near: %{near_percent: 100.0}, last_pair: nil} = :sys.get_state(Status)
   end
 
   test "each tick reports the depth's quality averaged over its pairs" do

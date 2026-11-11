@@ -12,6 +12,7 @@ defmodule VisionCore.Stereo.PairCheckTest do
         sync: %{present: true, pairs: 150, offset_median_ms: 0.08, offset_max_ms: 0.42},
         alignment: %{offset_rows: 0.1, band_offset_rows: [0.1, 0.2, 0.0, 0.1]},
         sharpness: %{left: 0.005, right: 0.0052},
+        brightness: %{left: 101.0, right: 98.0},
         row_correction: 0.0
       },
       Map.new(overrides)
@@ -86,6 +87,26 @@ defmodule VisionCore.Stereo.PairCheckTest do
              PairCheck.check(window(sharpness: %{left: 0.005, right: 0.0041})).focus
   end
 
+  test "brightness points at the brighter camera, past 20% brighter" do
+    hazy_right = PairCheck.check(window(brightness: %{left: 90.0, right: 120.0})).brightness
+
+    assert %{
+             level: :warning,
+             camera: :right,
+             issues: [:brightness_mismatch],
+             brighter: :right,
+             difference_percent: 33
+           } = hazy_right
+
+    assert_in_delta hazy_right.gauge, 1 / 0.6, 1.0e-9
+
+    assert %{level: :warning, camera: :left, brighter: :left} =
+             PairCheck.check(window(brightness: %{left: 130.0, right: 100.0})).brightness
+
+    assert %{level: :ok, brighter: :right} =
+             PairCheck.check(window(brightness: %{left: 100.0, right: 118.0})).brightness
+  end
+
   test "keeps a raised issue until its figure falls below 0.8 of its threshold" do
     uneven = fn spread ->
       window(alignment: %{offset_rows: 0.0, band_offset_rows: [0.0, spread]})
@@ -136,6 +157,7 @@ defmodule VisionCore.Stereo.PairCheckTest do
           sync: %{present: false},
           alignment: nil,
           sharpness: nil,
+          brightness: nil,
           row_correction: nil
         )
       )
@@ -145,6 +167,13 @@ defmodule VisionCore.Stereo.PairCheckTest do
 
   test "lists every issue it raises" do
     assert PairCheck.issues() ==
-             [:timing_offset, :row_offset, :large_row_correction, :uneven_rows, :focus_mismatch]
+             [
+               :timing_offset,
+               :row_offset,
+               :large_row_correction,
+               :uneven_rows,
+               :focus_mismatch,
+               :brightness_mismatch
+             ]
   end
 end

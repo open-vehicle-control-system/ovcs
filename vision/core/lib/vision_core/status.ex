@@ -16,8 +16,11 @@ defmodule VisionCore.Status do
 
   `:pair` judges the cameras together (`VisionCore.Stereo.PairCheck`):
   their timing, their rows, with the row correction the stage declaring
-  `right_row_offset` applies, and their focus; each camera's `:issues`
-  are those of the checks pointing at it.
+  `right_row_offset` applies, their focus and their brightness; each
+  camera's `:issues` are those of the checks pointing at it. `:depth`
+  judges how well the unit turns pairs into depth
+  (`VisionCore.Stereo.DepthCheck`): the pairs it drops and how much of
+  the last pair is nearer than it measures.
 
   Started after the components and the exporters in `VisionCore.Supervisor`.
   A listing of the exporters that misses its deadline reports those
@@ -33,7 +36,7 @@ defmodule VisionCore.Status do
   use GenServer
 
   alias VisionCore.{Exporter, Exporters, Outputs}
-  alias VisionCore.Stereo.{AlignmentCorrection, PairCheck, Pairer, Pipeline}
+  alias VisionCore.Stereo.{AlignmentCorrection, DepthCheck, PairCheck, Pairer, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias VisionCore.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
@@ -57,6 +60,7 @@ defmodule VisionCore.Status do
           stereo_segment_percent: float(),
           alignment: %{offset_rows: float(), band_offset_rows: [float() | nil]} | nil,
           pair: PairCheck.t(),
+          depth: DepthCheck.t(),
           sharpness: %{left: float(), right: float()} | nil,
           quality:
             %{
@@ -129,7 +133,12 @@ defmodule VisionCore.Status do
        alignment: nil,
        sharpnesses: [],
        sharpness: nil,
+       brightnesses: [],
+       brightness: nil,
+       last_pair: nil,
+       near: nil,
        pair: nil,
+       depth: nil,
        qualities: [],
        quality: nil,
        window_start_ms: now_ms(),
@@ -167,6 +176,8 @@ defmodule VisionCore.Status do
        state
        | alignments: prepend(pair.alignment, state.alignments),
          sharpnesses: prepend(pair.sharpness, state.sharpnesses),
+         brightnesses: prepend(pair.brightness, state.brightnesses),
+         last_pair: pair,
          qualities: prepend(quality(pair.metrics), state.qualities)
      }}
   end
@@ -210,6 +221,10 @@ defmodule VisionCore.Status do
         alignments: [],
         sharpness: mean_sharpness(state.sharpnesses),
         sharpnesses: [],
+        brightness: mean_sharpness(state.brightnesses),
+        brightnesses: [],
+        near: state.last_pair && DepthCheck.near(state.last_pair),
+        last_pair: nil,
         quality: mean_quality(state.qualities),
         qualities: []
     }
@@ -277,19 +292,32 @@ defmodule VisionCore.Status do
           sync: sync,
           alignment: state.alignment,
           sharpness: state.sharpness,
+          brightness: state.brightness,
           row_correction: Map.get(replies, :row_correction)
         },
         state.pair
       )
 
+    depth =
+      DepthCheck.check(
+        %{
+          cameras: cameras,
+          depth_hz: state.rates_hz.depth,
+          load_percent: state.stereo_segment_percent,
+          near: state.near
+        },
+        state.depth
+      )
+
     issues = PairCheck.camera_issues(pair)
-    state = %{state | pair: pair}
+    state = %{state | pair: pair, depth: depth}
 
     snapshot = %{
       cameras:
         Map.new(cameras, fn {side, camera} -> {side, Map.put(camera, :issues, issues[side])} end),
       sync: sync,
       pair: pair,
+      depth: depth,
       hailo: hailo(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,

@@ -41,6 +41,9 @@ defmodule VisionCore.Stereo.Pair do
     * `:sharpness` — each rectified image's sharpness,
       `%{left: float, right: float}`, comparable between the two
       (`VisionCore.Stereo.Stage.Sharpness`); `nil` before it is measured.
+    * `:brightness` — each rectified image's mean grey,
+      `%{left: float, right: float}`, from the same measure; `nil` before
+      it is measured.
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
     * `:device_ms` — the time the pair spent in compiled Nx segments, on
@@ -68,6 +71,7 @@ defmodule VisionCore.Stereo.Pair do
     :cloud_size,
     :alignment,
     :sharpness,
+    :brightness,
     cloud_points: 0,
     disparity_scale: 1.0,
     device_ms: 0.0,
