@@ -13,7 +13,7 @@ that `/stereo/{left,right}/image_raw/compressed` are live. Verify
 with `docker compose exec ros2 ros2 topic list`.
 
 1. **Print a chessboard.** Default expected by the service is
-   an **8×6 inner-corner** board with **25 mm squares** — i.e.
+   an **8×6 inner-corner** board with **30 mm squares** — i.e.
    a 9-column × 7-row grid of black/white squares. Use ROS's
    `check-7x6.pdf` rotated 90° or any standard cv chessboard.
    Override via env if you printed a different one:
