@@ -1,7 +1,7 @@
-defmodule VisionCore.SystemLoadTest do
+defmodule OvcsVehicle.SystemLoadTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.SystemLoad
+  alias OvcsVehicle.SystemLoad
 
   @earlier_stat "cpu  100 0 50 800 50 0 0 0 0 0\ncpu0 25 0 12 200 12 0 0 0 0 0\n"
   @later_stat "cpu  160 0 90 840 60 0 0 0 0 0\ncpu0 40 0 22 210 15 0 0 0 0 0\n"
@@ -22,5 +22,10 @@ defmodule VisionCore.SystemLoadTest do
   test "reads this machine's CPU times" do
     assert {busy, total} = SystemLoad.cpu_times()
     assert busy <= total
+  end
+
+  test "the 1, 5 and 15 minute load averages of /proc/loadavg" do
+    assert SystemLoad.parse_loadavg("0.52 0.48 0.40 1/123 4567\n") == [0.52, 0.48, 0.4]
+    assert SystemLoad.parse_loadavg("") == nil
   end
 end

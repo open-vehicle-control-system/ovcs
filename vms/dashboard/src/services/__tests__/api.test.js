@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchBlocks, fetchFirmware, fetchPages, fetchVehicle, postAction } from '../api.js'
+import { fetchBlocks, fetchBoard, fetchFirmware, fetchPages, fetchVehicle, postAction } from '../api.js'
 import { actionBody } from '../../format.js'
 
 const answer = (status, body = '') =>
@@ -70,5 +70,13 @@ describe('api', () => {
 
     expect(await fetchFirmware()).toEqual(attributes)
     expect(fetch.mock.calls[0][0]).toMatch(/\/api\/firmware$/)
+  })
+
+  it("reads the board's interfaces and clock", async () => {
+    const attributes = { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true }
+    fetch.mockImplementation(() => answer(200, JSON.stringify({ data: { type: 'board', id: 'current', attributes } })))
+
+    expect(await fetchBoard()).toEqual(attributes)
+    expect(fetch.mock.calls[0][0]).toMatch(/\/api\/board$/)
   })
 })

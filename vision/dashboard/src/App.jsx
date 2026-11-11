@@ -18,9 +18,10 @@ import {
   OvcsTopBar,
   focusClass as FOCUS,
   useOvcsConnection,
+  useOvcsBoard,
   useOvcsFirmware
 } from '@ovcs/ui/react'
-import { fetchFirmware } from './services/unit.js'
+import { fetchBoard, fetchFirmware } from './services/unit.js'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
@@ -182,12 +183,13 @@ export default function App() {
   const joins = useStatus((state) => state.joins)
   const firmware = useOvcsFirmware(fetchFirmware, joins)
   const connection = useOvcsConnection(dashboardSocket)
+  const board = useOvcsBoard(fetchBoard, connection === 'connected')
   const { page, selectedGroupId, exporterId } = useNavigationInUrl()
   const Page = PAGES[page]
 
   return (
     <OvcsShell product="Vision">
-      <OvcsTopBar firmware={firmware}>
+      <OvcsTopBar firmware={firmware} board={board}>
         <ParameterError connection={connection} />
       </OvcsTopBar>
 

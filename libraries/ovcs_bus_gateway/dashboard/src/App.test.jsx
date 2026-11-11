@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import App from './App.jsx'
@@ -202,6 +202,7 @@ describe('App', () => {
     render(<App />)
     const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
     expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
-    expect(document.title).toBe('OVCS Bus Gateway · OVCS Mini')
+    // The title is set in an effect, which can run after the text shows.
+    await waitFor(() => expect(document.title).toBe('OVCS Bus Gateway · OVCS Mini'))
   })
 })

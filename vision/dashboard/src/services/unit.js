@@ -19,6 +19,12 @@ export async function fetchFirmware() {
   return document.data.attributes
 }
 
+/** The board the unit runs on: its `interfaces`, each a `name` with its `addresses`, its clock's `time` and `clockSynchronized`. */
+export async function fetchBoard() {
+  const document = await request('board')
+  return document.data.attributes
+}
+
 /** What takes the outputs out of the unit: each exporter's `id`, `name`, `module`, `status` and `outputs`, the API last. */
 export async function fetchExporters() {
   const document = await request('exporters')

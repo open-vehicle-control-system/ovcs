@@ -171,6 +171,27 @@ The same parameters are reachable over ROS 2 under the same ids ([Vision unit](.
 }
 ```
 
+`GET /api/board` returns the board the unit runs on: each network interface that is up, with a device and an address, with its addresses (loopback, container bridges and IPv6 link-local addresses left out), its load, the CPU's busy share over half a second and the 1, 5 and 15 minute load averages, and the board's clock, its UTC time and whether NTP has synchronized it. A board whose clock is not synchronized publishes nothing to ROS 2. On a host, `clockSynchronized` is `null`. The dashboard's top bar reads it every 10 s while connected.
+
+```json
+{
+  "data": {
+    "type": "boards",
+    "id": "current",
+    "attributes": {
+      "interfaces": [
+        {"name": "eth0", "addresses": ["192.168.10.232"]},
+        {"name": "usb0", "addresses": ["172.31.42.1"]}
+      ],
+      "cpuPercent": 23.4,
+      "loadAverage": [0.52, 0.48, 0.4],
+      "time": "2026-11-11T14:53:12Z",
+      "clockSynchronized": true
+    }
+  }
+}
+```
+
 `GET /api/configuration` returns the configuration your vehicle's composer gives the unit, as `VisionCore.settings/0` returns it: the components with their options, the exporters, the previews and the ROS 2 link. Shortened, the stereo component's options also holding its calibration directories, each camera's settings and its stages:
 
 ```json

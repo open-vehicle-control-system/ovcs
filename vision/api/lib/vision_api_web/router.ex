@@ -19,6 +19,7 @@ defmodule VisionApiWeb.Router do
     post "/parameter-resets", ParameterActionController, :reset
     get "/configuration", ConfigurationController, :show
     get "/firmware", FirmwareController, :show
+    get "/board", BoardController, :show
     get "/exporters", ExporterController, :index
     post "/exporters/:id/actions/:name", ExporterActionController, :run
     get "/ros2-node", Ros2NodeController, :show

@@ -7,12 +7,13 @@ import {
   OvcsShellBody,
   OvcsTopBar,
   focusClass as FOCUS,
+  useOvcsBoard,
   useOvcsFirmware
 } from '@ovcs/ui/react'
 import Menu from './components/Menu.jsx'
 import DynamicPage from './pages/DynamicPage.jsx'
 import NetworkPage from './pages/NetworkPage.jsx'
-import { fetchFirmware } from './services/api.js'
+import { fetchBoard, fetchFirmware } from './services/api.js'
 import { dashboardSocket } from './services/socket.js'
 import { useConnection } from './stores/connection.js'
 import { useMetrics } from './stores/metrics.js'
@@ -85,6 +86,7 @@ export default function App() {
   const connection = useConnection((state) => state.state)
   // Each connection reads the firmware again, as after an upload.
   const firmware = useOvcsFirmware(fetchFirmware, connection === 'connected')
+  const board = useOvcsBoard(fetchBoard, connection === 'connected')
 
   useEffect(() => {
     load()
@@ -96,7 +98,7 @@ export default function App() {
 
   return (
     <OvcsShell product="VMS">
-      <OvcsTopBar firmware={firmware} />
+      <OvcsTopBar firmware={firmware} board={board} />
 
       <OvcsShellBody>
         <Menu pages={pages ?? NO_PAGES} />
