@@ -5,7 +5,15 @@ import { HealthValue, WARNING, Widest } from './UnitStatus.jsx'
 import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
 import Hint from './Hint.jsx'
-import { PAIR_CHECKS, cameraFigures, cameraIssues, depthFigures, objectFigures, pairStatus } from '../status.js'
+import {
+  PAIR_CHECKS,
+  cameraFigures,
+  cameraIssues,
+  depthFigures,
+  depthIssues,
+  objectFigures,
+  pairStatus
+} from '../status.js'
 
 // Each figure is a small label over its value; the one with a tone carries the stream's health dot.
 function Figures({ id, figures, children }) {
@@ -104,9 +112,8 @@ function PairStatus({ status }) {
   )
 }
 
-/** What to do about a camera, as badges on its frame, the full wording on hover; none for a healthy camera. */
-function cameraBadge(camera) {
-  const { actions, wording } = cameraIssues(camera)
+/** What to do, as badges on a preview's frame, the full wording on hover; none without anything to do. */
+function badges({ actions, wording }) {
   if (actions.length === 0) return null
 
   return actions.map((action) => (
@@ -121,8 +128,8 @@ function cameraBadge(camera) {
   ))
 }
 
-// Whether a camera has something to do, for the ring around its frame.
-const needsAction = (camera) => cameraIssues(camera).actions.length > 0
+// Whether a preview has something to do, for the ring around its frame.
+const needsAction = ({ actions }) => actions.length > 0
 
 /** The latest detection result, `null` until one comes or on a unit without detection. */
 function useDetections(socket) {
@@ -150,8 +157,8 @@ function LeftPreview({ status, socket }) {
       stream="left"
       socket={socket}
       overlay={detections ? <DetectionOverlay detections={detections} /> : null}
-      badge={cameraBadge(status?.cameras?.left)}
-      alert={needsAction(status?.cameras?.left)}
+      badge={badges(cameraIssues(status?.cameras?.left))}
+      alert={needsAction(cameraIssues(status?.cameras?.left))}
     >
       {status ? <Figures id="left" figures={[...cameraFigures(status.cameras?.left), ...objectFigures(detections)]} /> : null}
     </Preview>
@@ -159,7 +166,7 @@ function LeftPreview({ status, socket }) {
 }
 
 /**
- * The depth with its rate and quality, and its colour range, which the unit pushes after every join, a rejoin
+ * The depth with its rate, its checks and quality, badged with what to do about it, and its colour range, which the unit pushes after every join, a rejoin
  * included, and on every change; the handler is bound before the join, so it misses none.
  */
 function DepthPreview({ status, socket }) {
@@ -179,8 +186,10 @@ function DepthPreview({ status, socket }) {
       onChannel={follow}
       className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
       frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
+      badge={badges(depthIssues(status))}
+      alert={needsAction(depthIssues(status))}
     >
-      <Figures id="depth" figures={status ? depthFigures(status.depthHz, status.quality) : []}>
+      <Figures id="depth" figures={status ? depthFigures(status) : []}>
         <DepthRange channel={channel} metres={metres} onChange={setMetres} />
       </Figures>
     </Preview>
@@ -197,8 +206,8 @@ export default function Previews({ status, socket }) {
         <Preview
           stream="right"
           socket={socket}
-          badge={cameraBadge(status?.cameras?.right)}
-          alert={needsAction(status?.cameras?.right)}
+          badge={badges(cameraIssues(status?.cameras?.right))}
+          alert={needsAction(cameraIssues(status?.cameras?.right))}
         >
           {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}
         </Preview>

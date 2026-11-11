@@ -13,7 +13,12 @@ const snapshot = {
   pair: {
     timing: { level: 'ok', camera: null, issues: [], later: 'right', offsetMs: 0.12, maxOffsetMs: 0.4, pairs: 150 },
     rows: { level: 'off', camera: null, issues: [] },
-    focus: { level: 'warning', camera: 'right', issues: ['focus_mismatch'], softer: 'right', differencePercent: 30, left: 0.0312, right: 0.0218 }
+    focus: { level: 'warning', camera: 'right', issues: ['focus_mismatch'], softer: 'right', differencePercent: 30, left: 0.0312, right: 0.0218 },
+    brightness: { level: 'ok', camera: null, issues: [], gauge: -0.3, brighter: 'left', differencePercent: 6, left: 104.2, right: 98.3 }
+  },
+  depth: {
+    rate: { level: 'ok', camera: null, issues: [], gauge: 0.2, droppedPercent: 1.0, depthHz: 12.8, cameraHz: 12.9, loadPercent: 97.0 },
+    range: { level: 'off', camera: null, issues: [] }
   },
   depthHz: 12.8,
   quality: { matchedPercent: 61.6, meanDisparityPx: 18.43, spreadPx: 6.08, jitterPx: 0.318 }
@@ -56,14 +61,15 @@ describe('Previews', () => {
     expect(card('right').textContent).toContain('absent')
   })
 
-  it("puts the cameras' timing, rows and focus between the two camera previews", () => {
+  it("puts the cameras' timing, rows, focus and brightness between the two camera previews", () => {
     render(<Previews status={snapshot} socket={socket} />)
 
     const pair = screen.getByRole('list', { name: 'Camera pair' })
     const row = [...pair.parentElement.children]
     expect(row).toEqual([figure('left'), pair, figure('right')])
-    for (const id of ['timing', 'rows', 'focus']) expect(pair.contains(card(id))).toBe(true)
+    for (const id of ['timing', 'rows', 'focus', 'brightness']) expect(pair.contains(card(id))).toBe(true)
     expect(card('timing').textContent).toContain('0.12 ms')
+    expect(card('brightness').textContent).toContain('left brighter')
   })
 
   it("badges the frame of a camera with something to do, and rings it, its text and layout unchanged", () => {
@@ -78,6 +84,30 @@ describe('Previews', () => {
     expect(figure('left').querySelector('[data-alert]')).toBeNull()
   })
 
+  it('badges and rings the depth with what to do about it', () => {
+    const depth = {
+      rate: { level: 'warning', camera: null, issues: ['pairs_dropped'], droppedPercent: 14.2, depthHz: 30.0, cameraHz: 35.0 },
+      range: { level: 'warning', camera: null, issues: ['too_near'], nearPercent: 31.4, nearestM: 1.39 }
+    }
+    render(<Previews status={{ ...snapshot, depth }} socket={socket} />)
+
+    const badges = [...figure('depth').querySelectorAll('[data-badge]')]
+    expect(badges.map((badge) => badge.textContent)).toEqual(['Lower frame rate', 'Too near'])
+    expect(figure('depth').querySelector('[data-alert]')).not.toBeNull()
+
+    const shown = (label) => card('depth').querySelector(`[data-figure="${label}"]`).textContent
+    expect(shown('dropped')).toContain('14 %, unhealthy')
+    expect(shown('too near')).toContain('31 % < 1.4 m, unhealthy')
+  })
+
+  it('leaves out a depth check with nothing to judge, and badges nothing while the depth is healthy', () => {
+    render(<Previews status={snapshot} socket={socket} />)
+
+    expect(figure('depth').querySelector('[data-badge]')).toBeNull()
+    expect(figure('depth').querySelector('[data-alert]')).toBeNull()
+    expect(card('depth').querySelector('[data-figure="dropped"]').textContent).toBe('dropped1 %')
+    expect(card('depth').querySelector('[data-figure="too near"]')).toBeNull()
+  })
 
   it('puts the depth rate under the depth preview', () => {
     render(<Previews status={snapshot} socket={socket} />)
@@ -110,7 +140,7 @@ describe('Previews', () => {
     expect(screen.getAllByRole('figure')).toHaveLength(3)
     expect(card('left')).toBeNull()
     expect(card('depth').querySelector('[data-figure="rate"]')).toBeNull()
-    for (const id of ['timing', 'rows', 'focus']) expect(card(id).textContent).toContain('–')
+    for (const id of ['timing', 'rows', 'focus', 'brightness']) expect(card(id).textContent).toContain('–')
   })
 
   describe('colour range', () => {
