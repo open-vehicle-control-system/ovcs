@@ -12,6 +12,7 @@ const TAG_LOG: u8 = 2;
 const TAG_METADATA: u8 = 3;
 const TAG_PAIR: u8 = 4;
 const TAG_GREY_FRAME: u8 = 5;
+const TAG_RGB_FRAME: u8 = 6;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -195,6 +196,12 @@ pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) 
     [&grey_frame_header(width, height, capture_ns)[..], grey].concat()
 }
 
+/// The start of an RGB_FRAME record, which `width` x `height` pixels of
+/// 8-bit red, green and blue follow, row-major.
+pub fn rgb_frame_header(width: u16, height: u16, capture_ns: i64) -> [u8; 13] {
+    image_header(TAG_RGB_FRAME, width, height, capture_ns)
+}
+
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
     let mut record = Vec::with_capacity(2 + message.len());
     record.push(TAG_LOG);
@@ -318,6 +325,15 @@ mod tests {
     fn grey_frame_record_layout() {
         let got = grey_frame_record(2, 1, 5, &[7, 8]);
         let want = [5, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 7, 8];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn rgb_frame_record_layout() {
+        let got = [&rgb_frame_header(2, 1, -5)[..], &[1, 2, 3, 4, 5, 6]].concat();
+        let want = [
+            6, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4, 5, 6,
+        ];
         assert_eq!(got, want);
     }
 

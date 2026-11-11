@@ -12,6 +12,8 @@ pub enum SensorModel {
     Imx708,
     /// Global-shutter IMX296, fixed focus.
     Imx296,
+    /// Raspberry Pi HQ Camera, 12-bit, with a manual lens.
+    Imx477,
 }
 
 impl SensorModel {
@@ -20,6 +22,8 @@ impl SensorModel {
     pub fn for_sensor(name: &str) -> SensorModel {
         if name.starts_with("imx296") {
             SensorModel::Imx296
+        } else if name.starts_with("imx477") {
+            SensorModel::Imx477
         } else {
             SensorModel::Imx708
         }
@@ -29,7 +33,7 @@ impl SensorModel {
     pub fn gain_code(self, gain: f64, min_code: i32, max_code: i32) -> i32 {
         let code = match self {
             // gain = 1024 / (1024 - code)
-            SensorModel::Imx708 => 1024.0 - 1024.0 / gain,
+            SensorModel::Imx708 | SensorModel::Imx477 => 1024.0 - 1024.0 / gain,
             // 0.1 dB a code: gain = 10^(code / 200)
             SensorModel::Imx296 => 200.0 * gain.log10(),
         };
@@ -39,7 +43,7 @@ impl SensorModel {
     /// The gain an analogue gain `code` stands for: the inverse of `gain_code`.
     pub fn gain(self, code: i32) -> f64 {
         match self {
-            SensorModel::Imx708 => 1024.0 / f64::from(1024 - code),
+            SensorModel::Imx708 | SensorModel::Imx477 => 1024.0 / f64::from(1024 - code),
             SensorModel::Imx296 => 10f64.powf(f64::from(code) / 200.0),
         }
     }
@@ -47,6 +51,14 @@ impl SensorModel {
     /// Whether the camera has a lens actuator to focus.
     pub fn has_lens(self) -> bool {
         self == SensorModel::Imx708
+    }
+
+    /// The bits per sample of the mode `v4l2_capture` captures.
+    pub fn sample_bits(self) -> u32 {
+        match self {
+            SensorModel::Imx708 | SensorModel::Imx296 => 10,
+            SensorModel::Imx477 => 12,
+        }
     }
 }
 
@@ -112,6 +124,29 @@ mod tests {
         );
         assert!(SensorModel::Imx708.has_lens());
         assert!(!SensorModel::Imx296.has_lens());
+    }
+
+    #[test]
+    fn the_imx477_is_a_12_bit_sensor_without_a_lens() {
+        let model = SensorModel::for_sensor("imx477 5-001a");
+        assert_eq!(model, SensorModel::Imx477);
+        assert!(!model.has_lens());
+        assert_eq!(model.sample_bits(), 12);
+        assert_eq!(SensorModel::Imx708.sample_bits(), 10);
+        assert_eq!(SensorModel::Imx296.sample_bits(), 10);
+    }
+
+    #[test]
+    fn imx477_gain_codes_follow_the_mainline_driver() {
+        let model = SensorModel::Imx477;
+        assert_eq!(model.gain_code(1.0, 0, 978), 0);
+        assert_eq!(model.gain_code(2.0, 0, 978), 512);
+        assert_eq!(model.gain_code(64.0, 0, 978), 978);
+        assert!((model.gain(978) - 1024.0 / 46.0).abs() < 1e-9);
+        for gain in [1.5, 4.0, 16.0] {
+            let code = model.gain_code(gain, 0, 978);
+            assert!((model.gain(code) / gain - 1.0).abs() < 0.02, "gain {gain}");
+        }
     }
 
     #[test]
