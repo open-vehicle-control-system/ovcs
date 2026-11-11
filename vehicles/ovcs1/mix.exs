@@ -37,8 +37,6 @@ defmodule Ovcs1.MixProject do
       {:infotainment_firmware, path: "../../infotainment/firmware"},
       {:bridge_firmware, path: "../../bridges/firmware"},
       {:vision_firmware, path: "../../vision/firmware"},
-      # The vision unit's nx_stereo needs Nx 1.0; ros_bridge asks for 0.x.
-      {:nx, "~> 1.0", override: true},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]
