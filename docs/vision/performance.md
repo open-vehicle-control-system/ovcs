@@ -72,6 +72,8 @@ The unit is the OVCS1 reference vehicle's: two Global Shutter Cameras (IMX296) 2
 | Each camera | 35 frames a second |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
 | One detection request, letterbox included | 17 to 22 ms, on about 92% of the pairs at 35 Hz |
+| YOLOX's inference time, the HTP's execution time without waits (`npu.pipelines.detection.inferenceMs`) | 8.7 ms |
+| The NPU's load with YOLOX alone (`npu.loadPercent`) | about 21% |
 | Generating the context binary, first boot only | about 2.4 s |
 
 ### Measuring a change on the board

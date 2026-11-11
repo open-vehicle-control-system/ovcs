@@ -22,10 +22,10 @@ The Hexagon NPU is reached through FastRPC and exposes no load counter to Linux;
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `qnn_detect` and `hailo_detect` return each inference's accelerator time with its boxes
-- [ ] #2 The status's `npu` carries `load_percent`, the share of the last tick the accelerator spent inferring, summed over every pipeline on it, and each pipeline's mean inference time
-- [ ] #3 The dashboard shows the load next to the NPU's kind and each pipeline's inference time in its Inference step
-- [ ] #4 On the OVCS1 unit, the load and inference time of YOLOX on the Hexagon are read and recorded in `docs/vision/performance.md`
+- [x] #1 `qnn_detect` and `hailo_detect` return each inference's accelerator time with its boxes
+- [x] #2 The status's `npu` carries `load_percent`, the share of the last tick the accelerator spent inferring, summed over every pipeline on it, and each pipeline's mean inference time
+- [x] #3 The dashboard shows the load next to the NPU's kind and each pipeline's inference time in its Inference step
+- [x] #4 On the OVCS1 unit, the load and inference time of YOLOX on the Hexagon are read and recorded in `docs/vision/performance.md`
 <!-- AC:END -->
 
 ## Implementation Plan
