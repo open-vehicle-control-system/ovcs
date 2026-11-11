@@ -11,9 +11,7 @@ defmodule Ovcs1.Vision.Composer do
   sensor in each axis, and the pipeline matches at that size over 128
   disparities, coarse to fine.
 
-  `priv/calibration` holds a nominal calibration (focal length from the
-  lens and pixel pitch, no distortion, the 20 cm baseline) until the rig
-  is calibrated.
+  `priv/calibration` holds the rig's calibration, from `cameracalibrator`.
 
   The GPU modules are compiled on a host into `priv/nx_iree_cache`, for
   the stages, their options and the matching size; rebuild it after
