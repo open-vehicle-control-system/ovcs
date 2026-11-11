@@ -5,6 +5,9 @@ defmodule VisionApiWeb.StatusJSON do
   `:stereo_segment_percent` as `stereoLoadPercent`. A camera's or the
   sync's fields that were not measured are left out. Each exporter's
   status is a `level` and a `detail`, as in `VisionApiWeb.ExporterJSON`.
+  `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`, `rows`
+  and `focus`, with camelCase keys; their levels, cameras, directions and
+  issues are strings, as each camera's `issues`.
   """
 
   alias VisionApiWeb.ExporterJSON
@@ -15,7 +18,8 @@ defmodule VisionApiWeb.StatusJSON do
     exposure_time_us: :exposureTimeUs,
     analogue_gain: :analogueGain,
     lens_position: :lensPosition,
-    colour_temperature: :colourTemperature
+    colour_temperature: :colourTemperature,
+    issues: :issues
   }
   @sync_keys %{
     present: :present,
@@ -33,6 +37,7 @@ defmodule VisionApiWeb.StatusJSON do
         right: rename(snapshot.cameras.right, @camera_keys)
       },
       sync: rename(snapshot.sync, @sync_keys),
+      pair: Map.new(snapshot.pair, fn {name, check} -> {name, camelize(check)} end),
       hailo: Atom.to_string(snapshot.hailo),
       depthHz: snapshot.depth_hz,
       cpuPercent: snapshot.cpu_percent,
@@ -49,6 +54,14 @@ defmodule VisionApiWeb.StatusJSON do
 
   defp rename(fields, keys) do
     for {key, value} <- fields, Map.has_key?(keys, key), into: %{}, do: {keys[key], value}
+  end
+
+  # A check's keys are `VisionCore.Stereo.PairCheck`'s own, a fixed set.
+  defp camelize(check) do
+    Map.new(check, fn {key, value} ->
+      [first | rest] = key |> Atom.to_string() |> String.split("_")
+      {String.to_atom(Enum.join([first | Enum.map(rest, &String.capitalize/1)])), value}
+    end)
   end
 
   defp alignment(nil), do: nil
