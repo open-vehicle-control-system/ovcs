@@ -8,7 +8,7 @@ const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn
 const snapshot = {
   cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
-  hailo: 'absent',
+  npu: null,
   depthHz: 12.8,
   exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'warning', detail: 'Disconnected' } }],
   cpuPercent: 37.25,
@@ -55,16 +55,24 @@ describe('UnitStatus and the pair status', () => {
       </>
     )
 
-  it('shows Hailo absent in grey: a unit without an accelerator is not failing', () => {
+  it('shows no NPU as none in grey: a unit without an accelerator is not failing', () => {
     show(snapshot)
-    expect(card('hailo').textContent).toContain('absent')
-    expect(card('hailo').querySelector('.ovcs-status--error')).toBeNull()
-    expect(card('hailo').querySelector('.ovcs-status--ok')).toBeNull()
+    expect(card('npu').textContent).toContain('NPU')
+    expect(card('npu').textContent).toContain('none')
+    expect(card('npu').querySelector('.ovcs-status--error')).toBeNull()
+    expect(card('npu').querySelector('.ovcs-status--ok')).toBeNull()
   })
 
-  it('shows a Hailo that failed in red', () => {
-    show({ ...snapshot, hailo: 'failed' })
-    expect(card('hailo').querySelector('.ovcs-status--error')).not.toBeNull()
+  it('shows a running NPU by its kind', () => {
+    show({ ...snapshot, npu: { kind: 'Hailo-8', state: 'running' } })
+    expect(card('npu').textContent).toContain('Hailo-8')
+    expect(card('npu').querySelector('.ovcs-status--ok')).not.toBeNull()
+  })
+
+  it('shows an NPU that failed by its kind, in red', () => {
+    show({ ...snapshot, npu: { kind: 'Hexagon', state: 'failed' } })
+    expect(card('npu').textContent).toContain('Hexagon')
+    expect(card('npu').querySelector('.ovcs-status--error')).not.toBeNull()
   })
 
   it("shows the ROS 2 exporter's status in the top bar", () => {
@@ -155,7 +163,7 @@ describe('UnitStatus and the pair status', () => {
       expect(card(id).querySelector('[data-warning]')).not.toBeNull()
       expect(card(id).textContent).toContain(', unhealthy')
     }
-    for (const id of ['hailo', 'segment', 'timing', 'left']) {
+    for (const id of ['npu', 'segment', 'timing', 'left']) {
       expect(card(id).querySelector('[data-warning]')).toBeNull()
       expect(card(id).textContent).not.toContain('unhealthy')
     }
@@ -166,8 +174,8 @@ describe('UnitStatus and the pair status', () => {
 
     const widest = (id) => card(id).querySelector('[data-widest]').dataset.widest
     expect(widest('ros2')).toBe('not answering')
-    expect(widest('hailo')).toBe('running')
+    expect(widest('npu')).toBe('Hexagon')
     expect(widest('segment')).toBe('100 %')
-    for (const id of ['ros2', 'hailo', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
+    for (const id of ['ros2', 'npu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
   })
 })

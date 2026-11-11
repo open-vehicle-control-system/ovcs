@@ -48,7 +48,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         },
         range: %{level: :off, camera: nil, issues: []}
       },
-      hailo: :absent,
+      npu: %{kind: "Hexagon", state: :running},
       depth_hz: 29.9,
       cpu_percent: 61.0,
       stereo_segment_percent: 96.5,
@@ -102,7 +102,7 @@ defmodule VisionApiWeb.StatusJSONTest do
                },
                range: %{level: :off, camera: nil, issues: []}
              },
-             hailo: "absent",
+             npu: %{kind: "Hexagon", state: "running"},
              depthHz: 29.9,
              cpuPercent: 61.0,
              stereoLoadPercent: 96.5,
@@ -134,7 +134,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         rate: %{level: :off, camera: nil, issues: []},
         range: %{level: :off, camera: nil, issues: []}
       },
-      hailo: :running,
+      npu: nil,
       depth_hz: 0.0,
       cpu_percent: nil,
       stereo_segment_percent: 0.0,
@@ -150,7 +150,7 @@ defmodule VisionApiWeb.StatusJSONTest do
              alignment: nil,
              sharpness: nil,
              quality: nil,
-             hailo: "running",
+             npu: nil,
              exporters: []
            } = StatusJSON.status(snapshot)
   end

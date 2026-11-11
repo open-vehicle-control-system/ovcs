@@ -2,10 +2,10 @@ defmodule VisionApiWeb.StatusJSON do
   @moduledoc """
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
   same fields with camelCase keys, states as strings, and
-  `:stereo_segment_percent` as `stereoLoadPercent`. A camera's or the
-  sync's fields that were not measured are left out. Each exporter's
-  status is a `level` and a `detail`, as in `VisionApiWeb.ExporterJSON`.
-  `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`,
+  `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
+  without one. A camera's or the sync's fields that were not measured
+  are left out. Each exporter's status is a `level` and a `detail`, as
+  in `VisionApiWeb.ExporterJSON`. `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`,
   `rows`, `focus` and `brightness`, and `depth` the
   `VisionCore.Stereo.DepthCheck` checks, `rate` and `range`, with
   camelCase keys; their levels, cameras, directions and issues are
@@ -41,7 +41,7 @@ defmodule VisionApiWeb.StatusJSON do
       sync: rename(snapshot.sync, @sync_keys),
       pair: checks(snapshot.pair),
       depth: checks(snapshot.depth),
-      hailo: Atom.to_string(snapshot.hailo),
+      npu: npu(snapshot.npu),
       depthHz: snapshot.depth_hz,
       cpuPercent: snapshot.cpu_percent,
       stereoLoadPercent: snapshot.stereo_segment_percent,
@@ -68,6 +68,9 @@ defmodule VisionApiWeb.StatusJSON do
       {String.to_atom(Enum.join([first | Enum.map(rest, &String.capitalize/1)])), value}
     end)
   end
+
+  defp npu(nil), do: nil
+  defp npu(npu), do: %{kind: npu.kind, state: Atom.to_string(npu.state)}
 
   defp alignment(nil), do: nil
 

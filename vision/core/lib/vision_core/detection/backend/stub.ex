@@ -50,6 +50,9 @@ defmodule VisionCore.Detection.Backend.Stub do
   @impl VisionCore.Detection.Backend
   def available?(_server \\ __MODULE__), do: true
 
+  @impl VisionCore.Detection.Backend
+  def npu_kind, do: nil
+
   @impl GenServer
   def init(opts) do
     boxes = Keyword.get(opts, :boxes, @default_boxes)

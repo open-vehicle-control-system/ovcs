@@ -59,7 +59,7 @@ defmodule VisionApiWeb.ExporterStatusTest do
       |> socket()
       |> subscribe_and_join(VisionApiWeb.StatusChannel, "status")
 
-    assert_push "status", %{exporters: [%{id: "malformed", status: status}], hailo: "absent"}
+    assert_push "status", %{exporters: [%{id: "malformed", status: status}], npu: nil}
     assert status == %{level: "warning", detail: "Malformed status: :ok"}
   end
 end

@@ -104,6 +104,9 @@ defmodule VisionCore.Detection.Backend.Hailo do
     :exit, _ -> false
   end
 
+  @impl VisionCore.Detection.Backend
+  def npu_kind, do: "Hailo-8"
+
   @impl GenServer
   def init(opts) do
     Process.flag(:trap_exit, true)

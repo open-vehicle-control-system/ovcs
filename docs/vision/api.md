@@ -370,7 +370,7 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out.
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`; it is `null` on a unit without one.
 
 ```json
 {
@@ -399,7 +399,7 @@ status.join()
   "depthHz": 26.0,
   "stereoLoadPercent": 98.0,
   "cpuPercent": 84.8,
-  "hailo": "running",
+  "npu": {"kind": "Hexagon", "state": "running"},
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}}]
 }
 ```

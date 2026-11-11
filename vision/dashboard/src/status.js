@@ -165,15 +165,15 @@ function ros2Status(exporters) {
 export function unitStatus(status) {
   return [
     ...ros2Status(status.exporters),
-    // Absent is a unit built without an accelerator, not a fault.
+    // No NPU is a unit built without an accelerator, not a fault.
     {
-      id: 'hailo',
-      title: 'Hailo',
-      value: status.hailo,
-      widest: 'running',
-      healthy: status.hailo === 'running',
-      tone: status.hailo === 'absent' ? 'muted' : undefined,
-      hint: HINTS.hailo
+      id: 'npu',
+      title: 'NPU',
+      value: status.npu?.kind ?? 'none',
+      widest: 'Hexagon',
+      healthy: status.npu?.state === 'running',
+      tone: status.npu ? undefined : 'muted',
+      hint: HINTS.npu
     },
     { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]

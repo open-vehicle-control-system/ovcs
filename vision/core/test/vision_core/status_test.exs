@@ -70,7 +70,7 @@ defmodule VisionCore.StatusTest do
         do: assert(check == %{level: :off, camera: nil, issues: []})
 
     assert snapshot.sync == %{present: false}
-    assert snapshot.hailo == :absent
+    assert snapshot.npu == nil
     assert snapshot.depth_hz == 0.0
   end
 
@@ -136,10 +136,41 @@ defmodule VisionCore.StatusTest do
     end
   end
 
-  test "a configured Hailo detector that is not running is reported failed" do
+  test "a configured Hailo detector that is not running is reported as a failed Hailo-8" do
     start_supervised!({Status, config: config([{:hailo_detector, hef_path: "/missing.hef"}])})
 
-    assert Status.snapshot().hailo == :failed
+    assert Status.snapshot().npu == %{kind: "Hailo-8", state: :failed}
+  end
+
+  test "a configured QNN detector that is not running is reported as a failed Hexagon" do
+    start_supervised!({Status, config: config([{:qnn_detector, dlc_path: "/missing.dlc"}])})
+
+    assert Status.snapshot().npu == %{kind: "Hexagon", state: :failed}
+  end
+
+  test "a QNN detector whose backend is available is reported as a running Hexagon" do
+    available = spawn(&answer_available/0)
+    Process.register(available, VisionCore.Detection.Backend.Qnn)
+    on_exit(fn -> Process.exit(available, :kill) end)
+    start_supervised!({Status, config: config([:qnn_detector])})
+
+    assert Status.snapshot().npu == %{kind: "Hexagon", state: :running}
+  end
+
+  defp answer_available do
+    receive do
+      {:"$gen_call", from, :available?} -> GenServer.reply(from, true)
+    end
+
+    answer_available()
+  end
+
+  test "a detector whose backend runs on no accelerator reports no NPU" do
+    start_supervised!(
+      {Status, config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}])}
+    )
+
+    assert Status.snapshot().npu == nil
   end
 
   test "a detector that does not answer is reported failed without stalling the snapshot" do
@@ -150,7 +181,7 @@ defmodule VisionCore.StatusTest do
 
     {elapsed_us, snapshot} = :timer.tc(&Status.snapshot/0)
 
-    assert snapshot.hailo == :failed
+    assert %{state: :failed} = snapshot.npu
     assert elapsed_us < 1_000_000
   end
 
@@ -163,7 +194,9 @@ defmodule VisionCore.StatusTest do
 
     {elapsed_us, snapshot} = :timer.tc(&Status.snapshot/0)
 
-    assert %{hailo: :failed, exporters: [%{status: {:warning, "Not answering"}}]} = snapshot
+    assert %{npu: %{state: :failed}, exporters: [%{status: {:warning, "Not answering"}}]} =
+             snapshot
+
     assert elapsed_us < 350_000
   end
 

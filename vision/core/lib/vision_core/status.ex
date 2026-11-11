@@ -1,9 +1,10 @@
 defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
-  frame rate and exposure, the pair's sync, the Hailo detector, the depth
-  rate, each exporter's status (`VisionCore.Exporters.list/1`), the CPU's
-  busy share (`OvcsVehicle.SystemLoad`) and the share of time the stereo
+  frame rate and exposure, the pair's sync, the NPU detection runs on,
+  the depth rate, each exporter's status (`VisionCore.Exporters.list/1`),
+  the CPU's busy share (`OvcsVehicle.SystemLoad`) and the share of time
+  the stereo
   pipeline spent in its compiled Nx or native segments
   (`Pair` `:device_ms`). Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
@@ -39,7 +40,6 @@ defmodule VisionCore.Status do
   alias VisionCore.Stereo.{AlignmentCorrection, DepthCheck, PairCheck, Pairer, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias OvcsVehicle.SystemLoad
-  alias VisionCore.Detection.Backend.Hailo
   alias VisionCore.Stereo.Pair
   alias VisionCore.Camera.Frame
 
@@ -53,7 +53,7 @@ defmodule VisionCore.Status do
   @type snapshot :: %{
           cameras: %{left: camera(), right: camera()},
           sync: map(),
-          hailo: :running | :absent | :failed,
+          npu: %{kind: String.t(), state: :running | :failed} | nil,
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -121,7 +121,7 @@ defmodule VisionCore.Status do
      %{
        tick_ms: tick_ms,
        cameras: StereoSupervisor.cameras(config),
-       hailo_configured?: hailo_configured?(config),
+       npu_backend: npu_backend(config),
        exporters: [],
        subscribers: %{},
        counts: %{left: 0, right: 0, depth: 0},
@@ -318,7 +318,7 @@ defmodule VisionCore.Status do
       sync: sync,
       pair: pair,
       depth: depth,
-      hailo: hailo(state, replies),
+      npu: npu(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,
@@ -341,12 +341,16 @@ defmodule VisionCore.Status do
 
   # What the snapshot asks other processes, by key: the function and its answer when it fails.
   defp calls(state) do
-    hailo = if state.hailo_configured?, do: %{hailo: {&Hailo.available?/0, false}}, else: %{}
-
     %{exporters: {&exporters/0, :late}}
-    |> Map.merge(hailo)
+    |> Map.merge(npu_calls(state))
     |> Map.merge(stereo_calls(state))
   end
+
+  defp npu_calls(%{npu_backend: nil}), do: %{}
+
+  # A backend is registered under its module.
+  defp npu_calls(%{npu_backend: backend}),
+    do: %{npu: {fn -> backend.available?(backend) end, false}}
 
   # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
   defp exporters do
@@ -388,17 +392,16 @@ defmodule VisionCore.Status do
   defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
   defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
 
-  defp hailo(%{hailo_configured?: false}, _replies), do: :absent
-  defp hailo(_state, %{hailo: available?}), do: if(available?, do: :running, else: :failed)
+  defp npu(%{npu_backend: nil}, _replies), do: nil
 
-  defp hailo_configured?(%VisionCore.Config{components: components}),
-    do: Enum.any?(components, &hailo_component?/1)
+  defp npu(%{npu_backend: backend}, %{npu: available?}),
+    do: %{kind: backend.npu_kind(), state: if(available?, do: :running, else: :failed)}
 
-  defp hailo_component?(:hailo_detector), do: true
-  defp hailo_component?({:hailo_detector, _options}), do: true
-  defp hailo_component?(:detector), do: true
-  defp hailo_component?({:detector, options}), do: Keyword.get(options, :backend, Hailo) == Hailo
-  defp hailo_component?(_component), do: false
+  # The detection unit's backend, when it runs on an accelerator.
+  defp npu_backend(config) do
+    backend = VisionCore.Detection.Supervisor.backend(config)
+    if backend && backend.npu_kind(), do: backend
+  end
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 

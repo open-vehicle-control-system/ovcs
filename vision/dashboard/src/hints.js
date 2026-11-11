@@ -102,9 +102,9 @@ export const HINTS = {
       "The dashboard's live link to the unit, which carries the statuses beside it and the previews. " +
       'Disconnected, the page shows nothing new until the link comes back.'
   },
-  hailo: {
-    title: 'Hailo',
-    text: 'The Hailo accelerator running object detection. Absent when the vehicle configures none.'
+  npu: {
+    title: 'NPU',
+    text: "The accelerator running the unit's inference, by kind. Red when its backend cannot run; none on a unit without one."
   },
   objects: {
     title: 'Objects',

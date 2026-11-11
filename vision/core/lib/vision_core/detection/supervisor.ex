@@ -99,19 +99,33 @@ defmodule VisionCore.Detection.Supervisor do
   @spec outputs(VisionCore.Config.t()) :: [
           {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
         ]
-  def outputs(%VisionCore.Config{components: components}) do
-    if Enum.any?(components, &starts_unit?/1),
-      do: [detections: {:detections, Pipeline}],
-      else: []
+  def outputs(config) do
+    if unit_options(config), do: [detections: {:detections, Pipeline}], else: []
   end
 
-  defp starts_unit?({name, opts}) do
-    name
-    |> VisionCore.Components.start(opts)
-    |> Enum.any?(&match?(%{start: {__MODULE__, _function, _arguments}}, &1))
+  @doc """
+  The backend module of the detection unit in `config`, `nil` when no
+  component of `config` starts the unit.
+  """
+  @spec backend(VisionCore.Config.t()) :: module() | nil
+  def backend(config) do
+    case unit_options(config) do
+      nil -> nil
+      opts -> opts |> split_backend_options() |> elem(0)
+    end
   end
 
-  defp starts_unit?(name), do: starts_unit?({name, []})
+  # The options of the unit `config`'s components start, as `VisionCore.Components` resolves them.
+  defp unit_options(%VisionCore.Config{components: components}) do
+    Enum.find_value(components, fn component ->
+      {name, opts} = if is_atom(component), do: {component, []}, else: component
+
+      Enum.find_value(VisionCore.Components.start(name, opts), fn
+        %{start: {__MODULE__, _function, [unit_opts]}} -> unit_opts
+        _child -> nil
+      end)
+    end)
+  end
 
   defp check_options!(opts) do
     case Enum.uniq(Keyword.keys(opts)) -- options() do

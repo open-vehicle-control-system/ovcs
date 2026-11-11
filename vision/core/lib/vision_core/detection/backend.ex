@@ -46,6 +46,11 @@ defmodule VisionCore.Detection.Backend do
   `available?/1` exists so a caller can say something useful at
   startup instead of discovering this per-frame.
 
+  ## The accelerator
+
+  `npu_kind/0` names the accelerator a backend runs on, as the
+  dashboard shows it, or `nil` for a backend that runs on none.
+
   ## The inference step
 
   A backend declares the detection pipeline's inference step in
@@ -81,4 +86,7 @@ defmodule VisionCore.Detection.Backend do
 
   @doc "False when the backend could not initialise. Never raises."
   @callback available?(server()) :: boolean()
+
+  @doc "The kind of accelerator the backend runs on, `nil` without one."
+  @callback npu_kind() :: String.t() | nil
 end

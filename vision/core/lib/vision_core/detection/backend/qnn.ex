@@ -78,6 +78,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
     :exit, _ -> false
   end
 
+  @impl VisionCore.Detection.Backend
+  def npu_kind, do: "Hexagon"
+
   @impl GenServer
   def init(opts) do
     Process.flag(:trap_exit, true)

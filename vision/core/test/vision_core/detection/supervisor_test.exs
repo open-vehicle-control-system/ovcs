@@ -105,5 +105,18 @@ defmodule VisionCore.Detection.SupervisorTest do
     test "none without a component starting it" do
       assert Supervisor.outputs(config([{:stereo, []}])) == []
     end
+
+    test "its backend: the one the component names, the Hailo one by default" do
+      assert Supervisor.backend(config([{:stereo, []}, :qnn_detector])) ==
+               VisionCore.Detection.Backend.Qnn
+
+      assert Supervisor.backend(config([{:hailo_detector, hef_path: "/m.hef"}])) == Hailo
+      assert Supervisor.backend(config([{:detector, backend: Stub}])) == Stub
+      assert Supervisor.backend(config([:detector])) == Hailo
+    end
+
+    test "no backend without a component starting the unit" do
+      assert Supervisor.backend(config([{:stereo, []}])) == nil
+    end
   end
 end
