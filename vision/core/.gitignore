@@ -10,5 +10,6 @@ erl_crash.dump
 /priv/hailo_detect
 /priv/jpeg_codec
 /priv/qnn_detect
+/priv/qnn_segment
 /priv/v4l2_capture
 /vision_core_dev.db*

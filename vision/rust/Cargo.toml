@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "qnn", "qnn_detect", "v4l2_capture"]
+members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "qnn", "qnn_detect", "qnn_segment", "v4l2_capture"]
 # qnn and the Ports on it need the QAIRT headers, which only an arduino_ventuno_q build extracts.
 default-members = ["camera_capture", "detection", "framing", "hailo_detect", "jpeg_codec", "v4l2_capture"]
 

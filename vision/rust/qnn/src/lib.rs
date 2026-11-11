@@ -37,6 +37,8 @@ pub struct Tensor {
     pub dimensions: Vec<u32>,
     /// `(scale, offset)`: a value `q` stands for `(q + offset) × scale`.
     pub scale_offset: Option<(f32, i32)>,
+    /// Whether an element is one unsigned byte, quantised or not.
+    pub unsigned_8bit: bool,
     pub bytes: usize,
     raw: Qnn_Tensor_t,
 }
@@ -152,6 +154,10 @@ fn missing(what: &str) -> String {
     format!("the QNN library has no {what}")
 }
 
+fn is_unsigned_8bit(data_type: Qnn_DataType_t) -> bool {
+    data_type == QNN_DATATYPE_UFIXED_POINT_8 || data_type == QNN_DATATYPE_UINT_8
+}
+
 /// The bytes one element of `data_type` takes: QNN encodes its bit width
 /// in the low byte, written as decimal digits (0x08, 0x16, 0x32, 0x64).
 fn element_bytes(data_type: Qnn_DataType_t) -> Option<usize> {
@@ -198,6 +204,7 @@ unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
         name,
         dimensions,
         scale_offset,
+        unsigned_8bit: is_unsigned_8bit(v1.dataType),
         bytes,
         raw: *raw,
     })
@@ -603,6 +610,15 @@ mod tests {
         assert_eq!(element_bytes(QNN_DATATYPE_UFIXED_POINT_8), Some(1));
         assert_eq!(element_bytes(QNN_DATATYPE_FLOAT_32), Some(4));
         assert_eq!(element_bytes(QNN_DATATYPE_INT_16), Some(2));
+    }
+
+    #[test]
+    fn unsigned_8_bit_types_are_the_quantised_and_the_plain_ones() {
+        assert!(is_unsigned_8bit(QNN_DATATYPE_UFIXED_POINT_8));
+        assert!(is_unsigned_8bit(QNN_DATATYPE_UINT_8));
+        assert!(!is_unsigned_8bit(QNN_DATATYPE_SFIXED_POINT_8));
+        assert!(!is_unsigned_8bit(QNN_DATATYPE_INT_8));
+        assert!(!is_unsigned_8bit(QNN_DATATYPE_UFIXED_POINT_16));
     }
 
     fn event(kind: u32, unit: u32, value: u64) -> ProfileEvent {

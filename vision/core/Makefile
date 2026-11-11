@@ -9,7 +9,7 @@ BINARIES := v4l2_capture jpeg_codec
 FEATURES :=
 TARGET_CPU_FLAGS :=
 else ifeq ($(MIX_TARGET),arduino_ventuno_q)
-BINARIES := v4l2_capture jpeg_codec qnn_detect
+BINARIES := v4l2_capture jpeg_codec qnn_detect qnn_segment
 FEATURES :=
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a78
 # The qnn crate's bindings come from the QNN headers of the QAIRT archive the
@@ -26,7 +26,7 @@ endif
 CARGO ?= cargo
 # Every Port binary: priv/ is shared by the host and every target, so a
 # target build removes the ones it does not build.
-ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect v4l2_capture
+ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect qnn_segment v4l2_capture
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
 RUST_TARGET := $(TARGET_ARCH)-unknown-$(TARGET_OS)-$(TARGET_ABI)

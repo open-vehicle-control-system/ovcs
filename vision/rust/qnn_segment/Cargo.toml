@@ -1,0 +1,8 @@
+[package]
+name = "qnn_segment"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+framing = { path = "../framing" }
+qnn = { path = "../qnn" }
