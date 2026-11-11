@@ -183,7 +183,7 @@ defmodule VisionCore.Stereo.Stage.Disparity do
   def option_specs, do: @option_specs
 
   @impl VisionCore.Stereo.NxStage
-  def options(state), do: Map.delete(state, :matcher)
+  def options(state), do: Map.take(state, Keyword.keys(@option_specs))
 
   @impl VisionCore.Stereo.NxStage
   def set_option(state, key, value) do
