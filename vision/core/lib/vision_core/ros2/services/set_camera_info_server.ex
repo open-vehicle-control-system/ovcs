@@ -1,16 +1,17 @@
 defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   @moduledoc """
   ROS 2 service server for `sensor_msgs/srv/SetCameraInfo`. One
-  instance per camera side; together they make the
+  instance per stereo side and per camera of its own; they make the
   `cameracalibrator` GUI's **COMMIT** button work — clicking it
   delivers the freshly-solved `CameraInfo` over Zenoh, this writes
-  it to the side's YAML and has the stereo pipeline reload it, so the
-  new geometry takes effect on the next frame. A calibration the
-  stereo unit refuses is taken back: the YAML holds what it held
-  before, or is removed when there was none, so the next start does
-  not load it, and the answer is `success: false` with the reason.
-  `VisionCore.Ros2.Exporter` starts one per side it publishes, as a
-  helper, and is told of each calibration committed (`notify/2`).
+  it to the camera's YAML and, for a stereo side, has the stereo
+  pipeline reload it, so the new geometry takes effect on the next
+  frame. A calibration the stereo unit refuses is taken back: the YAML
+  holds what it held before, or is removed when there was none, so the
+  next start does not load it, and the answer is `success: false` with
+  the reason. `VisionCore.Ros2.Exporter` starts one per side and camera
+  it publishes, as a helper, and is told of each calibration committed
+  (`notify/2`).
 
   ## Required opts
 
@@ -25,7 +26,8 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
       args after a successful write, answering `:ok` once the stereo
       unit has taken the calibration. Lets the calling
       supervisor wire in the stereo pipeline's reload without
-      coupling this module to it.
+      coupling this module to it. `nil`, as for a camera of its own,
+      takes every calibration written.
     * `:register_service` (`&Ros2Zenoh.Client.register_service/3`)
       — registers the service, called with its name, its module and
       this server's pid.

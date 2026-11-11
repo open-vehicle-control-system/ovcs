@@ -15,6 +15,20 @@ defmodule VisionCore.Camera.Unit do
   sets one: `VisionCore.Camera.V4L2Single` on a CAMSS board,
   `VisionCore.Camera.GStreamer` for a USB camera on a workstation.
 
+  Three options describe the camera to its consumers, such as
+  `VisionCore.Ros2.Exporter`, and are not given to the driver
+  (`settings/1`):
+
+    * `:calibration` — its `camera_info` YAML
+      (`VisionCore.Ros2.CameraCalibration`): K and D.
+    * `:calibration_store_dir` — a writable directory for a calibration
+      committed at runtime (`set_camera_info`), as `camera_<name>.yaml`,
+      apart from the stereo unit's `<prefix>_<side>.yaml` in a directory
+      they share. Once stored there it takes precedence over
+      `:calibration`, as the stereo unit's (`VisionCore.Stereo.Supervisor`).
+    * `:pose` — its pose relative to the stereo pair, a YAML
+      `VisionCore.Camera.Pose` reads.
+
   Exists to contain failure, as `VisionCore.Detection.Supervisor` does:
   a driver that keeps crashing is restarted within this supervisor's own
   budget, then the unit stops and, a `:transient` child, stays down,
@@ -31,6 +45,18 @@ defmodule VisionCore.Camera.Unit do
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
   @max_seconds 60
+
+  @consumer_options [:calibration, :calibration_store_dir, :pose]
+
+  @typedoc "What a camera's consumers read of it; see `settings/1`."
+  @type settings :: %{
+          name: atom(),
+          server: atom(),
+          frame_id: String.t(),
+          calibration_path: Path.t() | nil,
+          calibration_store_path: Path.t() | nil,
+          pose_path: Path.t() | nil
+        }
 
   @doc """
   The camera's name in the `:camera` component's `opts`. Raises
@@ -93,7 +119,8 @@ defmodule VisionCore.Camera.Unit do
 
     driver_opts =
       driver_opts
-      |> Keyword.put_new(:frame_id, "#{name}_optical")
+      |> Keyword.drop(@consumer_options)
+      |> Keyword.put_new(:frame_id, default_frame_id(name))
       |> Keyword.put(:label, Atom.to_string(name))
 
     Supervisor.init([{driver, driver_opts}],
@@ -132,6 +159,43 @@ defmodule VisionCore.Camera.Unit do
     for {name, _driver, server} <- cameras(config),
         do: {{:camera_frame, name}, {:camera_frame, server}}
   end
+
+  @doc """
+  What the consumers of `config`'s cameras read of each, in config order,
+  for the cameras `cameras/1` lists: its name, the name its driver
+  registers under, its optical frame, its calibration path, the stored
+  calibration first when there is one, the path a committed calibration
+  is stored at (`nil` without a store), and its pose path. The store is
+  read at each call.
+  """
+  @spec settings(VisionCore.Config.t()) :: [settings()]
+  def settings(%VisionCore.Config{components: components} = config) do
+    options = for {:camera, opts} <- components, is_list(opts), into: %{}, do: {opts[:name], opts}
+
+    for {name, _driver, server} <- cameras(config) do
+      opts = Map.fetch!(options, name)
+      store_path = calibration_store_path(opts[:calibration_store_dir], name)
+
+      %{
+        name: name,
+        server: server,
+        frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
+        calibration_path: calibration_path(opts[:calibration], store_path),
+        calibration_store_path: store_path,
+        pose_path: opts[:pose]
+      }
+    end
+  end
+
+  defp calibration_store_path(nil, _name), do: nil
+  defp calibration_store_path(directory, name), do: Path.join(directory, "camera_#{name}.yaml")
+
+  defp calibration_path(calibration, nil), do: calibration
+
+  defp calibration_path(calibration, store_path),
+    do: if(File.exists?(store_path), do: store_path, else: calibration)
+
+  defp default_frame_id(name), do: "#{name}_optical"
 
   defp camera_driver?(driver),
     do:

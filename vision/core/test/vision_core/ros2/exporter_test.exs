@@ -8,6 +8,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
+  alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Camera.Frame
   alias VisionCore.Exporter.Runner
@@ -670,6 +671,196 @@ defmodule VisionCore.Ros2.ExporterTest do
                        %CompressedImage{data: rectified}}
 
       assert <<0xFF, 0xD8, _rest::binary>> = rectified
+    end
+  end
+
+  describe "a camera of its own" do
+    # `config`'s components with a camera `:hq` of `driver` and `options`.
+    defp with_camera(config, driver, options) do
+      camera = {:camera, [name: :hq, driver: driver] ++ options}
+      %{config | components: config.components ++ [camera]}
+    end
+
+    defp hq_options(driver, camera_options, exporter_options) do
+      config = driver |> config() |> with_camera(driver, camera_options)
+      Keyword.put(options(driver, exporter_options), :config, config)
+    end
+
+    defp pose_file(tmp_dir) do
+      path = Path.join(tmp_dir, "hq_pose.yaml")
+      File.write!(path, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [-0.1, 0, 0]\n")
+      path
+    end
+
+    test "its frames are read with cameras:, every camera by default, or those it names" do
+      options = hq_options(Camera, [], cameras: [])
+      assert Exporter.outputs(options) == [{:camera_frame, :hq}]
+
+      assert Exporter.outputs(Keyword.put(options, :cameras, names: [:hq])) ==
+               [{:camera_frame, :hq}]
+
+      assert Exporter.outputs(Keyword.put(options, :cameras, names: [])) == []
+      assert Exporter.outputs(Keyword.delete(options, :cameras)) == []
+    end
+
+    @tag :tmp_dir
+    test "answers set_camera_info on <prefix>/<name>/set_camera_info, writing to its store",
+         %{tmp_dir: tmp_dir} do
+      options =
+        hq_options(Camera, [calibration: "hq.yaml", calibration_store_dir: tmp_dir], cameras: [])
+
+      assert [server] = Exporter.children(options)
+
+      assert %{id: {SetCameraInfoServer, :hq}, start: {SetCameraInfoServer, :start_link, [args]}} =
+               server
+
+      assert args[:service_name] == "stereo/hq/set_camera_info"
+      assert args[:calibration_path] == Path.join(tmp_dir, "camera_hq.yaml")
+      assert args[:camera_name] == "hq"
+      assert args[:reload] == nil
+    end
+
+    test "without a store, set_camera_info writes its calibration file; with neither, no service" do
+      options = hq_options(Camera, [calibration: "hq.yaml"], cameras: [topic_prefix: "front"])
+
+      assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] = Exporter.children(options)
+      assert args[:service_name] == "front/hq/set_camera_info"
+      assert args[:calibration_path] == "hq.yaml"
+
+      assert Exporter.children(hq_options(Camera, [], cameras: [])) == []
+    end
+
+    test "publishes its image and camera info through the runner, in the frame it carries" do
+      calibration = Path.join(@calibration, "distorted_left.yaml")
+      options = hq_options(OtherCamera, [calibration: calibration], cameras: [])
+      start_runner(options, options[:config])
+
+      Outputs.publish(
+        {:camera_frame, OtherCamera.name_for("hq")},
+        {:camera_frame, %{jpeg_frame("hq", 1) | width: 96, height: 72}}
+      )
+
+      assert_receive {:published, "stereo/hq/image_raw/compressed", %CompressedImage{} = image},
+                     1_000
+
+      assert image.header.frame_id == "hq_optical"
+
+      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}, 1_000
+      assert camera_info.k == [81.3, 0.0, 47.2, 0.0, 80.9, 35.6, 0.0, 0.0, 1.0]
+      assert camera_info.r == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    end
+
+    @tag :tmp_dir
+    test "publishes its pose as a static transform from the stereo left optical frame, again and again",
+         %{tmp_dir: tmp_dir} do
+      options = hq_options(Camera, [pose: pose_file(tmp_dir)], cameras: [])
+
+      {:ok, state} = Exporter.init(options)
+      assert_received :publish_transforms
+
+      {:ok, _state} = Exporter.handle_info(:publish_transforms, state)
+
+      assert_received {:published, "/tf_static", %TFMessage{transforms: [transform]}}
+      assert transform.header.frame_id == "stereo_left"
+      assert transform.child_frame_id == "hq_optical"
+      assert transform.transform.translation.x == 0.1
+      assert_receive :publish_transforms, 2_000
+    end
+
+    @tag :tmp_dir
+    test "no transform without a stereo unit, or without a pose", %{tmp_dir: tmp_dir} do
+      no_stereo =
+        %VisionCore.Config{ros2: [zenoh_endpoint_ip: "127.0.0.1"]}
+        |> with_camera(Camera, pose: pose_file(tmp_dir))
+
+      {:ok, _state} =
+        Exporter.init(Keyword.put(options(Camera, cameras: []), :config, no_stereo))
+
+      {:ok, _state} = Exporter.init(hq_options(Camera, [], cameras: []))
+
+      refute_received :publish_transforms
+    end
+
+    @tag :tmp_dir
+    test "a committed calibration is published as its camera info", %{tmp_dir: tmp_dir} do
+      stored = Path.join(tmp_dir, "camera_hq.yaml")
+
+      options =
+        hq_options(
+          Camera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: []
+        )
+
+      {:ok, state} = Exporter.init(options)
+      File.cp!(Path.join(@calibration, "identity_left.yaml"), stored)
+
+      {:ok, state} =
+        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
+
+      frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
+      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
+
+      assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
+      assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+
+    @tag :tmp_dir
+    test "a calibration committed through its service is stored and published as its camera info",
+         %{tmp_dir: tmp_dir} do
+      options =
+        hq_options(
+          OtherCamera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: [camera_info_interval_frames: 1]
+        )
+
+      supervisor =
+        start_supervised!(
+          {VisionCore.Exporter.Supervisor,
+           exporter: Exporter, options: options, config: options[:config]}
+        )
+
+      runner(supervisor)
+      identity = CameraCalibration.load!(Path.join(@calibration, "identity_left.yaml"))
+
+      camera_info = %CameraInfo{
+        header: %Header{stamp: %Time{}, frame_id: "hq_optical"},
+        width: identity.width,
+        height: identity.height,
+        distortion_model: identity.distortion_model,
+        d: identity.distortion_coefficients,
+        k: identity.camera_matrix,
+        r: identity.rectification_matrix,
+        p: identity.projection_matrix
+      }
+
+      server = SetCameraInfoServer.name_for("stereo/hq/set_camera_info")
+
+      send(
+        server,
+        {:service_request,
+         %{query: %Zenohex.Query{}, request_payload: CameraInfo.encode(camera_info)}}
+      )
+
+      :sys.get_state(server)
+      runner(supervisor)
+
+      assert File.exists?(Path.join(tmp_dir, "camera_hq.yaml"))
+
+      Outputs.publish(
+        {:camera_frame, OtherCamera.name_for("hq")},
+        {:camera_frame, %{jpeg_frame("hq", 1) | width: 192, height: 108}}
+      )
+
+      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = published}, 1_000
+      assert published.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
     end
   end
 end

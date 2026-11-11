@@ -48,7 +48,9 @@ defmodule VisionCore.Components do
            frame_id: "hq_camera_optical"}
 
       or, on a workstation, `driver: VisionCore.Camera.GStreamer, device:
-      "/dev/video0"`.
+      "/dev/video0"`. `:calibration`, `:calibration_store_dir` and
+      `:pose` describe the camera to its consumers and are not the
+      driver's (`VisionCore.Camera.Unit`).
   """
 
   alias VisionCore.Detection
