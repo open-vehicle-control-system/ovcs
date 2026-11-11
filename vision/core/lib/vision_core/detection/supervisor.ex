@@ -15,7 +15,9 @@ defmodule VisionCore.Detection.Supervisor do
   Which backend is `:backend`, defaulting to the Hailo-8 accelerator,
   `VisionCore.Detection.Backend.Hailo`; `VisionCore.Detection.Backend.Qnn`
   runs on a Qualcomm Hexagon NPU. See `VisionCore.Detection.Backend` for
-  `Stub`, for plumbing only.
+  `Stub`, for plumbing only. A Hailo unit first claims the accelerator
+  (`VisionCore.Detection.Backend.Hailo.Device`), which one pipeline at a
+  time runs on: a second Hailo unit is left down, saying so.
 
   Exists to contain failure rather than to organise code. The vision
   core's own supervisor is `:rest_for_one` with the default restart
@@ -50,8 +52,9 @@ defmodule VisionCore.Detection.Supervisor do
 
   alias VisionCore.Detection
   alias VisionCore.Detection.{Live, Pipeline}
+  alias VisionCore.Detection.Backend.Hailo
 
-  @default_backend VisionCore.Detection.Backend.Hailo
+  @default_backend Hailo
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
   @max_seconds 60
@@ -75,9 +78,13 @@ defmodule VisionCore.Detection.Supervisor do
     end
   end
 
+  defp failure_text({:shutdown, {:failed_to_start_child, _child, reason}}),
+    do: failure_text(reason)
+
   defp failure_text({%{__exception__: true} = exception, _stacktrace}),
     do: Exception.message(exception)
 
+  defp failure_text(reason) when is_binary(reason), do: reason
   defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
@@ -87,13 +94,15 @@ defmodule VisionCore.Detection.Supervisor do
     {backend, backend_opts} = split_backend_options(opts)
     backend_server = Detection.server(backend, name)
 
-    children = [
-      {backend, backend_opts ++ [name: backend_server, pipeline: name]},
-      {Pipeline,
-       Keyword.take(opts, pipeline_keys()) ++
-         [backend: backend, backend_server: backend_server, name: name]},
-      {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
-    ]
+    children =
+      device_claim(backend, name) ++
+        [
+          {backend, backend_opts ++ [name: backend_server, pipeline: name]},
+          {Pipeline,
+           Keyword.take(opts, pipeline_keys()) ++
+             [backend: backend, backend_server: backend_server, name: name]},
+          {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
+        ]
 
     Supervisor.init(children,
       strategy: :rest_for_one,
@@ -101,6 +110,9 @@ defmodule VisionCore.Detection.Supervisor do
       max_seconds: @max_seconds
     )
   end
+
+  defp device_claim(Hailo, name), do: [{Hailo.Device, pipeline: name}]
+  defp device_claim(_backend, _name), do: []
 
   @doc """
   The outputs of the detection units in `config`, in config order, with

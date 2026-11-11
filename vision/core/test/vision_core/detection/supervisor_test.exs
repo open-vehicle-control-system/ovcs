@@ -132,6 +132,65 @@ defmodule VisionCore.Detection.SupervisorTest do
     assert log =~ "hef_path"
   end
 
+  describe "the Hailo-8" do
+    @hailo [backend: Hailo, hef_path: "/missing.hef"]
+
+    test "a Hailo unit claims the device before its backend starts; another unit claims nothing" do
+      {:ok, {_flags, [claim, backend | _rest]}} = Supervisor.init(@hailo ++ [name: :road])
+
+      assert %{start: {Hailo.Device, :start_link, [[pipeline: :road]]}} = claim
+      assert %{start: {Hailo, :start_link, _options}} = backend
+
+      {:ok, {_flags, [stub | _rest]}} = Supervisor.init(@options)
+      assert %{start: {Stub, :start_link, _options}} = stub
+    end
+
+    test "a second Hailo unit is left down, saying the Hailo-8 serves another pipeline; the first runs" do
+      Process.flag(:trap_exit, true)
+      first = start_supervised!({Supervisor, @hailo})
+
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@hailo ++ [name: :road]) == :ignore end)
+
+      assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
+      assert log =~ "the Hailo-8 already serves another pipeline, :detection"
+      refute Process.whereis(Supervisor.Road)
+      assert Process.alive?(first)
+      assert Process.whereis(Pipeline)
+    end
+
+    test "a Hailo unit runs beside a unit on another backend" do
+      start_supervised!({Supervisor, @hailo})
+
+      start_supervised!(
+        Elixir.Supervisor.child_spec({Supervisor, @options ++ [name: :road]}, id: :road)
+      )
+
+      assert Process.whereis(Hailo.Device)
+      assert Process.whereis(Pipeline)
+      assert Process.whereis(Pipeline.Road)
+    end
+
+    test "a backend restart keeps the claim" do
+      start_supervised!({Supervisor, @hailo})
+      claim = Process.whereis(Hailo.Device)
+      backend = Process.whereis(Hailo)
+
+      Process.exit(backend, :kill)
+      eventually(fn -> Process.whereis(Hailo) not in [nil, backend] end)
+
+      assert Process.whereis(Hailo.Device) == claim
+    end
+  end
+
+  defp eventually(check, attempts \\ 100) do
+    cond do
+      check.() -> :ok
+      attempts == 0 -> flunk("condition not met")
+      true -> Process.sleep(10) && eventually(check, attempts - 1)
+    end
+  end
+
   test "keeps every Hailo option to the backend" do
     assert Supervisor.split_backend_options(
              backend: VisionCore.Detection.Backend.Hailo,

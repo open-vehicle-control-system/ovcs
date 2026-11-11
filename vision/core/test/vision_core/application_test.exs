@@ -322,6 +322,34 @@ defmodule VisionCore.ApplicationTest do
     assert Process.alive?(Process.whereis(VisionCore.Detection.Pipeline))
   end
 
+  test "a second Hailo detector is left down, the Hailo-8 serving the first, which runs" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:hailo_detector, hef_path: "/missing.hef"},
+            {:hailo_detector, name: :road, hef_path: "/missing.hef"}
+          ]
+        })
+      end)
+
+    assert log =~ "road down: the Hailo-8 already serves another pipeline, :detection"
+    refute Process.whereis(VisionCore.Detection.Supervisor.Road)
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
+  end
+
+  test "a Hailo detector and a stub one both run" do
+    start_pipeline(%VisionCore.Config{
+      components: [
+        {:hailo_detector, hef_path: "/missing.hef"},
+        {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub}
+      ]
+    })
+
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor.Road))
+  end
+
   test "two detectors of one name fail the start, naming it" do
     for {components, name} <- [
           {[{:detector, backend: VisionCore.Detection.Backend.Stub}, :hailo_detector],
