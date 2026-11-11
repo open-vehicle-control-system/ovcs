@@ -223,12 +223,67 @@ pub fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -
         green: &tone.table,
         blue: &blue,
     };
+    let mut rgb = vec![0u8; frame.width * frame.height * 3];
+    let mut image = Image::new(&mut rgb, frame.width, rotate_180);
     demosaic_full(
         frame,
-        rotate_180,
+        &mut DemosaicRows::default(),
         |row, samples, toned: &mut [u8]| tables.tone_row(samples, row.is_multiple_of(2), toned),
-        |rgb, out| out.copy_from_slice(rgb),
-    )
+        |y, values| image.write(y, |out| out.copy_from_slice(values)),
+    );
+    rgb
+}
+
+/// An 8-bit red, green and blue image written a row at a time, turned by
+/// 180 degrees with `rotate_180` for a sensor mounted upside down.
+pub(crate) struct Image<'a> {
+    rgb: &'a mut [u8],
+    row_bytes: usize,
+    rotate_180: bool,
+}
+
+impl<'a> Image<'a> {
+    /// The image of `rgb`, rows of `width` pixels.
+    pub(crate) fn new(rgb: &'a mut [u8], width: usize, rotate_180: bool) -> Image<'a> {
+        Image {
+            rgb,
+            row_bytes: width * 3,
+            rotate_180,
+        }
+    }
+
+    /// Writes row `y` with `write`.
+    pub(crate) fn write(&mut self, y: usize, write: impl FnOnce(&mut [u8])) {
+        let height = self.rgb.len() / self.row_bytes.max(1);
+        let target = if self.rotate_180 { height - 1 - y } else { y };
+        let out = &mut self.rgb[target * self.row_bytes..(target + 1) * self.row_bytes];
+        write(out);
+        if self.rotate_180 {
+            // Reversing the bytes reverses the pixels but turns each into
+            // blue, green, red; the swap restores red, green, blue.
+            out.reverse();
+            for pixel in out.chunks_exact_mut(3) {
+                pixel.swap(0, 2);
+            }
+        }
+    }
+}
+
+/// The rows `demosaic_full` works on, kept from one frame to the next.
+pub(crate) struct DemosaicRows<V> {
+    samples: Vec<u16>,
+    developed: [Vec<V>; 3],
+    interpolated: Vec<V>,
+}
+
+impl<V> Default for DemosaicRows<V> {
+    fn default() -> DemosaicRows<V> {
+        DemosaicRows {
+            samples: Vec::new(),
+            developed: std::array::from_fn(|_| Vec::new()),
+            interpolated: Vec::new(),
+        }
+    }
 }
 
 /// A value demosaicing interpolates.
@@ -249,69 +304,65 @@ impl Sample for u16 {
     }
 }
 
-/// Demosaics `frame` at its own size as `rgb_full` does, on the values
-/// `develop_row(row, samples, values)` gives each row's samples, and turns
-/// each row of red, green and blue values into 8 bits with
-/// `render_row(values, out)`.
+/// Demosaics `frame` at its own size as `rgb_full` does, in `rows`, on the
+/// values `develop_row(row, samples, values)` gives each row's samples, and
+/// hands each row of pixels' red, green and blue values, top to bottom, to
+/// `pixel_row(y, values)`.
 pub(crate) fn demosaic_full<V: Sample>(
     frame: &RawFrame,
-    rotate_180: bool,
+    rows: &mut DemosaicRows<V>,
     mut develop_row: impl FnMut(usize, &[u16], &mut [V]),
-    mut render_row: impl FnMut(&[V], &mut [u8]),
-) -> Vec<u8> {
+    mut pixel_row: impl FnMut(usize, &[V]),
+) {
     let (width, height) = (frame.width, frame.height);
     if width < 2 || height < 2 {
-        return Vec::new();
+        return;
     }
     let row_bytes = frame.layout.row_bytes(width);
-    let mut row_samples = vec![0u16; width];
+    let DemosaicRows {
+        samples: row_samples,
+        developed,
+        interpolated,
+    } = rows;
+    row_samples.resize(width, 0);
     // Rows y - 1, y and y + 1, developed, at index row % 3, each with the
     // nearest value of the same colour beyond each end.
-    let mut developed: [Vec<V>; 3] = std::array::from_fn(|_| vec![V::default(); width + 2]);
+    for values in developed.iter_mut() {
+        values.resize(width + 2, V::default());
+    }
+    interpolated.resize(width * 3, V::default());
     let mut develop = |row: usize, developed: &mut [Vec<V>; 3]| {
         let start = row * frame.row_stride;
         samples(
             &frame.raw[start..start + row_bytes],
             frame.layout,
-            &mut row_samples,
+            row_samples,
         );
         let values = &mut developed[row % 3];
-        develop_row(row, &row_samples, &mut values[1..=width]);
+        develop_row(row, row_samples, &mut values[1..=width]);
         values[0] = values[2];
         values[width + 1] = values[width - 1];
     };
-    develop(0, &mut developed);
-    develop(1, &mut developed);
-    let pixel_row = width * 3;
-    let mut interpolated = vec![V::default(); pixel_row];
-    let mut rgb = vec![0u8; pixel_row * height];
+    develop(0, developed);
+    develop(1, developed);
     for y in 0..height {
         if y >= 1 && y + 1 < height {
-            develop(y + 1, &mut developed);
+            develop(y + 1, developed);
         }
         let up = if y == 0 { 1 } else { y - 1 };
         let down = if y + 1 == height { y - 1 } else { y + 1 };
-        let target = if rotate_180 { height - 1 - y } else { y };
-        let out = &mut rgb[target * pixel_row..(target + 1) * pixel_row];
         let rows = (
             &developed[up % 3][..],
             &developed[y % 3][..],
             &developed[down % 3][..],
         );
         if y.is_multiple_of(2) {
-            interpolate_row::<true, V>(rows, &mut interpolated);
+            interpolate_row::<true, V>(rows, interpolated);
         } else {
-            interpolate_row::<false, V>(rows, &mut interpolated);
+            interpolate_row::<false, V>(rows, interpolated);
         }
-        render_row(&interpolated, out);
-        if rotate_180 {
-            out.reverse();
-            for pixel in out.chunks_exact_mut(3) {
-                pixel.swap(0, 2);
-            }
-        }
+        pixel_row(y, interpolated);
     }
-    rgb
 }
 
 /// Each channel's 8-bit value of a raw sample.

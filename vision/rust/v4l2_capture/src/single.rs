@@ -77,6 +77,8 @@ pub fn run(
         tuning,
         contrast: ContrastTable::new(tuning),
     });
+    let mut buffers = colour::Buffers::default();
+    let mut fallback_rgb = Vec::new();
     let mut settings = arguments.settings.clone();
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
@@ -175,8 +177,22 @@ pub fn run(
                 layout: camera.capture.layout,
             };
             let (rgb, means) = match &tuned {
-                Some(tuned) => develop_tuned(&raw, arguments.output, &settings, gains, tuned),
-                None => develop(&raw, arguments.output, &settings, gains, &tone),
+                Some(tuned) => develop_tuned(
+                    &raw,
+                    arguments.output,
+                    &settings,
+                    gains,
+                    tuned,
+                    &mut buffers,
+                ),
+                None => develop(
+                    &raw,
+                    arguments.output,
+                    &settings,
+                    gains,
+                    &tone,
+                    &mut fallback_rgb,
+                ),
             };
             frames += 1;
             let exposure_mean = (settings.capture.auto_exposure
@@ -195,7 +211,7 @@ pub fn run(
             }
             writer.write_record_parts(&[
                 &rgb_frame_header(width as u16, height as u16, frame.start_ns),
-                &rgb,
+                rgb,
             ])?;
         }
     }
@@ -207,16 +223,18 @@ struct TunedColour {
     contrast: ContrastTable,
 }
 
-/// `raw` in RGB at the size of `output`, through `tuned`'s colour path at
-/// the colour temperature of `gains`, and with `settings.awb` the channel
-/// means white balance measures after lens shading.
-fn develop_tuned(
+/// `raw` in RGB at the size of `output`, in `buffers`, through `tuned`'s
+/// colour path at the colour temperature of `gains`, and with
+/// `settings.awb` the channel means white balance measures after lens
+/// shading.
+fn develop_tuned<'a>(
     raw: &RawFrame,
     output: Output,
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
-) -> (Vec<u8>, Option<[f64; 3]>) {
+    buffers: &'a mut colour::Buffers,
+) -> (&'a [u8], Option<[f64; 3]>) {
     let kelvin = tuned.tuning.colour_temperature(gains);
     let shading = tuned.tuning.lens_shading(kelvin);
     let colour = Colour {
@@ -232,8 +250,8 @@ fn develop_tuned(
     };
     let rotate_180 = settings.capture.rotation == 180;
     let rgb = match output {
-        Output::Full => colour::rgb_full(raw, &colour, rotate_180),
-        Output::Half => colour::rgb_half(raw, &colour, rotate_180),
+        Output::Full => colour::rgb_full(raw, &colour, rotate_180, buffers),
+        Output::Half => colour::rgb_half(raw, &colour, rotate_180, buffers),
     };
     let means = settings.awb.then(|| {
         colour::shaded_channel_means(
@@ -246,18 +264,19 @@ fn develop_tuned(
     (rgb, means)
 }
 
-/// `raw` in RGB at the size of `output`, white balanced by `gains` then
-/// through `tone`, and with `settings.awb` the channel means white balance
-/// measures.
-fn develop(
+/// `raw` in RGB at the size of `output`, in `rgb`, white balanced by
+/// `gains` then through `tone`, and with `settings.awb` the channel means
+/// white balance measures.
+fn develop<'a>(
     raw: &RawFrame,
     output: Output,
     settings: &ColourSettings,
     gains: Gains,
     tone: &Tone,
-) -> (Vec<u8>, Option<[f64; 3]>) {
+    rgb: &'a mut Vec<u8>,
+) -> (&'a [u8], Option<[f64; 3]>) {
     let rotate_180 = settings.capture.rotation == 180;
-    let rgb = match output {
+    *rgb = match output {
         Output::Full => bayer::rgb_full(raw, tone, gains, rotate_180),
         Output::Half => bayer::rgb_half(raw, tone, gains, rotate_180),
     };
