@@ -50,14 +50,14 @@ defmodule VisionCore.Stereo.Stage do
         }
 
   @typedoc """
-  A setting: its `:type` (`:integer`, `:double` or `:bool`), its `:range`
-  `{min, max}` with an optional `:step`, or its `:values`, the setting of
-  the same stage it must exceed (`:greater_than`), whether it changes
-  while running (`applies: :live`, the default) or is fixed at start
-  (`:build`), and a `:description`.
+  A setting: its `:type` (`:integer`, `:double`, `:bool` or `:string`),
+  its `:range` `{min, max}` with an optional `:step`, or its `:values`,
+  the setting of the same stage it must exceed (`:greater_than`), whether
+  it changes while running (`applies: :live`, the default) or is fixed at
+  start (`:build`), and a `:description`.
   """
   @type option_spec :: %{
-          required(:type) => :integer | :double | :bool,
+          required(:type) => VisionCore.Parameters.type(),
           optional(:range) => {number(), number()},
           optional(:step) => number(),
           optional(:values) => [term()],
