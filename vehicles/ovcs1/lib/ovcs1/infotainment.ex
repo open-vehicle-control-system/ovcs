@@ -35,6 +35,7 @@ defmodule Ovcs1.Infotainment do
         @status_frame_names ++
           [
             "rear_controller_digital_and_analog_pin_status",
+            "drivetrain_status",
             "gear_status",
             "passenger_compartment_status",
             "pack_status",
