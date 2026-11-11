@@ -60,7 +60,15 @@ defmodule VisionCore.StatusTest do
     snapshot = Status.snapshot()
 
     assert snapshot.exporters == []
-    assert snapshot.cameras == %{left: %{present: false}, right: %{present: false}}
+
+    assert snapshot.cameras == %{
+             left: %{present: false, issues: []},
+             right: %{present: false, issues: []}
+           }
+
+    for {_name, check} <- snapshot.pair,
+        do: assert(check == %{level: :off, camera: nil, issues: []})
+
     assert snapshot.sync == %{present: false}
     assert snapshot.hailo == :absent
     assert snapshot.depth_hz == 0.0
