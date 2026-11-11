@@ -35,7 +35,7 @@ Spec: TASK-87 (requirement 7). Builds on TASK-90 to TASK-92.
 
 #### Task 1: the composer.
 - `Ovcs1.Vision.Composer`'s target config: `{:camera, name: :hq, driver: VisionCore.Camera.V4L2Single, csiphy: 2, frame_id: "hq_optical", calibration: <priv>/calibration/hq.yaml, pose: <priv>/calibration/hq_pose.yaml, calibration_store_dir: "/data/vision/calibration"}`; `{:qnn_detector, source: {:camera, :hq}, dlc_path: …, score_threshold: 0.4}`; `{:qnn_segmenter, name: :road, source: {:camera, :hq}, dlc_path: <priv>/models/ffnet_122ns_lowres.dlc}`; the ROS 2 exporter's `cameras: [:hq]` and `segmentation: [pipelines: [:road]]`.
-- `priv/calibration/hq.yaml`: nominal intrinsics for 1014 × 760 from the lens's focal length and the binned pixel pitch (3.1 µm), no distortion. `hq_pose.yaml` is absent until measured, and the unit runs without distances on the HQ pipelines until then.
+- `priv/calibration/hq.yaml`: nominal intrinsics for 2028 × 1520 from the 3.6 mm lens and the binned pixel pitch (3.1 µm): `fx = fy = 1161.3`, `cx = 1013.5`, `cy = 759.5`, no distortion. `hq_pose.yaml` is absent until measured, and the unit runs without distances on the HQ pipelines until then.
 - `required_files` and `vehicles/ovcs1/test/vision_composer_test.exs` follow.
 - `vehicles/ovcs1/priv/models/README.md` or the docs name the road model and its licence.
 

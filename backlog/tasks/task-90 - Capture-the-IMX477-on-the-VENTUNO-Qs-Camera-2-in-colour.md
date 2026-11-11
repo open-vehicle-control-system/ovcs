@@ -70,5 +70,34 @@ Review focus, each pinned by a test in the owning task:
 - Tests: `preview_test.exs`, the preview channel's test, `Previews.test.jsx`.
 - Docs: `docs/vision/README.md` (a camera of its own, the `:camera` component, the IMX477 on the VENTUNO Q), `docs/vision/api.md` (`preview:<name>`), `vision/core/README.md`.
 
+#### Task 4: full-resolution colour output.
+- `v4l2_capture` single mode: `--output full|half`, default `full`. `half` is the 2×2 superpixel (1014 × 760 from 2028 × 1520). `full` is a bilinear demosaic at the capture's resolution (2028 × 1520 from 2028 × 1520): each pixel keeps its own sample and interpolates the two missing channels from its 4-neighbours (green) or its 2 or 4 diagonal or axial neighbours (red, blue), replicating samples at the image's edges; white balance and the tone apply as in `half`; `rotation` 180 rotates the output.
+- Auto exposure and white-balance statistics stay on the superpixel means, so both outputs expose and balance alike.
+- Rust tests: a uniform colour field comes out uniform in `full`; a known 4×4 RGGB pattern gives the expected interpolated pixels, edges included; rotation; output size per mode.
+- On the OVCS1 unit: the frame rate at `full`, 15 fps asked; if the Port or the conversion cannot hold it, the driver's default `fps` drops to the rate it holds, recorded in the task's notes.
+
+#### Task 5: the IMX477's colour processing.
+- The single mode's colour path follows what libcamera's Raspberry Pi pipeline does for this sensor, with the values of its IMX477 tuning (`src/ipa/rpi/pisp/data/imx477.json` in libcamera, Raspberry Pi's calibration, licence checked and credited in the module that holds them): black level, lens shading (`rpi.alsc`: the luminance table and the colour tables for the current colour temperature, bilinear over the frame), white balance, demosaic on linear samples, colour correction matrix (`rpi.ccm`, interpolated between the two calibrated colour temperatures around the current one; the colour temperature from the white-balance gains through `rpi.awb`'s `ct_curve`), then `rpi.contrast`'s `gamma_curve` to 8 bits, replacing the plain gamma. `half` and `full` both take this path.
+- The tuning values live in one Rust module per sensor; a sensor without one (none today but the IMX477 in single mode) keeps the plain gamma.
+- `gamma` stays a setting for that fallback; a setting `ccm` (`true` by default) turns the matrix off to compare.
+- Rust tests: the matrix interpolation at, between and beyond the calibrated temperatures; the colour temperature from known gains; the contrast curve's end points and monotony; lens shading gains at the centre and corners; a grey patch stays grey through the whole path.
+- On the OVCS1 unit: both outputs still hold 15 fps; a frame of the same scene before and after, compared.
+
+#### Task 6: denoise, exposure on what is shown, and the settings.
+- Chroma denoise in the single mode's colour path, after the colour matrix and before the contrast curve: the chroma (Cb, Cr of the linear RGB) is computed and blurred at the 2×2 cell resolution (a separable 5-tap kernel), luma untouched; setting `denoise` (`true` by default). It removes the coloured speckle at high gain, which also tints the shadows.
+- Auto exposure measures the green of the image as shown: after lens shading and through the contrast curve, on the same sampling as today.
+- The contrast table's index rounds instead of truncating.
+- The 9 MB output and the scratch rows are reused across frames.
+- `VisionCore.Camera.V4L2Single` passes `ccm` and `denoise` as settings like `awb`, and its `gamma` describes what it does for a sensor with a tuning (only the fallback for sensors without one).
+- `docs/vision/README.md` describes a camera of its own's colour path in one paragraph: black level, lens shading, white balance, demosaic, colour matrix, chroma denoise and contrast curve, after Raspberry Pi's libcamera tuning for the IMX477.
+- Tests: denoise keeps a uniform colour field, flattens chroma noise of known variance, leaves a sharp luma edge sharp; the exposure statistic on a known frame; the rounding; the settings pass through `V4L2Single`.
+- On the OVCS1 unit: 15 fps held at `full` with denoise on; the conversion's time per frame from the capture's 60 s statistics log, recorded in the task's notes.
+
+#### Task 7: a camera of its own's figures.
+- `VisionCore.Status` reports each camera of its own beside the stereo sides, under its name in `cameras`: `present`, `fps` counted over the tick from its frames, and `exposure_time_us`, `analogue_gain`, `colour_temperature` from its driver's `live/1` when the driver has one (as for the sides). The stereo sides' entries and the pair's checks are unchanged.
+- The status JSON carries it with the sides' camelCase keys; `docs/vision/api.md` documents it.
+- The dashboard shows under each camera of its own's preview the figures the stereo sides show: rate, exposure, gain (with the same `cameraFigures`), and nothing while the status has no entry for it.
+- Tests: status with a named camera (rate counted, metadata from `live/1`, absent when not running), the JSON, the preview's figures.
+
 Checks before review: `cargo test`, `cargo clippy -- -D warnings` in `vision/rust`; `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in `vision/core` and `vision/api`; the dashboard's tests; `elixir scripts/check_docs.exs`. On the OVCS1 unit, with the camera declared in the composer (TASK-93 makes it permanent), the dashboard shows the HQ camera in colour.
 <!-- SECTION:PLAN:END -->
