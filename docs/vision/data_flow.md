@@ -16,6 +16,7 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
 The diagram shows the Pi 5. The other boards differ:
 
 - On the C100 and the VENTUNO Q, one `v4l2_capture` Port captures both cameras and sends their frames as pairs.
+- A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
 A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model; the diagram shows one.
@@ -38,6 +39,7 @@ A Port's row below names the process that owns it.
 | Box | Process | Started by |
 |---|---|---|
 | LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
+| Camera of its own | [`VisionCore.Camera.V4L2Single`](../../vision/core/lib/vision_core/camera/v4l2_single.ex), with its `v4l2_capture` Port, for a `:camera` component | `VisionCore.Camera.Unit` |
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |

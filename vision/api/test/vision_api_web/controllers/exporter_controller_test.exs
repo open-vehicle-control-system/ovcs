@@ -49,11 +49,19 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
+  # A camera of its own that captures nothing.
+  defmodule NamedCamera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def child_spec(opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
+    def start_link(_opts), do: {:ok, spawn_link(fn -> Process.sleep(:infinity) end)}
+  end
+
   test "GET /api/exporters gives each output of the API the most values its channel carries a second",
        %{conn: conn} do
     VisionApiWeb.TestUnit.start(%VisionCore.Config{
       components: [
         {:stereo, driver: Camera, left: [], right: []},
+        {:camera, name: :hq, driver: NamedCamera},
         {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4},
         {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub, max_hz: 2}
       ],
@@ -67,6 +75,7 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              %{"name" => "camera_frame:left", "maxHz" => 5},
              %{"name" => "camera_frame:right", "maxHz" => 5},
              %{"name" => "stereo_pair", "maxHz" => 5},
+             %{"name" => "camera_frame:hq", "maxHz" => 5},
              %{"name" => "detections", "maxHz" => 4},
              %{"name" => "detections:road", "maxHz" => 2}
            ]

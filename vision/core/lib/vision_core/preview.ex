@@ -1,8 +1,9 @@
 defmodule VisionCore.Preview do
   @moduledoc """
-  Live JPEG previews of the stereo unit for the dashboard: the `:left`
-  and `:right` camera frames as captured, and the `:depth` map
-  colourised.
+  Live JPEG previews of the vision unit for the dashboard: the stereo
+  unit's `:left` and `:right` camera frames as captured and its `:depth`
+  map colourised, and one stream per camera of its own
+  (`VisionCore.Camera.Unit`), named as the camera is, from its frames.
 
   A subscriber receives `{:vision_preview, stream, jpeg}` and calls
   `ack/1` once it has handled the frame. Each subscriber has at most one
@@ -22,8 +23,12 @@ defmodule VisionCore.Preview do
   sent to each depth subscriber as `{:vision_preview_options,
   %{depth_range_m: metres}}`.
 
+  A camera's frame is held until it is replaced and encoded only when a
+  subscriber is due it, at the preview's rate, so a frame of several
+  megapixels costs an encode a preview, not one per frame.
+
   Started after the components in `VisionCore.Supervisor`; without a
-  `:stereo` component it runs with nothing to preview.
+  `:stereo` or `:camera` component it runs with nothing to preview.
 
   ## Options
 
@@ -43,30 +48,36 @@ defmodule VisionCore.Preview do
   use GenServer
   require Logger
 
+  alias VisionCore.Camera
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
-  @streams [:left, :right, :depth]
+  @stereo_streams [:left, :right, :depth]
   @default_max_hz 10
   @default_depth_range_m 0.0
 
   @jpeg_quality 80
 
-  @type stream :: :left | :right | :depth
+  @typedoc "`:left`, `:right`, `:depth` or the name of a camera of its own."
+  @type stream :: atom()
 
   @doc "Starts the preview server; see the module doc for the options."
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
-  @doc "Sends the caller `stream`'s frames as `{:vision_preview, stream, jpeg}` until it exits."
-  @spec subscribe(stream()) :: :ok
-  def subscribe(stream) when stream in @streams,
+  @doc """
+  Sends the caller `stream`'s frames as `{:vision_preview, stream, jpeg}`
+  until it exits; `{:error, :unknown_stream}` for a stream the unit has
+  no camera for.
+  """
+  @spec subscribe(stream()) :: :ok | {:error, :unknown_stream}
+  def subscribe(stream) when is_atom(stream),
     do: GenServer.call(__MODULE__, {:subscribe, self(), stream})
 
   @doc "Tells the server the caller has handled its last `stream` frame."
   @spec ack(stream()) :: :ok
-  def ack(stream) when stream in @streams, do: GenServer.cast(__MODULE__, {:ack, self(), stream})
+  def ack(stream) when is_atom(stream), do: GenServer.cast(__MODULE__, {:ack, self(), stream})
 
   @doc """
   The depth of `pair` as a colour JPEG, by 1/depth: the nearest measured
@@ -100,8 +111,13 @@ defmodule VisionCore.Preview do
 
   @impl GenServer
   def init(opts) do
-    for {_output, key} <- StereoSupervisor.outputs(Keyword.fetch!(opts, :config)),
+    config = Keyword.fetch!(opts, :config)
+    cameras = Camera.Unit.cameras(config)
+
+    for {_output, key} <- StereoSupervisor.outputs(config) ++ Camera.Unit.outputs(config),
         do: :ok = Outputs.subscribe(key)
+
+    streams = @stereo_streams ++ for {name, _driver, _server} <- cameras, do: name
 
     max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
     jpeg_codec = Keyword.get(opts, :jpeg_codec, VisionCore.Jpeg)
@@ -114,8 +130,9 @@ defmodule VisionCore.Preview do
        jpeg_codec: jpeg_codec,
        depth_encoder: Keyword.get(opts, :depth_encoder),
        frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg(&1, jpeg_codec)),
-       latest: Map.new(@streams, &{&1, %{sequence: 0, frame: nil}}),
-       encoded: Map.new(@streams, &{&1, {0, nil}}),
+       streams: streams,
+       latest: Map.new(streams, &{&1, %{sequence: 0, frame: nil}}),
+       encoded: Map.new(streams, &{&1, {0, nil}}),
        depth_failure_logged: false,
        subscribers: %{}
      }}
@@ -143,6 +160,10 @@ defmodule VisionCore.Preview do
     end
   end
 
+  def handle_call({:subscribe, _pid, stream}, _from, state)
+      when not is_map_key(state.latest, stream),
+      do: {:reply, {:error, :unknown_stream}, state}
+
   def handle_call({:subscribe, pid, stream}, _from, state)
       when is_map_key(state.subscribers, {pid, stream}),
       do: {:reply, :ok, state}
@@ -161,9 +182,12 @@ defmodule VisionCore.Preview do
   end
 
   @impl GenServer
-  def handle_cast({:camera_frame, %Frame{label: label} = frame}, state)
-      when label in ["left", "right"],
-      do: {:noreply, store_frame(state, String.to_existing_atom(label), frame)}
+  def handle_cast({:camera_frame, %Frame{label: label} = frame}, state) do
+    case Enum.find(state.streams, &(Atom.to_string(&1) == label and &1 != :depth)) do
+      nil -> {:noreply, state}
+      stream -> {:noreply, store_frame(state, stream, frame)}
+    end
+  end
 
   def handle_cast({:stereo_pair, %Pair{depth: nil}}, state), do: {:noreply, state}
 

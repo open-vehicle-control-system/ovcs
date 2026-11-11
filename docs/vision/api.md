@@ -283,6 +283,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "camera_frame:left", "maxHz": 10},
           {"name": "camera_frame:right", "maxHz": 10},
           {"name": "stereo_pair", "maxHz": 10},
+          {"name": "camera_frame:hq", "maxHz": 10},
           {"name": "detections", "maxHz": 10}
         ],
         "actions": []
@@ -291,6 +292,8 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
   ]
 }
 ```
+
+The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:hq`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them.
 
 A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API.
 
@@ -440,7 +443,7 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 ### Previews
 
-`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary. The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
+`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary, and so does `preview:<name>` for each camera of its own (the `:camera` component, [Vision unit](./README.md#the-arduino-ventuno-q)): `preview:hq` for the camera named `hq`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one, at most `preview.max_hz` a second, whatever the camera's own rate. The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
 
 ```javascript
 const left = socket.channel('preview:left')

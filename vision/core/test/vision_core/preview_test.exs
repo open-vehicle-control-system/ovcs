@@ -61,6 +61,60 @@ defmodule VisionCore.PreviewTest do
     assert length(frames) >= 3
   end
 
+  describe "a camera of its own" do
+    @camera_config %VisionCore.Config{components: [{:camera, name: :hq, driver: Camera}]}
+
+    defp hq_frame(sequence),
+      do: %Frame{label: "hq", width: 2, height: 2, capture_ns: sequence, rgb: <<sequence>>}
+
+    defp publish_hq(frame),
+      do: Outputs.publish({:camera_frame, Camera.name_for("hq")}, {:camera_frame, frame})
+
+    test "its frames are previewed as the stream of its name, encoded at the preview's own rate" do
+      test_pid = self()
+
+      encode_frame = fn %Frame{rgb: <<sequence>>} ->
+        send(test_pid, {:encoded, sequence})
+        {:ok, "hq#{sequence}"}
+      end
+
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      refute_receive {:vision_preview, :hq, _}, 50
+
+      publish_hq(hq_frame(1))
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+
+      for sequence <- 2..6, do: publish_hq(hq_frame(sequence))
+      :sys.get_state(Preview)
+      refute_receive {:vision_preview, :hq, _}, 100
+
+      Preview.ack(:hq)
+      assert_receive {:vision_preview, :hq, "hq6"}, 500
+      for skipped <- 2..5, do: refute_received({:encoded, ^skipped})
+    end
+
+    test "a stream's frames reach only its subscribers" do
+      start_supervised!({Preview, config: @camera_config, max_hz: 50})
+      :ok = Preview.subscribe(:left)
+
+      publish_hq(%{hq_frame(1) | jpeg: "hq"})
+      :sys.get_state(Preview)
+
+      refute_receive {:vision_preview, _stream, _jpeg}, 100
+    end
+
+    test "a stream the configuration has no camera for cannot be subscribed to" do
+      start_supervised!({Preview, config: @camera_config, max_hz: 50})
+
+      assert Preview.subscribe(:other) == {:error, :unknown_stream}
+      assert Preview.subscribe(:hq) == :ok
+    end
+  end
+
   @tag :jpeg
   test "a grey frame is previewed as a JPEG" do
     start_supervised!(VisionCore.Jpeg)

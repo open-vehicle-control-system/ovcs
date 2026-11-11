@@ -2,7 +2,9 @@ defmodule VisionApiWeb.PreviewChannel do
   @moduledoc """
   Pushes one `VisionCore.Preview` stream as `"frame"` events whose
   binary payload is the JPEG itself. The topic names the stream:
-  `"preview:left"`, `"preview:right"` or `"preview:depth"`.
+  `"preview:left"`, `"preview:right"`, `"preview:depth"` or
+  `"preview:<name>"` for the frames of the unit's camera of its own
+  `<name>`; a name that is none of the unit's cameras is refused.
 
   The client pushes `"ack"` once it has shown a frame, and only then is
   the next one sent, so a slow link gets the latest frame instead of a
@@ -20,11 +22,11 @@ defmodule VisionApiWeb.PreviewChannel do
 
   alias VisionApiWeb.{PreviewJSON, SourceMonitor}
 
-  @streams %{"left" => :left, "right" => :right, "depth" => :depth}
+  @stereo_streams %{"left" => :left, "right" => :right, "depth" => :depth}
 
   @impl Phoenix.Channel
   def join("preview:" <> stream_name, _payload, socket) do
-    case Map.fetch(@streams, stream_name) do
+    case stream(stream_name) do
       {:ok, stream} ->
         socket
         |> assign(:stream, stream)
@@ -32,6 +34,27 @@ defmodule VisionApiWeb.PreviewChannel do
 
       :error ->
         {:error, %{reason: "unknown stream"}}
+    end
+  end
+
+  # A name among the configured cameras' atoms, compared as text: a client's topics cannot grow the atom table.
+  defp stream(stream_name) do
+    case Map.fetch(@stereo_streams, stream_name) do
+      {:ok, stream} -> {:ok, stream}
+      :error -> camera_stream(stream_name)
+    end
+  end
+
+  defp camera_stream(stream_name) do
+    case VisionCore.Application.active_config() do
+      nil ->
+        :error
+
+      config ->
+        Enum.find_value(VisionCore.Camera.Unit.cameras(config), :error, fn {name, _driver,
+                                                                            _server} ->
+          if Atom.to_string(name) == stream_name, do: {:ok, name}
+        end)
     end
   end
 

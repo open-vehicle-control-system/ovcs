@@ -161,6 +161,35 @@ describe('Previews', () => {
     })
   })
 
+  describe('cameras of their own', () => {
+    const listed = (...outputs) =>
+      useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: outputs.map((name) => ({ name, maxHz: 5 })) }] })
+    afterEach(() => act(() => useExporters.setState({ exporters: [] })))
+
+    it('shows a preview titled by its name for each camera_frame output beside the stereo pair', () => {
+      listed('camera_frame:left', 'camera_frame:right', 'stereo_pair', 'camera_frame:hq', 'camera_frame:usb', 'detections')
+      const { socket } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      const topics = socket.channel.mock.calls.map(([topic]) => topic).filter((topic) => topic.startsWith('preview:'))
+      expect(topics.sort()).toEqual(['preview:depth', 'preview:hq', 'preview:left', 'preview:right', 'preview:usb'])
+      expect(figure('hq')).not.toBeNull()
+      expect(figure('usb')).not.toBeNull()
+    })
+
+    it('shows none without a camera of its own, the depth alone filling the row below the pair', () => {
+      listed('camera_frame:left', 'camera_frame:right', 'stereo_pair')
+      const { socket } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      expect(document.querySelectorAll('figure')).toHaveLength(3)
+      const row = document.querySelector('[data-cameras]')
+      expect(row.children).toHaveLength(1)
+      expect(row.firstElementChild.contains(figure('depth'))).toBe(true)
+      expect(row.className).toContain('lg:grid-rows-[minmax(0,1fr)]')
+    })
+  })
+
   describe('detections', () => {
     const listed = (...outputs) =>
       useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: outputs.map((name) => ({ name, maxHz: 5 })) }] })

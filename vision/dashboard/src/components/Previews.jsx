@@ -141,6 +141,33 @@ function useDetectionTopics() {
   return (outputs ?? []).map(({ name }) => name).filter((name) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
 }
 
+const CAMERA_FRAME = 'camera_frame:'
+const STEREO_SIDES = ['left', 'right']
+
+/** The cameras of their own: each `camera_frame:<name>` output the API exporter lists, but the stereo pair's sides. */
+function useCameraNames() {
+  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+
+  return (outputs ?? [])
+    .map(({ name }) => name)
+    .filter((name) => name.startsWith(CAMERA_FRAME))
+    .map((name) => name.slice(CAMERA_FRAME.length))
+    .filter((name) => !STEREO_SIDES.includes(name))
+}
+
+/** A preview for each camera of its own, titled by its name, sharing the depth's row and height. */
+function CameraPreviews({ socket }) {
+  return useCameraNames().map((name) => (
+    <Preview
+      key={name}
+      stream={name}
+      socket={socket}
+      className="lg:flex lg:min-h-0 lg:flex-col"
+      frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
+    />
+  ))
+}
+
 /** The latest detection result of each channel in `topics`, a space-separated list, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
 function useDetections(socket, topics) {
   const [detections, setDetections] = useState({})
@@ -207,7 +234,7 @@ function DepthPreview({ status, socket }) {
       stream="depth"
       socket={socket}
       onChannel={follow}
-      className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+      className="lg:flex lg:min-h-0 lg:flex-col"
       frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
       badge={badges(depthIssues(status))}
       alert={needsAction(depthIssues(status))}
@@ -219,7 +246,7 @@ function DepthPreview({ status, socket }) {
   )
 }
 
-/** Both cameras with their rates and how they compare between them, then the depth with its rate, filling the height left. */
+/** Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of their own side by side, filling the height left. */
 export default function Previews({ status, socket }) {
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
@@ -235,7 +262,10 @@ export default function Previews({ status, socket }) {
           {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}
         </Preview>
       </div>
-      <DepthPreview status={status} socket={socket} />
+      <div data-cameras className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)]">
+        <DepthPreview status={status} socket={socket} />
+        <CameraPreviews socket={socket} />
+      </div>
     </section>
   )
 }

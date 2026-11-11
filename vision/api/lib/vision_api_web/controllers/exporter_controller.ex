@@ -5,7 +5,9 @@ defmodule VisionApiWeb.ExporterController do
   answering, as `exporters`. The API's outputs are those its channels
   carry, each with the most values a channel carries a second: the
   previews' rate (`VisionCore.Preview.options/0`) for the camera frames
-  and each pair's depth, and then each detection pipeline's detections,
+  and each pair's depth, `{:camera_frame, name}` for each camera of its
+  own, in the order of the configuration's cameras, and then each
+  detection pipeline's detections,
   in the order of the configuration's detectors: `:detections` for the
   default pipeline and `{:detections, name}` for a named one, each at
   its pipeline's `VisionCore.Detection.Live.max_hz/1`.
@@ -28,12 +30,17 @@ defmodule VisionApiWeb.ExporterController do
       status: {:ok, "Answering"},
       outputs:
         Enum.map(
-          outputs ++ detection_outputs(config),
+          outputs ++ camera_outputs(config) ++ detection_outputs(config),
           &%{output: &1, max_hz: channel_max_hz(&1)}
         ),
       actions: []
     }
   end
+
+  defp camera_outputs(nil), do: []
+
+  defp camera_outputs(config),
+    do: for({output, _key} <- VisionCore.Camera.Unit.outputs(config), do: output)
 
   defp detection_outputs(nil), do: []
 
