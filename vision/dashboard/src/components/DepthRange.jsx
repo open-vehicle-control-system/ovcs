@@ -40,14 +40,14 @@ export default function DepthRange({ channel, metres, onChange }) {
   }
 
   return (
-    <div data-figure="colour scale" className="ml-auto flex select-none flex-col gap-1">
+    <div data-figure="colour scale" className="flex min-w-56 flex-1 select-none flex-col gap-1">
       <div className="flex items-center gap-2">
         <span className="flex items-center gap-1 text-xs text-ovcs-muted">
           <span id={labelId}>colour scale</span>
           <Hint hint={HINTS.colourScale} />
         </span>
         <span className="text-xs text-ovcs-muted">near</span>
-        <span aria-hidden="true" className="h-2 w-24 rounded-sm" style={{ backgroundImage: COLOURS }} />
+        <span aria-hidden="true" className="h-2 min-w-12 flex-1 rounded-sm" style={{ backgroundImage: COLOURS }} />
         <span className="w-16 whitespace-nowrap text-base font-semibold tabular-nums">{show(shown)}</span>
       </div>
       <input
