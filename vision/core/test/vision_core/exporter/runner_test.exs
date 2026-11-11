@@ -339,6 +339,24 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_receive {:exported, _output, _value, _at}, 100
     end
 
+    test "hands the exporter a named camera's frames apart from the stereo pair's" do
+      config =
+        config([
+          {:stereo, driver: Camera, left: [], right: []},
+          {:camera, name: :hq, driver: Camera}
+        ])
+
+      start_forwarder([outputs: [{:camera_frame, :hq}, {:camera_frame, :left}]], config)
+
+      hq = frame("hq", 1)
+      left = frame("left", 2)
+      publish_frame(hq)
+      publish_frame(left)
+
+      assert_receive {:exported, {:camera_frame, :hq}, ^hq, _at}
+      assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
+    end
+
     test "leaves out an output the configuration has no producer of" do
       runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
 
@@ -348,7 +366,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     test "refuses to start on an output it does not know, or an option an output does not take" do
       for outputs <- [
             [:stereo_pairs],
-            [{:camera_frame, :middle}],
+            [{:camera_frame, :"front-cam"}],
             [stereo_pair: [rate: 5]],
             [stereo_pair: [max_hz: 0]],
             [:stereo_pair, stereo_pair: [max_hz: 5]]

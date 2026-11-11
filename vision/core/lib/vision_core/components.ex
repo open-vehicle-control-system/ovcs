@@ -36,6 +36,19 @@ defmodule VisionCore.Components do
     * `:hailo_detector` — `:detector` with the Hailo backend.
     * `:qnn_detector` — `:detector` with the QNN backend
       (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.
+    * `:camera` — `VisionCore.Camera.Unit`: a camera of its own, outside
+      the stereo pair, its `:name` the child id of its unit, `{:camera,
+      name}`, and its frames the output `{:camera_frame, name}`. `:name`
+      and `:driver` are required; the other options go to the driver:
+
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           csiphy: 2,
+           frame_id: "hq_camera_optical"}
+
+      or, on a workstation, `driver: VisionCore.Camera.GStreamer, device:
+      "/dev/video0"`.
   """
 
   alias VisionCore.Detection
@@ -63,6 +76,17 @@ defmodule VisionCore.Components do
 
     # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
     [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]
+  end
+
+  def start(:camera, opts) do
+    name = VisionCore.Camera.Unit.name!(opts)
+
+    [
+      Supervisor.child_spec({VisionCore.Camera.Unit, opts},
+        id: {:camera, name},
+        restart: :transient
+      )
+    ]
   end
 
   def start(:stereo, opts) do

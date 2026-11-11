@@ -331,13 +331,18 @@ defmodule VisionCore.Exporter.Runner do
   end
 
   # The output a message is of, among those subscribed; `newest/2` matches the same shapes.
+  defp route({:camera_frame, %{label: label}}, slots) do
+    Enum.find_value(slots, fn
+      {{:camera_frame, name} = output, _slot} -> if Atom.to_string(name) == label, do: output
+      _slot -> nil
+    end)
+  end
+
   defp route(message, slots) do
     output = message_output(message)
     if is_map_key(slots, output), do: output
   end
 
-  defp message_output({:camera_frame, %{label: "left"}}), do: {:camera_frame, :left}
-  defp message_output({:camera_frame, %{label: "right"}}), do: {:camera_frame, :right}
   defp message_output({:detections, _pair, _detections}), do: :detections
   defp message_output({:detections, _pair, _detections, name}), do: {:detections, name}
   defp message_output({tag, _value}), do: tag

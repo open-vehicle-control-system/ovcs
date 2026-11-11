@@ -48,7 +48,9 @@ defmodule VisionCore.ExporterTest do
   test "outputs naming no output, one twice, or an option other than a positive :max_hz are invalid" do
     for {outputs, entry} <- [
           {[:stereo_pairs], :stereo_pairs},
-          {[{:camera_frame, :middle}], {:camera_frame, :middle}},
+          {[{:camera_frame, :"front-cam"}], {:camera_frame, :"front-cam"}},
+          {[{:camera_frame, "hq"}], {:camera_frame, "hq"}},
+          {[{:camera_frame, :depth}], {:camera_frame, :depth}},
           {[stereo_pair: [rate: 5]], {:stereo_pair, [rate: 5]}},
           {[stereo_pair: [max_hz: 0]], {:stereo_pair, [max_hz: 0]}},
           {[:stereo_pair, stereo_pair: [max_hz: 5]], {:stereo_pair, [max_hz: 5]}},
@@ -63,6 +65,28 @@ defmodule VisionCore.ExporterTest do
     end
 
     assert {:error, {:outputs_raised, _message}} = Exporter.output_specs(Reading, [])
+  end
+
+  test "a named camera's frames are an output of their own, beside the stereo pair's" do
+    assert Exporter.output_specs(Reading,
+             outputs: [{:camera_frame, :left}, {{:camera_frame, :hq}, max_hz: 2}]
+           ) == {:ok, [{{:camera_frame, :left}, nil}, {{:camera_frame, :hq}, 2}]}
+  end
+
+  test "a named camera's frames resolve to the key its driver publishes under" do
+    config =
+      config([
+        {:stereo, driver: Camera, left: [], right: []},
+        {:camera, name: :hq, driver: Camera}
+      ])
+
+    assert Exporter.output_key({:camera_frame, :hq}, config) ==
+             {:camera_frame, Camera.name_for("hq")}
+
+    assert Exporter.output_key({:camera_frame, :left}, config) ==
+             {:camera_frame, Camera.name_for("left")}
+
+    assert Exporter.output_key({:camera_frame, :usb}, config) == nil
   end
 
   test "an output resolves to the key its producer in the configuration publishes under" do
@@ -108,6 +132,7 @@ defmodule VisionCore.ExporterTest do
           :stereo_pair,
           {:camera_frame, :left},
           {:camera_frame, :right},
+          {:camera_frame, :hq},
           :detections,
           {:detections, :road}
         ] do

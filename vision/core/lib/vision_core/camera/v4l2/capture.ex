@@ -1,7 +1,8 @@
 defmodule VisionCore.Camera.V4L2.Capture do
   @moduledoc """
-  What a driver running `v4l2_capture`, such as `VisionCore.Camera.V4L2`,
-  needs: its settings, given as a list of specs (`%{key:, type:, range:, default:, description:}`), the
+  What the drivers running `v4l2_capture`, `VisionCore.Camera.V4L2` and
+  `VisionCore.Camera.V4L2Single`, share: their settings, given as a list
+  of specs (`%{key:, type:, range:, default:, description:}`), the
   program's Port, its log and metadata records, and the watchdog that
   stops a driver whose program stops delivering frames.
   """
@@ -134,7 +135,7 @@ defmodule VisionCore.Camera.V4L2.Capture do
 
     unless File.exists?(executable) do
       raise "#{who}: v4l2_capture missing at #{executable}; " <>
-              "the :okdo_c100 firmware build provides it."
+              "the :okdo_c100 and :arduino_ventuno_q firmware builds provide it."
     end
 
     port =

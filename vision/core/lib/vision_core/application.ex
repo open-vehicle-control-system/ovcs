@@ -29,7 +29,9 @@ defmodule VisionCore.Application do
 
   A configuration with two detectors of one name, or of two names whose
   processes would be registered alike (`VisionCore.Detection.server/2`:
-  `:road_2` and `:road2`), fails the start, naming them.
+  `:road_2` and `:road2`), fails the start, naming them. So does one with
+  two cameras of one name (`VisionCore.Camera.Unit`), or a camera named
+  as a detection pipeline, both publishing under `<prefix>/<name>/`.
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
@@ -88,6 +90,7 @@ defmodule VisionCore.Application do
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
     check_detector_names!(component_children)
+    check_camera_names!(component_children)
 
     consumer_children = [
       {VisionCore.Jpeg, name: @export_jpeg_codec},
@@ -168,6 +171,27 @@ defmodule VisionCore.Application do
         raise ArgumentError,
               "detectors #{inspect(first)} and #{inspect(second)} would both run as " <>
                 "#{inspect(server)}: give them names that camelize apart"
+    end
+  end
+
+  defp check_camera_names!(children) do
+    cameras = for %{id: {:camera, name}} <- children, do: name
+
+    pipelines =
+      for %{start: {Detection.Supervisor, _function, [opts]}} <- children,
+          do: Detection.pipeline_name(opts)
+
+    case {cameras -- Enum.uniq(cameras), Enum.find(cameras, &(&1 in pipelines))} do
+      {[name | _others], _shared} ->
+        raise ArgumentError, "two cameras are named #{inspect(name)}: give each its own :name"
+
+      {[], nil} ->
+        :ok
+
+      {[], name} ->
+        raise ArgumentError,
+              "the camera and the detection pipeline #{inspect(name)} share their name, " <>
+                "under which both publish: give them names apart"
     end
   end
 

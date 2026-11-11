@@ -4,11 +4,11 @@ defmodule VisionApiWeb.ExporterJSON do
   by its id: `name`, `module`, `status` (`level`, `ok`, `warning` or
   `off`, and `detail`) and `outputs`, each output's `name`
   (`stereo_pair`, `camera_frame:left`, `camera_frame:right`,
-  `detections` for the default detection pipeline's, or
-  `detections:<name>` for the pipeline `<name>`'s) and `maxHz`, the
-  most values it takes a second,
-  `null` when unbounded, and `actions`, each with a `name`, a `label` and
-  a `description`.
+  `camera_frame:<name>` for the camera `<name>`'s frames, `detections` for
+  the default detection pipeline's, or `detections:<name>` for the pipeline
+  `<name>`'s) and `maxHz`, the most values it takes a second, `null` when
+  unbounded, and `actions`, each with a `name`, a `label` and a
+  `description`.
   """
   alias VisionApiWeb.JsonApi
 

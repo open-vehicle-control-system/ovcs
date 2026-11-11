@@ -67,16 +67,17 @@ defmodule VisionCore.Detection do
 
   @doc """
   `name` when it is a valid pipeline name (`name?/1`). Raises
-  `ArgumentError` stating the rule otherwise.
+  `ArgumentError` stating the rule for `owner`'s name otherwise: a camera
+  (`VisionCore.Camera.Unit`) follows the same rule.
   """
-  @spec name!(term()) :: atom()
-  def name!(name) do
+  @spec name!(term(), String.t()) :: atom()
+  def name!(name, owner \\ "a detection pipeline") do
     if name?(name),
       do: name,
       else:
         raise(
           ArgumentError,
-          "a detection pipeline's name is an atom matching ^[a-z][a-z0-9_]*$, " <>
+          "#{owner}'s name is an atom matching ^[a-z][a-z0-9_]*$, " <>
             "not one of #{Enum.map_join(@reserved_names, ", ", &inspect/1)}, got #{inspect(name)}"
         )
   end

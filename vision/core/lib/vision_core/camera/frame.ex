@@ -19,11 +19,12 @@ defmodule VisionCore.Camera.Frame do
       before populating this field — the two clocks differ by ~18
       years. See `VisionCore.Timing`.
     * `:jpeg` — the JPEG-compressed image bytes, or
-    * `:grey` — `width * height` bytes of 8-bit grey, row-major.
-      Exactly one of the two is set.
+    * `:grey` — `width * height` bytes of 8-bit grey, row-major, or
+    * `:rgb` — `width * height * 3` bytes of 8-bit red, green and blue,
+      row-major. Exactly one of the three is set.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
-  defstruct [:label, :width, :height, :capture_ns, frame_id: nil, jpeg: nil, grey: nil]
+  defstruct [:label, :width, :height, :capture_ns, frame_id: nil, jpeg: nil, grey: nil, rgb: nil]
 
   @type t :: %__MODULE__{
           label: String.t(),
@@ -32,12 +33,13 @@ defmodule VisionCore.Camera.Frame do
           height: pos_integer(),
           capture_ns: integer(),
           jpeg: binary() | nil,
-          grey: binary() | nil
+          grey: binary() | nil,
+          rgb: binary() | nil
         }
 
   @doc """
-  The frame as JPEG bytes, encoding a grey frame on `jpeg_codec`, a
-  `VisionCore.Jpeg` instance.
+  The frame as JPEG bytes, encoding a grey or RGB frame on `jpeg_codec`,
+  a `VisionCore.Jpeg` instance.
   """
   @spec to_jpeg(t(), GenServer.server()) :: {:ok, binary()} | {:error, term()}
   def to_jpeg(frame, jpeg_codec \\ VisionCore.Jpeg)
@@ -48,13 +50,21 @@ defmodule VisionCore.Camera.Frame do
       when is_binary(grey),
       do: VisionCore.Jpeg.encode(grey, width, height, 1, codec: jpeg_codec)
 
+  def to_jpeg(%__MODULE__{rgb: rgb, width: width, height: height}, jpeg_codec)
+      when is_binary(rgb),
+      do: VisionCore.Jpeg.encode(rgb, width, height, 3, codec: jpeg_codec)
+
   @doc """
-  The frame as a `u8` `{height, width}` tensor, decoding a JPEG frame
-  to its luma through `VisionCore.Jpeg`.
+  The frame as a `u8` tensor: `{height, width, 3}` for an RGB frame,
+  `{height, width}` for a grey one, and for a JPEG frame its luma,
+  decoded through `VisionCore.Jpeg`.
   """
   @spec to_tensor(t()) :: {:ok, Nx.Tensor.t()} | {:error, {:jpeg, term()}}
   def to_tensor(%__MODULE__{grey: grey, width: width, height: height}) when is_binary(grey),
     do: {:ok, grey |> Nx.from_binary(:u8) |> Nx.reshape({height, width})}
+
+  def to_tensor(%__MODULE__{rgb: rgb, width: width, height: height}) when is_binary(rgb),
+    do: {:ok, rgb |> Nx.from_binary(:u8) |> Nx.reshape({height, width, 3})}
 
   def to_tensor(%__MODULE__{jpeg: jpeg}) when is_binary(jpeg) do
     case VisionCore.Jpeg.decode_grey(jpeg) do
