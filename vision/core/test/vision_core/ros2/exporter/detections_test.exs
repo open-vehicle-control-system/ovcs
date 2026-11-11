@@ -53,6 +53,8 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
              {3, Marker.text_view_facing()}
            ]
 
+    assert Enum.all?(markers, &(&1.ns == "detections"))
+
     assert Enum.map(array.detections, & &1.id) == ["0", "1"]
     assert Enum.at(markers, 1).text == "person 0.80 2.00m"
   end
@@ -115,6 +117,27 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
     assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
     assert array.header.frame_id == "front_left_optical"
+  end
+
+  test "publishes a named pipeline's detections under its name, its markers in its own namespace" do
+    settings = Detections.new(topic_prefix: "front", pipeline: :road)
+    messages = Detections.messages([detection("lane", square(0.0, 0.0))], pair(), settings, 2)
+
+    assert [
+             {"front/road/detections/markers", MarkerArray, %MarkerArray{markers: markers},
+              keep: true},
+             {"front/road/detections", Detection3DArray, array},
+             {"front/road/annotations", ImageAnnotations, _overlay}
+           ] = messages
+
+    assert Enum.map(markers, &{&1.ns, &1.id, &1.action}) == [
+             {"road", 0, Marker.add()},
+             {"road", 1, Marker.add()},
+             {"road", 2, Marker.delete()},
+             {"road", 3, Marker.delete()}
+           ]
+
+    assert array.header.frame_id == "front_left"
   end
 
   test "stamps the detections of a pair without a frame id in the prefix's left frame" do

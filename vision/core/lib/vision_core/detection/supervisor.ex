@@ -123,17 +123,14 @@ defmodule VisionCore.Detection.Supervisor do
   resolves them.
   """
   @spec outputs(VisionCore.Config.t()) :: [
-          {VisionCore.Exporter.output() | {:detections, atom()}, VisionCore.Outputs.key()}
+          {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
         ]
   def outputs(config) do
     for opts <- units_options(config) do
       name = Detection.pipeline_name(opts)
-      {output(name), {:detections, Detection.server(Pipeline, name)}}
+      {Detection.output(name), {:detections, Detection.server(Pipeline, name)}}
     end
   end
-
-  defp output(:detection), do: :detections
-  defp output(name), do: {:detections, name}
 
   @doc """
   The backend of each detection unit in `config`, in config order: its

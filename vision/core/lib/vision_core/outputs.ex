@@ -11,8 +11,10 @@ defmodule VisionCore.Outputs do
       from the `VisionCore.Camera` driver instance registered as `name`.
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
-    * `{:detections, name}` — `{:detections, pair, detections}` from the
-      `VisionCore.Detection.Pipeline` registered as `name`.
+    * `{:detections, name}` — from the `VisionCore.Detection.Pipeline`
+      registered as `name`: `{:detections, pair, detections}` from the
+      default pipeline, `{:detections, pair, detections, pipeline}` from
+      the one named `pipeline` (`VisionCore.Detection`).
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. A subscription belongs to the subscriber, not to the

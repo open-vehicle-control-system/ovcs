@@ -31,13 +31,25 @@ defmodule VisionCore.Detection do
   def pipeline_name(opts), do: Keyword.get(opts, :name, @default_name)
 
   @doc """
-  `name` when it is a valid pipeline name: an atom matching
-  `^[a-z][a-z0-9_]*$`, not `:stereo`. Raises `ArgumentError` stating the
-  rule otherwise.
+  The `VisionCore.Exporter` output of the pipeline `name`'s detections:
+  `:detections` for the default pipeline, `{:detections, name}` otherwise.
+  """
+  @spec output(atom()) :: :detections | {:detections, atom()}
+  def output(@default_name), do: :detections
+  def output(name), do: {:detections, name}
+
+  @doc "Whether `name` is a valid pipeline name: an atom matching `^[a-z][a-z0-9_]*$`, not `:stereo`."
+  @spec name?(term()) :: boolean()
+  def name?(name),
+    do: is_atom(name) and name != :stereo and Regex.match?(@name_pattern, Atom.to_string(name))
+
+  @doc """
+  `name` when it is a valid pipeline name (`name?/1`). Raises
+  `ArgumentError` stating the rule otherwise.
   """
   @spec name!(atom()) :: atom()
   def name!(name) do
-    if is_atom(name) and name != :stereo and Regex.match?(@name_pattern, Atom.to_string(name)),
+    if name?(name),
       do: name,
       else:
         raise(

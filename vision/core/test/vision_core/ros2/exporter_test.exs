@@ -175,6 +175,14 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       assert Exporter.outputs(heartbeat: []) == []
     end
+
+    test "reads the detections of each pipeline its detection options list" do
+      assert Exporter.outputs(detections: [pipelines: [:detection, :road]]) ==
+               [:detections, {:detections, :road}]
+
+      assert Exporter.outputs(detections: [pipelines: [:road, :signs]]) ==
+               [{:detections, :road}, {:detections, :signs}]
+    end
   end
 
   describe "children/1" do
@@ -538,6 +546,79 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
+  end
+
+  describe "several detection pipelines" do
+    defp markers_of(topic) do
+      assert_received {:published, ^topic, %MarkerArray{markers: markers}}
+      Enum.map(markers, &{&1.ns, &1.action})
+    end
+
+    test "publish each its own detections on its own topics, each deleting only its own markers" do
+      {:ok, state} =
+        Exporter.init(options(Camera, detections: [pipelines: [:detection, :road]]))
+
+      two = [detection("person"), detection("car")]
+      {:ok, state} = Exporter.handle_output(:detections, {pair(), two}, state)
+
+      assert markers_of("stereo/detections/markers") ==
+               List.duplicate({"detections", Marker.add()}, 4)
+
+      assert_received {:published, "stereo/detections", _array}
+      assert_received {:published, "stereo/left/detections", %ImageAnnotations{}}
+
+      {:ok, state} =
+        Exporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
+
+      assert markers_of("stereo/road/detections/markers") ==
+               List.duplicate({"road", Marker.add()}, 2)
+
+      assert_received {:published, "stereo/road/detections", _array}
+      assert_received {:published, "stereo/road/annotations", %ImageAnnotations{}}
+      refute_received {:published, "stereo/" <> _topic, _message}
+
+      {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+
+      assert markers_of("stereo/detections/markers") ==
+               List.duplicate({"detections", Marker.add()}, 2) ++
+                 List.duplicate({"detections", Marker.delete()}, 2)
+
+      refute_received {:published, "stereo/road/" <> _topic, _message}
+    end
+
+    test "through the runner, each pipeline's detections reach only its own topics" do
+      config = config(OtherCamera)
+
+      config = %{
+        config
+        | components: config.components ++ [:detector, {:detector, name: :road}]
+      }
+
+      start_runner(
+        [
+          config: config,
+          publish: publish_to(self()),
+          detections: [pipelines: [:detection, :road]]
+        ],
+        config
+      )
+
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline.Road},
+        {:detections, pair(), [detection("lane")], :road}
+      )
+
+      assert_receive {:published, "stereo/road/detections", _array}, 1_000
+      refute_receive {:published, "stereo/detections", _array}, 100
+
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline},
+        {:detections, pair(), [detection("person")]}
+      )
+
+      assert_receive {:published, "stereo/detections", _array}, 1_000
+      refute_receive {:published, "stereo/road/detections", _array}, 100
+    end
   end
 
   test "has the client keep the marker array that deletes the markers of boxes gone" do

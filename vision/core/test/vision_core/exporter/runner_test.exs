@@ -364,6 +364,62 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  describe "named detection pipelines" do
+    @detection_outputs [:detections, {:detections, :road}, {:detections, :signs}]
+
+    defp detectors_config,
+      do: config([:detector, {:detector, name: :road}, {:detector, name: :signs}])
+
+    defp publish_named_detections(name, pair, detections),
+      do:
+        Outputs.publish(
+          {:detections, VisionCore.Detection.server(VisionCore.Detection.Pipeline, name)},
+          {:detections, pair, detections, name}
+        )
+
+    test "hands each pipeline's detections to its own output only" do
+      start_forwarder([outputs: @detection_outputs], detectors_config())
+
+      publish_named_detections(:road, :road_pair, [:lane])
+      assert_receive {:exported, {:detections, :road}, {:road_pair, [:lane]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      Outputs.publish(
+        {:detections, VisionCore.Detection.Pipeline},
+        {:detections, :pair, [:person]}
+      )
+
+      assert_receive {:exported, :detections, {:pair, [:person]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_named_detections(:signs, :signs_pair, [:stop])
+      assert_receive {:exported, {:detections, :signs}, {:signs_pair, [:stop]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+    end
+
+    test "a busy exporter is handed each pipeline's newest detections, none taken for another's" do
+      runner =
+        start_forwarder([outputs: @detection_outputs, block_on: {0, []}], detectors_config())
+
+      publish_detections(0)
+      assert_receive {:exported, :detections, {0, []}, _at}
+
+      for index <- 1..3 do
+        publish_named_detections(:road, {:road, index}, [])
+        publish_detections(index)
+        publish_named_detections(:signs, {:signs, index}, [])
+      end
+
+      publish_named_detections(:road, {:road, 4}, [])
+      send(runner, :release)
+
+      assert_receive {:exported, :detections, {3, []}, _at}
+      assert_receive {:exported, {:detections, :road}, {{:road, 4}, []}, _at}
+      assert_receive {:exported, {:detections, :signs}, {{:signs, 3}, []}, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
+    end
+  end
+
   describe "flow control" do
     test "a busy exporter is handed the newest value of each output, the older ones dropped" do
       runner =

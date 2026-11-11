@@ -16,6 +16,18 @@ defmodule VisionCore.DetectionTest do
     assert Detection.pipeline_name(backend: Detection.Backend.Stub) == :detection
   end
 
+  test "the exporter output of a pipeline's detections, :detections for the default one" do
+    assert Detection.output(:detection) == :detections
+    assert Detection.output(:road) == {:detections, :road}
+  end
+
+  test "tells a valid pipeline name from an invalid one" do
+    assert Detection.name?(:road_signs)
+    refute Detection.name?(:stereo)
+    refute Detection.name?(:"front-cam")
+    refute Detection.name?("road")
+  end
+
   test "takes a lowercase name of letters, digits and underscores" do
     for name <- [:detection, :road, :signs_2] do
       assert Detection.name!(name) == name

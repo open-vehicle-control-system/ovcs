@@ -3,8 +3,10 @@ defmodule VisionApiWeb.ExporterJSON do
   The unit's exporters as `exporters` JSON:API resources, each identified
   by its id: `name`, `module`, `status` (`level`, `ok`, `warning` or
   `off`, and `detail`) and `outputs`, each output's `name`
-  (`stereo_pair`, `detections`, `camera_frame:left` or
-  `camera_frame:right`) and `maxHz`, the most values it takes a second,
+  (`stereo_pair`, `camera_frame:left`, `camera_frame:right`,
+  `detections` for the default detection pipeline's, or
+  `detections:<name>` for the pipeline `<name>`'s) and `maxHz`, the
+  most values it takes a second,
   `null` when unbounded, and `actions`, each with a `name`, a `label` and
   a `description`.
   """
@@ -33,6 +35,6 @@ defmodule VisionApiWeb.ExporterJSON do
 
   defp output(%{output: output, max_hz: max_hz}), do: %{name: output_name(output), maxHz: max_hz}
 
-  defp output_name({:camera_frame, side}), do: "camera_frame:#{side}"
+  defp output_name({output, name}), do: "#{output}:#{name}"
   defp output_name(output), do: Atom.to_string(output)
 end

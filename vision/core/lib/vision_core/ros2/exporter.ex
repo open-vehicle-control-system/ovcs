@@ -11,8 +11,9 @@ defmodule VisionCore.Ros2.Exporter do
     * What the stereo unit's cameras actually do, and their sync
       (`VisionCore.Ros2.Exporter.Diagnostics`, a helper under the
       exporter's supervisor).
-    * The detections, as markers, `vision_msgs` and an overlay on the
-      left raw image (`VisionCore.Ros2.Exporter.Detections`).
+    * Each detection pipeline's detections, as markers, `vision_msgs`
+      and an overlay on the left raw image
+      (`VisionCore.Ros2.Exporter.Detections`).
     * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
       see the unit alive even when no other topic flows. Its data names
       the node, so nodes sharing the topic tell themselves apart.
@@ -50,9 +51,12 @@ defmodule VisionCore.Ros2.Exporter do
       documents its options: `:topic_prefix`, the stereo unit's
       `:prefix` by default, the `:publish_*` switches,
       `:raw_image_max_hz` and `:camera_info_interval_frames`.
-    * `:detections` — publishes the detections;
-      `VisionCore.Ros2.Exporter.Detections` documents its options, its
-      `:topic_prefix` the stereo unit's `:prefix` by default.
+    * `:detections` — publishes the detections of each pipeline its
+      `:pipelines` list (`[:detection]`, the default pipeline), each on
+      topics and in a marker namespace of its own;
+      `VisionCore.Ros2.Exporter.Detections` documents its other options
+      and the topics, its `:topic_prefix` the stereo unit's `:prefix` by
+      default.
     * `:heartbeat` — publishes the heartbeat; `:interval_ms` (`1_000`),
       the time between two heartbeats.
     * `:node_name` (the node name of the configuration's `ros2:`) —
@@ -72,6 +76,7 @@ defmodule VisionCore.Ros2.Exporter do
 
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias VisionCore.Camera.Frame
+  alias VisionCore.Detection
   alias VisionCore.Ros2.Exporter.{Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Topics}
@@ -117,8 +122,13 @@ defmodule VisionCore.Ros2.Exporter do
         do: [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}],
         else: []
 
-    stereo ++ if options[:detections], do: [:detections], else: []
+    stereo ++ Enum.map(detection_pipelines(options[:detections]), &Detection.output/1)
   end
+
+  defp detection_pipelines(nil), do: []
+
+  defp detection_pipelines(detections_options),
+    do: Keyword.get(detections_options, :pipelines, [:detection])
 
   @impl VisionCore.Exporter
   def children(options) do
@@ -189,8 +199,7 @@ defmodule VisionCore.Ros2.Exporter do
         jpeg_codec: Keyword.get(options, :jpeg_codec, VisionCore.Jpeg),
         heartbeat: options[:heartbeat] && start_heartbeat(options, config),
         stereo: stereo,
-        detections: options[:detections] && start_detections(options[:detections], cameras),
-        drawn: 0,
+        detections: start_detections(options[:detections], cameras),
         telemetry: StageTimer.new(window: 30, label: "publisher"),
         last_pair_at_ns: nil
       }
@@ -250,18 +259,23 @@ defmodule VisionCore.Ros2.Exporter do
     end
   end
 
+  # Each pipeline's settings and the count of its markers drawn last, by its output.
   defp start_detections(options, cameras) do
-    detections =
-      options
-      |> Keyword.put_new(:topic_prefix, unit_prefix(cameras))
-      |> Detections.new()
+    Map.new(detection_pipelines(options), fn pipeline ->
+      settings =
+        options
+        |> Keyword.delete(:pipelines)
+        |> Keyword.put(:pipeline, pipeline)
+        |> Keyword.put_new(:topic_prefix, unit_prefix(cameras))
+        |> Detections.new()
 
-    Logger.info(
-      "#{__MODULE__} publishing markers on #{detections.markers_topic} and " <>
-        "detections on #{detections.detections_topic}"
-    )
+      Logger.info(
+        "#{__MODULE__} publishing markers on #{settings.markers_topic} and " <>
+          "detections on #{settings.detections_topic}"
+      )
 
-    detections
+      {Detection.output(pipeline), %{settings: settings, drawn: 0}}
+    end)
   end
 
   defp unit_prefix({:ok, cameras}), do: cameras[:prefix]
@@ -327,12 +341,15 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, %{state | telemetry: telemetry}}
   end
 
-  def handle_output(:detections, {%Pair{} = pair, detections}, state) do
+  def handle_output(output, {%Pair{} = pair, detections}, state)
+      when is_map_key(state.detections, output) do
+    %{settings: settings, drawn: drawn} = state.detections[output]
+
     detections
-    |> Detections.messages(pair, state.detections, state.drawn)
+    |> Detections.messages(pair, settings, drawn)
     |> publish_all(state)
 
-    {:ok, %{state | drawn: length(detections)}}
+    {:ok, put_in(state.detections[output].drawn, length(detections))}
   end
 
   @impl VisionCore.Exporter

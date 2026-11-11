@@ -54,7 +54,8 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
     VisionApiWeb.TestUnit.start(%VisionCore.Config{
       components: [
         {:stereo, driver: Camera, left: [], right: []},
-        {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4}
+        {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4},
+        {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub, max_hz: 2}
       ],
       preview: [max_hz: 5]
     })
@@ -66,7 +67,8 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              %{"name" => "camera_frame:left", "maxHz" => 5},
              %{"name" => "camera_frame:right", "maxHz" => 5},
              %{"name" => "stereo_pair", "maxHz" => 5},
-             %{"name" => "detections", "maxHz" => 4}
+             %{"name" => "detections", "maxHz" => 4},
+             %{"name" => "detections:road", "maxHz" => 2}
            ]
   end
 end
@@ -86,7 +88,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
 
   alias VisionApiWeb.ExporterJSON
 
-  test "names each output, a camera's with its side, with the most values it takes a second" do
+  test "names each output, a camera's with its side and a named pipeline's with its name, with the most values it takes a second" do
     exporter = %{
       id: "recorder",
       name: "Recorder",
@@ -95,7 +97,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
       outputs: [
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
-        %{output: :detections, max_hz: nil}
+        %{output: :detections, max_hz: nil},
+        %{output: {:detections, :road}, max_hz: 3}
       ],
       actions: [%{name: :export, label: "Export", description: "Writes a zip."}]
     }
@@ -110,7 +113,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
              outputs: [
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
-               %{name: "detections", maxHz: nil}
+               %{name: "detections", maxHz: nil},
+               %{name: "detections:road", maxHz: 3}
              ],
              actions: [%{name: "export", label: "Export", description: "Writes a zip."}]
            }

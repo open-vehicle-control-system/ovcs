@@ -1,10 +1,10 @@
 defmodule VisionCore.Ros2.Exporter.Detections do
   @moduledoc """
-  The ROS 2 messages of the detections of `VisionCore.Detection.Pipeline`,
-  which `VisionCore.Ros2.Exporter` publishes: a
-  `visualization_msgs/MarkerArray` (what Foxglove's 3D panel renders), a
-  `vision_msgs/Detection3DArray` (what nav2 will consume), and a 2D
-  overlay on the left raw image.
+  The ROS 2 messages of the detections of one detection pipeline
+  (`VisionCore.Detection.Pipeline`), which `VisionCore.Ros2.Exporter`
+  publishes: a `visualization_msgs/MarkerArray` (what Foxglove's 3D
+  panel renders), a `vision_msgs/Detection3DArray` (what nav2 will
+  consume), and a 2D overlay on the left raw image.
 
   ## Frames
 
@@ -16,10 +16,15 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
   ## Options
 
-    * `:topic_prefix` (`"stereo"`) — markers go to
-      `<prefix>/detections/markers`, detections to
+    * `:pipeline` (`:detection`) — the detection pipeline whose
+      detections these are (`VisionCore.Detection`). The default
+      pipeline's markers go to `<prefix>/detections/markers` in the
+      marker namespace `"detections"`, its detections to
       `<prefix>/detections`, and the 2D image overlay to
-      `<prefix>/left/detections`.
+      `<prefix>/left/detections`. A named pipeline's go to
+      `<prefix>/<name>/detections/markers` in the namespace `"<name>"`,
+      `<prefix>/<name>/detections` and `<prefix>/<name>/annotations`.
+    * `:topic_prefix` (`"stereo"`) — the `<prefix>` of the topics.
     * `:marker_lifetime_ms` (`500`) — how long a marker survives
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
@@ -64,8 +69,6 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   @default_marker_lifetime_ms 500
   @default_label_font_size 12.0
 
-  @namespace "detections"
-
   @typedoc """
   A message to publish: its topic, its module and the message, and for the
   markers the options `Ros2Zenoh.Client.publish/4` takes.
@@ -73,13 +76,14 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   @type message :: {String.t(), module(), struct()} | {String.t(), module(), struct(), keyword()}
 
   @typedoc """
-  The topics, the frame of a pair that carries none, the marker lifetime
-  and the font size, from `new/1`.
+  The topics, the marker namespace, the frame of a pair that carries
+  none, the marker lifetime and the font size, from `new/1`.
   """
   @type t :: %{
           markers_topic: String.t(),
           detections_topic: String.t(),
           overlay_topic: String.t(),
+          namespace: String.t(),
           default_frame_id: String.t(),
           marker_lifetime: struct(),
           label_font_size: float()
@@ -90,16 +94,34 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   def new(options) do
     topic_prefix = Keyword.get(options, :topic_prefix, @default_topic_prefix)
 
-    %{
-      markers_topic: "#{topic_prefix}/detections/markers",
-      detections_topic: "#{topic_prefix}/detections",
-      overlay_topic: "#{topic_prefix}/left/detections",
+    options
+    |> Keyword.get(:pipeline, :detection)
+    |> topics(topic_prefix)
+    |> Map.merge(%{
       default_frame_id: "#{topic_prefix}_left",
       marker_lifetime:
         options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
       label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size)
+    })
+  end
+
+  defp topics(:detection, topic_prefix) do
+    %{
+      markers_topic: "#{topic_prefix}/detections/markers",
+      detections_topic: "#{topic_prefix}/detections",
+      overlay_topic: "#{topic_prefix}/left/detections",
+      namespace: "detections"
+    }
+  end
+
+  defp topics(pipeline, topic_prefix) do
+    %{
+      markers_topic: "#{topic_prefix}/#{pipeline}/detections/markers",
+      detections_topic: "#{topic_prefix}/#{pipeline}/detections",
+      overlay_topic: "#{topic_prefix}/#{pipeline}/annotations",
+      namespace: Atom.to_string(pipeline)
     }
   end
 
@@ -140,8 +162,18 @@ defmodule VisionCore.Ros2.Exporter.Detections do
     stale_markers =
       Enum.flat_map(length(detections)..(drawn - 1)//1, fn index ->
         [
-          %Marker{header: header, ns: @namespace, id: box_id(index), action: Marker.delete()},
-          %Marker{header: header, ns: @namespace, id: label_id(index), action: Marker.delete()}
+          %Marker{
+            header: header,
+            ns: settings.namespace,
+            id: box_id(index),
+            action: Marker.delete()
+          },
+          %Marker{
+            header: header,
+            ns: settings.namespace,
+            id: label_id(index),
+            action: Marker.delete()
+          }
         ]
       end)
 
@@ -151,7 +183,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   defp box_marker(detection, index, header, settings) do
     %Marker{
       header: header,
-      ns: @namespace,
+      ns: settings.namespace,
       id: box_id(index),
       type: Marker.cube(),
       action: Marker.add(),
@@ -165,7 +197,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   defp label_marker(detection, index, header, settings) do
     %Marker{
       header: header,
-      ns: @namespace,
+      ns: settings.namespace,
       id: label_id(index),
       type: Marker.text_view_facing(),
       action: Marker.add(),

@@ -15,7 +15,12 @@ defmodule VisionCore.Exporter.Runner do
   output's next slot opens, or while the exporter is busy with the
   output, is held, replaced by any newer one, and handed over once the
   slot is open and the exporter ready. The camera outputs tell their
-  frames apart by `:label`, `"left"` or `"right"`.
+  frames apart by `:label`, `"left"` or `"right"`, and the detection
+  outputs their pipelines by the name a named pipeline's messages end
+  with: the default pipeline's `{:detections, pair, detections}` go to
+  `:detections` only, the pipeline `name`'s
+  `{:detections, pair, detections, name}` to `{:detections, name}` only,
+  each handed over as `{pair, detections}`.
 
   The runner starts without waiting for its exporter: the exporter's
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or
@@ -112,7 +117,6 @@ defmodule VisionCore.Exporter.Runner do
            config: Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0),
            outputs: slots(specs),
            slots: %{},
-           routes: %{},
            started: false,
            exporter_state: nil,
            not_started: nil,
@@ -154,7 +158,7 @@ defmodule VisionCore.Exporter.Runner do
 
   @impl GenServer
   def handle_cast(message, state) do
-    case route(message, state.routes) do
+    case route(message, state.slots) do
       nil -> {:noreply, state}
       output -> {:noreply, offer(state, output, newest(output, payload(message)))}
     end
@@ -212,8 +216,7 @@ defmodule VisionCore.Exporter.Runner do
           | started: true,
             exporter_state: exporter_state,
             not_started: nil,
-            slots: slots,
-            routes: Map.new(slots, fn {output, _slot} -> {message_tag(output), output} end)
+            slots: slots
         }
 
       {:error, reason} ->
@@ -327,33 +330,53 @@ defmodule VisionCore.Exporter.Runner do
     |> Map.new()
   end
 
-  # An output's messages: its tag, and for a camera's, the frames' label.
-  defp message_tag({tag, side}), do: {tag, Atom.to_string(side)}
-  defp message_tag(tag), do: {tag, nil}
-
-  defp route(message, routes) when tuple_size(message) >= 2 do
-    tag = elem(message, 0)
-    Map.get(routes, {tag, label(elem(message, 1))}) || Map.get(routes, {tag, nil})
+  # The output a message is of, among those subscribed; `newest/2` matches the same shapes.
+  defp route(message, slots) do
+    output = message_output(message)
+    if is_map_key(slots, output), do: output
   end
 
-  defp route(_message, _routes), do: nil
-
-  defp label(%{label: label}), do: label
-  defp label(_payload), do: nil
+  defp message_output({:camera_frame, %{label: "left"}}), do: {:camera_frame, :left}
+  defp message_output({:camera_frame, %{label: "right"}}), do: {:camera_frame, :right}
+  defp message_output({:detections, _pair, _detections}), do: :detections
+  defp message_output({:detections, _pair, _detections, name}), do: {:detections, name}
+  defp message_output({tag, _value}), do: tag
+  defp message_output(_message), do: nil
 
   defp payload({_tag, value}), do: value
-  defp payload(message), do: Tuple.delete_at(message, 0)
+  defp payload({:detections, pair, detections}), do: {pair, detections}
+  defp payload({:detections, pair, detections, _name}), do: {pair, detections}
 
   # The newest value of the output waiting in the mailbox replaces `value`.
-  defp newest(output, value) do
-    {tag, label} = message_tag(output)
+  defp newest({:camera_frame, side} = output, value) do
+    label = Atom.to_string(side)
 
     receive do
-      {:"$gen_cast", message}
-      when tuple_size(message) >= 2 and elem(message, 0) == tag and
-             (is_nil(label) or
-                (is_map(elem(message, 1)) and :erlang.map_get(:label, elem(message, 1)) == label)) ->
-        newest(output, payload(message))
+      {:"$gen_cast", {:camera_frame, %{label: ^label} = frame}} -> newest(output, frame)
+    after
+      0 -> value
+    end
+  end
+
+  defp newest({:detections, name} = output, value) do
+    receive do
+      {:"$gen_cast", {:detections, pair, detections, ^name}} -> newest(output, {pair, detections})
+    after
+      0 -> value
+    end
+  end
+
+  defp newest(:detections, value) do
+    receive do
+      {:"$gen_cast", {:detections, pair, detections}} -> newest(:detections, {pair, detections})
+    after
+      0 -> value
+    end
+  end
+
+  defp newest(tag, value) do
+    receive do
+      {:"$gen_cast", {^tag, next}} -> newest(tag, next)
     after
       0 -> value
     end
