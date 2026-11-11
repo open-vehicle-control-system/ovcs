@@ -19,7 +19,8 @@ defmodule VisionFirmware.Application do
            glob: "/sys/class/devfreq/*gpu*/governor", devices: "GPU", await: 60_000},
           id: :gpu_governor
         ),
-        OvcsVehicle.FirmwareValidator
+        OvcsVehicle.FirmwareValidator,
+        OvcsVehicle.ClockSync
       ]
   end
 end

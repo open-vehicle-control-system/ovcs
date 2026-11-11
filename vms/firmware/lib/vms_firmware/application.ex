@@ -15,12 +15,12 @@ defmodule VmsFirmware.Application do
   # crash-loops on a dev host's coldplug uevents and isn't used off
   # target. See `OvcsVehicle.HostUEventGuard`.
   #
-  # On target, mark the firmware valid so an A/B update sticks, and pin
-  # the CPU governor; see `OvcsVehicle.FirmwareValidator` and
-  # `OvcsVehicle.CpuGovernor`.
+  # On target, mark the firmware valid so an A/B update sticks, pin the
+  # CPU governor and restart a hung ntpd; see `OvcsVehicle.FirmwareValidator`,
+  # `OvcsVehicle.CpuGovernor` and `OvcsVehicle.ClockSync`.
   defp children do
     if Nerves.Runtime.mix_target() == :host,
       do: [OvcsVehicle.HostUEventGuard],
-      else: [OvcsVehicle.FirmwareValidator, OvcsVehicle.CpuGovernor]
+      else: [OvcsVehicle.FirmwareValidator, OvcsVehicle.CpuGovernor, OvcsVehicle.ClockSync]
   end
 end
