@@ -13,44 +13,13 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
   flicker the matcher's subpixel estimates have, and the holes of pixels
   whose match comes and goes.
 
-  ## Options
+  ## Settings
 
-    * `:alpha` (`0.4`) — the new value's weight, 0.05 to 1; `1.0` turns
-      smoothing off.
-    * `:delta` (`2.0`) — the largest change, in pixels, that is smoothed,
-      up to 8.
-    * `:hold` (`2`) — how many pairs a lost match is held, up to 10; `0`
-      turns holding off.
-
-  They change while running.
+  `NxStereo.Stage.TemporalFilter.settings/0` declares them, with their defaults
+  and the values they take; those of a type the vision parameters hold
+  are this stage's parameters (`VisionCore.Stereo.NxStage`).
   """
-  @behaviour VisionCore.Stereo.NxStage
-
-  alias VisionCore.Parameters.Check
-
-  @max_hold 10
-
-  @option_specs [
-    alpha: %{
-      type: :double,
-      range: {0.05, 1},
-      description:
-        "Weight of a new disparity where it agrees with the previous one; 1 turns smoothing off"
-    },
-    delta: %{
-      type: :double,
-      range: {0, 8},
-      description: "Largest disparity change, in pixels, that is smoothed"
-    },
-    hold: %{
-      type: :integer,
-      range: {0, @max_hold},
-      description:
-        "Pairs a pixel that loses its match keeps its last disparity; 0 turns holding off"
-    }
-  ]
-
-  @defaults %{alpha: 0.4, delta: 2.0, hold: 2}
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.TemporalFilter
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Smooths the disparity over time and holds lost matches briefly."
@@ -66,46 +35,4 @@ defmodule VisionCore.Stereo.Stage.TemporalFilter do
         "such as a new edge, is taken at once. A pixel that loses its match keeps its last " <>
         "value for up to hold pairs, which fills holes that come and go. Watch Jitter under " <>
         "the depth video."
-
-  @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: NxStereo.Stage.TemporalFilter.init(Map.to_list(settings), context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
-  def provides, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_constants, to: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate params(state, context), to: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate carry(state, context), to: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.TemporalFilter
-
-  @impl VisionCore.Stereo.NxStage
-  def option_specs, do: @option_specs
-
-  @impl VisionCore.Stereo.NxStage
-  def options(state), do: %{alpha: state.alpha, delta: state.delta, hold: state.hold}
-
-  @impl VisionCore.Stereo.NxStage
-  def set_option(state, key, value) do
-    with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
-         do: {:ok, %{state | key => value}}
-  end
 end

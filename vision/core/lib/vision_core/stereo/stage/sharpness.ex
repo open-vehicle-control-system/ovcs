@@ -15,10 +15,9 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   Both means are over the pairs an image counts, and an image without
   any reads 0. The pair's `:sharpness` is `%{left: float, right: float}`.
   """
-  @behaviour VisionCore.Stereo.NxStage
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.Sharpness
 
   alias NxStereo.Diagnostics
-  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
@@ -35,25 +34,7 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
         "where it reaches past a camera's frame. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: NxStereo.Stage.Sharpness.init([], context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.Sharpness
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:left, :right]
-
-  @impl VisionCore.Stereo.NxStage
   def provides, do: [:sharpness]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.Sharpness
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.Sharpness
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state),

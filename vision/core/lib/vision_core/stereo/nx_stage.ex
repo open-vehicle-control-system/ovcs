@@ -32,6 +32,7 @@ defmodule VisionCore.Stereo.NxStage do
   `:native`, and refused when it asks for `:native` itself.
   """
 
+  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.{Pair, Stage}
 
   @type state :: term()
@@ -164,6 +165,126 @@ defmodule VisionCore.Stereo.NxStage do
                       native_constants: 0,
                       native_settings: 1,
                       stereo_stage: 0
+
+  @doc """
+  Makes the module the pipeline stage of nx_stereo's `:stage`: its
+  computation, `requires/0` and `provides/0` are that stage's, and its
+  settings are those the stage declares (`c:NxStereo.Stage.settings/0`)
+  with a type the vision parameters hold, a live one where the stage
+  takes it among its params. A setting of another type, such as an
+  atom, is passed to the stage unchecked. The module adds its
+  `summary/0` and `explanation/0`, and overrides any callback, as
+  `finish/3`, `provides/0` for the `Pair` fields it fills, or `params/2`.
+
+      use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.SpeckleFilter
+  """
+  defmacro __using__(opts) do
+    quote bind_quoted: [stage: Keyword.fetch!(opts, :stage)] do
+      @behaviour VisionCore.Stereo.NxStage
+
+      @stereo_stage stage
+      @option_specs VisionCore.Stereo.NxStage.option_specs_of(stage)
+
+      @impl VisionCore.Stereo.NxStage
+      def stereo_stage, do: @stereo_stage
+
+      @impl VisionCore.Stereo.NxStage
+      def requires, do: @stereo_stage.requires()
+
+      @impl VisionCore.Stereo.NxStage
+      def provides, do: @stereo_stage.provides()
+
+      @impl VisionCore.Stereo.NxStage
+      def init(opts, context),
+        do: VisionCore.Stereo.NxStage.init_stage(@stereo_stage, @option_specs, opts, context)
+
+      @impl VisionCore.Stereo.NxStage
+      def step(tensors, params, state), do: @stereo_stage.step(tensors, params, state)
+
+      if @option_specs != [] do
+        @impl VisionCore.Stereo.NxStage
+        def option_specs, do: @option_specs
+
+        @impl VisionCore.Stereo.NxStage
+        def options(state), do: Map.take(state, Keyword.keys(@option_specs))
+
+        @impl VisionCore.Stereo.NxStage
+        def set_option(state, key, value),
+          do: VisionCore.Stereo.NxStage.set_stage_option(@option_specs, state, key, value)
+      end
+
+      for {name, arity} <- VisionCore.Stereo.NxStage.delegated(stage) do
+        args = Macro.generate_arguments(arity, __MODULE__)
+
+        @impl VisionCore.Stereo.NxStage
+        def unquote(name)(unquote_splicing(args)),
+          do: @stereo_stage.unquote(name)(unquote_splicing(args))
+      end
+
+      defoverridable VisionCore.Stereo.NxStage
+    end
+  end
+
+  @delegated [
+    params: 2,
+    carry: 2,
+    device_only: 0,
+    compute: 1,
+    native_kind: 0,
+    native_constants: 0,
+    native_settings: 1
+  ]
+
+  @doc false
+  def delegated(stage) do
+    Code.ensure_compiled!(stage)
+    for {name, arity} <- @delegated, function_exported?(stage, name, arity), do: {name, arity}
+  end
+
+  @parameter_types %{integer: :integer, float: :double, boolean: :bool, string: :string}
+
+  @doc """
+  The vision parameters' specs of the settings nx_stereo's `stage`
+  declares, those of a type they hold.
+  """
+  @spec option_specs_of(module()) :: [{atom(), Stage.option_spec()}]
+  def option_specs_of(stage) do
+    for {key, setting} <- NxStereo.Stage.declared_settings(stage),
+        type = @parameter_types[setting.type] do
+      spec =
+        setting
+        |> Map.take([:range, :step, :values, :greater_than, :when])
+        |> Map.merge(%{type: type, applies: if(setting[:live], do: :live, else: :build)})
+
+      {key, if(doc = setting[:doc], do: Map.put(spec, :description, doc), else: spec)}
+    end
+  end
+
+  @doc """
+  Initialises nx_stereo's `stage` from a stage list's `opts`: those in
+  `specs` checked as vision parameters over the stage's defaults, or
+  `defaults` where given, the stage's other settings passed on as they
+  are, and anything else refused.
+  """
+  @spec init_stage(module(), [{atom(), Stage.option_spec()}], keyword(), Stage.context(), map()) ::
+          {:ok, term()} | {:error, String.t()}
+  def init_stage(stage, specs, opts, context, defaults \\ %{}) do
+    declared = NxStereo.Stage.declared_settings(stage)
+    {passed, opts} = Keyword.split(opts, Keyword.keys(declared) -- Keyword.keys(specs))
+    stage_defaults = for {key, _spec} <- specs, into: %{}, do: {key, declared[key].default}
+
+    with {:ok, values} <- Check.init_settings(specs, Map.merge(stage_defaults, defaults), opts),
+         do: stage.init(Map.to_list(values) ++ passed, context)
+  end
+
+  @doc "Changes the live setting `key` of `state` to `value`, as `specs` allow."
+  @spec set_stage_option([{atom(), Stage.option_spec()}], map(), atom(), term()) ::
+          {:ok, map()} | {:error, String.t()}
+  def set_stage_option(specs, state, key, value) do
+    with {:ok, value} <-
+           Check.change_setting(specs, Map.take(state, Keyword.keys(specs)), key, value),
+         do: {:ok, %{state | key => value}}
+  end
 
   @doc "Whether `module` is an Nx stage: it declares `@behaviour VisionCore.Stereo.NxStage`."
   @spec nx_stage?(module()) :: boolean()

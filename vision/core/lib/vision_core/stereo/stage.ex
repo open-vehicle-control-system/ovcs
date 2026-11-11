@@ -54,7 +54,8 @@ defmodule VisionCore.Stereo.Stage do
   its `:range` `{min, max}` with an optional `:step`, or its `:values`,
   the setting of the same stage it must exceed (`:greater_than`), whether
   it changes while running (`applies: :live`, the default) or is fixed at
-  start (`:build`), and a `:description`.
+  start (`:build`), the values of other build settings it only takes
+  effect with (`:when`), and a `:description`.
   """
   @type option_spec :: %{
           required(:type) => VisionCore.Parameters.type(),
@@ -63,6 +64,7 @@ defmodule VisionCore.Stereo.Stage do
           optional(:values) => [term()],
           optional(:greater_than) => atom(),
           optional(:applies) => :live | :build,
+          optional(:when) => keyword(),
           optional(:description) => String.t()
         }
 

@@ -14,25 +14,13 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
   hole the result can be a lower disparity, which reads farther, than
   the median of the matched pixels alone.
 
-  ## Options
+  ## Settings
 
-    * `:kernel_size` (`5`) — the window's width, 3 or 5; fixed in the
-      build.
+  `NxStereo.Stage.MedianFilter.settings/0` declares them, with their defaults
+  and the values they take; those of a type the vision parameters hold
+  are this stage's parameters (`VisionCore.Stereo.NxStage`).
   """
-  @behaviour VisionCore.Stereo.NxStage
-
-  alias VisionCore.Parameters.Check
-
-  @option_specs [
-    kernel_size: %{
-      type: :integer,
-      values: [3, 5],
-      applies: :build,
-      description: "Width of the median filter's square window, in pixels"
-    }
-  ]
-
-  @defaults %{kernel_size: 5}
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.MedianFilter
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Removes isolated wrong disparities with a median filter."
@@ -47,34 +35,4 @@ defmodule VisionCore.Stereo.Stage.MedianFilter do
         "3 × 3 median, so this stage is for a wider one. An unmatched pixel counts as the " <>
         "lowest value: a hole that is mostly surrounded by matches fills, and a match that is " <>
         "mostly surrounded by holes is dropped."
-
-  @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: NxStereo.Stage.MedianFilter.init(Map.to_list(settings), context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.MedianFilter
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
-  def provides, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.MedianFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_settings(state), to: NxStereo.Stage.MedianFilter
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.MedianFilter
-
-  @impl VisionCore.Stereo.NxStage
-  def option_specs, do: @option_specs
-
-  @impl VisionCore.Stereo.NxStage
-  def options(state), do: %{kernel_size: state.kernel_size}
 end

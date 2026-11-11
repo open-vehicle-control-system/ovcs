@@ -204,7 +204,8 @@ defmodule VisionCore.Stereo.Pipeline do
   @doc """
   Every stage in pipeline order, the members of a compiled segment
   among them: its name, module, summary, explanation, settings (`applies`
-  filled in) and their values.
+  filled in) and their values. A setting that takes effect only with
+  other settings' values (`:when`) is left out while they differ.
   """
   @spec stage_options(GenServer.server()) :: [stage_options()]
   def stage_options(server), do: GenServer.call(server, :stage_options)
@@ -933,13 +934,20 @@ defmodule VisionCore.Stereo.Pipeline do
   defp compute(_stage), do: %{runs_on: :cpu, implementation: :elixir, backend: nil}
 
   defp describe(stage) do
+    values = values(stage)
+
+    {specs, idle} =
+      Enum.split_with(option_specs(stage.module), fn {_key, spec} ->
+        Enum.all?(Map.get(spec, :when, []), fn {key, value} -> values[key] == value end)
+      end)
+
     %{
       stage: stage.name,
       module: stage.module,
       summary: summary(stage.module),
       explanation: explanation(stage.module),
-      specs: option_specs(stage.module),
-      values: values(stage)
+      specs: specs,
+      values: Map.drop(values, Keyword.keys(idle))
     }
   end
 

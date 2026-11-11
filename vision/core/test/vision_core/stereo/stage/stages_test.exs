@@ -243,7 +243,7 @@ defmodule VisionCore.Stereo.Stage.StagesTest do
     assert Stage.Disparity.compute(nx) == :nx
     assert Stage.Disparity.options(native) == Stage.Disparity.options(default)
 
-    assert {:error, "matcher must be :nx or :native, got :gpu"} =
+    assert {:error, "matcher must be one of [nil, :nx, :native], got :gpu"} =
              Stage.Disparity.init([matcher: :gpu], context)
   end
 

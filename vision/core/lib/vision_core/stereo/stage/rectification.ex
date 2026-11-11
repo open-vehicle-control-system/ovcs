@@ -7,29 +7,18 @@ defmodule VisionCore.Stereo.Stage.Rectification do
   camera's calibration is an input, so a reloaded calibration needs no
   new compiled module.
 
-  ## Options
+  ## Settings
 
-    * `:right_row_offset` (`0.0`) — rows the right image is moved by, up
-      to 8 either way, a correction for cameras that have shifted since
-      the calibration (`VisionCore.Stereo.AlignmentCorrection` sets it);
-      also a runtime setting.
+  `NxStereo.Stage.Rectification.settings/0` declares them, with their defaults
+  and the values they take; those of a type the vision parameters hold
+  are this stage's parameters (`VisionCore.Stereo.NxStage`).
+
+  `VisionCore.Stereo.AlignmentCorrection` sets `:right_row_offset` for
+  cameras that have shifted since the calibration.
   """
-  @behaviour VisionCore.Stereo.NxStage
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.Rectification
 
-  alias VisionCore.Parameters.Check
   alias VisionCore.Ros2.CameraCalibration
-
-  @max_row_offset 8
-
-  @option_specs [
-    right_row_offset: %{
-      type: :double,
-      range: {-@max_row_offset, @max_row_offset},
-      description: "Rows the right image is moved by to line up with the left one"
-    }
-  ]
-
-  @defaults %{right_row_offset: 0.0}
 
   @impl VisionCore.Stereo.NxStage
   def summary, do: "Undistorts and rectifies both frames so a point lies on the same row in each."
@@ -46,24 +35,6 @@ defmodule VisionCore.Stereo.Stage.Rectification do
         "measure. A camera that turned, or moved sideways, needs a new calibration. Watch Row " <>
         "alignment between the videos."
 
-  @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, settings} <- Check.init_settings(@option_specs, @defaults, opts),
-         do: NxStereo.Stage.Rectification.init(Map.to_list(settings), context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.Rectification
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:left_frame, :right_frame]
-
-  @impl VisionCore.Stereo.NxStage
-  def provides, do: [:left, :right]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.Rectification
-
   # The cameras from the context's calibrations.
   @impl VisionCore.Stereo.NxStage
   def params(state, context) do
@@ -74,21 +45,6 @@ defmodule VisionCore.Stereo.Stage.Rectification do
       })
 
     NxStereo.Stage.Rectification.params(state, geometry)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.Rectification
-
-  @impl VisionCore.Stereo.NxStage
-  def option_specs, do: @option_specs
-
-  @impl VisionCore.Stereo.NxStage
-  def options(state), do: %{right_row_offset: state.right_row_offset}
-
-  @impl VisionCore.Stereo.NxStage
-  def set_option(state, key, value) do
-    with {:ok, value} <- Check.change_setting(@option_specs, options(state), key, value),
-         do: {:ok, %{state | key => value}}
   end
 
   defp camera(%CameraCalibration{} = calibration) do

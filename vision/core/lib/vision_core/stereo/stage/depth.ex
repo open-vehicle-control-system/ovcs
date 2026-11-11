@@ -4,9 +4,8 @@ defmodule VisionCore.Stereo.Stage.Depth do
   `NxStereo.Stage.Depth`, and fills the 32-bit float disparity and the
   16-bit millimetre depth from it.
   """
-  @behaviour VisionCore.Stereo.NxStage
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.Depth
 
-  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @impl VisionCore.Stereo.NxStage
@@ -23,31 +22,7 @@ defmodule VisionCore.Stereo.Stage.Depth do
         "beyond the 65.5 m it holds, have no depth. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: NxStereo.Stage.Depth.init([], context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.Depth
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:disparity]
-
-  @impl VisionCore.Stereo.NxStage
   def provides, do: [:disparity_bytes, :depth, :depth_m]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.Depth
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate params(state, context), to: NxStereo.Stage.Depth
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.Depth
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate device_only, to: NxStereo.Stage.Depth
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do

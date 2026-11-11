@@ -18,10 +18,9 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
   rotation. The offset over the whole image is also reported as the
   `align_rows` metric. Without it, the pair has neither.
   """
-  @behaviour VisionCore.Stereo.NxStage
+  use VisionCore.Stereo.NxStage, stage: NxStereo.Stage.RowAlignment
 
   alias NxStereo.Diagnostics
-  alias VisionCore.Parameters.Check
   alias VisionCore.Stereo.Pair
 
   @min_matched_pixels 64
@@ -42,28 +41,7 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
         "has no settings."
 
   @impl VisionCore.Stereo.NxStage
-  def init(opts, context) do
-    with {:ok, _no_settings} <- Check.init_settings([], %{}, opts),
-         do: NxStereo.Stage.RowAlignment.init([], context)
-  end
-
-  @impl VisionCore.Stereo.NxStage
-  def stereo_stage, do: NxStereo.Stage.RowAlignment
-
-  @impl VisionCore.Stereo.NxStage
-  def requires, do: [:left, :right, :disparity]
-
-  @impl VisionCore.Stereo.NxStage
   def provides, do: [:alignment, :metrics]
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_kind, to: NxStereo.Stage.RowAlignment
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate native_constants, to: NxStereo.Stage.RowAlignment
-
-  @impl VisionCore.Stereo.NxStage
-  defdelegate step(tensors, params, state), to: NxStereo.Stage.RowAlignment
 
   @impl VisionCore.Stereo.NxStage
   def finish(%Pair{} = pair, outputs, _state) do
