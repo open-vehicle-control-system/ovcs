@@ -111,6 +111,53 @@ Its `priv/calibration` holds a nominal calibration until the rig is calibrated: 
 
 The rates measured on this unit are in [Vision performance](./performance.md#measured-on-an-arduino-ventuno-q).
 
+## A camera's calibration and pose
+
+A camera of its own is described to the rest of the unit by three options of its `:camera` component, which its driver does not see (`VisionCore.Camera.Unit`):
+
+```elixir
+{:camera,
+ name: :hq,
+ driver: VisionCore.Camera.V4L2Single,
+ csiphy: 2,
+ calibration: Application.app_dir(:<vehicle>, "priv/calibration/hq.yaml"),
+ calibration_store_dir: "/data/vision/calibration",
+ pose: Application.app_dir(:<vehicle>, "priv/calibration/hq_pose.yaml")}
+```
+
+- `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is scaled to them, so one made at the sensor's full size serves `output: :half`.
+- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit.
+- `pose:` is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame, `p_camera = rotation × p_left + translation` in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration: a new stereo calibration changes the rectified frame, so measure the pose again.
+
+The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`), every one by default, or those its `names:` lists:
+
+| Topic or service | Type | What |
+|---|---|---|
+| `<prefix>/<name>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
+| `<prefix>/<name>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
+| `<prefix>/<name>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
+| `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. |
+
+### Measure the pose
+
+The pose comes from pictures of a chessboard that both the stereo left camera and the camera see, solved by `scripts/camera_pose.py` with OpenCV on both calibrations, held fixed.
+
+1. Calibrate the camera's intrinsics first, in `cameracalibrator`'s monocular mode ([Calibration](./basics.md#calibration)), with the fisheye model for a wide-angle lens, and commit them or write them to `calibration:`.
+2. Record pairs with a board whose inner corners are one odd and one even count, such as 9 × 6: a board that looks the same after a half turn, such as 8 × 6, can have its corners numbered apart by two cameras turned far from each other, which gives a wrong pose and a large error. Hold the board still where both cameras see it whole, and save the newest image of `<prefix>/left/image_raw/compressed` and of `<prefix>/<name>/image_raw/compressed` as `left-<n>.png` and `camera-<n>.png` in one directory, the same `<n>` for both. The two cameras are not triggered together: a still board makes their images agree, and their header stamps should be within a frame period of each other. Take the left camera's raw image, not the rectified one. Twenty pairs or so, at several distances and tilts, the board across the camera's image, give a stable pose.
+3. Run the script on your workstation, with OpenCV and NumPy, giving the chessboard's inner corners and square size:
+
+   ```sh
+   python3 -I scripts/camera_pose.py --pairs pairs/ \
+       --left vehicles/<vehicle>/priv/calibration/stereo_left.yaml \
+       --camera hq.yaml --board 9x6 --square 0.025 \
+       --output vehicles/<vehicle>/priv/calibration/hq_pose.yaml
+   ```
+
+   It leaves out a pair in which it does not find the board in both images, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures.
+4. Point the `:camera` component's `pose:` at the YAML, in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's.
+
+The left calibration must be the one the stereo unit runs: the stored one when you committed it through `set_camera_info`.
+
 ## Depth
 
 The stereo stages turn each pair of camera frames into a disparity, then a depth image and a point cloud. The disparity is the horizontal shift of each point between the two images. Where the stages run depends on the board. On the C100 and the VENTUNO Q, they run on the GPU, compiled from Nx. On the Raspberry Pi 5, they run on the CPU cores, in native code. The guides of this section explain them:
