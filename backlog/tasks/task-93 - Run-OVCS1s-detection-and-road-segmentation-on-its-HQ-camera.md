@@ -35,13 +35,13 @@ Spec: TASK-87 (requirement 7). Builds on TASK-90 to TASK-92.
 
 #### Task 1: the composer.
 - `Ovcs1.Vision.Composer`'s target config: `{:camera, name: :hq, driver: VisionCore.Camera.V4L2Single, csiphy: 2, frame_id: "hq_optical", calibration: <priv>/calibration/hq.yaml, pose: <priv>/calibration/hq_pose.yaml, calibration_store_dir: "/data/vision/calibration"}`; `{:qnn_detector, source: {:camera, :hq}, dlc_path: …, score_threshold: 0.4}`; `{:qnn_segmenter, name: :road, source: {:camera, :hq}, dlc_path: <priv>/models/ffnet_122ns_lowres.dlc}`; the ROS 2 exporter's `cameras: [:hq]` and `segmentation: [pipelines: [:road]]`.
-- `priv/calibration/hq.yaml`: nominal intrinsics for 2028 × 1520 from the 3.6 mm lens and the binned pixel pitch (3.1 µm): `fx = fy = 1161.3`, `cx = 1013.5`, `cy = 759.5`, no distortion. `hq_pose.yaml` is absent until measured, and the unit runs without distances on the HQ pipelines until then.
+- `priv/calibration/hq.yaml`: nominal intrinsics for the camera's `half` output, 1014 × 760, from the 3.6 mm lens and the half output's pixel pitch (6.2 µm): `fx = fy = 580.6`, `cx = 506.5`, `cy = 379.5`, no distortion (`CameraCalibration.scale_to/3` scales it if the output changes). `hq_pose.yaml` is absent until measured, and the unit runs without distances on the HQ pipelines until then.
 - `required_files` and `vehicles/ovcs1/test/vision_composer_test.exs` follow.
 - `vehicles/ovcs1/priv/models/README.md` or the docs name the road model and its licence.
 
 #### Task 2: measurements.
 - On the unit, both pipelines' rates and the NPU's load with YOLOX, then with the smaller detector if Qualcomm AI Hub publishes one under Apache-2.0; the faster one that keeps detection above 5 Hz stays.
-- `docs/vision/performance.md` records the rates; `docs/vision/README.md`'s OVCS1 worked example describes the HQ camera.
+- `docs/vision/performance.md` records the rates; `docs/vision/README.md`'s OVCS1 worked example and `docs/hardware.md`'s vision unit row (around line 253) describe the HQ camera.
 
 Checks before review: `mix test` in `vehicles/ovcs1`, `elixir scripts/check_docs.exs`; on the unit, the dashboard shows the HQ preview with boxes and the road overlay.
 <!-- SECTION:PLAN:END -->

@@ -22,10 +22,10 @@ On the OVCS1 unit, the IMX477 driver probes (`imx477 5-001a: Device found is imx
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `v4l2_capture` captures one camera in packed 12-bit Bayer and returns colour frames, demosaiced 2×2, with auto exposure and grey-world white balance
-- [ ] #2 A `:camera` component starts a named camera whose colour frames are published under `{:camera_frame, name}`, and a failing camera leaves the rest of the unit running
-- [ ] #3 The dashboard shows a named camera's preview next to the stereo pair's
-- [ ] #4 On the OVCS1 unit, the IMX477 on Camera 2 streams colour frames to the dashboard
+- [x] #1 `v4l2_capture` captures one camera in packed 12-bit Bayer and returns colour frames, demosaiced 2×2, with auto exposure and grey-world white balance
+- [x] #2 A `:camera` component starts a named camera whose colour frames are published under `{:camera_frame, name}`, and a failing camera leaves the rest of the unit running
+- [x] #3 The dashboard shows a named camera's preview next to the stereo pair's
+- [x] #4 On the OVCS1 unit, the IMX477 on Camera 2 streams colour frames to the dashboard
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -101,3 +101,19 @@ Review focus, each pinned by a test in the owning task:
 
 Checks before review: `cargo test`, `cargo clippy -- -D warnings` in `vision/rust`; `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in `vision/core` and `vision/api`; the dashboard's tests; `elixir scripts/check_docs.exs`. On the OVCS1 unit, with the camera declared in the composer (TASK-93 makes it permanent), the dashboard shows the HQ camera in colour.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Measured on the OVCS1 reference vehicle's VENTUNO Q, IMX477 on Camera 2 (`imx477 3-001a` or `5-001a`: the bus number changes across boots; the camera is found by its link to `msm_csiphy2`), captured as `pRCC` from `msm_vfe2_video0`:
+
+| Output | Asked | Delivered | Conversion per frame |
+|---|---|---|---|
+| `half`, denoise on | 35 fps | 34.9–35.0 fps | 17.1 ms |
+| `full`, before the colour processing | 15 fps | 15.0 fps | — |
+| `full`, colour processing, before the denoise | 15 fps | 15.0 fps | 29.0 ms |
+| `full`, denoise on | 35 fps | 16.6 fps | — |
+| `full`, denoise off | 35 fps | 21.3 fps | — |
+
+The sensor's `horizontal_flip` and `vertical_flip` read 0, so Raspberry Pi's lens-shading tables apply turned by 180°; its analogue gain spans 0..978. Indoors in the evening, auto exposure reached its limits (60 ms then 25 ms, gain about 16) with white balance at about 2850 K. With the camera at 35 fps half, the stereo pair kept about 33 pairs a second and detection about 10 results a second. Full resolution at 35 fps is TASK-94.
+<!-- SECTION:NOTES:END -->
