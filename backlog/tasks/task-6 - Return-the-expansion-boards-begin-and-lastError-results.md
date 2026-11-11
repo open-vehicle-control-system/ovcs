@@ -22,4 +22,5 @@ ExpansionBoard::begin() and lastError() call the MCP23008 library and return not
 <!-- AC:BEGIN -->
 - [x] #1 begin() and lastError() return the MCP23008 library's results
 - [x] #2 Without the framework's -w, the build fails with -Werror=return-type before the change and passes after it
+- [x] #3 A controller whose expansion board in use fails to begin, at boot or on adoption, reports EXPANSION_BOARDS_ERROR instead of READY
 <!-- AC:END -->

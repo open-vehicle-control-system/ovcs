@@ -17,6 +17,7 @@ void Controller::initializeSerialTransfer() {
 void Controller::resetExpansionBoards() {
   Wire.end();
   initializeI2C();
+  // A board that fails to begin reports it through lastError() on the next loop.
   initializeExpansionBoards();
   _configuration.initializePhysicalPins();
 };
@@ -26,13 +27,11 @@ void Controller::initializeI2C() {
   Wire.setClock(I2C_CLOCK_FREQUENCY);
 };
 
-void Controller::initializeExpansionBoards() {
-  if (_configuration._expansionBoard1InUse)  {
-    _expansionBoard1->begin();
-  }
-  if (_configuration._expansionBoard2InUse)  {
-    _expansionBoard2->begin();
-  }
+bool Controller::initializeExpansionBoards() {
+  return beginExpansionBoards(
+    _expansionBoard1, _configuration._expansionBoard1InUse,
+    _expansionBoard2, _configuration._expansionBoard2InUse
+  );
 };
 
 bool Controller::isReady() {
@@ -41,11 +40,20 @@ bool Controller::isReady() {
 
 void Controller::adoptConfiguration() {
   _configuration.storeAndApply(_can._receivedFrame.data);
-  initializeExpansionBoards();
+  bool expansionBoardsBegan = initializeExpansionBoards();
   _configuration.initializePhysicalPins();
   _adoptionButton.validateAdoption();
   DPRINTLN("> Adoption applied");
-  setStatus(READY);
+  becomeReadyIf(expansionBoardsBegan);
+};
+
+void Controller::becomeReadyIf(bool expansionBoardsBegan) {
+  if (expansionBoardsBegan) {
+    setStatus(READY);
+  } else {
+    DPRINTLN("> Expansion board failed to begin");
+    shutdown(EXPANSION_BOARDS_ERROR);
+  }
 };
 
 void Controller::writeDigitalPins() {
@@ -234,9 +242,9 @@ void Controller::setup() {
   analogReadResolution(ANALOG_READ_RESOLUTION);
   analogWriteResolution(ANALOG_WRITE_RESOLUTION);
   if (_configuration.load()) {
-    initializeExpansionBoards();
+    bool expansionBoardsBegan = initializeExpansionBoards();
     _configuration.initializePhysicalPins();
-    setStatus(READY);
+    becomeReadyIf(expansionBoardsBegan);
   } else {
     setStatus(ADOPTION_REQUIRED);
   }
