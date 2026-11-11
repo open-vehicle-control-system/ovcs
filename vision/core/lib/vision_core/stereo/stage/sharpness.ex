@@ -37,6 +37,11 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   def provides, do: [:sharpness]
 
   @impl VisionCore.Stereo.NxStage
-  def finish(%Pair{} = pair, outputs, _state),
-    do: %{pair | sharpness: Diagnostics.sharpness(outputs.sharpness_sums)}
+  def finish(%Pair{} = pair, outputs, _state) do
+    %{
+      pair
+      | sharpness: Diagnostics.sharpness(outputs.sharpness_sums),
+        brightness: Diagnostics.brightness(outputs.sharpness_sums)
+    }
+  end
 end

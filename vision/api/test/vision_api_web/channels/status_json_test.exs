@@ -3,7 +3,7 @@ defmodule VisionApiWeb.StatusJSONTest do
 
   alias VisionApiWeb.StatusJSON
 
-  test "gives the snapshot's fields camelCase keys and states as strings, each exporter's status a level and a detail, and the pair's checks" do
+  test "gives the snapshot's fields camelCase keys and states as strings, each exporter's status a level and a detail, and the pair's and depth's checks" do
     snapshot = %{
       cameras: %{
         left: %{
@@ -28,7 +28,25 @@ defmodule VisionApiWeb.StatusJSONTest do
           misalignment_rows: 6.2,
           correction_rows: 6.0
         },
-        focus: %{level: :ok, camera: nil, issues: [], softer: :left, difference_percent: 17}
+        focus: %{level: :ok, camera: nil, issues: [], softer: :left, difference_percent: 17},
+        brightness: %{
+          level: :ok,
+          camera: nil,
+          issues: [],
+          brighter: :right,
+          difference_percent: 4
+        }
+      },
+      depth: %{
+        rate: %{
+          level: :warning,
+          camera: nil,
+          issues: [:pairs_dropped],
+          dropped_percent: 12.0,
+          depth_hz: 30.8,
+          camera_hz: 35.0
+        },
+        range: %{level: :off, camera: nil, issues: []}
       },
       hailo: :absent,
       depth_hz: 29.9,
@@ -64,7 +82,25 @@ defmodule VisionApiWeb.StatusJSONTest do
                  misalignmentRows: 6.2,
                  correctionRows: 6.0
                },
-               focus: %{level: :ok, camera: nil, issues: [], softer: :left, differencePercent: 17}
+               focus: %{level: :ok, camera: nil, issues: [], softer: :left, differencePercent: 17},
+               brightness: %{
+                 level: :ok,
+                 camera: nil,
+                 issues: [],
+                 brighter: :right,
+                 differencePercent: 4
+               }
+             },
+             depth: %{
+               rate: %{
+                 level: :warning,
+                 camera: nil,
+                 issues: [:pairs_dropped],
+                 droppedPercent: 12.0,
+                 depthHz: 30.8,
+                 cameraHz: 35.0
+               },
+               range: %{level: :off, camera: nil, issues: []}
              },
              hailo: "absent",
              depthHz: 29.9,
@@ -91,7 +127,12 @@ defmodule VisionApiWeb.StatusJSONTest do
       pair: %{
         timing: %{level: :off, camera: nil, issues: []},
         rows: %{level: :off, camera: nil, issues: []},
-        focus: %{level: :off, camera: nil, issues: []}
+        focus: %{level: :off, camera: nil, issues: []},
+        brightness: %{level: :off, camera: nil, issues: []}
+      },
+      depth: %{
+        rate: %{level: :off, camera: nil, issues: []},
+        range: %{level: :off, camera: nil, issues: []}
       },
       hailo: :running,
       depth_hz: 0.0,
@@ -114,10 +155,10 @@ defmodule VisionApiWeb.StatusJSONTest do
            } = StatusJSON.status(snapshot)
   end
 
-  test "the API guide lists every issue a pair check can raise" do
+  test "the API guide lists every issue a pair or depth check can raise" do
     guide = File.read!(Path.expand("../../../../../docs/vision/api.md", __DIR__))
 
-    for issue <- VisionCore.Stereo.PairCheck.issues(),
+    for issue <- VisionCore.Stereo.PairCheck.issues() ++ VisionCore.Stereo.DepthCheck.issues(),
         do: assert(guide =~ "`#{issue}`", "docs/vision/api.md does not list #{issue}")
   end
 end
