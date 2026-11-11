@@ -126,7 +126,7 @@ A camera of its own is described to the rest of the unit by three options of its
 ```
 
 - `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is scaled to them, so one made at the sensor's full size serves `output: :half`.
-- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit.
+- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`.
 - `pose:` is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame, `p_camera = rotation × p_left + translation` in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration: a new stereo calibration changes the rectified frame, so measure the pose again.
 
 The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`), every one by default, or those its `names:` lists:
@@ -136,27 +136,45 @@ The ROS 2 exporter's `cameras:` option publishes each camera of its own (`Vision
 | `<prefix>/<name>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
 | `<prefix>/<name>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
 | `<prefix>/<name>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
-| `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. |
+| `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. The parent is the frame the depth is published in, in rectified coordinates: the rectified left camera, not the raw one. |
 
 ### Measure the pose
 
-The pose comes from pictures of a chessboard that both the stereo left camera and the camera see, solved by `scripts/camera_pose.py` with OpenCV on both calibrations, held fixed.
+The pose comes from pictures of a chessboard that both the stereo left camera and the camera see, solved by [`scripts/camera_pose.py`](../../scripts/camera_pose.py) with OpenCV on both calibrations, held fixed. Use a board whose inner corners are one odd and one even count, such as 9 × 6: a board that looks the same after a half turn, such as 8 × 6, can have its corners numbered apart by two cameras turned far from each other, which gives a wrong pose and a large error. The commands below use the camera `hq`, a 9 × 6 board of 25 mm squares, and a vision unit reached as `<vehicle>-vision.local` whose `calibration_store_dir` is `/data/vision/calibration`; they work the same with your camera's name, board and store.
 
-1. Calibrate the camera's intrinsics first, in `cameracalibrator`'s monocular mode ([Calibration](./basics.md#calibration)), with the fisheye model for a wide-angle lens, and commit them or write them to `calibration:`.
-2. Record pairs with a board whose inner corners are one odd and one even count, such as 9 × 6: a board that looks the same after a half turn, such as 8 × 6, can have its corners numbered apart by two cameras turned far from each other, which gives a wrong pose and a large error. Hold the board still where both cameras see it whole, and save the newest image of `<prefix>/left/image_raw/compressed` and of `<prefix>/<name>/image_raw/compressed` as `left-<n>.png` and `camera-<n>.png` in one directory, the same `<n>` for both. The two cameras are not triggered together: a still board makes their images agree, and their header stamps should be within a frame period of each other. Take the left camera's raw image, not the rectified one. Twenty pairs or so, at several distances and tilts, the board across the camera's image, give a stable pose.
-3. Run the script on your workstation, with OpenCV and NumPy, giving the chessboard's inner corners and square size:
+1. **Calibrate the camera's intrinsics.** With the ROS 2 exporter publishing the camera (`cameras:`), run the calibrator on your workstation, as for the stereo pair, with the camera's name:
 
    ```sh
-   python3 -I scripts/camera_pose.py --pairs pairs/ \
-       --left vehicles/<vehicle>/priv/calibration/stereo_left.yaml \
-       --camera hq.yaml --board 9x6 --square 0.025 \
+   compose/local/scripts/calibrate.sh --camera hq 9x6 0.025
+   ```
+
+   [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode in the `calibrator` compose service, on `<prefix>/hq/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), decompressed by the service. For a wide-angle lens, choose the calibrator's fisheye model, which gives an `equidistant` calibration. Move the board until the coverage bars fill, then CALIBRATE and COMMIT: the camera's `set_camera_info` stores it as `/data/vision/calibration/camera_hq.yaml`, which the unit then publishes and uses.
+2. **Record pairs on the unit.** Open the unit's IEx shell, `ssh <vehicle>-vision.local`, hold the board still where both cameras see it whole, and run:
+
+   ```elixir
+   VisionCore.Camera.PoseCapture.capture(:hq)
+   ```
+
+   It writes the stereo left camera's raw frame and the camera's frame captured closest to it in time, within half a stereo pair period, as `/data/vision/pose_pairs/hq/left-<n>.png` and `camera-<n>.png`, numbered after the pairs already there, and answers `{:error, :no_matching_pair}` when no two frames come that close. Repeat for twenty poses or so, at several distances and tilts, the board across the camera's image. `directory:` writes elsewhere, as on a workstation without `/data`. Then copy the pairs and the calibrations the unit runs to your workstation:
+
+   ```sh
+   scp -r <vehicle>-vision.local:/data/vision/pose_pairs/hq pairs
+   scp <vehicle>-vision.local:/data/vision/calibration/camera_hq.yaml .
+   scp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml .
+   ```
+
+   `stereo_left.yaml` is in the store only when the stereo pair's calibration was committed through `set_camera_info`; otherwise the stereo unit runs `vehicles/<vehicle>/priv/calibration/stereo_left.yaml`, and the script must take that one.
+3. **Solve the pose** on your workstation, with OpenCV and NumPy (`python3-opencv` on Debian and Ubuntu):
+
+   ```sh
+   python3 -I scripts/camera_pose.py --pairs pairs \
+       --left stereo_left.yaml --camera camera_hq.yaml \
+       --board 9x6 --square 0.025 \
        --output vehicles/<vehicle>/priv/calibration/hq_pose.yaml
    ```
 
-   It leaves out a pair in which it does not find the board in both images, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures.
-4. Point the `:camera` component's `pose:` at the YAML, in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's.
-
-The left calibration must be the one the stereo unit runs: the stored one when you committed it through `set_camera_info`.
+   It leaves out a pair in which it does not find the board in both images, refuses images of several sizes, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures, and recording again helps.
+4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's.
 
 ## Depth
 
