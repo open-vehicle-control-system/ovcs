@@ -4,7 +4,9 @@ defmodule Ovcs1.Vision.Composer do
   Shutter Cameras (IMX296) on Camera 0 (left) and Camera 1 (right), 20 cm
   apart with 6 mm lenses, captured over raw V4L2 through the board's CAMSS
   with the right sensor phase-locked to the left, depth computed on the
-  GPU, and objects detected by YOLOX on the Hexagon NPU.
+  GPU, and objects detected by YOLOX on the Hexagon NPU. A Raspberry Pi HQ
+  Camera (IMX477) on Camera 2 is a camera of its own, `:hq`, captured in
+  colour by `VisionCore.Camera.V4L2Single`.
 
   `priv/firmware/vision/rootfs_overlay/boot/cameras.cfg` names the sensor on
   each of the board's connectors. The cameras deliver 728x544, half the
@@ -49,7 +51,8 @@ defmodule Ovcs1.Vision.Composer do
       ],
       components: [
         stereo_component(),
-        {:qnn_detector, dlc_path: Application.app_dir(:ovcs1, @dlc), score_threshold: 0.4}
+        {:qnn_detector, dlc_path: Application.app_dir(:ovcs1, @dlc), score_threshold: 0.4},
+        hq_camera()
       ],
       exporters: [
         {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [raw_image_max_hz: 35], detections: []}
@@ -65,6 +68,17 @@ defmodule Ovcs1.Vision.Composer do
       "priv/calibration/stereo_right.yaml",
       @dlc
     ]
+  end
+
+  # Half resolution: the models shrink every frame below the half output.
+  defp hq_camera do
+    {:camera,
+     name: :hq,
+     driver: VisionCore.Camera.V4L2Single,
+     csiphy: 2,
+     fps: 35,
+     output: :half,
+     max_exposure_us: 25_000}
   end
 
   defp stereo_component do

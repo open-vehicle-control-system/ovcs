@@ -34,6 +34,18 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
+  test "the HQ camera runs on Camera 2 at 35 fps in half-resolution colour, for driving" do
+    %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
+    camera = Keyword.fetch!(components, :camera)
+
+    assert camera[:name] == :hq
+    assert camera[:driver] == VisionCore.Camera.V4L2Single
+    assert camera[:csiphy] == 2
+    assert camera[:fps] == 35
+    assert camera[:output] == :half
+    assert camera[:max_exposure_us] == 25_000
+  end
+
   test "the calibration gives the rig's 20 cm baseline" do
     dir = Application.app_dir(:ovcs1, "priv/calibration")
 
