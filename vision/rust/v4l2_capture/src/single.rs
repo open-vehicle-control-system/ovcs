@@ -1,7 +1,8 @@
 //! A single colour camera: captures its raw RGGB frames, demosaics them at
 //! the capture's size or each 2x2 cell into one pixel, with grey-world white
 //! balance, runs auto exposure on the green of the RGGB cells as the image
-//! tones it, and writes RGB_FRAME records on stdout. A sensor with a tuning
+//! tones it, and writes RGB_FRAME records on stdout, each frame converted in
+//! bands of rows on as many threads as `threads` sets. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
 //! correction matrix of its colour temperature, the chroma denoise and the
 //! contrast curve; another one its gamma.
@@ -187,6 +188,7 @@ pub fn run(
                 channel_means: settings.awb,
                 green_mean: measure_exposure,
                 row_step: MEASURED_ROW_STEP,
+                threads: settings.threads.unwrap_or(arguments.output.threads()),
             };
             let Developed {
                 rgb,
@@ -249,4 +251,112 @@ fn develop_tuned<'a>(
         denoise: settings.denoise,
     };
     colour::develop(raw, &colour, conversion, buffers)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arguments::Output;
+    use crate::bayer::tests::padded_packed12;
+    use crate::bayer::Layout;
+    use crate::tuning::imx477;
+
+    // Noise over a gradient down and across, so that every row differs.
+    fn samples(width: usize, height: usize) -> Vec<u16> {
+        let mut state = 0x2545_f491u32;
+        (0..width * height)
+            .map(|i| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                let (x, y) = (i % width, i / width);
+                let gradient = (y * 2400 / height + x * 600 / width) as u32;
+                (200 + gradient + state % 900).min(4095) as u16
+            })
+            .collect()
+    }
+
+    // The image and measures of a frame, the means as bits to compare exactly.
+    type Outcome = (Vec<u8>, Option<[u64; 3]>, Option<u64>);
+
+    fn outcome(developed: Developed) -> Outcome {
+        (
+            developed.rgb.to_vec(),
+            developed.channel_means.map(|means| means.map(f64::to_bits)),
+            developed.green_mean.map(f64::to_bits),
+        )
+    }
+
+    #[test]
+    fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
+        let tuned = TunedColour {
+            tuning: &imx477::TUNING,
+            contrast: ContrastTable::new(&imx477::TUNING),
+        };
+        let tone = Tone::with_sample_bits(256, 2.2, 12);
+        let gains = Gains {
+            red: 2.1,
+            blue: 1.6,
+        };
+        // 23, 25, 11 and 3 rows of RGGB cells: none splits evenly in 2, 3 or 4.
+        for (width, height) in [(24, 46), (24, 50), (32, 22), (36, 6)] {
+            let stride = width * 3 / 2 + 6;
+            let raw = padded_packed12(&samples(width, height), width, stride);
+            let frame = RawFrame {
+                raw: &raw,
+                width,
+                height,
+                row_stride: stride,
+                layout: Layout::Packed12,
+            };
+            for output in [Output::Full, Output::Half] {
+                for rotate_180 in [false, true] {
+                    for (denoise, ccm) in [(true, true), (false, true), (true, false)] {
+                        let settings = ColourSettings {
+                            denoise,
+                            ccm,
+                            ..ColourSettings::default()
+                        };
+                        let (mut buffers, mut fallback) =
+                            (colour::Buffers::default(), bayer::Buffers::default());
+                        let mut developed = |threads| {
+                            let conversion = Conversion {
+                                output,
+                                rotate_180,
+                                channel_means: true,
+                                green_mean: true,
+                                row_step: MEASURED_ROW_STEP,
+                                threads,
+                            };
+                            (
+                                outcome(develop_tuned(
+                                    &frame,
+                                    &conversion,
+                                    &settings,
+                                    gains,
+                                    &tuned,
+                                    &mut buffers,
+                                )),
+                                outcome(bayer::develop(
+                                    &frame,
+                                    &tone,
+                                    gains,
+                                    &conversion,
+                                    &mut fallback,
+                                )),
+                            )
+                        };
+                        let one = developed(1);
+                        for threads in [2, 3, 4, 3, 1] {
+                            assert!(
+                                developed(threads) == one,
+                                "{width}x{height} {output:?} rotated {rotate_180} \
+                                 denoise {denoise} ccm {ccm} on {threads} threads"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

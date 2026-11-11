@@ -235,6 +235,7 @@ pub fn develop<'b>(
                 frame.width,
                 2,
                 rotate_180,
+                conversion.threads,
                 bands,
                 |cells, image, demosaic| {
                     let sums = measure(frame, tone, conversion, cells.clone());
@@ -251,6 +252,7 @@ pub fn develop<'b>(
                 frame.width / 2,
                 1,
                 rotate_180,
+                conversion.threads,
                 bands,
                 |cells, image, _| {
                     let sums = measure(frame, tone, conversion, cells.clone());
@@ -702,6 +704,7 @@ pub(crate) mod tests {
             channel_means: true,
             green_mean: true,
             row_step: 1,
+            threads: 1,
         }
     }
 

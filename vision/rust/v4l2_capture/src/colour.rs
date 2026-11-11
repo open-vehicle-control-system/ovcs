@@ -137,6 +137,7 @@ pub fn develop<'b>(
         width,
         cell,
         conversion.rotate_180,
+        conversion.threads,
         bands,
         |cells, image, band| {
             let sums = measure(frame, colour, conversion, cells.clone(), band);
@@ -1325,6 +1326,7 @@ mod tests {
             channel_means: false,
             green_mean: false,
             row_step: 1,
+            threads: 1,
         }
     }
 

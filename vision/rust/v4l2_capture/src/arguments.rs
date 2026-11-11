@@ -53,6 +53,16 @@ impl Output {
             Output::Half => (sensor_width / 2, sensor_height / 2),
         }
     }
+
+    /// The threads converting each frame unless the `threads` setting says
+    /// otherwise: a frame of the capture size takes several cores to keep
+    /// up with the sensor.
+    pub fn threads(self) -> usize {
+        match self {
+            Output::Full => 3,
+            Output::Half => 1,
+        }
+    }
 }
 
 /// The V4L2 names of one camera's capture node and sensor subdevice.
@@ -297,6 +307,14 @@ mod tests {
         assert!(!arguments.settings.awb);
         assert_eq!(arguments.settings.red_gain, 1.8);
         assert_eq!(arguments.settings.capture.black_level, 256);
+    }
+
+    #[test]
+    fn a_single_camera_converts_full_size_frames_on_3_threads_and_half_size_ones_on_1() {
+        assert_eq!(Output::Full.threads(), 3);
+        assert_eq!(Output::Half.threads(), 1);
+        let parsed = parse_single(&single_command_line(&["--threads", "4"])).unwrap();
+        assert_eq!(parsed.settings.threads, Some(4));
     }
 
     #[test]

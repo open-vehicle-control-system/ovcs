@@ -97,7 +97,13 @@ pub struct ColourSettings {
     pub ccm: bool,
     /// The chroma denoise, on sensors with a tuning.
     pub denoise: bool,
+    /// The threads converting each frame, 1 to `MAX_THREADS`; without, as
+    /// many as the output's size takes (`Output::threads`).
+    pub threads: Option<usize>,
 }
+
+/// The most threads a colour camera converts a frame on.
+pub const MAX_THREADS: usize = 8;
 
 impl Default for ColourSettings {
     fn default() -> ColourSettings {
@@ -111,6 +117,7 @@ impl Default for ColourSettings {
             blue_gain: 1.0,
             ccm: true,
             denoise: true,
+            threads: None,
         }
     }
 }
@@ -127,6 +134,10 @@ impl ColourSettings {
             "awb" => self.awb = boolean(value).ok_or_else(invalid)?,
             "ccm" => self.ccm = boolean(value).ok_or_else(invalid)?,
             "denoise" => self.denoise = boolean(value).ok_or_else(invalid)?,
+            "threads" => {
+                let threads = value.parse().ok().filter(|t| (1..=MAX_THREADS).contains(t));
+                self.threads = Some(threads.ok_or_else(invalid)?)
+            }
             "red_gain" => self.red_gain = gain()?,
             "blue_gain" => self.blue_gain = gain()?,
             "black_level" => {
@@ -267,6 +278,26 @@ mod tests {
         assert!(!settings.denoise);
         assert!(settings.apply(b"denoise=sometimes").is_err());
         assert!(!settings.denoise);
+    }
+
+    #[test]
+    fn a_colour_camera_converts_on_as_many_threads_as_set_from_1_to_8() {
+        let mut settings = ColourSettings::default();
+        assert_eq!(settings.threads, None);
+        settings.apply(b"threads=4").unwrap();
+        assert_eq!(settings.threads, Some(4));
+        settings.apply(b"threads=1").unwrap();
+        settings.apply(b"threads=8").unwrap();
+        assert_eq!(settings.threads, Some(8));
+        for refused in [
+            &b"threads=0"[..],
+            b"threads=9",
+            b"threads=2.5",
+            b"threads=many",
+        ] {
+            assert!(settings.apply(refused).is_err());
+        }
+        assert_eq!(settings.threads, Some(8));
     }
 
     #[test]
