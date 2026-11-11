@@ -9,9 +9,9 @@ export const useFrameSize = () => use(FrameSize)
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`
  * gets the stream's channel before it joins, to bind its own events, and `overlay` is drawn over the frame once its
- * size is known (`useFrameSize`).
+ * size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
  */
-export default function Preview({ stream, socket, onChannel, overlay, className = '', frameClassName = '', children }) {
+export default function Preview({ stream, socket, onChannel, overlay, badge, alert = false, className = '', frameClassName = '', children }) {
   const [frame, setFrame] = useState(null)
   const [size, setSize] = useState(null)
   const frameRef = useRef(null)
@@ -64,6 +64,8 @@ export default function Preview({ stream, socket, onChannel, overlay, className 
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
         {frame && size && overlay ? <FrameSize value={size}>{overlay}</FrameSize> : null}
+        {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
+        {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
       </div>
       <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">

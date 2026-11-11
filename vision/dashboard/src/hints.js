@@ -43,24 +43,25 @@ export const HINTS = {
       "How much a pixel’s disparity changes from one depth map to the next, on average. On a still scene " +
       'nothing moves, so it is the matcher’s noise: the lower, the steadier the depth.'
   },
-  sync: {
-    title: 'Synchronisation',
+  timing: {
+    title: 'Timing',
     text:
-      'Median time between the left and right captures of a pair. Matching assumes both images show the same ' +
-      'instant; within 1 ms is healthy. Max is the worst of the recent pairs.'
+      'Which camera starts its capture later, and by how much, as a median over the recent pairs; max is the ' +
+      'worst. Matching assumes both images show the same instant: the unit warns when they drift apart.'
   },
-  alignment: {
-    title: 'Row alignment',
+  rows: {
+    title: 'Rows',
     text:
-      'After rectification a point should sit on the same row in both images. This is how many rows the right ' +
-      'image is off, overall and in four bands from left to right. Past half a row the calibration no longer ' +
-      'fits the cameras and matching suffers.'
+      'After rectification a point sits on the same row in both images. This is how far the right image is from ' +
+      'where the calibration puts it, the automatic row correction included, and the offset left in four bands ' +
+      'from left to right. The unit asks for a new calibration when the rows drift, the correction grows large ' +
+      'or the bands disagree, as when a camera turned.'
   },
-  sharpness: {
-    title: 'Sharpness, right / left',
+  focus: {
+    title: 'Focus',
     text:
-      "The right image’s sharpness divided by the left’s. Near 1 both cameras are focused alike; far from 1 " +
-      'one of them is out of focus compared with the other.'
+      'Which camera is less sharp than the other, and by how much. The unit warns when their focus differs ' +
+      'enough to cost matching; the softer camera shows the warning.'
   },
   colourScale: {
     title: 'Colour scale',

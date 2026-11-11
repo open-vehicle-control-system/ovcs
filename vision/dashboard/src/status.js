@@ -1,4 +1,5 @@
 import { HINTS } from './hints.js'
+import { issueActions, issueWording } from './pairIssues.js'
 
 /**
  * What the dashboard shows of the status snapshot: `{ id, title, value, healthy, tone, detail, hint }` items, `tone`
@@ -25,19 +26,6 @@ export function cameraFigures(camera) {
 /** How many objects the latest detection result holds, none without detection. */
 export function objectFigures(detections) {
   return detections ? [{ label: 'objects', value: String(detections.length), hint: HINTS.objects }] : []
-}
-
-export function syncStatus(sync) {
-  if (!sync || !sync.present) return { id: 'sync', title: 'Synchronisation', value: 'absent', healthy: false }
-  if (sync.offsetMedianMs == null) return { id: 'sync', title: 'Synchronisation', value: 'no pairs', healthy: false }
-  return {
-    id: 'sync',
-    title: 'Synchronisation',
-    value: `${formatNumber(sync.offsetMedianMs, 2)} ms`,
-    healthy: Math.abs(sync.offsetMedianMs) <= 1,
-    detail: `max ${formatNumber(sync.offsetMaxMs, 2)} ms over ${sync.pairs} pairs`,
-    hint: HINTS.sync
-  }
 }
 
 // After the rate, the quality stage's averages: pixels matched, disparity mean and spread, and jitter, the matcher's noise on a still scene.
@@ -75,36 +63,59 @@ function loadStatus(id, title, percent) {
   }
 }
 
-// Rows the right image is offset by; past half a row the calibration no longer fits.
-function alignmentStatus(alignment) {
-  if (!alignment) return { id: 'alignment', title: 'Row alignment', value: '–', healthy: false }
+// A check of the unit's `pair`, as its item: a dash while it has nothing to judge, the unit's level as its health;
+// `describe` gives the value, its short `detail` and the `more` figures of a check that has them.
+function checkItem({ id, title, hint, widest }, check, describe) {
+  const blank = { id, title, widest, hint, value: '–', detail: '', more: '', healthy: false, tone: 'muted', camera: null, issues: [] }
+  if (!check || check.level === 'off') return blank
+  const [value, detail, more] = describe(check)
   return {
-    id: 'alignment',
-    title: 'Row alignment',
-    value: `${formatNumber(alignment.offsetRows)} rows`,
-    healthy: Math.abs(alignment.offsetRows) <= 0.5,
-    hint: HINTS.alignment,
-    detail: `left to right ${alignment.bandOffsetRows.map((rows) => formatNumber(rows)).join(' · ')}`
+    ...blank,
+    value,
+    detail,
+    more,
+    healthy: check.level === 'ok',
+    tone: undefined,
+    gauge: check.gauge,
+    camera: check.camera,
+    issues: check.issues.map(issueWording)
   }
 }
 
-// The right camera's sharpness over the left's; far from 1, their focus differs.
-function sharpnessStatus(sharpness) {
-  if (!sharpness || !sharpness.left) return { id: 'sharpness', title: 'Sharpness, right / left', value: '–', healthy: false }
-  const ratio = sharpness.right / sharpness.left
-  return {
-    id: 'sharpness',
-    title: 'Sharpness, right / left',
-    value: formatNumber(ratio, 2),
-    healthy: ratio >= 0.8 && ratio <= 1.25,
-    hint: HINTS.sharpness,
-    detail: `left ${formatNumber(sharpness.left, 4)} · right ${formatNumber(sharpness.right, 4)}`
-  }
-}
+export const PAIR_CHECKS = [
+  { id: 'timing', title: 'Timing', hint: HINTS.timing, widest: '00.00 ms' },
+  { id: 'rows', title: 'Rows', hint: HINTS.rows, widest: '00.0 rows' },
+  { id: 'focus', title: 'Focus', hint: HINTS.focus, widest: '100 %' }
+]
 
-/** How the two cameras compare: their sync, row alignment and sharpness. */
+/** How the cameras work together, as the unit judges them (`pair`): their timing, rows and focus. */
 export function pairStatus(status) {
-  return [syncStatus(status.sync), alignmentStatus(status.alignment), sharpnessStatus(status.sharpness)]
+  const { timing, rows, focus } = status.pair ?? {}
+  const [timingCheck, rowsCheck, focusCheck] = PAIR_CHECKS
+
+  return [
+    checkItem(timingCheck, timing, (check) => [
+      `${formatNumber(check.offsetMs, 2)} ms`,
+      `${check.later} later · max ${formatNumber(check.maxOffsetMs, 2)}`,
+      `over ${check.pairs} pairs`
+    ]),
+    checkItem(rowsCheck, rows, (check) => [
+      `${formatNumber(check.misalignmentRows)} rows`,
+      `right ${check.direction} · corrected ${formatNumber(check.correctionRows)}`,
+      `left to right ${check.bandOffsetRows.map((band) => formatNumber(band)).join(' · ')}`
+    ]),
+    checkItem(focusCheck, focus, (check) => [
+      `${check.differencePercent} %`,
+      `${check.softer} softer`,
+      `left ${formatNumber(check.left, 4)} · right ${formatNumber(check.right, 4)}`
+    ])
+  ]
+}
+
+/** What the unit found wrong with one camera: the `actions` it calls for and their full `wording`. */
+export function cameraIssues(camera) {
+  const issues = camera?.issues ?? []
+  return { actions: issueActions(issues), wording: issues.map(issueWording) }
 }
 
 // The ROS 2 exporter's status, lower-cased like the other values; none on a unit without a ROS 2 exporter.

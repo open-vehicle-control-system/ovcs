@@ -9,7 +9,7 @@ const WARNING_ICON = (
 )
 
 // What marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader.
-const WARNING = (
+export const WARNING = (
   <>
     {WARNING_ICON}
     <span className="sr-only">, unhealthy</span>
@@ -27,7 +27,7 @@ export function HealthValue({ tone, children }) {
 }
 
 /** `children` in a box as wide as `widest` in the same font, so what follows keeps its place as the value changes. */
-function Widest({ widest, align, children }) {
+export function Widest({ widest, align, children }) {
   return (
     <span
       data-widest={widest}
