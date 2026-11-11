@@ -144,17 +144,22 @@ pub struct RawFrame<'a> {
 }
 
 impl RawFrame<'_> {
-    /// Calls `cell_row` with the samples of every `step`-th row of RGGB
-    /// cells: its top row's, then its bottom row's.
-    fn cell_rows(&self, step: usize, mut cell_row: impl FnMut(&[u16], &[u16])) {
+    /// Calls `cell_row` with the index of the top row of every `step`-th
+    /// row of RGGB cells, then its top row's samples and its bottom row's.
+    pub(crate) fn cell_rows(&self, step: usize, mut cell_row: impl FnMut(usize, &[u16], &[u16])) {
         let row_bytes = self.layout.row_bytes(self.width);
         let (mut top, mut bottom) = (vec![0u16; self.width], vec![0u16; self.width]);
         let rows = &self.raw[..self.row_stride * self.height];
-        for pair in rows.chunks_exact(self.row_stride * 2).step_by(step.max(1)) {
+        let step = step.max(1);
+        for (cell_row_index, pair) in rows
+            .chunks_exact(self.row_stride * 2)
+            .enumerate()
+            .step_by(step)
+        {
             let (top_row, bottom_row) = pair.split_at(self.row_stride);
             samples(&top_row[..row_bytes], self.layout, &mut top);
             samples(&bottom_row[..row_bytes], self.layout, &mut bottom);
-            cell_row(&top, &bottom);
+            cell_row(2 * cell_row_index, &top, &bottom);
         }
     }
 }
@@ -166,7 +171,7 @@ impl RawFrame<'_> {
 pub fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
     let (red_q12, blue_q12) = (q12(gains.red), q12(gains.blue));
     let mut rgb = Vec::with_capacity((frame.width / 2) * (frame.height / 2) * 3);
-    frame.cell_rows(1, |top, bottom| {
+    frame.cell_rows(1, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
             rgb.extend_from_slice(&[
@@ -198,10 +203,6 @@ pub fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -
 /// White balance by `gains`, then the tone, then interpolation: one lookup
 /// per sample instead of three per pixel, invisible between neighbours.
 pub fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
-    let (width, height) = (frame.width, frame.height);
-    if width < 2 || height < 2 {
-        return Vec::new();
-    }
     let scaled_table = |gain: f64| -> Vec<u8> {
         let gain_q12 = q12(gain);
         (0..tone.table.len())
@@ -214,37 +215,87 @@ pub fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -
         green: &tone.table,
         blue: &blue,
     };
+    demosaic_full(
+        frame,
+        rotate_180,
+        |row, samples, toned: &mut [u8]| tables.tone_row(samples, row.is_multiple_of(2), toned),
+        |rgb, out| out.copy_from_slice(rgb),
+    )
+}
+
+/// A value demosaicing interpolates.
+pub(crate) trait Sample: Copy + Default + Into<u32> {
+    /// The value of a mean of values of this type.
+    fn from_mean(mean: u32) -> Self;
+}
+
+impl Sample for u8 {
+    fn from_mean(mean: u32) -> u8 {
+        mean as u8
+    }
+}
+
+impl Sample for u16 {
+    fn from_mean(mean: u32) -> u16 {
+        mean as u16
+    }
+}
+
+/// Demosaics `frame` at its own size as `rgb_full` does, on the values
+/// `develop_row(row, samples, values)` gives each row's samples, and turns
+/// each row of red, green and blue values into 8 bits with
+/// `render_row(values, out)`.
+pub(crate) fn demosaic_full<V: Sample>(
+    frame: &RawFrame,
+    rotate_180: bool,
+    mut develop_row: impl FnMut(usize, &[u16], &mut [V]),
+    mut render_row: impl FnMut(&[V], &mut [u8]),
+) -> Vec<u8> {
+    let (width, height) = (frame.width, frame.height);
+    if width < 2 || height < 2 {
+        return Vec::new();
+    }
     let row_bytes = frame.layout.row_bytes(width);
     let mut row_samples = vec![0u16; width];
-    // Rows y - 1, y and y + 1, toned, at index row % 3.
-    let mut toned: [Vec<u8>; 3] = std::array::from_fn(|_| vec![0u8; width + 2]);
-    let mut tone_row = |row: usize, toned: &mut [Vec<u8>; 3]| {
+    // Rows y - 1, y and y + 1, developed, at index row % 3, each with the
+    // nearest value of the same colour beyond each end.
+    let mut developed: [Vec<V>; 3] = std::array::from_fn(|_| vec![V::default(); width + 2]);
+    let mut develop = |row: usize, developed: &mut [Vec<V>; 3]| {
         let start = row * frame.row_stride;
         samples(
             &frame.raw[start..start + row_bytes],
             frame.layout,
             &mut row_samples,
         );
-        tables.tone_row(&row_samples, row.is_multiple_of(2), &mut toned[row % 3]);
+        let values = &mut developed[row % 3];
+        develop_row(row, &row_samples, &mut values[1..=width]);
+        values[0] = values[2];
+        values[width + 1] = values[width - 1];
     };
-    tone_row(0, &mut toned);
-    tone_row(1, &mut toned);
+    develop(0, &mut developed);
+    develop(1, &mut developed);
     let pixel_row = width * 3;
+    let mut interpolated = vec![V::default(); pixel_row];
     let mut rgb = vec![0u8; pixel_row * height];
     for y in 0..height {
         if y >= 1 && y + 1 < height {
-            tone_row(y + 1, &mut toned);
+            develop(y + 1, &mut developed);
         }
         let up = if y == 0 { 1 } else { y - 1 };
         let down = if y + 1 == height { y - 1 } else { y + 1 };
         let target = if rotate_180 { height - 1 - y } else { y };
         let out = &mut rgb[target * pixel_row..(target + 1) * pixel_row];
-        let rows = (&toned[up % 3][..], &toned[y % 3][..], &toned[down % 3][..]);
+        let rows = (
+            &developed[up % 3][..],
+            &developed[y % 3][..],
+            &developed[down % 3][..],
+        );
         if y.is_multiple_of(2) {
-            interpolate_row::<true>(rows, out);
+            interpolate_row::<true, V>(rows, &mut interpolated);
         } else {
-            interpolate_row::<false>(rows, out);
+            interpolate_row::<false, V>(rows, &mut interpolated);
         }
+        render_row(&interpolated, out);
         if rotate_180 {
             out.reverse();
             for pixel in out.chunks_exact_mut(3) {
@@ -263,10 +314,8 @@ struct ChannelTables<'a> {
 }
 
 impl ChannelTables<'_> {
-    /// Tones a row of samples into `toned[1..=width]`, through red and green
-    /// on a row of red cells, green and blue otherwise, and repeats the
-    /// second and the second-last sample, its edges' nearest of the same
-    /// colour, beyond each end.
+    /// Tones a row of samples into `toned`, through red and green on a row
+    /// of red cells, green and blue otherwise.
     fn tone_row(&self, row: &[u16], red_row: bool, toned: &mut [u8]) {
         let (even, odd) = if red_row {
             (self.red, self.green)
@@ -274,37 +323,39 @@ impl ChannelTables<'_> {
             (self.green, self.blue)
         };
         let last = even.len() - 1;
-        let width = row.len();
-        for (pair, out) in row
-            .chunks_exact(2)
-            .zip(toned[1..=width].chunks_exact_mut(2))
-        {
+        for (pair, out) in row.chunks_exact(2).zip(toned.chunks_exact_mut(2)) {
             out[0] = even[usize::from(pair[0]).min(last)];
             out[1] = odd[usize::from(pair[1]).min(last)];
         }
-        toned[0] = toned[2];
-        toned[width + 1] = toned[width - 1];
     }
 }
 
-/// Interpolates one row of pixels from the toned rows above it, its own and
-/// below it, each holding one sample beyond each edge: a row of red and
-/// green samples when `RED_ROW`, of green and blue otherwise.
-fn interpolate_row<const RED_ROW: bool>((up, centre, down): (&[u8], &[u8], &[u8]), out: &mut [u8]) {
+/// Interpolates one row of pixels, red, green and blue each, from the rows
+/// of values above it, its own and below it, each holding one value beyond
+/// each edge: a row of red and green samples when `RED_ROW`, of green and
+/// blue otherwise.
+fn interpolate_row<const RED_ROW: bool, V: Sample>(
+    (up, centre, down): (&[V], &[V], &[V]),
+    out: &mut [V],
+) {
     let (colour, other) = if RED_ROW { (0, 2) } else { (2, 0) };
-    let mean2 = |a: u8, b: u8| ((u16::from(a) + u16::from(b) + 1) >> 1) as u8;
-    let mean4 = |a: u8, b: u8, c: u8, d: u8| {
-        ((u16::from(a) + u16::from(b) + u16::from(c) + u16::from(d) + 2) >> 2) as u8
+    let at = |row: &[V], i: usize| -> u32 { row[i].into() };
+    let mean2 = |a: u32, b: u32| V::from_mean((a + b + 1) >> 1);
+    let mean4 = |a: u32, b: u32, c: u32, d: u32| V::from_mean((a + b + c + d + 2) >> 2);
+    let colour_site = |i: usize, out: &mut [V]| {
+        out[colour] = centre[i];
+        out[1] = mean4(at(centre, i - 1), at(centre, i + 1), at(up, i), at(down, i));
+        out[other] = mean4(
+            at(up, i - 1),
+            at(up, i + 1),
+            at(down, i - 1),
+            at(down, i + 1),
+        );
     };
-    let colour_site = |i: usize, pixel: &mut [u8]| {
-        pixel[colour] = centre[i];
-        pixel[1] = mean4(centre[i - 1], centre[i + 1], up[i], down[i]);
-        pixel[other] = mean4(up[i - 1], up[i + 1], down[i - 1], down[i + 1]);
-    };
-    let green_site = |i: usize, pixel: &mut [u8]| {
-        pixel[1] = centre[i];
-        pixel[colour] = mean2(centre[i - 1], centre[i + 1]);
-        pixel[other] = mean2(up[i], down[i]);
+    let green_site = |i: usize, out: &mut [V]| {
+        out[1] = centre[i];
+        out[colour] = mean2(at(centre, i - 1), at(centre, i + 1));
+        out[other] = mean2(at(up, i), at(down, i));
     };
     for (pair, pixels) in out.chunks_exact_mut(6).enumerate() {
         let i = 2 * pair + 1;
@@ -327,7 +378,7 @@ fn q12(gain: f64) -> u32 {
 /// RGGB cells of `frame`: each cell's two greens averaged, through `tone`.
 pub fn toned_green_mean(frame: &RawFrame, tone: &Tone, row_step: usize) -> f64 {
     let (mut sum, mut cells) = (0u64, 0u64);
-    frame.cell_rows(row_step, |top, bottom| {
+    frame.cell_rows(row_step, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
             sum += u64::from(tone.grey(green as u16));
@@ -343,7 +394,7 @@ pub fn channel_means(frame: &RawFrame, black_level: u16, row_step: usize) -> [f6
     let mut sums = [0u64; 3];
     let mut cells = 0u64;
     let signal = |sample: u16| u64::from(sample.saturating_sub(black_level));
-    frame.cell_rows(row_step, |top, bottom| {
+    frame.cell_rows(row_step, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             sums[0] += signal(top_pair[0]);
             sums[1] += signal(top_pair[1]) + signal(bottom_pair[0]);
@@ -360,7 +411,7 @@ pub fn channel_means(frame: &RawFrame, black_level: u16, row_step: usize) -> [f6
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     fn little_endian_samples(samples: &[u16]) -> Vec<u8> {
@@ -484,7 +535,7 @@ mod tests {
     }
 
     // Two samples to three bytes: their high 8 bits, then their low 4 bits, the first's lowest.
-    fn packed12(samples: &[u16]) -> Vec<u8> {
+    pub(crate) fn packed12(samples: &[u16]) -> Vec<u8> {
         samples
             .chunks_exact(2)
             .flat_map(|two| {
@@ -587,7 +638,7 @@ mod tests {
 
     // Rows of `samples`, `width` each, packed as 12-bit and padded with 0xff
     // to `row_stride` bytes.
-    fn padded_packed12(samples: &[u16], width: usize, row_stride: usize) -> Vec<u8> {
+    pub(crate) fn padded_packed12(samples: &[u16], width: usize, row_stride: usize) -> Vec<u8> {
         samples
             .chunks_exact(width)
             .flat_map(|row| {
