@@ -13,7 +13,8 @@ fn main() {
         .clang_arg(format!("-I{include_dir}"))
         .header_contents(
             "wrapper.h",
-            "#include <QnnInterface.h>\n#include <System/QnnSystemInterface.h>\n",
+            "#include <QnnInterface.h>\n#include <HTP/QnnHtpProfile.h>\n\
+             #include <System/QnnSystemInterface.h>\n",
         )
         .allowlist_type("Qnn.*")
         .allowlist_var("QNN_.*")

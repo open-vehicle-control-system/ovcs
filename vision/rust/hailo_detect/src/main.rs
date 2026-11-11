@@ -3,8 +3,9 @@
 //!
 //! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
 //! Response (stdout): u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
-//! in the caller's pixel coordinates, or a LOG record (`framing::log_record`). Scalars are
-//! little-endian.
+//! in the caller's pixel coordinates, then, when the frame was inferred, a u32 inference time
+//! in µs (the input's write and the output's read); or a LOG record (`framing::log_record`).
+//! Scalars are little-endian.
 
 #[cfg(feature = "device")]
 mod hailo;
@@ -65,7 +66,7 @@ fn main() {
 fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
     use letterbox::{letterbox_for, letterbox_into};
     use outcome::{reply_for, FrameOutcome, Reply};
-    use protocol::{detections_record, parse_request};
+    use protocol::{detections_record, inference_micros, parse_request};
 
     let mut detector = match hailo::Detector::open(hef_path) {
         Ok(detector) => detector,
@@ -96,6 +97,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
         };
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, model_size);
+        let mut inference_time = None;
         let outcome = match request.check() {
             Err(message) => {
                 log(writer, LogLevel::Warning, &message);
@@ -113,7 +115,10 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                 );
 
                 match detector.infer(&model_input, &mut output) {
-                    Ok(()) => FrameOutcome::Inferred,
+                    Ok(elapsed) => {
+                        inference_time = Some(inference_micros(elapsed.as_micros()));
+                        FrameOutcome::Inferred
+                    }
                     Err(failure) => {
                         log(writer, LogLevel::Error, &failure.message);
                         failure.outcome
@@ -126,7 +131,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             // The Elixir side holds per-sequence state until it gets an answer.
             Reply::Empty => {
                 if writer
-                    .write_record(&detections_record(request.sequence, &[]))
+                    .write_record(&detections_record(request.sequence, &[], None))
                     .is_err()
                 {
                     break;
@@ -139,7 +144,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                     LogLevel::Warning,
                     "vstreams may hold a frame in flight; exiting for a restart",
                 );
-                let _ = writer.write_record(&detections_record(request.sequence, &[]));
+                let _ = writer.write_record(&detections_record(request.sequence, &[], None));
                 return 1;
             }
         }
@@ -165,7 +170,11 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             score_threshold,
         );
         if writer
-            .write_record(&detections_record(request.sequence, &detections))
+            .write_record(&detections_record(
+                request.sequence,
+                &detections,
+                inference_time,
+            ))
             .is_err()
         {
             break;

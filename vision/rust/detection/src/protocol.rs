@@ -1,4 +1,8 @@
 //! Port records: a detect request in, a detections record out. Scalars are little-endian.
+//!
+//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 BGR), pixels.
+//! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
+//! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 
 const TAG_DETECT: u8 = 1;
 const TAG_DETECTIONS: u8 = 1;
@@ -63,8 +67,15 @@ impl Request<'_> {
     }
 }
 
-pub fn detections_record(sequence: u32, detections: &[Detection]) -> Vec<u8> {
-    let mut record = Vec::with_capacity(1 + 4 + 2 + detections.len() * DETECTION_BYTES);
+/// The detections record for `sequence`. `inference_micros`, the accelerator's time on
+/// the frame, follows the last detection when the frame was inferred; a reader that stops
+/// after `count` detections ignores it.
+pub fn detections_record(
+    sequence: u32,
+    detections: &[Detection],
+    inference_micros: Option<u32>,
+) -> Vec<u8> {
+    let mut record = Vec::with_capacity(1 + 4 + 2 + detections.len() * DETECTION_BYTES + 4);
     record.push(TAG_DETECTIONS);
     record.extend_from_slice(&sequence.to_le_bytes());
     record.extend_from_slice(&(detections.len() as u16).to_le_bytes());
@@ -80,7 +91,15 @@ pub fn detections_record(sequence: u32, detections: &[Detection]) -> Vec<u8> {
             record.extend_from_slice(&field.to_le_bytes());
         }
     }
+    if let Some(micros) = inference_micros {
+        record.extend_from_slice(&micros.to_le_bytes());
+    }
     record
+}
+
+/// `micros` as a record's u32, saturated.
+pub fn inference_micros(micros: u128) -> u32 {
+    u32::try_from(micros).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -153,7 +172,7 @@ mod tests {
             x1: 3.0,
             y1: 4.0,
         };
-        let got = detections_record(0x0a0b0c0d, &[detection, detection]);
+        let got = detections_record(0x0a0b0c0d, &[detection, detection], None);
         let mut want = vec![1, 0x0d, 0x0c, 0x0b, 0x0a, 2, 0];
         for _ in 0..2 {
             want.extend_from_slice(&[0x02, 0x01]);
@@ -167,6 +186,32 @@ mod tests {
 
     #[test]
     fn empty_detections_record() {
-        assert_eq!(detections_record(5, &[]), [1, 5, 0, 0, 0, 0, 0]);
+        assert_eq!(detections_record(5, &[], None), [1, 5, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn inference_time_follows_the_detections() {
+        let detection = Detection {
+            class_id: 3,
+            score: 0.5,
+            x0: 1.0,
+            y0: 2.0,
+            x1: 3.0,
+            y1: 4.0,
+        };
+        let without = detections_record(5, &[detection], None);
+        let got = detections_record(5, &[detection], Some(0x01020304));
+        assert_eq!(got[..without.len()], without[..]);
+        assert_eq!(got[without.len()..], [0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(
+            detections_record(5, &[], Some(7)),
+            [1, 5, 0, 0, 0, 0, 0, 7, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn inference_micros_saturates() {
+        assert_eq!(inference_micros(12_345), 12_345);
+        assert_eq!(inference_micros(u128::from(u32::MAX) + 1), u32::MAX);
     }
 }

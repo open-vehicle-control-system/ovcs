@@ -4,6 +4,7 @@
 use std::ffi::CString;
 use std::mem::MaybeUninit;
 use std::ptr;
+use std::time::{Duration, Instant};
 
 use crate::outcome::FrameOutcome;
 
@@ -233,8 +234,12 @@ impl Detector {
     /// that succeeds (`WriteFailed { streams_cleared: true }`). A failed read leaves a
     /// frame that may still be in flight on the device and could answer the next read,
     /// so `ReadFailed` streams are not reusable and the `Detector` must be dropped.
-    pub fn infer(&mut self, input: &[u8], output: &mut [f32]) -> Result<(), InferFailure> {
+    ///
+    /// Returns the time from the write to the end of the read: the device's work and
+    /// the PCIe transfers.
+    pub fn infer(&mut self, input: &[u8], output: &mut [f32]) -> Result<Duration, InferFailure> {
         assert!(std::mem::size_of_val(output) >= self.output_bytes);
+        let started = Instant::now();
         // SAFETY: both buffers outlive the calls and are at least as long as the sizes passed.
         let written = unsafe {
             check(
@@ -272,7 +277,8 @@ impl Detector {
         .map_err(|message| InferFailure {
             message,
             outcome: FrameOutcome::ReadFailed,
-        })
+        })?;
+        Ok(started.elapsed())
     }
 
     fn clear(&mut self) -> Result<(), String> {
