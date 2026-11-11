@@ -3,7 +3,7 @@ defmodule VisionCore.Status do
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the Hailo detector, the depth
   rate, each exporter's status (`VisionCore.Exporters.list/1`), the CPU's
-  busy share (`VisionCore.SystemLoad`) and the share of time the stereo
+  busy share (`OvcsVehicle.SystemLoad`) and the share of time the stereo
   pipeline spent in its compiled Nx or native segments
   (`Pair` `:device_ms`). Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
@@ -30,7 +30,7 @@ defmodule VisionCore.Status do
   alias VisionCore.{Exporter, Exporters, Outputs}
   alias VisionCore.Stereo.Pairer
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
-  alias VisionCore.SystemLoad
+  alias OvcsVehicle.SystemLoad
   alias VisionCore.Detection.Backend.Hailo
   alias VisionCore.Stereo.Pair
   alias VisionCore.Camera.Frame

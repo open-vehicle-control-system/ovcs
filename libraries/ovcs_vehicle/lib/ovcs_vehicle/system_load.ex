@@ -1,5 +1,8 @@
-defmodule VisionCore.SystemLoad do
-  @moduledoc "The CPU's busy share, from Linux's `/proc/stat`."
+defmodule OvcsVehicle.SystemLoad do
+  @moduledoc """
+  A board's load, from Linux: the CPU's busy share, from `/proc/stat`, and
+  the load averages, from `/proc/loadavg`.
+  """
 
   @doc """
   The CPU's `{busy, total}` time in clock ticks since boot, over all cores,
@@ -32,4 +35,13 @@ defmodule VisionCore.SystemLoad do
       do: 100 * (later_busy - earlier_busy) / (later_total - earlier_total)
 
   def cpu_percent(_earlier, _later), do: nil
+
+  @doc "The three load averages leading a `/proc/loadavg` line."
+  @spec parse_loadavg(String.t()) :: [float()] | nil
+  def parse_loadavg(loadavg) do
+    case String.split(loadavg) do
+      [one, five, fifteen | _rest] -> Enum.map([one, five, fifteen], &String.to_float/1)
+      _other -> nil
+    end
+  end
 end

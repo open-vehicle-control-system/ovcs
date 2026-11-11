@@ -64,6 +64,36 @@ defmodule OvcsVehicle.BoardStatusTest do
     assert %{synchronized: false} = current([], fn -> false end)
   end
 
+  test "measures the CPU's busy share over a short sample, and reads the load averages" do
+    samples = :counters.new(1, [])
+
+    status =
+      BoardStatus.current(
+        getifaddrs: fn -> {:ok, []} end,
+        cpu_times: fn ->
+          :counters.add(samples, 1, 1)
+          if :counters.get(samples, 1) == 1, do: {100, 1_000}, else: {150, 1_200}
+        end,
+        sleep: fn _ms -> :ok end,
+        loadavg: fn -> "0.52 0.48 0.40 1/123 4567\n" end
+      )
+
+    assert status.cpu_percent == 25.0
+    assert status.load_average == [0.52, 0.48, 0.4]
+  end
+
+  test "reports neither where /proc cannot be read" do
+    status =
+      BoardStatus.current(
+        getifaddrs: fn -> {:ok, []} end,
+        cpu_times: fn -> nil end,
+        sleep: fn _ms -> :ok end,
+        loadavg: fn -> nil end
+      )
+
+    assert {status.cpu_percent, status.load_average} == {nil, nil}
+  end
+
   test "reports no synchronization where NervesTime is missing, as on a host" do
     assert BoardStatus.current(getifaddrs: fn -> {:ok, []} end).synchronized == nil
   end

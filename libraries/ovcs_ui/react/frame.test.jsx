@@ -16,6 +16,7 @@ import {
   OvcsTopBar,
   boardClock,
   boardInterfaces,
+  boardLoad,
   firmwareFacts,
   useOvcsBoard,
   useOvcsConnection,
@@ -146,6 +147,18 @@ describe('boardInterfaces', () => {
   })
 })
 
+describe('boardLoad', () => {
+  test("rounds the CPU's busy share, a warning from 90 %, and lists the load averages as uptime does", () => {
+    expect(boardLoad({ cpuPercent: 23.4, loadAverage: [0.52, 0.48, 0.4] })).toEqual({ cpu: '23 %', tone: 'ok', load: '0.52, 0.48, 0.40' })
+    expect(boardLoad({ cpuPercent: 94.6, loadAverage: [3.1, 2, 1.25] })).toEqual({ cpu: '95 %', tone: 'warn', load: '3.10, 2.00, 1.25' })
+  })
+
+  test('leaves out what the board does not report', () => {
+    expect(boardLoad({ cpuPercent: null, loadAverage: null })).toEqual({ cpu: null, tone: null, load: null })
+    expect(boardLoad(null)).toBeNull()
+  })
+})
+
 describe('boardClock', () => {
   const now = Date.parse('2026-11-11T15:00:00Z')
 
@@ -170,9 +183,11 @@ describe('boardClock', () => {
 })
 
 describe('OvcsTopBar with a board', () => {
-  test("lists the board's interfaces and its clock, an unsynchronized one as a warning", () => {
+  test("lists the board's interfaces, its load and its clock, an unsynchronized one as a warning", () => {
     const board = {
       interfaces: [{ name: 'eth0', addresses: ['192.168.10.232'] }],
+      cpuPercent: 23.4,
+      loadAverage: [0.52, 0.48, 0.4],
       offsetMs: Date.parse('1970-01-01T00:03:05Z') - Date.now(),
       clockSynchronized: false
     }
@@ -186,6 +201,18 @@ describe('OvcsTopBar with a board', () => {
     expect(within(facts).getByText('192.168.10.232').previousSibling.textContent).toBe('eth0')
     expect(within(facts).getByText(/^1970-01-01 00:03:0\d UTC$/)).toBeTruthy()
     expect(within(facts).getByText('not synchronized').classList).toContain('ovcs-status--warn')
+    expect(within(facts).getByText('23 %').closest('div').firstChild.textContent).toBe('CPU')
+    expect(within(facts).getByText('0.52, 0.48, 0.40').closest('div').firstChild.textContent).toBe('Load')
+  })
+
+  test('sets the board apart from the firmware', () => {
+    const board = { interfaces: [], cpuPercent: 10, loadAverage: [0.1, 0.1, 0.1], offsetMs: 0, clockSynchronized: true }
+    render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar board={board} firmware={{ revision: 'ce99e251', target: 'host' }} />
+      </OvcsShell>
+    )
+    expect(screen.getByLabelText('Firmware').classList).toContain('border-l')
   })
 })
 

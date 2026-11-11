@@ -85,10 +85,6 @@ export const HINTS = {
     title: 'Hailo',
     text: 'The Hailo accelerator running object detection. Absent when the vehicle configures none.'
   },
-  cpu: {
-    title: 'CPU',
-    text: 'Busy share of all processor cores over the last second.'
-  },
   objects: {
     title: 'Objects',
     text:

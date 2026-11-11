@@ -138,7 +138,6 @@ export function unitStatus(status) {
       tone: status.hailo === 'absent' ? 'muted' : undefined,
       hint: HINTS.hailo
     },
-    { ...loadStatus('cpu', 'CPU', status.cpuPercent), hint: HINTS.cpu },
     { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]
 }

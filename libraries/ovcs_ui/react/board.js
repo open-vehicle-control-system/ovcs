@@ -35,6 +35,21 @@ export function boardInterfaces(board) {
 }
 
 /**
+ * The board's load as the top bar shows it: its CPU's busy share, rounded, with its `tone`, a warning from 90 %, and
+ * its 1, 5 and 15 minute load averages as `uptime` prints them; each `null` where the board does not report it.
+ */
+export function boardLoad(board) {
+  if (!board) return null
+  const { cpuPercent, loadAverage } = board
+
+  return {
+    cpu: cpuPercent == null ? null : `${Math.round(cpuPercent)} %`,
+    tone: cpuPercent == null ? null : cpuPercent >= 90 ? 'warn' : 'ok',
+    load: loadAverage ? loadAverage.map((average) => average.toFixed(2)).join(', ') : null
+  }
+}
+
+/**
  * The board's clock at `nowMs`, in UTC: `time`, dated when it is not synchronized, as a board whose clock never set
  * reads 1970, and its synchronization, `state` with its `tone`, both `null` on a host, which reports none.
  */

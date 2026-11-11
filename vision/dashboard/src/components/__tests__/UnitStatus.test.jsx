@@ -58,10 +58,10 @@ describe('UnitStatus and the pair status', () => {
     expect(card('ros2')).toBeNull()
   })
 
-  it('shows the CPU usage, and the stereo stages\' busy time as the stereo load, explained by its hint', () => {
+  it('leaves the CPU usage to the top bar, and shows the stereo stages\' busy time as the stereo load, explained by its hint', () => {
     show(snapshot)
 
-    expect(card('cpu').textContent).toContain('37 %')
+    expect(card('cpu')).toBeNull()
     expect(card('segment').textContent).toContain('Stereo load')
     expect(card('segment').textContent).not.toContain('GPU')
     expect(card('segment').textContent).toContain('82 %')
@@ -102,12 +102,6 @@ describe('UnitStatus and the pair status', () => {
     expect(card('sharpness').querySelector('.ovcs-status--ok')).not.toBeNull()
   })
 
-  it('shows an unknown CPU usage as a dash', () => {
-    show({ ...snapshot, cpuPercent: null })
-
-    expect(card('cpu').textContent).toContain('–')
-  })
-
   it('marks an unhealthy value beyond its colour: a warning sign, and words for a screen reader', () => {
     show(snapshot)
 
@@ -115,7 +109,7 @@ describe('UnitStatus and the pair status', () => {
       expect(card(id).querySelector('[data-warning]')).not.toBeNull()
       expect(card(id).textContent).toContain(', unhealthy')
     }
-    for (const id of ['hailo', 'cpu', 'segment', 'sync', 'left']) {
+    for (const id of ['hailo', 'segment', 'sync', 'left']) {
       expect(card(id).querySelector('[data-warning]')).toBeNull()
       expect(card(id).textContent).not.toContain('unhealthy')
     }
@@ -127,8 +121,7 @@ describe('UnitStatus and the pair status', () => {
     const widest = (id) => card(id).querySelector('[data-widest]').dataset.widest
     expect(widest('ros2')).toBe('not answering')
     expect(widest('hailo')).toBe('running')
-    expect(widest('cpu')).toBe('100 %')
     expect(widest('segment')).toBe('100 %')
-    for (const id of ['ros2', 'hailo', 'cpu', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
+    for (const id of ['ros2', 'hailo', 'segment']) expect(card(id).querySelector('[data-warning-slot]')).not.toBeNull()
   })
 })
