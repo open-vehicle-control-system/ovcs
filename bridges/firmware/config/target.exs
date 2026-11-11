@@ -61,16 +61,13 @@ config :ros_bridge, zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.
 # Nothing is published to ROS before NTP has set the clock (`Ros2Zenoh.Client`).
 config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}
 
-# The Zenoh router is the vehicle's compute node, which also serves the
-# vehicle network's time (`ntp` in compose/compute): every board then
-# stamps with the clock Nav2 compares against, with or without internet.
-ntp_pool = ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
-
+# `NTP_SERVERS`, comma-separated, from the vehicle's `.env.exs`: a vehicle with
+# a compute node lists it first (`ntp` in compose/compute).
 config :nerves_time,
   servers:
-    (case System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1") do
-       "127.0.0.1" -> ntp_pool
-       router -> [router | ntp_pool]
+    (case System.get_env("NTP_SERVERS", "") |> String.split(",", trim: true) do
+       [] -> ["0.pool.ntp.org", "1.pool.ntp.org", "2.pool.ntp.org", "3.pool.ntp.org"]
+       servers -> Enum.map(servers, &String.trim/1)
      end)
 
 # Override nerves_pack's default usb0+eth0 to optionally add wlan0

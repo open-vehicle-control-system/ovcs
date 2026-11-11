@@ -40,7 +40,7 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 
 ## Build
 
-1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge or a vision unit, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of the vehicle.
+1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge or a vision unit, `ZENOH_ENDPOINT_IP`. `NTP_SERVERS`, comma-separated, sets the boards' time servers: the public pools when unset, the compute node first on a vehicle that has one. The file is gitignored and shared by every firmware of the vehicle.
 2. **Generate stable SSH host keys**, once per vehicle ([below](#stable-ssh-host-keys-across-burns)):
 
    ```sh
