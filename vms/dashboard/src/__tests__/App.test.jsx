@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import App from '../App.jsx'
-import { fetchBlocks, fetchFirmware, fetchPages, fetchVehicle } from '../services/api.js'
+import { fetchBlocks, fetchBoard, fetchFirmware, fetchPages, fetchVehicle } from '../services/api.js'
 import { useVehicle } from '../stores/vehicle.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useConnection } from '../stores/connection.js'
@@ -43,6 +43,8 @@ const visit = (path) => {
   useNavigation.setState({ path })
 }
 
+const board = { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true }
+
 describe('App', () => {
   beforeEach(() => {
     vi.resetAllMocks()
@@ -50,6 +52,7 @@ describe('App', () => {
     fetchPages.mockResolvedValue(pages)
     fetchBlocks.mockResolvedValue([])
     fetchFirmware.mockResolvedValue(firmware)
+    fetchBoard.mockResolvedValue(board)
     useVehicle.setState({ vehicle: null, pages: null, error: null })
     useConnection.setState({ state: 'connecting' })
     document.title = 'OVCS VMS'
@@ -62,14 +65,16 @@ describe('App', () => {
     await screen.findByRole('heading', { level: 2, name: 'Status' })
   })
 
-  it('reads the firmware once connected, for the top bar and the browser title', async () => {
+  it('reads the firmware and the board once connected, for the top bar and the browser title', async () => {
     render(<App />)
     await screen.findByRole('heading', { level: 2, name: 'Status' })
     expect(fetchFirmware).not.toHaveBeenCalled()
+    expect(fetchBoard).not.toHaveBeenCalled()
 
     act(() => useConnection.setState({ state: 'connected' }))
     const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
     expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
+    expect(await within(topBar).findByText('192.168.1.20')).toBeTruthy()
     expect(document.title).toBe('OVCS VMS · OVCS Mini')
   })
 

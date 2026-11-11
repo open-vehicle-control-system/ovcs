@@ -37,7 +37,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | Component | Props |
   |---|---|
   | `OvcsShell` | `product`: holds an `OvcsTopBar`, an `OvcsShellBody` and an `OvcsBottomBar`, which name the product |
-  | `OvcsTopBar` | `firmware`: the sticky top bar, the same on every dashboard: "OVCS" and the shell's product, its `children`, then at its end the firmware's Version (its commit), System (its Nerves system, or target) and Vehicle, each after its label, and the `OvcsThemeSwitch`, last; it titles the browser tab `OVCS <product> · <vehicle>` |
+  | `OvcsTopBar` | `firmware`, `board`: the sticky top bar, the same on every dashboard: "OVCS" and the shell's product, its `children`, then at its end the board's interfaces, each name before its addresses, and its Clock in UTC, ticking, with `synchronized` or, as a warning, `not synchronized`, then the firmware's Version (its commit), System (its Nerves system, or target) and Vehicle, each after its label, and the `OvcsThemeSwitch`, last; it titles the browser tab `OVCS <product> · <vehicle>` |
   | `OvcsShellBody` | holds an `OvcsMenu` and an `OvcsMain` |
   | `OvcsMenu` | `label`: the navigation, holding `OvcsMenuSection`s |
   | `OvcsMenuSection` | `title`, which names it |
@@ -49,7 +49,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsConnectionStatus` | `state`: `connecting`, `connected` or `disconnected`, as `useOvcsConnection(socket)` answers it for a Phoenix socket; `hint`: an element after the label. The bottom bar item for the live connection, labelled with the shell's product |
   | `OvcsPageFrame` | `title`, `summary`: a page's heading over its content, which scrolls on its own on a laptop |
 
-  It also exports `useOvcsFirmware(fetchFirmware, readWhen)` (the firmware for the top bar, read again each time `readWhen` turns truthy), `useOvcsProduct` (the shell's product), `useOvcsConnection` (a Phoenix socket's connection state), `firmwareFacts` (a firmware's labelled facts in the top bar), `focusClass` (the focus ring utilities), `useOvcsTheme` (the current theme, `light` or `dark`) and the helpers `formatValue`, `rangeStep` and `tidy`. Most components use Tailwind utilities: add this package's `react/**/*.{js,jsx}`, relative to the app, to its `content`. An app with `OvcsThemeSwitch` applies the stored choice before the first paint with an inline script in its `index.html`, as `vision/dashboard/index.html` does.
+  It also exports `useOvcsFirmware(fetchFirmware, readWhen)` (the firmware for the top bar, read again each time `readWhen` turns truthy), `useOvcsBoard(fetchBoard, connected, intervalMs)` (the board for the top bar, as `GET /api/board` answers it, read every `intervalMs`, 10 s by default, while `connected`), `boardInterfaces` and `boardClock` (its interfaces and clock as the top bar shows them), `useOvcsProduct` (the shell's product), `useOvcsConnection` (a Phoenix socket's connection state), `firmwareFacts` (a firmware's labelled facts in the top bar), `focusClass` (the focus ring utilities), `useOvcsTheme` (the current theme, `light` or `dark`) and the helpers `formatValue`, `rangeStep` and `tidy`. Most components use Tailwind utilities: add this package's `react/**/*.{js,jsx}`, relative to the app, to its `content`. An app with `OvcsThemeSwitch` applies the stored choice before the first paint with an inline script in its `index.html`, as `vision/dashboard/index.html` does.
 
 ## Use
 

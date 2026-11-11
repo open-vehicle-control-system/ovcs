@@ -14,7 +14,10 @@ import {
   OvcsShell,
   OvcsShellBody,
   OvcsTopBar,
+  boardClock,
+  boardInterfaces,
   firmwareFacts,
+  useOvcsBoard,
   useOvcsConnection,
   useOvcsFirmware
 } from './index.js'
@@ -124,6 +127,104 @@ describe('firmwareFacts', () => {
       ['Vehicle', 'OVCS1']
     ])
     expect(firmwareFacts(null)).toEqual([])
+  })
+})
+
+describe('boardInterfaces', () => {
+  test('pairs each interface with its addresses, and lists none before the board is known', () => {
+    const board = {
+      interfaces: [
+        { name: 'eth0', addresses: ['192.168.10.232'] },
+        { name: 'wlan0', addresses: ['172.16.0.159', '2001:db8::7'] }
+      ]
+    }
+    expect(boardInterfaces(board)).toEqual([
+      ['eth0', '192.168.10.232'],
+      ['wlan0', '172.16.0.159, 2001:db8::7']
+    ])
+    expect(boardInterfaces(null)).toEqual([])
+  })
+})
+
+describe('boardClock', () => {
+  const now = Date.parse('2026-11-11T15:00:00Z')
+
+  test("reads the board's clock from its offset, in UTC, with its synchronization", () => {
+    const board = { offsetMs: -5_000, clockSynchronized: true }
+    expect(boardClock(board, now)).toEqual({ time: '14:59:55 UTC', tone: 'ok', state: 'synchronized' })
+  })
+
+  test('dates an unsynchronized clock, as a warning', () => {
+    const board = { offsetMs: Date.parse('1970-01-01T00:03:05Z') - now, clockSynchronized: false }
+    expect(boardClock(board, now)).toEqual({
+      time: '1970-01-01 00:03:05 UTC',
+      tone: 'warn',
+      state: 'not synchronized'
+    })
+  })
+
+  test('says nothing of synchronization on a host, and nothing at all before the board is known', () => {
+    expect(boardClock({ offsetMs: 0, clockSynchronized: null }, now)).toEqual({ time: '15:00:00 UTC', tone: null, state: null })
+    expect(boardClock(null, now)).toBeNull()
+  })
+})
+
+describe('OvcsTopBar with a board', () => {
+  test("lists the board's interfaces and its clock, an unsynchronized one as a warning", () => {
+    const board = {
+      interfaces: [{ name: 'eth0', addresses: ['192.168.10.232'] }],
+      offsetMs: Date.parse('1970-01-01T00:03:05Z') - Date.now(),
+      clockSynchronized: false
+    }
+    render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar board={board} />
+      </OvcsShell>
+    )
+
+    const facts = screen.getByLabelText('Board')
+    expect(within(facts).getByText('192.168.10.232').previousSibling.textContent).toBe('eth0')
+    expect(within(facts).getByText(/^1970-01-01 00:03:0\d UTC$/)).toBeTruthy()
+    expect(within(facts).getByText('not synchronized').classList).toContain('ovcs-status--warn')
+  })
+})
+
+describe('useOvcsBoard', () => {
+  const flush = () => act(() => Promise.resolve())
+
+  test('reads the board while connected, every interval, with the offset of its clock', async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-11-11T15:00:00Z') })
+    try {
+      // The board's clock runs 10 s behind this browser's.
+      const fetchBoard = vi.fn(async () => ({
+        interfaces: [],
+        time: new Date(Date.now() - 10_000).toISOString(),
+        clockSynchronized: true
+      }))
+      const { result, rerender } = renderHook(({ connected }) => useOvcsBoard(fetchBoard, connected, 1_000), {
+        initialProps: { connected: false }
+      })
+      await flush()
+      expect(fetchBoard).not.toHaveBeenCalled()
+      expect(result.current).toBeNull()
+
+      rerender({ connected: true })
+      await flush()
+      expect(result.current).toMatchObject({ clockSynchronized: true, offsetMs: -10_000 })
+
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(fetchBoard).toHaveBeenCalledTimes(2)
+
+      fetchBoard.mockRejectedValue(new Error('offline'))
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(result.current).toMatchObject({ offsetMs: -10_000 })
+
+      rerender({ connected: false })
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      expect(fetchBoard).toHaveBeenCalledTimes(3)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
