@@ -28,8 +28,9 @@ defmodule VisionCore.Ros2.Exporter do
   It needs the ROS 2 link, the `ros2:` section of the configuration:
   without it, it is not started (`check/1`), nor when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
-  cannot read. Its status is the link's: connected while the Zenoh
-  session is open.
+  cannot read, nor with a `cameras:` option it does not take or a name
+  no camera of the configuration has. Its status is the link's:
+  connected while the Zenoh session is open.
 
   ## The stereo unit
 
@@ -114,6 +115,7 @@ defmodule VisionCore.Ros2.Exporter do
   @default_prefix "stereo"
   @transform_topic "/tf_static"
   @transform_interval_ms 1_000
+  @camera_options [:names, :topic_prefix, :raw_image_max_hz, :camera_info_interval_frames]
 
   @doc "The heartbeat numbered `counter` of the node `node_name`, sent at `system_time_ms`."
   @spec heartbeat_message(pos_integer(), String.t(), integer()) :: struct()
@@ -127,7 +129,10 @@ defmodule VisionCore.Ros2.Exporter do
   def check(options) do
     config = config(options)
 
-    with :ok <- check_link(config), do: check_stereo(options[:stereo], config)
+    with :ok <- check_link(config),
+         :ok <- check_stereo(options[:stereo], config) do
+      check_cameras(options[:cameras], config)
+    end
   end
 
   defp check_link(%VisionCore.Config{ros2: nil}),
@@ -143,6 +148,31 @@ defmodule VisionCore.Ros2.Exporter do
     case StereoSupervisor.camera_options(config) do
       {:ok, _cameras} -> :ok
       {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
+    end
+  end
+
+  defp check_cameras(nil, _config), do: :ok
+
+  defp check_cameras(camera_options, config) do
+    names = for {name, _driver, _server} <- Unit.cameras(config), do: name
+
+    cond do
+      not (is_list(camera_options) and Keyword.keyword?(camera_options)) ->
+        {:error, "its cameras: is not a keyword list: #{inspect(camera_options)}"}
+
+      (unknown = Keyword.keys(camera_options) -- @camera_options) != [] ->
+        {:error, "its cameras: has no option #{Enum.map_join(unknown, ", ", &inspect/1)}"}
+
+      not is_list(listed = Keyword.get(camera_options, :names, [])) ->
+        {:error, "its cameras: names: is not a list of camera names: #{inspect(listed)}"}
+
+      (missing = Keyword.get(camera_options, :names, []) -- names) != [] ->
+        {:error,
+         "its cameras: names #{Enum.map_join(missing, ", ", &inspect/1)}, " <>
+           "which is no camera of the configuration"}
+
+      true ->
+        :ok
     end
   end
 

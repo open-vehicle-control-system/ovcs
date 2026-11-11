@@ -692,6 +692,25 @@ defmodule VisionCore.Ros2.ExporterTest do
       path
     end
 
+    test "check/1 refuses cameras: options it does not take, or names no camera has" do
+      assert Exporter.check(hq_options(Camera, [], cameras: [names: [:hq], raw_image_max_hz: 5])) ==
+               :ok
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [max_hz: 5]))
+      assert reason =~ "cameras: has no option :max_hz"
+
+      assert {:error, reason} =
+               Exporter.check(hq_options(Camera, [], cameras: [names: [:hq, :usb]]))
+
+      assert reason =~ "cameras: names :usb, which is no camera of the configuration"
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: :hq))
+      assert reason =~ "cameras: is not a keyword list"
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [names: :hq]))
+      assert reason =~ "cameras: names: is not a list of camera names: :hq"
+    end
+
     test "its frames are read with cameras:, every camera by default, or those it names" do
       options = hq_options(Camera, [], cameras: [])
       assert Exporter.outputs(options) == [{:camera_frame, :hq}]
