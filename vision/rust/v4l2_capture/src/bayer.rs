@@ -1,5 +1,7 @@
 //! Raw Bayer to grey or to colour.
 
+use std::ops::Range;
+
 use crate::white_balance::Gains;
 
 /// Maps a raw sample to 8 bits: the sensor's black level to 0, full scale
@@ -152,19 +154,28 @@ pub struct RawFrame<'a> {
 }
 
 impl RawFrame<'_> {
-    /// Calls `cell_row` with the index of the top row of every `step`-th
-    /// row of RGGB cells, then its top row's samples and its bottom row's.
-    pub(crate) fn cell_rows(&self, step: usize, mut cell_row: impl FnMut(usize, &[u16], &[u16])) {
+    /// The frame's rows of RGGB cells.
+    pub(crate) fn cell_row_count(&self) -> usize {
+        self.height / 2
+    }
+
+    /// Calls `cell_row` with the index of the top row of each row of RGGB
+    /// cells in `cell_rows` whose index is a multiple of `step`, then its top
+    /// row's samples and its bottom row's.
+    pub(crate) fn cell_rows(
+        &self,
+        cell_rows: Range<usize>,
+        step: usize,
+        mut cell_row: impl FnMut(usize, &[u16], &[u16]),
+    ) {
         let row_bytes = self.layout.row_bytes(self.width);
         let (mut top, mut bottom) = (vec![0u16; self.width], vec![0u16; self.width]);
         let rows = &self.raw[..self.row_stride * self.height];
         let step = step.max(1);
-        for (cell_row_index, pair) in rows
-            .chunks_exact(self.row_stride * 2)
-            .enumerate()
-            .step_by(step)
-        {
-            let (top_row, bottom_row) = pair.split_at(self.row_stride);
+        let end = cell_rows.end.min(self.cell_row_count());
+        for cell_row_index in (cell_rows.start.next_multiple_of(step)..end).step_by(step) {
+            let top_row = &rows[2 * cell_row_index * self.row_stride..];
+            let bottom_row = &top_row[self.row_stride..];
             samples(&top_row[..row_bytes], self.layout, &mut top);
             samples(&bottom_row[..row_bytes], self.layout, &mut bottom);
             cell_row(2 * cell_row_index, &top, &bottom);
@@ -179,7 +190,7 @@ impl RawFrame<'_> {
 pub fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
     let (red_q12, blue_q12) = (q12(gains.red), q12(gains.blue));
     let mut rgb = Vec::with_capacity((frame.width / 2) * (frame.height / 2) * 3);
-    frame.cell_rows(1, |_, top, bottom| {
+    frame.cell_rows(0..frame.cell_row_count(), 1, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
             rgb.extend_from_slice(&[
@@ -228,34 +239,53 @@ pub fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -
     demosaic_full(
         frame,
         &mut DemosaicRows::default(),
+        0..frame.height,
         |row, samples, toned: &mut [u8]| tables.tone_row(samples, row.is_multiple_of(2), toned),
         |y, values| image.write(y, |out| out.copy_from_slice(values)),
     );
     rgb
 }
 
-/// An 8-bit red, green and blue image written a row at a time, turned by
-/// 180 degrees with `rotate_180` for a sensor mounted upside down.
+/// Rows of an 8-bit red, green and blue image written a row at a time,
+/// turned by 180 degrees with `rotate_180` for a sensor mounted upside down.
 pub(crate) struct Image<'a> {
     rgb: &'a mut [u8],
     row_bytes: usize,
+    rows: Range<usize>,
     rotate_180: bool,
 }
 
 impl<'a> Image<'a> {
     /// The image of `rgb`, rows of `width` pixels.
     pub(crate) fn new(rgb: &'a mut [u8], width: usize, rotate_180: bool) -> Image<'a> {
+        let height = rgb.len() / (width * 3).max(1);
+        Image::band(rgb, width, 0..height, rotate_180)
+    }
+
+    /// Rows `rows` of an image of rows of `width` pixels, held in `rgb`
+    /// where the image has them: in their order, or with `rotate_180` in
+    /// reverse.
+    pub(crate) fn band(
+        rgb: &'a mut [u8],
+        width: usize,
+        rows: Range<usize>,
+        rotate_180: bool,
+    ) -> Image<'a> {
         Image {
             rgb,
             row_bytes: width * 3,
+            rows,
             rotate_180,
         }
     }
 
     /// Writes row `y` with `write`.
     pub(crate) fn write(&mut self, y: usize, write: impl FnOnce(&mut [u8])) {
-        let height = self.rgb.len() / self.row_bytes.max(1);
-        let target = if self.rotate_180 { height - 1 - y } else { y };
+        let target = if self.rotate_180 {
+            self.rows.end - 1 - y
+        } else {
+            y - self.rows.start
+        };
         let out = &mut self.rgb[target * self.row_bytes..(target + 1) * self.row_bytes];
         write(out);
         if self.rotate_180 {
@@ -304,18 +334,21 @@ impl Sample for u16 {
     }
 }
 
-/// Demosaics `frame` at its own size as `rgb_full` does, in `rows`, on the
-/// values `develop_row(row, samples, values)` gives each row's samples, and
-/// hands each row of pixels' red, green and blue values, top to bottom, to
-/// `pixel_row(y, values)`.
+/// Demosaics rows `rows` of `frame` at its own size as `rgb_full` does, in
+/// `buffers`, on the values `develop_row(row, samples, values)` gives the
+/// samples of those rows and of the rows next to them, and hands each row of
+/// pixels' red, green and blue values, top to bottom, to `pixel_row(y,
+/// values)`.
 pub(crate) fn demosaic_full<V: Sample>(
     frame: &RawFrame,
-    rows: &mut DemosaicRows<V>,
+    buffers: &mut DemosaicRows<V>,
+    rows: Range<usize>,
     mut develop_row: impl FnMut(usize, &[u16], &mut [V]),
     mut pixel_row: impl FnMut(usize, &[V]),
 ) {
     let (width, height) = (frame.width, frame.height);
-    if width < 2 || height < 2 {
+    let rows = rows.start..rows.end.min(height);
+    if width < 2 || height < 2 || rows.is_empty() {
         return;
     }
     let row_bytes = frame.layout.row_bytes(width);
@@ -323,7 +356,7 @@ pub(crate) fn demosaic_full<V: Sample>(
         samples: row_samples,
         developed,
         interpolated,
-    } = rows;
+    } = buffers;
     row_samples.resize(width, 0);
     // Rows y - 1, y and y + 1, developed, at index row % 3, each with the
     // nearest value of the same colour beyond each end.
@@ -343,9 +376,11 @@ pub(crate) fn demosaic_full<V: Sample>(
         values[0] = values[2];
         values[width + 1] = values[width - 1];
     };
-    develop(0, developed);
-    develop(1, developed);
-    for y in 0..height {
+    // From the row above the first, or from the frame's top row.
+    let first = rows.start.max(1) - 1;
+    develop(first, developed);
+    develop(first + 1, developed);
+    for y in rows {
         if y >= 1 && y + 1 < height {
             develop(y + 1, developed);
         }
@@ -437,7 +472,7 @@ fn q12(gain: f64) -> u32 {
 /// RGGB cells of `frame`: each cell's two greens averaged, through `tone`.
 pub fn toned_green_mean(frame: &RawFrame, tone: &Tone, row_step: usize) -> f64 {
     let (mut sum, mut cells) = (0u64, 0u64);
-    frame.cell_rows(row_step, |_, top, bottom| {
+    frame.cell_rows(0..frame.cell_row_count(), row_step, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
             sum += u64::from(tone.grey(green as u16));
@@ -453,7 +488,7 @@ pub fn channel_means(frame: &RawFrame, black_level: u16, row_step: usize) -> [f6
     let mut sums = [0u64; 3];
     let mut cells = 0u64;
     let signal = |sample: u16| u64::from(sample.saturating_sub(black_level));
-    frame.cell_rows(row_step, |_, top, bottom| {
+    frame.cell_rows(0..frame.cell_row_count(), row_step, |_, top, bottom| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             sums[0] += signal(top_pair[0]);
             sums[1] += signal(top_pair[1]) + signal(bottom_pair[0]);

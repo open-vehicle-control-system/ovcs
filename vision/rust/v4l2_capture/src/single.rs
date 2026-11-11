@@ -12,6 +12,7 @@ use std::os::fd::{AsFd, AsRawFd};
 use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
 
 use crate::arguments::{Output, SingleArguments};
+use crate::bands::{Conversion, Developed};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
 use crate::sensor::{self, SensorModel};
@@ -180,37 +181,37 @@ pub fn run(
             frames += 1;
             let measure_exposure =
                 settings.capture.auto_exposure && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES);
+            let conversion = Conversion {
+                output: arguments.output,
+                rotate_180: settings.capture.rotation == 180,
+                channel_means: settings.awb,
+                green_mean: measure_exposure,
+                row_step: MEASURED_ROW_STEP,
+            };
             let Developed {
                 rgb,
-                means,
-                exposure_mean,
+                channel_means,
+                green_mean,
             } = match &tuned {
-                Some(tuned) => develop_tuned(
-                    &raw,
-                    arguments.output,
-                    &settings,
-                    gains,
-                    tuned,
-                    measure_exposure,
-                    &mut buffers,
-                ),
+                Some(tuned) => {
+                    develop_tuned(&raw, &conversion, &settings, gains, tuned, &mut buffers)
+                }
                 None => develop(
                     &raw,
-                    arguments.output,
+                    &conversion,
                     &settings,
                     gains,
                     &tone,
-                    measure_exposure,
                     &mut fallback_rgb,
                 ),
             };
-            if let Some(means) = means {
+            if let Some(means) = channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
             conversion_ns += converting.elapsed().as_nanos();
             camera.capture.queue(frame.index)?;
             last_ns = Some(frame.start_ns);
-            if let Some(mean) = exposure_mean {
+            if let Some(mean) = green_mean {
                 if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
                     report_exposure(set_exposure(exposure_us, gain)?, frame.start_ns)?;
                 }
@@ -229,26 +230,15 @@ struct TunedColour {
     contrast: ContrastTable,
 }
 
-/// A frame developed: its image, with `awb` the channel means white
-/// balance measures, and when asked the mean green auto exposure steers.
-struct Developed<'a> {
-    rgb: &'a [u8],
-    means: Option<[f64; 3]>,
-    exposure_mean: Option<f64>,
-}
-
-/// `raw` in RGB at the size of `output`, in `buffers`, through `tuned`'s
-/// colour path at the colour temperature of `gains`, with `settings.awb`
-/// the channel means white balance measures after lens shading, and with
-/// `measure_exposure` the green after lens shading through the contrast
-/// curve.
+/// `raw` through `tuned`'s colour path as `conversion` asks, in `buffers`,
+/// at the colour temperature of `gains`, with the colour correction matrix
+/// and the chroma denoise as `settings` switch them.
 fn develop_tuned<'a>(
     raw: &RawFrame,
-    output: Output,
+    conversion: &Conversion,
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
-    measure_exposure: bool,
     buffers: &'a mut colour::Buffers,
 ) -> Developed<'a> {
     let kelvin = tuned.tuning.colour_temperature(gains);
@@ -265,53 +255,32 @@ fn develop_tuned<'a>(
         contrast: &tuned.contrast,
         denoise: settings.denoise,
     };
-    let exposure_mean = measure_exposure
-        .then(|| colour::shown_green_mean(raw, &colour, MEASURED_ROW_STEP, buffers));
-    let rotate_180 = settings.capture.rotation == 180;
-    let rgb = match output {
-        Output::Full => colour::rgb_full(raw, &colour, rotate_180, buffers),
-        Output::Half => colour::rgb_half(raw, &colour, rotate_180, buffers),
-    };
-    let means = settings.awb.then(|| {
-        colour::shaded_channel_means(
-            raw,
-            settings.capture.black_level,
-            &shading,
-            MEASURED_ROW_STEP,
-        )
-    });
-    Developed {
-        rgb,
-        means,
-        exposure_mean,
-    }
+    colour::develop(raw, &colour, conversion, buffers)
 }
 
-/// `raw` in RGB at the size of `output`, in `rgb`, white balanced by
-/// `gains` then through `tone`, with `settings.awb` the channel means white
-/// balance measures, and with `measure_exposure` the toned green.
+/// `raw` in RGB as `conversion` asks, in `rgb`, white balanced by `gains`
+/// then through `tone`, measuring the channel means above the black level of
+/// `settings` and the toned green.
 fn develop<'a>(
     raw: &RawFrame,
-    output: Output,
+    conversion: &Conversion,
     settings: &ColourSettings,
     gains: Gains,
     tone: &Tone,
-    measure_exposure: bool,
     rgb: &'a mut Vec<u8>,
 ) -> Developed<'a> {
-    let rotate_180 = settings.capture.rotation == 180;
-    *rgb = match output {
-        Output::Full => bayer::rgb_full(raw, tone, gains, rotate_180),
-        Output::Half => bayer::rgb_half(raw, tone, gains, rotate_180),
+    *rgb = match conversion.output {
+        Output::Full => bayer::rgb_full(raw, tone, gains, conversion.rotate_180),
+        Output::Half => bayer::rgb_half(raw, tone, gains, conversion.rotate_180),
     };
-    let means = settings
-        .awb
-        .then(|| bayer::channel_means(raw, settings.capture.black_level, MEASURED_ROW_STEP));
-    let exposure_mean =
-        measure_exposure.then(|| bayer::toned_green_mean(raw, tone, MEASURED_ROW_STEP));
+    let black_level = settings.capture.black_level;
     Developed {
         rgb,
-        means,
-        exposure_mean,
+        channel_means: conversion
+            .channel_means
+            .then(|| bayer::channel_means(raw, black_level, conversion.row_step)),
+        green_mean: conversion
+            .green_mean
+            .then(|| bayer::toned_green_mean(raw, tone, conversion.row_step)),
     }
 }

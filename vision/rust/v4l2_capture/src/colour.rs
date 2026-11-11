@@ -3,6 +3,10 @@
 //! colour correction matrix, chroma denoise, then the contrast curve to 8
 //! bits.
 
+use std::ops::Range;
+
+use crate::arguments::Output;
+use crate::bands::{self, Conversion, Developed, Sums};
 use crate::bayer::{self, DemosaicRows, Image, RawFrame};
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
@@ -84,34 +88,78 @@ pub struct Colour<'a> {
     pub denoise: bool,
 }
 
-/// What the colour path keeps from one frame to the next: the rows it works
-/// on and the image it writes.
+/// What the colour path keeps from one frame to the next: the image it
+/// writes, and the rows each band of it works on.
 #[derive(Default)]
 pub struct Buffers {
     rgb: Vec<u8>,
+    bands: Vec<Band>,
+}
+
+/// The rows a band of the colour path works on.
+#[derive(Default)]
+struct Band {
     shading_gains: ShadingGains,
     row_gains: Vec<u32>,
     values: [Vec<u16>; 2],
-    cells: Vec<u16>,
+    half_row: Vec<u16>,
     demosaic: DemosaicRows<u16>,
     entries: Vec<u16>,
     matrixed: Vec<i32>,
     chroma: ChromaDenoise,
+    /// The lens shading gains alone, white balance measures through, and
+    /// those of a row of RGGB cells.
+    measured_gains: ShadingGains,
+    measured_row_gains: [Vec<u32>; 2],
 }
 
-/// Demosaics `frame` at its own size as `bayer::rgb_full` does, on linear
-/// values: each sample's signal above the black level times its lens
-/// shading and white balance gains, the sensor's full scale at 65535.
-/// `rotate_180` turns the image for a sensor mounted upside down. Returns
-/// 8-bit red, green and blue per pixel, row-major, in `buffers`.
-pub fn rgb_full<'b>(
+/// `frame` through `colour`, in `buffers`, at the size of
+/// `conversion.output`: at its own size demosaiced as `bayer::rgb_full`
+/// does, on linear values, each sample's signal above the black level times
+/// its lens shading and white balance gains, the sensor's full scale at
+/// 65535; at half size each 2x2 RGGB cell one pixel, red, the mean of both
+/// greens, and blue, on those linear values. Measures what `conversion`
+/// asks for (`measure`).
+pub fn develop<'b>(
     frame: &RawFrame,
     colour: &Colour,
-    rotate_180: bool,
+    conversion: &Conversion,
     buffers: &'b mut Buffers,
-) -> &'b [u8] {
-    let Buffers {
+) -> Developed<'b> {
+    let Buffers { rgb, bands } = buffers;
+    let (width, cell) = match conversion.output {
+        Output::Full => (frame.width, 2),
+        Output::Half => (frame.width / 2, 1),
+    };
+    rgb.resize(width * frame.cell_row_count() * cell * 3, 0);
+    let sums = bands::convert(
         rgb,
+        width,
+        cell,
+        conversion.rotate_180,
+        bands,
+        |cells, image, band| {
+            let sums = measure(frame, colour, conversion, cells.clone(), band);
+            match conversion.output {
+                Output::Full => full_band(frame, colour, cells, image, band),
+                Output::Half => half_band(frame, colour, cells, image, band),
+            }
+            sums
+        },
+    );
+    Developed::new(rgb, sums, conversion, f64::from(1u32 << GAIN_SHIFT))
+}
+
+/// Writes the rows of RGGB cells `cells` of `frame` at its own size into
+/// `image`, through `band`.
+fn full_band(
+    frame: &RawFrame,
+    colour: &Colour,
+    cells: Range<usize>,
+    image: Image,
+    band: &mut Band,
+) {
+    let Band {
         shading_gains,
         row_gains,
         demosaic,
@@ -119,146 +167,152 @@ pub fn rgb_full<'b>(
         matrixed,
         chroma,
         ..
-    } = buffers;
-    rgb.resize(frame.width * frame.height * 3, 0);
+    } = band;
     row_gains.resize(frame.width, 0);
     let mut linear = linearisation(frame, colour, shading_gains);
-    let image = Image::new(rgb, frame.width, rotate_180);
-    let denoise = denoise(colour, matrixed, chroma, frame.width, frame.height, 2);
+    let (denoise, rows) = denoise(
+        colour,
+        matrixed,
+        chroma,
+        frame.width,
+        2,
+        frame.cell_row_count(),
+        cells,
+    );
     let mut renderer = Renderer::new(colour, image, frame.width, entries, denoise);
     bayer::demosaic_full(
         frame,
         demosaic,
+        rows,
         |row, samples, values: &mut [u16]| linear.row(row, samples, row_gains, values),
         |y, pixels| renderer.row(y, pixels),
     );
     renderer.finish();
-    rgb
 }
 
-/// Turns each 2x2 RGGB cell of `frame` into one pixel: red, the mean of
-/// both greens, and blue, on linear values as `rgb_full` does. Halves both
-/// dimensions; `rotate_180` turns the image for a sensor mounted upside
-/// down. Returns 8-bit red, green and blue per pixel, row-major, in
-/// `buffers`.
-pub fn rgb_half<'b>(
+/// Writes the rows of RGGB cells `cells` of `frame` into `image`, each cell
+/// one pixel, through `band`.
+fn half_band(
     frame: &RawFrame,
     colour: &Colour,
-    rotate_180: bool,
-    buffers: &'b mut Buffers,
-) -> &'b [u8] {
-    let Buffers {
-        rgb,
+    cells: Range<usize>,
+    image: Image,
+    band: &mut Band,
+) {
+    let Band {
         shading_gains,
         row_gains,
         values: [top_values, bottom_values],
-        cells,
+        half_row,
         entries,
         matrixed,
         chroma,
         ..
-    } = buffers;
-    let (width, height) = (frame.width / 2, frame.height / 2);
-    rgb.resize(width * height * 3, 0);
+    } = band;
+    let width = frame.width / 2;
     row_gains.resize(frame.width, 0);
     top_values.resize(frame.width, 0);
     bottom_values.resize(frame.width, 0);
-    cells.resize(width * 3, 0);
+    half_row.resize(width * 3, 0);
     let mut linear = linearisation(frame, colour, shading_gains);
-    let image = Image::new(rgb, width, rotate_180);
-    let denoise = denoise(colour, matrixed, chroma, width, height, 1);
+    let (denoise, rows) = denoise(
+        colour,
+        matrixed,
+        chroma,
+        width,
+        1,
+        frame.cell_row_count(),
+        cells,
+    );
     let mut renderer = Renderer::new(colour, image, width, entries, denoise);
-    frame.cell_rows(1, |row, top, bottom| {
+    frame.cell_rows(rows, 1, |row, top, bottom| {
         linear.row(row, top, row_gains, top_values);
         linear.row(row + 1, bottom, row_gains, bottom_values);
-        for ((top_pair, bottom_pair), cell) in top_values
+        for ((top_pair, bottom_pair), pixel) in top_values
             .chunks_exact(2)
             .zip(bottom_values.chunks_exact(2))
-            .zip(cells.chunks_exact_mut(3))
+            .zip(half_row.chunks_exact_mut(3))
         {
-            cell[0] = top_pair[0];
-            cell[1] = ((u32::from(top_pair[1]) + u32::from(bottom_pair[0]) + 1) >> 1) as u16;
-            cell[2] = bottom_pair[1];
+            pixel[0] = top_pair[0];
+            pixel[1] = ((u32::from(top_pair[1]) + u32::from(bottom_pair[0]) + 1) >> 1) as u16;
+            pixel[2] = bottom_pair[1];
         }
-        renderer.row(row / 2, cells);
+        renderer.row(row / 2, half_row);
     });
     renderer.finish();
-    rgb
 }
 
-/// The mean green auto exposure steers over every `row_step`-th row of RGGB
-/// cells of `frame`, through `buffers`' rows: each cell's two greens after
-/// lens shading and white balance, averaged as `rgb_half` does, through
-/// the contrast curve, before the colour matrix.
-pub fn shown_green_mean(
+/// What `conversion` asks to measure of every `conversion.row_step`-th row
+/// of RGGB cells of `frame` within `cells`, through `band`: for auto
+/// exposure, each cell's two greens after lens shading and white balance,
+/// averaged as the half-size image does, through the contrast curve, before
+/// the colour matrix; for white balance, each cell's red, greens and blue
+/// above the black level, each times its lens shading gain.
+fn measure(
     frame: &RawFrame,
     colour: &Colour,
-    row_step: usize,
-    buffers: &mut Buffers,
-) -> f64 {
-    let Buffers {
+    conversion: &Conversion,
+    cells: Range<usize>,
+    band: &mut Band,
+) -> Sums {
+    let mut sums = Sums::default();
+    let Band {
         shading_gains,
         row_gains,
         values: [top_values, bottom_values],
+        measured_gains,
+        measured_row_gains: [top_gains, bottom_gains],
         ..
-    } = buffers;
-    row_gains.resize(frame.width, 0);
-    top_values.resize(frame.width, 0);
-    bottom_values.resize(frame.width, 0);
-    let mut linear = linearisation(frame, colour, shading_gains);
-    let (mut sum, mut cells) = (0u64, 0u64);
-    frame.cell_rows(row_step, |row, top, bottom| {
-        linear.row(row, top, row_gains, top_values);
-        linear.row(row + 1, bottom, row_gains, bottom_values);
-        for (top_pair, bottom_pair) in top_values
-            .chunks_exact(2)
-            .zip(bottom_values.chunks_exact(2))
-        {
-            let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
-            sum += u64::from(colour.contrast.shown(green));
-            cells += 1;
-        }
-    });
-    sum as f64 / cells.max(1) as f64
-}
-
-/// The mean red, green and blue above `black_level` over every
-/// `row_step`-th row of RGGB cells of `frame`, each sample times its lens
-/// shading gain.
-pub fn shaded_channel_means(
-    frame: &RawFrame,
-    black_level: u16,
-    shading: &LensShading,
-    row_step: usize,
-) -> [f64; 3] {
-    let mut gains = ShadingGains::new(
-        shading,
-        [1.0; 3],
-        u32::MAX >> WEIGHT_SHIFT,
-        frame.width,
-        frame.height,
-    );
-    let (mut top_gains, mut bottom_gains) = (vec![0u32; frame.width], vec![0u32; frame.width]);
-    let mut sums = [0u64; 3];
-    let mut cells = 0u64;
-    let shaded =
-        |sample: u16, gain: u32| u64::from(sample.saturating_sub(black_level)) * u64::from(gain);
-    frame.cell_rows(row_step, |row, top, bottom| {
-        gains.row(row, &mut top_gains);
-        gains.row(row + 1, &mut bottom_gains);
-        for i in (0..frame.width).step_by(2) {
-            sums[0] += shaded(top[i], top_gains[i]);
-            sums[1] += shaded(top[i + 1], top_gains[i + 1]) + shaded(bottom[i], bottom_gains[i]);
-            sums[2] += shaded(bottom[i + 1], bottom_gains[i + 1]);
-            cells += 1;
-        }
-    });
-    let samples = cells.max(1) as f64 * f64::from(1u32 << GAIN_SHIFT);
-    [
-        sums[0] as f64 / samples,
-        sums[1] as f64 / 2.0 / samples,
-        sums[2] as f64 / samples,
-    ]
+    } = band;
+    if conversion.green_mean {
+        row_gains.resize(frame.width, 0);
+        top_values.resize(frame.width, 0);
+        bottom_values.resize(frame.width, 0);
+        let mut linear = linearisation(frame, colour, shading_gains);
+        let mut measured = 0u64;
+        frame.cell_rows(cells.clone(), conversion.row_step, |row, top, bottom| {
+            linear.row(row, top, row_gains, top_values);
+            linear.row(row + 1, bottom, row_gains, bottom_values);
+            for (top_pair, bottom_pair) in top_values
+                .chunks_exact(2)
+                .zip(bottom_values.chunks_exact(2))
+            {
+                let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
+                sums.green += u64::from(colour.contrast.shown(green));
+                measured += 1;
+            }
+        });
+        sums.cells = measured;
+    }
+    if conversion.channel_means {
+        measured_gains.set(
+            colour.shading,
+            [1.0; 3],
+            u32::MAX >> WEIGHT_SHIFT,
+            frame.width,
+            frame.height,
+        );
+        top_gains.resize(frame.width, 0);
+        bottom_gains.resize(frame.width, 0);
+        let black_level = colour.black_level;
+        let shaded = |sample: u16, gain: u32| {
+            u64::from(sample.saturating_sub(black_level)) * u64::from(gain)
+        };
+        let mut measured = 0u64;
+        frame.cell_rows(cells, conversion.row_step, |row, top, bottom| {
+            measured_gains.row(row, top_gains);
+            measured_gains.row(row + 1, bottom_gains);
+            for i in (0..frame.width).step_by(2) {
+                sums.channels[0] += shaded(top[i], top_gains[i]);
+                sums.channels[1] +=
+                    shaded(top[i + 1], top_gains[i + 1]) + shaded(bottom[i], bottom_gains[i]);
+                sums.channels[2] += shaded(bottom[i + 1], bottom_gains[i + 1]);
+                measured += 1;
+            }
+        });
+        sums.cells = measured;
+    }
+    sums
 }
 
 /// What `colour` makes of `frame`'s samples, in fixed point: their linear
@@ -330,22 +384,26 @@ struct Denoise<'a> {
     chroma: &'a mut ChromaDenoise,
 }
 
-/// With `colour.denoise`, the chroma denoise of an image of `height` rows of
-/// `width` pixels, over cells of `size` by `size` pixels, in `matrixed` and
-/// `chroma`.
+/// With `colour.denoise`, the chroma denoise of the rows of cells `cells` of
+/// an image of `cell_rows` rows of cells of `size` by `size` pixels, `width`
+/// pixels wide, in `matrixed` and `chroma`. Returns it, and the rows of
+/// pixels to hand it (`ChromaDenoise::start`), or without it those of
+/// `cells`.
 fn denoise<'a>(
     colour: &Colour,
     matrixed: &'a mut Vec<i32>,
     chroma: &'a mut ChromaDenoise,
     width: usize,
-    height: usize,
     size: usize,
-) -> Option<Denoise<'a>> {
-    colour.denoise.then(|| {
-        matrixed.resize(width * 3, 0);
-        chroma.start(width, height, size);
-        Denoise { matrixed, chroma }
-    })
+    cell_rows: usize,
+    cells: Range<usize>,
+) -> (Option<Denoise<'a>>, Range<usize>) {
+    if !colour.denoise {
+        return (None, size * cells.start..size * cells.end);
+    }
+    matrixed.resize(width * 3, 0);
+    let rows = chroma.start(width, size, cell_rows, cells);
+    (Some(Denoise { matrixed, chroma }), rows)
 }
 
 /// Writes rows of pixels' linear red, green and blue into an image: through
@@ -464,8 +522,9 @@ struct ChromaDenoise {
     width: usize,
     size: usize,
     cell_rows: usize,
-    /// The next cell row to hand out.
+    /// The next cell row to hand out, and the one after the last.
     next: usize,
+    end: usize,
     /// Each pixel's luma in 1/1024ths, for the pixel rows of the last three
     /// cell rows, at index cell row % 3.
     luma: [Vec<i32>; 3],
@@ -483,11 +542,20 @@ struct ChromaDenoise {
 }
 
 impl ChromaDenoise {
-    /// Starts an image of `height` rows of `width` pixels, in cells of
-    /// `size` by `size`, 1 or 2.
-    fn start(&mut self, width: usize, height: usize, size: usize) {
+    /// Starts the cell rows `band` of an image of `cell_rows` rows of
+    /// cells of `size` by `size` pixels, 1 or 2, `width` pixels wide.
+    /// Returns the rows of pixels to push: those of `band` and of the two
+    /// cell rows on each side of it within the image, the blur's reach.
+    fn start(
+        &mut self,
+        width: usize,
+        size: usize,
+        cell_rows: usize,
+        band: Range<usize>,
+    ) -> Range<usize> {
         let cells = width / size;
-        (self.width, self.size, self.cell_rows, self.next) = (width, size, height / size, 0);
+        (self.width, self.size, self.cell_rows) = (width, size, cell_rows);
+        (self.next, self.end) = (band.start, band.end.min(cell_rows));
         for luma in &mut self.luma {
             luma.resize(size * width, 0);
         }
@@ -501,10 +569,12 @@ impl ChromaDenoise {
             row.resize(cells, 0);
         }
         self.out.resize(width * 3, 0);
+        size * self.next.saturating_sub(2)..size * (self.end + 2).min(cell_rows)
     }
 
-    /// Takes row `y` of pixels, and hands each row of pixels whose cell
-    /// row's chroma is blurred, two cell rows behind, to `denoised(y, rgb)`.
+    /// Takes row `y` of pixels, and hands each row of pixels of the band
+    /// whose cell row's chroma is blurred, two cell rows behind, to
+    /// `denoised(y, rgb)`.
     fn push(&mut self, y: usize, rgb: &[i32], mut denoised: impl FnMut(usize, &[i32])) {
         let (cell_row, row_in_cell) = (y / self.size, y % self.size);
         let width = self.width;
@@ -524,15 +594,15 @@ impl ChromaDenoise {
         }
         if row_in_cell + 1 == self.size {
             self.blur_across(cell_row);
-            if cell_row >= 2 {
+            if self.next < self.end && cell_row >= self.next + 2 {
                 self.hand_out(&mut denoised);
             }
         }
     }
 
-    /// Hands the rows still held to `denoised(y, rgb)`.
+    /// Hands the band's rows still held to `denoised(y, rgb)`.
     fn finish(&mut self, mut denoised: impl FnMut(usize, &[i32])) {
-        while self.next < self.cell_rows {
+        while self.next < self.end {
             self.hand_out(&mut denoised);
         }
     }
@@ -657,6 +727,7 @@ struct ShadingGains {
 impl ShadingGains {
     /// The gains of `shading`, each channel's times `channel_gains`, each at
     /// most `cap`, on a frame of `width` by `height` samples.
+    #[cfg(test)]
     fn new(
         shading: &LensShading,
         channel_gains: [f64; 3],
@@ -1125,7 +1196,8 @@ mod tests {
     // cells of `size` by `size` pixels.
     fn denoised(rows: &[Vec<i32>], size: usize) -> Vec<Vec<i32>> {
         let mut denoise = ChromaDenoise::default();
-        denoise.start(rows[0].len() / 3, rows.len(), size);
+        let cell_rows = rows.len() / size;
+        denoise.start(rows[0].len() / 3, size, cell_rows, 0..cell_rows);
         let mut out = vec![Vec::new(); rows.len()];
         for (y, row) in rows.iter().enumerate() {
             denoise.push(y, row, |y, linear| out[y] = linear.to_vec());
@@ -1244,5 +1316,91 @@ mod tests {
 
     fn half(frame: &RawFrame, colour: &Colour, rotate_180: bool) -> Vec<u8> {
         rgb_half(frame, colour, rotate_180, &mut Buffers::default()).to_vec()
+    }
+
+    fn conversion(output: Output, rotate_180: bool) -> Conversion {
+        Conversion {
+            output,
+            rotate_180,
+            channel_means: false,
+            green_mean: false,
+            row_step: 1,
+        }
+    }
+
+    fn rgb_full<'b>(
+        frame: &RawFrame,
+        colour: &Colour,
+        rotate_180: bool,
+        buffers: &'b mut Buffers,
+    ) -> &'b [u8] {
+        develop(
+            frame,
+            colour,
+            &conversion(Output::Full, rotate_180),
+            buffers,
+        )
+        .rgb
+    }
+
+    fn rgb_half<'b>(
+        frame: &RawFrame,
+        colour: &Colour,
+        rotate_180: bool,
+        buffers: &'b mut Buffers,
+    ) -> &'b [u8] {
+        develop(
+            frame,
+            colour,
+            &conversion(Output::Half, rotate_180),
+            buffers,
+        )
+        .rgb
+    }
+
+    // The mean green auto exposure steers over every `row_step`-th row of
+    // RGGB cells.
+    fn shown_green_mean(
+        frame: &RawFrame,
+        colour: &Colour,
+        row_step: usize,
+        buffers: &mut Buffers,
+    ) -> f64 {
+        let conversion = Conversion {
+            green_mean: true,
+            row_step,
+            ..conversion(Output::Half, false)
+        };
+        develop(frame, colour, &conversion, buffers)
+            .green_mean
+            .unwrap()
+    }
+
+    // The mean red, green and blue above `black_level` over every
+    // `row_step`-th row of RGGB cells, each sample times its lens shading
+    // gain.
+    fn shaded_channel_means(
+        frame: &RawFrame,
+        black_level: u16,
+        shading: &LensShading,
+        row_step: usize,
+    ) -> [f64; 3] {
+        let contrast = linear();
+        let colour = Colour {
+            black_level,
+            shading,
+            white_balance: UNITY,
+            matrix: IDENTITY,
+            contrast: &contrast,
+            denoise: false,
+        };
+        let conversion = Conversion {
+            channel_means: true,
+            row_step,
+            ..conversion(Output::Half, false)
+        };
+        develop(frame, &colour, &conversion, &mut Buffers::default())
+            .channel_means
+            .unwrap()
     }
 }

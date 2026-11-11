@@ -7,6 +7,7 @@
 //! stops it.
 
 mod arguments;
+mod bands;
 mod bayer;
 mod colour;
 mod exposure;
