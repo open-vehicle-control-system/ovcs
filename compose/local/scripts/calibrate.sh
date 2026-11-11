@@ -14,17 +14,27 @@
 #   compose/local/scripts/calibrate.sh                           # 8x6 inner corners, 30 mm squares
 #   compose/local/scripts/calibrate.sh 9x6                       # override corner count
 #   compose/local/scripts/calibrate.sh 8x5 0.025                 # override corners + square size
+#   compose/local/scripts/calibrate.sh --camera hq 9x6 0.025     # the camera of its own `hq`, monocular
 #
 # Environment overrides (take precedence over positional args):
 #   CHESSBOARD_INNER_CORNERS=8x5
 #   CHESSBOARD_SQUARE_M=0.030
 #   APPROXIMATE_SYNC=0.05
+#   CALIBRATION_CAMERA=hq            # as --camera
+#   CALIBRATION_TOPIC_PREFIX=stereo  # the vision unit's topic prefix
 #   DISPLAY=:0
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+camera="${CALIBRATION_CAMERA:-}"
+if [[ "${1:-}" == "--camera" ]]; then
+  camera="${CALIBRATION_CAMERA:-${2:?--camera needs a camera name}}"
+  shift 2
+fi
+
+topic_prefix="${CALIBRATION_TOPIC_PREFIX:-stereo}"
 corners="${CHESSBOARD_INNER_CORNERS:-${1:-8x6}}"
 square="${CHESSBOARD_SQUARE_M:-${2:-0.030}}"
 approx_sync="${APPROXIMATE_SYNC:-0.05}"
@@ -57,6 +67,7 @@ else
 fi
 
 echo "calibrate.sh: launching calibrator"
+echo "  camera:                   ${camera:-the stereo pair} (/${topic_prefix})"
 echo "  chessboard inner corners: ${corners}"
 echo "  square size:              ${square} m"
 echo "  approximate sync window:  ${approx_sync} s"
@@ -67,6 +78,8 @@ echo
 CHESSBOARD_INNER_CORNERS="${corners}" \
 CHESSBOARD_SQUARE_M="${square}" \
 APPROXIMATE_SYNC="${approx_sync}" \
+CALIBRATION_CAMERA="${camera}" \
+CALIBRATION_TOPIC_PREFIX="${topic_prefix}" \
 DISPLAY="${display}" \
 OVCS_XAUTHORITY="${xauth_source}" \
   docker compose -f base.yml --profile calibration run --rm calibrator
