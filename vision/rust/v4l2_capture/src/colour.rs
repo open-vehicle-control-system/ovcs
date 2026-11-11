@@ -47,7 +47,6 @@ impl ContrastTable {
     }
 
     /// The 8-bit output of the linear value `linear`.
-    #[cfg(test)]
     pub fn shown(&self, linear: i32) -> u8 {
         self.output(entry(linear))
     }
@@ -165,6 +164,42 @@ pub fn rgb_half<'b>(
         renderer.row(row / 2, cells);
     });
     rgb
+}
+
+/// The mean green auto exposure steers over every `row_step`-th row of RGGB
+/// cells of `frame`, through `buffers`' rows: each cell's two greens after
+/// lens shading and white balance, averaged as `rgb_half` does, through
+/// the contrast curve, before the colour matrix.
+pub fn shown_green_mean(
+    frame: &RawFrame,
+    colour: &Colour,
+    row_step: usize,
+    buffers: &mut Buffers,
+) -> f64 {
+    let Buffers {
+        shading_gains,
+        row_gains,
+        values: [top_values, bottom_values],
+        ..
+    } = buffers;
+    row_gains.resize(frame.width, 0);
+    top_values.resize(frame.width, 0);
+    bottom_values.resize(frame.width, 0);
+    let mut linear = linearisation(frame, colour, shading_gains);
+    let (mut sum, mut cells) = (0u64, 0u64);
+    frame.cell_rows(row_step, |row, top, bottom| {
+        linear.row(row, top, row_gains, top_values);
+        linear.row(row + 1, bottom, row_gains, bottom_values);
+        for (top_pair, bottom_pair) in top_values
+            .chunks_exact(2)
+            .zip(bottom_values.chunks_exact(2))
+        {
+            let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
+            sum += u64::from(colour.contrast.shown(green));
+            cells += 1;
+        }
+    });
+    sum as f64 / cells.max(1) as f64
 }
 
 /// The mean red, green and blue above `black_level` over every
@@ -757,6 +792,34 @@ mod tests {
         assert_eq!(step.shown(16_000), 0);
         assert_eq!(step.shown(16_016), 255);
         assert_eq!(linear().shown(65_535), 255);
+    }
+
+    #[test]
+    fn auto_exposure_measures_the_green_after_lens_shading_through_the_curve() {
+        let shading = LensShading {
+            columns: 2,
+            rows: 2,
+            gains: [vec![3.0; 4], vec![1.5; 4], vec![1.0; 4]],
+        };
+        let raw = packed(&uniform([3000, 1000, 1000, 500], 8, 8), 8);
+        let contrast = ContrastTable::from_curve(|x| (x / 65535.0).sqrt() * 65535.0);
+        let colour = Colour {
+            black_level: 0,
+            shading: &shading,
+            white_balance: Gains {
+                red: 0.8,
+                blue: 1.0,
+            },
+            matrix: IDENTITY,
+            contrast: &contrast,
+        };
+        let frame = frame(&raw, 8, 8);
+        let mut buffers = Buffers::default();
+        // Green 1000 of 4095 times its shading gain 1.5, over 0.8 for red's
+        // gain to be at least 1: 30006 of 65535, whose square root is 0.677.
+        assert_eq!(shown_green_mean(&frame, &colour, 1, &mut buffers), 173.0);
+        assert_eq!(shown_green_mean(&frame, &colour, 2, &mut buffers), 173.0);
+        assert_eq!(half(&frame, &colour, false)[1], 173);
     }
 
     fn full(frame: &RawFrame, colour: &Colour, rotate_180: bool) -> Vec<u8> {

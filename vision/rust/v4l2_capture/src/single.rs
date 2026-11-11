@@ -1,9 +1,10 @@
 //! A single colour camera: captures its raw RGGB frames, demosaics them at
 //! the capture's size or each 2x2 cell into one pixel, with grey-world white
-//! balance, runs auto exposure on the green of the RGGB cells, and writes
-//! RGB_FRAME records on stdout. A sensor with a tuning takes its colour path
-//! (`colour`): lens shading, white balance, the colour correction matrix and
-//! the contrast curve of its colour temperature; another one its gamma.
+//! balance, runs auto exposure on the green of the RGGB cells as the image
+//! tones it, and writes RGB_FRAME records on stdout. A sensor with a tuning
+//! takes its colour path (`colour`): lens shading, white balance, the colour
+//! correction matrix and the contrast curve of its colour temperature;
+//! another one its gamma.
 
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
@@ -176,13 +177,21 @@ pub fn run(
                 row_stride: camera.capture.row_stride,
                 layout: camera.capture.layout,
             };
-            let (rgb, means) = match &tuned {
+            frames += 1;
+            let measure_exposure =
+                settings.capture.auto_exposure && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES);
+            let Developed {
+                rgb,
+                means,
+                exposure_mean,
+            } = match &tuned {
                 Some(tuned) => develop_tuned(
                     &raw,
                     arguments.output,
                     &settings,
                     gains,
                     tuned,
+                    measure_exposure,
                     &mut buffers,
                 ),
                 None => develop(
@@ -191,13 +200,10 @@ pub fn run(
                     &settings,
                     gains,
                     &tone,
+                    measure_exposure,
                     &mut fallback_rgb,
                 ),
             };
-            frames += 1;
-            let exposure_mean = (settings.capture.auto_exposure
-                && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES))
-            .then(|| bayer::toned_green_mean(&raw, &tone, MEASURED_ROW_STEP));
             if let Some(means) = means {
                 gains = white_balance::grey_world(means, gains);
             }
@@ -223,18 +229,28 @@ struct TunedColour {
     contrast: ContrastTable,
 }
 
+/// A frame developed: its image, with `awb` the channel means white
+/// balance measures, and when asked the mean green auto exposure steers.
+struct Developed<'a> {
+    rgb: &'a [u8],
+    means: Option<[f64; 3]>,
+    exposure_mean: Option<f64>,
+}
+
 /// `raw` in RGB at the size of `output`, in `buffers`, through `tuned`'s
-/// colour path at the colour temperature of `gains`, and with
-/// `settings.awb` the channel means white balance measures after lens
-/// shading.
+/// colour path at the colour temperature of `gains`, with `settings.awb`
+/// the channel means white balance measures after lens shading, and with
+/// `measure_exposure` the green after lens shading through the contrast
+/// curve.
 fn develop_tuned<'a>(
     raw: &RawFrame,
     output: Output,
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
+    measure_exposure: bool,
     buffers: &'a mut colour::Buffers,
-) -> (&'a [u8], Option<[f64; 3]>) {
+) -> Developed<'a> {
     let kelvin = tuned.tuning.colour_temperature(gains);
     let shading = tuned.tuning.lens_shading(kelvin);
     let colour = Colour {
@@ -248,6 +264,8 @@ fn develop_tuned<'a>(
         },
         contrast: &tuned.contrast,
     };
+    let exposure_mean = measure_exposure
+        .then(|| colour::shown_green_mean(raw, &colour, MEASURED_ROW_STEP, buffers));
     let rotate_180 = settings.capture.rotation == 180;
     let rgb = match output {
         Output::Full => colour::rgb_full(raw, &colour, rotate_180, buffers),
@@ -261,20 +279,25 @@ fn develop_tuned<'a>(
             MEASURED_ROW_STEP,
         )
     });
-    (rgb, means)
+    Developed {
+        rgb,
+        means,
+        exposure_mean,
+    }
 }
 
 /// `raw` in RGB at the size of `output`, in `rgb`, white balanced by
-/// `gains` then through `tone`, and with `settings.awb` the channel means
-/// white balance measures.
+/// `gains` then through `tone`, with `settings.awb` the channel means white
+/// balance measures, and with `measure_exposure` the toned green.
 fn develop<'a>(
     raw: &RawFrame,
     output: Output,
     settings: &ColourSettings,
     gains: Gains,
     tone: &Tone,
+    measure_exposure: bool,
     rgb: &'a mut Vec<u8>,
-) -> (&'a [u8], Option<[f64; 3]>) {
+) -> Developed<'a> {
     let rotate_180 = settings.capture.rotation == 180;
     *rgb = match output {
         Output::Full => bayer::rgb_full(raw, tone, gains, rotate_180),
@@ -283,5 +306,11 @@ fn develop<'a>(
     let means = settings
         .awb
         .then(|| bayer::channel_means(raw, settings.capture.black_level, MEASURED_ROW_STEP));
-    (rgb, means)
+    let exposure_mean =
+        measure_exposure.then(|| bayer::toned_green_mean(raw, tone, MEASURED_ROW_STEP));
+    Developed {
+        rgb,
+        means,
+        exposure_mean,
+    }
 }
