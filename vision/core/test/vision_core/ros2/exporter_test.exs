@@ -9,6 +9,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
+  alias Ros2Zenoh.VisionMsgs.Msg.Detection2DArray
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Camera.Frame
   alias VisionCore.Exporter.Runner
@@ -547,6 +548,40 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
+  end
+
+  test "publishes a camera source's detections in the camera's frame, deleting only the markers it drew" do
+    {:ok, state} = Exporter.init(options(Camera, detections: [pipelines: [:hq_people]]))
+    frame = %Frame{label: "hq", frame_id: "hq_optical", width: 40, height: 20, capture_ns: 1}
+
+    unplaced =
+      "car"
+      |> detection()
+      |> Map.merge(%{x: nil, y: nil, z: nil, width: nil, height: nil, depth: nil})
+      |> Map.put(:box, %{x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0})
+
+    {:ok, state} =
+      Exporter.handle_output(
+        {:detections, :hq_people},
+        {frame, [detection("person"), unplaced]},
+        state
+      )
+
+    assert_received {:published, "stereo/hq_people/detections/markers",
+                     %MarkerArray{markers: [marker, _label]}}
+
+    assert marker.header.frame_id == "hq_optical"
+
+    assert_received {:published, "stereo/hq_people/detections_2d",
+                     %Detection2DArray{detections: [_car]}}
+
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :hq_people}, {frame, [unplaced]}, state)
+
+    assert_received {:published, "stereo/hq_people/detections/markers",
+                     %MarkerArray{markers: markers}}
+
+    assert Enum.map(markers, & &1.action) == List.duplicate(Marker.delete(), 2)
   end
 
   describe "several detection pipelines" do

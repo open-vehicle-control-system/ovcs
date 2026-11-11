@@ -12,8 +12,8 @@ defmodule VisionCore.Ros2.Exporter do
       (`VisionCore.Ros2.Exporter.Diagnostics`, a helper under the
       exporter's supervisor).
     * Each detection pipeline's detections, as markers, `vision_msgs`
-      and an overlay on the left raw image
-      (`VisionCore.Ros2.Exporter.Detections`).
+      and an overlay on the left raw image, or on a camera source the
+      camera's (`VisionCore.Ros2.Exporter.Detections`).
     * Each camera of its own's image, camera info and pose relative to
       the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
     * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
@@ -508,15 +508,15 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, %{state | telemetry: telemetry}}
   end
 
-  def handle_output(output, {%Pair{} = pair, detections}, state)
+  def handle_output(output, {source, detections}, state)
       when is_map_key(state.detections, output) do
     %{settings: settings, drawn: drawn} = state.detections[output]
 
     detections
-    |> Detections.messages(pair, settings, drawn)
+    |> Detections.messages(source, settings, drawn)
     |> publish_all(state)
 
-    {:ok, put_in(state.detections[output].drawn, length(detections))}
+    {:ok, put_in(state.detections[output].drawn, Detections.drawn(detections))}
   end
 
   @impl VisionCore.Exporter
