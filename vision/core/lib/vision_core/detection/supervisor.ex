@@ -2,7 +2,8 @@ defmodule VisionCore.Detection.Supervisor do
   @moduledoc """
   Supervises a detection unit, one detection pipeline: an inference
   backend, the `VisionCore.Detection.Pipeline` that places its boxes in
-  3D with the stereo depth, and `VisionCore.Detection.Live`, which hands
+  3D with the stereo depth, on the stereo pair or a camera of its own
+  (its `:source`), and `VisionCore.Detection.Live`, which hands
   them to the dashboard. `VisionCore.Ros2.Exporter` publishes them on
   ROS 2, outside the unit.
 
@@ -40,7 +41,8 @@ defmodule VisionCore.Detection.Supervisor do
   pipeline and `:max_hz` to `Live`; see their docs. How the detections
   are published is the exporters' business: the ROS 2 exporter's are its
   `detections:` options (`VisionCore.Ros2.Exporter`), and their frame
-  is the one their pair carries, the stereo unit's left `:frame_id`.
+  is the one their pair carries, the stereo unit's left `:frame_id`, or
+  on a camera source the camera's.
 
   A unit that fails to start, such as one whose backend cannot, or one
   given an option it does not take, is left down, with the reason
@@ -133,6 +135,19 @@ defmodule VisionCore.Detection.Supervisor do
   end
 
   @doc """
+  The source of each detection unit in `config`, in config order, with
+  its output (`outputs/1`): `:stereo`, the stereo pair's, or `{:camera,
+  name}`, the camera of its own `name` (`VisionCore.Detection.Pipeline`).
+  """
+  @spec sources(VisionCore.Config.t()) :: [
+          {VisionCore.Exporter.output(), :stereo | {:camera, atom()}}
+        ]
+  def sources(config) do
+    for opts <- units_options(config),
+        do: {Detection.output(Detection.pipeline_name(opts)), Keyword.get(opts, :source, :stereo)}
+  end
+
+  @doc """
   The backend of each detection unit in `config`, in config order: its
   module and the name it is registered under. `[]` when no component of
   `config` starts a unit.
@@ -189,8 +204,8 @@ defmodule VisionCore.Detection.Supervisor do
   end
 
   defp pipeline_keys do
-    [:detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction] ++
-      [:outline_segments]
+    [:source, :detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction] ++
+      [:outline_segments, :reprojection_stride, :pair_wait_ms]
   end
 
   # The options of `Backend.Hailo`, `Backend.Qnn` and `Backend.Stub`.

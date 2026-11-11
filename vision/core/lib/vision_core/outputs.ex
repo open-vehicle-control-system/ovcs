@@ -14,7 +14,9 @@ defmodule VisionCore.Outputs do
     * `{:detections, name}` — from the `VisionCore.Detection.Pipeline`
       registered as `name`: `{:detections, pair, detections}` from the
       default pipeline, `{:detections, pair, detections, pipeline}` from
-      the one named `pipeline` (`VisionCore.Detection`).
+      the one named `pipeline` (`VisionCore.Detection`), the
+      `%VisionCore.Camera.Frame{}` the boxes were found on in place of
+      `pair` on a camera source.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. A subscription belongs to the subscriber, not to the

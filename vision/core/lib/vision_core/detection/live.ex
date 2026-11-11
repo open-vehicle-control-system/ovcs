@@ -1,9 +1,10 @@
 defmodule VisionCore.Detection.Live do
   @moduledoc """
   The latest detections of a `VisionCore.Detection.Pipeline`, for the
-  dashboard: each object's label, score, distance in metres and outline
-  on the left camera's image as it is captured, which the left preview
-  shows. Each pipeline has its own, registered as
+  dashboard: each object's label, score, distance in metres, `nil` for
+  one without, and outline on its source's image as it is captured, the
+  left camera's or, on a camera source, the camera's, which that
+  camera's preview shows. Each pipeline has its own, registered as
   `VisionCore.Detection.server(VisionCore.Detection.Live, name)`.
 
   A subscriber (`subscribe/1`) receives `{:vision_detections,
@@ -25,6 +26,7 @@ defmodule VisionCore.Detection.Live do
   """
   use GenServer
 
+  alias VisionCore.Camera.Frame
   alias VisionCore.Detection
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Outputs
@@ -87,8 +89,8 @@ defmodule VisionCore.Detection.Live do
        when map_size(subscribers) == 0,
        do: {:noreply, state}
 
-  defp hand_on(%Pair{} = pair, positioned, state) do
-    detections = describe(positioned, pair)
+  defp hand_on(source, positioned, state) do
+    detections = describe(positioned, image(source))
     now_ms = System.monotonic_time(:millisecond)
 
     cond do
@@ -123,7 +125,10 @@ defmodule VisionCore.Detection.Live do
   defp due?(%{sent_at_ms: nil}, _now_ms), do: true
   defp due?(state, now_ms), do: now_ms - state.sent_at_ms >= state.interval_ms
 
-  defp describe(positioned, %Pair{left_frame: frame}) do
+  defp image(%Pair{left_frame: frame}), do: frame
+  defp image(%Frame{} = frame), do: frame
+
+  defp describe(positioned, frame) do
     Enum.map(positioned, fn detection ->
       %{
         label: detection.label,

@@ -61,6 +61,15 @@ defmodule VisionCore.Detection.LiveTest do
     assert detection.outline == [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
   end
 
+  test "a camera source's result: its outline as fractions of the camera's frame, without a distance where there is none" do
+    :ok = Live.subscribe()
+    frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: 0, rgb: <<>>}
+    GenServer.cast(Live, {:detections, frame, [person(0, 0, 507, 380, nil)], :hq_people})
+
+    assert_receive {:vision_detections, [%{distance_m: nil, outline: outline}]}
+    assert outline == [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
+  end
+
   test "sends an empty result, so boxes from the last one go away" do
     :ok = Live.subscribe()
     cast_detections([person(240, 108, 720, 432, 1.8)])

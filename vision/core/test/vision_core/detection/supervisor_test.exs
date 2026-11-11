@@ -39,6 +39,14 @@ defmodule VisionCore.Detection.SupervisorTest do
     assert Enum.sort(live_options) == [max_hz: 4, name: :detection]
   end
 
+  test "hands the pipeline its source and the camera source's options" do
+    camera_options = [source: {:camera, :hq}, reprojection_stride: 4, pair_wait_ms: 200]
+    {:ok, {_flags, children}} = Supervisor.init(@options ++ [name: :people] ++ camera_options)
+
+    assert [_backend, %{start: {Pipeline, :start_link, [pipeline_options]}}, _live] = children
+    assert camera_options -- pipeline_options == []
+  end
+
   test "names a named unit's backend, pipeline and Live after it" do
     {:ok, {_flags, children}} = Supervisor.init(@options ++ [name: :road])
 
@@ -287,6 +295,19 @@ defmodule VisionCore.Detection.SupervisorTest do
 
     test "no backend without a component starting the unit" do
       assert Supervisor.backends(config([{:stereo, []}])) == []
+    end
+
+    test "each pipeline's source, in config order, by its output: the stereo pair's by default" do
+      components = [
+        {:detector, backend: Stub, name: :people, source: {:camera, :hq}},
+        {:stereo, []},
+        :qnn_detector
+      ]
+
+      assert Supervisor.sources(config(components)) == [
+               {{:detections, :people}, {:camera, :hq}},
+               {:detections, :stereo}
+             ]
     end
   end
 end

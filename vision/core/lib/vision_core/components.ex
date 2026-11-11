@@ -32,7 +32,10 @@ defmodule VisionCore.Components do
       in 3D. The detection pipeline subscribes to the stereo pipeline's
       pairs through `VisionCore.Outputs`, whichever of the two starts
       first. Several detectors run side by side, each with its own
-      `:name` (`VisionCore.Detection`), the child id of its unit.
+      `:name` (`VisionCore.Detection`), the child id of its unit. A
+      named one with `source: {:camera, name}` detects on the camera of
+      its own `name` instead, and takes the depth of the stereo pairs
+      projected into that camera's image.
     * `:hailo_detector` — `:detector` with the Hailo backend.
     * `:qnn_detector` — `:detector` with the QNN backend
       (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.

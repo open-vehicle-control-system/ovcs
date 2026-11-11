@@ -20,7 +20,8 @@ defmodule VisionCore.Exporter.Runner do
   with: the default pipeline's `{:detections, pair, detections}` go to
   `:detections` only, the pipeline `name`'s
   `{:detections, pair, detections, name}` to `{:detections, name}` only,
-  each handed over as `{pair, detections}`.
+  each handed over as `{pair, detections}`, or `{frame, detections}`
+  from a pipeline on a camera.
 
   The runner starts without waiting for its exporter: the exporter's
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or

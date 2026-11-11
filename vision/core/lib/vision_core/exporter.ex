@@ -23,7 +23,9 @@ defmodule VisionCore.Exporter do
       default detection pipeline, the one a detector without a `:name`
       starts (`VisionCore.Detection`);
     * `{:detections, name}` — `{pair, detections}`, the result for
-      `pair` of the detection pipeline named `name`.
+      `pair` of the detection pipeline named `name`, or `{frame,
+      detections}`, the result for the `VisionCore.Camera.Frame` `frame`
+      of one whose source is a camera of its own.
 
   An entry is an output, or `{output, options}` whose one option is
   `:max_hz`, the most values of the output handed over a second
@@ -45,7 +47,8 @@ defmodule VisionCore.Exporter do
   camera's are `{:camera_frame, frame}`, the frame carrying the camera's
   side, or its name, as its `:label`, and the detections are
   `{:detections, pair, detections}` from the default pipeline and
-  `{:detections, pair, detections, name}` from the pipeline `name`. A
+  `{:detections, pair, detections, name}` from the pipeline `name`, a
+  frame in place of the pair on a camera source. A
   new output is one more entry in this module's table of outputs, with
   the unit whose `outputs/1` gives its key, its messages
   `{output, value}`.
