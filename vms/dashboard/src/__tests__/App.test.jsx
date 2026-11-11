@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, render, screen, fireEvent, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import App from '../App.jsx'
 import { fetchBlocks, fetchBoard, fetchFirmware, fetchPages, fetchVehicle } from '../services/api.js'
 import { useVehicle } from '../stores/vehicle.js'
@@ -75,7 +75,8 @@ describe('App', () => {
     const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
     expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
     expect(await within(topBar).findByText('192.168.1.20')).toBeTruthy()
-    expect(document.title).toBe('OVCS VMS · OVCS Mini')
+    // The title is set in an effect, which can run after the text shows.
+    await waitFor(() => expect(document.title).toBe('OVCS VMS · OVCS Mini'))
   })
 
   it('shows the first page at /', async () => {
