@@ -78,13 +78,11 @@ defmodule VisionCore.Camera.V4L2 do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Camss, Frame, LibCamera}
+  alias VisionCore.Camera.{Camss, Frame}
+  alias VisionCore.Camera.V4L2.Capture
   alias VisionCore.{Outputs, Timing}
 
   @pair_tag 4
-  @log_tag 2
-  @metadata_tag 3
-  @watchdog_interval_ms 1_000
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
   # How long CAMSS and the sensors may take to register after the VM starts.
@@ -229,55 +227,18 @@ defmodule VisionCore.Camera.V4L2 do
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
 
     nodes =
-      for {key, default} <- @default_nodes, do: [flag(key), Keyword.get(opts, key, default)]
+      for {key, default} <- @default_nodes,
+          do: [Capture.flag(key), Keyword.get(opts, key, default)]
 
-    settings =
-      for spec <- @settings,
-          do: [flag(spec.key), encode(spec, Keyword.get(opts, spec.key, spec.default))]
-
-    List.flatten(size ++ nodes ++ settings)
+    List.flatten(size ++ nodes) ++ Capture.arguments(@settings, opts)
   end
-
-  defp flag(key), do: "--" <> String.replace(Atom.to_string(key), "_", "-")
 
   @doc """
   The `name=value` commands that set `controls` on the capture program,
   or why one of them is refused.
   """
   @spec control_commands(keyword()) :: {:ok, [String.t()]} | {:error, String.t()}
-  def control_commands(controls) do
-    Enum.reduce_while(controls, {:ok, []}, fn {key, value}, {:ok, commands} ->
-      case validate(key, value) do
-        {:ok, spec} -> {:cont, {:ok, commands ++ ["#{key}=#{encode(spec, value)}"]}}
-        {:error, _reason} = error -> {:halt, error}
-      end
-    end)
-  end
-
-  defp validate(key, value) do
-    case Enum.find(@settings, &(&1.key == key)) do
-      nil ->
-        {:error, "unknown camera setting #{key}"}
-
-      spec ->
-        if valid?(spec, value),
-          do: {:ok, spec},
-          else: {:error, "#{key}: invalid value #{inspect(value)}"}
-    end
-  end
-
-  defp valid?(%{key: :rotation}, value), do: value in [0, 180]
-  defp valid?(%{type: :bool}, value), do: is_boolean(value)
-
-  defp valid?(%{type: :integer, range: {min, max}}, value),
-    do: is_integer(value) and value in min..max
-
-  defp valid?(%{type: :double, range: {min, max}}, value),
-    do: is_number(value) and value >= min and value <= max
-
-  defp encode(%{type: :bool}, value), do: to_string(value == true)
-  defp encode(%{type: :integer}, value), do: Integer.to_string(round(value))
-  defp encode(%{type: :double}, value), do: Float.to_string(value * 1.0)
+  def control_commands(controls), do: Capture.commands(@settings, controls)
 
   @impl VisionCore.Camera
   def shared_controls?, do: true
@@ -310,9 +271,7 @@ defmodule VisionCore.Camera.V4L2 do
      frame("right", width, height, right_ns, right)}
   end
 
-  def parse_record(<<@log_tag, level, message::binary>>), do: {:log, log_level(level), message}
-  def parse_record(<<@metadata_tag, _rest::binary>> = record), do: LibCamera.parse_record(record)
-  def parse_record(_other), do: {:error, :malformed_record}
+  def parse_record(record), do: Capture.parse_record(record)
 
   defp frame(label, width, height, kernel_ns, grey) do
     %Frame{
@@ -324,22 +283,11 @@ defmodule VisionCore.Camera.V4L2 do
     }
   end
 
-  defp normalise(%{type: :double}, value), do: value * 1.0
-  defp normalise(_spec, value), do: value
-
-  defp log_level(0), do: :info
-  defp log_level(1), do: :warning
-  defp log_level(_), do: :error
-
   @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
-    opts = accepted_settings(opts, label)
-
-    controls =
-      Map.new(@settings, fn spec ->
-        {spec.key, normalise(spec, Keyword.get(opts, spec.key, spec.default))}
-      end)
+    opts = Capture.accepted(@settings, opts, "#{__MODULE__}[#{label}]")
+    controls = Capture.controls(@settings, opts)
 
     state = %{
       label: label,
@@ -364,49 +312,9 @@ defmodule VisionCore.Camera.V4L2 do
     end
   end
 
-  # v4l2_capture exits on a setting it refuses, at every restart: such a setting keeps its default.
-  defp accepted_settings(opts, label) do
-    Enum.filter(opts, fn {key, value} ->
-      case Enum.find(@settings, &(&1.key == key)) do
-        nil ->
-          true
-
-        spec ->
-          if valid?(spec, value) do
-            true
-          else
-            Logger.warning("#{__MODULE__}[#{label}] #{key}: invalid value #{inspect(value)}")
-            false
-          end
-      end
-    end)
-  end
-
   defp open_port(state, opts) do
-    executable = Keyword.get_lazy(opts, :executable, &binary_path/0)
-
-    unless File.exists?(executable) do
-      raise "#{__MODULE__}: v4l2_capture missing at #{executable}; " <>
-              "the :okdo_c100 firmware build provides it."
-    end
-
-    port =
-      Port.open({:spawn_executable, executable}, [
-        :binary,
-        :exit_status,
-        {:packet, 4},
-        args: port_arguments(opts)
-      ])
-
-    Process.send_after(self(), :watchdog, @watchdog_interval_ms)
-
-    Map.merge(state, %{
-      port: port,
-      started_at: now_ms(),
-      last_frame_at: nil,
-      stall_timeout_ms: @stall_timeout_ms,
-      startup_timeout_ms: @startup_timeout_ms
-    })
+    timeouts = [stall_timeout_ms: @stall_timeout_ms, startup_timeout_ms: @startup_timeout_ms]
+    Map.merge(state, Capture.open(opts, port_arguments(opts), timeouts, "#{__MODULE__}"))
   end
 
   @impl GenServer
@@ -423,10 +331,7 @@ defmodule VisionCore.Camera.V4L2 do
       {:ok, commands} ->
         Enum.each(commands, &Port.command(state.port, &1))
 
-        updated =
-          Enum.reduce(controls, state.controls, fn {key, value}, controls ->
-            Map.put(controls, key, normalise(Enum.find(@settings, &(&1.key == key)), value))
-          end)
+        updated = Capture.update(@settings, state.controls, controls)
 
         {:reply, {:ok, updated}, %{state | controls: updated}}
 
@@ -447,7 +352,7 @@ defmodule VisionCore.Camera.V4L2 do
       {:pair, left, right} ->
         publish_frame(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
-        {:noreply, %{state | last_frame_at: now_ms(), applied: refreshed(state.applied)}}
+        {:noreply, %{state | last_frame_at: Capture.now_ms(), applied: refreshed(state.applied)}}
 
       {:metadata, metadata} ->
         applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
@@ -468,17 +373,7 @@ defmodule VisionCore.Camera.V4L2 do
     {:stop, {:v4l2_capture_exit, status}, state}
   end
 
-  def handle_info(:watchdog, state) do
-    case LibCamera.stall_verdict(state, now_ms()) do
-      :ok ->
-        Process.send_after(self(), :watchdog, @watchdog_interval_ms)
-        {:noreply, state}
-
-      verdict ->
-        Logger.error("#{__MODULE__} v4l2_capture stopped delivering: #{inspect(verdict)}")
-        {:stop, {:camera_stall, verdict}, state}
-    end
-  end
+  def handle_info(:watchdog, state), do: Capture.watchdog(state, "#{__MODULE__}")
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -488,16 +383,4 @@ defmodule VisionCore.Camera.V4L2 do
 
   defp publish_frame(state, frame),
     do: Outputs.publish(state.output, {:camera_frame, %{frame | frame_id: state.frame_id}})
-
-  defp now_ms, do: System.monotonic_time(:millisecond)
-
-  defp binary_path do
-    case :code.priv_dir(:vision_core) do
-      {:error, :bad_name} ->
-        raise "#{__MODULE__}: :vision_core app not loaded; cannot locate v4l2_capture"
-
-      priv_directory ->
-        Path.join([List.to_string(priv_directory), "v4l2_capture"])
-    end
-  end
 end
