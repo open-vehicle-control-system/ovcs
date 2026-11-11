@@ -253,7 +253,7 @@ defmodule VisionCore.Stereo.NxStage do
         type = @parameter_types[setting.type] do
       spec =
         setting
-        |> Map.take([:range, :step, :values, :greater_than])
+        |> Map.take([:range, :step, :values, :greater_than, :when])
         |> Map.merge(%{type: type, applies: if(setting[:live], do: :live, else: :build)})
 
       {key, if(doc = setting[:doc], do: Map.put(spec, :description, doc), else: spec)}

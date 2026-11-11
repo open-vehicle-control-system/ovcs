@@ -89,7 +89,7 @@ The 3 × 3 median is the only one in the default list; [a wider one can be added
 | `band` | build | With `coarse_to_fine`, the disparities searched around each pixel's coarse match: 8, 16, 32 or 64. Wider costs more memory and time. |
 | `margin` | build | With `coarse_to_fine`, how many of the `band` disparities lie below the coarse match. |
 
-The settings are nx_stereo's: [`NxStereo.Stage.Disparity`](https://github.com/Spin42/nx_stereo/blob/main/lib/nx_stereo/stage/disparity.ex) declares them, and a new one there becomes a parameter here. `:fine_census`, the fine search's Census window, is given in the composer only. `:matcher` (`:native` or `:nx`), given in the composer, makes this stage run natively or compiled whatever the rest of the pipeline does. Cost on the Pi 5: about 30 ms, two thirds of the pipeline.
+The settings are nx_stereo's: [`NxStereo.Stage.Disparity`](https://github.com/Spin42/nx_stereo/blob/main/lib/nx_stereo/stage/disparity.ex) declares them, and a new one there becomes a parameter here. The dashboard lists `coarse_paths`, `band` and `margin` only while `search` is `coarse_to_fine`. `:fine_census`, the fine search's Census window, is given in the composer only. `:matcher` (`:native` or `:nx`), given in the composer, makes this stage run natively or compiled whatever the rest of the pipeline does. Cost on the Pi 5: about 30 ms, two thirds of the pipeline.
 
 ### 4. SpeckleFilter
 

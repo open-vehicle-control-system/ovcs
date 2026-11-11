@@ -382,6 +382,27 @@ defmodule VisionCore.Stereo.PipelineTest do
     assert Enum.count(names, &(&1 == :median_filter)) == 1
   end
 
+  test "lists Disparity's coarse-to-fine settings only while it searches coarse to fine" do
+    keys = fn search ->
+      {:ok, pipeline} =
+        start(Pipeline.default_stages(disparity: [num_disparities: 128, search: search]))
+
+      disparity = Enum.find(Pipeline.stage_options(pipeline), &(&1.stage == :disparity))
+      GenServer.stop(pipeline)
+      {Keyword.keys(disparity.specs), Map.keys(disparity.values)}
+    end
+
+    coarse_to_fine = [:coarse_paths, :band, :margin]
+
+    {specs, values} = keys.("full")
+    assert specs -- coarse_to_fine == specs
+    assert values -- coarse_to_fine == values
+
+    {specs, values} = keys.("coarse_to_fine")
+    assert coarse_to_fine -- specs == []
+    assert coarse_to_fine -- values == []
+  end
+
   test "default_stages/1 refuses an override that names no stage" do
     assert_raise ArgumentError,
                  ~r/^no default stage named :disparty; they are :rectification, /,
