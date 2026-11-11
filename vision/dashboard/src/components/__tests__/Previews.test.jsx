@@ -1,6 +1,7 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import Previews from '../Previews.jsx'
+import { useExporters } from '../../stores/exporters.js'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
 
@@ -161,6 +162,10 @@ describe('Previews', () => {
   })
 
   describe('detections', () => {
+    const listed = (...outputs) =>
+      useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: outputs.map((name) => ({ name, maxHz: 5 })) }] })
+    afterEach(() => act(() => useExporters.setState({ exporters: [] })))
+
     const person = {
       label: 'person',
       score: 0.62,
@@ -178,6 +183,7 @@ describe('Previews', () => {
     }
 
     it("labels an object above its outline's top-left, whichever vertex comes first", () => {
+      listed('detections')
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
       showLeftFrame(push)
@@ -190,6 +196,7 @@ describe('Previews', () => {
     })
 
     it('counts the objects under the left preview, once detection answers', () => {
+      listed('detections')
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
       expect(card('left').querySelector('[data-figure="objects"]')).toBeNull()
@@ -201,6 +208,7 @@ describe('Previews', () => {
     })
 
     it("draws each object's outline and its label with the distance over the left preview", () => {
+      listed('detections')
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
       showLeftFrame(push)
@@ -216,6 +224,75 @@ describe('Previews', () => {
       push('detections', 'detections', { detections: [] })
       expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(0)
       expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-hidden')).toBe('true')
+    })
+
+    describe('with named pipelines', () => {
+      it("subscribes to each channel the API exporter lists, the default's and every named pipeline's", () => {
+        listed('stereo_pair', 'detections', 'detections:road_signs', 'detections:lanes')
+        const { socket } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+
+        const topics = socket.channel.mock.calls.map(([topic]) => topic)
+        expect(topics).toEqual(expect.arrayContaining(['detections', 'detections:road_signs', 'detections:lanes']))
+      })
+
+      it('joins no detections channel while the API exporter lists none', () => {
+        const { socket } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+
+        const topics = socket.channel.mock.calls.map(([topic]) => topic)
+        expect(topics.filter((topic) => topic.startsWith('detections'))).toEqual([])
+        expect(figure('left').querySelector('svg[data-detections]')).toBeNull()
+      })
+
+      it("joins only the named pipelines' channels on a unit without the default pipeline", () => {
+        listed('stereo_pair', 'detections:road_signs')
+        const { socket } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+
+        const topics = socket.channel.mock.calls.map(([topic]) => topic)
+        expect(topics.filter((topic) => topic.startsWith('detections'))).toEqual(['detections:road_signs'])
+      })
+
+      it('draws no overlay before any pipeline has answered', () => {
+        listed('detections', 'detections:road_signs')
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showLeftFrame(push)
+
+        expect(figure('left').querySelector('svg[data-detections]')).toBeNull()
+      })
+
+      it("draws each pipeline's boxes on the left preview and counts all their objects", () => {
+        listed('detections', 'detections:road_signs')
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showLeftFrame(push)
+        const stop = { ...person, label: 'stop' }
+
+        push('detections', 'detections', { detections: [person] })
+        push('detections:road_signs', 'detections', { detections: [stop, stop] })
+
+        const overlays = [...figure('left').querySelectorAll('svg[data-detections]')]
+        expect(overlays.map((overlay) => overlay.getAttribute('aria-label'))).toEqual([
+          'Detected: person at 1.8 m',
+          'Detected: stop at 1.8 m, stop at 1.8 m'
+        ])
+        expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects3')
+      })
+
+      it("keeps a named pipeline's objects off the default's overlay", () => {
+        listed('detections', 'detections:road_signs')
+        const { socket, push } = liveSocket()
+        render(<Previews status={snapshot} socket={socket} />)
+        showLeftFrame(push)
+
+        push('detections:road_signs', 'detections', { detections: [person] })
+
+        expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
+        expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-label')).toBe('Detected: person at 1.8 m')
+        expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
+      })
     })
   })
 })

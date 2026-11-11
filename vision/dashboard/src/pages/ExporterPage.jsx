@@ -17,6 +17,12 @@ const OUTPUT_NAMES = {
   detections: 'Detections'
 }
 
+// `detections:road_signs` is the named pipeline road_signs's detections.
+const outputName = (name) => {
+  const [output, pipeline] = name.split(':')
+  return OUTPUT_NAMES[name] ?? (pipeline && OUTPUT_NAMES[output] ? `${OUTPUT_NAMES[output]}: ${pipeline}` : name)
+}
+
 const REVOKE_DELAY_MS = 10000
 
 const download = ({ blob, filename }) => {
@@ -124,7 +130,7 @@ function GenericExporterPage({ id }) {
             <tbody className="divide-y divide-ovcs-border">
               {exporter.outputs.map((output) => (
                 <tr key={output.name}>
-                  <td className="py-2 pr-3">{OUTPUT_NAMES[output.name] ?? output.name}</td>
+                  <td className="py-2 pr-3">{outputName(output.name)}</td>
                   <td className="py-2 tabular-nums text-ovcs-muted">
                     {output.maxHz == null ? 'the newest, unbounded' : `at most ${output.maxHz} Hz`}
                   </td>

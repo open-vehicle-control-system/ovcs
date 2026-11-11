@@ -119,12 +119,12 @@ function Steps({ name, groups, selectedGroupId, box }) {
 
 /**
  * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. Detection is listed on
- * every unit, so the menu reads the same everywhere: without a detector, as one greyed line.
+ * every unit, so the menu reads the same everywhere: on a unit with no pipeline beyond the stereo one, as one greyed line.
  */
 export default function Pipelines() {
   const { pipelines, selectedGroupId, box } = useGroupBoxes()
   if (pipelines.length === 0) return null
-  const withDetector = pipelines.some((pipeline) => pipeline.name === 'detection')
+  const withInference = pipelines.some((pipeline) => pipeline.name !== 'stereo')
 
   return (
     <div className="flex flex-col gap-3">
@@ -133,7 +133,7 @@ export default function Pipelines() {
           <Steps name={name} groups={groups} selectedGroupId={selectedGroupId} box={box} />
         </Pipeline>
       ))}
-      {withDetector ? null : (
+      {withInference ? null : (
         <Pipeline name="detection">
           <p className="px-3 py-1 text-sm text-ovcs-muted">No detector on this unit</p>
         </Pipeline>

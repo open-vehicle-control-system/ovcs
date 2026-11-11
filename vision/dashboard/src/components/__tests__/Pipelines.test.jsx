@@ -63,6 +63,17 @@ describe('Pipelines', () => {
     expect(line.className).toContain('text-ovcs-muted')
   })
 
+  it('shows no greyed detection line on a unit with only a named pipeline', () => {
+    useParameters.setState({
+      groups: [group('cameras', 'Cameras', 1, { role: 'source' }), group('road_signs.input', 'Input', 101, { pipeline: 'road_signs' })]
+    })
+    render(<Pipelines />)
+
+    expect(screen.getByRole('list', { name: 'Road signs' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Detection' })).toBeNull()
+    expect(screen.queryByText('No detector on this unit')).toBeNull()
+  })
+
   it('shows no pipeline before the stages have loaded', () => {
     useParameters.setState({ groups: [] })
     render(<Pipelines />)

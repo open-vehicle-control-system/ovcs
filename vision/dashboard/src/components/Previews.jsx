@@ -5,6 +5,7 @@ import { HealthValue, WARNING, Widest } from './UnitStatus.jsx'
 import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
 import Hint from './Hint.jsx'
+import { useExporters } from '../stores/exporters.js'
 import {
   PAIR_CHECKS,
   cameraFigures,
@@ -131,32 +132,54 @@ function badges({ actions, wording }) {
 // Whether a preview has something to do, for the ring around its frame.
 const needsAction = ({ actions }) => actions.length > 0
 
-/** The latest detection result, `null` until one comes or on a unit without detection. */
-function useDetections(socket) {
-  const [detections, setDetections] = useState(null)
+const DETECTIONS = 'detections'
+
+/** The detection channels to join: each `detections` output the API exporter lists, the default pipeline's and every named one's. */
+function useDetectionTopics() {
+  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+
+  return (outputs ?? []).map(({ name }) => name).filter((name) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
+}
+
+/** The latest detection result of each channel in `topics`, a space-separated list, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
+function useDetections(socket, topics) {
+  const [detections, setDetections] = useState({})
 
   useEffect(() => {
-    const channel = socket.channel('detections', {})
-    channel.on('detections', (payload) => setDetections(payload.detections))
-    channel.join()
+    const channels = topics
+      .split(' ')
+      .filter(Boolean)
+      .map((topic) => {
+        const channel = socket.channel(topic, {})
+        channel.on('detections', (payload) => setDetections((latest) => ({ ...latest, [topic]: payload.detections })))
+        channel.join()
+        return channel
+      })
     return () => {
-      channel.leave()
-      setDetections(null)
+      channels.forEach((channel) => channel.leave())
+      setDetections({})
     }
-  }, [socket])
+  }, [socket, topics])
 
   return detections
 }
 
-/** The left camera with the detected objects drawn over it and counted; their results re-render it alone. */
+/** The left camera with every pipeline's detected objects drawn over it and counted; their results re-render it alone. */
 function LeftPreview({ status, socket }) {
-  const detections = useDetections(socket)
+  const topics = useDetectionTopics()
+  const latest = useDetections(socket, topics.join(' '))
+  const answered = topics.filter((topic) => latest[topic])
+  const detections = answered.length > 0 ? answered.flatMap((topic) => latest[topic]) : null
 
   return (
     <Preview
       stream="left"
       socket={socket}
-      overlay={detections ? <DetectionOverlay detections={detections} /> : null}
+      overlay={
+        answered.length > 0
+          ? answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />)
+          : null
+      }
       badge={badges(cameraIssues(status?.cameras?.left))}
       alert={needsAction(cameraIssues(status?.cameras?.left))}
     >

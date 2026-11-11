@@ -27,6 +27,7 @@ Channels:
 - `status`: a `VisionCore.Status` snapshot on join, then one a second, with each exporter's status.
 - `preview:left`, `preview:right` and `preview:depth`: JPEG frames as binary WebSocket messages, one at a time, sent when the client acknowledges the previous one with `ack`. On `preview:depth`, the client pushes `depth_range` with `metres` to set the depth video's colour range, or without to read it; the reply is the range in force, `{"metres": …}`. The range is the unit's: the channel pushes it as a `depth_range` event after every join and on every change, whichever dashboard makes it.
 - `detections`: each detection result, at most ten a second, as `detections` events: every object's label, score, distance in metres and outline on the left camera's image, as fractions of its width and height. Refused on a unit without detection.
+- `detections:<name>`: the same for the named detection pipeline `<name>`, as `detections` events; the API exporter's outputs list each one. Refused when no pipeline of that name runs.
 
 Any other path serves the dashboard.
 
