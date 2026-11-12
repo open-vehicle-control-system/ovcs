@@ -1,7 +1,7 @@
 ---
 id: TASK-100
 title: Report a Port's panic while another thread writes
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-12 10:00'
 labels:
@@ -19,6 +19,6 @@ ordinal: 79000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A panic while another thread holds stdout still reaches the host as a log record, after a bounded wait for the lock
-- [ ] #2 A test panics while another thread holds the writer and finds the record
+- [x] #1 A panic while another thread holds stdout still reaches the host as a log record, after a bounded wait for the lock
+- [x] #2 A test panics while another thread holds the writer and finds the record
 <!-- AC:END -->

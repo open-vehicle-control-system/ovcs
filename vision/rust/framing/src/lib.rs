@@ -6,6 +6,7 @@ use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 use std::sync::{Arc, Mutex, TryLockError};
+use std::time::{Duration, Instant};
 
 const TAG_FRAME: u8 = 1;
 const TAG_LOG: u8 = 2;
@@ -16,6 +17,10 @@ const TAG_OUTPUT_FRAME: u8 = 7;
 const TAG_OUTPUT_JPEG: u8 = 8;
 
 pub const METADATA_FIELDS: usize = 8;
+
+/// How long a panic waits for the thread writing a record before it gives up its own.
+const PANIC_LOCK_WAIT: Duration = Duration::from_millis(500);
+const PANIC_LOCK_RETRY: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogLevel {
@@ -150,16 +155,28 @@ impl Writer {
     }
 
     /// Also sends a panic's message as an error LOG record before the usual
-    /// report on stderr, which the Port does not read. Skipped while another
-    /// thread is writing a record, which it would cut.
+    /// report on stderr, which the Port does not read. It waits its turn
+    /// behind a thread writing a record, which it would cut, and is skipped
+    /// when that thread still writes after `PANIC_LOCK_WAIT`, or is the one
+    /// panicking.
     pub fn log_panics(&self) {
+        self.log_panics_waiting(PANIC_LOCK_WAIT, || std::thread::sleep(PANIC_LOCK_RETRY));
+    }
+
+    /// `log_panics`, waiting up to `wait` for the lock, with `pause` between two tries.
+    fn log_panics_waiting(&self, wait: Duration, pause: impl Fn() + Send + Sync + 'static) {
         let stdout = Arc::clone(&self.stdout);
         let report = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            let output = match stdout.try_lock() {
-                Ok(output) => Some(output),
-                Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
-                Err(TryLockError::WouldBlock) => None,
+            let deadline = Instant::now() + wait;
+            // Never `lock`: the panicking thread may hold the lock itself.
+            let output = loop {
+                match stdout.try_lock() {
+                    Ok(output) => break Some(output),
+                    Err(TryLockError::Poisoned(poisoned)) => break Some(poisoned.into_inner()),
+                    Err(TryLockError::WouldBlock) if Instant::now() < deadline => pause(),
+                    Err(TryLockError::WouldBlock) => break None,
+                }
             };
             if let Some(mut output) = output {
                 let record = log_record(LogLevel::Error, &format!("panic: {info}"));
@@ -339,15 +356,31 @@ mod tests {
         assert!(size == 1 << 20 || size == 64 << 20, "{size}");
     }
 
-    #[test]
-    fn a_panic_is_sent_as_an_error_log_record() {
+    // The panic hook is the process's: one test sets it at a time.
+    static PANIC_HOOK: Mutex<()> = Mutex::new(());
+
+    // A writer and the end its records are read from.
+    fn piped_writer() -> (Writer, File) {
         let mut ends = [0; 2];
         // SAFETY: `ends` has room for the two descriptors.
         assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
         // SAFETY: both descriptors were just created and nothing else owns them.
-        let (mut pipe_out, pipe_in) =
+        let (pipe_out, pipe_in) =
             unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
-        let writer = Writer::from_file(pipe_in);
+        (Writer::from_file(pipe_in), pipe_out)
+    }
+
+    fn assert_panic_record(record: &[u8], panic_message: &str) {
+        assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
+        let message = String::from_utf8(record[2..].to_vec()).unwrap();
+        assert!(message.starts_with("panic: "), "{message}");
+        assert!(message.contains(panic_message), "{message}");
+    }
+
+    #[test]
+    fn a_panic_is_sent_as_an_error_log_record() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
         writer.log_panics();
 
         let panicked = std::panic::catch_unwind(|| panic!("no frame left"));
@@ -356,10 +389,57 @@ mod tests {
         assert!(panicked.is_err());
         drop(writer);
         let record = read_record(&mut pipe_out, 1 << 10).unwrap().unwrap();
-        assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
-        let message = String::from_utf8(record[2..].to_vec()).unwrap();
-        assert!(message.starts_with("panic: "), "{message}");
-        assert!(message.contains("no frame left"), "{message}");
+        assert_panic_record(&record, "no frame left");
+    }
+
+    #[test]
+    fn a_panic_while_another_thread_writes_is_sent_once_that_thread_is_done() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let (done, is_done) = std::sync::mpsc::channel::<()>();
+        let (holding, is_holding) = std::sync::mpsc::channel::<()>();
+        let stdout = Arc::clone(&writer.stdout);
+        let holder = std::thread::spawn(move || {
+            let output = stdout.lock().unwrap();
+            holding.send(()).unwrap();
+            released.recv().unwrap();
+            drop(output);
+            done.send(()).unwrap();
+        });
+        is_holding.recv().unwrap();
+        // The first pause lets the other thread finish, as its write would.
+        let (release, is_done) = (Mutex::new(release), Mutex::new(is_done));
+        writer.log_panics_waiting(Duration::from_secs(60), move || {
+            if release.lock().unwrap().send(()).is_ok() {
+                is_done.lock().unwrap().recv().unwrap();
+            }
+        });
+
+        let panicked = std::panic::catch_unwind(|| panic!("conversion failed"));
+        let _ = std::panic::take_hook();
+
+        assert!(panicked.is_err());
+        holder.join().unwrap();
+        drop(writer);
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap();
+        assert_panic_record(&record.expect("the panic's record"), "conversion failed");
+    }
+
+    #[test]
+    fn a_panic_gives_up_its_record_when_the_writer_stays_held() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
+        let output = writer.stdout.lock().unwrap();
+        writer.log_panics_waiting(Duration::ZERO, || {});
+
+        let panicked = std::panic::catch_unwind(|| panic!("held"));
+        let _ = std::panic::take_hook();
+
+        assert!(panicked.is_err());
+        drop(output);
+        drop(writer);
+        assert_eq!(read_record(&mut pipe_out, 1 << 10).unwrap(), None);
     }
 
     #[test]
