@@ -45,6 +45,11 @@ BINDGEN_ARGS := --target=$(RUST_TARGET) --sysroot=$(SYSROOT) \
 	-isystem $(NERVES_TOOLCHAIN)/lib/gcc/$(GCC_TRIPLE)/$(GCC_VERSION)/include \
 	-isystem $(SYSROOT)/usr/include
 
+# jpeg_codec links the system's libturbojpeg where the system ships one, and
+# otherwise libjpeg-turbo built statically from the turbojpeg-sys crate's
+# source, which needs cmake.
+TURBOJPEG_SOURCE := $(if $(wildcard $(SYSROOT)/usr/lib/pkgconfig/libturbojpeg.pc),pkg-config,vendor)
+
 # The Nerves CC, CFLAGS and PKG_CONFIG_* would also apply to the host
 # build scripts, so they are passed only under target-scoped names.
 # `--sysroot` at link time lets ld resolve libcamera's own dependencies.
@@ -58,6 +63,7 @@ CARGO_ENV := env -u CC -u CXX -u AR -u CFLAGS -u CXXFLAGS -u LDFLAGS \
 	HAILORT_INCLUDE_DIR="$(HAILORT_DIR)/native/include" \
 	HAILORT_LINK_DIR="$(HAILORT_DIR)/native/lib" \
 	QAIRT_INCLUDE_DIR="$(QAIRT_HEADERS)" \
+	$(RUST_TARGET_ENV_UPPER)_TURBOJPEG_SOURCE=$(TURBOJPEG_SOURCE) \
 	PKG_CONFIG_ALLOW_CROSS=1 \
 	PKG_CONFIG_SYSROOT_DIR_$(RUST_TARGET_ENV)="$(SYSROOT)" \
 	PKG_CONFIG_PATH_$(RUST_TARGET_ENV)= \

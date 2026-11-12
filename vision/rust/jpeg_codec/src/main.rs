@@ -17,8 +17,8 @@
 
 use std::io::{self, Write};
 
-use jpeg_decoder::{Decoder, PixelFormat};
-use jpeg_encoder::{ColorType, Encoder};
+use jpeg_decoder::Decoder;
+use turbojpeg::{Image, PixelFormat, Subsamp};
 
 const ENCODE: u8 = 0;
 const DECODE: u8 = 1;
@@ -300,9 +300,9 @@ fn encode(request: &[u8]) -> Option<Vec<u8>> {
     let width = u16::from_le_bytes([header[0], header[1]]);
     let height = u16::from_le_bytes([header[2], header[3]]);
     let (channels, quality) = (header[4], header[5]);
-    let color = match channels {
-        1 => ColorType::Luma,
-        3 => ColorType::Rgb,
+    let format = match channels {
+        1 => PixelFormat::GRAY,
+        3 => PixelFormat::RGB,
         _ => return None,
     };
     let pixels = &request[ENCODE_HEADER..];
@@ -312,11 +312,33 @@ fn encode(request: &[u8]) -> Option<Vec<u8>> {
     {
         return None;
     }
-    let mut jpeg = Vec::new();
-    Encoder::new(&mut jpeg, quality.clamp(1, 100))
-        .encode(pixels, width, height, color)
-        .ok()?;
-    Some(jpeg)
+    compress(pixels, width, height, format, quality)
+}
+
+/// Grey or RGB `pixels` as a JPEG, its chroma 4:2:0 below quality 90 and
+/// 4:4:4 from 90 up. The caller checks that `pixels` holds the image.
+fn compress(
+    pixels: &[u8],
+    width: u16,
+    height: u16,
+    format: PixelFormat,
+    quality: u8,
+) -> Option<Vec<u8>> {
+    let subsamp = match format {
+        PixelFormat::GRAY => Subsamp::Gray,
+        _ if quality < 90 => Subsamp::Sub2x2,
+        _ => Subsamp::None,
+    };
+    let (width, height) = (usize::from(width), usize::from(height));
+    let image = Image {
+        pixels,
+        width,
+        pitch: width * format.size(),
+        height,
+        format,
+    };
+    let jpeg = turbojpeg::compress(image, i32::from(quality.clamp(1, 100)), subsamp).ok()?;
+    Some(jpeg.to_vec())
 }
 
 // A colour JPEG's luma is computed back from its RGB with BT.601 weights,
@@ -329,8 +351,8 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     reply.extend_from_slice(&properties.width.to_le_bytes());
     reply.extend_from_slice(&properties.height.to_le_bytes());
     match properties.pixel_format {
-        PixelFormat::L8 => reply.extend_from_slice(&samples),
-        PixelFormat::RGB24 => reply.extend(samples.chunks_exact(3).map(|rgb| {
+        jpeg_decoder::PixelFormat::L8 => reply.extend_from_slice(&samples),
+        jpeg_decoder::PixelFormat::RGB24 => reply.extend(samples.chunks_exact(3).map(|rgb| {
             let [red, green, blue] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
             ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
         })),
@@ -359,11 +381,13 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     };
     let far = if far_mm == 0 { u16::MAX } else { far_mm };
     let range = near.map(|near| (near, far.max(near.saturating_add(1))));
-    let mut jpeg = Vec::new();
-    Encoder::new(&mut jpeg, quality.clamp(1, 100))
-        .encode(&depth_colours(&depth, range), width, height, ColorType::Rgb)
-        .ok()?;
-    Some(jpeg)
+    compress(
+        &depth_colours(&depth, range),
+        width,
+        height,
+        PixelFormat::RGB,
+        quality,
+    )
 }
 
 /// The 2nd percentile of the measured depths, so a few stray near matches do
