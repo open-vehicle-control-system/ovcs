@@ -61,6 +61,13 @@ defmodule VisionCore.Detection.Reprojection do
   """
   @type points :: %{count: non_neg_integer(), points: binary()}
 
+  @typedoc """
+  `t:points/0` with where each point is in the rectified left optical
+  frame: its pixel `u`, `v`, then its `x`, `y`, `z` in metres in that
+  frame, as native-endian 32-bit floats, `u, v, x, y, z` after one another.
+  """
+  @type points_with_origin :: %{count: non_neg_integer(), points: binary()}
+
   defguardp is_floats(first, second) when is_float(first) and is_float(second)
 
   defguardp is_floats(first, second, third)
@@ -120,15 +127,32 @@ defmodule VisionCore.Detection.Reprojection do
   for a calibration `check/1` refuses.
   """
   @spec project(Pair.t(), camera(), Pose.t(), pos_integer()) :: points()
-  def project(pair, camera, pose, stride \\ @default_stride)
+  def project(pair, camera, pose, stride \\ @default_stride),
+    do: project(pair, camera, pose, stride, :camera)
 
-  def project(%Pair{} = pair, camera, %Pose{} = pose, stride)
-      when is_integer(stride) and stride > 0 do
+  @doc """
+  `project/4`'s points, each with where it is in the rectified left
+  optical frame, the stereo pair's: its pixel `u`, `v` in the camera's
+  image, then its `x`, `y`, `z` in metres in the left optical frame, as
+  native-endian 32-bit floats, `u, v, x, y, z` after one another.
+  """
+  @spec project_with_origin(Pair.t(), camera(), Pose.t(), pos_integer()) :: points_with_origin()
+  def project_with_origin(pair, camera, pose, stride \\ @default_stride),
+    do: project(pair, camera, pose, stride, :origin)
+
+  defp project(%Pair{} = pair, camera, %Pose{} = pose, stride, record)
+       when is_integer(stride) and stride > 0 do
     lens = to_lens(camera)
     {width, height} = Pair.size(pair)
     {cx, cy} = pair.geometry.principal_point
     fx = pair.geometry.focal_length_px / 1
-    columns = %{first_x: -cx / fx, x_step: stride / fx, skip_bytes: (stride - 1) * 2}
+
+    columns = %{
+      first_x: -cx / fx,
+      x_step: stride / fx,
+      skip_bytes: (stride - 1) * 2,
+      record: record
+    }
 
     points =
       Enum.reduce(0..(height - 1)//stride, <<>>, fn row, points ->
@@ -137,8 +161,11 @@ defmodule VisionCore.Detection.Reprojection do
         project_row(depths, columns.first_x, columns, ray, lens, points)
       end)
 
-    %{count: div(byte_size(points), 12), points: points}
+    %{count: div(byte_size(points), record_bytes(record)), points: points}
   end
+
+  defp record_bytes(:camera), do: 12
+  defp record_bytes(:origin), do: 20
 
   @doc """
   The unit direction, in the camera's optical frame, of what `pixel` of
@@ -226,18 +253,20 @@ defmodule VisionCore.Detection.Reprojection do
     %{lens | fold: fold(lens)}
   end
 
-  # R · (x, y, 1) for a row's y: R's first column, times x, plus the row's part, then t.
+  # R · (x, y, 1) for a row's y: R's first column, times x, plus the row's part, then t; and y.
   defp row_ray(%Pose{rotation: rotation, translation: translation}, row_y) do
     [r00, r01, r02, r10, r11, r12, r20, r21, r22] = Enum.map(rotation, &(&1 / 1))
     [tx, ty, tz] = Enum.map(translation, &(&1 / 1))
-    {{r00, r10, r20}, {r01 * row_y + r02, r11 * row_y + r12, r21 * row_y + r22}, {tx, ty, tz}}
+
+    {{r00, r10, r20}, {r01 * row_y + r02, r11 * row_y + r12, r21 * row_y + r22}, {tx, ty, tz},
+     row_y / 1}
   end
 
   defp project_row(<<millimetres::little-16, rest::binary>>, left_x, columns, ray, lens, points)
        when is_float(left_x) do
     points =
       if millimetres > 0,
-        do: project_point(millimetres / 1000, left_x, ray, lens, points),
+        do: project_point(millimetres / 1000, left_x, ray, lens, {columns.record, points}),
         else: points
 
     project_row(
@@ -262,19 +291,27 @@ defmodule VisionCore.Detection.Reprojection do
   defp project_point(
          depth_m,
          left_x,
-         {{r00, r10, r20}, {row_x, row_y, row_z}, {tx, ty, tz}},
+         {{r00, r10, r20}, {row_x, row_y, row_z}, {tx, ty, tz}, left_y},
          lens,
-         points
+         {record, points}
        )
        when is_floats(r00, r10, r20) and is_floats(row_x, row_y, row_z) and
-              is_floats(tx, ty, tz) and is_floats(depth_m, left_x) do
+              is_floats(tx, ty, tz) and is_floats(depth_m, left_x, left_y) do
     x = depth_m * (r00 * left_x + row_x) + tx
     y = depth_m * (r10 * left_x + row_y) + ty
     z = depth_m * (r20 * left_x + row_z) + tz
 
     with {distorted_x, distorted_y} <- distort(lens, x, y, z),
          {u, v} <- pixel(lens.camera, distorted_x, distorted_y) do
-      <<points::binary, u::float-32-native, v::float-32-native, z::float-32-native>>
+      case record do
+        :camera ->
+          <<points::binary, u::float-32-native, v::float-32-native, z::float-32-native>>
+
+        :origin ->
+          <<points::binary, u::float-32-native, v::float-32-native,
+            depth_m * left_x::float-32-native, depth_m * left_y::float-32-native,
+            depth_m::float-32-native>>
+      end
     else
       :outside -> points
     end

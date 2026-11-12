@@ -178,6 +178,64 @@ defmodule VisionCore.Detection.ReprojectionTest do
     end
   end
 
+  describe "project_with_origin/4" do
+    test "gives each projected point's pixel with its position in the left optical frame" do
+      calibration =
+        calibration("plumb_bob", {600.0, 590.0, 330.0, 245.0}, [
+          -0.25,
+          0.08,
+          1.0e-3,
+          -1.5e-3,
+          0.01
+        ])
+
+      pair = pair(sloped_depth_mm(64, 48))
+      left = left_points(pair, 2)
+
+      expected =
+        left
+        |> opencv_plumb_bob(calibration)
+        |> Enum.zip_with(left, fn {u, v}, {x, y, z} -> {u, v, x, y, z} end)
+        |> Enum.filter(fn {u, v, _x, _y, _z} -> u >= 0 and u < 640 and v >= 0 and v < 480 end)
+
+      projection = Reprojection.project_with_origin(pair, calibration, oblique_pose(), 2)
+
+      projected =
+        for <<u::float-32-native, v::float-32-native, x::float-32-native, y::float-32-native,
+              z::float-32-native <- projection.points>>,
+            do: {u, v, x, y, z}
+
+      assert projection.count == length(expected)
+      assert length(expected) < length(left)
+
+      Enum.zip_with(projected, expected, fn {u, v, x, y, z}, {eu, ev, ex, ey, ez} ->
+        assert_in_delta u, eu, 1.0e-3
+        assert_in_delta v, ev, 1.0e-3
+
+        for {value, wanted} <- [{x, ex}, {y, ey}, {z, ez}],
+            do: assert_in_delta(value, wanted, 1.0e-5)
+      end)
+    end
+
+    test "projects the same points as project/4" do
+      calibration = calibration("equidistant", {250.0, 245.0, 320.0, 240.0}, [0.03, -0.01, 0.0])
+      pair = pair(sloped_depth_mm(64, 48))
+      with_origin = Reprojection.project_with_origin(pair, calibration, oblique_pose(), 3)
+
+      pixels =
+        for <<u::float-32-native, v::float-32-native,
+              _origin::binary-size(12) <-
+                with_origin.points>>,
+            do: {u, v}
+
+      assert pixels ==
+               for(
+                 {u, v, _z} <- triples(Reprojection.project(pair, calibration, oblique_pose(), 3)),
+                 do: {u, v}
+               )
+    end
+  end
+
   describe "check/1" do
     test "accepts plumb_bob with up to 5 coefficients and equidistant with up to 4" do
       for {model, coefficients} <- [
