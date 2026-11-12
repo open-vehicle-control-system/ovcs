@@ -157,6 +157,71 @@ class SolvePoseTest(unittest.TestCase):
             camera_pose.solve_pose(boards, left_points, camera_points, LEFT, rational, IMAGE_SIZE)
 
 
+class PairErrorsTest(unittest.TestCase):
+    def errors(self, left, camera, shifted_px=0.0):
+        """Each view's error under the true pose, the third view's camera corners `shifted_px` right."""
+        boards, left_points, camera_points = synthetic_views(left, camera)
+        camera_points[2] = camera_points[2] + np.array([shifted_px, 0.0])
+        return camera_pose.pair_errors(
+            boards[0],
+            left_points,
+            camera_points,
+            left,
+            camera,
+            TRUE_ROTATION @ RECTIFICATION,
+            TRUE_TRANSLATION,
+        )
+
+    def test_is_zero_for_every_pair_that_fits_the_pose(self):
+        for left, camera in [
+            (LEFT, CAMERA_PLUMB_BOB),
+            (LEFT, CAMERA_EQUIDISTANT),
+            (LEFT_EQUIDISTANT, CAMERA_PLUMB_BOB),
+            (LEFT_EQUIDISTANT, CAMERA_EQUIDISTANT),
+        ]:
+            np.testing.assert_allclose(self.errors(left, camera), 0.0, atol=1e-3)
+
+    def test_is_the_rms_over_both_images_of_a_pair_whose_corners_moved_in_one(self):
+        for camera in [CAMERA_PLUMB_BOB, CAMERA_EQUIDISTANT]:
+            errors = self.errors(LEFT, camera, shifted_px=4.0)
+
+            self.assertAlmostEqual(errors[2], 4.0 / np.sqrt(2), places=2)
+            np.testing.assert_allclose(np.delete(errors, 2), 0.0, atol=1e-3)
+
+
+class ScaledCameraMatrixTest(unittest.TestCase):
+    def test_maps_pixel_centres_as_the_vision_unit_resamples_a_calibration(self):
+        scaled = camera_pose.scaled_camera_matrix(LEFT["K"], (2028, 1520), (1014, 760))
+
+        np.testing.assert_allclose(
+            scaled, [[350.0, 0.0, 249.75], [0.0, 351.0, 189.75], [0.0, 0.0, 1.0]]
+        )
+
+    def test_keeps_a_calibration_at_the_size_of_the_images(self):
+        np.testing.assert_array_equal(
+            camera_pose.scaled_camera_matrix(LEFT["K"], IMAGE_SIZE, IMAGE_SIZE), LEFT["K"]
+        )
+
+    def test_takes_images_within_a_hundredth_of_the_aspect_ratio(self):
+        camera_pose.scaled_camera_matrix(LEFT["K"], (2028, 1520), (1014, 764))
+
+    def test_refuses_images_of_another_aspect_ratio(self):
+        with self.assertRaisesRegex(ValueError, "2028x1520.*1014x570"):
+            camera_pose.scaled_camera_matrix(LEFT["K"], (2028, 1520), (1014, 570))
+
+
+class ReadMatrixTest(unittest.TestCase):
+    def test_reads_the_data_of_its_own_key(self):
+        yaml = "camera_matrix:\n  rows: 1\n  cols: 2\n  data: [1.0, 2.5]\nother:\n  data: [3.0]\n"
+
+        self.assertEqual(camera_pose.read_matrix(yaml, "camera_matrix"), [1.0, 2.5])
+
+    def test_is_none_for_a_key_without_data_whatever_follows_it(self):
+        yaml = "rectification_matrix:\n  rows: 3\nprojection_matrix:\n  data: [3.0]\n"
+
+        self.assertIsNone(camera_pose.read_matrix(yaml, "rectification_matrix"))
+
+
 def calibration_yaml(camera, size, rectification=IDENTITY):
     """A camera_info YAML of `camera` at `size`; without `rectification_matrix` when None."""
     projection = np.hstack([camera["K"], np.zeros((3, 1))])
@@ -227,8 +292,11 @@ RENDERED_LEFT = dict(LEFT, D=np.zeros(5))
 RENDERED_CAMERA = dict(CAMERA_PLUMB_BOB, D=np.zeros(5))
 
 
-def write_rendered_pairs(pairs, true_rotation, camera_sizes):
-    """Writes a rendered pair into `pairs` for each camera image size of `camera_sizes`."""
+def write_rendered_pairs(pairs, true_rotation, camera_sizes, moved=()):
+    """Writes a rendered pair into `pairs` for each camera image size of `camera_sizes`.
+
+    The board moves 3 cm between the two captures of the pairs whose index is in `moved`.
+    """
     raw_rotation = true_rotation @ RECTIFICATION
     centre = np.array([(COLUMNS - 1) * SQUARE_M / 2, (ROWS - 1) * SQUARE_M / 2, 0.0])
     board_poses = [
@@ -246,6 +314,8 @@ def write_rendered_pairs(pairs, true_rotation, camera_sizes):
             str(pairs / f"left-{index:04d}.png"),
             render_chessboard(RENDERED_LEFT, board_rotation, board_translation, IMAGE_SIZE),
         )
+        if index in moved:
+            board_translation = board_translation + np.array([0.03, 0.0, 0.0])
         cv2.imwrite(
             str(pairs / f"camera-{index:04d}.png"),
             render_chessboard(
@@ -257,7 +327,7 @@ def write_rendered_pairs(pairs, true_rotation, camera_sizes):
         )
 
 
-def run_command(directory, board=f"{COLUMNS}x{ROWS}"):
+def run_command(directory, board=f"{COLUMNS}x{ROWS}", square=SQUARE_M, extra=()):
     """The status and printed output of the command on `directory`'s pairs and calibrations."""
     output = io.StringIO()
     with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
@@ -272,9 +342,10 @@ def run_command(directory, board=f"{COLUMNS}x{ROWS}"):
                 "--board",
                 board,
                 "--square",
-                str(SQUARE_M),
+                str(square),
                 "--output",
                 str(directory / "pose.yaml"),
+                *extra,
             ]
         )
     return status, output.getvalue()
@@ -306,9 +377,9 @@ class CommandTest(unittest.TestCase):
         (self.directory / "left.yaml").write_text(
             calibration_yaml(RENDERED_LEFT, IMAGE_SIZE, left_rectification)
         )
-        full_size_camera = dict(
-            RENDERED_CAMERA, K=np.diag([2.0, 2.0, 1.0]) @ RENDERED_CAMERA["K"]
-        )
+        # Twice the size, pixel centres on pixel centres: u becomes (u + 1/2) * 2 - 1/2.
+        to_full_size = np.array([[2.0, 0.0, 0.5], [0.0, 2.0, 0.5], [0.0, 0.0, 1.0]])
+        full_size_camera = dict(RENDERED_CAMERA, K=to_full_size @ RENDERED_CAMERA["K"])
         camera_size = camera_size or (IMAGE_SIZE[0] * 2, IMAGE_SIZE[1] * 2)
         camera = RENDERED_CAMERA if camera_size == (0, 0) else full_size_camera
         (self.directory / "camera.yaml").write_text(calibration_yaml(camera, camera_size))
@@ -368,6 +439,86 @@ class CommandTest(unittest.TestCase):
         self.assertEqual(status, 1)
         self.assertIn("camera images of several sizes", output)
         self.assertFalse((self.directory / "pose.yaml").exists())
+
+    def test_lists_each_pair_by_its_error_worst_first_when_the_pose_does_not_fit(self):
+        write_rendered_pairs(self.directory / "pairs", TRUE_ROTATION, [IMAGE_SIZE] * 4, moved=[2])
+        self.write_calibrations()
+
+        status, output = run_command(self.directory)
+
+        self.assertEqual(status, 0, output)
+        listed = re.findall(r"^  (\d{4}): (\d+\.\d+) px$", output, re.M)
+        self.assertEqual(sorted(name for name, _error in listed), ["0000", "0001", "0002", "0003"])
+        self.assertEqual(listed[0][0], "0002")
+        errors = [float(error) for _name, error in listed]
+        self.assertEqual(errors, sorted(errors, reverse=True))
+        self.assertIn("--exclude", output)
+
+    def test_lists_no_pair_when_the_pose_fits(self):
+        write_rendered_pairs(self.directory / "pairs", TRUE_ROTATION, [IMAGE_SIZE] * 4)
+        self.write_calibrations()
+
+        _status, output = run_command(self.directory)
+
+        self.assertNotIn("0002:", output)
+        self.assertNotIn("--exclude", output)
+
+    def test_leaves_out_the_excluded_pairs(self):
+        write_rendered_pairs(self.directory / "pairs", TRUE_ROTATION, [IMAGE_SIZE] * 4, moved=[2])
+        self.write_calibrations()
+
+        status, output = run_command(self.directory, extra=["--exclude", "0002"])
+
+        self.assertEqual(status, 0, output)
+        self.assertIn("3 pairs", output)
+        pose_rotation, pose_translation, rms = read_pose(self.directory / "pose.yaml")
+        np.testing.assert_allclose(pose_rotation, TRUE_ROTATION, atol=5e-3)
+        np.testing.assert_allclose(pose_translation, TRUE_TRANSLATION, atol=5e-3)
+        self.assertLess(rms, 0.5)
+
+    def test_refuses_to_exclude_a_pair_that_is_not_there(self):
+        write_rendered_pairs(self.directory / "pairs", TRUE_ROTATION, [IMAGE_SIZE] * 4)
+        self.write_calibrations()
+
+        status, output = run_command(self.directory, extra=["--exclude", "0007"])
+
+        self.assertEqual(status, 1)
+        self.assertIn("0007", output)
+
+    def test_refuses_a_calibration_of_another_aspect_ratio(self):
+        write_rendered_pairs(self.directory / "pairs", TRUE_ROTATION, [IMAGE_SIZE] * 4)
+        self.write_calibrations(camera_size=(IMAGE_SIZE[0] * 2, IMAGE_SIZE[1]))
+
+        status, output = run_command(self.directory)
+
+        self.assertEqual(status, 1)
+        self.assertIn(f"{IMAGE_SIZE[0] * 2}x{IMAGE_SIZE[1]}", output)
+        self.assertFalse((self.directory / "pose.yaml").exists())
+
+    def test_refuses_a_square_that_is_not_a_length(self):
+        self.write_calibrations()
+
+        for square in [0, -0.025]:
+            status, output = run_command(self.directory, square=square)
+
+            self.assertEqual(status, 1)
+            self.assertIn("--square", output)
+
+    def test_refuses_a_board_that_looks_the_same_after_a_half_turn(self):
+        self.write_calibrations()
+
+        status, output = run_command(self.directory, board="8x6")
+
+        self.assertEqual(status, 1)
+        self.assertIn("--allow-symmetric", output)
+
+    def test_takes_such_a_board_when_told_to(self):
+        self.write_calibrations()
+
+        status, output = run_command(self.directory, board="8x6", extra=["--allow-symmetric"])
+
+        self.assertEqual(status, 1)
+        self.assertIn("at least 3 are needed", output)
 
     def test_refuses_a_malformed_board(self):
         self.write_calibrations()

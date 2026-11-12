@@ -15,11 +15,14 @@ from the rectified left optical frame, the frame of the stereo depth:
 
 It writes the pose as YAML for the `:camera` component's `:pose`
 (`VisionCore.Camera.Pose`) and prints the RMS reprojection error, in
-pixels. Each camera's images are of one size; a calibration of another
-size is scaled to them, one without a size taken as it is. Run from the
-repository root, with OpenCV and NumPy:
+pixels; above a pixel, it lists each pair's own, worst first, and
+`--exclude <n>` leaves pairs out. Each camera's images are of one size;
+a calibration of another size is resampled to them as the vision unit
+does, one without a size taken as it is. Run from the repository root,
+with a Python that has OpenCV and NumPy, as the system's with
+`python3-opencv`:
 
-    python3 -I scripts/camera_pose.py --pairs pairs/ \\
+    /usr/bin/python3 -I scripts/camera_pose.py --pairs pairs/ \\
         --left stereo_left.yaml --camera center.yaml \\
         --board 9x6 --square 0.025 --output center_pose.yaml
 """
@@ -29,18 +32,30 @@ import re
 import sys
 from pathlib import Path
 
-import cv2
-import numpy as np
+try:
+    import cv2
+    import numpy as np
+except ImportError as error:
+    sys.exit(
+        f"camera_pose: {error}: run it with a Python that has OpenCV and NumPy, the system's "
+        "(/usr/bin/python3) with the python3-opencv package, or one with the "
+        "opencv-python-headless and numpy packages"
+    )
 
 MODELS = ("plumb_bob", "equidistant")
 PAIR_NAME = re.compile(r"^(left|camera)-(.+)\.(png|jpg|jpeg|bmp)$", re.IGNORECASE)
 MINIMUM_PAIRS = 3
+# The RMS error above which the pose does not fit, and each pair's error is listed.
+FIT_RMS_PX = 1.0
+# How far a calibration's aspect ratio may be from its images', as the vision unit takes it.
+ASPECT_TOLERANCE = 0.01
 
 
 def read_matrix(yaml, key):
     """The `data` list of `key` in a `camera_info` YAML, or None."""
-    match = re.search(rf"^{key}:.*?data:\s*\[([^\]]*)\]", yaml, re.MULTILINE | re.DOTALL)
-    if match is None:
+    own = re.search(rf"^{key}:(.*?)(?=^\S|\Z)", yaml, re.MULTILINE | re.DOTALL)
+    match = own and re.search(r"data:\s*\[([^\]]*)\]", own.group(1))
+    if not match:
         return None
     return [float(number) for number in match.group(1).split(",") if number.strip()]
 
@@ -69,17 +84,25 @@ def read_calibration(path):
 def scaled_camera_matrix(camera_matrix, calibration_size, image_size):
     """`camera_matrix` of a calibration at `calibration_size` for images of `image_size`.
 
-    A calibration without a size, 0 x 0, is taken as it is, as the vision
-    unit takes it.
+    Pixel centres map onto pixel centres, as in the vision unit's
+    `VisionCore.Ros2.CameraCalibration.resample_to/3`: a coordinate `u`
+    becomes `(u + 1/2) * scale - 1/2`. A calibration without a size,
+    0 x 0, is taken as it is. Raises for images of another aspect ratio,
+    which the unit refuses too.
     """
     if calibration_size[0] == 0 or calibration_size[1] == 0:
         return camera_matrix
     scale_x = image_size[0] / calibration_size[0]
     scale_y = image_size[1] / calibration_size[1]
-    scaled = camera_matrix.copy()
-    scaled[0, :] *= scale_x
-    scaled[1, :] *= scale_y
-    return scaled
+    if abs(scale_x / scale_y - 1) > ASPECT_TOLERANCE:
+        raise ValueError(
+            f"a calibration of {calibration_size[0]}x{calibration_size[1]} for images of "
+            f"{image_size[0]}x{image_size[1]}: they are not of one aspect ratio"
+        )
+    to_centres = np.array(
+        [[scale_x, 0.0, (scale_x - 1) / 2], [0.0, scale_y, (scale_y - 1) / 2], [0.0, 0.0, 1.0]]
+    )
+    return to_centres @ camera_matrix
 
 
 def distortion(coefficients, model):
@@ -162,6 +185,61 @@ def solve_pose(board_points, left_points, camera_points, left, camera, image_siz
     return rms, rotation, translation.reshape(3)
 
 
+def seen(points, rotation_vector, translation, camera):
+    """The pixels of `points`, placed at that pose from `camera`, in the camera's own model."""
+    coefficients = distortion(camera["D"], camera["model"])
+    if camera["model"] == "equidistant":
+        pixels, _ = cv2.fisheye.projectPoints(
+            points.reshape(-1, 1, 3), rotation_vector, translation, camera["K"], coefficients
+        )
+    else:
+        pixels, _ = cv2.projectPoints(
+            points, rotation_vector, translation, camera["K"], coefficients
+        )
+    return pixels.reshape(-1, 2)
+
+
+def rays(points, camera):
+    """`points`, pixels of `camera`, on the plane one unit ahead of it, undistorted."""
+    undistort = (
+        cv2.fisheye.undistortPoints if camera["model"] == "equidistant" else cv2.undistortPoints
+    )
+    return undistort(
+        points.reshape(-1, 1, 2).astype(np.float64),
+        camera["K"],
+        distortion(camera["D"], camera["model"]),
+    )
+
+
+def pair_errors(board, left_points, camera_points, left, camera, rotation, translation):
+    """Each pair's RMS reprojection error, in pixels, under the pose from the raw left camera.
+
+    The board is placed from its corners in the left image, then seen by
+    both cameras, each in its own model: the error is over the corners
+    of both images, as the solvers' own.
+    """
+    errors = []
+    for left_view, camera_view in zip(left_points, camera_points):
+        _, board_vector, board_translation = cv2.solvePnP(
+            board, rays(left_view, left), np.eye(3), None
+        )
+        in_camera, _ = cv2.Rodrigues(rotation @ cv2.Rodrigues(board_vector)[0])
+        residuals = np.concatenate(
+            [
+                seen(board, board_vector, board_translation, left) - left_view.reshape(-1, 2),
+                seen(
+                    board,
+                    in_camera,
+                    (rotation @ board_translation).reshape(3) + translation,
+                    camera,
+                )
+                - camera_view.reshape(-1, 2),
+            ]
+        )
+        errors.append(float(np.sqrt(np.mean(np.sum(residuals**2, axis=1)))))
+    return errors
+
+
 def from_rectified_left(rotation, translation, rectification):
     """The pose from the rectified left frame, given the one from the raw left frame.
 
@@ -195,14 +273,14 @@ def find_corners(path, columns, rows):
 
 
 def image_pairs(directory):
-    """`(left, camera)` image paths of each pair in `directory`, by their shared name."""
+    """`(name, left, camera)` of each pair in `directory`: its shared name and image paths."""
     found = {}
     for path in Path(directory).iterdir():
         match = PAIR_NAME.match(path.name)
         if match:
             found.setdefault(match.group(2), {})[match.group(1).lower()] = path
     return [
-        (paths["left"], paths["camera"])
+        (name, paths["left"], paths["camera"])
         for name, paths in sorted(found.items())
         if "left" in paths and "camera" in paths
     ]
@@ -232,14 +310,25 @@ def board_size(text):
     return int(match.group(1)), int(match.group(2))
 
 
+def kept_pairs(pairs, excluded):
+    """`pairs` without those named in `excluded`; raises for a name no pair has."""
+    unknown = sorted(set(excluded) - {name for name, _left, _camera in pairs})
+    if unknown:
+        raise ValueError(f"--exclude {', '.join(unknown)}: no such pair")
+    return [pair for pair in pairs if pair[0] not in excluded]
+
+
 def measure(arguments):
     """Solves the pose from the arguments' pairs, writes it and returns the RMS error."""
     columns, rows = board_size(arguments.board)
-    if columns % 2 == rows % 2:
-        print(
+    if arguments.square <= 0:
+        raise ValueError(f"--square {arguments.square}: give the square's side in metres")
+    if columns % 2 == rows % 2 and not arguments.allow_symmetric:
+        raise ValueError(
             f"a {columns}x{rows} board looks the same after a half turn: two cameras turned "
-            "far from each other may number its corners apart; one odd and one even count, "
-            "such as 9x6, avoids it"
+            "far from each other may number its corners apart, which gives a wrong pose. Use "
+            "one odd and one even count, such as 9x6, or pass --allow-symmetric for cameras "
+            "turned alike"
         )
     left_calibration = read_calibration(arguments.left)
     camera_calibration = read_calibration(arguments.camera)
@@ -250,9 +339,9 @@ def measure(arguments):
         )
         left_calibration["R"] = np.eye(3)
 
-    left_points, camera_points, left_sizes, camera_sizes = [], [], set(), set()
-    pairs = image_pairs(arguments.pairs)
-    for left_path, camera_path in pairs:
+    names, left_points, camera_points, left_sizes, camera_sizes = [], [], [], set(), set()
+    pairs = kept_pairs(image_pairs(arguments.pairs), arguments.exclude)
+    for name, left_path, camera_path in pairs:
         left_corners, left_size = find_corners(left_path, columns, rows)
         camera_corners, camera_size = find_corners(camera_path, columns, rows)
         left_sizes.add(left_size)
@@ -260,6 +349,7 @@ def measure(arguments):
         if left_corners is None or camera_corners is None:
             print(f"{left_path.name}, {camera_path.name}: chessboard not found in both, left out")
             continue
+        names.append(name)
         left_points.append(left_corners)
         camera_points.append(camera_corners)
 
@@ -288,12 +378,20 @@ def measure(arguments):
     rms, rotation, translation = solve_pose(
         [board] * len(left_points), left_points, camera_points, left, camera, camera_size
     )
+    errors = pair_errors(board, left_points, camera_points, left, camera, rotation, translation)
     rotation, translation = from_rectified_left(rotation, translation, left_calibration["R"])
     Path(arguments.output).write_text(pose_yaml(rotation, translation, rms))
     print(
         f"{len(left_points)} pairs, RMS reprojection error {rms:.3f} px, "
         f"pose written to {arguments.output}"
     )
+    if rms > FIT_RMS_PX:
+        print(
+            f"above {FIT_RMS_PX:g} px, the pose does not fit. Each pair's error, worst first; "
+            "record the worst again or leave them out with --exclude:"
+        )
+        for error, name in sorted(zip(errors, names), reverse=True):
+            print(f"  {name}: {error:.3f} px")
     return rms
 
 
@@ -310,6 +408,18 @@ def parse_arguments(argv):
         "--square", required=True, type=float, help="the chessboard's square, in metres"
     )
     parser.add_argument("--output", required=True, help="the pose YAML to write")
+    parser.add_argument(
+        "--exclude",
+        nargs="+",
+        default=[],
+        metavar="N",
+        help="pairs to leave out, by the <n> of their images' names",
+    )
+    parser.add_argument(
+        "--allow-symmetric",
+        action="store_true",
+        help="take a board with two odd or two even corner counts",
+    )
     return parser.parse_args(argv)
 
 
