@@ -1,11 +1,11 @@
 ---
 title: Vision unit
-description: The vision role, a Pi 5, OKdo Nano C100 or Arduino VENTUNO Q that turns stereo cameras into depth and detection as ROS 2 topics, and how a vehicle opts in.
+description: The vision role, a Pi 5, OKdo Nano C100 or Arduino VENTUNO Q that turns cameras into depth, detection and road segmentation, and how a vehicle opts in.
 ---
 
 The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, where it:
 
-- runs stereo depth, and optionally object detection;
+- runs stereo depth, and optionally object detection and road segmentation;
 - takes the results out through its exporters, such as ROS 2 messages over Zenoh;
 - serves its own dashboard.
 
@@ -14,7 +14,7 @@ It has no CAN controller and does not touch the `ovcs` bus. It reaches the vehic
 A vehicle without cameras omits the role and nothing is built for it. Among the reference vehicles:
 
 - The OVCS Mini reference vehicle runs one on a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`).
-- The OVCS1 reference vehicle runs one on an Arduino VENTUNO Q with two Global Shutter Cameras (`Ovcs1.Vision.Composer`).
+- The OVCS1 reference vehicle runs one on an Arduino VENTUNO Q (`Ovcs1.Vision.Composer`). Two Global Shutter Cameras give depth, and an HQ Camera in colour, `:center`, feeds detection and road segmentation.
 
 ## Layers
 
