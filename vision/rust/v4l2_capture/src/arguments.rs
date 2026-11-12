@@ -44,6 +44,9 @@ pub struct OutputSpec {
     pub width: u32,
     pub height: u32,
     pub format: Format,
+    /// Whether its records are written; one not sent is made only for the
+    /// outputs made from it.
+    pub send: bool,
 }
 
 /// How an output's frames are sent.
@@ -147,8 +150,9 @@ pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
 /// `cpu:<width>x<height>`, made by the software conversion at the capture's
 /// size or half of it, or `from:<index>:<width>x<height>`, scaled from an
 /// earlier output to a whole fraction of its size, sent as a JPEG with
-/// `:jpeg:<quality>` after it; without, one output of the capture's size.
-/// The error is the message to log.
+/// `:jpeg:<quality>` after it; an RGB one followed by `:unsent` is made
+/// but not sent, for the outputs made from it. Without, one output of the
+/// capture's size. The error is the message to log.
 pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let (mut sensor_width, mut sensor_height, mut fps) = (None, None, None);
     let (mut video, mut sensor) = (None, None);
@@ -182,10 +186,22 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
         return Err(format!("--output: at most {MAX_OUTPUTS} outputs"));
     }
     let mut specs: Vec<OutputSpec> = Vec::with_capacity(outputs.len());
-    for value in outputs {
+    for value in &outputs {
         let spec = output_spec(value, (sensor_width, sensor_height), &specs)
             .map_err(|message| format!("--output {value}: {message}"))?;
         specs.push(spec);
+    }
+    let made_for_nothing = (specs.iter().enumerate()).position(|(index, spec)| {
+        !spec.send
+            && !specs
+                .iter()
+                .any(|later| later.source == Source::From(index))
+    });
+    if let Some(index) = made_for_nothing {
+        return Err(format!(
+            "--output {}: it is not sent and no output is made from it",
+            outputs[index]
+        ));
     }
     Ok(SingleArguments {
         sensor_width,
@@ -200,7 +216,8 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     })
 }
 
-const OUTPUT_FORMS: &str = "cpu:<width>x<height>, from:<index>:<width>x<height> \
+const OUTPUT_FORMS: &str = "cpu:<width>x<height>[:unsent], \
+                            from:<index>:<width>x<height>[:unsent] \
                             or from:<index>:<width>x<height>:jpeg:<quality>";
 
 /// The output `value` describes, one of `OUTPUT_FORMS`, of a `sensor`
@@ -210,6 +227,10 @@ fn output_spec(
     sensor: (u32, u32),
     earlier: &[OutputSpec],
 ) -> Result<OutputSpec, String> {
+    let (value, send) = match value.strip_suffix(":unsent") {
+        Some(made) => (made, false),
+        None => (value, true),
+    };
     let (source, size, format) = match value.split(':').collect::<Vec<_>>()[..] {
         ["cpu", size] => (None, size, Format::Rgb),
         ["from", index, size] => (Some(output_index(index)?), size, Format::Rgb),
@@ -264,6 +285,7 @@ fn output_spec(
         width,
         height,
         format,
+        send,
     })
 }
 
@@ -459,6 +481,7 @@ mod tests {
             width,
             height,
             format: Format::Rgb,
+            send: true,
         }
     }
 
@@ -479,6 +502,7 @@ mod tests {
                     width: 1014,
                     height: 760,
                     format: Format::Rgb,
+                    send: true,
                 }
             ]
         );
@@ -499,6 +523,7 @@ mod tests {
             width,
             height,
             format: Format::Jpeg { quality },
+            send: true,
         };
         assert_eq!(
             parsed(&[
@@ -521,6 +546,64 @@ mod tests {
     }
 
     #[test]
+    fn an_output_followed_by_unsent_is_made_but_not_sent() {
+        let parsed = parse_single(&single_command_line(&[
+            "--output",
+            "cpu:2028x1520:unsent",
+            "--output",
+            "from:0:2028x1520:jpeg:80",
+            "--output",
+            "from:0:1014x760:unsent",
+            "--output",
+            "from:2:507x380",
+        ]))
+        .unwrap();
+        let sent: Vec<bool> = parsed.outputs.iter().map(|spec| spec.send).collect();
+        assert_eq!(sent, [false, true, false, true]);
+        assert_eq!(
+            parsed.outputs[0],
+            OutputSpec {
+                send: false,
+                ..cpu(Output::Full, (2028, 1520))
+            }
+        );
+        assert_eq!(
+            (parsed.outputs[2].source, parsed.outputs[2].width),
+            (Source::From(0), 1014)
+        );
+    }
+
+    #[test]
+    fn an_unsent_output_is_refused_unless_another_is_made_from_it() {
+        let refused = |outputs: &[&str]| {
+            let extra: Vec<&str> = outputs
+                .iter()
+                .flat_map(|output| ["--output", output])
+                .collect();
+            parse_single(&single_command_line(&extra)).unwrap_err()
+        };
+        assert_eq!(
+            refused(&["cpu:2028x1520:unsent"]),
+            "--output cpu:2028x1520:unsent: it is not sent and no output is made from it"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "cpu:1014x760:unsent", "from:0:507x380"]),
+            "--output cpu:1014x760:unsent: it is not sent and no output is made from it"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "from:0:2028x1520:jpeg:80:unsent"]),
+            "--output from:0:2028x1520:jpeg:80:unsent: \
+             it is not sent and no output is made from it"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520:unsent:unsent", "from:0:1014x760"]),
+            "--output cpu:2028x1520:unsent:unsent: cpu:<width>x<height>[:unsent], \
+             from:<index>:<width>x<height>[:unsent] \
+             or from:<index>:<width>x<height>:jpeg:<quality>"
+        );
+    }
+
+    #[test]
     fn a_jpeg_output_is_refused_without_its_quality_or_as_a_source() {
         let refused = |output: &str| {
             parse_single(&single_command_line(&[
@@ -531,7 +614,7 @@ mod tests {
             ]))
             .unwrap_err()
         };
-        let forms = "cpu:<width>x<height>, from:<index>:<width>x<height> \
+        let forms = "cpu:<width>x<height>[:unsent], from:<index>:<width>x<height>[:unsent] \
                      or from:<index>:<width>x<height>:jpeg:<quality>";
         for quality in ["0", "101", "x", ""] {
             assert_eq!(
@@ -583,7 +666,8 @@ mod tests {
         );
         assert_eq!(
             refused(&["isp:2028x1520"]),
-            "--output isp:2028x1520: cpu:<width>x<height>, from:<index>:<width>x<height> \
+            "--output isp:2028x1520: cpu:<width>x<height>[:unsent], \
+             from:<index>:<width>x<height>[:unsent] \
              or from:<index>:<width>x<height>:jpeg:<quality>"
         );
         assert_eq!(refused(&["cpu:2028"]), "--output cpu:2028: no size 2028");

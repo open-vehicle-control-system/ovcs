@@ -5,8 +5,9 @@
 //! output as the processor converts it, or encoded from another output as
 //! a JPEG on an encoder thread (`jpeg`), runs auto exposure on the
 //! green of the RGGB cells as the image tones it, and writes one
-//! OUTPUT_FRAME or OUTPUT_JPEG record per output per frame on stdout, in
-//! the outputs' order, each frame converted in bands of rows on as many
+//! OUTPUT_FRAME or OUTPUT_JPEG record per sent output per frame on stdout,
+//! in the outputs' order, an output not sent made only for those made from
+//! it, each frame converted in bands of rows on as many
 //! threads as `threads` sets and written on a writer thread while the next
 //! one converts. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
@@ -232,10 +233,11 @@ fn capture(
 /// A frame's images, one per output, shared by the threads that read them.
 type FrameImages = Arc<Vec<Vec<u8>>>;
 
-/// A record for the writer thread: a frame's outputs, each image with its
-/// header, or another record whole.
+/// A record for the writer thread: a frame's images, one per output, with
+/// the header of each output sent and that output's index, or another
+/// record whole.
 enum Record {
-    Frame(Vec<[u8; 14]>, FrameImages),
+    Frame(Vec<(usize, [u8; 14])>, FrameImages),
     Other(Vec<u8>),
 }
 
@@ -248,9 +250,10 @@ struct Written {
 }
 
 /// Writes each record `queued` holds to `records`, in order, a frame's
-/// outputs one record each, each output `jpeg_slots` places among the
+/// sent outputs one record each, each output `jpeg_slots` places among the
 /// frame's JPEGs as its JPEG from `encoded`, handing each frame's images
-/// back to `written` with the time their writes and encodes took.
+/// back to `written`, once its JPEGs are encoded, with the time their
+/// writes and encodes took.
 fn write_records(
     records: &impl Records,
     jpeg_slots: &[Option<usize>],
@@ -262,10 +265,16 @@ fn write_records(
         match record {
             Record::Frame(headers, images) => {
                 let mut jpegs = None;
+                let receive_jpegs = |jpegs: &mut Option<Encoded>| -> io::Result<()> {
+                    if jpegs.is_none() {
+                        *jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+                    }
+                    Ok(())
+                };
                 let mut write = Duration::ZERO;
-                for (index, header) in headers.iter().enumerate() {
-                    if jpeg_slots[index].is_some() && jpegs.is_none() {
-                        jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+                for &(index, ref header) in &headers {
+                    if jpeg_slots[index].is_some() {
+                        receive_jpegs(&mut jpegs)?;
                     }
                     let body = match (jpeg_slots[index], &jpegs) {
                         (Some(slot), Some(encoded)) => &encoded.jpegs[slot],
@@ -274,6 +283,10 @@ fn write_records(
                     let writing = Instant::now();
                     records.write(&[header, body])?;
                     write += writing.elapsed();
+                }
+                // The encoder holds the images until the frame's JPEGs are done.
+                if jpeg_slots.iter().any(Option::is_some) {
+                    receive_jpegs(&mut jpegs)?;
                 }
                 let encode = jpegs.map(|encoded| {
                     drop(encoded.images);
@@ -307,7 +320,7 @@ impl Queue {
     }
 
     /// Sends a frame's outputs to the writer, and its images to the encoder.
-    fn send_frame(&self, headers: Vec<[u8; 14]>, images: FrameImages) -> io::Result<()> {
+    fn send_frame(&self, headers: Vec<(usize, [u8; 14])>, images: FrameImages) -> io::Result<()> {
         if let Some(to_encode) = &self.to_encode {
             (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
         }
@@ -536,13 +549,14 @@ fn convert_frames(
                 }
             };
             let headers = (outputs.iter().enumerate())
+                .filter(|(_, spec)| spec.send)
                 .map(|(index, spec)| {
                     let (width, height) = (spec.width as u16, spec.height as u16);
                     let header = match spec.format {
                         Format::Rgb => output_frame_header,
                         Format::Jpeg { .. } => output_jpeg_header,
                     };
-                    header(index as u8, width, height, start_ns)
+                    (index, header(index as u8, width, height, start_ns))
                 })
                 .collect();
             queue.send_frame(headers, Arc::new(std::mem::replace(&mut images, free)))?;
@@ -1080,6 +1094,7 @@ mod tests {
         width: WIDTH as u32,
         height: HEIGHT as u32,
         format: Format::Rgb,
+        send: true,
     };
 
     // The frame loop over `frames` from the IMX477, writing to `records`,
@@ -1178,6 +1193,7 @@ mod tests {
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
             format: Format::Rgb,
+            send: true,
         };
         let full = captured(scenes(6, Some(2)), vec![]);
         let records = captured_as(&[FULL, half], scenes(6, Some(2)), vec![]);
@@ -1228,6 +1244,7 @@ mod tests {
             width,
             height,
             format: Format::Rgb,
+            send: true,
         };
         // The first 2x2 average of the CPU output is made as it converts,
         // the others after it.
@@ -1264,6 +1281,7 @@ mod tests {
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
             format: Format::Rgb,
+            send: true,
         };
         let full = captured(scenes(6, None), vec![]);
         let half_alone = captured_as(&[half], scenes(6, None), vec![]);
@@ -1282,6 +1300,7 @@ mod tests {
             width: width as u32,
             height: height as u32,
             format,
+            send: true,
         }
     }
 
@@ -1388,6 +1407,45 @@ mod tests {
         );
         assert_eq!(output_images(&records, 0), output_images(&without, 0));
         assert_eq!(output_images(&records, 2), output_images(&without, 1));
+    }
+
+    #[test]
+    fn an_unsent_output_gives_no_record_and_the_others_theirs_in_order() {
+        let half = (WIDTH / 2, HEIGHT / 2);
+        let sent = [
+            FULL,
+            from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 80 }),
+            from(0, half, Format::Rgb),
+            from(0, (WIDTH / 3, HEIGHT / 2), Format::Rgb),
+        ];
+        let unsent = OutputSpec {
+            send: false,
+            ..FULL
+        };
+        let mut outputs = sent;
+        outputs[0] = unsent;
+        let all = captured_as(&sent, scenes(6, Some(2)), vec![]);
+        let records = captured_as(&outputs, scenes(6, Some(2)), vec![]);
+
+        // Each frame's sent outputs, with their indices, the fourth's after the exposure it sets (3).
+        let heads: Vec<(u8, u8)> = (records.iter())
+            .map(|record| match record[0] {
+                OUTPUT_FRAME | OUTPUT_JPEG => (record[0], record[1]),
+                tag => (tag, 0),
+            })
+            .collect();
+        let frame = [(8, 1), (7, 2), (7, 3)];
+        let expected = [&frame[..], &frame, &frame, &[(3, 0)], &frame, &frame].concat();
+        assert_eq!(heads, expected);
+        // What is made from it is what is made from it sent.
+        let made = |records: &[Vec<u8>]| -> Vec<Vec<u8>> {
+            (records.iter())
+                .filter(|record| [OUTPUT_FRAME, OUTPUT_JPEG].contains(&record[0]))
+                .filter(|record| record[1] != 0)
+                .cloned()
+                .collect()
+        };
+        assert!(made(&records) == made(&all));
     }
 
     #[test]
@@ -1606,6 +1664,7 @@ mod tests {
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
             format: Format::Rgb,
+            send: true,
         };
         let (frames, mut input) = TestFrames::new(scenes(4, None), vec![]);
         let records = Collected::default();
