@@ -146,13 +146,14 @@ defmodule VisionCore.Detection.DepthQueue do
   Has `:pair_wait` sent to the calling process when the first result
   waiting leaves without a new pair, at its deadline or when `depth`'s
   pairs stall, whichever comes first, for it to settle the queue again;
-  cancels a timer armed for another time. `now_ns` is the time now.
+  cancels a timer armed for another time, and arms again one that has
+  fired. `now_ns` is the time now.
   """
   @spec schedule(t(), CameraDepth.t(), integer()) :: t()
   def schedule(queue, depth, now_ns) do
     case {wake_ns(queue, depth), queue.timer} do
-      {wake_ns, {_timer, wake_ns}} ->
-        queue
+      {wake_ns, {timer, wake_ns}} when is_integer(wake_ns) ->
+        if Process.read_timer(timer), do: queue, else: arm(queue, wake_ns, now_ns)
 
       {nil, timer} ->
         cancel(timer)
@@ -160,9 +161,13 @@ defmodule VisionCore.Detection.DepthQueue do
 
       {wake_ns, timer} ->
         cancel(timer)
-        delay_ms = max(ceil((wake_ns - now_ns) / @ns_per_ms), 0)
-        %{queue | timer: {Process.send_after(self(), :pair_wait, delay_ms), wake_ns}}
+        arm(queue, wake_ns, now_ns)
     end
+  end
+
+  defp arm(queue, wake_ns, now_ns) do
+    delay_ms = max(ceil((wake_ns - now_ns) / @ns_per_ms), 0)
+    %{queue | timer: {Process.send_after(self(), :pair_wait, delay_ms), wake_ns}}
   end
 
   defp wake_ns(queue, depth) do

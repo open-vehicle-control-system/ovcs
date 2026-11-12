@@ -210,8 +210,8 @@ defmodule VisionCore.Detection.CameraDepthTest do
         |> CameraDepth.add_pair(pair(0), 5_000 * @ms)
         |> CameraDepth.add_pair(pair(100), 5_100 * @ms)
 
-      refute CameraDepth.stalled?(depth, 5_300 * @ms)
-      assert CameraDepth.stalled?(depth, 5_300 * @ms + 1)
+      refute CameraDepth.stalled?(depth, 5_300 * @ms - 1)
+      assert CameraDepth.stalled?(depth, 5_300 * @ms)
     end
 
     test "keeps only the pair captured two pair periods after the one before" do

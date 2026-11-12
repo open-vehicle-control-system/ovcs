@@ -97,8 +97,16 @@ defmodule VisionCore.Detection.DepthQueueTest do
     depth = depth(60_000) |> add_pair(0) |> add_pair(100)
     queue = DepthQueue.put(DepthQueue.new(60_000), :stalled, 250 * @ms, 250 * @ms)
 
-    assert {[], queue} = settled_captures(queue, depth, 300)
-    assert {[stalled: nil], _queue} = settled_captures(queue, depth, 301)
+    assert {[], queue} = settled_captures(queue, depth, 299)
+    assert {[stalled: nil], _queue} = settled_captures(queue, depth, 300)
+  end
+
+  test "settles with a pair kept within half a period while the stereo pairs have stalled" do
+    depth = depth(60_000) |> add_pair(0) |> add_pair(100)
+    queue = DepthQueue.put(DepthQueue.new(60_000), :close, 130 * @ms, 130 * @ms)
+
+    assert {[], queue} = settled_captures(queue, depth, 299)
+    assert {[close: 100], _queue} = settled_captures(queue, depth, 300)
   end
 
   test "settles at once, without a pair, before two pairs came" do
@@ -161,6 +169,24 @@ defmodule VisionCore.Detection.DepthQueueTest do
       |> DepthQueue.put(:waiting, 1_500 * @ms, now_ns)
       |> DepthQueue.schedule(depth, now_ns)
 
+      assert_receive :pair_wait, 1_000
+    end
+
+    test "arms again a timer that fired while the first result still waits" do
+      now_ns = System.monotonic_time(:nanosecond)
+
+      depth =
+        depth(20)
+        |> CameraDepth.add_pair(pair(0), now_ns - 1_000 * @ms)
+        |> CameraDepth.add_pair(pair(1_000), now_ns)
+
+      queue =
+        DepthQueue.new(20)
+        |> DepthQueue.put(:waiting, 1_500 * @ms, now_ns)
+        |> DepthQueue.schedule(depth, now_ns)
+
+      assert_receive :pair_wait, 1_000
+      DepthQueue.schedule(queue, depth, now_ns)
       assert_receive :pair_wait, 1_000
     end
 

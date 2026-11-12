@@ -247,13 +247,14 @@ defmodule VisionCore.Detection.CameraDepth do
 
   @doc """
   Whether the stereo pairs have stalled at `now_ns`: fewer than two have
-  come, or none for two pair periods since the last one arrived.
+  come, or none for two pair periods or more since the last one was handed
+  over.
   """
   @spec stalled?(t(), integer()) :: boolean()
   def stalled?(depth, now_ns) do
     case stalls_at(depth) do
       nil -> true
-      stall_ns -> now_ns > stall_ns
+      stall_ns -> now_ns >= stall_ns
     end
   end
 
