@@ -130,6 +130,8 @@ defmodule Ovcs1.Vision.Composer do
        width: 728,
        height: 544,
        fps: 30,
+       # The IMX296's black level, in 10-bit samples.
+       black_level: 60,
        match_width: 728,
        match_height: 544,
        # The Port pairs frames whose starts are within 1 ms.
@@ -141,14 +143,8 @@ defmodule Ovcs1.Vision.Composer do
            disparity: [num_disparities: 128, search: "coarse_to_fine", coarse_paths: 3]
          ),
        defn_options: NxSegment.ventuno_q_defn_options({:ovcs1, "priv/nx_iree_cache"}),
-       left: [
-         frame_id: "stereo_left_optical",
-         left_csiphy: 0,
-         right_csiphy: 1,
-         # The IMX296's black level, in 10-bit samples.
-         black_level: 60
-       ],
-       right: [frame_id: "stereo_right_optical"]
+       left: [frame_id: "stereo_left_optical", csiphy: 0],
+       right: [frame_id: "stereo_right_optical", csiphy: 1]
      ]}
   end
 end

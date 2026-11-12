@@ -61,7 +61,20 @@ defmodule VisionCore.Camera do
   """
   @callback outputs(keyword()) :: {:ok, [VisionCore.Camera.Output.t()]} | {:error, String.t()}
 
-  @optional_callbacks set_controls: 2,
+  @doc """
+  For a driver that captures both cameras of a stereo pair together:
+  `:pair`, the `:stereo` component's options it takes once for both
+  cameras, beside `:width`, `:height` and `:fps`, and `:side`, those each
+  side takes beside `:frame_id` and `:calibration_path`. The stereo unit
+  refuses any other option under a side, and gives each instance the
+  pair's options and both sides' as `:left` and `:right`. Optional: a
+  driver without it takes any option under a side, each side's options
+  its instance's.
+  """
+  @callback pair_options() :: %{pair: [atom()], side: [atom()]}
+
+  @optional_callbacks pair_options: 0,
+                      set_controls: 2,
                       controls: 1,
                       shared_controls?: 0,
                       control_specs: 0,

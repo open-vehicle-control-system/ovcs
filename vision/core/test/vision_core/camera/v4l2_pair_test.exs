@@ -25,7 +25,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
         width: 768,
         height: 432,
         fps: 30,
-        right_sensor: "imx708 7-001a",
+        right: [sensor: "imx708 7-001a"],
         rotation: 180,
         analogue_gain: 2
       )
@@ -60,14 +60,14 @@ defmodule VisionCore.Camera.V4L2PairTest do
     fn _command, args -> if "-p" in args, do: {text, 0}, else: {"", 0} end
   end
 
-  test "CSI PHY options route both sides and pass their nodes to the Port" do
+  test "each side's CSI PHY routes its sensor, whose nodes go to the Port" do
     assert {:ok, opts} =
              V4L2Pair.routed(
                width: 728,
                height: 544,
                fps: 30,
-               left_csiphy: 0,
-               right_csiphy: 1,
+               left: [frame_id: "stereo_left_optical", csiphy: 0],
+               right: [csiphy: 1],
                media_runner: media_runner("media-ctl-p.txt")
              )
 
@@ -93,8 +93,8 @@ defmodule VisionCore.Camera.V4L2PairTest do
                    width: 728,
                    height: 544,
                    fps: 30,
-                   left_csiphy: 0,
-                   right_csiphy: 2,
+                   left: [csiphy: 0],
+                   right: [csiphy: 2],
                    media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
                    executable: "/bin/true"
                  )

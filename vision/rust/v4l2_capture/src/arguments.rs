@@ -307,8 +307,8 @@ fn jpeg(quality: &str) -> Result<Format, String> {
 /// underscores. The error is the message to log.
 pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
     let (mut width, mut height, mut fps) = (None, None, None);
-    let (mut left_video, mut left_sensor) = (None, None);
-    let (mut right_video, mut right_sensor) = (None, None);
+    let (mut left_node, mut left_subdevice) = (None, None);
+    let (mut right_node, mut right_subdevice) = (None, None);
     let mut settings = Settings::default();
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
@@ -319,10 +319,10 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
             "--width" => width = Some(number(flag, value)?),
             "--height" => height = Some(number(flag, value)?),
             "--fps" => fps = Some(number(flag, value)?),
-            "--left-video" => left_video = Some(value.clone()),
-            "--left-sensor" => left_sensor = Some(value.clone()),
-            "--right-video" => right_video = Some(value.clone()),
-            "--right-sensor" => right_sensor = Some(value.clone()),
+            "--left-video" => left_node = Some(value.clone()),
+            "--left-sensor" => left_subdevice = Some(value.clone()),
+            "--right-video" => right_node = Some(value.clone()),
+            "--right-sensor" => right_subdevice = Some(value.clone()),
             setting => match setting.strip_prefix("--") {
                 Some(name) => settings.set(&name.replace('-', "_"), value)?,
                 None => return Err(format!("unknown argument {flag}")),
@@ -334,12 +334,12 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
         height: height.ok_or("missing --height")?,
         fps: fps.ok_or("missing --fps")?,
         left: Nodes {
-            video: left_video.ok_or("missing --left-video")?,
-            sensor: left_sensor.ok_or("missing --left-sensor")?,
+            video: left_node.ok_or("missing --left-video")?,
+            sensor: left_subdevice.ok_or("missing --left-sensor")?,
         },
         right: Nodes {
-            video: right_video.ok_or("missing --right-video")?,
-            sensor: right_sensor.ok_or("missing --right-sensor")?,
+            video: right_node.ok_or("missing --right-video")?,
+            sensor: right_subdevice.ok_or("missing --right-sensor")?,
         },
         settings,
     })

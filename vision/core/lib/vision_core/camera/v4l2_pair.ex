@@ -47,30 +47,35 @@ defmodule VisionCore.Camera.V4L2Pair do
 
   The sensors are raw, with no ISP: the program converts their Bayer
   samples to grey and runs the exposure itself. Its settings apply to
-  both sensors, are given in the left camera's opts, and can change
-  while running through `set_controls/2` on either camera, so they are
-  also the stereo unit's `<prefix>.cameras` parameters. `control_specs/0`
-  lists them with their defaults. No autofocus runs: the program holds
-  both lenses at the `focus` setting.
+  both sensors, so the `:stereo` component takes them once, beside
+  `:width` (`pair_options/0`). They can change while running through
+  `set_controls/2` on either camera, so they are also the stereo unit's
+  `<prefix>.cameras` parameters. `control_specs/0` lists them with their
+  defaults. No autofocus runs: the program holds both lenses at the
+  `focus` setting.
 
   ## Opts
 
+  The stereo unit gives each instance these; the left one uses all of
+  them, the right one its `:label` and `:frame_id`.
+
     * `:label` — `"left"` or `"right"`.
     * `:frame_id` — the optical frame each of this side's frames carries.
-    * `:width`, `:height`, `:fps` — the output size and frame rate (left).
-    * `:left_video`, `:left_sensor`, `:right_video`, `:right_sensor` — the
-      V4L2 names (`/sys/class/video4linux/*/name`) of each side's capture
-      node and sensor subdevice (left); the C100's CSI ports by default.
-    * `:left_csiphy`, `:right_csiphy` — on a CAMSS board such as the
-      Arduino VENTUNO Q, the CSI PHY each side's sensor is wired to (left):
-      `VisionCore.Camera.Camss` routes it, at twice `:width` × `:height`,
-      and names its nodes, in place of the four options above. Startup
-      waits up to 30 s for the media device and the sensor on each PHY,
-      which register some seconds after boot; a PHY still without a
-      sensor then stops the camera with an error naming it.
+    * `:width`, `:height`, `:fps` — the output size and frame rate.
+    * `:left`, `:right` — each side's options:
+      * `:video`, `:sensor` — the V4L2 names
+        (`/sys/class/video4linux/*/name`) of the side's capture node and
+        sensor subdevice; the C100's CSI ports by default.
+      * `:csiphy` — on a CAMSS board such as the Arduino VENTUNO Q, the
+        CSI PHY the side's sensor is wired to: `VisionCore.Camera.Camss`
+        routes it, at twice `:width` × `:height`, and names its nodes, in
+        place of `:video` and `:sensor`. Startup waits up to 30 s for the
+        media device and the sensor on each PHY, which register some
+        seconds after boot; a PHY still without a sensor then stops the
+        camera with an error naming it.
+    * any setting of `control_specs/0`, by its key.
     * `:media_runner` — runs `media-ctl` for the routing, as
       `VisionCore.Camera.Camss.route/2`'s `:runner` (tests).
-    * any setting of `control_specs/0`, by its key (left).
     * `:executable` — the capture program (default `priv/v4l2_capture`).
   """
   use GenServer
@@ -89,10 +94,8 @@ defmodule VisionCore.Camera.V4L2Pair do
   @media_timeout_ms 30_000
   # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
   @default_nodes [
-    left_video: "54080000.vi-output-0",
-    left_sensor: "imx708 5-001a",
-    right_video: "54080000.vi-output-4",
-    right_sensor: "imx708 6-001a"
+    left: [video: "54080000.vi-output-0", sensor: "imx708 5-001a"],
+    right: [video: "54080000.vi-output-4", sensor: "imx708 6-001a"]
   ]
 
   def start_link(opts) do
@@ -184,9 +187,20 @@ defmodule VisionCore.Camera.V4L2Pair do
   def control_specs, do: @settings
 
   @doc """
-  `opts` with each side's nodes named after routing the sensor on its CSI
-  PHY (`:left_csiphy`, `:right_csiphy`), or unchanged without those
-  options; the routing's error otherwise.
+  The `:stereo` component's options for the pair, the settings of
+  `control_specs/0` and `:executable`, and for each side, its nodes or
+  CSI PHY.
+  """
+  @impl VisionCore.Camera
+  def pair_options,
+    do: %{
+      pair: [:executable | Enum.map(@settings, & &1.key)],
+      side: [:csiphy, :video, :sensor]
+    }
+
+  @doc """
+  `opts` with the nodes of each side given a `:csiphy` named after
+  routing the sensor on it; the routing's error otherwise.
   """
   @spec routed(keyword()) :: {:ok, keyword()} | {:error, String.t()}
   def routed(opts) do
@@ -198,25 +212,23 @@ defmodule VisionCore.Camera.V4L2Pair do
       ] ++
         if runner = opts[:media_runner], do: [runner: runner], else: []
 
-    Enum.reduce_while([left: :left_csiphy, right: :right_csiphy], {:ok, opts}, fn
-      {side, key}, {:ok, opts} ->
-        case Keyword.fetch(opts, key) do
-          :error ->
-            {:cont, {:ok, opts}}
+    Enum.reduce_while([:left, :right], {:ok, opts}, fn side, {:ok, opts} ->
+      side_opts = Keyword.get(opts, side, [])
 
-          {:ok, csiphy} ->
-            case Camss.route(csiphy, route_opts) do
-              {:ok, route} ->
-                {:cont,
-                 {:ok,
-                  opts
-                  |> Keyword.put(:"#{side}_video", "msm_vfe#{csiphy}_video0")
-                  |> Keyword.put(:"#{side}_sensor", route.sensor)}}
+      case Keyword.fetch(side_opts, :csiphy) do
+        :error ->
+          {:cont, {:ok, opts}}
 
-              {:error, message} ->
-                {:halt, {:error, "#{side} camera: #{message}"}}
-            end
-        end
+        {:ok, csiphy} ->
+          case Camss.route(csiphy, route_opts) do
+            {:ok, route} ->
+              nodes = [video: "msm_vfe#{csiphy}_video0", sensor: route.sensor]
+              {:cont, {:ok, Keyword.put(opts, side, Keyword.merge(side_opts, nodes))}}
+
+            {:error, message} ->
+              {:halt, {:error, "#{side} camera: #{message}"}}
+          end
+      end
     end)
   end
 
@@ -227,8 +239,9 @@ defmodule VisionCore.Camera.V4L2Pair do
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
 
     nodes =
-      for {key, default} <- @default_nodes,
-          do: [V4L2Capture.flag(key), Keyword.get(opts, key, default)]
+      for {side, defaults} <- @default_nodes, {key, default} <- defaults do
+        ["--#{side}-#{key}", opts |> Keyword.get(side, []) |> Keyword.get(key, default)]
+      end
 
     List.flatten(size ++ nodes) ++ V4L2Capture.arguments(@settings, opts)
   end

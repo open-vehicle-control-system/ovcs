@@ -21,8 +21,12 @@ defmodule Ovcs1.VisionComposerTest do
     assert {stereo[:width], stereo[:height]} == {728, 544}
     assert {stereo[:match_width], stereo[:match_height]} == {728, 544}
     assert stereo[:defn_options][:byte_storage] == false
-    assert stereo[:left][:left_csiphy] == 0
-    assert stereo[:left][:right_csiphy] == 1
+    assert stereo[:left][:csiphy] == 0
+    assert stereo[:right][:csiphy] == 1
+    assert stereo[:black_level] == 60
+
+    assert {:ok, _cameras} =
+             VisionCore.Stereo.Supervisor.camera_options(Ovcs1.Vision.Composer.config(:target))
 
     disparity = stereo[:stages][VisionCore.Stereo.Stage.Disparity]
     assert disparity[:num_disparities] == 128
