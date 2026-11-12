@@ -37,6 +37,7 @@ type GetSystemProviders =
     unsafe extern "C" fn(*mut *mut *const QnnSystemInterface_t, *mut u32) -> Qnn_ErrorHandle_t;
 
 /// A graph input or output: its name, shape, 8-bit quantisation if any, and size.
+#[derive(Clone, Debug, PartialEq)]
 pub struct Tensor {
     pub name: String,
     pub dimensions: Vec<u32>,
@@ -45,7 +46,13 @@ pub struct Tensor {
     /// Whether an element is one unsigned byte, quantised or not.
     pub unsigned_8bit: bool,
     pub bytes: usize,
-    raw: Qnn_Tensor_t,
+}
+
+/// A graph's inputs or outputs, and QNN's tensor each is described from, in the same order.
+#[derive(Default)]
+struct Tensors {
+    described: Vec<Tensor>,
+    raw: Vec<Qnn_Tensor_t>,
 }
 
 /// The accelerator's time, by order of preference: the graph's execution on the HTP
@@ -206,6 +213,8 @@ pub struct Model {
     pub graph_name: String,
     pub inputs: Vec<Tensor>,
     pub outputs: Vec<Tensor>,
+    raw_inputs: Vec<Qnn_Tensor_t>,
+    raw_outputs: Vec<Qnn_Tensor_t>,
     profile: Option<Profile>,
     /// Why executions are timed by the wall time, once the profile is unavailable.
     pub profile_error: Option<String>,
@@ -473,24 +482,25 @@ unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
         scale_offset,
         unsigned_8bit: is_unsigned_8bit(v1.dataType),
         bytes,
-        raw: *raw,
     })
 }
 
-unsafe fn describe_all(tensors: *const Qnn_Tensor_t, count: u32) -> Result<Vec<Tensor>, String> {
+unsafe fn describe_all(tensors: *const Qnn_Tensor_t, count: u32) -> Result<Tensors, String> {
     if tensors.is_null() {
-        return Ok(Vec::new());
+        return Ok(Tensors::default());
     }
-    std::slice::from_raw_parts(tensors, count as usize)
+    let raw = std::slice::from_raw_parts(tensors, count as usize).to_vec();
+    let described = raw
         .iter()
-        .map(|t| describe(t))
-        .collect()
+        .map(|raw| describe(raw))
+        .collect::<Result<_, _>>()?;
+    Ok(Tensors { described, raw })
 }
 
 /// The first graph's name, inputs and outputs, from the binary's description.
 unsafe fn first_graph(
     info: &QnnSystemContext_BinaryInfo_t,
-) -> Result<(*const std::os::raw::c_char, Vec<Tensor>, Vec<Tensor>), String> {
+) -> Result<(*const std::os::raw::c_char, Tensors, Tensors), String> {
     let (count, graphs) = match info.version {
         QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1 => {
             let v = &info.__bindgen_anon_1.contextBinaryInfoV1;
@@ -650,8 +660,10 @@ impl Model {
                 interface,
                 graph,
                 graph_name: graph_name_text,
-                inputs,
-                outputs,
+                inputs: inputs.described,
+                outputs: outputs.described,
+                raw_inputs: inputs.raw,
+                raw_outputs: outputs.raw,
                 profile,
                 profile_error,
                 profile_report: None,
@@ -678,34 +690,8 @@ impl Model {
         inputs: &mut [&mut [u8]],
         outputs: &mut [&mut [u8]],
     ) -> Result<Timing, String> {
-        let bind =
-            |tensors: &[Tensor], buffers: &mut [&mut [u8]]| -> Result<Vec<Qnn_Tensor_t>, String> {
-                tensors
-                    .iter()
-                    .zip(buffers.iter_mut())
-                    .map(|(tensor, buffer)| {
-                        if buffer.len() != tensor.bytes {
-                            return Err(format!(
-                                "{}: {} bytes for a {}-byte tensor",
-                                tensor.name,
-                                buffer.len(),
-                                tensor.bytes
-                            ));
-                        }
-                        let mut raw = tensor.raw;
-                        // Version 2 begins with version 1's fields.
-                        let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
-                        v1.memType = QNN_TENSORMEMTYPE_RAW;
-                        v1.__bindgen_anon_1.clientBuf = Qnn_ClientBuffer_t {
-                            data: buffer.as_mut_ptr() as *mut c_void,
-                            dataSize: buffer.len() as u32,
-                        };
-                        Ok(raw)
-                    })
-                    .collect()
-            };
-        let inputs = bind(&self.inputs, inputs)?;
-        let mut outputs = bind(&self.outputs, outputs)?;
+        let inputs = bind(&self.inputs, &self.raw_inputs, inputs)?;
+        let mut outputs = bind(&self.outputs, &self.raw_outputs, outputs)?;
         let graph_execute = self
             .interface
             .graphExecute
@@ -798,6 +784,36 @@ impl Model {
             Err(message) => self.profile_error = Some(message),
         }
     }
+}
+
+/// QNN's tensors `raw`, which `tensors` describe, each on the buffer of `buffers` in its place.
+fn bind(
+    tensors: &[Tensor],
+    raw: &[Qnn_Tensor_t],
+    buffers: &mut [&mut [u8]],
+) -> Result<Vec<Qnn_Tensor_t>, String> {
+    (tensors.iter().zip(raw))
+        .zip(buffers.iter_mut())
+        .map(|((tensor, raw), buffer)| {
+            if buffer.len() != tensor.bytes {
+                return Err(format!(
+                    "{}: {} bytes for a {}-byte tensor",
+                    tensor.name,
+                    buffer.len(),
+                    tensor.bytes
+                ));
+            }
+            let mut raw = *raw;
+            // Version 2 begins with version 1's fields.
+            let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
+            v1.memType = QNN_TENSORMEMTYPE_RAW;
+            v1.__bindgen_anon_1.clientBuf = Qnn_ClientBuffer_t {
+                data: buffer.as_mut_ptr() as *mut c_void,
+                dataSize: buffer.len() as u32,
+            };
+            Ok(raw)
+        })
+        .collect()
 }
 
 /// A basic-level profile handle on `backend`.

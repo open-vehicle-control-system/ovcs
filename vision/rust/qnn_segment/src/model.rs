@@ -5,14 +5,7 @@
 /// How far a pixel value's scale times 255 may be from 1.
 const PIXEL_SCALE_TOLERANCE: f32 = 1e-2;
 
-/// A graph input or output as the shape check reads it.
-pub struct Shape<'a> {
-    pub name: &'a str,
-    pub dimensions: &'a [u32],
-    pub unsigned_8bit: bool,
-    /// `(scale, offset)`, when the tensor is quantised.
-    pub scale_offset: Option<(f32, i32)>,
-}
+use qnn::Tensor;
 
 /// The model's input image and output grid sizes, and its classes.
 #[derive(Debug, PartialEq)]
@@ -27,8 +20,8 @@ pub struct Geometry {
 /// The model's geometry, or the message naming the input or output it cannot run on, its
 /// output scoring other than `expected_classes` classes.
 pub fn geometry(
-    inputs: &[Shape],
-    outputs: &[Shape],
+    inputs: &[Tensor],
+    outputs: &[Tensor],
     expected_classes: usize,
 ) -> Result<Geometry, String> {
     let ([input], [output]) = (inputs, outputs) else {
@@ -38,7 +31,7 @@ pub fn geometry(
             outputs.len()
         ));
     };
-    let (input_height, input_width) = match (input.unsigned_8bit, input.dimensions) {
+    let (input_height, input_width) = match (input.unsigned_8bit, &input.dimensions[..]) {
         (true, &[1, height, width, 3]) if height > 0 && width > 0 => (height, width),
         _ => {
             return Err(format!(
@@ -59,24 +52,25 @@ pub fn geometry(
             input.name
         ));
     }
-    let (output_height, output_width, classes) = match (output.unsigned_8bit, output.dimensions) {
-        (true, &[1, height, width, classes])
-            if (1..=256).contains(&classes) && height > 0 && width > 0 =>
-        {
-            match (u16::try_from(height), u16::try_from(width)) {
-                (Ok(height), Ok(width)) => Some((height, width, classes)),
-                _ => None,
+    let (output_height, output_width, classes) =
+        match (output.unsigned_8bit, &output.dimensions[..]) {
+            (true, &[1, height, width, classes])
+                if (1..=256).contains(&classes) && height > 0 && width > 0 =>
+            {
+                match (u16::try_from(height), u16::try_from(width)) {
+                    (Ok(height), Ok(width)) => Some((height, width, classes)),
+                    _ => None,
+                }
             }
+            _ => None,
         }
-        _ => None,
-    }
-    .ok_or_else(|| {
-        format!(
-            "output {} is {}, not [1, H, W, C] uint8, C at most 256",
-            output.name,
-            described(output)
-        )
-    })?;
+        .ok_or_else(|| {
+            format!(
+                "output {} is {}, not [1, H, W, C] uint8, C at most 256",
+                output.name,
+                described(output)
+            )
+        })?;
     if classes as usize != expected_classes {
         return Err(format!(
             "output {} scores {classes} classes, not the {expected_classes} the pipeline's \
@@ -109,13 +103,13 @@ fn pixel_quantisation(scale: f32, offset: i32) -> bool {
 }
 
 /// The tensor's dimensions and whether its elements are uint8.
-fn described(shape: &Shape) -> String {
-    let element = if shape.unsigned_8bit {
+fn described(tensor: &Tensor) -> String {
+    let element = if tensor.unsigned_8bit {
         "uint8"
     } else {
         "not uint8"
     };
-    format!("{:?} {element}", shape.dimensions)
+    format!("{:?} {element}", tensor.dimensions)
 }
 
 #[cfg(test)]
@@ -125,25 +119,25 @@ mod tests {
     const PIXEL_SCALE: f32 = 1.0 / 255.0;
     const CITYSCAPES_CLASSES: usize = 19;
 
-    fn image(dimensions: &'static [u32]) -> Shape<'static> {
-        Shape {
-            name: "image",
-            dimensions,
+    fn tensor(name: &str, dimensions: &[u32], scale_offset: (f32, i32)) -> Tensor {
+        Tensor {
+            name: name.to_string(),
+            dimensions: dimensions.to_vec(),
+            scale_offset: Some(scale_offset),
             unsigned_8bit: true,
-            scale_offset: Some((PIXEL_SCALE, 0)),
+            bytes: dimensions.iter().map(|&size| size as usize).product(),
         }
     }
 
-    fn mask(dimensions: &'static [u32]) -> Shape<'static> {
-        Shape {
-            name: "mask",
-            dimensions,
-            unsigned_8bit: true,
-            scale_offset: Some((0.20315, -153)),
-        }
+    fn image(dimensions: &[u32]) -> Tensor {
+        tensor("image", dimensions, (PIXEL_SCALE, 0))
     }
 
-    fn checked(inputs: &[Shape], outputs: &[Shape]) -> Result<Geometry, String> {
+    fn mask(dimensions: &[u32]) -> Tensor {
+        tensor("mask", dimensions, (0.20315, -153))
+    }
+
+    fn checked(inputs: &[Tensor], outputs: &[Tensor]) -> Result<Geometry, String> {
         geometry(inputs, outputs, CITYSCAPES_CLASSES)
     }
 
@@ -202,7 +196,7 @@ mod tests {
         assert!(checked(&[image(&[512, 1024, 3])], &ffnet_mask).is_err());
         assert!(checked(&[image(&[2, 512, 1024, 3])], &ffnet_mask).is_err());
         assert!(checked(&[image(&[1, 0, 1024, 3])], &ffnet_mask).is_err());
-        let float = Shape {
+        let float = Tensor {
             unsigned_8bit: false,
             ..image(&FFNET_INPUT)
         };
@@ -215,7 +209,7 @@ mod tests {
     #[test]
     fn the_input_takes_pixel_values_unquantised_or_with_a_scale_of_1_over_255_and_no_offset() {
         let ffnet_mask = [mask(&FFNET_OUTPUT)];
-        let quantised = |scale_offset| Shape {
+        let quantised = |scale_offset| Tensor {
             scale_offset,
             ..image(&FFNET_INPUT)
         };
@@ -272,7 +266,7 @@ mod tests {
         assert!(checked(&ffnet_image, &[mask(&[1, 128, 256, 257])]).is_err());
         assert!(checked(&ffnet_image, &[mask(&[1, 128, 256, 0])]).is_err());
         assert!(checked(&ffnet_image, &[mask(&[1, 128, 70_000, 19])]).is_err());
-        let signed = Shape {
+        let signed = Tensor {
             unsigned_8bit: false,
             ..mask(&FFNET_OUTPUT)
         };
@@ -288,7 +282,7 @@ mod tests {
     #[test]
     fn the_scores_scale_must_keep_their_order() {
         let ffnet_image = [image(&FFNET_INPUT)];
-        let negative = Shape {
+        let negative = Tensor {
             scale_offset: Some((-0.2, 0)),
             ..mask(&FFNET_OUTPUT)
         };
@@ -296,7 +290,7 @@ mod tests {
             checked(&ffnet_image, &[negative]),
             Err("output mask's scale is -0.2, not positive".to_string())
         );
-        let not_a_number = Shape {
+        let not_a_number = Tensor {
             scale_offset: Some((f32::NAN, 0)),
             ..mask(&FFNET_OUTPUT)
         };
@@ -304,7 +298,7 @@ mod tests {
             checked(&ffnet_image, &[not_a_number]),
             Err("output mask's scale is NaN, not positive".to_string())
         );
-        let plain = Shape {
+        let plain = Tensor {
             scale_offset: None,
             ..mask(&FFNET_OUTPUT)
         };

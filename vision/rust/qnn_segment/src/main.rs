@@ -25,7 +25,7 @@ use std::process::exit;
 use std::time::Instant;
 
 use framing::{log_record, LogLevel, Writer};
-use model::{Geometry, Shape};
+use model::Geometry;
 use protocol::{labels_record, parse_request};
 use qnn::{CommandLine, Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 
@@ -82,18 +82,6 @@ fn main() {
     }
 }
 
-fn shapes(tensors: &[qnn::Tensor]) -> Vec<Shape<'_>> {
-    tensors
-        .iter()
-        .map(|tensor| Shape {
-            name: &tensor.name,
-            dimensions: &tensor.dimensions,
-            unsigned_8bit: tensor.unsigned_8bit,
-            scale_offset: tensor.scale_offset,
-        })
-        .collect()
-}
-
 fn run(
     context_path: &str,
     expected_classes: usize,
@@ -126,11 +114,7 @@ fn run(
         output_width,
         output_height,
         classes,
-    } = model::geometry(
-        &shapes(&model.inputs),
-        &shapes(&model.outputs),
-        expected_classes,
-    )?;
+    } = model::geometry(&model.inputs, &model.outputs, expected_classes)?;
 
     log(
         writer,
