@@ -11,12 +11,17 @@ defmodule VisionCore.Detection.Backend.QnnTest do
   @image Nx.iota({2, 3}, type: :u8)
 
   # The DLC's text becomes the context binary's, which picks what the fake Port does.
-  defp start_backend(dir, mode, opts \\ []) do
+  defp start_backend_files(dir) do
     qairt = Path.join(dir, "qairt")
     File.mkdir_p!(Path.join(qairt, "lib"))
     File.mkdir_p!(Path.join(qairt, "bin"))
     File.write!(Path.join(qairt, "lib/libQnnHtp.so"), "library")
     File.cp!(@generator, Path.join(qairt, "bin/qnn-context-binary-generator"))
+    qairt
+  end
+
+  defp start_backend(dir, mode, opts \\ []) do
+    qairt = start_backend_files(dir)
     dlc = Path.join(dir, "model.dlc")
     File.write!(dlc, mode)
 
@@ -142,6 +147,42 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     eventually(&Qnn.available?/0)
     assert Qnn.detect(2, @image) == :ok
     assert_receive {:inference_detections, 2, [_detection]}, 2_000
+  end
+
+  test "opens the Port once its context binary is generated, after a generation that failed",
+       %{tmp_dir: dir} do
+    fail = Path.join(dir, "qairt/bin/fail")
+    File.mkdir_p!(Path.dirname(fail))
+    File.write!(fail, "")
+    start_backend(dir, "answer")
+    eventually(fn -> File.exists?(Path.join(dir, "qairt/bin/failed")) end)
+    refute Qnn.available?()
+
+    File.rm!(fail)
+
+    eventually(&Qnn.available?/0)
+    assert Qnn.detect(1, @image) == :ok
+  end
+
+  test "does not try again without its DLC", %{tmp_dir: dir} do
+    dlc = Path.join(dir, "late.dlc")
+
+    start_supervised!(
+      {Qnn,
+       dlc_path: dlc,
+       qairt_dir: Path.join(dir, "qairt"),
+       cache_dir: Path.join(dir, "cache"),
+       executable: @detector,
+       reopen_delays_ms: [0]}
+    )
+
+    eventually(fn -> is_nil(:sys.get_state(Qnn).opening) end)
+    start_backend_files(dir)
+    File.write!(dlc, "answer")
+    Process.sleep(200)
+
+    refute Qnn.available?()
+    assert is_nil(:sys.get_state(Qnn).opening)
   end
 
   test "a context binary that cannot be generated leaves the backend unavailable, saying why",

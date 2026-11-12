@@ -187,6 +187,32 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert log =~ "#{inspect(Hailo)} (road) loaded model.hef"
   end
 
+  test "opens hailo_detect once it can be started, after a start that failed", %{
+    tmp_dir: tmp_dir
+  } do
+    executable = Path.join(tmp_dir, "hailo_detect")
+    File.cp!(@executable, executable)
+    File.chmod!(executable, 0o644)
+    hef_path = Path.join(tmp_dir, "model.hef")
+    File.write!(hef_path, "answer")
+
+    start_supervised!(
+      {Hailo,
+       hef_path: hef_path,
+       executable: executable,
+       working_directory: tmp_dir,
+       library_path: tmp_dir,
+       reopen_delays_ms: [20]}
+    )
+
+    refute Hailo.available?()
+
+    File.chmod!(executable, 0o755)
+
+    eventually(&Hailo.available?/0)
+    assert Hailo.detect(1, @image) == :ok
+  end
+
   test "stays unavailable without its model", %{tmp_dir: tmp_dir} do
     start_supervised!(
       {Hailo, hef_path: Path.join(tmp_dir, "missing.hef"), executable: @executable}

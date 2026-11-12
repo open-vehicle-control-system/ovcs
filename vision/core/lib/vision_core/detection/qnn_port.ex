@@ -111,6 +111,17 @@ defmodule VisionCore.Detection.QnnPort do
     do: raise(ArgumentError, "its #{inspect(key)} is #{expected}, got #{inspect(value)}")
 
   @doc """
+  Whether `reason`, why a Port could not be opened, stays until the
+  firmware changes: a missing DLC, QAIRT or program. Any other may be
+  gone at the next try.
+  """
+  @spec final?(term()) :: boolean()
+  def final?({missing, _path}) when missing in [:missing_dlc, :missing_qairt, :missing_binary],
+    do: true
+
+  def final?(_reason), do: false
+
+  @doc """
   The wait before reopening a Port that failed `failures` times in a row:
   that entry of `reopen_delays_ms`, its last one past its end.
   """

@@ -30,7 +30,8 @@ defmodule VisionCore.Detection.Backend.Hailo do
   ## Failure is not fatal
 
   A missing binary or HEF is logged and leaves this process alive but
-  inference-less, answering `{:error, :unavailable}`. When `hailo_detect`
+  inference-less, answering `{:error, :unavailable}`. A Port that could
+  not be opened for another reason is tried again. When `hailo_detect`
   exits, as it does when the accelerator is not ready yet or after a
   failed read, or leaves a frame unanswered for `:infer_timeout_ms`, the
   frame in flight is answered with `nil` detections and the Port is
@@ -161,13 +162,30 @@ defmodule VisionCore.Detection.Backend.Hailo do
         {:ok, %{state | port: port}}
 
       {:error, reason} ->
-        Logger.error(
-          "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
-            "continues; no detections will be published."
-        )
-
-        {:ok, state}
+        {:ok, unavailable(state, reason)}
     end
+  end
+
+  # Tries again after the next wait, unless what is missing stays missing.
+  defp unavailable(state, {missing, _path} = reason)
+       when missing in [:missing_binary, :missing_hef] do
+    Logger.error(
+      "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
+        "continues; no detections will be published."
+    )
+
+    state
+  end
+
+  defp unavailable(state, reason) do
+    delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
+
+    Logger.error(
+      "#{label(state)} unavailable: #{inspect(reason)}; trying again in #{delay_ms} ms"
+    )
+
+    Process.send_after(self(), :reopen, delay_ms)
+    %{state | failures: state.failures + 1}
   end
 
   defp label(%{pipeline: :detection}), do: inspect(__MODULE__)
@@ -305,8 +323,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
         {:noreply, %{state | port: port}}
 
       {:error, reason} ->
-        Logger.error("#{label(state)} unavailable: #{inspect(reason)}")
-        {:noreply, state}
+        {:noreply, unavailable(state, reason)}
     end
   end
 

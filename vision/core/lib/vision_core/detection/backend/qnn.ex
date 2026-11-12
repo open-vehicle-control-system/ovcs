@@ -18,7 +18,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
   the process alive answering `{:error, :unavailable}`. When `qnn_detect`
   exits or leaves a frame unanswered for `:infer_timeout_ms`, the frame in
   flight is answered with `nil` detections and the Port is reopened after
-  a wait that grows with each failure in a row.
+  a wait that grows with each failure in a row. A context binary that
+  could not be generated, or a Port that could not be opened, is tried
+  again after the same waits.
 
   ## Options
 
@@ -175,13 +177,28 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
       %{state | port: port}
     else
-      {:error, reason} ->
-        Logger.error(
-          "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
-            "continues; no detections will be published."
-        )
+      {:error, reason} -> unavailable(state, reason)
+    end
+  end
 
-        state
+  # Tries again after the next wait, unless what is missing stays missing.
+  defp unavailable(state, reason) do
+    if QnnPort.final?(reason) do
+      Logger.error(
+        "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
+          "continues; no detections will be published."
+      )
+
+      state
+    else
+      delay_ms = QnnPort.reopen_delay_ms(state.reopen_delays_ms, state.failures)
+
+      Logger.error(
+        "#{label(state)} unavailable: #{inspect(reason)}; trying again in #{delay_ms} ms"
+      )
+
+      Process.send_after(self(), :reopen, delay_ms)
+      %{state | failures: state.failures + 1}
     end
   end
 

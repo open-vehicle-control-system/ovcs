@@ -19,7 +19,8 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   exits or leaves a band unanswered for `:infer_timeout_ms`, the band in
   flight is answered with `nil` labels and the Port is reopened after a
   wait that grows with each failure in a row, as
-  `VisionCore.Detection.Backend.Qnn` does.
+  `VisionCore.Detection.Backend.Qnn` does, and as it tries again a
+  context binary that could not be generated.
 
   The band goes to the Port as an image of its own whose band is all of
   it, so only its rows go down the pipe.
@@ -170,13 +171,28 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")
       %{state | port: port}
     else
-      {:error, reason} ->
-        Logger.error(
-          "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
-            "continues; no segmentation will be published."
-        )
+      {:error, reason} -> unavailable(state, reason)
+    end
+  end
 
-        state
+  # Tries again after the next wait, unless what is missing stays missing.
+  defp unavailable(state, reason) do
+    if QnnPort.final?(reason) do
+      Logger.error(
+        "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
+          "continues; no segmentation will be published."
+      )
+
+      state
+    else
+      delay_ms = QnnPort.reopen_delay_ms(state.reopen_delays_ms, state.failures)
+
+      Logger.error(
+        "#{label(state)} unavailable: #{inspect(reason)}; trying again in #{delay_ms} ms"
+      )
+
+      Process.send_after(self(), :reopen, delay_ms)
+      %{state | failures: state.failures + 1}
     end
   end
 
