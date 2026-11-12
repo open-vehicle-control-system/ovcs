@@ -18,7 +18,7 @@ function accessibleName(group, unsaved, figure) {
   return parts.join(', ')
 }
 
-// A detection pipeline's Inference step shows the mean time its accelerator took per frame, as the unit status reports it.
+// An inference pipeline's Inference step shows the mean time its accelerator took per frame, as the unit status reports it.
 function useInferenceFigure(group) {
   const ms = useStatus((state) =>
     group.id === `${group.pipeline}.inference` ? state.snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
