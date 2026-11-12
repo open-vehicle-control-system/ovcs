@@ -5,13 +5,20 @@ defmodule VisionCore.Camera.Output do
   or scaled from another output with `:from`, each pixel the average of
   the block of that output's pixels it covers. A driver with named
   outputs (`c:VisionCore.Camera.outputs/1`) resolves its camera's
-  `:outputs` here against the processors it has and the resolutions
-  each can make:
+  `:outputs` here against the processors it has, the resolutions each
+  can make and the formats it sends:
 
       outputs: [
         view: [resolution: {2028, 1520}, processor: :cpu],
+        view_jpeg: [from: :view, format: :jpeg, quality: 80],
         inference: [resolution: {1014, 760}, from: :view]
       ]
+
+  An output's `:format` is `:rgb`, frames of 8-bit red, green and blue
+  pixels, by default, or `:jpeg` for an output made `:from` another:
+  that output's image encoded by the driver, once a frame, at
+  `:quality` 1 to 100 (80). An output made `:from` another has that
+  output's `:resolution` unless it is given one.
 
   The first output in the configuration is the camera's default, the
   one a consumer that names no output takes (`VisionCore.Camera.Unit`).
@@ -20,7 +27,16 @@ defmodule VisionCore.Camera.Output do
   """
 
   @enforce_keys [:name, :index, :width, :height]
-  defstruct [:name, :index, :width, :height, processor: nil, from: nil]
+  defstruct [
+    :name,
+    :index,
+    :width,
+    :height,
+    processor: nil,
+    from: nil,
+    format: :rgb,
+    quality: nil
+  ]
 
   @type t :: %__MODULE__{
           name: atom(),
@@ -28,30 +44,42 @@ defmodule VisionCore.Camera.Output do
           width: pos_integer(),
           height: pos_integer(),
           processor: atom() | nil,
-          from: atom() | nil
+          from: atom() | nil,
+          format: :rgb | :jpeg,
+          quality: 1..100 | nil
         }
 
   @typedoc "Each processor a driver has, with the resolutions it can make."
   @type processors :: %{atom() => [{pos_integer(), pos_integer()}]}
 
-  @options [:resolution, :processor, :from]
+  @options [:resolution, :processor, :from, :format, :quality]
+  @formats [:rgb, :jpeg]
+  @default_quality 80
 
   @doc """
   The outputs `outputs` describes, in its order, for a driver with
-  `processors`; `{:error, message}` for one that cannot be made: none,
-  a name given twice, an option it does not take, a missing or
-  malformed `:resolution`, neither or both of `:processor` and `:from`,
-  a processor the driver lacks or a resolution it cannot make, a `:from`
-  naming no output, outputs whose `:from` runs in a cycle, or a size
-  that is not a whole fraction of its source's.
+  `processors` that sends the `:formats` of `options` (`[:rgb]`);
+  `{:error, message}` for one that cannot be made: none, a name given
+  twice, an option it does not take, a missing or malformed
+  `:resolution`, neither or both of `:processor` and `:from`, a
+  processor the driver lacks or a resolution it cannot make, a format
+  it does not send, a JPEG made by a processor, a `:quality` outside 1
+  to 100 or without `format: :jpeg`, a `:from` naming no output or a
+  JPEG, outputs whose `:from` runs in a cycle, or a size that is not a
+  whole fraction of its source's.
   """
-  @spec resolve(term(), processors()) :: {:ok, [t()]} | {:error, String.t()}
-  def resolve(outputs, processors) do
+  @spec resolve(term(), processors(), [{:formats, [:rgb | :jpeg]}]) ::
+          {:ok, [t()]} | {:error, String.t()}
+  def resolve(outputs, processors, options \\ []) do
+    formats = Keyword.get(options, :formats, [:rgb])
+
     with :ok <- check_list(outputs),
-         {:ok, described} <- describe_each(outputs, processors),
-         :ok <- check_sources(described),
+         {:ok, described} <- describe_each(outputs, processors, formats),
+         :ok <- check_sources_named(described),
          {:ok, indices} <- indices(described),
-         do: {:ok, Enum.map(described, &%{&1 | index: Map.fetch!(indices, &1.name)})}
+         sized = inherit_resolutions(described, indices),
+         :ok <- check_sources(sized),
+         do: {:ok, Enum.map(sized, &%{&1 | index: Map.fetch!(indices, &1.name)})}
   end
 
   @doc "`outputs` in the order of their indices, the order the driver makes them in."
@@ -74,19 +102,20 @@ defmodule VisionCore.Camera.Output do
     end
   end
 
-  defp describe_each(outputs, processors) do
+  defp describe_each(outputs, processors, formats) do
     Enum.reduce_while(outputs, {:ok, []}, fn {name, options}, {:ok, described} ->
-      case describe(name, options, processors) do
+      case describe(name, options, processors, formats) do
         {:ok, output} -> {:cont, {:ok, described ++ [output]}}
         {:error, message} -> {:halt, {:error, "output #{name}: #{message}"}}
       end
     end)
   end
 
-  defp describe(name, options, processors) do
+  defp describe(name, options, processors, formats) do
     with :ok <- check_options(options),
-         {:ok, {width, height}} <- resolution(options[:resolution]),
          {:ok, maker} <- maker(options),
+         {:ok, {width, height}} <- resolution(options[:resolution], maker),
+         {:ok, {format, quality}} <- format(options, maker, formats),
          :ok <- check_processor(maker, {width, height}, processors) do
       {:ok,
        %__MODULE__{
@@ -95,7 +124,9 @@ defmodule VisionCore.Camera.Output do
          width: width,
          height: height,
          processor: maker[:processor],
-         from: maker[:from]
+         from: maker[:from],
+         format: format,
+         quality: quality
        }}
     end
   end
@@ -114,13 +145,6 @@ defmodule VisionCore.Camera.Output do
   defp check_options(options),
     do: {:error, "its options are a keyword list, got #{inspect(options)}"}
 
-  defp resolution({width, height} = resolution)
-       when is_integer(width) and width > 0 and is_integer(height) and height > 0,
-       do: {:ok, resolution}
-
-  defp resolution(other),
-    do: {:error, "its :resolution is {width, height} in pixels, got #{inspect(other)}"}
-
   defp maker(options) do
     case Keyword.take(options, [:processor, :from]) do
       [{_kind, maker}] = taken when is_atom(maker) and not is_nil(maker) ->
@@ -136,6 +160,47 @@ defmodule VisionCore.Camera.Output do
         {:error, "it needs a :processor or a :from, not both"}
     end
   end
+
+  defp resolution({width, height} = resolution, _maker)
+       when is_integer(width) and width > 0 and is_integer(height) and height > 0,
+       do: {:ok, resolution}
+
+  # Its source's, once the sources are numbered: `inherit_resolutions/2`.
+  defp resolution(nil, from: _source), do: {:ok, {nil, nil}}
+
+  defp resolution(other, _maker),
+    do: {:error, "its :resolution is {width, height} in pixels, got #{inspect(other)}"}
+
+  defp format(options, maker, formats) do
+    format = Keyword.get(options, :format, :rgb)
+
+    cond do
+      format not in @formats ->
+        {:error, "its :format is :rgb or :jpeg, got #{inspect(format)}"}
+
+      format not in formats ->
+        {:error,
+         "its format #{inspect(format)} is not one this driver makes " <>
+           "(#{Enum.map_join(formats, ", ", &inspect/1)})"}
+
+      format == :rgb ->
+        if Keyword.has_key?(options, :quality),
+          do: {:error, "its :quality is a JPEG's: give it format: :jpeg"},
+          else: {:ok, {:rgb, nil}}
+
+      Keyword.has_key?(maker, :processor) ->
+        {:error, "a JPEG is made :from another output, not by a :processor"}
+
+      true ->
+        jpeg_quality(Keyword.get(options, :quality, @default_quality))
+    end
+  end
+
+  defp jpeg_quality(quality) when is_integer(quality) and quality in 1..100,
+    do: {:ok, {:jpeg, quality}}
+
+  defp jpeg_quality(other),
+    do: {:error, "its :quality is an integer from 1 to 100, got #{inspect(other)}"}
 
   defp check_processor([from: _source], _resolution, _processors), do: :ok
 
@@ -156,6 +221,38 @@ defmodule VisionCore.Camera.Output do
     end
   end
 
+  defp check_sources_named(described) do
+    names = MapSet.new(described, & &1.name)
+
+    Enum.find_value(described, :ok, fn
+      %{from: nil} ->
+        nil
+
+      %{from: from} = output ->
+        unless from in names,
+          do:
+            {:error,
+             "output #{output.name}: its :from, #{inspect(from)}, is no output of the camera"}
+    end)
+  end
+
+  # In the order of their indices, so a source has its size before the outputs made from it.
+  defp inherit_resolutions(described, indices) do
+    sized =
+      described
+      |> Enum.sort_by(&Map.fetch!(indices, &1.name))
+      |> Enum.reduce(%{}, fn
+        %{width: nil, from: from} = output, sized ->
+          %{width: width, height: height} = Map.fetch!(sized, from)
+          Map.put(sized, output.name, %{output | width: width, height: height})
+
+        output, sized ->
+          Map.put(sized, output.name, output)
+      end)
+
+    Enum.map(described, &Map.fetch!(sized, &1.name))
+  end
+
   defp check_sources(described) do
     by_name = Map.new(described, &{&1.name, &1})
 
@@ -164,13 +261,14 @@ defmodule VisionCore.Camera.Output do
         nil
 
       %{from: from} = output ->
-        case by_name do
-          %{^from => source} ->
-            with :ok <- whole_fraction(output, source), do: nil
-
-          _no_source ->
+        case Map.fetch!(by_name, from) do
+          %{format: :jpeg} ->
             {:error,
-             "output #{output.name}: its :from, #{inspect(from)}, is no output of the camera"}
+             "output #{output.name}: its :from, #{inspect(from)}, is a JPEG, " <>
+               "which no output is made from"}
+
+          source ->
+            with :ok <- whole_fraction(output, source), do: nil
         end
     end)
   end

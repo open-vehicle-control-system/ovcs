@@ -4,6 +4,7 @@ defmodule VisionCore.Camera.OutputTest do
   alias VisionCore.Camera.Output
 
   @processors %{cpu: [{2028, 1520}, {1014, 760}]}
+  @view [resolution: {2028, 1520}, processor: :cpu]
 
   describe "resolve/2" do
     test "gives each output its size, its maker and its index on the Port, in config order" do
@@ -22,7 +23,9 @@ defmodule VisionCore.Camera.OutputTest do
                width: 2028,
                height: 1520,
                processor: :cpu,
-               from: nil
+               from: nil,
+               format: :rgb,
+               quality: nil
              }
 
       assert inference == %Output{
@@ -31,8 +34,49 @@ defmodule VisionCore.Camera.OutputTest do
                width: 1014,
                height: 760,
                processor: nil,
-               from: :view
+               from: :view,
+               format: :rgb,
+               quality: nil
              }
+    end
+
+    test "sends an output made from another as a JPEG, at its source's size unless given one" do
+      assert {:ok, [_view, view_jpeg, small_jpeg]} =
+               Output.resolve(
+                 [
+                   view: @view,
+                   view_jpeg: [from: :view, format: :jpeg, quality: 85],
+                   small_jpeg: [resolution: {507, 380}, from: :view, format: :jpeg]
+                 ],
+                 @processors,
+                 formats: [:rgb, :jpeg]
+               )
+
+      assert %Output{width: 2028, height: 1520, from: :view, format: :jpeg, quality: 85} =
+               view_jpeg
+
+      assert %Output{width: 507, height: 380, format: :jpeg, quality: 80} = small_jpeg
+    end
+
+    test "gives an output made from another its source's size, through a chain in any order" do
+      assert {:ok, outputs} =
+               Output.resolve(
+                 [
+                   copy_jpeg: [from: :copy, format: :jpeg],
+                   copy: [from: :inference],
+                   inference: [resolution: {1014, 760}, from: :view],
+                   view: @view
+                 ],
+                 @processors,
+                 formats: [:rgb, :jpeg]
+               )
+
+      assert Enum.map(outputs, &{&1.name, &1.width, &1.height}) == [
+               {:copy_jpeg, 1014, 760},
+               {:copy, 1014, 760},
+               {:inference, 1014, 760},
+               {:view, 2028, 1520}
+             ]
     end
 
     test "numbers an output after the one it is scaled from, whatever the config order" do
@@ -111,6 +155,36 @@ defmodule VisionCore.Camera.OutputTest do
              ], "output inference: 4056x3040 is no whole fraction of view's 2028x1520"}
           ] do
         assert Output.resolve(outputs, @processors) == {:error, message}, inspect(outputs)
+      end
+    end
+
+    test "refuses a JPEG the camera cannot make" do
+      for {outputs, formats, message} <- [
+            {[view: @view, view_jpeg: [from: :view, format: :jpeg]], [:rgb],
+             "output view_jpeg: its format :jpeg is not one this driver makes (:rgb)"},
+            {[view: @view, view_jpeg: [from: :view, format: :png]], [:rgb, :jpeg],
+             "output view_jpeg: its :format is :rgb or :jpeg, got :png"},
+            {[view: Keyword.put(@view, :format, :jpeg)], [:rgb, :jpeg],
+             "output view: a JPEG is made :from another output, not by a :processor"},
+            {[view: @view, small: [resolution: {1014, 760}, from: :view, quality: 80]],
+             [:rgb, :jpeg], "output small: its :quality is a JPEG's: give it format: :jpeg"},
+            {[view: @view, view_jpeg: [from: :view, format: :jpeg, quality: 0]], [:rgb, :jpeg],
+             "output view_jpeg: its :quality is an integer from 1 to 100, got 0"},
+            {[view: @view, view_jpeg: [from: :view, format: :jpeg, quality: 80.0]], [:rgb, :jpeg],
+             "output view_jpeg: its :quality is an integer from 1 to 100, got 80.0"},
+            {[view: @view, view_jpeg: [from: :view, format: :jpeg, quality: 101]], [:rgb, :jpeg],
+             "output view_jpeg: its :quality is an integer from 1 to 100, got 101"},
+            {[
+               view: @view,
+               view_jpeg: [from: :view, format: :jpeg],
+               small: [resolution: {1014, 760}, from: :view_jpeg]
+             ], [:rgb, :jpeg],
+             "output small: its :from, :view_jpeg, is a JPEG, which no output is made from"},
+            {[view: @view, view_jpeg: [resolution: {1000, 760}, from: :view, format: :jpeg]],
+             [:rgb, :jpeg], "output view_jpeg: 1000x760 is no whole fraction of view's 2028x1520"}
+          ] do
+        assert Output.resolve(outputs, @processors, formats: formats) == {:error, message},
+               inspect(outputs)
       end
     end
   end
