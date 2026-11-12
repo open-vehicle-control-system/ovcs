@@ -221,6 +221,46 @@ defmodule VisionCore.StatusTest do
     assert %{detection: %{inference_ms: 10.0}, road: %{inference_ms: 20.0}} = npu.pipelines
   end
 
+  @road_segmenter {:qnn_segmenter, name: :road, source: {:camera, :hq}, dlc_path: "/missing.dlc"}
+
+  test "a configured QNN segmenter that is not running is reported as a failed Hexagon" do
+    start_supervised!({Status, config: config([@road_segmenter])})
+
+    assert Status.snapshot().npu == %{
+             kind: "Hexagon",
+             state: :failed,
+             load_percent: nil,
+             pipelines: %{road: %{inference_ms: nil}}
+           }
+  end
+
+  test "a QNN detector's and a QNN segmenter's times add up in the load, each keeping its own mean time" do
+    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
+    register_backend(VisionCore.Segmentation.Backend.Qnn.Road, %{sum_us: 40_000, count: 2})
+
+    start_supervised!({Status, config: config([:qnn_detector, @road_segmenter]), tick_ms: 200})
+    :ok = Status.subscribe()
+
+    npu = next_load()
+
+    assert npu.state == :running
+    assert_in_delta npu.load_percent, 35.0, 5.0
+    assert %{detection: %{inference_ms: 10.0}, road: %{inference_ms: 20.0}} = npu.pipelines
+  end
+
+  test "a stub segmenter reports no NPU" do
+    start_supervised!(
+      {Status,
+       config:
+         config([
+           {:segmenter,
+            name: :road, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :hq}}
+         ])}
+    )
+
+    assert Status.snapshot().npu == nil
+  end
+
   test "the load adds up only the pipelines on the reported accelerator's kind" do
     register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
     register_backend(VisionCore.Detection.Backend.Hailo.Road, %{sum_us: 80_000, count: 2})

@@ -1,10 +1,11 @@
 defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
-  frame rate and exposure, the pair's sync, the NPU the detection
-  pipelines run on (`:npu`: the kind of the first one's, failed while any
-  of their backends is unavailable, its `:load_percent` and each
-  pipeline's `:inference_ms`), the depth rate, each exporter's
+  frame rate and exposure, the pair's sync, the NPU the detection and
+  segmentation pipelines run on (`:npu`: the kind of the first one's,
+  the detection pipelines' first, failed while any of their backends is
+  unavailable, its `:load_percent` and each pipeline's
+  `:inference_ms`), the depth rate, each exporter's
   status (`VisionCore.Exporters.list/1`), the CPU's busy share
   (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
   spent in its compiled Nx or native segments (`Pair` `:device_ms`).
@@ -42,7 +43,8 @@ defmodule VisionCore.Status do
   inferring, summed over them and clamped to 100, and a pipeline's
   inference time the mean over the tick's frames, both from the
   accelerator times the backends report
-  (`VisionCore.Detection.Backend.inference_times/1`), which each tick
+  (`VisionCore.Detection.Backend.inference_times/1`, and
+  `VisionCore.Segmentation.Backend`'s alike), which each tick
   reads and starts over, a snapshot asked between two not. Both are `nil`
   while no backend has reported a time.
 
@@ -484,10 +486,11 @@ defmodule VisionCore.Status do
 
   defp pipelines(%{npu_times: %{pipelines: pipelines}}), do: pipelines
 
-  # The detection units' backends that run on an accelerator, with their pipeline's name.
+  # The detection and segmentation units' backends that run on an accelerator, with their pipeline's name.
   defp npu_backends(config) do
     for {_name, backend, _server} = pipeline <-
-          VisionCore.Detection.Supervisor.pipelines(config),
+          VisionCore.Detection.Supervisor.pipelines(config) ++
+            VisionCore.Segmentation.Supervisor.pipelines(config),
         backend.npu_kind(),
         do: pipeline
   end
