@@ -97,6 +97,35 @@ defmodule VisionCore.PreviewTest do
       for skipped <- 2..5, do: refute_received({:encoded, ^skipped})
     end
 
+    test "its frames that fail to encode are skipped, logged once until one encodes" do
+      encode_frame = fn
+        %Frame{rgb: <<0>>} -> {:error, :no_codec}
+        %Frame{rgb: <<sequence>>} -> {:ok, "hq#{sequence}"}
+      end
+
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
+      )
+
+      :ok = Preview.subscribe(:hq)
+
+      log =
+        capture_log(fn ->
+          for _ <- 1..3 do
+            publish_hq(hq_frame(0))
+            :sys.get_state(Preview)
+            Process.sleep(30)
+          end
+
+          refute_receive {:vision_preview, :hq, _jpeg}, 100
+        end)
+
+      assert length(String.split(log, "cannot encode the hq preview: :no_codec")) == 2
+
+      publish_hq(hq_frame(1))
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+    end
+
     # Encodes the left frames at once, and each hq frame once the test sends the encode :release.
     defp held_hq_encoder(test_pid) do
       fn

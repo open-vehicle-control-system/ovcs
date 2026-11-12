@@ -96,7 +96,8 @@ defmodule VisionCore.Detection.Pipeline do
   submitted while a submission is in flight, even once the backend is
   free: its reply may still be waiting to be read, and would be lost. A
   pair or frame the backend could not detect on, answered with `nil`,
-  publishes nothing.
+  publishes nothing. A camera source's frame whose JPEG does not decode
+  is skipped, which is logged once until one decodes.
 
   `:detect_every_n` counts the pairs, or a camera source's frames that
   come while fewer than 32 frames' boxes wait, those that come while a
@@ -146,6 +147,8 @@ defmodule VisionCore.Detection.Pipeline do
   number: another value fails the start (`VisionCore.Options`).
   """
   use GenServer
+
+  require Logger
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
@@ -255,7 +258,8 @@ defmodule VisionCore.Detection.Pipeline do
       held: nil,
       # Camera frames' boxes waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
-      clock: Keyword.get(opts, :clock, &monotonic_ns/0)
+      clock: Keyword.get(opts, :clock, &monotonic_ns/0),
+      undecodable_logged: false
     }
 
     if Process.whereis(VisionCore.Parameters),
@@ -455,9 +459,27 @@ defmodule VisionCore.Detection.Pipeline do
 
   defp submit_frame(frame, state) do
     case Frame.to_tensor(frame) do
-      {:ok, image} -> submit(%{frame | jpeg: nil, grey: nil, rgb: nil}, image, state)
-      {:error, _reason} -> state
+      {:ok, image} ->
+        submit(
+          %{frame | jpeg: nil, grey: nil, rgb: nil},
+          image,
+          %{state | undecodable_logged: false}
+        )
+
+      {:error, reason} ->
+        note_undecodable(state, reason)
     end
+  end
+
+  defp note_undecodable(%{undecodable_logged: true} = state, _reason), do: state
+
+  defp note_undecodable(state, reason) do
+    Logger.warning(
+      "detection pipeline #{state.name}: cannot detect on the camera #{state.camera.name}'s " <>
+        "images, which do not decode: #{inspect(reason)}"
+    )
+
+    %{state | undecodable_logged: true}
   end
 
   # Submits the frame held while the queue has room for its boxes.

@@ -151,7 +151,8 @@ defmodule VisionCore.Preview do
        latest: Map.new(streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded: Map.new(streams, &{&1, {0, nil}}),
        encoding: %{},
-       depth_failure_logged: false,
+       # The streams whose last frame failed to encode, which was logged.
+       failing: MapSet.new(),
        subscribers: %{}
      }}
   end
@@ -393,18 +394,20 @@ defmodule VisionCore.Preview do
     end)
   end
 
-  defp jpeg_or_skip(state, :depth, {:ok, jpeg}),
-    do: {jpeg, %{state | depth_failure_logged: false}}
+  defp jpeg_or_skip(state, stream, {:ok, jpeg}),
+    do: {jpeg, %{state | failing: MapSet.delete(state.failing, stream)}}
 
-  defp jpeg_or_skip(state, :depth, {:error, reason}) do
-    unless state.depth_failure_logged,
-      do: Logger.error("#{__MODULE__} cannot encode the depth preview: #{reason}")
+  defp jpeg_or_skip(state, stream, failure) do
+    unless stream in state.failing,
+      do:
+        Logger.error("#{__MODULE__} cannot encode the #{stream} preview: #{reason_text(failure)}")
 
-    {nil, %{state | depth_failure_logged: true}}
+    {nil, %{state | failing: MapSet.put(state.failing, stream)}}
   end
 
-  defp jpeg_or_skip(state, _stream, {:ok, jpeg}), do: {jpeg, state}
-  defp jpeg_or_skip(state, _stream, _error), do: {nil, state}
+  defp reason_text({:error, reason}) when is_binary(reason), do: reason
+  defp reason_text({:error, reason}), do: inspect(reason)
+  defp reason_text(other), do: inspect(other)
 
   # The depth range is the unit's, shared by every dashboard: each depth subscriber hears a new one.
   defp announce_depth_range(state) do

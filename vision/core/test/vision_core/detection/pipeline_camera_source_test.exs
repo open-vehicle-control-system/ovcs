@@ -504,6 +504,26 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert log =~ "cannot place detections at 40x10"
   end
 
+  @tag :jpeg
+  test "skips the frames whose JPEG does not decode, saying so once, and detects the next", %{
+    tmp_dir: dir
+  } do
+    start_supervised!(VisionCore.Jpeg)
+    start_pipeline(dir)
+    undecodable = %Frame{label: "hq", width: 40, height: 20, capture_ns: 0, jpeg: "no JPEG"}
+
+    log =
+      capture_log(fn ->
+        for _frame <- 1..3,
+            do: Outputs.publish({:camera_frame, @camera_server}, {:camera_frame, undecodable})
+
+        publish_frame(100)
+        assert [_person] = detections()
+      end)
+
+    assert length(String.split(log, "cannot detect on the camera hq's images")) == 2
+  end
+
   test "publishes nothing for a frame the backend could not detect on, and detects the next", %{
     tmp_dir: dir
   } do
