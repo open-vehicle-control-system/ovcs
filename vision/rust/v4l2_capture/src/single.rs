@@ -17,22 +17,16 @@ use std::time::{Duration, Instant};
 use framing::{log_record, metadata_record, rgb_frame_header, LogLevel, Writer};
 
 use crate::arguments::{Output, SingleArguments};
-use crate::bands::{Conversion, Measures};
-use crate::bayer::{self, RawFrame, Tone};
-use crate::colour::{self, Colour, ContrastTable};
+use crate::bayer::{RawFrame, Tone};
+use crate::processor::{Cpu, Development, Processor};
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
-use crate::tuning::Tuning;
 use crate::v4l2;
-use crate::white_balance::{self, Gains};
+use crate::white_balance;
 use crate::{
     auto_exposure, auto_exposure_from, input, open_camera, pollfd, resume_point,
     EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
 };
-
-/// White balance and auto exposure measure every this many rows of RGGB
-/// cells, the same cells whatever the output's size.
-const MEASURED_ROW_STEP: usize = 4;
 
 /// Captures the camera `arguments` names at its full sensor size until the
 /// host closes stdin, writing each frame at the size of `arguments.output`.
@@ -278,14 +272,10 @@ fn convert_frames(
             model.sample_bits(),
         )
     };
-    let tuned = model.tuning().map(|tuning| TunedColour {
-        tuning,
-        contrast: ContrastTable::new(tuning),
-    });
+    let tuning = model.tuning();
+    let mut processor = Cpu::new(model, output);
     // Two images alternate: one converts while the writer writes the other.
     let (mut rgb, mut spare) = (Vec::new(), Some(Vec::new()));
-    let mut buffers = colour::Buffers::default();
-    let mut fallback_buffers = bayer::Buffers::default();
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
@@ -345,9 +335,8 @@ fn convert_frames(
                     statistics[1],
                     conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
                     write_ns / 1_000 / u128::from(writes.max(1)),
-                    tuned
-                        .as_ref()
-                        .map(|tuned| format!(", {:.0} K", tuned.tuning.colour_temperature(gains)))
+                    tuning
+                        .map(|tuning| format!(", {:.0} K", tuning.colour_temperature(gains)))
                         .unwrap_or_default()
                 ),
             );
@@ -363,33 +352,15 @@ fn convert_frames(
             converted += 1;
             let measure_exposure =
                 settings.capture.auto_exposure && converted.is_multiple_of(EXPOSURE_EVERY_FRAMES);
-            let conversion = Conversion {
-                output,
-                rotate_180: settings.capture.rotation == 180,
+            let development = Development {
+                settings: &settings,
+                gains,
+                tone: &tone,
                 channel_means: settings.awb,
                 green_mean: measure_exposure,
-                row_step: MEASURED_ROW_STEP,
                 threads: settings.threads.unwrap_or(output.threads()),
             };
-            let developed = match &tuned {
-                Some(tuned) => develop_tuned(
-                    &raw,
-                    &conversion,
-                    &settings,
-                    gains,
-                    tuned,
-                    &mut rgb,
-                    &mut buffers,
-                ),
-                None => bayer::develop(
-                    &raw,
-                    &tone,
-                    gains,
-                    &conversion,
-                    &mut rgb,
-                    &mut fallback_buffers,
-                ),
-            };
+            let developed = processor.develop(&raw, &development, &mut rgb);
             if let Some(means) = developed.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
@@ -423,41 +394,6 @@ fn convert_frames(
     }
 }
 
-/// A sensor's tuning, and the table of its contrast curve.
-struct TunedColour {
-    tuning: &'static Tuning,
-    contrast: ContrastTable,
-}
-
-/// `raw` through `tuned`'s colour path as `conversion` asks, into `rgb`
-/// through `buffers`, at the colour temperature of `gains`, with the colour
-/// correction matrix and the chroma denoise as `settings` switch them.
-fn develop_tuned(
-    raw: &RawFrame,
-    conversion: &Conversion,
-    settings: &ColourSettings,
-    gains: Gains,
-    tuned: &TunedColour,
-    rgb: &mut Vec<u8>,
-    buffers: &mut colour::Buffers,
-) -> Measures {
-    let kelvin = tuned.tuning.colour_temperature(gains);
-    let shading = tuned.tuning.lens_shading(kelvin);
-    let colour = Colour {
-        black_level: settings.capture.black_level,
-        shading: &shading,
-        white_balance: gains,
-        matrix: if settings.ccm {
-            tuned.tuning.colour_matrix(kelvin)
-        } else {
-            colour::IDENTITY
-        },
-        contrast: &tuned.contrast,
-        denoise: settings.denoise,
-    };
-    colour::develop(raw, &colour, conversion, rgb, buffers)
-}
-
 #[cfg(test)]
 mod tests {
     use std::cell::{Cell, RefCell};
@@ -467,9 +403,13 @@ mod tests {
     use std::sync::{mpsc, Mutex};
 
     use super::*;
-    use crate::bayer::tests::padded_packed12;
+    use crate::bands::{Conversion, Measures};
     use crate::bayer::Layout;
+    use crate::bayer::{self, tests::padded_packed12};
+    use crate::colour;
+    use crate::processor::{develop_tuned, TunedColour, MEASURED_ROW_STEP};
     use crate::tuning::imx477;
+    use crate::white_balance::Gains;
 
     // Noise over a gradient down and across, so that every row differs.
     fn samples(width: usize, height: usize) -> Vec<u16> {
@@ -520,10 +460,7 @@ mod tests {
 
     #[test]
     fn a_frame_converts_to_the_same_image_and_measures_on_any_number_of_threads() {
-        let tuned = TunedColour {
-            tuning: &imx477::TUNING,
-            contrast: ContrastTable::new(&imx477::TUNING),
-        };
+        let tuned = TunedColour::new(&imx477::TUNING);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -612,10 +549,7 @@ mod tests {
 
     #[test]
     fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
-        let tuned = TunedColour {
-            tuning: &imx477::TUNING,
-            contrast: ContrastTable::new(&imx477::TUNING),
-        };
+        let tuned = TunedColour::new(&imx477::TUNING);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
