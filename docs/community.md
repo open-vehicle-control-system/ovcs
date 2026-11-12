@@ -5,13 +5,13 @@ description: Conference videos, slides, the forum thread, the GitHub organisatio
 
 ## Where it comes from
 
-OVCS was started in early 2024 by [Marc Lainez](https://github.com/mlainez), [Loïc Vigneron](https://github.com/loicvigneron) and [Thibault Poncelet](https://github.com/thibaultponcelet) at [Spin42](https://www.spin42.com/), to make vehicle embedded computing accessible with off-the-shelf components and high-level languages. The team built the framework and, on it, the reference vehicles that prove it works:
+OVCS was started in early 2024 by [Marc Lainez](https://github.com/mlainez), [Loïc Vigneron](https://github.com/loicvigneron) and [Thibault Poncelet](https://github.com/thibaultponcelet) at [Spin42](https://www.spin42.com/). Its goal is to make vehicle embedded computing accessible with off-the-shelf components and high-level languages. The team built the framework and, on it, the reference vehicles that prove it works:
 
-- **OVCS1**: a 2007 Volkswagen Polo converted to electric with a Nissan Leaf AZE0 drivetrain, a Bosch iBooster Gen2, an Orion BMS2 and custom Arduino controllers, orchestrated by Elixir on Raspberry Pis running Nerves.
+- **OVCS1**: a 2007 Volkswagen Polo converted to electric with a Nissan Leaf AZE0 drivetrain, a Bosch iBooster Gen2, an Orion BMS2 and custom Arduino controllers. Elixir on Raspberry Pis running Nerves orchestrates it.
 - **OVCS Mini**: a Traxxas RC car, so remote-control and ROS 2 work can be developed safely before it reaches the full-size car.
 - **OBD2**: a scan tool for any car with a diagnostic port.
 
-The talks mostly show OVCS1 and OVCS Mini; what they demonstrate is the framework underneath. See [Framework and vehicles](./framework.md).
+The talks mostly show OVCS1 and OVCS Mini. What they demonstrate is the framework underneath. See [Framework and vehicles](./framework.md).
 
 ## Talks and videos
 
@@ -63,11 +63,14 @@ mise run cli
 
 Before opening a pull request:
 
-- **Style.** [`CODE_STYLING.md`](../CODE_STYLING.md) documents the conventions. Credo covers the Elixir apps, Ruff the Python tooling, `cspell` the spelling. Guides follow the documentation rules in [`CLAUDE.md`](../CLAUDE.md) and pass `elixir scripts/check_docs.exs`.
-- **The guides are the website.** Every guide linked from [`docs/README.md`](./README.md) is published as-is on ovcs.be/docs; add a new guide there to put it in the navigation. The [website](https://github.com/open-vehicle-control-system/website) pins this repository as a submodule and bumps it to `main` daily, so a merged guide change goes live with the next bump, after the website's own checks. To preview an unmerged change, run the website with `OVCS_DIR` pointing at your checkout (its README has the commands).
-- **CI runs on pull requests.** `.github/workflows/` holds `ci.yml` (the Elixir tree, every PR), `firmware.yml` (every firmware build, on PRs touching `vms/`, `infotainment/`, `bridges/`, `vehicles/`, `libraries/` or `mise.toml`; the only thing that catches a host-versus-target OTP mismatch) and `ros2.yml` (the container stacks and the Zenoh pin check, on PRs touching `compose/` or `ruff.toml`).
+- **Style.** [`CODE_STYLING.md`](../CODE_STYLING.md) documents the conventions. Credo covers the Elixir apps, Ruff the Python tooling, `cspell` the spelling. Guides follow its [documentation rules](../CODE_STYLING.md#guides) and pass `elixir scripts/check_docs.exs`.
+- **The guides are the website.** Every guide linked from [`docs/README.md`](./README.md) is published as-is on ovcs.be/docs; add a new guide there to put it in the navigation. The [website](https://github.com/open-vehicle-control-system/website) pins this repository as a submodule and updates it to `main` daily. A merged guide change therefore goes live with the next update, after the website's own checks. To preview an unmerged change, run the website with `OVCS_DIR` pointing at your checkout (its README has the commands).
+- **CI runs on pull requests.** `.github/workflows/` holds three workflows:
+  - `ci.yml`: the Elixir tree, on every PR.
+  - `firmware.yml`: every firmware build, on PRs touching `vms/`, `infotainment/`, `bridges/`, `vehicles/`, `libraries/` or `mise.toml`. It is the only thing that catches a host-versus-target OTP mismatch.
+  - `ros2.yml`: the container stacks and the Zenoh pin check, on PRs touching `compose/` or `ruff.toml`.
 - **Sideloaded libraries have their own repositories.** A change to Cantastic, ExpressLRS, MSP OSD or ovcs_control is a pull request there, not against `libraries/` here.
-- **Vehicles live in `vehicles/`.** A new vehicle is a new package scaffolded with `./ovcs new`, not a framework change. The cores, firmware shells and libraries stay free of vehicle-specific code; if your vehicle needs something the framework cannot express, open a separate framework pull request. See [Your vehicle package](./vehicle_package.md).
+- **Vehicles live in `vehicles/`.** A new vehicle is a new package scaffolded with `./ovcs new`, not a framework change. The cores, firmware shells and libraries stay free of vehicle-specific code. If your vehicle needs something the framework cannot express, open a separate framework pull request. See [Your vehicle package](./vehicle_package.md).
 - **The reference vehicles are examples, not requirements.** Fixes to them are welcome; nothing in a new vehicle should depend on them.
 - **Nerves systems are forks** pinned to upstream tags; [Toolchain and OTP](./toolchain_and_otp.md) has the migration recipe.
 

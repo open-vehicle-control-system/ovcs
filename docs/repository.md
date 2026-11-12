@@ -3,7 +3,9 @@ title: Repository layout
 description: The monorepo's tree, where each component is documented, the shared libraries, the vehicle packages and the environment variables the firmwares read.
 ---
 
-OVCS is a monorepo holding the framework's components and, under `vehicles/`, the vehicles built on it. The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, React apps, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build; the Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella.
+OVCS is a monorepo. It holds the framework's components and, under `vehicles/`, the vehicles built on it.
+
+The framework side is a set of independent projects: Elixir Mix projects, a C++/PlatformIO project, React apps, a Flutter app and a Rust CLI. Each has its own dependencies, configuration and build. The Elixir projects reference each other through relative `path:` dependencies. It is **not** an Elixir umbrella.
 
 > [!NOTE]
 > Here, *component* means a piece of the framework, and *vehicle* means a package under `vehicles/`. Every component is vehicle-agnostic. See [Framework and vehicles](./framework.md).
@@ -51,7 +53,7 @@ ovcs/
 +-- ovcs                      Symlink to cli/ovcs, the binary built by `mise run cli` (binary gitignored, symlink committed)
 ```
 
-Each major system follows the Firmware → API → Core layering described in [Architecture](./architecture.md). Every Elixir project runs on a host machine against virtual CAN interfaces; development needs no hardware.
+Each major system follows the Firmware → API → Core layering; see [Architecture](./architecture.md). Every Elixir project runs on a host machine against virtual CAN interfaces, so development needs no hardware.
 
 ## Where each component is documented
 
@@ -71,7 +73,17 @@ Each component's own README keeps its developer details: build, tests and source
 
 ## Shared libraries
 
-Two kinds live side by side under `libraries/`. **In-tree** libraries are framework-internal contracts that evolve with the rest of the code. **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories; they are gitignored here and cloned by `mise run libraries`, which `mise install` runs for you, at the commits pinned in `scripts/libraries.tsv`. A change to one of them reaches OVCS through a change to its pin; to try one first, edit its clone in `libraries/` and build, then push it and update the pin.
+Two kinds of library live under `libraries/`:
+
+- **In-tree** libraries are framework-internal contracts that evolve with the rest of the code.
+- **Sideloaded** libraries are reusable outside OVCS, so they have their own repositories. They are gitignored here. `mise run libraries`, which `mise install` runs for you, clones them at the commits pinned in `scripts/libraries.tsv`.
+
+A change to a sideloaded library reaches OVCS through a change to its pin. To try a change first:
+
+1. Edit the library's clone in `libraries/`.
+2. Build.
+3. Push the change.
+4. Update the pin.
 
 | Library | Module | Source | Purpose |
 |---|---|---|---|
@@ -97,7 +109,12 @@ A vehicle's topology YAMLs import shared component specs with Cantastic's cross-
 
 ## Vehicle packages
 
-A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level module implements `OvcsVehicle`: `name/0`, `vms/0`, `can_config_otp_app/0`, `vms_target/0`, and optionally `infotainment/0`, `infotainment_target/0`, `vision/0`, `vision_target/0`, `bridge_firmwares/0`, `geometry/0`. It bundles the VMS composer, an optional infotainment composer, optional bridge declarations, the CAN topology and per-role firmware overrides. It has no `Application` module: the framework's firmware shells load it at boot.
+A vehicle is a standalone Mix package under `vehicles/<name>/`. Its top-level module implements `OvcsVehicle`:
+
+- **Required:** `name/0`, `vms/0`, `can_config_otp_app/0`, `vms_target/0`.
+- **Optional:** `infotainment/0`, `infotainment_target/0`, `vision/0`, `vision_target/0`, `bridge_firmwares/0`, `geometry/0`.
+
+The package bundles the VMS composer, an optional infotainment composer, optional bridge declarations, the CAN topology and per-role firmware overrides. It has no `Application` module: the framework's firmware shells load it at boot.
 
 | Package | Top-level module | What it demonstrates |
 |---|---|---|
@@ -106,7 +123,7 @@ A vehicle is a standalone Mix package under `vehicles/<name>/` whose top-level m
 | `vehicles/obd2/` | `Obd2` | Diagnostics only: VMS and infotainment, no bridges, no drivetrain |
 | `vehicles/<yours>/` | `<Yours>` | Scaffolded by `./ovcs new`; keep the components you need, drop the rest |
 
-Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle`, `:infotainment_core, :vehicle` or `:vision_core, :vehicle`. The wiring and the scaffold are in [Your vehicle package](./vehicle_package.md).
+Each firmware's `runtime.exs` writes the side composer (`Ovcs1.Vms.Composer`, for example) into `:vms_core, :vehicle`, `:infotainment_core, :vehicle` or `:vision_core, :vehicle`. [Your vehicle package](./vehicle_package.md) covers the wiring and the scaffold.
 
 ## Environment variables
 

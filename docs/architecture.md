@@ -3,7 +3,10 @@ title: Architecture
 description: Bus isolation, vehicle-agnostic cores, the vehicle contract, and the Erlang mesh that ties every firmware together.
 ---
 
-OVCS is a framework for vehicle embedded systems. It makes components from different manufacturers work together in whatever vehicle you build on it. Two ideas shape everything else: each manufacturer's CAN bus stays isolated, and everything vehicle-specific lives in a separate package, a *vehicle package*, that the firmware loads at boot.
+OVCS is a framework for vehicle embedded systems. It makes components from different manufacturers work together in whatever vehicle you build on it. Two ideas shape everything else:
+
+- each manufacturer's CAN bus stays isolated;
+- everything vehicle-specific lives in a separate package, a *vehicle package*, that the firmware loads at boot.
 
 > [!NOTE]
 > Everything here holds for any vehicle. OVCS1, OVCS Mini and OBD2 appear only as worked examples. See [Framework and vehicles](./framework.md).
@@ -12,9 +15,9 @@ OVCS is a framework for vehicle embedded systems. It makes components from diffe
 
 ### Bus isolation
 
-Components from different manufacturers use overlapping CAN identifiers. A Nissan Leaf inverter and a Volkswagen Polo ABS module were never meant to share a wire; on one bus their frames would collide. OVCS keeps each manufacturer's bus physically separate. The Vehicle Management System (VMS) is the only node on all of them, and bridges traffic between buses where the vehicle needs it. In the OVCS1 reference vehicle, that is how the Polo's original instrument cluster shows the Leaf motor's RPM.
+Components from different manufacturers use overlapping CAN identifiers. A Nissan Leaf inverter and a Volkswagen Polo ABS module were never designed to share a wire: on one bus their frames would collide. OVCS keeps each manufacturer's bus physically separate. The Vehicle Management System (VMS) is the only node on all of them. It bridges traffic between buses where the vehicle needs it. In the OVCS1 reference vehicle, that is how the Polo's original instrument cluster shows the Leaf motor's RPM.
 
-An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adoption, infotainment and bridge commands. Manufacturer buses run at the bitrate their components require. Which buses exist, and at what speed, is the vehicle's decision; OVCS1's five-bus layout is in [Hardware](./hardware.md).
+An internal bus, `ovcs`, carries framework traffic: heartbeats, controller adoption, infotainment and bridge commands. Manufacturer buses run at the bitrate their components require. The vehicle decides which buses exist, and at what speed. OVCS1's five-bus layout is in [Hardware](./hardware.md).
 
 ### The framework knows no vehicle
 
@@ -39,30 +42,35 @@ Nothing on the left changes when you add a vehicle. Everything on the right is y
 
 ## The roles
 
-A running vehicle is a small fleet of BEAMs:
+A running vehicle is a small group of BEAMs:
 
 - **VMS**: the only firmware on the vehicle CAN buses, so all isolation between manufacturers happens there. Raspberry Pi 4 with a multi-CAN SPI hub. See [VMS](./vms/README.md).
 - **Infotainment** (optional): the in-car touchscreen on a Raspberry Pi 5, on the `ovcs` bus only.
-- **Vision** (optional): stereo depth on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, and object detection on the VENTUNO Q's NPU or where the Pi 5 has a Hailo-8, publishing ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/README.md).
+- **Vision** (optional): stereo depth on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q. Object detection runs on the VENTUNO Q's NPU, or on a Pi 5 that has a Hailo-8. The unit publishes ROS 2 topics over Zenoh. No CAN. See [Vision unit](./vision/README.md).
 - **Bridges** (zero or more): each ferries data between the `ovcs` bus and a non-CAN world, such as an ExpressLRS radio link or a ROS 2 graph. The vehicle declares which bridges it ships and on which target.
 - **Generic controllers**: Arduino R4 Minima boards running one shared firmware. They receive their pinout from the VMS at runtime through an adoption frame. See [Generic controllers](./generic_controllers/README.md).
 
-The VMS dashboard, a React app, runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's React dashboard is served by its own API, from the unit, and shows its previews and its pipeline's parameters.
+The VMS dashboard, a React app, runs off the vehicle, on a laptop, and talks to the VMS API. The Flutter head unit runs on the infotainment Pi 5, bundled into its firmware, and talks to the infotainment API. Both use HTTP and WebSocket and render the pages the vehicle's composers declare. The vision unit's own API serves its React dashboard, from the unit. That dashboard shows the unit's previews and its pipeline's parameters.
 
 ### One Erlang mesh, no broker
 
-Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`: at boot each node calls `Node.connect/1` on its declared peers until the mesh forms. The nodes talk to each other directly: no broker, no relay between them.
+Every BEAM of a running vehicle joins one Erlang-distribution cluster through `OvcsBus.Cluster`. At boot, each node calls `Node.connect/1` on its declared peers until the mesh forms. The nodes talk to each other directly: no broker, no relay between them.
 
 A bus message is delivered on its own node only, so a slow link cannot stall a drivetrain component. `OvcsBus.Forwarder` is the cross-node path of bus traffic, and the [bus gateway](./bus/gateway.md) uses it to carry the bus out of the mesh. See [The OVCS bus](./bus/README.md).
 
-The transport is the same in both environments: `./ovcs run <vehicle>` clusters one BEAM per role over loopback; a deployed vehicle clusters one BEAM per board over the vehicle LAN. [The mesh](./bus/README.md#the-mesh) covers node names, cookies and how `.local` names resolve.
+The transport is the same in both environments:
+
+- `./ovcs run <vehicle>` clusters one BEAM per role over loopback;
+- a deployed vehicle clusters one BEAM per board over the vehicle LAN.
+
+[The mesh](./bus/README.md#the-mesh) covers node names, cookies and how `.local` names resolve.
 
 > [!NOTE]
 > Nothing safety-relevant depends on the mesh. Commands from the radio link or the ROS bridge travel as CAN frames on the `ovcs` bus, where the VMS watches their freshness. The mesh carries metrics, status and coordination.
 
 ## Three layers per system
 
-VMS, infotainment and the vision unit share one layered shape. Each layer is its own Mix project referencing the one below through a relative `path:` dependency; this is a monorepo, not an umbrella.
+VMS, infotainment and the vision unit share one layered shape. Each layer is its own Mix project and references the one below through a relative `path:` dependency. This is a monorepo, not an umbrella.
 
 ```text
 +------------+     +------------+     +----------------+
@@ -84,9 +92,11 @@ VMS, infotainment and the vision unit share one layered shape. Each layer is its
 - **Dashboard**: React for the VMS debug dashboard and the vision dashboard, both on the shared `@ovcs/ui` library; Flutter for the head unit.
 - **Firmware**: a Nerves project packaging the API (and Core) into a bootable image. At boot it reads `VEHICLE` and loads the vehicle package.
 
-The vehicle package sits beside these layers: the firmware reaches it through `Code.prepend_path`, and no framework project depends on it. Every Elixir project runs on a host against virtual CAN. The inventory is in [Repository layout](./repository.md).
+The vehicle package sits beside these layers. The firmware reaches it through `Code.prepend_path`, and no framework project depends on it.
 
-How the VMS works inside, from its supervision tree to the component pattern every driver follows and the managers, is in [How the VMS works](./vms/how_it_works.md).
+Every Elixir project runs on a host against virtual CAN. The inventory is in [Repository layout](./repository.md).
+
+[How the VMS works](./vms/how_it_works.md) covers the VMS's internals: its supervision tree, the component pattern every driver follows, and the managers.
 
 ## Safety mechanisms in the framework
 

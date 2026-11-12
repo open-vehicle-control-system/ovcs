@@ -3,14 +3,16 @@ title: OBD2 reference vehicle
 description: A vehicle package with no drivetrain that turns the VMS into an OBD2 / KWP2000 / UDS scan tool for any car, and how to extend it for brand-specific data.
 ---
 
-OBD2 is the smallest of the three reference vehicles: a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool. It has no drivetrain and no bridges; its supervised processes read or probe the diagnostic CAN bus of whatever car you plug into, and one mirrors speed and rpm onto the `ovcs` bus for the infotainment. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
+OBD2 is the smallest of the three reference vehicles. It is a vehicle package under `vehicles/obd2/` that turns the framework's VMS into an OBD2 / KWP2000 / UDS scan tool.
+
+It has no drivetrain and no bridges. Its supervised processes read or probe the diagnostic CAN bus of the car you plug into. One of them mirrors speed and rpm onto the `ovcs` bus for the infotainment. It runs on the same Raspberry Pi 4 the framework targets for every VMS.
 
 > [!NOTE]
-> OBD2 is worth reading even if you never scan a car: it shows how little a vehicle has to contain. Three GenServers, a handful of YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_package.md).
+> OBD2 is worth reading even if you never scan a car. It shows how little a vehicle has to contain: three GenServers, a few YAML imports and a composer. Your own vehicle follows the same contract; see [Your vehicle package](./vehicle_package.md).
 
 ## Why this is a vehicle, not a feature
 
-The framework already speaks CAN through Cantastic, ships a Phoenix dashboard with a metrics channel, and loads whatever package `VEHICLE` names at boot. A scan tool is therefore just another composer, one that subscribes to OBD2 and UDS request loops instead of Leaf inverter frames, and the framework's dashboard displays the results without a frontend change. So:
+The framework already speaks CAN through Cantastic, ships a Phoenix dashboard with a metrics channel, and loads the package `VEHICLE` names at boot. A scan tool is therefore one more composer. It subscribes to OBD2 and UDS request loops instead of Leaf inverter frames. The framework's dashboard displays the results without a frontend change. So:
 
 - Adding or changing a probe is a YAML edit plus, optionally, a few lines of Elixir in the vehicle package. The framework doesn't change.
 - The dashboard the OVCS1 reference vehicle uses for debugging works on any car with an OBD-II port.
@@ -30,7 +32,7 @@ Five dashboard pages, all running on Cantastic's standard codecs:
 | Vehicle info | Mode 09 identification + UDS extended-session toggle | 09, 10, 3E |
 | Discovery | Supported PIDs, UDS DID scan, passive bus traffic | 01 PID 0x00, 22, raw |
 
-A DTC (Diagnostic Trouble Code) is the standardised five-character code an ECU sets when it detects a fault: what turns on the "check engine" light. The first character names the system: `P` powertrain, `C` chassis, `B` body, `U` network. The dashboard reads four kinds:
+A DTC (Diagnostic Trouble Code) is the standardised five-character code an ECU sets when it detects a fault. It is what turns on the "check engine" light. The first character names the system: `P` powertrain, `C` chassis, `B` body, `U` network. The dashboard reads four kinds:
 
 - **Stored (Mode 03)**: confirmed faults; the warning light is on because of these.
 - **Pending (Mode 07)**: detected once, not yet confirmed.
@@ -39,7 +41,12 @@ A DTC (Diagnostic Trouble Code) is the standardised five-character code an ECU s
 
 ## Architecture
 
-At boot, the vehicle's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request; once enabled, it re-sends the request every `frequency` milliseconds. `Diagnostics` enables the read-only requests at boot and leaves the clear and session requests off until the dashboard triggers them. Three GenServers in the vehicle package consume the answers: `Diagnostics` and `Discovery` broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard, and `Obd2.Vms` copies speed and rpm into the `ovcs` network's `drivetrain_status` frame for the infotainment.
+At boot, the vehicle's `priv/can/vms.yml` imports one YAML per request from the framework's `ovcs_can` library, under the `obd2` network's `obd2_requests:` key. Cantastic spawns one `OBD2.Request` GenServer per declared request; once enabled, it re-sends the request every `frequency` milliseconds. `Diagnostics` enables the read-only requests at boot and leaves the clear and session requests off until the dashboard triggers them.
+
+Three GenServers in the vehicle package consume the answers:
+
+- `Diagnostics` and `Discovery` broadcast them as ordinary `%OvcsBus.Message{}`s, so the framework's metrics pipeline carries them to the dashboard.
+- `Obd2.Vms` copies speed and rpm into the `ovcs` network's `drivetrain_status` frame for the infotainment.
 
 ```text
 vehicles/obd2/priv/can/vms.yml
@@ -58,13 +65,18 @@ Obd2.Vms.Diagnostics                    Obd2.Vms.Discovery
                           → VmsApi metrics channel → VMS dashboard
 ```
 
-Adding a metric is mostly "subscribe to one more Cantastic request, broadcast its decoded value". The dashboard composer then references it by `{module, key}` like any other metric.
+Adding a metric is mostly two steps: subscribe to one more Cantastic request, then broadcast its decoded value. The dashboard composer then references it by `{module, key}` like any other metric.
 
 ## Setup
 
 ### Prerequisites
 
-- The VMS Raspberry Pi 4 with a Waveshare 2-CH CAN HAT: two MCP2515 controllers with 16 MHz crystals, CAN0 on SPI0 chip select 0 with its interrupt on GPIO 23, CAN1 on chip select 1 with its interrupt on GPIO 25. The Pi-side configuration, including the `mcp2515-can0` and `mcp2515-can1` overlays, is in `vehicles/obd2/priv/firmware/vms/config.txt`. The `obd2` network maps to `spi0.0` on target and `vcan0` on the host; the `ovcs` network, which carries `drivetrain_status` to the infotainment, maps to `spi0.1` (the HAT's CAN1 channel) and `vcan1`.
+- The VMS Raspberry Pi 4 with a Waveshare 2-CH CAN HAT: two MCP2515 controllers with 16 MHz crystals.
+  - CAN0 is on SPI0 chip select 0, with its interrupt on GPIO 23.
+  - CAN1 is on chip select 1, with its interrupt on GPIO 25.
+  - The Pi-side configuration, including the `mcp2515-can0` and `mcp2515-can1` overlays, is in `vehicles/obd2/priv/firmware/vms/config.txt`.
+  - The `obd2` network maps to `spi0.0` on target and `vcan0` on the host.
+  - The `ovcs` network, which carries `drivetrain_status` to the infotainment, maps to `spi0.1` (the HAT's CAN1 channel) and `vcan1`.
 - An OBD-II cable wired so that:
   - pin 6 → CAN-High on the HAT's CAN0 channel;
   - pin 14 → CAN-Low;
@@ -78,18 +90,23 @@ Adding a metric is mostly "subscribe to one more Cantastic request, broadcast it
 ./ovcs burn obd2 vms
 ```
 
-Plug into the OBD-II port and power up. The dashboard is at `http://obd2-vms.local:4000/`. For a dry run without a car, `./ovcs run obd2` boots the VMS and infotainment BEAMs against virtual CAN; see the [Quickstart](./quickstart.md).
+Plug into the OBD-II port and power up. The dashboard is at `http://obd2-vms.local:4000/`. To try it without a car, run `./ovcs run obd2`. It boots the VMS and infotainment BEAMs against virtual CAN; see the [Quickstart](./quickstart.md).
 
 ## What is safe to do passively
 
-Default polling is read-only: reading live data, codes or the VIN doesn't change ECU state. The dashboard's **Clear** buttons (Mode 04 / Mode 14) and the UDS extended-session toggle (Mode 10 / Mode 3E) are the only things that write to the bus, and only when clicked.
+Default polling is read-only: reading live data, codes or the VIN doesn't change ECU state. Only two things write to the bus, and only when clicked:
+
+- the dashboard's **Clear** buttons (Mode 04 / Mode 14);
+- the UDS extended-session toggle (Mode 10 / Mode 3E).
 
 > [!WARNING]
-> Continuous polling (the fast live-data loop runs at 10 Hz) keeps every ECU on the bus awake and prevents the usual "30 seconds of quiet, then sleep". On a parked modern car that drains the 12 V battery: unplug the scanner between drives or power the VMS through the ignition.
+> Continuous polling keeps every ECU on the bus awake: the fast live-data loop runs at 10 Hz. It prevents the usual "30 seconds of quiet, then sleep". On a parked modern car that drains the 12 V battery. Unplug the scanner between drives, or power the VMS through the ignition.
 
 ## Extending the vehicle
 
-Everything below changes the OBD2 vehicle's code, never the framework's. Adding a standard PID is the exception: it edits the shared request YAML in `ovcs_can`, which every vehicle importing it picks up. Standardised wire formats live in YAML; brand quirks live in the vehicle's Elixir. If your brand-specific additions grow beyond a module or two, a scan tool for one make is worth a vehicle package of its own: scaffold it with `./ovcs new` and borrow these patterns.
+Everything below changes the OBD2 vehicle's code, never the framework's. Adding a standard PID is the exception: it edits the shared request YAML in `ovcs_can`, which every vehicle importing it picks up. Standardised wire formats live in YAML; brand quirks live in the vehicle's Elixir.
+
+If your brand-specific additions grow beyond a module or two, a scan tool for one make is worth a vehicle package of its own. Scaffold it with `./ovcs new` and reuse these patterns.
 
 ### 1. Add a live Mode 01 PID
 
@@ -103,7 +120,7 @@ Add a parameter to one of the live-data files, `libraries/ovcs_can/priv/can/comp
   unit: kPa
 ```
 
-Cantastic packs it into the existing batched Mode 01 request, and `Diagnostics` broadcasts every Mode 01 parameter automatically as `%Bus.Message{name: :barometric_pressure, source: Diagnostics}`. The only Elixir change is referencing it from a dashboard page:
+Cantastic packs it into the existing batched Mode 01 request. `Diagnostics` broadcasts every Mode 01 parameter automatically, this one as `%Bus.Message{name: :barometric_pressure, source: Diagnostics}`. The only Elixir change is to reference it from a dashboard page:
 
 ```elixir
 %{type: :metric, name: "Barometric pressure",
@@ -114,7 +131,7 @@ The fast file (100 ms) is for values that move with every driver input; the slow
 
 ### 2. Add a brand-specific UDS DID (Mode 22)
 
-Manufacturer data sits behind 16-bit DIDs read with Mode 22. Cantastic stays brand-agnostic by exposing the raw payload as a `kind: bytes` parameter and letting your handler decode it. For a Nissan Leaf battery cell-voltage block:
+Manufacturer data sits behind 16-bit DIDs read with Mode 22. Cantastic stays brand-agnostic: it exposes the raw payload as a `kind: bytes` parameter, and your handler decodes it. For a Nissan Leaf battery cell-voltage block:
 
 ```yaml
 # vehicles/obd2/priv/can/obd2/leaf_battery_cells.yml
@@ -186,7 +203,13 @@ def children do
 end
 ```
 
-The pattern is the same for every brand: declare the wire format in YAML with `kind: bytes`, put the bit-twiddling in a brand-named module, broadcast the result on the bus. The dashboard then shows it through `%{type: :metric, module: Obd2.Vms.Brands.NissanLeaf, key: :leaf_cell_voltages}` (or alias the module in the page).
+The pattern is the same for every brand:
+
+1. Declare the wire format in YAML with `kind: bytes`.
+2. Put the bit decoding in a brand-named module.
+3. Broadcast the result on the bus.
+
+The dashboard then shows it through `%{type: :metric, module: Obd2.Vms.Brands.NissanLeaf, key: :leaf_cell_voltages}` (or alias the module in the page).
 
 ### 3. KWP2000 ECUs (Mode 21)
 
@@ -228,11 +251,11 @@ options:
   sub_function: 0x01      # startRoutine (the default)
 ```
 
-Fire it on demand with `Diagnostics.pulse("vw_throttle_adapt_reset")`, as the Clear buttons do for Mode 04 and Mode 14; subscribe a handler of your own to the request to see its response. Routines almost always need an extended session first: open it from the dashboard's Vehicle info page, then trigger the routine.
+Trigger it on demand with `Diagnostics.pulse("vw_throttle_adapt_reset")`, as the Clear buttons do for Mode 04 and Mode 14. To see its response, subscribe a handler of your own to the request. Routines almost always need an extended session first: open it from the dashboard's Vehicle info page, then trigger the routine.
 
 ### 5. Probe brand-specific DID ranges
 
-`Obd2.Vms.Discovery.start_did_scan/1` takes `:dids`, `:request_id` and `:response_id`, so you can probe non-standard ranges or other ECUs without touching the GenServer. It defaults to the ISO 14229-1 identification range `0xF180`–`0xF19E` on the powertrain pair `0x7E0` / `0x7E8`. From IEx on the device:
+`Obd2.Vms.Discovery.start_did_scan/1` takes `:dids`, `:request_id` and `:response_id`, so you can probe non-standard ranges or other ECUs without changing the GenServer. It defaults to the ISO 14229-1 identification range `0xF180`–`0xF19E` on the powertrain pair `0x7E0` / `0x7E8`. From IEx on the device:
 
 ```elixir
 # Example: sweep a manufacturer DID range on another ECU pair
@@ -247,7 +270,14 @@ A per-brand dashboard button is a `trigger_action/2` clause calling `start_did_s
 
 ### 6. Read the bus for proprietary chatter
 
-The Discovery sniffer counts every frame id it sees on the `obd2` network and republishes a per-id summary every second. That is the starting point for reverse-engineering vehicle-specific broadcasts: spot a recurring id that isn't standard OBD2 (not `0x7DF` or `0x7E0`–`0x7EF`), watch how its bytes change while you exercise the car, then declare it under the network's `received_frames:` in `vms.yml` and add a component module to decode it. It is the same pattern the framework uses for the Leaf inverter, the EVPT charger and the Polo body modules; OBD2 gives you a place to do that work without a drivetrain.
+The Discovery sniffer counts every frame id it sees on the `obd2` network and republishes a per-id summary every second. That is the starting point for reverse-engineering vehicle-specific broadcasts:
+
+1. Spot a recurring id that isn't standard OBD2 (not `0x7DF` or `0x7E0`–`0x7EF`).
+2. Watch how its bytes change while you exercise the car.
+3. Declare it under the network's `received_frames:` in `vms.yml`.
+4. Add a component module to decode it.
+
+The framework uses the same pattern for the Leaf inverter, the EVPT charger and the Polo body modules. OBD2 gives you a place to do that work without a drivetrain.
 
 ## Negative responses
 
@@ -274,4 +304,4 @@ When an ECU rejects a request (`0x7F SID NRC`), the subscribing GenServer receiv
 | Dashboard pages | `vehicles/obd2/lib/obd2/vms/composer/dashboard/` |
 | Multi-line metric rendering | `vms/dashboard/src/components/MetricValue.jsx` |
 
-The Cantastic reference for every supported service, its YAML options and the negative-response table is the `Cantastic.OBD2` moduledoc in the [Cantastic repository](https://github.com/open-vehicle-control-system/cantastic).
+The `Cantastic.OBD2` moduledoc in the [Cantastic repository](https://github.com/open-vehicle-control-system/cantastic) is the reference for every supported service, its YAML options and the negative-response table.

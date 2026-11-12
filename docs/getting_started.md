@@ -3,14 +3,14 @@ title: Setup
 description: Set up a Linux workstation (or a VM on macOS) with mise, the system packages and the ovcs CLI, then check it with ./ovcs doctor and virtual CAN.
 ---
 
-OVCS runs on your workstation without any hardware: virtual CAN interfaces stand in for the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor` and working virtual CAN interfaces. From there, the [Quickstart](./quickstart.md) boots a whole vehicle in one command.
+OVCS runs on your workstation without any hardware: virtual CAN interfaces replace the buses, and every firmware boots as a plain BEAM. This guide takes a fresh machine to a green `./ovcs doctor` and working virtual CAN interfaces. From there, the [Quickstart](./quickstart.md) boots a whole vehicle in one command.
 
 > [!NOTE]
-> Linux is the development platform. The virtual CAN driver (`vcan`) is a Linux kernel module that only ships in standard, non-cloud kernels. On macOS, develop inside a Linux VM ([below](#macos-multipass-vm)). WSL2's stock kernel has no `vcan` either, so use a full VM on Windows too.
+> Linux is the development platform. The virtual CAN driver (`vcan`) is a Linux kernel module that only ships in standard, non-cloud kernels. On macOS, develop inside a Linux VM: see [macOS (Multipass VM)](#macos-multipass-vm). WSL2's stock kernel has no `vcan` either, so use a full VM on Windows too.
 
 ## What you install
 
-Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by [mise](https://mise.jdx.dev/) in one go. A few system packages come from your distribution.
+Most of the toolchain is pinned in [`mise.toml`](../mise.toml), and [mise](https://mise.jdx.dev/) installs it in one step. A few system packages come from your distribution.
 
 | Tool | Version | Purpose | Installed by |
 |---|---|---|---|
@@ -32,7 +32,7 @@ Most of the toolchain is pinned in [`mise.toml`](../mise.toml) and installed by 
 | nerves_bootstrap | latest | Nerves Mix archive | `mise install` hook |
 
 > [!WARNING]
-> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 29 line, and a firmware build on a host with another OTP major stops with a version-mismatch error. mise pins Elixir 1.20.4 built against OTP 29 to match; build from a shell where mise is active, or through `mise exec --`. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
+> The Erlang and Elixir versions are exact, not minimums. Every Nerves target ships the OTP 29 line, and a firmware build on a host with another OTP major stops with a version-mismatch error. mise pins Elixir 1.20.4 built against OTP 29 to match. Build from a shell where mise is active, or through `mise exec --`. [Toolchain and OTP](./toolchain_and_otp.md) explains the coupling.
 
 ## Set up your machine
 
@@ -52,7 +52,7 @@ Other shells and package-manager installs are in the [mise installation docs](ht
 
 #### Debian / Ubuntu
 
-mise builds Erlang and Ruby from source, so the C toolchain and dev headers have to be present:
+mise builds Erlang and Ruby from source, so install the C toolchain and dev headers first:
 
 ```sh
 sudo apt install -y build-essential autoconf m4 \
@@ -61,7 +61,7 @@ sudo apt install -y build-essential autoconf m4 \
   libssh-dev unixodbc-dev xsltproc fop libxml2-utils pkg-config
 ```
 
-Then the tools OVCS calls:
+Then install the tools OVCS calls:
 
 ```sh
 sudo apt install -y git can-utils libsocketcan-dev libmnl-dev kmod
@@ -72,7 +72,7 @@ sudo apt install -y git can-utils libsocketcan-dev libmnl-dev kmod
 - `libsocketcan-dev` is only needed to build firmware for physical CAN targets.
 - `libmnl-dev` host-compiles `nerves_uevent`, a transitive firmware dependency.
 
-Docker Engine with the Compose v2 plugin is needed only for the simulator and the ROS containers; install it from [the Docker Engine docs](https://docs.docker.com/engine/install/).
+Docker Engine with the Compose v2 plugin is needed only for the simulator and the ROS containers. Install it from [the Docker Engine docs](https://docs.docker.com/engine/install/).
 
 `fwup` is not in the Debian/Ubuntu repositories. Install the `.deb` from its releases:
 
@@ -81,17 +81,26 @@ curl -L -o /tmp/fwup.deb "https://github.com/fwup-home/fwup/releases/download/v1
 sudo dpkg -i /tmp/fwup.deb
 ```
 
-To run the Flutter infotainment dashboard on your desktop (`mise run infotainment-dashboard`), add the Linux desktop toolchain and check that `flutter doctor` ticks the **Linux toolchain** line:
+To run the Flutter infotainment dashboard on your desktop (`mise run infotainment-dashboard`), add the Linux desktop toolchain:
 
 ```sh
 sudo apt install -y clang cmake ninja-build libgtk-3-dev
 ```
 
+Then check that `flutter doctor` ticks the **Linux toolchain** line.
+
 #### Bluefin / atomic Fedora
 
-On an immutable Fedora (Bluefin, Silverblue, Kinoite, Bazzite, uBlue) `/usr` is read-only, so you develop inside an **Ubuntu distrobox**: a rootless container that shares your home directory, display and devices. The Debian / Ubuntu commands above then apply verbatim inside it.
+On an immutable Fedora (Bluefin, Silverblue, Kinoite, Bazzite, uBlue) `/usr` is read-only, so you develop inside an **Ubuntu distrobox**. It is a rootless container that shares your home directory, display and devices. The Debian / Ubuntu commands above then apply unchanged inside it.
 
-**CAN kernel and network setup must happen on the host.** A rootless container can't `modprobe` (it needs real root) or create interfaces (it needs `CAP_NET_ADMIN` over the host network namespace), and `--privileged` doesn't change that. The symptom is `./ovcs can setup` running its sudo block, then failing with `modprobe: Operation not permitted` or `RTNETLINK answers: Operation not permitted`. Create the interfaces once on the host, so the CLI finds them already up:
+**CAN kernel and network setup must happen on the host.** A rootless container can't do either part, and `--privileged` doesn't change that:
+
+- it can't `modprobe`, which needs real root;
+- it can't create interfaces, which needs `CAP_NET_ADMIN` over the host network namespace.
+
+The symptom: `./ovcs can setup` runs its sudo block, then fails with `modprobe: Operation not permitted` or `RTNETLINK answers: Operation not permitted`.
+
+Create the interfaces once on the host, so the CLI finds them already up:
 
 ```sh
 # Load the vcan module now and on every boot.
@@ -117,7 +126,11 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now ovcs-vcan.service
 ```
 
-`ip -br link show | grep vcan` lists `vcan0` to `vcan4`, each with `UP` in its flags (`<NOARP,UP,LOWER_UP>`); the state column reads `UNKNOWN`, which is normal for vcan. Five covers the OVCS1 reference vehicle, the largest; widen the loop if your vehicle declares more networks. Then create and enter the container:
+`ip -br link show | grep vcan` lists `vcan0` to `vcan4`, each with `UP` in its flags (`<NOARP,UP,LOWER_UP>`). The state column reads `UNKNOWN`, which is normal for vcan.
+
+Five interfaces cover the OVCS1 reference vehicle, the largest. Widen the loop if your vehicle declares more networks.
+
+Then create and enter the container:
 
 ```sh
 distrobox create --name ovcs --image ubuntu:24.04
@@ -126,7 +139,7 @@ distrobox enter ovcs
 
 From here on, **every command in this guide runs inside the container**. The clone lives in your shared home, so nothing moves, and `sudo` is passwordless.
 
-The host's mise (usually a Homebrew binary) isn't mounted into the container: re-run step 1 inside it, then wire mise into the container's bash:
+The host's mise (usually a Homebrew binary) isn't mounted into the container. Re-run step 1 inside it, then add mise to the container's bash:
 
 ```sh
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
@@ -142,7 +155,7 @@ distrobox-export --bin /usr/local/bin/fwup --export-path ~/.local/bin
 
 #### macOS (Multipass VM)
 
-You need a full Linux VM. [Multipass](https://canonical.com/multipass/install) is the simplest:
+You need a full Linux VM. [Multipass](https://canonical.com/multipass/install) is the simplest. Size the disk for Nerves builds at creation: it can't grow afterwards.
 
 ```sh
 multipass launch --name primary --disk 40G --cpus 2 --memory 8G
@@ -150,7 +163,7 @@ multipass shell
 sudo passwd ubuntu
 ```
 
-Size the disk for Nerves builds up front: it can't grow after creation. Clone the repository **inside the VM** to avoid permission and symlink problems in Nerves builds; share it back to macOS over NFS if you want your usual editor. Then follow the Debian / Ubuntu instructions inside the VM.
+Clone the repository **inside the VM** to avoid permission and symlink problems in Nerves builds. To use your usual editor, share it back to macOS over NFS. Then follow the Debian / Ubuntu instructions inside the VM.
 
 ### 3. Clone the repository
 
@@ -169,7 +182,7 @@ mise install
 `mise install` installs every pinned runtime, then runs a hook that does two more things:
 
 - `mise run bootstrap`: installs hex, rebar and the `nerves_bootstrap` archive.
-- `mise run libraries`: clones `cantastic`, `express_lrs`, `msp_osd`, `ovcs_control` and `arduino_router_ex` into `libraries/`, each at the commit pinned in `scripts/libraries.tsv`. Existing clones are left alone, so your local edits there survive; `mise run libraries-check` reports any clone that is not at its pin.
+- `mise run libraries`: clones `cantastic`, `express_lrs`, `msp_osd`, `ovcs_control` and `arduino_router_ex` into `libraries/`, each at the commit pinned in `scripts/libraries.tsv`. It leaves existing clones alone, so your local edits there survive. `mise run libraries-check` reports any clone that is not at its pin.
 
 From now on, entering the directory activates the pinned versions. Reinstalling Elixir later fires the same hook.
 
@@ -180,13 +193,24 @@ mise run cli      # cargo build --release, stripped and copied to cli/ovcs
 ./ovcs doctor
 ```
 
-`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it. `doctor` checks the toolchain binaries (required: mise, Elixir, Mix, Node, Python, fwup; optional, a warning when missing: Ruby, Flutter, can-utils, balena, Docker, PlatformIO), the `nerves_bootstrap` archive, the `libsocketcan` headers (warning), each vehicle's Nerves targets under `vehicles/`, and their SSH host keys. Missing host keys are a warning: you only need them before burning firmware.
+`./ovcs` at the repository root is a symlink to `cli/ovcs`, which is gitignored: every contributor builds it.
+
+`doctor` checks:
+
+- the toolchain binaries. Required: mise, Elixir, Mix, Node, Python, fwup. Optional, a warning when missing: Ruby, Flutter, can-utils, balena, Docker, PlatformIO;
+- the `nerves_bootstrap` archive;
+- the `libsocketcan` headers (warning);
+- each vehicle's Nerves targets under `vehicles/`, and their SSH host keys.
+
+Missing host keys are a warning: you only need them before burning firmware.
 
 ### 6. Optional: firmware builds
 
-Skip this if you only develop on the host. Building images for the Raspberry Pis additionally needs the host packages from the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html) (`squashfs-tools`, `ssh-askpass`, …). You don't clone the OVCS Nerves systems: each firmware project pins its system to a release tag and Mix fetches it, prebuilt, on the first build. Clone a system into `systems/` only to modify it ([Toolchain and OTP](./toolchain_and_otp.md#hacking-on-a-system-fork-locally)).
+Skip this if you only develop on the host. Building images for the Raspberry Pis also needs the host packages from the [Nerves installation guide](https://hexdocs.pm/nerves/installation.html) (`squashfs-tools`, `ssh-askpass`, …).
 
-Before your first burn, generate stable SSH host keys for your vehicle, so reflashes don't trip OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning:
+You don't clone the OVCS Nerves systems. Each firmware project pins its system to a release tag, and Mix fetches it, prebuilt, on the first build. Clone a system into `systems/` only to modify it: see [Toolchain and OTP](./toolchain_and_otp.md#hacking-on-a-system-fork-locally).
+
+Before your first burn, generate stable SSH host keys for your vehicle, so reflashes don't trigger OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning:
 
 ```sh
 ./ovcs host-keys generate <vehicle>   # once per vehicle, e.g. ovcs1
@@ -196,22 +220,24 @@ The build, burn and upload flow is in [Running on hardware](./running_hardware.m
 
 ## Verify the setup
 
-Provision the virtual CAN interfaces for one vehicle and check them. The commands take any vehicle under `vehicles/`; the OVCS Mini reference vehicle, which the [Quickstart](./quickstart.md) boots, needs two. Run them with `ovcs1`, `obd2` or your own vehicle's name and they work the same:
+Provision the virtual CAN interfaces for one vehicle and check them. The commands take any vehicle under `vehicles/`: they work the same with `ovcs1`, `obd2` or your own vehicle's name. The OVCS Mini reference vehicle, which the [Quickstart](./quickstart.md) boots, needs two interfaces:
 
 ```sh
 ./ovcs can setup ovcs_mini
 ./ovcs can status ovcs_mini
 ```
 
-`can setup` reads the vehicle's `default_can_mapping(:host)` and creates only the interfaces that are missing: it lists what it will run as root, then prompts for sudo. A second run prints `All virtual CAN interfaces for OvcsMini are already up — nothing to do.` `can status` prints one line per interface and ends with `All interfaces up.` An interface marked `down` or `not created` means `can setup` didn't finish: on an atomic Fedora, create them on the host ([above](#bluefin--atomic-fedora)).
+`can setup` reads the vehicle's `default_can_mapping(:host)` and creates only the interfaces that are missing. It lists what it will run as root, then prompts for sudo. A second run prints `All virtual CAN interfaces for OvcsMini are already up — nothing to do.`
+
+`can status` prints one line per interface and ends with `All interfaces up.` An interface marked `down` or `not created` means `can setup` didn't finish. On an atomic Fedora, create them on the host: see [Bluefin / atomic Fedora](#bluefin--atomic-fedora).
 
 > [!NOTE]
-> The CLI runs `mix` to read each vehicle's metadata, so it needs the mise-managed toolchain on your `PATH`. If `./ovcs doctor` reports `mix` as not on `PATH`, or `./ovcs can setup` stops with `failed to spawn mix`, mise isn't activated in this shell: check the `mise activate` line from step 1 is in your shell's rc file, open a new shell, and `cd` back into the repository.
+> The CLI runs `mix` to read each vehicle's metadata, so it needs the mise-managed toolchain on your `PATH`. If `./ovcs doctor` reports `mix` as not on `PATH`, or `./ovcs can setup` stops with `failed to spawn mix`, mise isn't activated in this shell. Check that the `mise activate` line from step 1 is in your shell's rc file, open a new shell, and `cd` back into the repository.
 
-A green `./ovcs doctor` and `All interfaces up.` mean your toolchain works. Booting a vehicle on it is the [Quickstart](./quickstart.md).
+A green `./ovcs doctor` and `All interfaces up.` mean your toolchain works. To boot a vehicle on it, follow the [Quickstart](./quickstart.md).
 
 > [!TIP]
-> Something doesn't line up? [Troubleshooting](./troubleshooting.md) lists the setup failures people hit most, each with the check that names the cause.
+> If something does not work, [Troubleshooting](./troubleshooting.md) lists the most common setup failures, each with the check that names the cause.
 
 ## Next steps
 

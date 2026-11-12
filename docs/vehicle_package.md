@@ -3,14 +3,14 @@ title: Your vehicle package
 description: The OvcsVehicle contract, how VEHICLE selects your package, what each firmware boots, control levels, and the ovcs new scaffold.
 ---
 
-OVCS is a framework; the **vehicle** you build on it is a package under `vehicles/<name>/` that the framework loads at boot. This guide covers what a vehicle provides, how to scaffold one, how `VEHICLE` selects it, what each firmware does with it at boot, how the BEAMs find each other, and who is allowed to command the vehicle. Read it before creating a vehicle or touching any firmware's `config/`.
+OVCS is a framework. The **vehicle** you build on it is a package under `vehicles/<name>/` that the framework loads at boot. Read this guide before creating a vehicle or touching any firmware's `config/`.
 
 > [!NOTE]
 > The framework contains no vehicle-specific code. OVCS1, OVCS Mini and OBD2 are the three **reference vehicles** in the repository: worked examples of the contract on this page. Your vehicle needs none of them. See [Framework and vehicles](./framework.md).
 
 ## What a vehicle is
 
-A standalone Mix package whose top-level module implements the `OvcsVehicle` behaviour. It is **metadata and composers only**: no `Application` module, nothing runnable on its own. Firmware BEAMs load it through `Code.prepend_path` at boot and ask it what to supervise.
+A vehicle is a standalone Mix package whose top-level module implements the `OvcsVehicle` behaviour. It is **metadata and composers only**: no `Application` module, nothing runnable on its own. Firmware BEAMs load it through `Code.prepend_path` at boot and ask it what to supervise.
 
 | The vehicle provides | The framework provides |
 |---|---|
@@ -22,7 +22,7 @@ A standalone Mix package whose top-level module implements the `OvcsVehicle` beh
 | CAN YAMLs under `priv/can/` that import shared frame specs | `ovcs_can` frame specifications and Cantastic |
 | `.env.exs` with SSH keys, Wi-Fi networks and secrets; SSH host keys | The `ovcs` CLI that builds, burns, uploads and runs any vehicle |
 
-Everything is driven by **one environment variable**, `VEHICLE`, set to the vehicle's top-level module name: `Ovcs1`, `OvcsMini` or `Obd2` for the reference vehicles, whatever `./ovcs new` generated for yours. Bridge firmwares also read `BRIDGE_FIRMWARE_ID` to pick one entry from the vehicle's `bridge_firmwares/0` map.
+**One environment variable**, `VEHICLE`, drives everything. It is set to the vehicle's top-level module name: `Ovcs1`, `OvcsMini` or `Obd2` for the reference vehicles, whatever `./ovcs new` generated for yours. Bridge firmwares also read `BRIDGE_FIRMWARE_ID` to pick one entry from the vehicle's `bridge_firmwares/0` map.
 
 ## Start from the scaffold
 
@@ -40,7 +40,11 @@ This runs `OvcsVehicle.Scaffold.generate/3` against `libraries/ovcs_vehicle/priv
 - the CAN topology YAMLs and an `.env.exs.example`;
 - `priv/firmware/vms/` and `priv/firmware/infotainment/` holding `config.txt`, `cmdline-a.txt` and `cmdline-b.txt` copied from each target's defaults. `fwup.conf` is not copied: it stays shared with the target (see [Toolchain and OTP](./toolchain_and_otp.md#what-the-ab-layout-requires)).
 
-The name must map back to itself through the module name, since the firmware finds the directory with `Macro.underscore/1`: `my_car` becomes `MyCar` and back, but `car_2` would be looked for as `car2`, so `ovcs new` refuses it and suggests the name that works. `--no-infotainment` and `--no-bridges` trim the template; `--display-name` sets the human-readable name, which may not contain `"`, `\` or `#{` since it is written into Elixir strings. Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any vehicle:
+The name must map back to itself through the module name, since the firmware finds the directory with `Macro.underscore/1`. `my_car` becomes `MyCar` and back, but `car_2` would be looked for as `car2`, so `ovcs new` refuses it and suggests the name that works.
+
+`--no-infotainment` and `--no-bridges` trim the template. `--display-name` sets the human-readable name, which may not contain `"`, `\` or `#{` since it is written into Elixir strings.
+
+Drop the components you don't need, add the ones your hardware needs, fill in the CAN YAMLs under `priv/can/`, then boot it like any vehicle:
 
 ```sh
 ./ovcs run my_car            # every firmware of your vehicle on virtual CAN
@@ -60,7 +64,12 @@ The name must map back to itself through the module name, since the firmware fin
 | `VisionCore.Composer` | `vision/core/lib/vision_core/composer.ex` | Vision composer (optional): `config/1` returning a `VisionCore.Config` per arm, optional `required_files/0`. Implemented by `<Vehicle>.Vision.Composer`. See [Vision unit](#vision-unit). |
 | `OvcsBridge` | `libraries/ovcs_bridge/lib/ovcs_bridge.ex` | One per bridge **library** in the framework, not per vehicle: `children/0`, and an optional `apply_runtime_config/2` that `bridges/firmware`'s `runtime.exs` calls before any application starts. Vehicles pick which bridges to bundle via `bridge_firmwares/0`. |
 
-Bridge libraries define their own config behaviour, which your vehicle module implements for each bridge it bundles. Bundling `RadioControlBridge` requires `@behaviour RadioControlBridge` and `radio_control_bridge_config/1` returning `%RadioControlBridge.Config{}`. Bundling `RosBridge` requires `@behaviour RosBridge` and `ros_bridge_config/1` (or `/2`, which also receives the `bridge_firmwares/0` entry id) returning `%RosBridge.Config{}`. The first argument is the arm, `:host` or `:target`.
+Bridge libraries define their own config behaviour, which your vehicle module implements for each bridge it bundles:
+
+- Bundling `RadioControlBridge` requires `@behaviour RadioControlBridge` and `radio_control_bridge_config/1` returning `%RadioControlBridge.Config{}`.
+- Bundling `RosBridge` requires `@behaviour RosBridge` and `ros_bridge_config/1` (or `/2`, which also receives the `bridge_firmwares/0` entry id) returning `%RosBridge.Config{}`.
+
+The first argument is the arm, `:host` or `:target`.
 
 ## Package layout
 
@@ -92,11 +101,18 @@ vehicles/ovcs_mini/
   foxglove/                      Foxglove layouts for the vehicle's topics
 ```
 
-`./ovcs compute push <vehicle> <fleet>` deploys the compute node with your vehicle's `nav2/`, its expanded `description/<vehicle>.urdf` and its meshes; `OVCS_VEHICLE=<vehicle>` in `compose/local/.env` selects it for the local stacks. `mise run urdf` expands the URDF; the model names its meshes under a `mesh_uri` xacro argument, which the framework sets to `package://ovcs_description/meshes`, the scheme Foxglove fetches through `foxglove_bridge`. See [`compose/README.md`](../compose/README.md#what-comes-from-your-vehicle).
+`./ovcs compute push <vehicle> <fleet>` deploys the compute node with your vehicle's `nav2/`, its expanded `description/<vehicle>.urdf` and its meshes. `OVCS_VEHICLE=<vehicle>` in `compose/local/.env` selects it for the local stacks.
+
+`mise run urdf` expands the URDF. The model names its meshes under a `mesh_uri` xacro argument. The framework sets it to `package://ovcs_description/meshes`, the scheme Foxglove fetches through `foxglove_bridge`. See [`compose/README.md`](../compose/README.md#what-comes-from-your-vehicle).
 
 ### Why the vehicle depends on the firmwares
 
-`vehicles/<name>/mix.exs` lists `vms_firmware`, `infotainment_firmware` (when the vehicle has an infotainment side), `vision_firmware` (when it has a vision unit) and `bridge_firmware` (when it declares bridges) as path dependencies:
+`vehicles/<name>/mix.exs` lists these path dependencies:
+
+- `vms_firmware`;
+- `infotainment_firmware`, when the vehicle has an infotainment side;
+- `vision_firmware`, when it has a vision unit;
+- `bridge_firmware`, when it declares bridges.
 
 ```elixir
 defp deps do
@@ -110,13 +126,15 @@ defp deps do
 end
 ```
 
-This is the entry point for `./ovcs run <vehicle>`: one `mix compile` in the vehicle directory builds every firmware project into `vehicles/<name>/_build/dev/lib/`, so each spawned BEAM is self-contained against that tree. The firmware projects never depend on a vehicle; the dependency points one way, which keeps the framework vehicle-agnostic.
+This is the entry point for `./ovcs run <vehicle>`. One `mix compile` in the vehicle directory builds every firmware project into `vehicles/<name>/_build/dev/lib/`, so each spawned BEAM is self-contained against that tree.
+
+The firmware projects never depend on a vehicle. The dependency points one way, which keeps the framework vehicle-agnostic.
 
 ## Boot flow
 
 Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
 
-1. **`config/config.exs`**, at compile time and again at each `mix run`, so host development picks up the current environment. Selects Nerves targets, `fwup.conf` overlays, vehicle override directories and, for bridges, the `:ovcs_bridge, :vehicle` and `:firmware_id` application env.
+1. **`config/config.exs`**, at compile time and again at each `mix run`, so host development picks up the current environment. It selects Nerves targets, `fwup.conf` overlays, vehicle override directories and, for bridges, the `:ovcs_bridge, :vehicle` and `:firmware_id` application env.
 2. **`config/runtime.exs`**, at every boot. The vehicle-specific wiring happens here:
 
    ```elixir
@@ -136,10 +154,14 @@ Each firmware's `config.exs` and `runtime.exs` run in Mix's standard order:
    end
    ```
 
-   `resolve_side/4` takes the vehicle name baked in by `config.exs` (from `VEHICLE`, default `Ovcs1` on host), prepends the vehicle's ebin (`vehicles/<name>/_build/<env>/lib/<name>/ebin` on host, `<release>/lib/<name>-<vsn>/ebin` on target) and returns `{vehicle, composer}`, or `nil` under `MIX_ENV=test`.
+   `resolve_side/4`:
+
+   - takes the vehicle name baked in by `config.exs` (from `VEHICLE`, default `Ovcs1` on host);
+   - prepends the vehicle's ebin (`vehicles/<name>/_build/<env>/lib/<name>/ebin` on host, `<release>/lib/<name>-<vsn>/ebin` on target);
+   - returns `{vehicle, composer}`, or `nil` under `MIX_ENV=test`.
 3. **`Application.start/2`** of the core (`VmsCore.Application` or `InfotainmentCore.Application`) reads `:*_core, :vehicle`, calls `composer.children/0`, and supervises the result under its root supervisor. It also supervises `OvcsBus.Cluster`, which connects this BEAM to its siblings. `VisionCore.Application` reads `:vision_core, :vehicle` the same way, but its composer returns a `VisionCore.Config` rather than children; see [Vision unit](./vision/README.md).
 
-Bridges follow the same pattern with `OvcsBridge.Supervisor` in place of a core application; the entry it reads is `vehicle.bridge_firmwares()[bridge_firmware_id]`.
+Bridges follow the same pattern with `OvcsBridge.Supervisor` in place of a core application. The entry it reads is `vehicle.bridge_firmwares()[bridge_firmware_id]`.
 
 ## What a composer contributes
 
@@ -154,15 +176,22 @@ The infotainment composer has the same shape, with `infotainment_configuration/0
 
 ## Bridge firmwares
 
-A bridge firmware is the Nerves image that hosts your vehicle's extensions next to the `ovcs` bus: bridges such as `RadioControlBridge` and `RosBridge`, and any other child. Your vehicle declares them in the optional `bridge_firmwares/0` callback, one entry per image, each addressed on the CLI as `bridge-<id>`; each bundled bridge reads its configuration from a callback on your vehicle module (see [The five behaviours](#the-five-behaviours)). [Bridge firmwares](./bridges/README.md#bridge-firmwares) covers the entry's keys, the targets and the boot sequence.
+A bridge firmware is the Nerves image that hosts your vehicle's extensions next to the `ovcs` bus: bridges such as `RadioControlBridge` and `RosBridge`, and any other child. Your vehicle declares them in the optional `bridge_firmwares/0` callback, one entry per image. The CLI addresses each as `bridge-<id>`. Each bundled bridge reads its configuration from a callback on your vehicle module (see [The five behaviours](#the-five-behaviours)). [Bridge firmwares](./bridges/README.md#bridge-firmwares) covers the entry's keys, the targets and the boot sequence.
 
 ## Vision unit
 
-A vehicle with stereo cameras adds two optional callbacks to its top-level module: `vision/0` returns its `VisionCore.Composer`, and `vision_target/0` names the board, `:rpi5`, `:okdo_c100` or `:arduino_ventuno_q`. The role is addressed as `vision` (`./ovcs build my_car vision`) and its boot files go in `priv/firmware/vision/`, its root filesystem files, such as the VENTUNO Q's `/boot/cameras.cfg`, in `priv/firmware/vision/rootfs_overlay/`. [Opting in](./vision/README.md#opting-in) covers the composer, its configuration arms and its required files.
+A vehicle with stereo cameras adds two optional callbacks to its top-level module:
+
+- `vision/0` returns its `VisionCore.Composer`;
+- `vision_target/0` names the board, `:rpi5`, `:okdo_c100` or `:arduino_ventuno_q`.
+
+The role is addressed as `vision` (`./ovcs build my_car vision`). Its boot files go in `priv/firmware/vision/`. Its root filesystem files, such as the VENTUNO Q's `/boot/cameras.cfg`, go in `priv/firmware/vision/rootfs_overlay/`. [Opting in](./vision/README.md#opting-in) covers the composer, its configuration arms and its required files.
 
 ## Bus wiring and node names
 
-Every firmware image runs `OvcsBus` (a thin `Phoenix.PubSub` wrapper) and `OvcsBus.Cluster`, which calls `Node.connect/1` against each declared peer on a retry loop until the BEAMs form a distributed Erlang mesh. `OvcsBus.broadcast/2` delivers only on its own node: a send across the mesh would make the publishing component wait whenever a link is busy. Components on different boards coordinate over CAN.
+Every firmware image runs `OvcsBus` (a thin `Phoenix.PubSub` wrapper) and `OvcsBus.Cluster`. `OvcsBus.Cluster` calls `Node.connect/1` against each declared peer on a retry loop, until the BEAMs form a distributed Erlang mesh.
+
+`OvcsBus.broadcast/2` delivers only on its own node: a send across the mesh would make the publishing component wait whenever a link is busy. Components on different boards coordinate over CAN.
 
 Peer node names come from the vehicle module's declared roles plus the naming convention parsed from `Node.self()`:
 
@@ -171,13 +200,15 @@ Peer node names come from the vehicle module's declared roles plus the naming co
 | Host dev | `<vehicle>-<role>@<host>`, every underscore a dash (`ovcs-mini-bridge-radio-control@<host>`) | sname; all share `<host>` |
 | Deployed Nerves | `nerves@<vehicle>-<role>.local`, likewise dashed (`nerves@ovcs-mini-bridge-radio-control.local`) | hostname; all share the sname `nerves` and the `.local` domain |
 
-On the host, `./ovcs run` names each BEAM with `--sname`. A deployed firmware boots unnamed; `OvcsBus.Distribution` starts distribution on the first cluster tick with long names, after `epmd -daemon`, on the hostname erlinit set from `hostname_pattern`. Peers resolve each other's `.local` names through mdns_lite's DNS bridge, which each firmware's target config enables and puts first in VintageNet's `additional_name_servers`.
+On the host, `./ovcs run` names each BEAM with `--sname`. A deployed firmware boots unnamed. `OvcsBus.Distribution` starts distribution on the first cluster tick with long names, after `epmd -daemon`, on the hostname erlinit set from `hostname_pattern`.
 
-Every firmware release sets the cookie `ovcs` in its `mix.exs`, handed to the VM by `-setcookie` in `rel/vm.args.eex`. On the host, `./ovcs run` and `./ovcs attach` use your `~/.erlang.cookie` instead, which the CLI creates with a random value if it is missing.
+Peers resolve each other's `.local` names through mdns_lite's DNS bridge. Each firmware's target config enables it and puts it first in VintageNet's `additional_name_servers`.
+
+Every firmware release sets the cookie `ovcs` in its `mix.exs`; `-setcookie` in `rel/vm.args.eex` hands it to the VM. On the host, `./ovcs run` and `./ovcs attach` use your `~/.erlang.cookie` instead, which the CLI creates with a random value if it is missing.
 
 ## Control levels
 
-Who commands the vehicle, the pedals, the radio transmitter or a ROS node, is the VMS's decision: `VmsCore.Managers.ControlLevel` makes it from the switches and source maps your VMS composer configures. [Control levels](./vms/how_it_works.md#control-levels) covers the two switches, the channel layout, the `requested_*_sources` maps and how to drive them on the host bench.
+The VMS decides who commands the vehicle: the pedals, the radio transmitter or a ROS node. `VmsCore.Managers.ControlLevel` makes that decision from the switches and source maps your VMS composer configures. [Control levels](./vms/how_it_works.md#control-levels) covers the two switches, the channel layout, the `requested_*_sources` maps and how to drive them on the host bench.
 
 ## Host development versus deployed
 
@@ -189,7 +220,7 @@ Who commands the vehicle, the pedals, the radio transmitter or a ROS node, is th
 | CAN interfaces | Virtual, provisioned by `./ovcs can setup` | Real SPI/CAN hardware, set up by Cantastic at boot |
 | `VEHICLE` | Set by the CLI when spawning each BEAM | Baked into the release at build time |
 
-`OvcsBus.Cluster.peers_for/1` handles the naming split; composers don't care which mode they run in.
+`OvcsBus.Cluster.peers_for/1` handles the naming difference; a composer does not depend on which mode it runs in.
 
 ## Learn from the reference vehicles
 

@@ -1,11 +1,11 @@
 ---
 title: Running on hardware
-description: Build and burn your vehicle's Nerves firmware, update running boards over SSH or through NervesHub, keep SSH host keys stable across burns, and attach to the running boards.
+description: Build and burn your vehicle's Nerves firmware, update boards over SSH or NervesHub, keep SSH host keys stable across burns, and attach to running boards.
 ---
 
 Everything that runs on your laptop with `./ovcs run` also runs on the vehicle: the same firmware projects, the same vehicle package, the same Erlang cluster. The difference is that each BEAM becomes a Nerves image on its own board. This guide covers building those images, getting them onto boards, updating them, and watching them run.
 
-The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. Everything that varies per vehicle (the Nerves target of each role, `.env.exs` with its keys and secrets, the SSH host keys, the CAN mapping) belongs to your vehicle package under `vehicles/<vehicle>/`. The commands below use the `ovcs1` and `ovcs_mini` reference vehicles; substitute your own package name and they work unchanged.
+The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. Everything that varies per vehicle belongs to your vehicle package under `vehicles/<vehicle>/`: the Nerves target of each role, `.env.exs` with its keys and secrets, the SSH host keys, the CAN mapping. The commands below use the `ovcs1` and `ovcs_mini` reference vehicles; substitute your own package name and they work unchanged.
 
 ## Boards per role
 
@@ -20,7 +20,14 @@ The firmware projects, the Nerves systems and the `ovcs` CLI are the framework. 
 | `vision` | Arduino VENTUNO Q | [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q) (Mix target `arduino_ventuno_q`) |
 | Generic controller | Arduino R4 Minima | none (PlatformIO) |
 
-These are the reference vehicles' choices, except `vision`, whose three rows are the boards `vision/firmware` builds for: the OVCS Mini reference vehicle runs it on the Raspberry Pi 5, the OVCS1 reference vehicle on the Arduino VENTUNO Q. A unit on the VENTUNO Q needs QAIRT and its GPU modules before the build: [The Arduino VENTUNO Q](./vision/README.md#the-arduino-ventuno-q) lists the steps. The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name. To deploy on other hardware, change those values in `vehicles/<vehicle>/lib/<vehicle>.ex` and add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
+These are the reference vehicles' choices, except `vision`, whose three rows are the boards `vision/firmware` builds for. The OVCS Mini reference vehicle runs it on the Raspberry Pi 5, the OVCS1 reference vehicle on the Arduino VENTUNO Q. A unit on the VENTUNO Q needs QAIRT and its GPU modules before the build: [The Arduino VENTUNO Q](./vision/README.md#the-arduino-ventuno-q) lists the steps.
+
+The target of each role is a per-vehicle decision, read from your top-level module: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, and the `:target` key of each `bridge_firmwares/0` entry. The `:target` value is the Mix target, which usually but not always equals the system's name.
+
+To deploy on other hardware:
+
+1. Change those values in `vehicles/<vehicle>/lib/<vehicle>.ex`.
+2. Add the matching system dependency to the firmware project's `mix.exs` (see the [Nerves custom-systems guide](https://hexdocs.pm/nerves/customizing-systems.html)).
 
 The OVCS systems add the CAN kernel modules and device-tree overlays the SPI-CAN hardware needs. The host OTP pinned in `mise.toml` must match the OTP they ship: [Toolchain and OTP](./toolchain_and_otp.md) explains why.
 
@@ -40,8 +47,16 @@ Every build, burn and upload goes through `./ovcs` (built by `mise run cli`, see
 
 ## Build
 
-1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs` and fill in `AUTHORIZED_SSH_KEYS` (your SSH public keys), `WIFI_NETWORKS`, the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`, and, for a vehicle with a ROS bridge or a vision unit, `ZENOH_ENDPOINT_IP`. `NTP_SERVERS`, comma-separated, sets the boards' time servers: the public pools when unset, the compute node first on a vehicle that has one. The file is gitignored and shared by every firmware of the vehicle.
-2. **Generate stable SSH host keys**, once per vehicle ([below](#stable-ssh-host-keys-across-burns)):
+1. **Configure the vehicle's secrets.** Copy `vehicles/<vehicle>/.env.exs.example` to `vehicles/<vehicle>/.env.exs`. The file is gitignored and shared by every firmware of the vehicle. Fill in:
+
+   - `AUTHORIZED_SSH_KEYS`: your SSH public keys;
+   - `WIFI_NETWORKS`;
+   - the Phoenix `SECRET_KEY_BASE` and `SIGNING_SALT`;
+   - `ZENOH_ENDPOINT_IP`, for a vehicle with a ROS bridge or a vision unit.
+
+   `NTP_SERVERS`, comma-separated, sets the boards' time servers: the public pools when unset, the compute node first on a vehicle that has one.
+
+2. **Generate stable SSH host keys**, once per vehicle (see [Stable SSH host keys across burns](#stable-ssh-host-keys-across-burns)):
 
    ```sh
    ./ovcs host-keys generate ovcs1
@@ -61,13 +76,13 @@ A VMS build also builds the React dashboard and bundles it into the image. The i
 
 ### Stable SSH host keys across burns
 
-A fresh SD-card burn regenerates the device's SSH host key, so every reflash trips OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning. Persistent keys per role avoid that:
+A fresh SD-card burn regenerates the device's SSH host key, so every reflash triggers OpenSSH's "REMOTE HOST IDENTIFICATION HAS CHANGED" warning. Persistent keys per role avoid that:
 
 ```sh
 ./ovcs host-keys generate ovcs1
 ```
 
-This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, `vision/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate; `./ovcs doctor` warns about any vehicle missing keys.
+This creates an RSA and an ed25519 key pair per role under `vehicles/<vehicle>/priv/host_keys/`: `vms/`, `infotainment/`, `vision/`, and `bridges/<id>/` for each bridge. The files are gitignored. The firmware ships them in the vehicle's `priv` and points `:nerves_ssh, :system_dir` at them at boot. Re-run with `--force` to rotate. `./ovcs doctor` warns about any vehicle missing keys.
 
 To share one identity across a team:
 
@@ -104,14 +119,14 @@ The default host is `<vehicle>-<role>.local`, with every underscore turned into 
 
 ## OTA updates via NervesHub
 
-The VMS and vision firmwares ship [NervesHubLink](https://hexdocs.pm/nerves_hub_link/), so deployed vehicles can pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
+The VMS and vision firmwares ship [NervesHubLink](https://hexdocs.pm/nerves_hub_link/). Deployed vehicles can then pull signed updates from a self-hosted [NervesHub](https://github.com/nerves-hub/nerves_hub_web) instance instead of being flashed over SSH. It is opt-in per vehicle: set three variables in `vehicles/<vehicle>/.env.exs` before building (`.env.exs.example` has them commented out).
 
 - `NERVES_HUB_HOST`: the instance's device endpoint, a bare hostname (`wss` on port 443) or a full `wss://host:port` URL.
 - `NERVES_HUB_PRODUCT_KEY` and `NERVES_HUB_PRODUCT_SECRET`: the shared-secret pair from the product's settings on the instance.
 
 Without `NERVES_HUB_HOST`, the firmware never contacts NervesHub.
 
-**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name and the firmware: `Ovcs1 - VMS`, `Ovcs Mini - VMS`, `<Vehicle> - Vision`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to, so create one product per vehicle with that name and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware. Both firmwares of a vehicle read that one pair, so it serves the VMS or the vision unit, not both.
+**One NervesHub product per vehicle.** The build stamps a product name into the image's `meta-product`, derived from the `VEHICLE` module name and the firmware: `Ovcs1 - VMS`, `Ovcs Mini - VMS`, `<Vehicle> - Vision`. NervesHub only accepts firmware whose metadata matches the product it's uploaded to. Create one product per vehicle with that name, and put its shared-secret pair in that vehicle's `.env.exs`. A device then only ever sees its own vehicle's firmware. Both firmwares of a vehicle read that one pair, so it serves the VMS or the vision unit, not both.
 
 Publish with the [`nh` CLI](https://github.com/nerves-hub/nerves_hub_cli):
 
@@ -122,9 +137,14 @@ nh firmware publish \
   --product "Ovcs1 - VMS" --key <signing-key> --deploy <deployment>
 ```
 
-Firmware must be signed: `nh key create <name>` creates a signing key pair and registers the public half on the instance, and `nh firmware publish --key <name>` signs locally, so the private key never leaves your machine. Devices authenticate with the product's shared secret, self-register on first connect (identified by serial number), and fetch the verification keys from the instance, so nothing is baked into the image.
+Firmware must be signed:
 
-The link also enables health reporting (CPU, memory, disk) and a remote IEx console in the NervesHub UI, open to anyone with access to the product. `nerves_hub_link` starts before the main application, so a vehicle whose main application crashes at boot stays reachable for an OTA fix.
+- `nh key create <name>` creates a signing key pair and registers the public half on the instance.
+- `nh firmware publish --key <name>` signs locally, so the private key never leaves your machine.
+
+Devices authenticate with the product's shared secret, self-register on first connect (identified by serial number), and fetch the verification keys from the instance. Nothing is baked into the image.
+
+The link also enables health reporting (CPU, memory, disk) and a remote IEx console in the NervesHub UI, open to anyone with access to the product. Because `nerves_hub_link` starts before the main application, a vehicle whose main application crashes at boot stays reachable for an OTA fix.
 
 ## Watching a running vehicle
 
@@ -159,7 +179,12 @@ Host 10.42.0.*
 
 ## CAN interfaces
 
-Each side's composer declares which interface carries each CAN network, per environment, in `default_can_mapping/1`: `:host` for `./ovcs run` (virtual `vcan` interfaces), `:target` for the deployed image (on the VMS, `spi` interfaces behind the CAN hub; the infotainment uses `can0`). A bridge declares its own in the `default_can_mapping` of its `bridge_firmwares/0` entry.
+Each side's composer declares which interface carries each CAN network, per environment, in `default_can_mapping/1`:
+
+- `:host` for `./ovcs run`: virtual `vcan` interfaces;
+- `:target` for the deployed image: on the VMS, `spi` interfaces behind the CAN hub; the infotainment uses `can0`.
+
+A bridge declares its own in the `default_can_mapping` of its `bridge_firmwares/0` entry.
 
 | Interface prefix | Type | Example |
 |---|---|---|
@@ -185,9 +210,9 @@ The network names are declared in the vehicle's YAML. The framework's own compon
 CAN_NETWORK_MAPPINGS=network1:interface1,network2:interface2,...
 ```
 
-It is read by each firmware's `config/runtime.exs` at boot. A deployed image boots without it in its environment and uses `default_can_mapping(:target)`; to change a deployed mapping, change the composer.
+Each firmware's `config/runtime.exs` reads it at boot. A deployed image boots without it in its environment and uses `default_can_mapping(:target)`. To change a deployed mapping, change the composer.
 
-On the host, every BEAM `./ovcs run` spawns inherits it except the bridges, which always get their own mapping. Cantastic refuses a mapping that names a network its YAML doesn't declare (`CAN Network: '…' is missing from the Yaml configuration`), so the variable suits a vehicle whose sides share their networks. The Mini's VMS, for instance, on a physical `can0` for the `ovcs` bus:
+On the host, every BEAM `./ovcs run` spawns inherits it except the bridges, which always get their own mapping. Cantastic refuses a mapping that names a network its YAML doesn't declare (`CAN Network: '…' is missing from the Yaml configuration`). The variable therefore suits a vehicle whose sides share their networks. The Mini's VMS, for instance, on a physical `can0` for the `ovcs` bus:
 
 ```sh
 CAN_NETWORK_MAPPINGS=ovcs:can0,misc:vcan1 ./ovcs run ovcs_mini
