@@ -1,18 +1,7 @@
-//! A single colour camera: captures its raw RGGB frames, makes each of its
-//! outputs from them, demosaiced at the capture's size or each 2x2 cell into
-//! one pixel by the processor (`processor`), with grey-world white balance,
-//! or averaged from another output (`scale`), the 2x2 average of a CPU
-//! output as the processor converts it, or encoded from another output as
-//! a JPEG on an encoder thread (`jpeg`), runs auto exposure on the
-//! green of the RGGB cells as the image tones it, and writes one
-//! OUTPUT_FRAME or OUTPUT_JPEG record per sent output per frame on stdout,
-//! in the outputs' order, an output not sent made only for those made from
-//! it, each frame converted in bands of rows on as many
-//! threads as `threads` sets and written on a writer thread while the next
-//! one converts. A sensor with a tuning
-//! takes its colour path (`colour`): lens shading, white balance, the colour
-//! correction matrix of its colour temperature, the chroma denoise and the
-//! contrast curve; another one its gamma.
+//! A single colour camera's frame loop: captures its raw RGGB frames, makes
+//! each output's image of them (`plan`), steers the exposure and the white
+//! balance from what they measure, and writes one OUTPUT_FRAME or OUTPUT_JPEG
+//! record per sent output per frame on stdout, in the outputs' order.
 
 use std::fs::File;
 use std::io;
@@ -239,11 +228,8 @@ struct Written {
     encode: Option<Duration>,
 }
 
-/// Writes each record `queued` holds to `records`, in order, a frame's
-/// sent outputs one record each, each output `jpeg_slots` places among the
-/// frame's JPEGs as its JPEG from `encoded`, handing each frame's images
-/// back to `written`, once its JPEGs are encoded, with the time their
-/// writes and encodes took.
+/// Writes each record of `queued` to `records`, a frame's sent outputs one
+/// record each, a JPEG one from `encoded`, then hands its images to `written`.
 fn write_records(
     records: &impl Records,
     jpeg_slots: &[Option<usize>],
@@ -1163,11 +1149,9 @@ mod tests {
         assert!(encodes.iter().any(|&us| us > 0), "{encodes:?}");
     }
 
-    // Prints the host's time to encode a frame of OVCS1's HQ camera,
-    // 2028 x 1520, as a JPEG at quality 80:
-    // `cargo test --release -p v4l2_capture -- --ignored --nocapture`.
+    // A 2028 x 1520 frame as a JPEG at quality 80.
     #[test]
-    #[ignore]
+    #[ignore = "a benchmark: run with `-- --ignored --nocapture` to print the host's times"]
     fn host_time_of_a_full_frame_encoded_as_a_jpeg() {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;

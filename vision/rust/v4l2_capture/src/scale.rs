@@ -166,10 +166,8 @@ mod tests {
         }
     }
 
-    // Prints the host's time for OVCS1's HQ camera, 2028 x 1520 by 2 x 2:
-    // `cargo test --release -p v4l2_capture -- --ignored --nocapture`.
     #[test]
-    #[ignore]
+    #[ignore = "a benchmark: run with `-- --ignored --nocapture` to print the host's times"]
     fn host_time_of_a_2x2_average_of_a_full_frame() {
         let (width, height) = (2028, 1520);
         let source = noise(width * height * 3);

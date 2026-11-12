@@ -223,8 +223,7 @@ pub(crate) mod tests {
             red: 2.1,
             blue: 1.6,
         };
-        // The digests of the conversion on one thread before it was split
-        // into bands.
+        // Each case's image and measures, digested: the same on any number of threads.
         #[rustfmt::skip]
         let pinned = [
             ((24, 46), Output::Full, false, Path::Denoised, 0x5adc1b5784f7a6df),
@@ -482,12 +481,10 @@ pub(crate) mod tests {
         }
     }
 
-    // Prints the host's time per frame for OVCS1's HQ camera, 2028 x 1520
-    // on 3 threads, converted alone, then averaged 2 x 2 after, then
-    // averaged as it converts:
-    // `cargo test --release -p v4l2_capture -- --ignored --nocapture`.
+    // A 2028 x 1520 frame on 3 threads: converted alone, then averaged 2 x 2
+    // after, then averaged as it converts.
     #[test]
-    #[ignore]
+    #[ignore = "a benchmark: run with `-- --ignored --nocapture` to print the host's times"]
     fn host_time_of_a_full_frame_converted_and_averaged() {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;
