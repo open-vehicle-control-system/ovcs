@@ -2,7 +2,8 @@
 //! the capture's size or each 2x2 cell into one pixel, with grey-world white
 //! balance, runs auto exposure on the green of the RGGB cells as the image
 //! tones it, and writes RGB_FRAME records on stdout, each frame converted in
-//! bands of rows on as many threads as `threads` sets. A sensor with a tuning
+//! bands of rows on as many threads as `threads` sets and written on a
+//! writer thread while the next one converts. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
 //! correction matrix of its colour temperature, the chroma denoise and the
 //! contrast curve; another one its gamma.
@@ -10,6 +11,7 @@
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use framing::{log_record, metadata_record, rgb_frame_header, LogLevel, Writer};
@@ -172,14 +174,92 @@ struct Setup {
 }
 
 /// Converts the frames of `frames` as `setup` says and writes them to
-/// `records`, steering the sensor's exposure through `set_exposure` and
-/// applying the settings `input` sends, until `input` closes.
+/// `records`, each on a writer thread while the next one converts,
+/// steering the sensor's exposure through `set_exposure` and applying the
+/// settings `input` sends, until `input` closes. The records keep the order
+/// they are sent in.
 fn capture(
     setup: Setup,
     frames: &impl Frames,
     set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
     input: &mut File,
     records: &impl Records,
+) -> io::Result<()> {
+    std::thread::scope(|scope| {
+        let (sender, queued) = mpsc::channel();
+        let (written, images) = mpsc::channel();
+        let writer = scope.spawn(move || write_records(records, queued, written));
+        let queue = Queue {
+            records: sender,
+            images,
+        };
+        let converted = convert_frames(setup, frames, set_exposure, input, &queue);
+        drop(queue);
+        let written = writer
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        // After a failed write the loop's own error only says the writer stopped.
+        written.and(converted)
+    })
+}
+
+/// A record for the writer thread: a frame's header and image, or another
+/// record whole.
+enum Record {
+    Frame([u8; 13], Vec<u8>),
+    Other(Vec<u8>),
+}
+
+/// Writes each record `queued` holds to `records`, in order, handing each
+/// frame's image back to `written` with the time its write took.
+fn write_records(
+    records: &impl Records,
+    queued: mpsc::Receiver<Record>,
+    written: mpsc::Sender<(Vec<u8>, Duration)>,
+) -> io::Result<()> {
+    for record in queued {
+        match record {
+            Record::Frame(header, image) => {
+                let writing = Instant::now();
+                records.write(&[&header, &image])?;
+                let _ = written.send((image, writing.elapsed()));
+            }
+            Record::Other(record) => records.write(&[&record])?,
+        }
+    }
+    Ok(())
+}
+
+/// The records on their way to the writer thread, and the images it has
+/// written on their way back.
+struct Queue {
+    records: mpsc::Sender<Record>,
+    images: mpsc::Receiver<(Vec<u8>, Duration)>,
+}
+
+impl Queue {
+    fn send(&self, record: Record) -> io::Result<()> {
+        self.records.send(record).map_err(|_| writer_stopped())
+    }
+
+    /// The next image written, waiting for its write to end, and the time
+    /// it took.
+    fn written(&self) -> io::Result<(Vec<u8>, Duration)> {
+        self.images.recv().map_err(|_| writer_stopped())
+    }
+}
+
+fn writer_stopped() -> io::Error {
+    io::Error::other("the writer thread stopped")
+}
+
+/// `capture`'s loop, sending its records to `queue`.
+fn convert_frames(
+    setup: Setup,
+    frames: &impl Frames,
+    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    input: &mut File,
+    queue: &Queue,
 ) -> io::Result<()> {
     let Setup {
         output,
@@ -189,7 +269,7 @@ fn capture(
         statistics_every,
     } = setup;
     let log = |level, message: &str| {
-        let _ = records.write(&[&log_record(level, message)]);
+        let _ = queue.send(Record::Other(log_record(level, message)));
     };
     let tone_for = |settings: &ColourSettings| {
         Tone::with_sample_bits(
@@ -202,7 +282,8 @@ fn capture(
         tuning,
         contrast: ContrastTable::new(tuning),
     });
-    let mut rgb = Vec::new();
+    // Two images alternate: one converts while the writer writes the other.
+    let (mut rgb, mut spare) = (Vec::new(), Some(Vec::new()));
     let mut buffers = colour::Buffers::default();
     let mut fallback_buffers = bayer::Buffers::default();
     let mut tone = tone_for(&settings);
@@ -214,6 +295,7 @@ fn capture(
     // Frames converted, and frames dropped as incomplete.
     let mut statistics = [0u64; 2];
     let mut conversion_ns = 0u128;
+    let (mut writes, mut write_ns) = (0u64, 0u128);
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
@@ -240,7 +322,8 @@ fn capture(
                                 f64::from(settings.capture.exposure_us),
                                 settings.capture.analogue_gain,
                             )?;
-                            records.write(&[&exposure_record(applied, last_ns.unwrap_or(0))])?;
+                            let record = exposure_record(applied, last_ns.unwrap_or(0));
+                            queue.send(Record::Other(record))?;
                             Ok(applied)
                         })?;
                         auto_exposure =
@@ -256,11 +339,12 @@ fn capture(
                 LogLevel::Info,
                 &format!(
                     "last {} s: frames {}, incomplete {}, \
-                     {} us per conversion, white balance {gains:?}{}",
+                     {} us per conversion, {} us per write, white balance {gains:?}{}",
                     statistics_every.as_secs(),
                     statistics[0],
                     statistics[1],
                     conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
+                    write_ns / 1_000 / u128::from(writes.max(1)),
                     tuned
                         .as_ref()
                         .map(|tuned| format!(", {:.0} K", tuned.tuning.colour_temperature(gains)))
@@ -269,6 +353,7 @@ fn capture(
             );
             statistics = [0; 2];
             conversion_ns = 0;
+            (writes, write_ns) = (0, 0);
             statistics_since = Instant::now();
         }
         // One frame a round: the settings and statistics are served between frames.
@@ -320,14 +405,20 @@ fn capture(
             if let Some(mean) = green_mean {
                 if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
                     let applied = set_exposure(exposure_us, gain)?;
-                    records.write(&[&exposure_record(applied, start_ns)])?;
+                    queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
             }
+            let free = match spare.take() {
+                Some(image) => image,
+                None => {
+                    let (image, took) = queue.written()?;
+                    (writes, write_ns) = (writes + 1, write_ns + took.as_nanos());
+                    image
+                }
+            };
             let (width, height) = output.size(sensor_width as u32, sensor_height as u32);
-            records.write(&[
-                &rgb_frame_header(width as u16, height as u16, start_ns),
-                &rgb,
-            ])?;
+            let header = rgb_frame_header(width as u16, height as u16, start_ns);
+            queue.send(Record::Frame(header, std::mem::replace(&mut rgb, free)))?;
         }
     }
 }
@@ -372,7 +463,8 @@ mod tests {
     use std::cell::{Cell, RefCell};
     use std::io::Write;
     use std::os::fd::FromRawFd;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{mpsc, Mutex};
 
     use super::*;
     use crate::bayer::tests::padded_packed12;
@@ -613,7 +705,8 @@ mod tests {
     // Frames in order, `None` for an incomplete one, each starting a
     // millisecond after the one before; the host's end of the settings
     // pipe sends `settings` as the frame of their index is taken, and
-    // closes once the frames run out.
+    // closes once the frames run out. `on_take` hears each frame's index
+    // as it is taken.
     struct TestFrames {
         frames: Vec<Option<Vec<u8>>>,
         taken: Cell<usize>,
@@ -621,6 +714,7 @@ mod tests {
         ready: (File, File),
         host: RefCell<Option<File>>,
         settings: Vec<(usize, &'static str)>,
+        on_take: Option<mpsc::Sender<usize>>,
     }
 
     impl TestFrames {
@@ -635,6 +729,7 @@ mod tests {
                 ready,
                 host: RefCell::new(Some(host)),
                 settings,
+                on_take: None,
             };
             (frames, input)
         }
@@ -655,6 +750,9 @@ mod tests {
                 return Ok(None);
             };
             self.taken.set(index + 1);
+            if let Some(on_take) = &self.on_take {
+                let _ = on_take.send(index);
+            }
             for (_, setting) in self.settings.iter().filter(|(at, _)| *at == index) {
                 let record = [
                     &(setting.len() as u32).to_be_bytes()[..],
@@ -702,6 +800,25 @@ mod tests {
             .collect()
     }
 
+    // The frame loop over `frames` from the IMX477, writing to `records`,
+    // logging its statistics every `statistics_every`.
+    fn run_loop(
+        frames: &TestFrames,
+        input: &mut File,
+        records: &impl Records,
+        statistics_every: Duration,
+    ) -> io::Result<()> {
+        let setup = Setup {
+            output: Output::Full,
+            model: SensorModel::Imx477,
+            frame_us: 28_571.0,
+            settings: ColourSettings::default(),
+            statistics_every,
+        };
+        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
+        capture(setup, frames, &set_exposure, input, records)
+    }
+
     // The records the frame loop writes for `frames` from the IMX477.
     fn captured(
         frames: Vec<Option<Vec<u8>>>,
@@ -709,15 +826,8 @@ mod tests {
     ) -> Vec<Vec<u8>> {
         let (frames, mut input) = TestFrames::new(frames, settings);
         let records = Collected::default();
-        let setup = Setup {
-            output: Output::Full,
-            model: SensorModel::Imx477,
-            frame_us: 28_571.0,
-            settings: ColourSettings::default(),
-            statistics_every: Duration::from_secs(3_600),
-        };
-        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
-        capture(setup, &frames, &set_exposure, &mut input, &records).unwrap();
+        let hour = Duration::from_secs(3_600);
+        run_loop(&frames, &mut input, &records, hour).unwrap();
         records.0.into_inner().unwrap()
     }
 
@@ -742,7 +852,7 @@ mod tests {
         let tags: Vec<u8> = records.iter().map(|record| record[0]).collect();
         // Frames (6), each fourth whole one after the exposure it sets (3).
         assert_eq!(tags, [6, 6, 6, 3, 6, 6, 6, 6, 3, 6, 6, 6, 6]);
-        // The digest of the loop converting then writing each frame in turn.
+        // Which thread writes the records changes none of them nor their order.
         assert_eq!(records_digest(&records), 0xf88a5dbe53ea288a);
     }
 
@@ -771,5 +881,90 @@ mod tests {
             .nth(2)
             .map(|(position, _)| position);
         assert_eq!(applied, third_frame.map(|position| position + 1));
+    }
+
+    // Holds the first frame's record until the loop takes the next frame,
+    // two seconds at most, and tells whether it did.
+    struct Held {
+        taken: Mutex<mpsc::Receiver<usize>>,
+        overlapped: Mutex<Option<bool>>,
+    }
+
+    impl Records for Held {
+        fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
+            let mut overlapped = self.overlapped.lock().unwrap();
+            if parts[0][0] == 6 && overlapped.is_none() {
+                let taken = self.taken.lock().unwrap();
+                let mut taken =
+                    std::iter::from_fn(|| taken.recv_timeout(Duration::from_secs(2)).ok());
+                *overlapped = Some(taken.any(|index| index == 1));
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn a_frame_is_written_while_the_next_one_converts() {
+        let (mut frames, mut input) = TestFrames::new(scenes(3, None), vec![]);
+        let (on_take, taken) = mpsc::channel();
+        frames.on_take = Some(on_take);
+        let records = Held {
+            taken: Mutex::new(taken),
+            overlapped: Mutex::new(None),
+        };
+        let hour = Duration::from_secs(3_600);
+        run_loop(&frames, &mut input, &records, hour).unwrap();
+        assert_eq!(*records.overlapped.lock().unwrap(), Some(true));
+    }
+
+    // Takes `frames` frame records, then fails as a closed pipe does.
+    struct Closing {
+        frames: AtomicUsize,
+    }
+
+    impl Records for Closing {
+        fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
+            if parts[0][0] != 6 {
+                return Ok(());
+            }
+            let left = self.frames.fetch_sub(1, Ordering::SeqCst);
+            if left == 0 {
+                self.frames.store(0, Ordering::SeqCst);
+                return Err(io::ErrorKind::BrokenPipe.into());
+            }
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_loop_stops_with_the_error_of_a_write() {
+        let (frames, mut input) = TestFrames::new(scenes(12, None), vec![]);
+        let records = Closing {
+            frames: AtomicUsize::new(3),
+        };
+        let hour = Duration::from_secs(3_600);
+        let error = run_loop(&frames, &mut input, &records, hour).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert!(frames.taken.get() < 12);
+    }
+
+    #[test]
+    fn the_statistics_give_the_time_a_frame_takes_to_write() {
+        let (frames, mut input) = TestFrames::new(scenes(4, None), vec![]);
+        let records = Collected::default();
+        run_loop(&frames, &mut input, &records, Duration::ZERO).unwrap();
+        let records = records.0.into_inner().unwrap();
+        let statistics = records.iter().filter_map(|record| {
+            let message = record.strip_prefix(b"\x02\x00last ")?;
+            Some(String::from_utf8(message.to_vec()).unwrap())
+        });
+        assert!(statistics.clone().count() > 0);
+        assert!(
+            statistics
+                .clone()
+                .all(|line| line.contains(" us per write")),
+            "{:?}",
+            statistics.collect::<Vec<_>>()
+        );
     }
 }
