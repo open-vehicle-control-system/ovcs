@@ -13,6 +13,7 @@ const TAG_METADATA: u8 = 3;
 const TAG_PAIR: u8 = 4;
 const TAG_GREY_FRAME: u8 = 5;
 const TAG_OUTPUT_FRAME: u8 = 7;
+const TAG_OUTPUT_JPEG: u8 = 8;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -240,6 +241,15 @@ pub fn output_frame_header(output: u8, width: u16, height: u16, capture_ns: i64)
     header
 }
 
+/// The start of an OUTPUT_JPEG record, a camera output's frame as a JPEG:
+/// an OUTPUT_FRAME record's header under its own tag, which the JPEG of
+/// the `width` x `height` image follows.
+pub fn output_jpeg_header(output: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 14] {
+    let mut header = output_frame_header(output, width, height, capture_ns);
+    header[0] = TAG_OUTPUT_JPEG;
+    header
+}
+
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
     let mut record = Vec::with_capacity(2 + message.len());
     record.push(TAG_LOG);
@@ -380,6 +390,20 @@ mod tests {
     fn grey_frame_record_layout() {
         let got = grey_frame_record(2, 1, 5, &[7, 8]);
         let want = [5, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 7, 8];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn output_jpeg_record_layout() {
+        let got = [
+            &output_jpeg_header(3, 2, 1, -5)[..],
+            &[0xff, 0xd8, 0xff, 0xd9],
+        ]
+        .concat();
+        let want = [
+            8, 3, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xd8, 0xff,
+            0xd9,
+        ];
         assert_eq!(got, want);
     }
 
