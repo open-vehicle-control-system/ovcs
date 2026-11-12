@@ -19,11 +19,11 @@ mod performance;
 mod stage_times;
 mod time_log;
 
-pub use performance::{command_line, Performance, DEFAULT_PERFORMANCE};
+pub use performance::{command_line, CommandLine, Performance, DEFAULT_PERFORMANCE};
 pub use stage_times::{micros, StageTimes, STAGE_TIMES_EVERY};
 pub use time_log::TimeLog;
 
-use std::ffi::{c_void, CStr};
+use std::ffi::{c_void, CStr, CString};
 use std::ops::Range;
 use std::ptr;
 use std::time::Instant;
@@ -203,6 +203,7 @@ struct Profile {
 pub struct Model {
     interface: QnnInterface_ImplementationV2_39_t,
     graph: Qnn_GraphHandle_t,
+    pub graph_name: String,
     pub inputs: Vec<Tensor>,
     pub outputs: Vec<Tensor>,
     profile: Option<Profile>,
@@ -309,6 +310,103 @@ unsafe fn vote(
     }
     let error = (!failures.is_empty()).then(|| failures.join(", "));
     (Some(held), error)
+}
+
+/// The interface of `libQnnSystem.so` of this QNN system API version.
+unsafe fn system_interface(
+    library: &Library,
+) -> Result<QnnSystemInterface_ImplementationV1_14_t, String> {
+    let get_system_providers: libloading::Symbol<GetSystemProviders> = library
+        .get(b"QnnSystemInterface_getProviders\0")
+        .map_err(|e| format!("QnnSystemInterface_getProviders: {e}"))?;
+    let mut system_providers: *mut *const QnnSystemInterface_t = ptr::null_mut();
+    let mut count = 0u32;
+    check(
+        "QnnSystemInterface_getProviders",
+        get_system_providers(&mut system_providers, &mut count),
+    )?;
+    Ok(std::slice::from_raw_parts(system_providers, count as usize)
+        .iter()
+        .map(|&provider| &*provider)
+        .find(|provider| provider.systemApiVersion.major == QNN_SYSTEM_API_VERSION_MAJOR)
+        .ok_or("libQnnSystem.so offers no interface of this QNN system API version")?
+        .__bindgen_anon_1
+        .v1_14)
+}
+
+/// The names of the graphs the DLC at `path` holds, as QNN's system library reads them.
+pub fn dlc_graph_names(path: &str) -> Result<Vec<String>, String> {
+    let terminated_path =
+        CString::new(path).map_err(|_| format!("{path}: a path holding a NUL"))?;
+    unsafe {
+        let library =
+            Library::new("libQnnSystem.so").map_err(|e| format!("libQnnSystem.so: {e}"))?;
+        let system = system_interface(&library)?;
+        let mut dlc: QnnSystemDlc_Handle_t = ptr::null_mut();
+        check(
+            "systemDlcCreateFromFile",
+            system
+                .systemDlcCreateFromFile
+                .ok_or_else(|| missing("systemDlcCreateFromFile"))?(
+                ptr::null_mut(),
+                terminated_path.as_ptr(),
+                &mut dlc,
+            ),
+        )?;
+        let names = composable_graph_names(&system, dlc);
+        if let Some(free) = system.systemDlcFree {
+            free(dlc);
+        }
+        names
+    }
+}
+
+/// Prints the names of the graphs the DLC at `path` holds on stdout, one a line: a Port's
+/// answer to `--graph-names`.
+pub fn print_dlc_graph_names(path: &str) -> Result<(), String> {
+    let names = dlc_graph_names(path)?;
+    if names.is_empty() {
+        return Err(format!("{path} holds no graph"));
+    }
+    for name in names {
+        println!("{name}");
+    }
+    Ok(())
+}
+
+unsafe fn composable_graph_names(
+    system: &QnnSystemInterface_ImplementationV1_14_t,
+    dlc: QnnSystemDlc_Handle_t,
+) -> Result<Vec<String>, String> {
+    let get_handles = system
+        .systemDlcGetComposableGraphInfoHandles
+        .ok_or_else(|| missing("systemDlcGetComposableGraphInfoHandles"))?;
+    let get_name = system
+        .systemDlcGetComposableGraphInfoGraphName
+        .ok_or_else(|| missing("systemDlcGetComposableGraphInfoGraphName"))?;
+    let mut handles: *mut QnnSystemDlc_GraphInfoHandle_t = ptr::null_mut();
+    let mut count = 0u32;
+    check(
+        "systemDlcGetComposableGraphInfoHandles",
+        get_handles(dlc, &mut handles, &mut count),
+    )?;
+    if handles.is_null() {
+        return Ok(Vec::new());
+    }
+    std::slice::from_raw_parts(handles, count as usize)
+        .iter()
+        .map(|&handle| {
+            let mut name: *const std::os::raw::c_char = ptr::null();
+            check(
+                "systemDlcGetComposableGraphInfoGraphName",
+                get_name(handle, &mut name),
+            )?;
+            if name.is_null() {
+                return Err("a graph of the DLC has no name".to_string());
+            }
+            Ok(CStr::from_ptr(name).to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 fn check(what: &str, status: Qnn_ErrorHandle_t) -> Result<(), String> {
@@ -463,21 +561,7 @@ impl Model {
                 .__bindgen_anon_1
                 .v2_39;
 
-            let get_system_providers: libloading::Symbol<GetSystemProviders> = system_library
-                .get(b"QnnSystemInterface_getProviders\0")
-                .map_err(|e| format!("QnnSystemInterface_getProviders: {e}"))?;
-            let mut system_providers: *mut *const QnnSystemInterface_t = ptr::null_mut();
-            check(
-                "QnnSystemInterface_getProviders",
-                get_system_providers(&mut system_providers, &mut count),
-            )?;
-            let system = std::slice::from_raw_parts(system_providers, count as usize)
-                .iter()
-                .map(|&provider| &*provider)
-                .find(|provider| provider.systemApiVersion.major == QNN_SYSTEM_API_VERSION_MAJOR)
-                .ok_or("libQnnSystem.so offers no interface of this QNN system API version")?
-                .__bindgen_anon_1
-                .v1_14;
+            let system = system_interface(&system_library)?;
 
             // The binary's description stays in the system context, which lives
             // as long as the process: the tensors point into it.
@@ -505,6 +589,7 @@ impl Model {
                 ),
             )?;
             let (graph_name, inputs, outputs) = first_graph(&*info)?;
+            let graph_name_text = CStr::from_ptr(graph_name).to_string_lossy().into_owned();
 
             let mut backend: Qnn_BackendHandle_t = ptr::null_mut();
             check(
@@ -564,6 +649,7 @@ impl Model {
             Ok(Model {
                 interface,
                 graph,
+                graph_name: graph_name_text,
                 inputs,
                 outputs,
                 profile,

@@ -175,17 +175,37 @@ fn corner_name(corner: QnnHtpPerfInfrastructure_VoltageCorner_t) -> &'static str
     }
 }
 
-/// A Port's command line, the program's name excluded: its own positional arguments, then the
-/// performance profile, from an optional trailing `--performance <profile>`.
-pub fn command_line(arguments: &[String]) -> Result<(&[String], Performance), String> {
+/// What a Port's command line asks for.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CommandLine<'a> {
+    /// `--graph-names <dlc>`: print the DLC's graph names, one a line, and exit.
+    GraphNames(&'a str),
+    /// Serve requests: the Port's own positional arguments, then the performance profile, from
+    /// an optional trailing `--performance <profile>`.
+    Serve {
+        arguments: &'a [String],
+        performance: Performance,
+    },
+}
+
+/// Reads `arguments`, the program's name excluded.
+pub fn command_line(arguments: &[String]) -> Result<CommandLine<'_>, String> {
     match arguments {
-        [positional @ .., flag, profile] if flag == "--performance" => {
-            Ok((positional, Performance::parse(profile)?))
+        [flag, dlc] if flag == "--graph-names" => Ok(CommandLine::GraphNames(dlc)),
+        [positional @ .., flag, profile] if flag == "--performance" => Ok(CommandLine::Serve {
+            arguments: positional,
+            performance: Performance::parse(profile)?,
+        }),
+        _ if arguments
+            .iter()
+            .any(|argument| argument == "--performance" || argument == "--graph-names") =>
+        {
+            Err("--performance <profile> comes last, --graph-names <dlc> alone".to_string())
         }
-        _ if arguments.iter().any(|argument| argument == "--performance") => {
-            Err("--performance <profile> comes last".to_string())
-        }
-        _ => Ok((arguments, DEFAULT_PERFORMANCE)),
+        _ => Ok(CommandLine::Serve {
+            arguments,
+            performance: DEFAULT_PERFORMANCE,
+        }),
     }
 }
 
@@ -215,7 +235,10 @@ mod tests {
         let arguments = strings(&["model.bin", "0.5"]);
         assert_eq!(
             command_line(&arguments),
-            Ok((&arguments[..], Performance::Burst))
+            Ok(CommandLine::Serve {
+                arguments: &arguments,
+                performance: Performance::Burst
+            })
         );
     }
 
@@ -224,12 +247,18 @@ mod tests {
         let arguments = strings(&["model.bin", "19", "--performance", "balanced"]);
         assert_eq!(
             command_line(&arguments),
-            Ok((&arguments[..2], Performance::Balanced))
+            Ok(CommandLine::Serve {
+                arguments: &arguments[..2],
+                performance: Performance::Balanced
+            })
         );
         let arguments = strings(&["model.bin", "--performance", "none"]);
         assert_eq!(
             command_line(&arguments),
-            Ok((&arguments[..1], Performance::NoVote))
+            Ok(CommandLine::Serve {
+                arguments: &arguments[..1],
+                performance: Performance::NoVote
+            })
         );
     }
 
@@ -238,6 +267,7 @@ mod tests {
         for arguments in [
             &["model.bin", "--performance"][..],
             &["model.bin", "--performance", "burst", "19"],
+            &["--graph-names", "model.dlc", "extra"],
         ] {
             assert!(command_line(&strings(arguments)).is_err(), "{arguments:?}");
         }
@@ -245,6 +275,15 @@ mod tests {
             command_line(&strings(&["model.bin", "--performance", "fast"]))
                 .unwrap_err()
                 .contains("unknown performance profile fast")
+        );
+    }
+
+    #[test]
+    fn graph_names_take_the_dlc() {
+        let arguments = strings(&["--graph-names", "model.dlc"]);
+        assert_eq!(
+            command_line(&arguments),
+            Ok(CommandLine::GraphNames("model.dlc"))
         );
     }
 

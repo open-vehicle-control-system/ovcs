@@ -2,7 +2,8 @@
 //! `VisionCore.Segmentation.Backend.Qnn`. A semantic segmentation model on the Hexagon NPU
 //! through QNN's HTP backend, from a context binary built for this chip and QAIRT version,
 //! scoring the `classes` classes the pipeline names, under the power vote of the performance
-//! profile (`qnn::Performance`, burst by default). The environment's `LD_LIBRARY_PATH` holds
+//! profile (`qnn::Performance`, burst by default). `qnn_segment --graph-names <model.dlc>`
+//! prints the DLC's graph names, one a line. The environment's `LD_LIBRARY_PATH` holds
 //! `libQnnHtp.so` and `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
 //! The model takes one `[1, H, W, 3]` uint8 RGB image of pixel values, unquantised or quantised
@@ -26,7 +27,7 @@ use std::time::Instant;
 use framing::{log_record, LogLevel, Writer};
 use model::{Geometry, Shape};
 use protocol::{labels_record, parse_request};
-use qnn::{Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
+use qnn::{CommandLine, Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 
 /// Room in the request pipe for a whole request, which the BEAM then writes in one go.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
@@ -44,12 +45,20 @@ fn exit_early(message: &str, status: i32) -> ! {
     exit(status)
 }
 
-const USAGE: &str = "usage: qnn_segment <context.bin> <classes> [--performance <profile>]";
+const USAGE: &str = "usage: qnn_segment <context.bin> <classes> [--performance <profile>] \
+                     | --graph-names <model.dlc>";
 
 fn main() {
     let command_line: Vec<String> = std::env::args().skip(1).collect();
     let (arguments, performance) = match qnn::command_line(&command_line) {
-        Ok(parsed) => parsed,
+        Ok(CommandLine::GraphNames(dlc)) => match qnn::print_dlc_graph_names(dlc) {
+            Ok(()) => exit(0),
+            Err(message) => exit_early(&message, 1),
+        },
+        Ok(CommandLine::Serve {
+            arguments,
+            performance,
+        }) => (arguments, performance),
         Err(message) => exit_early(&format!("{message}; {USAGE}"), 2),
     };
     let (context_path, classes) = match arguments {
@@ -127,8 +136,9 @@ fn run(
         writer,
         LogLevel::Info,
         &format!(
-            "ready: {context_path}, input {} {:?} quantisation {:?}, output {} {:?} \
+            "ready: {context_path}, graph {}, input {} {:?} quantisation {:?}, output {} {:?} \
              quantisation {:?}",
+            model.graph_name,
             model.inputs[0].name,
             model.inputs[0].dimensions,
             model.inputs[0].scale_offset,
