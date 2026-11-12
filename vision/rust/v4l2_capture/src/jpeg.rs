@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 use crate::arguments::OutputSpec;
-use crate::scale;
+use crate::scale::Averager;
 
 /// One output sent as a JPEG.
 pub struct JpegOutput {
@@ -56,7 +56,7 @@ pub fn encode_frames(
     encoded: mpsc::Sender<Encoded>,
 ) -> io::Result<()> {
     let mut compressor = Compressor::new().map_err(io::Error::other)?;
-    let mut averaged = Vec::new();
+    let (mut averager, mut averaged) = (Averager::default(), Vec::new());
     for images in frames {
         let encoding = Instant::now();
         let mut jpegs = Vec::with_capacity(outputs.len());
@@ -65,7 +65,13 @@ pub fn encode_frames(
             let pixels = if output.block == (1, 1) {
                 source
             } else {
-                scale::average_blocks(source, output.source_width, output.block, 1, &mut averaged);
+                averager.average_blocks(
+                    source,
+                    output.source_width,
+                    output.block,
+                    1,
+                    &mut averaged,
+                );
                 &averaged
             };
             let size = (output.width, output.height);

@@ -91,7 +91,7 @@ impl Sums {
 }
 
 /// What a frame is converted into: `rgb`, and with `averaged` each 2x2 block
-/// of it averaged, as `scale::average_blocks` does.
+/// of it averaged, as `scale::Averager` does.
 pub struct Images<'a> {
     pub rgb: &'a mut Vec<u8>,
     pub averaged: Option<&'a mut Vec<u8>>,
@@ -188,20 +188,22 @@ pub fn convert<S: Default + Send>(
 }
 
 /// Runs `work` over up to `threads` bands of whole rows of `input` and
-/// `output` (`split`), `input_row` and `output_row` bytes a row, `output`
-/// holding whole rows: each band but the last on a thread of its own, the
-/// last on the calling one.
-pub fn in_row_bands(
-    input: &[u8],
-    input_row: usize,
-    output: &mut [u8],
-    output_row: usize,
+/// `output` (`split`), each given with the bytes a row of it takes, `output`
+/// holding whole rows, through a `scratch` of the band's own: each band but
+/// the last on a thread of its own, the last on the calling one.
+pub fn in_row_bands<S: Default + Send>(
+    (input, input_row): (&[u8], usize),
+    (output, output_row): (&mut [u8], usize),
     threads: usize,
-    work: impl Fn(&[u8], &mut [u8]) + Sync,
+    scratch: &mut Vec<S>,
+    work: impl Fn(&[u8], &mut [u8], &mut S) + Sync,
 ) {
     let bands = split(output.len() / output_row.max(1), threads);
+    if scratch.len() < bands.len() {
+        scratch.resize_with(bands.len(), S::default);
+    }
     if let [_one] = &bands[..] {
-        return work(input, output);
+        return work(input, output, &mut scratch[0]);
     }
     let outputs = parts(
         output,
@@ -210,17 +212,18 @@ pub fn in_row_bands(
     );
     let work = &work;
     std::thread::scope(|scope| {
-        let mut jobs = bands.iter().zip(outputs);
-        let (last_rows, last_output) = jobs.next_back().expect("a band");
+        let mut jobs = bands.iter().zip(outputs).zip(scratch.iter_mut());
+        let ((last_rows, last_output), last_scratch) = jobs.next_back().expect("a band");
         let running: Vec<_> = jobs
-            .map(|(rows, output)| {
+            .map(|((rows, output), scratch)| {
                 let input = &input[rows.start * input_row..rows.end * input_row];
-                scope.spawn(move || work(input, output))
+                scope.spawn(move || work(input, output, scratch))
             })
             .collect();
         work(
             &input[last_rows.start * input_row..last_rows.end * input_row],
             last_output,
+            last_scratch,
         );
         for band in running {
             band.join()

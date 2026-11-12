@@ -762,7 +762,7 @@ mod tests {
             .zip(output_images(&records, 1))
         {
             let mut averaged = Vec::new();
-            scale::average_blocks(view, WIDTH, (2, 2), 1, &mut averaged);
+            scale::Averager::default().average_blocks(view, WIDTH, (2, 2), 1, &mut averaged);
             assert!(small == averaged);
         }
         for record in records.iter().filter(|record| record[0] == OUTPUT_FRAME) {
@@ -810,7 +810,13 @@ mod tests {
             for (image, source_image) in images[index].iter().zip(&images[source]) {
                 let mut averaged = Vec::new();
                 let width = outputs[source].width as usize;
-                scale::average_blocks(source_image, width, block, 1, &mut averaged);
+                scale::Averager::default().average_blocks(
+                    source_image,
+                    width,
+                    block,
+                    1,
+                    &mut averaged,
+                );
                 assert!(*image == averaged, "output {index}");
             }
         }
@@ -888,7 +894,7 @@ mod tests {
         let halves: Vec<Vec<u8>> = (views.iter())
             .map(|view| {
                 let mut half = Vec::new();
-                scale::average_blocks(view, width, (2, 2), 1, &mut half);
+                scale::Averager::default().average_blocks(view, width, (2, 2), 1, &mut half);
                 half
             })
             .collect();

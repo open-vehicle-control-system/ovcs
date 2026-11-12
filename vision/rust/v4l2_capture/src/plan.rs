@@ -8,7 +8,7 @@ use crate::bands::{Images, Measures};
 use crate::bayer::RawFrame;
 use crate::jpeg::JpegOutput;
 use crate::processor::{Cpu, Development, Processor};
-use crate::scale;
+use crate::scale::Averager;
 use crate::sensor::SensorModel;
 
 /// What makes an output's image of a frame.
@@ -38,6 +38,7 @@ struct OutputPlan {
 /// Each output's role, in the outputs' order.
 pub struct Plan {
     outputs: Vec<OutputPlan>,
+    averager: Averager,
 }
 
 impl Plan {
@@ -89,7 +90,10 @@ impl Plan {
             };
             planned.push(OutputPlan { spec, role });
         }
-        Plan { outputs: planned }
+        Plan {
+            outputs: planned,
+            averager: Averager::default(),
+        }
     }
 
     /// How many outputs there are.
@@ -178,14 +182,14 @@ impl Plan {
 
     /// Makes each output scaled after the processors, in order, into its
     /// image of `images`, on `threads` threads.
-    pub fn scale(&self, threads: usize, images: &mut [Vec<u8>]) {
+    pub fn scale(&mut self, threads: usize, images: &mut [Vec<u8>]) {
         for (index, output) in self.outputs.iter().enumerate() {
             let Role::ScaledAfter { from, block } = output.role else {
                 continue;
             };
             let (made, rest) = images.split_at_mut(index);
             let source_width = self.outputs[from].spec.width as usize;
-            scale::average_blocks(&made[from], source_width, block, threads, &mut rest[0]);
+            (self.averager).average_blocks(&made[from], source_width, block, threads, &mut rest[0]);
         }
     }
 

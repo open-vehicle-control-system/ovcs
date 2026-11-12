@@ -387,10 +387,9 @@ impl<'a> Image<'a> {
             // pass over the whole image (`scale`, the general path).
             let pair = if self.rotate_180 { target } else { target - 1 };
             let averaged_bytes = row_bytes / 2;
-            scale::average_rows(
+            scale::average_pairs(
                 &self.rgb[pair * row_bytes..(pair + 2) * row_bytes],
                 row_bytes / 3,
-                (2, 2),
                 &mut averaged[pair / 2 * averaged_bytes..(pair / 2 + 1) * averaged_bytes],
             );
         }

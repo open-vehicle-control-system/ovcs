@@ -533,7 +533,7 @@ pub(crate) mod tests {
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
                             let mut after = Vec::new();
-                            scale::average_blocks(
+                            scale::Averager::default().average_blocks(
                                 &alone,
                                 output_width as usize,
                                 (2, 2),
@@ -588,7 +588,7 @@ pub(crate) mod tests {
             };
             develop_along(Path::Denoised, &frame, &conversion, images, &mut buffers);
             if way == 1 {
-                scale::average_blocks(&rgb, width, (2, 2), 3, &mut averaged);
+                scale::Averager::default().average_blocks(&rgb, width, (2, 2), 3, &mut averaged);
             }
             times[way].push(started.elapsed());
         }
