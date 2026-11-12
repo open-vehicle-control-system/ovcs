@@ -76,7 +76,8 @@ defmodule Ovcs1.Vision.Composer do
         {:qnn_segmenter,
          name: :road,
          source: {:camera, :hq, :inference},
-         dlc_path: Application.app_dir(:ovcs1, @road_model)}
+         dlc_path: Application.app_dir(:ovcs1, @road_model),
+         segment_every_n: 1}
       ],
       preview: [outputs: [hq: :inference]],
       exporters: [

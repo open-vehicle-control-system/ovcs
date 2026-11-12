@@ -48,6 +48,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert [segmenter] = Keyword.get_values(components, :qnn_segmenter)
     assert segmenter[:name] == :road
     assert segmenter[:source] == {:camera, :hq, :inference}
+    assert segmenter[:segment_every_n] == 1
     assert String.ends_with?(segmenter[:dlc_path], "priv/models/ffnet_122ns_lowres.dlc")
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
