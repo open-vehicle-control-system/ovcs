@@ -230,14 +230,13 @@ struct Profile {
 
 /// A context binary's first graph, ready to execute.
 pub struct Model {
-    interface: QnnInterface_ImplementationV2_39_t,
+    session: Session,
     graph: Qnn_GraphHandle_t,
     pub graph_name: String,
     pub inputs: Vec<Tensor>,
     pub outputs: Vec<Tensor>,
     raw_inputs: Vec<Qnn_Tensor_t>,
     raw_outputs: Vec<Qnn_Tensor_t>,
-    profile: Option<Profile>,
     /// Why executions are timed by the wall time, once the profile is unavailable.
     pub profile_error: Option<String>,
     /// The first profiled execution's events, until `take_profile_report`.
@@ -245,11 +244,19 @@ pub struct Model {
     profile_reported: bool,
     /// Why the performance profile's vote is missing or partial, if it is.
     pub power_vote_error: Option<String>,
+}
+
+/// The QNN libraries and what a model creates in them, each handle null until it is created.
+struct Session {
+    interface: QnnInterface_ImplementationV2_39_t,
+    system: QnnSystemInterface_ImplementationV1_14_t,
+    system_context: QnnSystemContext_Handle_t,
     backend: Qnn_BackendHandle_t,
+    device: Qnn_DeviceHandle_t,
     // Destroyed before the libraries are unloaded.
-    _power_vote: Option<PowerVote>,
-    // The context and the libraries live as long as the process.
-    _context: Qnn_ContextHandle_t,
+    power_vote: Option<PowerVote>,
+    context: Qnn_ContextHandle_t,
+    profile: Option<Profile>,
     _libraries: [Library; 2],
 }
 
@@ -341,6 +348,28 @@ unsafe fn vote(
     }
     let error = (!failures.is_empty()).then(|| failures.join(", "));
     (Some(held), error)
+}
+
+/// The interface of `libQnnHtp.so` of this QNN API version.
+unsafe fn backend_interface(
+    library: &Library,
+) -> Result<QnnInterface_ImplementationV2_39_t, String> {
+    let get_providers: libloading::Symbol<GetProviders> = library
+        .get(b"QnnInterface_getProviders\0")
+        .map_err(|e| format!("QnnInterface_getProviders: {e}"))?;
+    let mut providers: *mut *const QnnInterface_t = ptr::null_mut();
+    let mut count = 0u32;
+    check(
+        "QnnInterface_getProviders",
+        get_providers(&mut providers, &mut count),
+    )?;
+    Ok(std::slice::from_raw_parts(providers, count as usize)
+        .iter()
+        .map(|&provider| &*provider)
+        .find(|provider| provider.apiVersion.coreApiVersion.major == QNN_API_VERSION_MAJOR)
+        .ok_or("libQnnHtp.so offers no interface of this QNN API version")?
+        .__bindgen_anon_1
+        .v2_39)
 }
 
 /// The interface of `libQnnSystem.so` of this QNN system API version.
@@ -565,136 +594,151 @@ unsafe fn first_graph(
     })
 }
 
+impl Session {
+    /// The HTP backend's and the system's libraries, loaded, with their interfaces.
+    unsafe fn load() -> Result<Session, String> {
+        let backend_library =
+            Library::new("libQnnHtp.so").map_err(|e| format!("libQnnHtp.so: {e}"))?;
+        let system_library =
+            Library::new("libQnnSystem.so").map_err(|e| format!("libQnnSystem.so: {e}"))?;
+        Ok(Session {
+            interface: backend_interface(&backend_library)?,
+            system: system_interface(&system_library)?,
+            system_context: ptr::null_mut(),
+            backend: ptr::null_mut(),
+            device: ptr::null_mut(),
+            power_vote: None,
+            context: ptr::null_mut(),
+            profile: None,
+            _libraries: [backend_library, system_library],
+        })
+    }
+
+    /// `binary`'s description, which stays in the system context: the tensors point into it.
+    unsafe fn describe_binary(
+        &mut self,
+        binary: &[u8],
+    ) -> Result<*const QnnSystemContext_BinaryInfo_t, String> {
+        check(
+            "systemContextCreate",
+            self.system
+                .systemContextCreate
+                .ok_or_else(|| missing("systemContextCreate"))?(
+                &mut self.system_context
+            ),
+        )?;
+        let mut info: *const QnnSystemContext_BinaryInfo_t = ptr::null();
+        let mut info_size: Qnn_ContextBinarySize_t = 0;
+        check(
+            "systemContextGetBinaryInfo",
+            self.system
+                .systemContextGetBinaryInfo
+                .ok_or_else(|| missing("systemContextGetBinaryInfo"))?(
+                self.system_context,
+                binary.as_ptr() as *mut c_void,
+                binary.len() as u64,
+                &mut info,
+                &mut info_size,
+            ),
+        )?;
+        Ok(info)
+    }
+
+    /// Creates the backend and, where the library has one, its device.
+    unsafe fn create_backend(&mut self) -> Result<(), String> {
+        check(
+            "backendCreate",
+            self.interface
+                .backendCreate
+                .ok_or_else(|| missing("backendCreate"))?(
+                ptr::null_mut(),
+                ptr::null_mut(),
+                &mut self.backend,
+            ),
+        )?;
+        if let Some(device_create) = self.interface.deviceCreate {
+            check(
+                "deviceCreate",
+                device_create(ptr::null_mut(), ptr::null_mut(), &mut self.device),
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Creates the context `binary` holds on the backend and its device.
+    unsafe fn create_context(&mut self, binary: &[u8]) -> Result<(), String> {
+        check(
+            "contextCreateFromBinary",
+            self.interface
+                .contextCreateFromBinary
+                .ok_or_else(|| missing("contextCreateFromBinary"))?(
+                self.backend,
+                self.device,
+                ptr::null_mut(),
+                binary.as_ptr() as *const c_void,
+                binary.len() as u64,
+                &mut self.context,
+                ptr::null_mut(),
+            ),
+        )
+    }
+
+    /// The context's graph named `name`.
+    unsafe fn retrieve_graph(
+        &self,
+        name: *const std::os::raw::c_char,
+    ) -> Result<Qnn_GraphHandle_t, String> {
+        let mut graph: Qnn_GraphHandle_t = ptr::null_mut();
+        check(
+            "graphRetrieve",
+            self.interface
+                .graphRetrieve
+                .ok_or_else(|| missing("graphRetrieve"))?(
+                self.context, name, &mut graph
+            ),
+        )?;
+        Ok(graph)
+    }
+
+    /// A fresh basic-level profile handle as the session's, or none and why.
+    fn create_profile(&mut self) -> Result<(), String> {
+        let handle = create_profile(&self.interface, self.backend)?;
+        self.profile = Some(Profile {
+            handle,
+            cursor: EventCursor::default(),
+        });
+        Ok(())
+    }
+}
+
 impl Model {
     /// Loads the HTP backend, votes `performance` on it, and creates the context `binary`
     /// holds. A vote that fails leaves the HTP under its default power policy, the reason in
     /// `power_vote_error`.
     pub fn open(binary: &[u8], performance: Performance) -> Result<Model, String> {
         unsafe {
-            let backend_library =
-                Library::new("libQnnHtp.so").map_err(|e| format!("libQnnHtp.so: {e}"))?;
-            let system_library =
-                Library::new("libQnnSystem.so").map_err(|e| format!("libQnnSystem.so: {e}"))?;
-
-            let get_providers: libloading::Symbol<GetProviders> = backend_library
-                .get(b"QnnInterface_getProviders\0")
-                .map_err(|e| format!("QnnInterface_getProviders: {e}"))?;
-            let mut providers: *mut *const QnnInterface_t = ptr::null_mut();
-            let mut count = 0u32;
-            check(
-                "QnnInterface_getProviders",
-                get_providers(&mut providers, &mut count),
-            )?;
-            let interface = std::slice::from_raw_parts(providers, count as usize)
-                .iter()
-                .map(|&provider| &*provider)
-                .find(|provider| provider.apiVersion.coreApiVersion.major == QNN_API_VERSION_MAJOR)
-                .ok_or("libQnnHtp.so offers no interface of this QNN API version")?
-                .__bindgen_anon_1
-                .v2_39;
-
-            let system = system_interface(&system_library)?;
-
-            // The binary's description stays in the system context, which lives
-            // as long as the process: the tensors point into it.
-            let mut system_context: QnnSystemContext_Handle_t = ptr::null_mut();
-            check(
-                "systemContextCreate",
-                system
-                    .systemContextCreate
-                    .ok_or_else(|| missing("systemContextCreate"))?(
-                    &mut system_context
-                ),
-            )?;
-            let mut info: *const QnnSystemContext_BinaryInfo_t = ptr::null();
-            let mut info_size: Qnn_ContextBinarySize_t = 0;
-            check(
-                "systemContextGetBinaryInfo",
-                system
-                    .systemContextGetBinaryInfo
-                    .ok_or_else(|| missing("systemContextGetBinaryInfo"))?(
-                    system_context,
-                    binary.as_ptr() as *mut c_void,
-                    binary.len() as u64,
-                    &mut info,
-                    &mut info_size,
-                ),
-            )?;
+            let mut session = Session::load()?;
+            let info = session.describe_binary(binary)?;
             let (graph_name, inputs, outputs) = first_graph(&*info)?;
             let graph_name_text = CStr::from_ptr(graph_name).to_string_lossy().into_owned();
-
-            let mut backend: Qnn_BackendHandle_t = ptr::null_mut();
-            check(
-                "backendCreate",
-                interface
-                    .backendCreate
-                    .ok_or_else(|| missing("backendCreate"))?(
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                    &mut backend,
-                ),
-            )?;
-            let mut device: Qnn_DeviceHandle_t = ptr::null_mut();
-            if let Some(device_create) = interface.deviceCreate {
-                check(
-                    "deviceCreate",
-                    device_create(ptr::null_mut(), ptr::null_mut(), &mut device),
-                )?;
-            }
-            let (power_vote, power_vote_error) = vote(&interface, performance);
-            let mut context: Qnn_ContextHandle_t = ptr::null_mut();
-            check(
-                "contextCreateFromBinary",
-                interface
-                    .contextCreateFromBinary
-                    .ok_or_else(|| missing("contextCreateFromBinary"))?(
-                    backend,
-                    device,
-                    ptr::null_mut(),
-                    binary.as_ptr() as *const c_void,
-                    binary.len() as u64,
-                    &mut context,
-                    ptr::null_mut(),
-                ),
-            )?;
-            let mut graph: Qnn_GraphHandle_t = ptr::null_mut();
-            check(
-                "graphRetrieve",
-                interface
-                    .graphRetrieve
-                    .ok_or_else(|| missing("graphRetrieve"))?(
-                    context, graph_name, &mut graph
-                ),
-            )?;
-
-            let (profile, profile_error) = match create_profile(&interface, backend) {
-                Ok(handle) => (
-                    Some(Profile {
-                        handle,
-                        cursor: EventCursor::default(),
-                    }),
-                    None,
-                ),
-                Err(message) => (None, Some(message)),
-            };
-
+            session.create_backend()?;
+            let (power_vote, power_vote_error) = vote(&session.interface, performance);
+            session.power_vote = power_vote;
+            session.create_context(binary)?;
+            let graph = session.retrieve_graph(graph_name)?;
+            let profile_error = session.create_profile().err();
             Ok(Model {
-                interface,
+                session,
                 graph,
                 graph_name: graph_name_text,
                 inputs: inputs.described,
                 outputs: outputs.described,
                 raw_inputs: inputs.raw,
                 raw_outputs: outputs.raw,
-                profile,
                 profile_error,
                 profile_report: None,
                 profile_reported: false,
                 power_vote_error,
-                backend,
-                _power_vote: power_vote,
-                _context: context,
-                _libraries: [backend_library, system_library],
             })
         }
     }
@@ -715,10 +759,12 @@ impl Model {
         let inputs = bind(&self.inputs, &self.raw_inputs, inputs)?;
         let mut outputs = bind(&self.outputs, &self.raw_outputs, outputs)?;
         let graph_execute = self
+            .session
             .interface
             .graphExecute
             .ok_or_else(|| missing("graphExecute"))?;
         let profile_handle = self
+            .session
             .profile
             .as_ref()
             .map_or(ptr::null_mut(), |profile| profile.handle);
@@ -759,10 +805,11 @@ impl Model {
     /// The latest execution's times from the profile. The handle is replaced every
     /// `EXECUTIONS_PER_PROFILE` executions, and as soon as it stores no more events.
     fn profiled_times(&mut self) -> ProfiledTimes {
-        let Some(profile) = self.profile.as_mut() else {
+        let session = &mut self.session;
+        let Some(profile) = session.profile.as_mut() else {
             return ProfiledTimes::default();
         };
-        let interface = &self.interface;
+        let interface = &session.interface;
         let top_level = unsafe { top_level_events(interface, profile.handle) };
         let latest = profile.cursor.latest_execution(top_level.len());
         let replace = latest.is_none() || profile.cursor.executions >= EXECUTIONS_PER_PROFILE;
@@ -789,21 +836,15 @@ impl Model {
     /// A fresh profile handle in place of the current one, or none, the reason in
     /// `profile_error`, when either step fails.
     fn replace_profile(&mut self) {
-        let Some(profile) = self.profile.take() else {
+        let Some(profile) = self.session.profile.take() else {
             return;
         };
-        let freed = match self.interface.profileFree {
+        let freed = match self.session.interface.profileFree {
             Some(profile_free) => check("profileFree", unsafe { profile_free(profile.handle) }),
             None => Err(missing("profileFree")),
         };
-        match freed.and_then(|()| create_profile(&self.interface, self.backend)) {
-            Ok(handle) => {
-                self.profile = Some(Profile {
-                    handle,
-                    cursor: EventCursor::default(),
-                })
-            }
-            Err(message) => self.profile_error = Some(message),
+        if let Err(message) = freed.and_then(|()| self.session.create_profile()) {
+            self.profile_error = Some(message);
         }
     }
 }
