@@ -14,9 +14,11 @@ defmodule VmsCore.Status do
   performs is therefore done once at boot, after `@boot_reset_delay_ms`
   gives the CAN stack time to come up.
   """
+  @moduledoc safety: :relevant
   use GenServer
   alias Cantastic.Emitter
   alias OvcsBus, as: Bus
+  alias VmsCore.Status.Heartbeat
 
   @loop_period_ms 10
   @boot_reset_delay_ms 3_000
@@ -110,25 +112,17 @@ defmodule VmsCore.Status do
   end
 
   defp update_vms_status(state) do
-    cond do
-      state.resetting && state.emitted_vms_status != "RESETTING" ->
-        :ok =
-          Emitter.update(:ovcs, "vms_status", fn frame_data ->
-            %{frame_data | "status" => "RESETTING"}
-          end)
-
-        %{state | emitted_vms_status: "RESETTING"}
-
-      state.emitted_vms_status != state.vms_status ->
-        :ok =
-          Emitter.update(:ovcs, "vms_status", fn frame_data ->
-            %{frame_data | "status" => state.vms_status}
-          end)
-
-        %{state | emitted_vms_status: state.vms_status}
-
-      true ->
+    case Heartbeat.next_status(state) do
+      nil ->
         state
+
+      status ->
+        :ok =
+          Emitter.update(:ovcs, "vms_status", fn frame_data ->
+            %{frame_data | "status" => status}
+          end)
+
+        %{state | emitted_vms_status: status}
     end
   end
 
