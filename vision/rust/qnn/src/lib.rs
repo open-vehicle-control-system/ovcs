@@ -895,8 +895,8 @@ impl Model {
         inputs: &mut [&mut [u8]],
         outputs: &mut [&mut [u8]],
     ) -> Result<Timing, String> {
-        let inputs = bind(&self.inputs, &self.raw_inputs, inputs)?;
-        let mut outputs = bind(&self.outputs, &self.raw_outputs, outputs)?;
+        let inputs = bind("input", &self.inputs, &self.raw_inputs, inputs)?;
+        let mut outputs = bind("output", &self.outputs, &self.raw_outputs, outputs)?;
         let graph_execute = self
             .session
             .interface
@@ -993,12 +993,21 @@ impl Model {
     }
 }
 
-/// QNN's tensors `raw`, which `tensors` describe, each on the buffer of `buffers` in its place.
+/// QNN's tensors `raw`, the graph's inputs or outputs as `kind` says, which `tensors`
+/// describe, each on the buffer of `buffers` in its place.
 fn bind(
+    kind: &str,
     tensors: &[Tensor],
     raw: &[Qnn_Tensor_t],
     buffers: &mut [&mut [u8]],
 ) -> Result<Vec<Qnn_Tensor_t>, String> {
+    if buffers.len() != tensors.len() {
+        return Err(format!(
+            "{} {kind} buffers for the graph's {} {kind}s",
+            buffers.len(),
+            tensors.len()
+        ));
+    }
     (tensors.iter().zip(raw))
         .zip(buffers.iter_mut())
         .map(|((tensor, raw), buffer)| {
@@ -1173,6 +1182,33 @@ mod tests {
         assert_eq!(
             described,
             Err("the context binary's first graph has no name".to_string())
+        );
+    }
+
+    #[test]
+    fn an_execution_takes_one_buffer_of_its_size_per_tensor() {
+        let tensor = Tensor {
+            name: "scores".to_string(),
+            dimensions: vec![4],
+            scale_offset: None,
+            unsigned_8bit: true,
+            bytes: 4,
+        };
+        let tensors = [tensor.clone(), tensor];
+        // SAFETY: a tensor is plain data, and its zero holds null pointers.
+        let raw: [Qnn_Tensor_t; 2] = unsafe { std::mem::zeroed() };
+        let (mut first, mut second, mut short) = ([0u8; 4], [0u8; 4], [0u8; 3]);
+        let bound = |buffers: &mut [&mut [u8]]| {
+            bind("output", &tensors, &raw, buffers).map(|bound| bound.len())
+        };
+        assert_eq!(bound(&mut [&mut first, &mut second]), Ok(2));
+        assert_eq!(
+            bound(&mut [&mut first]),
+            Err("1 output buffers for the graph's 2 outputs".to_string())
+        );
+        assert_eq!(
+            bound(&mut [&mut first, &mut short]),
+            Err("scores: 3 bytes for a 4-byte tensor".to_string())
         );
     }
 
