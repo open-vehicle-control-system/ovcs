@@ -37,8 +37,9 @@ defmodule VisionCore.Detection.Supervisor do
   the reverse: a backend is told where to reply on every call and holds
   nothing across one.
 
-  The backend's options go to the backend, the pipeline's to the
-  pipeline and `:max_hz` to `Live`; see their docs. How the detections
+  The backend's options (`c:VisionCore.Detection.Backend.options/0`) go
+  to the backend, the pipeline's to the pipeline and `:max_hz` to
+  `Live`; see their docs. How the detections
   are published is the exporters' business: the ROS 2 exporter's are its
   `detections:` options (`VisionCore.Ros2.Exporter`), and their frame
   is the one their pair carries, the stereo unit's left `:frame_id`, or
@@ -74,9 +75,9 @@ defmodule VisionCore.Detection.Supervisor do
 
   @impl Supervisor
   def init(opts) do
-    Unit.refuse_unknown!(opts, options(), refusal_hints())
-    name = opts |> Detection.pipeline_name() |> Detection.name!()
     {backend, backend_opts} = split_backend_options(opts)
+    Unit.refuse_unknown!(opts, options(backend), refusal_hints())
+    name = opts |> Detection.pipeline_name() |> Detection.name!()
     backend_server = Detection.server(backend, name)
 
     children =
@@ -179,23 +180,16 @@ defmodule VisionCore.Detection.Supervisor do
     )
   end
 
-  defp options, do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
+  defp options(backend), do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend.options()
 
   @doc false
   def split_backend_options(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {backend, Keyword.take(opts, backend_keys())}
+    {backend, Keyword.take(opts, backend.options())}
   end
 
   defp pipeline_keys do
     [:source, :detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction] ++
       [:outline_segments, :reprojection_stride, :pair_wait_ms, :config]
-  end
-
-  # The options of `Backend.Hailo`, `Backend.Qnn` and `Backend.Stub`.
-  defp backend_keys do
-    [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
-      [:dlc_path, :qairt_dir, :dsp_library_path, :dsp_architecture, :cache_dir] ++
-      [:infer_timeout_ms, :reopen_delays_ms, :performance, :boxes]
   end
 end

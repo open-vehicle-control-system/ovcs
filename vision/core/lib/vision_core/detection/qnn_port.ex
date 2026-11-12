@@ -38,6 +38,16 @@ defmodule VisionCore.Detection.QnnPort do
           dsp_architecture: String.t()
         ]
 
+  @doc """
+  The options every QNN backend takes: the board's, `:cache_dir`,
+  `:executable`, `timings!/1`'s and `:performance`.
+  """
+  @spec options() :: [atom()]
+  def options do
+    Keyword.keys(@default_runtime) ++
+      [:cache_dir, :executable, :infer_timeout_ms, :reopen_delays_ms, :performance]
+  end
+
   @doc "The board's options among `opts`, each with its default (see the module doc)."
   @spec runtime(keyword()) :: runtime()
   def runtime(opts) do

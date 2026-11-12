@@ -116,6 +116,9 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   end
 
   @impl VisionCore.Segmentation.Backend
+  def options, do: [:dlc_path | QnnPort.options()]
+
+  @impl VisionCore.Segmentation.Backend
   def npu_kind, do: "Hexagon"
 
   @impl GenServer

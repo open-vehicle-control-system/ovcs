@@ -131,6 +131,12 @@ defmodule VisionCore.Detection.Backend.Hailo do
   end
 
   @impl VisionCore.Detection.Backend
+  def options,
+    do:
+      [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
+        [:infer_timeout_ms, :reopen_delays_ms]
+
+  @impl VisionCore.Detection.Backend
   def npu_kind, do: "Hailo-8"
 
   @impl GenServer

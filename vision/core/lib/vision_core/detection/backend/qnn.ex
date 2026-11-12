@@ -112,6 +112,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
   end
 
   @impl VisionCore.Detection.Backend
+  def options, do: [:dlc_path, :score_threshold | QnnPort.options()]
+
+  @impl VisionCore.Detection.Backend
   def npu_kind, do: "Hexagon"
 
   @impl GenServer

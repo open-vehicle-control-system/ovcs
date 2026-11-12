@@ -23,7 +23,8 @@ defmodule VisionCore.Segmentation.Supervisor do
   restarts the pipeline with its backend, so a pipeline waiting for a
   reply the restarted backend will never send starts over.
 
-  The backend's options go to the backend, with `:classes`, the number
+  The backend's options (`c:VisionCore.Segmentation.Backend.options/0`)
+  go to the backend, with `:classes`, the number
   of `:labels`; the pipeline's to the pipeline, and `:max_hz` to `Live`;
   see their docs. A unit that fails to
   start, such as one given an option it does not take, is left down,
@@ -58,9 +59,9 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   @impl Supervisor
   def init(opts) do
-    Unit.refuse_unknown!(opts, options(), %{topic_prefix: @topic_prefix_hint})
-    name = Segmentation.name!(opts)
     {backend, backend_opts} = split_backend_options(opts)
+    Unit.refuse_unknown!(opts, options(backend), %{topic_prefix: @topic_prefix_hint})
+    name = Segmentation.name!(opts)
     backend_server = Detection.server(backend, name)
     classes = length(Keyword.get(opts, :labels, Segmentation.labels()))
 
@@ -153,22 +154,15 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   defp units_options(config), do: Unit.options_of(config, __MODULE__)
 
-  defp options, do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
+  defp options(backend), do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend.options()
 
   defp split_backend_options(opts) do
     backend = Keyword.get(opts, :backend, @default_backend)
-    {backend, Keyword.take(opts, backend_keys())}
+    {backend, Keyword.take(opts, backend.options())}
   end
 
   defp pipeline_keys do
     [:source, :band_top, :labels, :road_classes, :segment_every_n] ++
       [:reprojection_stride, :pair_wait_ms, :config]
-  end
-
-  # The options of `Backend.Qnn` and `Backend.Stub`.
-  defp backend_keys do
-    [:dlc_path, :qairt_dir, :dsp_library_path, :dsp_architecture, :cache_dir] ++
-      [:executable] ++
-      [:infer_timeout_ms, :reopen_delays_ms, :performance, :label_image]
   end
 end

@@ -54,6 +54,9 @@ defmodule VisionCore.Detection.Backend.Stub do
   def available?(_server \\ __MODULE__), do: true
 
   @impl VisionCore.Detection.Backend
+  def options, do: [:boxes]
+
+  @impl VisionCore.Detection.Backend
   def npu_kind, do: nil
 
   @doc "Always `nil`: it runs no model."

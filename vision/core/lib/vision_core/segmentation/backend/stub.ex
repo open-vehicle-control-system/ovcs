@@ -38,6 +38,9 @@ defmodule VisionCore.Segmentation.Backend.Stub do
   def available?(_server \\ __MODULE__), do: true
 
   @impl VisionCore.Segmentation.Backend
+  def options, do: [:label_image]
+
+  @impl VisionCore.Segmentation.Backend
   def npu_kind, do: nil
 
   @doc "Always `nil`: it runs no model."

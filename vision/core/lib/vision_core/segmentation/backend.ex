@@ -66,6 +66,14 @@ defmodule VisionCore.Segmentation.Backend do
 
   @optional_callbacks state: 1
 
+  @doc """
+  The options the backend takes beside `:name` and those its unit's
+  supervisor gives it: the supervisor hands it these of the unit's
+  options, and refuses the unit one that neither it nor the backend
+  takes.
+  """
+  @callback options() :: [atom()]
+
   @doc "The kind of accelerator the backend runs on, `nil` without one."
   @callback npu_kind() :: String.t() | nil
 
