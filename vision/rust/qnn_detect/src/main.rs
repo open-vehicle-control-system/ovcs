@@ -9,15 +9,17 @@
 //! the reply the detections in the image's pixels and, when the graph ran, its
 //! time on the HTP from QNN's profile, or the wall time around its execution
 //! when the profile is unavailable; or a LOG record.
+//! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod yolox;
 
 use std::process::exit;
+use std::time::Instant;
 
 use detection::letterbox::{letterbox_for, letterbox_into};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{log_record, LogLevel, Writer};
-use qnn::TimeLog;
+use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 use yolox::{decode, Outputs, Quantisation, ANCHORS, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
@@ -126,8 +128,28 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
         .collect();
     let mut stdin = std::io::stdin().lock();
     let mut time_log = TimeLog::default();
+    let mut record = Vec::new();
+    let mut stage_times = StageTimes::new(
+        &[
+            &["idle", "read", "letterbox"],
+            &EXECUTION_STAGES[..],
+            &["decode", "reply"],
+        ]
+        .concat(),
+        STAGE_TIMES_EVERY,
+        Instant::now(),
+    );
+    let mut mark = Instant::now();
 
-    while let Ok(Some(record)) = framing::read_record(&mut stdin) {
+    while let Ok(Some(length)) = framing::read_length(&mut stdin) {
+        stage_times.lap("idle", &mut mark);
+        if !matches!(
+            framing::read_body_into(&mut stdin, length, &mut record),
+            Ok(true)
+        ) {
+            break;
+        }
+        stage_times.lap("read", &mut mark);
         let Some(request) = parse_request(&record) else {
             continue;
         };
@@ -148,12 +170,14 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
                     MODEL_SIZE,
                     &letterbox,
                 );
+                stage_times.lap("letterbox", &mut mark);
                 let mut outputs: Vec<&mut [u8]> = buffers
                     .iter_mut()
                     .map(|buffer| buffer.as_mut_slice())
                     .collect();
                 match model.execute(&mut [input.as_mut_slice()], &mut outputs) {
                     Ok(timing) => {
+                        timing.add_to(&mut stage_times);
                         if let Some(report) = model.take_profile_report() {
                             log(
                                 writer,
@@ -166,6 +190,7 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
                         {
                             log(writer, LogLevel::Info, &message);
                         }
+                        mark = Instant::now();
                         let detections = decode(
                             &Outputs {
                                 boxes: &buffers[boxes],
@@ -178,6 +203,7 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
                             NMS_IOU,
                             &letterbox,
                         );
+                        stage_times.lap("decode", &mut mark);
                         (
                             detections,
                             Some(inference_micros(u128::from(timing.micros))),
@@ -195,6 +221,11 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
             .is_err()
         {
             break;
+        }
+        stage_times.lap("reply", &mut mark);
+        stage_times.count_request();
+        if let Some(line) = stage_times.line(mark) {
+            log(writer, LogLevel::Info, &line);
         }
     }
     Ok(())

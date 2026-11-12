@@ -14,8 +14,10 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/qnn.rs"));
 }
 
+mod stage_times;
 mod time_log;
 
+pub use stage_times::{micros, StageTimes, STAGE_TIMES_EVERY};
 pub use time_log::TimeLog;
 
 use std::ffi::{c_void, CStr};
@@ -63,11 +65,76 @@ pub enum TimeSource {
     WallTime,
 }
 
-/// An execution's time in µs and what it measures.
+/// An execution's time in µs and what it measures, and where the time around it went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timing {
     pub micros: u64,
     pub source: TimeSource,
+    /// The wall time around `graphExecute`.
+    pub graph_execute_micros: u64,
+    /// Reading the execution's events off the profile, after `graphExecute`.
+    pub profile_read_micros: u64,
+    pub profiled: ProfiledTimes,
+}
+
+/// The stages `Timing::add_to` adds: `graphExecute`'s wall time, QNN's times inside it, then
+/// the profile's reading after it.
+pub const EXECUTION_STAGES: [&str; 6] = [
+    "graphExecute",
+    "QNN execute",
+    "host RPC",
+    "HTP RPC",
+    "HTP",
+    "profile read",
+];
+
+impl Timing {
+    /// Adds the execution's times to `times`, which has `EXECUTION_STAGES`.
+    pub fn add_to(&self, times: &mut StageTimes) {
+        let [graph_execute, execute, host_rpc, htp_rpc, htp, profile_read] = EXECUTION_STAGES;
+        times.add(graph_execute, self.graph_execute_micros);
+        for (stage, micros) in [
+            (execute, self.profiled.execute_micros),
+            (host_rpc, self.profiled.host_rpc_micros),
+            (htp_rpc, self.profiled.htp_rpc_micros),
+            (htp, self.profiled.accelerator_micros),
+        ] {
+            if let Some(micros) = micros {
+                times.add(stage, micros);
+            }
+        }
+        times.add(profile_read, self.profile_read_micros);
+    }
+}
+
+/// QNN's own times of an execution in µs, from its profile, when it reports them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProfiledTimes {
+    /// `graphExecute` as QNN times it.
+    pub execute_micros: Option<u64>,
+    /// The remote procedure call, as the CPU times it.
+    pub host_rpc_micros: Option<u64>,
+    /// The remote procedure call, as the HTP times it.
+    pub htp_rpc_micros: Option<u64>,
+    /// The graph's execution on the HTP (`ACCELERATOR_EVENTS`).
+    pub accelerator_micros: Option<u64>,
+}
+
+impl ProfiledTimes {
+    fn of(events: &[ProfileEvent]) -> ProfiledTimes {
+        ProfiledTimes {
+            execute_micros: latest_micros(events, QNN_PROFILE_EVENTTYPE_EXECUTE),
+            host_rpc_micros: latest_micros(
+                events,
+                QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_HOST_RPC_TIME_MICROSEC,
+            ),
+            htp_rpc_micros: latest_micros(
+                events,
+                QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_HTP_RPC_TIME_MICROSEC,
+            ),
+            accelerator_micros: accelerator_micros(events),
+        }
+    }
 }
 
 /// One profile event's type, unit and value.
@@ -81,13 +148,18 @@ struct ProfileEvent {
 /// The accelerator's time in µs among one execution's events: the latest of the
 /// most preferred kind reported (`ACCELERATOR_EVENTS`).
 fn accelerator_micros(events: &[ProfileEvent]) -> Option<u64> {
-    ACCELERATOR_EVENTS.iter().find_map(|&kind| {
-        events
-            .iter()
-            .rev()
-            .find(|event| event.kind == kind && event.unit == QNN_PROFILE_EVENTUNIT_MICROSEC)
-            .map(|event| event.value)
-    })
+    ACCELERATOR_EVENTS
+        .iter()
+        .find_map(|&kind| latest_micros(events, kind))
+}
+
+/// The latest event of `kind` among one execution's events, in µs.
+fn latest_micros(events: &[ProfileEvent], kind: QnnProfile_EventType_t) -> Option<u64> {
+    events
+        .iter()
+        .rev()
+        .find(|event| event.kind == kind && event.unit == QNN_PROFILE_EVENTUNIT_MICROSEC)
+        .map(|event| event.value)
 }
 
 /// Which of a profile handle's top-level events the latest execution stored. A
@@ -471,24 +543,29 @@ impl Model {
             self.replace_profile();
         }
         executed?;
-        let wall_micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-        Ok(match self.profiled_micros() {
-            Some(micros) => Timing {
-                micros,
-                source: TimeSource::Accelerator,
-            },
-            None => Timing {
-                micros: wall_micros,
-                source: TimeSource::WallTime,
-            },
+        let graph_execute_micros = micros(started.elapsed());
+        let reading = Instant::now();
+        let profiled = self.profiled_times();
+        let profile_read_micros = micros(reading.elapsed());
+        let (micros, source) = match profiled.accelerator_micros {
+            Some(micros) => (micros, TimeSource::Accelerator),
+            None => (graph_execute_micros, TimeSource::WallTime),
+        };
+        Ok(Timing {
+            micros,
+            source,
+            graph_execute_micros,
+            profile_read_micros,
+            profiled,
         })
     }
 
-    /// The latest execution's accelerator time from the profile. The handle is
-    /// replaced every `EXECUTIONS_PER_PROFILE` executions, and as soon as it stores
-    /// no more events.
-    fn profiled_micros(&mut self) -> Option<u64> {
-        let profile = self.profile.as_mut()?;
+    /// The latest execution's times from the profile. The handle is replaced every
+    /// `EXECUTIONS_PER_PROFILE` executions, and as soon as it stores no more events.
+    fn profiled_times(&mut self) -> ProfiledTimes {
+        let Some(profile) = self.profile.as_mut() else {
+            return ProfiledTimes::default();
+        };
         let interface = &self.interface;
         let top_level = unsafe { top_level_events(interface, profile.handle) };
         let latest = profile.cursor.latest_execution(top_level.len());
@@ -510,7 +587,7 @@ impl Model {
         if replace {
             self.replace_profile();
         }
-        accelerator_micros(&events)
+        ProfiledTimes::of(&events)
     }
 
     /// A fresh profile handle in place of the current one, or none, the reason in
@@ -648,6 +725,61 @@ mod tests {
             event(INCLUDING_WAIT, MICROSECONDS, 2593),
         ];
         assert_eq!(accelerator_micros(&events), Some(2556));
+    }
+
+    #[test]
+    fn profiled_times_are_the_execute_rpc_and_accelerator_events() {
+        let events = [
+            event(QNN_PROFILE_EVENTTYPE_EXECUTE, MICROSECONDS, 3304),
+            event(
+                QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_HOST_RPC_TIME_MICROSEC,
+                MICROSECONDS,
+                2932,
+            ),
+            event(
+                QNN_HTP_PROFILE_EVENTTYPE_GRAPH_EXECUTE_HTP_RPC_TIME_MICROSEC,
+                MICROSECONDS,
+                2650,
+            ),
+            event(INCLUDING_WAIT, MICROSECONDS, 2593),
+        ];
+        assert_eq!(
+            ProfiledTimes::of(&events),
+            ProfiledTimes {
+                execute_micros: Some(3304),
+                host_rpc_micros: Some(2932),
+                htp_rpc_micros: Some(2650),
+                accelerator_micros: Some(2593),
+            }
+        );
+        assert_eq!(ProfiledTimes::of(&[]), ProfiledTimes::default());
+    }
+
+    #[test]
+    fn an_execution_adds_the_times_its_profile_reported() {
+        let start = Instant::now();
+        let mut times = StageTimes::new(&EXECUTION_STAGES, STAGE_TIMES_EVERY, start);
+        let timing = Timing {
+            micros: 8700,
+            source: TimeSource::Accelerator,
+            graph_execute_micros: 20_000,
+            profile_read_micros: 300,
+            profiled: ProfiledTimes {
+                execute_micros: Some(12_000),
+                host_rpc_micros: Some(9000),
+                htp_rpc_micros: None,
+                accelerator_micros: Some(8700),
+            },
+        };
+        timing.add_to(&mut times);
+        times.count_request();
+        assert_eq!(
+            times.line(start + STAGE_TIMES_EVERY).as_deref(),
+            Some(
+                "last 60 s: 1 requests, us each: graphExecute 20000, QNN execute 12000, \
+                 host RPC 9000, HTP RPC none, HTP 8700, profile read 300"
+            )
+        );
     }
 
     #[test]

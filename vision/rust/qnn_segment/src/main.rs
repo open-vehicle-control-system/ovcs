@@ -11,6 +11,7 @@
 //! inferred, and the reply carries each cell's class, the highest of its scores, and, when the
 //! graph ran, its time on the HTP from QNN's profile, or the wall time around its execution when
 //! the profile is unavailable; or a LOG record.
+//! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod band;
 mod labels;
@@ -18,11 +19,12 @@ mod model;
 mod protocol;
 
 use std::process::exit;
+use std::time::Instant;
 
 use framing::{log_record, LogLevel, Writer};
 use model::{Geometry, Shape};
 use protocol::{labels_record, parse_request};
-use qnn::TimeLog;
+use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 
 fn log(writer: &Writer, level: LogLevel, message: &str) {
     let _ = writer.write_record(&log_record(level, message));
@@ -106,8 +108,28 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
     let mut labels = vec![0u8; usize::from(output_width) * usize::from(output_height)];
     let mut stdin = std::io::stdin().lock();
     let mut time_log = TimeLog::default();
+    let mut record = Vec::new();
+    let mut stage_times = StageTimes::new(
+        &[
+            &["idle", "read", "resize"],
+            &EXECUTION_STAGES[..],
+            &["argmax", "reply"],
+        ]
+        .concat(),
+        STAGE_TIMES_EVERY,
+        Instant::now(),
+    );
+    let mut mark = Instant::now();
 
-    while let Ok(Some(record)) = framing::read_record(&mut stdin) {
+    while let Ok(Some(length)) = framing::read_length(&mut stdin) {
+        stage_times.lap("idle", &mut mark);
+        if !matches!(
+            framing::read_body_into(&mut stdin, length, &mut record),
+            Ok(true)
+        ) {
+            break;
+        }
+        stage_times.lap("read", &mut mark);
         let Some(request) = parse_request(&record) else {
             continue;
         };
@@ -127,8 +149,10 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
                     input_width,
                     input_height,
                 );
+                stage_times.lap("resize", &mut mark);
                 match model.execute(&mut [input.as_mut_slice()], &mut [scores.as_mut_slice()]) {
                     Ok(timing) => {
+                        timing.add_to(&mut stage_times);
                         if let Some(report) = model.take_profile_report() {
                             log(
                                 writer,
@@ -141,7 +165,9 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
                         {
                             log(writer, LogLevel::Info, &message);
                         }
+                        mark = Instant::now();
                         labels::argmax_into(&scores, classes, &mut labels);
+                        stage_times.lap("argmax", &mut mark);
                         labels_record(
                             request.sequence,
                             output_width,
@@ -159,6 +185,11 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
         };
         if writer.write_record(&reply).is_err() {
             break;
+        }
+        stage_times.lap("reply", &mut mark);
+        stage_times.count_request();
+        if let Some(line) = stage_times.line(mark) {
+            log(writer, LogLevel::Info, &line);
         }
     }
     Ok(())
