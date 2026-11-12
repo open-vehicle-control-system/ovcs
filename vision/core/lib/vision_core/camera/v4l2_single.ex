@@ -7,23 +7,29 @@ defmodule VisionCore.Camera.V4L2Single do
   mode. The `:camera` component (`VisionCore.Components`) starts it.
 
   Frames are 8-bit RGB (`%Frame{rgb: ...}`), white-balanced by the
-  program, at the size `:output` asks for: the sensor mode's own, 2028 ×
-  1520 by default, demosaiced bilinearly, or half of it in each axis,
-  1014 × 760, each 2x2 Bayer cell one pixel. Each frame's size is the one
-  its record gives.
+  program, one per output at every frame (`outputs/1`,
+  `VisionCore.Camera.Output`). Its one processor, `:cpu`, the program's
+  software conversion, makes the sensor mode's size, 2028 × 1520 by
+  default, demosaiced bilinearly, or half of it in each axis, 1014 × 760,
+  each 2x2 Bayer cell one pixel; an output `:from` another is averaged
+  from it in blocks on the same threads. Each output's frames are
+  published under `{:camera_frame, name, output}`, `name` the instance's
+  registered name, each frame carrying its output's name as its
+  `:output` and the size its record gives.
 
   ## Framing protocol
 
   Records on the Port's stdout are `{:packet, 4}`:
 
       uint8   tag                 # 7 = OUTPUT_FRAME
-      uint8   output              # the output's index
+      uint8   output              # the output's index, `VisionCore.Camera.Output`'s
       uint16  width   LE
       uint16  height  LE
       int64   capture_ns LE       # frame start, kernel CLOCK_MONOTONIC
       bytes   rgb                 # width * height * 3, R, G, B
 
-  or the log and metadata records `VisionCore.Camera.V4L2` reads. Records
+  one per output per frame, in the order of their indices, or the log
+  and metadata records `VisionCore.Camera.V4L2` reads. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
 
@@ -40,8 +46,9 @@ defmodule VisionCore.Camera.V4L2Single do
   and the denoise; `ccm` and `denoise` switch its colour correction
   matrix and its chroma denoise, and `gamma` only sets how far auto
   exposure steps, the contrast curve encoding the image. `threads`, 1 to
-  8, is how many threads convert each frame, in bands of rows: without
-  it, 3 for `:full` frames and 1 for `:half` ones.
+  8, is how many threads convert each frame and average its outputs, in
+  bands of rows: without it, 3 with an output of the sensor mode's size
+  made by `:cpu`, 1 otherwise.
 
   ## Opts
 
@@ -57,9 +64,16 @@ defmodule VisionCore.Camera.V4L2Single do
     * `:sensor_width` (2028), `:sensor_height` (1520) — the sensor mode.
     * `:code` (`"SRGGB12_1X12"`) — the sensor mode's media bus code.
     * `:fps` (15) — the frame rate.
-    * `:output` (`:full`) — `:full` for frames of the sensor mode's size,
-      `:half` for half of it in each axis; passed as `--output full|half`.
-      Another value stops the camera at start, saying so.
+    * `:outputs` — the camera's named outputs, each `[resolution:
+      {width, height}, processor: :cpu]` or `[resolution: {width, height},
+      from: output]`, a whole fraction of that output's size; the first
+      is the camera's default. Passed as `--output cpu:<width>x<height>`
+      or `--output from:<index>:<width>x<height>`, in the order of their
+      indices. Outputs it cannot make stop the camera at start, saying
+      why.
+    * `:output` (`:full`) — the one-output shorthand, without
+      `:outputs`: `:full`, the sensor mode's size, or `:half`, half of it
+      in each axis, made by `:cpu` and named as the value.
     * `:frame_id` — the optical frame each frame carries; `nil` without
       (`VisionCore.Camera.Unit` gives `"<name>_optical"` by default).
     * any setting of `control_specs/0`, by its key.
@@ -146,10 +160,10 @@ defmodule VisionCore.Camera.V4L2Single do
                 key: :threads,
                 type: :integer,
                 range: {1, 8},
-                # The output decides: `default_threads/1`.
+                # The outputs decide: `default_threads/2`.
                 default: nil,
                 description:
-                  "Threads converting each frame, 1 to 8; without, 3 for full-size frames and 1 for half-size ones"
+                  "Threads converting each frame, 1 to 8; without, 3 with a full-size output and 1 otherwise"
               }
             ])
 

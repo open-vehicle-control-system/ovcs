@@ -85,7 +85,9 @@ defmodule VisionCore.Ros2.Exporter do
       and the topics, its `:topic_prefix` the stereo unit's `:prefix` by
       default.
     * `:cameras` — publishes the cameras of their own its `:names` list,
-      every camera of the configuration by default:
+      every camera of the configuration by default, each its default
+      output or the one `:outputs` names for each camera it publishes (`hq: :view`;
+      `VisionCore.Camera.Output`):
       `:topic_prefix`, the stereo unit's `:prefix` by default, else
       `"stereo"`; `:raw_image_max_hz` (10), the most images a second per
       camera for frames it encodes, JPEG frames going out as they arrive;

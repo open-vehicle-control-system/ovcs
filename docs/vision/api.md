@@ -293,7 +293,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:hq`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them.
+The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:hq`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them. An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, `camera_frame:hq:inference` for instance.
 
 A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `hq` for a pipeline on the camera `hq`.
 

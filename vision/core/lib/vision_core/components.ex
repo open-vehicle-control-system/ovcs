@@ -55,8 +55,10 @@ defmodule VisionCore.Components do
       Hexagon NPU.
     * `:camera` — `VisionCore.Camera.Unit`: a camera of its own, outside
       the stereo pair, its `:name` the child id of its unit, `{:camera,
-      name}`, and its frames the output `{:camera_frame, name}`. `:name`
-      and `:driver` are required; the other options go to the driver:
+      name}`, and its frames the output `{:camera_frame, name}`, of its
+      default output, or `{:camera_frame, name, output}`, of its output
+      `output` (`VisionCore.Camera.Output`). `:name` and `:driver` are
+      required; the other options go to the driver:
 
           {:camera,
            name: :hq,

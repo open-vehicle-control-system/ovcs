@@ -8,7 +8,9 @@ defmodule VisionCore.Outputs do
   registered name, so two producers of one kind stay apart.
 
     * `{:camera_frame, name}` — `{:camera_frame, %VisionCore.Camera.Frame{}}`
-      from the `VisionCore.Camera` driver instance registered as `name`.
+      from the `VisionCore.Camera` driver instance registered as `name`;
+      `{:camera_frame, name, output}` from one with named outputs, the
+      frames of its output `output` (`VisionCore.Camera.Unit.output_key/3`).
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
     * `{:detections, name}` — from the `VisionCore.Detection.Pipeline`
@@ -38,7 +40,9 @@ defmodule VisionCore.Outputs do
   """
 
   @typedoc "An output and the name of the producer publishing it."
-  @type key :: {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
+  @type key ::
+          {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
+          | {:camera_frame, atom(), atom()}
 
   @doc "Starts the registry."
   @spec start_link(keyword()) :: Supervisor.on_start()

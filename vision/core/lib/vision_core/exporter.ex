@@ -423,7 +423,8 @@ defmodule VisionCore.Exporter do
   `config` describes, the active `VisionCore.Config` by default, from
   the `outputs/1` of the unit that produces it
   (`VisionCore.Stereo.Supervisor`, `VisionCore.Detection.Supervisor`,
-  `VisionCore.Segmentation.Supervisor`, `VisionCore.Camera.Unit`).
+  `VisionCore.Segmentation.Supervisor`, `VisionCore.Camera.Unit`), and for
+  a camera's named output from `VisionCore.Camera.Unit.output_key/3`.
   `nil` when nothing in `config` produces `output`; raises
   `ArgumentError` for a term that is no output (`output?/1`).
   """
