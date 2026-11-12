@@ -161,8 +161,8 @@ defmodule VisionCore.Jpeg do
 
       %{from: from, timer: timer} ->
         Process.cancel_timer(timer)
-        GenServer.reply(from, if(reply == <<>>, do: {:error, :bad_request}, else: {:ok, reply}))
-        {:noreply, dispatch(put_in(state.ports[port], nil))}
+        reply = if reply == <<>>, do: {:error, :bad_request}, else: {:ok, reply}
+        {:noreply, state |> put_in([:ports, port], nil) |> answer(from, reply) |> dispatch()}
     end
   end
 
@@ -199,8 +199,7 @@ defmodule VisionCore.Jpeg do
             state
 
           {:error, _reason} = error ->
-            GenServer.reply(from, error)
-            dispatch(%{state | waiting: waiting})
+            %{state | waiting: waiting} |> answer(from, error) |> dispatch()
         end
     end
   end
@@ -230,16 +229,22 @@ defmodule VisionCore.Jpeg do
 
   # Forgets `port`, answering its request, if any, with `reply`.
   defp retire_port(state, port, reply) do
-    case state.ports[port] do
+    {request, ports} = Map.pop(state.ports, port)
+    state = %{state | ports: ports}
+
+    case request do
       %{from: from, timer: timer} ->
         Process.cancel_timer(timer)
-        GenServer.reply(from, reply)
+        answer(state, from, reply)
 
       nil ->
-        :ok
+        state
     end
+  end
 
-    %{state | ports: Map.delete(state.ports, port)}
+  defp answer(state, from, reply) do
+    GenServer.reply(from, reply)
+    state
   end
 
   defp close(port) do
