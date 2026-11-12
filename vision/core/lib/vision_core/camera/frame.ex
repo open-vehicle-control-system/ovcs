@@ -54,20 +54,25 @@ defmodule VisionCore.Camera.Frame do
 
   @doc """
   The frame as JPEG bytes, encoding a grey or RGB frame on `jpeg_codec`,
-  a `VisionCore.Jpeg` instance.
+  a `VisionCore.Jpeg` instance, once for every consumer encoding the same
+  frame there: a frame is its camera's (`:label`), its output's and its
+  capture time's.
   """
   @spec to_jpeg(t(), GenServer.server()) :: {:ok, binary()} | {:error, term()}
   def to_jpeg(frame, jpeg_codec \\ VisionCore.Jpeg)
 
   def to_jpeg(%__MODULE__{jpeg: jpeg}, _jpeg_codec) when is_binary(jpeg), do: {:ok, jpeg}
 
-  def to_jpeg(%__MODULE__{grey: grey, width: width, height: height}, jpeg_codec)
+  def to_jpeg(%__MODULE__{grey: grey, width: width, height: height} = frame, jpeg_codec)
       when is_binary(grey),
-      do: VisionCore.Jpeg.encode(grey, width, height, 1, codec: jpeg_codec)
+      do: VisionCore.Jpeg.encode(grey, width, height, 1, encode_options(frame, jpeg_codec))
 
-  def to_jpeg(%__MODULE__{rgb: rgb, width: width, height: height}, jpeg_codec)
+  def to_jpeg(%__MODULE__{rgb: rgb, width: width, height: height} = frame, jpeg_codec)
       when is_binary(rgb),
-      do: VisionCore.Jpeg.encode(rgb, width, height, 3, codec: jpeg_codec)
+      do: VisionCore.Jpeg.encode(rgb, width, height, 3, encode_options(frame, jpeg_codec))
+
+  defp encode_options(frame, jpeg_codec),
+    do: [codec: jpeg_codec, frame: {{frame.label, frame.output}, frame.capture_ns}]
 
   @doc """
   The frame as a `u8` tensor: `{height, width, 3}` for an RGB frame,

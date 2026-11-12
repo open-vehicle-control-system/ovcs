@@ -1,6 +1,7 @@
 defmodule VisionCore.JpegTest do
   use ExUnit.Case, async: false
 
+  alias VisionCore.Camera.Frame
   alias VisionCore.Jpeg
 
   @moduletag :jpeg
@@ -148,6 +149,71 @@ defmodule VisionCore.JpegTest do
       assert {:error, {:exited, 3}} = fake(2)
       assert {:ok, "slow"} = Task.await(slow)
       assert {:ok, "fast"} = fake(0)
+    end
+
+    # A request for the frame captured at `capture_ns` of the left camera's stream.
+    defp frame_request(byte, capture_ns, options \\ []),
+      do: Jpeg.encode(<<byte>>, 1, 1, 1, [frame: {{"left", nil}, capture_ns}] ++ options)
+
+    test "requests for one frame at one quality share one encode while it runs" do
+      start_supervised!({Jpeg, ports: 2})
+      first = Task.async(fn -> frame_request(1, 7) end)
+      await_busy_port()
+      second = Task.async(fn -> frame_request(1, 7) end)
+
+      assert {:ok, "slow"} = Task.await(first)
+      assert {:ok, "slow"} = Task.await(second)
+      assert map_size(:sys.get_state(Jpeg).ports) == 1
+    end
+
+    test "two consumers encoding one camera frame share its encode" do
+      start_supervised!({Jpeg, ports: 2})
+      frame = %Frame{label: "left", width: 1, height: 1, capture_ns: 7, grey: <<1>>}
+      first = Task.async(fn -> Frame.to_jpeg(frame, Jpeg) end)
+      await_busy_port()
+      second = Task.async(fn -> Frame.to_jpeg(frame, Jpeg) end)
+
+      assert {:ok, "slow"} = Task.await(first)
+      assert {:ok, "slow"} = Task.await(second)
+      assert map_size(:sys.get_state(Jpeg).ports) == 1
+    end
+
+    test "a request for the frame a stream encoded last takes its JPEG without an encode" do
+      start_supervised!({Jpeg, ports: 1})
+
+      assert {:ok, codec_pid} = frame_request(3, 7)
+      assert {:ok, ^codec_pid} = frame_request(0, 7)
+    end
+
+    test "another quality, another frame, another stream or no frame is encoded" do
+      start_supervised!({Jpeg, ports: 1})
+      {:ok, _codec_pid} = frame_request(3, 7)
+
+      assert {:ok, "fast"} = frame_request(0, 7, quality: 90)
+      assert {:ok, "fast"} = frame_request(0, 8)
+      assert {:ok, "fast"} = Jpeg.encode(<<0>>, 1, 1, 1, frame: {{"right", nil}, 8})
+      assert {:ok, "fast"} = Jpeg.encode(<<0>>, 1, 1, 1)
+    end
+
+    test "each stream keeps only the JPEG of its latest frame" do
+      start_supervised!({Jpeg, ports: 1})
+      {:ok, _codec_pid} = frame_request(3, 7)
+      {:ok, "fast"} = frame_request(0, 8)
+
+      assert {:ok, "fast"} = frame_request(0, 7)
+      assert {:ok, "fast"} = frame_request(3, 8)
+      assert map_size(:sys.get_state(Jpeg).finished) == 1
+    end
+
+    test "a shared encode that fails answers each request with its error and is not kept" do
+      start_supervised!({Jpeg, ports: 1, timeout_ms: 100})
+      first = Task.async(fn -> frame_request(1, 7) end)
+      await_busy_port()
+      second = Task.async(fn -> frame_request(1, 7) end)
+
+      assert {:error, :timeout} = Task.await(first)
+      assert {:error, :timeout} = Task.await(second)
+      assert {:ok, "fast"} = frame_request(0, 7)
     end
 
     test "its size is a positive integer" do

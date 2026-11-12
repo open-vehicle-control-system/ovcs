@@ -12,6 +12,12 @@ defmodule VisionCore.Jpeg do
   sending request after request waits its turn like the others,
   starving none.
 
+  An encode that names its frame (`:frame`) is shared: requests for the
+  same frame at the same quality, while one of them waits or encodes,
+  are answered with its JPEG, and so is a request for the frame whose
+  JPEG its stream holds, the latest each stream encoded. A failed encode
+  answers each of its requests with its error and is not held.
+
   `VisionCore.Application` starts two instances: `VisionCore.Jpeg`, one
   Port on which the stereo pipeline decodes JPEG camera frames, and
   `VisionCore.Jpeg.Export`, the pool `VisionCore.Preview` and the
@@ -44,8 +50,14 @@ defmodule VisionCore.Jpeg do
   @decode 1
   @depth 2
 
-  @typedoc "`:codec`, the instance a request runs on, and an encode's `:quality` (`80`)."
-  @type option :: {:codec, GenServer.server()} | {:quality, 1..100}
+  @typedoc """
+  `:codec`, the instance a request runs on, an encode's `:quality`
+  (`80`), and the `:frame` its pixels are of, `{stream, capture_ns}`,
+  `stream` naming the frames of one camera output, such as `{label,
+  output}`.
+  """
+  @type option ::
+          {:codec, GenServer.server()} | {:quality, 1..100} | {:frame, {term(), integer()}}
 
   @doc """
   Starts the codec server; see the module doc for `opts`. Raises
@@ -68,7 +80,8 @@ defmodule VisionCore.Jpeg do
 
   @doc """
   `pixels` as a JPEG: `width` x `height`, row-major, with 1 (grey) or 3
-  (RGB) `channels`.
+  (RGB) `channels`. With `:frame`, the JPEG of a request for the same
+  frame at the same quality, when there is one, whatever `pixels` holds.
   """
   @spec encode(binary(), pos_integer(), pos_integer(), 1 | 3, [option()]) ::
           {:ok, binary()} | {:error, term()}
@@ -76,7 +89,9 @@ defmodule VisionCore.Jpeg do
       when channels in [1, 3] and byte_size(pixels) == width * height * channels do
     call(
       options,
-      <<@encode, width::little-16, height::little-16, channels, quality(options), pixels::binary>>
+      <<@encode, width::little-16, height::little-16, channels, quality(options),
+        pixels::binary>>,
+      shared_frame(options)
     )
   end
 
@@ -131,13 +146,26 @@ defmodule VisionCore.Jpeg do
   end
 
   # The server bounds each request by its own timeout.
-  defp call(options, request),
-    do: GenServer.call(Keyword.get(options, :codec, __MODULE__), {:request, request}, :infinity)
+  defp call(options, request, shared_frame \\ nil),
+    do:
+      GenServer.call(
+        Keyword.get(options, :codec, __MODULE__),
+        {:request, request, shared_frame},
+        :infinity
+      )
 
   defp quality(options), do: Keyword.get(options, :quality, @default_quality)
 
+  defp shared_frame(options) do
+    case Keyword.fetch(options, :frame) do
+      {:ok, {stream, capture_ns}} -> {stream, capture_ns, quality(options)}
+      :error -> nil
+    end
+  end
+
   # `ports` maps each open Port to its request, `nil` while free; `waiting` holds the
-  # requests no Port is free for, oldest first.
+  # requests no Port is free for, oldest first; `sharing` the callers of each shared
+  # frame's request until it is answered; `finished` each stream's latest JPEG.
   @impl GenServer
   def init(opts) do
     {:ok,
@@ -145,13 +173,34 @@ defmodule VisionCore.Jpeg do
        size: Keyword.get(opts, :ports, @default_ports),
        timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms),
        ports: %{},
-       waiting: :queue.new()
+       waiting: :queue.new(),
+       sharing: %{},
+       finished: %{}
      }}
   end
 
   @impl GenServer
-  def handle_call({:request, request}, from, state),
+  def handle_call({:request, request, nil}, from, state),
     do: {:noreply, dispatch(%{state | waiting: :queue.in({from, request}, state.waiting)})}
+
+  def handle_call({:request, request, {stream, capture_ns, quality} = frame}, from, state) do
+    case state do
+      %{finished: %{^stream => {{^capture_ns, ^quality}, jpeg}}} ->
+        {:reply, {:ok, jpeg}, state}
+
+      %{sharing: %{^frame => callers}} ->
+        {:noreply, put_in(state.sharing[frame], [from | callers])}
+
+      _new_frame ->
+        state = %{
+          state
+          | sharing: Map.put(state.sharing, frame, [from]),
+            waiting: :queue.in({{:shared, frame}, request}, state.waiting)
+        }
+
+        {:noreply, dispatch(state)}
+    end
+  end
 
   @impl GenServer
   def handle_info({port, {:data, reply}}, state) when is_map_key(state.ports, port) do
@@ -242,10 +291,27 @@ defmodule VisionCore.Jpeg do
     end
   end
 
+  defp answer(state, {:shared, {stream, capture_ns, quality} = frame}, reply) do
+    {callers, sharing} = Map.pop!(state.sharing, frame)
+    Enum.each(callers, &GenServer.reply(&1, reply))
+    finished = hold_latest(state.finished, stream, {capture_ns, quality}, reply)
+    %{state | sharing: sharing, finished: finished}
+  end
+
   defp answer(state, from, reply) do
     GenServer.reply(from, reply)
     state
   end
+
+  # A frame encoded after a newer one of its stream is not held.
+  defp hold_latest(finished, stream, {capture_ns, _quality} = frame, {:ok, jpeg}) do
+    case finished do
+      %{^stream => {{newer_ns, _newer_quality}, _jpeg}} when newer_ns > capture_ns -> finished
+      _older -> Map.put(finished, stream, {frame, jpeg})
+    end
+  end
+
+  defp hold_latest(finished, _stream, _frame, {:error, _reason}), do: finished
 
   defp close(port) do
     Port.close(port)
