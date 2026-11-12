@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::panic;
 
 use crate::arguments::Output;
-use crate::bayer::Image;
+use crate::bayer::{Image, RawFrame};
 
 /// How a frame is converted: at which size, which way up, and what is
 /// measured of it besides its image.
@@ -60,6 +60,26 @@ pub struct Sums {
 }
 
 impl Sums {
+    /// The sums over every `conversion.row_step`-th row of RGGB cells of
+    /// `frame` within `cells`, when `conversion` asks for a measure:
+    /// `cell_row` adds to them the cells of the row whose top row has this
+    /// index, given its top row's samples and its bottom row's.
+    pub fn measured(
+        frame: &RawFrame,
+        conversion: &Conversion,
+        cells: Range<usize>,
+        mut cell_row: impl FnMut(usize, &[u16], &[u16], &mut Sums),
+    ) -> Sums {
+        let mut sums = Sums::default();
+        if conversion.green_mean || conversion.channel_means {
+            frame.cell_rows(cells, conversion.row_step, |row, top, bottom| {
+                cell_row(row, top, bottom, &mut sums);
+                sums.cells += (frame.width / 2) as u64;
+            });
+        }
+        sums
+    }
+
     fn add(self, other: Sums) -> Sums {
         Sums {
             cells: self.cells + other.cells,

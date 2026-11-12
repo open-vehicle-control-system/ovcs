@@ -258,7 +258,6 @@ fn measure(
     cells: Range<usize>,
     band: &mut Band,
 ) -> Sums {
-    let mut sums = Sums::default();
     let Band {
         shading_gains,
         row_gains,
@@ -267,26 +266,12 @@ fn measure(
         measured_row_gains: [top_gains, bottom_gains],
         ..
     } = band;
-    if conversion.green_mean {
+    let mut linear = conversion.green_mean.then(|| {
         row_gains.resize(frame.width, 0);
         top_values.resize(frame.width, 0);
         bottom_values.resize(frame.width, 0);
-        let mut linear = linearisation(frame, colour, shading_gains);
-        let mut measured = 0u64;
-        frame.cell_rows(cells.clone(), conversion.row_step, |row, top, bottom| {
-            linear.row(row, top, row_gains, top_values);
-            linear.row(row + 1, bottom, row_gains, bottom_values);
-            for (top_pair, bottom_pair) in top_values
-                .chunks_exact(2)
-                .zip(bottom_values.chunks_exact(2))
-            {
-                let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
-                sums.green += u64::from(colour.contrast.shown(green));
-                measured += 1;
-            }
-        });
-        sums.cells = measured;
-    }
+        linearisation(frame, colour, shading_gains)
+    });
     if conversion.channel_means {
         measured_gains.set(
             colour.shading,
@@ -297,12 +282,23 @@ fn measure(
         );
         top_gains.resize(frame.width, 0);
         bottom_gains.resize(frame.width, 0);
-        let black_level = colour.black_level;
-        let shaded = |sample: u16, gain: u32| {
-            u64::from(sample.saturating_sub(black_level)) * u64::from(gain)
-        };
-        let mut measured = 0u64;
-        frame.cell_rows(cells, conversion.row_step, |row, top, bottom| {
+    }
+    let black_level = colour.black_level;
+    let shaded =
+        |sample: u16, gain: u32| u64::from(sample.saturating_sub(black_level)) * u64::from(gain);
+    Sums::measured(frame, conversion, cells, |row, top, bottom, sums| {
+        if let Some(linear) = &mut linear {
+            linear.row(row, top, row_gains, top_values);
+            linear.row(row + 1, bottom, row_gains, bottom_values);
+            for (top_pair, bottom_pair) in top_values
+                .chunks_exact(2)
+                .zip(bottom_values.chunks_exact(2))
+            {
+                let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
+                sums.green += u64::from(colour.contrast.shown(green));
+            }
+        }
+        if conversion.channel_means {
             measured_gains.row(row, top_gains);
             measured_gains.row(row + 1, bottom_gains);
             for i in (0..frame.width).step_by(2) {
@@ -310,12 +306,9 @@ fn measure(
                 sums.channels[1] +=
                     shaded(top[i + 1], top_gains[i + 1]) + shaded(bottom[i], bottom_gains[i]);
                 sums.channels[2] += shaded(bottom[i + 1], bottom_gains[i + 1]);
-                measured += 1;
             }
-        });
-        sums.cells = measured;
-    }
-    sums
+        }
+    })
 }
 
 /// What `colour` makes of `frame`'s samples, in fixed point: their linear

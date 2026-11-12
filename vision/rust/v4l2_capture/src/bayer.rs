@@ -553,32 +553,20 @@ fn q12(gain: f64) -> u32 {
 /// white balance, each cell's red, greens and blue above `tone`'s black
 /// level.
 fn measure(frame: &RawFrame, tone: &Tone, conversion: &Conversion, cells: Range<usize>) -> Sums {
-    let mut sums = Sums::default();
-    if conversion.green_mean {
-        let mut measured = 0u64;
-        frame.cell_rows(cells.clone(), conversion.row_step, |_, top, bottom| {
-            for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
+    let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
+    Sums::measured(frame, conversion, cells, |_, top, bottom, sums| {
+        for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
+            if conversion.green_mean {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
                 sums.green += u64::from(tone.grey(green as u16));
-                measured += 1;
             }
-        });
-        sums.cells = measured;
-    }
-    if conversion.channel_means {
-        let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
-        let mut measured = 0u64;
-        frame.cell_rows(cells, conversion.row_step, |_, top, bottom| {
-            for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
+            if conversion.channel_means {
                 sums.channels[0] += signal(top_pair[0]);
                 sums.channels[1] += signal(top_pair[1]) + signal(bottom_pair[0]);
                 sums.channels[2] += signal(bottom_pair[1]);
-                measured += 1;
             }
-        });
-        sums.cells = measured;
-    }
-    sums
+        }
+    })
 }
 
 #[cfg(test)]
