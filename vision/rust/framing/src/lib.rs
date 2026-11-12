@@ -43,15 +43,29 @@ extern "C" {
 
 /// Reads one length-prefixed record. `None` on clean EOF or a truncated record.
 pub fn read_record<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
+    let Some(length) = read_length(reader)? else {
+        return Ok(None);
+    };
+    let mut body = Vec::new();
+    Ok(read_body_into(reader, length, &mut body)?.then_some(body))
+}
+
+/// Waits for the next record's length prefix. `None` on clean EOF or a
+/// truncated prefix.
+pub fn read_length<R: Read>(reader: &mut R) -> io::Result<Option<usize>> {
     let mut length = [0u8; 4];
-    if !read_exact_or_eof(reader, &mut length)? {
-        return Ok(None);
-    }
-    let mut body = vec![0u8; u32::from_be_bytes(length) as usize];
-    if !read_exact_or_eof(reader, &mut body)? {
-        return Ok(None);
-    }
-    Ok(Some(body))
+    Ok(read_exact_or_eof(reader, &mut length)?.then(|| u32::from_be_bytes(length) as usize))
+}
+
+/// Reads a record's body of `length` bytes into `body` in place of its
+/// contents, reusing its allocation. `false` on a truncated body.
+pub fn read_body_into<R: Read>(
+    reader: &mut R,
+    length: usize,
+    body: &mut Vec<u8>,
+) -> io::Result<bool> {
+    body.resize(length, 0);
+    read_exact_or_eof(reader, body)
 }
 
 fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<bool> {
@@ -358,6 +372,25 @@ mod tests {
     fn read_record_reads_a_record() {
         let mut input: &[u8] = &[0, 0, 0, 2, 9, 8, 7];
         assert_eq!(read_record(&mut input).unwrap(), Some(vec![9, 8]));
+    }
+
+    #[test]
+    fn a_body_read_into_a_buffer_replaces_its_contents() {
+        let mut input: &[u8] = &[0, 0, 0, 3, 1, 2, 3, 0, 0, 0, 1, 9, 0, 0];
+        let mut body = vec![7; 5];
+        assert_eq!(read_length(&mut input).unwrap(), Some(3));
+        assert!(read_body_into(&mut input, 3, &mut body).unwrap());
+        assert_eq!(body, [1, 2, 3]);
+        assert_eq!(read_length(&mut input).unwrap(), Some(1));
+        assert!(read_body_into(&mut input, 1, &mut body).unwrap());
+        assert_eq!(body, [9]);
+        assert_eq!(read_length(&mut input).unwrap(), None);
+    }
+
+    #[test]
+    fn a_truncated_body_read_into_a_buffer_is_refused() {
+        let mut input: &[u8] = &[1, 2];
+        assert!(!read_body_into(&mut input, 3, &mut Vec::new()).unwrap());
     }
 
     /// Takes at most three bytes a write, as a full pipe may.
