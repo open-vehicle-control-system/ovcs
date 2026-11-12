@@ -310,5 +310,17 @@ defmodule VisionCore.Detection.SupervisorTest do
                {:detections, :stereo}
              ]
     end
+
+    test "a pipeline whose source is none of those, which never runs, is left out" do
+      components = [
+        {:detector, backend: Stub, name: :people, source: :hq},
+        {:detector, backend: Stub, name: :signs, source: {:camera, :hq, :inference}},
+        {:stereo, []}
+      ]
+
+      assert Supervisor.sources(config(components)) == [
+               {{:detections, :signs}, {:camera, :hq, :inference}}
+             ]
+    end
   end
 end

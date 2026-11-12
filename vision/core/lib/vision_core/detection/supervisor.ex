@@ -138,15 +138,23 @@ defmodule VisionCore.Detection.Supervisor do
   The source of each detection unit in `config`, in config order, with
   its output (`outputs/1`): `:stereo`, the stereo pair's, `{:camera,
   name}`, the camera of its own `name`, or `{:camera, name, output}`, one
-  of its outputs (`VisionCore.Detection.Pipeline`).
+  of its outputs (`VisionCore.Detection.Pipeline`). A unit with another
+  source never runs, so it is left out.
   """
   @spec sources(VisionCore.Config.t()) :: [
           {VisionCore.Exporter.output(), :stereo | {:camera, atom()} | {:camera, atom(), atom()}}
         ]
   def sources(config) do
     for opts <- units_options(config),
-        do: {Detection.output(Detection.pipeline_name(opts)), Keyword.get(opts, :source, :stereo)}
+        source = Keyword.get(opts, :source, :stereo),
+        source?(source),
+        do: {Detection.output(Detection.pipeline_name(opts)), source}
   end
+
+  defp source?(:stereo), do: true
+  defp source?({:camera, camera}), do: is_atom(camera)
+  defp source?({:camera, camera, output}), do: is_atom(camera) and is_atom(output)
+  defp source?(_other), do: false
 
   @doc """
   The backend of each detection unit in `config`, in config order: its

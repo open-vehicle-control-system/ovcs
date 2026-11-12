@@ -74,6 +74,8 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
          backend: VisionCore.Segmentation.Backend.Stub,
          source: {:camera, :hq},
          max_hz: 1},
+        # Left down: its source is none a detection pipeline takes.
+        {:detector, name: :mistyped, backend: VisionCore.Detection.Backend.Stub, source: :hq},
         # Left down: a segmentation pipeline needs a camera.
         {:segmenter, name: :sourceless, backend: VisionCore.Segmentation.Backend.Stub}
       ],
