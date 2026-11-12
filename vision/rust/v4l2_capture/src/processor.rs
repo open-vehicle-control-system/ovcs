@@ -1,6 +1,7 @@
 //! What makes a camera output from the sensor's raw frame: a processor.
 //! `Cpu` is the software conversion; an output scaled from another one is
-//! made after the processors (`scale`).
+//! made after the processors (`scale`), but for the 2x2 average of a `Cpu`
+//! output, which it makes as it converts.
 
 use crate::arguments::Output;
 use crate::bands::{Conversion, Images, Measures};
@@ -18,8 +19,14 @@ pub const MEASURED_ROW_STEP: usize = 4;
 /// Makes an output from each raw frame.
 pub trait Processor: Send {
     /// `frame` as `development` says, into `images`, with what it asks to
-    /// measure.
+    /// measure. `images` holds an averaged image only when the processor
+    /// `averages_2x2`.
     fn develop(&mut self, frame: &RawFrame, development: &Development, images: Images) -> Measures;
+
+    /// Whether `develop` makes the 2x2 average of its image too.
+    fn averages_2x2(&self) -> bool {
+        false
+    }
 }
 
 /// How a frame is developed, as the settings stand when it comes.
@@ -87,6 +94,10 @@ impl Processor for Cpu {
                 &mut self.fallback_buffers,
             ),
         }
+    }
+
+    fn averages_2x2(&self) -> bool {
+        true
     }
 }
 

@@ -1,7 +1,8 @@
 //! A single colour camera: captures its raw RGGB frames, makes each of its
 //! outputs from them, demosaiced at the capture's size or each 2x2 cell into
 //! one pixel by the processor (`processor`), with grey-world white balance,
-//! or averaged from another output (`scale`), runs auto exposure on the
+//! or averaged from another output (`scale`), the 2x2 average of a CPU
+//! output as the processor converts it, runs auto exposure on the
 //! green of the RGGB cells as the image tones it, and writes one
 //! OUTPUT_FRAME record per output per frame on stdout, in the outputs'
 //! order, each frame converted in bands of rows on as many threads as
@@ -293,6 +294,23 @@ fn convert_frames(
         })
         .max()
         .unwrap_or(1);
+    // A CPU output's 2x2 average is made as the conversion writes its rows,
+    // while they are in cache; `scale` makes every other `from:` output.
+    let averaged_along: Vec<Option<usize>> = (processors.iter().enumerate())
+        .map(|(index, processor)| {
+            processor
+                .as_ref()
+                .filter(|processor| processor.averages_2x2())?;
+            (outputs.iter()).position(|spec| {
+                spec.source == Source::From(index) && spec.block(&outputs[index]) == (2, 2)
+            })
+        })
+        .collect();
+    let scaled_after: Vec<bool> = (outputs.iter().enumerate())
+        .map(|(index, spec)| {
+            matches!(spec.source, Source::From(_)) && !averaged_along.contains(&Some(index))
+        })
+        .collect();
     // Two sets of images alternate: one converts while the writer writes the other.
     let (mut images, mut spare) = (
         vec![Vec::new(); outputs.len()],
@@ -377,7 +395,7 @@ fn convert_frames(
                 settings.capture.auto_exposure && converted.is_multiple_of(EXPOSURE_EVERY_FRAMES);
             let threads = settings.threads.unwrap_or(default_threads);
             let mut measured = None;
-            for (processor, image) in processors.iter_mut().zip(&mut images) {
+            for (index, processor) in processors.iter_mut().enumerate() {
                 let Some(processor) = processor else { continue };
                 // The first output a processor makes measures the frame.
                 let development = Development {
@@ -388,11 +406,12 @@ fn convert_frames(
                     green_mean: measure_exposure && measured.is_none(),
                     threads,
                 };
-                let images = Images {
-                    rgb: image,
-                    averaged: None,
+                let (made, later) = images.split_at_mut(index + 1);
+                let target = Images {
+                    rgb: &mut made[index],
+                    averaged: averaged_along[index].map(|output| &mut later[output - index - 1]),
                 };
-                let measures = processor.develop(&raw, &development, images);
+                let measures = processor.develop(&raw, &development, target);
                 measured.get_or_insert(measures);
             }
             let measures = measured.expect("an output made by a processor");
@@ -414,10 +433,12 @@ fn convert_frames(
                     queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
             }
-            let scaling = Instant::now();
-            let threads = settings.threads.unwrap_or(default_threads);
-            scale_outputs(&outputs, threads, &mut images);
-            scaling_ns += scaling.elapsed().as_nanos();
+            if scaled_after.contains(&true) {
+                let scaling = Instant::now();
+                let threads = settings.threads.unwrap_or(default_threads);
+                scale_outputs(&outputs, &scaled_after, threads, &mut images);
+                scaling_ns += scaling.elapsed().as_nanos();
+            }
             let free = match spare.take() {
                 Some(images) => images,
                 None => {
@@ -437,11 +458,16 @@ fn convert_frames(
     }
 }
 
-/// Makes each of `outputs` scaled from another, in order, into its image
-/// of `images`, on `threads` threads.
-fn scale_outputs(outputs: &[OutputSpec], threads: usize, images: &mut [Vec<u8>]) {
+/// Makes each of `outputs` scaled from another that `scaled_after` marks,
+/// in order, into its image of `images`, on `threads` threads.
+fn scale_outputs(
+    outputs: &[OutputSpec],
+    scaled_after: &[bool],
+    threads: usize,
+    images: &mut [Vec<u8>],
+) {
     for (index, spec) in outputs.iter().enumerate() {
-        let Source::From(from) = spec.source else {
+        let (Source::From(from), true) = (spec.source, scaled_after[index]) else {
             continue;
         };
         let (made, rest) = images.split_at_mut(index);
@@ -1102,6 +1128,41 @@ mod tests {
     }
 
     #[test]
+    fn each_output_made_from_another_is_the_average_of_its_source() {
+        let from = |source, width, height| OutputSpec {
+            source: Source::From(source),
+            width,
+            height,
+        };
+        // The first 2x2 average of the CPU output is made as it converts,
+        // the others after it.
+        let outputs = [
+            FULL,
+            from(0, 12, 23),
+            from(0, 12, 23),
+            from(0, 12, 46),
+            from(1, 6, 23),
+        ];
+        let records = captured_as(&outputs, scenes(6, None), vec![(2, "rotation=180")]);
+        let images: Vec<_> = (0..outputs.len())
+            .map(|index| output_images(&records, index as u8))
+            .collect();
+        for (index, spec) in outputs.iter().enumerate().skip(1) {
+            let Source::From(source) = spec.source else {
+                unreachable!()
+            };
+            let block = spec.block(&outputs[source]);
+            assert_eq!(images[index].len(), 6);
+            for (image, source_image) in images[index].iter().zip(&images[source]) {
+                let mut averaged = Vec::new();
+                let width = outputs[source].width as usize;
+                scale::average_blocks(source_image, width, block, 1, &mut averaged);
+                assert!(*image == averaged, "output {index}");
+            }
+        }
+    }
+
+    #[test]
     fn each_output_a_processor_makes_has_the_image_of_its_own_size() {
         let half = OutputSpec {
             source: Source::Cpu(Output::Half),
@@ -1222,6 +1283,30 @@ mod tests {
                 .all(|line| line.contains(" us per write")),
             "{:?}",
             statistics.collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn the_statistics_give_no_scaling_time_when_the_conversion_averages() {
+        let half = OutputSpec {
+            source: Source::From(0),
+            width: WIDTH as u32 / 2,
+            height: HEIGHT as u32 / 2,
+        };
+        let (frames, mut input) = TestFrames::new(scenes(4, None), vec![]);
+        let records = Collected::default();
+        run_outputs(&[FULL, half], &frames, &mut input, &records, Duration::ZERO).unwrap();
+        let records = records.0.into_inner().unwrap();
+        let statistics: Vec<_> = (records.iter())
+            .filter_map(|record| {
+                let message = record.strip_prefix(b"\x02\x00last ")?;
+                Some(String::from_utf8(message.to_vec()).unwrap())
+            })
+            .collect();
+        assert!(statistics.len() > 1);
+        assert!(
+            (statistics.iter()).all(|line| line.contains(", 0 us per scaling")),
+            "{statistics:?}"
         );
     }
 }

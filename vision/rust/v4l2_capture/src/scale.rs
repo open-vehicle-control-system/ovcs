@@ -1,5 +1,6 @@
 //! An output scaled from another one, after the processors: each pixel the
-//! average of the block of the source's pixels it covers.
+//! average of the block of the source's pixels it covers. The CPU processor
+//! makes the 2x2 average of its own output as it converts (`bands::Images`).
 
 use std::panic;
 
