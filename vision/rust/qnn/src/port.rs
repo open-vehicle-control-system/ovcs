@@ -174,7 +174,8 @@ impl Clock {
 }
 
 /// Answers the requests `input` brings until it closes, each record with the reply `answer`
-/// gives it, written to `writer`; a record `answer` gives none for is skipped.
+/// gives it, written to `writer`; a record `answer` gives none for is skipped with a warning.
+/// `Err` is a failed read.
 pub fn serve<R: Read>(
     input: &mut R,
     writer: &Writer,
@@ -182,20 +183,27 @@ pub fn serve<R: Read>(
     mut answer: impl FnMut(&[u8], &mut Clock) -> Option<Vec<u8>>,
 ) -> Result<(), String> {
     let mut record = Vec::new();
-    while let Ok(Some(length)) = framing::read_length(input) {
+    let failed = |error: std::io::Error| format!("reading a request: {error}");
+    loop {
+        let Some(length) = framing::read_length(input).map_err(failed)? else {
+            return Ok(());
+        };
         clock.lap(clock.idle);
-        if !matches!(
-            framing::read_body_into(input, length, &mut record),
-            Ok(true)
-        ) {
-            break;
+        if !framing::read_body_into(input, length, &mut record).map_err(failed)? {
+            return Ok(());
         }
         clock.lap(clock.read);
         let Some(reply) = answer(&record, clock) else {
+            let skipped = format!(
+                "skipped a record of {} bytes that is no request",
+                record.len()
+            );
+            log(writer, LogLevel::Warning, &skipped);
             continue;
         };
+        // The host closed the Port: nothing reads a log either.
         if writer.write_record(&reply).is_err() {
-            break;
+            return Ok(());
         }
         clock.lap(clock.reply);
         clock.times.count_request();
@@ -203,7 +211,6 @@ pub fn serve<R: Read>(
             log(writer, LogLevel::Info, &line);
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -231,10 +238,10 @@ mod tests {
 
     // The records `serve` writes for `input`, each request answered with its bytes doubled,
     // one starting with 0 skipped.
-    fn served(input: &[u8]) -> (Result<(), String>, Vec<Vec<u8>>) {
+    fn served(mut input: impl Read) -> (Result<(), String>, Vec<Vec<u8>>) {
         let (writer, mut written) = writer();
         let mut clock = Clock::new("resize", "argmax", Instant::now());
-        let outcome = serve(&mut &input[..], &writer, &mut clock, |record, clock| {
+        let outcome = serve(&mut input, &writer, &mut clock, |record, clock| {
             clock.prepared();
             clock.finished();
             (record[0] != 0).then(|| record.iter().map(|byte| byte * 2).collect())
@@ -249,9 +256,47 @@ mod tests {
 
     #[test]
     fn each_request_is_answered_in_order_until_the_input_closes() {
-        let (outcome, records) = served(&framed(&[&[1, 2], &[0, 9], &[3]]));
+        let (outcome, records) = served(&framed(&[&[1, 2], &[3]])[..]);
         assert_eq!(outcome, Ok(()));
         assert_eq!(records, [vec![2, 4], vec![6]]);
+    }
+
+    #[test]
+    fn a_record_that_is_no_request_is_skipped_with_a_warning() {
+        let (outcome, records) = served(&framed(&[&[0, 9], &[3]])[..]);
+        assert_eq!(outcome, Ok(()));
+        let warning = log_record(
+            LogLevel::Warning,
+            "skipped a record of 2 bytes that is no request",
+        );
+        assert_eq!(records, [warning, vec![6]]);
+    }
+
+    #[test]
+    fn a_request_cut_short_ends_the_loop_as_a_closed_input_does() {
+        let cut = &framed(&[&[1, 2], &[3, 4, 5]])[..10];
+        let (outcome, records) = served(cut);
+        assert_eq!(outcome, Ok(()));
+        assert_eq!(records, [vec![2, 4]]);
+    }
+
+    // One request, then a read that fails.
+    struct Broken(&'static [u8]);
+
+    impl Read for Broken {
+        fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+            if self.0.is_empty() {
+                return Err(std::io::Error::other("input gone"));
+            }
+            self.0.read(buffer)
+        }
+    }
+
+    #[test]
+    fn a_failed_read_ends_the_loop_with_its_error() {
+        let (outcome, records) = served(Broken(&[0, 0, 0, 1, 7]));
+        assert_eq!(outcome, Err("reading a request: input gone".to_string()));
+        assert_eq!(records, [vec![14]]);
     }
 
     #[test]
