@@ -275,13 +275,11 @@ defmodule VisionCore.Detection.Backend.Hailo do
 
   def handle_call({:detect, sequence, image, reply_to}, _from, state) do
     {height, width, channels} = image_shape(image)
-    pixels = Nx.to_binary(image)
 
-    Port.command(
-      state.port,
-      <<@detect_request_tag, sequence::little-32, width::little-16, height::little-16, channels,
-        pixels::binary>>
-    )
+    Port.command(state.port, [
+      <<@detect_request_tag, sequence::little-32, width::little-16, height::little-16, channels>>,
+      Nx.to_binary(image)
+    ])
 
     timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
 

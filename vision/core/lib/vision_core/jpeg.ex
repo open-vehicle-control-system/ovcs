@@ -89,8 +89,7 @@ defmodule VisionCore.Jpeg do
       when channels in [1, 3] and byte_size(pixels) == width * height * channels do
     call(
       options,
-      <<@encode, width::little-16, height::little-16, channels, quality(options),
-        pixels::binary>>,
+      [<<@encode, width::little-16, height::little-16, channels, quality(options)>>, pixels],
       shared_frame(options)
     )
   end

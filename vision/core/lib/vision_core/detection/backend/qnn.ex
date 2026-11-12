@@ -244,11 +244,10 @@ defmodule VisionCore.Detection.Backend.Qnn do
   def handle_call({:detect, sequence, image, reply_to}, _from, state) do
     {height, width, channels} = image_shape(image)
 
-    Port.command(
-      state.port,
-      <<@detect_request_tag, sequence::little-32, width::little-16, height::little-16, channels,
-        Nx.to_binary(image)::binary>>
-    )
+    Port.command(state.port, [
+      <<@detect_request_tag, sequence::little-32, width::little-16, height::little-16, channels>>,
+      Nx.to_binary(image)
+    ])
 
     timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
     {:reply, :ok, %{state | inflight: %{sequence: sequence, reply_to: reply_to, timer: timer}}}
