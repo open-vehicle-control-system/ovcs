@@ -1,9 +1,18 @@
 //! The class of each cell of the model's output.
 
+use detection::bands;
+
 /// Each cell's class into `labels`: the index of the highest of its `classes` scores, the
 /// lowest index on a tie. `scores` holds the cells' scores one cell after the other, as 8-bit
-/// codes of a positive scale, which rank as the values they stand for.
-pub fn argmax_into(scores: &[u8], classes: usize, labels: &mut [u8]) {
+/// codes of a positive scale, which rank as the values they stand for. The cells are split
+/// into up to `threads` bands.
+pub fn argmax_into(scores: &[u8], classes: usize, labels: &mut [u8], threads: usize) {
+    bands::in_row_bands(scores, classes, labels, 1, threads, |scores, labels| {
+        argmax_cells(scores, classes, labels);
+    });
+}
+
+fn argmax_cells(scores: &[u8], classes: usize, labels: &mut [u8]) {
     for (cell, label) in scores.chunks_exact(classes).zip(labels.iter_mut()) {
         let mut best = 0;
         for (class, &score) in cell.iter().enumerate().skip(1) {
@@ -21,7 +30,7 @@ mod tests {
 
     fn argmax(scores: &[u8], classes: usize) -> Vec<u8> {
         let mut labels = vec![u8::MAX; scores.len() / classes];
-        argmax_into(scores, classes, &mut labels);
+        argmax_into(scores, classes, &mut labels, 1);
         labels
     }
 
@@ -69,5 +78,25 @@ mod tests {
         scores[18] = 200;
         scores[19 + 7] = 200;
         assert_eq!(argmax(&scores, 19), [18, 7]);
+    }
+
+    #[test]
+    fn one_to_four_threads_give_the_same_labels() {
+        let (cells, classes) = (37, 19);
+        let mut state = 0x1234_5678u32;
+        let scores: Vec<u8> = (0..cells * classes)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            })
+            .collect();
+        let labels = argmax(&scores, classes);
+        for threads in 2..=4 {
+            let mut threaded = vec![u8::MAX; cells];
+            argmax_into(&scores, classes, &mut threaded, threads);
+            assert_eq!(threaded, labels, "on {threads} threads");
+        }
     }
 }

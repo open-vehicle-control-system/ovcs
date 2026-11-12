@@ -30,7 +30,7 @@ use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 /// Room in the request pipe for a whole request, which the BEAM then writes in one go.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
 
-/// Threads the resize splits its rows across.
+/// Threads the resize and the argmax each split their rows across.
 const THREADS: usize = 3;
 
 fn log(writer: &Writer, level: LogLevel, message: &str) {
@@ -186,7 +186,7 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
                             log(writer, LogLevel::Info, &message);
                         }
                         mark = Instant::now();
-                        labels::argmax_into(&scores, classes, &mut labels);
+                        labels::argmax_into(&scores, classes, &mut labels, THREADS);
                         stage_times.lap("argmax", &mut mark);
                         labels_record(
                             request.sequence,
