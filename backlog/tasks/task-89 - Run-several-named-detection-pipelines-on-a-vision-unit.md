@@ -20,12 +20,12 @@ Step 2 of TASK-87: pipelines named in the composer, each with its own supervisor
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A composer declares several detector components, each with a `:name`; each runs under its own supervisor, backend and model, and one crashing or failing to start leaves the others running
-- [ ] #2 A detector without `:name` is named `detection` and keeps today's process names, parameter ids, `"detections"` channel, exporter output and ROS 2 topics
-- [ ] #3 A named pipeline's parameters, channel, exporter output and ROS 2 topics carry its name
-- [ ] #4 A second pipeline on the Hailo-8 fails to start with its reason logged; two QNN pipelines keep their context binaries apart
-- [ ] #5 The status's `npu` covers every detection pipeline's backend
-- [ ] #6 The dashboard draws each pipeline as its own flow and each pipeline's boxes on the left preview
+- [x] #1 A composer declares several detector components, each with a `:name`; each runs under its own supervisor, backend and model, and one crashing or failing to start leaves the others running
+- [x] #2 A detector without `:name` is named `detection` and keeps today's process names, parameter ids, `"detections"` channel, exporter output and ROS 2 topics
+- [x] #3 A named pipeline's parameters, channel, exporter output and ROS 2 topics carry its name
+- [x] #4 A second pipeline on the Hailo-8 fails to start with its reason logged; two QNN pipelines keep their context binaries apart
+- [x] #5 The status's `npu` covers every detection pipeline's backend
+- [x] #6 The dashboard draws each pipeline as its own flow and each pipeline's boxes on the left preview
 <!-- AC:END -->
 
 ## Implementation Plan

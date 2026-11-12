@@ -1,8 +1,9 @@
 ---
 id: TASK-91
 title: Detect on a camera source with the stereo depth reprojected
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11 19:00'
 labels:
   - vision
@@ -21,11 +22,11 @@ Step 4 of TASK-87: a detection pipeline whose source is a camera of its own (TAS
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A detector with `source: {:camera, name}` infers on that camera's frames, shrunk whole to the model's input
-- [ ] #2 Its boxes take their distance from the stereo pair captured closest in time, reprojected through the camera's calibration and pose; a box with no depth inside it is kept with `nil` 3D fields and its bearing
-- [ ] #3 The camera publishes its image, `camera_info` and a `set_camera_info` service on ROS 2; the pipeline publishes `Detection3DArray`, markers and `Detection2DArray` in the camera's frame
-- [ ] #4 The dashboard draws the pipeline's boxes on the camera's preview, without a distance where there is none
-- [ ] #5 A documented procedure produces the camera's pose relative to the stereo left camera
+- [x] #1 A detector with `source: {:camera, name}` infers on that camera's frames, shrunk whole to the model's input
+- [x] #2 Its boxes take their distance from the stereo pair captured closest in time, reprojected through the camera's calibration and pose; a box with no depth inside it is kept with `nil` 3D fields and its bearing
+- [x] #3 The camera publishes its image, `camera_info` and a `set_camera_info` service on ROS 2; the pipeline publishes `Detection3DArray`, markers and `Detection2DArray` in the camera's frame
+- [x] #4 The dashboard draws the pipeline's boxes on the camera's preview, without a distance where there is none
+- [x] #5 A documented procedure produces the camera's pose relative to the stereo left camera
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -54,13 +55,13 @@ Review focus, each pinned by a test in the owning task:
 - Tests: pose loading (valid, missing, malformed), the exporter's camera topics and service, the script's composition of the rectification rotation on a synthetic case.
 
 #### Task 2: depth reprojection and placement.
-- `VisionCore.Detection.Reprojection.project(pair :: Pair.t(), calibration :: CameraCalibration.t(), pose :: Pose.t(), stride :: pos_integer()) :: %{u: Nx.Tensor.t(), v: Nx.Tensor.t(), z: Nx.Tensor.t()}`: every `stride`-th depth pixel with a valid depth, unprojected with the rectified left intrinsics, moved by the pose, kept when `z > 0`, projected with the camera's K and distortion: `plumb_bob` as OpenCV's `projectPoints`, `equidistant` as OpenCV's `fisheye::projectPoints` (θ = atan2(r, z), θ_d = θ (1 + k1 θ² + k2 θ⁴ + k3 θ⁶ + k4 θ⁸)), chosen by the calibration's `distortion_model`; any other model is refused at start. Default stride 2.
+- `VisionCore.Detection.Reprojection.project(pair :: Pair.t(), calibration :: CameraCalibration.t(), pose :: Pose.t(), stride :: pos_integer()) :: %{count: non_neg_integer(), points: binary()}` (native-endian f32 `u, v, z` triples; Nx cannot hold the empty result a pair with nothing in view gives), given a calibration or a lens prepared once by `lens/1`: every `stride`-th depth pixel with a valid depth, unprojected with the rectified left intrinsics, moved by the pose, kept when `z > 0`, projected with the camera's K and distortion: `plumb_bob` as OpenCV's `projectPoints`, `equidistant` as OpenCV's `fisheye::projectPoints` (θ = atan2(r, z), θ_d = θ (1 + k1 θ² + k2 θ⁴ + k3 θ⁶ + k4 θ⁸)), chosen by the calibration's `distortion_model`; any other model is refused at start. Default stride 2.
 - `VisionCore.Detection.Fusion`: a box's distance on a camera source is the median of the projected points' `z` inside its central `depth_sample_fraction`; position and size unprojected with the camera's K, as for the stereo source.
 - Tests against OpenCV (`evision`, as the stereo stages are tested): projection of known points with a non-trivial pose and distortion, for both models; a box over a plane at a known distance gets that distance; a fisheye point beyond 90° off-axis but in front of the camera (`z > 0` is not the test for a fisheye: θ < the lens's half field) projects, one behind it does not.
 - `scripts/camera_pose.py` and the bearing of a detection without distance use the same model: OpenCV's `fisheye.stereoCalibrate` and `fisheye.undistortPoints` for `equidistant`.
 
 #### Task 3: the camera source in the detection pipeline.
-- Detector option `source`: `:stereo` (default) or `{:camera, name}`. With a camera source, `Pipeline` subscribes to the camera's frames and to the stereo pairs, keeps the last 4 pairs, matches each submitted frame by capture time, submits the frame's RGB tensor to the backend (the backends shrink it whole to the model's input, letterboxed), and places boxes with `Reprojection` and `Fusion`; outlines are the boxes' rectangles in the camera's pixels (no distortion pass); `:bearing` from the box centre through K.
+- Detector option `source`: `:stereo` (default) or `{:camera, name}`. With a camera source, `Pipeline` subscribes to the camera's frames and to the stereo pairs, keeps the pairs captured within `pair_wait_ms` of the newest without their images, queues the results waiting for their pair in capture order (bounded; new frames are skipped when it is full), matches each submitted frame by capture time, submits the frame's RGB tensor to the backend (the backends shrink it whole to the model's input, letterboxed), and places boxes with `Reprojection` and `Fusion`; outlines are the boxes' rectangles in the camera's pixels (no distortion pass); `:bearing` from the box centre through K.
 - Backends `Qnn`, `Hailo` and `Stub` accept a `{h, w, 3}` image; QNN's model takes RGB, so a grey `{h, w}` image is expanded to 3 channels as today and an RGB one is passed as is.
 - `ROS 2`: a camera-source pipeline publishes `Detection3DArray` and markers for detections with a distance and `vision_msgs/Detection2DArray` on `<prefix>/<name>/detections_2d` for those without, all in the camera's `frame_id`, and its image annotations on `<prefix>/<name>/annotations` over the camera's image.
 - API and dashboard: the exporter controller's output for a pipeline names its `source` (`"left"` or the camera's name); the dashboard draws each pipeline's boxes on its source's preview; a detection without a distance is captioned without one.
@@ -69,3 +70,9 @@ Review focus, each pinned by a test in the owning task:
 
 Checks before review: `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in `vision/core`, `vision/api`, `vehicles/ovcs1`; the dashboard's tests; `elixir scripts/check_docs.exs`.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+The waits for a stereo pair are shared with segmentation: `CameraDepth` keeps the pairs, `DepthQueue` queues the results, and the newest frame arriving while one is in flight is held and submitted on its reply. Distances on the unit wait for the `:center` camera's pose.
+<!-- SECTION:NOTES:END -->

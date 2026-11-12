@@ -1,8 +1,9 @@
 ---
 id: TASK-92
 title: Segment the road on a camera source
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@claude'
 created_date: '2026-11-11 19:00'
 labels:
   - vision
@@ -22,11 +23,11 @@ The model is FFNet-122NS-LowRes from Qualcomm AI Hub, w8a8 for QNN: input `image
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A `:qnn_segmenter` component runs a named segmentation pipeline on a camera source, on the Hexagon
-- [ ] #2 Its label image covers the camera's image band the model sees, one Cityscapes class per cell
-- [ ] #3 It publishes the label image and the road and off-road clouds, in the stereo left frame, on ROS 2
-- [ ] #4 The dashboard overlays the classes on the camera's preview
-- [ ] #5 `mise run fetch-models` fetches the model with its licence printed
+- [x] #1 A `:qnn_segmenter` component runs a named segmentation pipeline on a camera source, on the Hexagon
+- [x] #2 Its label image covers the camera's image band the model sees, one Cityscapes class per cell
+- [x] #3 It publishes the label image and the road and off-road clouds, in the stereo left frame, on ROS 2
+- [x] #4 The dashboard overlays the classes on the camera's preview
+- [x] #5 `mise run fetch-models` fetches the model with its licence printed
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -49,7 +50,7 @@ Review focus, each pinned by a test in the owning task:
 
 #### Task 1: `qnn_segment`.
 - `vision/rust/qnn`: a library crate holding today's `qnn_detect/src/qnn.rs`; `qnn_detect` uses it unchanged in behaviour.
-- `vision/rust/qnn_segment`: a Port like `qnn_detect` (same framing, logs and stdin protocol), reading the model's input and output shapes from the context; for each submitted RGB frame and band, resizes the band to the input (bilinear), runs the model, takes the argmax per cell and replies `<<7, sequence::little-32, width::little-16, height::little-16, labels>>`, `labels` being `width * height` class ids.
+- `vision/rust/qnn_segment`: a Port like `qnn_detect` (same framing, logs and stdin protocol), reading the model's input and output shapes from the context; for each submitted RGB frame and band, resizes the band to the input (bilinear), runs the model, takes the argmax per cell and replies `<<7, sequence::little-32, width::little-16, height::little-16, labels, inference_us::little-32>>`, `labels` being `width * height` class ids and `inference_us` the accelerator time measured as `qnn_detect` measures it (TASK-95), absent when it could not be measured.
 - Rust tests: band resize on a known image, argmax with quantised scores, the record, the shape check.
 
 #### Task 2: the segmentation unit in the core.
@@ -69,8 +70,24 @@ Review focus, each pinned by a test in the owning task:
 - `VisionApiWeb` channel `segmentation:<name>` pushing each result at most `max_hz` (5) a second as a binary event: the band and the label image.
 - The dashboard draws the label image over the source camera's preview, each class in the Cityscapes palette at 40 % opacity, road highlighted; a legend lists the classes present.
 - `scripts/models.tsv`: `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`, sha256 `96e5a015e792c04526cb77ea48d46cfd12b3da390df243725ac719660f270f7c`, licence `BSD-3-Clause code (Qualcomm FFNet); weights trained on Cityscapes, non-commercial use only`, url `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/ffnet_122ns_lowres/releases/v0.66.0/ffnet_122ns_lowres-qnn_dlc-w8a8.zip`, member `ffnet_122ns_lowres-qnn_dlc-w8a8/ffnet_122ns_lowres.dlc`.
-- Docs: `docs/vision/README.md` (segmentation pipelines, the model and its licence), `docs/vision/api.md` (`segmentation:<name>`), `docs/vision/data_flow.md`.
+- Docs: `docs/vision/README.md` (segmentation pipelines, the model and its licence; the QNN bindings are the `qnn` crate's), `docs/vision/api.md` (`segmentation:<name>`), `docs/vision/data_flow.md`, and the lists of Ports and crates that now miss `qnn` and `qnn_segment`: `vision/core/README.md`, `docs/vision/compute.md` (the Port table and what the Makefile builds for the VENTUNO Q), `docs/repository.md` (the `rust/` line).
 - Tests: channel, `Previews.test.jsx` overlay, `elixir scripts/check_docs.exs`.
 
 Checks before review: `cargo test`, `cargo clippy -- -D warnings` in `vision/rust`; `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in `vision/core`, `vision/api`, `vehicles/ovcs1`; the dashboard's tests; `elixir scripts/check_docs.exs`.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decisions taken during the work:
+- A point's cell follows OpenCV's pixel-centre convention: `(⌊(u − x + ½)·W/w⌋, ⌊(v − y + ½)·H/h⌋)`.
+- On ROS 2 the label image has a sibling `<prefix>/<name>/camera_info` (image_transport's rule) whose intrinsics are the camera's mapped to the label grid, `K' = S·K`, so a consumer can project points into the labels; empty when the camera has no usable calibration.
+- The road and off-road clouds are stamped with their stereo pair's capture time, the labels and their camera info with the frame's; a consumer syncing them needs an approximate-time policy.
+- The dashboard acks each grid it draws; the channel holds at most one waiting grid per client. Road classes are drawn at 60 % opacity, the others at 40 %.
+- The waits for a stereo pair are shared with detection (`CameraDepth`, `DepthQueue`, TASK-91).
+
+Follow-ups: TASK-99 (QNN Port reopen), TASK-101 (unknown detection names), TASK-102 (class names on ROS 2).
+
+Checked on the unit: pending (the VENTUNO was off).
+On OVCS1 the pipeline is named `:scene`, as it labels the whole scene; its clouds are still `road` and `off_road`.
+<!-- SECTION:NOTES:END -->

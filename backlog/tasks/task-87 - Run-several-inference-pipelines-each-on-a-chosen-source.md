@@ -45,7 +45,7 @@ This is a parent task. The work ships as the sequence of tasks under Plan, each 
 
 **Depth on a camera source.** The stereo depth map's points, in the rectified left optical frame, are transformed by the camera's pose relative to that frame and projected through the camera's intrinsics and distortion. A box's distance is the median of the projected points that fall inside its central fraction, as `VisionCore.Detection.Fusion` takes it from the depth map today; a box with none is kept with `nil` 3D fields. Only the points are projected, never a dense depth image: the boxes and clouds need nothing more.
 
-**Road segmentation.** The backend returns a label image, one class id per pixel, in the submitted image's pixels. Each stereo point reprojected into the camera's image takes the class of the pixel it lands on. The pipeline publishes the label image and two point clouds in the stereo left frame, road points and off-road points, so a costmap can mark the second and clear with the first. Which classes count as road is a pipeline option. The backend is QNN, on the Hexagon: `qnn_detect` replies with boxes only, so segmentation needs its own Port or a second output mode of it.
+**Road segmentation.** The backend returns a grid of class ids over a band of the submitted image. Each stereo point reprojected into the camera's image takes the class of the cell it lands in. The pipeline publishes the label image and two point clouds in the stereo left frame, road points and off-road points, so a costmap can mark the second and clear with the first. Which classes count as road is a pipeline option. The backend is QNN, on the Hexagon: `qnn_detect` replies with boxes only, so segmentation needs its own Port or a second output mode of it.
 
 **ROS 2.** Detections with a distance go out as today, under the pipeline's topics. Detections without one go out as a `vision_msgs/Detection2DArray` on `<prefix>/<name>/detections_2d`, in the source camera's frame. A segmentation pipeline publishes its label image as a `sensor_msgs/Image` (`mono8`, class ids) and its clouds as `sensor_msgs/PointCloud2`. A camera source publishes its image and `camera_info`, with a `set_camera_info` service, as each stereo side does.
 
@@ -55,7 +55,7 @@ This is a parent task. The work ships as the sequence of tasks under Plan, each 
 
 **IMX477 on the VENTUNO Q.** OVCS1's `/boot/cameras.cfg` already names the IMX477 on Camera 2 (`imx296-imx296-imx477`), which only shows the configuration string exists: whether its driver probes on this board is the first thing to check. It then needs its CSIPHY routing in `VisionCore.Camera.Camss`, which routes only the stereo pair's two connectors, and its format in `v4l2_capture`, which knows the IMX296 and IMX708. It captures in its 2×2 binned mode, 2028 × 1520, demosaiced to colour, which loses nothing once shrunk to the model's input.
 
-**Calibration.** The camera source needs its intrinsics and its pose relative to the stereo left camera. Its intrinsics are committed through its own `set_camera_info` service, as each stereo side's. Its pose comes from a stereo calibration of the left camera and the camera source, run under their own camera names so it never overwrites the pair's `camera_info`: with `cameracalibrator` if it accepts two cameras of different sizes and fields of view, otherwise with an offline OpenCV `stereoCalibrate` on fixed intrinsics. The pose is stored in the camera source's calibration file, expressed in the rectified left frame by composing the left camera's rectification rotation.
+**Calibration.** The camera source needs its intrinsics and its pose relative to the stereo left camera. Its intrinsics are committed through its own `set_camera_info` service, as each stereo side's. Its pose comes from synchronised chessboard pairs of the left camera and the camera source (`VisionCore.Camera.PoseCapture`), solved offline by `scripts/camera_pose.py` with OpenCV's `stereoCalibrate` (or `fisheye.stereoCalibrate`) on fixed intrinsics. The pose is stored in a pose file of its own, the `:camera` component's `pose:` option, expressed in the rectified left frame by composing the left camera's rectification rotation.
 
 ### Options considered
 
@@ -90,10 +90,16 @@ Steps 1, 2 and 3 depend on nothing. Step 4 depends on 2; it is developed on the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 The status bar shows `NPU` with the accelerator's kind, and `none` on a unit without one; the status JSON carries it as `npu`
-- [ ] #2 A composer declares several named pipelines, each with its kind, source, backend and model, and a failing pipeline leaves the stereo unit and the others running
-- [ ] #3 A unit with one unnamed detector keeps its parameter ids, its `"detections"` channel and its ROS 2 topics
-- [ ] #4 A detection pipeline on a camera source places boxes with the reprojected stereo depth, and publishes those outside the stereo view without a distance
-- [ ] #5 A road segmentation pipeline on a camera source publishes its label image and its road and off-road clouds on ROS 2, and the dashboard overlays it on the camera's preview
-- [ ] #6 The OVCS1 reference vehicle runs detection and road segmentation on an IMX477 on the VENTUNO Q's Camera 2, and its stereo pair computes depth only
+- [x] #1 The status bar shows `NPU` with the accelerator's kind, and `none` on a unit without one; the status JSON carries it as `npu`
+- [x] #2 A composer declares several named pipelines, each with its kind, source, backend and model, and a failing pipeline leaves the stereo unit and the others running
+- [x] #3 A unit with one unnamed detector keeps its parameter ids, its `"detections"` channel and its ROS 2 topics
+- [x] #4 A detection pipeline on a camera source places boxes with the reprojected stereo depth, and publishes those outside the stereo view without a distance
+- [x] #5 A road segmentation pipeline on a camera source publishes its label image and its road and off-road clouds on ROS 2, and the dashboard overlays it on the camera's preview
+- [x] #6 The OVCS1 reference vehicle runs detection and road segmentation on an IMX477 on the VENTUNO Q's Camera 2, and its stereo pair computes depth only
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Checked on the OVCS1 unit at 30 fps: every stereo and `:center` stream, `:objects` and `:scene` at 30 a second. Distances and clouds on a camera source wait for the camera's measured pose.
+<!-- SECTION:NOTES:END -->
