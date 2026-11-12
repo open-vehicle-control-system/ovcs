@@ -79,6 +79,15 @@ defmodule Ovcs1.VisionComposerTest do
     assert camera[:frame_id] == "hq_optical"
   end
 
+  test "the preview shows the HQ camera's half-size output, ROS 2 its full one" do
+    config = Ovcs1.Vision.Composer.config(:target)
+    exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
+
+    assert config.preview[:outputs] == [hq: :inference]
+    assert VisionCore.Camera.Unit.output_key(config, :hq, config.preview[:outputs][:hq])
+    refute exporter[:cameras][:outputs]
+  end
+
   test "the HQ camera's calibration and pose sit beside the stereo pair's" do
     config = Ovcs1.Vision.Composer.config(:target)
     stereo = Keyword.fetch!(config.components, :stereo)
