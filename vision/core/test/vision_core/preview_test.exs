@@ -97,6 +97,61 @@ defmodule VisionCore.PreviewTest do
       for skipped <- 2..5, do: refute_received({:encoded, ^skipped})
     end
 
+    # Encodes the left frames at once, and each hq frame once the test sends the encode :release.
+    defp held_hq_encoder(test_pid) do
+      fn
+        %Frame{label: "hq", rgb: <<sequence>>} ->
+          send(test_pid, {:encoding, self(), sequence})
+
+          receive do
+            :release -> {:ok, "hq#{sequence}"}
+          end
+
+        %Frame{jpeg: jpeg} ->
+          {:ok, jpeg}
+      end
+    end
+
+    test "a slow stream does not delay another's" do
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe(:left)
+
+      publish_hq(hq_frame(1))
+      assert_receive {:encoding, encode, 1}, 500
+      feed_left(1)
+
+      assert_receive {:vision_preview, :left, "1"}, 500
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+    end
+
+    test "one frame a stream encodes at a time, the newest waiting, sent though newer came" do
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      publish_hq(hq_frame(1))
+      assert_receive {:encoding, encode, 1}, 500
+
+      for sequence <- 2..4, do: publish_hq(hq_frame(sequence))
+      :sys.get_state(Preview)
+      refute_receive {:encoding, _encode, _sequence}, 100
+
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+      Preview.ack(:hq)
+
+      assert_receive {:encoding, encode, 4}, 500
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq4"}, 500
+      refute_received {:encoding, _encode, _skipped}
+    end
+
     test "a stream's frames reach only its subscribers" do
       start_supervised!({Preview, config: @camera_config, max_hz: 50})
       :ok = Preview.subscribe(:left)
@@ -193,6 +248,35 @@ defmodule VisionCore.PreviewTest do
     assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
     assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _rest::binary>>}, 1_000
     assert Process.whereis(VisionCore.Jpeg) == nil
+  end
+
+  test "the previews and an exporter encoding back to back share one Port, neither starving" do
+    path = Application.get_env(:vision_core, :jpeg_codec_path)
+    on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)
+    fake_codec = Path.expand("../support/slow_jpeg_codec.py", __DIR__)
+    Application.put_env(:vision_core, :jpeg_codec_path, fake_codec)
+    start_supervised!({VisionCore.Jpeg, name: :shared_codec, ports: 1})
+    test_pid = self()
+
+    # Each of its encodes takes the fake codec half a second, answered "slow".
+    export = fn ->
+      reply = VisionCore.Jpeg.encode(<<1>>, 1, 1, 1, codec: :shared_codec)
+      send(test_pid, {:exported, reply})
+    end
+
+    start_supervised!({Task, fn -> Stream.repeatedly(export) |> Stream.run() end})
+    start_supervised!({Preview, config: @config, max_hz: 50, jpeg_codec: :shared_codec})
+    :ok = Preview.subscribe(:left)
+
+    for sequence <- 1..2 do
+      frame = %Frame{label: "left", width: 1, height: 1, capture_ns: sequence, grey: <<0>>}
+      GenServer.cast(Preview, {:camera_frame, frame})
+      assert_receive {:vision_preview, :left, "fast"}, 1_500
+      Preview.ack(:left)
+    end
+
+    assert_receive {:exported, {:ok, "slow"}}, 1_500
+    assert_receive {:exported, {:ok, "slow"}}, 1_500
   end
 
   test "preview delivers only the latest frame to a slow subscriber" do

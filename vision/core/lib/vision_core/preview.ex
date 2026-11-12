@@ -27,6 +27,13 @@ defmodule VisionCore.Preview do
   subscriber is due it, at the preview's rate, so a frame of several
   megapixels costs an encode a preview, not one per frame.
 
+  Each stream encodes in a task of its own, one frame at a time, so a
+  slow stream delays only itself. A frame that comes during an encode
+  waits, replaced by any newer one; the encoded frame still goes to the
+  subscribers due one, and the waiting frame is encoded when one is due
+  again. Each stream holds its newest frame and at most one in its
+  encode.
+
   Started after the components in `VisionCore.Supervisor`; without a
   `:stereo` or `:camera` component it runs with nothing to preview.
 
@@ -142,6 +149,7 @@ defmodule VisionCore.Preview do
        streams: streams,
        latest: Map.new(streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded: Map.new(streams, &{&1, {0, nil}}),
+       encoding: %{},
        depth_failure_logged: false,
        subscribers: %{}
      }}
@@ -249,6 +257,12 @@ defmodule VisionCore.Preview do
     end
   end
 
+  def handle_info({reference, result}, state) when is_map_key(state.encoding, reference) do
+    Process.demonitor(reference, [:flush])
+    {{stream, sequence}, encoding} = Map.pop(state.encoding, reference)
+    {:noreply, encoded(%{state | encoding: encoding}, stream, sequence, result)}
+  end
+
   def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
     subscribers =
       Map.reject(state.subscribers, fn {_key, subscriber} ->
@@ -266,13 +280,15 @@ defmodule VisionCore.Preview do
         %{sequence: latest.sequence + 1, frame: frame}
       end)
 
-    state.subscribers
-    |> Map.keys()
-    |> Enum.filter(&match?({_pid, ^stream}, &1))
+    state
+    |> subscriber_keys(stream)
     |> Enum.reduce(state, &deliver(&2, &1))
   end
 
-  defp deliver(state, {pid, stream} = key) do
+  defp subscriber_keys(state, stream),
+    do: state.subscribers |> Map.keys() |> Enum.filter(&match?({_pid, ^stream}, &1))
+
+  defp deliver(state, {_pid, stream} = key) do
     subscriber = state.subscribers[key]
     latest = state.latest[stream]
     now_ms = System.monotonic_time(:millisecond)
@@ -282,58 +298,108 @@ defmodule VisionCore.Preview do
           subscriber.timer != nil ->
         state
 
-      subscriber.sent_ms != nil and now_ms - subscriber.sent_ms < state.interval_ms ->
+      not interval_elapsed?(state, subscriber, now_ms) ->
         wait_ms = state.interval_ms - (now_ms - subscriber.sent_ms)
         timer = Process.send_after(self(), {:deliver, key}, wait_ms)
         put_in(state.subscribers[key].timer, timer)
 
       true ->
-        {jpeg, state} = jpeg(state, stream)
-        if jpeg, do: send(pid, {:vision_preview, stream, jpeg})
+        # Each stream's latest frame is encoded once, however many subscribers it goes to.
+        case state.encoded[stream] do
+          {sequence, jpeg} when sequence == latest.sequence ->
+            send_frame(state, key, sequence, jpeg, now_ms)
 
-        put_in(state.subscribers[key], %{
-          subscriber
-          | sequence: latest.sequence,
-            awaiting_ack: jpeg != nil,
-            sent_ms: if(jpeg, do: now_ms, else: subscriber.sent_ms)
-        })
+          _stale ->
+            encode(state, stream)
+        end
     end
   end
 
-  # Each stream's latest frame is encoded once, however many subscribers it goes to.
-  defp jpeg(state, stream) do
-    %{sequence: sequence} = state.latest[stream]
+  defp interval_elapsed?(state, subscriber, now_ms),
+    do: subscriber.sent_ms == nil or now_ms - subscriber.sent_ms >= state.interval_ms
 
-    case state.encoded[stream] do
-      {^sequence, jpeg} ->
-        {jpeg, state}
+  # A `nil` jpeg, a frame that failed to encode, is skipped.
+  defp send_frame(state, {pid, stream} = key, sequence, jpeg, now_ms) do
+    if jpeg, do: send(pid, {:vision_preview, stream, jpeg})
 
-      _stale ->
-        {jpeg, state} = encode(state, stream)
-        {jpeg, put_in(state.encoded[stream], {sequence, jpeg})}
-    end
-  end
-
-  defp encode(state, :depth) do
-    case encode_depth_safely(state, state.latest.depth.frame) do
-      {:ok, jpeg} ->
-        {jpeg, %{state | depth_failure_logged: false}}
-
-      {:error, reason} ->
-        unless state.depth_failure_logged,
-          do: Logger.error("#{__MODULE__} cannot encode the depth preview: #{reason}")
-
-        {nil, %{state | depth_failure_logged: true}}
-    end
+    update_in(state.subscribers[key], fn subscriber ->
+      %{
+        subscriber
+        | sequence: sequence,
+          awaiting_ack: jpeg != nil,
+          sent_ms: if(jpeg, do: now_ms, else: subscriber.sent_ms)
+      }
+    end)
   end
 
   # Encoded on send: a grey frame costs an encode, and most are replaced unsent.
   defp encode(state, stream) do
-    case state.frame_encoder.(state.latest[stream].frame) do
-      {:ok, jpeg} -> {jpeg, state}
-      {:error, _reason} -> {nil, state}
+    if Enum.any?(state.encoding, &match?({_reference, {^stream, _sequence}}, &1)) do
+      state
+    else
+      %{sequence: sequence, frame: frame} = state.latest[stream]
+      encoder = encoder(state, stream)
+      task = Task.async(fn -> encode_safely(encoder, frame) end)
+      put_in(state.encoding[task.ref], {stream, sequence})
     end
   end
+
+  defp encoder(%{depth_encoder: nil, depth_range_m: range_m, jpeg_codec: jpeg_codec}, :depth),
+    do: depth_encoder(&encode_depth(&1, range_m, jpeg_codec))
+
+  defp encoder(state, :depth), do: depth_encoder(state.depth_encoder)
+  defp encoder(state, _stream), do: state.frame_encoder
+
+  defp depth_encoder(encode) do
+    fn pair ->
+      case encode.(pair) do
+        jpeg when is_binary(jpeg) -> {:ok, jpeg}
+        other -> {:error, inspect(other)}
+      end
+    end
+  end
+
+  defp encode_safely(encode, frame) do
+    encode.(frame)
+  rescue
+    exception -> {:error, Exception.message(exception)}
+  catch
+    :exit, reason -> {:error, Exception.format_exit(reason)}
+  end
+
+  # The encoded frame goes to each subscriber due one, though a newer frame may wait.
+  defp encoded(state, stream, sequence, result) do
+    {jpeg, state} = encode_result(state, stream, result)
+    state = put_in(state.encoded[stream], {sequence, jpeg})
+    now_ms = System.monotonic_time(:millisecond)
+
+    state
+    |> subscriber_keys(stream)
+    |> Enum.reduce(state, fn key, state ->
+      subscriber = state.subscribers[key]
+
+      state =
+        if sequence > subscriber.sequence and not subscriber.awaiting_ack and
+             subscriber.timer == nil and interval_elapsed?(state, subscriber, now_ms),
+           do: send_frame(state, key, sequence, jpeg, now_ms),
+           else: state
+
+      deliver(state, key)
+    end)
+  end
+
+  defp encode_result(state, :depth, {:ok, jpeg}),
+    do: {jpeg, %{state | depth_failure_logged: false}}
+
+  defp encode_result(state, :depth, {:error, reason}) do
+    unless state.depth_failure_logged,
+      do: Logger.error("#{__MODULE__} cannot encode the depth preview: #{reason}")
+
+    {nil, %{state | depth_failure_logged: true}}
+  end
+
+  defp encode_result(state, _stream, {:ok, jpeg}), do: {jpeg, state}
+  defp encode_result(state, _stream, _error), do: {nil, state}
 
   # The depth range is the unit's, shared by every dashboard: each depth subscriber hears a new one.
   defp announce_depth_range(state) do
@@ -355,15 +421,4 @@ defmodule VisionCore.Preview do
     do: %{state | max_hz: max_hz, interval_ms: div(1_000, max_hz)}
 
   defp put_option(state, :depth_range_m, range_m), do: %{state | depth_range_m: range_m * 1.0}
-
-  defp encode_depth_safely(state, pair) do
-    encode = state.depth_encoder || (&encode_depth(&1, state.depth_range_m, state.jpeg_codec))
-
-    case encode.(pair) do
-      jpeg when is_binary(jpeg) -> {:ok, jpeg}
-      other -> {:error, inspect(other)}
-    end
-  rescue
-    exception -> {:error, Exception.message(exception)}
-  end
 end
