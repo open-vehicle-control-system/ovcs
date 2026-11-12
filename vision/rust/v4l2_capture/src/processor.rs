@@ -48,19 +48,32 @@ pub struct Development<'a> {
 /// path when it has a tuning, its gamma otherwise.
 pub struct Cpu {
     output: Output,
-    tuned: Option<TunedColour>,
-    buffers: colour::Buffers,
-    fallback_buffers: bayer::Buffers,
+    path: ColourPath,
+}
+
+/// The conversion a sensor takes, with the buffers it converts through.
+enum ColourPath {
+    Tuned {
+        tuned: TunedColour,
+        buffers: colour::Buffers,
+    },
+    Gamma {
+        buffers: bayer::Buffers,
+    },
 }
 
 impl Cpu {
     pub fn new(model: SensorModel, output: Output) -> Cpu {
-        Cpu {
-            output,
-            tuned: model.tuning().map(TunedColour::new),
-            buffers: colour::Buffers::default(),
-            fallback_buffers: bayer::Buffers::default(),
-        }
+        let path = match model.tuning() {
+            Some(tuning) => ColourPath::Tuned {
+                tuned: TunedColour::new(tuning),
+                buffers: colour::Buffers::default(),
+            },
+            None => ColourPath::Gamma {
+                buffers: bayer::Buffers::default(),
+            },
+        };
+        Cpu { output, path }
     }
 }
 
@@ -75,23 +88,23 @@ impl Processor for Cpu {
             row_step: MEASURED_ROW_STEP,
             threads: development.threads,
         };
-        match &self.tuned {
-            Some(tuned) => develop_tuned(
+        match &mut self.path {
+            ColourPath::Tuned { tuned, buffers } => develop_tuned(
                 frame,
                 &conversion,
                 settings,
                 development.gains,
                 tuned,
                 images,
-                &mut self.buffers,
+                buffers,
             ),
-            None => bayer::develop(
+            ColourPath::Gamma { buffers } => bayer::develop(
                 frame,
                 development.tone,
                 development.gains,
                 &conversion,
                 images,
-                &mut self.fallback_buffers,
+                buffers,
             ),
         }
     }
