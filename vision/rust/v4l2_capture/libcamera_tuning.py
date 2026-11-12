@@ -90,7 +90,7 @@ def module(path, source, rotation):
 
 use super::{{ColourMatrix, ColourShading, LensShadingTables, Tuning}};
 
-pub const TUNING: Tuning = Tuning {{
+pub static TUNING: Tuning = Tuning {{
     colour_temperature_curve: &[{"".join(numbers(curve[i:i + 3]) + "," for i in range(0, len(curve), 3))}],
     colour_matrices: &[{"".join(f"ColourMatrix {{ kelvin: {number(entry['ct'])}, matrix: {numbers(entry['ccm'])} }}," for entry in blocks["rpi.ccm"]["ccms"])}],
     lens_shading: LensShadingTables {{

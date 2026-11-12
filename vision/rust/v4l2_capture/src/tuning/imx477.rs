@@ -29,7 +29,7 @@
 
 use super::{ColourMatrix, ColourShading, LensShadingTables, Tuning};
 
-pub const TUNING: Tuning = Tuning {
+pub static TUNING: Tuning = Tuning {
     colour_temperature_curve: &[
         [2850.0, 0.4307, 0.3957],
         [2960.0, 0.4159, 0.4313],
