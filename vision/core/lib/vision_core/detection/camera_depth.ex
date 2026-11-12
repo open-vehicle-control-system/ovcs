@@ -42,6 +42,7 @@ defmodule VisionCore.Detection.CameraDepth do
   another part of the sensor than the calibration's.
   """
   require Logger
+  require VisionCore.Outputs, as: Outputs
 
   alias VisionCore.Camera.{Frame, Pose, Unit}
   alias VisionCore.Detection.Reprojection
@@ -230,14 +231,14 @@ defmodule VisionCore.Detection.CameraDepth do
 
   @doc """
   `depth` with the stereo pairs waiting in the calling process's mailbox
-  as `{:"$gen_cast", {:stereo_pair, pair}}` taken out and kept
+  (`VisionCore.Outputs.queued/1`) taken out and kept
   (`add_pair/3`), arrived at `now_ns`: a pipeline running late takes the
   pairs already sent before settling a result on the pairs it has.
   """
   @spec add_queued_pairs(t(), integer()) :: t()
   def add_queued_pairs(depth, now_ns) do
     receive do
-      {:"$gen_cast", {:stereo_pair, %Pair{} = pair}} ->
+      Outputs.queued({:stereo_pair, %Pair{} = pair}) ->
         depth |> add_pair(pair, now_ns) |> add_queued_pairs(now_ns)
     after
       0 -> depth

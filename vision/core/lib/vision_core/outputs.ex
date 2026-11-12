@@ -24,7 +24,8 @@ defmodule VisionCore.Outputs do
       `name`, the segmentation pipeline `pipeline`'s.
 
   A consumer subscribes to the keys it reads and receives each message
-  as a cast. A subscription belongs to the subscriber, not to the
+  as a cast. One that takes messages out of its mailbox itself matches
+  them with `queued/1`. A subscription belongs to the subscriber, not to the
   producer: it holds before the producer starts and across its restarts,
   and goes when the subscriber exits. Every subscriber receives every
   message, so one that falls behind lets its mailbox grow.
@@ -77,6 +78,18 @@ defmodule VisionCore.Outputs do
       for {subscriber, _value} <- subscriptions, do: GenServer.cast(subscriber, message)
     end)
   end
+
+  @doc """
+  The pattern of `message`, published, as it waits in a subscriber's
+  mailbox, for a `receive` that takes it out ahead of the others:
+
+      receive do
+        Outputs.queued({:stereo_pair, pair}) -> pair
+      after
+        0 -> nil
+      end
+  """
+  defmacro queued(message), do: quote(do: {:"$gen_cast", unquote(message)})
 
   @doc "The processes subscribed to `key`."
   @spec subscribers(key()) :: [pid()]

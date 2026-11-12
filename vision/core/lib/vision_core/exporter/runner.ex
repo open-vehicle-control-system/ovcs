@@ -64,9 +64,10 @@ defmodule VisionCore.Exporter.Runner do
   """
   use GenServer
   require Logger
+  require VisionCore.Outputs, as: Outputs
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.{Exporter, Outputs}
+  alias VisionCore.Exporter
 
   @default_status_timeout_ms 200
   @first_retry_ms 500
@@ -408,7 +409,7 @@ defmodule VisionCore.Exporter.Runner do
   defp newest(output, %Frame{label: label, output: frame_output} = value)
        when is_tuple(output) and elem(output, 0) == :camera_frame do
     receive do
-      {:"$gen_cast", {:camera_frame, %{label: ^label, output: ^frame_output} = frame}} ->
+      Outputs.queued({:camera_frame, %{label: ^label, output: ^frame_output} = frame}) ->
         newest(output, frame)
     after
       0 -> value
@@ -417,7 +418,7 @@ defmodule VisionCore.Exporter.Runner do
 
   defp newest({:detections, name} = output, value) do
     receive do
-      {:"$gen_cast", {:detections, pair, detections, ^name}} -> newest(output, {pair, detections})
+      Outputs.queued({:detections, pair, detections, ^name}) -> newest(output, {pair, detections})
     after
       0 -> value
     end
@@ -425,7 +426,7 @@ defmodule VisionCore.Exporter.Runner do
 
   defp newest({:segmentation, name} = output, value) do
     receive do
-      {:"$gen_cast", {:segmentation, ^name, frame, labels, clouds}} ->
+      Outputs.queued({:segmentation, ^name, frame, labels, clouds}) ->
         newest(output, {frame, labels, clouds})
     after
       0 -> value
@@ -434,7 +435,7 @@ defmodule VisionCore.Exporter.Runner do
 
   defp newest(:detections, value) do
     receive do
-      {:"$gen_cast", {:detections, pair, detections}} -> newest(:detections, {pair, detections})
+      Outputs.queued({:detections, pair, detections}) -> newest(:detections, {pair, detections})
     after
       0 -> value
     end
@@ -442,7 +443,7 @@ defmodule VisionCore.Exporter.Runner do
 
   defp newest(tag, value) do
     receive do
-      {:"$gen_cast", {^tag, next}} -> newest(tag, next)
+      Outputs.queued({^tag, next}) -> newest(tag, next)
     after
       0 -> value
     end

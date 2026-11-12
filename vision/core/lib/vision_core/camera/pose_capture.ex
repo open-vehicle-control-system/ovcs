@@ -16,6 +16,8 @@ defmodule VisionCore.Camera.PoseCapture do
   frame is written as PNG, a JPEG frame as it is.
   """
 
+  require VisionCore.Outputs, as: Outputs
+
   alias VisionCore.Camera.Frame
   alias VisionCore.Debug.Png
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
@@ -91,14 +93,14 @@ defmodule VisionCore.Camera.PoseCapture do
   end
 
   defp next_pair({left_key, camera_key} = keys, tolerance_ns, timeout_ms) do
-    :ok = VisionCore.Outputs.subscribe(left_key)
-    :ok = VisionCore.Outputs.subscribe(camera_key)
+    :ok = Outputs.subscribe(left_key)
+    :ok = Outputs.subscribe(camera_key)
     deadline = System.monotonic_time(:millisecond) + timeout_ms
 
     try do
       await_pair(%{left: [], camera: []}, tolerance_ns, deadline)
     after
-      Enum.each(Tuple.to_list(keys), &VisionCore.Outputs.unsubscribe/1)
+      Enum.each(Tuple.to_list(keys), &Outputs.unsubscribe/1)
       flush_frames()
     end
   end
@@ -107,10 +109,10 @@ defmodule VisionCore.Camera.PoseCapture do
     remaining_ms = max(deadline - System.monotonic_time(:millisecond), 0)
 
     receive do
-      {:"$gen_cast", {:camera_frame, %Frame{label: "left"} = frame}} ->
+      Outputs.queued({:camera_frame, %Frame{label: "left"} = frame}) ->
         match(frame, :left, frames, tolerance_ns, deadline)
 
-      {:"$gen_cast", {:camera_frame, %Frame{} = frame}} ->
+      Outputs.queued({:camera_frame, %Frame{} = frame}) ->
         match(frame, :camera, frames, tolerance_ns, deadline)
     after
       remaining_ms -> {:error, :no_matching_pair}
@@ -140,7 +142,7 @@ defmodule VisionCore.Camera.PoseCapture do
 
   defp flush_frames do
     receive do
-      {:"$gen_cast", {:camera_frame, _frame}} -> flush_frames()
+      Outputs.queued({:camera_frame, _frame}) -> flush_frames()
     after
       0 -> :ok
     end
