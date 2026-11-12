@@ -72,7 +72,9 @@ defmodule VisionCore.Segmentation.Pipeline do
   with the start-time calibration until the unit restarts.
 
   The model needs colour: a frame without RGB pixels is skipped, which
-  is logged once.
+  is logged once. A frame that comes while a band is in flight is
+  skipped too, even once the backend is free: the band's reply may still
+  be waiting to be read.
 
   ## Options
 
@@ -334,6 +336,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     cond do
       rem(frame_count, state.segment_every_n) != 0 -> state
       not is_binary(frame.rgb) -> note_colourless(state)
+      not is_nil(state.pending) -> state
       true -> submit(frame, state)
     end
   end

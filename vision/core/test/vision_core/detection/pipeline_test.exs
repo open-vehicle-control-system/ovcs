@@ -123,18 +123,20 @@ defmodule VisionCore.Detection.PipelineTest do
       assert [%{label: "person"}] = detections()
     end
 
-    test "publishes the reply to the pair in flight while the next pairs find the backend busy" do
-      script = start_supervised!({Agent, fn -> [:ok, {:error, :busy}] end})
+    test "submits no pair while one is in flight, so its reply is published" do
+      script = start_supervised!({Agent, fn -> [] end})
       start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
       :ok = Outputs.subscribe({:detections, Pipeline})
 
       publish_pair()
       assert_receive {:submitted, in_flight}
       publish_pair()
-      assert_receive {:submitted, _busy}
+      refute_receive {:submitted, _sequence}, 100
 
       send(Pipeline, {:inference_detections, in_flight, []})
       assert_receive {:"$gen_cast", {:detections, %Pair{}, []}}, 1_000
+      publish_pair()
+      assert_receive {:submitted, _next}
     end
 
     test "drops a late reply to a pair the backend refused, matching only the pair it took" do

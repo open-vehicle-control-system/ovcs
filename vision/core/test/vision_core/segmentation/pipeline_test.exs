@@ -481,17 +481,18 @@ defmodule VisionCore.Segmentation.PipelineTest do
     :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
   end
 
-  test "publishes the reply to the band in flight while the next frames find the backend busy",
-       %{tmp_dir: dir} do
-    start_scripted(dir, [:ok, {:error, :busy}])
+  test "submits no frame while a band is in flight, so its reply is published", %{tmp_dir: dir} do
+    start_scripted(dir, [])
 
     publish_frame(100)
     assert_receive {:submitted, in_flight}
     publish_frame(200)
-    assert_receive {:submitted, _busy}
+    refute_receive {:submitted, _sequence}, 100
 
     send(Pipeline.Road, {:inference_labels, in_flight, @label_image})
     assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{capture_ns: 100_000_000}, _, nil}}
+    publish_frame(300)
+    assert_receive {:submitted, _next}
   end
 
   test "drops a late reply to a band the backend refused, matching only the band it took", %{

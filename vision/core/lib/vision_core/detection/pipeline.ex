@@ -90,10 +90,11 @@ defmodule VisionCore.Detection.Pipeline do
   Only one submitted pair is held, with the sequence number it was
   submitted under, and a reply is matched on that number. Every
   submission takes a new number, a refused one included, so a late
-  reply to a call that timed out never matches a later pair; a backend
-  that accepted overlapping requests would have its earlier replies
-  discarded as stale. A pair or frame the backend could not detect on,
-  answered with `nil`, publishes nothing.
+  reply to a call that timed out never matches a later pair. Pairs and
+  frames are skipped while a submission is in flight, even once the
+  backend is free: its reply may still be waiting to be read. A pair or
+  frame the backend could not detect on, answered with `nil`, publishes
+  nothing.
 
   ## Options
 
@@ -397,6 +398,7 @@ defmodule VisionCore.Detection.Pipeline do
     cond do
       rem(image_count, state.detect_every_n) != 0 -> {:noreply, state}
       is_nil(pair.left) or is_nil(pair.depth) -> {:noreply, state}
+      not is_nil(state.pending) -> {:noreply, state}
       true -> {:noreply, submit(pair, state)}
     end
   end
@@ -415,6 +417,7 @@ defmodule VisionCore.Detection.Pipeline do
     state = %{state | image_count: image_count}
 
     with 0 <- rem(image_count, state.detect_every_n),
+         nil <- state.pending,
          {:ok, image} <- Frame.to_tensor(frame) do
       submit(%{frame | jpeg: nil, grey: nil, rgb: nil}, image, state)
     else
@@ -424,7 +427,6 @@ defmodule VisionCore.Detection.Pipeline do
 
   defp submit(pair, state), do: submit(pair, pair.left, state)
 
-  # Overwrites `pending`; see "One inference in flight" in the moduledoc.
   defp submit(source, image, state) do
     sequence = state.sequence + 1
     state = %{state | sequence: sequence}
