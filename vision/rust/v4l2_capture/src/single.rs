@@ -33,7 +33,7 @@ use crate::scale;
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
-use crate::white_balance;
+use crate::white_balance::{self, Gains};
 use crate::{
     auto_exposure, auto_exposure_from, input, open_camera, pollfd, resume_point,
     EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
@@ -341,6 +341,45 @@ fn encoder_stopped() -> io::Error {
     io::Error::other("the encoder thread stopped")
 }
 
+/// What the frame loop counts and times between two statistics lines.
+#[derive(Default)]
+struct Statistics {
+    /// Frames converted, and frames dropped as incomplete.
+    frames: u64,
+    incomplete: u64,
+    conversion: Duration,
+    scaling: Duration,
+    /// Frames written, and the time their writes took.
+    writes: u64,
+    write: Duration,
+    jpegs_encoded: u64,
+    encode: Duration,
+}
+
+impl Statistics {
+    /// The line logged after `period`, with the white balance `gains` in force and
+    /// the colour temperature a tuned sensor reads from them.
+    fn line(&self, period: Duration, gains: Gains, kelvin: Option<f64>) -> String {
+        let micros_each =
+            |total: Duration, count: u64| total.as_nanos() / 1_000 / u128::from(count.max(1));
+        format!(
+            "last {} s: frames {}, incomplete {}, {} us per conversion, \
+             {} us per scaling, {} us per write, {} us per JPEG encode, \
+             white balance {gains:?}{}",
+            period.as_secs(),
+            self.frames,
+            self.incomplete,
+            micros_each(self.conversion, self.frames),
+            micros_each(self.scaling, self.frames),
+            micros_each(self.write, self.writes),
+            micros_each(self.encode, self.jpegs_encoded),
+            kelvin
+                .map(|kelvin| format!(", {kelvin:.0} K"))
+                .unwrap_or_default()
+        )
+    }
+}
+
 /// `capture`'s loop, sending its records to `queue`.
 fn convert_frames(
     setup: Setup,
@@ -415,11 +454,7 @@ fn convert_frames(
     let mut last_ns = None;
 
     let mut converted = 0u32;
-    // Frames converted, and frames dropped as incomplete.
-    let mut statistics = [0u64; 2];
-    let (mut conversion_ns, mut scaling_ns) = (0u128, 0u128);
-    let (mut writes, mut write_ns) = (0u64, 0u128);
-    let (mut encodes, mut encode_ns) = (0u64, 0u128);
+    let mut statistics = Statistics::default();
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
@@ -459,28 +494,10 @@ fn convert_frames(
             }
         }
         if statistics_since.elapsed() >= statistics_every {
-            log(
-                LogLevel::Info,
-                &format!(
-                    "last {} s: frames {}, incomplete {}, {} us per conversion, \
-                     {} us per scaling, {} us per write, {} us per JPEG encode, \
-                     white balance {gains:?}{}",
-                    statistics_every.as_secs(),
-                    statistics[0],
-                    statistics[1],
-                    conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
-                    scaling_ns / 1_000 / u128::from(statistics[0].max(1)),
-                    write_ns / 1_000 / u128::from(writes.max(1)),
-                    encode_ns / 1_000 / u128::from(encodes.max(1)),
-                    tuning
-                        .map(|tuning| format!(", {:.0} K", tuning.colour_temperature(gains)))
-                        .unwrap_or_default()
-                ),
-            );
-            statistics = [0; 2];
-            (conversion_ns, scaling_ns) = (0, 0);
-            (writes, write_ns) = (0, 0);
-            (encodes, encode_ns) = (0, 0);
+            let kelvin = tuning.map(|tuning| tuning.colour_temperature(gains));
+            let line = statistics.line(statistics_every, gains, kelvin);
+            log(LogLevel::Info, &line);
+            statistics = Statistics::default();
             statistics_since = Instant::now();
         }
         // One frame a round: the settings and statistics are served between frames.
@@ -515,14 +532,14 @@ fn convert_frames(
             if let Some(means) = measures.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
-            conversion_ns += converting.elapsed().as_nanos();
+            statistics.conversion += converting.elapsed();
             Some((start_ns, measures.green_mean))
         })? {
             let Some((start_ns, green_mean)) = taken else {
-                statistics[1] += 1;
+                statistics.incomplete += 1;
                 continue;
             };
-            statistics[0] += 1;
+            statistics.frames += 1;
             last_ns = Some(start_ns);
             if let Some(mean) = green_mean {
                 if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
@@ -534,16 +551,17 @@ fn convert_frames(
                 let scaling = Instant::now();
                 let threads = settings.threads.unwrap_or(default_threads);
                 scale_outputs(&outputs, &scaled_after, threads, &mut images);
-                scaling_ns += scaling.elapsed().as_nanos();
+                statistics.scaling += scaling.elapsed();
             }
             let free = match spare.take() {
                 Some(images) => images,
                 None => {
                     let written = queue.written()?;
-                    (writes, write_ns) = (writes + 1, write_ns + written.write.as_nanos());
+                    statistics.writes += 1;
+                    statistics.write += written.write;
                     if let Some(took) = written.encode {
-                        (encodes, encode_ns) =
-                            (encodes + jpegs_per_frame, encode_ns + took.as_nanos());
+                        statistics.jpegs_encoded += jpegs_per_frame;
+                        statistics.encode += took;
                     }
                     written.images
                 }
