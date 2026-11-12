@@ -9,9 +9,10 @@ defmodule VisionCore.Detection.CameraDepth do
 
   ## Matching a frame with a pair
 
-  The pairs captured within `:pair_wait_ms` of the newest one are kept,
-  at least two, each with its depth, its geometry and its left frame's
-  capture time and frame id only. A frame is matched with the pair whose
+  For a camera with a calibration and a pose, the pairs captured within
+  `:pair_wait_ms` of the newest one are kept, at least two, each with its
+  depth, its geometry and its left frame's capture time and frame id
+  only. A frame is matched with the pair whose
   left capture time is closest to its own, within half the pair period,
   the median spacing of the pairs kept; otherwise it has no depth,
   rather than a stale one. The stereo pipeline publishes a pair well
@@ -166,16 +167,20 @@ defmodule VisionCore.Detection.CameraDepth do
   def projectable?(depth), do: not is_nil(depth.calibration) and not is_nil(depth.pose)
 
   @doc """
-  Keeps `pair`, arrived at `now_ns`, when it has a depth map, without
-  its images, and drops the pairs captured more than `:pair_wait_ms`
-  before it, keeping two; after a stall of two pair periods, it is kept
-  alone.
+  Keeps `pair`, arrived at `now_ns`, when it has a depth map and the
+  camera is `projectable?/1`, without its images, and drops the pairs
+  captured more than `:pair_wait_ms` before it, keeping two; after a
+  stall of two pair periods, it is kept alone.
   """
   @spec add_pair(t(), Pair.t(), integer()) :: t()
   def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair, now_ns)
       when is_binary(depth_map) and is_map(geometry) do
-    kept = if gone_quiet?(depth, now_ns), do: [], else: depth.pairs
-    %{depth | pairs: recent([slim(pair) | kept], depth.keep_ns), received_ns: now_ns}
+    if projectable?(depth) do
+      kept = if gone_quiet?(depth, now_ns), do: [], else: depth.pairs
+      %{depth | pairs: recent([slim(pair) | kept], depth.keep_ns), received_ns: now_ns}
+    else
+      depth
+    end
   end
 
   def add_pair(depth, _pair_without_depth, _now_ns), do: depth
@@ -188,9 +193,15 @@ defmodule VisionCore.Detection.CameraDepth do
       left_frame: %Frame{left_frame | jpeg: nil, grey: nil, rgb: nil},
       right_frame: nil,
       geometry: Map.merge(pair.geometry, %{width: width, height: height}),
-      # A slice of the stereo Port's reply would keep the whole reply.
-      depth: :binary.copy(pair.depth)
+      depth: own_binary(pair.depth)
     }
+  end
+
+  # A slice of the stereo Port's reply would keep the whole reply.
+  defp own_binary(depth_map) do
+    if :binary.referenced_byte_size(depth_map) > byte_size(depth_map),
+      do: :binary.copy(depth_map),
+      else: depth_map
   end
 
   defp recent([newest | _older] = pairs, keep_ns) do

@@ -18,11 +18,17 @@ defmodule VisionCore.Detection.DepthQueueTest do
     lens: "project"
   }
 
-  defp depth(pair_wait_ms) do
-    config = %VisionCore.Config{
-      components: [{:camera, [name: :hq, driver: VisionCore.Camera.GStreamer]}]
-    }
+  @calibration Path.expand("../../support/calibration", __DIR__)
 
+  defp depth(pair_wait_ms) do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.GStreamer,
+      calibration: Path.join(@calibration, "equidistant_hq.yaml"),
+      pose: Path.join(@calibration, "camera_pose_hq.yaml")
+    ]
+
+    config = %VisionCore.Config{components: [{:camera, camera}]}
     CameraDepth.new(:hq, config, "test pipeline", @wording, pair_wait_ms: pair_wait_ms)
   end
 

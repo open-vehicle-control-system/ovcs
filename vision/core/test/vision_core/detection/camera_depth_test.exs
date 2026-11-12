@@ -18,11 +18,17 @@ defmodule VisionCore.Detection.CameraDepthTest do
     lens: "project"
   }
 
-  defp depth(pair_wait_ms \\ 500) do
-    config = %VisionCore.Config{
-      components: [{:camera, [name: :hq, driver: VisionCore.Camera.GStreamer]}]
-    }
+  @calibration Path.expand("../../support/calibration", __DIR__)
 
+  # A camera with a calibration and a pose, or with `files` of them only.
+  defp depth(pair_wait_ms \\ 500, files \\ [:calibration, :pose]) do
+    paths = [
+      calibration: Path.join(@calibration, "equidistant_hq.yaml"),
+      pose: Path.join(@calibration, "camera_pose_hq.yaml")
+    ]
+
+    camera = [name: :hq, driver: VisionCore.Camera.GStreamer] ++ Keyword.take(paths, files)
+    config = %VisionCore.Config{components: [{:camera, camera}]}
     CameraDepth.new(:hq, config, "test pipeline", @wording, pair_wait_ms: pair_wait_ms)
   end
 
@@ -101,6 +107,23 @@ defmodule VisionCore.Detection.CameraDepthTest do
       assert {:ok, kept} = CameraDepth.match(depth, 100 * @ms)
       assert kept.depth == binary_part(reply, 0, 400)
       assert :binary.referenced_byte_size(kept.depth) == 400
+    end
+
+    test "keeps a depth map that is a binary of its own as it is" do
+      own = :binary.copy(<<2000::little-16>>, 1_000)
+      pair = %{pair(100) | depth: own}
+      depth = CameraDepth.add_pair(with_pairs(depth(), [0]), pair, 100 * @ms)
+
+      assert {:ok, kept} = CameraDepth.match(depth, 100 * @ms)
+      assert :erts_debug.same(kept.depth, own)
+    end
+
+    test "keeps no pair for a camera it cannot project into" do
+      for files <- [[:calibration], [:pose]] do
+        depth = with_pairs(depth(500, files), [0, 100])
+
+        assert CameraDepth.match(depth, 100 * @ms, final: true) == :none
+      end
     end
   end
 
