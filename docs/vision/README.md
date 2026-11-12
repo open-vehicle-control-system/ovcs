@@ -1,15 +1,24 @@
 ---
 title: Vision unit
-description: The vision role, a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q that turns stereo cameras into depth and detection, exported as ROS 2 topics, and how a vehicle opts in.
+description: The vision role, a Pi 5, OKdo Nano C100 or Arduino VENTUNO Q that turns stereo cameras into depth and detection as ROS 2 topics, and how a vehicle opts in.
 ---
 
-The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs stereo depth, and optionally object detection, on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, takes the results out through its exporters, such as ROS 2 messages over Zenoh, and serves its own dashboard. It has no CAN controller and does not touch the `ovcs` bus: it reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2/compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
+The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, where it:
 
-A vehicle without cameras omits the role and nothing is built for it. The OVCS Mini reference vehicle runs one on a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`), the OVCS1 reference vehicle one on an Arduino VENTUNO Q with two Global Shutter Cameras (`Ovcs1.Vision.Composer`).
+- runs stereo depth, and optionally object detection;
+- takes the results out through its exporters, such as ROS 2 messages over Zenoh;
+- serves its own dashboard.
+
+It has no CAN controller and does not touch the `ovcs` bus. It reaches the vehicle through the Zenoh router of the [ROS compute node](../ros2/compute_node.md), and the rest of the vehicle through the [Erlang mesh](../architecture.md#one-erlang-mesh-no-broker).
+
+A vehicle without cameras omits the role and nothing is built for it. Among the reference vehicles:
+
+- The OVCS Mini reference vehicle runs one on a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`).
+- The OVCS1 reference vehicle runs one on an Arduino VENTUNO Q with two Global Shutter Cameras (`Ovcs1.Vision.Composer`).
 
 ## Layers
 
-The unit follows the same split as the VMS and the infotainment: a core, an API, a firmware shell and a dashboard, with the vehicle package supplying everything vehicle-specific.
+The unit follows the same split as the VMS and the infotainment: a core, an API, a firmware shell and a dashboard. The vehicle package supplies everything vehicle-specific.
 
 | Layer | Path | What it is |
 |---|---|---|
@@ -31,11 +40,24 @@ def vision, do: MyCar.Vision.Composer
 def vision_target, do: :rpi5
 ```
 
-`vision_target/0` is `:rpi5`, `:okdo_c100` or `:arduino_ventuno_q`; see [The OKdo Nano C100](#the-okdo-nano-c100) and [The Arduino VENTUNO Q](#the-arduino-ventuno-q) for the other two.
+`vision_target/0` is `:rpi5`, `:okdo_c100` or `:arduino_ventuno_q`. See [The OKdo Nano C100](#the-okdo-nano-c100) and [The Arduino VENTUNO Q](#the-arduino-ventuno-q) for the other two.
 
-`vision/0` returns a module implementing `VisionCore.Composer`: `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm (the components and their drivers, the exporters, and the ROS 2 link they need: Zenoh endpoint and ROS node name), and the optional `required_files/0` lists files, relative to your vehicle app, that the image needs and the repository does not carry, such as a detection model. The build fails when one is missing. The behaviour is documented in `VisionCore.Composer`, the components you can list in `VisionCore.Components`, and the exporters in [How a pair flows](./data_flow.md#exporters); see also [Your vehicle package](../vehicle_package.md#the-five-behaviours). A component given an option it does not take is left down, with the reason logged, and the unit runs on without it; when another component or exporter takes that option, as the ROS 2 exporter takes the stereo images' topics, the log names it.
+`vision/0` returns a module implementing `VisionCore.Composer`:
 
-Everything the unit needs from a vehicle lives in the package: resolution, the stereo stages and their settings, calibration, topic prefix, frame ids, detection model and thresholds. Boot files for the Pi go in `vehicles/<vehicle>/priv/firmware/vision/`, and files for the image's root filesystem, such as the VENTUNO Q's `/boot/cameras.cfg`, in its `rootfs_overlay/`.
+- `config/1` returns a `VisionCore.Config` for the `:host` or `:target` arm. It holds the components and their drivers, the exporters, and the ROS 2 link they need: Zenoh endpoint and ROS node name.
+- The optional `required_files/0` lists files that the image needs and the repository does not carry, such as a detection model. Their paths are relative to your vehicle app. The build fails when one is missing.
+
+The documentation is in:
+
+- the behaviour, in `VisionCore.Composer`;
+- the components you can list, in `VisionCore.Components`;
+- the exporters, in [How a pair flows](./data_flow.md#exporters).
+
+See also [Your vehicle package](../vehicle_package.md#the-five-behaviours).
+
+A component given an option it does not take is left down, with the reason logged, and the unit runs on without it. When another component or exporter takes that option, as the ROS 2 exporter takes the stereo images' topics, the log names it.
+
+Everything the unit needs from a vehicle lives in the package: resolution, the stereo stages and their settings, calibration, topic prefix, frame ids, detection model and thresholds. Boot files for the Pi go in `vehicles/<vehicle>/priv/firmware/vision/`. Files for the image's root filesystem, such as the VENTUNO Q's `/boot/cameras.cfg`, go in its `rootfs_overlay/`.
 
 ## The OKdo Nano C100
 
@@ -53,13 +75,13 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 
 The Arduino VENTUNO Q carries a Qualcomm QCS8300: 4 Cortex-A78C and 4 Cortex-A55 cores, an Adreno 623 GPU, a Hexagon NPU (HTP v75) and 16 GB of memory. Its CAMSS camera subsystem has three CSI connectors, Camera 0, 1 and 2. Its system is [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q). The stereo stages run on the GPU, as on the C100 ([On the VENTUNO Q's GPU](./compute.md#on-the-ventuno-qs-gpu)), and detection on the NPU.
 
-**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options, and `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl, waiting up to 30 s at boot for the media graph and the sensors. `v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors.
+**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options. `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl. At boot it waits up to 30 s for the media graph and the sensors. `v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors.
 
-**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50), in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, into `/data/vision/qnn`, and later boots reuse it; a new DLC or a new QAIRT makes a new one (`VisionCore.Detection.QnnContext`).
+**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, into `/data/vision/qnn`. Later boots reuse it. A new DLC or a new QAIRT makes a new one (`VisionCore.Detection.QnnContext`).
 
 QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too: `qnn_detect`'s bindings are generated at build time from the cached QAIRT archive, and nothing derived from them is committed.
 
-To build a unit for this board, from the repository root:
+To build a unit for this board, run from the repository root:
 
 ```sh
 VEHICLE=<Vehicle> mise run fetch-qairt   # QAIRT, into the firmware's rootfs overlay
@@ -74,15 +96,18 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 35 frames a second, matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at about 34.5 pairs a second, and YOLOX detects objects on more than 9 pairs in 10. The same composer shape works on your own vehicle with your cameras and connectors.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 35 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at about 34.5 pairs a second. YOLOX detects objects on more than 9 pairs in 10. The same composer shape works on your own vehicle with your cameras and connectors.
 
-Its `priv/calibration` holds a nominal calibration until the rig is calibrated: a focal length of 869.6 px from the lens and the pixel pitch, no distortion, and the 20 cm baseline. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then either replace the two YAML files and rebuild, or commit the calibration through the ROS 2 exporter's `set_camera_info` services, as `cameracalibrator` does: with `calibration_store_dir` set on the `:stereo` component, `/data/vision/calibration` on OVCS1, a calibration committed for both sides is stored there and takes precedence over the files (`VisionCore.Stereo.Supervisor`).
+Its `priv/calibration` holds a nominal calibration until the rig is calibrated: a focal length of 869.6 px from the lens and the pixel pitch, no distortion, and the 20 cm baseline. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then do one of two things:
+
+- Replace the two YAML files and rebuild.
+- Commit the calibration through the ROS 2 exporter's `set_camera_info` services, as `cameracalibrator` does. With `calibration_store_dir` set on the `:stereo` component, `/data/vision/calibration` on OVCS1, a calibration committed for both sides is stored there and takes precedence over the files (`VisionCore.Stereo.Supervisor`).
 
 The rates measured on this unit are in [Vision performance](./performance.md#measured-on-an-arduino-ventuno-q).
 
 ## Depth
 
-The stereo stages turn each pair of camera frames into a disparity, the horizontal shift of each point between the two images, then a depth image and a point cloud; [Stereo vision basics](./basics.md) explains the principle, from the lens up. Where they run depends on the board: on the GPU of the C100 or the VENTUNO Q, compiled from Nx, or on the Raspberry Pi 5's CPU cores, in native code. The guides of this section explain them:
+The stereo stages turn each pair of camera frames into a disparity, then a depth image and a point cloud. The disparity is the horizontal shift of each point between the two images. Where the stages run depends on the board. On the C100 and the VENTUNO Q, they run on the GPU, compiled from Nx. On the Raspberry Pi 5, they run on the CPU cores, in native code. The guides of this section explain them:
 
 - [Stereo vision basics](./basics.md): lens, baseline, rectification, disparity, depth and point cloud, with diagrams and a worked example.
 - [How a pair flows](./data_flow.md): the processes a pair goes through, from the cameras to the ROS 2 topics and the dashboard.
@@ -101,7 +126,7 @@ The role is addressed like the others:
 ./ovcs clean  <vehicle> vision
 ```
 
-`VEHICLE` selects the package and `vision_target/0` the `MIX_TARGET`. The build compiles the dashboard into the API's static files, cross-builds the Rust Ports and then runs `mix firmware`. Per-vehicle secrets, the Zenoh router address and Wi-Fi networks come from `vehicles/<vehicle>/.env.exs`, as for every other firmware; rebuild after changing `ZENOH_ENDPOINT_IP`. Details are in [`vision/firmware/README.md`](../../vision/firmware/README.md) and [Running on hardware](../running_hardware.md).
+`VEHICLE` selects the package and `vision_target/0` the `MIX_TARGET`. The build compiles the dashboard into the API's static files, cross-builds the Rust Ports and then runs `mix firmware`. Per-vehicle secrets, the Zenoh router address and Wi-Fi networks come from `vehicles/<vehicle>/.env.exs`, as for every other firmware. Rebuild after changing `ZENOH_ENDPOINT_IP`. Details are in [`vision/firmware/README.md`](../../vision/firmware/README.md) and [Running on hardware](../running_hardware.md).
 
 The image's hostname is `<vehicle>-vision` and the node joins the Erlang mesh as role `vision`, so it reaches its peers and is reachable at `<vehicle>-vision.local`.
 
@@ -115,35 +140,70 @@ http://<vehicle>-vision.local:4100
 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
-On a unit with detection, the left video outlines each detected object with its label and distance, and its caption counts them. An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.
+On a unit with detection, an object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out of the detections.
 
-The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right; a band with too little matched texture to measure shows a dash. A calibration that still fits the cameras reads within half a row; a larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
+The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
-The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not. On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting, whose default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m; `VisionCore.Camera.FocusSweep.run/1`, from IEx on the unit facing a textured scene at the distance that matters, steps it through a range, sets the position best for both cameras and returns the sharpness curve. Recalibrate after changing the focus.
+The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
 
-The vision parameters are the unit's own settings, grouped by component and pipeline stage: the cameras' controls, each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness`, and, on a unit with detection, the detection's settings. Most apply live: the stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size, and some are set by an automatic mode while it is on, such as the exposure under auto exposure.
+On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
 
-The dashboard's menu draws each of the unit's pipelines as a numbered flow of its steps: the stereo pipeline, the cameras then each stage your vehicle composes, in order, and the detection pipeline, its input, inference, filtering and placement. On a unit without a detector, the detection pipeline is one greyed line. A box shows where the step runs, its status and how many of its parameters are unsaved; selecting it opens its panel, and the selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again. The panel says in one line what the step does; How it works, next to it, explains why it matters, what its settings change and what to watch on the dashboard. It lists the box's parameters with their constraints and defaults: a live parameter changes while the unit runs, a parameter fixed in the build is shown but locked, and a parameter set by an automatic mode shows the mode that sets it. A relation between two parameters, such as `p2` above `p1`, bounds each control by the other's value.
+The vision parameters are the unit's own settings, grouped by component and pipeline stage:
 
-A change is unsaved until you save it. Unsaved changes live on the unit, not in the page: reloading the dashboard or opening it elsewhere loses nothing, and a reboot drops them. The save bar below the panel counts the unsaved changes and offers:
+- the cameras' controls;
+- each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness`;
+- on a unit with detection, the detection's settings.
+
+Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
+
+The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. The detection pipeline is its input, inference, filtering and placement. The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
+
+A box's panel lists its parameters with their constraints and defaults:
+
+- a live parameter changes while the unit runs;
+- a parameter fixed in the build is shown but locked;
+- a parameter set by an automatic mode shows the mode that sets it.
+
+A relation between two parameters, such as `p2` above `p1`, bounds each control by the other's value.
+
+A change is unsaved until you save it. Unsaved changes live on the unit, not in the page: reloading the dashboard or opening it elsewhere loses nothing, and a reboot drops them. The dashboard offers:
 
 - **Save**: stores the unsaved values on the unit, in `/data/vision_core.db`, where they are applied again at every boot.
 - **Discard**: returns every unsaved parameter to its saved value, or to its default without one.
 - **Reset**: a box's Reset, or a parameter's, returns it to the defaults; **Reset all** returns every parameter.
 
-Discard and Reset all ask first. The same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2` from IEx. The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`); a change made there is saved at once, and unsaved changes from the dashboard stay unsaved. The compute node's `foxglove_bridge` offers the parameters under `/ovcs_vision.stereo.`, which the Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows as sliders next to the depth and the cameras' sync, exposure and gain; its rectified camera panels need `publish_rectified_image: true` in the ROS 2 exporter's `stereo:` options.
+Discard and Reset all ask first. From IEx, the same actions are `VisionCore.Parameters.save/1`, `discard/1` and `reset/2`.
 
-The API follows [JSON:API](https://jsonapi.org/): [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels, and [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
+The parameters are also reachable with `ros2 param` and Foxglove's Parameters panel under their ids, `<prefix>.<stage>.<name>` (`stereo.disparity.p1`). A change made there is saved at once, and unsaved changes from the dashboard stay unsaved.
 
-The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. The ROS 2 exporter and the API open pages of their own, another exporter a page with its status, the outputs it reads and its actions as buttons. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them.
+The compute node's `foxglove_bridge` offers the parameters under `/ovcs_vision.stereo.`. The Foxglove layout [`ovcs_stereo_tuning.json`](../../compose/local/foxglove/ovcs_stereo_tuning.json) shows them as sliders next to the depth and the cameras' sync, exposure and gain. Its rectified camera panels need `publish_rectified_image: true` in the ROS 2 exporter's `stereo:` options.
 
-`GET /api/ros2-node` describes what the unit exports over ROS 2: its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open, the topics it has published, each with its message type and rate over the last second, and the services it answers, the parameter services and each camera's `set_camera_info`. Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent: it is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`. A unit without the ROS 2 link has no node: `GET /api/ros2-node` answers 404.
+The API follows [JSON:API](https://jsonapi.org/). [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels. [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
+
+The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them.
+
+`GET /api/ros2-node` describes what the unit exports over ROS 2:
+
+- its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open;
+- the topics it has published, each with its message type and rate over the last second;
+- the services it answers: the parameter services and each camera's `set_camera_info`.
+
+Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. A unit without the ROS 2 link has no node: `GET /api/ros2-node` answers 404.
+
+The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 
 ## Detection models
 
-The `:hailo_detector` component runs the HEF its `:hef_path` names, compiled for the Hailo-8, and the `:qnn_detector` component the DLC its `:dlc_path` names, on the VENTUNO Q's NPU. **No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download. The OVCS Mini reference vehicle's models and what they require are described in [`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md); the OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`.
+Each detector component runs the model its option names:
+
+- `:hailo_detector` runs the HEF its `:hef_path` names, compiled for the Hailo-8.
+- `:qnn_detector` runs the DLC its `:dlc_path` names, on the VENTUNO Q's NPU.
+
+**No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download.
+
+[`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md) describes the OVCS Mini reference vehicle's models and what they require. The OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`.
 
 OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's history, which removing it from `HEAD` doesn't undo.
 
@@ -159,7 +219,7 @@ For commercial use of YOLOv8 specifically, an Ultralytics Enterprise licence is 
 
 ### Permissive models
 
-Apache-2.0 unless noted; those with a prebuilt HAILO8 HEF in model zoo v2.15.0 are marked, with sizes as served:
+The models below are Apache-2.0 unless noted. Those with a prebuilt HAILO8 HEF in model zoo v2.15.0 are marked, with sizes as served:
 
 - **NanoDet-RepVGG**: in the zoo (6.7 MB). The OVCS Mini's.
 - **YOLOX** tiny / s-leaky: in the zoo (9.3 / 9.4 MB), different NMS op.
@@ -174,7 +234,7 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 ## Running it on a workstation
 
-On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA, and `mix compile` builds `jpeg_codec` for the host, which decodes the cameras' JPEG frames, and `stereo_match`, for a pipeline computing with `compute: :native`.
+On the host the composer's `:host` arm applies: it can read USB cameras through `VisionCore.Camera.GStreamer`, or a simulator's camera topics through `VisionCore.Ros2.Camera`. No CAN interface is needed. The stereo stages compile with EXLA. `mix compile` builds for the host `jpeg_codec`, which decodes the cameras' JPEG frames, and `stereo_match`, for a pipeline computing with `compute: :native`.
 
 ## See also
 

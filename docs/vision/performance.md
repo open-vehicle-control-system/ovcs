@@ -3,7 +3,7 @@ title: Vision performance
 description: How fast the vision unit computes depth, where the time goes, how to read the figures it reports, and the settings that trade rate against range and quality.
 ---
 
-The figure that matters is the **depth rate**: how many depth images the unit computes a second. It cannot exceed the cameras' frame rate, since each depth image needs a new pair. This guide gives measured rates, where the time goes, and what to change. How the stages run is in [Where depth is computed](./compute.md).
+The figure that matters is the **depth rate**: how many depth images the unit computes a second. It cannot exceed the cameras' frame rate, since each depth image needs a new pair. How the stages run is in [Where depth is computed](./compute.md).
 
 ## Reading the figures
 
@@ -18,7 +18,7 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 
 The log goes to the unit's `RingLogger`; read it over SSH with `RingLogger.next`.
 
-When the depth rate is well below the cameras' rate and Stereo load is near 100 %, the stages are the limit. When the depth rate follows the cameras' rate, the cameras are: in a dark room, auto exposure lengthens each frame, and the frame rate drops with it.
+When the depth rate is well below the cameras' rate and Stereo load is near 100 %, the stages are the limit. When the depth rate follows the cameras' rate, the cameras are the limit. In a dark room, auto exposure lengthens each frame, and the frame rate drops with it.
 
 ## Measured on a Raspberry Pi 5
 
@@ -36,7 +36,7 @@ At 480 × 270 the cameras delivered 30 frames a second, CPU stood at 88 to 90 % 
 
 ### Where the time goes
 
-Median time of each stage in `stereo_match`, at 480 × 270, with a 3 × 3 MedianFilter added after Disparity, which the default stages leave out:
+For this measurement, a 3 × 3 MedianFilter runs after Disparity; the default stages leave it out. Median time of each stage in `stereo_match`, at 480 × 270:
 
 | Stage | Time |
 |---|---|
@@ -50,7 +50,7 @@ Median time of each stage in `stereo_match`, at 480 × 270, with a 3 × 3 Median
 | RowAlignment, Sharpness, PointCloud | under 0.5 ms each |
 | **The whole segment** | **48 ms** |
 
-On an idle board the same work takes about a third of that: while the unit runs, the cameras' image signal processor, the BEAM and the other Ports share the cores and the memory bandwidth ([Memory and the processor](./compute.md#memory-and-the-processor)).
+On an idle board the same work takes about a third of that. While the unit runs, the cameras' image signal processor, the BEAM and the other Ports share the cores and the memory bandwidth ([Memory and the processor](./compute.md#memory-and-the-processor)).
 
 How the four cores were shared at 480 × 360, with the dashboard open:
 
@@ -63,7 +63,7 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 
 ## Measured on an Arduino VENTUNO Q
 
-The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm apart, matched at 728 × 544 over 128 disparities on the Adreno 623, with YOLOX detecting on the NPU. These are measurements on one unit, not guarantees.
+The unit is the OVCS1 reference vehicle's: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623, with YOLOX detecting on the NPU. These are measurements on one unit, not guarantees.
 
 | Figure | Measured |
 |---|---|
@@ -82,7 +82,19 @@ The OVCS1 reference vehicle's unit: two Global Shutter Cameras (IMX296) 20 cm ap
 mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --search coarse_to_fine --paths 8 --coarse-paths 3
 ```
 
-It compiles the stages for the board, copies them there with a textured pair of frames, stops the live stereo unit, and prints how each output differs from EXLA's and the time of each pair. `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware; reboot the board afterwards. `--compute native --search full` times the stages in `stereo_match` on the board's CPU instead. Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
+The task:
+
+1. compiles the stages for the board;
+2. copies them there with a textured pair of frames;
+3. stops the live stereo unit;
+4. prints how each output differs from EXLA's, and the time of each pair.
+
+Options:
+
+- `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware. Reboot the board afterwards.
+- `--compute native --search full` times the stages in `stereo_match` on the board's CPU instead.
+
+Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
 
 ## What to change
 
@@ -94,17 +106,17 @@ Each setting trades rate against something else. The matching dominates, and its
 | `num_disparities` | Disparity, build | 128 measures nearer than 64 (the nearest distance is `f × B / num_disparities`) and costs about twice the matching time. |
 | `paths` | Disparity, build | 3 is much faster than 8 on a CPU, and leaves more holes on dark or textureless surfaces. |
 | `coarse_paths` | Disparity, build | With `search: "coarse_to_fine"`, the half-size match's paths, `paths` by default. It only places each pixel's band, so 3 costs little: on the 2006 Middlebury pairs about one point more of pixels off by over a pixel. |
-| `search: "coarse_to_fine"` | Disparity, build | Matches the pair shrunk 2x over 64 disparities, then each pixel within 16 disparities of that match at full size: a fraction of the full search's cost at the same range and size. It needs 128 disparities and an even working size, and runs on a GPU or Nx, not natively. On the 2006 Middlebury pairs at half size it agreed with the full search within a pixel on 96 to 99.8% of the pixels both matched; a structure too thin for the half-size pair, such as a cable, can take the background's disparity. |
+| `search: "coarse_to_fine"` | Disparity, build | Matches the pair shrunk 2x over 64 disparities, then each pixel within 16 disparities of that match at full size. That is a fraction of the full search's cost at the same range and size. It needs 128 disparities and an even working size, and runs on a GPU or Nx, not natively. On the 2006 Middlebury pairs at half size it agreed with the full search within a pixel on 96 to 99.8% of the pixels both matched. A structure too thin for the half-size pair, such as a cable, can take the background's disparity. |
 | `format: :grey` | each camera | Avoids encoding every frame to JPEG and decoding it again. Always use it on the Pi 5. |
 | `:stereo_match_threads` | `config :vision_core` | One per core by default, which measured fastest; fewer threads leave room for other work at a lower rate. |
 | `:raw_image_max_hz`, the preview's `:max_hz` | the ROS 2 exporter's `stereo:` options, `VisionCore.Config` | Fewer JPEG encodes for the raw image topics and the dashboard previews. |
 | Camera frame rate | `:fps` | Pairs the stages cannot take are dropped. On the Pi 5, 24 frames a second instead of 30 did not raise the depth rate. |
 
-The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute: on a busy board, single readings vary by about 15 %.
+The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute. On a busy board, single readings vary by about 15 %.
 
 ### Heat
 
-The measurements above ran at 55 to 60 °C. The Raspberry Pi 5 lowers its clock from about 80 °C, which lowers the depth rate: give a vision unit that runs continuously a cooler. `File.read!("/sys/class/thermal/thermal_zone0/temp")` on the unit gives the temperature in thousandths of a degree.
+The measurements above ran at 55 to 60 °C. The Raspberry Pi 5 lowers its clock from about 80 °C, which lowers the depth rate. Give a vision unit that runs continuously a cooler. `File.read!("/sys/class/thermal/thermal_zone0/temp")` on the unit gives the temperature in thousandths of a degree.
 
 ## See also
 

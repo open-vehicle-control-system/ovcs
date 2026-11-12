@@ -14,11 +14,17 @@ The [stereo stages](./stages.md) are written once and run one of two ways, depen
 
 Both give the same results: the native stages are tested against the Nx ones, image for image.
 
-To see where each stage of a running unit is computed, select it on the dashboard: its panel is tagged with where it runs (CPU or GPU), what it is written in (Rust, Elixir or Elixir Nx) and, for Nx, what compiles it (Vulkan, LLVM, EXLA or the Nx evaluator). `GET /api/stages` returns the same as each stage's `compute` attribute.
+To see where each stage of a running unit is computed, select it on the dashboard. It gives:
+
+- where the stage runs: CPU or GPU;
+- what it is written in: Rust, Elixir or Elixir Nx;
+- for Nx, what compiles it: Vulkan, LLVM, EXLA or the Nx evaluator.
+
+`GET /api/stages` returns the same as each stage's `compute` attribute.
 
 ## Nx: the stages as tensor programs
 
-[Nx](https://github.com/elixir-nx/nx) is Elixir's library for numerical computing: a function written with `defn` works on whole tensors, and a compiler turns it into code for a CPU or a GPU. Each stage implements `VisionCore.Stereo.NxStage`, whose `step` is such a function. The image algorithms come from [`nx_stereo`](https://github.com/Spin42/nx_stereo):
+[Nx](https://github.com/elixir-nx/nx) is Elixir's library for numerical computing. A function written with `defn` works on whole tensors, and a compiler turns it into code for a CPU or a GPU. Each stage implements `VisionCore.Stereo.NxStage`, whose `step` is such a function. The image algorithms come from [`nx_stereo`](https://github.com/Spin42/nx_stereo):
 
 | Module | What it provides |
 |---|---|
@@ -26,9 +32,9 @@ To see where each stage of a running unit is computed, select it on the dashboar
 | `NxStereo.Rectify` | Undistortion, rectification and shrinking in one sampling pass |
 | `NxStereo.Depth` | Disparity to depth in millimetres and metres |
 
-The Pipeline joins consecutive Nx stages into one `VisionCore.Stereo.NxSegment`, compiled once when the pipeline starts. A pair then goes to the device once, every stage of the segment runs there, and the outputs come back once. A value that changes while running, such as a calibration or a live setting like `p1`, is an input of the compiled function; a build setting such as `num_disparities` is compiled in.
+The Pipeline joins consecutive Nx stages into one `VisionCore.Stereo.NxSegment`, compiled once when the pipeline starts. A pair then goes to the device once, every stage of the segment runs there, and the outputs come back once. A value that changes while running, such as a calibration or a live setting like `p1`, is an input of the compiled function. A build setting such as `num_disparities` is compiled in.
 
-The compiler comes from the `:defn_options` of the `:stereo` component, which go to `VisionCore.Stereo.NxSegment`, the second of the component's default backends after `VisionCore.Stereo.NativeSegment`. A component can list its own `:backends` instead, each `{module, opts}`, with `defn_options:` among NxSegment's options:
+The compiler comes from the `:defn_options` of the `:stereo` component. They go to `VisionCore.Stereo.NxSegment`, the second of the component's default backends, after `VisionCore.Stereo.NativeSegment`. A component can list its own `:backends` instead, each `{module, opts}`, with `defn_options:` among NxSegment's options:
 
 | Compiler | Where | Used for |
 |---|---|---|
@@ -37,20 +43,38 @@ The compiler comes from the `:defn_options` of the `:stereo` component, which go
 | `nx_iree` with `vulkan-spirv` | compiled on your workstation, run on the VENTUNO Q's GPU | `ventuno_q_defn_options/1` |
 | `nx_iree` with `llvm-cpu` | compiled on your workstation, run on the Pi 5's cores | `rpi5_defn_options/1`, for the Nx stages that have no native implementation |
 
-`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs. On a Vulkan GPU, the stages run hand-written compute shaders rather than code IREE generates: each stage's step is an `Nx.block` whose Vulkan implementation is a shader, and whose default, run everywhere else, is the stage's Nx code. Every stage's computation and shader ships with [`nx_stereo`](https://github.com/Spin42/nx_stereo): the matching's, derived from libSGM, and those of rectification, the filters, depth, the point cloud and the sharpness, row alignment and quality measures. Each stage in `vision_core` adds its settings, its dashboard text and what it publishes. IREE generates only the few operations between the blocks. The shaders read and write 32-bit words only, so they also run on GPUs without 8-bit storage, such as the Adreno of the Arduino VENTUNO Q, where code IREE generates for 8-bit values gives wrong results. For such a GPU, the defn options carry `byte_storage: false`, as `ventuno_q_defn_options/1` does: the segment's 8-bit frames and images then cross to and from the device as 32-bit words, four pixels each (`NxStereo.Packing`), so no 8-bit buffer reaches the GPU.
+`nx_iree` compiles the segment with [IREE](https://iree.dev) into a module that the IREE runtime on the board loads and runs.
 
-The shaders give the Nx code's results, except where floating-point rounding differs: a rectified pixel can be 1 grey level off where a sample falls on a rounding half, the subpixel disparity follows, and depths and points can differ in their last bits, as a GPU's division is not correctly rounded. In `nx_stereo`, `mix test --include vulkan` checks each shader against its Nx code on your workstation's GPU, and `mix run bench/pipeline.exs` times each stage there; in `vision_core`, it checks the stages and a whole pipeline against EXLA. The matching shaders depend on the GPU's subgroup operations, so a new GPU needs them checked against the Nx version. A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
+On a Vulkan GPU, the stages run hand-written compute shaders, not code IREE generates. Each stage's step is an `Nx.block`. Its Vulkan implementation is a shader; its default, run everywhere else, is the stage's Nx code. IREE generates only the few operations between the blocks.
+
+Every stage's computation and shader ships with [`nx_stereo`](https://github.com/Spin42/nx_stereo):
+
+- the matching's, derived from libSGM;
+- those of rectification, the filters, depth, the point cloud, and the sharpness, row alignment and quality measures.
+
+Each stage in `vision_core` adds its settings, its dashboard text and what it publishes.
+
+The shaders read and write 32-bit words only. They therefore also run on GPUs without 8-bit storage, such as the Adreno of the Arduino VENTUNO Q, where code IREE generates for 8-bit values gives wrong results. For such a GPU, the defn options carry `byte_storage: false`, as `ventuno_q_defn_options/1` does. The segment's 8-bit frames and images then cross to and from the device as 32-bit words, four pixels each (`NxStereo.Packing`), so no 8-bit buffer reaches the GPU.
+
+The shaders give the Nx code's results, except where floating-point rounding differs:
+
+- a rectified pixel can be 1 grey level off where a sample falls on a rounding half, and the subpixel disparity follows;
+- depths and points can differ in their last bits, as a GPU's division is not correctly rounded.
+
+In `nx_stereo`, `mix test --include vulkan` checks each shader against its Nx code on your workstation's GPU, and `mix run bench/pipeline.exs` times each stage there. In `vision_core`, `mix test --include vulkan` checks the stages and a whole pipeline against EXLA. The matching shaders depend on the GPU's subgroup operations, so a new GPU needs them checked against the Nx version.
+
+A board has neither EXLA nor the IREE compiler, so the modules are compiled on your workstation into a cache directory in your vehicle's `priv/`. Run this in your vehicle's project, on the host, where `vision_firmware` brings EXLA:
 
 ```sh
 cd vehicles/<vehicle>
 mix vision_core.nx_cache --composer <Vehicle>.Vision.Composer --out priv/nx_iree_cache
 ```
 
-It compiles what the composer's stereo pipeline compiles when it starts. The cache keys each module on the stages, their build settings and the working size, so rebuild it after changing any of them; a unit whose cache lacks a module fails to start its stereo pipeline. A new calibration needs no rebuild. List the directory in `required_files/0` so a build without it fails.
+It compiles what the composer's stereo pipeline compiles when it starts. The cache keys each module on the stages, their build settings and the working size, so rebuild it after changing any of them. A unit whose cache lacks a module fails to start its stereo pipeline. A new calibration needs no rebuild. List the directory in `required_files/0` so a build without it fails.
 
 ## On the C100's GPU
 
-The Jetson Nano module of the C100 has 4 Cortex-A57 cores and a 128-core Maxwell GPU, about 236 GFLOPS in 32-bit floats, sharing 4 GB of LPDDR4 memory.
+The Jetson Nano module of the C100 has 4 Cortex-A57 cores and a 128-core Maxwell GPU, about 236 GFLOPS in 32-bit floats. They share 4 GB of LPDDR4 memory.
 
 ```text
  v4l2_capture ──grey pair──► BEAM ──upload──► GPU: every stage as compute shaders ──download──► BEAM
@@ -65,9 +89,9 @@ While one pair's outputs are collected, the next pair's GPU work already runs. T
 
 ## On the VENTUNO Q's GPU
 
-The QCS8300 of the Arduino VENTUNO Q has 4 Cortex-A78C and 4 Cortex-A55 cores and an Adreno 623 GPU, sharing 16 GB of memory. Its system runs Vulkan through Mesa's Turnip driver.
+The QCS8300 of the Arduino VENTUNO Q has 4 Cortex-A78C and 4 Cortex-A55 cores and an Adreno 623 GPU. They share 16 GB of memory. Its system runs Vulkan through Mesa's Turnip driver.
 
-A pair goes through the same steps as on the C100, packed into 32-bit words on its way to the GPU and unpacked on its way back, since the Adreno has no 8-bit storage. Two settings of the vision firmware serve the GPU, on this target only:
+A pair goes through the same steps as on the C100. It is packed into 32-bit words on its way to the GPU and unpacked on its way back, since the Adreno has no 8-bit storage. Two settings of the vision firmware serve the GPU, on this target only:
 
 - **Vulkan pool slabs.** The firmware sets `IREE_HAL_VULKAN_SLAB_SIZE` to 512 MiB through erlinit: larger slabs keep a stereo segment's transient buffers pooled.
 - **GPU clock.** `OvcsVehicle.CpuGovernor` pins the GPU at its maximum frequency, 877 MHz. It waits for the GPU's devfreq device, which appears seconds after boot.
@@ -81,7 +105,7 @@ The Pi 5 has 4 Cortex-A76 cores at 2.4 GHz, a VideoCore VII GPU and LPDDR4X memo
 
 ### The `stereo_match` Port
 
-With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`, the Rust program [`nx_stereo`](https://github.com/Spin42/nx_stereo) computes its stages with on a CPU, which the BEAM drives as a Port:
+With `compute: :native` on the `:stereo` component, every default stage runs in `stereo_match`. It is the Rust program that [`nx_stereo`](https://github.com/Spin42/nx_stereo) computes its stages with on a CPU. The BEAM drives it as a Port:
 
 ```elixir
 {:stereo,
@@ -97,11 +121,29 @@ With `compute: :native` on the `:stereo` component, every default stage runs in 
 | `VisionCore.Stereo.NativeSegment` | The counterpart of `NxSegment`: a run of consecutive native stages, configured once in the Port and run on each pair. It runs nx_stereo's `NxStereo.NativeSegment` on the pipeline's pairs, as `NxSegment` runs `NxStereo.NxSegment`. |
 | `VisionCore.Stereo.Matcher` | The `NxStereo.Matcher` process that owns the Port, queues requests and matches each reply to its request. It reopens the Port if it exits; a request with no reply within 5 s closes it. |
 
-The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair, and again after a calibration reload or a restart of the Port, which loses every segment's state. The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range, so each is written once, in the stage. The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take: the pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused before, when the pipeline starts, by Rectification. The protocol has three requests, configure, run and release, each one length-prefixed record over the pipes; nx_stereo's `native/stereo_match/src/protocol.rs` defines it.
+The Port keeps each segment's state between pairs: the rectification sampling maps, the matching buffers and the temporal filter's previous disparity. A segment is configured on its first pair. It is configured again after a calibration reload, or after a restart of the Port, which loses every segment's state.
 
-The stages keep their names, settings and outputs, so the exporters, the dashboard and detection work the same. A stage can override the component's choice with `compute: :native` or `compute: :nx` among its options: `Pipeline.default_stages(disparity: [compute: :native])` matches natively in a pipeline otherwise compiled with Nx, and `compute: :nx` compiles a stage in a native one. `Disparity`'s `matcher:` option does the same for the matching, and must agree with a `compute:` given beside it. A stage asked to compute natively that no backend computes natively is refused at start.
+The configuration holds each stage's kind, its build settings and the constants its Nx step shares with the Port, such as the point cloud's depth range. Each is thus written once, in the stage.
 
-Under `compute: :native`, a stage computes natively when it declares the kind of its native implementation with `native_kind/0`: every default stage does. A stage of your own that wraps a default one declares that stage's kind, and for TemporalFilter, PointCloud, RowAlignment and SpeckleFilter its `native_constants/0` too, or the pipeline stops at its first pair; it cannot add a numeric build setting of its own, which the Port would refuse. A stage of your own without a native kind runs between the native segments around it, which hand it their outputs: an Nx stage becomes a compiled segment of its own, so the component also needs `:defn_options`, `rpi5_defn_options/1` on the Pi 5, and a module cache. Without a compiler, the pipeline refuses to start rather than run that stage on Nx's evaluator. A stage that is not written in Nx runs on the BEAM. At start, the Pipeline logs each run of stages with where it computes, for example `rectification+sharpness (cpu, nx, llvm_cpu) → disparity (cpu, rust)`.
+The Port refuses a configuration it cannot run, such as a kind it has no implementation of or a setting the stage does not take. The pipeline then stops at that first pair, and the log says why. Frames smaller than the working size are refused earlier, when the pipeline starts, by Rectification.
+
+The protocol has three requests: configure, run and release. Each is one length-prefixed record over the pipes. nx_stereo's `native/stereo_match/src/protocol.rs` defines it.
+
+The stages keep their names, settings and outputs, so the exporters, the dashboard and detection work the same.
+
+A stage can override the component's choice with `compute: :native` or `compute: :nx` among its options:
+
+- `Pipeline.default_stages(disparity: [compute: :native])` matches natively in a pipeline otherwise compiled with Nx;
+- `compute: :nx` compiles a stage in a native one.
+
+`Disparity`'s `matcher:` option does the same for the matching, and must agree with a `compute:` given beside it. A stage asked to compute natively that no backend computes natively is refused at start.
+
+Under `compute: :native`, a stage computes natively when it declares the kind of its native implementation with `native_kind/0`. Every default stage does. For a stage of your own:
+
+- **It wraps a default stage.** It declares that stage's kind. For TemporalFilter, PointCloud, RowAlignment and SpeckleFilter it declares its `native_constants/0` too, or the pipeline stops at its first pair. It cannot add a numeric build setting of its own, which the Port would refuse.
+- **It has no native kind.** It runs between the native segments around it, which hand it their outputs. An Nx stage becomes a compiled segment of its own, so the component also needs `:defn_options`, `rpi5_defn_options/1` on the Pi 5, and a module cache. Without a compiler, the pipeline refuses to start rather than run that stage on Nx's evaluator. A stage that is not written in Nx runs on the BEAM.
+
+At start, the Pipeline logs each run of stages with where it computes, for example `rectification+sharpness (cpu, nx, llvm_cpu) → disparity (cpu, rust)`.
 
 ### Threads
 
@@ -111,7 +153,11 @@ Under `compute: :native`, a stage computes natively when it declares the kind of
  writer thread    writes the previous pair's outputs to stdout
 ```
 
-The Pipeline keeps two pairs at the Port, so reading, computing and writing overlap ([How a pair flows](./data_flow.md#two-pairs-in-flight)). The compute threads are started once and kept, blocked between pairs. Inside a stage, work is handed out in small items, usually image rows, as they become ready, rather than split into fixed shares; a thread waiting for a row another thread is finishing spins briefly, then yields its core, then sleeps. On a board where the BEAM, the camera Ports and `jpeg_codec` share the same four cores, a thread that loses its core then delays only the row it holds, not the whole stage. `config :vision_core, :stereo_match_threads` sets the pool size, one thread per core by default.
+The Pipeline keeps two pairs at the Port, so reading, computing and writing overlap ([How a pair flows](./data_flow.md#two-pairs-in-flight)). The compute threads are started once and kept, blocked between pairs.
+
+Inside a stage, work is handed out in small items, usually image rows, as they become ready, not split into fixed shares. A thread waiting for a row another thread is finishing spins briefly, then yields its core, then sleeps. On a board where the BEAM, the camera Ports and `jpeg_codec` share the same four cores, a thread that loses its core then delays only the row it holds, not the whole stage.
+
+`config :vision_core, :stereo_match_threads` sets the pool size, one thread per core by default.
 
 ### Memory and the processor
 
@@ -123,7 +169,7 @@ The matching is the cost. For every pixel it keeps one cost per candidate dispar
 | `paths: 8`: costs, horizontal sums, and 16-bit totals | 4 × W × H × D | 33 MB |
 | `paths: 3`: costs and horizontal sums for a ring of rows | 1 MiB | 1 MiB |
 
-Each A76 core has 512 KB of L2 cache, and the four share 2 MB of L3. With 8 paths, the matcher sweeps the image down and then up, so its volumes go through main memory several times per pair. With 3 paths it makes one pass down the image: the costs of the rows just computed sit in a ring that stays in cache, and each row is freed once the vertical path has gone through it. That is the main reason 3 paths are much faster on the Pi than the path count alone suggests.
+Each A76 core has 512 KB of L2 cache, and the four share 2 MB of L3. With 8 paths, the matcher sweeps the image down and then up, so its volumes go through main memory several times per pair. With 3 paths it makes one pass down the image. The costs of the rows just computed sit in a ring that stays in cache, and each row is freed once the vertical path has gone through it. That is the main reason 3 paths are much faster on the Pi than the path count alone suggests.
 
 The arithmetic is shaped for the A76's 128-bit NEON registers:
 
@@ -132,7 +178,7 @@ The arithmetic is shaped for the A76's 128-bit NEON registers:
 - **Winner search.** The search for the best disparity is written with NEON intrinsics.
 - **Tuned build.** `stereo_match` is built with `-C target-cpu=cortex-a76`.
 
-Memory bandwidth is still what limits the Pi. The cameras' image signal processor writes every frame to the same memory, so with the cameras running a plain memory copy goes from about 3.2 GB/s to about 1.1 to 1.5 GB/s. Together with the other processes on the cores, this makes the same stereo work take about three times longer while the unit runs than on an idle board.
+Memory bandwidth is still what limits the Pi. The cameras' image signal processor writes every frame to the same memory. With the cameras running, a plain memory copy goes from about 3.2 GB/s to about 1.1 to 1.5 GB/s. Together with the other processes on the cores, this makes the same stereo work take about three times longer while the unit runs than on an idle board.
 
 ### What crosses the pipes
 
@@ -150,7 +196,7 @@ The depth in metres, which PointCloud uses, never leaves the Port. The Port enla
 
 ## Rust Ports
 
-The core runs its Rust programs as Ports: separate processes speaking length-prefixed binary records over stdin and stdout, not NIFs loaded into the BEAM, so a crash in one cannot take the BEAM down.
+The core runs its Rust programs as Ports: separate processes speaking length-prefixed binary records over stdin and stdout. They are not NIFs loaded into the BEAM, so a crash in one cannot take the BEAM down.
 
 | Port | Board | What it does |
 |---|---|---|
@@ -161,11 +207,26 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
 
-Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`: `camera_capture`, `hailo_detect` and `jpeg_codec` for `rpi5`, `v4l2_capture` and `jpeg_codec` for `okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`. On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it. The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. Each crate is described in [`vision/rust/README.md`](../../vision/rust/README.md).
+Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`:
+
+| Target | Ports |
+|---|---|
+| `rpi5` | `camera_capture`, `hailo_detect` and `jpeg_codec` |
+| `okdo_c100` | `v4l2_capture` and `jpeg_codec` |
+| `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec` and `qnn_detect` |
+
+On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it.
+
+The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. [`vision/rust/README.md`](../../vision/rust/README.md) describes each crate.
 
 ## Grey frames on the Pi 5
 
-Give both cameras `format: :grey` in the `:stereo` component's `:left` and `:right` options. `camera_capture` then sends the luma plane the image signal processor already produced, one byte per pixel. Without it, each frame is encoded to JPEG in `camera_capture` and decoded again on the BEAM's side, two pieces of CPU work per frame for nothing. Only the frames that actually leave the unit are encoded: raw images at most `:raw_image_max_hz` a second, among the ROS 2 exporter's `stereo:` options, and the dashboard's previews while it is open.
+Give both cameras `format: :grey` in the `:stereo` component's `:left` and `:right` options. `camera_capture` then sends the luma plane the image signal processor already produced, one byte per pixel. Without it, each frame is encoded to JPEG in `camera_capture` and decoded again on the BEAM's side, two needless pieces of CPU work per frame.
+
+Only the frames that leave the unit are encoded:
+
+- raw images, at most `:raw_image_max_hz` a second, among the ROS 2 exporter's `stereo:` options;
+- the dashboard's previews, while it is open.
 
 ## See also
 
