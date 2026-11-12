@@ -19,7 +19,7 @@ The diagram shows the Pi 5. The other boards differ:
 - A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
-A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model; the diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames as well as the pairs, whose depth it projects into the camera's image.
+A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model; the diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames as well as the pairs, whose depth it projects into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
 
 ```text
  left camera Port ──► LibCamera / V4L2 driver ─┐
@@ -47,11 +47,13 @@ A Port's row below names the process that owns it.
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
+| Segmentation pipeline, one per segmenter | [`VisionCore.Segmentation.Pipeline`](../../vision/core/lib/vision_core/segmentation/pipeline.ex), with [`VisionCore.Segmentation.Live`](../../vision/core/lib/vision_core/segmentation/live.ex) passing its label grids to the dashboard | `VisionCore.Segmentation.Supervisor`, one per pipeline |
+| `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
 | Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
 | `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, the Preview and the exporters encode on `VisionCore.Jpeg.Export` | `VisionCore.Supervisor` |
 
-The drivers, the Pipeline and the Detection pipeline publish their frames, pairs and detections through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
+The drivers, the Pipeline and the detection and segmentation pipelines publish their frames, pairs, detections and label grids through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
 
 `VisionCore.Stereo.Supervisor` is one stereo unit. It starts its children in order and restarts everything after a child that fails (`:rest_for_one`):
 
@@ -155,6 +157,8 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 ## The dashboard's previews
 
 The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
+
+The dashboard draws each pipeline's results over its source's preview: a detection pipeline's boxes from its `detections` or `detections:<name>` channel, a segmentation pipeline's label grid from its `segmentation:<name>` channel, a binary message holding the band and the grid at most `max_hz` a second, sent, as a preview's frame, only once the previous one is acknowledged ([Vision API](./api.md#segmentation)).
 
 The depth preview is the depth image coloured by `jpeg_codec`, near red and far blue, scaled by 1/depth.
 

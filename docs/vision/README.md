@@ -26,7 +26,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5`, `okdo_c100` and `arduino_ventuno_q` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
 | Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, a preview of each camera of its own, and the unit as its pipeline with each box's parameters. |
-| Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, JPEG and stereo matching on the CPU. |
+| Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, road segmentation, JPEG and stereo matching on the CPU. |
 
 ## Opting in
 
@@ -83,15 +83,15 @@ The Arduino VENTUNO Q carries a Qualcomm QCS8300: 4 Cortex-A78C and 4 Cortex-A55
 
 The IMX477's colour follows libcamera's Raspberry Pi pipeline, with Raspberry Pi's tuning for the sensor. `v4l2_capture` subtracts the black level, applies the lens shading and white balance gains, and demosaics on linear 16-bit values. It then applies the colour correction matrix of the colour temperature that the white balance gives. A chroma denoise blurs the colour at the resolution of the 2 × 2 Bayer cells and keeps each pixel's brightness, which removes the coloured speckle of high gain. The tuning's contrast curve then encodes the result to 8 bits. Auto exposure measures the green after lens shading and white balance, through the contrast curve, before the colour matrix and the denoise. `ccm: false` leaves the matrix out and `denoise: false` the denoise. On this sensor `gamma` only sets how far auto exposure steps; on a sensor without a tuning it also encodes the image. `threads`, 1 to 8, sets how many threads convert each frame, each taking a band of rows, with the same image whatever their number. Without it, a full-size frame takes 3 threads and a half-size one 1.
 
-**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, into `/data/vision/qnn`. Later boots reuse it. A new DLC or a new QAIRT makes a new one (`VisionCore.Detection.QnnContext`).
+**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, into `/data/vision/qnn`. Later boots reuse it. A new DLC or a new QAIRT makes a new one (`VisionCore.Detection.QnnContext`). The `:qnn_segmenter` component runs a road segmentation model the same way, in the `qnn_segment` Port ([Road segmentation](#road-segmentation)).
 
-QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too: `qnn_detect`'s bindings are generated at build time from the cached QAIRT archive, and nothing derived from them is committed.
+QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too: the QNN bindings, the `qnn` crate's, which `qnn_detect` and `qnn_segment` share, are generated at build time from the cached QAIRT archive, and nothing derived from them is committed.
 
 To build a unit for this board, run from the repository root:
 
 ```sh
 VEHICLE=<Vehicle> mise run fetch-qairt   # QAIRT, into the firmware's rootfs overlay
-mise run fetch-models                    # the detection models, the YOLOX DLC among them
+mise run fetch-models                    # the models, the YOLOX and FFNet DLCs among them
 cd vehicles/<vehicle>
 mix vision_core.nx_cache --composer <Vehicle>.Vision.Composer --out priv/nx_iree_cache
 cd ../..
@@ -126,7 +126,7 @@ A camera of its own is described to the rest of the unit by three options of its
 ```
 
 - `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is scaled to them, so one made at the sensor's full size serves `output: :half`. Frames of another aspect ratio, from a sensor mode that crops, see another part of the sensor: their camera info is empty and no stereo depth is projected into them, which is logged, until the camera is calibrated at that size.
-- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`.
+- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`. The camera's `camera_info` and a segmentation pipeline's label `camera_info` take a committed calibration at once; a detection pipeline's boxes and a segmentation pipeline's clouds keep the one read at start until their unit restarts.
 - `pose:` is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame, `p_camera = rotation × p_left + translation` in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration: a new stereo calibration changes the rectified frame, so measure the pose again.
 
 The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`), every one by default, or those its `names:` lists:
@@ -271,7 +271,7 @@ A composer may list several detector components (`:detector`, `:hailo_detector`,
 
 The Hailo-8 serves one pipeline: a second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged, and the status `npu` shows `failed` because it covers every pipeline's backend and is `failed` when any of them is unavailable. Two QNN pipelines each run on the Hexagon, and a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
 
-The NPU in the top bar shows its kind and its load, and each detection pipeline's Inference box its mean inference time. Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second. A pipeline's inference time is the mean over the second's frames; the load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator and at most 100 %. On the Hailo-8 the time runs from writing the input to reading the output, so it holds the device's work and the PCIe transfer. On the Hexagon it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free, so two pipelines sharing it are not counted twice; where profiling is unavailable it is the wall time around the graph's execution, which includes the FastRPC call and overstates the NPU's work. The load is blank until a Port has reported a time; a pipeline's time is blank in a second without a frame, never 0.
+The NPU in the top bar shows its kind and its load, and each detection or segmentation pipeline's Inference box its mean inference time. Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second. A pipeline's inference time is the mean over the second's frames; the load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator and at most 100 %. On the Hailo-8 the time runs from writing the input to reading the output, so it holds the device's work and the PCIe transfer. On the Hexagon it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free, so two pipelines sharing it are not counted twice; where profiling is unavailable it is the wall time around the graph's execution, which includes the FastRPC call and overstates the NPU's work. The load is blank until a Port has reported a time; a pipeline's time is blank in a second without a frame, never 0.
 
 Each exporter takes the pipelines it publishes: the ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
 
@@ -293,6 +293,25 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
 
 The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info`, which the ROS 2 exporter publishes at once, reaches the pipeline once the unit restarts.
 
+## Road segmentation
+
+A segmentation pipeline classes each part of a camera of its own's image among the 19 Cityscapes classes, `road` among them, and sorts the stereo points seen in it into road and off-road, for a navigation stack. It takes a camera source only, in colour: the stereo pair's images are grey, and road models are trained on colour. The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. With the OVCS1 reference vehicle's HQ camera, `:hq`, it reads as below; it works the same with your camera:
+
+```elixir
+{:qnn_segmenter,
+ name: :road,
+ source: {:camera, :hq},
+ dlc_path: Application.app_dir(:<vehicle>, "priv/models/ffnet_122ns_lowres.dlc")}
+```
+
+- **Name.** `:name` is required and follows the detection pipelines' rule, in their namespace and the cameras': no detector, segmenter or camera shares it.
+- **Input.** The model sees a 2:1 band of the frame, its full width and half that in rows, touching the frame's bottom, where the road is; `band_top`, a fraction of the frame's height, moves it up. The Port resizes the band to the model's input, 1024 × 512 for FFNet, shrinking a wider band and enlarging a narrower one, such as a half-resolution HQ Camera's 1014 × 507, and gives each cell of the model's output grid a class: 256 × 128 cells for FFNet. `segment_every_n` segments one camera frame in `n`.
+- **Road.** `road_classes` names the classes that count as road, `["road"]` by default.
+- **Clouds.** The stereo pair captured closest to the frame is matched with it, and its depth projected into the camera's image, as for [a detection pipeline on a camera of its own](#detection-on-a-camera-of-its-own), with the same `reprojection_stride` and `pair_wait_ms`. Each projected point takes the class of the cell it lands in: the road points and the off-road points are two clouds in the stereo left optical frame. A frame without a matched pair, or on a camera without a calibration or a pose, has its label grid and no clouds. The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info` reaches the label grid's `camera_info` at once, but the clouds are sorted with the start-time calibration until the unit restarts.
+- **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids and the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)); the API's `segmentation:<name>` channel carries the grid and the band it covers, at most `max_hz` (5) a second and one at a time, each once the client acks the one before ([Segmentation](./api.md#segmentation)). The dashboard draws it over the camera's preview, each class in its Cityscapes colour at 40 % opacity and the road classes at 60 %, with a legend of the classes present, each kept for 3 s after the last grid with it.
+
+The road model fetched for the OVCS1 reference vehicle is FFNet-122NS-LowRes, quantised w8a8 for QNN by Qualcomm AI Hub: `mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. **Its weights are for non-commercial use only**: FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only, and `mise run fetch-models` prints that licence, which `scripts/models.tsv` records, before the download. Running it on a vehicle used commercially needs a road model trained on data you may use commercially.
+
 ## Detection models
 
 Each detector component runs the model its option names:
@@ -302,7 +321,7 @@ Each detector component runs the model its option names:
 
 **No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download.
 
-[`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md) describes the OVCS Mini reference vehicle's models and what they require. The OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`.
+[`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md) describes the OVCS Mini reference vehicle's models and what they require. The OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`. The road segmentation model fetched for it has non-commercial weights ([Road segmentation](#road-segmentation)).
 
 OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's history, which removing it from `HEAD` doesn't undo.
 

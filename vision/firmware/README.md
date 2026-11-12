@@ -21,14 +21,16 @@ Compiling `vision_core` for a target cross-builds that target's Port
 binaries from [`../rust`](../rust) into its `priv/` (see
 `../core/Makefile`): `camera_capture`, `hailo_detect`, `jpeg_codec` and
 `stereo_match` for `rpi5`, `v4l2_capture` and `jpeg_codec` for
-`okdo_c100`, and those two with `qnn_detect` for `arduino_ventuno_q`.
+`okdo_c100`, and those two with `qnn_detect` and `qnn_segment` for
+`arduino_ventuno_q`.
 That needs the `aarch64-unknown-linux-gnu` Rust target (installed by
 `mise install`), a host libclang for bindgen on `rpi5` and
 `arduino_ventuno_q`, `libhailort` for `rpi5`, which comes from
 [`libraries/hailort`](../../libraries/hailort), and for
 `arduino_ventuno_q` the QAIRT archive `mise run fetch-qairt` caches:
-`qnn_detect`'s bindings are generated from its QNN headers at build
-time, and nothing derived from them is committed.
+the QNN bindings, the `qnn` crate's, which `qnn_detect` and `qnn_segment`
+share, are generated from its QNN headers at build time, and nothing
+derived from them is committed.
 
 Per-target defaults (`fwup.conf`, `config.txt`, `cmdline-a.txt`,
 `cmdline-b.txt`) live under `targets/rpi5/`; `okdo_c100` and

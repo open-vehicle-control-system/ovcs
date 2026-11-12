@@ -297,7 +297,7 @@ The API lists a `camera_frame:<name>` output for each camera of its own, as in t
 
 A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `hq` for a pipeline on the camera `hq`.
 
-A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections: on the ROS 2 exporter when its `segmentation:` lists the pipeline, every one by default, and on the API, with the pipeline's camera as its `source`.
+A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections: on the ROS 2 exporter with its `segmentation:` option, those its `pipelines:` lists, or without `pipelines:` every one on a camera, and on the API, with the pipeline's camera as its `source`.
 
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
@@ -377,7 +377,7 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator detection runs on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each detection pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator the detection and segmentation pipelines run on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
 
 ```json
 {
@@ -482,3 +482,32 @@ On a unit with detection, `detections` pushes each result, at most ten a second,
 On a unit without detection, the join is refused with `{"reason": "unavailable"}`.
 
 `detections` carries the default pipeline. A pipeline named in the vehicle's composer, `:vehicle_detection` for instance, has its own channel, `detections:vehicle_detection`, which pushes the same `detections` event with the same payload. `detections:detection` and a name no pipeline runs under are refused with `{"reason": "unavailable"}`. The names come from `GET /api/exporters`, whose API outputs list each `detections:<name>`.
+
+### Segmentation
+
+A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmentation)) has a channel per pipeline, `segmentation:<name>`, whose names come from `GET /api/exporters`, with the camera each one segments as its `source`. It pushes each result, at most the pipeline's `maxHz` a second (5 by default), as a `segmentation` event whose payload is binary, and the next one only once you push `ack`, as on the previews: a result that comes before replaces the one waiting, so a slow link gets the newest grid instead of a backlog. The payload is eight unsigned 16-bit little-endian integers, then the label grid.
+
+| Bytes | Content |
+|---|---|
+| 0–3 | The camera frame's width and height, in pixels |
+| 4–11 | The band of the frame the grid covers, in the frame's pixels: `x`, `y`, `width`, `height` |
+| 12–15 | The grid's width and height, in cells |
+| 16– | One class id a cell, one byte each, row by row |
+
+The grid is stretched over the band, each cell the band's width over the grid's width wide, and its height over the grid's height high. On every join, a rejoin included, the channel pushes a `classes` event before any grid: `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
+
+```javascript
+const road = socket.channel('segmentation:road')
+let classes = null
+road.on('classes', (names) => { classes = names })
+road.on('segmentation', (payload) => {
+  const view = new DataView(payload)
+  const [frameW, frameH, x, y, w, h, gridW, gridH] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => view.getUint16(i * 2, true))
+  const grid = new Uint8Array(payload, 16, gridW * gridH)
+  console.log(classes?.labels[grid[0]], `over ${w}×${h} at ${x},${y} of ${frameW}×${frameH}`)
+  road.push('ack', {})
+})
+road.join()
+```
+
+A name no segmentation pipeline of the unit runs under, a detection pipeline's included, is refused with `{"reason": "unavailable"}`.
