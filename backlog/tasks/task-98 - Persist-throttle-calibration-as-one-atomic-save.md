@@ -18,11 +18,11 @@ The pedal stores four calibration boundaries in separate transactions. An interr
 
 ## Acceptance Criteria
 
-- [ ] A failed boundary insert rolls back the complete calibration save.
-- [ ] The latest complete calibration is selected even when timestamps tie.
-- [ ] Both calibration stop paths use the same atomic persistence operation.
-- [ ] Regression tests use a disposable real SQLite repository.
-- [ ] Core tests, formatting, compilation and strict Credo pass.
+- [x] A failed boundary insert rolls back the complete calibration save.
+- [x] The latest complete calibration is selected even when timestamps tie.
+- [x] Both calibration stop paths use the same atomic persistence operation.
+- [x] Regression tests use a disposable real SQLite repository.
+- [x] Core tests, formatting, compilation and strict Credo pass.
 
 ## Design
 
