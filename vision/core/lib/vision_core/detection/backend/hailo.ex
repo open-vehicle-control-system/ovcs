@@ -33,7 +33,8 @@ defmodule VisionCore.Detection.Backend.Hailo do
   inference-less, answering `{:error, :unavailable}`. When `hailo_detect`
   exits, as it does when the accelerator is not ready yet or after a
   failed read, or leaves a frame unanswered for `:infer_timeout_ms`, the
-  Port is reopened after a wait that grows with each failure in a row
+  frame in flight is answered with `nil` detections and the Port is
+  reopened after a wait that grows with each failure in a row
   (`:reopen_delays_ms`), answering `{:error, :unavailable}` meanwhile. A
   detection reply starts the waits over. The stereo pipeline never
   depends on the detector being up.
@@ -215,9 +216,13 @@ defmodule VisionCore.Detection.Backend.Hailo do
     error -> {:error, error}
   end
 
-  # Fails the frame in flight and reopens the Port after the next wait.
+  # Answers the frame in flight with no detections and reopens the Port after the next wait.
   defp port_down(state) do
-    if state.inflight, do: Process.cancel_timer(state.inflight.timer)
+    if inflight = state.inflight do
+      Process.cancel_timer(inflight.timer)
+      send(inflight.reply_to, {:inference_detections, inflight.sequence, nil})
+    end
+
     delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
     Process.send_after(self(), :reopen, delay_ms)
     %{state | port: nil, inflight: nil, times: nil, failures: state.failures + 1}

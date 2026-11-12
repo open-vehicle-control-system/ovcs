@@ -15,8 +15,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
   caller receives `{:inference_detections, sequence, detections}` in the
   submitted image's pixels, and a missing DLC, QAIRT or binary leaves
   the process alive answering `{:error, :unavailable}`. When `qnn_detect`
-  exits or leaves a frame unanswered for `:infer_timeout_ms`, the Port is
-  reopened after a wait that grows with each failure in a row.
+  exits or leaves a frame unanswered for `:infer_timeout_ms`, the frame in
+  flight is answered with `nil` detections and the Port is reopened after
+  a wait that grows with each failure in a row.
 
   ## Options
 
@@ -198,9 +199,13 @@ defmodule VisionCore.Detection.Backend.Qnn do
     error -> {:error, error}
   end
 
-  # Fails the frame in flight and reopens the Port after the next wait.
+  # Answers the frame in flight with no detections and reopens the Port after the next wait.
   defp port_down(state) do
-    if state.inflight, do: Process.cancel_timer(state.inflight.timer)
+    if inflight = state.inflight do
+      Process.cancel_timer(inflight.timer)
+      send(inflight.reply_to, {:inference_detections, inflight.sequence, nil})
+    end
+
     delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
     Process.send_after(self(), :reopen, delay_ms)
     %{state | port: nil, inflight: nil, times: nil, failures: state.failures + 1}

@@ -24,7 +24,9 @@ defmodule VisionCore.Detection.Backend do
       {:inference_detections, sequence, detections}
 
   where `sequence` is the sequence number the caller passed to `detect/3`,
-  and each detection is
+  and `detections` is `nil` when the backend could not detect on the frame,
+  as when its Port went down with the frame in flight: a frame accepted gets
+  exactly one reply. Each detection is
 
       %{class_id: 0..79, score: 0.0..1.0, x0: _, y0: _, x1: _, y1: _}
 

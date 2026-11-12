@@ -109,6 +109,23 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert Qnn.detect(2, @image) == {:error, :busy}
   end
 
+  test "a frame left unanswered is no detections, and the Port restarted", %{tmp_dir: dir} do
+    start_backend(dir, "hang", infer_timeout_ms: 200)
+    eventually(&Qnn.available?/0)
+
+    assert Qnn.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, nil}, 1_000
+    eventually(fn -> Qnn.detect(2, @image) == :ok end)
+  end
+
+  test "a frame in flight when the Port exits is no detections", %{tmp_dir: dir} do
+    start_backend(dir, "die", reopen_delays_ms: [60_000])
+    eventually(&Qnn.available?/0)
+
+    assert Qnn.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, nil}, 2_000
+  end
+
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",
        %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})

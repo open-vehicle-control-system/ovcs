@@ -4,6 +4,24 @@ defmodule VisionCore.Detection.PipelineTest do
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Outputs
 
+  # Fails the odd frames, as a backend whose Port went down, and finds a person on the left half of
+  # the even ones.
+  defmodule EveryOtherFrame do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(_server, sequence, image) do
+      {height, width} = image |> Nx.shape() |> then(&{elem(&1, 0), elem(&1, 1)})
+      person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: width / 2, y1: height / 1}
+      detections = if rem(sequence, 2) == 1, do: nil, else: [person]
+      send(self(), {:inference_detections, sequence, detections})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   describe "a pair through the backend" do
     alias VisionCore.Camera.Frame
     alias VisionCore.Detection.Backend.Stub
@@ -74,6 +92,16 @@ defmodule VisionCore.Detection.PipelineTest do
       assert [person] = detections()
       assert person.outline == [{0.0, 0.0}, {40.0, 0.0}, {40.0, 40.0}, {0.0, 40.0}]
       assert person.caption == "person 0.90 2.00m"
+    end
+
+    test "publishes nothing for a pair the backend could not detect on, and detects the next" do
+      start_supervised!({Pipeline, backend: EveryOtherFrame})
+      :ok = Outputs.subscribe({:detections, Pipeline})
+
+      publish_pair()
+      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 100
+
+      assert [%{label: "person"}] = detections()
     end
 
     test "ignores a stray :pair_wait on the stereo source" do

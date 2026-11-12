@@ -2,7 +2,8 @@
 # Stands in for hailo_detect. The HEF file's text picks what it does: "answer"
 # replies to each request with one detection spanning the image, of class id
 # its channel count less one, and a 1500 us inference time, "answer_once" the same for one request, then exits, "answer_untimed" the same without the time, "exit" exits
-# with status 1 at once, "hang" reads requests and never replies. A program that
+# with status 1 at once, "die" exits with status 1 on its first request, "hang"
+# reads requests and never replies. A program that
 # runs logs "ready" first. Each start appends a line to <hef>.starts.
 import struct, sys
 
@@ -26,6 +27,8 @@ while True:
     _tag, sequence, width, height, channels = struct.unpack("<BIHHB", request[:10])
     if mode == "hang":
         continue
+    if mode == "die":
+        sys.exit(1)
     detection = struct.pack("<Hfffff", channels - 1, 0.9, 0.0, 0.0, float(width), float(height))
     reply = struct.pack("<BIH", 1, sequence, 1) + detection
     if mode != "answer_untimed":

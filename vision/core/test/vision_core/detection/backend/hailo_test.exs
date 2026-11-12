@@ -131,8 +131,17 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     hef_path = start_backend(tmp_dir, "hang", infer_timeout_ms: 50)
 
     assert Hailo.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, nil}, 1_000
     eventually(fn -> starts(hef_path) == 2 and Hailo.available?() end)
     assert Hailo.detect(2, @image) == :ok
+  end
+
+  test "a frame in flight when hailo_detect exits is no detections", %{tmp_dir: tmp_dir} do
+    start_backend(tmp_dir, "die", reopen_delays_ms: [60_000])
+    eventually(&Hailo.available?/0)
+
+    assert Hailo.detect(1, @image) == :ok
+    assert_receive {:inference_detections, 1, nil}, 2_000
   end
 
   test "declares the inference step: its model and threshold, on the accelerator", %{

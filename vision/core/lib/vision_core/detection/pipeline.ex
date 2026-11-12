@@ -92,7 +92,8 @@ defmodule VisionCore.Detection.Pipeline do
   `{:error, :busy}` while an inference is in flight, so the sequence
   only advances on an accepted frame; a backend that accepted
   overlapping requests would have its earlier replies discarded as
-  stale.
+  stale. A pair or frame the backend could not detect on, answered with
+  `nil`, publishes nothing.
 
   ## Options
 
@@ -435,6 +436,9 @@ defmodule VisionCore.Detection.Pipeline do
   end
 
   @impl GenServer
+  def handle_info({:inference_detections, sequence, nil}, %{sequence: sequence} = state),
+    do: {:noreply, %{state | pending: nil}}
+
   def handle_info(
         {:inference_detections, sequence, detections},
         %{sequence: sequence, pending: %Pair{} = pair} = state

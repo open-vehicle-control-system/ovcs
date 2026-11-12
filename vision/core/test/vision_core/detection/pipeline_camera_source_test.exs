@@ -34,6 +34,21 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     def inference_times(_server), do: nil
   end
 
+  # Fails the first frame, as a backend whose Port went down, and finds a person in the next.
+  defmodule FirstFrameLost do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(_server, sequence, _image) do
+      person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0}
+      send(self(), {:inference_detections, sequence, if(sequence == 1, do: nil, else: [person])})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   # Saved at twice the frames' size: placed right only once scaled to them.
   defp calibration do
     %CameraCalibration{
@@ -339,6 +354,27 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       end)
 
     assert log =~ "cannot place detections at 40x10"
+  end
+
+  test "publishes nothing for a frame the backend could not detect on, and detects the next", %{
+    tmp_dir: dir
+  } do
+    start_supervised!(
+      {Pipeline,
+       name: :hq_people,
+       backend: FirstFrameLost,
+       source: {:camera, :hq},
+       config: config(dir, []),
+       clock: start_clock()}
+    )
+
+    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    publish_frame(100)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    publish_frame(200)
+
+    assert_receive {:"$gen_cast",
+                    {:detections, %Frame{capture_ns: 200_000_000}, [_person], :hq_people}}
   end
 
   test "keeps a box without a distance, with its bearing, at once while no pair came",
