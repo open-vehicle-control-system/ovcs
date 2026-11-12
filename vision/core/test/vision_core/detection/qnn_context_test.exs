@@ -69,6 +69,21 @@ defmodule VisionCore.Detection.QnnContextTest do
     assert third not in [first, second]
   end
 
+  test "the binary is named after a hash of the DLC, libQnnHtp.so and the HTP graph options", %{
+    tmp_dir: dir
+  } do
+    qairt = setup_qairt(dir, "library")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model")
+
+    key =
+      :crypto.hash(:sha256, ["model", "library", ~s({"O":3})])
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    assert ensure(dlc, qairt, dir) == {:ok, Path.join(dir, key <> ".bin")}
+  end
+
   test "QNN's environment names the DSP libraries of the board's Hexagon architecture" do
     assert QnnContext.env("/qairt", "/dsp", "hexagon-v79") == [
              {"LD_LIBRARY_PATH", "/qairt/lib"},

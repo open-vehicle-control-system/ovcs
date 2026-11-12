@@ -29,6 +29,7 @@ defmodule VisionCore.Detection.QnnContext do
   @htp_graph_options %{"O" => 3}
   @backend_config "backend_config.json"
   @generating_suffix ".generating"
+  @hash_block_bytes 1_048_576
   @htp_config "htp_backend_extensions.json"
 
   @type opts :: [
@@ -55,10 +56,12 @@ defmodule VisionCore.Detection.QnnContext do
     cache_dir = Keyword.fetch!(opts, :cache_dir)
     library = Path.join(qairt_dir, "lib/libQnnHtp.so")
 
-    with {:ok, dlc} <- read(dlc_path, :missing_dlc),
-         {:ok, backend} <- read(library, :missing_qairt) do
+    with {:ok, hash} <- hash_file(:crypto.hash_init(:sha256), dlc_path, :missing_dlc),
+         {:ok, hash} <- hash_file(hash, library, :missing_qairt) do
       key =
-        :crypto.hash(:sha256, [dlc, backend, Jason.encode!(@htp_graph_options)])
+        hash
+        |> :crypto.hash_update(Jason.encode!(@htp_graph_options))
+        |> :crypto.hash_final()
         |> Base.encode16(case: :lower)
         |> binary_part(0, 16)
 
@@ -109,11 +112,12 @@ defmodule VisionCore.Detection.QnnContext do
     ]
   end
 
-  defp read(path, missing) do
-    case File.read(path) do
-      {:ok, bytes} -> {:ok, bytes}
-      {:error, _} -> {:error, {missing, path}}
-    end
+  # `hash` over `path`'s bytes too, read a block at a time.
+  defp hash_file(hash, path, missing) do
+    {:ok,
+     path |> File.stream!(@hash_block_bytes) |> Enum.reduce(hash, &:crypto.hash_update(&2, &1))}
+  rescue
+    File.Error -> {:error, {missing, path}}
   end
 
   defp generate(dlc_path, library, key, binary, opts) do
