@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use crate::arguments::Output;
 use crate::bands::{self, Conversion, Images, Measures, Sums};
-use crate::bayer::{self, DemosaicRows, Image, RawFrame};
+use crate::bayer::{self, CellRows, DemosaicRows, Image, RawFrame};
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
 
@@ -98,6 +98,7 @@ pub struct Buffers {
 /// The rows a band of the colour path works on.
 #[derive(Default)]
 struct Band {
+    cells: CellRows,
     shading_gains: ShadingGains,
     row_gains: Vec<u32>,
     values: [Vec<u16>; 2],
@@ -203,6 +204,7 @@ fn half_band(
     band: &mut Band,
 ) {
     let Band {
+        cells: raw_rows,
         shading_gains,
         row_gains,
         values: [top_values, bottom_values],
@@ -228,7 +230,7 @@ fn half_band(
         cells,
     );
     let mut renderer = Renderer::new(colour, image, width, entries, denoise);
-    frame.cell_rows(rows, 1, |row, top, bottom| {
+    frame.cell_rows(rows, 1, raw_rows, |row, top, bottom| {
         linear.row(row, top, row_gains, top_values);
         linear.row(row + 1, bottom, row_gains, bottom_values);
         for ((top_pair, bottom_pair), pixel) in top_values
@@ -259,6 +261,7 @@ fn measure(
     band: &mut Band,
 ) -> Sums {
     let Band {
+        cells: raw_rows,
         shading_gains,
         row_gains,
         values: [top_values, bottom_values],
@@ -286,29 +289,35 @@ fn measure(
     let black_level = colour.black_level;
     let shaded =
         |sample: u16, gain: u32| u64::from(sample.saturating_sub(black_level)) * u64::from(gain);
-    Sums::measured(frame, conversion, cells, |row, top, bottom, sums| {
-        if let Some(linear) = &mut linear {
-            linear.row(row, top, row_gains, top_values);
-            linear.row(row + 1, bottom, row_gains, bottom_values);
-            for (top_pair, bottom_pair) in top_values
-                .chunks_exact(2)
-                .zip(bottom_values.chunks_exact(2))
-            {
-                let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
-                sums.green += u64::from(colour.contrast.shown(green));
+    Sums::measured(
+        frame,
+        conversion,
+        cells,
+        raw_rows,
+        |row, top, bottom, sums| {
+            if let Some(linear) = &mut linear {
+                linear.row(row, top, row_gains, top_values);
+                linear.row(row + 1, bottom, row_gains, bottom_values);
+                for (top_pair, bottom_pair) in top_values
+                    .chunks_exact(2)
+                    .zip(bottom_values.chunks_exact(2))
+                {
+                    let green = (i32::from(top_pair[1]) + i32::from(bottom_pair[0]) + 1) >> 1;
+                    sums.green += u64::from(colour.contrast.shown(green));
+                }
             }
-        }
-        if conversion.channel_means {
-            measured_gains.row(row, top_gains);
-            measured_gains.row(row + 1, bottom_gains);
-            for i in (0..frame.width).step_by(2) {
-                sums.channels[0] += shaded(top[i], top_gains[i]);
-                sums.channels[1] +=
-                    shaded(top[i + 1], top_gains[i + 1]) + shaded(bottom[i], bottom_gains[i]);
-                sums.channels[2] += shaded(bottom[i + 1], bottom_gains[i + 1]);
+            if conversion.channel_means {
+                measured_gains.row(row, top_gains);
+                measured_gains.row(row + 1, bottom_gains);
+                for i in (0..frame.width).step_by(2) {
+                    sums.channels[0] += shaded(top[i], top_gains[i]);
+                    sums.channels[1] +=
+                        shaded(top[i + 1], top_gains[i + 1]) + shaded(bottom[i], bottom_gains[i]);
+                    sums.channels[2] += shaded(bottom[i + 1], bottom_gains[i + 1]);
+                }
             }
-        }
-    })
+        },
+    )
 }
 
 /// What `colour` makes of `frame`'s samples, in fixed point: their linear

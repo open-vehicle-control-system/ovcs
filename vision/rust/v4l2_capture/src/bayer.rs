@@ -158,6 +158,9 @@ pub fn grey_half(
     grey
 }
 
+/// The samples of a row of RGGB cells' two rows, kept from one frame to the next.
+pub(crate) type CellRows = [Vec<u16>; 2];
+
 /// A raw RGGB frame: `height` rows starting every `row_stride` bytes, at
 /// least `layout.row_bytes(width)`; `width` and `height` are even.
 pub struct RawFrame<'a> {
@@ -176,24 +179,26 @@ impl RawFrame<'_> {
 
     /// Calls `cell_row` with the index of the top row of each row of RGGB
     /// cells in `cell_rows` whose index is a multiple of `step`, then its top
-    /// row's samples and its bottom row's.
+    /// row's samples and its bottom row's, unpacked into `rows`.
     pub(crate) fn cell_rows(
         &self,
         cell_rows: Range<usize>,
         step: usize,
+        [top, bottom]: &mut CellRows,
         mut cell_row: impl FnMut(usize, &[u16], &[u16]),
     ) {
         let row_bytes = self.layout.row_bytes(self.width);
-        let (mut top, mut bottom) = (vec![0u16; self.width], vec![0u16; self.width]);
+        top.resize(self.width, 0);
+        bottom.resize(self.width, 0);
         let rows = &self.raw[..self.row_stride * self.height];
         let step = step.max(1);
         let end = cell_rows.end.min(self.cell_row_count());
         for cell_row_index in (cell_rows.start.next_multiple_of(step)..end).step_by(step) {
             let top_row = &rows[2 * cell_row_index * self.row_stride..];
             let bottom_row = &top_row[self.row_stride..];
-            samples(&top_row[..row_bytes], self.layout, &mut top);
-            samples(&bottom_row[..row_bytes], self.layout, &mut bottom);
-            cell_row(2 * cell_row_index, &top, &bottom);
+            samples(&top_row[..row_bytes], self.layout, top);
+            samples(&bottom_row[..row_bytes], self.layout, bottom);
+            cell_row(2 * cell_row_index, top, bottom);
         }
     }
 }
@@ -252,7 +257,7 @@ pub fn develop(
                 conversion.threads,
                 bands,
                 |cells, image, demosaic| {
-                    let sums = measure(frame, tone, conversion, cells.clone());
+                    let sums = measure(frame, tone, conversion, cells.clone(), &mut demosaic.cells);
                     full_band(frame, &tables, cells, image, demosaic);
                     sums
                 },
@@ -270,9 +275,10 @@ pub fn develop(
                 rotate_180,
                 conversion.threads,
                 bands,
-                |cells, image, _| {
-                    let sums = measure(frame, tone, conversion, cells.clone());
-                    half_band(frame, tone, gains_q12, cells, image);
+                |cells, image, demosaic| {
+                    let rows = &mut demosaic.cells;
+                    let sums = measure(frame, tone, conversion, cells.clone(), rows);
+                    half_band(frame, tone, gains_q12, cells, image, rows);
                     sums
                 },
             )
@@ -308,8 +314,9 @@ fn half_band(
     (red_q12, blue_q12): (u32, u32),
     cells: Range<usize>,
     mut image: Image,
+    rows: &mut CellRows,
 ) {
-    frame.cell_rows(cells, 1, |row, top, bottom| {
+    frame.cell_rows(cells, 1, rows, |row, top, bottom| {
         image.write(row / 2, |out| {
             for ((top_pair, bottom_pair), pixel) in top
                 .chunks_exact(2)
@@ -392,6 +399,7 @@ impl<'a> Image<'a> {
 
 /// The rows `demosaic_full` works on, kept from one frame to the next.
 pub(crate) struct DemosaicRows<V> {
+    cells: CellRows,
     samples: Vec<u16>,
     developed: [Vec<V>; 3],
     interpolated: Vec<V>,
@@ -400,6 +408,7 @@ pub(crate) struct DemosaicRows<V> {
 impl<V> Default for DemosaicRows<V> {
     fn default() -> DemosaicRows<V> {
         DemosaicRows {
+            cells: CellRows::default(),
             samples: Vec::new(),
             developed: std::array::from_fn(|_| Vec::new()),
             interpolated: Vec::new(),
@@ -447,6 +456,7 @@ pub(crate) fn demosaic_full<V: Sample>(
         samples: row_samples,
         developed,
         interpolated,
+        ..
     } = buffers;
     row_samples.resize(width, 0);
     // Rows y - 1, y and y + 1, developed, at index row % 3, each with the
@@ -564,9 +574,15 @@ fn q12(gain: f64) -> u32 {
 /// two greens averaged through `tone`, as the half-size image has them; for
 /// white balance, each cell's red, greens and blue above `tone`'s black
 /// level.
-fn measure(frame: &RawFrame, tone: &Tone, conversion: &Conversion, cells: Range<usize>) -> Sums {
+fn measure(
+    frame: &RawFrame,
+    tone: &Tone,
+    conversion: &Conversion,
+    cells: Range<usize>,
+    rows: &mut CellRows,
+) -> Sums {
     let signal = |sample: u16| u64::from(sample.saturating_sub(tone.black_level));
-    Sums::measured(frame, conversion, cells, |_, top, bottom, sums| {
+    Sums::measured(frame, conversion, cells, rows, |_, top, bottom, sums| {
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             if conversion.green_mean {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
