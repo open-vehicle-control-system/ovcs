@@ -21,6 +21,10 @@ use framing::{log_record, LogLevel, Writer};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 
+/// Threads the letterbox splits its rows across.
+#[cfg(feature = "device")]
+const LETTERBOX_THREADS: usize = 1;
+
 /// A LOG record, which `VisionCore.Detection.Backend.Hailo` hands to the Logger.
 fn log(writer: &Writer, level: LogLevel, message: &str) {
     let _ = writer.write_record(&log_record(level, message));
@@ -64,7 +68,7 @@ fn main() {
 
 #[cfg(feature = "device")]
 fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
-    use letterbox::{letterbox_for, letterbox_into};
+    use letterbox::{letterbox_for, letterbox_into, Frame};
     use outcome::{reply_for, FrameOutcome, Reply};
     use protocol::{detections_record, inference_micros, parse_request};
 
@@ -105,13 +109,16 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             }
             Ok(()) => {
                 letterbox_into(
-                    request.pixels,
-                    width,
-                    height,
-                    request.channels,
+                    &Frame {
+                        pixels: request.pixels,
+                        width,
+                        height,
+                        channels: request.channels,
+                    },
                     &mut model_input,
                     model_size,
                     &letterbox,
+                    LETTERBOX_THREADS,
                 );
 
                 match detector.infer(&model_input, &mut output) {

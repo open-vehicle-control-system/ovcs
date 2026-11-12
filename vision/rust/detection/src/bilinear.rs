@@ -1,6 +1,8 @@
 //! Bilinear resize sampled at pixel centres, each output row blended along its source rows
 //! first, then between them.
 
+use crate::bands;
+
 /// The two source pixels a sample falls between, clamped to the image, and the second's
 /// weight.
 #[derive(Clone, Copy)]
@@ -32,9 +34,32 @@ pub fn taps(samples: usize, pixels: usize, to_pixels: impl Fn(f32) -> f32) -> Ve
 
 /// Resizes `source`, `CHANNELS` (1 or 3) samples a pixel and `source_width` pixels a row,
 /// along `columns` and `rows` into RGB rows of `destination`, `stride` bytes apart from its
-/// start; grey is replicated to RGB. A source row blended for one output row is kept for the
-/// next.
+/// start; grey is replicated to RGB. The rows are split into up to `threads` bands
+/// (`bands::in_row_bands`), each sample computed as on one thread.
 pub fn resize_into<const CHANNELS: usize>(
+    source: &[u8],
+    source_width: usize,
+    columns: &[Tap],
+    rows: &[Tap],
+    destination: &mut [u8],
+    stride: usize,
+    threads: usize,
+) {
+    bands::in_row_bands(
+        rows,
+        1,
+        destination,
+        stride,
+        threads,
+        |rows, destination| {
+            resize_rows::<CHANNELS>(source, source_width, columns, rows, destination, stride);
+        },
+    );
+}
+
+/// `resize_into` on the calling thread. A source row blended for one output row is kept for
+/// the next.
+fn resize_rows<const CHANNELS: usize>(
     source: &[u8],
     source_width: usize,
     columns: &[Tap],

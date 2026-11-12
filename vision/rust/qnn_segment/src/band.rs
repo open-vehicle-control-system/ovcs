@@ -6,7 +6,8 @@ use detection::bilinear;
 
 /// Bilinear resize of the RGB image's `rows`, `width` pixels wide, into `destination`, an
 /// `output_width` × `output_height` RGB image. Samples are taken at pixel centres, and a tap
-/// past the band's edge takes the edge's pixel, never a row outside the band.
+/// past the band's edge takes the edge's pixel, never a row outside the band. The output rows
+/// are split into up to `threads` bands, with the same output whatever their count.
 pub fn resize_band(
     image: &[u8],
     width: usize,
@@ -14,6 +15,7 @@ pub fn resize_band(
     destination: &mut [u8],
     output_width: usize,
     output_height: usize,
+    threads: usize,
 ) {
     let to_pixels = |input: usize, output: usize| {
         let scale = input as f32 / output as f32;
@@ -30,6 +32,7 @@ pub fn resize_band(
         ),
         destination,
         output_width * 3,
+        threads,
     );
 }
 
@@ -46,8 +49,26 @@ mod tests {
     }
 
     fn resized(source: &[u8], width: usize, rows: Range<usize>, output: (usize, usize)) -> Vec<u8> {
+        resized_on(source, width, rows, output, 1)
+    }
+
+    fn resized_on(
+        source: &[u8],
+        width: usize,
+        rows: Range<usize>,
+        output: (usize, usize),
+        threads: usize,
+    ) -> Vec<u8> {
         let mut destination = vec![0; output.0 * output.1 * 3];
-        resize_band(source, width, rows, &mut destination, output.0, output.1);
+        resize_band(
+            source,
+            width,
+            rows,
+            &mut destination,
+            output.0,
+            output.1,
+            threads,
+        );
         destination
     }
 
@@ -112,26 +133,30 @@ mod tests {
     }
 
     #[test]
-    fn the_resized_bands_keep_their_digests() {
-        let digests: Vec<u64> = [
-            (1014, 760, 126..633, (1024, 512)),
-            (1014, 760, 0..760, (256, 128)),
-            (13, 9, 2..7, (40, 17)),
-            (7, 5, 4..5, (3, 2)),
-        ]
-        .into_iter()
-        .map(|(width, height, rows, output)| {
-            digest(&resized(&noise(width * height * 3), width, rows, output))
-        })
-        .collect();
-        assert_eq!(
-            digests,
-            [
-                7170474687542579749,
-                12029912228537717427,
-                16906896625238522488,
-                13368472135222443375,
+    fn the_resized_bands_keep_their_digests_on_one_to_four_threads() {
+        for threads in 1..=4 {
+            let digests: Vec<u64> = [
+                (1014, 760, 126..633, (1024, 512)),
+                (1014, 760, 0..760, (256, 128)),
+                (13, 9, 2..7, (40, 17)),
+                (7, 5, 4..5, (3, 2)),
             ]
-        );
+            .into_iter()
+            .map(|(width, height, rows, output)| {
+                let source = noise(width * height * 3);
+                digest(&resized_on(&source, width, rows, output, threads))
+            })
+            .collect();
+            assert_eq!(
+                digests,
+                [
+                    7170474687542579749,
+                    12029912228537717427,
+                    16906896625238522488,
+                    13368472135222443375,
+                ],
+                "on {threads} threads"
+            );
+        }
     }
 }

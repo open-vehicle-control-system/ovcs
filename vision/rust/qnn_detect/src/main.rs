@@ -17,7 +17,7 @@ use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
-use detection::letterbox::{letterbox_for, letterbox_into};
+use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{log_record, LogLevel, Writer};
 use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
@@ -28,6 +28,9 @@ const NMS_IOU: f32 = 0.45;
 
 /// Room in the request pipe for a whole request, which the BEAM then writes in one go.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
+
+/// Threads the letterbox splits its rows across.
+const LETTERBOX_THREADS: usize = 3;
 
 fn log(writer: &Writer, level: LogLevel, message: &str) {
     let _ = writer.write_record(&log_record(level, message));
@@ -178,13 +181,16 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
             }
             Ok(()) => {
                 letterbox_into(
-                    request.pixels,
-                    width,
-                    height,
-                    request.channels,
+                    &Frame {
+                        pixels: request.pixels,
+                        width,
+                        height,
+                        channels: request.channels,
+                    },
                     &mut input,
                     MODEL_SIZE,
                     &letterbox,
+                    LETTERBOX_THREADS,
                 );
                 stage_times.lap("letterbox", &mut mark);
                 let mut outputs: Vec<&mut [u8]> = buffers
