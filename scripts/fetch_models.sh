@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Fetch the detection models the ROS bridge's detector uses, verify them,
-# and put them where the vehicle packages expect them.
+# Fetch the models the vision units run (detection and road segmentation),
+# verify them, and put them where the vehicle packages expect them.
 #
 #   mise run fetch-models          # fetch anything missing or corrupt
 #   mise run fetch-models -- -f    # re-fetch everything

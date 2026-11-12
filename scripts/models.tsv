@@ -1,4 +1,4 @@
-# Detection models fetched by scripts/fetch_models.sh, one per line.
+# Models fetched by scripts/fetch_models.sh, one per line.
 #
 # Deliberately not committed to this repository. OVCS is MIT licensed;
 # YOLOv8's weights are Ultralytics AGPL-3.0, and the two do not compose
@@ -38,3 +38,8 @@ vehicles/ovcs_mini/priv/models/yolov8n.hef	4f250daa6ac16e030cfaaf164e1cbdfe83e58
 # OVCS1's detector on the VENTUNO Q's NPU: YOLOX Small, quantised w8a8 for QNN
 # by Qualcomm AI Hub. The release is a zip; the DLC is its member.
 vehicles/ovcs1/priv/models/yolox_w8a8.dlc	7b72b64a3935432956c3d27e6d074c7c4f434ee4370677094ce7ef1634852f0b	Apache-2.0 (YOLOX, Qualcomm AI Hub)	https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/yolox/releases/v0.66.0/yolox-qnn_dlc-w8a8.zip	yolox-qnn_dlc-w8a8/yolox.dlc
+
+# OVCS1's road segmentation on the VENTUNO Q's NPU: FFNet-122NS-LowRes,
+# quantised w8a8 for QNN by Qualcomm AI Hub. Its weights are trained on
+# Cityscapes, whose terms allow non-commercial use only.
+vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc	96e5a015e792c04526cb77ea48d46cfd12b3da390df243725ac719660f270f7c	BSD-3-Clause code (Qualcomm FFNet); weights trained on Cityscapes, non-commercial use only	https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/ffnet_122ns_lowres/releases/v0.66.0/ffnet_122ns_lowres-qnn_dlc-w8a8.zip	ffnet_122ns_lowres-qnn_dlc-w8a8/ffnet_122ns_lowres.dlc
