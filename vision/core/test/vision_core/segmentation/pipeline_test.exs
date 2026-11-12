@@ -561,22 +561,36 @@ defmodule VisionCore.Segmentation.PipelineTest do
     refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
   end
 
-  defp start_scripted(dir, script) do
+  defp start_scripted(dir, script, opts \\ []) do
+    {files, opts} = Keyword.pop(opts, :files, [])
     script = start_supervised!({Agent, fn -> script end})
 
     start_supervised!(
       {Pipeline,
-       name: :road,
-       backend: Scripted,
-       backend_server: {self(), script},
-       source: {:camera, :hq},
-       config: config(dir, [])}
+       [
+         name: :road,
+         backend: Scripted,
+         backend_server: {self(), script},
+         source: {:camera, :hq},
+         config: config(dir, files),
+         clock: start_clock()
+       ] ++ opts}
     )
 
     :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
   end
 
-  test "submits no frame while a band is in flight, so its reply is published", %{tmp_dir: dir} do
+  defp reply(sequence, labels), do: send(Pipeline.Road, {:inference_labels, sequence, labels})
+
+  defp assert_published(capture_ms) do
+    capture_ns = capture_ms * @ms
+
+    assert_receive {:"$gen_cast",
+                    {:segmentation, :road, %Frame{capture_ns: ^capture_ns}, _labels, _clouds}}
+  end
+
+  test "keeps a frame that comes while a band is in flight, and submits it on the reply, before publishing",
+       %{tmp_dir: dir} do
     start_scripted(dir, [])
 
     publish_frame(100)
@@ -584,9 +598,151 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_frame(200)
     refute_receive {:submitted, _sequence}, 100
 
-    send(Pipeline.Road, {:inference_labels, in_flight, @label_image})
-    assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{capture_ns: 100_000_000}, _, nil}}
+    reply(in_flight, @label_image)
+    assert {:submitted, held} = next_message()
+    assert_published(100)
+    reply(held, @label_image)
+    assert_published(200)
+  end
+
+  defp next_message do
+    receive do
+      message -> message
+    after
+      1_000 -> flunk("no message")
+    end
+  end
+
+  test "keeps only the newest of the frames that come while a band is in flight", %{tmp_dir: dir} do
+    start_scripted(dir, [])
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
     publish_frame(300)
+    refute_receive {:submitted, _sequence}, 100
+
+    reply(in_flight, @label_image)
+    assert_published(100)
+    assert_receive {:submitted, held}
+    refute_receive {:submitted, _another}, 100
+    reply(held, @label_image)
+    assert_published(300)
+    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+  end
+
+  test "submits the frame kept once the band in flight could not be segmented", %{tmp_dir: dir} do
+    start_scripted(dir, [])
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+
+    reply(in_flight, nil)
+    assert_receive {:submitted, held}
+    reply(held, @label_image)
+    assert_published(200)
+    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+  end
+
+  test "keeps the frame for the reply in flight, not a late reply to a refused band", %{
+    tmp_dir: dir
+  } do
+    start_scripted(dir, [{:error, :unavailable}])
+
+    publish_frame(100)
+    assert_receive {:submitted, refused}
+    publish_frame(200)
+    assert_receive {:submitted, in_flight}
+    publish_frame(300)
+
+    reply(refused, @label_image)
+    refute_receive {:submitted, _sequence}, 100
+    refute_received {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}
+    reply(in_flight, @label_image)
+    assert_published(200)
+    assert_receive {:submitted, held}
+    reply(held, @label_image)
+    assert_published(300)
+  end
+
+  test "drops the frame kept when the backend refuses it, and submits the next at once", %{
+    tmp_dir: dir
+  } do
+    start_scripted(dir, [:ok, {:error, :busy}])
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+
+    reply(in_flight, @label_image)
+    assert_published(100)
+    assert_receive {:submitted, _refused}
+    refute_receive {:submitted, _sequence}, 100
+    publish_frame(300)
+    assert_receive {:submitted, next}
+    reply(next, @label_image)
+    assert_published(300)
+  end
+
+  test "with :segment_every_n 2, keeps only every other frame while a band is in flight", %{
+    tmp_dir: dir
+  } do
+    start_scripted(dir, [], segment_every_n: 2)
+
+    publish_frame(100)
+    refute_receive {:submitted, _sequence}, 100
+    publish_frame(200)
+    assert_receive {:submitted, in_flight}
+    publish_frame(300)
+    publish_frame(400)
+    publish_frame(500)
+
+    reply(in_flight, @label_image)
+    assert_published(200)
+    assert_receive {:submitted, held}
+    reply(held, @label_image)
+    assert_published(400)
+    refute_receive {:submitted, _another}, 100
+  end
+
+  test "keeps no frame without colour while a band is in flight", %{tmp_dir: dir} do
+    start_scripted(dir, [])
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+    publish_frame(300, grey: true)
+
+    reply(in_flight, @label_image)
+    assert_receive {:submitted, held}
+    reply(held, @label_image)
+    assert_published(200)
+  end
+
+  test "drops the frame kept when the reply in flight leaves 32 label images waiting", %{
+    tmp_dir: dir
+  } do
+    start_scripted(dir, [], files: [:calibration, :pose], pair_wait_ms: 60_000)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    for capture_ms <- 1_001..1_031 do
+      publish_frame(capture_ms)
+      assert_receive {:submitted, sequence}
+      reply(sequence, @label_image)
+    end
+
+    publish_frame(1_032)
+    assert_receive {:submitted, in_flight}
+    publish_frame(1_033)
+    reply(in_flight, @label_image)
+    refute_receive {:submitted, _sequence}, 100
+
+    publish_pair(1_100)
+    for capture_ms <- 1_001..1_032, do: assert_published(capture_ms)
+
+    publish_frame(1_100)
     assert_receive {:submitted, _next}
   end
 

@@ -34,13 +34,18 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     def inference_times(_server), do: nil
   end
 
-  # Tells the test of each frame it is handed and leaves the answer to it.
+  # Tells the test of each frame it is handed, answers what the test scripted, `:ok` once the
+  # script is spent, and leaves the reply to the test.
   defmodule Held do
     @behaviour VisionCore.Detection.Backend
 
-    def detect(test, sequence, _image) do
+    def detect({test, script}, sequence, _image) do
       send(test, {:submitted, sequence})
-      :ok
+
+      Agent.get_and_update(script, fn
+        [answer | rest] -> {answer, rest}
+        [] -> {:ok, []}
+      end)
     end
 
     def available?(_server), do: true
@@ -376,7 +381,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       {Pipeline,
        name: :hq_people,
        backend: Held,
-       backend_server: self(),
+       backend_server: {self(), start_supervised!({Agent, fn -> [] end})},
        source: {:camera, :hq},
        pair_wait_ms: 60_000,
        config: config(dir, [:calibration, :pose]),
@@ -565,6 +570,177 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     publish_frame(200)
 
     assert [] = detections()
+  end
+
+  @reply_person %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0}
+
+  defp start_held(dir, opts \\ []) do
+    {script, opts} = Keyword.pop(opts, :script, [])
+    {files, opts} = Keyword.pop(opts, :files, [])
+    script = start_supervised!({Agent, fn -> script end})
+
+    start_supervised!(
+      {Pipeline,
+       [
+         name: :hq_people,
+         backend: Held,
+         backend_server: {self(), script},
+         source: {:camera, :hq},
+         config: config(dir, files),
+         clock: start_clock()
+       ] ++ opts}
+    )
+
+    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+  end
+
+  defp reply(sequence, detections),
+    do: send(Pipeline.HqPeople, {:inference_detections, sequence, detections})
+
+  defp assert_published(capture_ms) do
+    capture_ns = capture_ms * @ms
+
+    assert_receive {:"$gen_cast",
+                    {:detections, %Frame{capture_ns: ^capture_ns}, _detections, :hq_people}}
+  end
+
+  test "keeps a frame that comes while one is in flight, and submits it on the reply, before publishing",
+       %{tmp_dir: dir} do
+    start_held(dir)
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+    refute_receive {:submitted, _sequence}, 100
+
+    reply(in_flight, [@reply_person])
+    assert {:submitted, held} = next_message()
+    assert_published(100)
+    reply(held, [@reply_person])
+    assert_published(200)
+  end
+
+  defp next_message do
+    receive do
+      message -> message
+    after
+      1_000 -> flunk("no message")
+    end
+  end
+
+  test "keeps only the newest of the frames that come while one is in flight", %{tmp_dir: dir} do
+    start_held(dir)
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+    publish_frame(300)
+    refute_receive {:submitted, _sequence}, 100
+
+    reply(in_flight, [])
+    assert_published(100)
+    assert_receive {:submitted, held}
+    refute_receive {:submitted, _another}, 100
+    reply(held, [])
+    assert_published(300)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+  end
+
+  test "submits the frame kept once the frame in flight could not be detected on", %{
+    tmp_dir: dir
+  } do
+    start_held(dir)
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+
+    reply(in_flight, nil)
+    assert_receive {:submitted, held}
+    reply(held, [])
+    assert_published(200)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+  end
+
+  test "keeps the frame for the reply in flight, not a late reply to a refused frame", %{
+    tmp_dir: dir
+  } do
+    start_held(dir, script: [{:error, :unavailable}])
+    publish_frame(100)
+    assert_receive {:submitted, refused}
+    publish_frame(200)
+    assert_receive {:submitted, in_flight}
+    publish_frame(300)
+
+    reply(refused, [])
+    refute_receive {:submitted, _sequence}, 100
+    refute_received {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}
+    reply(in_flight, [])
+    assert_published(200)
+    assert_receive {:submitted, held}
+    reply(held, [])
+    assert_published(300)
+  end
+
+  test "drops the frame kept when the backend refuses it, and submits the next at once", %{
+    tmp_dir: dir
+  } do
+    start_held(dir, script: [:ok, {:error, :busy}])
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+
+    reply(in_flight, [])
+    assert_published(100)
+    assert_receive {:submitted, _refused}
+    refute_receive {:submitted, _sequence}, 100
+    publish_frame(300)
+    assert_receive {:submitted, next}
+    reply(next, [])
+    assert_published(300)
+  end
+
+  test "with :detect_every_n 2, keeps only every other frame while one is in flight", %{
+    tmp_dir: dir
+  } do
+    start_held(dir, detect_every_n: 2)
+    publish_frame(100)
+    refute_receive {:submitted, _sequence}, 100
+    publish_frame(200)
+    assert_receive {:submitted, in_flight}
+    publish_frame(300)
+    publish_frame(400)
+    publish_frame(500)
+
+    reply(in_flight, [])
+    assert_published(200)
+    assert_receive {:submitted, held}
+    reply(held, [])
+    assert_published(400)
+    refute_receive {:submitted, _another}, 100
+  end
+
+  test "drops the frame kept when the reply in flight leaves 32 frames' boxes waiting", %{
+    tmp_dir: dir
+  } do
+    start_held(dir, files: [:calibration, :pose], pair_wait_ms: 60_000)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    for capture_ms <- 1_001..1_031 do
+      publish_frame(capture_ms)
+      assert_receive {:submitted, sequence}
+      reply(sequence, [@reply_person])
+    end
+
+    publish_frame(1_032)
+    assert_receive {:submitted, in_flight}
+    publish_frame(1_033)
+    reply(in_flight, [@reply_person])
+    refute_receive {:submitted, _sequence}, 100
+
+    publish_pair(1_100)
+    for capture_ms <- 1_001..1_032, do: assert_published(capture_ms)
+
+    publish_frame(1_100)
+    assert_receive {:submitted, _next}
   end
 
   test "declares its placement's projection settings, fixed at start" do

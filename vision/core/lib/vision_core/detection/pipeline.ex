@@ -89,14 +89,24 @@ defmodule VisionCore.Detection.Pipeline do
 
   ## One inference in flight
 
-  Only one submitted pair is held, with the sequence number it was
-  submitted under, and a reply is matched on that number. Every
-  submission takes a new number, a refused one included, so a late
-  reply to a call that timed out never matches a later pair. Pairs and
-  frames are skipped while a submission is in flight, even once the
-  backend is free: its reply may still be waiting to be read. A pair or
-  frame the backend could not detect on, answered with `nil`, publishes
-  nothing.
+  One pair or frame is in flight at a time, kept with the sequence
+  number it was submitted under, and a reply is matched on that
+  number. Every submission takes a new number, a refused one included,
+  so a late reply to a call that timed out never matches a later pair. Nothing is
+  submitted while a submission is in flight, even once the backend is
+  free: its reply may still be waiting to be read, and would be lost. A
+  pair or frame the backend could not detect on, answered with `nil`,
+  publishes nothing.
+
+  `:detect_every_n` counts the pairs, or a camera source's frames that
+  come while fewer than 32 frames' boxes wait, those that come while a
+  submission is in flight included: the `n`th, `2n`th, `3n`th… of them
+  are to be detected on, with `n` = 2 the second, fourth, sixth… A pair
+  that comes while a submission is in flight is skipped. A camera
+  source's frame is held instead, in place of the one held before, and
+  submitted once the reply is handled, `nil` included, before that
+  reply's boxes are placed. The frame held is dropped when 32 frames'
+  boxes wait once the reply is handled, or when the backend refuses it.
 
   ## Options
 
@@ -111,7 +121,7 @@ defmodule VisionCore.Detection.Pipeline do
       the camera of its own `name` (`VisionCore.Camera.Unit`), or
       `{:camera, name, output}`, that camera's output `output`.
     * `:detect_every_n` (`1`) — run inference on every nth pair, or
-      frame of a camera source.
+      frame of a camera source (see "One inference in flight").
     * `:labels` (COCO 80) — class id to name.
     * `:min_score` (`0.4`) — the backend filters at its own threshold
       too; this is the floor for what is passed on.
@@ -236,6 +246,8 @@ defmodule VisionCore.Detection.Pipeline do
       # `{sequence, source}`: the pair, or camera frame, submitted with the in-flight inference, to
       # which its boxes belong.
       pending: nil,
+      # The newest camera frame to detect on that came while one was in flight, with its pixels.
+      held: nil,
       # Camera frames' boxes waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
       clock: Keyword.get(opts, :clock, &monotonic_ns/0)
@@ -338,8 +350,9 @@ defmodule VisionCore.Detection.Pipeline do
       "Takes the images of #{camera_text(camera, output)} and hands them to the detector, which " <>
         "shrinks each whole to its model's input. detect_every_n, fixed in the build, runs " <>
         "detection on one image out of n: a higher value leaves the accelerator and the " <>
-        "processor more time, and updates the boxes less often. An image that arrives while " <>
-        "the detector is still busy is skipped."
+        "processor more time, and updates the boxes less often. An image to detect on that " <>
+        "arrives while the detector is still busy waits, the newest one only, and goes to the " <>
+        "detector as soon as it is done."
 
   defp placement_explanation(:stereo), do: @placement_explanation
   defp placement_explanation({:camera, _camera, _output}), do: @camera_placement_explanation
@@ -428,12 +441,27 @@ defmodule VisionCore.Detection.Pipeline do
     image_count = state.image_count + 1
     state = %{state | image_count: image_count}
 
-    with 0 <- rem(image_count, state.detect_every_n),
-         nil <- state.pending,
-         {:ok, image} <- Frame.to_tensor(frame) do
-      submit(%{frame | jpeg: nil, grey: nil, rgb: nil}, image, state)
-    else
-      _skipped -> state
+    cond do
+      rem(image_count, state.detect_every_n) != 0 -> state
+      not is_nil(state.pending) -> %{state | held: frame}
+      true -> submit_frame(frame, state)
+    end
+  end
+
+  defp submit_frame(frame, state) do
+    case Frame.to_tensor(frame) do
+      {:ok, image} -> submit(%{frame | jpeg: nil, grey: nil, rgb: nil}, image, state)
+      {:error, _reason} -> state
+    end
+  end
+
+  # Submits the frame held while the queue has room for its boxes.
+  defp submit_held(%{held: nil} = state), do: state
+
+  defp submit_held(%{held: frame} = state) do
+    case DepthQueue.admit(state.waiting, state.camera) do
+      {:ok, waiting} -> submit_frame(frame, %{state | held: nil, waiting: waiting})
+      {:full, waiting} -> %{state | held: nil, waiting: waiting}
     end
   end
 
@@ -457,7 +485,7 @@ defmodule VisionCore.Detection.Pipeline do
         {:inference_detections, sequence, nil},
         %{pending: {sequence, _source}} = state
       ),
-      do: {:noreply, %{state | pending: nil}}
+      do: {:noreply, submit_held(%{state | pending: nil})}
 
   def handle_info(
         {:inference_detections, sequence, detections},
@@ -491,7 +519,8 @@ defmodule VisionCore.Detection.Pipeline do
         do: DepthQueue.put(state.waiting, {frame, labelled}, frame.capture_ns, now_ns),
         else: DepthQueue.put_without_depth(state.waiting, {frame, labelled})
 
-    state = %{state | pending: nil, camera: camera, waiting: waiting}
+    # Submitted first, so the backend runs while the boxes are placed.
+    state = submit_held(%{state | pending: nil, camera: camera, waiting: waiting})
     {:noreply, place_settled(state, now_ns)}
   end
 

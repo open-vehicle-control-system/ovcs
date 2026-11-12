@@ -71,10 +71,23 @@ defmodule VisionCore.Segmentation.Pipeline do
   exporter's label `camera_info` at once, but the clouds are sorted
   with the start-time calibration until the unit restarts.
 
-  The model needs colour: a frame without RGB pixels is skipped, which
-  is logged once. A frame that comes while a band is in flight is
-  skipped too, even once the backend is free: the band's reply may still
-  be waiting to be read.
+  ## One band in flight
+
+  `:segment_every_n` counts the camera's frames that come while fewer
+  than 32 label images wait, a frame that comes while a band is in
+  flight included: the `n`th, `2n`th, `3n`th… of them are to be
+  segmented, with `n` = 2 the second, fourth, sixth… The model needs
+  colour: of those, a frame without RGB pixels is skipped, which is
+  logged once.
+
+  One band is in flight at a time, submitted under a sequence number its
+  reply is matched on. A frame to be segmented that comes meanwhile is
+  held, in place of the one held before, and submitted once that reply
+  is handled, `nil` included, before the reply's label image is matched
+  with a pair. It is not submitted as soon as the backend is free: the reply
+  may still be waiting to be read, and would be lost. The frame held is
+  dropped when 32 label images wait once the reply is handled, or when
+  the backend refuses it.
 
   ## Options
 
@@ -92,7 +105,8 @@ defmodule VisionCore.Segmentation.Pipeline do
       — class id to name.
     * `:road_classes` (`["road"]`) — the names of the classes that are
       road; each one of `:labels`.
-    * `:segment_every_n` (`1`) — segment every nth frame.
+    * `:segment_every_n` (`1`) — segment every nth frame (see "One band
+      in flight").
     * `:reprojection_stride` (`3`) — every nth pixel and row of the depth
       map projected into the camera's image.
     * `:pair_wait_ms` (`500`) — the longest a label image waits for the
@@ -175,6 +189,8 @@ defmodule VisionCore.Segmentation.Pipeline do
       frame_count: 0,
       # The in-flight inference's sequence, and the frame submitted with it, with its band.
       pending: nil,
+      # The newest frame to segment that came while a band was in flight, with its pixels.
+      held: nil,
       # Frames' label images waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
       clock: Keyword.get(opts, :clock, &monotonic_ns/0),
@@ -269,7 +285,8 @@ defmodule VisionCore.Segmentation.Pipeline do
             "the band touches the image's bottom, where the road is. The rest of the image " <>
             "gets no class. segment_every_n, fixed in the build, segments one image out of n: " <>
             "a higher value leaves the NPU more time and updates the classes less often. An " <>
-            "image that arrives while the model is still busy is skipped.",
+            "image to segment that arrives while the model is still busy waits, the newest " <>
+            "one only, and goes to the model as soon as it is done.",
         compute: @on_the_beam,
         parameters: [
           build_parameter(:segment_every_n, state.segment_every_n, "Images per segmentation"),
@@ -343,8 +360,18 @@ defmodule VisionCore.Segmentation.Pipeline do
     cond do
       rem(frame_count, state.segment_every_n) != 0 -> state
       not is_binary(frame.rgb) -> note_colourless(state)
-      not is_nil(state.pending) -> state
+      not is_nil(state.pending) -> %{state | held: frame}
       true -> submit(frame, state)
+    end
+  end
+
+  # Submits the frame held while the queue has room for its label image.
+  defp submit_held(%{held: nil} = state), do: state
+
+  defp submit_held(%{held: frame} = state) do
+    case DepthQueue.admit(state.waiting, state.camera) do
+      {:ok, waiting} -> submit(frame, %{state | held: nil, waiting: waiting})
+      {:full, waiting} -> %{state | held: nil, waiting: waiting}
     end
   end
 
@@ -387,7 +414,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     state = %{state | pending: nil}
 
     if is_nil(labels),
-      do: {:noreply, state},
+      do: {:noreply, submit_held(state)},
       else: {:noreply, wait_for_pair(state, frame, Map.put(labels, :band, band))}
   end
 
@@ -408,7 +435,10 @@ defmodule VisionCore.Segmentation.Pipeline do
         do: DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns),
         else: DepthQueue.put_without_depth(state.waiting, {frame, labels})
 
-    publish_settled(%{state | camera: camera, waiting: waiting}, now_ns)
+    # Submitted first, so the backend runs while the clouds are sorted.
+    %{state | camera: camera, waiting: waiting}
+    |> submit_held()
+    |> publish_settled(now_ns)
   end
 
   # Publishes the label images whose pair is known, in capture order, and has the pipeline told when to look again.
