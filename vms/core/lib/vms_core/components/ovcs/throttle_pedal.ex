@@ -26,6 +26,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
       fraction of travel.
     * `:cross_check_hold_ms` — how long a larger gap must last to fault.
   """
+  @moduledoc safety: :relevant
   import Ecto.Query
   use GenServer
   require Logger
@@ -271,20 +272,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
         _from,
         %{throttle_calibration_status: "in_progress"} = state
       ) do
-    with {:ok, _} <-
-           store_calibration_value("low_raw_throttle_a", state.low_raw_throttle_a),
-         {:ok, _} <-
-           store_calibration_value("low_raw_throttle_b", state.low_raw_throttle_b),
-         {:ok, _} <-
-           store_calibration_value(
-             "high_raw_throttle_a",
-             state.high_raw_throttle_a
-           ),
-         {:ok, _} <-
-           store_calibration_value(
-             "high_raw_throttle_b",
-             state.high_raw_throttle_b
-           ) do
+    with {:ok, _} <- store_calibration(state) do
       {:reply, :ok,
        %{state | throttle_calibration_status: "disabled", calibrated: calibrated?(state)}}
     else
@@ -302,26 +290,7 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
         {:reply, :ok, %{state | throttle_calibration_status: "started"}}
 
       _ ->
-        with {:ok, _} <-
-               store_calibration_value(
-                 "low_raw_throttle_a",
-                 state.low_raw_throttle_a
-               ),
-             {:ok, _} <-
-               store_calibration_value(
-                 "low_raw_throttle_b",
-                 state.low_raw_throttle_b
-               ),
-             {:ok, _} <-
-               store_calibration_value(
-                 "high_raw_throttle_a",
-                 state.high_raw_throttle_a
-               ),
-             {:ok, _} <-
-               store_calibration_value(
-                 "high_raw_throttle_b",
-                 state.high_raw_throttle_b
-               ) do
+        with {:ok, _} <- store_calibration(state) do
           {:reply, :ok,
            %{state | throttle_calibration_status: "disabled", calibrated: calibrated?(state)}}
         else
@@ -358,6 +327,14 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
       |> Repo.one()
 
     Map.get(record || %{}, :value, 0)
+  end
+
+  defp store_calibration(state) do
+    with {:ok, _} <- store_calibration_value("low_raw_throttle_a", state.low_raw_throttle_a),
+         {:ok, _} <- store_calibration_value("low_raw_throttle_b", state.low_raw_throttle_b),
+         {:ok, _} <- store_calibration_value("high_raw_throttle_a", state.high_raw_throttle_a) do
+      store_calibration_value("high_raw_throttle_b", state.high_raw_throttle_b)
+    end
   end
 
   defp store_calibration_value(key, raw_throttle) do
