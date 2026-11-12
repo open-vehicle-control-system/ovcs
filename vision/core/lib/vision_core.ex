@@ -28,7 +28,7 @@ defmodule VisionCore.Config do
           wall clock. **Simulation only**: see `VisionCore.Ros2.Clock`
           for what wall clock breaks against a simulator.
     * `:preview` — options of `VisionCore.Preview` (`:max_hz`,
-      `:depth_range_m`).
+      `:depth_range_m`, `:outputs`).
   """
   defstruct ros2: nil, components: [], exporters: [], preview: []
 

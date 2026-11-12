@@ -107,6 +107,44 @@ defmodule VisionCore.PreviewTest do
       refute_receive {:vision_preview, _stream, _jpeg}, 100
     end
 
+    test "its stream shows its default output, or the one :outputs names" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu],
+          inference: [resolution: {1014, 760}, from: :view]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      encode_frame = fn %Frame{output: output} -> {:ok, "#{output}"} end
+
+      preview =
+        start_supervised!({Preview, config: config, max_hz: 50, frame_encoder: encode_frame})
+
+      assert preview in Outputs.subscribers({:camera_frame, server, :view})
+      refute preview in Outputs.subscribers({:camera_frame, server, :inference})
+      stop_supervised!(Preview)
+
+      preview =
+        start_supervised!(
+          {Preview,
+           config: config, max_hz: 50, frame_encoder: encode_frame, outputs: [hq: :inference]}
+        )
+
+      refute preview in Outputs.subscribers({:camera_frame, server, :view})
+      :ok = Preview.subscribe(:hq)
+
+      Outputs.publish(
+        {:camera_frame, server, :inference},
+        {:camera_frame, %{hq_frame(1) | output: :inference}}
+      )
+
+      assert_receive {:vision_preview, :hq, "inference"}, 500
+    end
+
     test "a stream the configuration has no camera for cannot be subscribed to" do
       start_supervised!({Preview, config: @camera_config, max_hz: 50})
 

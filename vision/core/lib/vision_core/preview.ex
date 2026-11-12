@@ -34,6 +34,10 @@ defmodule VisionCore.Preview do
 
     * `:config` — the active `VisionCore.Config` (required).
     * `:max_hz` (`10`) — frames per second per subscriber.
+    * `:outputs` (`[]`) — the output each camera of its own's stream
+      shows, by camera name (`hq: :view`), its default output for a
+      camera not listed (`VisionCore.Camera.Unit.output_key/3`). An
+      output the camera does not have is logged, and its default shown.
     * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
       blue only what is infinitely far, so the colours stay put from one
       frame to the next. Red is the nearest measured depths.
@@ -114,8 +118,12 @@ defmodule VisionCore.Preview do
     config = Keyword.fetch!(opts, :config)
     cameras = Camera.Unit.cameras(config)
 
-    for {_output, key} <- StereoSupervisor.outputs(config) ++ Camera.Unit.outputs(config),
-        do: :ok = Outputs.subscribe(key)
+    outputs = Keyword.get(opts, :outputs, [])
+
+    for {_output, key} <- StereoSupervisor.outputs(config), do: :ok = Outputs.subscribe(key)
+
+    for {name, _driver, _server} <- cameras,
+        do: :ok = Outputs.subscribe(camera_key(config, name, outputs[name]))
 
     streams = @stereo_streams ++ for {name, _driver, _server} <- cameras, do: name
 
@@ -136,6 +144,23 @@ defmodule VisionCore.Preview do
        depth_failure_logged: false,
        subscribers: %{}
      }}
+  end
+
+  defp camera_key(config, name, nil), do: Camera.Unit.output_key(config, name, nil)
+
+  defp camera_key(config, name, output) do
+    case Camera.Unit.output_key(config, name, output) do
+      nil ->
+        Logger.error(
+          "#{inspect(__MODULE__)}: camera #{name} has no output #{inspect(output)}; " <>
+            "its stream shows its default output"
+        )
+
+        Camera.Unit.output_key(config, name, nil)
+
+      key ->
+        key
+    end
   end
 
   @impl GenServer

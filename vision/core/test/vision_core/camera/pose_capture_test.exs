@@ -115,6 +115,38 @@ defmodule VisionCore.Camera.PoseCaptureTest do
     assert Outputs.subscribers({:camera_frame, Camera.name_for("hq")}) == []
   end
 
+  test "writes the frame of the output it names", %{tmp_dir: tmp_dir} do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    ]
+
+    config = %VisionCore.Config{
+      components: [{:stereo, driver: Camera, fps: 20, left: [], right: []}, {:camera, camera}]
+    }
+
+    inference = {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
+
+    task =
+      Task.async(fn ->
+        PoseCapture.capture(:hq, config: config, output: :inference, directory: tmp_dir)
+      end)
+
+    eventually(fn -> Outputs.subscribers(inference) != [] end)
+    Outputs.publish({:camera_frame, Camera.name_for("left")}, {:camera_frame, left_frame(0)})
+    Outputs.publish(inference, {:camera_frame, %{camera_frame(10) | output: :inference}})
+
+    assert {:ok, %{camera: path}} = Task.await(task)
+    assert File.read!(path) == Png.rgb(<<10, 0, 0, 0, 0, 255>>, 1, 2)
+
+    assert PoseCapture.capture(:hq, config: config, output: :preview) ==
+             {:error, {:no_camera, :hq}}
+  end
+
   test "refuses a camera or a stereo unit the configuration does not have" do
     assert PoseCapture.capture(:usb, config: config()) == {:error, {:no_camera, :usb}}
 

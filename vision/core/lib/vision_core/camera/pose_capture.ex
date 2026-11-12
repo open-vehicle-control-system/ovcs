@@ -37,35 +37,38 @@ defmodule VisionCore.Camera.PoseCapture do
       is written, created when missing.
     * `:timeout_ms` (#{@default_timeout_ms}) — how long to wait for a
       pair.
+    * `:output` (the camera's default) — the camera's output whose
+      frames are written (`VisionCore.Camera.Output`).
     * `:config` (the active `VisionCore.Config`) — the unit's
       configuration.
 
   `{:error, :no_matching_pair}` when no two frames came within half a
   pair period of each other in time; `{:error, {:no_camera, name}}` or
-  `{:error, :no_stereo_unit}` when the configuration has no such camera
-  or no stereo unit.
+  `{:error, :no_stereo_unit}` when the configuration has no such camera,
+  or no such output of it, or no stereo unit.
   """
   @spec capture(atom(), keyword()) :: {:ok, saved()} | {:error, term()}
   def capture(name, options \\ []) do
     options =
       Keyword.validate!(options, [
         :config,
+        :output,
         directory: Path.join(@default_directory, Atom.to_string(name)),
         timeout_ms: @default_timeout_ms
       ])
 
     config = options[:config] || VisionCore.Application.active_config()
 
-    with {:ok, keys, tolerance_ns} <- sources(config, name),
+    with {:ok, keys, tolerance_ns} <- sources(config, name, options[:output]),
          {:ok, left, camera} <- next_pair(keys, tolerance_ns, options[:timeout_ms]) do
       write_pair(left, camera, options[:directory])
     end
   end
 
-  defp sources(config, name) do
+  defp sources(config, name, output) do
     with {:ok, stereo} <- stereo_cameras(config),
          camera_key when camera_key != nil <-
-           VisionCore.Exporter.output_key({:camera_frame, name}, config) do
+           VisionCore.Exporter.output_key(camera_output(name, output), config) do
       left_key = VisionCore.Exporter.output_key({:camera_frame, :left}, config)
       {:ok, {left_key, camera_key}, div(1_000_000_000, stereo[:fps] * 2)}
     else
@@ -73,6 +76,9 @@ defmodule VisionCore.Camera.PoseCapture do
       {:error, :no_stereo_unit} -> {:error, :no_stereo_unit}
     end
   end
+
+  defp camera_output(name, nil), do: {:camera_frame, name}
+  defp camera_output(name, output), do: {:camera_frame, name, output}
 
   defp stereo_cameras(config) do
     case StereoSupervisor.camera_options(config) do
