@@ -11,6 +11,13 @@ defmodule VisionCore.Detection.QnnContext do
   `qnn-context-binary-generator` when the binary is missing, then removes
   the others.
 
+  The generator writes into a directory of its own under the cache
+  directory, and the binary is renamed into place once it is done, so a
+  binary in the cache is always whole. A generation runs in a process
+  of its own, which no caller is linked to: the generator goes on when
+  its caller exits, and a call for a binary being generated answers
+  `{:error, {:generating, binary}}` instead of starting a second one.
+
   The generator prepares the DLC's graphs at the HTP's graph optimisation
   level 3, its highest, through a backend extension config
   (`libQnnHtpNetRunExtensions.so`) that names them: the Port program reads
@@ -21,6 +28,7 @@ defmodule VisionCore.Detection.QnnContext do
   # QAIRT's HTP backend extension options for each graph.
   @htp_graph_options %{"O" => 3}
   @backend_config "backend_config.json"
+  @generating_suffix ".generating"
   @htp_config "htp_backend_extensions.json"
 
   @type opts :: [
@@ -57,7 +65,33 @@ defmodule VisionCore.Detection.QnnContext do
 
       if File.exists?(binary),
         do: {:ok, binary},
-        else: generate(dlc_path, library, key, binary, opts)
+        else: generate_alone(binary, fn -> generate(dlc_path, library, key, binary, opts) end)
+    end
+  end
+
+  # Runs `generate` unlinked, under a lock on `binary` it holds until it is done.
+  defp generate_alone(binary, generate) do
+    caller = self()
+    reference = make_ref()
+
+    {generation, monitor} =
+      spawn_monitor(fn ->
+        lock = {{__MODULE__, binary}, self()}
+        generated = :global.trans(lock, generate, [node()], 0)
+        send(caller, {reference, generated})
+      end)
+
+    receive do
+      {^reference, :aborted} ->
+        Process.demonitor(monitor, [:flush])
+        {:error, {:generating, binary}}
+
+      {^reference, generated} ->
+        Process.demonitor(monitor, [:flush])
+        generated
+
+      {:DOWN, ^monitor, :process, ^generation, reason} ->
+        {:error, {:generation_crashed, reason}}
     end
   end
 
@@ -88,17 +122,30 @@ defmodule VisionCore.Detection.QnnContext do
 
     with {:ok, graph_names} <-
            graph_names(dlc_path, Keyword.fetch!(opts, :executable), runner, env) do
-      File.mkdir_p!(cache_dir)
+      output_dir = Path.join(cache_dir, key <> @generating_suffix)
+      File.rm_rf!(output_dir)
+      File.mkdir_p!(output_dir)
       config = write_config(qairt_dir, cache_dir, graph_names)
 
       args =
         ["--backend", library, "--dlc_path", dlc_path] ++
-          ["--binary_file", key, "--output_dir", cache_dir, "--config_file", config]
+          ["--binary_file", key, "--output_dir", output_dir, "--config_file", config]
 
-      case runner.(Path.join(qairt_dir, "bin/qnn-context-binary-generator"), args, env) do
-        {_output, 0} -> keep_only(binary, cache_dir)
-        {output, status} -> {:error, {:generator_failed, status, output}}
-      end
+      generated =
+        case runner.(Path.join(qairt_dir, "bin/qnn-context-binary-generator"), args, env) do
+          {_output, 0} -> move_into_place(Path.join(output_dir, key <> ".bin"), binary)
+          {output, status} -> {:error, {:generator_failed, status, output}}
+        end
+
+      File.rm_rf!(output_dir)
+      with :ok <- generated, do: keep_only(binary, cache_dir)
+    end
+  end
+
+  defp move_into_place(generated, binary) do
+    case File.rename(generated, binary) do
+      :ok -> :ok
+      {:error, _reason} -> {:error, {:no_context_binary, binary}}
     end
   end
 
@@ -139,14 +186,13 @@ defmodule VisionCore.Detection.QnnContext do
   end
 
   defp keep_only(binary, cache_dir) do
-    if File.exists?(binary) do
-      for stale <- Path.wildcard(Path.join(cache_dir, "*.bin")),
-          stale != binary,
-          do: File.rm(stale)
+    for stale <- Path.wildcard(Path.join(cache_dir, "*.bin")),
+        stale != binary,
+        do: File.rm(stale)
 
-      {:ok, binary}
-    else
-      {:error, {:no_context_binary, binary}}
-    end
+    for stale <- Path.wildcard(Path.join(cache_dir, "*" <> @generating_suffix)),
+        do: File.rm_rf(stale)
+
+    {:ok, binary}
   end
 end

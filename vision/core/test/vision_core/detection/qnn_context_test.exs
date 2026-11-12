@@ -118,6 +118,98 @@ defmodule VisionCore.Detection.QnnContextTest do
            }
   end
 
+  describe "a generation" do
+    setup %{tmp_dir: dir} do
+      dlc = Path.join(dir, "model.dlc")
+      File.write!(dlc, "model")
+      %{dlc: dlc, qairt: setup_qairt(dir, "library"), cache: Path.join(dir, "cache")}
+    end
+
+    # Writes `bytes` where the generator writes its binary, tells the test, and waits for
+    # `:finish` to exit with `status`.
+    defp held_runner(test, bytes, status) do
+      fn
+        @executable, ["--graph-names", _dlc], _env ->
+          {"graph_a\n", 0}
+
+        _generator, args, _env ->
+          opts = args |> Enum.chunk_every(2) |> Map.new(fn [flag, value] -> {flag, value} end)
+          File.write!(Path.join(opts["--output_dir"], opts["--binary_file"] <> ".bin"), bytes)
+          send(test, {:generating, self()})
+
+          receive do
+            :finish -> {"", status}
+          after
+            5_000 -> {"never finished", 1}
+          end
+      end
+    end
+
+    defp ensure_with(context, runner) do
+      QnnContext.ensure(context.dlc,
+        qairt_dir: context.qairt,
+        dsp_library_path: "/dsp",
+        cache_dir: context.cache,
+        executable: @executable,
+        runner: runner
+      )
+    end
+
+    test "that failed leaves no binary for the next one to take", context do
+      runner = held_runner(self(), "partial", 1)
+      failing = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+      send(generator, :finish)
+      assert {:error, {:generator_failed, 1, ""}} = Task.await(failing)
+
+      assert {:ok, binary} = ensure(context.dlc, context.qairt, context.cache)
+      assert_received {:generated, _, _, _}
+      assert File.read!(binary) == "context"
+    end
+
+    test "shows its binary only once the generator is done", context do
+      runner = held_runner(self(), "context", 0)
+      generating = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+      assert Path.wildcard(Path.join(context.cache, "*.bin")) == []
+
+      send(generator, :finish)
+
+      assert {:ok, binary} = Task.await(generating)
+      assert File.read!(binary) == "context"
+    end
+
+    test "is the only one of its binary: a second call does not start another", context do
+      runner = held_runner(self(), "context", 0)
+      generating = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+
+      assert {:error, {:generating, binary}} = ensure_with(context, runner)
+
+      refute_received {:generating, _second}
+      send(generator, :finish)
+      assert Task.await(generating) == {:ok, binary}
+    end
+
+    test "goes on when its caller exits, and the next call takes its binary", context do
+      runner = held_runner(self(), "context", 0)
+      caller = spawn(fn -> ensure_with(context, runner) end)
+
+      assert_receive {:generating, generator}
+      reference = Process.monitor(caller)
+      Process.exit(caller, :kill)
+      assert_receive {:DOWN, ^reference, :process, ^caller, :killed}
+
+      assert {:error, {:generating, binary}} = ensure(context.dlc, context.qairt, context.cache)
+      generation = Process.monitor(generator)
+      send(generator, :finish)
+      assert_receive {:DOWN, ^generation, :process, ^generator, _reason}
+
+      assert ensure(context.dlc, context.qairt, context.cache) == {:ok, binary}
+      refute_received {:generated, _, _, _}
+    end
+  end
+
   test "a DLC whose graph names cannot be read is an error, and the generator does not run", %{
     tmp_dir: dir
   } do
