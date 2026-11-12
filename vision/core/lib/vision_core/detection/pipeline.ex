@@ -12,7 +12,9 @@ defmodule VisionCore.Detection.Pipeline do
   named one `{:detections, pair, detections, name}`.
 
   With `source: {:camera, name}` it detects on the frames of the camera
-  of its own `name` instead (see "A camera source" below), and publishes
+  of its own `name` instead, its default output, or with
+  `source: {:camera, name, output}` on those of its output `output`
+  (`VisionCore.Camera.Output`; see "A camera source" below), and publishes
   `{:detections, frame, detections, name}`, `frame` the
   `VisionCore.Camera.Frame` the boxes were found on, without its pixels.
 
@@ -105,8 +107,9 @@ defmodule VisionCore.Detection.Pipeline do
       backend module.
     * `:backend_server` (the `:backend` module) — the name the backend is
       registered under.
-    * `:source` (`:stereo`) — the stereo pairs, or `{:camera, name}`,
-      the camera of its own `name` (`VisionCore.Camera.Unit`).
+    * `:source` (`:stereo`) — the stereo pairs, `{:camera, name}`,
+      the camera of its own `name` (`VisionCore.Camera.Unit`), or
+      `{:camera, name, output}`, that camera's output `output`.
     * `:detect_every_n` (`1`) — run inference on every nth pair, or
       frame of a camera source.
     * `:labels` (COCO 80) — class id to name.
@@ -209,7 +212,7 @@ defmodule VisionCore.Detection.Pipeline do
   def init(opts) do
     backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
     name = Detection.pipeline_name(opts)
-    source = Keyword.get(opts, :source, :stereo)
+    source = opts |> Keyword.get(:source, :stereo) |> with_output()
     pair_wait_ms = Keyword.get(opts, :pair_wait_ms, @default_pair_wait_ms)
 
     state = %{
@@ -242,15 +245,19 @@ defmodule VisionCore.Detection.Pipeline do
       do: :ok = VisionCore.Parameters.declare(groups(state))
 
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    if state.camera, do: :ok = Outputs.subscribe({:camera_frame, state.camera.server})
+    if state.camera, do: :ok = Outputs.subscribe(state.camera.key)
     {:ok, state}
   end
 
   defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
+  # A camera source names its output, `nil` for the camera's default.
+  defp with_output({:camera, camera}), do: {:camera, camera, nil}
+  defp with_output(source), do: source
+
   defp camera_source(:stereo, _name, _pair_wait_ms, _opts), do: nil
 
-  defp camera_source({:camera, _camera}, :detection, _pair_wait_ms, _opts),
+  defp camera_source({:camera, _camera, _output}, :detection, _pair_wait_ms, _opts),
     do:
       raise(
         ArgumentError,
@@ -258,19 +265,21 @@ defmodule VisionCore.Detection.Pipeline do
           "is the stereo pair's"
       )
 
-  defp camera_source({:camera, camera}, name, pair_wait_ms, opts) when is_atom(camera) do
+  defp camera_source({:camera, camera, output}, name, pair_wait_ms, opts)
+       when is_atom(camera) and is_atom(output) do
     config =
       Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
         %VisionCore.Config{}
 
-    CameraSource.new(camera, config, name, pair_wait_ms)
+    CameraSource.new(camera, config, name, pair_wait_ms, output)
   end
 
-  defp camera_source(source, _name, _pair_wait_ms, _opts),
+  defp camera_source(_source, _name, _pair_wait_ms, opts),
     do:
       raise(
         ArgumentError,
-        "its :source is :stereo or {:camera, name}, a camera of its own, got #{inspect(source)}"
+        "its :source is :stereo, {:camera, name}, a camera of its own, or " <>
+          "{:camera, name, output}, one of its outputs, got #{inspect(opts[:source])}"
       )
 
   @doc """
@@ -282,7 +291,7 @@ defmodule VisionCore.Detection.Pipeline do
   """
   @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
   def groups(state) do
-    source = Map.get(state, :source, :stereo)
+    source = state |> Map.get(:source, :stereo) |> with_output()
 
     [
       step(state.name, "input", "Input", 101, %{
@@ -314,26 +323,29 @@ defmodule VisionCore.Detection.Pipeline do
   defp input_summary(:stereo),
     do: "Hands the rectified left image of every nth stereo pair to the detector."
 
-  defp input_summary({:camera, camera}),
-    do: "Hands every nth image of the camera #{camera} to the detector."
+  defp input_summary({:camera, camera, output}),
+    do: "Hands every nth image of #{camera_text(camera, output)} to the detector."
 
   defp detect_every_n_description(:stereo), do: "Pairs per detection; 1 detects on every pair"
 
-  defp detect_every_n_description({:camera, _camera}),
+  defp detect_every_n_description({:camera, _camera, _output}),
     do: "Images per detection; 1 detects on every image"
 
   defp input_explanation(:stereo), do: @input_explanation
 
-  defp input_explanation({:camera, camera}),
+  defp input_explanation({:camera, camera, output}),
     do:
-      "Takes the images of the camera #{camera} and hands them to the detector, which " <>
+      "Takes the images of #{camera_text(camera, output)} and hands them to the detector, which " <>
         "shrinks each whole to its model's input. detect_every_n, fixed in the build, runs " <>
         "detection on one image out of n: a higher value leaves the accelerator and the " <>
         "processor more time, and updates the boxes less often. An image that arrives while " <>
         "the detector is still busy is skipped."
 
   defp placement_explanation(:stereo), do: @placement_explanation
-  defp placement_explanation({:camera, _camera}), do: @camera_placement_explanation
+  defp placement_explanation({:camera, _camera, _output}), do: @camera_placement_explanation
+
+  defp camera_text(camera, nil), do: "the camera #{camera}"
+  defp camera_text(camera, output), do: "the camera #{camera}'s output #{output}"
 
   defp placement_parameters(source, state) do
     [
@@ -347,7 +359,7 @@ defmodule VisionCore.Detection.Pipeline do
         :stereo ->
           []
 
-        {:camera, _camera} ->
+        {:camera, _camera, _output} ->
           [
             build_parameter(
               state,

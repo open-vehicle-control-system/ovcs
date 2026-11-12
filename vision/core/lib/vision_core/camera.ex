@@ -14,6 +14,9 @@ defmodule VisionCore.Camera do
     * publish each new frame through `VisionCore.Outputs` as
       `{:camera_frame, %VisionCore.Camera.Frame{}}`, under
       `{:camera_frame, name}`, `name` being the instance's registered name;
+      a driver with named outputs (`c:outputs/1`) publishes each output's
+      frames under `{:camera_frame, name, output}` instead, each frame
+      carrying its output's name as its `:output`;
     * put its `:label` and `:frame_id` options on each
       `VisionCore.Camera.Frame`: the stereo unit gives each side's
       `:frame_id`, and the exporters stamp the frame's messages, and its
@@ -49,9 +52,19 @@ defmodule VisionCore.Camera do
   @doc "What the camera applied to a recent frame, as it reports it; `nil` before a report."
   @callback live(GenServer.server()) :: map() | nil
 
+  @doc """
+  The named outputs of a camera given `opts`, the options it is started
+  with, in their configured order, the first the default
+  (`VisionCore.Camera.Output.resolve/2`): `{:error, message}` for
+  outputs it cannot make. Optional: a driver without it makes one
+  output, unnamed.
+  """
+  @callback outputs(keyword()) :: {:ok, [VisionCore.Camera.Output.t()]} | {:error, String.t()}
+
   @optional_callbacks set_controls: 2,
                       controls: 1,
                       shared_controls?: 0,
                       control_specs: 0,
-                      live: 1
+                      live: 1,
+                      outputs: 1
 end

@@ -18,7 +18,10 @@ defmodule VisionCore.Exporter do
     * `{:camera_frame, :left}`, `{:camera_frame, :right}` — a
       `VisionCore.Camera.Frame` a stereo camera captured;
     * `{:camera_frame, name}` — a `VisionCore.Camera.Frame` the camera
-      `name` captured, a `:camera` component (`VisionCore.Camera.Unit`);
+      `name` captured, a `:camera` component (`VisionCore.Camera.Unit`),
+      of its default output;
+    * `{:camera_frame, name, output}` — a frame of the camera `name`'s
+      output `output` (`VisionCore.Camera.Output`);
     * `:detections` — `{pair, detections}`, the result for `pair` of the
       default detection pipeline, the one a detector without a `:name`
       starts (`VisionCore.Detection`);
@@ -191,6 +194,7 @@ defmodule VisionCore.Exporter do
           | {:detections, atom()}
           | {:segmentation, atom()}
           | {:camera_frame, atom()}
+          | {:camera_frame, atom(), atom()}
 
   @typedoc "An entry of `c:outputs/1`: an output, with its options or without."
   @type output_spec :: output() | {output(), [{:max_hz, number()}]}
@@ -310,7 +314,8 @@ defmodule VisionCore.Exporter do
   `{:detections, name}` for a valid pipeline name other than the
   default's, `:detection` (`VisionCore.Detection.name?/1`),
   `{:segmentation, name}` for a valid pipeline name, and
-  `{:camera_frame, name}` for a stereo side or a valid camera name.
+  `{:camera_frame, name}` for a stereo side or a valid camera name, and
+  `{:camera_frame, name, output}` for a valid camera name and an atom.
   """
   @spec output?(term()) :: boolean()
   def output?({:detections, :detection}), do: false
@@ -318,6 +323,10 @@ defmodule VisionCore.Exporter do
   def output?({:segmentation, name}), do: VisionCore.Detection.name?(name)
   def output?({:camera_frame, side}) when side in [:left, :right], do: true
   def output?({:camera_frame, name}), do: VisionCore.Detection.name?(name)
+
+  def output?({:camera_frame, name, output}),
+    do: name not in [:left, :right] and VisionCore.Detection.name?(name) and is_atom(output)
+
   def output?(term), do: is_map_key(@outputs, term)
 
   defp producer({:detections, _name}), do: VisionCore.Detection.Supervisor
@@ -425,7 +434,13 @@ defmodule VisionCore.Exporter do
 
   def output_key(output, %VisionCore.Config{} = config) do
     unless output?(output), do: raise(ArgumentError, "no output #{inspect(output)}")
+    key(output, config)
+  end
 
+  defp key({:camera_frame, name, output}, config),
+    do: VisionCore.Camera.Unit.output_key(config, name, output)
+
+  defp key(output, config) do
     case List.keyfind(producer(output).outputs(config), output, 0) do
       {^output, key} -> key
       nil -> nil

@@ -82,7 +82,8 @@ defmodule VisionCore.Segmentation.Pipeline do
       `VisionCore.Detection.server(VisionCore.Segmentation.Pipeline, name)`
       and declares its parameter groups as `<name>.*`.
     * `:source` (required) — `{:camera, name}`, the camera of its own
-      `name` (`VisionCore.Camera.Unit`).
+      `name` (`VisionCore.Camera.Unit`), or `{:camera, name, output}`,
+      that camera's output `output` (`VisionCore.Camera.Output`).
     * `:backend` (`VisionCore.Segmentation.Backend.Qnn`) and
       `:backend_server` (the `:backend` module).
     * `:band_top` (the band touching the frame's bottom) — the band's top
@@ -184,19 +185,24 @@ defmodule VisionCore.Segmentation.Pipeline do
       do: :ok = VisionCore.Parameters.declare(groups(state))
 
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    :ok = Outputs.subscribe({:camera_frame, state.camera.server})
+    :ok = Outputs.subscribe(state.camera.key)
     {:ok, state}
   end
 
   defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
-  defp camera_depth({:camera, camera}, name, pair_wait_ms, opts) when is_atom(camera) do
+  defp camera_depth({:camera, camera}, name, pair_wait_ms, opts),
+    do: camera_depth({:camera, camera, nil}, name, pair_wait_ms, opts)
+
+  defp camera_depth({:camera, camera, output}, name, pair_wait_ms, opts)
+       when is_atom(camera) and is_atom(output) do
     config =
       Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
         %VisionCore.Config{}
 
     CameraDepth.new(camera, config, "segmentation pipeline #{name}", @wording,
-      pair_wait_ms: pair_wait_ms
+      pair_wait_ms: pair_wait_ms,
+      output: output
     )
   end
 
@@ -204,7 +210,8 @@ defmodule VisionCore.Segmentation.Pipeline do
     do:
       raise(
         ArgumentError,
-        "its :source is {:camera, name}, a camera of its own, got #{inspect(source)}"
+        "its :source is {:camera, name}, a camera of its own, or {:camera, name, output}, " <>
+          "one of its outputs, got #{inspect(source)}"
       )
 
   defp band_top!(band_top)

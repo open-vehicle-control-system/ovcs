@@ -16,8 +16,19 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     end
   end
 
-  defp rgb_record(capture_ns, rgb \\ <<1, 2, 3, 4, 5, 6>>) do
-    <<7, 0, 2::little-16, 1::little-16, capture_ns::little-signed-64, rgb::binary>>
+  defp rgb_record(capture_ns, rgb \\ <<1, 2, 3, 4, 5, 6>>, output \\ 0) do
+    <<7, output, 2::little-16, 1::little-16, capture_ns::little-signed-64, rgb::binary>>
+  end
+
+  defp write_records(tmp_dir, records) do
+    path = Path.join(tmp_dir, "records.bin")
+
+    File.write!(
+      path,
+      for(record <- records, into: <<>>, do: <<byte_size(record)::32, record::binary>>)
+    )
+
+    path
   end
 
   defp metadata_record(exposure_us, gain) do
@@ -92,7 +103,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     File.write!(records, <<byte_size(record)::32, record::binary>>)
     script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
 
-    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("front")})
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("front"), :full})
 
     camera =
       start_supervised!(
@@ -102,7 +113,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
       )
 
     assert Process.whereis(V4L2Single.name_for("front")) == camera
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "front"}}}, 2_000
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "front", output: :full}}}, 2_000
   end
 
   test "routes the sensor on its CSI PHY at the sensor size and passes the program its nodes by name",
@@ -136,6 +147,79 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     start_camera(executable: script, output: :half)
 
     assert ["--output", "cpu:1014x760"] = arguments |> arguments() |> Enum.slice(10, 2)
+  end
+
+  test "asks the program for each output, an output scaled from another after it",
+       %{tmp_dir: tmp_dir} do
+    {script, arguments, _commands} = listening_program(tmp_dir)
+
+    start_camera(
+      executable: script,
+      outputs: [
+        inference: [resolution: {1014, 760}, from: :view],
+        view: [resolution: {2028, 1520}, processor: :cpu]
+      ]
+    )
+
+    flags = arguments(arguments)
+
+    assert Enum.slice(flags, 10, 4) == [
+             "--output",
+             "cpu:2028x1520",
+             "--output",
+             "from:0:1014x760"
+           ]
+
+    assert flags |> Enum.drop_while(&(&1 != "--threads")) |> Enum.at(1) == "3"
+  end
+
+  test "publishes the frames of each output under its own key, each naming its output",
+       %{tmp_dir: tmp_dir} do
+    records =
+      write_records(tmp_dir, [
+        rgb_record(5, <<1, 2, 3, 4, 5, 6>>, 0),
+        rgb_record(5, <<7, 8, 9, 10, 11, 12>>, 1)
+      ])
+
+    script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq"), :inference})
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    )
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :inference} = frame}}, 2_000
+    assert frame.rgb == <<7, 8, 9, 10, 11, 12>>
+    refute_receive {:"$gen_cast", {:camera_frame, %Frame{output: :view}}}, 200
+  end
+
+  test "outputs it cannot make stop the camera, saying why", %{tmp_dir: tmp_dir} do
+    {script, _arguments, _commands} = listening_program(tmp_dir)
+    Process.flag(:trap_exit, true)
+
+    for {opts, message} <- [
+          {[outputs: [view: [resolution: {2028, 1520}, processor: :isp]]],
+           "output view: its processor :isp is not one this driver has (:cpu)"},
+          {[output: :full, outputs: [view: [resolution: {2028, 1520}, processor: :cpu]]],
+           ":output is the shorthand of one output: give :outputs or :output"}
+        ] do
+      capture_log(fn ->
+        assert {:error, ^message} =
+                 V4L2Single.start_link(
+                   [
+                     name: :hq,
+                     label: "hq",
+                     csiphy: 2,
+                     media_runner: media_runner(),
+                     executable: script
+                   ] ++ opts
+                 )
+      end)
+    end
   end
 
   test "a camera without a :csiphy is refused, naming the option" do
@@ -273,7 +357,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     File.write!(records, <<byte_size(record)::32, record::binary>>)
     script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
 
-    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq")})
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq"), :full})
     start_camera(executable: script, frame_id: "hq_optical")
 
     assert_receive {:"$gen_cast", {:camera_frame, %Frame{} = frame}}, 2_000
@@ -281,6 +365,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert %Frame{
              label: "hq",
              frame_id: "hq_optical",
+             output: :full,
              width: 2,
              height: 1,
              rgb: <<1, 2, 3, 4, 5, 6>>,

@@ -15,6 +15,16 @@ defmodule VisionCore.Camera.Unit do
   sets one: `VisionCore.Camera.V4L2Single` on a CAMSS board,
   `VisionCore.Camera.GStreamer` for a USB camera on a workstation.
 
+  A driver with named outputs (`c:VisionCore.Camera.outputs/1`), such as
+  `VisionCore.Camera.V4L2Single`, makes each of the camera's `:outputs`
+  at every frame (`VisionCore.Camera.Output`), published each under a key
+  of its own (`output_key/3`). A consumer takes the output it names, or
+  the camera's first, its default: the pipelines on a camera source
+  (`source: {:camera, name, output}`), the exporters (`{:camera_frame,
+  name, output}`), the preview and the pose capture. Outputs the driver
+  cannot make, or `:outputs` given to a driver without named outputs,
+  stop the unit at start, saying why.
+
   Three options describe the camera to its consumers, such as
   `VisionCore.Ros2.Exporter`, and are not given to the driver
   (`settings/1`):
@@ -40,6 +50,7 @@ defmodule VisionCore.Camera.Unit do
   use Supervisor
   require Logger
 
+  alias VisionCore.Camera.Output
   alias VisionCore.Detection
 
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
@@ -55,7 +66,8 @@ defmodule VisionCore.Camera.Unit do
           frame_id: String.t(),
           calibration_path: Path.t() | nil,
           calibration_store_path: Path.t() | nil,
-          pose_path: Path.t() | nil
+          pose_path: Path.t() | nil,
+          outputs: [Output.t()]
         }
 
   @doc """
@@ -117,6 +129,9 @@ defmodule VisionCore.Camera.Unit do
     name = name!(opts)
     {driver, driver_opts} = Keyword.pop!(opts, :driver)
 
+    with {:error, message} <- named_outputs(driver, driver_opts),
+         do: raise(ArgumentError, "camera #{name}: #{message}")
+
     driver_opts =
       driver_opts
       |> Keyword.drop(@consumer_options)
@@ -150,14 +165,65 @@ defmodule VisionCore.Camera.Unit do
   @doc """
   The outputs of `config`'s cameras, in config order, with their
   `VisionCore.Outputs` keys: `{:camera_frame, name}`, as
-  `VisionCore.Exporter` names it, under `{:camera_frame, server}`.
+  `VisionCore.Exporter` names it, under the key of the camera's default
+  output (`output_key/3`), one per camera.
   """
   @spec outputs(VisionCore.Config.t()) :: [
           {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
         ]
   def outputs(config) do
-    for {name, _driver, server} <- cameras(config),
-        do: {{:camera_frame, name}, {:camera_frame, server}}
+    for {name, _driver, _server} <- cameras(config),
+        do: {{:camera_frame, name}, output_key(config, name, nil)}
+  end
+
+  @doc """
+  The `VisionCore.Outputs` key the frames of the camera `name`'s output
+  `output` are published under in `config`, its default output's with
+  `output` `nil`: `{:camera_frame, server, output}` for a driver with
+  named outputs, `{:camera_frame, server}` for one without, which has
+  only its default. `nil` when `config` has no such camera or output.
+  """
+  @spec output_key(VisionCore.Config.t(), atom(), atom() | nil) :: VisionCore.Outputs.key() | nil
+  def output_key(config, name, output) do
+    with {^name, driver, server} <- List.keyfind(cameras(config), name, 0),
+         {:ok, outputs} <- named_outputs(driver, camera_options(config, name)) do
+      case {outputs, output} do
+        {nil, nil} ->
+          {:camera_frame, server}
+
+        {nil, _named} ->
+          nil
+
+        {[default | _others], nil} ->
+          {:camera_frame, server, default.name}
+
+        {outputs, output} ->
+          if Enum.any?(outputs, &(&1.name == output)), do: {:camera_frame, server, output}
+      end
+    else
+      _no_camera_or_outputs -> nil
+    end
+  end
+
+  # `{:ok, nil}` for a driver without named outputs, which takes no `:outputs`.
+  defp named_outputs(driver, opts) do
+    cond do
+      function_exported?(driver, :outputs, 1) ->
+        driver.outputs(opts)
+
+      Keyword.has_key?(opts, :outputs) ->
+        {:error, "its driver, #{inspect(driver)}, has no outputs"}
+
+      true ->
+        {:ok, nil}
+    end
+  end
+
+  defp camera_options(%VisionCore.Config{components: components}, name) do
+    Enum.find_value(components, [], fn
+      {:camera, opts} when is_list(opts) -> if opts[:name] == name, do: opts
+      _component -> nil
+    end)
   end
 
   @doc """
@@ -166,15 +232,22 @@ defmodule VisionCore.Camera.Unit do
   registers under, its optical frame, its calibration path, the stored
   calibration first when there is one, the path a committed calibration
   is stored at (`nil` without a store), and its pose path. The store is
-  read at each call.
+  read at each call. `:outputs` are its named outputs, in config order,
+  none for a driver without them or whose outputs cannot be made.
   """
   @spec settings(VisionCore.Config.t()) :: [settings()]
   def settings(%VisionCore.Config{components: components} = config) do
     options = for {:camera, opts} <- components, is_list(opts), into: %{}, do: {opts[:name], opts}
 
-    for {name, _driver, server} <- cameras(config) do
+    for {name, driver, server} <- cameras(config) do
       opts = Map.fetch!(options, name)
       store_path = calibration_store_path(opts[:calibration_store_dir], name)
+
+      outputs =
+        case named_outputs(driver, opts) do
+          {:ok, outputs} when is_list(outputs) -> outputs
+          _none -> []
+        end
 
       %{
         name: name,
@@ -182,7 +255,8 @@ defmodule VisionCore.Camera.Unit do
         frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
         calibration_path: calibration_path(opts[:calibration], store_path),
         calibration_store_path: store_path,
-        pose_path: opts[:pose]
+        pose_path: opts[:pose],
+        outputs: outputs
       }
     end
   end

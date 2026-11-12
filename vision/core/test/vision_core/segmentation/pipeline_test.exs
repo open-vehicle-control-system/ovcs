@@ -579,6 +579,32 @@ defmodule VisionCore.Segmentation.PipelineTest do
            } = values
   end
 
+  test "on a camera's output, takes that output's frames" do
+    start_supervised!({Stub, pipeline: :road})
+
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    ]
+
+    pipeline =
+      start_supervised!(
+        {Pipeline,
+         name: :road,
+         backend: Stub,
+         source: {:camera, :hq, :inference},
+         config: %VisionCore.Config{components: [{:camera, camera}]}}
+      )
+
+    server = VisionCore.Camera.V4L2Single.name_for("hq")
+    assert pipeline in Outputs.subscribers({:camera_frame, server, :inference})
+    refute pipeline in Outputs.subscribers({:camera_frame, server, :view})
+  end
+
   test "refuses a road class its labels do not name, a source that is no camera, and no name", %{
     tmp_dir: dir
   } do
@@ -595,6 +621,8 @@ defmodule VisionCore.Segmentation.PipelineTest do
           {[name: :road, source: {:camera, :hq}, reprojection_stride: 0], ":reprojection_stride"},
           {[name: :road, source: {:camera, :hq}, pair_wait_ms: -1], ":pair_wait_ms"},
           {[name: :road, source: {:camera, :usb}], ":usb"},
+          {[name: :road, source: {:camera, :hq, :inference}],
+           "the output :inference of the camera :hq, which has no named outputs"},
           {[source: {:camera, :hq}], ":name"}
         ] do
       assert {:error, {%ArgumentError{message: refused}, _stacktrace}} =

@@ -357,6 +357,34 @@ defmodule VisionCore.Exporter.RunnerTest do
       assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
     end
 
+    test "hands the exporter each output of a camera it names apart, the default as the camera's" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      start_forwarder(
+        [outputs: [{:camera_frame, :hq}, {:camera_frame, :hq, :inference}]],
+        config
+      )
+
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      view = %Frame{frame("hq", 1) | output: :view}
+      inference = %Frame{frame("hq", 1) | output: :inference}
+      Outputs.publish({:camera_frame, server, :view}, {:camera_frame, view})
+      Outputs.publish({:camera_frame, server, :inference}, {:camera_frame, inference})
+
+      assert_receive {:exported, {:camera_frame, :hq}, ^view, _at}
+      assert_receive {:exported, {:camera_frame, :hq, :inference}, ^inference, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
+    end
+
     test "leaves out an output the configuration has no producer of" do
       runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
 

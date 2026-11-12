@@ -1,7 +1,8 @@
 defmodule VisionCore.Detection.CameraSource do
   @moduledoc """
   What a `VisionCore.Detection.Pipeline` whose source is a camera of its
-  own (`source: {:camera, name}`) needs to place its boxes: the camera's
+  own (`source: {:camera, name}` or `{:camera, name, output}`) needs to
+  place its boxes: the camera's
   stereo depth, `VisionCore.Detection.CameraDepth`, which reads its
   calibration and pose once at start, keeps the stereo pairs to take the
   depth from and matches each frame with one, and the placement itself.
@@ -36,16 +37,18 @@ defmodule VisionCore.Detection.CameraSource do
   @type t :: CameraDepth.t()
 
   @doc """
-  The camera `name` of `config`, its calibration and pose read, each
-  missing one logged once as a warning naming `pipeline`, keeping the
-  pairs `pair_wait_ms` covers. Raises `ArgumentError` when `config` has
-  no camera `name`.
+  The camera `name` of `config`, its output `output`, its default with
+  `nil`, its calibration and pose read, each missing one logged once as
+  a warning naming `pipeline`, keeping the pairs `pair_wait_ms` covers.
+  Raises `ArgumentError` when `config` has no camera `name` or no such
+  output of it.
   """
-  @spec new(atom(), VisionCore.Config.t(), atom(), non_neg_integer()) :: t()
-  def new(name, config, pipeline, pair_wait_ms),
+  @spec new(atom(), VisionCore.Config.t(), atom(), non_neg_integer(), atom() | nil) :: t()
+  def new(name, config, pipeline, pair_wait_ms, output \\ nil),
     do:
       CameraDepth.new(name, config, "detection pipeline #{pipeline}", @wording,
-        pair_wait_ms: pair_wait_ms
+        pair_wait_ms: pair_wait_ms,
+        output: output
       )
 
   @doc "Whether boxes can be placed in 3D: the camera has a calibration and a pose."

@@ -99,6 +99,8 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
   defp start_pipeline(dir, opts \\ []) do
     {boxes, opts} = Keyword.pop(opts, :boxes, [@person])
     {files, opts} = Keyword.pop(opts, :files, [:calibration, :pose])
+    {config, opts} = Keyword.pop_lazy(opts, :config, fn -> config(dir, files) end)
+    {source, opts} = Keyword.pop(opts, :source, {:camera, :hq})
     start_supervised!({Stub, boxes: boxes})
 
     start_supervised!(
@@ -106,8 +108,8 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        [
          name: :hq_people,
          backend: Stub,
-         source: {:camera, :hq},
-         config: config(dir, files),
+         source: source,
+         config: config,
          clock: start_clock()
        ] ++ opts}
     )
@@ -153,7 +155,9 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     Outputs.publish({:stereo_pair, VisionCore.Stereo.Pipeline}, {:stereo_pair, pair})
   end
 
-  defp publish_frame(capture_ms, {width, height} \\ {40, 20}) do
+  defp publish_frame(capture_ms, size \\ {40, 20}, key \\ {:camera_frame, @camera_server})
+
+  defp publish_frame(capture_ms, {width, height}, key) do
     frame = %Frame{
       label: "hq",
       frame_id: "hq_optical",
@@ -163,7 +167,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       rgb: :binary.copy(<<1, 2, 3>>, width * height)
     }
 
-    Outputs.publish({:camera_frame, @camera_server}, {:camera_frame, frame})
+    Outputs.publish(key, {:camera_frame, frame})
   end
 
   defp detections(timeout \\ 1_000) do
@@ -201,6 +205,59 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_bearing(person)
     assert person.outline == [{0.0, 0.0}, {20.0, 0.0}, {20.0, 20.0}, {0.0, 20.0}]
     assert person.caption == "person 0.90 2.00m"
+  end
+
+  # The calibration's size made on the CPU, and half of it averaged from it.
+  defp outputs_config(dir) do
+    calibration = Path.join(dir, "hq.yaml")
+    File.write!(calibration, CameraCalibration.to_yaml(calibration(), "hq"))
+    pose = Path.join(dir, "hq_pose.yaml")
+    File.write!(pose, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [0, 0, 0]\n")
+
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      sensor_width: 80,
+      sensor_height: 40,
+      outputs: [
+        view: [resolution: {80, 40}, processor: :cpu],
+        inference: [resolution: {40, 20}, from: :view]
+      ],
+      calibration: calibration,
+      pose: pose
+    ]
+
+    %VisionCore.Config{components: [{:camera, camera}]}
+  end
+
+  test "on a camera's output, takes that output's frames and places its boxes at its size",
+       %{tmp_dir: dir} do
+    start_pipeline(dir, config: outputs_config(dir), source: {:camera, :hq, :inference})
+    server = VisionCore.Camera.V4L2Single.name_for("hq")
+    publish_pair(0)
+    publish_pair(100)
+    publish_frame(100, {80, 40}, {:camera_frame, server, :view})
+    publish_frame(100, {40, 20}, {:camera_frame, server, :inference})
+
+    assert [person] = detections()
+    assert_in_delta person.z, 2.0, 1.0e-6
+    assert_in_delta person.x, -0.4, 1.0e-6
+    assert_in_delta person.width, 0.8, 1.0e-6
+    assert_bearing(person)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+  end
+
+  test "refuses an output its camera does not have", %{tmp_dir: dir} do
+    assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+             start_supervised(
+               {Pipeline,
+                name: :hq_people,
+                backend: Stub,
+                source: {:camera, :hq, :preview},
+                config: outputs_config(dir)}
+             )
+
+    assert message =~ "the output :preview of the camera :hq, whose outputs are :view, :inference"
   end
 
   # The first call lets the frame's boxes reach the pipeline, the second has them handled.

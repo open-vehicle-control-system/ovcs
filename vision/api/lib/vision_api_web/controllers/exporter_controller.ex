@@ -64,6 +64,7 @@ defmodule VisionApiWeb.ExporterController do
 
   defp source_name(:stereo), do: "left"
   defp source_name({:camera, name}), do: Atom.to_string(name)
+  defp source_name({:camera, name, _output}), do: Atom.to_string(name)
 
   # A channel whose process is not running carries nothing to bound.
   defp channel_max_hz(:detections), do: call_or_nil(&VisionCore.Detection.Live.max_hz/0)

@@ -112,8 +112,9 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   @doc """
   The source of each segmentation unit in `config`, in config order, by
-  its output (`outputs/1`): `{:camera, name}`, or whatever its `:source`
-  holds, `nil` without one, for a unit left down.
+  its output (`outputs/1`): `{:camera, name}`, `{:camera, name, output}`,
+  or whatever its `:source` holds, `nil` without one, for a unit left
+  down.
   """
   @spec sources(VisionCore.Config.t()) :: [{{:segmentation, atom()}, term()}]
   def sources(config) do
@@ -128,8 +129,14 @@ defmodule VisionCore.Segmentation.Supervisor do
   """
   @spec cameras(VisionCore.Config.t()) :: [{atom(), atom()}]
   def cameras(config) do
-    for {{:segmentation, name}, {:camera, camera}} <- sources(config), do: {name, camera}
+    for {{:segmentation, name}, source} <- sources(config),
+        camera = camera_name(source),
+        do: {name, camera}
   end
+
+  defp camera_name({:camera, camera}), do: camera
+  defp camera_name({:camera, camera, _output}), do: camera
+  defp camera_name(_other), do: nil
 
   @doc """
   Each segmentation unit in `config`, in config order, as its pipeline

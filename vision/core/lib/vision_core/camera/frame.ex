@@ -18,6 +18,9 @@ defmodule VisionCore.Camera.Frame do
       must convert with `VisionCore.Timing.monotonic_from_kernel/1`
       before populating this field — the two clocks differ by ~18
       years. See `VisionCore.Timing`.
+    * `:output` — the name of the camera's output the frame is of
+      (`VisionCore.Camera.Output`), `nil` from a driver without named
+      outputs.
     * `:jpeg` — the JPEG-compressed image bytes, or
     * `:grey` — `width * height` bytes of 8-bit grey, row-major, or
     * `:rgb` — `width * height * 3` bytes of 8-bit red, green and blue,
@@ -25,11 +28,22 @@ defmodule VisionCore.Camera.Frame do
       with a pipeline's results, which has none.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
-  defstruct [:label, :width, :height, :capture_ns, frame_id: nil, jpeg: nil, grey: nil, rgb: nil]
+  defstruct [
+    :label,
+    :width,
+    :height,
+    :capture_ns,
+    frame_id: nil,
+    output: nil,
+    jpeg: nil,
+    grey: nil,
+    rgb: nil
+  ]
 
   @type t :: %__MODULE__{
           label: String.t(),
           frame_id: String.t() | nil,
+          output: atom() | nil,
           width: pos_integer(),
           height: pos_integer(),
           capture_ns: integer(),

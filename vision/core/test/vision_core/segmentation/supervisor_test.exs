@@ -146,12 +146,17 @@ defmodule VisionCore.Segmentation.SupervisorTest do
     end
 
     test "its pipelines on a camera, each with the camera's name, leaving out one without a camera" do
-      components = @components ++ [{:segmenter, name: :sourceless}]
+      components =
+        @components ++
+          [
+            {:segmenter, name: :sourceless},
+            {:segmenter, name: :kerb, backend: Stub, source: {:camera, :hq, :inference}}
+          ]
 
-      assert Supervisor.sources(config(components)) |> List.last() ==
+      assert Supervisor.sources(config(components)) |> Enum.at(2) ==
                {{:segmentation, :sourceless}, nil}
 
-      assert Supervisor.cameras(config(components)) == [road: :hq, lane: :front]
+      assert Supervisor.cameras(config(components)) == [road: :hq, lane: :front, kerb: :hq]
     end
 
     test "its pipelines: each one's name with its backend and server" do

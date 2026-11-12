@@ -52,7 +52,8 @@ defmodule VisionCore.Detection.CameraDepth do
 
   defstruct [
     :name,
-    :server,
+    :output,
+    :key,
     :calibration,
     :pose,
     :owner,
@@ -77,7 +78,8 @@ defmodule VisionCore.Detection.CameraDepth do
         }
 
   @typedoc """
-  The camera `name`, the name its driver publishes under, its calibration
+  The camera `name`, the output taken, `nil` for its default, the
+  `VisionCore.Outputs` key its frames come under, its calibration
   and pose, `nil` without, the owner its warnings name and their wording,
   its lens by frame size, `nil` for a size its calibration cannot be
   projected at, how far before the newest pair's capture pairs are kept,
@@ -85,7 +87,8 @@ defmodule VisionCore.Detection.CameraDepth do
   """
   @type t :: %__MODULE__{
           name: atom(),
-          server: atom(),
+          output: atom() | nil,
+          key: VisionCore.Outputs.key(),
           calibration: CameraCalibration.t() | nil,
           pose: Pose.t() | nil,
           owner: String.t(),
@@ -102,8 +105,10 @@ defmodule VisionCore.Detection.CameraDepth do
   saying what is lost (`wording`), as is a calibration whose lens cannot
   be projected with (`VisionCore.Detection.Reprojection.check_lens/1`),
   which is left out. Takes `:pair_wait_ms`, the longest a
-  result waits for its pair, which the pairs kept cover. Raises
-  `ArgumentError` when `config` has no camera `name`.
+  result waits for its pair, which the pairs kept cover, and `:output`,
+  the camera's output taken, its default without
+  (`VisionCore.Camera.Unit.output_key/3`). Raises `ArgumentError` when
+  `config` has no camera `name` or no such output of it.
   """
   @spec new(atom(), VisionCore.Config.t(), String.t(), wording(), keyword()) :: t()
   def new(name, config, owner, wording, opts) do
@@ -113,9 +118,18 @@ defmodule VisionCore.Detection.CameraDepth do
               "its source names the camera #{inspect(name)}, which is no camera of the " <>
                 "configuration"
 
+    output = Keyword.get(opts, :output)
+
+    key =
+      Unit.output_key(config, name, output) ||
+        raise ArgumentError,
+              "its source names the output #{inspect(output)} of the camera #{inspect(name)}, " <>
+                outputs_text(settings.outputs)
+
     depth = %__MODULE__{
       name: name,
-      server: settings.server,
+      output: output,
+      key: key,
       owner: owner,
       wording: wording,
       keep_ns: Keyword.fetch!(opts, :pair_wait_ms) * @ns_per_ms
@@ -127,6 +141,11 @@ defmodule VisionCore.Detection.CameraDepth do
         pose: read(depth, :pose, settings.pose_path)
     }
   end
+
+  defp outputs_text([]), do: "which has no named outputs"
+
+  defp outputs_text(outputs),
+    do: "whose outputs are #{Enum.map_join(outputs, ", ", &inspect(&1.name))}"
 
   defp read(depth, kind, nil) do
     Logger.warning(

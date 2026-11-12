@@ -75,7 +75,7 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Camss, Frame}
+  alias VisionCore.Camera.{Camss, Frame, Output}
   alias VisionCore.Camera.V4L2.Capture
   alias VisionCore.{Outputs, Timing}
 
@@ -219,20 +219,25 @@ defmodule VisionCore.Camera.V4L2Single do
       label: label,
       who: who,
       frame_id: Keyword.get(opts, :frame_id),
-      output: {:camera_frame, name_for(label)},
       applied: nil
     }
 
-    with {:ok, output} <- output(opts),
-         opts = Keyword.put_new(opts, :threads, default_threads(output)),
+    with {:ok, outputs} <- outputs(opts),
+         opts = Keyword.put_new(opts, :threads, default_threads(outputs, opts)),
          {:ok, nodes} <- route(opts) do
       timeouts = [
         stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @stall_timeout_ms),
         startup_timeout_ms: Keyword.get(opts, :startup_timeout_ms, @startup_timeout_ms)
       ]
 
-      arguments = port_arguments(nodes, output, opts)
-      state = Map.put(state, :controls, Capture.controls(@settings, opts))
+      arguments = port_arguments(nodes, outputs, opts)
+
+      state =
+        Map.merge(state, %{
+          controls: Capture.controls(@settings, opts),
+          outputs: Map.new(outputs, &{&1.index, {output_key(label, &1.name), &1.name}})
+        })
+
       {:ok, Map.merge(state, Capture.open(opts, arguments, timeouts, who))}
     else
       {:error, message} ->
@@ -241,16 +246,50 @@ defmodule VisionCore.Camera.V4L2Single do
     end
   end
 
-  defp output(opts) do
-    case Keyword.get(opts, :output, :full) do
-      output when output in [:full, :half] -> {:ok, output}
-      other -> {:error, ":output is :full or :half, got #{inspect(other)}"}
+  @doc """
+  The camera's outputs from `opts`: its `:outputs`, or the one output
+  `:output` names, `:full` by default; `{:error, message}` for outputs it
+  cannot make (`VisionCore.Camera.Output.resolve/2`). Its one processor,
+  `:cpu`, makes the sensor mode's size or half of it.
+  """
+  @impl VisionCore.Camera
+  def outputs(opts) do
+    case {Keyword.fetch(opts, :outputs), Keyword.get(opts, :output, :full)} do
+      {{:ok, outputs}, _output} ->
+        if Keyword.has_key?(opts, :output),
+          do: {:error, ":output is the shorthand of one output: give :outputs or :output"},
+          else: Output.resolve(outputs, processors(opts))
+
+      {:error, output} when output in [:full, :half] ->
+        Output.resolve(
+          [{output, [resolution: shorthand_size(output, opts), processor: :cpu]}],
+          processors(opts)
+        )
+
+      {:error, other} ->
+        {:error, ":output is :full or :half, got #{inspect(other)}"}
     end
   end
 
-  # A full-size frame takes several cores to keep up with the sensor.
-  defp default_threads(:full), do: 3
-  defp default_threads(:half), do: 1
+  defp processors(opts), do: %{cpu: [shorthand_size(:full, opts), shorthand_size(:half, opts)]}
+
+  defp shorthand_size(output, opts) do
+    divisor = if output == :half, do: 2, else: 1
+
+    {div(Keyword.get(opts, :sensor_width, @default_sensor_width), divisor),
+     div(Keyword.get(opts, :sensor_height, @default_sensor_height), divisor)}
+  end
+
+  defp output_key(label, output), do: {:camera_frame, name_for(label), output}
+
+  # A frame of the sensor mode's size takes several cores to keep up with the sensor.
+  defp default_threads(outputs, opts) do
+    full = shorthand_size(:full, opts)
+
+    if Enum.any?(outputs, &(&1.processor == :cpu and {&1.width, &1.height} == full)),
+      do: 3,
+      else: 1
+  end
 
   # `--video` takes the node's V4L2 name, which the program looks up, not the route's /dev path.
   defp route(opts) do
@@ -268,7 +307,7 @@ defmodule VisionCore.Camera.V4L2Single do
          do: {:ok, [video: "msm_vfe#{csiphy}_video0", sensor: route.sensor]}
   end
 
-  defp port_arguments(nodes, output, opts) do
+  defp port_arguments(nodes, outputs, opts) do
     [
       "--video",
       nodes[:video],
@@ -279,17 +318,20 @@ defmodule VisionCore.Camera.V4L2Single do
       "--sensor-height",
       Integer.to_string(Keyword.get(opts, :sensor_height, @default_sensor_height)),
       "--fps",
-      Integer.to_string(Keyword.get(opts, :fps, @default_fps)),
-      "--output",
-      "cpu:#{output_size(output, opts)}"
-    ] ++ Capture.arguments(@settings, opts)
+      Integer.to_string(Keyword.get(opts, :fps, @default_fps))
+    ] ++ output_arguments(outputs) ++ Capture.arguments(@settings, opts)
   end
 
-  defp output_size(output, opts) do
-    divisor = if output == :half, do: 2, else: 1
-    width = div(Keyword.get(opts, :sensor_width, @default_sensor_width), divisor)
-    height = div(Keyword.get(opts, :sensor_height, @default_sensor_height), divisor)
-    "#{width}x#{height}"
+  defp output_arguments(outputs) do
+    indices = Map.new(outputs, &{&1.name, &1.index})
+
+    Enum.flat_map(Output.port_order(outputs), fn
+      %Output{processor: :cpu} = output ->
+        ["--output", "cpu:#{output.width}x#{output.height}"]
+
+      %Output{from: from} = output ->
+        ["--output", "from:#{indices[from]}:#{output.width}x#{output.height}"]
+    end)
   end
 
   @impl GenServer
@@ -311,10 +353,12 @@ defmodule VisionCore.Camera.V4L2Single do
   @impl GenServer
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
-      {:frame, _output, frame} ->
+      {:frame, index, frame} ->
+        {key, output} = Map.fetch!(state.outputs, index)
+
         Outputs.publish(
-          state.output,
-          {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id}}
+          key,
+          {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id, output: output}}
         )
 
         {:noreply, %{state | last_frame_at: Capture.now_ms(), applied: refreshed(state.applied)}}

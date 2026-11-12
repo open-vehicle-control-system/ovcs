@@ -1,7 +1,7 @@
 defmodule VisionCore.Camera.UnitTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Camera.{GStreamer, Unit, V4L2Single}
+  alias VisionCore.Camera.{GStreamer, Output, Unit, V4L2Single}
 
   # Hands the test the options it is started with.
   defmodule Driver do
@@ -72,12 +72,84 @@ defmodule VisionCore.Camera.UnitTest do
            ]
   end
 
-  test "each camera's frames are an output, under its driver's key" do
-    config = config([{:camera, name: :hq, driver: V4L2Single, csiphy: 2}])
+  test "each camera's frames are an output, under its driver's key for its default output" do
+    config =
+      config([
+        {:camera, name: :hq, driver: V4L2Single, csiphy: 2},
+        {:camera, name: :usb, driver: GStreamer, device: "/dev/video0"}
+      ])
 
     assert Unit.outputs(config) == [
-             {{:camera_frame, :hq}, {:camera_frame, V4L2Single.name_for("hq")}}
+             {{:camera_frame, :hq}, {:camera_frame, V4L2Single.name_for("hq"), :full}},
+             {{:camera_frame, :usb}, {:camera_frame, GStreamer.name_for("usb")}}
            ]
+  end
+
+  describe "output_key/3" do
+    @outputs [
+      view: [resolution: {2028, 1520}, processor: :cpu],
+      inference: [resolution: {1014, 760}, from: :view]
+    ]
+
+    test "gives each named output its own key, the first the default" do
+      config = config([{:camera, name: :hq, driver: V4L2Single, csiphy: 2, outputs: @outputs}])
+      server = V4L2Single.name_for("hq")
+
+      assert Unit.output_key(config, :hq, nil) == {:camera_frame, server, :view}
+      assert Unit.output_key(config, :hq, :view) == {:camera_frame, server, :view}
+      assert Unit.output_key(config, :hq, :inference) == {:camera_frame, server, :inference}
+      assert Unit.outputs(config) == [{{:camera_frame, :hq}, {:camera_frame, server, :view}}]
+    end
+
+    test "is nil for an output or a camera the configuration does not have" do
+      config =
+        config([
+          {:camera, name: :hq, driver: V4L2Single, csiphy: 2, outputs: @outputs},
+          {:camera, name: :usb, driver: GStreamer, device: "/dev/video0"}
+        ])
+
+      assert Unit.output_key(config, :hq, :preview) == nil
+      assert Unit.output_key(config, :front, nil) == nil
+      assert Unit.output_key(config, :usb, :view) == nil
+      assert Unit.output_key(config, :usb, nil) == {:camera_frame, GStreamer.name_for("usb")}
+    end
+  end
+
+  describe "init/1" do
+    test "refuses outputs the camera's driver cannot make, naming the camera" do
+      for {opts, message} <- [
+            {[outputs: [view: [resolution: {2028, 1520}, processor: :isp]]],
+             "camera hq: output view: its processor :isp is not one this driver has (:cpu)"},
+            {[outputs: [view: [resolution: {640, 480}, processor: :cpu]]],
+             "camera hq: output view: its processor :cpu cannot make 640x480; " <>
+               "it makes 2028x1520 or 1014x760"},
+            {[
+               outputs: [
+                 view: [resolution: {2028, 1520}, processor: :cpu],
+                 inference: [resolution: {1000, 760}, from: :view]
+               ]
+             ], "camera hq: output inference: 1000x760 is no whole fraction of view's 2028x1520"},
+            {[outputs: [view: [resolution: {2028, 1520}, from: :inference]]],
+             "camera hq: output view: its :from, :inference, is no output of the camera"},
+            {[output: :quarter], "camera hq: :output is :full or :half, got :quarter"}
+          ] do
+        assert_raise ArgumentError, message, fn ->
+          Unit.init([name: :hq, driver: V4L2Single, csiphy: 2] ++ opts)
+        end
+      end
+    end
+
+    test "refuses outputs on a driver without named outputs" do
+      assert_raise ArgumentError,
+                   "camera usb: its driver, VisionCore.Camera.GStreamer, has no outputs",
+                   fn ->
+                     Unit.init(
+                       name: :usb,
+                       driver: GStreamer,
+                       outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+                     )
+                   end
+    end
   end
 
   test "a configuration without a camera has none, and a driver that is no camera gives none" do
@@ -90,7 +162,12 @@ defmodule VisionCore.Camera.UnitTest do
     test "each camera's frame id, calibration, pose and registered name" do
       config =
         config([
-          {:camera, name: :hq, driver: V4L2Single, calibration: "hq.yaml", pose: "hq_pose.yaml"},
+          {:camera,
+           name: :hq,
+           driver: V4L2Single,
+           calibration: "hq.yaml",
+           pose: "hq_pose.yaml",
+           output: :half},
           {:camera, name: :usb, driver: GStreamer, frame_id: "usb_link"}
         ])
 
@@ -101,7 +178,10 @@ defmodule VisionCore.Camera.UnitTest do
                  frame_id: "hq_optical",
                  calibration_path: "hq.yaml",
                  calibration_store_path: nil,
-                 pose_path: "hq_pose.yaml"
+                 pose_path: "hq_pose.yaml",
+                 outputs: [
+                   %Output{name: :half, index: 0, width: 1014, height: 760, processor: :cpu}
+                 ]
                },
                %{
                  name: :usb,
@@ -109,7 +189,8 @@ defmodule VisionCore.Camera.UnitTest do
                  frame_id: "usb_link",
                  calibration_path: nil,
                  calibration_store_path: nil,
-                 pose_path: nil
+                 pose_path: nil,
+                 outputs: []
                }
              ]
     end

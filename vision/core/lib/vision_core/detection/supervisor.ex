@@ -136,11 +136,12 @@ defmodule VisionCore.Detection.Supervisor do
 
   @doc """
   The source of each detection unit in `config`, in config order, with
-  its output (`outputs/1`): `:stereo`, the stereo pair's, or `{:camera,
-  name}`, the camera of its own `name` (`VisionCore.Detection.Pipeline`).
+  its output (`outputs/1`): `:stereo`, the stereo pair's, `{:camera,
+  name}`, the camera of its own `name`, or `{:camera, name, output}`, one
+  of its outputs (`VisionCore.Detection.Pipeline`).
   """
   @spec sources(VisionCore.Config.t()) :: [
-          {VisionCore.Exporter.output(), :stereo | {:camera, atom()}}
+          {VisionCore.Exporter.output(), :stereo | {:camera, atom()} | {:camera, atom(), atom()}}
         ]
   def sources(config) do
     for opts <- units_options(config),

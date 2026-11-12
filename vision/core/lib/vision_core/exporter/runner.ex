@@ -15,7 +15,8 @@ defmodule VisionCore.Exporter.Runner do
   output's next slot opens, or while the exporter is busy with the
   output, is held, replaced by any newer one, and handed over once the
   slot is open and the exporter ready. The camera outputs tell their
-  frames apart by `:label`, `"left"` or `"right"`, and the detection
+  frames apart by `:label`, `"left"`, `"right"` or a camera's name, and
+  by `:output`, the camera output a frame is of, and the detection
   outputs their pipelines by the name a named pipeline's messages end
   with: the default pipeline's `{:detections, pair, detections}` go to
   `:detections` only, the pipeline `name`'s
@@ -59,6 +60,7 @@ defmodule VisionCore.Exporter.Runner do
   use GenServer
   require Logger
 
+  alias VisionCore.Camera.Frame
   alias VisionCore.{Exporter, Outputs}
 
   @default_status_timeout_ms 200
@@ -327,16 +329,20 @@ defmodule VisionCore.Exporter.Runner do
 
         key ->
           :ok = Outputs.subscribe(key)
-          [{output, slot}]
+          [{output, Map.put(slot, :frame_output, frame_output(key))}]
       end
     end)
     |> Map.new()
   end
 
+  # The output name a camera's frames published under `key` carry.
+  defp frame_output({:camera_frame, _server, output}), do: output
+  defp frame_output(_key), do: nil
+
   # The output a message is of, among those subscribed; `newest/2` matches the same shapes.
-  defp route({:camera_frame, %{label: label}}, slots) do
+  defp route({:camera_frame, %{label: label, output: frame_output}}, slots) do
     Enum.find_value(slots, fn
-      {{:camera_frame, name} = output, _slot} -> if Atom.to_string(name) == label, do: output
+      {output, %{frame_output: ^frame_output}} -> if camera_label(output) == label, do: output
       _slot -> nil
     end)
   end
@@ -345,6 +351,10 @@ defmodule VisionCore.Exporter.Runner do
     output = message_output(message)
     if is_map_key(slots, output), do: output
   end
+
+  defp camera_label({:camera_frame, name}), do: Atom.to_string(name)
+  defp camera_label({:camera_frame, name, _output}), do: Atom.to_string(name)
+  defp camera_label(_output), do: nil
 
   defp message_output({:detections, _pair, _detections}), do: :detections
   defp message_output({:detections, _pair, _detections, name}), do: {:detections, name}
@@ -361,11 +371,11 @@ defmodule VisionCore.Exporter.Runner do
   defp payload({:segmentation, _name, frame, labels, clouds}), do: {frame, labels, clouds}
 
   # The newest value of the output waiting in the mailbox replaces `value`.
-  defp newest({:camera_frame, side} = output, value) do
-    label = Atom.to_string(side)
-
+  defp newest(output, %Frame{label: label, output: frame_output} = value)
+       when is_tuple(output) and elem(output, 0) == :camera_frame do
     receive do
-      {:"$gen_cast", {:camera_frame, %{label: ^label} = frame}} -> newest(output, frame)
+      {:"$gen_cast", {:camera_frame, %{label: ^label, output: ^frame_output} = frame}} ->
+        newest(output, frame)
     after
       0 -> value
     end

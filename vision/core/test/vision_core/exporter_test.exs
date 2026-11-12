@@ -99,6 +99,30 @@ defmodule VisionCore.ExporterTest do
     assert Exporter.output_key({:camera_frame, :usb}, config) == nil
   end
 
+  test "a camera's named output resolves to the key its driver publishes it under" do
+    config =
+      config([
+        {:camera,
+         name: :hq,
+         driver: VisionCore.Camera.V4L2Single,
+         outputs: [
+           view: [resolution: {2028, 1520}, processor: :cpu],
+           inference: [resolution: {1014, 760}, from: :view]
+         ]}
+      ])
+
+    server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+    assert Exporter.output?({:camera_frame, :hq, :inference})
+    refute Exporter.output?({:camera_frame, :left, :inference})
+    assert Exporter.output_key({:camera_frame, :hq}, config) == {:camera_frame, server, :view}
+
+    assert Exporter.output_key({:camera_frame, :hq, :inference}, config) ==
+             {:camera_frame, server, :inference}
+
+    assert Exporter.output_key({:camera_frame, :hq, :preview}, config) == nil
+  end
+
   test "an output resolves to the key its producer in the configuration publishes under" do
     config = config([{:stereo, driver: Camera, left: [], right: []}, :hailo_detector])
 
