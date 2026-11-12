@@ -3,20 +3,26 @@ title: "Add a component"
 description: The GenServer recipe every OVCS driver follows (CAN in, CAN out, bus messages, metrics, actions) and where your component's code goes.
 ---
 
-A component is a supervised process, almost always a GenServer, that your VMS composer's `children/0` starts. It subscribes to the CAN frames it cares about, emits frames on a period, exchanges `%OvcsBus.Message{}` with other components, publishes the metrics your dashboard reads, and answers actions from dashboard buttons. Every driver in `vms_core` follows that recipe, and your vehicle's own components follow it too. This guide walks through each part with snippets taken from the framework drivers and the reference vehicles; the drivers the framework ships are in [Drivers](./drivers.md).
+A component is a supervised process, almost always a GenServer, that your VMS composer's `children/0` starts. It:
 
-[How the VMS works](./how_it_works.md#the-component-pattern) has the short version of the pattern; this page is the one to keep open while you write code.
+- subscribes to the CAN frames it needs;
+- emits frames on a period;
+- exchanges `%OvcsBus.Message{}` with other components;
+- publishes the metrics your dashboard reads;
+- answers actions from dashboard buttons.
+
+Every driver in `vms_core` follows that recipe, and your vehicle's own components follow it too. The snippets come from the framework drivers and the reference vehicles. [Drivers](./drivers.md) lists the drivers the framework ships, and [How the VMS works](./how_it_works.md#the-component-pattern) has the short version of the pattern.
 
 ## Where a component lives
 
-Two places, and the choice is about scope, not size:
+A component lives in one of two places. The choice is about scope, not size:
 
-- **In your vehicle**, under `vehicles/<vehicle>/lib/<vehicle>/vms/`. Anything specific to your hardware, your wiring or your data goes here. The reference vehicles do this: OVCS1's [`Ovcs1.Vms.OVCSCANForwarder`](../../vehicles/ovcs1/lib/ovcs1/vms/ovcs_can_forwarder.ex) republishes body state on the OVCS bus, and OBD2's [`Obd2.Vms.Diagnostics`](../../vehicles/obd2/lib/obd2/vms/diagnostics.ex) and [`Obd2.Vms.Discovery`](../../vehicles/obd2/lib/obd2/vms/discovery.ex) are a complete vehicle-local feature set built from components. Its frames go in your vehicle's `priv/can/vms.yml`.
+- **In your vehicle**, under `vehicles/<vehicle>/lib/<vehicle>/vms/`. Anything specific to your hardware, your wiring or your data goes here. The reference vehicles do this: OVCS1's [`Ovcs1.Vms.OVCSCANForwarder`](../../vehicles/ovcs1/lib/ovcs1/vms/ovcs_can_forwarder.ex) republishes body state on the OVCS bus. OBD2's [`Obd2.Vms.Diagnostics`](../../vehicles/obd2/lib/obd2/vms/diagnostics.ex) and [`Obd2.Vms.Discovery`](../../vehicles/obd2/lib/obd2/vms/discovery.ex) are a complete vehicle-local feature set built from components. Its frames go in your vehicle's `priv/can/vms.yml`.
 - **In the framework**, under `vms/core/lib/vms_core/components/<manufacturer>/`, as a `VmsCore.Components.*` module. A driver for a part other vehicles could use belongs here, with its frame specs in [`libraries/ovcs_can/priv/can/components/`](../../libraries/ovcs_can/priv/can/components). The rule from [Community](../community.md#contributing): the cores stay free of vehicle-specific code, and something your vehicle needs that the framework cannot express is a separate framework pull request.
 
 Start in your vehicle. Moving a module into `vms_core` later is a rename; the recipe is the same.
 
-The composer starts a component with a `{Module, args}` tuple, which uses the `child_spec/1` that `use GenServer` generates. Its id is the module name, so a module you run twice needs a distinct id: either the explicit map form OVCS1 uses for its three `OVCS.GenericController` children, or a `child_spec/1` keyed on `:process_name`, as [`OVCS.InputCurve`](../../vms/core/lib/vms_core/components/ovcs/input_curve.ex) does:
+The composer starts a component with a `{Module, args}` tuple, which uses the `child_spec/1` that `use GenServer` generates. Its id is the module name, so a module you run twice needs a distinct id. Use either the explicit map form OVCS1 uses for its three `OVCS.GenericController` children, or a `child_spec/1` keyed on `:process_name`, as [`OVCS.InputCurve`](../../vms/core/lib/vms_core/components/ovcs/input_curve.ex) does:
 
 ```elixir
 def child_spec(%{process_name: process_name} = args) do
@@ -32,7 +38,7 @@ A single-instance component registers under `__MODULE__`, and that name is the `
 
 ## The skeleton
 
-[`OVCS.WaterPump`](../../vms/core/lib/vms_core/components/ovcs/water_pump.ex) is the smallest real driver and has every structural piece: options from the composer, a bus subscription, a periodic loop, a handler gated on a configured source, a catch-all, and a generic controller output.
+[`OVCS.WaterPump`](../../vms/core/lib/vms_core/components/ovcs/water_pump.ex) is the smallest real driver. It has every structural piece: options from the composer, a bus subscription, a periodic loop, a handler gated on a configured source, a catch-all, and a generic controller output.
 
 ```elixir
 defmodule VmsCore.Components.OVCS.WaterPump do
@@ -97,7 +103,7 @@ OVCS1 wires it with `{OVCS.WaterPump, %{controller: Vms.FrontController, power_r
 
 The catch-all `handle_info(%Bus.Message{}, state)` is required. Every subscriber to `"messages"` receives every message on the bus, and without it the first unrelated message crashes the process.
 
-For a vehicle-level state machine rather than a driver, start from your vehicle's own `Vms` module: the scaffold generates it from [`priv/templates/vehicle/lib/`](../../libraries/ovcs_vehicle/priv/templates/vehicle/lib) with the same shape, deciding `ready_to_drive` and `vms_status` on a 20 ms loop.
+For a vehicle-level state machine rather than a driver, start from your vehicle's own `Vms` module. The scaffold generates it from [`priv/templates/vehicle/lib/`](../../libraries/ovcs_vehicle/priv/templates/vehicle/lib) with the same shape. It decides `ready_to_drive` and `vms_status` on a 20 ms loop.
 
 ## Receiving frames
 
@@ -110,9 +116,9 @@ alias Cantastic.{Frame, Receiver, Signal}
 Receiver.subscribe(self(), network, ["inverter_status", "inverter_temperatures"])
 ```
 
-A driver for a part that sits on one of your vehicle's own networks takes that network's name as a `:network` option, so it works on whatever your topology calls the bus.
+A driver for a part that sits on one of your vehicle's own networks takes that network's name as a `:network` option. It then works on whatever your topology calls the bus.
 
-`Receiver.subscribe/4` takes one frame name or a list, and an optional `%{errors: true}` (below). The name must exist on that network: the receiver matches it against its specifications and an unknown name takes the network's receiver process down.
+`Receiver.subscribe/4` takes one frame name or a list, and an optional `%{errors: true}` (below). The name must exist on that network. The receiver matches it against its specifications, and an unknown name takes the network's receiver process down.
 
 Each decoded frame arrives as `{:handle_frame, %Cantastic.Frame{}}`. `name` is the YAML name and `signals` is a map from signal name to `%Cantastic.Signal{}`, whose `value` is already scaled:
 
@@ -170,7 +176,7 @@ When a source goes quiet, publish `nil` (the VESC driver) or an `:is_alive` flag
 
 ## Emitting frames
 
-Declare the frame under the network's `emitted_frames` with a `frequency`. Cantastic starts one emitter process per frame; your component configures it once and then only changes its data. The emitter sends on its own timer at the YAML frequency, whatever your loop does.
+Declare the frame under the network's `emitted_frames` with a `frequency`. Cantastic starts one emitter process per frame. Your component configures it once and then only changes its data. The emitter sends on its own timer at the YAML frequency, whatever your loop does.
 
 ```elixir
 alias Cantastic.Emitter
@@ -225,9 +231,9 @@ Bus.broadcast("messages", %Bus.Message{
 })
 ```
 
-`%OvcsBus.Message{}` enforces `:name` and `:source`, and `OvcsBus.broadcast/2` rejects a `nil` source. `:unit` is optional and comes from [`OvcsBus.Units`](../../libraries/ovcs_bus/lib/ovcs_bus/units.ex) (`Units.volt()`, `Units.revolution_per_minute()`, …), one function per unit so a typo fails to compile. The message reaches the subscribers of its own node; [The OVCS bus](../bus/README.md) covers messages, scope and the mesh.
+`%OvcsBus.Message{}` enforces `:name` and `:source`, and `OvcsBus.broadcast/2` rejects a `nil` source. `:unit` is optional and comes from [`OvcsBus.Units`](../../libraries/ovcs_bus/lib/ovcs_bus/units.ex) (`Units.volt()`, `Units.revolution_per_minute()`, …), one function per unit so a typo fails to compile. The message reaches the subscribers of its own node. [The OVCS bus](../bus/README.md) covers messages, scope and the mesh.
 
-An actuator adds one step: it does not follow a fixed commander, it follows whichever one `Managers.ControlLevel` currently names. The manager publishes `:requested_throttle_source` (and the steering, direction and gear equivalents); the actuator stores it, then gates the request on it. From the Leaf inverter:
+An actuator adds one step: it does not follow a fixed commander, it follows whichever one `Managers.ControlLevel` currently names. The manager publishes `:requested_throttle_source` (and the steering, direction and gear equivalents). The actuator stores it, then gates the request on it. From the Leaf inverter:
 
 ```elixir
 def handle_info(
@@ -261,7 +267,7 @@ rows: [
 ]
 ```
 
-`module:` is the `source`, not necessarily a module: for a component started with `process_name: Vms.MainController`, the row reads `module: Vms.MainController`. The channel resolves both with `String.to_existing_atom/1`, so a key must already exist as an atom in the VMS, which it does once your component's code mentions it.
+`module:` is the `source`, not necessarily a module: for a component started with `process_name: Vms.MainController`, the row reads `module: Vms.MainController`. The channel resolves both with `String.to_existing_atom/1`, so a key must already exist as an atom in the VMS. It does once your component's code mentions it.
 
 Publish metrics on the loop even when they have not changed: a dashboard opened later then shows a value at once. [Dashboard pages](./dashboard_pages.md) has every block and row type.
 
@@ -294,7 +300,7 @@ The params are the row's `module` and `action`, its `extra_parameters` merged in
 }
 ```
 
-`input_type` is `:button`, `:number` or `:toggle`; `status_metric_key` names one of the module's metrics that the row displays next to the control. Parse `value` yourself: it arrives as a string.
+`input_type` is `:button`, `:number` or `:toggle`. `status_metric_key` names one of the module's metrics that the row displays next to the control. Parse `value` yourself: it arrives as a string.
 
 ## Driving generic controller pins
 
@@ -307,11 +313,23 @@ Relays, PWM outputs and analog inputs on an Arduino [generic controller](../gene
 :ok = GenericController.set_external_pwm(state.controller, state.external_pwm_id, true, duty_cycle_percentage, frequency)
 ```
 
-These are the four calls the shipped drivers use. The controller must be started with `control_digital_pins: true` for digital outputs, and list the PWM in `enabled_external_pwms` for `set_external_pwm/5`; the pin must be configured in your composer's `generic_controllers/0` map, which the board receives when it is adopted. The digital value is sent on the controller's request frame at its YAML frequency, not immediately.
+These are the four calls the shipped drivers use. They need:
+
+- the controller started with `control_digital_pins: true`, for digital outputs;
+- the PWM listed in the controller's `enabled_external_pwms`, for `set_external_pwm/5`;
+- the pin configured in your composer's `generic_controllers/0` map, which the board receives when it is adopted.
+
+The digital value is sent on the controller's request frame at its YAML frequency, not immediately.
 
 ## Timing
 
-The shipped drivers loop every 10 ms (`@loop_period 10`), with a few exceptions: `OVCS.GenericController` and `OVCS.VehicleMotion` at 50 ms, OVCS1's `OVCSCANForwarder` at 100 ms, the scaffold's vehicle module at 20 ms. Pick the slowest period that serves the consumer; emitted frames keep their own YAML period regardless.
+The shipped drivers loop every 10 ms (`@loop_period 10`), with a few exceptions:
+
+- `OVCS.GenericController` and `OVCS.VehicleMotion` at 50 ms;
+- OVCS1's `OVCSCANForwarder` at 100 ms;
+- the scaffold's vehicle module at 20 ms.
+
+Pick the slowest period that serves the consumer. Emitted frames keep their own YAML period regardless.
 
 The loop is `:timer.send_interval/2` delivering `:loop` to your mailbox. It is handled after whatever messages are already queued, so the BEAM gives you soft real-time: fast and regular, with no hard deadline. Keep `handle_info/2` short, never block in it, and put work that takes longer in its own process. Each network's `Receiver` process runs at `:high` priority. Anything that must hold when the VMS stalls, such as a controller dropping its outputs, lives in the part's firmware, not in a component.
 
@@ -321,9 +339,13 @@ Before writing a driver, check whether the framework ships one: [Drivers](./driv
 
 ## Testing it on vcan
 
-Boot your vehicle with `./ovcs run <vehicle>`, inject the frames your component receives with `cansend` on the interface your host mapping gives that network, and watch its output with `candump` or the CAN pane of `./ovcs attach <vehicle>`. [Testing with CAN](../testing_with_can.md) has the commands and the replay workflow. Your metrics appear on the dashboard as soon as a row names them.
+1. Boot your vehicle with `./ovcs run <vehicle>`.
+2. Inject the frames your component receives with `cansend`, on the interface your host mapping gives that network.
+3. Watch its output with `candump` or the CAN pane of `./ovcs attach <vehicle>`.
 
-For logic, test the handlers without the CAN stack. The `vms_core` tests call `handle_info/2` directly with a hand-built state and a `%OvcsBus.Message{}`, then assert on the returned state; [`throttle_source_switching_test.exs`](../../vms/core/test/components/throttle_source_switching_test.exs) is a short example.
+[Testing with CAN](../testing_with_can.md) has the commands and the replay workflow. Your metrics appear on the dashboard as soon as a row names them.
+
+For logic, test the handlers without the CAN stack. The `vms_core` tests call `handle_info/2` directly with a hand-built state and a `%OvcsBus.Message{}`, then assert on the returned state. [`throttle_source_switching_test.exs`](../../vms/core/test/components/throttle_source_switching_test.exs) is a short example.
 
 ## Next steps
 

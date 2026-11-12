@@ -3,22 +3,22 @@ title: VMS
 description: The Vehicle Management System, the one firmware on every CAN bus of your vehicle, what it does, where it runs, its four layers and what talks to it.
 ---
 
-The Vehicle Management System (VMS) is the firmware that makes your vehicle's components work together. It is the only node on every CAN bus of the vehicle: it reads each manufacturer's frames, runs a driver per component, decides who commands the vehicle, and emits the frames each component expects. Every other role (infotainment, vision, bridges) is optional; the VMS is not.
+The Vehicle Management System (VMS) is the firmware that makes your vehicle's components work together. It is the only node on every CAN bus of the vehicle. It reads each manufacturer's frames, runs a driver per component, decides who commands the vehicle, and emits the frames each component expects. Every other role (infotainment, vision, bridges) is optional; the VMS is not.
 
 > [!NOTE]
 > Everything on this page holds for any vehicle. The OVCS1 and OVCS Mini reference vehicles appear as worked examples. See [Framework and vehicles](../framework.md).
 
 ## What it does
 
-- **Keeps the buses apart.** Components from different manufacturers reuse CAN identifiers, so each manufacturer's bus stays physically separate and the VMS is the only node on all of them ([bus isolation](../architecture.md#bus-isolation)). When one component needs another's data, the VMS reads it on one bus and emits it on the other. In the OVCS1 reference vehicle, that is how the Volkswagen Polo's instrument cluster shows the Nissan Leaf motor's RPM.
-- **Runs one driver per component.** A driver is a GenServer that decodes the component's frames, publishes what it learns on the [OVCS bus](../bus/README.md), and emits the frames that command it. The framework ships the [drivers](./drivers.md) its reference vehicles use; your vehicle picks the ones it needs and [adds its own](./add_a_component.md).
+- **Keeps the buses apart.** Components from different manufacturers reuse CAN identifiers, so each manufacturer's bus stays physically separate. The VMS is the only node on all of them ([bus isolation](../architecture.md#bus-isolation)). When one component needs another's data, the VMS reads it on one bus and emits it on the other. In the OVCS1 reference vehicle, that is how the Volkswagen Polo's instrument cluster shows the Nissan Leaf motor's RPM.
+- **Runs one driver per component.** A driver is a GenServer that decodes the component's frames, publishes what it learns on the [OVCS bus](../bus/README.md), and emits the frames that command it. The framework ships the [drivers](./drivers.md) its reference vehicles use. Your vehicle picks the ones it needs and [adds its own](./add_a_component.md).
 - **Decides who commands.** `VmsCore.Managers.ControlLevel` arbitrates between the pedals, the radio transmitter and the ROS bridge, and refuses unsafe changes. `VmsCore.Managers.Gear` turns the requested direction into a gear. See [How the VMS works](./how_it_works.md#managers).
 - **Supervises the generic controllers.** It adopts each Arduino board with its pinout, drives its outputs and emits the heartbeat that keeps them alive. See [Generic controllers](../generic_controllers/README.md).
 - **Feeds the debug dashboard.** It keeps the last value of every bus message and serves them, with the pages your vehicle declares, to the dashboard. See [Dashboard pages](./dashboard_pages.md).
 
 ## Where it runs
 
-On the vehicle, the VMS is a Nerves image on a Raspberry Pi 4 with a multi-CAN SPI hub, built on the [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) system. [Hardware](../hardware.md) lists the boards and CAN interfaces, and [Running on hardware](../running_hardware.md) builds, burns and updates the image:
+On the vehicle, the VMS is a Nerves image on a Raspberry Pi 4 with a multi-CAN SPI hub. It is built on the [`ovcs_base_can_system_rpi4`](https://github.com/open-vehicle-control-system/ovcs_base_can_system_rpi4) system. [Hardware](../hardware.md) lists the boards and CAN interfaces, and [Running on hardware](../running_hardware.md) builds, burns and updates the image:
 
 ```sh
 ./ovcs build <vehicle> vms
@@ -51,15 +51,28 @@ GET  /api/firmware                        the commit, target, Nerves system and 
 GET  /api/board                           the board's network interfaces with their addresses, its load and its clock
 ```
 
-A Phoenix socket at `/sockets/dashboard` carries two channels: `metrics` streams the values of the module and key pairs a client subscribes to, and `network-interfaces` streams each CAN interface's counters and bus state. In development, Phoenix LiveDashboard is at `/dev/dashboard`.
+A Phoenix socket at `/sockets/dashboard` carries two channels:
+
+- `metrics` streams the values of the module and key pairs a client subscribes to.
+- `network-interfaces` streams each CAN interface's counters and bus state.
+
+In development, Phoenix LiveDashboard is at `/dev/dashboard`.
 
 ### The dashboard
 
-The dashboard is a debugging tool for development and the bench, not an in-car display: that is the [infotainment](../infotainment/README.md). It fetches the layout from the API, subscribes to the metrics its blocks reference, and posts actions when you press a button. `./ovcs run` starts it with hot reload on port `5173`; the API on port `4000` serves the bundle the firmware build last produced.
+The dashboard is a debugging tool for development and the bench. It is not an in-car display: that is the [infotainment](../infotainment/README.md). It fetches the layout from the API, subscribes to the metrics its blocks reference, and posts actions when you press a button. `./ovcs run` starts it with hot reload on port `5173`. The API on port `4000` serves the bundle the firmware build last produced.
 
 ## What your vehicle provides
 
-Your vehicle's `<Vehicle>.Vms.Composer` implements [`VmsCore.Vehicle`](../../vms/core/lib/vms_core/vehicle.ex): the children to supervise (drivers, managers, `VmsCore.Status`, generic controllers), where its CAN topology YAML lives and which interface each network maps to on the host and on the target, and optionally the dashboard pages and the generic controller pinouts. The behaviour's moduledoc documents each callback. Your vehicle's top-level module points to the composer through `vms/0` and names the Nerves target through `vms_target/0`.
+Your vehicle's `<Vehicle>.Vms.Composer` implements [`VmsCore.Vehicle`](../../vms/core/lib/vms_core/vehicle.ex):
+
+- the children to supervise (drivers, managers, `VmsCore.Status`, generic controllers);
+- where its CAN topology YAML lives, and which interface each network maps to on the host and on the target;
+- optionally, the dashboard pages and the generic controller pinouts.
+
+The behaviour's moduledoc documents each callback.
+
+Your vehicle's top-level module points to the composer through `vms/0` and names the Nerves target through `vms_target/0`.
 
 ## What talks to it
 
@@ -72,7 +85,7 @@ Your vehicle's `<Vehicle>.Vms.Composer` implements [`VmsCore.Vehicle`](../../vms
 | Other roles | the Erlang mesh | metrics, status, the [bus gateway](../bus/gateway.md) |
 | Debug dashboard | HTTP and WebSocket | pages, metrics, actions |
 
-Commands always travel as CAN frames, where the VMS watches their freshness; the mesh carries only metrics, status and coordination. See [One Erlang mesh, no broker](../architecture.md#one-erlang-mesh-no-broker).
+Commands always travel as CAN frames, where the VMS watches their freshness. The mesh carries only metrics, status and coordination. See [One Erlang mesh, no broker](../architecture.md#one-erlang-mesh-no-broker).
 
 ## Where next
 
