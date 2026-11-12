@@ -919,8 +919,9 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   describe "segmentation pipelines" do
-    # A stereo unit of `driver`'s cameras, a camera `:hq` and the pipelines `:road` and `:lanes` on it.
-    defp segmentation_config(driver) do
+    # A stereo unit of `driver`'s cameras, a camera `:hq` of `camera_options` and the pipelines
+    # `:road` and `:lanes` on it.
+    defp segmentation_config(driver, camera_options \\ []) do
       config =
         config(driver,
           left: [
@@ -931,7 +932,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         )
 
       segmentation = [
-        {:camera, name: :hq, driver: driver, frame_id: "hq_lens"},
+        {:camera, [name: :hq, driver: driver, frame_id: "hq_lens"] ++ camera_options},
         {:segmenter, name: :road, source: {:camera, :hq}},
         {:segmenter, name: :lanes, source: {:camera, :hq}},
         # Left down: a segmentation pipeline needs a camera.
@@ -941,8 +942,13 @@ defmodule VisionCore.Ros2.ExporterTest do
       %{config | components: config.components ++ segmentation}
     end
 
-    defp segmentation_options(driver, exporter_options),
-      do: Keyword.put(options(driver, exporter_options), :config, segmentation_config(driver))
+    defp segmentation_options(driver, exporter_options, camera_options \\ []),
+      do:
+        Keyword.put(
+          options(driver, exporter_options),
+          :config,
+          segmentation_config(driver, camera_options)
+        )
 
     defp segmented_frame(frame_id \\ "hq_optical"),
       do: %Frame{label: "hq", frame_id: frame_id, width: 8, height: 6, capture_ns: 7}
@@ -1006,6 +1012,11 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert labels.header.frame_id == "hq_optical"
       assert labels.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(7)
       assert labels.data == <<0, 10>>
+
+      # The camera has no calibration.
+      assert_received {:published, "stereo/road/camera_info", %CameraInfo{} = camera_info}
+      assert camera_info == %CameraInfo{header: labels.header, width: 2, height: 1}
+
       assert_received {:published, "stereo/road/road/points", %PointCloud2{width: 1} = road}
       assert road.header.frame_id == "stereo_left_optical"
       assert road.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(5)
@@ -1020,7 +1031,76 @@ defmodule VisionCore.Ros2.ExporterTest do
         )
 
       assert_received {:published, "stereo/lanes/labels", %Image{}}
+      assert_received {:published, "stereo/lanes/camera_info", %CameraInfo{}}
       refute_received {:published, _topic, _message}
+    end
+
+    # The 192 x 108 frame's band is its bottom 96 rows; the 8 x 4 grid is 24 pixels a cell.
+    defp grid_labels, do: %{width: 8, height: 4, data: <<0::256>>, band: {0, 12, 192, 96}}
+
+    defp grid_k(fx, fy, cx, cy),
+      do: [
+        fx / 24,
+        0.0,
+        (cx + 0.5) / 24 - 0.5,
+        0.0,
+        fy / 24,
+        (cy - 12 + 0.5) / 24 - 0.5,
+        0.0,
+        0.0,
+        1.0
+      ]
+
+    defp published_k(state) do
+      frame = %{segmented_frame() | width: 192, height: 108}
+
+      {:ok, state} =
+        Exporter.handle_output({:segmentation, :road}, {frame, grid_labels(), nil}, state)
+
+      assert_received {:published, "stereo/road/camera_info", %CameraInfo{k: k}}
+      {k, state}
+    end
+
+    defp assert_k(k, expected) do
+      assert length(k) == 9
+      Enum.zip_with(k, expected, fn value, wanted -> assert_in_delta value, wanted, 1.0e-12 end)
+    end
+
+    test "publishes the label image's camera info from its camera's calibration" do
+      calibration = Path.join(@calibration, "identity_left.yaml")
+
+      {:ok, state} =
+        Exporter.init(segmentation_options(Camera, [segmentation: []], calibration: calibration))
+
+      assert {k, _state} = published_k(state)
+      assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
+    end
+
+    @tag :tmp_dir
+    test "a calibration committed through the camera's service reaches its label images' camera info",
+         %{tmp_dir: tmp_dir} do
+      options =
+        segmentation_options(Camera, [segmentation: [], cameras: []],
+          calibration: Path.join(@calibration, "distorted_left.yaml"),
+          calibration_store_dir: tmp_dir
+        )
+
+      {:ok, state} = Exporter.init(options)
+
+      # The 96 x 72 calibration does not fit the 192 x 108 frames: an empty camera info.
+      {k, state} = published_k(state)
+      assert k == List.duplicate(0.0, 9)
+
+      File.cp!(
+        Path.join(@calibration, "identity_left.yaml"),
+        Path.join(tmp_dir, "camera_hq.yaml")
+      )
+
+      {:ok, state} =
+        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
+
+      assert {k, _state} = published_k(state)
+      assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
     end
 
     test "a frame or pair without a frame id goes out in the camera's and the stereo left one's" do

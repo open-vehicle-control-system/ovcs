@@ -14,8 +14,12 @@ defmodule VisionCore.Ros2.Exporter do
     * Each detection pipeline's detections, as markers, `vision_msgs`
       and an overlay on the left raw image, or on a camera source the
       camera's (`VisionCore.Ros2.Exporter.Detections`).
-    * Each segmentation pipeline's label image and its road and off-road
-      points (`VisionCore.Ros2.Exporter.Segmentation`).
+    * Each segmentation pipeline's label image, with the camera info that
+      places it on its camera, and its road and off-road points
+      (`VisionCore.Ros2.Exporter.Segmentation`). The camera info is read
+      from the camera's calibration at each start of its runner, and
+      again when a calibration is committed through the camera's
+      `set_camera_info`.
     * Each camera of its own's image, camera info and pose relative to
       the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
     * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
@@ -455,7 +459,7 @@ defmodule VisionCore.Ros2.Exporter do
     end)
   end
 
-  # Each published segmentation pipeline's topics and frames, by its output.
+  # Each published segmentation pipeline's topics, frames and camera calibration, by its output.
   defp start_segmentation(options, cameras) do
     case segmentation_pipelines(options) do
       [] ->
@@ -464,8 +468,13 @@ defmodule VisionCore.Ros2.Exporter do
       pipelines ->
         config = config(options)
         pipeline_cameras = Map.new(SegmentationSupervisor.cameras(config))
-        frame_ids = Map.new(Unit.settings(config), &{&1.name, &1.frame_id})
+        camera_settings = Map.new(Unit.settings(config), &{&1.name, &1})
         topic_prefix = Keyword.get(options[:segmentation], :topic_prefix, unit_prefix(cameras))
+
+        calibrations =
+          for camera <- pipeline_cameras |> Map.take(pipelines) |> Map.values() |> Enum.uniq(),
+              into: %{},
+              do: {camera, segmented_camera_calibration(camera_settings[camera], camera)}
 
         for pipeline <- pipelines, camera = pipeline_cameras[pipeline], into: %{} do
           output = Segmentation.output(pipeline)
@@ -475,7 +484,8 @@ defmodule VisionCore.Ros2.Exporter do
               pipeline: pipeline,
               topic_prefix: topic_prefix,
               camera: camera,
-              camera_frame_id: frame_ids[camera],
+              camera_frame_id: camera_settings[camera] && camera_settings[camera].frame_id,
+              calibration: calibrations[camera],
               cloud_frame_id: left_frame_id(cameras)
             )
 
@@ -488,6 +498,11 @@ defmodule VisionCore.Ros2.Exporter do
         end
     end
   end
+
+  defp segmented_camera_calibration(nil, camera), do: Camera.calibration(nil, camera)
+
+  defp segmented_camera_calibration(settings, camera),
+    do: Camera.calibration(settings.calibration_path, camera)
 
   defp unit_prefix({:ok, cameras}), do: cameras[:prefix]
   defp unit_prefix({:error, _reason}), do: @default_prefix
@@ -643,8 +658,13 @@ defmodule VisionCore.Ros2.Exporter do
 
   def handle_info({:calibration_committed, service_name}, state) do
     case Enum.find(Map.values(state.cameras), &(&1.service_name == service_name)) do
-      nil -> reload_stereo_calibration(state)
-      camera -> {:ok, put_in(state.cameras[camera.name], reload_camera(camera, state.config))}
+      nil ->
+        reload_stereo_calibration(state)
+
+      camera ->
+        camera = reload_camera(camera, state.config)
+        state = put_in(state.cameras[camera.name], camera)
+        {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
     end
   end
 
@@ -655,6 +675,17 @@ defmodule VisionCore.Ros2.Exporter do
       nil -> camera
       settings -> Camera.reload(camera, settings.calibration_path)
     end
+  end
+
+  # The pipelines on `camera` take the calibration it was reloaded with.
+  defp recalibrate_segmentation(segmentation, camera) do
+    Map.new(segmentation, fn
+      {output, %{camera: name} = settings} when name == camera.name ->
+        {output, %{settings | calibration: camera.calibration}}
+
+      other ->
+        other
+    end)
   end
 
   defp reload_stereo_calibration(%{stereo: nil} = state), do: {:ok, state}
