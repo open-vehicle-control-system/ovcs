@@ -62,7 +62,7 @@ defmodule VisionCore.Segmentation.Backend.Stub do
           VisionCore.Segmentation.inference_group(Keyword.fetch!(opts, :pipeline), %{
             summary: "Returns fixed classes, without a model, to test the plumbing.",
             explanation: @explanation,
-            compute: %{runs_on: :cpu, implementation: :elixir, backend: nil},
+            compute: VisionCore.Parameters.on_the_beam(),
             parameters: []
           })
         ])

@@ -80,7 +80,7 @@ defmodule VisionCore.Detection.Backend.Stub do
             %{
               summary: "Returns fixed boxes, without a model, to test the plumbing.",
               explanation: @explanation,
-              compute: %{runs_on: :cpu, implementation: :elixir, backend: nil},
+              compute: VisionCore.Parameters.on_the_beam(),
               parameters: []
             }
           )

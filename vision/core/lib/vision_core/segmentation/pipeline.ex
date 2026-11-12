@@ -140,8 +140,6 @@ defmodule VisionCore.Segmentation.Pipeline do
     lens: "project the stereo points"
   }
 
-  @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
-
   def start_link(opts) do
     name = Keyword.get(opts, :name)
     GenServer.start_link(__MODULE__, opts, name: name && Detection.server(__MODULE__, name))
@@ -264,7 +262,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     camera = state.camera.name
 
     [
-      VisionCore.Segmentation.step(state.name, "input", "Input", 101, %{
+      VisionCore.Parameters.step(state.name, "input", "Input", 101, %{
         summary: "Hands a band of every nth image of the camera #{camera} to the model.",
         explanation:
           "Takes the images of the camera #{camera} and hands the model a band of each, its " <>
@@ -275,7 +273,7 @@ defmodule VisionCore.Segmentation.Pipeline do
             "a higher value leaves the NPU more time and updates the classes less often. An " <>
             "image to segment that arrives while the model is still busy waits, the newest " <>
             "one only, and goes to the model as soon as it is done.",
-        compute: @on_the_beam,
+        compute: VisionCore.Parameters.on_the_beam(),
         parameters: [
           build_parameter(:segment_every_n, state.segment_every_n, "Images per segmentation"),
           build_parameter(
@@ -285,7 +283,7 @@ defmodule VisionCore.Segmentation.Pipeline do
           )
         ]
       }),
-      VisionCore.Segmentation.step(state.name, "classes", "Classes", 103, %{
+      VisionCore.Parameters.step(state.name, "classes", "Classes", 103, %{
         summary: "Sorts the stereo points seen in the band into road and off-road.",
         explanation:
           "Projects the depth of the stereo pair captured closest to the image into the " <>
@@ -300,7 +298,7 @@ defmodule VisionCore.Segmentation.Pipeline do
             "published at once, with the pair already kept if one was captured within half " <>
             "a pair period of the image. Without such a pair, or without the camera's " <>
             "calibration or pose, they are published without points.",
-        compute: @on_the_beam,
+        compute: VisionCore.Parameters.on_the_beam(),
         parameters: [
           build_parameter(
             :road_classes,

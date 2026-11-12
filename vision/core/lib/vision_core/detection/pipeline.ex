@@ -158,7 +158,7 @@ defmodule VisionCore.Detection.Pipeline do
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
   alias VisionCore.Detection.{CameraDepth, CameraSource, DepthQueue, Fusion}
-  alias VisionCore.{Options, Outputs}
+  alias VisionCore.{Options, Outputs, Parameters}
   alias VisionCore.Stereo.Pair
 
   @coco_labels ~w(person bicycle car motorcycle airplane bus train truck boat
@@ -188,7 +188,6 @@ defmodule VisionCore.Detection.Pipeline do
     lens: "place detections"
   }
 
-  @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
   @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
                        "lines up with pixel for pixel, and hands it to the detector. " <>
                        "detect_every_n, fixed in the build, runs detection on one pair out of " <>
@@ -275,8 +274,7 @@ defmodule VisionCore.Detection.Pipeline do
       undecodable_logged: false
     }
 
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(groups(state))
+    if Process.whereis(Parameters), do: :ok = Parameters.declare(groups(state))
 
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
     if state.camera, do: :ok = Outputs.subscribe(state.camera.key)
@@ -326,32 +324,32 @@ defmodule VisionCore.Detection.Pipeline do
   start. The backend declares the inference step itself
   (`inference_group/2`).
   """
-  @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
+  @spec groups(map()) :: [Parameters.group_declaration()]
   def groups(state) do
-    source = state |> Map.get(:source, :stereo) |> with_output()
+    source = state.source
 
     [
-      step(state.name, "input", "Input", 101, %{
+      Parameters.step(state.name, "input", "Input", 101, %{
         summary: input_summary(source),
         explanation: input_explanation(source),
-        compute: @on_the_beam,
+        compute: Parameters.on_the_beam(),
         parameters: [
           build_parameter(state, :detect_every_n, detect_every_n_description(source))
         ]
       }),
-      step(state.name, "filtering", "Filtering", 103, %{
+      Parameters.step(state.name, "filtering", "Filtering", 103, %{
         summary: "Keeps the most confident detections.",
         explanation: @filtering_explanation,
-        compute: @on_the_beam,
+        compute: Parameters.on_the_beam(),
         parameters: [
           build_parameter(state, :min_score, "Lowest score of a detection passed on"),
           build_parameter(state, :max_detections, "Most detections passed on per image")
         ]
       }),
-      step(state.name, "placement", "Placement", 104, %{
+      Parameters.step(state.name, "placement", "Placement", 104, %{
         summary: "Places each box in 3D with the median depth in its middle.",
         explanation: placement_explanation(source),
-        compute: @on_the_beam,
+        compute: Parameters.on_the_beam(),
         parameters: placement_parameters(source, state)
       })
     ]
@@ -415,21 +413,9 @@ defmodule VisionCore.Detection.Pipeline do
   backend running the model declares it, `fields` giving its summary,
   explanation, compute and parameters.
   """
-  @spec inference_group(atom(), map()) :: VisionCore.Parameters.group_declaration()
-  def inference_group(pipeline, fields), do: step(pipeline, "inference", "Inference", 102, fields)
-
-  defp step(pipeline, id, name, position, fields) do
-    Map.merge(
-      %{
-        id: "#{pipeline}.#{id}",
-        name: name,
-        kind: :stage,
-        pipeline: pipeline,
-        position: position
-      },
-      fields
-    )
-  end
+  @spec inference_group(atom(), map()) :: Parameters.group_declaration()
+  def inference_group(pipeline, fields),
+    do: Parameters.step(pipeline, "inference", "Inference", 102, fields)
 
   defp build_parameter(state, key, description),
     do: VisionCore.Stereo.Parameters.build_parameter({key, Map.fetch!(state, key)}, description)

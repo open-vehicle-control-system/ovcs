@@ -45,31 +45,11 @@ defmodule VisionCore.Segmentation do
   def output(name), do: {:segmentation, name}
 
   @doc """
-  A step of the segmentation pipeline `pipeline` in
-  `VisionCore.Parameters`: the group `<pipeline>.<id>`, named `name`, at
-  `position` in the pipeline, `fields` giving its summary, explanation,
-  compute and parameters.
-  """
-  @spec step(atom(), String.t(), String.t(), non_neg_integer(), map()) ::
-          VisionCore.Parameters.group_declaration()
-  def step(pipeline, id, name, position, fields) do
-    Map.merge(
-      %{
-        id: "#{pipeline}.#{id}",
-        name: name,
-        kind: :stage,
-        pipeline: pipeline,
-        position: position
-      },
-      fields
-    )
-  end
-
-  @doc """
   The inference step of the segmentation pipeline `pipeline`,
   `<pipeline>.inference`, between its input and its classes, which its
   backend declares.
   """
   @spec inference_group(atom(), map()) :: VisionCore.Parameters.group_declaration()
-  def inference_group(pipeline, fields), do: step(pipeline, "inference", "Inference", 102, fields)
+  def inference_group(pipeline, fields),
+    do: VisionCore.Parameters.step(pipeline, "inference", "Inference", 102, fields)
 end

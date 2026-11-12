@@ -230,6 +230,7 @@ defmodule VisionCore.Detection.PipelineTest do
   test "declares the steps around the inference, in the detection pipeline, their settings fixed at start" do
     state = %{
       name: :detection,
+      source: :stereo,
       detect_every_n: 2,
       min_score: 0.5,
       max_detections: 10,
@@ -275,6 +276,7 @@ defmodule VisionCore.Detection.PipelineTest do
   test "a named pipeline's steps carry its name, at the same positions" do
     state = %{
       name: :road,
+      source: :stereo,
       detect_every_n: 1,
       min_score: 0.5,
       max_detections: 10,

@@ -786,7 +786,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
   test "declares its placement's projection settings, fixed at start" do
     state = %{
       name: :hq_people,
-      source: {:camera, :hq},
+      source: {:camera, :hq, nil},
       detect_every_n: 1,
       min_score: 0.5,
       max_detections: 10,
