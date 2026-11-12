@@ -18,6 +18,9 @@ pub enum SensorModel {
     Imx477,
 }
 
+/// The sample value of black in 10 bits.
+const BLACK_LEVEL_10_BIT: u16 = 64;
+
 impl SensorModel {
     /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`);
     /// the IMX708 for any other.
@@ -61,6 +64,11 @@ impl SensorModel {
             SensorModel::Imx477 => Some(&tuning::imx477::TUNING),
             SensorModel::Imx708 | SensorModel::Imx296 => None,
         }
+    }
+
+    /// The sample value of black a colour camera starts from, at the sensor's depth.
+    pub fn black_level(self) -> u16 {
+        BLACK_LEVEL_10_BIT << (self.sample_bits() - 10)
     }
 
     /// The bits per sample of the mode `v4l2_capture` captures.

@@ -263,7 +263,7 @@ pub(crate) mod tests {
             };
             let settings = ColourSettings {
                 denoise: !matches!(path, Path::Undenoised),
-                ..ColourSettings::default()
+                ..ColourSettings::for_sensor(SensorModel::Imx477)
             };
             for threads in 1..=4 {
                 let conversion = Conversion {
@@ -335,7 +335,7 @@ pub(crate) mod tests {
                         let settings = ColourSettings {
                             denoise,
                             ccm,
-                            ..ColourSettings::default()
+                            ..ColourSettings::for_sensor(SensorModel::Imx477)
                         };
                         let (mut rgb, mut buffers, mut fallback) = (
                             Vec::new(),
@@ -407,7 +407,7 @@ pub(crate) mod tests {
         };
         let settings = ColourSettings {
             denoise: !matches!(path, Path::Undenoised),
-            ..ColourSettings::default()
+            ..ColourSettings::for_sensor(SensorModel::Imx477)
         };
         match path {
             Path::Untuned => bayer::develop(frame, &tone, gains, conversion, images, fallback),

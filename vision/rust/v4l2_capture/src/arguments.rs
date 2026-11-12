@@ -2,6 +2,7 @@
 
 use std::str::FromStr;
 
+use crate::sensor::SensorModel;
 use crate::settings::{ColourSettings, Settings};
 
 /// What to capture: the stereo pair, or a single colour camera.
@@ -157,7 +158,10 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let (mut sensor_width, mut sensor_height, mut fps) = (None, None, None);
     let (mut video, mut sensor) = (None, None);
     let mut outputs = Vec::new();
-    let mut settings = ColourSettings::default();
+    // The settings start from the sensor's, wherever `--sensor` comes.
+    let named = (arguments.chunks_exact(2)).find(|pair| pair[0] == "--sensor");
+    let model = SensorModel::for_sensor(named.map_or("", |pair| pair[1].as_str()));
+    let mut settings = ColourSettings::for_sensor(model);
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
         let value = rest
@@ -430,6 +434,31 @@ mod tests {
         .chain(extra)
         .map(|argument| argument.to_string())
         .collect()
+    }
+
+    #[test]
+    fn a_single_cameras_black_level_starts_at_its_sensors_wherever_the_sensor_is_named() {
+        let ten_bit = |extra: &[&str]| {
+            let leading = ["--awb", "1", "--video", "video0", "--sensor-width", "1536"];
+            let trailing = [
+                "--sensor-height",
+                "864",
+                "--fps",
+                "30",
+                "--sensor",
+                "imx708",
+            ];
+            let command_line: Vec<String> = (leading.iter().chain(extra).chain(&trailing))
+                .map(|argument| argument.to_string())
+                .collect();
+            parse_single(&command_line).map(|arguments| arguments.settings.capture.black_level)
+        };
+        assert_eq!(ten_bit(&[]), Ok(64));
+        assert_eq!(ten_bit(&["--black-level", "70"]), Ok(70));
+        assert_eq!(
+            ten_bit(&["--black-level", "2000"]),
+            Err("black_level: invalid value 2000".to_string())
+        );
     }
 
     #[test]

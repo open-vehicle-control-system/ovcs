@@ -662,7 +662,7 @@ mod tests {
             outputs: outputs.to_vec(),
             model: SensorModel::Imx477,
             frame_us: 28_571.0,
-            settings: ColourSettings::default(),
+            settings: ColourSettings::for_sensor(SensorModel::Imx477),
             statistics_every,
         };
         let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));

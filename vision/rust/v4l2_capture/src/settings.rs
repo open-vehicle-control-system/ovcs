@@ -1,6 +1,7 @@
 //! The capture settings: set at start from the command line, and while
 //! running from `name=value` records on stdin.
 
+use crate::sensor::SensorModel;
 use crate::white_balance::{self, Gains};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,9 +86,11 @@ impl Settings {
 }
 
 /// The settings of a colour camera: those of `Settings`, the black level in
-/// 12 bits, white balance and colour correction.
+/// its sensor's sample depth, white balance and colour correction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ColourSettings {
+    /// The sensor they are for: its sample depth bounds `black_level`.
+    pub sensor: SensorModel,
     pub capture: Settings,
     /// Grey-world white balance; without it, `red_gain` and `blue_gain` hold.
     pub awb: bool,
@@ -105,11 +108,13 @@ pub struct ColourSettings {
 /// The most threads a colour camera converts a frame on.
 pub const MAX_THREADS: usize = 8;
 
-impl Default for ColourSettings {
-    fn default() -> ColourSettings {
+impl ColourSettings {
+    /// A colour camera's settings as they start on a `sensor`, black at its level.
+    pub fn for_sensor(sensor: SensorModel) -> ColourSettings {
         ColourSettings {
+            sensor,
             capture: Settings {
-                black_level: 256,
+                black_level: sensor.black_level(),
                 ..Settings::default()
             },
             awb: true,
@@ -141,7 +146,9 @@ impl ColourSettings {
             "red_gain" => self.red_gain = gain()?,
             "blue_gain" => self.blue_gain = gain()?,
             "black_level" => {
-                self.capture.black_level = in_range(value, 0.0, 4094.0).ok_or_else(invalid)? as u16
+                let full_scale = f64::from((1u32 << self.sensor.sample_bits()) - 1);
+                self.capture.black_level =
+                    in_range(value, 0.0, full_scale - 1.0).ok_or_else(invalid)? as u16
             }
             _ => self.capture.set(name, value)?,
         }
@@ -227,10 +234,14 @@ mod tests {
     }
 
     #[test]
-    fn a_colour_camera_balances_white_on_its_own_and_starts_at_a_12_bit_black_level() {
-        let settings = ColourSettings::default();
+    fn a_colour_camera_balances_white_on_its_own_and_starts_at_its_sensors_black_level() {
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
         assert!(settings.awb);
         assert_eq!(settings.capture.black_level, 256);
+        for ten_bit in [SensorModel::Imx708, SensorModel::Imx296] {
+            let settings = ColourSettings::for_sensor(ten_bit);
+            assert_eq!(settings.capture.black_level, 64, "{ten_bit:?}");
+        }
         assert_eq!(
             settings.gains(),
             Gains {
@@ -242,7 +253,7 @@ mod tests {
 
     #[test]
     fn colour_records_set_white_balance_and_the_capture_settings() {
-        let mut settings = ColourSettings::default();
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx477);
         settings.apply(b"awb=false").unwrap();
         settings.apply(b"red_gain=2.5").unwrap();
         settings.apply(b"blue_gain=1.25").unwrap();
@@ -262,7 +273,7 @@ mod tests {
 
     #[test]
     fn a_colour_camera_corrects_colours_with_its_matrix_unless_told_not_to() {
-        let mut settings = ColourSettings::default();
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx477);
         assert!(settings.ccm);
         settings.apply(b"ccm=false").unwrap();
         assert!(!settings.ccm);
@@ -272,7 +283,7 @@ mod tests {
 
     #[test]
     fn a_colour_camera_denoises_its_chroma_unless_told_not_to() {
-        let mut settings = ColourSettings::default();
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx477);
         assert!(settings.denoise);
         settings.apply(b"denoise=false").unwrap();
         assert!(!settings.denoise);
@@ -282,7 +293,7 @@ mod tests {
 
     #[test]
     fn a_colour_camera_converts_on_as_many_threads_as_set_from_1_to_8() {
-        let mut settings = ColourSettings::default();
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx477);
         assert_eq!(settings.threads, None);
         settings.apply(b"threads=4").unwrap();
         assert_eq!(settings.threads, Some(4));
@@ -301,8 +312,18 @@ mod tests {
     }
 
     #[test]
+    fn the_black_level_stays_below_the_sensors_full_scale() {
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx296);
+        settings.apply(b"black_level=1022").unwrap();
+        assert_eq!(settings.capture.black_level, 1022);
+        assert!(settings.apply(b"black_level=1023").is_err());
+        assert!(settings.apply(b"black_level=4094").is_err());
+        assert_eq!(settings.capture.black_level, 1022);
+    }
+
+    #[test]
     fn colour_records_out_of_range_are_refused() {
-        let mut settings = ColourSettings::default();
+        let mut settings = ColourSettings::for_sensor(SensorModel::Imx477);
         assert!(settings.apply(b"red_gain=4.5").is_err());
         assert!(settings.apply(b"blue_gain=0.4").is_err());
         assert!(settings.apply(b"black_level=4095").is_err());
@@ -311,6 +332,6 @@ mod tests {
             settings.apply(b"zoom=2"),
             Err("unknown setting zoom".to_string())
         );
-        assert_eq!(settings, ColourSettings::default());
+        assert_eq!(settings, ColourSettings::for_sensor(SensorModel::Imx477));
     }
 }
