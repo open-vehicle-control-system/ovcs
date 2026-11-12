@@ -17,7 +17,9 @@ defmodule VisionCore.Inference.PortBackend do
       {reply_tag, sequence, result}
 
   once, `result` being `nil` when the Port could not answer: it exited,
-  or left the request unanswered for `:infer_timeout_ms`.
+  left the request unanswered for `:infer_timeout_ms`, or answered with
+  a reply that is cut short. Such a reply, and a packet that is none the
+  backend knows, are logged once, until a reply is read again.
 
   ## Opening, and opening again
 
@@ -104,11 +106,13 @@ defmodule VisionCore.Inference.PortBackend do
   @doc """
   What a packet of the program that is no log line says: the result of
   the inference `sequence` and its time in microseconds, `nil` when it
-  carries none; `:error` for anything else.
+  carries none; `{:cut_short, sequence}` for a reply shorter than it
+  says; `:error` for anything else.
   """
   @callback parse(packet :: binary()) ::
               {:ok, sequence :: non_neg_integer(), result :: term(),
                time_us :: non_neg_integer() | nil}
+              | {:cut_short, sequence :: non_neg_integer()}
               | :error
 
   @doc "The tag of the message a caller receives its result in."
@@ -211,7 +215,8 @@ defmodule VisionCore.Inference.PortBackend do
       opening: nil,
       failures: 0,
       inflight: nil,
-      times: nil
+      times: nil,
+      unreadable_logged: false
     }
 
     if Process.whereis(VisionCore.Parameters),
@@ -318,8 +323,14 @@ defmodule VisionCore.Inference.PortBackend do
 
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case state.backend.parse(packet) do
-      {:ok, sequence, result, time_us} -> {:noreply, deliver(state, sequence, result, time_us)}
-      :error -> {:noreply, state}
+      {:ok, sequence, result, time_us} ->
+        {:noreply, deliver(%{state | unreadable_logged: false}, sequence, result, time_us)}
+
+      {:cut_short, sequence} ->
+        {:noreply, state |> note_unreadable("cut short") |> answer_cut_short(sequence)}
+
+      :error ->
+        {:noreply, note_unreadable(state, "none it knows")}
     end
   end
 
@@ -359,6 +370,18 @@ defmodule VisionCore.Inference.PortBackend do
 
   # Late reply for a timed-out request: dropped.
   defp deliver(state, _stale_sequence, _result, _time_us), do: state
+
+  defp note_unreadable(%{unreadable_logged: true} = state, _what), do: state
+
+  defp note_unreadable(%{wording: wording} = state, what) do
+    Logger.warning("#{wording.label} #{wording.program} sent a packet that is #{what}")
+    %{state | unreadable_logged: true}
+  end
+
+  defp answer_cut_short(%{inflight: %{sequence: sequence}} = state, sequence),
+    do: answer_inflight(state, nil)
+
+  defp answer_cut_short(state, _stale_sequence), do: state
 
   defp add_time(times, nil), do: times
   defp add_time(nil, time_us), do: %{sum_us: time_us, count: 1}

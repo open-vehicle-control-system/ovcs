@@ -110,6 +110,33 @@ defmodule VisionCore.Detection.Backend.HailoTest do
     assert log =~ "hailo_detect: ready"
   end
 
+  test "a reply cut short is no detections, said once", %{tmp_dir: tmp_dir} do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(tmp_dir, "cut_short")
+
+        for sequence <- [1, 2] do
+          assert Hailo.detect(sequence, @image) == :ok
+          assert_receive {:inference_detections, ^sequence, nil}, 2_000
+        end
+      end)
+
+    assert length(String.split(log, "hailo_detect sent a packet that is cut short")) == 2
+  end
+
+  test "a packet it cannot read is said once, and the frame left unanswered", %{
+    tmp_dir: tmp_dir
+  } do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(tmp_dir, "unreadable", infer_timeout_ms: 5_000)
+        assert Hailo.detect(1, @image) == :ok
+        refute_receive {:inference_detections, 1, _detections}, 200
+      end)
+
+    assert log =~ "hailo_detect sent a packet that is none it knows"
+  end
+
   test "answers busy while a frame is in flight", %{tmp_dir: tmp_dir} do
     start_backend(tmp_dir, "hang", infer_timeout_ms: 5_000)
 

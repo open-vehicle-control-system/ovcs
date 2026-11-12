@@ -3,7 +3,8 @@
 # replies to each request with one detection spanning the image, of class id
 # its channel count less one, and a 1500 us inference time, "answer_once" the same for one request, then exits, "answer_untimed" the same without the time, "exit" exits
 # with status 1 at once, "die" exits with status 1 on its first request, "hang"
-# reads requests and never replies. A program that
+# reads requests and never replies, "unreadable" answers each request with a packet of
+# an unknown tag, "cut_short" with a reply that says two detections and holds one. A program that
 # runs logs "ready" first. Each start appends a line to <hef>.starts and writes its
 # arguments after the HEF to <hef>.arguments. As qnn_detect, `--graph-names <dlc>`
 # prints the graph name "graph" and exits.
@@ -37,8 +38,12 @@ while True:
         continue
     if mode == "die":
         sys.exit(1)
+    if mode == "unreadable":
+        sys.stdout.buffer.write(struct.pack(">I", 3) + b"\x09??")
+        sys.stdout.buffer.flush()
+        continue
     detection = struct.pack("<Hfffff", channels - 1, 0.9, 0.0, 0.0, float(width), float(height))
-    reply = struct.pack("<BIH", 1, sequence, 1) + detection
+    reply = struct.pack("<BIH", 1, sequence, 2 if mode == "cut_short" else 1) + detection
     if mode != "answer_untimed":
         reply += struct.pack("<I", 1500)
     sys.stdout.buffer.write(struct.pack(">I", len(reply)) + reply)

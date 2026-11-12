@@ -185,7 +185,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
         {:ok, sequence, %{width: width, height: height, data: data}, nil}
 
       _short ->
-        {:ok, sequence, nil, nil}
+        {:cut_short, sequence}
     end
   end
 

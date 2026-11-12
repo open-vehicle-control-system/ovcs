@@ -37,17 +37,21 @@ defmodule VisionCore.Detection.Backend.Wire do
 
   @doc """
   The detections a reply carries, with its sequence and its inference
-  time in microseconds, `nil` when it carries none; `:error` for a
-  packet that is no detections reply.
+  time in microseconds, `nil` when it carries none;
+  `{:cut_short, sequence}` for a reply holding fewer detections than it
+  says; `:error` for a packet that is no detections reply.
   """
   @spec parse(binary()) ::
           {:ok, non_neg_integer(), [VisionCore.Detection.Backend.detection()],
            non_neg_integer() | nil}
+          | {:cut_short, non_neg_integer()}
           | :error
   def parse(<<@detections_reply_tag, sequence::little-32, count::little-16, rest::binary>>),
     do: parse_body(sequence, take_detections(rest, count, []))
 
   def parse(_packet), do: :error
+
+  defp parse_body(sequence, :cut_short), do: {:cut_short, sequence}
 
   # The detections may be followed by the inference time, a `u32` in microseconds.
   defp parse_body(sequence, {detections, <<time_us::little-32, _rest::binary>>}),
@@ -67,5 +71,5 @@ defmodule VisionCore.Detection.Backend.Wire do
     take_detections(rest, count - 1, [detection | detections])
   end
 
-  defp take_detections(_malformed, _count, detections), do: {Enum.reverse(detections), <<>>}
+  defp take_detections(_fewer, _count, _detections), do: :cut_short
 end

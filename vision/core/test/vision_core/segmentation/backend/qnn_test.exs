@@ -94,13 +94,19 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert File.read!(starts) == "start\n"
   end
 
-  test "a label image shorter than its size is no labels", %{tmp_dir: dir} do
-    start_backend(dir, "short")
-    eventually(&Qnn.available?/0)
+  test "a label image shorter than its size is no labels, said once", %{tmp_dir: dir} do
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(dir, "short")
+        eventually(&Qnn.available?/0)
 
-    assert Qnn.segment(1, @band) == :ok
-    assert_receive {:inference_labels, 1, nil}, 2_000
-    assert Qnn.segment(2, @band) == :ok
+        assert Qnn.segment(1, @band) == :ok
+        assert_receive {:inference_labels, 1, nil}, 2_000
+        assert Qnn.segment(2, @band) == :ok
+        assert_receive {:inference_labels, 2, nil}, 2_000
+      end)
+
+    assert length(String.split(log, "qnn_segment sent a packet that is cut short")) == 2
   end
 
   test "sums the inference times the replies carry and starts over once they are read", %{
