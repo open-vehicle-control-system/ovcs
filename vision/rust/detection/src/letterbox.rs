@@ -44,45 +44,101 @@ pub fn letterbox_into(
 ) {
     let model_px = model as usize;
     destination[..model_px * model_px * 3].fill(PAD_VALUE);
+    match channels {
+        1 => resize_into::<1>(source, width, height, destination, model_px, letterbox),
+        _ => resize_into::<3>(source, width, height, destination, model_px, letterbox),
+    }
+}
 
-    let channels = channels as usize;
-    let (scaled_width, scaled_height) = scaled_size(width, height, letterbox.scale);
-    let at = |row: i32, column: i32, channel: usize| -> f32 {
-        source[(row as usize * width as usize + column as usize) * channels + channel] as f32
-    };
+/// The two source pixels a sample falls between, clamped to the image, and the second's
+/// weight, sampled at pixel centres so the image does not creep half a pixel up-left.
+#[derive(Clone, Copy)]
+struct Tap {
+    first: usize,
+    second: usize,
+    weight: f32,
+}
 
-    for y in 0..scaled_height {
-        // Pixel-centre sampling keeps the image from creeping half a pixel up-left.
-        let source_y = (y as f32 + 0.5) / letterbox.scale - 0.5;
-        let y0 = source_y.floor() as i32;
-        let y_weight = source_y - y0 as f32;
-        let top_row = y0.max(0).min(height - 1);
-        let bottom_row = (y0 + 1).max(0).min(height - 1);
-
-        for x in 0..scaled_width {
-            let source_x = (x as f32 + 0.5) / letterbox.scale - 0.5;
-            let x0 = source_x.floor() as i32;
-            let x_weight = source_x - x0 as f32;
-            let left_column = x0.max(0).min(width - 1);
-            let right_column = (x0 + 1).max(0).min(width - 1);
-
-            let pixel = ((letterbox.offset_y + y) as usize * model_px
-                + (letterbox.offset_x + x) as usize)
-                * 3;
-
-            for channel in 0..channels {
-                let top = at(top_row, left_column, channel) * (1.0 - x_weight)
-                    + at(top_row, right_column, channel) * x_weight;
-                let bottom = at(bottom_row, left_column, channel) * (1.0 - x_weight)
-                    + at(bottom_row, right_column, channel) * x_weight;
-                let sample = (top * (1.0 - y_weight) + bottom * y_weight).round() as u8;
-
-                if channels == 1 {
-                    destination[pixel..pixel + 3].fill(sample);
-                } else {
-                    destination[pixel + channel] = sample;
-                }
+/// The taps of `samples` samples over `pixels` pixels, at `scale` samples a pixel.
+fn taps(samples: i32, pixels: i32, scale: f32) -> Vec<Tap> {
+    (0..samples)
+        .map(|sample| {
+            let position = (sample as f32 + 0.5) / scale - 0.5;
+            let first = position.floor() as i32;
+            Tap {
+                first: first.max(0).min(pixels - 1) as usize,
+                second: (first + 1).max(0).min(pixels - 1) as usize,
+                weight: position - first as f32,
             }
+        })
+        .collect()
+}
+
+/// The letterbox's image area, each sample blended along its row first, then between its
+/// two rows; a row blended for one output row is kept for the next.
+fn resize_into<const CHANNELS: usize>(
+    source: &[u8],
+    width: i32,
+    height: i32,
+    destination: &mut [u8],
+    model_px: usize,
+    letterbox: &Letterbox,
+) {
+    let (scaled_width, scaled_height) = scaled_size(width, height, letterbox.scale);
+    let columns = taps(scaled_width, width, letterbox.scale);
+    let source_row = |row: usize| {
+        let start = row * width as usize * CHANNELS;
+        &source[start..start + width as usize * CHANNELS]
+    };
+    let blended_length = columns.len() * CHANNELS;
+    let (mut upper, mut lower) = (vec![0f32; blended_length], vec![0f32; blended_length]);
+    let (mut upper_row, mut lower_row) = (None, None);
+
+    for (y, tap) in taps(scaled_height, height, letterbox.scale)
+        .into_iter()
+        .enumerate()
+    {
+        if upper_row != Some(tap.first) {
+            if lower_row == Some(tap.first) {
+                std::mem::swap(&mut upper, &mut lower);
+                lower_row = upper_row;
+            } else {
+                blend_row::<CHANNELS>(source_row(tap.first), &columns, &mut upper);
+            }
+            upper_row = Some(tap.first);
+        }
+        if lower_row != Some(tap.second) {
+            blend_row::<CHANNELS>(source_row(tap.second), &columns, &mut lower);
+            lower_row = Some(tap.second);
+        }
+
+        let start =
+            ((letterbox.offset_y + y as i32) as usize * model_px + letterbox.offset_x as usize) * 3;
+        let row = &mut destination[start..start + columns.len() * 3];
+        let (upper_weight, lower_weight) = (1.0 - tap.weight, tap.weight);
+        let blend =
+            |upper: f32, lower: f32| (upper * upper_weight + lower * lower_weight).round() as u8;
+        if CHANNELS == 3 {
+            for ((sample, &upper), &lower) in row.iter_mut().zip(&upper).zip(&lower) {
+                *sample = blend(upper, lower);
+            }
+        } else {
+            for ((pixel, &upper), &lower) in row.chunks_exact_mut(3).zip(&upper).zip(&lower) {
+                pixel.fill(blend(upper, lower));
+            }
+        }
+    }
+}
+
+/// `row` blended between each column tap's two pixels into `blended`, channel by channel.
+fn blend_row<const CHANNELS: usize>(row: &[u8], columns: &[Tap], blended: &mut [f32]) {
+    for (tap, samples) in columns.iter().zip(blended.chunks_exact_mut(CHANNELS)) {
+        let (first_weight, second_weight) = (1.0 - tap.weight, tap.weight);
+        let first = &row[tap.first * CHANNELS..][..CHANNELS];
+        let second = &row[tap.second * CHANNELS..][..CHANNELS];
+        for channel in 0..CHANNELS {
+            samples[channel] = f32::from(first[channel]) * first_weight
+                + f32::from(second[channel]) * second_weight;
         }
     }
 }
