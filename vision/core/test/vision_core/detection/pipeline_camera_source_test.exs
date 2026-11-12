@@ -365,6 +365,14 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     assert input.summary =~ "camera hq"
 
+    assert [
+             %{
+               name: "detect_every_n",
+               description: "Images per detection; 1 detects on every image"
+             }
+           ] =
+             input.parameters
+
     assert Enum.map(placement.parameters, &{&1.name, &1.get.()}) == [
              {"depth_sample_fraction", 0.5},
              {"reprojection_stride", 3},

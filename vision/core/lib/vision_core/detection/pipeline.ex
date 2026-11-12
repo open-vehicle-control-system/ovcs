@@ -18,9 +18,9 @@ defmodule VisionCore.Detection.Pipeline do
 
   Subscribes to the pairs of `VisionCore.Stereo.Pipeline`, so it sees
   the pairs every other consumer does, rectified left image and metric
-  depth included. That is why detection is nearly free here: the pixels
-  are already decoded and rectified, the depth is already computed, and
-  the accelerator is otherwise idle.
+  depth included. On the stereo source, that is why detection is nearly
+  free: the pixels are already decoded and rectified, the depth is
+  already computed, and the accelerator is otherwise idle.
 
   ## How a box becomes a position
 
@@ -279,7 +279,7 @@ defmodule VisionCore.Detection.Pipeline do
         explanation: input_explanation(source),
         compute: @on_the_beam,
         parameters: [
-          build_parameter(state, :detect_every_n, "Pairs per detection; 1 detects on every pair")
+          build_parameter(state, :detect_every_n, detect_every_n_description(source))
         ]
       }),
       step(state.name, "filtering", "Filtering", 103, %{
@@ -305,6 +305,11 @@ defmodule VisionCore.Detection.Pipeline do
 
   defp input_summary({:camera, camera}),
     do: "Hands every nth image of the camera #{camera} to the detector."
+
+  defp detect_every_n_description(:stereo), do: "Pairs per detection; 1 detects on every pair"
+
+  defp detect_every_n_description({:camera, _camera}),
+    do: "Images per detection; 1 detects on every image"
 
   defp input_explanation(:stereo), do: @input_explanation
 
