@@ -287,6 +287,117 @@ mod tests {
         )
     }
 
+    // FNV-1a of a frame's image, then of its means' bits.
+    fn digest(developed: Developed) -> u64 {
+        let means = developed.channel_means.into_iter().flatten();
+        let bits = means
+            .chain(developed.green_mean)
+            .flat_map(|mean| mean.to_bits().to_le_bytes());
+        developed
+            .rgb
+            .iter()
+            .copied()
+            .chain(bits)
+            .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Path {
+        Denoised,
+        Undenoised,
+        Untuned,
+    }
+
+    #[test]
+    fn a_frame_converts_to_the_same_image_and_measures_on_any_number_of_threads() {
+        let tuned = TunedColour {
+            tuning: &imx477::TUNING,
+            contrast: ContrastTable::new(&imx477::TUNING),
+        };
+        let tone = Tone::with_sample_bits(256, 2.2, 12);
+        let gains = Gains {
+            red: 2.1,
+            blue: 1.6,
+        };
+        // The digests of the conversion on one thread before it was split
+        // into bands.
+        #[rustfmt::skip]
+        let pinned = [
+            ((24, 46), Output::Full, false, Path::Denoised, 0x5adc1b5784f7a6df),
+            ((24, 46), Output::Full, false, Path::Undenoised, 0x77d9d3238a8e2a9a),
+            ((24, 46), Output::Full, false, Path::Untuned, 0xfa1d284195545234),
+            ((24, 46), Output::Full, true, Path::Denoised, 0xabd2abe75c2af1e9),
+            ((24, 46), Output::Full, true, Path::Undenoised, 0xe02c8e3b04a8abca),
+            ((24, 46), Output::Full, true, Path::Untuned, 0xbe584640e4e37f70),
+            ((24, 46), Output::Half, false, Path::Denoised, 0xa4169b1baac71cf3),
+            ((24, 46), Output::Half, false, Path::Undenoised, 0x7c01efd2f3ddbcbb),
+            ((24, 46), Output::Half, false, Path::Untuned, 0x1a25c91807e49859),
+            ((24, 46), Output::Half, true, Path::Denoised, 0xd1bc07eb69191829),
+            ((24, 46), Output::Half, true, Path::Undenoised, 0x60b1c77294f02b35),
+            ((24, 46), Output::Half, true, Path::Untuned, 0xd813e5060cc7f6bf),
+            ((36, 6), Output::Full, false, Path::Denoised, 0x896da32606cabe67),
+            ((36, 6), Output::Full, false, Path::Undenoised, 0x23424f1951fbf106),
+            ((36, 6), Output::Full, false, Path::Untuned, 0x02d67db56bc545df),
+            ((36, 6), Output::Full, true, Path::Denoised, 0x4619a8a968ff5bb3),
+            ((36, 6), Output::Full, true, Path::Undenoised, 0xdb2ebcc5fada1634),
+            ((36, 6), Output::Full, true, Path::Untuned, 0x1a4a7bf9f48e8f87),
+            ((36, 6), Output::Half, false, Path::Denoised, 0xd44a33ae59ed2d90),
+            ((36, 6), Output::Half, false, Path::Undenoised, 0x986243c7ea2645f1),
+            ((36, 6), Output::Half, false, Path::Untuned, 0x6d2b63032f973687),
+            ((36, 6), Output::Half, true, Path::Denoised, 0x4e39a53de350fc12),
+            ((36, 6), Output::Half, true, Path::Undenoised, 0xe68e692b564a01c9),
+            ((36, 6), Output::Half, true, Path::Untuned, 0x3f58b52486d9842b),
+        ];
+        for ((width, height), output, rotate_180, path, expected) in pinned {
+            let stride = width * 3 / 2 + 6;
+            let raw = padded_packed12(&samples(width, height), width, stride);
+            let frame = RawFrame {
+                raw: &raw,
+                width,
+                height,
+                row_stride: stride,
+                layout: Layout::Packed12,
+            };
+            let settings = ColourSettings {
+                denoise: !matches!(path, Path::Undenoised),
+                ..ColourSettings::default()
+            };
+            for threads in 1..=4 {
+                let conversion = Conversion {
+                    output,
+                    rotate_180,
+                    channel_means: true,
+                    green_mean: true,
+                    row_step: MEASURED_ROW_STEP,
+                    threads,
+                };
+                let developed = match path {
+                    Path::Untuned => digest(bayer::develop(
+                        &frame,
+                        &tone,
+                        gains,
+                        &conversion,
+                        &mut bayer::Buffers::default(),
+                    )),
+                    _ => digest(develop_tuned(
+                        &frame,
+                        &conversion,
+                        &settings,
+                        gains,
+                        &tuned,
+                        &mut colour::Buffers::default(),
+                    )),
+                };
+                assert_eq!(
+                    developed, expected,
+                    "{width}x{height} {output:?} rotated {rotate_180} {path:?} on {threads} threads"
+                );
+            }
+        }
+    }
+
     #[test]
     fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
         let tuned = TunedColour {
@@ -298,7 +409,8 @@ mod tests {
             red: 2.1,
             blue: 1.6,
         };
-        // 23, 25, 11 and 3 rows of RGGB cells: none splits evenly in 2, 3 or 4.
+        // 23, 25 and 11 rows of RGGB cells split unevenly in 2, 3 and 4 bands;
+        // 3 rows give a fourth thread no band.
         for (width, height) in [(24, 46), (24, 50), (32, 22), (36, 6)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
