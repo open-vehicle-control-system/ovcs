@@ -90,9 +90,10 @@ function useBeside(ref) {
     const caption = preview?.querySelector('figcaption')
     if (!caption || typeof ResizeObserver === 'undefined') return undefined
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-    const observer = new ResizeObserver(() =>
-      setBeside(preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
-    )
+    const measure = () => setBeside(preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
+    // Measured before the first paint: the observer's first report can come after it.
+    measure()
+    const observer = new ResizeObserver(measure)
     observer.observe(preview)
     observer.observe(caption)
     return () => observer.disconnect()

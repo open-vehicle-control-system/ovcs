@@ -332,6 +332,13 @@ describe('Previews', () => {
       expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)]')
     })
 
+    it('places the asides as the row mounts, before its observer reports', () => {
+      previewsSized(544, 400, 80)
+      renderAll()
+
+      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)_14rem]')
+    })
+
     it('keeps the asides under the captions without an observer to measure the previews', () => {
       vi.unstubAllGlobals()
       vi.stubGlobal('ResizeObserver', undefined)
