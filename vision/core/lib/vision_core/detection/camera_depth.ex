@@ -120,6 +120,14 @@ defmodule VisionCore.Detection.CameraDepth do
 
     output = Keyword.get(opts, :output)
 
+    with {:error, message} <- Unit.camera_outputs(config, name),
+         do:
+           raise(
+             ArgumentError,
+             "its source names the camera #{inspect(name)}, whose outputs cannot be made: " <>
+               message
+           )
+
     key =
       Unit.output_key(config, name, output) ||
         raise ArgumentError,

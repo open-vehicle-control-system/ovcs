@@ -247,6 +247,27 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
   end
 
+  test "on a camera whose outputs cannot be made, refuses to start saying why" do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+    ]
+
+    assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+             start_supervised(
+               {Pipeline,
+                name: :hq_people,
+                backend: Stub,
+                source: {:camera, :hq},
+                config: %VisionCore.Config{components: [{:camera, camera}]}}
+             )
+
+    assert message ==
+             "its source names the camera :hq, whose outputs cannot be made: output view: " <>
+               "its processor :cpu cannot make 640x480; it makes 2028x1520 or 1014x760"
+  end
+
   test "refuses an output its camera does not have", %{tmp_dir: dir} do
     assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
              start_supervised(

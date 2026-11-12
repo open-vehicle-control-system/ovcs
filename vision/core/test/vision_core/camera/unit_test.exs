@@ -115,6 +115,39 @@ defmodule VisionCore.Camera.UnitTest do
     end
   end
 
+  describe "a camera whose outputs cannot be made" do
+    @refused [
+      name: :hq,
+      driver: V4L2Single,
+      csiphy: 2,
+      outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+    ]
+
+    test "has no output key, and says why through camera_outputs/2" do
+      config = config([{:camera, @refused}])
+
+      assert Unit.outputs(config) == []
+      assert Unit.output_key(config, :hq, nil) == nil
+
+      assert Unit.camera_outputs(config, :hq) ==
+               {:error,
+                "output view: its processor :cpu cannot make 640x480; " <>
+                  "it makes 2028x1520 or 1014x760"}
+    end
+
+    test "camera_outputs/2 gives a camera's outputs, nil for a driver without, :error for no camera" do
+      config =
+        config([
+          {:camera, name: :hq, driver: V4L2Single, csiphy: 2, output: :half},
+          {:camera, name: :usb, driver: GStreamer, device: "/dev/video0"}
+        ])
+
+      assert {:ok, [%Output{name: :half}]} = Unit.camera_outputs(config, :hq)
+      assert Unit.camera_outputs(config, :usb) == {:ok, nil}
+      assert Unit.camera_outputs(config, :front) == :error
+    end
+  end
+
   describe "init/1" do
     test "refuses outputs the camera's driver cannot make, naming the camera" do
       for {opts, message} <- [

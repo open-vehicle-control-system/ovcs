@@ -145,6 +145,20 @@ defmodule VisionCore.PreviewTest do
       assert_receive {:vision_preview, :hq, "inference"}, 500
     end
 
+    test "a camera whose outputs cannot be made has nothing to show, and the rest previews on" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      preview = start_supervised!({Preview, config: config, max_hz: 50})
+
+      refute preview in Outputs.subscribers(nil)
+      assert Preview.subscribe(:hq) == :ok
+    end
+
     test "a stream the configuration has no camera for cannot be subscribed to" do
       start_supervised!({Preview, config: @camera_config, max_hz: 50})
 

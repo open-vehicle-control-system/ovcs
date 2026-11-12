@@ -166,14 +166,31 @@ defmodule VisionCore.Camera.Unit do
   The outputs of `config`'s cameras, in config order, with their
   `VisionCore.Outputs` keys: `{:camera_frame, name}`, as
   `VisionCore.Exporter` names it, under the key of the camera's default
-  output (`output_key/3`), one per camera.
+  output (`output_key/3`), one per camera; a camera whose outputs cannot
+  be made has none.
   """
   @spec outputs(VisionCore.Config.t()) :: [
           {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
         ]
   def outputs(config) do
     for {name, _driver, _server} <- cameras(config),
-        do: {{:camera_frame, name}, output_key(config, name, nil)}
+        key = output_key(config, name, nil),
+        do: {{:camera_frame, name}, key}
+  end
+
+  @doc """
+  The named outputs of `config`'s camera `name`: `{:ok, outputs}`,
+  `{:ok, nil}` for a driver without named outputs, `{:error, message}`
+  for outputs it cannot make, and `:error` when `config` has no camera
+  `name`.
+  """
+  @spec camera_outputs(VisionCore.Config.t(), atom()) ::
+          {:ok, [Output.t()] | nil} | {:error, String.t()} | :error
+  def camera_outputs(config, name) do
+    case List.keyfind(cameras(config), name, 0) do
+      {^name, driver, _server} -> named_outputs(driver, camera_options(config, name))
+      nil -> :error
+    end
   end
 
   @doc """
@@ -185,8 +202,8 @@ defmodule VisionCore.Camera.Unit do
   """
   @spec output_key(VisionCore.Config.t(), atom(), atom() | nil) :: VisionCore.Outputs.key() | nil
   def output_key(config, name, output) do
-    with {^name, driver, server} <- List.keyfind(cameras(config), name, 0),
-         {:ok, outputs} <- named_outputs(driver, camera_options(config, name)) do
+    with {^name, _driver, server} <- List.keyfind(cameras(config), name, 0),
+         {:ok, outputs} <- camera_outputs(config, name) do
       case {outputs, output} do
         {nil, nil} ->
           {:camera_frame, server}

@@ -123,7 +123,8 @@ defmodule VisionCore.Preview do
     for {_output, key} <- StereoSupervisor.outputs(config), do: :ok = Outputs.subscribe(key)
 
     for {name, _driver, _server} <- cameras,
-        do: :ok = Outputs.subscribe(camera_key(config, name, outputs[name]))
+        key = camera_key(config, name, outputs[name]),
+        do: :ok = Outputs.subscribe(key)
 
     streams = @stereo_streams ++ for {name, _driver, _server} <- cameras, do: name
 
@@ -146,19 +147,21 @@ defmodule VisionCore.Preview do
      }}
   end
 
-  defp camera_key(config, name, nil), do: Camera.Unit.output_key(config, name, nil)
-
+  # `nil` for a camera whose outputs cannot be made, whose unit is down.
   defp camera_key(config, name, output) do
-    case Camera.Unit.output_key(config, name, output) do
-      nil ->
+    case {Camera.Unit.output_key(config, name, output), Camera.Unit.output_key(config, name, nil)} do
+      {nil, nil} ->
+        nil
+
+      {nil, default} ->
         Logger.error(
           "#{inspect(__MODULE__)}: camera #{name} has no output #{inspect(output)}; " <>
             "its stream shows its default output"
         )
 
-        Camera.Unit.output_key(config, name, nil)
+        default
 
-      key ->
+      {key, _default} ->
         key
     end
   end

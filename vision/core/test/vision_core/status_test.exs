@@ -54,6 +54,18 @@ defmodule VisionCore.StatusTest do
     %Pair{left_frame: frame, right_frame: %{frame | label: "right"}}
   end
 
+  test "subscribes to no frames of a camera whose outputs cannot be made" do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+    ]
+
+    status = start_supervised!({Status, config: config([{:camera, camera}])})
+
+    refute status in VisionCore.Outputs.subscribers(nil)
+  end
+
   test "a snapshot of a unit with nothing running reports everything absent" do
     start_supervised!({Status, config: config([])})
 
