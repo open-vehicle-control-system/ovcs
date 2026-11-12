@@ -193,7 +193,7 @@ defmodule VisionCore.Detection.CameraDepthTest do
           assert {nil, _depth} = CameraDepth.lens(depth, {40, 30})
         end)
 
-      assert [_once] = Regex.scan(~r/camera hq: its 80x40 calibration .* 40x30/, log)
+      assert [_once] = Regex.scan(~r/test pipeline: camera hq's 80x40 calibration .* 40x30/, log)
     end
   end
 

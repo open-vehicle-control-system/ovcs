@@ -380,16 +380,16 @@ defmodule VisionCore.Detection.CameraDepth do
       else
         false ->
           Logger.warning(
-            "camera #{depth.name}: its #{calibration.width}x#{calibration.height} calibration " <>
-              "cannot #{depth.wording.lens} at #{width}x#{height}, of another aspect ratio: " <>
-              "calibrate the camera at that size"
+            "#{depth.owner}: camera #{depth.name}'s #{calibration.width}x#{calibration.height} " <>
+              "calibration cannot #{depth.wording.lens} at #{width}x#{height}, of another " <>
+              "aspect ratio: calibrate the camera at that size"
           )
 
           nil
 
         {:error, message} ->
           Logger.warning(
-            "camera #{depth.name}: its calibration cannot #{depth.wording.lens} at " <>
+            "#{depth.owner}: camera #{depth.name}'s calibration cannot #{depth.wording.lens} at " <>
               "#{width}x#{height}: #{message}"
           )
 
