@@ -34,8 +34,9 @@ defmodule VisionCore.Detection.CameraDepth do
 
   ## The lens
 
-  The camera's calibration is scaled to each frame size it sees
-  (`VisionCore.Ros2.CameraCalibration.scale_to/3`) and read once for that
+  The camera's calibration is resampled to each frame size it sees,
+  pixel centres onto pixel centres, as a camera's outputs are made
+  (`VisionCore.Ros2.CameraCalibration.resample_to/3`), and read once for that
   size (`VisionCore.Detection.Reprojection.lens/1`). A size of another
   aspect ratio, a sensor mode that crops, has no lens: its pixels see
   another part of the sensor than the calibration's.
@@ -337,7 +338,7 @@ defmodule VisionCore.Detection.CameraDepth do
 
     lens =
       with true <- CameraCalibration.proportional?(calibration, width, height),
-           scaled = CameraCalibration.scale_to(calibration, width, height),
+           scaled = CameraCalibration.resample_to(calibration, width, height),
            :ok <- Reprojection.check(scaled) do
         Reprojection.lens(scaled)
       else

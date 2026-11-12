@@ -137,7 +137,11 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   defp camera_info(calibration, %Frame{width: width, height: height}, labels, header) do
     if CameraCalibration.proportional?(calibration, width, height),
       do:
-        grid_camera_info(CameraCalibration.scale_to(calibration, width, height), labels, header),
+        grid_camera_info(
+          CameraCalibration.resample_to(calibration, width, height),
+          labels,
+          header
+        ),
       else: empty_camera_info(labels, header)
   end
 

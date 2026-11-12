@@ -70,9 +70,9 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       height: 40,
       distortion_model: "plumb_bob",
       distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0],
-      camera_matrix: [100.0, 0.0, 40.0, 0.0, 100.0, 20.0, 0.0, 0.0, 1.0],
+      camera_matrix: [100.0, 0.0, 40.5, 0.0, 100.0, 20.5, 0.0, 0.0, 1.0],
       rectification_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-      projection_matrix: [100.0, 0.0, 40.0, 0.0, 0.0, 100.0, 20.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+      projection_matrix: [100.0, 0.0, 40.5, 0.0, 0.0, 100.0, 20.5, 0.0, 0.0, 0.0, 1.0, 0.0]
     }
   end
 

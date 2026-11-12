@@ -180,7 +180,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
     end
 
     # A frame wider than 2:1 is all band, stretched more across than down onto the model's grid.
-    test "maps the scaled intrinsics onto the grid, skew and each axis's scale apart" do
+    test "maps the resampled intrinsics onto the grid, skew and each axis's scale apart" do
       calibration =
         calibration("plumb_bob", {500.0, 480.0, 499.5, 199.5}, [0.0], {1000, 400}, 2.0)
 
@@ -193,8 +193,8 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
                Segmentation.messages(frame, labels, nil, settings(calibration: calibration))
 
       {sx, sy} = {256 / 2000, 128 / 800}
-      # Scaled to the frame first: 2000 x 800 is twice the calibration's size.
-      {fx, fy, skew, cx, cy} = {1000.0, 960.0, 4.0, 499.5 * 2, 199.5 * 2}
+      # Resampled to the frame first: 2000 x 800 is twice the calibration's size.
+      {fx, fy, skew, cx, cy} = {1000.0, 960.0, 4.0, 999.5, 399.5}
 
       expected_k = [
         fx * sx,
@@ -225,7 +225,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         calibration =
           calibration(@model, {@focal, @focal * 0.98, 321.0, 238.0}, @coefficients, {640, 480})
 
-        # Twice the calibration's size: the camera info starts from the calibration scaled to the frame.
+        # Twice the calibration's size: the camera info starts from it resampled to the frame.
         frame = %Frame{frame() | width: 1280, height: 960}
         {x, y, w, h} = band = Pipeline.band(1280, 960, nil)
         {grid_w, grid_h} = {256, 128}
@@ -234,7 +234,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         assert [_labels, {_topic, CameraInfo, info}] =
                  Segmentation.messages(frame, labels, nil, settings(calibration: calibration))
 
-        scaled = CameraCalibration.scale_to(calibration, 1280, 960)
+        scaled = CameraCalibration.resample_to(calibration, 1280, 960)
         {cell_w, cell_h} = {w / grid_w, h / grid_h}
 
         # Inside the first cell, near its far corner, inside the last one, and just above the band.

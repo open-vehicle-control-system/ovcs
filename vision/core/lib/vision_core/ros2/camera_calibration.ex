@@ -233,6 +233,49 @@ defmodule VisionCore.Ros2.CameraCalibration do
   end
 
   @doc """
+  The calibration of the image resampled to `width × height` over the
+  same field of view, pixel centres mapped onto pixel centres: a
+  coordinate `u` becomes `(u + ½) × s − ½`, `s` the new width over the
+  saved one, and likewise `v`. Exact for a camera's output averaged in
+  blocks from another (`VisionCore.Camera.Output`), where 2 × 2 gives
+  `fx / 2` and `(cx + ½) / 2 − ½`, and for an output made at another
+  size from the same sensor area. `D` and `R` stay. A calibration
+  without a size is taken as it is, as by `scale_to/3`. Only valid for
+  a proportional resize (`proportional?/3`).
+  """
+  @spec resample_to(t(), pos_integer(), pos_integer()) :: t()
+  def resample_to(%__MODULE__{} = calibration, width, height) when width > 0 and height > 0 do
+    cond do
+      calibration.width == 0 or calibration.height == 0 ->
+        %{calibration | width: width, height: height}
+
+      calibration.width == width and calibration.height == height ->
+        calibration
+
+      true ->
+        scale_x = width / calibration.width
+        scale_y = height / calibration.height
+        to_centres = {{scale_x, (scale_x - 1) / 2}, {scale_y, (scale_y - 1) / 2}}
+
+        %{
+          calibration
+          | width: width,
+            height: height,
+            camera_matrix: map_rows(calibration.camera_matrix, 3, to_centres),
+            projection_matrix: map_rows(calibration.projection_matrix, 4, to_centres)
+        }
+    end
+  end
+
+  # The first two rows times their scale, plus the last row times their offset.
+  defp map_rows(matrix, columns, {{scale_x, offset_x}, {scale_y, offset_y}}) do
+    [row_x, row_y, last] = Enum.chunk_every(matrix, columns)
+
+    Enum.zip_with(row_x, last, &(&1 * scale_x + &2 * offset_x)) ++
+      Enum.zip_with(row_y, last, &(&1 * scale_y + &2 * offset_y)) ++ last
+  end
+
+  @doc """
   Whether `scale_to/3` can take `calibration` to `width × height`: the
   two aspect ratios are within 1 % of each other, or the calibration has
   no size.

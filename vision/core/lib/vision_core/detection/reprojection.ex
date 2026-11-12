@@ -26,7 +26,7 @@ defmodule VisionCore.Detection.Reprojection do
   from OpenCV have none.
 
   The calibration is the one of the camera's frames: one saved at another
-  size is scaled to it with `VisionCore.Ros2.CameraCalibration.scale_to/3`
+  size is resampled to it with `VisionCore.Ros2.CameraCalibration.resample_to/3`
   first.
 
   The projection runs in plain Elixir over the depth binary: Nx has no
@@ -93,7 +93,7 @@ defmodule VisionCore.Detection.Reprojection do
   more coefficients than the model takes (5 and 4; fewer are zeros), no
   focal length or no image size. The size is the camera frames' one, so
   a calibration saved at another size goes through
-  `VisionCore.Ros2.CameraCalibration.scale_to/3` first, and one without
+  `VisionCore.Ros2.CameraCalibration.resample_to/3` first, and one without
   a size gets the frames' from it.
   """
   @spec check(CameraCalibration.t()) :: :ok | {:error, String.t()}

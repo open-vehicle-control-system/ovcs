@@ -13,7 +13,8 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       **calibration** as `sensor_msgs/CameraInfo` on
       `<topic_prefix>/<name>/camera_info` every Nth frame, both in the
       frame id the frame carries. The camera info is the calibration's K
-      and D, scaled to the frame's size, with R the identity and P = K
+      and D, resampled to the frame's size
+      (`VisionCore.Ros2.CameraCalibration.resample_to/3`), with R the identity and P = K
       padded with a zero column: the camera is not one of a rectified
       pair. Without a calibration, or with one of another aspect ratio
       than the frames', which is logged, it is empty.
@@ -165,7 +166,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     do: %CameraInfo{header: header, width: width, height: height}
 
   defp scaled_camera_info(calibration, header, %Frame{width: width, height: height}) do
-    calibration = CameraCalibration.scale_to(calibration, width, height)
+    calibration = CameraCalibration.resample_to(calibration, width, height)
     [fx, skew, cx, _, fy, cy, _, _, _] = calibration.camera_matrix
 
     %CameraInfo{

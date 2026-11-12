@@ -46,6 +46,11 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
 
   defp encode(%Frame{width: width}), do: {:ok, "jpeg #{width}"}
 
+  defp assert_values(values, expected) do
+    assert length(values) == length(expected)
+    for {value, want} <- Enum.zip(values, expected), do: assert_in_delta(value, want, 1.0e-9)
+  end
+
   defp write_pose(tmp_dir, rotation, translation) do
     path = Path.join(tmp_dir, "hq_pose.yaml")
 
@@ -109,13 +114,17 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
       assert camera_info.p == [81.3, 0.0, 47.2, 0.0, 0.0, 80.9, 35.6, 0.0, 0.0, 0.0, 1.0, 0.0]
     end
 
-    test "scales a calibration of another size to the frame's" do
+    test "resamples a calibration of another size to the frame's, pixel centres on pixel centres" do
       {[_image, {_topic, CameraInfo, camera_info}], _camera} =
         Camera.frame_messages(rgb_frame(48, 36), camera(), 0, &encode/1)
 
       assert {camera_info.width, camera_info.height} == {48, 36}
-      assert camera_info.k == [40.65, 0.0, 23.6, 0.0, 40.45, 17.8, 0.0, 0.0, 1.0]
-      assert camera_info.p == [40.65, 0.0, 23.6, 0.0, 0.0, 40.45, 17.8, 0.0, 0.0, 0.0, 1.0, 0.0]
+      assert_values(camera_info.k, [40.65, 0.0, 23.35, 0.0, 40.45, 17.55, 0.0, 0.0, 1.0])
+
+      assert_values(
+        camera_info.p,
+        [40.65, 0.0, 23.35, 0.0, 0.0, 40.45, 17.55, 0.0, 0.0, 0.0, 1.0, 0.0]
+      )
     end
 
     test "an equidistant calibration keeps its model and four coefficients, scaled to a half frame" do
@@ -126,11 +135,13 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
 
       assert camera_info.distortion_model == "equidistant"
       assert camera_info.d == [0.05, -0.02, 0.006, -0.002]
-      assert camera_info.k == [405.0, 0.0, 507.25, 0.0, 404.5, 380.25, 0.0, 0.0, 1.0]
+      assert_values(camera_info.k, [405.0, 0.0, 507.0, 0.0, 404.5, 380.0, 0.0, 0.0, 1.0])
       assert camera_info.r == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
-      assert camera_info.p ==
-               [405.0, 0.0, 507.25, 0.0, 0.0, 404.5, 380.25, 0.0, 0.0, 0.0, 1.0, 0.0]
+      assert_values(
+        camera_info.p,
+        [405.0, 0.0, 507.0, 0.0, 0.0, 404.5, 380.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+      )
     end
 
     test "a calibration of another aspect ratio than the frame's gives an empty camera info, saying so once" do
