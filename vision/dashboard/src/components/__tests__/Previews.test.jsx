@@ -606,7 +606,8 @@ describe('Previews', () => {
     const put = (svg) => contexts.get(canvasOf(svg)).putImageData.mock.lastCall[0]
     const pixel = (svg, index) => [...put(svg).data.slice(index * 4, index * 4 + 4)]
     const legend = (name = 'road') => screen.getByRole('list', { name: `${name} classes` })
-    const items = (name) => [...legend(name).querySelectorAll('li')].map((item) => item.textContent)
+    const nameOf = (item) => item.querySelector('[data-name]')
+    const items = (name) => [...legend(name).querySelectorAll('li')].map((item) => nameOf(item).textContent)
     const present = (name = 'road') => [...legend(name).querySelectorAll('li[data-present]')].map((item) => item.dataset.class)
     // The legend's markup without its styling or presence: what decides its size.
     function shape(list) {
@@ -614,6 +615,7 @@ describe('Previews', () => {
       for (const element of [copy, ...copy.querySelectorAll('*')]) {
         element.removeAttribute('class')
         element.removeAttribute('data-present')
+        element.removeAttribute('aria-hidden')
       }
       return copy.outerHTML
     }
@@ -754,12 +756,30 @@ describe('Previews', () => {
       expect(items('road')).toEqual(cityscapes.map((name) => name.replaceAll('_', ' ')))
       expect(present()).toEqual(['road', 'sidewalk', 'sky', 'car'])
       const item = (name) => legend().querySelector(`[data-class="${name}"]`)
-      expect(item('car').classList.contains('opacity-40')).toBe(false)
-      expect(item('bus').classList.contains('opacity-40')).toBe(true)
       expect(item('road').hasAttribute('data-road')).toBe(true)
-      expect(item('road').lastChild.classList.contains('font-semibold')).toBe(true)
+      expect(nameOf(item('road')).classList.contains('font-semibold')).toBe(true)
       expect(item('car').hasAttribute('data-road')).toBe(false)
-      expect(item('car').lastChild.classList.contains('font-semibold')).toBe(false)
+      expect(nameOf(item('car')).classList.contains('font-semibold')).toBe(false)
+    })
+
+    it('tells the absent classes and the road to a reader who sees neither dimming nor bold, and every name in full on hover', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:road', 'segmentation', result)
+
+      const item = (name) => legend().querySelector(`[data-class="${name}"]`)
+      expect(item('car').hasAttribute('aria-hidden')).toBe(false)
+      expect(item('bus').getAttribute('aria-hidden')).toBe('true')
+      // The absent class's text keeps its full opacity: its swatch alone is dimmed.
+      expect(item('bus').className).not.toContain('opacity')
+      expect(item('bus').firstChild.classList.contains('opacity-40')).toBe(true)
+      expect(item('car').firstChild.classList.contains('opacity-40')).toBe(false)
+      expect(item('road').textContent).toBe('road (road)')
+      expect(item('car').textContent).toBe('car')
+      expect(nameOf(item('traffic_light')).title).toBe('traffic light')
     })
 
     it('keeps the bold of a road class while it is absent', () => {
@@ -772,7 +792,7 @@ describe('Previews', () => {
 
       const terrain = legend().querySelector('[data-class="terrain"]')
       expect(terrain.hasAttribute('data-present')).toBe(false)
-      expect(terrain.lastChild.classList.contains('font-semibold')).toBe(true)
+      expect(nameOf(terrain).classList.contains('font-semibold')).toBe(true)
     })
 
     it('shows a class present for a second after the last grid with it, by its styling alone', () => {
@@ -827,6 +847,23 @@ describe('Previews', () => {
       expect(figure('hq').querySelector('[data-segmentation]')).not.toBeNull()
       expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
       expect(figure('hq').querySelector('[data-class]')).toBeNull()
+    })
+
+    it('describes a grid by its class names alone: not at all until they come', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'segmentation', result)
+      const grid = figure('hq').querySelector('[data-segmentation]')
+      expect(grid.getAttribute('aria-hidden')).toBe('true')
+      expect(grid.hasAttribute('role')).toBe(false)
+      expect(grid.hasAttribute('aria-label')).toBe(false)
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      expect(overlay('Segmented: road, sidewalk, sky, car')).toBe(grid)
+      expect(grid.hasAttribute('aria-hidden')).toBe(false)
     })
 
     it('draws nothing before the first result, and lists every class absent', () => {

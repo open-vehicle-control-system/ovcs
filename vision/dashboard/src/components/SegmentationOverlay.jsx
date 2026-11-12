@@ -32,20 +32,22 @@ function useGridCanvas(segmentation, classes) {
  * A segmentation pipeline's label grid over a preview's frame, stretched over the band of the camera's image it
  * covers, each class in its Cityscapes colour at 40 % opacity and the classes the pipeline counts as road at 60 %.
  * Its box is the frame's own fitted inside the preview as the frame's `object-contain` image is, from the frame's
- * size and the preview's (container query units), and the band is placed in it by its fractions of the frame.
+ * size and the preview's (container query units), and the band is placed in it by its fractions of the frame. It is
+ * described by its class names, so hidden from assistive technology until they come.
  */
 export default function SegmentationOverlay({ segmentation, classes }) {
   const { width, height } = useFrameSize()
   const canvasRef = useGridCanvas(segmentation, classes)
   const { frame, band, grid, present } = segmentation
-  const description = `Segmented: ${present.map((id) => shown(classOf(id, classes).name)).join(', ')}`
+  const description = classes ? `Segmented: ${present.map((id) => shown(classOf(id, classes).name)).join(', ')}` : undefined
 
   return (
     <div className="pointer-events-none absolute inset-0 [container-type:size]">
       <div
         data-segmentation
-        role="img"
+        role={description ? 'img' : undefined}
         aria-label={description}
+        aria-hidden={description ? undefined : 'true'}
         style={{ '--frame-width': width, '--frame-height': height }}
         className="absolute inset-0 m-auto h-[min(100cqh,100cqw*var(--frame-height)/var(--frame-width))] w-[min(100cqw,100cqh*var(--frame-width)/var(--frame-height))]"
       >
@@ -68,8 +70,9 @@ export default function SegmentationOverlay({ segmentation, classes }) {
 
 /**
  * Every class a segmentation pipeline names, in class order, each with its colour, the road's in bold and those not
- * `present` dimmed, in a grid whose rows depend on the number of classes and the width alone, two columns in the aside
- * beside a preview's frame.
+ * `present` muted, their colour dimmed, in a grid whose rows depend on the number of classes and the width alone, two
+ * columns in the aside beside a preview's frame. Assistive technology hears the present classes alone, the road's said
+ * so, and a name cut by its column shows in full on hover.
  */
 export function SegmentationLegend({ name, classes, present }) {
   return (
@@ -83,10 +86,18 @@ export function SegmentationLegend({ name, classes, present }) {
             data-class={item.name}
             data-road={item.road ? '' : undefined}
             data-present={isPresent ? '' : undefined}
-            className={`flex min-w-0 items-center gap-1 ${isPresent ? 'text-ovcs-text' : 'text-ovcs-muted opacity-40'}`}
+            aria-hidden={isPresent ? undefined : 'true'}
+            className={`flex min-w-0 items-center gap-1 ${isPresent ? 'text-ovcs-text' : 'text-ovcs-muted'}`}
           >
-            <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: `rgb(${item.colour.join(' ')})` }} />
-            <span className={`truncate${item.road ? ' font-semibold' : ''}`}>{shown(item.name)}</span>
+            <span
+              aria-hidden="true"
+              className={`size-2.5 shrink-0 rounded-sm${isPresent ? '' : ' opacity-40'}`}
+              style={{ backgroundColor: `rgb(${item.colour.join(' ')})` }}
+            />
+            <span data-name title={shown(item.name)} className={`truncate${item.road ? ' font-semibold' : ''}`}>
+              {shown(item.name)}
+            </span>
+            {item.road ? <span className="sr-only"> (road)</span> : null}
           </li>
         )
       })}
