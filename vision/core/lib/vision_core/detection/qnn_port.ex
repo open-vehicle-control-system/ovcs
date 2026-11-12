@@ -17,12 +17,13 @@ defmodule VisionCore.Detection.QnnPort do
   @doc """
   The context binary of `dlc_path` for the program `executable`, generated
   when missing: `{:error, {:missing_binary, executable}}` without the
-  program. `context_opts` are `VisionCore.Detection.QnnContext.ensure/2`'s.
+  program. `context_opts` are `VisionCore.Detection.QnnContext.ensure/2`'s
+  but `:executable`, which is `executable`.
   """
   @spec context(Path.t(), Path.t(), QnnContext.opts()) :: {:ok, Path.t()} | {:error, term()}
   def context(dlc_path, executable, context_opts) do
     if File.exists?(executable),
-      do: QnnContext.ensure(dlc_path, context_opts),
+      do: QnnContext.ensure(dlc_path, Keyword.put(context_opts, :executable, executable)),
       else: {:error, {:missing_binary, executable}}
   end
 
