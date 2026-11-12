@@ -279,9 +279,9 @@ fn convert_frames(
         )
     };
     let tuning = model.tuning();
-    let mut processors: Vec<Option<Cpu>> = (outputs.iter())
+    let mut processors: Vec<Option<Box<dyn Processor>>> = (outputs.iter())
         .map(|spec| match spec.source {
-            Source::Cpu(output) => Some(Cpu::new(model, output)),
+            Source::Cpu(output) => Some(Box::new(Cpu::new(model, output)) as Box<dyn Processor>),
             Source::From(_) => None,
         })
         .collect();
@@ -885,9 +885,9 @@ mod tests {
         assert!(records
             .iter()
             .all(|record| record[0] != 7 || record[1] == 0));
-        // Pinned on the RGB_FRAME records (6) that the OUTPUT_FRAME records
-        // of one output are, but for their tag and output index: which
-        // thread writes the records changes none of them nor their order.
+        // Hashed with each frame record's tag set to 6 and its output index
+        // dropped: which thread writes the records changes none of them
+        // nor their order.
         let rgb_frames: Vec<Vec<u8>> = (records.iter())
             .map(|record| match record[0] {
                 OUTPUT_FRAME => [&[6][..], &record[2..]].concat(),
