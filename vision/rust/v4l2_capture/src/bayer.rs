@@ -3,7 +3,7 @@
 use std::ops::Range;
 
 use crate::arguments::Output;
-use crate::bands::{self, Conversion, Developed, Sums};
+use crate::bands::{self, Conversion, Measures, Sums};
 use crate::white_balance::Gains;
 
 /// Maps a raw sample to 8 bits: the sensor's black level to 0, full scale
@@ -192,7 +192,8 @@ pub struct Buffers {
     bands: Vec<DemosaicRows<u8>>,
 }
 
-/// `frame` in RGB into `rgb`, through `buffers`, at the size of `conversion.output`, each
+/// `frame` into `rgb`, 8-bit red, green and blue per pixel, row-major,
+/// through `buffers`, at the size of `conversion.output`, each
 /// sample through `tone`, red and blue scaled by `gains` first. At its own
 /// size, each pixel keeps its own sample and takes each missing colour as
 /// the mean of its nearest samples of that colour, the 4 axial ones for
@@ -204,14 +205,14 @@ pub struct Buffers {
 /// At its own size, white balance by `gains`, then the tone, then
 /// interpolation: one lookup per sample instead of three per pixel,
 /// invisible between neighbours.
-pub fn develop<'b>(
+pub fn develop(
     frame: &RawFrame,
     tone: &Tone,
     gains: Gains,
     conversion: &Conversion,
-    rgb: &'b mut Vec<u8>,
+    rgb: &mut Vec<u8>,
     Buffers { bands }: &mut Buffers,
-) -> Developed<'b> {
+) -> Measures {
     let rotate_180 = conversion.rotate_180;
     let sums = match conversion.output {
         Output::Full => {
@@ -260,7 +261,7 @@ pub fn develop<'b>(
             )
         }
     };
-    Developed::new(rgb, sums, conversion, 1.0)
+    Measures::new(sums, conversion, 1.0)
 }
 
 /// Writes the rows of RGGB cells `cells` of `frame` at its own size into
@@ -708,30 +709,30 @@ pub(crate) mod tests {
 
     fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
         let conversion = conversion(Output::Half, rotate_180);
+        let mut rgb = Vec::new();
         develop(
             frame,
             tone,
             gains,
             &conversion,
-            &mut Vec::new(),
+            &mut rgb,
             &mut Buffers::default(),
-        )
-        .rgb
-        .to_vec()
+        );
+        rgb
     }
 
     fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
         let conversion = conversion(Output::Full, rotate_180);
+        let mut rgb = Vec::new();
         develop(
             frame,
             tone,
             gains,
             &conversion,
-            &mut Vec::new(),
+            &mut rgb,
             &mut Buffers::default(),
-        )
-        .rgb
-        .to_vec()
+        );
+        rgb
     }
 
     // The mean green of the half-size image's pixels over every

@@ -13,7 +13,7 @@ use std::os::fd::{AsFd, AsRawFd};
 use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
 
 use crate::arguments::SingleArguments;
-use crate::bands::{Conversion, Developed};
+use crate::bands::{Conversion, Measures};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
 use crate::sensor::{self, SensorModel};
@@ -191,8 +191,7 @@ pub fn run(
                 row_step: MEASURED_ROW_STEP,
                 threads: settings.threads.unwrap_or(arguments.output.threads()),
             };
-            let Developed {
-                rgb,
+            let Measures {
                 channel_means,
                 green_mean,
             } = match &tuned {
@@ -227,7 +226,7 @@ pub fn run(
             }
             writer.write_record_parts(&[
                 &rgb_frame_header(width as u16, height as u16, frame.start_ns),
-                rgb,
+                &rgb,
             ])?;
         }
     }
@@ -242,15 +241,15 @@ struct TunedColour {
 /// `raw` through `tuned`'s colour path as `conversion` asks, into `rgb`
 /// through `buffers`, at the colour temperature of `gains`, with the colour
 /// correction matrix and the chroma denoise as `settings` switch them.
-fn develop_tuned<'a>(
+fn develop_tuned(
     raw: &RawFrame,
     conversion: &Conversion,
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
-    rgb: &'a mut Vec<u8>,
+    rgb: &mut Vec<u8>,
     buffers: &mut colour::Buffers,
-) -> Developed<'a> {
+) -> Measures {
     let kelvin = tuned.tuning.colour_temperature(gains);
     let shading = tuned.tuning.lens_shading(kelvin);
     let colour = Colour {
@@ -294,23 +293,21 @@ mod tests {
     // The image and measures of a frame, the means as bits to compare exactly.
     type Outcome = (Vec<u8>, Option<[u64; 3]>, Option<u64>);
 
-    fn outcome(developed: Developed) -> Outcome {
+    fn outcome(rgb: &[u8], measures: Measures) -> Outcome {
         (
-            developed.rgb.to_vec(),
-            developed.channel_means.map(|means| means.map(f64::to_bits)),
-            developed.green_mean.map(f64::to_bits),
+            rgb.to_vec(),
+            measures.channel_means.map(|means| means.map(f64::to_bits)),
+            measures.green_mean.map(f64::to_bits),
         )
     }
 
     // FNV-1a of a frame's image, then of its means' bits.
-    fn digest(developed: Developed) -> u64 {
-        let means = developed.channel_means.into_iter().flatten();
+    fn digest(rgb: &[u8], measures: Measures) -> u64 {
+        let means = measures.channel_means.into_iter().flatten();
         let bits = means
-            .chain(developed.green_mean)
+            .chain(measures.green_mean)
             .flat_map(|mean| mean.to_bits().to_le_bytes());
-        developed
-            .rgb
-            .iter()
+        rgb.iter()
             .copied()
             .chain(bits)
             .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
@@ -388,27 +385,29 @@ mod tests {
                     row_step: MEASURED_ROW_STEP,
                     threads,
                 };
-                let developed = match path {
-                    Path::Untuned => digest(bayer::develop(
+                let mut rgb = Vec::new();
+                let measures = match path {
+                    Path::Untuned => bayer::develop(
                         &frame,
                         &tone,
                         gains,
                         &conversion,
-                        &mut Vec::new(),
+                        &mut rgb,
                         &mut bayer::Buffers::default(),
-                    )),
-                    _ => digest(develop_tuned(
+                    ),
+                    _ => develop_tuned(
                         &frame,
                         &conversion,
                         &settings,
                         gains,
                         &tuned,
-                        &mut Vec::new(),
+                        &mut rgb,
                         &mut colour::Buffers::default(),
-                    )),
+                    ),
                 };
                 assert_eq!(
-                    developed, expected,
+                    digest(&rgb, measures),
+                    expected,
                     "{width}x{height} {output:?} rotated {rotate_180} {path:?} on {threads} threads"
                 );
             }
@@ -460,25 +459,25 @@ mod tests {
                                 row_step: MEASURED_ROW_STEP,
                                 threads,
                             };
-                            (
-                                outcome(develop_tuned(
-                                    &frame,
-                                    &conversion,
-                                    &settings,
-                                    gains,
-                                    &tuned,
-                                    &mut rgb,
-                                    &mut buffers,
-                                )),
-                                outcome(bayer::develop(
-                                    &frame,
-                                    &tone,
-                                    gains,
-                                    &conversion,
-                                    &mut rgb,
-                                    &mut fallback,
-                                )),
-                            )
+                            let measures = develop_tuned(
+                                &frame,
+                                &conversion,
+                                &settings,
+                                gains,
+                                &tuned,
+                                &mut rgb,
+                                &mut buffers,
+                            );
+                            let tuned = outcome(&rgb, measures);
+                            let measures = bayer::develop(
+                                &frame,
+                                &tone,
+                                gains,
+                                &conversion,
+                                &mut rgb,
+                                &mut fallback,
+                            );
+                            (tuned, outcome(&rgb, measures))
                         };
                         let one = developed(1);
                         for threads in [2, 3, 4, 3, 1] {

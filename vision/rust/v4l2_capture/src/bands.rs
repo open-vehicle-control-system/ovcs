@@ -24,22 +24,19 @@ pub struct Conversion {
     pub threads: usize,
 }
 
-/// A frame converted: 8-bit red, green and blue per pixel, row-major, and
-/// what `Conversion` asked to measure of it.
-pub struct Developed<'a> {
-    pub rgb: &'a [u8],
+/// What `Conversion` asked to measure of a frame converted.
+pub struct Measures {
     pub channel_means: Option<[f64; 3]>,
     pub green_mean: Option<f64>,
 }
 
-impl<'a> Developed<'a> {
-    /// `rgb` with the means of `sums` that `conversion` asked for, each
-    /// channel sum taken as `scale` times its samples' values.
-    pub fn new(rgb: &'a [u8], sums: Sums, conversion: &Conversion, scale: f64) -> Developed<'a> {
+impl Measures {
+    /// The means of `sums` that `conversion` asked for, each channel sum
+    /// taken as `scale` times its samples' values.
+    pub fn new(sums: Sums, conversion: &Conversion, scale: f64) -> Measures {
         let cells = sums.cells.max(1) as f64;
         let samples = cells * scale;
-        Developed {
-            rgb,
+        Measures {
             channel_means: conversion.channel_means.then(|| {
                 [
                     sums.channels[0] as f64 / samples,

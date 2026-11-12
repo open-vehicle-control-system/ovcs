@@ -6,7 +6,7 @@
 use std::ops::Range;
 
 use crate::arguments::Output;
-use crate::bands::{self, Conversion, Developed, Sums};
+use crate::bands::{self, Conversion, Measures, Sums};
 use crate::bayer::{self, DemosaicRows, Image, RawFrame};
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
@@ -112,20 +112,21 @@ struct Band {
     measured_row_gains: [Vec<u32>; 2],
 }
 
-/// `frame` through `colour` into `rgb`, through `buffers`, at the size of
+/// `frame` through `colour` into `rgb`, 8-bit red, green and blue per
+/// pixel, row-major, through `buffers`, at the size of
 /// `conversion.output`: at its own size demosaiced as `bayer::rgb_full`
 /// does, on linear values, each sample's signal above the black level times
 /// its lens shading and white balance gains, the sensor's full scale at
 /// 65535; at half size each 2x2 RGGB cell one pixel, red, the mean of both
 /// greens, and blue, on those linear values. Measures what `conversion`
 /// asks for (`measure`).
-pub fn develop<'b>(
+pub fn develop(
     frame: &RawFrame,
     colour: &Colour,
     conversion: &Conversion,
-    rgb: &'b mut Vec<u8>,
+    rgb: &mut Vec<u8>,
     Buffers { bands }: &mut Buffers,
-) -> Developed<'b> {
+) -> Measures {
     let (width, cell) = match conversion.output {
         Output::Full => (frame.width, 2),
         Output::Half => (frame.width / 2, 1),
@@ -147,7 +148,7 @@ pub fn develop<'b>(
             sums
         },
     );
-    Developed::new(rgb, sums, conversion, f64::from(1u32 << GAIN_SHIFT))
+    Measures::new(sums, conversion, f64::from(1u32 << GAIN_SHIFT))
 }
 
 /// Writes the rows of RGGB cells `cells` of `frame` at its own size into
@@ -1356,8 +1357,8 @@ mod tests {
             &conversion(Output::Full, rotate_180),
             rgb,
             buffers,
-        )
-        .rgb
+        );
+        rgb
     }
 
     fn rgb_half<'b>(
@@ -1373,8 +1374,8 @@ mod tests {
             &conversion(Output::Half, rotate_180),
             rgb,
             buffers,
-        )
-        .rgb
+        );
+        rgb
     }
 
     // The mean green auto exposure steers over every `row_step`-th row of
