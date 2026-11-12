@@ -133,6 +133,39 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert_receive {:inference_labels, 1, nil}, 2_000
   end
 
+  test "answers at once, unavailable, while its context binary is generated, then opens the Port",
+       %{tmp_dir: dir} do
+    hold = Path.join(dir, "qairt/bin/hold")
+    File.mkdir_p!(Path.dirname(hold))
+    File.write!(hold, "")
+    on_exit(fn -> File.rm(hold) end)
+    start_backend(dir, "answer")
+
+    submitted = Task.async(fn -> Qnn.segment(1, @band) end)
+    assert Task.yield(submitted, 500) == {:ok, {:error, :unavailable}}
+    refute Qnn.available?()
+
+    File.rm!(hold)
+    eventually(&Qnn.available?/0)
+    assert Qnn.segment(2, @band) == :ok
+    assert_receive {:inference_labels, 2, %{}}, 2_000
+  end
+
+  test "a context binary that cannot be generated leaves the backend unavailable, saying why",
+       %{tmp_dir: dir} do
+    File.write!(Path.join(dir, "cache"), "a file where the cache directory goes")
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(dir, "answer")
+        eventually(fn -> is_nil(:sys.get_state(Qnn).opening) end)
+        refute Qnn.available?()
+      end)
+
+    assert log =~ "#{inspect(Qnn)} (road) unavailable"
+    assert Qnn.segment(1, @band) == {:error, :unavailable}
+  end
+
   test "runs on the Hexagon" do
     assert Qnn.npu_kind() == "Hexagon"
   end

@@ -21,6 +21,15 @@ defmodule VisionCore.Detection.QnnPort do
   end
 
   @doc """
+  Runs `context/3` in a task linked to the caller, which gets its result
+  as `Task.async/1` delivers it, so the caller keeps answering while the
+  context binary is generated.
+  """
+  @spec start_context(Path.t(), Path.t(), QnnContext.opts()) :: Task.t()
+  def start_context(dlc_path, executable, context_opts),
+    do: Task.async(fn -> context(dlc_path, executable, context_opts) end)
+
+  @doc """
   Starts `executable` with `args` as a Port of 4-byte framed binary
   packets reporting its exit status, in QNN's environment
   (`VisionCore.Detection.QnnContext.env/2`).

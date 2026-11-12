@@ -5,9 +5,10 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   The model is a DLC. Its context binary, tied to the chip and the QAIRT
   version, is generated on the board the first time and cached
-  (`VisionCore.Detection.QnnContext`); the Port opens once it is there,
-  after `init/1`, so a first boot's generation does not hold up the
-  vision core.
+  (`VisionCore.Detection.QnnContext`), in a task: until the Port opens
+  on it, `detect/3` answers `{:error, :unavailable}` at once, so neither
+  the vision core's start nor the pipeline's frames wait for a first
+  boot's generation.
 
   The contract is `VisionCore.Detection.Backend`'s, as
   `VisionCore.Detection.Backend.Hailo` meets it: `detect/3` hands a
@@ -119,6 +120,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       infer_timeout_ms: Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms),
       reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
+      # The task generating the context binary, until the Port opens.
+      opening: nil,
       failures: 0,
       inflight: nil,
       times: nil
@@ -153,34 +156,29 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl GenServer
   def handle_continue(:open, state) do
-    case open_port(state) do
-      {:ok, port} ->
-        Logger.info(
-          "#{label(state)} loaded #{Path.basename(state.dlc_path)} (score >= #{state.score_threshold})"
-        )
+    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
+    opening = QnnPort.start_context(state.dlc_path, state.executable, context_opts)
+    {:noreply, %{state | opening: opening}}
+  end
 
-        {:noreply, %{state | port: port}}
+  defp open_port(state, context) do
+    with {:ok, binary} <- context,
+         args = [binary, to_string(state.score_threshold)],
+         {:ok, port} <-
+           QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
+      Logger.info(
+        "#{label(state)} loaded #{Path.basename(state.dlc_path)} (score >= #{state.score_threshold})"
+      )
 
+      %{state | port: port}
+    else
       {:error, reason} ->
         Logger.error(
           "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
             "continues; no detections will be published."
         )
 
-        {:noreply, state}
-    end
-  end
-
-  defp open_port(state) do
-    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
-
-    with {:ok, binary} <- QnnPort.context(state.dlc_path, state.executable, context_opts) do
-      QnnPort.open(
-        state.executable,
-        [binary, to_string(state.score_threshold)],
-        state.qairt_dir,
-        state.dsp_library_path
-      )
+        state
     end
   end
 
@@ -222,6 +220,14 @@ defmodule VisionCore.Detection.Backend.Qnn do
   end
 
   @impl GenServer
+  def handle_info({ref, context}, %{opening: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, open_port(%{state | opening: nil}, context)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{opening: %Task{ref: ref}} = state),
+    do: {:noreply, open_port(%{state | opening: nil}, {:error, reason})}
+
   def handle_info({port, {:data, <<@log_tag, level, message::binary>>}}, %{port: port} = state) do
     Logger.log(log_level(level), "#{label(state)} qnn_detect: #{message}")
     {:noreply, state}
@@ -259,7 +265,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
     {:noreply, port_down(state)}
   end
 
-  def handle_info(:reopen, state), do: handle_continue(:open, state)
+  def handle_info(:reopen, %{opening: nil} = state), do: handle_continue(:open, state)
 
   def handle_info(_message, state), do: {:noreply, state}
 

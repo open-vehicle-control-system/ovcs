@@ -126,6 +126,39 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert_receive {:inference_detections, 1, nil}, 2_000
   end
 
+  test "answers at once, unavailable, while its context binary is generated, then opens the Port",
+       %{tmp_dir: dir} do
+    hold = Path.join(dir, "qairt/bin/hold")
+    File.mkdir_p!(Path.dirname(hold))
+    File.write!(hold, "")
+    on_exit(fn -> File.rm(hold) end)
+    start_backend(dir, "answer")
+
+    submitted = Task.async(fn -> Qnn.detect(1, @image) end)
+    assert Task.yield(submitted, 500) == {:ok, {:error, :unavailable}}
+    refute Qnn.available?()
+
+    File.rm!(hold)
+    eventually(&Qnn.available?/0)
+    assert Qnn.detect(2, @image) == :ok
+    assert_receive {:inference_detections, 2, [_detection]}, 2_000
+  end
+
+  test "a context binary that cannot be generated leaves the backend unavailable, saying why",
+       %{tmp_dir: dir} do
+    File.write!(Path.join(dir, "cache"), "a file where the cache directory goes")
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        start_backend(dir, "answer")
+        eventually(fn -> is_nil(:sys.get_state(Qnn).opening) end)
+        refute Qnn.available?()
+      end)
+
+    assert log =~ "#{inspect(Qnn)} unavailable"
+    assert Qnn.detect(1, @image) == {:error, :unavailable}
+  end
+
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",
        %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})

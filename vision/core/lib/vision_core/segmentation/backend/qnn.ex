@@ -7,13 +7,15 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   the class scoring highest.
 
   The model is a DLC whose context binary is generated on the board the
-  first time and cached (`VisionCore.Detection.QnnContext`); the Port
-  opens once it is there, after `init/1`. The contract is
-  `VisionCore.Segmentation.Backend`'s: `segment/3` hands a band over or
-  answers `{:error, :busy}` while one is in flight, the caller receives
-  `{:inference_labels, sequence, labels}`, `nil` labels for a band the
-  Port could not segment, and a missing DLC, QAIRT or binary leaves the
-  process alive answering `{:error, :unavailable}`. When `qnn_segment`
+  first time and cached (`VisionCore.Detection.QnnContext`), in a task:
+  until the Port opens on it, `segment/3` answers `{:error, :unavailable}`
+  at once, so the pipeline skips its frames instead of waiting.
+
+  The contract is `VisionCore.Segmentation.Backend`'s: `segment/3` hands
+  a band over or answers `{:error, :busy}` while one is in flight, the
+  caller receives `{:inference_labels, sequence, labels}`, `nil` labels
+  for a band the Port could not segment, and a missing DLC, QAIRT or
+  binary leaves the process alive answering `{:error, :unavailable}`. When `qnn_segment`
   exits or leaves a band unanswered for `:infer_timeout_ms`, the band in
   flight is answered with `nil` labels and the Port is reopened after a
   wait that grows with each failure in a row, as
@@ -117,6 +119,8 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       infer_timeout_ms: Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms),
       reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
+      # The task generating the context binary, until the Port opens.
+      opening: nil,
       failures: 0,
       inflight: nil,
       times: nil
@@ -146,26 +150,25 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   @impl GenServer
   def handle_continue(:open, state) do
-    case open_port(state) do
-      {:ok, port} ->
-        Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")
-        {:noreply, %{state | port: port}}
+    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
+    opening = QnnPort.start_context(state.dlc_path, state.executable, context_opts)
+    {:noreply, %{state | opening: opening}}
+  end
 
+  defp open_port(state, context) do
+    with {:ok, binary} <- context,
+         {:ok, port} <-
+           QnnPort.open(state.executable, [binary], state.qairt_dir, state.dsp_library_path) do
+      Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")
+      %{state | port: port}
+    else
       {:error, reason} ->
         Logger.error(
           "#{label(state)} unavailable: #{inspect(reason)}. The stereo pipeline " <>
             "continues; no segmentation will be published."
         )
 
-        {:noreply, state}
-    end
-  end
-
-  defp open_port(state) do
-    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
-
-    with {:ok, binary} <- QnnPort.context(state.dlc_path, state.executable, context_opts) do
-      QnnPort.open(state.executable, [binary], state.qairt_dir, state.dsp_library_path)
+        state
     end
   end
 
@@ -211,6 +214,14 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   end
 
   @impl GenServer
+  def handle_info({ref, context}, %{opening: %Task{ref: ref}} = state) do
+    Process.demonitor(ref, [:flush])
+    {:noreply, open_port(%{state | opening: nil}, context)}
+  end
+
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{opening: %Task{ref: ref}} = state),
+    do: {:noreply, open_port(%{state | opening: nil}, {:error, reason})}
+
   def handle_info({port, {:data, <<@log_tag, level, message::binary>>}}, %{port: port} = state) do
     Logger.log(log_level(level), "#{label(state)} qnn_segment: #{message}")
     {:noreply, state}
@@ -245,7 +256,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
     {:noreply, port_down(state)}
   end
 
-  def handle_info(:reopen, state), do: handle_continue(:open, state)
+  def handle_info(:reopen, %{opening: nil} = state), do: handle_continue(:open, state)
 
   def handle_info(_message, state), do: {:noreply, state}
 
