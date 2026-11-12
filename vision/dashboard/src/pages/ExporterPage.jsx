@@ -14,13 +14,15 @@ const OUTPUT_NAMES = {
   stereo_pair: 'Stereo pairs',
   'camera_frame:left': 'Left camera frames',
   'camera_frame:right': 'Right camera frames',
-  detections: 'Detections'
+  camera_frame: 'Camera frames',
+  detections: 'Detections',
+  segmentation: 'Segmentation'
 }
 
-// `detections:road_signs` is the named pipeline road_signs's detections.
+// `detections:road_signs` is the pipeline road_signs's detections, `camera_frame:center:inference` the camera center's output inference.
 const outputName = (name) => {
-  const [output, pipeline] = name.split(':')
-  return OUTPUT_NAMES[name] ?? (pipeline && OUTPUT_NAMES[output] ? `${OUTPUT_NAMES[output]}: ${pipeline}` : name)
+  const [output, ...parts] = name.split(':')
+  return OUTPUT_NAMES[name] ?? (parts.length > 0 && OUTPUT_NAMES[output] ? `${OUTPUT_NAMES[output]}: ${parts.join(', ')}` : name)
 }
 
 const REVOKE_DELAY_MS = 10000
