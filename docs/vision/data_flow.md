@@ -91,7 +91,7 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 
 | Topic | Content |
 |---|---|
-| `<prefix>/<side>/image_raw/compressed` | Each camera's frames as JPEG. Grey frames are encoded by `jpeg_codec`, at most `:raw_image_max_hz` a second per side. |
+| `<prefix>/<side>/image_raw/compressed` | Each camera's frames as JPEG. Grey frames are encoded by `jpeg_codec`, at most `:raw_image_max_hz` a second per side; JPEG frames go out as they arrive. |
 | `<prefix>/<side>/camera_info` | Each camera's calibration. |
 | `<prefix>/disparity` | `stereo_msgs/DisparityImage`, the disparity in 32-bit float pixels. |
 | `<prefix>/depth/image_rect` | The depth as a 16UC1 image of millimetres, 0 where there is no measurement: the ROS depth-image convention, at half the bytes of 32-bit metres. |
@@ -158,7 +158,7 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 
 The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
 
-Each preview encodes apart from the others, one frame at a time, so a slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one. The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports, `jpeg: [ports: 3]` in your vehicle's `VisionCore.Config` by default: each encode runs on a free Port, and once every Port is busy the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
+Each preview encodes apart from the others, one frame at a time, so a slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one. The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports, `jpeg: [ports: 3]` in your vehicle's `VisionCore.Config` by default: each encode runs on a free Port, and once every Port is busy the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes. A camera frame is encoded once for every preview and exporter asking for it at the same quality: a request for a frame already waiting or encoding, or the last one its stream encoded, takes that JPEG, so the stereo cameras' frames that the preview and the ROS 2 exporter both send cost one encode each. A camera output sent as JPEG ([the VENTUNO Q](./README.md#the-arduino-ventuno-q)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
 
 The dashboard draws each pipeline's results over its source's preview: a detection pipeline's boxes from its `detections` or `detections:<name>` channel, a segmentation pipeline's label grid from its `segmentation:<name>` channel, a binary message holding the band and the grid at most `max_hz` a second, sent, as a preview's frame, only once the previous one is acknowledged ([Vision API](./api.md#segmentation)).
 
