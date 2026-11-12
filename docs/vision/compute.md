@@ -207,7 +207,7 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
 | `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
-| `qnn_segment` | VENTUNO Q | Runs the road segmentation model's context binary on the Hexagon NPU through QNN over a band of a colour frame and returns each output cell's class. |
+| `qnn_segment` | VENTUNO Q | Runs the road segmentation model's context binary on the Hexagon NPU through QNN, over a band of a colour frame. Returns each output cell's class. |
 
 Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`:
 
@@ -221,7 +221,7 @@ Compiling `vision_core` for a vision target cross-builds that target's Ports thr
 
 On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it.
 
-The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, libclang for bindgen, and cmake, which builds libjpeg-turbo for `jpeg_codec` and `v4l2_capture` on the workstation and on `okdo_c100`, whose system does not ship it; on an x86-64 workstation, nasm gives that build its SIMD code. [`vision/rust/README.md`](../../vision/rust/README.md) describes each crate.
+The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. It also needs cmake, which builds libjpeg-turbo for `jpeg_codec` and `v4l2_capture` on the workstation and on `okdo_c100`, whose system does not ship it. On an x86-64 workstation, nasm gives that build its SIMD code. [`vision/rust/README.md`](../../vision/rust/README.md) describes each crate.
 
 ## Grey frames on the Pi 5
 

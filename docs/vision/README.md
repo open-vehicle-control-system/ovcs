@@ -25,7 +25,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5`, `okdo_c100` and `arduino_ventuno_q` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, a preview of each camera of its own, and the unit as its pipeline with each box's parameters. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. It previews each camera of its own too. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, road segmentation, JPEG and stereo matching on the CPU. |
 
 ## Opting in
@@ -75,11 +75,18 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 
 The Arduino VENTUNO Q carries a Qualcomm QCS8300: 4 Cortex-A78C and 4 Cortex-A55 cores, an Adreno 623 GPU, a Hexagon NPU (HTP v75) and 16 GB of memory. Its CAMSS camera subsystem has three CSI connectors, Camera 0, 1 and 2. Its system is [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q). The stereo stages run on the GPU, as on the C100 ([On the VENTUNO Q's GPU](./compute.md#on-the-ventuno-qs-gpu)), and detection on the NPU.
 
-**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options. `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl. At boot it waits up to 30 s for the media graph and the sensors. `v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors; a camera of its own also takes the IMX477 in packed 12-bit Bayer (pRCC), below.
+**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options. `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl. At boot it waits up to 30 s for the media graph and the sensors. `v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors. A camera of its own also takes the IMX477, in packed 12-bit Bayer (pRCC).
 
-**A camera of its own.** The `:camera` component runs one camera outside the stereo pair, for a view that is not a depth source: `{:camera, name: :center, driver: VisionCore.Camera.V4L2Single, csiphy: 2}`. `:name` follows the rule of a detection pipeline's name, whose reserved names include `left`, `right` and `depth`, and no camera shares a pipeline's name. The camera's frames are the output `{:camera_frame, name}`, which an exporter lists like the stereo cameras' (`{:camera_frame, :center}`), and each carries the optical frame `"<name>_optical"` unless you set `:frame_id`. A camera whose driver has named outputs, below, makes each at every frame: `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` its first sent one, the default. A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit starts, so a mistyped one fails the boot. A unit that fails later, such as one whose sensor never registers, stays down with the reason logged while the stereo unit and the rest of the vision core run on.
+**A camera of its own.** The `:camera` component runs one camera outside the stereo pair, for a view that is not a depth source: `{:camera, name: :center, driver: VisionCore.Camera.V4L2Single, csiphy: 2}`.
 
-`VisionCore.Camera.V4L2Single` captures a Raspberry Pi HQ Camera (IMX477) on a CAMSS connector, Camera 2 on the VENTUNO Q. It takes the sensor's 2028 × 1520 12-bit binned mode as packed Bayer (pRCC), and `v4l2_capture` demosaics it to 8-bit RGB, in the camera's outputs, one of them made only for the others and one sent as a JPEG:
+- `:name` follows the rule of a detection pipeline's name, whose reserved names include `left`, `right` and `depth`. No camera shares a pipeline's name.
+- The camera's frames are the output `{:camera_frame, name}`, which an exporter lists like the stereo cameras' (`{:camera_frame, :center}`).
+- Each frame carries the optical frame `"<name>_optical"` unless you set `:frame_id`.
+- A camera whose driver has named outputs makes each at every frame. `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` is its first sent one, the default.
+
+A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit starts, so a mistyped one fails the boot. A unit that fails later, such as one whose sensor never registers, stays down with the reason logged. The stereo unit and the rest of the vision core run on.
+
+`VisionCore.Camera.V4L2Single` captures a Raspberry Pi HQ Camera (IMX477) on a CAMSS connector, Camera 2 on the VENTUNO Q. It takes the sensor's 2028 × 1520 12-bit binned mode as packed Bayer (pRCC). `v4l2_capture` demosaics it to 8-bit RGB in the camera's outputs. In the example below, one output is made only for the others, and one is sent as a JPEG:
 
 ```elixir
 {:camera,
@@ -93,15 +100,74 @@ The Arduino VENTUNO Q carries a Qualcomm QCS8300: 4 Cortex-A78C and 4 Cortex-A55
  ]}
 ```
 
-Each output is made at every frame, so each path runs all the time, not only while someone watches it. One with `processor: :cpu` is converted from the sensor's frame by `v4l2_capture`, the only processor of this driver: at the mode's 2028 × 1520, or at 1014 × 760, each 2 × 2 Bayer cell one pixel; each such output converts the raw frame again. One with `from:` is averaged from another output in blocks, each pixel the mean of the block it covers, on the conversion's threads: the cheap way to a second size. A 2 × 2 average of a `processor: :cpu` output is taken as each pair of rows is converted, while they are in the cache; other blocks, and outputs of other outputs, are averaged after the conversion. Its resolution is a whole fraction of its source's, 2 × 2 here, and its source's own without `resolution:`. With `format: :jpeg`, an output made `from:` another is that image, or its average, encoded by `v4l2_capture` with libjpeg-turbo at `quality:` 1 to 100 (80), on a thread of its own beside the one writing the frame's other outputs, so the conversion does not wait for it. Its frames carry the JPEG, which the preview and the ROS 2 exporter send as it is: the image is encoded once a frame for both, and the core encodes none of it. Each output crosses the Port at every frame, each frame of 2028 × 1520 9.2 MB, of 1014 × 760 2.3 MB, unless it has `send: false`: such an output is still made at every frame, for the outputs made `from:` it, but `v4l2_capture` writes none of its frames, so no consumer can take it. Here nothing takes the raw `view`, only its JPEG and its average, so it stays on the capture side. The first sent output is the camera's default. A processor the driver lacks, a resolution its processor cannot make, a `from:` naming no output, a JPEG or running in a cycle, a size that is no whole fraction of its source's, a JPEG made by a processor, a `quality:` outside 1 to 100 or without `format: :jpeg`, an output with `send: false` that no output is made from, or a name given twice stops the camera's unit at start, saying why. `output: :full`, the default, and `output: :half` stay the shorthand of one output, named as the value.
+Each output is made at every frame, so each path runs all the time, not only while someone watches it. An output takes these options:
 
-Each consumer takes the camera's default output unless told otherwise: a pipeline with `source: {:camera, name, output}`, an exporter with `{:camera_frame, name, output}`, the ROS 2 exporter with `cameras: [outputs: [center: :view_jpeg]]`, the preview with its `outputs:` option (`preview: [outputs: [center: :view_jpeg]]`) and the pose capture with `output:`. A pipeline, an exporter or the ROS 2 exporter naming an output with `send: false` is refused at start, saying so, and the pose capture answers `{:error, {:unsent_output, name, output}}`; the preview logs it and shows the camera's default. Auto exposure steers the green channel's mean and a grey-world white balance corrects the colour from the previous frame; `awb: false` applies `red_gain` and `blue_gain` as set instead. A full-resolution RGB frame is 9 MB, which is why the unit's `VisionCore.Preview` encodes it only at the preview's rate, apart from the other previews, so its encode delays only its own stream; a JPEG output costs the preview no encode.
+| Option | Effect |
+|---|---|
+| `processor: :cpu` | `v4l2_capture`, this driver's only processor, converts the output from the sensor's frame: at the mode's 2028 × 1520, or at 1014 × 760 with each 2 × 2 Bayer cell one pixel. Each such output converts the raw frame again. |
+| `from:` | The output is averaged from another output in blocks, each pixel the mean of the block it covers, on the conversion's threads: the cheap way to a second size. |
+| `resolution:` | For an output made `from:` another, a whole fraction of its source's size, 2 × 2 here. Without it, the output has its source's size. |
+| `format: :jpeg` | An output made `from:` another is that image, or its average, encoded by `v4l2_capture` with libjpeg-turbo. |
+| `quality:` | The JPEG's quality, 1 to 100, 80 by default. |
+| `send: false` | The output is still made at every frame, for the outputs made `from:` it, but `v4l2_capture` writes none of its frames. No consumer can take it. |
 
-The IMX477's colour follows libcamera's Raspberry Pi pipeline, with Raspberry Pi's tuning for the sensor. `v4l2_capture` subtracts the black level, applies the lens shading and white balance gains, and demosaics on linear 16-bit values. It then applies the colour correction matrix of the colour temperature that the white balance gives. A chroma denoise blurs the colour at the resolution of the 2 × 2 Bayer cells and keeps each pixel's brightness, which removes the coloured speckle of high gain. The tuning's contrast curve then encodes the result to 8 bits. Auto exposure measures the green after lens shading and white balance, through the contrast curve, before the colour matrix and the denoise. `ccm: false` leaves the matrix out and `denoise: false` the denoise. On this sensor `gamma` only sets how far auto exposure steps; on a sensor without a tuning it also encodes the image. `threads`, 1 to 8, sets how many threads convert each frame and average its outputs, each taking a band of rows, with the same image whatever their number. Without it, a camera with a full-size output made by `:cpu` takes 3 threads, and otherwise 1.
+A 2 × 2 average of a `processor: :cpu` output is taken as each pair of rows is converted, while they are in the cache. Other blocks, and outputs of other outputs, are averaged after the conversion.
 
-**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, at the HTP's graph optimisation level 3, into `/data/vision/qnn`. Later boots reuse it. A new DLC, a new QAIRT or new generator options make a new one (`VisionCore.Detection.QnnContext`). The Port holds a power vote on the HTP for as long as it runs, the performance profile `performance:` names: `:burst` by default, the highest voltage corner with dynamic clock scaling off, or `:sustained_high_performance`, `:balanced`, `:power_saver`, or `:none` for the HTP's default power policy. Its log says the profile it applied, or why it could not. The `:qnn_segmenter` component runs a road segmentation model the same way, in the `qnn_segment` Port ([Road segmentation](#road-segmentation)).
+A JPEG output is encoded on a thread of its own, beside the one writing the frame's other outputs, so the conversion does not wait for it. Its frames carry the JPEG, which the preview and the ROS 2 exporter send as it is. The image is encoded once a frame for both, and the core encodes none of it.
 
-QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too: the QNN bindings, the `qnn` crate's, which `qnn_detect` and `qnn_segment` share, are generated at build time from the cached QAIRT archive, and nothing derived from them is committed.
+Each sent output crosses the Port at every frame: 9.2 MB a frame at 2028 × 1520, 2.3 MB at 1014 × 760. Here nothing takes the raw `view`, only its JPEG and its average, so `send: false` keeps it on the capture side. The first sent output is the camera's default. `output: :full`, the default, and `output: :half` stay the shorthand of one output, named as the value.
+
+Each of these stops the camera's unit at start, saying why:
+
+- a processor the driver lacks, or a resolution its processor cannot make;
+- a `from:` that names no output, names a JPEG, or runs in a cycle;
+- a size that is no whole fraction of its source's;
+- a JPEG made by a processor;
+- a `quality:` outside 1 to 100, or without `format: :jpeg`;
+- an output with `send: false` that no output is made from;
+- a name given twice.
+
+Each consumer takes the camera's default output unless told otherwise:
+
+| Consumer | Takes another output with |
+|---|---|
+| A pipeline | `source: {:camera, name, output}` |
+| An exporter | `{:camera_frame, name, output}` |
+| The ROS 2 exporter | `cameras: [outputs: [center: :view_jpeg]]` |
+| The preview | its `outputs:` option, `preview: [outputs: [center: :view_jpeg]]` |
+| The pose capture | `output:` |
+
+A pipeline, an exporter or the ROS 2 exporter that names an output with `send: false` is refused at start, saying so. The pose capture answers `{:error, {:unsent_output, name, output}}`. The preview logs it and shows the camera's default.
+
+Auto exposure steers the green channel's mean. A grey-world white balance corrects the colour from the previous frame; `awb: false` applies `red_gain` and `blue_gain` as set instead.
+
+A full-resolution RGB frame is 9 MB. The unit's `VisionCore.Preview` therefore encodes it only at the preview's rate, apart from the other previews, so its encode delays only its own stream. A JPEG output costs the preview no encode.
+
+The IMX477's colour follows libcamera's Raspberry Pi pipeline, with Raspberry Pi's tuning for the sensor. `v4l2_capture`:
+
+1. subtracts the black level and applies the lens shading and white balance gains;
+2. demosaics on linear 16-bit values;
+3. applies the colour correction matrix of the colour temperature that the white balance gives;
+4. runs a chroma denoise against the coloured speckle of high gain: it blurs the colour at the 2 × 2 Bayer cells' resolution and keeps each pixel's brightness;
+5. encodes the result to 8 bits through the tuning's contrast curve.
+
+Auto exposure measures the green after lens shading and white balance, through the contrast curve, before the colour matrix and the denoise. `ccm: false` leaves the matrix out, and `denoise: false` the denoise. On this sensor `gamma` only sets how far auto exposure steps. On a sensor without a tuning, it also encodes the image.
+
+`threads`, 1 to 8, sets how many threads convert each frame and average its outputs. Each thread takes a band of rows, and the image is the same whatever their number. Without it, a camera with a full-size output made by `:cpu` takes 3 threads, and otherwise 1.
+
+**Detection.** The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, at the HTP's graph optimisation level 3, into `/data/vision/qnn`. Later boots reuse it. A new DLC, a new QAIRT or new generator options make a new one (`VisionCore.Detection.QnnContext`).
+
+The `:qnn_segmenter` component runs a road segmentation model the same way, in the `qnn_segment` Port ([Road segmentation](#road-segmentation)).
+
+Each QNN Port holds a power vote on the HTP for as long as it runs, with the performance profile its `performance:` names:
+
+- `:burst`, the default: the highest voltage corner, with dynamic clock scaling off;
+- `:sustained_high_performance`, `:balanced` or `:power_saver`;
+- `:none`, for the HTP's default power policy.
+
+The Port's log says the profile it applied, or why it could not.
+
+QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too. The `qnn` crate's bindings, which `qnn_detect` and `qnn_segment` share, are generated at build time from the cached QAIRT archive. Nothing derived from them is committed.
 
 To build a unit for this board, run from the repository root:
 
@@ -118,7 +184,16 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at the cameras' 30 pairs a second. The pair computes depth only. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`, captures 2028 × 1520 in colour at 30 frames a second, its `:view` output, which is not sent: `v4l2_capture` encodes it once a frame into its `:view_jpeg` output, which the preview and ROS 2 show, and averages it 2 × 2 into its `:inference` output, 1014 × 760, on which the unit runs YOLOX detection, the `:objects` pipeline, and FFNet scene segmentation, the `:scene` pipeline, on the NPU: the models' inputs are smaller still, so the full image would cross to their Ports only to be shrunk there. `priv/calibration/center.yaml` holds the camera's nominal calibration, from the lens and the pixel pitch, until it is calibrated; until its pose is measured, its detections have no distance and its segmentation no road or off-road clouds ([A camera's calibration and pose](#a-cameras-calibration-and-pose)). The same composer shape works on your own vehicle with your cameras and connectors.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at the cameras' 30 pairs a second. The pair computes depth only.
+
+A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`, captures 2028 × 1520 in colour at 30 frames a second. That image, its `:view` output, is not sent. `v4l2_capture` makes two outputs from it:
+
+- `:view_jpeg`, the image encoded once a frame, which the preview and ROS 2 show;
+- `:inference`, the image averaged 2 × 2 to 1014 × 760. The unit runs YOLOX detection, the `:objects` pipeline, and FFNet scene segmentation, the `:scene` pipeline, on it, on the NPU.
+
+The models' inputs are smaller still, so the full image would cross to their Ports only to be shrunk there.
+
+`priv/calibration/center.yaml` holds the camera's nominal calibration, from the lens and the pixel pitch, until it is calibrated. Until its pose is measured, its detections have no distance and its segmentation no road or off-road clouds ([A camera's calibration and pose](#a-cameras-calibration-and-pose)). The same composer shape works on your own vehicle with your cameras and connectors.
 
 The stereo pair's calibration, `priv/calibration/stereo_left.yaml` and `stereo_right.yaml`, comes from `cameracalibrator`. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then do one of two things:
 
@@ -129,7 +204,7 @@ The rates measured on this unit are in [Vision performance](./performance.md#mea
 
 ## A camera's calibration and pose
 
-A camera of its own is described to the rest of the unit by three options of its `:camera` component, which its driver does not see (`VisionCore.Camera.Unit`):
+Three options of a camera's `:camera` component describe it to the rest of the unit. Its driver does not see them (`VisionCore.Camera.Unit`):
 
 ```elixir
 {:camera,
@@ -141,11 +216,17 @@ A camera of its own is described to the rest of the unit by three options of its
  pose: Application.app_dir(:<vehicle>, "priv/calibration/center_pose.yaml")}
 ```
 
-- `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is resampled to them, each pixel centre onto a pixel centre, `fx / 2` and `(cx + ½) / 2 − ½` for a 2 × 2 average, so one made at the sensor's full size serves every output of the camera, each consumer at the size of the output it takes. Frames of another aspect ratio, from a sensor mode that crops, see another part of the sensor: their camera info is empty and no stereo depth is projected into them, which is logged, until the camera is calibrated at that size.
-- `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`. The camera's `camera_info` and a segmentation pipeline's label `camera_info` take a committed calibration at once; a detection pipeline's boxes and a segmentation pipeline's clouds keep the one read at start until their unit restarts.
-- `pose:` is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame, `p_camera = rotation × p_left + translation` in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration: a new stereo calibration changes the rectified frame, so measure the pose again.
+**`calibration:`** is the camera's `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is resampled to them, each pixel centre onto a pixel centre: `fx / 2` and `(cx + ½) / 2 − ½` for a 2 × 2 average. One made at the sensor's full size therefore serves every output of the camera, each consumer at the size of the output it takes.
 
-The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`), every one by default, or those its `names:` lists:
+Frames of another aspect ratio, from a sensor mode that crops, see another part of the sensor. Until the camera is calibrated at that size, their camera info is empty and no stereo depth is projected into them, which is logged.
+
+**`calibration_store_dir:`** is a writable directory. A calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's directory, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`.
+
+The camera's `camera_info` and a segmentation pipeline's label `camera_info` take a committed calibration at once. A detection pipeline's boxes and a segmentation pipeline's clouds keep the calibration read at start until their unit restarts.
+
+**`pose:`** is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame. It is `p_camera = rotation × p_left + translation`, in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration. A new stereo calibration changes the rectified frame, so measure the pose again.
+
+The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists.
 
 | Topic or service | Type | What |
 |---|---|---|
@@ -156,22 +237,31 @@ The ROS 2 exporter's `cameras:` option publishes each camera of its own (`Vision
 
 ### Measure the pose
 
-The pose comes from pictures of a chessboard that both the stereo left camera and the camera see, solved by [`scripts/camera_pose.py`](../../scripts/camera_pose.py) with OpenCV on both calibrations, held fixed. Use a board whose inner corners are one odd and one even count, such as 9 × 6: a board that looks the same after a half turn, such as 8 × 6, can have its corners numbered apart by two cameras turned far from each other, which gives a wrong pose and a large error. The commands below use the camera `center`, a 9 × 6 board of 25 mm squares, and a vision unit reached as `<vehicle>-vision.local` whose `calibration_store_dir` is `/data/vision/calibration`; they work the same with your camera's name, board and store.
+The pose comes from pictures of a chessboard that both the stereo left camera and the camera see. [`scripts/camera_pose.py`](../../scripts/camera_pose.py) solves it with OpenCV, holding both calibrations fixed.
 
-1. **Calibrate the camera's intrinsics.** With the ROS 2 exporter publishing the camera (`cameras:`), run the calibrator on your workstation, as for the stereo pair, with the camera's name:
+> [!WARNING]
+> Use a board whose inner corners are one odd and one even count, such as 9 × 6. Two cameras turned far from each other can number the corners of a board that looks the same after a half turn, such as 8 × 6, differently. That gives a wrong pose and a large error.
+
+The commands below use the camera `center`, a 9 × 6 board of 25 mm squares, and a vision unit reached as `<vehicle>-vision.local` whose `calibration_store_dir` is `/data/vision/calibration`. They work the same with your camera's name, board and store.
+
+1. **Start the calibrator.** With the ROS 2 exporter publishing the camera (`cameras:`), run it on your workstation with the camera's name, as for the stereo pair:
 
    ```sh
    compose/local/scripts/calibrate.sh --camera center 9x6 0.025
    ```
 
-   [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode in the `calibrator` compose service, on `<prefix>/center/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), decompressed by the service. It passes the calibrator no camera-model option; the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with. Move the board until the coverage bars fill, then CALIBRATE and COMMIT: the camera's `set_camera_info` stores it as `/data/vision/calibration/camera_center.yaml`. The ROS 2 exporter publishes it in the camera info at once; a pipeline on the camera reads its calibration at start, so it takes the new one once the unit restarts.
-2. **Record pairs on the unit.** Open the unit's IEx shell, `ssh <vehicle>-vision.local`, hold the board still where both cameras see it whole, and run:
+   [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode, in the `calibrator` compose service. It reads `<prefix>/center/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), which the service decompresses. It passes the calibrator no camera-model option: the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with.
+2. **Calibrate the camera's intrinsics.** Move the board until the coverage bars fill, then press CALIBRATE, then COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. The ROS 2 exporter publishes it in the camera info at once. A pipeline on the camera reads its calibration at start, so it takes the new one once the unit restarts.
+3. **Record pairs on the unit.** Open the unit's IEx shell with `ssh <vehicle>-vision.local`. Hold the board still where both cameras see it whole, and run:
 
    ```elixir
    VisionCore.Camera.PoseCapture.capture(:center)
    ```
 
-   It writes the stereo left camera's raw frame and the camera's frame captured closest to it in time, within half a stereo pair period, as `/data/vision/pose_pairs/center/left-<n>.png` and `camera-<n>.png`, or `camera-<n>.jpg` from a JPEG output such as the OVCS1 reference vehicle's default, `:view_jpeg`, numbered after the pairs already there, and answers `{:error, :no_matching_pair}` when no two frames come that close. Repeat for twenty poses or so, at several distances and tilts, the board across the camera's image. `directory:` writes elsewhere, as on a workstation without `/data`. Then copy the pairs and the calibrations the unit runs to your workstation:
+   It writes the stereo left camera's raw frame and the camera's frame captured closest to it in time, within half a stereo pair period. They go to `/data/vision/pose_pairs/center/` as `left-<n>.png` and `camera-<n>.png`, numbered after the pairs already there. A JPEG output, such as the OVCS1 reference vehicle's default `:view_jpeg`, gives `camera-<n>.jpg`. When no two frames come that close, it answers `{:error, :no_matching_pair}`.
+
+   Repeat for twenty poses or so, at several distances and tilts, with the board across the camera's image. `directory:` writes elsewhere, as on a workstation without `/data`.
+4. **Copy the pairs and the calibrations** the unit runs to your workstation:
 
    ```sh
    scp -r <vehicle>-vision.local:/data/vision/pose_pairs/center pairs
@@ -179,8 +269,8 @@ The pose comes from pictures of a chessboard that both the stereo left camera an
    scp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml .
    ```
 
-   `stereo_left.yaml` is in the store only when the stereo pair's calibration was committed through `set_camera_info`; otherwise the stereo unit runs `vehicles/<vehicle>/priv/calibration/stereo_left.yaml`, and the script must take that one.
-3. **Solve the pose** on your workstation, with OpenCV and NumPy (`python3-opencv` on Debian and Ubuntu):
+   `stereo_left.yaml` is in the store only when the stereo pair's calibration was committed through `set_camera_info`. Otherwise the stereo unit runs `vehicles/<vehicle>/priv/calibration/stereo_left.yaml`, and the script must take that one.
+5. **Solve the pose** on your workstation, with OpenCV and NumPy (`python3-opencv` on Debian and Ubuntu):
 
    ```sh
    python3 -I scripts/camera_pose.py --pairs pairs \
@@ -189,8 +279,8 @@ The pose comes from pictures of a chessboard that both the stereo left camera an
        --output vehicles/<vehicle>/priv/calibration/center_pose.yaml
    ```
 
-   It leaves out a pair in which it does not find the board in both images, refuses images of several sizes, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures, and recording again helps.
-4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, rebuild and update the unit: the ROS 2 exporter and each pipeline on the camera read the pose at start. Foxglove's 3D panel then places the camera's frame beside the stereo pair's, and a detection pipeline on the camera places its boxes with the stereo depth ([Detection on a camera of its own](#detection-on-a-camera-of-its-own)).
+   It leaves out a pair in which it does not find the board in both images, and refuses images of several sizes. It prints the RMS reprojection error. Under a pixel, the pose fits. Above, a pair is blurred or the board moved between the two captures: record again.
+6. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, then rebuild and update the unit. The ROS 2 exporter and each pipeline on the camera read the pose at start. Foxglove's 3D panel then places the camera's frame beside the stereo pair's. A detection pipeline on the camera places its boxes with the stereo depth ([Detection on a camera of its own](#detection-on-a-camera-of-its-own)).
 
 ## Depth
 
@@ -227,7 +317,7 @@ http://<vehicle>-vision.local:4100
 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
-On a unit with detection, an object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out of a stereo pipeline's detections. A pipeline on a camera of its own keeps it, without a distance.
+A stereo detection pipeline leaves out an object with no depth in the middle of its box, such as one nearer than the depth can measure. A pipeline on a camera of its own keeps it, without a distance.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
@@ -283,17 +373,27 @@ On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard
 
 ## Several detection pipelines
 
-A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`: a lowercase atom such as `:vehicle_detection`, defaulting to `:detection`. Each named pipeline has its own supervisor, backend, model and parameter groups, and the dashboard's menu draws it as its own flow. Names that collide with a ROS 2 topic segment under the prefix, the stereo pipeline's name, or the Hailo-8 claim are reserved, and two detectors with the same name are refused; `VisionCore.Detection` lists the reserved names.
+A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`. The name is a lowercase atom such as `:vehicle_detection`, `:detection` by default. Each named pipeline has its own supervisor, backend, model and parameter groups.
 
-The Hailo-8 serves one pipeline: a second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged, and the status `npu` shows `failed` because it covers every pipeline's backend and is `failed` when any of them is unavailable. Two QNN pipelines each run on the Hexagon, and a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
+Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, the stereo pipeline's name, or the Hailo-8 claim. `VisionCore.Detection` lists them. Two detectors with the same name are refused.
 
-The NPU in the top bar shows its kind and its load, and each detection or segmentation pipeline's Inference box its mean inference time. Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second. A pipeline's inference time is the mean over the second's frames; the load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator and at most 100 %. On the Hailo-8 the time runs from writing the input to reading the output, so it holds the device's work and the PCIe transfer. On the Hexagon it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free, so two pipelines sharing it are not counted twice; where profiling is unavailable it is the wall time around the graph's execution, which includes the FastRPC call and overstates the NPU's work. The load is blank until a Port has reported a time; a pipeline's time is blank in a second without a frame, never 0.
+The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the Hexagon; a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
 
-Each exporter takes the pipelines it publishes: the ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
+The status's `npu` gives the accelerator's kind and load, and each detection or segmentation pipeline's mean inference time ([Status](./api.md#status)). Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second:
+
+- A pipeline's inference time is the mean over the second's frames.
+- The load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator, at most 100 %.
+- On the Hailo-8, the time runs from writing the input to reading the output: the device's work and the PCIe transfer.
+- On the Hexagon, it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free. Two pipelines sharing it are therefore not counted twice.
+- Where QNN's profiling is unavailable, it is the wall time around the graph's execution. That includes the FastRPC call and overstates the NPU's work.
+
+The load is `null` until a Port has reported a time. A pipeline's time is `null` in a second without a frame, never 0.
+
+Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
 
 ## Detection on a camera of its own
 
-A named detector with `source: {:camera, name}` detects on the camera of its own `name` instead of the stereo pair's left image, and places its boxes in 3D with the stereo depth seen from that camera; `source: {:camera, name, output}` takes that camera's output `output`, and its boxes, depth and bearings are in that output's pixels. The default pipeline, `:detection`, stays the stereo pair's. With the OVCS1 reference vehicle's colour camera, `:center`, it reads as below; it works the same with your camera and backend:
+A named detector with `source: {:camera, name}` detects on the camera of its own `name` instead of the stereo pair's left image. It places its boxes in 3D with the stereo depth seen from that camera. `source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. The default pipeline, `:detection`, stays the stereo pair's. With the OVCS1 reference vehicle's colour camera, `:center`, it reads as below; it works the same with your camera and backend:
 
 ```elixir
 {:qnn_detector,
@@ -302,16 +402,25 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox.dlc")}
 ```
 
-- **Input.** Each frame goes to the backend whole, in colour (in grey for a camera that delivers JPEG, as `VisionCore.Camera.GStreamer` does), and the backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames, and detects on the `n`th, `2n`th, `3n`th… of them. One frame is with the backend at a time: a frame to detect on that comes meanwhile waits, the newest one only, and goes to the backend as soon as the reply is back, so a detection a little slower than the camera's frame period does not wait for the frame after next.
-- **Placement.** The pipeline keeps the depth of the stereo pairs captured within `pair_wait_ms` of the newest one, at least two, and matches the frame with the one whose left capture time is closest, within half the pairs' period. It projects that pair's depth into the camera's image through the camera's calibration and pose ([A camera's calibration and pose](#a-cameras-calibration-and-pose)), every `reprojection_stride`-th pixel and row (3), and gives each box the median depth projected in its middle, as on the stereo source. The stereo pipeline publishes a pair well after its capture, which can be after the frame's boxes, so they wait for the pair captured closest to it, at most `pair_wait_ms` (500 ms), while the next frames go to the backend; the boxes are published in the frames' order. When no stereo pair has come for two pair periods, the boxes are published at once, placed with the pair already kept if one was captured within half a pair period of the frame, otherwise without a distance. While 32 frames' boxes wait, the camera's frames are skipped, which is logged. Only a frame with at least one box is projected.
-- **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped: its position and size are `nil`, and its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, azimuth positive to the right and elevation positive up, says where it is seen. A camera without a pose, or one whose pose or calibration cannot be read, runs its pipeline with every detection without a distance, with a warning logged once; without a calibration it has no bearing either.
-- **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`, those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels on `<prefix>/<name>/detections_2d`, and all of them on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). When the exporter publishes another output of the camera than the one the pipeline detects on, these boxes are scaled to the published image. The dashboard draws them on the camera's preview.
+- **Input.** Each frame goes to the backend whole, in colour, or in grey for a camera that delivers JPEG, as `VisionCore.Camera.GStreamer` does. The backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames: the pipeline detects on the `n`th, `2n`th, `3n`th…
+- **One frame at a time.** One frame is with the backend at a time. A frame to detect on that comes meanwhile waits, the newest one only, and goes to the backend as soon as the reply is back. A detection a little slower than the camera's frame period therefore does not wait for the frame after next.
+- **Matching.** The pipeline keeps the depth of the stereo pairs captured within `pair_wait_ms` of the newest one, at least two. It matches the frame with the pair whose left capture time is closest, within half the pairs' period.
+- **Placement.** It projects that pair's depth into the camera's image through the camera's calibration and pose ([A camera's calibration and pose](#a-cameras-calibration-and-pose)), every `reprojection_stride`-th pixel and row (3). Each box takes the median depth projected in its middle, as on the stereo source. Only a frame with at least one box is projected.
+- **Waiting for the pair.** The stereo pipeline publishes a pair well after its capture, which can be after the frame's boxes. The boxes then wait for the pair captured closest to the frame, at most `pair_wait_ms` (500 ms), while the next frames go to the backend. The boxes are published in the frames' order.
+- **No pair coming.** When no stereo pair has come for two pair periods, the boxes are published at once. They are placed with the pair already kept if one was captured within half a pair period of the frame, otherwise without a distance.
+- **Backlog.** While 32 frames' boxes wait, the camera's frames are skipped, which is logged.
+- **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped. Its position and size are `nil`. Its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, says where it is seen: azimuth positive to the right, elevation positive up.
+- **Without a pose.** A camera without a pose, or one whose pose or calibration cannot be read, runs its pipeline with every detection without a distance. A warning is logged once. Without a calibration, a detection has no bearing either.
+- **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`. It publishes those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels, on `<prefix>/<name>/detections_2d`. All of them go on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)).
+- **Another output.** When the exporter publishes another output of the camera than the one the pipeline detects on, it scales these boxes to the published image.
 
-The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info`, which the ROS 2 exporter publishes at once, reaches the pipeline once the unit restarts.
+The pipeline reads the camera's calibration and pose at start. A calibration committed through the camera's `set_camera_info` reaches the ROS 2 exporter's camera info at once, and the pipeline once the unit restarts.
 
 ## Road segmentation
 
-A segmentation pipeline classes each part of a camera of its own's image among the 19 Cityscapes classes, `road` among them, and sorts the stereo points seen in it into road and off-road, for a navigation stack. It takes a camera source only, `{:camera, name}` or `{:camera, name, output}`, in colour: the stereo pair's images are grey, and road models are trained on colour. The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. With the OVCS1 reference vehicle's colour camera, `:center`, it reads as below; it works the same with your camera:
+A segmentation pipeline classes each part of a camera of its own's image among the 19 Cityscapes classes, `road` among them. It sorts the stereo points seen in the image into road and off-road, for a navigation stack.
+
+It takes a camera source only, `{:camera, name}` or `{:camera, name, output}`, in colour: the stereo pair's images are grey, and road models are trained on colour. The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. With the OVCS1 reference vehicle's colour camera, `:center`, it reads as below; it works the same with your camera:
 
 ```elixir
 {:qnn_segmenter,
@@ -321,13 +430,22 @@ A segmentation pipeline classes each part of a camera of its own's image among t
 ```
 
 - **Name.** `:name` is required and follows the detection pipelines' rule, in their namespace and the cameras': no detector, segmenter or camera shares it.
-- **Input.** The model sees a 2:1 band of the frame, its full width and half that in rows, touching the frame's bottom, where the road is; `band_top`, a fraction of the frame's height, moves it up. The Port resizes the band to the model's input, 1024 × 512 for FFNet, shrinking a wider band and enlarging a narrower one, such as a half-resolution HQ Camera's 1014 × 507, and gives each cell of the model's output grid a class: 256 × 128 cells for FFNet. `segment_every_n` segments one camera frame in `n`, the `n`th, `2n`th, `3n`th…; as for detection, a frame to segment that comes while a band is with the backend waits, the newest one only, and goes to the backend as soon as the reply is back.
-- **Model.** `dlc_path` names a DLC whose input is a `[1, H, W, 3]` uint8 RGB image, unquantised or quantised with a scale of 1/255 and an offset of 0, either of which takes the pixel values as they are, and whose output scores each cell for as many classes as `labels` names, the 19 Cityscapes classes by default. `qnn_segment` refuses another model at start, naming what does not match.
+- **Band.** The model sees a 2:1 band of the frame: its full width, and half that in rows, touching the frame's bottom, where the road is. `band_top`, a fraction of the frame's height, moves it up.
+- **Input.** The Port resizes the band to the model's input, 1024 × 512 for FFNet. It shrinks a wider band and enlarges a narrower one, such as a half-resolution HQ Camera's 1014 × 507. It gives each cell of the model's output grid a class: 256 × 128 cells for FFNet.
+- **Rate.** `segment_every_n` segments one camera frame in `n`: the `n`th, `2n`th, `3n`th… As for detection, a frame to segment that comes while a band is with the backend waits, the newest one only. It goes to the backend as soon as the reply is back.
+- **Model.** `dlc_path` names a DLC whose input is a `[1, H, W, 3]` uint8 RGB image. It is unquantised, or quantised with a scale of 1/255 and an offset of 0: either takes the pixel values as they are. Its output scores each cell for as many classes as `labels` names, the 19 Cityscapes classes by default. `qnn_segment` refuses another model at start, naming what does not match.
 - **Road.** `road_classes` names the classes that count as road, `["road"]` by default.
-- **Clouds.** The stereo pair captured closest to the frame is matched with it, and its depth projected into the camera's image, as for [a detection pipeline on a camera of its own](#detection-on-a-camera-of-its-own), with the same `reprojection_stride` and `pair_wait_ms`. Each projected point takes the class of the cell it lands in: the road points and the off-road points are two clouds in the stereo left optical frame. A frame without a matched pair, or on a camera without a calibration or a pose, has its label grid and no clouds. The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info` reaches the label grid's `camera_info` at once, but the clouds are sorted with the start-time calibration until the unit restarts.
-- **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids and the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)); the API's `segmentation:<name>` channel carries the grid and the band it covers, at most `max_hz` (5) a second and one at a time, each once the client acks the one before ([Segmentation](./api.md#segmentation)). The dashboard draws it over the camera's preview, each class in its Cityscapes colour at 40 % opacity and the road classes at 60 %, with a legend of every class the pipeline names, in a grid that keeps its size, the classes absent from the grids of the last second dimmed and the road classes in bold.
+- **Clouds.** The stereo pair captured closest to the frame is matched with it, as for [a detection pipeline on a camera of its own](#detection-on-a-camera-of-its-own). Its depth is projected into the camera's image, with the same `reprojection_stride` and `pair_wait_ms`. Each projected point takes the class of the cell it lands in. The road points and the off-road points are two clouds, in the stereo left optical frame.
+- **No clouds.** A frame without a matched pair, or on a camera without a calibration or a pose, has its label grid and no clouds.
+- **Calibration.** The pipeline reads the camera's calibration and pose at start. A calibration committed through the camera's `set_camera_info` reaches the label grid's `camera_info` at once. The clouds are sorted with the start-time calibration until the unit restarts.
+- **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids, and the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). The API's `segmentation:<name>` channel carries the grid and the band it covers ([Segmentation](./api.md#segmentation)). It sends at most `max_hz` (5) a second, one at a time, each once the client acks the one before.
 
-The road model the OVCS1 reference vehicle runs is FFNet-122NS-LowRes, quantised w8a8 for QNN by Qualcomm AI Hub: `mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. **Its weights are for non-commercial use only**: FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only, and `mise run fetch-models` prints that licence, which `scripts/models.tsv` records, before the download. Running it on a vehicle used commercially needs a road model trained on data you may use commercially.
+The road model the OVCS1 reference vehicle runs is FFNet-122NS-LowRes, quantised w8a8 for QNN by Qualcomm AI Hub.
+
+> [!WARNING]
+> FFNet-122NS-LowRes's weights are for non-commercial use only. FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only. A vehicle used commercially needs a road model trained on data you may use commercially.
+
+`mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. It prints the model's licence, which `scripts/models.tsv` records, before the download.
 
 ## Detection models
 

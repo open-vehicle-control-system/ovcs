@@ -294,11 +294,11 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:center`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them. An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, `camera_frame:center:inference` for instance.
+The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` in the example. Each has a `preview:<name>` channel ([Previews](#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
 
-A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `center` for a pipeline on the camera `center`.
+A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for a pipeline on the camera `center`.
 
-A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections: on the ROS 2 exporter with its `segmentation:` option, those its `pipelines:` lists, or without `pipelines:` every one on a camera, and on the API, with the pipeline's camera as its `source`.
+A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
@@ -378,7 +378,17 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`center` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator the detection and segmentation pipelines run on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out.
+
+`cameras` holds the stereo sides and each camera of its own, by name (`center` here). A camera of its own has no `issues`.
+
+`npu` is the accelerator the detection and segmentation pipelines run on, `null` on a unit without one:
+
+- `kind`, and `state`: `running` or `failed`;
+- `loadPercent`, the share of the last second its pipelines spent inferring, at most 100, `null` until a Port has reported a time;
+- each pipeline's mean `inferenceMs` over that second, `null` in a second without a frame.
+
+[Several detection pipelines](./README.md#several-detection-pipelines) says what they measure on each accelerator.
 
 ```json
 {
@@ -447,7 +457,9 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 ### Previews
 
-`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary, and so does `preview:<name>` for each camera of its own (the `:camera` component, [Vision unit](./README.md#the-arduino-ventuno-q)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one, at most `preview.max_hz` a second, whatever the camera's own rate. The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
+`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary. So does `preview:<name>` for each camera of its own, a `:camera` component ([The Arduino VENTUNO Q](./README.md#the-arduino-ventuno-q)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one: at most `preview.max_hz` a second, whatever the camera's own rate.
+
+The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
 
 ```javascript
 const left = socket.channel('preview:left')
@@ -470,7 +482,7 @@ depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.l
 
 ### Detections
 
-On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline, whose vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image, and an object it cannot place has a `distanceM` of `null`.
+On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline, whose vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
@@ -486,7 +498,9 @@ On a unit without detection, the join is refused with `{"reason": "unavailable"}
 
 ### Segmentation
 
-A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmentation)) has a channel per pipeline, `segmentation:<name>`, whose names come from `GET /api/exporters`, with the camera each one segments as its `source`. It pushes each result, at most the pipeline's `maxHz` a second (5 by default), as a `segmentation` event whose payload is binary, and the next one only once you push `ack`, as on the previews: a result that comes before replaces the one waiting, so a slow link gets the newest grid instead of a backlog. The payload is eight unsigned 16-bit little-endian integers, then the label grid.
+A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmentation)) has a channel per pipeline, `segmentation:<name>`. The names come from `GET /api/exporters`, with the camera each one segments as its `source`.
+
+The channel pushes each result as a `segmentation` event whose payload is binary, at most the pipeline's `maxHz` a second (5 by default). It pushes the next one only once you push `ack`, as on the previews. A result that comes before replaces the one waiting, so a slow link gets the newest grid instead of a backlog. The payload is eight unsigned 16-bit little-endian integers, then the label grid.
 
 | Bytes | Content |
 |---|---|
@@ -495,7 +509,7 @@ A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmen
 | 12–15 | The grid's width and height, in cells |
 | 16– | One class id a cell, one byte each, row by row |
 
-The grid is stretched over the band, each cell the band's width over the grid's width wide, and its height over the grid's height high. On every join, a rejoin included, the channel pushes a `classes` event before any grid: `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
+The grid is stretched over the band. Each cell is the band's width over the grid's width wide, and the band's height over the grid's height high. On every join, a rejoin included, the channel pushes a `classes` event before any grid. It holds `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
 
 ```javascript
 const scene = socket.channel('segmentation:scene')
