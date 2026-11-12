@@ -1,6 +1,6 @@
 # vision_api
 
-Phoenix endpoint of the vision unit. It serves the [dashboard](../dashboard) build and exposes `VisionCore` to it. [Vision API](../../docs/vision/api.md) shows how a program uses it, with examples.
+Phoenix endpoint of the vision unit. It serves the [dashboard](../dashboard) build and exposes `VisionCore` to it. [Vision API](../../docs/vision/api.md) and [Vision channels](../../docs/vision/channels.md) show how a program uses it, with examples.
 
 The `/api` routes follow [JSON:API](https://jsonapi.org/): a response is `application/vnd.api+json`, and a refusal's `errors` list holds one error object with `status`, `title` and `detail`. A refusal of the request document points at the member at fault with `source.pointer`, one of an `include` names it with `source.parameter`, and the others (the 404s, the 503 and a refused reset's 422) have no `source`. An unknown `/api` path answers a 404 whatever the client accepts. An error raised outside the controllers, such as a 500, is an `errors` list with `status` and `title`, as `application/json`.
 

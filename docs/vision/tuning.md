@@ -177,7 +177,7 @@ One entry for each stage, with `median`, `p95` and `max` in milliseconds over th
 
 ### detections.json
 
-A list with one entry for each publication during the burst: the pair's `captureNs` and its `detections`. Each detection has `label`, `score`, `distanceM` and `outline`. The outline is the `[x, y]` vertices as fractions of the left image's width and height, as in the API's [detections event](./api.md#detections).
+A list with one entry for each publication during the burst: the pair's `captureNs` and its `detections`. Each detection has `label`, `score`, `distanceM` and `outline`. The outline is the `[x, y]` vertices as fractions of the left image's width and height, as in the API's [detections event](./channels.md#detections).
 
 ## Compare two exports
 

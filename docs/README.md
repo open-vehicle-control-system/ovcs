@@ -46,6 +46,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Vision performance](./vision/performance.md)
 - [Tune with exports](./vision/tuning.md)
 - [Vision API](./vision/api.md)
+- [Vision channels](./vision/channels.md)
 
 ### Bus
 

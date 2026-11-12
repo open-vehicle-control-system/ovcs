@@ -212,4 +212,4 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
 
 - [Object detection](./detection.md): detection pipelines on the camera.
 - [Road segmentation](./segmentation.md): road and off-road points from the camera's image.
-- [Vision API](./api.md#previews): the camera's preview channel.
+- [Vision channels](./channels.md#previews): the camera's preview channel.

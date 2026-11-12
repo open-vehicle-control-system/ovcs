@@ -36,11 +36,11 @@ Some names are reserved: those that collide with a ROS 2 topic segment under the
 
 The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
 
-Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
+Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The Debug exporter reads the default pipeline only.
 
 ## Accelerator load
 
-The status's `npu` gives the accelerator's kind and load, and each detection or segmentation pipeline's mean inference time ([Status](./api.md#status)). Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second:
+The status's `npu` gives the accelerator's kind and load, and each detection or segmentation pipeline's mean inference time ([Status](./channels.md#status)). Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second:
 
 - A pipeline's inference time is the mean over the second's frames.
 - The load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator, at most 100 %.
@@ -114,4 +114,4 @@ Avoid YOLOv5/v8/v10/v11 (Ultralytics, AGPL-3.0), YOLOv6 and YOLOv7 (GPL-3.0; `yo
 
 - [A camera of its own](./cameras.md): the camera, its outputs, calibration and pose.
 - [Road segmentation](./segmentation.md): the other pipeline that runs on a camera of its own.
-- [Vision API](./api.md#detections): the detection channels.
+- [Vision channels](./channels.md#detections): the detection channels.

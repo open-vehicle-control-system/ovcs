@@ -168,7 +168,7 @@ A camera frame is encoded once for every preview and exporter that asks for it a
 
 A camera output sent as JPEG ([Outputs](./cameras.md#outputs)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
 
-Each pipeline's results reach the dashboard on a channel of their own: `detections` or `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision API](./api.md#segmentation)).
+Each pipeline's results reach the dashboard on a channel of their own: `detections` or `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision channels](./channels.md#segmentation)).
 
 The depth preview is the depth image coloured by `jpeg_codec`, near red and far blue, scaled by 1/depth.
 

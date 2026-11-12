@@ -31,7 +31,7 @@ With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference
 - **Clouds.** The stereo pair captured closest to the frame is matched with it, as for [a detection pipeline on a camera of its own](./detection.md#detect-on-a-camera-of-its-own). Its depth is projected into the camera's image, with the same `reprojection_stride` and `pair_wait_ms`. Each projected point takes the class of the cell it lands in. The road points and the off-road points are two clouds, in the stereo left optical frame.
 - **No clouds.** A frame without a matched pair, or on a camera without a calibration or a pose, has its label grid and no clouds.
 - **Calibration.** The pipeline reads the camera's calibration and pose at start. [Calibration and pose](./cameras.md#calibration-and-pose) says when a committed calibration reaches the label grid and the clouds.
-- **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids. It publishes the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). The API's `segmentation:<name>` channel carries the grid and the band it covers ([Segmentation](./api.md#segmentation)). It sends at most `max_hz` (5) a second, one at a time, each once the client acknowledges the one before.
+- **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids. It publishes the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). The API's `segmentation:<name>` channel carries the grid and the band it covers ([Segmentation](./channels.md#segmentation)). It sends at most `max_hz` (5) a second, one at a time, each once the client acknowledges the one before.
 
 ## The model
 
@@ -46,4 +46,4 @@ The road model the OVCS1 reference vehicle runs is FFNet-122NS-LowRes, quantised
 
 - [A camera of its own](./cameras.md): the camera, its calibration and its pose.
 - [Object detection](./detection.md): detection pipelines and the accelerator's load.
-- [Vision API](./api.md#segmentation): the segmentation channel.
+- [Vision channels](./channels.md#segmentation): the segmentation channel.
