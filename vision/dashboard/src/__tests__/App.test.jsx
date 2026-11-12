@@ -15,7 +15,7 @@ vi.mock('../services/socket.js', () => ({
     onClose: () => 'close',
     onError: () => 'error',
     off: () => {},
-    channel: vi.fn(() => ({ on: () => {}, join: () => ({ receive() { return this } }), off: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
+    channel: vi.fn(() => ({ on: () => {}, join: () => ({ receive() { return this } }), off: () => {}, onError: () => {}, leave: vi.fn(), push: () => ({ receive() { return this } }) }))
   }
 }))
 

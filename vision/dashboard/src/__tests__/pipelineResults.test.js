@@ -1,16 +1,20 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useDetections, useSegmentations } from '../pipelineResults.js'
 
-// A socket whose channels each keep their own handlers until `off`, so a test can deliver to one after it was left.
+// A socket whose channels each keep their own handlers until `off`, so a test can deliver to one after it was left,
+// and fail one as the unit stopping it does.
 function fakeSocket() {
   const channels = []
   const channel = (topic) => {
     const handlers = {}
+    const errorHandlers = []
     const opened = {
       topic,
       on: (event, handler) => { handlers[event] = handler },
       off: (event) => { delete handlers[event] },
+      onError: (handler) => { errorHandlers.push(handler) },
+      fail: () => act(() => errorHandlers.forEach((handler) => handler())),
       join: vi.fn(),
       leave: vi.fn(),
       push: vi.fn(),
@@ -57,6 +61,68 @@ describe('useDetections', () => {
     expect(first.channels[0].leave).toHaveBeenCalled()
     expect(result.current).toEqual({})
   })
+
+  it("drops a channel's result when the channel fails, until the next one", () => {
+    const socket = fakeSocket()
+    const { result } = renderHook(() => useDetections(socket, outputs))
+    socket.channels[0].deliver('detections', { detections: [person] })
+
+    socket.channels[0].fail()
+    expect(result.current).toEqual({})
+
+    socket.channels[0].deliver('detections', { detections: [] })
+    expect(result.current).toEqual({ 'detections:objects': [] })
+  })
+
+  it('keeps a result when a channel it left fails', () => {
+    const first = fakeSocket()
+    const second = fakeSocket()
+    const { result, rerender } = renderHook(({ socket }) => useDetections(socket, outputs), { initialProps: { socket: first } })
+    rerender({ socket: second })
+    second.channels[0].deliver('detections', { detections: [person] })
+
+    first.channels[0].fail()
+
+    expect(result.current).toEqual({ 'detections:objects': [person] })
+  })
+
+  describe('a result no other follows', () => {
+    afterEach(() => vi.useRealTimers())
+
+    const latestAfter = (maxHz, ms) => {
+      vi.useFakeTimers()
+      const socket = fakeSocket()
+      const { result } = renderHook(() => useDetections(socket, [{ name: 'detections:objects', maxHz }]))
+      socket.channels[0].deliver('detections', { detections: [person] })
+      act(() => vi.advanceTimersByTime(ms))
+      return result.current
+    }
+
+    it('is dropped after ten periods of its maxHz', () => {
+      expect(latestAfter(2, 4999)).toEqual({ 'detections:objects': [person] })
+      expect(latestAfter(2, 5000)).toEqual({})
+    })
+
+    it('is kept two seconds at least, and that long without a maxHz', () => {
+      expect(latestAfter(10, 1999)).toEqual({ 'detections:objects': [person] })
+      expect(latestAfter(10, 2000)).toEqual({})
+      expect(latestAfter(null, 1999)).toEqual({ 'detections:objects': [person] })
+      expect(latestAfter(null, 2000)).toEqual({})
+    })
+
+    it('is kept while others follow it in time', () => {
+      vi.useFakeTimers()
+      const socket = fakeSocket()
+      const { result } = renderHook(() => useDetections(socket, outputs))
+
+      socket.channels[0].deliver('detections', { detections: [person] })
+      act(() => vi.advanceTimersByTime(1500))
+      socket.channels[0].deliver('detections', { detections: [] })
+      act(() => vi.advanceTimersByTime(1500))
+
+      expect(result.current).toEqual({ 'detections:objects': [] })
+    })
+  })
 })
 
 describe('useSegmentations', () => {
@@ -72,5 +138,42 @@ describe('useSegmentations', () => {
 
     expect(result.current).toEqual({})
     expect(acks(second.channels[0])).toBe(0)
+  })
+
+  const classes = { labels: ['road', 'sky'], roadClasses: ['road'] }
+
+  it("drops a channel's grid and classes when the channel fails, and acks the grid that follows its rejoin", () => {
+    const socket = fakeSocket()
+    const { result } = renderHook(() => useSegmentations(socket, outputs))
+    const [channel] = socket.channels
+    channel.deliver('classes', classes)
+    channel.deliver('segmentation', grid([0, 1]))
+    expect(acks(channel)).toBe(1)
+
+    channel.fail()
+    expect(result.current).toEqual({})
+
+    channel.deliver('classes', classes)
+    channel.deliver('segmentation', grid([0, 1]))
+    expect(result.current['segmentation:scene'].segmentation.present).toEqual([0, 1])
+    expect(acks(channel)).toBe(2)
+  })
+
+  it('drops a grid no other follows and the classes seen with it, and keeps the class names', () => {
+    vi.useFakeTimers()
+    try {
+      const socket = fakeSocket()
+      const { result } = renderHook(() => useSegmentations(socket, outputs))
+      socket.channels[0].deliver('classes', classes)
+      socket.channels[0].deliver('segmentation', grid([0, 1]))
+
+      act(() => vi.advanceTimersByTime(1999))
+      expect(result.current['segmentation:scene'].segmentation).toBeDefined()
+
+      act(() => vi.advanceTimersByTime(1))
+      expect(result.current).toEqual({ 'segmentation:scene': { classes } })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

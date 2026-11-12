@@ -3,7 +3,7 @@ import { render, screen, act, fireEvent } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 import { useExporters } from '../../stores/exporters.js'
 
-const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: {
@@ -25,8 +25,8 @@ const snapshot = {
   quality: { matchedPercent: 61.6, meanDisparityPx: 18.43, spreadPx: 6.08, jitterPx: 0.318 }
 }
 
-// A socket whose channels keep their handlers, so a test can push to them. Like the unit, the depth stream pushes
-// `depthRange` as it joins, before anything bound later could hear it.
+// A socket whose channels keep their handlers, so a test can push to them, and fail one as the unit stopping it does.
+// Like the unit, the depth stream pushes `depthRange` as it joins, before anything bound later could hear it.
 function liveSocket({ depthRange = null } = {}) {
   const handlers = {}
   const deliver = (topic, event, payload) => handlers[`${topic}/${event}`]?.(payload)
@@ -39,10 +39,15 @@ function liveSocket({ depthRange = null } = {}) {
       }),
       push: vi.fn(() => ({ receive() { return this } })),
       off: vi.fn(),
+      onError: vi.fn((handler) => { handlers[`${topic}/error`] = handler }),
       leave: vi.fn()
     }))
   }
-  return { socket, push: (topic, event, payload) => act(() => handlers[`${topic}/${event}`](payload)) }
+  return {
+    socket,
+    push: (topic, event, payload) => act(() => handlers[`${topic}/${event}`](payload)),
+    fail: (topic) => act(() => handlers[`${topic}/error`]())
+  }
 }
 
 describe('Previews', () => {
@@ -788,6 +793,20 @@ describe('Previews', () => {
       push('segmentation:road', 'segmentation', many)
       expect(present()).toEqual(['road', 'sidewalk', 'building', 'pole', 'vegetation', 'sky', 'person', 'car'])
       expect(shape(legend())).toBe(before)
+    })
+
+    it("takes a pipeline's grid and legend off its camera's preview when its channel fails", () => {
+      listed(...outputs)
+      const { socket, push, fail } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:road', 'segmentation', result)
+
+      fail('segmentation:road')
+
+      expect(figure('hq').querySelector('[data-segmentation]')).toBeNull()
+      expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
     })
 
     it('lists no class until the class names come', () => {
