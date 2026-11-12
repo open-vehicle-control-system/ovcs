@@ -117,6 +117,46 @@ describe('metrics store', () => {
     expect(socket.pushes()).toEqual([['subscribe', rpm]])
   })
 
+  it('keeps subscriptions active when a retired channel reports an error', () => {
+    const retire = useMetrics.getState().listen(socket, 70)
+    socket.join()
+    retire()
+    const replacement = fakeSocket()
+    stop = useMetrics.getState().listen(replacement, 70)
+    replacement.join()
+
+    socket.drop()
+    watch([speed])
+
+    expect(replacement.pushes()).toEqual([['subscribe', speed]])
+  })
+
+  it('ignores metric updates from a retired channel', () => {
+    const retire = useMetrics.getState().listen(socket, 70)
+    retire()
+    const replacement = fakeSocket()
+    stop = useMetrics.getState().listen(replacement, 70)
+    replacement.update({ data: { current: { speed: 3 } } })
+
+    socket.update({ data: { old: { speed: 9 } } })
+
+    expect(useMetrics.getState().data).toEqual({ current: { speed: 3 } })
+  })
+
+  it('waits for the replacement channel to join even when the old join completes late', () => {
+    const retire = useMetrics.getState().listen(socket, 70)
+    retire()
+    const replacement = fakeSocket()
+    stop = useMetrics.getState().listen(replacement, 70)
+    watch([speed])
+
+    socket.join()
+    expect(replacement.pushes()).toEqual([])
+
+    replacement.join()
+    expect(replacement.pushes()).toEqual([['subscribe', speed]])
+  })
+
   it('leaves the channel when stopped', () => {
     useMetrics.getState().listen(socket, 70)()
     expect(socket.raw.leave).toHaveBeenCalled()

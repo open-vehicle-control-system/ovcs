@@ -22,20 +22,27 @@ export const useMetrics = create((set) => ({
   listen(socket, interval) {
     const own = socket.channel('metrics', { interval })
     channel = own
-    own.on('updated', (payload) => set({ data: payload.data ?? {}, units: payload.units ?? {} }))
-    own.onError(() => (joined = false))
-    own.onClose(() => (joined = false))
+    joined = false
+    own.on('updated', (payload) => {
+      if (channel === own) set({ data: payload.data ?? {}, units: payload.units ?? {} })
+    })
+    const markUnjoined = () => {
+      if (channel === own) joined = false
+    }
+    own.onError(markUnjoined)
+    own.onClose(markUnjoined)
     // The server's channel starts with no subscriptions, after a reconnect too.
     own.join().receive('ok', () => {
+      if (channel !== own) return
       joined = true
       for (const { metric } of watched.values()) push('subscribe', metric)
     })
     return () => {
-      own.leave()
       if (channel === own) {
         channel = null
         joined = false
       }
+      own.leave()
     }
   },
   watch(metrics) {
