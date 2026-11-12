@@ -2,8 +2,6 @@
 //! average of the block of the source's pixels it covers. The CPU processor
 //! makes the 2x2 average of its own output as it converts (`bands::Images`).
 
-use std::panic;
-
 use crate::bands;
 
 /// `source`, rows of `source_width` 8-bit red, green and blue pixels, into
@@ -22,38 +20,14 @@ pub fn average_blocks(
     let (width, height) = (source_width / block_width, source_height / block_height);
     image.resize(width * height * 3, 0);
     let source_rows = source_width * 3 * block_height;
-    let average = |rows: &[u8], out: &mut [u8]| {
-        average_rows(rows, source_width, (block_width, block_height), out)
-    };
-    let bands = bands::split(height, threads);
-    if let [_one] = &bands[..] {
-        return average(source, image);
-    }
-    let mut parts = Vec::with_capacity(bands.len());
-    let mut rest = &mut image[..];
-    for band in &bands {
-        let (part, after) = std::mem::take(&mut rest).split_at_mut(band.len() * width * 3);
-        rest = after;
-        parts.push(part);
-    }
-    std::thread::scope(|scope| {
-        let mut jobs = bands.iter().zip(parts);
-        let (last_rows, last_part) = jobs.next_back().expect("a band");
-        let running: Vec<_> = jobs
-            .map(|(rows, part)| {
-                let rows = &source[rows.start * source_rows..rows.end * source_rows];
-                scope.spawn(move || average(rows, part))
-            })
-            .collect();
-        average(
-            &source[last_rows.start * source_rows..last_rows.end * source_rows],
-            last_part,
-        );
-        for band in running {
-            band.join()
-                .unwrap_or_else(|panic| panic::resume_unwind(panic));
-        }
-    });
+    bands::in_row_bands(
+        source,
+        source_rows,
+        image,
+        width * 3,
+        threads,
+        |rows, out| average_rows(rows, source_width, (block_width, block_height), out),
+    );
 }
 
 /// The rows of blocks of `rows`, rows of `source_width` pixels, averaged

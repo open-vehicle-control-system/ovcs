@@ -186,6 +186,48 @@ pub fn convert<S: Default + Send>(
     })
 }
 
+/// Runs `work` over up to `threads` bands of whole rows of `input` and
+/// `output` (`split`), `input_row` and `output_row` bytes a row, `output`
+/// holding whole rows: each band but the last on a thread of its own, the
+/// last on the calling one.
+pub fn in_row_bands(
+    input: &[u8],
+    input_row: usize,
+    output: &mut [u8],
+    output_row: usize,
+    threads: usize,
+    work: impl Fn(&[u8], &mut [u8]) + Sync,
+) {
+    let bands = split(output.len() / output_row.max(1), threads);
+    if let [_one] = &bands[..] {
+        return work(input, output);
+    }
+    let outputs = parts(
+        output,
+        bands.iter().map(|band| band.len() * output_row),
+        false,
+    );
+    let work = &work;
+    std::thread::scope(|scope| {
+        let mut jobs = bands.iter().zip(outputs);
+        let (last_rows, last_output) = jobs.next_back().expect("a band");
+        let running: Vec<_> = jobs
+            .map(|(rows, output)| {
+                let input = &input[rows.start * input_row..rows.end * input_row];
+                scope.spawn(move || work(input, output))
+            })
+            .collect();
+        work(
+            &input[last_rows.start * input_row..last_rows.end * input_row],
+            last_output,
+        );
+        for band in running {
+            band.join()
+                .unwrap_or_else(|panic| panic::resume_unwind(panic));
+        }
+    });
+}
+
 /// `cell_rows` rows of cells split into up to `count` bands, top to bottom,
 /// none empty but for an image without rows, their sizes at most one apart.
 pub(crate) fn split(cell_rows: usize, count: usize) -> Vec<Range<usize>> {
