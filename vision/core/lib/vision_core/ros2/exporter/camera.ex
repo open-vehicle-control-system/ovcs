@@ -34,7 +34,6 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
   alias VisionCore.Ros2.Exporter.Stereo
 
-  @identity_3x3 [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
   @default_raw_image_max_hz 10
   @default_camera_info_interval_frames 30
 
@@ -166,19 +165,9 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     do: %CameraInfo{header: header, width: width, height: height}
 
   defp scaled_camera_info(calibration, header, %Frame{width: width, height: height}) do
-    calibration = CameraCalibration.resample_to(calibration, width, height)
-    [fx, skew, cx, _, fy, cy, _, _, _] = calibration.camera_matrix
-
-    %CameraInfo{
-      header: header,
-      width: width,
-      height: height,
-      distortion_model: calibration.distortion_model,
-      d: calibration.distortion_coefficients,
-      k: calibration.camera_matrix,
-      r: @identity_3x3,
-      p: [fx, skew, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
-    }
+    calibration
+    |> CameraCalibration.resample_to(width, height)
+    |> CameraCalibration.camera_info(header, width, height)
   end
 
   defp note_misfit(%{misfit_size: {width, height}} = camera, %Frame{width: width, height: height}),

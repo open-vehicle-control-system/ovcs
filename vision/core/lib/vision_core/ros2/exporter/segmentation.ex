@@ -54,7 +54,6 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
 
   @default_topic_prefix "stereo"
-  @identity_3x3 [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
 
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
@@ -148,22 +147,17 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   defp empty_camera_info(labels, header),
     do: %CameraInfo{header: header, width: labels.width, height: labels.height}
 
-  # P is K padded with a zero column, as the camera's own camera info has it.
   defp grid_camera_info(calibration, %{band: {x, y, w, h}} = labels, header) do
     {sx, sy} = {labels.width / w, labels.height / h}
     to_grid = [sx, 0.0, (0.5 - x) * sx - 0.5, 0.0, sy, (0.5 - y) * sy - 0.5, 0.0, 0.0, 1.0]
-    [k0, k1, k2, k3, k4, k5, k6, k7, k8] = multiply(to_grid, calibration.camera_matrix)
 
-    %CameraInfo{
-      header: header,
-      width: labels.width,
-      height: labels.height,
-      distortion_model: calibration.distortion_model,
-      d: calibration.distortion_coefficients,
-      k: [k0, k1, k2, k3, k4, k5, k6, k7, k8],
-      r: @identity_3x3,
-      p: [k0, k1, k2, 0.0, k3, k4, k5, 0.0, k6, k7, k8, 0.0]
-    }
+    CameraCalibration.camera_info(
+      calibration,
+      header,
+      labels.width,
+      labels.height,
+      multiply(to_grid, calibration.camera_matrix)
+    )
   end
 
   defp multiply([a0, a1, a2, a3, a4, a5, a6, a7, a8], [b0, b1, b2, b3, b4, b5, b6, b7, b8]) do

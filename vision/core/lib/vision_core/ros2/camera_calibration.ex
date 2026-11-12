@@ -360,6 +360,29 @@ defmodule VisionCore.Ros2.CameraCalibration do
   end
 
   @doc """
+  `calibration`'s `sensor_msgs/CameraInfo` for a `width` x `height`
+  image under `header`, with the camera matrix `camera_matrix`, the
+  calibration's own unless the image is a part of the camera's: its
+  distortion, no rectification, and the projection matrix the camera
+  matrix padded with a zero column.
+  """
+  @spec camera_info(t(), struct(), pos_integer(), pos_integer(), [float()]) :: CameraInfo.t()
+  def camera_info(calibration, header, width, height, camera_matrix \\ nil) do
+    [k0, k1, k2, k3, k4, k5, k6, k7, k8] = k = camera_matrix || calibration.camera_matrix
+
+    %CameraInfo{
+      header: header,
+      width: width,
+      height: height,
+      distortion_model: calibration.distortion_model,
+      d: calibration.distortion_coefficients,
+      k: k,
+      r: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      p: [k0, k1, k2, 0.0, k3, k4, k5, 0.0, k6, k7, k8, 0.0]
+    }
+  end
+
+  @doc """
   Build a `Calibration` struct from a `sensor_msgs/CameraInfo`
   parsed off the wire. The CameraInfo carries the same matrices
   (k, r, p, d) but with different field names — this is a pure
