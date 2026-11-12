@@ -3,7 +3,8 @@ defmodule VisionCore.Detection.QnnPort do
   What `VisionCore.Detection.Backend.Qnn` and
   `VisionCore.Segmentation.Backend.Qnn` share about their Port: the
   context binary it runs (`VisionCore.Detection.QnnContext`), the program
-  started with QNN's environment, and the wait before it is reopened.
+  started with QNN's environment, its performance profile, and the wait
+  before it is reopened.
   """
 
   alias VisionCore.Detection.QnnContext
@@ -11,6 +12,7 @@ defmodule VisionCore.Detection.QnnPort do
   # Detects a wedged Port; not a latency budget.
   @default_infer_timeout_ms 2_000
   @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
+  @performance_profiles [:burst, :sustained_high_performance, :balanced, :power_saver, :none]
 
   @doc """
   The context binary of `dlc_path` for the program `executable`, generated
@@ -81,6 +83,27 @@ defmodule VisionCore.Detection.QnnPort do
              )
 
     {infer_timeout_ms, reopen_delays_ms}
+  end
+
+  @doc """
+  The Port's arguments for `opts`' `:performance`, the power vote it
+  holds on the HTP: none without it, the Port then voting `burst`;
+  `--performance` and the profile for one of `:burst`,
+  `:sustained_high_performance`, `:balanced`, `:power_saver` and `:none`
+  (no vote); raises `ArgumentError` on another value.
+  """
+  @spec performance_args!(keyword()) :: [String.t()]
+  def performance_args!(opts) do
+    case Keyword.fetch(opts, :performance) do
+      :error ->
+        []
+
+      {:ok, profile} when profile in @performance_profiles ->
+        ["--performance", Atom.to_string(profile)]
+
+      {:ok, profile} ->
+        refuse!(:performance, profile, "one of #{inspect(@performance_profiles)}")
+    end
   end
 
   defp refuse!(key, value, expected),

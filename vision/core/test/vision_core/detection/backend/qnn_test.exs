@@ -159,10 +159,31 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert Qnn.detect(1, @image) == {:error, :unavailable}
   end
 
-  test "refuses at start an :infer_timeout_ms or :reopen_delays_ms it cannot wait on", %{
-    tmp_dir: dir
-  } do
+  test "hands the Port its performance profile when one is given", %{tmp_dir: dir} do
+    for {opts, arguments} <- [
+          {[], "0.4"},
+          {[performance: :balanced], "0.4 --performance balanced"},
+          {[performance: :none], "0.4 --performance none"}
+        ] do
+      start_backend(dir, "answer", opts)
+      eventually(&Qnn.available?/0)
+      assert Qnn.detect(1, @image) == :ok
+      assert_receive {:inference_detections, 1, _detections}, 2_000
+
+      assert [file] = dir |> Path.join("cache/*.bin.arguments") |> Path.wildcard()
+      assert File.read!(file) == arguments
+      stop_supervised!(Qnn)
+      File.rm!(file)
+    end
+  end
+
+  test "refuses at start an :infer_timeout_ms, :reopen_delays_ms or :performance it cannot use",
+       %{tmp_dir: dir} do
+    profiles = "one of [:burst, :sustained_high_performance, :balanced, :power_saver, :none]"
+
     for {key, value, expected} <- [
+          {:performance, :turbo, profiles},
+          {:performance, "burst", profiles},
           {:infer_timeout_ms, 0, "a positive integer"},
           {:infer_timeout_ms, 1.5, "a positive integer"},
           {:reopen_delays_ms, [], "a non-empty list of non-negative integers"},

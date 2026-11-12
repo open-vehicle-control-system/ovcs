@@ -4,12 +4,20 @@
 # its channel count less one, and a 1500 us inference time, "answer_once" the same for one request, then exits, "answer_untimed" the same without the time, "exit" exits
 # with status 1 at once, "die" exits with status 1 on its first request, "hang"
 # reads requests and never replies. A program that
-# runs logs "ready" first. Each start appends a line to <hef>.starts.
+# runs logs "ready" first. Each start appends a line to <hef>.starts and writes its
+# arguments after the HEF to <hef>.arguments. As qnn_detect, `--graph-names <dlc>`
+# prints the graph name "graph" and exits.
 import struct, sys
+
+if sys.argv[1] == "--graph-names":
+    print("graph")
+    sys.exit(0)
 
 hef = sys.argv[1]
 with open(hef + ".starts", "a") as starts:
     starts.write("start\n")
+with open(hef + ".arguments", "w") as arguments:
+    arguments.write(" ".join(sys.argv[2:]))
 with open(hef) as model:
     mode = model.read().strip()
 if mode == "exit":

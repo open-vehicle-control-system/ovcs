@@ -73,7 +73,8 @@ defmodule VisionCore.Segmentation.SupervisorTest do
       cache_dir: "/cache",
       executable: "/qnn_segment",
       infer_timeout_ms: 100,
-      reopen_delays_ms: [10]
+      reopen_delays_ms: [10],
+      performance: :balanced
     ]
 
     {:ok, {_flags, [backend | _children]}} =

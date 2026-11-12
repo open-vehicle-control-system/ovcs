@@ -44,6 +44,9 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`, the last
       repeated), a non-empty list of non-negative integers; another value
       fails the start (`VisionCore.Detection.QnnPort.timings!/1`).
+    * `:performance` (`qnn_segment`'s own, `:burst`) — the power vote the
+      Port holds on the HTP; an unknown profile fails the start
+      (`VisionCore.Detection.QnnPort.performance_args!/1`).
   """
   use GenServer
 
@@ -114,6 +117,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       port: nil,
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
+      performance_args: QnnPort.performance_args!(opts),
       classes: Keyword.get(opts, :classes, length(VisionCore.Segmentation.labels())),
       qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
       dsp_library_path:
@@ -160,7 +164,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   defp open_port(state, context) do
     with {:ok, binary} <- context,
-         args = [binary, Integer.to_string(state.classes)],
+         args = [binary, Integer.to_string(state.classes) | state.performance_args],
          {:ok, port} <-
            QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
       Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")

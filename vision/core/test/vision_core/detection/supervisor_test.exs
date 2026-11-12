@@ -231,7 +231,8 @@ defmodule VisionCore.Detection.SupervisorTest do
       qairt_dir: "/opt/qairt",
       dsp_library_path: "/dsp",
       cache_dir: "/data/qnn",
-      score_threshold: 0.4
+      score_threshold: 0.4,
+      performance: :sustained_high_performance
     ]
 
     assert Supervisor.split_backend_options(

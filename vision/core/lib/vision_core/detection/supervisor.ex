@@ -213,6 +213,6 @@ defmodule VisionCore.Detection.Supervisor do
   defp backend_keys do
     [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
       [:dlc_path, :qairt_dir, :dsp_library_path, :cache_dir] ++
-      [:infer_timeout_ms, :reopen_delays_ms, :boxes]
+      [:infer_timeout_ms, :reopen_delays_ms, :performance, :boxes]
   end
 end

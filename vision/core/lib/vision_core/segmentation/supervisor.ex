@@ -188,6 +188,6 @@ defmodule VisionCore.Segmentation.Supervisor do
   # The options of `Backend.Qnn` and `Backend.Stub`.
   defp backend_keys do
     [:dlc_path, :qairt_dir, :dsp_library_path, :cache_dir, :executable] ++
-      [:infer_timeout_ms, :reopen_delays_ms, :label_image]
+      [:infer_timeout_ms, :reopen_delays_ms, :performance, :label_image]
   end
 end

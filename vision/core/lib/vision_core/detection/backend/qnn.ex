@@ -40,6 +40,9 @@ defmodule VisionCore.Detection.Backend.Qnn do
       `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`, the last
       repeated), a non-empty list of non-negative integers; another value
       fails the start (`VisionCore.Detection.QnnPort.timings!/1`).
+    * `:performance` (`qnn_detect`'s own, `:burst`) — the power vote the
+      Port holds on the HTP; an unknown profile fails the start
+      (`VisionCore.Detection.QnnPort.performance_args!/1`).
   """
   use GenServer
 
@@ -111,6 +114,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
       port: nil,
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
+      performance_args: QnnPort.performance_args!(opts),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
       qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
       dsp_library_path:
@@ -162,7 +166,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   defp open_port(state, context) do
     with {:ok, binary} <- context,
-         args = [binary, to_string(state.score_threshold)],
+         args = [binary, to_string(state.score_threshold) | state.performance_args],
          {:ok, port} <-
            QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
       Logger.info(

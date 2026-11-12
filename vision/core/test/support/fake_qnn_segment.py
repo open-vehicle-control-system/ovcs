@@ -10,8 +10,13 @@
 # request; "exit" exits with status 1 at once.
 # A program that runs logs "ready" first. Each start appends a line to
 # <binary>.starts and writes its arguments after the binary to <binary>.arguments.
-# It exits when its stdin or its stdout closes.
+# It exits when its stdin or its stdout closes. `--graph-names <dlc>` prints the graph
+# name "graph" and exits.
 import os, struct, sys
+
+if sys.argv[1] == "--graph-names":
+    print("graph")
+    sys.exit(0)
 
 binary = sys.argv[1]
 with open(binary + ".starts", "a") as starts:
