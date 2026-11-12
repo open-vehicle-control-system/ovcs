@@ -190,6 +190,34 @@ defmodule VisionCore.ApplicationTest do
            ]
   end
 
+  test "the pipeline decodes on one Port, the previews and exporters encode on a pool of three" do
+    start_pipeline(%VisionCore.Config{})
+
+    assert :sys.get_state(VisionCore.Jpeg).size == 1
+    assert :sys.get_state(VisionCore.Jpeg.Export).size == 3
+  end
+
+  test "the configuration's jpeg: options size the encoders' pool" do
+    start_pipeline(%VisionCore.Config{jpeg: [ports: 2]})
+
+    assert :sys.get_state(VisionCore.Jpeg.Export).size == 2
+  end
+
+  test "jpeg: options other than a positive number of :ports fail the start" do
+    for jpeg <- [[ports: 0], [ports: :many], [size: 2], :ports] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{jpeg: jpeg})
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~ "jpeg:"
+      assert message =~ inspect(jpeg)
+    end
+  end
+
   @tag :jpeg
   test "the previews encode JPEG on a codec of their own, not the pipeline's" do
     start_pipeline(%VisionCore.Config{})

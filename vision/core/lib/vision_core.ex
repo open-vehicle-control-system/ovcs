@@ -29,15 +29,21 @@ defmodule VisionCore.Config do
           for what wall clock breaks against a simulator.
     * `:preview` — options of `VisionCore.Preview` (`:max_hz`,
       `:depth_range_m`, `:outputs`).
+    * `:jpeg` — options of `VisionCore.Jpeg.Export`, the pool of
+      `jpeg_codec` Ports the previews and exporters encode on:
+        * `:ports` (`3`) — the most Ports encoding at once, a positive
+          integer. Each runs one encode at a time, so it bounds the
+          encodes, their memory and the CPU cores they take.
   """
-  defstruct ros2: nil, components: [], exporters: [], preview: []
+  defstruct ros2: nil, components: [], exporters: [], preview: [], jpeg: []
 
   @type component :: atom() | {atom(), keyword()}
   @type t :: %__MODULE__{
           ros2: keyword() | nil,
           components: [component()],
           exporters: [{module(), keyword()} | module()],
-          preview: keyword()
+          preview: keyword(),
+          jpeg: keyword()
         }
 end
 

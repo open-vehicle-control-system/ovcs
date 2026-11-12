@@ -46,7 +46,8 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
                          "options" => %{"heartbeat" => %{"interval_ms" => 5_000}}
                        }
                      ],
-                     "preview" => []
+                     "preview" => [],
+                     "jpeg" => []
                    }
                  }
                }

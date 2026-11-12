@@ -225,7 +225,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-`GET /api/configuration` returns the configuration your vehicle's composer gives the unit, as `VisionCore.settings/0` returns it. It holds the components with their options, the exporters, the previews and the ROS 2 link. The example is shortened: the stereo component's options also hold its calibration directories, each camera's settings and its stages.
+`GET /api/configuration` returns the configuration your vehicle's composer gives the unit, as `VisionCore.settings/0` returns it. It holds the components with their options, the exporters, the previews, the JPEG encoders and the ROS 2 link. The example is shortened: the stereo component's options also hold its calibration directories, each camera's settings and its stages.
 
 ```json
 {
@@ -244,6 +244,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"module": "VisionCore.Ros2.Exporter", "options": {"stereo": [], "detections": [], "heartbeat": []}}
         ],
         "preview": [],
+        "jpeg": [],
         "ros2": {"zenoh_endpoint_ip": "192.168.1.20"}
       }
     }

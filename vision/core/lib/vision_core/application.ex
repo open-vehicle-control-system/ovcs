@@ -45,7 +45,9 @@ defmodule VisionCore.Application do
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
   on `VisionCore.Jpeg`, one Port, while the exporters and
   `VisionCore.Preview` encode on `VisionCore.Jpeg.Export`, a pool of
-  Ports, apart from those decodes. The
+  Ports sized by the configuration's `jpeg:` options, apart from those
+  decodes; `jpeg:` options other than a positive number of `:ports`
+  fail the start. The
   second starts after the components, before the exporters, so that its
   restart reaches only what starts after it, its users among them, not
   the cameras and pipelines.
@@ -98,9 +100,10 @@ defmodule VisionCore.Application do
     check_unit_names!(component_children, Segmentation.Supervisor, "segmenters")
     check_pipeline_names!(component_children)
     check_camera_names!(component_children)
+    check_jpeg!(config.jpeg)
 
     consumer_children = [
-      {VisionCore.Jpeg, name: @export_jpeg_codec},
+      {VisionCore.Jpeg, [name: @export_jpeg_codec] ++ config.jpeg},
       {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec},
       {VisionCore.Status, config: config},
       {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
@@ -144,6 +147,15 @@ defmodule VisionCore.Application do
       true ->
         :ok
     end
+  end
+
+  defp check_jpeg!(jpeg) do
+    valid? =
+      is_list(jpeg) and
+        Enum.all?(jpeg, &match?({:ports, ports} when is_integer(ports) and ports > 0, &1))
+
+    unless valid?,
+      do: raise(ArgumentError, "jpeg: takes :ports, a positive integer, got #{inspect(jpeg)}")
   end
 
   # A key left out takes the client's default.

@@ -15,8 +15,9 @@ defmodule VisionCore.Jpeg do
   `VisionCore.Application` starts two instances: `VisionCore.Jpeg`, one
   Port on which the stereo pipeline decodes JPEG camera frames, and
   `VisionCore.Jpeg.Export`, the pool `VisionCore.Preview` and the
-  exporters encode on, so that those encodes and the pipeline's decodes
-  do not wait on each other. Each function runs on the instance
+  exporters encode on, sized by the configuration's `:jpeg` options
+  (`VisionCore.Config`), so that those encodes and the pipeline's
+  decodes do not wait on each other. Each function runs on the instance
   its `:codec` option names, `VisionCore.Jpeg` by default.
 
   The binary is `priv/jpeg_codec`, or `config :vision_core,
