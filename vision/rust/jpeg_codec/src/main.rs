@@ -26,6 +26,9 @@ const DEPTH: u8 = 2;
 const ENCODE_HEADER: usize = 6;
 const DEPTH_HEADER: usize = 9;
 
+/// The longest request taken: above any camera's whole RGB frame.
+const MAX_REQUEST_BYTES: usize = 64 << 20;
+
 // OpenCV's COLORMAP_TURBO, as RGB.
 const TURBO: [[u8; 3]; 256] = [
     [48, 18, 59],
@@ -440,7 +443,7 @@ fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
 fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
-    while let Some(request) = framing::read_record(&mut input)? {
+    while let Some(request) = framing::read_record(&mut input, MAX_REQUEST_BYTES)? {
         let reply = reply_to(&request).unwrap_or_default();
         output.write_all(&(reply.len() as u32).to_be_bytes())?;
         output.write_all(&reply)?;

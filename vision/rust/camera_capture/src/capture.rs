@@ -527,6 +527,9 @@ fn control_table(camera: &Camera) -> HashMap<String, (u32, ControlKind)> {
 
 /// stdin carries the Port's `{:packet, 4}` records, one `Name=value` each; they apply to
 /// the next request requeued. EOF, the BEAM closing the Port, stops the capture.
+/// The longest record taken from the host: a control is a line of text.
+const MAX_CONTROL_BYTES: usize = 64 << 10;
+
 fn spawn_stdin_reader(
     control_ids: HashMap<String, (u32, ControlKind)>,
     pending: Arc<Mutex<HashMap<u32, LibcameraValue>>>,
@@ -535,7 +538,7 @@ fn spawn_stdin_reader(
 ) {
     thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
-        while let Ok(Some(record)) = framing::read_record(&mut stdin) {
+        while let Ok(Some(record)) = framing::read_record(&mut stdin, MAX_CONTROL_BYTES) {
             let command = String::from_utf8_lossy(&record);
             let resolved = parse_control(&command).ok().and_then(|(name, value)| {
                 let (id, kind) = control_ids.get(&name)?;

@@ -21,6 +21,10 @@ use framing::{log_record, LogLevel, Writer};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 
+/// The longest request taken: above any camera's whole RGB frame.
+#[cfg(feature = "device")]
+const MAX_REQUEST_BYTES: usize = 64 << 20;
+
 /// Threads the letterbox splits its rows across.
 #[cfg(feature = "device")]
 const LETTERBOX_THREADS: usize = 1;
@@ -95,7 +99,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
     let mut output = vec![0f32; detector.output_bytes.div_ceil(std::mem::size_of::<f32>())];
     let mut stdin = std::io::stdin().lock();
 
-    while let Ok(Some(record)) = framing::read_record(&mut stdin) {
+    while let Ok(Some(record)) = framing::read_record(&mut stdin, MAX_REQUEST_BYTES) {
         let Some(request) = parse_request(&record) else {
             continue;
         };

@@ -237,7 +237,7 @@ fn run(
             return Err(error);
         }
         if poll_descriptors[2].revents != 0 {
-            match framing::read_record(&mut input)? {
+            match framing::read_record(&mut input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {

@@ -46,9 +46,10 @@ extern "C" {
     fn libc_pipe(ends: *mut RawFd) -> i32;
 }
 
-/// Reads one length-prefixed record. `None` on clean EOF or a truncated record.
-pub fn read_record<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
-    let Some(length) = read_length(reader)? else {
+/// Reads one length-prefixed record of at most `max_bytes`. `None` on clean EOF or a
+/// truncated record.
+pub fn read_record<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {
+    let Some(length) = read_length(reader, max_bytes)? else {
         return Ok(None);
     };
     let mut body = Vec::new();
@@ -56,10 +57,21 @@ pub fn read_record<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
 }
 
 /// Waits for the next record's length prefix. `None` on clean EOF or a
-/// truncated prefix.
-pub fn read_length<R: Read>(reader: &mut R) -> io::Result<Option<usize>> {
-    let mut length = [0u8; 4];
-    Ok(read_exact_or_eof(reader, &mut length)?.then(|| u32::from_be_bytes(length) as usize))
+/// truncated prefix; an error for a length over `max_bytes`, which no record
+/// of the Port's has: the stream is out of step.
+pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
+    let mut prefix = [0u8; 4];
+    if !read_exact_or_eof(reader, &mut prefix)? {
+        return Ok(None);
+    }
+    let length = u32::from_be_bytes(prefix) as usize;
+    if length > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("a record of {length} bytes, over the {max_bytes} taken"),
+        ));
+    }
+    Ok(Some(length))
 }
 
 /// Reads a record's body of `length` bytes into `body` in place of its
@@ -343,7 +355,7 @@ mod tests {
 
         assert!(panicked.is_err());
         drop(writer);
-        let record = read_record(&mut pipe_out).unwrap().unwrap();
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap().unwrap();
         assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
         let message = String::from_utf8(record[2..].to_vec()).unwrap();
         assert!(message.starts_with("panic: "), "{message}");
@@ -418,33 +430,50 @@ mod tests {
     }
 
     #[test]
+    fn a_record_longer_than_the_maximum_is_an_error_before_it_is_read() {
+        let mut input: &[u8] = &[0, 0, 0, 5, 1, 2, 3, 4, 5];
+        let error = read_record(&mut input, 4).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.to_string(), "a record of 5 bytes, over the 4 taken");
+        assert_eq!(input, [1, 2, 3, 4, 5]);
+
+        let mut input: &[u8] = &[0, 0, 0, 5, 1, 2, 3, 4, 5];
+        assert_eq!(
+            read_record(&mut input, 5).unwrap(),
+            Some(vec![1, 2, 3, 4, 5])
+        );
+        let mut input: &[u8] = &[0xff, 0xff, 0xff, 0xff];
+        assert!(read_length(&mut input, 64 << 20).is_err());
+    }
+
+    #[test]
     fn read_record_returns_none_on_eof() {
-        assert_eq!(read_record(&mut &[][..]).unwrap(), None);
+        assert_eq!(read_record(&mut &[][..], 16).unwrap(), None);
     }
 
     #[test]
     fn read_record_returns_none_on_truncated_body() {
         let mut input: &[u8] = &[0, 0, 0, 10, 1, 2, 3, 4];
-        assert_eq!(read_record(&mut input).unwrap(), None);
+        assert_eq!(read_record(&mut input, 16).unwrap(), None);
     }
 
     #[test]
     fn read_record_reads_a_record() {
         let mut input: &[u8] = &[0, 0, 0, 2, 9, 8, 7];
-        assert_eq!(read_record(&mut input).unwrap(), Some(vec![9, 8]));
+        assert_eq!(read_record(&mut input, 16).unwrap(), Some(vec![9, 8]));
     }
 
     #[test]
     fn a_body_read_into_a_buffer_replaces_its_contents() {
         let mut input: &[u8] = &[0, 0, 0, 3, 1, 2, 3, 0, 0, 0, 1, 9, 0, 0];
         let mut body = vec![7; 5];
-        assert_eq!(read_length(&mut input).unwrap(), Some(3));
+        assert_eq!(read_length(&mut input, 16).unwrap(), Some(3));
         assert!(read_body_into(&mut input, 3, &mut body).unwrap());
         assert_eq!(body, [1, 2, 3]);
-        assert_eq!(read_length(&mut input).unwrap(), Some(1));
+        assert_eq!(read_length(&mut input, 16).unwrap(), Some(1));
         assert!(read_body_into(&mut input, 1, &mut body).unwrap());
         assert_eq!(body, [9]);
-        assert_eq!(read_length(&mut input).unwrap(), None);
+        assert_eq!(read_length(&mut input, 16).unwrap(), None);
     }
 
     #[test]

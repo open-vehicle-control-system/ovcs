@@ -4,6 +4,9 @@ use std::fs::File;
 use std::io;
 use std::os::fd::BorrowedFd;
 
+/// The longest record taken from the host: a setting is a line of text.
+pub const MAX_SETTING_BYTES: usize = 64 << 10;
+
 /// `descriptor` as an unbuffered file: reading a record takes only that record
 /// off the pipe, so `poll` still reports the next one. Rust's `Stdin` buffers,
 /// and records it has already taken are out of `poll`'s sight.
@@ -13,7 +16,7 @@ pub fn unbuffered(descriptor: BorrowedFd<'_>) -> io::Result<File> {
 
 #[cfg(test)]
 mod tests {
-    use super::unbuffered;
+    use super::{unbuffered, MAX_SETTING_BYTES};
     use std::fs::File;
     use std::io::Write;
     use std::os::fd::{AsFd, AsRawFd, FromRawFd};
@@ -46,12 +49,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            framing::read_record(&mut input).unwrap(),
+            framing::read_record(&mut input, MAX_SETTING_BYTES).unwrap(),
             Some(b"exposure_us=10000".to_vec())
         );
         assert!(readable(&input));
         assert_eq!(
-            framing::read_record(&mut input).unwrap(),
+            framing::read_record(&mut input, MAX_SETTING_BYTES).unwrap(),
             Some(b"gamma=2.0".to_vec())
         );
         assert!(!readable(&input));

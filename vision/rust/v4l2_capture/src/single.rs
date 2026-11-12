@@ -409,7 +409,7 @@ fn convert_frames(
             return Err(error);
         }
         if poll_descriptors[1].revents != 0 {
-            match framing::read_record(input)? {
+            match framing::read_record(input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {

@@ -17,6 +17,9 @@ use crate::{
 /// Room asked for in the request pipe, which the BEAM then fills in fewer turns with the Port.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
 
+/// The longest request taken: above any camera's whole RGB frame.
+const MAX_REQUEST_BYTES: usize = 64 << 20;
+
 /// What a Port serves with: its own positional arguments, the performance profile, and the
 /// writer of its records.
 pub struct Start {
@@ -185,7 +188,7 @@ pub fn serve<R: Read>(
     let mut record = Vec::new();
     let failed = |error: std::io::Error| format!("reading a request: {error}");
     loop {
-        let Some(length) = framing::read_length(input).map_err(failed)? else {
+        let Some(length) = framing::read_length(input, MAX_REQUEST_BYTES).map_err(failed)? else {
             return Ok(());
         };
         clock.lap(clock.idle);
@@ -248,7 +251,7 @@ mod tests {
         });
         drop(writer);
         let mut records = Vec::new();
-        while let Some(record) = framing::read_record(&mut written).unwrap() {
+        while let Some(record) = framing::read_record(&mut written, 1 << 10).unwrap() {
             records.push(record);
         }
         (outcome, records)
