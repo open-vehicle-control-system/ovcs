@@ -18,6 +18,22 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
   # The left half of the frame.
   @person {0, 0.9, {0.0, 0.0, 0.5, 1.0}}
 
+  # Tells the test of each frame it is handed, then answers with one person on its left half.
+  defmodule Recorder do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(test, sequence, _image) do
+      send(test, {:submitted, sequence})
+      person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0}
+      send(self(), {:inference_detections, sequence, [person]})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   # Saved at twice the frames' size: placed right only once scaled to them.
   defp calibration do
     %CameraCalibration{
@@ -65,18 +81,20 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
   end
 
-  # Matched at the frames' size, its rectified intrinsics the camera's scaled ones: a plane 2 m away,
-  # or with `right_half: :none` its right half without depth, as out of the stereo view.
+  # Matched at the frames' size, its rectified intrinsics the camera's scaled ones: a plane
+  # `:distance_mm` away (2 m), or with `right_half: :none` its right half without depth, as out of
+  # the stereo view.
   defp publish_pair(capture_ms, opts \\ []) do
     {width, height} = {40, 20}
     frame = %Frame{label: "left", width: width, height: height, capture_ns: capture_ms * @ms}
-    right_depth = if opts[:right_half] == :none, do: 0, else: 2000
+    distance_mm = Keyword.get(opts, :distance_mm, 2000)
+    right_depth = if opts[:right_half] == :none, do: 0, else: distance_mm
 
     depth =
       for _y <- 1..height,
           x <- 0..(width - 1),
           into: <<>>,
-          do: <<if(x < 20, do: 2000, else: right_depth)::little-16>>
+          do: <<if(x < 20, do: distance_mm, else: right_depth)::little-16>>
 
     pair = %Pair{
       left_frame: frame,
@@ -139,39 +157,115 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert person.caption == "person 0.90 2.00m"
   end
 
+  # The first call lets the frame's boxes reach the pipeline, the second has them handled.
+  defp await_boxes do
+    _submitted = :sys.get_state(Pipeline.HqPeople)
+    _handled = :sys.get_state(Pipeline.HqPeople)
+  end
+
+  # Pairs a second apart, so the stereo pairs do not stall while a test runs.
   test "waits for a pair captured after the frame, which may be closer", %{tmp_dir: dir} do
     start_pipeline(dir)
     publish_pair(0)
-    publish_pair(100)
-    publish_frame(140)
+    publish_pair(1_000)
+    publish_frame(1_400)
 
     refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
-    publish_pair(150)
+    publish_pair(1_500)
 
     assert [person] = detections()
     assert_in_delta person.z, 2.0, 1.0e-6
   end
 
-  test "skips the frames that come while a frame's boxes wait for their pair", %{tmp_dir: dir} do
+  test "detects the frames that come while boxes wait, publishing each in capture order with its own pair",
+       %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
-    publish_pair(100)
-    publish_frame(160)
+    publish_pair(1_000)
+    publish_frame(1_400)
+    await_boxes()
+    publish_frame(1_900)
+    await_boxes()
 
-    # The Stub takes every frame where a backend would be busy: frame 190 comes once frame 160's boxes wait.
-    _submitted = :sys.get_state(Pipeline.HqPeople)
-    _waiting = :sys.get_state(Pipeline.HqPeople)
-    publish_frame(190)
     refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
-    publish_pair(150)
-    publish_pair(200)
+    publish_pair(1_500, distance_mm: 3000)
+    publish_pair(2_000, distance_mm: 4000)
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{capture_ns: 160_000_000}, [person], :hq_people}},
-                   1_000
+                    {:detections, %Frame{capture_ns: 1_400_000_000}, [first], :hq_people}}
 
-    assert_in_delta person.z, 2.0, 1.0e-6
+    assert_receive {:"$gen_cast",
+                    {:detections, %Frame{capture_ns: 1_900_000_000}, [second], :hq_people}}
+
+    assert_in_delta first.z, 3.0, 1.0e-6
+    assert_in_delta second.z, 4.0, 1.0e-6
+  end
+
+  test "publishes the frame without its pixels", %{tmp_dir: dir} do
+    start_pipeline(dir)
+    publish_pair(0)
+    publish_pair(100)
+    publish_frame(100)
+
+    assert_receive {:"$gen_cast",
+                    {:detections, %Frame{rgb: nil, frame_id: "hq_optical"}, [_person], :hq_people}}
+  end
+
+  test "skips the frames that come while 32 frames' boxes wait for their pair", %{tmp_dir: dir} do
+    start_supervised!(
+      {Pipeline,
+       name: :hq_people,
+       backend: Recorder,
+       backend_server: self(),
+       source: {:camera, :hq},
+       pair_wait_ms: 60_000,
+       config: config(dir, [:calibration, :pose])}
+    )
+
+    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    publish_pair(0)
+    publish_pair(1_000)
+
+    for capture_ms <- 1_001..1_033 do
+      publish_frame(capture_ms)
+      await_boxes()
+    end
+
+    for sequence <- 1..32, do: assert_received({:submitted, ^sequence})
+    refute_received {:submitted, _next}
+    publish_pair(1_100)
+
+    for capture_ms <- 1_001..1_032 do
+      capture_ns = capture_ms * @ms
+
+      assert_receive {:"$gen_cast",
+                      {:detections, %Frame{capture_ns: ^capture_ns}, [_person], :hq_people}}
+    end
+
+    publish_frame(1_100)
+    assert_receive {:submitted, 33}
+  end
+
+  test "a stray :pair_wait places nothing before the boxes' pair comes", %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 60_000)
+    publish_pair(0)
+    publish_pair(1_000)
+    publish_frame(1_400)
+    await_boxes()
+
+    send(Pipeline.HqPeople, :pair_wait)
     refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+  end
+
+  test "publishes at once without a distance when the stereo pairs stop for two pair periods",
+       %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 60_000)
+    publish_pair(0)
+    publish_pair(10)
+    publish_frame(100)
+
+    assert [person] = detections()
+    assert_no_distance(person)
   end
 
   test "keeps a box out of the stereo view without a distance, with its bearing, beside a placed one",
@@ -188,8 +282,9 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_in_delta azimuth, :math.atan(0.2), 1.0e-6
   end
 
-  test "keeps a box without a distance, with its bearing, when no pair comes", %{tmp_dir: dir} do
-    start_pipeline(dir, pair_wait_ms: 20)
+  test "keeps a box without a distance, with its bearing, at once while no pair came",
+       %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 60_000)
     publish_frame(100)
 
     assert [person] = detections()

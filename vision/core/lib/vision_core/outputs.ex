@@ -15,8 +15,8 @@ defmodule VisionCore.Outputs do
       registered as `name`: `{:detections, pair, detections}` from the
       default pipeline, `{:detections, pair, detections, pipeline}` from
       the one named `pipeline` (`VisionCore.Detection`), the
-      `%VisionCore.Camera.Frame{}` the boxes were found on in place of
-      `pair` on a camera source.
+      `%VisionCore.Camera.Frame{}` the boxes were found on, without its
+      pixels, in place of `pair` on a camera source.
     * `{:segmentation, name}` — `{:segmentation, pipeline, frame, labels,
       clouds}` from the `VisionCore.Segmentation.Pipeline` registered as
       `name`, the segmentation pipeline `pipeline`'s.

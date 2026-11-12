@@ -76,6 +76,15 @@ defmodule VisionCore.Detection.PipelineTest do
       assert person.caption == "person 0.90 2.00m"
     end
 
+    test "ignores a stray :pair_wait on the stereo source" do
+      start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
+      publish_pair()
+      send(Pipeline, :pair_wait)
+
+      assert [%{label: "person"}] = detections()
+      assert Process.alive?(Process.whereis(Pipeline))
+    end
+
     test "keeps the highest scores, up to :max_detections" do
       start_detection(
         [{1, 0.5, {0.0, 0.0, 0.5, 1.0}}, {0, 0.9, {0.0, 0.0, 0.5, 1.0}}],

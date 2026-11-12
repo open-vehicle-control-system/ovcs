@@ -52,13 +52,9 @@ defmodule VisionCore.Detection.CameraSource do
   @spec placeable?(t()) :: boolean()
   defdelegate placeable?(source), to: CameraDepth, as: :projectable?
 
-  @doc "Keeps `pair` among the last pairs; see `VisionCore.Detection.CameraDepth.add_pair/2`."
-  @spec add_pair(t(), Pair.t()) :: t()
-  defdelegate add_pair(source, pair), to: CameraDepth
-
-  @doc "The pair to place a frame's boxes with; see `VisionCore.Detection.CameraDepth.match/3`."
-  @spec match(t(), integer(), keyword()) :: {:ok, Pair.t()} | :none | :wait
-  defdelegate match(source, capture_ns, opts \\ []), to: CameraDepth
+  @doc "Keeps `pair`, arrived at `now_ns`; see `VisionCore.Detection.CameraDepth.add_pair/3`."
+  @spec add_pair(t(), Pair.t(), integer()) :: t()
+  defdelegate add_pair(source, pair, now_ns), to: CameraDepth
 
   @doc """
   `detections`, boxes in `frame`'s pixels, placed with `pair`'s depth,

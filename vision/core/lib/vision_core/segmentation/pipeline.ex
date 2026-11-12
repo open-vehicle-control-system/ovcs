@@ -46,10 +46,15 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   The frame is matched with the stereo pair captured closest to it
   (`VisionCore.Detection.CameraDepth`, as a detection pipeline on a
-  camera does), once its label image is back: the label image waits for
-  that pair at most `:pair_wait_ms`, and the camera's frames that come
-  meanwhile are skipped. The pair's depth is projected into the frame
-  through the camera's calibration and pose
+  camera does), once its label image is back: the label images wait for
+  their pairs in a queue (`VisionCore.Detection.DepthQueue`) while the
+  next frames go to the backend, and are published in capture order; each
+  waits at most `:pair_wait_ms`, and not at all while the stereo pairs
+  have stalled, two pair periods without one. While 32 label images wait,
+  the camera's frames are skipped.
+
+  The pair's depth is projected into the frame through the camera's
+  calibration and pose
   (`VisionCore.Detection.Reprojection.project_with_origin/4`, every
   `:reprojection_stride`-th pixel and row). A camera without a
   calibration or a pose publishes its label images at once, without
@@ -77,7 +82,8 @@ defmodule VisionCore.Segmentation.Pipeline do
     * `:reprojection_stride` (`3`) — every nth pixel and row of the depth
       map projected into the camera's image.
     * `:pair_wait_ms` (`500`) — the longest a label image waits for the
-      pair captured closest to its frame.
+      pair captured closest to its frame, and how far before the newest
+      pair's capture the pairs are kept.
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera is read from.
   """
@@ -258,8 +264,11 @@ defmodule VisionCore.Segmentation.Pipeline do
             "the band are left out. Fixed in the build: road_classes; reprojection_stride, " <>
             "every how many pixels and rows of the depth it projects, a higher value sorting " <>
             "faster and fewer points; and pair_wait_ms, how long the classes wait for that " <>
-            "pair. Without a pair, or without the camera's calibration or pose, the classes " <>
-            "are published without points.",
+            "pair. The next images go to the model meanwhile, and the classes are published " <>
+            "in the images' order. While the stereo pairs have stopped, the classes are " <>
+            "published at once, with the pair already kept if one was captured within half " <>
+            "a pair period of the image. Without such a pair, or without the camera's " <>
+            "calibration or pose, they are published without points.",
         compute: @on_the_beam,
         parameters: [
           build_parameter(
@@ -287,14 +296,16 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    {:noreply, publish_settled(%{state | camera: CameraDepth.add_pair(state.camera, pair)})}
+    now_ns = System.monotonic_time(:nanosecond)
+    state = %{state | camera: CameraDepth.add_pair(state.camera, pair, now_ns)}
+    {:noreply, publish_settled(state, now_ns)}
   end
 
-  # A frame that comes while a label image waits for its pair is skipped, as one during an inference.
   def handle_cast({:camera_frame, %Frame{} = frame}, state) do
-    if DepthQueue.waiting?(state.waiting),
-      do: {:noreply, state},
-      else: {:noreply, take_frame(frame, state)}
+    case DepthQueue.admit(state.waiting, state.camera) do
+      {:ok, waiting} -> {:noreply, take_frame(frame, %{state | waiting: waiting})}
+      {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
+    end
   end
 
   def handle_cast(_message, state), do: {:noreply, state}
@@ -344,36 +355,34 @@ defmodule VisionCore.Segmentation.Pipeline do
       ) do
     state = %{state | pending: nil}
 
-    cond do
-      is_nil(labels) ->
-        {:noreply, state}
-
-      CameraDepth.projectable?(state.camera) ->
-        {:noreply, wait_for_pair(state, frame, Map.put(labels, :band, band))}
-
-      true ->
-        publish(state, frame, Map.put(labels, :band, band), nil)
-        {:noreply, state}
-    end
+    if is_nil(labels),
+      do: {:noreply, state},
+      else: {:noreply, wait_for_pair(state, frame, Map.put(labels, :band, band))}
   end
 
   # A reply for a frame no longer waited on.
   def handle_info({:inference_labels, _stale, _labels}, state), do: {:noreply, state}
 
-  def handle_info(:pair_wait, state), do: {:noreply, publish_settled(state)}
+  def handle_info(:pair_wait, state),
+    do: {:noreply, publish_settled(state, System.monotonic_time(:nanosecond))}
 
   def handle_info(_message, state), do: {:noreply, state}
 
   defp wait_for_pair(state, frame, labels) do
     now_ns = System.monotonic_time(:nanosecond)
-    waiting = DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns)
+
+    waiting =
+      if CameraDepth.projectable?(state.camera),
+        do: DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns),
+        else: DepthQueue.put_without_depth(state.waiting, {frame, labels})
+
     publish_settled(%{state | waiting: waiting}, now_ns)
   end
 
-  # Publishes the label images whose pair is known, and has the pipeline told when to look again.
-  defp publish_settled(state, now_ns \\ System.monotonic_time(:nanosecond)) do
+  # Publishes the label images whose pair is known, in capture order, and has the pipeline told when to look again.
+  defp publish_settled(state, now_ns) do
     {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
-    state = %{state | waiting: DepthQueue.schedule(waiting, now_ns)}
+    state = %{state | waiting: DepthQueue.schedule(waiting, state.camera, now_ns)}
 
     Enum.reduce(settled, state, fn {labelled, pair}, state ->
       publish_labels(labelled, pair, state)

@@ -175,9 +175,9 @@ defmodule VisionCore.Segmentation.PipelineTest do
   test "publishes the frame without its pixels", %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
-    publish_pair(100)
-    publish_frame(140)
-    publish_pair(150)
+    publish_pair(1_000)
+    publish_frame(1_400)
+    publish_pair(1_500)
 
     assert_receive {:"$gen_cast",
                     {:segmentation, :road, %Frame{rgb: nil, frame_id: "hq_optical"}, _labels, %{}}}
@@ -259,32 +259,89 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert length(points(road)) == 2
   end
 
-  test "publishes the label image without clouds when no pair was captured with the frame", %{
-    tmp_dir: dir
-  } do
-    start_pipeline(dir, pair_wait_ms: 20)
+  test "publishes the label image without clouds at once while no pair came", %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 60_000)
     publish_frame(100)
 
     assert {%{width: 4}, nil} = segmentation()
   end
 
-  test "waits for a pair captured after the frame, skipping the frames meanwhile", %{
-    tmp_dir: dir
-  } do
+  test "publishes the label image without clouds at once when the stereo pairs stop for two pair periods",
+       %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
-    publish_pair(100)
-    publish_frame(140)
+    publish_pair(10)
+    publish_frame(100)
+
+    assert {%{width: 4}, nil} = segmentation()
+  end
+
+  # The first call lets the frame's labels reach the pipeline, the second has them handled.
+  defp await_labels do
     _submitted = :sys.get_state(Pipeline.Road)
-    publish_frame(160)
+    _handled = :sys.get_state(Pipeline.Road)
+  end
+
+  # Pairs a second apart, so the stereo pairs do not stall while a test runs.
+  test "segments the frames that come while label images wait, publishing each in capture order with clouds",
+       %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 60_000)
+    publish_pair(0)
+    publish_pair(1_000)
+    publish_frame(1_400)
+    await_labels()
+    publish_frame(1_900)
+    await_labels()
+
     refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
-    publish_pair(150)
+    publish_pair(1_500)
+    publish_pair(2_000)
 
     assert_receive {:"$gen_cast",
-                    {:segmentation, :road, %Frame{capture_ns: 140_000_000}, _labels, %{}}},
-                   1_000
+                    {:segmentation, :road, %Frame{capture_ns: 1_400_000_000}, _labels, first}}
 
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    assert_receive {:"$gen_cast",
+                    {:segmentation, :road, %Frame{capture_ns: 1_900_000_000}, _labels, second}}
+
+    assert %{road: <<_road::binary>>} = first
+    assert %{road: <<_road_too::binary>>} = second
+  end
+
+  test "skips the frames that come while 32 frames' label images wait for their pair", %{
+    tmp_dir: dir
+  } do
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: Recorder,
+       backend_server: {self(), @label_image},
+       source: {:camera, :hq},
+       pair_wait_ms: 60_000,
+       config: config(dir, [:calibration, :pose])}
+    )
+
+    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    publish_pair(0)
+    publish_pair(1_000)
+
+    for capture_ms <- 1_001..1_033 do
+      publish_frame(capture_ms)
+      await_labels()
+    end
+
+    for _sent <- 1..32, do: assert_received({:band, _band})
+    refute_received {:band, _next}
+    publish_pair(1_100)
+
+    for capture_ms <- 1_001..1_032 do
+      capture_ns = capture_ms * @ms
+
+      assert_receive {:"$gen_cast",
+                      {:segmentation, :road, %Frame{capture_ns: ^capture_ns}, _labels, %{}}}
+    end
+
+    publish_frame(1_100)
+    assert_receive {:band, _band}
   end
 
   test "a camera without a pose publishes no clouds, without waiting, saying so once", %{

@@ -46,8 +46,9 @@ defmodule VisionCore.Detection.CameraDepthTest do
     }
   end
 
+  # Each pair arriving as it is captured.
   defp with_pairs(depth, captures_ms),
-    do: Enum.reduce(captures_ms, depth, &CameraDepth.add_pair(&2, pair(&1)))
+    do: Enum.reduce(captures_ms, depth, &CameraDepth.add_pair(&2, pair(&1), &1 * @ms))
 
   defp matched_capture_ms(depth, capture_ms) do
     case CameraDepth.match(depth, capture_ms * @ms, final: true) do
@@ -98,6 +99,39 @@ defmodule VisionCore.Detection.CameraDepthTest do
       assert {:ok, kept} = CameraDepth.match(depth, 100 * @ms)
       assert kept.depth == binary_part(reply, 0, 400)
       assert :binary.referenced_byte_size(kept.depth) == 400
+    end
+  end
+
+  describe "stalled?/2" do
+    test "is stalled before two pairs came" do
+      refute CameraDepth.stalled?(with_pairs(depth(), [0, 100]), 100 * @ms)
+      assert CameraDepth.stalled?(with_pairs(depth(), [0]), 0)
+      assert CameraDepth.stalled?(depth(), 0)
+    end
+
+    test "is stalled once no pair came for two pair periods, by arrival time" do
+      depth =
+        depth()
+        |> CameraDepth.add_pair(pair(0), 5_000 * @ms)
+        |> CameraDepth.add_pair(pair(100), 5_100 * @ms)
+
+      refute CameraDepth.stalled?(depth, 5_300 * @ms)
+      assert CameraDepth.stalled?(depth, 5_300 * @ms + 1)
+    end
+
+    test "keeps only the pair that comes after a stall" do
+      depth =
+        with_pairs(depth(60_000), [0, 100])
+        |> CameraDepth.add_pair(pair(2_000), 2_000 * @ms)
+
+      assert CameraDepth.stalled?(depth, 2_000 * @ms)
+      assert matched_capture_ms(depth, 1_600) == :none
+
+      depth = CameraDepth.add_pair(depth, pair(2_100), 2_100 * @ms)
+
+      refute CameraDepth.stalled?(depth, 2_100 * @ms)
+      assert matched_capture_ms(depth, 2_040) == 2_000
+      assert matched_capture_ms(depth, 1_900) == :none
     end
   end
 end

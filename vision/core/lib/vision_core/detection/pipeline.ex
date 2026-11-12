@@ -14,7 +14,7 @@ defmodule VisionCore.Detection.Pipeline do
   With `source: {:camera, name}` it detects on the frames of the camera
   of its own `name` instead (see "A camera source" below), and publishes
   `{:detections, frame, detections, name}`, `frame` the
-  `VisionCore.Camera.Frame` the boxes were found on.
+  `VisionCore.Camera.Frame` the boxes were found on, without its pixels.
 
   Subscribes to the pairs of `VisionCore.Stereo.Pipeline`, so it sees
   the pairs every other consumer does, rectified left image and metric
@@ -63,16 +63,21 @@ defmodule VisionCore.Detection.Pipeline do
   Hands every `:detect_every_n`-th frame of the camera, as a tensor
   (`VisionCore.Camera.Frame.to_tensor/1`: RGB for an RGB frame, its luma
   for a JPEG one), to the backend, which shrinks it whole to its model's
-  input. A frame that comes while the boxes of the one before wait for
-  their pair is skipped, so the detection rate is bounded by the stereo
-  pipeline's latency as well as the inference's. Its boxes are placed with the depth of
-  the stereo pair captured closest to the frame, projected into the
-  camera's image through its calibration and pose
-  (`VisionCore.Detection.CameraSource`), only for a frame with boxes. A
-  box with no distance is kept: its position and size are `nil`, and
-  its `:bearing` says where it is seen. Each detection is in the camera's
-  optical frame, its `:box` and `:outline`, its four corners, in the
-  frame's pixels, and has a `:bearing`, `{azimuth, elevation}` in
+  input. Its boxes are placed with the depth of the stereo pair captured
+  closest to the frame, projected into the camera's image through its
+  calibration and pose (`VisionCore.Detection.CameraSource`), only for a
+  frame with boxes. The stereo pipeline publishes a pair after the
+  frame's boxes may be back, so they wait for it in a queue
+  (`VisionCore.Detection.DepthQueue`) while the next frames go to the
+  backend, and leave it in capture order: at most `:pair_wait_ms`, and
+  not at all while the stereo pairs have stalled, two pair periods
+  without one. While 32 frames' boxes wait, the camera's frames are
+  skipped.
+
+  A box with no distance is kept: its position and size are `nil`, and
+  its `:bearing` says where it is seen. Each detection is in the
+  camera's optical frame, its `:box` and `:outline`, its four corners,
+  in the frame's pixels, and has a `:bearing`, `{azimuth, elevation}` in
   radians, `nil` without a calibration. Its caption has its distance
   only when it has one: `"person 0.62"`.
 
@@ -112,7 +117,8 @@ defmodule VisionCore.Detection.Pipeline do
     * `:reprojection_stride` (`3`) — on a camera source, every nth pixel
       and row of the depth map projected into the camera's image.
     * `:pair_wait_ms` (`500`) — on a camera source, the longest a frame's
-      boxes wait for the pair captured closest to it.
+      boxes wait for the pair captured closest to it, and how far before
+      the newest pair's capture the pairs are kept.
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera of a camera source is read from.
   """
@@ -174,7 +180,12 @@ defmodule VisionCore.Detection.Pipeline do
                                   "box's width and height it samples; reprojection_stride, " <>
                                   "every how many pixels and rows of the depth it projects, " <>
                                   "a higher value placing faster and less finely; and " <>
-                                  "pair_wait_ms, how long the boxes wait for that pair. A " <>
+                                  "pair_wait_ms, how long the boxes wait for that pair. The " <>
+                                  "next images go to the detector meanwhile, and the boxes " <>
+                                  "are published in the images' order; while the stereo " <>
+                                  "pairs have stopped, they are published at once, with " <>
+                                  "the pair already kept if one was captured within half " <>
+                                  "a pair period of the image. A " <>
                                   "box with no depth in its middle, or out of the stereo " <>
                                   "pair's view, is kept without a distance, with its " <>
                                   "bearing. Watch the outlines and distances on the camera's " <>
@@ -211,7 +222,7 @@ defmodule VisionCore.Detection.Pipeline do
       reprojection_stride: Keyword.get(opts, :reprojection_stride, @default_reprojection_stride),
       pair_wait_ms: pair_wait_ms,
       sequence: 0,
-      pair_count: 0,
+      image_count: 0,
       # The pair, or camera frame, submitted with the in-flight inference: its boxes belong to it.
       pending: nil,
       # Camera frames' boxes waiting for the pair captured closest to each.
@@ -359,36 +370,38 @@ defmodule VisionCore.Detection.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraDepth{} = camera} = state) do
-    {:noreply, place_settled(%{state | camera: CameraSource.add_pair(camera, pair)})}
+    now_ns = System.monotonic_time(:nanosecond)
+    state = %{state | camera: CameraSource.add_pair(camera, pair, now_ns)}
+    {:noreply, place_settled(state, now_ns)}
   end
 
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    pair_count = state.pair_count + 1
-    state = %{state | pair_count: pair_count}
+    image_count = state.image_count + 1
+    state = %{state | image_count: image_count}
 
     cond do
-      rem(pair_count, state.detect_every_n) != 0 -> {:noreply, state}
+      rem(image_count, state.detect_every_n) != 0 -> {:noreply, state}
       is_nil(pair.left) or is_nil(pair.depth) -> {:noreply, state}
       true -> {:noreply, submit(pair, state)}
     end
   end
 
-  # A frame that comes while boxes wait for their pair is skipped, as one that comes during an inference.
   def handle_cast({:camera_frame, %Frame{} = frame}, %{camera: %CameraDepth{}} = state) do
-    if DepthQueue.waiting?(state.waiting),
-      do: {:noreply, state},
-      else: {:noreply, take_frame(frame, state)}
+    case DepthQueue.admit(state.waiting, state.camera) do
+      {:ok, waiting} -> {:noreply, take_frame(frame, %{state | waiting: waiting})}
+      {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
+    end
   end
 
   def handle_cast(_message, state), do: {:noreply, state}
 
   defp take_frame(frame, state) do
-    pair_count = state.pair_count + 1
-    state = %{state | pair_count: pair_count}
+    image_count = state.image_count + 1
+    state = %{state | image_count: image_count}
 
-    with 0 <- rem(pair_count, state.detect_every_n),
+    with 0 <- rem(image_count, state.detect_every_n),
          {:ok, image} <- Frame.to_tensor(frame) do
-      submit(frame, image, state)
+      submit(%{frame | jpeg: nil, grey: nil, rgb: nil}, image, state)
     else
       _skipped -> state
     end
@@ -433,24 +446,22 @@ defmodule VisionCore.Detection.Pipeline do
         {:inference_detections, sequence, detections},
         %{sequence: sequence, pending: %Frame{} = frame} = state
       ) do
-    case detections |> select(state) |> Enum.map(&labelled(&1, state)) do
-      [] ->
-        publish(state, frame, [])
-        {:noreply, %{state | pending: nil}}
+    labelled = detections |> select(state) |> Enum.map(&labelled(&1, state))
+    now_ns = System.monotonic_time(:nanosecond)
 
-      labelled ->
-        state = %{state | pending: nil}
+    waiting =
+      if labelled != [] and CameraSource.placeable?(state.camera),
+        do: DepthQueue.put(state.waiting, {frame, labelled}, frame.capture_ns, now_ns),
+        else: DepthQueue.put_without_depth(state.waiting, {frame, labelled})
 
-        if CameraSource.placeable?(state.camera),
-          do: {:noreply, wait_for_pair(state, frame, labelled)},
-          else: {:noreply, place_frame({frame, labelled}, nil, state)}
-    end
+    {:noreply, place_settled(%{state | pending: nil, waiting: waiting}, now_ns)}
   end
 
   # A reply for a pair no longer waited on.
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
-  def handle_info(:pair_wait, state), do: {:noreply, place_settled(state)}
+  def handle_info(:pair_wait, %{camera: %CameraDepth{}} = state),
+    do: {:noreply, place_settled(state, System.monotonic_time(:nanosecond))}
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -473,16 +484,10 @@ defmodule VisionCore.Detection.Pipeline do
   defp label(detection, state),
     do: Enum.at(state.labels, detection.class_id, "class_#{detection.class_id}")
 
-  defp wait_for_pair(state, frame, detections) do
-    now_ns = System.monotonic_time(:nanosecond)
-    waiting = DepthQueue.put(state.waiting, {frame, detections}, frame.capture_ns, now_ns)
-    place_settled(%{state | waiting: waiting}, now_ns)
-  end
-
-  # Places the boxes whose pair is known, and has the pipeline told when to look again.
-  defp place_settled(state, now_ns \\ System.monotonic_time(:nanosecond)) do
+  # Places the boxes whose pair is known, in capture order, and has the pipeline told when to look again.
+  defp place_settled(state, now_ns) do
     {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
-    state = %{state | waiting: DepthQueue.schedule(waiting, now_ns)}
+    state = %{state | waiting: DepthQueue.schedule(waiting, state.camera, now_ns)}
     Enum.reduce(settled, state, fn {boxes, pair}, state -> place_frame(boxes, pair, state) end)
   end
 

@@ -11,16 +11,20 @@ defmodule VisionCore.Detection.CameraDepth do
 
   The pairs captured within `:pair_wait_ms` of the newest one are kept,
   at least two, each with its depth, its geometry and its left frame's
-  capture time and frame id only. A frame is matched with the pair whose left
-  capture time is closest to its own, within half the pair period, the
-  median spacing of the pairs kept; otherwise it has no depth, rather
-  than a stale one. The stereo pipeline publishes a pair well after its
-  capture, so the pair captured closest to a frame may come after the
-  frame's result: `match/3` says `:wait` until a pair captured at or
-  after the frame has come, and the pipeline waits for it at most its
-  `:pair_wait_ms` (`VisionCore.Detection.DepthQueue`), skipping the
-  camera's frames meanwhile, then matches with the pairs it has
-  (`match/3` with `final: true`).
+  capture time and frame id only. A frame is matched with the pair whose
+  left capture time is closest to its own, within half the pair period,
+  the median spacing of the pairs kept; otherwise it has no depth,
+  rather than a stale one. The stereo pipeline publishes a pair well
+  after its capture, so the pair captured closest to a frame may come
+  after the frame's result: `match/3` says `:wait` until a pair captured
+  at or after the frame has come, and the pipeline's results wait for it
+  (`VisionCore.Detection.DepthQueue`).
+
+  The stereo pairs have stalled (`stalled?/2`) before two have come, or
+  when none has come for two pair periods, by the time each arrived: the
+  stereo latency is more than a period, so capture times would always
+  look stalled. A pair that comes after a stall is kept alone, so the
+  pairs from before it do not stretch the period.
 
   ## The lens
 
@@ -45,6 +49,7 @@ defmodule VisionCore.Detection.CameraDepth do
     :owner,
     :wording,
     :keep_ns,
+    :received_ns,
     lenses: %{},
     pairs: []
   ]
@@ -67,7 +72,7 @@ defmodule VisionCore.Detection.CameraDepth do
   and pose, `nil` without, the owner its warnings name and their wording,
   its lens by frame size, `nil` for a size its calibration cannot be
   projected at, how far before the newest pair's capture pairs are kept,
-  and the pairs kept, newest first.
+  when the newest pair arrived and the pairs kept, newest first.
   """
   @type t :: %__MODULE__{
           name: atom(),
@@ -77,6 +82,7 @@ defmodule VisionCore.Detection.CameraDepth do
           owner: String.t(),
           wording: wording(),
           keep_ns: non_neg_integer(),
+          received_ns: integer() | nil,
           lenses: %{{pos_integer(), pos_integer()} => Reprojection.lens() | nil},
           pairs: [Pair.t()]
         }
@@ -142,15 +148,19 @@ defmodule VisionCore.Detection.CameraDepth do
   def projectable?(depth), do: not is_nil(depth.calibration) and not is_nil(depth.pose)
 
   @doc """
-  Keeps `pair`, when it has a depth map, without its images, and drops
-  the pairs captured more than `:pair_wait_ms` before it, keeping two.
+  Keeps `pair`, arrived at `now_ns`, when it has a depth map, without
+  its images, and drops the pairs captured more than `:pair_wait_ms`
+  before it, keeping two; after a stall of two pair periods, it is kept
+  alone.
   """
-  @spec add_pair(t(), Pair.t()) :: t()
-  def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair)
-      when is_binary(depth_map) and is_map(geometry),
-      do: %{depth | pairs: recent([slim(pair) | depth.pairs], depth.keep_ns)}
+  @spec add_pair(t(), Pair.t(), integer()) :: t()
+  def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair, now_ns)
+      when is_binary(depth_map) and is_map(geometry) do
+    kept = if gone_quiet?(depth, now_ns), do: [], else: depth.pairs
+    %{depth | pairs: recent([slim(pair) | kept], depth.keep_ns), received_ns: now_ns}
+  end
 
-  def add_pair(depth, _pair_without_depth), do: depth
+  def add_pair(depth, _pair_without_depth, _now_ns), do: depth
 
   # What matching and projecting read: the depth, its size, the geometry and the left frame's times.
   defp slim(%Pair{left_frame: %Frame{} = left_frame} = pair) do
@@ -173,6 +183,33 @@ defmodule VisionCore.Detection.CameraDepth do
       recent -> recent
     end
   end
+
+  @doc """
+  Whether the stereo pairs have stalled at `now_ns`: fewer than two have
+  come, or none for two pair periods since the last one arrived.
+  """
+  @spec stalled?(t(), integer()) :: boolean()
+  def stalled?(depth, now_ns) do
+    case stalls_at(depth) do
+      nil -> true
+      stall_ns -> now_ns > stall_ns
+    end
+  end
+
+  @doc """
+  When the stereo pairs stall if no other comes, `nil` while fewer than
+  two have come.
+  """
+  @spec stalls_at(t()) :: integer() | nil
+  def stalls_at(depth) do
+    case period_ns(depth.pairs) do
+      nil -> nil
+      period -> depth.received_ns + 2 * period
+    end
+  end
+
+  # Stalled with two pairs or more: none came for two periods.
+  defp gone_quiet?(depth, now_ns), do: not is_nil(stalls_at(depth)) and stalled?(depth, now_ns)
 
   @doc """
   The pair to take the depth of a frame captured at `capture_ns` from:
@@ -207,7 +244,7 @@ defmodule VisionCore.Detection.CameraDepth do
     end
   end
 
-  defp period_ns([_one]), do: nil
+  defp period_ns(pairs) when length(pairs) < 2, do: nil
 
   defp period_ns(pairs) do
     spacings =

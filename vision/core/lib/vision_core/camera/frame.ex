@@ -21,7 +21,8 @@ defmodule VisionCore.Camera.Frame do
     * `:jpeg` — the JPEG-compressed image bytes, or
     * `:grey` — `width * height` bytes of 8-bit grey, row-major, or
     * `:rgb` — `width * height * 3` bytes of 8-bit red, green and blue,
-      row-major. Exactly one of the three is set.
+      row-major. One of the three is set, except on a frame published
+      with a pipeline's results, which has none.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
   defstruct [:label, :width, :height, :capture_ns, frame_id: nil, jpeg: nil, grey: nil, rgb: nil]
