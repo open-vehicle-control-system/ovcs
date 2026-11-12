@@ -121,6 +121,9 @@ defmodule VisionCore.Detection.Pipeline do
       the newest pair's capture the pairs are kept.
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera of a camera source is read from.
+    * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
+      waits of a camera source are measured with, a function of no
+      argument.
   """
   use GenServer
 
@@ -226,7 +229,8 @@ defmodule VisionCore.Detection.Pipeline do
       # The pair, or camera frame, submitted with the in-flight inference: its boxes belong to it.
       pending: nil,
       # Camera frames' boxes waiting for the pair captured closest to each.
-      waiting: DepthQueue.new(pair_wait_ms)
+      waiting: DepthQueue.new(pair_wait_ms),
+      clock: Keyword.get(opts, :clock, &monotonic_ns/0)
     }
 
     if Process.whereis(VisionCore.Parameters),
@@ -236,6 +240,8 @@ defmodule VisionCore.Detection.Pipeline do
     if state.camera, do: :ok = Outputs.subscribe({:camera_frame, state.camera.server})
     {:ok, state}
   end
+
+  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
   defp camera_source(:stereo, _name, _pair_wait_ms, _opts), do: nil
 
@@ -375,7 +381,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraDepth{} = camera} = state) do
-    now_ns = System.monotonic_time(:nanosecond)
+    now_ns = state.clock.()
     state = %{state | camera: CameraSource.add_pair(camera, pair, now_ns)}
     {:noreply, place_settled(state, now_ns)}
   end
@@ -452,7 +458,7 @@ defmodule VisionCore.Detection.Pipeline do
         %{sequence: sequence, pending: %Frame{} = frame} = state
       ) do
     labelled = detections |> select(state) |> Enum.map(&labelled(&1, state))
-    now_ns = System.monotonic_time(:nanosecond)
+    now_ns = state.clock.()
 
     waiting =
       if labelled != [] and CameraSource.placeable?(state.camera),
@@ -466,7 +472,7 @@ defmodule VisionCore.Detection.Pipeline do
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(:pair_wait, %{camera: %CameraDepth{}} = state),
-    do: {:noreply, place_settled(state, System.monotonic_time(:nanosecond))}
+    do: {:noreply, place_settled(state, state.clock.())}
 
   def handle_info(_message, state), do: {:noreply, state}
 

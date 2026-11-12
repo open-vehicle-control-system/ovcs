@@ -92,6 +92,8 @@ defmodule VisionCore.Segmentation.Pipeline do
       pair's capture the pairs are kept.
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera is read from.
+    * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
+      waits for a pair are measured with, a function of no argument.
   """
   use GenServer
 
@@ -166,6 +168,7 @@ defmodule VisionCore.Segmentation.Pipeline do
       pending: nil,
       # Frames' label images waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
+      clock: Keyword.get(opts, :clock, &monotonic_ns/0),
       colourless_logged: false
     }
 
@@ -176,6 +179,8 @@ defmodule VisionCore.Segmentation.Pipeline do
     :ok = Outputs.subscribe({:camera_frame, state.camera.server})
     {:ok, state}
   end
+
+  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
   defp camera_depth({:camera, camera}, name, pair_wait_ms, opts) when is_atom(camera) do
     config =
@@ -302,7 +307,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    now_ns = System.monotonic_time(:nanosecond)
+    now_ns = state.clock.()
     state = %{state | camera: CameraDepth.add_pair(state.camera, pair, now_ns)}
     {:noreply, publish_settled(state, now_ns)}
   end
@@ -370,12 +375,12 @@ defmodule VisionCore.Segmentation.Pipeline do
   def handle_info({:inference_labels, _stale, _labels}, state), do: {:noreply, state}
 
   def handle_info(:pair_wait, state),
-    do: {:noreply, publish_settled(state, System.monotonic_time(:nanosecond))}
+    do: {:noreply, publish_settled(state, state.clock.())}
 
   def handle_info(_message, state), do: {:noreply, state}
 
   defp wait_for_pair(state, frame, labels) do
-    now_ns = System.monotonic_time(:nanosecond)
+    now_ns = state.clock.()
     {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =

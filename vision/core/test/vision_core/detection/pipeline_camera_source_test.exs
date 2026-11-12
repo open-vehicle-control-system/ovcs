@@ -74,12 +74,29 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     start_supervised!(
       {Pipeline,
-       [name: :hq_people, backend: Stub, source: {:camera, :hq}, config: config(dir, files)] ++
-         opts}
+       [
+         name: :hq_people,
+         backend: Stub,
+         source: {:camera, :hq},
+         config: config(dir, files),
+         clock: start_clock()
+       ] ++ opts}
     )
 
     :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
   end
+
+  # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
+  defp start_clock do
+    start_supervised!(%{
+      id: :clock,
+      start: {Agent, :start_link, [fn -> 0 end, [name: __MODULE__.Clock]]}
+    })
+
+    fn -> Agent.get(__MODULE__.Clock, & &1) end
+  end
+
+  defp set_clock(ms), do: Agent.update(__MODULE__.Clock, fn _now_ns -> ms * @ms end)
 
   # Matched at the frames' size, its rectified intrinsics the camera's scaled ones: a plane
   # `:distance_mm` away (2 m), or with `right_half: :none` its right half without depth, as out of
@@ -163,7 +180,6 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     _handled = :sys.get_state(Pipeline.HqPeople)
   end
 
-  # Pairs a second apart, so the stereo pairs do not stall while a test runs.
   test "waits for a pair captured after the frame, which may be closer", %{tmp_dir: dir} do
     start_pipeline(dir)
     publish_pair(0)
@@ -219,7 +235,8 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        backend_server: self(),
        source: {:camera, :hq},
        pair_wait_ms: 60_000,
-       config: config(dir, [:calibration, :pose])}
+       config: config(dir, [:calibration, :pose]),
+       clock: start_clock()}
     )
 
     :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
@@ -257,12 +274,36 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
   end
 
-  test "publishes at once without a distance when the stereo pairs stop for two pair periods",
+  test "publishes without a distance once the stereo pairs stop for two pair periods",
        %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
     publish_pair(10)
     publish_frame(100)
+    await_boxes()
+
+    set_clock(19)
+    send(Pipeline.HqPeople, :pair_wait)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    set_clock(21)
+    send(Pipeline.HqPeople, :pair_wait)
+
+    assert [person] = detections()
+    assert_no_distance(person)
+  end
+
+  test "publishes without a distance once the boxes waited pair_wait_ms", %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 500)
+    publish_pair(0)
+    publish_pair(1_000)
+    publish_frame(1_600)
+    await_boxes()
+
+    set_clock(499)
+    send(Pipeline.HqPeople, :pair_wait)
+    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    set_clock(500)
+    send(Pipeline.HqPeople, :pair_wait)
 
     assert [person] = detections()
     assert_no_distance(person)

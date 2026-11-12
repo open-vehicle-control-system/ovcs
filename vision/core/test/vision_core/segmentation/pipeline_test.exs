@@ -81,12 +81,28 @@ defmodule VisionCore.Segmentation.PipelineTest do
          name: :road,
          backend: Stub,
          source: {:camera, :hq},
-         config: config(dir, files, principal_point)
+         config: config(dir, files, principal_point),
+         clock: start_clock()
        ] ++ opts}
     )
 
     :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
   end
+
+  # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
+  defp start_clock do
+    if Process.whereis(__MODULE__.Clock),
+      do: set_clock(0),
+      else:
+        start_supervised!(%{
+          id: :clock,
+          start: {Agent, :start_link, [fn -> 0 end, [name: __MODULE__.Clock]]}
+        })
+
+    fn -> Agent.get(__MODULE__.Clock, & &1) end
+  end
+
+  defp set_clock(ms), do: Agent.update(__MODULE__.Clock, fn _now_ns -> ms * @ms end)
 
   # A pair captured at `capture_ms` measuring 2 m at each of `pixels`, `{column, row}`, or at
   # every pixel without them.
@@ -282,12 +298,35 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert {%{width: 4}, nil} = segmentation()
   end
 
-  test "publishes the label image without clouds at once when the stereo pairs stop for two pair periods",
+  test "publishes the label image without clouds once the stereo pairs stop for two pair periods",
        %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
     publish_pair(10)
     publish_frame(100)
+    await_labels()
+
+    set_clock(19)
+    send(Pipeline.Road, :pair_wait)
+    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    set_clock(21)
+    send(Pipeline.Road, :pair_wait)
+
+    assert {%{width: 4}, nil} = segmentation()
+  end
+
+  test "publishes the label image without clouds once it waited pair_wait_ms", %{tmp_dir: dir} do
+    start_pipeline(dir, pair_wait_ms: 500)
+    publish_pair(0)
+    publish_pair(1_000)
+    publish_frame(1_600)
+    await_labels()
+
+    set_clock(499)
+    send(Pipeline.Road, :pair_wait)
+    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    set_clock(500)
+    send(Pipeline.Road, :pair_wait)
 
     assert {%{width: 4}, nil} = segmentation()
   end
@@ -298,7 +337,6 @@ defmodule VisionCore.Segmentation.PipelineTest do
     _handled = :sys.get_state(Pipeline.Road)
   end
 
-  # Pairs a second apart, so the stereo pairs do not stall while a test runs.
   test "segments the frames that come while label images wait, publishing each in capture order with clouds",
        %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
@@ -337,7 +375,8 @@ defmodule VisionCore.Segmentation.PipelineTest do
        backend_server: {self(), @label_image},
        source: {:camera, :hq},
        pair_wait_ms: 60_000,
-       config: config(dir, [:calibration, :pose])}
+       config: config(dir, [:calibration, :pose]),
+       clock: start_clock()}
     )
 
     :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
