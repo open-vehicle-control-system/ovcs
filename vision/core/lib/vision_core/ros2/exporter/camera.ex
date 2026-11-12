@@ -15,7 +15,8 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       frame id the frame carries. The camera info is the calibration's K
       and D, scaled to the frame's size, with R the identity and P = K
       padded with a zero column: the camera is not one of a rectified
-      pair. Without a calibration it is empty.
+      pair. Without a calibration, or with one of another aspect ratio
+      than the frames', which is logged, it is empty.
     * Its **pose** relative to the stereo pair (`VisionCore.Camera.Pose`)
       as a `tf2_msgs/TFMessage` transform from the stereo left optical
       frame to the camera's `frame_id` (`transform_message/3`).
@@ -38,7 +39,8 @@ defmodule VisionCore.Ros2.Exporter.Camera do
 
   @typedoc """
   One camera's: its name, frame id, topics, service, calibration and
-  pose, the frames seen and the next image's slot.
+  pose, the frames seen, the next image's slot and the frame size its
+  calibration was last logged as not fitting.
   """
   @type t :: %{
           name: atom(),
@@ -51,7 +53,8 @@ defmodule VisionCore.Ros2.Exporter.Camera do
           raw_image_max_hz: number(),
           camera_info_interval_frames: pos_integer(),
           frame_counter: non_neg_integer(),
-          next_image_ms: number() | nil
+          next_image_ms: number() | nil,
+          misfit_size: {pos_integer(), pos_integer()} | nil
         }
 
   @doc """
@@ -83,7 +86,8 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       raw_image_max_hz: options[:raw_image_max_hz],
       camera_info_interval_frames: options[:camera_info_interval_frames],
       frame_counter: 0,
-      next_image_ms: nil
+      next_image_ms: nil,
+      misfit_size: nil
     }
   end
 
@@ -96,7 +100,11 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   @doc "`camera` with its calibration read again from `calibration_path`."
   @spec reload(t(), Path.t() | nil) :: t()
   def reload(camera, calibration_path),
-    do: %{camera | calibration: load_calibration(calibration_path, camera.name)}
+    do: %{
+      camera
+      | calibration: load_calibration(calibration_path, camera.name),
+        misfit_size: nil
+    }
 
   @doc """
   The messages of the camera's `frame` at `now_ms`, and the camera after
@@ -114,12 +122,13 @@ defmodule VisionCore.Ros2.Exporter.Camera do
 
     {image, camera} = image(frame, camera, header, now_ms, encode)
 
-    camera_info =
-      if rem(camera.frame_counter, camera.camera_info_interval_frames) == 0,
-        do: [
-          {camera.camera_info_topic, CameraInfo, camera_info(camera.calibration, header, frame)}
-        ],
-        else: []
+    {camera_info, camera} =
+      if rem(camera.frame_counter, camera.camera_info_interval_frames) == 0 do
+        {message, camera} = camera_info(camera, header, frame)
+        {[{camera.camera_info_topic, CameraInfo, message}], camera}
+      else
+        {[], camera}
+      end
 
     {image ++ camera_info, %{camera | frame_counter: camera.frame_counter + 1}}
   end
@@ -143,10 +152,19 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     end
   end
 
-  defp camera_info(nil, header, %Frame{width: width, height: height}),
+  defp camera_info(%{calibration: nil} = camera, header, frame),
+    do: {empty_camera_info(header, frame), camera}
+
+  defp camera_info(%{calibration: calibration} = camera, header, %Frame{} = frame) do
+    if CameraCalibration.proportional?(calibration, frame.width, frame.height),
+      do: {scaled_camera_info(calibration, header, frame), camera},
+      else: {empty_camera_info(header, frame), note_misfit(camera, frame)}
+  end
+
+  defp empty_camera_info(header, %Frame{width: width, height: height}),
     do: %CameraInfo{header: header, width: width, height: height}
 
-  defp camera_info(calibration, header, %Frame{width: width, height: height}) do
+  defp scaled_camera_info(calibration, header, %Frame{width: width, height: height}) do
     calibration = CameraCalibration.scale_to(calibration, width, height)
     [fx, skew, cx, _, fy, cy, _, _, _] = calibration.camera_matrix
 
@@ -160,6 +178,21 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       r: @identity_3x3,
       p: [fx, skew, cx, 0.0, 0.0, fy, cy, 0.0, 0.0, 0.0, 1.0, 0.0]
     }
+  end
+
+  defp note_misfit(%{misfit_size: {width, height}} = camera, %Frame{width: width, height: height}),
+       do: camera
+
+  defp note_misfit(camera, %Frame{width: width, height: height}) do
+    %{calibration: calibration} = camera
+
+    Logger.warning(
+      "camera #{camera.name}: its #{calibration.width}x#{calibration.height} calibration does " <>
+        "not fit its #{width}x#{height} frames, of another aspect ratio, so its camera info is " <>
+        "empty: calibrate the camera at that size"
+    )
+
+    %{camera | misfit_size: {width, height}}
   end
 
   @doc """

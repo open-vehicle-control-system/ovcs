@@ -133,6 +133,24 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
                [405.0, 0.0, 507.25, 0.0, 0.0, 404.5, 380.25, 0.0, 0.0, 0.0, 1.0, 0.0]
     end
 
+    test "a calibration of another aspect ratio than the frame's gives an empty camera info, saying so once" do
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          {[_image, {_topic, CameraInfo, camera_info}], camera} =
+            Camera.frame_messages(rgb_frame(96, 40), camera(), 0, &encode/1)
+
+          assert {camera_info.width, camera_info.height} == {96, 40}
+          assert camera_info.k == %CameraInfo{}.k
+
+          {_messages, camera} = Camera.frame_messages(rgb_frame(96, 40), camera, 1_000, &encode/1)
+
+          {_messages, _camera} =
+            Camera.frame_messages(rgb_frame(96, 40), camera, 2_000, &encode/1)
+        end)
+
+      assert [_once] = Regex.scan(~r/96x72 calibration .* 96x40/, log)
+    end
+
     test "without a calibration, an empty camera info of the frame's size" do
       {[_image, {_topic, CameraInfo, camera_info}], _camera} =
         Camera.frame_messages(rgb_frame(48, 36), camera(%{calibration_path: nil}), 0, &encode/1)

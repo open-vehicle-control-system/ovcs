@@ -127,4 +127,25 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
       assert CameraCalibration.scale_to(sized, 640, 360) == sized
     end
   end
+
+  describe "proportional?/3" do
+    setup do
+      %{calibration: %{CameraCalibration.parse(@ost_style) | width: 4056, height: 3040}}
+    end
+
+    test "is true for a resize that keeps the aspect ratio within 1 %", %{
+      calibration: calibration
+    } do
+      assert CameraCalibration.proportional?(calibration, 2028, 1520)
+      assert CameraCalibration.proportional?(calibration, 1014, 760)
+      assert CameraCalibration.proportional?(%{calibration | width: 0, height: 0}, 2028, 1080)
+    end
+
+    test "is false for a size of another aspect ratio, as a cropping sensor mode gives", %{
+      calibration: calibration
+    } do
+      refute CameraCalibration.proportional?(calibration, 2028, 1080)
+      refute CameraCalibration.proportional?(calibration, 4056, 2980)
+    end
+  end
 end

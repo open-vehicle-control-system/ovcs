@@ -137,6 +137,43 @@ defmodule VisionCore.Detection.CameraDepthTest do
     end
   end
 
+  describe "lens/2" do
+    @tag :tmp_dir
+    test "has none for frames of another aspect ratio than the calibration's, saying so once",
+         %{tmp_dir: dir} do
+      calibration = %VisionCore.Ros2.CameraCalibration{
+        width: 80,
+        height: 40,
+        distortion_model: "plumb_bob",
+        distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0],
+        camera_matrix: [100.0, 0.0, 40.0, 0.0, 100.0, 20.0, 0.0, 0.0, 1.0],
+        rectification_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        projection_matrix: [100.0, 0.0, 40.0, 0.0, 0.0, 100.0, 20.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+      }
+
+      path = Path.join(dir, "hq.yaml")
+      File.write!(path, VisionCore.Ros2.CameraCalibration.to_yaml(calibration, "hq"))
+
+      config = %VisionCore.Config{
+        components: [
+          {:camera, [name: :hq, driver: VisionCore.Camera.GStreamer, calibration: path]}
+        ]
+      }
+
+      depth = CameraDepth.new(:hq, config, "test pipeline", @wording, pair_wait_ms: 500)
+      assert {lens, depth} = CameraDepth.lens(depth, {40, 20})
+      refute is_nil(lens)
+
+      log =
+        capture_log(fn ->
+          assert {nil, depth} = CameraDepth.lens(depth, {40, 30})
+          assert {nil, _depth} = CameraDepth.lens(depth, {40, 30})
+        end)
+
+      assert [_once] = Regex.scan(~r/camera hq: its 80x40 calibration .* 40x30/, log)
+    end
+  end
+
   describe "stalled?/2" do
     test "is stalled before two pairs came" do
       refute CameraDepth.stalled?(with_pairs(depth(), [0, 100]), 100 * @ms)

@@ -125,7 +125,7 @@ A camera of its own is described to the rest of the unit by three options of its
  pose: Application.app_dir(:<vehicle>, "priv/calibration/hq_pose.yaml")}
 ```
 
-- `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is scaled to them, so one made at the sensor's full size serves `output: :half`.
+- `calibration:` is its `camera_info` YAML, as `cameracalibrator` writes it: K and D, `plumb_bob` or `equidistant` for a fisheye lens. A calibration of another size than the frames is scaled to them, so one made at the sensor's full size serves `output: :half`. Frames of another aspect ratio, from a sensor mode that crops, see another part of the sensor: their camera info is empty and no stereo depth is projected into them, which is logged, until the camera is calibrated at that size.
 - `calibration_store_dir:` is a writable directory: a calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`.
 - `pose:` is the camera's pose relative to the stereo pair: the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame, `p_camera = rotation × p_left + translation` in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration: a new stereo calibration changes the rectified frame, so measure the pose again.
 

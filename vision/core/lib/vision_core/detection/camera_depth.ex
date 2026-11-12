@@ -30,7 +30,9 @@ defmodule VisionCore.Detection.CameraDepth do
 
   The camera's calibration is scaled to each frame size it sees
   (`VisionCore.Ros2.CameraCalibration.scale_to/3`) and read once for that
-  size (`VisionCore.Detection.Reprojection.lens/1`).
+  size (`VisionCore.Detection.Reprojection.lens/1`). A size of another
+  aspect ratio, a sensor mode that crops, has no lens: its pixels see
+  another part of the sensor than the calibration's.
   """
   require Logger
 
@@ -281,7 +283,8 @@ defmodule VisionCore.Detection.CameraDepth do
   @doc """
   The camera's lens at frames of `size`, `{width, height}`: `nil`
   without a calibration, or with one that cannot be projected at that
-  size, which is logged once. Returns it with the depth, which keeps it.
+  size or is of another aspect ratio, which is logged once. Returns it
+  with the depth, which keeps it.
   """
   @spec lens(t(), {pos_integer(), pos_integer()}) :: {Reprojection.lens() | nil, t()}
   def lens(%{calibration: nil} = depth, _size), do: {nil, depth}
@@ -289,12 +292,22 @@ defmodule VisionCore.Detection.CameraDepth do
   def lens(depth, size) when is_map_key(depth.lenses, size), do: {depth.lenses[size], depth}
 
   def lens(depth, {width, height} = size) do
-    calibration = CameraCalibration.scale_to(depth.calibration, width, height)
+    calibration = depth.calibration
 
     lens =
-      case Reprojection.check(calibration) do
-        :ok ->
-          Reprojection.lens(calibration)
+      with true <- CameraCalibration.proportional?(calibration, width, height),
+           scaled = CameraCalibration.scale_to(calibration, width, height),
+           :ok <- Reprojection.check(scaled) do
+        Reprojection.lens(scaled)
+      else
+        false ->
+          Logger.warning(
+            "camera #{depth.name}: its #{calibration.width}x#{calibration.height} calibration " <>
+              "cannot #{depth.wording.lens} at #{width}x#{height}, of another aspect ratio: " <>
+              "calibrate the camera at that size"
+          )
+
+          nil
 
         {:error, message} ->
           Logger.warning(

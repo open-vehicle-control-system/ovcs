@@ -67,6 +67,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
           projection_matrix: [float()]
         }
 
+  @aspect_tolerance 0.01
   @empty_3x3 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
   # Written as rows and flattened: `mix format` puts a flat 12-element
   # list one element per line, which loses the 3x4 shape entirely.
@@ -195,9 +196,9 @@ defmodule VisionCore.Ros2.CameraCalibration do
   `P[0,0]` scale by the same factor. Distortion coefficients `D` and
   the rectification rotation `R` are resolution-invariant.
 
-  Only valid for a proportional resize. Changing the *aspect* ratio
-  changes which part of the sensor is sampled and needs a fresh
-  calibration, not a rescale.
+  Only valid for a proportional resize (`proportional?/3`). Changing the
+  *aspect* ratio changes which part of the sensor is sampled and needs a
+  fresh calibration, not a rescale.
 
   The principal point scales with the pixel's corner as origin: `cx`
   becomes `cx × s`, `s` the new width over the saved one. Rectification
@@ -230,6 +231,18 @@ defmodule VisionCore.Ros2.CameraCalibration do
         }
     end
   end
+
+  @doc """
+  Whether `scale_to/3` can take `calibration` to `width × height`: the
+  two aspect ratios are within 1 % of each other, or the calibration has
+  no size.
+  """
+  @spec proportional?(t(), pos_integer(), pos_integer()) :: boolean()
+  def proportional?(%__MODULE__{width: saved_width, height: saved_height}, width, height)
+      when saved_width > 0 and saved_height > 0,
+      do: abs(width * saved_height / (height * saved_width) - 1) <= @aspect_tolerance
+
+  def proportional?(%__MODULE__{}, _width, _height), do: true
 
   defp scale_3x3([r0c0, r0c1, r0c2, r1c0, r1c1, r1c2, r2c0, r2c1, r2c2], scale_x, scale_y) do
     [
