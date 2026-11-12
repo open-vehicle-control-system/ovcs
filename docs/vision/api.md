@@ -498,17 +498,17 @@ A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmen
 The grid is stretched over the band, each cell the band's width over the grid's width wide, and its height over the grid's height high. On every join, a rejoin included, the channel pushes a `classes` event before any grid: `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
 
 ```javascript
-const road = socket.channel('segmentation:road')
+const scene = socket.channel('segmentation:scene')
 let classes = null
-road.on('classes', (names) => { classes = names })
-road.on('segmentation', (payload) => {
+scene.on('classes', (names) => { classes = names })
+scene.on('segmentation', (payload) => {
   const view = new DataView(payload)
   const [frameW, frameH, x, y, w, h, gridW, gridH] = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => view.getUint16(i * 2, true))
   const grid = new Uint8Array(payload, 16, gridW * gridH)
   console.log(classes?.labels[grid[0]], `over ${w}×${h} at ${x},${y} of ${frameW}×${frameH}`)
-  road.push('ack', {})
+  scene.push('ack', {})
 })
-road.join()
+scene.join()
 ```
 
 A name no segmentation pipeline of the unit runs under, a detection pipeline's included, is refused with `{"reason": "unavailable"}`.

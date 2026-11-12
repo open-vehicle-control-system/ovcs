@@ -13,7 +13,8 @@ defmodule Ovcs1.Vision.Composer do
   ROS 2 exporter both show as it is; and `:inference`, 1014 × 760,
   averaged from it 2 × 2. On the Hexagon NPU,
   YOLOX detects objects on `:inference`, the `:objects` pipeline, and
-  FFNet segments the road on it, the `:road` pipeline: the models' inputs
+  FFNet segments the scene on it, the `:scene` pipeline, its road and
+  off-road points among what it publishes: the models' inputs
   are smaller still, so the full image would cross to their Ports only
   to be shrunk there. Both take their distances from the stereo depth
   projected into the camera.
@@ -48,7 +49,7 @@ defmodule Ovcs1.Vision.Composer do
   alias VisionCore.Stereo.{NxSegment, Pipeline}
 
   @detection_model "priv/models/yolox_w8a8.dlc"
-  @road_model "priv/models/ffnet_122ns_lowres.dlc"
+  @segmentation_model "priv/models/ffnet_122ns_lowres.dlc"
   @center_calibration "priv/calibration/center.yaml"
   @center_pose "priv/calibration/center_pose.yaml"
   @calibration_store_dir "/data/vision/calibration"
@@ -75,9 +76,9 @@ defmodule Ovcs1.Vision.Composer do
          dlc_path: Application.app_dir(:ovcs1, @detection_model),
          score_threshold: 0.4},
         {:qnn_segmenter,
-         name: :road,
+         name: :scene,
          source: {:camera, :center, :inference},
-         dlc_path: Application.app_dir(:ovcs1, @road_model),
+         dlc_path: Application.app_dir(:ovcs1, @segmentation_model),
          segment_every_n: 1}
       ],
       preview: [max_hz: 30, outputs: [center: :view_jpeg]],
@@ -87,7 +88,7 @@ defmodule Ovcs1.Vision.Composer do
          stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],
          cameras: [names: [:center], outputs: [center: :view_jpeg]],
-         segmentation: [pipelines: [:road]]}
+         segmentation: [pipelines: [:scene]]}
       ]
     }
   end
@@ -100,7 +101,7 @@ defmodule Ovcs1.Vision.Composer do
       "priv/calibration/stereo_right.yaml",
       @center_calibration,
       @detection_model,
-      @road_model
+      @segmentation_model
     ]
   end
 

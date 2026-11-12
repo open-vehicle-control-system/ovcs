@@ -42,11 +42,11 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "road segmentation runs on the NPU on the center camera" do
+  test "scene segmentation runs on the NPU on the center camera" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
 
     assert [segmenter] = Keyword.get_values(components, :qnn_segmenter)
-    assert segmenter[:name] == :road
+    assert segmenter[:name] == :scene
     assert segmenter[:source] == {:camera, :center, :inference}
     assert segmenter[:segment_every_n] == 1
     assert String.ends_with?(segmenter[:dlc_path], "priv/models/ffnet_122ns_lowres.dlc")
@@ -158,13 +158,13 @@ defmodule Ovcs1.VisionComposerTest do
     end
   end
 
-  test "the ROS 2 exporter publishes the center camera, its detections and its road" do
+  test "the ROS 2 exporter publishes the center camera, its detections and its scene" do
     config = Ovcs1.Vision.Composer.config(:target)
     options = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
     assert options[:detections][:pipelines] == [:objects]
     assert options[:cameras][:names] == [:center]
-    assert options[:segmentation][:pipelines] == [:road]
+    assert options[:segmentation][:pipelines] == [:scene]
 
     assert VisionCore.Exporter.output_key({:camera_frame, :center, :view_jpeg}, config) ==
              {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :view_jpeg}
