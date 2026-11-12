@@ -18,7 +18,7 @@
 use std::io::{self, Write};
 
 use jpeg_decoder::Decoder;
-use turbojpeg::{Image, PixelFormat, Subsamp};
+use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 const ENCODE: u8 = 0;
 const DECODE: u8 = 1;
@@ -289,16 +289,16 @@ const TURBO: [[u8; 3]; 256] = [
     [122, 4, 3],
 ];
 
-fn reply_to(request: &[u8]) -> Option<Vec<u8>> {
+fn reply_to(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     match request.split_first()? {
-        (&ENCODE, body) => encode(body),
+        (&ENCODE, body) => encode(compressor, body),
         (&DECODE, body) => decode_luma(body),
-        (&DEPTH, body) => encode_depth(body),
+        (&DEPTH, body) => encode_depth(compressor, body),
         _ => None,
     }
 }
 
-fn encode(request: &[u8]) -> Option<Vec<u8>> {
+fn encode(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     let header = request.get(..ENCODE_HEADER)?;
     let width = u16::from_le_bytes([header[0], header[1]]);
     let height = u16::from_le_bytes([header[2], header[3]]);
@@ -315,15 +315,15 @@ fn encode(request: &[u8]) -> Option<Vec<u8>> {
     {
         return None;
     }
-    compress(pixels, width, height, format, quality)
+    compress(compressor, pixels, (width, height), format, quality)
 }
 
 /// Grey or RGB `pixels` as a JPEG, its chroma 4:2:0 below quality 90 and
 /// 4:4:4 from 90 up. The caller checks that `pixels` holds the image.
 fn compress(
+    compressor: &mut Compressor,
     pixels: &[u8],
-    width: u16,
-    height: u16,
+    (width, height): (u16, u16),
     format: PixelFormat,
     quality: u8,
 ) -> Option<Vec<u8>> {
@@ -340,8 +340,11 @@ fn compress(
         height,
         format,
     };
-    let jpeg = turbojpeg::compress(image, i32::from(quality.clamp(1, 100)), subsamp).ok()?;
-    Some(jpeg.to_vec())
+    compressor
+        .set_quality(i32::from(quality.clamp(1, 100)))
+        .and_then(|()| compressor.set_subsamp(subsamp))
+        .and_then(|()| compressor.compress_to_vec(image))
+        .ok()
 }
 
 // A colour JPEG's luma is computed back from its RGB with BT.601 weights,
@@ -364,7 +367,7 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     Some(reply)
 }
 
-fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
+fn encode_depth(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     let header = request.get(..DEPTH_HEADER)?;
     let u16_at = |offset: usize| u16::from_le_bytes([header[offset], header[offset + 1]]);
     let (width, height, quality) = (u16_at(0), u16_at(2), header[4]);
@@ -385,9 +388,9 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     let far = if far_mm == 0 { u16::MAX } else { far_mm };
     let range = near.map(|near| (near, far.max(near.saturating_add(1))));
     compress(
+        compressor,
         &depth_colours(&depth, range),
-        width,
-        height,
+        (width, height),
         PixelFormat::RGB,
         quality,
     )
@@ -443,8 +446,9 @@ fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
 fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
+    let mut compressor = Compressor::new().map_err(io::Error::other)?;
     while let Some(request) = framing::read_record(&mut input, MAX_REQUEST_BYTES)? {
-        let reply = reply_to(&request).unwrap_or_default();
+        let reply = reply_to(&mut compressor, &request).unwrap_or_default();
         output.write_all(&(reply.len() as u32).to_be_bytes())?;
         output.write_all(&reply)?;
         output.flush()?;
@@ -455,6 +459,15 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The reply of a codec that kept its compressor from other requests.
+    fn reply_to(request: &[u8]) -> Option<Vec<u8>> {
+        thread_local! {
+            static COMPRESSOR: std::cell::RefCell<Compressor> =
+                std::cell::RefCell::new(Compressor::new().unwrap());
+        }
+        COMPRESSOR.with_borrow_mut(|compressor| super::reply_to(compressor, request))
+    }
 
     fn request(width: u16, height: u16, channels: u8, pixels: &[u8]) -> Vec<u8> {
         let mut request = vec![ENCODE];
