@@ -409,6 +409,27 @@ defmodule VisionCore.Exporter.RunnerTest do
                )
     end
 
+    test "refuses to start on a camera output the camera does not send" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      assert {:error, {{:unsent_output, {:camera_frame, :hq, :view}}, _child}} =
+               start_supervised(
+                 {Runner,
+                  exporter: Forwarder,
+                  options: [test: self(), outputs: [{:camera_frame, :hq, :view}]],
+                  config: config}
+               )
+    end
+
     test "leaves out an output the configuration has no producer of" do
       runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
 

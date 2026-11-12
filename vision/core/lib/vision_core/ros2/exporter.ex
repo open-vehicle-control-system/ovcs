@@ -216,6 +216,14 @@ defmodule VisionCore.Ros2.Exporter do
          "its cameras: outputs names the camera #{inspect(hd(unpublished))}, " <>
            "which it does not publish"}
 
+      unsent =
+          Enum.find(outputs, fn {name, output} -> Unit.unsent_output?(config, name, output) end) ->
+        {name, output} = unsent
+
+        {:error,
+         "its cameras: outputs gives the camera #{inspect(name)} the output " <>
+           "#{inspect(output)}, which it does not send (send: false)"}
+
       missing =
           Enum.find(outputs, fn {name, output} -> !Unit.output_key(config, name, output) end) ->
         {name, output} = missing

@@ -158,6 +158,45 @@ defmodule VisionCore.Camera.OutputTest do
       end
     end
 
+    test "makes an output with send: false only for the outputs made from it" do
+      assert {:ok, [view, view_jpeg, half, quarter]} =
+               Output.resolve(
+                 [
+                   view: Keyword.put(@view, :send, false),
+                   view_jpeg: [from: :view, format: :jpeg],
+                   half: [resolution: {1014, 760}, from: :view, send: false],
+                   quarter: [resolution: {507, 380}, from: :half, send: true]
+                 ],
+                 @processors,
+                 formats: [:rgb, :jpeg]
+               )
+
+      assert Enum.map([view, view_jpeg, half, quarter], &{&1.name, &1.index, &1.send}) == [
+               {:view, 0, false},
+               {:view_jpeg, 1, true},
+               {:half, 2, false},
+               {:quarter, 3, true}
+             ]
+
+      assert Output.sent([view, view_jpeg, half, quarter]) == [view_jpeg, quarter]
+    end
+
+    test "refuses an output it does not send unless another is made from it" do
+      for {outputs, message} <- [
+            {[view: Keyword.put(@view, :send, false)],
+             "output view: it is not sent (send: false), and no output is made from it"},
+            {[view: @view, half: [resolution: {1014, 760}, from: :view, send: false]],
+             "output half: it is not sent (send: false), and no output is made from it"},
+            {[view: @view, view_jpeg: [from: :view, format: :jpeg, send: false]],
+             "output view_jpeg: it is not sent (send: false), and no output is made from it"},
+            {[view: Keyword.put(@view, :send, "no")],
+             "output view: its :send is true or false, got \"no\""}
+          ] do
+        assert Output.resolve(outputs, @processors, formats: [:rgb, :jpeg]) == {:error, message},
+               inspect(outputs)
+      end
+    end
+
     test "refuses a JPEG the camera cannot make" do
       for {outputs, formats, message} <- [
             {[view: @view, view_jpeg: [from: :view, format: :jpeg]], [:rgb],

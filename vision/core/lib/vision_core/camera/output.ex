@@ -20,10 +20,16 @@ defmodule VisionCore.Camera.Output do
   `:quality` 1 to 100 (80). An output made `:from` another has that
   output's `:resolution` unless it is given one.
 
-  The first output in the configuration is the camera's default, the
-  one a consumer that names no output takes (`VisionCore.Camera.Unit`).
-  `:index` is the output's place among those the driver makes: an output
-  scaled from another comes after it.
+  An output with `send: false` is made at every frame, for the outputs
+  made `:from` it, but its frames are not sent to the vision core: no
+  consumer takes it (`sent/1`). Only an output another is made from
+  can be left unsent.
+
+  The first sent output in the configuration is the camera's default,
+  the one a consumer that names no output takes
+  (`VisionCore.Camera.Unit`). `:index` is the output's place among those
+  the driver makes, sent or not: an output scaled from another comes
+  after it.
   """
 
   @enforce_keys [:name, :index, :width, :height]
@@ -35,7 +41,8 @@ defmodule VisionCore.Camera.Output do
     processor: nil,
     from: nil,
     format: :rgb,
-    quality: nil
+    quality: nil,
+    send: true
   ]
 
   @type t :: %__MODULE__{
@@ -46,13 +53,14 @@ defmodule VisionCore.Camera.Output do
           processor: atom() | nil,
           from: atom() | nil,
           format: :rgb | :jpeg,
-          quality: 1..100 | nil
+          quality: 1..100 | nil,
+          send: boolean()
         }
 
   @typedoc "Each processor a driver has, with the resolutions it can make."
   @type processors :: %{atom() => [{pos_integer(), pos_integer()}]}
 
-  @options [:resolution, :processor, :from, :format, :quality]
+  @options [:resolution, :processor, :from, :format, :quality, :send]
   @formats [:rgb, :jpeg]
   @default_quality 80
 
@@ -64,9 +72,10 @@ defmodule VisionCore.Camera.Output do
   `:resolution`, neither or both of `:processor` and `:from`, a
   processor the driver lacks or a resolution it cannot make, a format
   it does not send, a JPEG made by a processor, a `:quality` outside 1
-  to 100 or without `format: :jpeg`, a `:from` naming no output or a
-  JPEG, outputs whose `:from` runs in a cycle, or a size that is not a
-  whole fraction of its source's.
+  to 100 or without `format: :jpeg`, a `:send` other than a boolean, a
+  `:from` naming no output or a JPEG, outputs whose `:from` runs in a
+  cycle, a size that is not a whole fraction of its source's, or an
+  output with `send: false` that no output is made from.
   """
   @spec resolve(term(), processors(), [{:formats, [:rgb | :jpeg]}]) ::
           {:ok, [t()]} | {:error, String.t()}
@@ -79,8 +88,13 @@ defmodule VisionCore.Camera.Output do
          {:ok, indices} <- indices(described),
          sized = inherit_resolutions(described, indices),
          :ok <- check_sources(sized),
+         :ok <- check_unsent_sources(sized),
          do: {:ok, Enum.map(sized, &%{&1 | index: Map.fetch!(indices, &1.name)})}
   end
+
+  @doc "The outputs of `outputs` sent to the vision core, in their order."
+  @spec sent([t()]) :: [t()]
+  def sent(outputs), do: Enum.filter(outputs, & &1.send)
 
   @doc "`outputs` in the order of their indices, the order the driver makes them in."
   @spec port_order([t()]) :: [t()]
@@ -116,6 +130,7 @@ defmodule VisionCore.Camera.Output do
          {:ok, maker} <- maker(options),
          {:ok, {width, height}} <- resolution(options[:resolution], maker),
          {:ok, {format, quality}} <- format(options, maker, formats),
+         {:ok, send} <- send_option(Keyword.get(options, :send, true)),
          :ok <- check_processor(maker, {width, height}, processors) do
       {:ok,
        %__MODULE__{
@@ -126,7 +141,8 @@ defmodule VisionCore.Camera.Output do
          processor: maker[:processor],
          from: maker[:from],
          format: format,
-         quality: quality
+         quality: quality,
+         send: send
        }}
     end
   end
@@ -202,6 +218,9 @@ defmodule VisionCore.Camera.Output do
   defp jpeg_quality(other),
     do: {:error, "its :quality is an integer from 1 to 100, got #{inspect(other)}"}
 
+  defp send_option(send) when is_boolean(send), do: {:ok, send}
+  defp send_option(other), do: {:error, "its :send is true or false, got #{inspect(other)}"}
+
   defp check_processor([from: _source], _resolution, _processors), do: :ok
 
   defp check_processor([processor: processor], resolution, processors) do
@@ -271,6 +290,19 @@ defmodule VisionCore.Camera.Output do
             with :ok <- whole_fraction(output, source), do: nil
         end
     end)
+  end
+
+  defp check_unsent_sources(described) do
+    sources = MapSet.new(described, & &1.from)
+
+    case Enum.find(described, &(not &1.send and &1.name not in sources)) do
+      nil ->
+        :ok
+
+      unsent ->
+        {:error,
+         "output #{unsent.name}: it is not sent (send: false), and no output is made from it"}
+    end
   end
 
   defp whole_fraction(output, source) do

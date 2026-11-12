@@ -115,6 +115,47 @@ defmodule VisionCore.Camera.UnitTest do
     end
   end
 
+  describe "a camera with an output it does not send" do
+    @unsent_view [
+      view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+      view_jpeg: [from: :view, format: :jpeg],
+      inference: [resolution: {1014, 760}, from: :view]
+    ]
+
+    setup do
+      config =
+        config([{:camera, name: :hq, driver: V4L2Single, csiphy: 2, outputs: @unsent_view}])
+
+      %{config: config, server: V4L2Single.name_for("hq")}
+    end
+
+    test "has no key for it, and its first sent output is its default", %{
+      config: config,
+      server: server
+    } do
+      assert Unit.output_key(config, :hq, :view) == nil
+      assert Unit.output_key(config, :hq, nil) == {:camera_frame, server, :view_jpeg}
+      assert Unit.output_key(config, :hq, :inference) == {:camera_frame, server, :inference}
+      assert Unit.outputs(config) == [{{:camera_frame, :hq}, {:camera_frame, server, :view_jpeg}}]
+    end
+
+    test "tells it apart from an output it does not have", %{config: config} do
+      assert Unit.unsent_output?(config, :hq, :view)
+      refute Unit.unsent_output?(config, :hq, :view_jpeg)
+      refute Unit.unsent_output?(config, :hq, :preview)
+      refute Unit.unsent_output?(config, :hq, nil)
+      refute Unit.unsent_output?(config, :front, :view)
+    end
+
+    test "lists only the outputs it sends to its consumers", %{config: config} do
+      assert [%{outputs: [%Output{name: :view_jpeg}, %Output{name: :inference}]}] =
+               Unit.settings(config)
+
+      assert {:ok, [%Output{name: :view, send: false} | _sent]} =
+               Unit.camera_outputs(config, :hq)
+    end
+  end
+
   describe "a camera whose outputs cannot be made" do
     @refused [
       name: :hq,

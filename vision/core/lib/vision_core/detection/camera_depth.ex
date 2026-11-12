@@ -108,7 +108,8 @@ defmodule VisionCore.Detection.CameraDepth do
   result waits for its pair, which the pairs kept cover, and `:output`,
   the camera's output taken, its default without
   (`VisionCore.Camera.Unit.output_key/3`). Raises `ArgumentError` when
-  `config` has no camera `name` or no such output of it.
+  `config` has no camera `name`, no such output of it, or one it does
+  not send.
   """
   @spec new(atom(), VisionCore.Config.t(), String.t(), wording(), keyword()) :: t()
   def new(name, config, owner, wording, opts) do
@@ -127,6 +128,14 @@ defmodule VisionCore.Detection.CameraDepth do
              "its source names the camera #{inspect(name)}, whose outputs cannot be made: " <>
                message
            )
+
+    if Unit.unsent_output?(config, name, output),
+      do:
+        raise(
+          ArgumentError,
+          "its source names the output #{inspect(output)} of the camera #{inspect(name)}, " <>
+            "which it does not send (send: false)"
+        )
 
     key =
       Unit.output_key(config, name, output) ||

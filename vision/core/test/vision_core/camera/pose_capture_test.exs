@@ -147,6 +147,24 @@ defmodule VisionCore.Camera.PoseCaptureTest do
              {:error, {:no_camera, :hq}}
   end
 
+  test "refuses an output its camera does not send" do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    ]
+
+    config = %VisionCore.Config{
+      components: [{:stereo, driver: Camera, fps: 20, left: [], right: []}, {:camera, camera}]
+    }
+
+    assert PoseCapture.capture(:hq, config: config, output: :view) ==
+             {:error, {:unsent_output, :hq, :view}}
+  end
+
   test "refuses a camera or a stereo unit the configuration does not have" do
     assert PoseCapture.capture(:usb, config: config()) == {:error, {:no_camera, :usb}}
 

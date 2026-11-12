@@ -7,19 +7,20 @@ defmodule VisionCore.Camera.V4L2Single do
   mode. The `:camera` component (`VisionCore.Components`) starts it.
 
   Frames are 8-bit RGB (`%Frame{rgb: ...}`), white-balanced by the
-  program, one per output at every frame (`outputs/1`,
-  `VisionCore.Camera.Output`). Its one processor, `:cpu`, the program's
-  software conversion, makes the sensor mode's size, 2028 × 1520 by
-  default, demosaiced bilinearly, or half of it in each axis, 1014 × 760,
-  each 2x2 Bayer cell one pixel; an output `:from` another is averaged
-  from it in blocks on the same threads, or with `format: :jpeg`
-  encoded from it by the program with libjpeg-turbo on a thread of its
-  own, its frames carrying the JPEG (`%Frame{jpeg: ...}`), which
-  `VisionCore.Camera.Frame.to_jpeg/2` hands its consumers as it is.
-  Each output's frames are
-  published under `{:camera_frame, name, output}`, `name` the instance's
-  registered name, each frame carrying its output's name as its
-  `:output` and the size its record gives.
+  program, one per sent output at every frame (`outputs/1`,
+  `VisionCore.Camera.Output`); an output with `send: false` is made by
+  the program for those made from it and never leaves it. Its one
+  processor, `:cpu`, the program's software conversion, makes the sensor
+  mode's size, 2028 × 1520 by default, demosaiced bilinearly, or half of
+  it in each axis, 1014 × 760, each 2x2 Bayer cell one pixel; an output
+  `:from` another is averaged from it in blocks on the same threads, or
+  with `format: :jpeg` encoded from it by the program with libjpeg-turbo
+  on a thread of its own, its frames carrying the JPEG (`%Frame{jpeg:
+  ...}`), which `VisionCore.Camera.Frame.to_jpeg/2` hands its consumers
+  as it is. Each sent output's frames are published under
+  `{:camera_frame, name, output}`, `name` the instance's registered name,
+  each frame carrying its output's name as its `:output` and the size its
+  record gives.
 
   ## Framing protocol
 
@@ -33,8 +34,8 @@ defmodule VisionCore.Camera.V4L2Single do
       bytes   rgb                 # width * height * 3, R, G, B
 
   or, for a JPEG output, the same header under tag 8, OUTPUT_JPEG, then
-  the JPEG of the `width` x `height` image, one record per output per
-  frame, in the order of their indices, or the log
+  the JPEG of the `width` x `height` image, one record per sent output
+  per frame, in the order of their indices, or the log
   and metadata records `VisionCore.Camera.V4L2` reads. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
@@ -73,13 +74,14 @@ defmodule VisionCore.Camera.V4L2Single do
     * `:outputs` — the camera's named outputs, each `[resolution:
       {width, height}, processor: :cpu]` or `[resolution: {width, height},
       from: output]`, a whole fraction of that output's size, its size by
-      default, which `format: :jpeg` and a `:quality` send as a JPEG
-      (`VisionCore.Camera.Output`); the first is the camera's default.
-      Passed as `--output cpu:<width>x<height>`, `--output
+      default, which `format: :jpeg` and a `:quality` send as a JPEG,
+      and `send: false` makes only for the outputs made from it
+      (`VisionCore.Camera.Output`); the first sent is the camera's
+      default. Passed as `--output cpu:<width>x<height>`, `--output
       from:<index>:<width>x<height>` or `--output
       from:<index>:<width>x<height>:jpeg:<quality>`, in the order of
-      their indices. Outputs it cannot make stop the camera at start,
-      saying why.
+      their indices, an unsent one with `:unsent` after it. Outputs it
+      cannot make stop the camera at start, saying why.
     * `:output` (`:full`) — the one-output shorthand, without
       `:outputs`: `:full`, the sensor mode's size, or `:half`, half of it
       in each axis, made by `:cpu` and named as the value.
@@ -276,7 +278,8 @@ defmodule VisionCore.Camera.V4L2Single do
       state =
         Map.merge(state, %{
           controls: Capture.controls(@settings, opts),
-          outputs: Map.new(outputs, &{&1.index, {output_key(label, &1.name), &1.name}})
+          outputs:
+            Map.new(Output.sent(outputs), &{&1.index, {output_key(label, &1.name), &1.name}})
         })
 
       {:ok, Map.merge(state, Capture.open(opts, arguments, timeouts, who))}
@@ -367,20 +370,19 @@ defmodule VisionCore.Camera.V4L2Single do
   defp output_arguments(outputs) do
     indices = Map.new(outputs, &{&1.name, &1.index})
 
-    Enum.flat_map(Output.port_order(outputs), fn
-      %Output{processor: :cpu} = output ->
-        ["--output", "cpu:#{output.width}x#{output.height}"]
-
-      %Output{from: from, format: :jpeg} = output ->
-        [
-          "--output",
-          "from:#{indices[from]}:#{output.width}x#{output.height}:jpeg:#{output.quality}"
-        ]
-
-      %Output{from: from} = output ->
-        ["--output", "from:#{indices[from]}:#{output.width}x#{output.height}"]
+    Enum.flat_map(Output.port_order(outputs), fn output ->
+      ["--output", output_argument(output, indices) <> if(output.send, do: "", else: ":unsent")]
     end)
   end
+
+  defp output_argument(%Output{processor: :cpu} = output, _indices),
+    do: "cpu:#{output.width}x#{output.height}"
+
+  defp output_argument(%Output{from: from, format: :jpeg} = output, indices),
+    do: "from:#{indices[from]}:#{output.width}x#{output.height}:jpeg:#{output.quality}"
+
+  defp output_argument(%Output{from: from} = output, indices),
+    do: "from:#{indices[from]}:#{output.width}x#{output.height}"
 
   @impl GenServer
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}

@@ -45,7 +45,8 @@ defmodule VisionCore.Camera.PoseCapture do
   `{:error, :no_matching_pair}` when no two frames came within half a
   pair period of each other in time; `{:error, {:no_camera, name}}` or
   `{:error, :no_stereo_unit}` when the configuration has no such camera,
-  or no such output of it, or no stereo unit.
+  or no such output of it, or no stereo unit; `{:error, {:unsent_output,
+  name, output}}` for an output the camera does not send.
   """
   @spec capture(atom(), keyword()) :: {:ok, saved()} | {:error, term()}
   def capture(name, options \\ []) do
@@ -67,12 +68,14 @@ defmodule VisionCore.Camera.PoseCapture do
 
   defp sources(config, name, output) do
     with {:ok, stereo} <- stereo_cameras(config),
+         false <- VisionCore.Camera.Unit.unsent_output?(config, name, output),
          camera_key when camera_key != nil <-
            VisionCore.Exporter.output_key(camera_output(name, output), config) do
       left_key = VisionCore.Exporter.output_key({:camera_frame, :left}, config)
       {:ok, {left_key, camera_key}, div(1_000_000_000, stereo[:fps] * 2)}
     else
       nil -> {:error, {:no_camera, name}}
+      true -> {:error, {:unsent_output, name, output}}
       {:error, :no_stereo_unit} -> {:error, :no_stereo_unit}
     end
   end

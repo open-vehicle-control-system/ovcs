@@ -43,8 +43,9 @@ defmodule VisionCore.Preview do
     * `:max_hz` (`10`) — frames per second per subscriber.
     * `:outputs` (`[]`) — the output each camera of its own's stream
       shows, by camera name (`hq: :view`), its default output for a
-      camera not listed (`VisionCore.Camera.Unit.output_key/3`). An
-      output the camera does not have is logged, and its default shown.
+      camera not listed, its first sent one
+      (`VisionCore.Camera.Unit.output_key/3`). An output the camera does
+      not have, or does not send, is logged, and its default shown.
     * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
       blue only what is infinitely far, so the colours stay put from one
       frame to the next. Red is the nearest measured depths.
@@ -162,9 +163,13 @@ defmodule VisionCore.Preview do
         nil
 
       {nil, default} ->
+        missing =
+          if Camera.Unit.unsent_output?(config, name, output),
+            do: "does not send its output #{inspect(output)} (send: false)",
+            else: "has no output #{inspect(output)}"
+
         Logger.error(
-          "#{inspect(__MODULE__)}: camera #{name} has no output #{inspect(output)}; " <>
-            "its stream shows its default output"
+          "#{inspect(__MODULE__)}: camera #{name} #{missing}; its stream shows its default output"
         )
 
         default

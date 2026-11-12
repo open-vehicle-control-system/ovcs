@@ -786,6 +786,25 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert reason =~ "cameras: outputs names the camera :hq, which it does not publish"
     end
 
+    test "refuses to publish an output its camera does not send" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_jpeg: [from: :view, format: :jpeg],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      options = &Keyword.put(options(Camera, &1), :config, config)
+
+      assert Exporter.outputs(options.(cameras: [])) == [{:camera_frame, :hq}]
+      assert Exporter.check(options.(cameras: [outputs: [hq: :view_jpeg]])) == :ok
+
+      assert Exporter.check(options.(cameras: [outputs: [hq: :view]])) ==
+               {:error,
+                "its cameras: outputs gives the camera :hq the output :view, " <>
+                  "which it does not send (send: false)"}
+    end
+
     test "publishes a camera's JPEG output as the camera sent it, each frame, without an encode" do
       outputs = [
         view: [resolution: {2028, 1520}, processor: :cpu],
@@ -846,6 +865,35 @@ defmodule VisionCore.Ros2.ExporterTest do
       frame = %{jpeg_frame("hq", 1) | output: :inference}
       {:ok, _state} = Exporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
       assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+    end
+
+    test "draws a camera pipeline's 2D boxes on the camera's first sent output by default" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config =
+        Camera
+        |> config()
+        |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+        |> Map.update!(:components, fn components ->
+          components ++
+            [
+              {:detector,
+               name: :objects,
+               backend: VisionCore.Detection.Backend.Stub,
+               source: {:camera, :hq, :inference}}
+            ]
+        end)
+
+      options =
+        Camera
+        |> options(cameras: [], detections: [pipelines: [:objects]])
+        |> Keyword.put(:config, config)
+
+      {:ok, state} = Exporter.init(options)
+      assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
     end
 
     test "its frames are read with cameras:, every camera by default, or those it names" do

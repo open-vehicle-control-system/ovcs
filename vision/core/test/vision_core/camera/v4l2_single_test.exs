@@ -200,6 +200,63 @@ defmodule VisionCore.Camera.V4L2SingleTest do
            ]
   end
 
+  test "asks the program to make an output it does not send, for those made from it",
+       %{tmp_dir: tmp_dir} do
+    {script, arguments, _commands} = listening_program(tmp_dir)
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_jpeg: [from: :view, format: :jpeg, quality: 80],
+        half: [resolution: {1014, 760}, from: :view, send: false],
+        quarter: [resolution: {507, 380}, from: :half]
+      ]
+    )
+
+    assert Enum.slice(arguments(arguments), 10, 8) == [
+             "--output",
+             "cpu:2028x1520:unsent",
+             "--output",
+             "from:0:2028x1520:jpeg:80",
+             "--output",
+             "from:0:1014x760:unsent",
+             "--output",
+             "from:2:507x380"
+           ]
+  end
+
+  test "publishes the outputs it sends by their index, none for one it does not send",
+       %{tmp_dir: tmp_dir} do
+    jpeg = <<0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9>>
+
+    records =
+      write_records(tmp_dir, [
+        jpeg_record(5, jpeg, 1),
+        rgb_record(5, <<7, 8, 9, 10, 11, 12>>, 2)
+      ])
+
+    script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
+    server = V4L2Single.name_for("hq")
+    :ok = Outputs.subscribe({:camera_frame, server, :view_jpeg})
+    :ok = Outputs.subscribe({:camera_frame, server, :inference})
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_jpeg: [from: :view, format: :jpeg],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    )
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :view_jpeg, jpeg: ^jpeg}}},
+                   2_000
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :inference} = frame}}, 2_000
+    assert frame.rgb == <<7, 8, 9, 10, 11, 12>>
+  end
+
   test "publishes the frames of a JPEG output carrying the JPEG the program sends",
        %{tmp_dir: tmp_dir} do
     jpeg = <<0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9>>

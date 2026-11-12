@@ -286,6 +286,26 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert message =~ "the output :preview of the camera :hq, whose outputs are :view, :inference"
   end
 
+  test "refuses an output its camera does not send", %{tmp_dir: dir} do
+    config =
+      update_in(outputs_config(dir).components, fn [{:camera, camera}] ->
+        [
+          {:camera,
+           put_in(camera[:outputs][:view], Keyword.put(camera[:outputs][:view], :send, false))}
+        ]
+      end)
+
+    assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+             start_supervised(
+               {Pipeline,
+                name: :hq_people, backend: Stub, source: {:camera, :hq, :view}, config: config}
+             )
+
+    assert message ==
+             "its source names the output :view of the camera :hq, which it does not send " <>
+               "(send: false)"
+  end
+
   # The first call lets the frame's boxes reach the pipeline, the second has them handled.
   defp await_boxes do
     _submitted = :sys.get_state(Pipeline.HqPeople)

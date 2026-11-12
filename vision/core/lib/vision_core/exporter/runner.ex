@@ -58,7 +58,9 @@ defmodule VisionCore.Exporter.Runner do
   error `VisionCore.Exporter.output_specs/2` says, nor when two of them
   resolve to one key in the configuration, such as `{:camera_frame,
   :hq}` and `{:camera_frame, :hq, :view}` on a camera whose default
-  output is `:view`: `{:invalid_output, second}`.
+  output is `:view`: `{:invalid_output, second}`, nor on a camera's
+  output the camera does not send (`VisionCore.Camera.Unit.unsent_output?/3`):
+  `{:unsent_output, output}`.
   """
   use GenServer
   require Logger
@@ -117,6 +119,7 @@ defmodule VisionCore.Exporter.Runner do
     config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
 
     with {:ok, specs} <- Exporter.output_specs(exporter, options),
+         :ok <- check_sent(specs, config),
          :ok <- check_keys_apart(specs, config) do
       if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
 
@@ -142,6 +145,17 @@ defmodule VisionCore.Exporter.Runner do
     else
       {:error, reason} -> {:stop, reason}
     end
+  end
+
+  defp check_sent(specs, config) do
+    Enum.find_value(specs, :ok, fn
+      {{:camera_frame, name, output} = camera_output, _max_hz} ->
+        if VisionCore.Camera.Unit.unsent_output?(config, name, output),
+          do: {:error, {:unsent_output, camera_output}}
+
+      _other ->
+        nil
+    end)
   end
 
   # One key feeds one slot: a camera's default output named a second time by its name never would.

@@ -200,6 +200,36 @@ defmodule VisionCore.PreviewTest do
       assert_receive {:vision_preview, :hq, "inference"}, 500
     end
 
+    test "its stream shows its camera's first sent output, not one it does not send" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+          view_jpeg: [from: :view, format: :jpeg],
+          inference: [resolution: {1014, 760}, from: :view]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+      preview = start_supervised!({Preview, config: config, max_hz: 50})
+      assert preview in Outputs.subscribers({:camera_frame, server, :view_jpeg})
+      stop_supervised!(Preview)
+
+      log =
+        capture_log(fn ->
+          preview = start_supervised!({Preview, config: config, max_hz: 50, outputs: [hq: :view]})
+          assert preview in Outputs.subscribers({:camera_frame, server, :view_jpeg})
+          refute preview in Outputs.subscribers({:camera_frame, server, :view})
+        end)
+
+      assert log =~
+               "camera hq does not send its output :view (send: false); " <>
+                 "its stream shows its default output"
+    end
+
     test "a camera's JPEG output is previewed as the camera sent it, without an encode" do
       camera = [
         name: :hq,
