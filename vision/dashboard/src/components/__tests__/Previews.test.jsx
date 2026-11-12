@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
 import { render, screen, act, fireEvent } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 import { useExporters } from '../../stores/exporters.js'
@@ -404,6 +404,287 @@ describe('Previews', () => {
         expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
         expect(figure('hq').querySelector('svg[data-detections]')).toBeNull()
       })
+    })
+  })
+
+  describe('segmentation', () => {
+    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs }] })
+    afterEach(() => act(() => useExporters.setState({ exporters: [] })))
+
+    const outputs = [
+      { name: 'camera_frame:left', maxHz: 5 },
+      { name: 'camera_frame:hq', maxHz: 5 },
+      { name: 'segmentation:road', maxHz: 5, source: 'hq' }
+    ]
+
+    // The channel's binary payload: eight little-endian 16-bit integers, then the label grid.
+    function payload({ frame, band, grid, data }) {
+      const buffer = new ArrayBuffer(16 + data.length)
+      const view = new DataView(buffer)
+      ;[...frame, ...band, ...grid].forEach((value, index) => view.setUint16(index * 2, value, true))
+      new Uint8Array(buffer, 16).set(data)
+      return buffer
+    }
+
+    // A 4 × 2 grid over the frame's bottom 960 × 480 band: road, road, sidewalk, car, then road and sky.
+    const gridOf = (data) => payload({ frame: [960, 540], band: [0, 60, 960, 480], grid: [4, 2], data })
+    const result = gridOf([0, 0, 1, 13, 0, 10, 10, 10])
+    const cityscapes = ['road', 'sidewalk', 'building', 'wall', 'fence', 'pole', 'traffic_light', 'traffic_sign', 'vegetation',
+      'terrain', 'sky', 'person', 'rider', 'car', 'truck', 'bus', 'train', 'motorcycle', 'bicycle']
+
+    // jsdom has no 2D canvas: each canvas gets a context of its own, which keeps the images put on it.
+    let contexts
+    beforeEach(() => {
+      contexts = new Map()
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function () {
+        if (!contexts.has(this)) {
+          contexts.set(this, {
+            createImageData: (width, height) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }),
+            putImageData: vi.fn()
+          })
+        }
+        return contexts.get(this)
+      })
+    })
+    afterEach(() => vi.restoreAllMocks())
+
+    function showFrame(push, stream) {
+      URL.createObjectURL = vi.fn(() => `blob:${stream}`)
+      URL.revokeObjectURL = vi.fn()
+      push(`preview:${stream}`, 'frame', new Uint8Array([1]).buffer)
+      const image = screen.getByRole('img', { name: `${stream} preview` })
+      Object.defineProperties(image, { naturalWidth: { value: 480 }, naturalHeight: { value: 270 } })
+      fireEvent.load(image)
+    }
+
+    const overlay = (name) => screen.getByRole('img', { name })
+    const canvasOf = (svg) => svg.querySelector('canvas')
+    const put = (svg) => contexts.get(canvasOf(svg)).putImageData.mock.lastCall[0]
+    const pixel = (svg, index) => [...put(svg).data.slice(index * 4, index * 4 + 4)]
+    const legend = (name = 'road') => screen.getByRole('list', { name: `${name} classes` })
+    const items = (name) => [...legend(name).querySelectorAll('li')].map((item) => item.textContent)
+    // The channel the dashboard opened on `topic`.
+    const channelOf = (socket, topic) => socket.channel.mock.results[socket.channel.mock.calls.findIndex(([called]) => called === topic)].value
+    const acks = (socket, topic) => channelOf(socket, topic).push.mock.calls.filter(([event]) => event === 'ack').length
+
+    it("joins a pipeline's channel for its camera's preview only", () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'left')
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'segmentation', result)
+
+      const topics = socket.channel.mock.calls.map(([topic]) => topic).filter((topic) => topic.startsWith('segmentation'))
+      expect(topics).toEqual(['segmentation:road'])
+      expect(figure('hq').querySelector('[data-segmentation]')).not.toBeNull()
+      expect(figure('left').querySelector('[data-segmentation]')).toBeNull()
+    })
+
+    it("stretches the label grid, a sharp pixel a cell, over the band of the camera's preview it covers", () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:road', 'segmentation', result)
+
+      // The frame's box, fitted in the preview as the object-contain image is: the smaller of the two scales.
+      const box = figure('hq').querySelector('[data-segmentation]')
+      expect([box.style.getPropertyValue('--frame-width'), box.style.getPropertyValue('--frame-height')]).toEqual(['480', '270'])
+      expect(box.className.split(' ')).toEqual(
+        expect.arrayContaining([
+          'absolute',
+          'inset-0',
+          'm-auto',
+          'w-[min(100cqw,100cqh*var(--frame-width)/var(--frame-height))]',
+          'h-[min(100cqh,100cqw*var(--frame-height)/var(--frame-width))]'
+        ])
+      )
+      expect(box.parentElement.className.split(' ')).toEqual(expect.arrayContaining(['absolute', 'inset-0', '[container-type:size]']))
+      // The band, by its fractions of the 960 × 540 frame: from row 60 down, 480 rows.
+      const canvas = canvasOf(box)
+      expect([canvas.style.left, canvas.style.top, canvas.style.width, canvas.style.height]).toEqual(['0%', '11.111%', '100%', '88.889%'])
+      expect([canvas.width, canvas.height]).toEqual([4, 2])
+      expect(canvas.className.split(' ')).toEqual(['absolute', '[image-rendering:pixelated]'])
+      expect(screen.getByRole('img', { name: 'Segmented: road, sidewalk, sky, car' })).toBe(box)
+    })
+
+    it("lies under the boxes of a detection pipeline on the same camera", () => {
+      listed(...outputs, { name: 'detections:hq_people', maxHz: 5, source: 'hq' })
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('detections:hq_people', 'detections', { detections: [{ label: 'car', score: 0.7, distanceM: null, outline: [[0, 0], [0.5, 0], [0.5, 0.5], [0, 0.5]] }] })
+      push('segmentation:road', 'segmentation', result)
+
+      // Neither layer has a z-index: the later sibling paints over the earlier.
+      const boxes = figure('hq').querySelector('svg[data-detections]')
+      const grid = figure('hq').querySelector('[data-segmentation]').parentElement
+      expect(grid.parentElement).toBe(boxes.parentElement)
+      expect(grid.compareDocumentPosition(boxes) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(`${grid.className} ${boxes.getAttribute('class')}`).not.toMatch(/\bz-/)
+    })
+
+    it('acks a grid it cannot decode, and draws nothing for it', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'segmentation', new Uint8Array([4, 0, 2, 0]).buffer)
+
+      expect(acks(socket, 'segmentation:road')).toBe(1)
+      expect(figure('hq').querySelector('[data-segmentation]')).toBeNull()
+      expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
+    })
+
+    it('colours each class in the Cityscapes palette at 40 % opacity, the road at 60 %', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:road', 'segmentation', result)
+
+      const svg = figure('hq').querySelector('[data-segmentation]')
+      expect([put(svg).width, put(svg).height]).toEqual([4, 2])
+      expect(pixel(svg, 0)).toEqual([128, 64, 128, 153])
+      expect(pixel(svg, 2)).toEqual([244, 35, 232, 102])
+      expect(pixel(svg, 3)).toEqual([0, 0, 142, 102])
+      expect(pixel(svg, 5)).toEqual([70, 130, 180, 102])
+    })
+
+    it('redraws each grid on the same canvas', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'segmentation', result)
+      const canvas = canvasOf(figure('hq').querySelector('[data-segmentation]'))
+      push('segmentation:road', 'segmentation', gridOf([10, 10, 10, 10, 10, 10, 10, 10]))
+
+      const svg = figure('hq').querySelector('[data-segmentation]')
+      expect(canvasOf(svg)).toBe(canvas)
+      expect(contexts.get(canvas).putImageData).toHaveBeenCalledTimes(2)
+      expect(pixel(svg, 0)).toEqual([70, 130, 180, 102])
+    })
+
+    it('highlights every class the pipeline counts as road', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road', 'sidewalk'] })
+      push('segmentation:road', 'segmentation', result)
+
+      expect(pixel(figure('hq').querySelector('[data-segmentation]'), 2)).toEqual([244, 35, 232, 153])
+      expect([...legend().querySelectorAll('[data-road]')].map((item) => item.dataset.class)).toEqual(['road', 'sidewalk'])
+    })
+
+    it('lists the classes present under the preview, in class order, marking the road', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:road', 'segmentation', result)
+
+      expect(figure('hq').contains(legend())).toBe(true)
+      expect(items('road')).toEqual(['road', 'sidewalk', 'sky', 'car'])
+      expect(legend().querySelector('[data-class="road"]').hasAttribute('data-road')).toBe(true)
+      expect(legend().querySelector('[data-class="car"]').hasAttribute('data-road')).toBe(false)
+    })
+
+    it('keeps a class in the legend for three seconds after the last grid with it', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      const now = vi.spyOn(Date, 'now')
+      render(<Previews status={snapshot} socket={socket} />)
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      const roadOnly = gridOf([0, 0, 0, 0, 0, 0, 0, 0])
+
+      now.mockReturnValue(10_000)
+      push('segmentation:road', 'segmentation', result)
+      now.mockReturnValue(12_999)
+      push('segmentation:road', 'segmentation', roadOnly)
+      expect(items('road')).toEqual(['road', 'sidewalk', 'sky', 'car'])
+
+      now.mockReturnValue(13_000)
+      push('segmentation:road', 'segmentation', roadOnly)
+      expect(items('road')).toEqual(['road'])
+    })
+
+    it('names a class by its id until the class names come', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'segmentation', result)
+
+      expect(items('road')).toEqual(['class 0', 'class 1', 'class 10', 'class 13'])
+    })
+
+    it('draws nothing and lists nothing before the first result', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+
+      expect(figure('hq').querySelector('[data-segmentation]')).toBeNull()
+      expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
+    })
+
+    it('acks each grid once it is rendered, with or without a frame to draw it on, and nothing else', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      expect(acks(socket, 'segmentation:road')).toBe(0)
+
+      push('segmentation:road', 'segmentation', result)
+      expect(acks(socket, 'segmentation:road')).toBe(1)
+
+      showFrame(push, 'hq')
+      push('segmentation:road', 'segmentation', result)
+      expect(acks(socket, 'segmentation:road')).toBe(2)
+    })
+
+    it("keeps two pipelines' grids, classes and legends apart, and another camera's off this preview", () => {
+      listed(
+        ...outputs,
+        { name: 'camera_frame:usb', maxHz: 5 },
+        { name: 'segmentation:lanes', maxHz: 5, source: 'hq' },
+        { name: 'segmentation:far', maxHz: 5, source: 'usb' }
+      )
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
+      push('segmentation:lanes', 'classes', { labels: cityscapes, roadClasses: ['sidewalk'] })
+      push('segmentation:road', 'segmentation', gridOf([0, 0, 0, 0, 13, 13, 13, 13]))
+      push('segmentation:lanes', 'segmentation', gridOf([1, 1, 1, 1, 0, 0, 0, 0]))
+      push('segmentation:far', 'segmentation', gridOf([10, 10, 10, 10, 10, 10, 10, 10]))
+
+      const road = overlay('Segmented: road, car')
+      const lanes = overlay('Segmented: road, sidewalk')
+      expect([...figure('hq').querySelectorAll('[data-segmentation]')]).toEqual([road, lanes])
+      expect([pixel(road, 0), pixel(road, 4)]).toEqual([[128, 64, 128, 153], [0, 0, 142, 102]])
+      expect([pixel(lanes, 0), pixel(lanes, 4)]).toEqual([[244, 35, 232, 153], [128, 64, 128, 102]])
+      expect(items('road')).toEqual(['road', 'car'])
+      expect(items('lanes')).toEqual(['road', 'sidewalk'])
+      expect(figure('hq').contains(legend('far'))).toBe(false)
+      expect(figure('usb').contains(legend('far'))).toBe(true)
     })
   })
 })

@@ -21,7 +21,8 @@ const CHANNELS = [
   ['preview:left, preview:right', 'Camera frames as binary JPEG messages; the client acks each frame to get the next'],
   ['preview:depth', 'The coloured depth map, as binary JPEG messages; push depth_range to read or set its colour range'],
   ['detections', 'The objects detected, with their label, score, distance and outline on the left image'],
-  ['detections:<name>', "A named detection pipeline's objects, shaped like detections; the exporter listing names each pipeline"]
+  ['detections:<name>', "A named detection pipeline's objects, shaped like detections; the exporter listing names each pipeline"],
+  ['segmentation:<name>', "A segmentation pipeline's class grid over its camera's image, as binary messages the client acks, and its class names"]
 ]
 
 const base = () => `${import.meta.env.VITE_BASE_URL || window.location.origin}/api/`

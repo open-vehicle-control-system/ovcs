@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Preview from './Preview.jsx'
 import { OvcsStatus } from '@ovcs/ui/react'
 import { HealthValue, WARNING, Widest } from './UnitStatus.jsx'
 import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
+import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
 import { useExporters } from '../stores/exporters.js'
+import { decodeSegmentation } from '../segmentation.js'
 import {
   PAIR_CHECKS,
   cameraFigures,
@@ -160,6 +162,101 @@ function useSourceDetections(socket, source) {
   }
 }
 
+const SEGMENTATION = 'segmentation:'
+
+/** The segmentation channels to join on the preview of the camera `source`: each `segmentation` output the API exporter lists on it. */
+function useSegmentationTopics(source) {
+  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+
+  return (outputs ?? []).filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source).map(({ name }) => name)
+}
+
+// How long a class stays in a pipeline's legend after its last grid with it, so the legend does not reflow at the grids' rate.
+const LEGEND_HOLD_MS = 3000
+
+/** Each class id seen in the last `LEGEND_HOLD_MS`, by the time it was last seen, with those of `segmentation` seen at `now`. */
+function seenClasses(seen = {}, segmentation, now) {
+  const kept = Object.entries(seen).filter(([, at]) => now - at < LEGEND_HOLD_MS)
+  return Object.fromEntries([...kept, ...segmentation.present.map((id) => [id, now])])
+}
+
+/**
+ * The latest result of each segmentation channel in `topics`, a space-separated list, by topic, with the pipeline's
+ * classes, which the unit pushes on every join before any grid, and the classes seen lately; a channel has no result
+ * until its first comes. Each grid is acked once rendered, and the unit sends the next only then.
+ */
+function useSegmentations(socket, topics) {
+  const [segmentations, setSegmentations] = useState({})
+  const channelsRef = useRef({})
+  const ackedRef = useRef({})
+
+  useEffect(() => {
+    const channels = topics
+      .split(' ')
+      .filter(Boolean)
+      .map((topic) => {
+        const channel = socket.channel(topic, {})
+        const update = (change) => setSegmentations((latest) => ({ ...latest, [topic]: { ...latest[topic], ...change(latest[topic]) } }))
+        channel.on('classes', (classes) => update(() => ({ classes })))
+        channel.on('segmentation', (payload) => {
+          let segmentation
+          try {
+            segmentation = decodeSegmentation(payload)
+          } catch {
+            // Never rendered, so acked here, or the unit would send no other grid.
+            channel.push('ack', {})
+            return
+          }
+          const now = Date.now()
+          update((last) => ({ segmentation, seen: seenClasses(last?.seen, segmentation, now) }))
+        })
+        channel.join()
+        channelsRef.current[topic] = channel
+        return channel
+      })
+    return () => {
+      channels.forEach((channel) => channel.leave())
+      channelsRef.current = {}
+      ackedRef.current = {}
+      setSegmentations({})
+    }
+  }, [socket, topics])
+
+  // After the commit, so the overlay has drawn the grid it acks.
+  useEffect(() => {
+    for (const [topic, { segmentation }] of Object.entries(segmentations)) {
+      if (segmentation && ackedRef.current[topic] !== segmentation) {
+        ackedRef.current[topic] = segmentation
+        channelsRef.current[topic]?.push('ack', {})
+      }
+    }
+  }, [segmentations])
+
+  return segmentations
+}
+
+/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends. */
+function useSourceSegmentations(socket, source) {
+  const topics = useSegmentationTopics(source)
+  const latest = useSegmentations(socket, topics.join(' '))
+  const answered = topics.filter((topic) => latest[topic]?.segmentation)
+  const legendIds = (seen) => Object.keys(seen).map(Number).sort((a, b) => a - b)
+
+  return {
+    overlays: answered.map((topic) => (
+      <SegmentationOverlay key={topic} segmentation={latest[topic].segmentation} classes={latest[topic].classes} />
+    )),
+    legends: answered.map((topic) => (
+      <SegmentationLegend
+        key={topic}
+        name={topic.slice(SEGMENTATION.length)}
+        ids={legendIds(latest[topic].seen)}
+        classes={latest[topic].classes}
+      />
+    ))
+  }
+}
+
 const CAMERA_FRAME = 'camera_frame:'
 const STEREO_SIDES = ['left', 'right']
 
@@ -174,20 +271,26 @@ function useCameraNames() {
     .filter((name) => !STEREO_SIDES.includes(name))
 }
 
-/** A camera of its own, titled by its name, with its rate, exposure and gain, and the objects its pipelines detect drawn over it and counted. */
+/**
+ * A camera of its own, titled by its name, with its rate, exposure and gain, its segmentation pipelines' label grids
+ * drawn over it with a legend of their classes, and the objects its detection pipelines detect drawn over those and counted.
+ */
 function CameraPreview({ name, status, socket }) {
   const { overlay, detections } = useSourceDetections(socket, name)
+  const { overlays, legends } = useSourceSegmentations(socket, name)
+  const layers = [...overlays, ...(overlay ?? [])]
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
 
   return (
     <Preview
       stream={name}
       socket={socket}
-      overlay={overlay}
+      overlay={layers.length > 0 ? layers : null}
       className="lg:flex lg:min-h-0 lg:flex-col"
       frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
     >
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
+      {legends}
     </Preview>
   )
 }
