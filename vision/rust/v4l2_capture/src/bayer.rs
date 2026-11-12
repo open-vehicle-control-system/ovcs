@@ -186,15 +186,13 @@ impl RawFrame<'_> {
 }
 
 /// What the colour path of a sensor without a tuning keeps from one frame
-/// to the next: the image it writes, and the rows each band of it
-/// demosaics.
+/// to the next: the rows each band of it demosaics.
 #[derive(Default)]
 pub struct Buffers {
-    rgb: Vec<u8>,
     bands: Vec<DemosaicRows<u8>>,
 }
 
-/// `frame` in RGB, in `buffers`, at the size of `conversion.output`, each
+/// `frame` in RGB into `rgb`, through `buffers`, at the size of `conversion.output`, each
 /// sample through `tone`, red and blue scaled by `gains` first. At its own
 /// size, each pixel keeps its own sample and takes each missing colour as
 /// the mean of its nearest samples of that colour, the 4 axial ones for
@@ -211,9 +209,9 @@ pub fn develop<'b>(
     tone: &Tone,
     gains: Gains,
     conversion: &Conversion,
-    buffers: &'b mut Buffers,
+    rgb: &'b mut Vec<u8>,
+    Buffers { bands }: &mut Buffers,
 ) -> Developed<'b> {
-    let Buffers { rgb, bands } = buffers;
     let rotate_180 = conversion.rotate_180;
     let sums = match conversion.output {
         Output::Full => {
@@ -710,16 +708,30 @@ pub(crate) mod tests {
 
     fn rgb_half(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
         let conversion = conversion(Output::Half, rotate_180);
-        develop(frame, tone, gains, &conversion, &mut Buffers::default())
-            .rgb
-            .to_vec()
+        develop(
+            frame,
+            tone,
+            gains,
+            &conversion,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .rgb
+        .to_vec()
     }
 
     fn rgb_full(frame: &RawFrame, tone: &Tone, gains: Gains, rotate_180: bool) -> Vec<u8> {
         let conversion = conversion(Output::Full, rotate_180);
-        develop(frame, tone, gains, &conversion, &mut Buffers::default())
-            .rgb
-            .to_vec()
+        develop(
+            frame,
+            tone,
+            gains,
+            &conversion,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .rgb
+        .to_vec()
     }
 
     // The mean green of the half-size image's pixels over every
@@ -729,9 +741,16 @@ pub(crate) mod tests {
             row_step,
             ..conversion(Output::Half, false)
         };
-        develop(frame, tone, UNITY, &conversion, &mut Buffers::default())
-            .green_mean
-            .unwrap()
+        develop(
+            frame,
+            tone,
+            UNITY,
+            &conversion,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .green_mean
+        .unwrap()
     }
 
     // The mean red, green and blue above `black_level` over every
@@ -742,9 +761,16 @@ pub(crate) mod tests {
             row_step,
             ..conversion(Output::Half, false)
         };
-        develop(frame, &tone, UNITY, &conversion, &mut Buffers::default())
-            .channel_means
-            .unwrap()
+        develop(
+            frame,
+            &tone,
+            UNITY,
+            &conversion,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .channel_means
+        .unwrap()
     }
 
     fn linear_tone() -> Tone {

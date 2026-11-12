@@ -88,11 +88,10 @@ pub struct Colour<'a> {
     pub denoise: bool,
 }
 
-/// What the colour path keeps from one frame to the next: the image it
-/// writes, and the rows each band of it works on.
+/// What the colour path keeps from one frame to the next: the rows each
+/// band of it works on.
 #[derive(Default)]
 pub struct Buffers {
-    rgb: Vec<u8>,
     bands: Vec<Band>,
 }
 
@@ -113,7 +112,7 @@ struct Band {
     measured_row_gains: [Vec<u32>; 2],
 }
 
-/// `frame` through `colour`, in `buffers`, at the size of
+/// `frame` through `colour` into `rgb`, through `buffers`, at the size of
 /// `conversion.output`: at its own size demosaiced as `bayer::rgb_full`
 /// does, on linear values, each sample's signal above the black level times
 /// its lens shading and white balance gains, the sensor's full scale at
@@ -124,9 +123,9 @@ pub fn develop<'b>(
     frame: &RawFrame,
     colour: &Colour,
     conversion: &Conversion,
-    buffers: &'b mut Buffers,
+    rgb: &'b mut Vec<u8>,
+    Buffers { bands }: &mut Buffers,
 ) -> Developed<'b> {
-    let Buffers { rgb, bands } = buffers;
     let (width, cell) = match conversion.output {
         Output::Full => (frame.width, 2),
         Output::Half => (frame.width / 2, 1),
@@ -1119,18 +1118,18 @@ mod tests {
             denoise: true,
         };
         let (frame, other) = (frame(&raw, 8, 6), frame(&other_raw, 4, 4));
-        let mut buffers = Buffers::default();
-        rgb_full(&frame, &colour, false, &mut buffers);
+        let (mut rgb, mut buffers) = (Vec::new(), Buffers::default());
+        rgb_full(&frame, &colour, false, &mut rgb, &mut buffers);
         assert_eq!(
-            rgb_half(&other, &colour, true, &mut buffers),
+            rgb_half(&other, &colour, true, &mut rgb, &mut buffers),
             half(&other, &colour, true)
         );
         assert_eq!(
-            rgb_full(&other, &colour, false, &mut buffers),
+            rgb_full(&other, &colour, false, &mut rgb, &mut buffers),
             full(&other, &colour, false)
         );
         assert_eq!(
-            rgb_full(&frame, &colour, false, &mut buffers),
+            rgb_full(&frame, &colour, false, &mut rgb, &mut buffers),
             full(&frame, &colour, false)
         );
     }
@@ -1312,11 +1311,25 @@ mod tests {
     }
 
     fn full(frame: &RawFrame, colour: &Colour, rotate_180: bool) -> Vec<u8> {
-        rgb_full(frame, colour, rotate_180, &mut Buffers::default()).to_vec()
+        rgb_full(
+            frame,
+            colour,
+            rotate_180,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .to_vec()
     }
 
     fn half(frame: &RawFrame, colour: &Colour, rotate_180: bool) -> Vec<u8> {
-        rgb_half(frame, colour, rotate_180, &mut Buffers::default()).to_vec()
+        rgb_half(
+            frame,
+            colour,
+            rotate_180,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .to_vec()
     }
 
     fn conversion(output: Output, rotate_180: bool) -> Conversion {
@@ -1334,12 +1347,14 @@ mod tests {
         frame: &RawFrame,
         colour: &Colour,
         rotate_180: bool,
-        buffers: &'b mut Buffers,
+        rgb: &'b mut Vec<u8>,
+        buffers: &mut Buffers,
     ) -> &'b [u8] {
         develop(
             frame,
             colour,
             &conversion(Output::Full, rotate_180),
+            rgb,
             buffers,
         )
         .rgb
@@ -1349,12 +1364,14 @@ mod tests {
         frame: &RawFrame,
         colour: &Colour,
         rotate_180: bool,
-        buffers: &'b mut Buffers,
+        rgb: &'b mut Vec<u8>,
+        buffers: &mut Buffers,
     ) -> &'b [u8] {
         develop(
             frame,
             colour,
             &conversion(Output::Half, rotate_180),
+            rgb,
             buffers,
         )
         .rgb
@@ -1373,7 +1390,7 @@ mod tests {
             row_step,
             ..conversion(Output::Half, false)
         };
-        develop(frame, colour, &conversion, buffers)
+        develop(frame, colour, &conversion, &mut Vec::new(), buffers)
             .green_mean
             .unwrap()
     }
@@ -1401,8 +1418,14 @@ mod tests {
             row_step,
             ..conversion(Output::Half, false)
         };
-        develop(frame, &colour, &conversion, &mut Buffers::default())
-            .channel_means
-            .unwrap()
+        develop(
+            frame,
+            &colour,
+            &conversion,
+            &mut Vec::new(),
+            &mut Buffers::default(),
+        )
+        .channel_means
+        .unwrap()
     }
 }

@@ -80,6 +80,7 @@ pub fn run(
         tuning,
         contrast: ContrastTable::new(tuning),
     });
+    let mut rgb = Vec::new();
     let mut buffers = colour::Buffers::default();
     let mut fallback_buffers = bayer::Buffers::default();
     let mut settings = arguments.settings.clone();
@@ -195,10 +196,23 @@ pub fn run(
                 channel_means,
                 green_mean,
             } = match &tuned {
-                Some(tuned) => {
-                    develop_tuned(&raw, &conversion, &settings, gains, tuned, &mut buffers)
-                }
-                None => bayer::develop(&raw, &tone, gains, &conversion, &mut fallback_buffers),
+                Some(tuned) => develop_tuned(
+                    &raw,
+                    &conversion,
+                    &settings,
+                    gains,
+                    tuned,
+                    &mut rgb,
+                    &mut buffers,
+                ),
+                None => bayer::develop(
+                    &raw,
+                    &tone,
+                    gains,
+                    &conversion,
+                    &mut rgb,
+                    &mut fallback_buffers,
+                ),
             };
             if let Some(means) = channel_means {
                 gains = white_balance::grey_world(means, gains);
@@ -225,16 +239,17 @@ struct TunedColour {
     contrast: ContrastTable,
 }
 
-/// `raw` through `tuned`'s colour path as `conversion` asks, in `buffers`,
-/// at the colour temperature of `gains`, with the colour correction matrix
-/// and the chroma denoise as `settings` switch them.
+/// `raw` through `tuned`'s colour path as `conversion` asks, into `rgb`
+/// through `buffers`, at the colour temperature of `gains`, with the colour
+/// correction matrix and the chroma denoise as `settings` switch them.
 fn develop_tuned<'a>(
     raw: &RawFrame,
     conversion: &Conversion,
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
-    buffers: &'a mut colour::Buffers,
+    rgb: &'a mut Vec<u8>,
+    buffers: &mut colour::Buffers,
 ) -> Developed<'a> {
     let kelvin = tuned.tuning.colour_temperature(gains);
     let shading = tuned.tuning.lens_shading(kelvin);
@@ -250,7 +265,7 @@ fn develop_tuned<'a>(
         contrast: &tuned.contrast,
         denoise: settings.denoise,
     };
-    colour::develop(raw, &colour, conversion, buffers)
+    colour::develop(raw, &colour, conversion, rgb, buffers)
 }
 
 #[cfg(test)]
@@ -379,6 +394,7 @@ mod tests {
                         &tone,
                         gains,
                         &conversion,
+                        &mut Vec::new(),
                         &mut bayer::Buffers::default(),
                     )),
                     _ => digest(develop_tuned(
@@ -387,6 +403,7 @@ mod tests {
                         &settings,
                         gains,
                         &tuned,
+                        &mut Vec::new(),
                         &mut colour::Buffers::default(),
                     )),
                 };
@@ -429,8 +446,11 @@ mod tests {
                             ccm,
                             ..ColourSettings::default()
                         };
-                        let (mut buffers, mut fallback) =
-                            (colour::Buffers::default(), bayer::Buffers::default());
+                        let (mut rgb, mut buffers, mut fallback) = (
+                            Vec::new(),
+                            colour::Buffers::default(),
+                            bayer::Buffers::default(),
+                        );
                         let mut developed = |threads| {
                             let conversion = Conversion {
                                 output,
@@ -447,6 +467,7 @@ mod tests {
                                     &settings,
                                     gains,
                                     &tuned,
+                                    &mut rgb,
                                     &mut buffers,
                                 )),
                                 outcome(bayer::develop(
@@ -454,6 +475,7 @@ mod tests {
                                     &tone,
                                     gains,
                                     &conversion,
+                                    &mut rgb,
                                     &mut fallback,
                                 )),
                             )
