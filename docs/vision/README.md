@@ -148,7 +148,7 @@ The pose comes from pictures of a chessboard that both the stereo left camera an
    compose/local/scripts/calibrate.sh --camera hq 9x6 0.025
    ```
 
-   [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode in the `calibrator` compose service, on `<prefix>/hq/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), decompressed by the service. For a wide-angle lens, choose the calibrator's fisheye model, which gives an `equidistant` calibration. Move the board until the coverage bars fill, then CALIBRATE and COMMIT: the camera's `set_camera_info` stores it as `/data/vision/calibration/camera_hq.yaml`, which the unit then publishes and uses.
+   [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode in the `calibrator` compose service, on `<prefix>/hq/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), decompressed by the service. It passes the calibrator no camera-model option; the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with. Move the board until the coverage bars fill, then CALIBRATE and COMMIT: the camera's `set_camera_info` stores it as `/data/vision/calibration/camera_hq.yaml`. The ROS 2 exporter publishes it in the camera info at once; a pipeline on the camera reads its calibration at start, so it takes the new one once the unit restarts.
 2. **Record pairs on the unit.** Open the unit's IEx shell, `ssh <vehicle>-vision.local`, hold the board still where both cameras see it whole, and run:
 
    ```elixir
@@ -174,7 +174,7 @@ The pose comes from pictures of a chessboard that both the stereo left camera an
    ```
 
    It leaves out a pair in which it does not find the board in both images, refuses images of several sizes, and prints the RMS reprojection error: under a pixel, the pose fits; more, a pair is blurred or the board moved between the two captures, and recording again helps.
-4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, and rebuild. Foxglove's 3D panel then places the camera's frame beside the stereo pair's, and a detection pipeline on the camera places its boxes with the stereo depth ([Detection on a camera of its own](#detection-on-a-camera-of-its-own)).
+4. **Use it.** Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`, rebuild and update the unit: the ROS 2 exporter and each pipeline on the camera read the pose at start. Foxglove's 3D panel then places the camera's frame beside the stereo pair's, and a detection pipeline on the camera places its boxes with the stereo depth ([Detection on a camera of its own](#detection-on-a-camera-of-its-own)).
 
 ## Depth
 
@@ -291,7 +291,7 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
 - **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped: its position and size are `nil`, and its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, azimuth positive to the right and elevation positive up, says where it is seen. A camera without a pose, or one whose pose or calibration cannot be read, runs its pipeline with every detection without a distance, with a warning logged once; without a calibration it has no bearing either.
 - **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`, those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels on `<prefix>/<name>/detections_2d`, and all of them on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)). The dashboard draws them on the camera's preview.
 
-A calibration committed through the camera's `set_camera_info` reaches the pipeline when it restarts.
+The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info`, which the ROS 2 exporter publishes at once, reaches the pipeline once the unit restarts.
 
 ## Detection models
 
