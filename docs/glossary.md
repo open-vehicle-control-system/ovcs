@@ -43,7 +43,7 @@ The guides use a small set of words precisely. Each entry gives the meaning in o
 | **NervesHub** | A self-hosted update server the VMS firmware can pull signed firmware from, opt-in per vehicle through `NERVES_HUB_*` variables in `.env.exs`, with one NervesHub product per vehicle. [Running on hardware](./running_hardware.md#ota-updates-via-nerveshub) |
 | **OTA** | Updating a deployed board's firmware over the network instead of reburning its SD card. The guides mean NervesHub pulls by "OTA updates"; `./ovcs upload` pushes an image over SSH. [Running on hardware](./running_hardware.md#ota-updates-via-nerveshub) |
 | **System fork** | An OVCS fork of an upstream Nerves system, pinned to a tag; `systems/` holds local clones for patching one. [Toolchain and OTP](./toolchain_and_otp.md#hacking-on-a-system-fork-locally) |
-| **Vision unit** | The optional `vision` role: `VisionCore` stereo depth, and optionally object detection, on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, published over Zenoh, with its own dashboard. A vehicle opts in with `vision/0` and `vision_target/0`. [Vision unit](./vision/README.md) |
+| **Vision unit** | The optional `vision` role: `VisionCore` stereo depth, and optionally object detection and road segmentation, on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, published over Zenoh, with its own dashboard. A vehicle opts in with `vision/0` and `vision_target/0`. [Vision unit](./vision/README.md) |
 
 ## CAN
 

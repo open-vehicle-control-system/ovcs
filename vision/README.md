@@ -1,6 +1,6 @@
 # vision
 
-The vision unit: stereo depth and, optionally, object detection on a single board, published as ROS 2 messages over Zenoh, with its own dashboard. The guide is [Vision unit](../docs/vision/README.md).
+The vision unit: stereo depth and, optionally, object detection and road segmentation on a single board, published as ROS 2 messages over Zenoh, with its own dashboard. The guide is [Vision unit](../docs/vision/README.md).
 
 | Path | What it is |
 |---|---|
