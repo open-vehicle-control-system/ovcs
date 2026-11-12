@@ -249,17 +249,44 @@ pub struct Model {
 }
 
 /// The QNN libraries and what a model creates in them, each handle null until it is created.
+/// Dropped, it frees them, the latest created first, before the libraries unload.
 struct Session {
     interface: QnnInterface_ImplementationV2_39_t,
     system: QnnSystemInterface_ImplementationV1_14_t,
     system_context: QnnSystemContext_Handle_t,
     backend: Qnn_BackendHandle_t,
     device: Qnn_DeviceHandle_t,
-    // Destroyed before the libraries are unloaded.
     power_vote: Option<PowerVote>,
     context: Qnn_ContextHandle_t,
     profile: Option<Profile>,
     _libraries: [Library; 2],
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        let (interface, system) = (&self.interface, &self.system);
+        // SAFETY: each handle is null or one these libraries created and nothing has freed,
+        // and the libraries unload only after this, with the fields.
+        unsafe {
+            if let (Some(profile), Some(free)) = (self.profile.take(), interface.profileFree) {
+                free(profile.handle);
+            }
+            if let (false, Some(free)) = (self.context.is_null(), interface.contextFree) {
+                free(self.context, ptr::null_mut());
+            }
+            // The vote is the device's infrastructure's.
+            drop(self.power_vote.take());
+            if let (false, Some(free)) = (self.device.is_null(), interface.deviceFree) {
+                free(self.device);
+            }
+            if let (false, Some(free)) = (self.backend.is_null(), interface.backendFree) {
+                free(self.backend);
+            }
+            if let (false, Some(free)) = (self.system_context.is_null(), system.systemContextFree) {
+                free(self.system_context);
+            }
+        }
+    }
 }
 
 /// A power config id holding a performance profile's vote, which ends when it is destroyed.
