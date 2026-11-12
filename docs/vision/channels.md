@@ -22,7 +22,7 @@ status.join()
 
 `status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out.
 
-The example is the OVCS1 reference vehicle's unit. `cameras` holds the stereo sides and each camera of its own, by name (`center` here). A camera of its own has no `issues`.
+`cameras` holds the stereo sides and each camera of its own, by name (`center` here). A camera of its own has no `issues`.
 
 `npu` is the accelerator the detection and segmentation pipelines run on, `null` on a unit without one:
 

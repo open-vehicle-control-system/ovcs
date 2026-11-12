@@ -14,7 +14,7 @@ Everything the dashboard shows comes from it:
 - resources under `/api`, which follow [JSON:API](https://jsonapi.org/);
 - live channels on a Phoenix socket at `/sockets/dashboard` ([Vision channels](./channels.md)).
 
-The examples come from a Raspberry Pi 5 unit with detection, shortened where a list is long. [`vision/api/README.md`](../../vision/api/README.md) lists every route with its status codes.
+The examples come from units of several builds, shortened where a list is long. [`vision/api/README.md`](../../vision/api/README.md) lists every route with its status codes.
 
 ## Requests and errors
 
@@ -297,7 +297,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The example is the OVCS1 reference vehicle's unit: a camera `center` with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
+The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
 
 A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
 

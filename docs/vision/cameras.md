@@ -155,7 +155,7 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode, in the `calibrator` compose service. It reads `<prefix>/center/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), which the service decompresses. It passes the calibrator no camera-model option: the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with.
 2. Move the board until the calibrator's coverage bars fill.
 3. Press CALIBRATE.
-4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. Restart the unit for the camera's pipelines to take it ([Calibration and pose](#calibration-and-pose)).
+4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. The camera's pipelines take it once the unit restarts ([Calibration and pose](#calibration-and-pose)).
 5. Open the unit's IEx shell:
 
    ```sh
@@ -180,7 +180,7 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    scp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml .
    ```
 
-9. Solve the pose on your workstation. The script needs OpenCV and NumPy, which the repository's pinned Python does not have. On Debian and Ubuntu, install `python3-opencv` and run it with the system Python:
+9. Solve the pose on your workstation. The script needs OpenCV and NumPy, which the repository's pinned Python does not have. On Debian and Ubuntu, install `python3-opencv` and run it with the system Python. Elsewhere, run it with a Python that has the `opencv-python-headless` and `numpy` packages.
 
    ```sh
    /usr/bin/python3 -I scripts/camera_pose.py --pairs pairs \
@@ -194,8 +194,6 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    ```text
    <n> pairs, RMS reprojection error <error> px, pose written to vehicles/<vehicle>/priv/calibration/center_pose.yaml
    ```
-
-   Elsewhere, run it with a Python that has the `opencv-python-headless` and `numpy` packages.
 
    Under a pixel, the pose fits. Above, a pair is blurred or the board moved between the two captures. The script then lists each pair's error, worst first: record those pairs again, or leave them out with `--exclude <n>`.
 10. Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`.
