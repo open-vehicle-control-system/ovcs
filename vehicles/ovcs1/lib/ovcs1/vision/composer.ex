@@ -7,10 +7,11 @@ defmodule Ovcs1.Vision.Composer do
   GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
   is a camera of its own, `:center`, captured in colour by
   `VisionCore.Camera.V4L2Single`, at every frame in three outputs:
-  `:view`, 2028 × 1520; `:view_jpeg`, that image encoded once by the
-  capture program, which the dashboard's preview and the ROS 2 exporter
-  both show as it is; and `:inference`, 1014 × 760, averaged from it
-  2 × 2. On the Hexagon NPU,
+  `:view`, 2028 × 1520, made only for the two others and not sent to the
+  vision core, where nothing takes it; `:view_jpeg`, that image encoded
+  once by the capture program, which the dashboard's preview and the
+  ROS 2 exporter both show as it is; and `:inference`, 1014 × 760,
+  averaged from it 2 × 2. On the Hexagon NPU,
   YOLOX detects objects on `:inference`, the `:objects` pipeline, and
   FFNet segments the road on it, the `:road` pipeline: the models' inputs
   are smaller still, so the full image would cross to their Ports only
@@ -110,7 +111,7 @@ defmodule Ovcs1.Vision.Composer do
      csiphy: 2,
      fps: 30,
      outputs: [
-       view: [resolution: {2028, 1520}, processor: :cpu],
+       view: [resolution: {2028, 1520}, processor: :cpu, send: false],
        view_jpeg: [from: :view, format: :jpeg, quality: 80],
        inference: [resolution: {1014, 760}, from: :view]
      ],

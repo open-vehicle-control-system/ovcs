@@ -53,7 +53,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the center camera runs on Camera 2 at 30 fps in full-resolution colour, as a JPEG, and at half for the models" do
+  test "the center camera runs on Camera 2 at 30 fps in full-resolution colour, sent as a JPEG, and at half for the models" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
@@ -64,22 +64,34 @@ defmodule Ovcs1.VisionComposerTest do
     refute camera[:output]
 
     assert camera[:outputs] == [
-             view: [resolution: {2028, 1520}, processor: :cpu],
+             view: [resolution: {2028, 1520}, processor: :cpu, send: false],
              view_jpeg: [from: :view, format: :jpeg, quality: 80],
              inference: [resolution: {1014, 760}, from: :view]
            ]
 
     config = Ovcs1.Vision.Composer.config(:target)
-    assert [%{outputs: [view, view_jpeg, inference]}] = VisionCore.Camera.Unit.settings(config)
-    assert {view.name, view.index, view.width, view.height} == {:view, 0, 2028, 1520}
+
+    assert {:ok, [view, view_jpeg, inference]} =
+             VisionCore.Camera.Unit.camera_outputs(config, :center)
+
+    assert {view.name, view.index, view.width, view.height, view.send} ==
+             {:view, 0, 2028, 1520, false}
 
     assert {view_jpeg.index, view_jpeg.width, view_jpeg.height, view_jpeg.format} ==
              {1, 2028, 1520, :jpeg}
 
     assert {inference.name, inference.index, inference.from} == {:inference, 2, :view}
 
+    # The raw view is made only for the JPEG and the models' input: it never crosses the Port.
+    assert [%{outputs: [^view_jpeg, ^inference]}] = VisionCore.Camera.Unit.settings(config)
+    server = VisionCore.Camera.V4L2Single.name_for("center")
+    assert VisionCore.Camera.Unit.output_key(config, :center, :view) == nil
+
+    assert VisionCore.Camera.Unit.output_key(config, :center, nil) ==
+             {:camera_frame, server, :view_jpeg}
+
     assert VisionCore.Camera.Unit.output_key(config, :center, :inference) ==
-             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :inference}
+             {:camera_frame, server, :inference}
 
     assert camera[:max_exposure_us] == 25_000
     assert camera[:frame_id] == "center_optical"
