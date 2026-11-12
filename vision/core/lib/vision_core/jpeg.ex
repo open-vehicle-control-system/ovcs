@@ -154,28 +154,28 @@ defmodule VisionCore.Jpeg do
     do: {:noreply, dispatch(%{state | waiting: :queue.in({from, request}, state.waiting)})}
 
   @impl GenServer
-  def handle_info({port, {:data, data}}, state) when is_map_key(state.ports, port) do
+  def handle_info({port, {:data, reply}}, state) when is_map_key(state.ports, port) do
     case state.ports[port] do
       nil ->
         {:noreply, state}
 
       %{from: from, timer: timer} ->
         Process.cancel_timer(timer)
-        GenServer.reply(from, if(data == <<>>, do: {:error, :bad_request}, else: {:ok, data}))
+        GenServer.reply(from, if(reply == <<>>, do: {:error, :bad_request}, else: {:ok, reply}))
         {:noreply, dispatch(put_in(state.ports[port], nil))}
     end
   end
 
   def handle_info({port, {:exit_status, status}}, state) when is_map_key(state.ports, port) do
     Logger.warning("#{__MODULE__}: jpeg_codec exited with #{status}")
-    {:noreply, state |> drop(port, {:error, {:exited, status}}) |> dispatch()}
+    {:noreply, state |> retire_port(port, {:error, {:exited, status}}) |> dispatch()}
   end
 
   def handle_info({:timeout, port, reference}, state) do
     case state.ports do
       %{^port => %{reference: ^reference}} ->
         close(port)
-        {:noreply, state |> drop(port, {:error, :timeout}) |> dispatch()}
+        {:noreply, state |> retire_port(port, {:error, :timeout}) |> dispatch()}
 
       _ports ->
         {:noreply, state}
@@ -193,7 +193,7 @@ defmodule VisionCore.Jpeg do
       {{:value, {from, request}}, waiting} ->
         case free_port(state) do
           {:ok, port} ->
-            %{state | waiting: waiting} |> run(port, from, request) |> dispatch()
+            %{state | waiting: waiting} |> send_request(port, from, request) |> dispatch()
 
           :busy ->
             state
@@ -206,14 +206,14 @@ defmodule VisionCore.Jpeg do
   end
 
   defp free_port(state) do
-    case Enum.find(state.ports, fn {_port, job} -> job == nil end) do
+    case Enum.find(state.ports, fn {_port, request} -> request == nil end) do
       {port, nil} -> {:ok, port}
       nil when map_size(state.ports) < state.size -> open_port()
       nil -> :busy
     end
   end
 
-  defp run(state, port, from, request) do
+  defp send_request(state, port, from, request) do
     Port.command(port, request)
     reference = make_ref()
     timer = Process.send_after(self(), {:timeout, port, reference}, state.timeout_ms)
@@ -228,7 +228,8 @@ defmodule VisionCore.Jpeg do
       }
   end
 
-  defp drop(state, port, reply) do
+  # Forgets `port`, answering its request, if any, with `reply`.
+  defp retire_port(state, port, reply) do
     case state.ports[port] do
       %{from: from, timer: timer} ->
         Process.cancel_timer(timer)
@@ -244,6 +245,7 @@ defmodule VisionCore.Jpeg do
   defp close(port) do
     Port.close(port)
   rescue
+    # Already closed by its exit, whose status is ignored once the Port is forgotten.
     ArgumentError -> :ok
   end
 

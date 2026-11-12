@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Stands in for jpeg_codec, by a request's last byte: 1 answers "slow"
-# after half a second, 2 exits with status 3, 3 answers its process id,
-# and any other answers "fast" at once.
+# after a delay, 2 exits with status 3, 3 answers its process id, and
+# any other answers "fast" at once.
 import os, struct, sys, time
 
 while True:

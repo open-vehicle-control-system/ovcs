@@ -257,10 +257,10 @@ defmodule VisionCore.Preview do
     end
   end
 
-  def handle_info({reference, result}, state) when is_map_key(state.encoding, reference) do
+  def handle_info({reference, encoded_jpeg}, state) when is_map_key(state.encoding, reference) do
     Process.demonitor(reference, [:flush])
     {{stream, sequence}, encoding} = Map.pop(state.encoding, reference)
-    {:noreply, encoded(%{state | encoding: encoding}, stream, sequence, result)}
+    {:noreply, send_encoded(%{state | encoding: encoding}, stream, sequence, encoded_jpeg)}
   end
 
   def handle_info({:DOWN, monitor_reference, :process, _pid, _reason}, state) do
@@ -310,7 +310,7 @@ defmodule VisionCore.Preview do
             send_frame(state, key, sequence, jpeg, now_ms)
 
           _stale ->
-            encode(state, stream)
+            start_encode(state, stream)
         end
     end
   end
@@ -333,7 +333,7 @@ defmodule VisionCore.Preview do
   end
 
   # Encoded on send: a grey frame costs an encode, and most are replaced unsent.
-  defp encode(state, stream) do
+  defp start_encode(state, stream) do
     if Enum.any?(state.encoding, &match?({_reference, {^stream, _sequence}}, &1)) do
       state
     else
@@ -368,8 +368,8 @@ defmodule VisionCore.Preview do
   end
 
   # The encoded frame goes to each subscriber due one, though a newer frame may wait.
-  defp encoded(state, stream, sequence, result) do
-    {jpeg, state} = encode_result(state, stream, result)
+  defp send_encoded(state, stream, sequence, encoded_jpeg) do
+    {jpeg, state} = jpeg_or_skip(state, stream, encoded_jpeg)
     state = put_in(state.encoded[stream], {sequence, jpeg})
     now_ms = System.monotonic_time(:millisecond)
 
@@ -388,18 +388,18 @@ defmodule VisionCore.Preview do
     end)
   end
 
-  defp encode_result(state, :depth, {:ok, jpeg}),
+  defp jpeg_or_skip(state, :depth, {:ok, jpeg}),
     do: {jpeg, %{state | depth_failure_logged: false}}
 
-  defp encode_result(state, :depth, {:error, reason}) do
+  defp jpeg_or_skip(state, :depth, {:error, reason}) do
     unless state.depth_failure_logged,
       do: Logger.error("#{__MODULE__} cannot encode the depth preview: #{reason}")
 
     {nil, %{state | depth_failure_logged: true}}
   end
 
-  defp encode_result(state, _stream, {:ok, jpeg}), do: {jpeg, state}
-  defp encode_result(state, _stream, _error), do: {nil, state}
+  defp jpeg_or_skip(state, _stream, {:ok, jpeg}), do: {jpeg, state}
+  defp jpeg_or_skip(state, _stream, _error), do: {nil, state}
 
   # The depth range is the unit's, shared by every dashboard: each depth subscriber hears a new one.
   defp announce_depth_range(state) do

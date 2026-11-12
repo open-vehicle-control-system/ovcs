@@ -258,7 +258,7 @@ defmodule VisionCore.PreviewTest do
     start_supervised!({VisionCore.Jpeg, name: :shared_codec, ports: 1})
     test_pid = self()
 
-    # Each of its encodes takes the fake codec half a second, answered "slow".
+    # Each of its encodes is a slow one on the fake codec, answered "slow".
     export = fn ->
       reply = VisionCore.Jpeg.encode(<<1>>, 1, 1, 1, codec: :shared_codec)
       send(test_pid, {:exported, reply})

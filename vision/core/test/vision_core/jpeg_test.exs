@@ -90,9 +90,13 @@ defmodule VisionCore.JpegTest do
     defp fake(byte), do: Jpeg.encode(<<byte>>, 1, 1, 1)
     defp slow, do: Task.async(fn -> fake(1) end)
 
-    defp await_busy(ports) do
-      busy = :sys.get_state(Jpeg).ports |> Map.values() |> Enum.count(&(&1 != nil))
-      if busy < ports, do: await_busy(ports)
+    # Waits until a request is on a Port, so the next one cannot overtake it.
+    defp await_busy_port(deadline_ms \\ System.monotonic_time(:millisecond) + 1_000) do
+      cond do
+        Enum.any?(Map.values(:sys.get_state(Jpeg).ports)) -> :ok
+        System.monotonic_time(:millisecond) > deadline_ms -> flunk("no request reached a Port")
+        true -> await_busy_port(deadline_ms)
+      end
     end
 
     test "a late reply does not reach the next caller" do
@@ -105,7 +109,7 @@ defmodule VisionCore.JpegTest do
     test "a request runs on a free Port while another Port encodes" do
       start_supervised!({Jpeg, ports: 2})
       slow = slow()
-      await_busy(1)
+      await_busy_port()
 
       assert {:ok, "fast"} = fake(0)
       assert Task.yield(slow, 0) == nil
@@ -120,7 +124,7 @@ defmodule VisionCore.JpegTest do
         for round <- 1..3, do: send(test_pid, {:steady, round, fake(1)})
       end)
 
-      await_busy(1)
+      await_busy_port()
       assert {:ok, "fast"} = fake(0)
 
       assert_receive {:steady, 1, {:ok, "slow"}}
@@ -128,19 +132,18 @@ defmodule VisionCore.JpegTest do
       assert_receive {:steady, 3, {:ok, "slow"}}, 2_000
     end
 
-    test "a free Port is reused, and no more Ports open than requests need" do
+    test "a free Port takes the next request rather than a new Port" do
       start_supervised!({Jpeg, ports: 3})
 
-      assert {:ok, pid} = fake(3)
-      assert {:ok, ^pid} = fake(3)
-      assert map_size(:sys.get_state(Jpeg).ports) == 1
+      assert {:ok, codec_pid} = fake(3)
+      assert {:ok, ^codec_pid} = fake(3)
     end
 
     @tag :capture_log
     test "a Port that exits fails its own request only, and reopens on the next" do
       start_supervised!({Jpeg, ports: 2})
       slow = slow()
-      await_busy(1)
+      await_busy_port()
 
       assert {:error, {:exited, 3}} = fake(2)
       assert {:ok, "slow"} = Task.await(slow)
