@@ -1,8 +1,9 @@
-//! `qnn_segment <context.bin> <classes>`: the Port behind `VisionCore.Segmentation.Backend.Qnn`.
-//! A semantic segmentation model on the Hexagon NPU through QNN's HTP backend, from a context
-//! binary built for this chip and QAIRT version, scoring the `classes` classes the pipeline
-//! names. The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and `libQnnSystem.so`, its
-//! `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
+//! `qnn_segment <context.bin> <classes> [--performance <profile>]`: the Port behind
+//! `VisionCore.Segmentation.Backend.Qnn`. A semantic segmentation model on the Hexagon NPU
+//! through QNN's HTP backend, from a context binary built for this chip and QAIRT version,
+//! scoring the `classes` classes the pipeline names, under the power vote of the performance
+//! profile (`qnn::Performance`, burst by default). The environment's `LD_LIBRARY_PATH` holds
+//! `libQnnHtp.so` and `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
 //! The model takes one `[1, H, W, 3]` uint8 RGB image of pixel values, unquantised or quantised
 //! with a scale of 1/255 and an offset of 0, and gives one `[1, H, W, C]` uint8 grid of C scores
@@ -25,7 +26,7 @@ use std::time::Instant;
 use framing::{log_record, LogLevel, Writer};
 use model::{Geometry, Shape};
 use protocol::{labels_record, parse_request};
-use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
+use qnn::{Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 
 /// Room in the request pipe for a whole request, which the BEAM then writes in one go.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
@@ -43,14 +44,20 @@ fn exit_early(message: &str, status: i32) -> ! {
     exit(status)
 }
 
+const USAGE: &str = "usage: qnn_segment <context.bin> <classes> [--performance <profile>]";
+
 fn main() {
-    let command_line: Vec<String> = std::env::args().collect();
-    let (context_path, classes) = match command_line.as_slice() {
-        [_program, context_path, classes] => match classes.parse::<usize>() {
+    let command_line: Vec<String> = std::env::args().skip(1).collect();
+    let (arguments, performance) = match qnn::command_line(&command_line) {
+        Ok(parsed) => parsed,
+        Err(message) => exit_early(&format!("{message}; {USAGE}"), 2),
+    };
+    let (context_path, classes) = match arguments {
+        [context_path, classes] => match classes.parse::<usize>() {
             Ok(classes) => (context_path, classes),
             Err(_) => exit_early(&format!("classes: {classes} is not a count"), 2),
         },
-        _ => exit_early("usage: qnn_segment <context.bin> <classes>", 2),
+        _ => exit_early(USAGE, 2),
     };
 
     // Before any QNN call: its libraries may log onto stdout.
@@ -60,7 +67,7 @@ fn main() {
     };
     writer.log_panics();
 
-    if let Err(message) = run(context_path, classes, &writer) {
+    if let Err(message) = run(context_path, classes, performance, &writer) {
         log(&writer, LogLevel::Error, &message);
         exit(1);
     }
@@ -78,7 +85,12 @@ fn shapes(tensors: &[qnn::Tensor]) -> Vec<Shape<'_>> {
         .collect()
 }
 
-fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(), String> {
+fn run(
+    context_path: &str,
+    expected_classes: usize,
+    performance: Performance,
+    writer: &Writer,
+) -> Result<(), String> {
     match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
         Ok(bytes) => log(
             writer,
@@ -92,8 +104,12 @@ fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(
         ),
     }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
-    let mut model = qnn::Model::open(&binary)?;
+    let mut model = qnn::Model::open(&binary, performance)?;
     drop(binary);
+    match performance.outcome(model.power_vote_error.as_deref()) {
+        Ok(line) => log(writer, LogLevel::Info, &line),
+        Err(line) => log(writer, LogLevel::Warning, &line),
+    }
 
     let Geometry {
         input_width,

@@ -2,6 +2,7 @@
 //! libraries loaded at run time from the library path. Each execution is timed
 //! by QNN's basic profiling, the HTP's own execution time, or by the wall time
 //! around `graphExecute` when the profile is unavailable; `TimeLog` says which.
+//! The HTP runs under the power vote of a performance profile (`Performance`).
 
 #[allow(
     non_upper_case_globals,
@@ -14,9 +15,11 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/qnn.rs"));
 }
 
+mod performance;
 mod stage_times;
 mod time_log;
 
+pub use performance::{command_line, Performance, DEFAULT_PERFORMANCE};
 pub use stage_times::{micros, StageTimes, STAGE_TIMES_EVERY};
 pub use time_log::TimeLog;
 
@@ -208,10 +211,104 @@ pub struct Model {
     /// The first profiled execution's events, until `take_profile_report`.
     profile_report: Option<String>,
     profile_reported: bool,
+    /// Why the performance profile's vote is missing or partial, if it is.
+    pub power_vote_error: Option<String>,
     backend: Qnn_BackendHandle_t,
+    // Destroyed before the libraries are unloaded.
+    _power_vote: Option<PowerVote>,
     // The context and the libraries live as long as the process.
     _context: Qnn_ContextHandle_t,
     _libraries: [Library; 2],
+}
+
+/// A power config id holding a performance profile's vote, which ends when it is destroyed.
+struct PowerVote {
+    destroy: QnnHtpPerfInfrastructure_DestroyPowerConfigIdFn_t,
+    id: u32,
+}
+
+impl Drop for PowerVote {
+    fn drop(&mut self) {
+        if let Some(destroy) = self.destroy {
+            unsafe { destroy(self.id) };
+        }
+    }
+}
+
+/// The calls of a performance profile's vote, in `Performance::power_configs`' order.
+const POWER_CONFIG_CALLS: [&str; 3] = [
+    "setPowerConfig DCVS_V3",
+    "setPowerConfig RPC_CONTROL_LATENCY",
+    "setPowerConfig RPC_POLLING_TIME",
+];
+
+/// Votes `performance` on the HTP through the device's performance infrastructure. The vote
+/// holds while the returned id lives; there is none when the DCVS_V3 call fails. The message
+/// names each call that failed.
+unsafe fn vote(
+    interface: &QnnInterface_ImplementationV2_39_t,
+    performance: Performance,
+) -> (Option<PowerVote>, Option<String>) {
+    let unvoted = |message: String| {
+        (
+            None,
+            Some(format!(
+                "{message}; the HTP runs under its default power policy"
+            )),
+        )
+    };
+    if performance == Performance::NoVote {
+        return (None, None);
+    }
+    let Some(get_infrastructure) = interface.deviceGetInfrastructure else {
+        return unvoted(missing("deviceGetInfrastructure"));
+    };
+    let mut infrastructure: QnnDevice_Infrastructure_t = ptr::null_mut();
+    // QNN writes the infrastructure through the pointer its header declares const.
+    let written = ptr::addr_of_mut!(infrastructure).cast_const();
+    if let Err(message) = check("deviceGetInfrastructure", get_infrastructure(written)) {
+        return unvoted(message);
+    }
+    if infrastructure.is_null() {
+        return unvoted("deviceGetInfrastructure gave no infrastructure".to_string());
+    }
+    let htp = &*(infrastructure as *const QnnHtpDevice_Infrastructure_t);
+    if htp.infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF {
+        return unvoted(format!(
+            "the device's infrastructure is of type {}, not the HTP's performance one",
+            htp.infraType
+        ));
+    }
+    let performance_infrastructure = htp.__bindgen_anon_1.perfInfra;
+    let (Some(create), Some(set)) = (
+        performance_infrastructure.createPowerConfigId,
+        performance_infrastructure.setPowerConfig,
+    ) else {
+        return unvoted(missing("createPowerConfigId or setPowerConfig"));
+    };
+    let mut id = 0u32;
+    if let Err(message) = check("createPowerConfigId", create(0, 0, &mut id)) {
+        return unvoted(message);
+    }
+    let held = PowerVote {
+        destroy: performance_infrastructure.destroyPowerConfigId,
+        id,
+    };
+    let mut failures = Vec::new();
+    for (config, call) in performance.power_configs(id).iter().zip(POWER_CONFIG_CALLS) {
+        let mut configs = [
+            config as *const QnnHtpPerfInfrastructure_PowerConfig_t,
+            ptr::null(),
+        ];
+        if let Err(message) = check(call, set(id, configs.as_mut_ptr())) {
+            if call == POWER_CONFIG_CALLS[0] {
+                return unvoted(message);
+            }
+            failures.push(message);
+        }
+    }
+    let error = (!failures.is_empty()).then(|| failures.join(", "));
+    (Some(held), error)
 }
 
 fn check(what: &str, status: Qnn_ErrorHandle_t) -> Result<(), String> {
@@ -339,8 +436,10 @@ unsafe fn first_graph(
 }
 
 impl Model {
-    /// Loads the HTP backend and creates the context `binary` holds.
-    pub fn open(binary: &[u8]) -> Result<Model, String> {
+    /// Loads the HTP backend, votes `performance` on it, and creates the context `binary`
+    /// holds. A vote that fails leaves the HTP under its default power policy, the reason in
+    /// `power_vote_error`.
+    pub fn open(binary: &[u8], performance: Performance) -> Result<Model, String> {
         unsafe {
             let backend_library =
                 Library::new("libQnnHtp.so").map_err(|e| format!("libQnnHtp.so: {e}"))?;
@@ -425,6 +524,7 @@ impl Model {
                     device_create(ptr::null_mut(), ptr::null_mut(), &mut device),
                 )?;
             }
+            let (power_vote, power_vote_error) = vote(&interface, performance);
             let mut context: Qnn_ContextHandle_t = ptr::null_mut();
             check(
                 "contextCreateFromBinary",
@@ -470,7 +570,9 @@ impl Model {
                 profile_error,
                 profile_report: None,
                 profile_reported: false,
+                power_vote_error,
                 backend,
+                _power_vote: power_vote,
                 _context: context,
                 _libraries: [backend_library, system_library],
             })

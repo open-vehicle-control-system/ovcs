@@ -1,6 +1,7 @@
-//! `qnn_detect <context.bin> [score_threshold]`: the Port behind
+//! `qnn_detect <context.bin> [score_threshold] [--performance <profile>]`: the Port behind
 //! `VisionCore.Detection.Backend.Qnn`. YOLOX on the Hexagon NPU through QNN's
-//! HTP backend, from a context binary built for this chip and QAIRT version.
+//! HTP backend, from a context binary built for this chip and QAIRT version, under the
+//! power vote of the performance profile (`qnn::Performance`, burst by default).
 //! The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and
 //! `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
@@ -20,7 +21,7 @@ use std::time::Instant;
 use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{log_record, LogLevel, Writer};
-use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
+use qnn::{Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
 use yolox::{decode, Outputs, Quantisation, ANCHORS, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
@@ -42,16 +43,21 @@ fn exit_early(message: &str, status: i32) -> ! {
     exit(status)
 }
 
+const USAGE: &str = "usage: qnn_detect <context.bin> [score_threshold] [--performance <profile>]";
+
 fn main() {
-    let command_line: Vec<String> = std::env::args().collect();
-    if command_line.len() < 2 {
-        exit_early("usage: qnn_detect <context.bin> [score_threshold]", 2);
-    }
-    let context_path = &command_line[1];
-    let score_threshold = match command_line.get(2).map(|s| s.parse::<f32>()) {
+    let command_line: Vec<String> = std::env::args().skip(1).collect();
+    let (arguments, performance) = match qnn::command_line(&command_line) {
+        Ok(parsed) => parsed,
+        Err(message) => exit_early(&format!("{message}; {USAGE}"), 2),
+    };
+    let Some(context_path) = arguments.first() else {
+        exit_early(USAGE, 2);
+    };
+    let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => exit_early(&format!("bad score threshold {}", command_line[2]), 2),
+        Some(Err(_)) => exit_early(&format!("bad score threshold {}", arguments[1]), 2),
     };
 
     // Before any QNN call: its libraries may log onto stdout.
@@ -61,7 +67,7 @@ fn main() {
     };
     writer.log_panics();
 
-    if let Err(message) = run(context_path, score_threshold, &writer) {
+    if let Err(message) = run(context_path, score_threshold, performance, &writer) {
         log(&writer, LogLevel::Error, &message);
         exit(1);
     }
@@ -91,7 +97,12 @@ fn quantisation(model: &qnn::Model, index: usize) -> Result<Quantisation, String
     })
 }
 
-fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), String> {
+fn run(
+    context_path: &str,
+    score_threshold: f32,
+    performance: Performance,
+    writer: &Writer,
+) -> Result<(), String> {
     match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
         Ok(bytes) => log(
             writer,
@@ -105,8 +116,12 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
         ),
     }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
-    let mut model = qnn::Model::open(&binary)?;
+    let mut model = qnn::Model::open(&binary, performance)?;
     drop(binary);
+    match performance.outcome(model.power_vote_error.as_deref()) {
+        Ok(line) => log(writer, LogLevel::Info, &line),
+        Err(line) => log(writer, LogLevel::Warning, &line),
+    }
 
     let input_bytes = (MODEL_SIZE * MODEL_SIZE * 3) as usize;
     match model.inputs.as_slice() {

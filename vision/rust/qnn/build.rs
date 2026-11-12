@@ -13,11 +13,15 @@ fn main() {
         .clang_arg(format!("-I{include_dir}"))
         .header_contents(
             "wrapper.h",
-            "#include <QnnInterface.h>\n#include <HTP/QnnHtpProfile.h>\n\
+            // The HTP device headers use C's `bool` and `static_assert` without including them.
+            "#include <stdbool.h>\n#include <assert.h>\n\
+             #include <QnnInterface.h>\n#include <HTP/QnnHtpProfile.h>\n\
+             #include <HTP/QnnHtpDevice.h>\n\
              #include <System/QnnSystemInterface.h>\n",
         )
         .allowlist_type("Qnn.*")
         .allowlist_var("QNN_.*")
+        .allowlist_var("DCVS_.*")
         .prepend_enum_name(false)
         .layout_tests(false)
         .generate()
