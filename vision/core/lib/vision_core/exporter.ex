@@ -29,8 +29,9 @@ defmodule VisionCore.Exporter do
     * `{:segmentation, name}` — `{frame, labels, clouds}`, the result for
       the `VisionCore.Camera.Frame` `frame` of the segmentation pipeline
       named `name`: its label image and its road and off-road points,
-      `nil` without a stereo pair matched with the frame
-      (`VisionCore.Segmentation.Pipeline`).
+      `nil` without a stereo pair matched with the frame, or when the
+      camera's calibration or pose is missing or its calibration cannot
+      be projected at the frame's size (`VisionCore.Segmentation.Pipeline`).
 
   An entry is an output, or `{output, options}` whose one option is
   `:max_hz`, the most values of the output handed over a second

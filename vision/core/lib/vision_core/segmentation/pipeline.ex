@@ -16,13 +16,15 @@ defmodule VisionCore.Segmentation.Pipeline do
       model's output grid, `width * height` class ids, one byte each, row
       by row, an index into `:labels`, stretched over the band, the
       rectangle of the frame's pixels the model saw.
-    * `clouds` — `%{road:, off_road:, frame_id:}`: the points of the
-      stereo pair matched with the frame that land in a road cell and in
-      any other cell, each `x, y, z` in metres in the rectified left
-      optical frame, packed little-endian 32-bit floats, in the order the
-      depth map's rows give them, and `frame_id` that frame's, the pair's
-      (`VisionCore.Stereo.Pair.frame_id/1`), `nil` when the stereo unit's
-      left camera was given none. `nil` without a matched pair, when the
+    * `clouds` — `%{road:, off_road:, frame_id:, capture_ns:}`: the
+      points of the stereo pair matched with the frame that land in a
+      road cell and in any other cell, each `x, y, z` in metres in the
+      rectified left optical frame, packed little-endian 32-bit floats, in
+      the order the depth map's rows give them; `frame_id` that frame's,
+      the pair's (`VisionCore.Stereo.Pair.frame_id/1`), `nil` when the
+      stereo unit's left camera was given none; and `capture_ns` the
+      pair's capture time (`VisionCore.Stereo.Pair.capture_ns/1`), which
+      the points' geometry belongs to. `nil` without a matched pair, when the
       camera's calibration or pose is missing, or when its calibration
       cannot be projected at the frame's size, such as one of another
       aspect ratio (`VisionCore.Detection.CameraDepth.lens/2`).
@@ -414,7 +416,15 @@ defmodule VisionCore.Segmentation.Pipeline do
         Reprojection.project_with_origin(pair, lens, camera.pose, state.reprojection_stride)
 
       {road, off_road} = sort_points(points, labels, state.road, <<>>, <<>>)
-      {%{road: road, off_road: off_road, frame_id: Pair.frame_id(pair)}, state}
+
+      clouds = %{
+        road: road,
+        off_road: off_road,
+        frame_id: Pair.frame_id(pair),
+        capture_ns: Pair.capture_ns(pair)
+      }
+
+      {clouds, state}
     else
       {nil, state}
     end

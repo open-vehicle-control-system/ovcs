@@ -92,7 +92,9 @@ defmodule VisionCore.Segmentation.SupervisorTest do
           {Keyword.delete(@options, :name), "a segmenter needs a :name"},
           {Keyword.put(@options, :name, :stereo), "not one of :stereo"},
           {Keyword.put(@options, :name, "road"), "got \"road\""},
-          {@options ++ [min_score: 0.5], "no option :min_score"}
+          {@options ++ [min_score: 0.5], "no option :min_score"},
+          {@options ++ [topic_prefix: "front"],
+           ":topic_prefix is the ROS 2 exporter's segmentation: option"}
         ] do
       log = capture_log(fn -> assert Supervisor.start_link(options) == :ignore end)
 

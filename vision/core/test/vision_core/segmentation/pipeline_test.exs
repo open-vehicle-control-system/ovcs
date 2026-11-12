@@ -321,6 +321,10 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
     assert %{road: <<_road::binary>>} = first
     assert %{road: <<_road_too::binary>>} = second
+
+    # The clouds carry the capture time of the pair matched with each frame.
+    assert first.capture_ns == 1_500_000_000
+    assert second.capture_ns == 2_000_000_000
   end
 
   test "skips the frames that come while 32 frames' label images wait for their pair", %{

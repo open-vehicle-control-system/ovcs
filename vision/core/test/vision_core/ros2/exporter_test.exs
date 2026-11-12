@@ -4,7 +4,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.FoxgloveMsgs.Msg.ImageAnnotations
-  alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image}
+  alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2}
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
@@ -915,6 +915,166 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = published}, 1_000
       assert published.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+  end
+
+  describe "segmentation pipelines" do
+    # A stereo unit of `driver`'s cameras, a camera `:hq` and the pipelines `:road` and `:lanes` on it.
+    defp segmentation_config(driver) do
+      config =
+        config(driver,
+          left: [
+            sync: :server,
+            frame_id: "rig_left",
+            calibration_path: Path.join(@calibration, "stereo_left.yaml")
+          ]
+        )
+
+      segmentation = [
+        {:camera, name: :hq, driver: driver, frame_id: "hq_lens"},
+        {:segmenter, name: :road, source: {:camera, :hq}},
+        {:segmenter, name: :lanes, source: {:camera, :hq}}
+      ]
+
+      %{config | components: config.components ++ segmentation}
+    end
+
+    defp segmentation_options(driver, exporter_options),
+      do: Keyword.put(options(driver, exporter_options), :config, segmentation_config(driver))
+
+    defp segmented_frame(frame_id \\ "hq_optical"),
+      do: %Frame{label: "hq", frame_id: frame_id, width: 8, height: 6, capture_ns: 7}
+
+    defp segmentation_labels,
+      do: %{width: 2, height: 1, data: <<0, 10>>, band: {0, 2, 8, 4}}
+
+    defp segmentation_clouds(frame_id \\ "stereo_left_optical"),
+      do: %{
+        road: <<1.0::float-32-little, 2.0::float-32-little, 3.0::float-32-little>>,
+        off_road: <<>>,
+        frame_id: frame_id,
+        capture_ns: 5
+      }
+
+    test "check/1 refuses segmentation: options it does not take, or names no pipeline has" do
+      assert Exporter.check(segmentation_options(Camera, segmentation: [pipelines: [:road]])) ==
+               :ok
+
+      assert Exporter.check(segmentation_options(Camera, segmentation: [topic_prefix: "front"])) ==
+               :ok
+
+      for {segmentation, refusal} <- [
+            {[pipelines: [:road, :signs]],
+             "segmentation: pipelines :signs, which is no segmentation pipeline of the configuration"},
+            {[max_hz: 5], "segmentation: has no option :max_hz"},
+            {:road, "segmentation: is not a keyword list: :road"},
+            {[pipelines: :road],
+             "segmentation: pipelines: is not a list of segmentation pipeline names: :road"}
+          ] do
+        assert {:error, reason} =
+                 Exporter.check(segmentation_options(Camera, segmentation: segmentation))
+
+        assert reason =~ refusal
+      end
+    end
+
+    test "its results are read with segmentation:, every pipeline by default, or those it names" do
+      options = segmentation_options(Camera, segmentation: [])
+      assert Exporter.outputs(options) == [{:segmentation, :road}, {:segmentation, :lanes}]
+
+      assert Exporter.outputs(Keyword.put(options, :segmentation, pipelines: [:lanes])) ==
+               [{:segmentation, :lanes}]
+
+      assert Exporter.outputs(Keyword.delete(options, :segmentation)) == []
+    end
+
+    test "publishes each pipeline's labels and clouds on its own topics" do
+      {:ok, state} = Exporter.init(segmentation_options(Camera, segmentation: []))
+
+      {:ok, state} =
+        Exporter.handle_output(
+          {:segmentation, :road},
+          {segmented_frame(), segmentation_labels(), segmentation_clouds()},
+          state
+        )
+
+      assert_received {:published, "stereo/road/labels", %Image{} = labels}
+      assert labels.header.frame_id == "hq_optical"
+      assert labels.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(7)
+      assert labels.data == <<0, 10>>
+      assert_received {:published, "stereo/road/road/points", %PointCloud2{width: 1} = road}
+      assert road.header.frame_id == "stereo_left_optical"
+      assert road.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(5)
+      assert_received {:published, "stereo/road/off_road/points", %PointCloud2{width: 0}}
+      refute_received {:published, _topic, _message}
+
+      {:ok, _state} =
+        Exporter.handle_output(
+          {:segmentation, :lanes},
+          {segmented_frame(), segmentation_labels(), nil},
+          state
+        )
+
+      assert_received {:published, "stereo/lanes/labels", %Image{}}
+      refute_received {:published, _topic, _message}
+    end
+
+    test "a frame or pair without a frame id goes out in the camera's and the stereo left one's" do
+      {:ok, state} =
+        Exporter.init(segmentation_options(Camera, segmentation: [topic_prefix: "front"]))
+
+      {:ok, _state} =
+        Exporter.handle_output(
+          {:segmentation, :road},
+          {segmented_frame(nil), segmentation_labels(), segmentation_clouds(nil)},
+          state
+        )
+
+      assert_received {:published, "front/road/labels", %Image{} = labels}
+      assert labels.header.frame_id == "hq_lens"
+      assert_received {:published, "front/road/road/points", %PointCloud2{} = road}
+      assert road.header.frame_id == "rig_left"
+    end
+
+    test "without a stereo unit in its configuration, publishes under stereo, its clouds' fallback frame the prefix's left one" do
+      config = %VisionCore.Config{
+        ros2: [zenoh_endpoint_ip: "127.0.0.1"],
+        components: [
+          {:camera, name: :hq, driver: Camera},
+          {:segmenter, name: :road, source: {:camera, :hq}}
+        ]
+      }
+
+      for {segmentation, prefix} <- [{[], "stereo"}, {[topic_prefix: "front"], "front"}] do
+        options = [config: config, publish: publish_to(self()), segmentation: segmentation]
+        assert Exporter.check(options) == :ok
+        {:ok, state} = Exporter.init(options)
+
+        {:ok, _state} =
+          Exporter.handle_output(
+            {:segmentation, :road},
+            {segmented_frame(), segmentation_labels(), segmentation_clouds(nil)},
+            state
+          )
+
+        road_topic = "#{prefix}/road/road/points"
+        assert_received {:published, ^road_topic, %PointCloud2{} = road}
+        assert road.header.frame_id == "#{prefix}_left"
+      end
+    end
+
+    test "through the runner, each pipeline's results reach only its own topics" do
+      options = segmentation_options(OtherCamera, segmentation: [])
+      start_runner(options, options[:config])
+
+      Outputs.publish(
+        {:segmentation, VisionCore.Segmentation.Pipeline.Lanes},
+        {:segmentation, :lanes, segmented_frame(), segmentation_labels(), segmentation_clouds()}
+      )
+
+      assert_receive {:published, "stereo/lanes/labels", %Image{}}, 1_000
+      assert_receive {:published, "stereo/lanes/road/points", %PointCloud2{}}, 1_000
+      refute_receive {:published, "stereo/road/" <> _topic, _message}, 100
     end
   end
 end

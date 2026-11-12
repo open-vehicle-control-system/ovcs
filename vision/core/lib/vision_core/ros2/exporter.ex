@@ -14,6 +14,8 @@ defmodule VisionCore.Ros2.Exporter do
     * Each detection pipeline's detections, as markers, `vision_msgs`
       and an overlay on the left raw image, or on a camera source the
       camera's (`VisionCore.Ros2.Exporter.Detections`).
+    * Each segmentation pipeline's label image and its road and off-road
+      points (`VisionCore.Ros2.Exporter.Segmentation`).
     * Each camera of its own's image, camera info and pose relative to
       the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
     * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
@@ -28,8 +30,9 @@ defmodule VisionCore.Ros2.Exporter do
   It needs the ROS 2 link, the `ros2:` section of the configuration:
   without it, it is not started (`check/1`), nor when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
-  cannot read, nor with a `cameras:` option it does not take or a name
-  no camera of the configuration has. Its status is the link's:
+  cannot read, nor with a `cameras:` or `segmentation:` option it does
+  not take or a name no camera or segmentation pipeline of the
+  configuration has. Its status is the link's:
   connected while the Zenoh session is open.
 
   ## The stereo unit
@@ -83,6 +86,13 @@ defmodule VisionCore.Ros2.Exporter do
       `"stereo"`; `:raw_image_max_hz` (10), the most images a second per
       camera for frames it encodes, JPEG frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
+    * `:segmentation` — publishes the results of each segmentation
+      pipeline its `:pipelines` list, every one of the configuration by
+      default, on the topics `VisionCore.Ros2.Exporter.Segmentation`
+      documents, under `:topic_prefix`, the stereo unit's `:prefix` by
+      default, else `"stereo"`. Clouds whose pair carries no frame id are
+      in the stereo unit's left `:frame_id`, else in `"<prefix>_left"`,
+      this `:topic_prefix`'s.
     * `:heartbeat` — publishes the heartbeat; `:interval_ms` (`1_000`),
       the time between two heartbeats.
     * `:node_name` (the node name of the configuration's `ros2:`) —
@@ -103,8 +113,10 @@ defmodule VisionCore.Ros2.Exporter do
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Unit}
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Segmentation}
   alias VisionCore.Ros2.Exporter.{Camera, Detections, Diagnostics, Stereo}
+  alias VisionCore.Ros2.Exporter.Segmentation, as: SegmentationMessages
+  alias VisionCore.Segmentation.Supervisor, as: SegmentationSupervisor
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Stamp, Topics}
   alias VisionCore.Stereo.{Pair, StageTimer}
@@ -116,6 +128,7 @@ defmodule VisionCore.Ros2.Exporter do
   @transform_topic "/tf_static"
   @transform_interval_ms 1_000
   @camera_options [:names, :topic_prefix, :raw_image_max_hz, :camera_info_interval_frames]
+  @segmentation_options [:pipelines, :topic_prefix]
 
   @doc "The heartbeat numbered `counter` of the node `node_name`, sent at `system_time_ms`."
   @spec heartbeat_message(pos_integer(), String.t(), integer()) :: struct()
@@ -130,8 +143,9 @@ defmodule VisionCore.Ros2.Exporter do
     config = config(options)
 
     with :ok <- check_link(config),
-         :ok <- check_stereo(options[:stereo], config) do
-      check_cameras(options[:cameras], config)
+         :ok <- check_stereo(options[:stereo], config),
+         :ok <- check_cameras(options[:cameras], config) do
+      check_segmentation(options[:segmentation], config)
     end
   end
 
@@ -176,6 +190,36 @@ defmodule VisionCore.Ros2.Exporter do
     end
   end
 
+  defp check_segmentation(nil, _config), do: :ok
+
+  defp check_segmentation(segmentation_options, config) do
+    names = segmentation_names(config)
+
+    cond do
+      not (is_list(segmentation_options) and Keyword.keyword?(segmentation_options)) ->
+        {:error, "its segmentation: is not a keyword list: #{inspect(segmentation_options)}"}
+
+      (unknown = Keyword.keys(segmentation_options) -- @segmentation_options) != [] ->
+        {:error, "its segmentation: has no option #{Enum.map_join(unknown, ", ", &inspect/1)}"}
+
+      not is_list(listed = Keyword.get(segmentation_options, :pipelines, [])) ->
+        {:error,
+         "its segmentation: pipelines: is not a list of segmentation pipeline names: " <>
+           inspect(listed)}
+
+      (missing = Keyword.get(segmentation_options, :pipelines, []) -- names) != [] ->
+        {:error,
+         "its segmentation: pipelines #{Enum.map_join(missing, ", ", &inspect/1)}, " <>
+           "which is no segmentation pipeline of the configuration"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp segmentation_names(config),
+    do: for({name, _backend, _server} <- SegmentationSupervisor.pipelines(config), do: name)
+
   @impl VisionCore.Exporter
   def outputs(options) do
     stereo =
@@ -185,7 +229,20 @@ defmodule VisionCore.Ros2.Exporter do
 
     stereo ++
       Enum.map(detection_pipelines(options[:detections]), &Detection.output/1) ++
+      Enum.map(segmentation_pipelines(options), &Segmentation.output/1) ++
       Enum.map(published_camera_names(options), &{:camera_frame, &1})
+  end
+
+  defp segmentation_pipelines(options) do
+    case options[:segmentation] do
+      nil ->
+        []
+
+      segmentation_options ->
+        Keyword.get_lazy(segmentation_options, :pipelines, fn ->
+          segmentation_names(config(options))
+        end)
+    end
   end
 
   # Without reading the cameras' files: `outputs/1` runs at every listing.
@@ -313,6 +370,7 @@ defmodule VisionCore.Ros2.Exporter do
         heartbeat: options[:heartbeat] && start_heartbeat(options, config),
         stereo: stereo,
         detections: start_detections(options[:detections], cameras),
+        segmentation: start_segmentation(options, cameras),
         cameras: start_cameras(options),
         transform_parent_frame_id: left_frame_id(cameras),
         telemetry: StageTimer.new(window: 30, label: "publisher"),
@@ -394,6 +452,44 @@ defmodule VisionCore.Ros2.Exporter do
       {Detection.output(pipeline), %{settings: settings, drawn: 0}}
     end)
   end
+
+  # Each published segmentation pipeline's topics and frames, by its output.
+  defp start_segmentation(options, cameras) do
+    case segmentation_pipelines(options) do
+      [] ->
+        %{}
+
+      pipelines ->
+        config = config(options)
+        sources = Map.new(SegmentationSupervisor.sources(config))
+        frame_ids = Map.new(Unit.settings(config), &{&1.name, &1.frame_id})
+        topic_prefix = Keyword.get(options[:segmentation], :topic_prefix, unit_prefix(cameras))
+
+        Map.new(pipelines, fn pipeline ->
+          output = Segmentation.output(pipeline)
+          camera = source_camera(sources[output])
+
+          settings =
+            SegmentationMessages.new(
+              pipeline: pipeline,
+              topic_prefix: topic_prefix,
+              camera: camera,
+              camera_frame_id: frame_ids[camera],
+              cloud_frame_id: left_frame_id(cameras)
+            )
+
+          Logger.info(
+            "#{__MODULE__} publishing segmentation #{pipeline} on #{settings.labels_topic}, " <>
+              "#{settings.road_topic} and #{settings.off_road_topic}"
+          )
+
+          {output, settings}
+        end)
+    end
+  end
+
+  defp source_camera({:camera, camera}), do: camera
+  defp source_camera(_source), do: nil
 
   defp unit_prefix({:ok, cameras}), do: cameras[:prefix]
   defp unit_prefix({:error, _reason}), do: @default_prefix
@@ -517,6 +613,15 @@ defmodule VisionCore.Ros2.Exporter do
     |> publish_all(state)
 
     {:ok, put_in(state.detections[output].drawn, Detections.drawn(detections))}
+  end
+
+  def handle_output(output, {%Frame{} = frame, labels, clouds}, state)
+      when is_map_key(state.segmentation, output) do
+    frame
+    |> SegmentationMessages.messages(labels, clouds, state.segmentation[output])
+    |> publish_all(state)
+
+    {:ok, state}
   end
 
   @impl VisionCore.Exporter

@@ -25,7 +25,8 @@ defmodule VisionCore.Segmentation.Supervisor do
   pipeline, and `:max_hz`, `:labels` and `:road_classes` to `Live`; see
   their docs. A unit that fails to start, such as one given an option it
   does not take, is left down, with the reason logged, and the rest of
-  the vision core runs on.
+  the vision core runs on; the log names the ROS 2 exporter's
+  `segmentation:` for its `:topic_prefix`.
   """
   use Supervisor
   require Logger
@@ -142,6 +143,11 @@ defmodule VisionCore.Segmentation.Supervisor do
       refused -> raise ArgumentError, Enum.map_join(refused, "; ", &refused_option/1)
     end
   end
+
+  defp refused_option(:topic_prefix),
+    do:
+      "its :topic_prefix is the ROS 2 exporter's segmentation: option " <>
+        "(VisionCore.Ros2.Exporter)"
 
   defp refused_option(option), do: "it has no option #{inspect(option)}"
 
