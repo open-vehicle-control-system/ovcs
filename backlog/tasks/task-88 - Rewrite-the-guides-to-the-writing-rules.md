@@ -31,7 +31,7 @@ No page is split, merged or renamed here: URLs and redirects live in the website
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Across the 42 guides, sentences over 35 words go from 156 to 13 and paragraphs over 120 words from 20 to 0; the word count is unchanged (72340 to 72494), since the prose was restructured rather than cut. The 13 remaining are two sentences the counter joins because the second starts with inline code, or a troubleshooting entry's cause and fix.
+Across the 42 guides, sentences over 35 words go from 156 to 13 and paragraphs over 120 words from 20 to 0; the word count barely moves (72340 to 72218), since the prose was restructured rather than cut. The 13 remaining are two sentences the counter joins because the second starts with inline code, or a troubleshooting entry's cause and fix.
 
 Removed under the dashboard rule: the OVCS1 grid walk-through in docs/infotainment/README.md; the theme, card layout, narrow-screen and chart-colour sentences in docs/vms/dashboard_pages.md; the menu, panel, save bar and caption descriptions in docs/vision/README.md, data_flow.md and stages.md; the export button's states in docs/vision/tuning.md; the bus drawing, tables, filter box and `@ovcs/ui` frame in docs/bus/gateway.md.
 
