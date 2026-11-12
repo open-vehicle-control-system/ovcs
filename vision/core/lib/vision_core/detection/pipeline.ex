@@ -77,6 +77,11 @@ defmodule VisionCore.Detection.Pipeline do
   skipped. The boxes of a frame whose size the calibration cannot be
   projected at, such as one of another aspect ratio, wait for no pair.
 
+  The calibration and the pose are read at start. A calibration
+  committed through the camera's `set_camera_info` reaches the ROS 2
+  exporter's `camera_info` at once, but the boxes are placed with the
+  start-time calibration until the unit restarts.
+
   A box with no distance is kept: its position and size are `nil`, and
   its `:bearing` says where it is seen. Each detection is in the
   camera's optical frame, its `:box` and `:outline`, its four corners,
