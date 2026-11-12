@@ -4,20 +4,25 @@ defmodule Ovcs1.Vision.Composer do
   Shutter Cameras (IMX296) on Camera 0 (left) and Camera 1 (right), 20 cm
   apart with 6 mm lenses, captured over raw V4L2 through the board's CAMSS
   with the right sensor phase-locked to the left, depth computed on the
-  GPU, and objects detected by YOLOX on the Hexagon NPU. A Raspberry Pi HQ
-  Camera (IMX477) on Camera 2 is a camera of its own, `:hq`, captured in
-  colour by `VisionCore.Camera.V4L2Single`.
+  GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
+  is a camera of its own, `:hq`, captured in colour by
+  `VisionCore.Camera.V4L2Single`. On the Hexagon NPU, YOLOX detects
+  objects on it, the `:objects` pipeline, and FFNet segments the road on
+  it, the `:road` pipeline; both take their distances from the stereo
+  depth projected into the camera.
 
   `priv/firmware/vision/rootfs_overlay/boot/cameras.cfg` names the sensor on
-  each of the board's connectors. The cameras deliver 728x544, half the
-  sensor in each axis, and the pipeline matches at that size over 128
+  each of the board's connectors. The stereo cameras deliver 728x544, half
+  the sensor in each axis, and the pipeline matches at that size over 128
   disparities, coarse to fine.
 
-  `priv/calibration` holds the rig's calibration, from `cameracalibrator`.
-  The cameras deliver grey frames, which the ROS 2 exporter encodes to
-  JPEG; it publishes every pair (`raw_image_max_hz` at the capture rate),
-  so a consumer pairing left and right images gets frames of the same
-  capture.
+  `priv/calibration` holds the rig's calibration, from `cameracalibrator`,
+  and the HQ camera's nominal one, `hq.yaml`, for its half output, until
+  it is calibrated. Without `hq_pose.yaml`, its pose relative to the
+  stereo pair, the HQ pipelines run without distances. The stereo
+  cameras deliver grey frames, which the ROS 2 exporter encodes to JPEG;
+  it publishes every pair (`raw_image_max_hz` at the capture rate), so a
+  consumer pairing left and right images gets frames of the same capture.
 
   The GPU modules are compiled on a host into `priv/nx_iree_cache`, for
   the stages, their options and the matching size; rebuild it after
@@ -25,16 +30,21 @@ defmodule Ovcs1.Vision.Composer do
 
       mix vision_core.nx_cache --composer Ovcs1.Vision.Composer --out priv/nx_iree_cache
 
-  The detection model, YOLOX w8a8 for QNN, is fetched, not committed:
-  `mise run fetch-models` at the repository root. The board generates its
-  context binary on first boot, into `/data/vision/qnn`.
+  The models, YOLOX and FFNet-122NS-LowRes w8a8 for QNN, are fetched, not
+  committed: `mise run fetch-models` at the repository root. FFNet's
+  weights are for non-commercial use only. The board generates each
+  model's context binary on first boot, into `/data/vision/qnn/<pipeline>`.
   """
 
   @behaviour VisionCore.Composer
 
   alias VisionCore.Stereo.{NxSegment, Pipeline}
 
-  @dlc "priv/models/yolox_w8a8.dlc"
+  @detection_model "priv/models/yolox_w8a8.dlc"
+  @road_model "priv/models/ffnet_122ns_lowres.dlc"
+  @hq_calibration "priv/calibration/hq.yaml"
+  @hq_pose "priv/calibration/hq_pose.yaml"
+  @calibration_store_dir "/data/vision/calibration"
 
   @impl VisionCore.Composer
   def config(:host) do
@@ -51,11 +61,22 @@ defmodule Ovcs1.Vision.Composer do
       ],
       components: [
         stereo_component(),
-        {:qnn_detector, dlc_path: Application.app_dir(:ovcs1, @dlc), score_threshold: 0.4},
-        hq_camera()
+        hq_camera(),
+        {:qnn_detector,
+         name: :objects,
+         source: {:camera, :hq},
+         dlc_path: Application.app_dir(:ovcs1, @detection_model),
+         score_threshold: 0.4},
+        {:qnn_segmenter,
+         name: :road, source: {:camera, :hq}, dlc_path: Application.app_dir(:ovcs1, @road_model)}
       ],
       exporters: [
-        {VisionCore.Ros2.Exporter, heartbeat: [], stereo: [raw_image_max_hz: 35], detections: []}
+        {VisionCore.Ros2.Exporter,
+         heartbeat: [],
+         stereo: [raw_image_max_hz: 35],
+         detections: [pipelines: [:objects]],
+         cameras: [names: [:hq]],
+         segmentation: [pipelines: [:road]]}
       ]
     }
   end
@@ -66,7 +87,9 @@ defmodule Ovcs1.Vision.Composer do
       "priv/nx_iree_cache",
       "priv/calibration/stereo_left.yaml",
       "priv/calibration/stereo_right.yaml",
-      @dlc
+      @hq_calibration,
+      @detection_model,
+      @road_model
     ]
   end
 
@@ -78,7 +101,11 @@ defmodule Ovcs1.Vision.Composer do
      csiphy: 2,
      fps: 35,
      output: :half,
-     max_exposure_us: 25_000}
+     max_exposure_us: 25_000,
+     frame_id: "hq_optical",
+     calibration: Application.app_dir(:ovcs1, @hq_calibration),
+     pose: Application.app_dir(:ovcs1, @hq_pose),
+     calibration_store_dir: @calibration_store_dir}
   end
 
   defp stereo_component do
@@ -93,7 +120,7 @@ defmodule Ovcs1.Vision.Composer do
        # The Port pairs frames whose starts are within 1 ms.
        pair_tolerance_ms: 5,
        calibration_dir: Application.app_dir(:ovcs1, "priv/calibration"),
-       calibration_store_dir: "/data/vision/calibration",
+       calibration_store_dir: @calibration_store_dir,
        stages:
          Pipeline.default_stages(
            disparity: [num_disparities: 128, search: "coarse_to_fine", coarse_paths: 3]

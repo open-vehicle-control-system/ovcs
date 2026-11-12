@@ -102,9 +102,9 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 35 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at about 34.5 pairs a second. YOLOX detects objects on more than 9 pairs in 10. The same composer shape works on your own vehicle with your cameras and connectors.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 35 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at about 34.5 pairs a second. The pair computes depth only. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:hq`, captures 1014 × 760 in colour, its `half` output, and the unit runs YOLOX detection, the `:objects` pipeline, and FFNet road segmentation, the `:road` pipeline, on it, on the NPU. `priv/calibration/hq.yaml` holds the camera's nominal calibration, from the lens and the pixel pitch, until it is calibrated; until its pose is measured, its detections have no distance and its road segmentation no clouds ([A camera's calibration and pose](#a-cameras-calibration-and-pose)). The same composer shape works on your own vehicle with your cameras and connectors.
 
-Its `priv/calibration` holds a nominal calibration until the rig is calibrated: a focal length of 869.6 px from the lens and the pixel pitch, no distortion, and the 20 cm baseline. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then do one of two things:
+The stereo pair's calibration, `priv/calibration/stereo_left.yaml` and `stereo_right.yaml`, comes from `cameracalibrator`. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then do one of two things:
 
 - Replace the two YAML files and rebuild.
 - Commit the calibration through the ROS 2 exporter's `set_camera_info` services, as `cameracalibrator` does. With `calibration_store_dir` set on the `:stereo` component, `/data/vision/calibration` on OVCS1, a calibration committed for both sides is stored there and takes precedence over the files (`VisionCore.Stereo.Supervisor`).
@@ -281,7 +281,7 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
 
 ```elixir
 {:qnn_detector,
- name: :hq_objects,
+ name: :objects,
  source: {:camera, :hq},
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox.dlc")}
 ```
@@ -310,7 +310,7 @@ A segmentation pipeline classes each part of a camera of its own's image among t
 - **Clouds.** The stereo pair captured closest to the frame is matched with it, and its depth projected into the camera's image, as for [a detection pipeline on a camera of its own](#detection-on-a-camera-of-its-own), with the same `reprojection_stride` and `pair_wait_ms`. Each projected point takes the class of the cell it lands in: the road points and the off-road points are two clouds in the stereo left optical frame. A frame without a matched pair, or on a camera without a calibration or a pose, has its label grid and no clouds. The pipeline reads the camera's calibration and pose at start: a calibration committed through the camera's `set_camera_info` reaches the label grid's `camera_info` at once, but the clouds are sorted with the start-time calibration until the unit restarts.
 - **What it publishes.** The ROS 2 exporter publishes the label grid as a `mono8` image of class ids and the two clouds as `PointCloud2` ([What leaves the unit](./data_flow.md#what-leaves-the-unit)); the API's `segmentation:<name>` channel carries the grid and the band it covers, at most `max_hz` (5) a second and one at a time, each once the client acks the one before ([Segmentation](./api.md#segmentation)). The dashboard draws it over the camera's preview, each class in its Cityscapes colour at 40 % opacity and the road classes at 60 %, with a legend of the classes present, each kept for 3 s after the last grid with it.
 
-The road model fetched for the OVCS1 reference vehicle is FFNet-122NS-LowRes, quantised w8a8 for QNN by Qualcomm AI Hub: `mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. **Its weights are for non-commercial use only**: FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only, and `mise run fetch-models` prints that licence, which `scripts/models.tsv` records, before the download. Running it on a vehicle used commercially needs a road model trained on data you may use commercially.
+The road model the OVCS1 reference vehicle runs is FFNet-122NS-LowRes, quantised w8a8 for QNN by Qualcomm AI Hub: `mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. **Its weights are for non-commercial use only**: FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only, and `mise run fetch-models` prints that licence, which `scripts/models.tsv` records, before the download. Running it on a vehicle used commercially needs a road model trained on data you may use commercially.
 
 ## Detection models
 
@@ -321,7 +321,7 @@ Each detector component runs the model its option names:
 
 **No model weights are committed.** `mise run fetch-models` downloads them and verifies each against the sha256 in `scripts/models.tsv`, which also records each licence and prints it before the download.
 
-[`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md) describes the OVCS Mini reference vehicle's models and what they require. The OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`. The road segmentation model fetched for it has non-commercial weights ([Road segmentation](#road-segmentation)).
+[`vehicles/ovcs_mini/priv/models/README.md`](../../vehicles/ovcs_mini/priv/models/README.md) describes the OVCS Mini reference vehicle's models and what they require. The OVCS1 reference vehicle runs YOLOX (Apache-2.0) from Qualcomm AI Hub, `yolox_w8a8.dlc`, and a road segmentation model with non-commercial weights ([Road segmentation](#road-segmentation)).
 
 OVCS is MIT licensed (`LICENCE.txt`). Ultralytics YOLOv8 is dual-licensed **AGPL-3.0** or a paid Enterprise licence, and Ultralytics asserts that covers the pretrained *weights*, not only the Python code. The two don't compose in this direction: MIT tells downstream users they may use the work without source-disclosure obligations, and AGPL-3.0 doesn't let anyone grant that. Distributing YOLOv8-derived weights under MIT would make a promise the licence can't keep. Fetching moves the choice to the operator. `yolov8n.hef` is in this repository's history, which removing it from `HEAD` doesn't undo.
 
