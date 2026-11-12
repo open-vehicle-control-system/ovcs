@@ -171,8 +171,13 @@ defmodule VisionCore.Detection.CameraDepth do
       |> Enum.map(fn [newer, older] -> newer - older end)
       |> Enum.sort()
 
-    Enum.at(spacings, div(length(spacings), 2))
+    median(spacings, length(spacings))
   end
+
+  defp median(sorted, count) when rem(count, 2) == 1, do: Enum.at(sorted, div(count, 2))
+
+  defp median(sorted, count),
+    do: div(Enum.at(sorted, div(count, 2) - 1) + Enum.at(sorted, div(count, 2)), 2)
 
   @doc """
   The camera's lens at frames of `size`, `{width, height}`: `nil`
