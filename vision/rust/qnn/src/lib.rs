@@ -48,6 +48,28 @@ pub struct Tensor {
     pub bytes: usize,
 }
 
+/// How far a pixel value's scale times 255 may be from 1.
+const PIXEL_SCALE_TOLERANCE: f32 = 1e-2;
+
+impl Tensor {
+    /// Whether the input reads its bytes as the pixel values they are: unquantised, or with
+    /// a scale of 1/255 and an offset of 0. `Err` names the quantisation that does not.
+    pub fn check_takes_pixel_values(&self) -> Result<(), String> {
+        match self.scale_offset {
+            Some((scale, offset))
+                if offset != 0 || (scale * 255.0 - 1.0).abs() > PIXEL_SCALE_TOLERANCE =>
+            {
+                Err(format!(
+                    "input {} has a scale of {scale} and an offset of {offset}, not a scale \
+                     of 1/255 and an offset of 0: it is fed pixel values from 0 to 255",
+                    self.name
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
 /// A graph's inputs or outputs, and QNN's tensor each is described from, in the same order.
 #[derive(Default)]
 struct Tensors {

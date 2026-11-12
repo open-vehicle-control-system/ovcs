@@ -2,9 +2,6 @@
 //! or quantised with a scale of 1/255 and an offset of 0, one `[1, H, W, C]` uint8 score map out,
 //! C scores per cell, C the classes the pipeline names.
 
-/// How far a pixel value's scale times 255 may be from 1.
-const PIXEL_SCALE_TOLERANCE: f32 = 1e-2;
-
 use qnn::Tensor;
 
 /// The model's input image and output grid sizes, and its classes.
@@ -41,17 +38,7 @@ pub fn geometry(
             ))
         }
     };
-    // Unquantised, the bytes are the values.
-    if let Some((scale, offset)) = input
-        .scale_offset
-        .filter(|&(scale, offset)| !pixel_quantisation(scale, offset))
-    {
-        return Err(format!(
-            "input {} has a scale of {scale} and an offset of {offset}, not a scale of 1/255 \
-             and an offset of 0: it is fed pixel values from 0 to 255",
-            input.name
-        ));
-    }
+    input.check_takes_pixel_values()?;
     let (output_height, output_width, classes) =
         match (output.unsigned_8bit, &output.dimensions[..]) {
             (true, &[1, height, width, classes])
@@ -94,12 +81,6 @@ pub fn geometry(
         output_height,
         classes: classes as usize,
     })
-}
-
-/// Whether a quantisation reads the input's bytes as the pixel values they are: a scale of
-/// 1/255 and an offset of 0.
-fn pixel_quantisation(scale: f32, offset: i32) -> bool {
-    offset == 0 && (scale * 255.0 - 1.0).abs() <= PIXEL_SCALE_TOLERANCE
 }
 
 /// The tensor's dimensions and whether its elements are uint8.
