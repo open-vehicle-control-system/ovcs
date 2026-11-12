@@ -271,7 +271,8 @@ fn capture(
             conversion_ns = 0;
             statistics_since = Instant::now();
         }
-        while let Some(taken) = frames.next(|whole| {
+        // One frame a round: the settings and statistics are served between frames.
+        if let Some(taken) = frames.next(|whole| {
             let (raw, start_ns) = whole?;
             let converting = Instant::now();
             converted += 1;
@@ -689,14 +690,14 @@ mod tests {
 
     // `count` frames of the same scene, a little brighter each time, the
     // frame at `incomplete` incomplete.
-    fn scenes(count: usize, incomplete: usize) -> Vec<Option<Vec<u8>>> {
+    fn scenes(count: usize, incomplete: Option<usize>) -> Vec<Option<Vec<u8>>> {
         (0..count)
             .map(|index| {
                 let samples: Vec<u16> = samples(WIDTH, HEIGHT)
                     .iter()
                     .map(|sample| (sample + 150 * index as u16).min(4095))
                     .collect();
-                (index != incomplete).then(|| padded_packed12(&samples, WIDTH, STRIDE))
+                (Some(index) != incomplete).then(|| padded_packed12(&samples, WIDTH, STRIDE))
             })
             .collect()
     }
@@ -737,11 +738,38 @@ mod tests {
 
     #[test]
     fn a_sequence_of_frames_gives_the_same_records_in_the_same_order() {
-        let records = captured(scenes(12, 5), vec![]);
+        let records = captured(scenes(12, Some(5)), vec![]);
         let tags: Vec<u8> = records.iter().map(|record| record[0]).collect();
         // Frames (6), each fourth whole one after the exposure it sets (3).
         assert_eq!(tags, [6, 6, 6, 3, 6, 6, 6, 6, 3, 6, 6, 6, 6]);
         // The digest of the loop converting then writing each frame in turn.
         assert_eq!(records_digest(&records), 0xf88a5dbe53ea288a);
+    }
+
+    #[test]
+    fn a_setting_sent_while_frames_arrive_applies_from_the_next_frame() {
+        let upright = captured(scenes(8, None), vec![]);
+        let turned = captured(scenes(8, None), vec![(2, "rotation=180")]);
+        let frames = |records: &[Vec<u8>]| -> Vec<Vec<u8>> {
+            let frames = records.iter().filter(|record| record[0] == 6);
+            frames.map(|record| record[13..].to_vec()).collect()
+        };
+        let turn =
+            |rgb: &[u8]| -> Vec<u8> { rgb.chunks_exact(3).rev().flatten().copied().collect() };
+        let (upright, turned_frames) = (frames(&upright), frames(&turned));
+
+        assert_eq!(turned_frames.len(), 8);
+        assert_eq!(turned_frames[..3], upright[..3]);
+        for (turned, upright) in turned_frames[3..].iter().zip(&upright[3..]) {
+            assert!(*turned == turn(upright));
+        }
+        let applied = turned
+            .iter()
+            .position(|record| record.starts_with(b"\x02\x00settings: "));
+        let third_frame = (turned.iter().enumerate())
+            .filter(|(_, record)| record[0] == 6)
+            .nth(2)
+            .map(|(position, _)| position);
+        assert_eq!(applied, third_frame.map(|position| position + 1));
     }
 }
