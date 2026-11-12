@@ -45,6 +45,7 @@ The library the QNN Ports share:
 - runs a context binary's first graph on the Hexagon NPU through QNN's HTP backend, under a performance profile's power vote (`--performance <profile>`, `burst` by default);
 - times each execution;
 - prints a DLC's graph names (`--graph-names <dlc>`);
+- reads the Ports' command line and requests, and writes their replies (`qnn::port`);
 - writes the Ports' statistics line.
 
 An execution's stages are:
