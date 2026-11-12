@@ -1,6 +1,6 @@
 image_width: 2028
 image_height: 1520
-camera_name: hq
+camera_name: center
 camera_matrix:
   rows: 3
   cols: 3

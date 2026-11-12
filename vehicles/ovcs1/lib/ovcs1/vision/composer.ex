@@ -5,7 +5,7 @@ defmodule Ovcs1.Vision.Composer do
   apart with 6 mm lenses, captured over raw V4L2 through the board's CAMSS
   with the right sensor phase-locked to the left, depth computed on the
   GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
-  is a camera of its own, `:hq`, captured in colour by
+  is a camera of its own, `:center`, captured in colour by
   `VisionCore.Camera.V4L2Single`, at every frame in three outputs:
   `:view`, 2028 × 1520; `:view_jpeg`, that image encoded once by the
   capture program, which the dashboard's preview and the ROS 2 exporter
@@ -23,9 +23,9 @@ defmodule Ovcs1.Vision.Composer do
   disparities, coarse to fine.
 
   `priv/calibration` holds the rig's calibration, from `cameracalibrator`,
-  and the HQ camera's nominal one, `hq.yaml`, for its 3.6 mm lens, until
-  it is calibrated. Without `hq_pose.yaml`, its pose relative to the
-  stereo pair, the HQ pipelines run without distances. The stereo
+  and the center camera's nominal one, `center.yaml`, for its 3.6 mm lens,
+  until it is calibrated. Without `center_pose.yaml`, its pose relative
+  to the stereo pair, its pipelines run without distances. The stereo
   cameras deliver grey frames, which the ROS 2 exporter encodes to JPEG;
   it publishes every pair (`raw_image_max_hz` at the capture rate), so a
   consumer pairing left and right images gets frames of the same capture.
@@ -48,8 +48,8 @@ defmodule Ovcs1.Vision.Composer do
 
   @detection_model "priv/models/yolox_w8a8.dlc"
   @road_model "priv/models/ffnet_122ns_lowres.dlc"
-  @hq_calibration "priv/calibration/hq.yaml"
-  @hq_pose "priv/calibration/hq_pose.yaml"
+  @center_calibration "priv/calibration/center.yaml"
+  @center_pose "priv/calibration/center_pose.yaml"
   @calibration_store_dir "/data/vision/calibration"
 
   @impl VisionCore.Composer
@@ -67,25 +67,25 @@ defmodule Ovcs1.Vision.Composer do
       ],
       components: [
         stereo_component(),
-        hq_camera(),
+        center_camera(),
         {:qnn_detector,
          name: :objects,
-         source: {:camera, :hq, :inference},
+         source: {:camera, :center, :inference},
          dlc_path: Application.app_dir(:ovcs1, @detection_model),
          score_threshold: 0.4},
         {:qnn_segmenter,
          name: :road,
-         source: {:camera, :hq, :inference},
+         source: {:camera, :center, :inference},
          dlc_path: Application.app_dir(:ovcs1, @road_model),
          segment_every_n: 1}
       ],
-      preview: [max_hz: 30, outputs: [hq: :view_jpeg]],
+      preview: [max_hz: 30, outputs: [center: :view_jpeg]],
       exporters: [
         {VisionCore.Ros2.Exporter,
          heartbeat: [],
          stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],
-         cameras: [names: [:hq], outputs: [hq: :view_jpeg]],
+         cameras: [names: [:center], outputs: [center: :view_jpeg]],
          segmentation: [pipelines: [:road]]}
       ]
     }
@@ -97,15 +97,15 @@ defmodule Ovcs1.Vision.Composer do
       "priv/nx_iree_cache",
       "priv/calibration/stereo_left.yaml",
       "priv/calibration/stereo_right.yaml",
-      @hq_calibration,
+      @center_calibration,
       @detection_model,
       @road_model
     ]
   end
 
-  defp hq_camera do
+  defp center_camera do
     {:camera,
-     name: :hq,
+     name: :center,
      driver: VisionCore.Camera.V4L2Single,
      csiphy: 2,
      fps: 30,
@@ -115,9 +115,9 @@ defmodule Ovcs1.Vision.Composer do
        inference: [resolution: {1014, 760}, from: :view]
      ],
      max_exposure_us: 25_000,
-     frame_id: "hq_optical",
-     calibration: Application.app_dir(:ovcs1, @hq_calibration),
-     pose: Application.app_dir(:ovcs1, @hq_pose),
+     frame_id: "center_optical",
+     calibration: Application.app_dir(:ovcs1, @center_calibration),
+     pose: Application.app_dir(:ovcs1, @center_pose),
      calibration_store_dir: @calibration_store_dir}
   end
 

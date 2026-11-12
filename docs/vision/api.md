@@ -284,7 +284,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "camera_frame:left", "maxHz": 10},
           {"name": "camera_frame:right", "maxHz": 10},
           {"name": "stereo_pair", "maxHz": 10},
-          {"name": "camera_frame:hq", "maxHz": 10},
+          {"name": "camera_frame:center", "maxHz": 10},
           {"name": "detections", "maxHz": 10, "source": "left"}
         ],
         "actions": []
@@ -294,9 +294,9 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:hq`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them. An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, `camera_frame:hq:inference` for instance.
+The API lists a `camera_frame:<name>` output for each camera of its own, as in the example's `camera_frame:center`, between `stereo_pair` and the detections; the dashboard opens a `preview:<name>` channel for each of them. An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, `camera_frame:center:inference` for instance.
 
-A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `hq` for a pipeline on the camera `hq`.
+A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `center` for a pipeline on the camera `center`.
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections: on the ROS 2 exporter with its `segmentation:` option, those its `pipelines:` lists, or without `pipelines:` every one on a camera, and on the API, with the pipeline's camera as its `source`.
 
@@ -378,14 +378,14 @@ status.join()
 
 ### Status
 
-`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`hq` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator the detection and segmentation pipelines run on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
+`status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. `cameras` holds the stereo sides and each camera of its own, by name (`center` here); a camera of its own has no `issues`. A camera's or the sync's figures that were not measured are left out. `npu` is the accelerator the detection and segmentation pipelines run on, its kind and its state, `running` or `failed`, its `loadPercent`, the share of the last second its pipelines spent inferring (at most 100), and each pipeline's mean `inferenceMs` over that second; it is `null` on a unit without one. `loadPercent` is `null` until a Port has reported a time, and an `inferenceMs` too in a second without a frame. What they measure on each accelerator is in [Vision](./README.md).
 
 ```json
 {
   "cameras": {
     "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
     "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]},
-    "hq": {"present": true, "fps": 10.0, "exposureTimeUs": 12000, "analogueGain": 4}
+    "center": {"present": true, "fps": 10.0, "exposureTimeUs": 12000, "analogueGain": 4}
   },
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
   "pair": {
@@ -447,7 +447,7 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 ### Previews
 
-`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary, and so does `preview:<name>` for each camera of its own (the `:camera` component, [Vision unit](./README.md#the-arduino-ventuno-q)): `preview:hq` for the camera named `hq`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one, at most `preview.max_hz` a second, whatever the camera's own rate. The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
+`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary, and so does `preview:<name>` for each camera of its own (the `:camera` component, [Vision unit](./README.md#the-arduino-ventuno-q)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one, at most `preview.max_hz` a second, whatever the camera's own rate. The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
 
 ```javascript
 const left = socket.channel('preview:left')

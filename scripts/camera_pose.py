@@ -20,8 +20,8 @@ size is scaled to them, one without a size taken as it is. Run from the
 repository root, with OpenCV and NumPy:
 
     python3 -I scripts/camera_pose.py --pairs pairs/ \\
-        --left stereo_left.yaml --camera hq.yaml \\
-        --board 9x6 --square 0.025 --output hq_pose.yaml
+        --left stereo_left.yaml --camera center.yaml \\
+        --board 9x6 --square 0.025 --output center_pose.yaml
 """
 
 import argparse

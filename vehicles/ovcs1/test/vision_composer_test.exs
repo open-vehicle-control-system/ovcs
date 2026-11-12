@@ -31,33 +31,33 @@ defmodule Ovcs1.VisionComposerTest do
     refute disparity[:paths]
   end
 
-  test "detection runs on the NPU on the HQ camera, not on the stereo pair" do
+  test "detection runs on the NPU on the center camera, not on the stereo pair" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
 
     assert [detector] = Keyword.get_values(components, :qnn_detector)
     assert detector[:name] == :objects
-    assert detector[:source] == {:camera, :hq, :inference}
+    assert detector[:source] == {:camera, :center, :inference}
     assert detector[:score_threshold] == 0.4
     assert String.ends_with?(detector[:dlc_path], "priv/models/yolox_w8a8.dlc")
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "road segmentation runs on the NPU on the HQ camera" do
+  test "road segmentation runs on the NPU on the center camera" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
 
     assert [segmenter] = Keyword.get_values(components, :qnn_segmenter)
     assert segmenter[:name] == :road
-    assert segmenter[:source] == {:camera, :hq, :inference}
+    assert segmenter[:source] == {:camera, :center, :inference}
     assert segmenter[:segment_every_n] == 1
     assert String.ends_with?(segmenter[:dlc_path], "priv/models/ffnet_122ns_lowres.dlc")
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour, as a JPEG, and at half for the models" do
+  test "the center camera runs on Camera 2 at 30 fps in full-resolution colour, as a JPEG, and at half for the models" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
-    assert camera[:name] == :hq
+    assert camera[:name] == :center
     assert camera[:driver] == VisionCore.Camera.V4L2Single
     assert camera[:csiphy] == 2
     assert camera[:fps] == 30
@@ -78,40 +78,40 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert {inference.name, inference.index, inference.from} == {:inference, 2, :view}
 
-    assert VisionCore.Camera.Unit.output_key(config, :hq, :inference) ==
-             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
+    assert VisionCore.Camera.Unit.output_key(config, :center, :inference) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :inference}
 
     assert camera[:max_exposure_us] == 25_000
-    assert camera[:frame_id] == "hq_optical"
+    assert camera[:frame_id] == "center_optical"
   end
 
-  test "the preview and ROS 2 show the HQ camera's full image as the JPEG the camera encodes" do
+  test "the preview and ROS 2 show the center camera's full image as the JPEG the camera encodes" do
     config = Ovcs1.Vision.Composer.config(:target)
     exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
-    assert config.preview[:outputs] == [hq: :view_jpeg]
+    assert config.preview[:outputs] == [center: :view_jpeg]
     assert config.preview[:max_hz] == 30
-    assert VisionCore.Camera.Unit.output_key(config, :hq, config.preview[:outputs][:hq])
-    assert exporter[:cameras][:outputs] == [hq: :view_jpeg]
+    assert VisionCore.Camera.Unit.output_key(config, :center, config.preview[:outputs][:center])
+    assert exporter[:cameras][:outputs] == [center: :view_jpeg]
   end
 
-  test "the HQ camera's calibration and pose sit beside the stereo pair's" do
+  test "the center camera's calibration and pose sit beside the stereo pair's" do
     config = Ovcs1.Vision.Composer.config(:target)
     stereo = Keyword.fetch!(config.components, :stereo)
 
-    assert [hq] = VisionCore.Camera.Unit.settings(config)
-    assert hq.name == :hq
-    assert hq.frame_id == "hq_optical"
-    assert String.ends_with?(hq.calibration_path, "priv/calibration/hq.yaml")
-    assert String.ends_with?(hq.pose_path, "priv/calibration/hq_pose.yaml")
-    assert hq.calibration_store_path == "/data/vision/calibration/camera_hq.yaml"
-    assert Path.dirname(hq.calibration_store_path) == stereo[:calibration_store_dir]
-    assert "priv/calibration/hq.yaml" in Ovcs1.Vision.Composer.required_files()
-    refute "priv/calibration/hq_pose.yaml" in Ovcs1.Vision.Composer.required_files()
+    assert [center] = VisionCore.Camera.Unit.settings(config)
+    assert center.name == :center
+    assert center.frame_id == "center_optical"
+    assert String.ends_with?(center.calibration_path, "priv/calibration/center.yaml")
+    assert String.ends_with?(center.pose_path, "priv/calibration/center_pose.yaml")
+    assert center.calibration_store_path == "/data/vision/calibration/camera_center.yaml"
+    assert Path.dirname(center.calibration_store_path) == stereo[:calibration_store_dir]
+    assert "priv/calibration/center.yaml" in Ovcs1.Vision.Composer.required_files()
+    refute "priv/calibration/center_pose.yaml" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera's nominal calibration is for its full output" do
-    path = Application.app_dir(:ovcs1, "priv/calibration/hq.yaml")
+  test "the center camera's nominal calibration is for its full output" do
+    path = Application.app_dir(:ovcs1, "priv/calibration/center.yaml")
 
     calibration = CameraCalibration.load!(path)
 
@@ -122,18 +122,18 @@ defmodule Ovcs1.VisionComposerTest do
     assert Reprojection.check(calibration) == :ok
   end
 
-  test "the HQ pipelines run without distances until the camera's pose is measured" do
+  test "the center camera's pipelines run without distances until the camera's pose is measured" do
     config = Ovcs1.Vision.Composer.config(:target)
     assert [%{pose_path: pose_path}] = VisionCore.Camera.Unit.settings(config)
     refute File.exists?(pose_path)
 
-    {source, log} = with_log(fn -> CameraSource.new(:hq, config, :objects, 500) end)
+    {source, log} = with_log(fn -> CameraSource.new(:center, config, :objects, 500) end)
 
     assert source.calibration
     refute source.pose
     refute CameraSource.placeable?(source)
-    assert log =~ "camera hq has no pose"
-    assert log =~ "hq_pose.yaml unreadable (:enoent)"
+    assert log =~ "camera center has no pose"
+    assert log =~ "center_pose.yaml unreadable (:enoent)"
   end
 
   test "every vision unit takes its options as the vision core starts it" do
@@ -146,16 +146,16 @@ defmodule Ovcs1.VisionComposerTest do
     end
   end
 
-  test "the ROS 2 exporter publishes the HQ camera, its detections and its road" do
+  test "the ROS 2 exporter publishes the center camera, its detections and its road" do
     config = Ovcs1.Vision.Composer.config(:target)
     options = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
     assert options[:detections][:pipelines] == [:objects]
-    assert options[:cameras][:names] == [:hq]
+    assert options[:cameras][:names] == [:center]
     assert options[:segmentation][:pipelines] == [:road]
 
-    assert VisionCore.Exporter.output_key({:camera_frame, :hq, :view_jpeg}, config) ==
-             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :view_jpeg}
+    assert VisionCore.Exporter.output_key({:camera_frame, :center, :view_jpeg}, config) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :view_jpeg}
   end
 
   test "the ROS 2 exporter's outputs are all produced by the configuration" do

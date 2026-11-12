@@ -6,8 +6,8 @@ on fresh topics that cameracalibrator can consume:
 `/<prefix>/<camera>/image_calibration`.
 
 Usage: `decompress_stereo [<prefix> [<camera> ...]]`, the stereo pair,
-`stereo left right`, by default; `decompress_stereo stereo hq` for the
-camera of its own named `hq`.
+`stereo left right`, by default; `decompress_stereo stereo center` for the
+camera of its own named `center`.
 
 We use this instead of `image_transport republish` because the
 latter's CompressedImage subscriber and our Elixir bridge's

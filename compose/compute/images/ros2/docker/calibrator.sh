@@ -14,7 +14,7 @@
 #      exporter publishing them (stereo:, and cameras: for a camera of
 #      its own).
 #   2. Run this service: compose/local/scripts/calibrate.sh, or
-#      compose/local/scripts/calibrate.sh --camera hq for a camera.
+#      compose/local/scripts/calibrate.sh --camera center for a camera.
 #   3. Wave a chessboard until the coverage bars are green, click
 #      CALIBRATE, wait for the solver, then COMMIT to store the
 #      calibration on the unit through set_camera_info, or SAVE.

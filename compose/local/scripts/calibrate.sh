@@ -14,13 +14,13 @@
 #   compose/local/scripts/calibrate.sh                           # 8x6 inner corners, 30 mm squares
 #   compose/local/scripts/calibrate.sh 9x6                       # override corner count
 #   compose/local/scripts/calibrate.sh 8x5 0.025                 # override corners + square size
-#   compose/local/scripts/calibrate.sh --camera hq 9x6 0.025     # the camera of its own `hq`, monocular
+#   compose/local/scripts/calibrate.sh --camera center 9x6 0.025 # the camera of its own `center`, monocular
 #
 # Environment overrides (take precedence over positional args):
 #   CHESSBOARD_INNER_CORNERS=8x5
 #   CHESSBOARD_SQUARE_M=0.030
 #   APPROXIMATE_SYNC=0.05
-#   CALIBRATION_CAMERA=hq            # as --camera
+#   CALIBRATION_CAMERA=center        # as --camera
 #   CALIBRATION_TOPIC_PREFIX=stereo  # the vision unit's topic prefix
 #   DISPLAY=:0
 
