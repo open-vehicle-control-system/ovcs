@@ -16,8 +16,9 @@ defmodule VisionCore.Detection.CameraDepth do
   capture, so the pair captured closest to a frame may come after the
   frame's result: `match/3` says `:wait` until a pair captured at or
   after the frame has come, and the pipeline waits for it at most its
-  `:pair_wait_ms`, skipping the camera's frames meanwhile, then matches
-  with the pairs it has (`match/3` with `final: true`).
+  `:pair_wait_ms` (`VisionCore.Detection.DepthQueue`), skipping the
+  camera's frames meanwhile, then matches with the pairs it has
+  (`match/3` with `final: true`).
 
   ## The lens
 
@@ -38,13 +39,14 @@ defmodule VisionCore.Detection.CameraDepth do
 
   @typedoc """
   What the owner's warnings say is lost: without a calibration, without a
-  pose, with either unreadable, and what a calibration that cannot be
-  projected with cannot do.
+  pose, with either unreadable, and without a matched pair, and what a
+  calibration that cannot be projected with cannot do.
   """
   @type wording :: %{
           calibration: String.t(),
           pose: String.t(),
           unreadable: String.t(),
+          unmatched: String.t(),
           lens: String.t()
         }
 

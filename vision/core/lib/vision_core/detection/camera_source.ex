@@ -29,6 +29,7 @@ defmodule VisionCore.Detection.CameraSource do
     calibration: "its detections have no distance nor bearing",
     pose: "its detections have no distance",
     unreadable: "its detections have no distance",
+    unmatched: "its detections have no distance",
     lens: "place detections"
   }
 

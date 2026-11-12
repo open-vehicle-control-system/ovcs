@@ -87,7 +87,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
-  alias VisionCore.Detection.{CameraDepth, Reprojection}
+  alias VisionCore.Detection.{CameraDepth, DepthQueue, Reprojection}
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
@@ -101,6 +101,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     calibration: "its segmentation has no clouds",
     pose: "its segmentation has no clouds",
     unreadable: "its segmentation has no clouds",
+    unmatched: "its segmentation has no clouds",
     lens: "project the stereo points"
   }
 
@@ -133,6 +134,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     backend = Keyword.get(opts, :backend, @default_backend)
     labels = Keyword.get(opts, :labels, VisionCore.Segmentation.labels())
     road_classes = Keyword.get(opts, :road_classes, @default_road_classes)
+    pair_wait_ms = integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
 
     state = %{
       name: name,
@@ -145,14 +147,13 @@ defmodule VisionCore.Segmentation.Pipeline do
       road: road!(road_classes, labels),
       segment_every_n: integer!(opts, :segment_every_n, @default_segment_every_n, 1),
       reprojection_stride: integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
-      pair_wait_ms: integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0),
+      pair_wait_ms: pair_wait_ms,
       sequence: 0,
       frame_count: 0,
       # The frame submitted with the in-flight inference, with its band.
       pending: nil,
-      # A frame's label image waiting for the pair captured closest to it.
-      awaiting: nil,
-      unmatched_logged: false,
+      # Frames' label images waiting for the pair captured closest to each.
+      waiting: DepthQueue.new(pair_wait_ms),
       colourless_logged: false
     }
 
@@ -284,29 +285,28 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    state = %{state | camera: CameraDepth.add_pair(state.camera, pair)}
-
-    case state.awaiting do
-      nil -> {:noreply, state}
-      awaiting -> {:noreply, publish_awaiting(awaiting, state, final: false)}
-    end
+    {:noreply, publish_settled(%{state | camera: CameraDepth.add_pair(state.camera, pair)})}
   end
 
   # A frame that comes while a label image waits for its pair is skipped, as one during an inference.
-  def handle_cast({:camera_frame, %Frame{}}, %{awaiting: %{}} = state), do: {:noreply, state}
-
   def handle_cast({:camera_frame, %Frame{} = frame}, state) do
+    if DepthQueue.waiting?(state.waiting),
+      do: {:noreply, state},
+      else: {:noreply, take_frame(frame, state)}
+  end
+
+  def handle_cast(_message, state), do: {:noreply, state}
+
+  defp take_frame(frame, state) do
     frame_count = state.frame_count + 1
     state = %{state | frame_count: frame_count}
 
     cond do
-      rem(frame_count, state.segment_every_n) != 0 -> {:noreply, state}
-      not is_binary(frame.rgb) -> {:noreply, note_colourless(state)}
-      true -> {:noreply, submit(frame, state)}
+      rem(frame_count, state.segment_every_n) != 0 -> state
+      not is_binary(frame.rgb) -> note_colourless(state)
+      true -> submit(frame, state)
     end
   end
-
-  def handle_cast(_message, state), do: {:noreply, state}
 
   defp submit(frame, state) do
     {_x, top, width, height} = band = band(frame.width, frame.height, state.band_top)
@@ -347,8 +347,7 @@ defmodule VisionCore.Segmentation.Pipeline do
         {:noreply, state}
 
       CameraDepth.projectable?(state.camera) ->
-        awaiting = %{frame: frame, labels: Map.put(labels, :band, band), timer: nil}
-        {:noreply, publish_awaiting(awaiting, state, final: false)}
+        {:noreply, wait_for_pair(state, frame, Map.put(labels, :band, band))}
 
       true ->
         publish(state, frame, Map.put(labels, :band, band), nil)
@@ -359,35 +358,38 @@ defmodule VisionCore.Segmentation.Pipeline do
   # A reply for a frame no longer waited on.
   def handle_info({:inference_labels, _stale, _labels}, state), do: {:noreply, state}
 
-  def handle_info({:pair_wait, timer}, %{awaiting: %{timer: timer} = awaiting} = state),
-    do: {:noreply, publish_awaiting(awaiting, state, final: true)}
+  def handle_info(:pair_wait, state), do: {:noreply, publish_settled(state)}
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # Publishes a frame's label image once its pair is known, or waits for it, at most :pair_wait_ms.
-  defp publish_awaiting(%{frame: frame} = awaiting, state, final: final) do
-    case CameraDepth.match(state.camera, frame.capture_ns, final: final) do
-      :wait when is_nil(awaiting.timer) ->
-        timer = make_ref()
-        Process.send_after(self(), {:pair_wait, timer}, state.pair_wait_ms)
-        %{state | awaiting: %{awaiting | timer: timer}}
-
-      :wait ->
-        %{state | awaiting: awaiting}
-
-      {:ok, pair} ->
-        {clouds, state} = clouds(awaiting, pair, note_match(state, pair))
-        publish(state, frame, awaiting.labels, clouds)
-        %{state | awaiting: nil}
-
-      :none ->
-        state = note_match(state, nil)
-        publish(state, frame, awaiting.labels, nil)
-        %{state | awaiting: nil}
-    end
+  defp wait_for_pair(state, frame, labels) do
+    now_ns = System.monotonic_time(:nanosecond)
+    waiting = DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns)
+    publish_settled(%{state | waiting: waiting}, now_ns)
   end
 
-  defp clouds(%{frame: frame, labels: labels}, pair, state) do
+  # Publishes the label images whose pair is known, and has the pipeline told when to look again.
+  defp publish_settled(state, now_ns \\ System.monotonic_time(:nanosecond)) do
+    {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
+    state = %{state | waiting: DepthQueue.schedule(waiting, now_ns)}
+
+    Enum.reduce(settled, state, fn {labelled, pair}, state ->
+      publish_labels(labelled, pair, state)
+    end)
+  end
+
+  defp publish_labels({frame, labels}, nil, state) do
+    publish(state, frame, labels, nil)
+    state
+  end
+
+  defp publish_labels({frame, labels}, pair, state) do
+    {clouds, state} = clouds(frame, labels, pair, state)
+    publish(state, frame, labels, clouds)
+    state
+  end
+
+  defp clouds(frame, labels, pair, state) do
     {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
     state = %{state | camera: camera}
 
@@ -449,18 +451,6 @@ defmodule VisionCore.Segmentation.Pipeline do
     if cell_x >= 0 and cell_x < cells_x and cell_y >= 0 and cell_y < cells_y,
       do: :binary.at(data, cell_y * cells_x + cell_x)
   end
-
-  defp note_match(%{unmatched_logged: false} = state, nil) do
-    Logger.warning(
-      "segmentation pipeline #{state.name}: no stereo pair captured close enough to the " <>
-        "camera #{state.camera.name}'s image, so its segmentation has no clouds until one is"
-    )
-
-    %{state | unmatched_logged: true}
-  end
-
-  defp note_match(state, nil), do: state
-  defp note_match(state, _pair), do: %{state | unmatched_logged: false}
 
   defp publish(state, frame, labels, clouds),
     do:

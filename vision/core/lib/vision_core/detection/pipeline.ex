@@ -118,11 +118,9 @@ defmodule VisionCore.Detection.Pipeline do
   """
   use GenServer
 
-  require Logger
-
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
-  alias VisionCore.Detection.{CameraDepth, CameraSource, Fusion}
+  alias VisionCore.Detection.{CameraDepth, CameraSource, DepthQueue, Fusion}
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
@@ -195,6 +193,7 @@ defmodule VisionCore.Detection.Pipeline do
     backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
     name = Detection.pipeline_name(opts)
     source = Keyword.get(opts, :source, :stereo)
+    pair_wait_ms = Keyword.get(opts, :pair_wait_ms, @default_pair_wait_ms)
 
     state = %{
       name: name,
@@ -210,14 +209,13 @@ defmodule VisionCore.Detection.Pipeline do
         Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       reprojection_stride: Keyword.get(opts, :reprojection_stride, @default_reprojection_stride),
-      pair_wait_ms: Keyword.get(opts, :pair_wait_ms, @default_pair_wait_ms),
+      pair_wait_ms: pair_wait_ms,
       sequence: 0,
       pair_count: 0,
       # The pair, or camera frame, submitted with the in-flight inference: its boxes belong to it.
       pending: nil,
-      # A camera frame's boxes waiting for the pair captured closest to it.
-      awaiting: nil,
-      unmatched_logged: false
+      # Camera frames' boxes waiting for the pair captured closest to each.
+      waiting: DepthQueue.new(pair_wait_ms)
     }
 
     if Process.whereis(VisionCore.Parameters),
@@ -361,12 +359,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraDepth{} = camera} = state) do
-    state = %{state | camera: CameraSource.add_pair(camera, pair)}
-
-    case state.awaiting do
-      nil -> {:noreply, state}
-      awaiting -> {:noreply, place_awaiting(awaiting, state, final: false)}
-    end
+    {:noreply, place_settled(%{state | camera: CameraSource.add_pair(camera, pair)})}
   end
 
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
@@ -381,22 +374,25 @@ defmodule VisionCore.Detection.Pipeline do
   end
 
   # A frame that comes while boxes wait for their pair is skipped, as one that comes during an inference.
-  def handle_cast({:camera_frame, %Frame{}}, %{camera: %CameraDepth{}, awaiting: %{}} = state),
-    do: {:noreply, state}
-
   def handle_cast({:camera_frame, %Frame{} = frame}, %{camera: %CameraDepth{}} = state) do
+    if DepthQueue.waiting?(state.waiting),
+      do: {:noreply, state},
+      else: {:noreply, take_frame(frame, state)}
+  end
+
+  def handle_cast(_message, state), do: {:noreply, state}
+
+  defp take_frame(frame, state) do
     pair_count = state.pair_count + 1
     state = %{state | pair_count: pair_count}
 
     with 0 <- rem(pair_count, state.detect_every_n),
          {:ok, image} <- Frame.to_tensor(frame) do
-      {:noreply, submit(frame, image, state)}
+      submit(frame, image, state)
     else
-      _skipped -> {:noreply, state}
+      _skipped -> state
     end
   end
-
-  def handle_cast(_message, state), do: {:noreply, state}
 
   defp submit(pair, state), do: submit(pair, pair.left, state)
 
@@ -443,20 +439,18 @@ defmodule VisionCore.Detection.Pipeline do
         {:noreply, %{state | pending: nil}}
 
       labelled ->
-        awaiting = %{frame: frame, detections: labelled, timer: nil}
         state = %{state | pending: nil}
 
         if CameraSource.placeable?(state.camera),
-          do: {:noreply, place_awaiting(awaiting, state, final: false)},
-          else: {:noreply, place_frame(awaiting, nil, state)}
+          do: {:noreply, wait_for_pair(state, frame, labelled)},
+          else: {:noreply, place_frame({frame, labelled}, nil, state)}
     end
   end
 
   # A reply for a pair no longer waited on.
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
-  def handle_info({:pair_wait, timer}, %{awaiting: %{timer: timer} = awaiting} = state),
-    do: {:noreply, place_awaiting(awaiting, state, final: true)}
+  def handle_info(:pair_wait, state), do: {:noreply, place_settled(state)}
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -479,26 +473,20 @@ defmodule VisionCore.Detection.Pipeline do
   defp label(detection, state),
     do: Enum.at(state.labels, detection.class_id, "class_#{detection.class_id}")
 
-  # Places a camera frame's boxes once its pair is known, or waits for it, at most :pair_wait_ms.
-  defp place_awaiting(%{frame: frame} = awaiting, state, final: final) do
-    case CameraSource.match(state.camera, frame.capture_ns, final: final) do
-      :wait when is_nil(awaiting.timer) ->
-        timer = make_ref()
-        Process.send_after(self(), {:pair_wait, timer}, state.pair_wait_ms)
-        %{state | awaiting: %{awaiting | timer: timer}}
-
-      :wait ->
-        %{state | awaiting: awaiting}
-
-      {:ok, pair} ->
-        place_frame(awaiting, pair, note_match(state, pair))
-
-      :none ->
-        place_frame(awaiting, nil, note_match(state, nil))
-    end
+  defp wait_for_pair(state, frame, detections) do
+    now_ns = System.monotonic_time(:nanosecond)
+    waiting = DepthQueue.put(state.waiting, {frame, detections}, frame.capture_ns, now_ns)
+    place_settled(%{state | waiting: waiting}, now_ns)
   end
 
-  defp place_frame(%{frame: frame, detections: detections}, pair, state) do
+  # Places the boxes whose pair is known, and has the pipeline told when to look again.
+  defp place_settled(state, now_ns \\ System.monotonic_time(:nanosecond)) do
+    {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
+    state = %{state | waiting: DepthQueue.schedule(waiting, now_ns)}
+    Enum.reduce(settled, state, fn {boxes, pair}, state -> place_frame(boxes, pair, state) end)
+  end
+
+  defp place_frame({frame, detections}, pair, state) do
     {placed, camera} =
       CameraSource.place(
         state.camera,
@@ -518,20 +506,8 @@ defmodule VisionCore.Detection.Pipeline do
       end)
 
     publish(state, frame, detections)
-    %{state | camera: camera, awaiting: nil}
+    %{state | camera: camera}
   end
-
-  defp note_match(%{unmatched_logged: false} = state, nil) do
-    Logger.warning(
-      "detection pipeline #{state.name}: no stereo pair captured close enough to the camera " <>
-        "#{state.camera.name}'s image, so its detections have no distance until one is"
-    )
-
-    %{state | unmatched_logged: true}
-  end
-
-  defp note_match(state, nil), do: state
-  defp note_match(state, _pair), do: %{state | unmatched_logged: false}
 
   defp publish(state, source, detections),
     do:

@@ -172,15 +172,11 @@ defmodule VisionCore.Segmentation.PipelineTest do
     end
   end
 
-  test "keeps and publishes the frame without its pixels once its band is sent", %{tmp_dir: dir} do
+  test "publishes the frame without its pixels", %{tmp_dir: dir} do
     start_pipeline(dir, pair_wait_ms: 60_000)
     publish_pair(0)
     publish_pair(100)
     publish_frame(140)
-
-    # The first call lets the frame's labels reach the pipeline, which the second sees waiting.
-    _submitted = :sys.get_state(Pipeline.Road)
-    assert %{awaiting: %{frame: %Frame{rgb: nil}}} = :sys.get_state(Pipeline.Road)
     publish_pair(150)
 
     assert_receive {:"$gen_cast",
