@@ -537,4 +537,15 @@ defmodule VmsCore.Managers.ControlLevelTest do
       assert log =~ ":speed_unknown"
     end
   end
+
+  @tag skip: "not met: TASK-101 requires a speed sample before claiming standstill"
+  test "does not grant radio authority before a configured speed source reports" do
+    state =
+      manager()
+      |> deliver(:ready_to_drive, true, Vms)
+      |> deliver(:requested_control_level, :radio, RadioLevel)
+      |> tick()
+
+    assert state.selected_control_level == :manual
+  end
 end
