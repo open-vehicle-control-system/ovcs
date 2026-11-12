@@ -73,21 +73,11 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   ## One band in flight
 
-  `:segment_every_n` counts the camera's frames that come while fewer
-  than 32 label images wait, a frame that comes while a band is in
-  flight included: the `n`th, `2n`th, `3n`th… of them are to be
-  segmented, with `n` = 2 the second, fourth, sixth… The model needs
-  colour: of those, a frame without RGB pixels is skipped, which is
-  logged once.
-
-  One band is in flight at a time, submitted under a sequence number its
-  reply is matched on. A frame to be segmented that comes meanwhile is
-  held, in place of the one held before, and submitted once that reply
-  is handled, `nil` included, before the reply's label image is matched
-  with a pair. It is not submitted as soon as the backend is free: the reply
-  may still be waiting to be read, and would be lost. The frame held is
-  dropped when 32 label images wait once the reply is handled, or when
-  the backend refuses it.
+  `VisionCore.CameraPipeline` runs the pipeline: it segments every
+  `:segment_every_n`-th frame, one band in flight at a time, the newest
+  frame held meanwhile, and publishes the label images in capture
+  order. The model needs colour: a frame to segment without RGB pixels
+  is skipped, which is logged once.
 
   ## Options
 
@@ -117,14 +107,14 @@ defmodule VisionCore.Segmentation.Pipeline do
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
       waits for a pair are measured with, a function of no argument.
   """
-  use GenServer
+  @behaviour VisionCore.CameraPipeline
 
   require Logger
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
-  alias VisionCore.Detection.{CameraDepth, DepthQueue, Reprojection}
-  alias VisionCore.{Options, Outputs}
+  alias VisionCore.Detection.{CameraDepth, Reprojection}
+  alias VisionCore.{CameraPipeline, Options}
   alias VisionCore.Stereo.Pair
 
   @default_backend VisionCore.Segmentation.Backend.Qnn
@@ -140,9 +130,17 @@ defmodule VisionCore.Segmentation.Pipeline do
     lens: "project the stereo points"
   }
 
+  @doc false
+  def child_spec(opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
+
   def start_link(opts) do
-    name = Keyword.get(opts, :name)
-    GenServer.start_link(__MODULE__, opts, name: name && Detection.server(__MODULE__, name))
+    registration =
+      case Keyword.get(opts, :name) do
+        nil -> []
+        name -> [name: Detection.server(__MODULE__, name)]
+      end
+
+    CameraPipeline.start_link(__MODULE__, opts, registration)
   end
 
   @doc """
@@ -161,17 +159,15 @@ defmodule VisionCore.Segmentation.Pipeline do
     {0, top, width, band_height}
   end
 
-  @impl GenServer
+  @impl CameraPipeline
   def init(opts) do
-    name = VisionCore.Segmentation.name!(opts)
     backend = Keyword.get(opts, :backend, @default_backend)
     labels = Keyword.get(opts, :labels, VisionCore.Segmentation.labels())
     road_classes = Keyword.get(opts, :road_classes, VisionCore.Segmentation.road_classes())
-    pair_wait_ms = Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
 
-    state = %{
-      name: name,
-      camera: camera_depth(Keyword.get(opts, :source), name, pair_wait_ms, opts),
+    %{
+      name: VisionCore.Segmentation.name!(opts),
+      source: source!(Keyword.get(opts, :source)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
       band_top: band_top!(Keyword.get(opts, :band_top)),
@@ -181,52 +177,33 @@ defmodule VisionCore.Segmentation.Pipeline do
       segment_every_n: Options.integer!(opts, :segment_every_n, @default_segment_every_n, 1),
       reprojection_stride:
         Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
-      pair_wait_ms: pair_wait_ms,
-      # The sequence of the last submission, accepted or not.
-      sequence: 0,
-      frame_count: 0,
-      # The in-flight inference's sequence, and the frame submitted with it, with its band.
-      pending: nil,
-      # The newest frame to segment that came while a band was in flight, with its pixels.
-      held: nil,
-      # Frames' label images waiting for the pair captured closest to each.
-      waiting: DepthQueue.new(pair_wait_ms),
-      clock: Keyword.get(opts, :clock, &monotonic_ns/0),
+      pair_wait_ms: Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0),
       colourless_logged: false
     }
-
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(groups(state))
-
-    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    :ok = Outputs.subscribe(state.camera.key)
-    {:ok, state}
   end
 
-  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
+  # A camera source names its output, `nil` for the camera's default.
+  defp source!({:camera, camera}), do: source!({:camera, camera, nil})
 
-  defp camera_depth({:camera, camera}, name, pair_wait_ms, opts),
-    do: camera_depth({:camera, camera, nil}, name, pair_wait_ms, opts)
+  defp source!({:camera, camera, output} = source) when is_atom(camera) and is_atom(output),
+    do: source
 
-  defp camera_depth({:camera, camera, output}, name, pair_wait_ms, opts)
-       when is_atom(camera) and is_atom(output) do
-    config =
-      Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
-        %VisionCore.Config{}
-
-    CameraDepth.new(camera, config, "segmentation pipeline #{name}", @wording,
-      pair_wait_ms: pair_wait_ms,
-      output: output
-    )
-  end
-
-  defp camera_depth(source, _name, _pair_wait_ms, _opts),
+  defp source!(source),
     do:
       raise(
         ArgumentError,
         "its :source is {:camera, name}, a camera of its own, or {:camera, name, output}, " <>
           "one of its outputs, got #{inspect(source)}"
       )
+
+  @impl CameraPipeline
+  def every_n(settings), do: settings.segment_every_n
+
+  @impl CameraPipeline
+  def depth_wording(settings), do: {"segmentation pipeline #{settings.name}", @wording}
+
+  @impl CameraPipeline
+  def output_key(settings), do: {:segmentation, Detection.server(__MODULE__, settings.name)}
 
   defp band_top!(band_top)
        when is_nil(band_top) or (is_number(band_top) and band_top >= 0 and band_top <= 1),
@@ -252,15 +229,13 @@ defmodule VisionCore.Segmentation.Pipeline do
   end
 
   @doc """
-  The segmentation pipeline's steps around the inference, for a running
-  `state`: `<name>.input` and `<name>.classes` in the pipeline `name`,
+  The segmentation pipeline's steps around the inference, for its
+  settings: `<name>.input` and `<name>.classes` in the pipeline `name`,
   with their settings fixed at start. The backend declares the inference
   step itself (`VisionCore.Segmentation.inference_group/2`).
   """
-  @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
-  def groups(state) do
-    camera = state.camera.name
-
+  @impl CameraPipeline
+  def groups(%{source: {:camera, camera, _output}} = state) do
     [
       VisionCore.Parameters.step(state.name, "input", "Input", 101, %{
         summary: "Hands a band of every nth image of the camera #{camera} to the model.",
@@ -323,141 +298,55 @@ defmodule VisionCore.Segmentation.Pipeline do
   defp build_parameter(key, value, description),
     do: VisionCore.Stereo.Parameters.build_parameter({key, value}, description)
 
-  @impl GenServer
-  def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    now_ns = state.clock.()
-    state = %{state | camera: CameraDepth.add_pair(state.camera, pair, now_ns)}
-    {:noreply, publish_settled(state, now_ns)}
-  end
+  @impl CameraPipeline
+  def accept(%Frame{rgb: rgb}, settings) when is_binary(rgb), do: {:ok, settings}
+  def accept(_colourless, settings), do: {:skip, note_colourless(settings)}
 
-  def handle_cast({:camera_frame, %Frame{} = frame}, state) do
-    case DepthQueue.admit(state.waiting, state.camera) do
-      {:ok, waiting} -> {:noreply, take_frame(frame, %{state | waiting: waiting})}
-      {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
-    end
-  end
+  defp note_colourless(%{colourless_logged: true} = settings), do: settings
 
-  def handle_cast(_message, state), do: {:noreply, state}
-
-  defp take_frame(frame, state) do
-    frame_count = state.frame_count + 1
-    state = %{state | frame_count: frame_count}
-
-    cond do
-      rem(frame_count, state.segment_every_n) != 0 -> state
-      not is_binary(frame.rgb) -> note_colourless(state)
-      not is_nil(state.pending) -> %{state | held: frame}
-      true -> submit(frame, state)
-    end
-  end
-
-  # Submits the frame held while the queue has room for its label image.
-  defp submit_held(%{held: nil} = state), do: state
-
-  defp submit_held(%{held: frame} = state) do
-    case DepthQueue.admit(state.waiting, state.camera) do
-      {:ok, waiting} -> submit(frame, %{state | held: nil, waiting: waiting})
-      {:full, waiting} -> %{state | held: nil, waiting: waiting}
-    end
-  end
-
-  defp submit(frame, state) do
-    {_x, top, width, height} = band = band(frame.width, frame.height, state.band_top)
-    rgb = binary_part(frame.rgb, top * width * 3, height * width * 3)
-    sequence = state.sequence + 1
-    state = %{state | sequence: sequence}
-
-    case state.backend.segment(state.backend_server, sequence, %{
-           width: width,
-           height: height,
-           rgb: rgb
-         }) do
-      :ok ->
-        %{state | pending: %{sequence: sequence, frame: %{frame | rgb: nil}, band: band}}
-
-      # Busy or unavailable: the backend logs the unavailable case once.
-      {:error, _reason} ->
-        state
-    end
-  end
-
-  defp note_colourless(%{colourless_logged: true} = state), do: state
-
-  defp note_colourless(state) do
+  defp note_colourless(%{source: {:camera, camera, _output}} = settings) do
     Logger.warning(
-      "segmentation pipeline #{state.name}: camera #{state.camera.name}'s images have no " <>
+      "segmentation pipeline #{settings.name}: camera #{camera}'s images have no " <>
         "colour, which its model needs, so none is segmented"
     )
 
-    %{state | colourless_logged: true}
+    %{settings | colourless_logged: true}
   end
 
-  @impl GenServer
-  def handle_info(
-        {:inference_labels, sequence, labels},
-        %{pending: %{sequence: sequence, frame: frame, band: band}} = state
-      ) do
-    state = %{state | pending: nil}
-
-    if is_nil(labels),
-      do: {:noreply, submit_held(state)},
-      else: {:noreply, wait_for_pair(state, frame, Map.put(labels, :band, band))}
+  @impl CameraPipeline
+  def prepare(frame, settings) do
+    {_x, top, width, height} = band = band(frame.width, frame.height, settings.band_top)
+    rgb = binary_part(frame.rgb, top * width * 3, height * width * 3)
+    {:submit, %{width: width, height: height, rgb: rgb}, band, settings}
   end
 
-  # A reply for a frame no longer waited on.
-  def handle_info({:inference_labels, _stale, _labels}, state), do: {:noreply, state}
+  @impl CameraPipeline
+  def submit(band, sequence, settings),
+    do: settings.backend.segment(settings.backend_server, sequence, band)
 
-  def handle_info(:pair_wait, state),
-    do: {:noreply, publish_settled(state, state.clock.())}
+  @impl CameraPipeline
+  def reply_tag, do: :inference_labels
 
-  def handle_info(_message, state), do: {:noreply, state}
+  @impl CameraPipeline
+  def result(labels, band, _settings), do: {Map.put(labels, :band, band), true}
 
-  defp wait_for_pair(state, frame, labels) do
-    now_ns = state.clock.()
-    {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
+  @impl CameraPipeline
+  def finish(frame, labels, nil, camera, settings),
+    do: {{:segmentation, settings.name, frame, labels, nil}, camera}
 
-    waiting =
-      if lens && CameraDepth.projectable?(camera),
-        do: DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns),
-        else: DepthQueue.put_without_depth(state.waiting, {frame, labels})
-
-    # Submitted first, so the backend runs while the clouds are sorted.
-    %{state | camera: camera, waiting: waiting}
-    |> submit_held()
-    |> publish_settled(now_ns)
+  def finish(frame, labels, pair, camera, settings) do
+    {clouds, camera} = clouds(frame, labels, pair, camera, settings)
+    {{:segmentation, settings.name, frame, labels, clouds}, camera}
   end
 
-  # Publishes the label images whose pair is known, in capture order, and has the pipeline told when to look again.
-  defp publish_settled(state, now_ns) do
-    state = %{state | camera: CameraDepth.add_queued_pairs(state.camera, now_ns)}
-    {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
-    state = %{state | waiting: DepthQueue.schedule(waiting, state.camera, now_ns)}
-
-    Enum.reduce(settled, state, fn {labelled, pair}, state ->
-      publish_labels(labelled, pair, state)
-    end)
-  end
-
-  defp publish_labels({frame, labels}, nil, state) do
-    publish(state, frame, labels, nil)
-    state
-  end
-
-  defp publish_labels({frame, labels}, pair, state) do
-    {clouds, state} = clouds(frame, labels, pair, state)
-    publish(state, frame, labels, clouds)
-    state
-  end
-
-  defp clouds(frame, labels, pair, state) do
-    {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
-    state = %{state | camera: camera}
+  defp clouds(frame, labels, pair, camera, settings) do
+    {lens, camera} = CameraDepth.lens(camera, {frame.width, frame.height})
 
     if lens do
       %{points: points} =
-        Reprojection.project_with_origin(pair, lens, camera.pose, state.reprojection_stride)
+        Reprojection.project_with_origin(pair, lens, camera.pose, settings.reprojection_stride)
 
-      {road, off_road} = sort_points(points, labels, state.road, <<>>, <<>>)
+      {road, off_road} = sort_points(points, labels, settings.road, <<>>, <<>>)
 
       clouds = %{
         road: road,
@@ -466,9 +355,9 @@ defmodule VisionCore.Segmentation.Pipeline do
         capture_ns: Pair.capture_ns(pair)
       }
 
-      {clouds, state}
+      {clouds, camera}
     else
-      {nil, state}
+      {nil, camera}
     end
   end
 
@@ -519,11 +408,4 @@ defmodule VisionCore.Segmentation.Pipeline do
     if cell_x >= 0 and cell_x < cells_x and cell_y >= 0 and cell_y < cells_y,
       do: :binary.at(data, cell_y * cells_x + cell_x)
   end
-
-  defp publish(state, frame, labels, clouds),
-    do:
-      Outputs.publish(
-        {:segmentation, Detection.server(__MODULE__, state.name)},
-        {:segmentation, state.name, frame, labels, clouds}
-      )
 end
