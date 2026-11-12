@@ -130,7 +130,8 @@ impl Writer {
         }
     }
 
-    fn from_file(output: File) -> Writer {
+    /// Record output on `output`.
+    pub fn from_file(output: File) -> Writer {
         Writer {
             stdout: Arc::new(Mutex::new(output)),
         }

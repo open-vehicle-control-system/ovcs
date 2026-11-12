@@ -8,6 +8,7 @@ edition = "2021"
 doctest = false
 
 [dependencies]
+framing = { path = "../framing" }
 libloading = "0.8"
 
 [build-dependencies]

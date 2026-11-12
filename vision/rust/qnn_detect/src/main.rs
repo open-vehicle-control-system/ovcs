@@ -15,69 +15,42 @@
 
 mod yolox;
 
-use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
 use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::protocol::{detections_record, inference_micros, parse_request};
-use framing::{log_record, LogLevel, Writer};
-use qnn::{CommandLine, Performance, StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
+use framing::{LogLevel, Writer};
+use qnn::port::{self, Clock, Start};
+use qnn::{Performance, TimeLog};
 use yolox::{decode, Outputs, Quantisation, ANCHORS, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 const NMS_IOU: f32 = 0.45;
 
-/// Room in the request pipe for a whole request, which the BEAM then writes in one go.
-const REQUEST_PIPE_BYTES: usize = 4 << 20;
-
 /// Threads the letterbox splits its rows across.
 const LETTERBOX_THREADS: usize = 3;
 
-fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
-
-/// A failure before stdout carries records goes to stderr.
-fn exit_early(message: &str, status: i32) -> ! {
-    eprintln!("qnn_detect: {message}");
-    exit(status)
-}
-
+const NAME: &str = "qnn_detect";
 const USAGE: &str = "usage: qnn_detect <context.bin> [score_threshold] \
                      [--performance <profile>] | --graph-names <model.dlc>";
 
 fn main() {
-    let command_line: Vec<String> = std::env::args().skip(1).collect();
-    let (arguments, performance) = match qnn::command_line(&command_line) {
-        Ok(CommandLine::GraphNames(dlc)) => match qnn::print_dlc_graph_names(dlc) {
-            Ok(()) => exit(0),
-            Err(message) => exit_early(&message, 1),
-        },
-        Ok(CommandLine::Serve {
-            arguments,
-            performance,
-        }) => (arguments, performance),
-        Err(message) => exit_early(&format!("{message}; {USAGE}"), 2),
-    };
+    let Start {
+        arguments,
+        performance,
+        writer,
+    } = port::start(NAME, USAGE);
     let Some(context_path) = arguments.first() else {
-        exit_early(USAGE, 2);
+        port::exit_early(NAME, USAGE, 2);
     };
     let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => exit_early(&format!("bad score threshold {}", arguments[1]), 2),
+        Some(Err(_)) => port::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2),
     };
-
-    // Before any QNN call: its libraries may log onto stdout.
-    let writer = match Writer::from_stdout_redirecting() {
-        Ok(writer) => writer,
-        Err(error) => exit_early(&format!("stdout: {error}"), 1),
-    };
-    writer.log_panics();
-
     if let Err(message) = run(context_path, score_threshold, performance, &writer) {
-        log(&writer, LogLevel::Error, &message);
+        port::log(&writer, LogLevel::Error, &message);
         exit(1);
     }
 }
@@ -112,25 +85,7 @@ fn run(
     performance: Performance,
     writer: &Writer,
 ) -> Result<(), String> {
-    match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
-        Ok(bytes) => log(
-            writer,
-            LogLevel::Info,
-            &format!("request pipe: {bytes} bytes"),
-        ),
-        Err(error) => log(
-            writer,
-            LogLevel::Warning,
-            &format!("request pipe not enlarged: {error}"),
-        ),
-    }
-    let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
-    let mut model = qnn::Model::open(&binary, performance)?;
-    drop(binary);
-    match performance.outcome(model.power_vote_error.as_deref()) {
-        Ok(line) => log(writer, LogLevel::Info, &line),
-        Err(line) => log(writer, LogLevel::Warning, &line),
-    }
+    let mut model = port::open_model(context_path, performance, writer)?;
 
     let input_bytes = (MODEL_SIZE * MODEL_SIZE * 3) as usize;
     match model.inputs.as_slice() {
@@ -148,7 +103,7 @@ fn run(
     let (box_quantisation, score_quantisation) =
         (quantisation(&model, boxes)?, quantisation(&model, scores)?);
 
-    log(
+    port::log(
         writer,
         LogLevel::Info,
         &format!(
@@ -170,38 +125,16 @@ fn run(
         .iter()
         .map(|tensor| vec![0u8; tensor.bytes])
         .collect();
-    let mut stdin = std::io::stdin().lock();
     let mut time_log = TimeLog::default();
-    let mut record = Vec::new();
-    let mut stage_times = StageTimes::new(
-        &[
-            &["idle", "read", "letterbox"],
-            &EXECUTION_STAGES[..],
-            &["decode", "reply"],
-        ]
-        .concat(),
-        STAGE_TIMES_EVERY,
-        Instant::now(),
-    );
-    let mut mark = Instant::now();
-
-    while let Ok(Some(length)) = framing::read_length(&mut stdin) {
-        stage_times.lap("idle", &mut mark);
-        if !matches!(
-            framing::read_body_into(&mut stdin, length, &mut record),
-            Ok(true)
-        ) {
-            break;
-        }
-        stage_times.lap("read", &mut mark);
-        let Some(request) = parse_request(&record) else {
-            continue;
-        };
+    let mut clock = Clock::new("letterbox", "decode", Instant::now());
+    let mut stdin = std::io::stdin().lock();
+    port::serve(&mut stdin, writer, &mut clock, |record, clock| {
+        let request = parse_request(record)?;
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, MODEL_SIZE);
         let (detections, time) = match request.check() {
             Err(message) => {
-                log(writer, LogLevel::Warning, &message);
+                port::log(writer, LogLevel::Warning, &message);
                 (Vec::new(), None)
             }
             Ok(()) => {
@@ -217,27 +150,15 @@ fn run(
                     &letterbox,
                     LETTERBOX_THREADS,
                 );
-                stage_times.lap("letterbox", &mut mark);
+                clock.prepared();
                 let mut outputs: Vec<&mut [u8]> = buffers
                     .iter_mut()
                     .map(|buffer| buffer.as_mut_slice())
                     .collect();
                 match model.execute(&mut [input.as_mut_slice()], &mut outputs) {
                     Ok(timing) => {
-                        timing.add_to(&mut stage_times);
-                        if let Some(report) = model.take_profile_report() {
-                            log(
-                                writer,
-                                LogLevel::Info,
-                                &format!("first execution's profile events: {report}"),
-                            );
-                        }
-                        if let Some(message) =
-                            time_log.message(timing.source, model.profile_error.as_deref())
-                        {
-                            log(writer, LogLevel::Info, &message);
-                        }
-                        mark = Instant::now();
+                        port::log_execution(writer, &mut model, &mut time_log, &timing);
+                        clock.executed(&timing);
                         let detections = decode(
                             &Outputs {
                                 boxes: &buffers[boxes],
@@ -250,30 +171,19 @@ fn run(
                             NMS_IOU,
                             &letterbox,
                         );
-                        stage_times.lap("decode", &mut mark);
+                        clock.finished();
                         (
                             detections,
                             Some(inference_micros(u128::from(timing.micros))),
                         )
                     }
                     Err(message) => {
-                        log(writer, LogLevel::Error, &message);
+                        port::log(writer, LogLevel::Error, &message);
                         (Vec::new(), None)
                     }
                 }
             }
         };
-        if writer
-            .write_record(&detections_record(request.sequence, &detections, time))
-            .is_err()
-        {
-            break;
-        }
-        stage_times.lap("reply", &mut mark);
-        stage_times.count_request();
-        if let Some(line) = stage_times.line(mark) {
-            log(writer, LogLevel::Info, &line);
-        }
-    }
-    Ok(())
+        Some(detections_record(request.sequence, &detections, time))
+    })
 }

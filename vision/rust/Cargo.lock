@@ -330,6 +330,7 @@ name = "qnn"
 version = "0.1.0"
 dependencies = [
  "bindgen",
+ "framing",
  "libloading",
 ]
 

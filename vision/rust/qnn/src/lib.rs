@@ -16,11 +16,12 @@ mod ffi {
 }
 
 mod performance;
+pub mod port;
 mod stage_times;
 mod time_log;
 
 pub use performance::{command_line, CommandLine, Performance, DEFAULT_PERFORMANCE};
-pub use stage_times::{micros, StageTimes, STAGE_TIMES_EVERY};
+pub use stage_times::{micros, Stage, StageTimes, STAGE_TIMES_EVERY};
 pub use time_log::TimeLog;
 
 use std::ffi::{c_void, CStr, CString};
@@ -121,9 +122,9 @@ pub const EXECUTION_STAGES: [&str; 6] = [
 ];
 
 impl Timing {
-    /// Adds the execution's times to `times`, which has `EXECUTION_STAGES`.
-    pub fn add_to(&self, times: &mut StageTimes) {
-        let [graph_execute, execute, host_rpc, htp_rpc, htp, profile_read] = EXECUTION_STAGES;
+    /// Adds the execution's times to `times`, whose `stages` are `EXECUTION_STAGES`.
+    pub fn add_to(&self, times: &mut StageTimes, stages: &[Stage; 6]) {
+        let [graph_execute, execute, host_rpc, htp_rpc, htp, profile_read] = *stages;
         times.add(graph_execute, self.graph_execute_micros);
         for (stage, micros) in [
             (execute, self.profiled.execute_micros),
@@ -1025,7 +1026,7 @@ mod tests {
     #[test]
     fn an_execution_adds_the_times_its_profile_reported() {
         let start = Instant::now();
-        let mut times = StageTimes::new(&EXECUTION_STAGES, STAGE_TIMES_EVERY, start);
+        let (mut times, stages) = StageTimes::new(EXECUTION_STAGES, STAGE_TIMES_EVERY, start);
         let timing = Timing {
             micros: 8700,
             source: TimeSource::Accelerator,
@@ -1038,7 +1039,7 @@ mod tests {
                 accelerator_micros: Some(8700),
             },
         };
-        timing.add_to(&mut times);
+        timing.add_to(&mut times, &stages);
         times.count_request();
         assert_eq!(
             times.line(start + STAGE_TIMES_EVERY).as_deref(),
