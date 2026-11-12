@@ -66,20 +66,15 @@ config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
 # Advance the system clock on devices without real-time clocks.
 # `ctty: "ttyS0"` mirrors BEAM/IEx onto the UART so boot crashes are
 # visible on a serial console (kept on tty1 by default for HDMI users).
-# `mount: "/dev/mmcblk0p3:/data:..."` overrides where the OVCS Nerves
-# system mounts the writable application partition. The system's own
-# `etc/erlinit.config` mounts it at `/root`, but the rest of the
-# codebase (and every upstream Nerves library — NervesSSH, nerves_time,
-# etc.) assumes the standard `/data` convention. We prepend a `/data`
-# mount so erlinit mounts it there first; the system's `/root` mount
-# line still gets emitted but fails harmlessly (device already mounted)
-# and erlinit logs and continues. Once `ovcs_base_can_system_rpi4`'s
-# erlinit.config is updated upstream, this override can come out.
+# The pinned RPi4 system puts its F2FS application partition on p7.
+# Mount it at `/data` before BEAM starts; the system's erlinit default
+# uses `/root`. `build.sh` sets the firmware metadata's application
+# target to `/data` too, so Nerves Runtime uses the same mount point.
 config :nerves, :erlinit,
   update_clock: true,
   hostname_pattern: vehicle_host,
   ctty: "ttyS0",
-  mount: "/dev/mmcblk0p3:/data:f2fs:nodev:"
+  mount: "/dev/mmcblk0p7:/data:f2fs:nodev:"
 
 config :nerves_ssh,
   authorized_keys: (System.get_env("AUTHORIZED_SSH_KEYS") || "") |> String.split(",", trim: true),
