@@ -79,7 +79,7 @@ defmodule Ovcs1.Vision.Composer do
          dlc_path: Application.app_dir(:ovcs1, @road_model),
          segment_every_n: 1}
       ],
-      preview: [outputs: [hq: :inference]],
+      preview: [max_hz: 30, outputs: [hq: :inference]],
       exporters: [
         {VisionCore.Ros2.Exporter,
          heartbeat: [],

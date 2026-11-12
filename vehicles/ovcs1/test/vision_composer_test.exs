@@ -85,6 +85,7 @@ defmodule Ovcs1.VisionComposerTest do
     exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
     assert config.preview[:outputs] == [hq: :inference]
+    assert config.preview[:max_hz] == 30
     assert VisionCore.Camera.Unit.output_key(config, :hq, config.preview[:outputs][:hq])
     refute exporter[:cameras][:outputs]
   end
