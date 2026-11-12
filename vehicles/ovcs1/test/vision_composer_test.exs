@@ -53,7 +53,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour and at half for the models" do
+  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour, as a JPEG, and at half for the models" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
@@ -65,13 +65,18 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert camera[:outputs] == [
              view: [resolution: {2028, 1520}, processor: :cpu],
+             view_jpeg: [from: :view, format: :jpeg, quality: 80],
              inference: [resolution: {1014, 760}, from: :view]
            ]
 
     config = Ovcs1.Vision.Composer.config(:target)
-    assert [%{outputs: [view, inference]}] = VisionCore.Camera.Unit.settings(config)
+    assert [%{outputs: [view, view_jpeg, inference]}] = VisionCore.Camera.Unit.settings(config)
     assert {view.name, view.index, view.width, view.height} == {:view, 0, 2028, 1520}
-    assert {inference.name, inference.index, inference.from} == {:inference, 1, :view}
+
+    assert {view_jpeg.index, view_jpeg.width, view_jpeg.height, view_jpeg.format} ==
+             {1, 2028, 1520, :jpeg}
+
+    assert {inference.name, inference.index, inference.from} == {:inference, 2, :view}
 
     assert VisionCore.Camera.Unit.output_key(config, :hq, :inference) ==
              {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
@@ -80,14 +85,14 @@ defmodule Ovcs1.VisionComposerTest do
     assert camera[:frame_id] == "hq_optical"
   end
 
-  test "the preview shows the HQ camera's half-size output, ROS 2 its full one" do
+  test "the preview and ROS 2 show the HQ camera's full image as the JPEG the camera encodes" do
     config = Ovcs1.Vision.Composer.config(:target)
     exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
-    assert config.preview[:outputs] == [hq: :inference]
+    assert config.preview[:outputs] == [hq: :view_jpeg]
     assert config.preview[:max_hz] == 30
     assert VisionCore.Camera.Unit.output_key(config, :hq, config.preview[:outputs][:hq])
-    refute exporter[:cameras][:outputs]
+    assert exporter[:cameras][:outputs] == [hq: :view_jpeg]
   end
 
   test "the HQ camera's calibration and pose sit beside the stereo pair's" do
@@ -147,11 +152,10 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert options[:detections][:pipelines] == [:objects]
     assert options[:cameras][:names] == [:hq]
-    refute options[:cameras][:outputs]
     assert options[:segmentation][:pipelines] == [:road]
 
-    assert VisionCore.Exporter.output_key({:camera_frame, :hq}, config) ==
-             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :view}
+    assert VisionCore.Exporter.output_key({:camera_frame, :hq, :view_jpeg}, config) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :view_jpeg}
   end
 
   test "the ROS 2 exporter's outputs are all produced by the configuration" do

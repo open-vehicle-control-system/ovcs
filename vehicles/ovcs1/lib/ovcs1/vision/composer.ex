@@ -6,11 +6,11 @@ defmodule Ovcs1.Vision.Composer do
   with the right sensor phase-locked to the left, depth computed on the
   GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
   is a camera of its own, `:hq`, captured in colour by
-  `VisionCore.Camera.V4L2Single`, at every frame in two outputs: `:view`,
-  2028 × 1520, which the ROS 2 exporter publishes, and `:inference`,
-  1014 × 760, averaged from it 2 × 2, which the dashboard's preview
-  shows: a full frame takes the board too long to encode at the
-  preview's rate. On the Hexagon NPU,
+  `VisionCore.Camera.V4L2Single`, at every frame in three outputs:
+  `:view`, 2028 × 1520; `:view_jpeg`, that image encoded once by the
+  capture program, which the dashboard's preview and the ROS 2 exporter
+  both show as it is; and `:inference`, 1014 × 760, averaged from it
+  2 × 2. On the Hexagon NPU,
   YOLOX detects objects on `:inference`, the `:objects` pipeline, and
   FFNet segments the road on it, the `:road` pipeline: the models' inputs
   are smaller still, so the full image would cross to their Ports only
@@ -79,13 +79,13 @@ defmodule Ovcs1.Vision.Composer do
          dlc_path: Application.app_dir(:ovcs1, @road_model),
          segment_every_n: 1}
       ],
-      preview: [max_hz: 30, outputs: [hq: :inference]],
+      preview: [max_hz: 30, outputs: [hq: :view_jpeg]],
       exporters: [
         {VisionCore.Ros2.Exporter,
          heartbeat: [],
          stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],
-         cameras: [names: [:hq]],
+         cameras: [names: [:hq], outputs: [hq: :view_jpeg]],
          segmentation: [pipelines: [:road]]}
       ]
     }
@@ -111,6 +111,7 @@ defmodule Ovcs1.Vision.Composer do
      fps: 30,
      outputs: [
        view: [resolution: {2028, 1520}, processor: :cpu],
+       view_jpeg: [from: :view, format: :jpeg, quality: 80],
        inference: [resolution: {1014, 760}, from: :view]
      ],
      max_exposure_us: 25_000,
