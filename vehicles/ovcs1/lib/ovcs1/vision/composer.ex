@@ -17,7 +17,7 @@ defmodule Ovcs1.Vision.Composer do
   disparities, coarse to fine.
 
   `priv/calibration` holds the rig's calibration, from `cameracalibrator`,
-  and the HQ camera's nominal one, `hq.yaml`, for its half output, until
+  and the HQ camera's nominal one, `hq.yaml`, for its 3.6 mm lens, until
   it is calibrated. Without `hq_pose.yaml`, its pose relative to the
   stereo pair, the HQ pipelines run without distances. The stereo
   cameras deliver grey frames, which the ROS 2 exporter encodes to JPEG;
@@ -93,14 +93,13 @@ defmodule Ovcs1.Vision.Composer do
     ]
   end
 
-  # Half resolution: the models shrink every frame below the half output.
   defp hq_camera do
     {:camera,
      name: :hq,
      driver: VisionCore.Camera.V4L2Single,
      csiphy: 2,
      fps: 35,
-     output: :half,
+     output: :full,
      max_exposure_us: 25_000,
      frame_id: "hq_optical",
      calibration: Application.app_dir(:ovcs1, @hq_calibration),

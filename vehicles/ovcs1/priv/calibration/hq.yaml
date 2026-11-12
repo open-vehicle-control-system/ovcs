@@ -1,10 +1,10 @@
-image_width: 1014
-image_height: 760
+image_width: 2028
+image_height: 1520
 camera_name: hq
 camera_matrix:
   rows: 3
   cols: 3
-  data: [580.6, 0.0, 506.5, 0.0, 580.6, 379.5, 0.0, 0.0, 1.0]
+  data: [1161.3, 0.0, 1013.5, 0.0, 1161.3, 759.5, 0.0, 0.0, 1.0]
 distortion_model: plumb_bob
 distortion_coefficients:
   rows: 1
@@ -17,4 +17,4 @@ rectification_matrix:
 projection_matrix:
   rows: 3
   cols: 4
-  data: [580.6, 0.0, 506.5, 0.0, 0.0, 580.6, 379.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+  data: [1161.3, 0.0, 1013.5, 0.0, 0.0, 1161.3, 759.5, 0.0, 0.0, 0.0, 1.0, 0.0]

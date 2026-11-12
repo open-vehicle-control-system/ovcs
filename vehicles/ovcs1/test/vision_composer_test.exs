@@ -52,7 +52,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera runs on Camera 2 at 35 fps in half-resolution colour, for driving" do
+  test "the HQ camera runs on Camera 2 at 35 fps in full-resolution colour, for driving" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
@@ -60,7 +60,7 @@ defmodule Ovcs1.VisionComposerTest do
     assert camera[:driver] == VisionCore.Camera.V4L2Single
     assert camera[:csiphy] == 2
     assert camera[:fps] == 35
-    assert camera[:output] == :half
+    assert camera[:output] == :full
     assert camera[:max_exposure_us] == 25_000
     assert camera[:frame_id] == "hq_optical"
   end
@@ -80,13 +80,13 @@ defmodule Ovcs1.VisionComposerTest do
     refute "priv/calibration/hq_pose.yaml" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera's nominal calibration is for its half output" do
+  test "the HQ camera's nominal calibration is for its full output" do
     path = Application.app_dir(:ovcs1, "priv/calibration/hq.yaml")
 
     calibration = CameraCalibration.load!(path)
 
-    assert {calibration.width, calibration.height} == {1014, 760}
-    assert calibration.camera_matrix == [580.6, 0.0, 506.5, 0.0, 580.6, 379.5, 0.0, 0.0, 1.0]
+    assert {calibration.width, calibration.height} == {2028, 1520}
+    assert calibration.camera_matrix == [1161.3, 0.0, 1013.5, 0.0, 1161.3, 759.5, 0.0, 0.0, 1.0]
     assert calibration.distortion_model == "plumb_bob"
     assert Enum.all?(calibration.distortion_coefficients, &(&1 == 0.0))
     assert Reprojection.check(calibration) == :ok
