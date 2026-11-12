@@ -1,5 +1,5 @@
 ---
-id: TASK-89
+id: TASK-110
 title: Run several named detection pipelines on a vision unit
 status: In Progress
 assignee:
@@ -8,14 +8,14 @@ created_date: '2026-11-11 19:00'
 labels:
   - vision
 dependencies: []
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 68000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 2 of TASK-87: pipelines named in the composer, each with its own supervisor, backend and model, keyed by name in outputs, parameters, channels, ROS 2 topics and the dashboard; an unnamed detector keeps today's ids. A second pipeline on a Hailo backend is refused at start. See TASK-87's Design.
+Step 2 of TASK-108: pipelines named in the composer, each with its own supervisor, backend and model, keyed by name in outputs, parameters, channels, ROS 2 topics and the dashboard; an unnamed detector keeps today's ids. A second pipeline on a Hailo backend is refused at start. See TASK-108's Design.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -31,10 +31,10 @@ Step 2 of TASK-87: pipelines named in the composer, each with its own supervisor
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87 (Named pipelines, Backends, ROS 2, Status, Dashboard). Inventory of today's single-pipeline assumptions: every `__MODULE__` registration in `vision/core/lib/vision_core/detection/`, `Exporter`'s `@outputs` and `output_key/2`, `Exporter.Runner`'s `route/2` and `newest/2`, `Ros2.Exporter`'s `detections` state, `Ros2.Exporter.Detections`'s topics, `DetectionChannel` on the fixed topic `"detections"`, `ExporterController`'s `:detections`, the dashboard's `Pipelines.jsx` placeholder and `Previews.jsx`'s `useDetections`.
+Spec: TASK-108 (Named pipelines, Backends, ROS 2, Status, Dashboard). Inventory of today's single-pipeline assumptions: every `__MODULE__` registration in `vision/core/lib/vision_core/detection/`, `Exporter`'s `@outputs` and `output_key/2`, `Exporter.Runner`'s `route/2` and `newest/2`, `Ros2.Exporter`'s `detections` state, `Ros2.Exporter.Detections`'s topics, `DetectionChannel` on the fixed topic `"detections"`, `ExporterController`'s `:detections`, the dashboard's `Pipelines.jsx` placeholder and `Previews.jsx`'s `useDetections`.
 
 Global constraints:
-- A pipeline name is an atom matching `^[a-z][a-z0-9_]*$`, none of the reserved names (TASK-87, Pipeline names); the default is `:detection`. It is a ROS 2 parameter name segment, so no `.` or `-`.
+- A pipeline name is an atom matching `^[a-z][a-z0-9_]*$`, none of the reserved names (TASK-108, Pipeline names); the default is `:detection`. It is a ROS 2 parameter name segment, so no `.` or `-`.
 - The default pipeline keeps everything it has today: process names (the modules), the Outputs key `{:detections, VisionCore.Detection.Pipeline}`, the group ids `detection.input`, `detection.inference`, `detection.filtering`, `detection.placement` and `pipeline: :detection`, the channel and event `"detections"`, the exporter output `:detections`, the ROS 2 topics `<prefix>/detections`, `<prefix>/detections/markers`, `<prefix>/left/detections` and marker namespace `"detections"`.
 
 Review focus, each pinned by a test in the owning task:

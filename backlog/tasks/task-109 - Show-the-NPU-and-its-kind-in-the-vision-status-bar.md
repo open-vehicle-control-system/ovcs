@@ -1,5 +1,5 @@
 ---
-id: TASK-88
+id: TASK-109
 title: Show the NPU and its kind in the vision status bar
 status: In Progress
 assignee:
@@ -8,14 +8,14 @@ created_date: '2026-11-11 19:00'
 labels:
   - vision
 dependencies: []
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 67000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 1 of TASK-87. The status bar's `Hailo` entry and the status JSON's `hailo` field only know the Hailo backend: a unit detecting with `VisionCore.Detection.Backend.Qnn` on a Hexagon NPU, such as the OVCS1 reference vehicle's, reads `absent` while its NPU runs.
+Step 1 of TASK-108. The status bar's `Hailo` entry and the status JSON's `hailo` field only know the Hailo backend: a unit detecting with `VisionCore.Detection.Backend.Qnn` on a Hexagon NPU, such as the OVCS1 reference vehicle's, reads `absent` while its NPU runs.
 
 Chosen: each detection backend names the accelerator it runs on, `npu_kind/0`: `"Hailo-8"` for `Backend.Hailo`, `"Hexagon"` for `Backend.Qnn`, `nil` for `Backend.Stub`, which runs on none. `VisionCore.Detection.Supervisor.backend/1` resolves the configured backend from the config's components. `VisionCore.Status` reports `npu: %{kind: kind, state: :running | :failed}`, or `nil` without a detector or with a backend on no accelerator; the status JSON carries it as `npu`, `null` or `{"kind": …, "state": …}`. The status bar shows `NPU` with the kind as its value, green when running, red when failed, and `none` in grey without one.
 <!-- SECTION:DESCRIPTION:END -->
@@ -31,7 +31,7 @@ Chosen: each detection backend names the accelerator it runs on, `npu_kind/0`: `
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87, requirement 1 and its Status paragraph.
+Spec: TASK-108, requirement 1 and its Status paragraph.
 
 Review focus, each pinned by a test below:
 - A unit whose detector is the stub backend shows `none`, not `failed`.

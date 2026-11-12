@@ -11,14 +11,14 @@ dependencies:
   - TASK-90
   - TASK-91
   - TASK-92
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 72000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 6 of TASK-87: the OVCS1 reference vehicle's composer declares the HQ camera and runs detection and road segmentation on it, its stereo pair computing depth only. The detection model is chosen by measuring both pipelines' rates on the NPU, a smaller YOLOX first. See TASK-87's Design.
+Step 6 of TASK-108: the OVCS1 reference vehicle's composer declares the HQ camera and runs detection and road segmentation on it, its stereo pair computing depth only. The detection model is chosen by measuring both pipelines' rates on the NPU, a smaller YOLOX first. See TASK-108's Design.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Step 6 of TASK-87: the OVCS1 reference vehicle's composer declares the HQ camera
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87 (requirement 7). Builds on TASK-90 to TASK-92.
+Spec: TASK-108 (requirement 7). Builds on TASK-90 to TASK-92.
 
 #### Task 1: the composer.
 - `Ovcs1.Vision.Composer`'s target config: `{:camera, name: :hq, driver: VisionCore.Camera.V4L2Single, csiphy: 2, frame_id: "hq_optical", calibration: <priv>/calibration/hq.yaml, pose: <priv>/calibration/hq_pose.yaml, calibration_store_dir: "/data/vision/calibration"}`; `{:qnn_detector, name: :objects, source: {:camera, :hq}, dlc_path: …, score_threshold: 0.4}` (the default `:detection` pipeline takes no camera source), the ROS 2 exporter's `detections: [pipelines: [:objects]]`; `{:qnn_segmenter, name: :road, source: {:camera, :hq}, dlc_path: <priv>/models/ffnet_122ns_lowres.dlc}`; the ROS 2 exporter's `cameras: [:hq]` and `segmentation: [pipelines: [:road]]`.

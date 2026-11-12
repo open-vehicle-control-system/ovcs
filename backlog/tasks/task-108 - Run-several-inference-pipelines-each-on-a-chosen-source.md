@@ -1,5 +1,5 @@
 ---
-id: TASK-87
+id: TASK-108
 title: Run several inference pipelines, each on a chosen source
 status: In Progress
 assignee:
@@ -78,8 +78,8 @@ This is a parent task. The work ships as the sequence of tasks under Plan, each 
 
 Each step is its own task and PR:
 
-1. TASK-88: the NPU and its kind in the status bar and the status JSON.
-2. TASK-89: named detection pipelines: several per unit, each with its own backend and model.
+1. TASK-109: the NPU and its kind in the status bar and the status JSON.
+2. TASK-110: named detection pipelines: several per unit, each with its own backend and model.
 3. TASK-90: the IMX477 on the VENTUNO Q's Camera 2, in colour; it starts by checking that the driver probes.
 4. TASK-91: a camera as a pipeline's source: its calibration and pose, depth reprojection, detections without a distance, its preview and ROS 2 topics.
 5. TASK-92: road segmentation as a second pipeline kind on the Hexagon, with its model, label image, road and off-road clouds, ROS 2 topics and overlay.

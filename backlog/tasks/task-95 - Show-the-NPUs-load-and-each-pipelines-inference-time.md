@@ -8,14 +8,14 @@ created_date: '2026-11-12 00:00'
 labels:
   - vision
 dependencies:
-  - TASK-89
+  - TASK-110
 ordinal: 74000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Nothing measures how busy the accelerator is: the status gives the NPU's kind and whether its backends are available, not how much of each second it spends inferring. Several pipelines will share one NPU (TASK-87), and the OVCS1 reference vehicle's detection model is chosen by measuring the pipelines' rates on it (TASK-93), so the load has to be visible.
+Nothing measures how busy the accelerator is: the status gives the NPU's kind and whether its backends are available, not how much of each second it spends inferring. Several pipelines will share one NPU (TASK-108), and the OVCS1 reference vehicle's detection model is chosen by measuring the pipelines' rates on it (TASK-93), so the load has to be visible.
 
 The Hexagon NPU is reached through FastRPC and exposes no load counter to Linux; HailoRT gives per-model utilisation only through its monitor service, which the unit does not run. Each detection Port therefore measures the accelerator time of each inference itself and returns it with the answer: `qnn_detect` from QNN's basic profiling (the accelerator's execute time, measured on the Hexagon), or the time around the graph's execution when profiling is unavailable; `hailo_detect` the time around the inference call (the device's work and the PCIe transfer). The status sums these over each tick into the accelerator's load, and the mean inference time of each pipeline.
 <!-- SECTION:DESCRIPTION:END -->

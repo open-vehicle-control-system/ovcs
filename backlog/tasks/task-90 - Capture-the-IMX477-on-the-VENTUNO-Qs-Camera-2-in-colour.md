@@ -8,14 +8,14 @@ created_date: '2026-11-11 19:00'
 labels:
   - vision
 dependencies: []
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 69000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 3 of TASK-87: a camera of its own, outside the stereo pair, declared in the composer as a `:camera` component and captured in colour. On the VENTUNO Q it is the IMX477 on Camera 2, routed through CAMSS and captured by `v4l2_capture` in its 2×2 binned mode, 2028 × 1520, demosaiced to colour. The dashboard shows its preview.
+Step 3 of TASK-108: a camera of its own, outside the stereo pair, declared in the composer as a `:camera` component and captured in colour. On the VENTUNO Q it is the IMX477 on Camera 2, routed through CAMSS and captured by `v4l2_capture` in its 2×2 binned mode, 2028 × 1520, demosaiced to colour. The dashboard shows its preview.
 
 On the OVCS1 unit, the IMX477 driver probes (`imx477 5-001a: Device found is imx477`) and is linked to `msm_csiphy2`; the sensor offers `SRGGB12_1X12`, `SRGGB10_1X10` and `SRGGB8_1X8`; `msm_vfe2_video0` (`/dev/video8`, multiplanar) offers `pRCC`, 12-bit packed RGGB, among others. The binned whole-sensor mode is the 12-bit one.
 <!-- SECTION:DESCRIPTION:END -->
@@ -31,13 +31,13 @@ On the OVCS1 unit, the IMX477 driver probes (`imx477 5-001a: Device found is imx
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87 (IMX477 on the VENTUNO Q, Sources). The camera's calibration, its pose, its ROS 2 topics and its use as a detection source are TASK-91's.
+Spec: TASK-108 (IMX477 on the VENTUNO Q, Sources). The camera's calibration, its pose, its ROS 2 topics and its use as a detection source are TASK-91's.
 
 Global constraints:
 - The camera captures the sensor's `SRGGB12_1X12` 2028 × 1520 mode as `pRCC`, packed 12-bit RGGB: 3 bytes per 2 samples, `s0 = b0 << 4 | (b2 & 0x0F)`, `s1 = b1 << 4 | (b2 >> 4)`.
 - Demosaic is the 2×2 superpixel: one RGB pixel per RGGB cell, `R`, `(G1 + G2) / 2`, `B`, so a 2028 × 1520 capture gives 1014 × 760 RGB.
 - The stereo pair's capture, its protocol and its tests are unchanged.
-- A camera name follows the pipeline-name rule of TASK-89, checked by the same function (`VisionCore.Detection.name?/1`, or a module both use): an atom matching `^[a-z][a-z0-9_]*$`, none of the reserved names that collide with the stereo unit's ROS 2 topic segments and preview streams (`left`, `right`, `depth`, …); and no camera may share a name with a pipeline, since both publish under `<prefix>/<name>/`.
+- A camera name follows the pipeline-name rule of TASK-110, checked by the same function (`VisionCore.Detection.name?/1`, or a module both use): an atom matching `^[a-z][a-z0-9_]*$`, none of the reserved names that collide with the stereo unit's ROS 2 topic segments and preview streams (`left`, `right`, `depth`, …); and no camera may share a name with a pipeline, since both publish under `<prefix>/<name>/`.
 
 Review focus, each pinned by a test in the owning task:
 - A capture whose node refuses `pRCC` fails with a message naming the formats it offers, not with a garbled image.

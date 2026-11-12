@@ -8,16 +8,16 @@ created_date: '2026-11-11 19:00'
 labels:
   - vision
 dependencies:
-  - TASK-89
+  - TASK-110
   - TASK-90
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 70000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 4 of TASK-87: a detection pipeline whose source is a camera of its own (TASK-90), its boxes placed in 3D with the stereo depth reprojected into that camera's image, kept without a distance outside the stereo view. The camera publishes its image and `camera_info` on ROS 2 with a `set_camera_info` service, and its pose relative to the stereo pair comes from a calibration procedure. See TASK-87's Design.
+Step 4 of TASK-108: a detection pipeline whose source is a camera of its own (TASK-90), its boxes placed in 3D with the stereo depth reprojected into that camera's image, kept without a distance outside the stereo view. The camera publishes its image and `camera_info` on ROS 2 with a `set_camera_info` service, and its pose relative to the stereo pair comes from a calibration procedure. See TASK-108's Design.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Step 4 of TASK-87: a detection pipeline whose source is a camera of its own (TAS
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87 (Sources, Depth on a camera source, ROS 2, Dashboard, Calibration). Builds on TASK-89's named pipelines and TASK-90's `:camera` component, `Frame.rgb` and `VisionCore.Camera.Unit`.
+Spec: TASK-108 (Sources, Depth on a camera source, ROS 2, Dashboard, Calibration). Builds on TASK-110's named pipelines and TASK-90's `:camera` component, `Frame.rgb` and `VisionCore.Camera.Unit`.
 
 Global constraints:
 - The stereo depth is in the rectified left optical frame (`Pair` `:depth`, millimetres per rectified left pixel). The camera's pose is the transform from that frame to the camera's optical frame: `p_cam = R * p_left + t`, `R` 3×3, `t` in metres.

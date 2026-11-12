@@ -9,14 +9,14 @@ labels:
   - vision
 dependencies:
   - TASK-91
-parent_task_id: TASK-87
+parent_task_id: TASK-108
 ordinal: 71000
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Step 5 of TASK-87: road segmentation as a second pipeline kind, on a camera source, on the Hexagon NPU. Each pixel of the camera's image gets a Cityscapes class; with the stereo depth reprojected into the camera, the pipeline publishes road points and off-road points for a costmap, and the dashboard overlays the classes on the camera's preview. See TASK-87's Design.
+Step 5 of TASK-108: road segmentation as a second pipeline kind, on a camera source, on the Hexagon NPU. Each pixel of the camera's image gets a Cityscapes class; with the stereo depth reprojected into the camera, the pipeline publishes road points and off-road points for a costmap, and the dashboard overlays the classes on the camera's preview. See TASK-108's Design.
 
 The model is FFNet-122NS-LowRes from Qualcomm AI Hub, w8a8 for QNN: input `image` 1×512×1024×3 uint8 (scale 1/255), output `mask` 1×128×256×19 uint8 (scale 0.20315, zero point 153), the 19 Cityscapes classes with `road` first. DDRNet23-Slim (input 1×1024×2048×3, same output) is the alternative. Their weights are trained on Cityscapes, whose licence allows non-commercial use only.
 <!-- SECTION:DESCRIPTION:END -->
@@ -33,14 +33,14 @@ The model is FFNet-122NS-LowRes from Qualcomm AI Hub, w8a8 for QNN: input `image
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-87 (Road segmentation, ROS 2, Dashboard, requirement 8). Builds on TASK-89 (named pipelines, `Detection.server/2`, the NPU status over every backend), TASK-90 (`:camera`, `Frame.rgb`) and TASK-91 (`Reprojection`, the camera's calibration and pose, frame-to-pair matching).
+Spec: TASK-108 (Road segmentation, ROS 2, Dashboard, requirement 8). Builds on TASK-110 (named pipelines, `Detection.server/2`, the NPU status over every backend), TASK-90 (`:camera`, `Frame.rgb`) and TASK-91 (`Reprojection`, the camera's calibration and pose, frame-to-pair matching).
 
 Global constraints:
 - The model sees a band of the camera's frame with the model's aspect ratio (2:1), full width, its top at `band_top` (a fraction of the frame's height, default: the band touches the frame's bottom), resized to the model's input; no letterbox. The label image is the model's output grid (256 × 128) over that band; pixels outside the band have no class.
 - A cell's class is the argmax of its 19 scores.
 - Road classes are a pipeline option, `road_classes`, default `["road"]`; every other class is off-road. A cell with no class contributes to neither cloud.
 - The clouds are `sensor_msgs/PointCloud2` with `x`, `y`, `z` float32, in the stereo left optical frame, one point per reprojected stereo point whose camera pixel falls in a cell.
-- Pipeline names, server names and the NPU status follow TASK-89; segmentation pipelines appear in the dashboard's menu as their own flow, `pipeline: name`.
+- Pipeline names, server names and the NPU status follow TASK-110; segmentation pipelines appear in the dashboard's menu as their own flow, `pipeline: name`.
 
 Review focus, each pinned by a test in the owning task:
 - A frame without a matched stereo pair: the label image is still published, the clouds are not.
@@ -54,7 +54,7 @@ Review focus, each pinned by a test in the owning task:
 - Rust tests: band resize on a known image, argmax with quantised scores, the record, the shape check.
 
 #### Task 2: the segmentation unit in the core.
-- `VisionCore.Segmentation.Supervisor`, `Pipeline`, `Live` and `Backend.Qnn` (and `Backend.Stub` returning fixed labels), named with `VisionCore.Detection.server/2`, supervised and refused as TASK-89's detection units; `VisionCore.Components.start(:qnn_segmenter, opts)` and `:segmenter`; options `name` (required), `source` (`{:camera, name}`, required), `dlc_path`, `band_top`, `road_classes`, `labels` (Cityscapes 19 by default), `segment_every_n` (1).
+- `VisionCore.Segmentation.Supervisor`, `Pipeline`, `Live` and `Backend.Qnn` (and `Backend.Stub` returning fixed labels), named with `VisionCore.Detection.server/2`, supervised and refused as TASK-110's detection units; `VisionCore.Components.start(:qnn_segmenter, opts)` and `:segmenter`; options `name` (required), `source` (`{:camera, name}`, required), `dlc_path`, `band_top`, `road_classes`, `labels` (Cityscapes 19 by default), `segment_every_n` (1).
 - `Pipeline` matches each camera frame with a stereo pair as TASK-91's detection pipeline does; with a pair, `Reprojection.project/4` (extended to also return each point's `x`, `y`, `z` in the stereo left frame) gives the points, each classed by the cell it lands in; publishes `{:segmentation, name, frame, labels, clouds}` under `{:segmentation, server(Pipeline, name)}`, `labels` being `%{width, height, data, band: {x, y, w, h}}` and `clouds` `%{road: binary, off_road: binary}` (packed float32 xyz) or `nil`.
 - Parameter groups `"#{name}.input"`, `"#{name}.inference"`, `"#{name}.classes"`, `pipeline: name`.
 - `VisionCore.Status`'s NPU covers segmentation backends.
