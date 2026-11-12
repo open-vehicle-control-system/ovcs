@@ -12,7 +12,11 @@ defmodule VisionApiWeb.ExporterController do
   default pipeline and `{:detections, name}` for a named one, each at
   its pipeline's `VisionCore.Detection.Live.max_hz/1` and with its
   source, the preview its boxes are drawn on: `"left"` for the stereo
-  pair, the camera's name for a camera of its own.
+  pair, the camera's name for a camera of its own; then each
+  segmentation pipeline's `{:segmentation, name}`, in the order of the
+  configuration's segmenters, at its pipeline's
+  `VisionCore.Segmentation.Live.max_hz/1` and with its camera's name as
+  its source, but for a pipeline given no camera, which never runs.
   """
   use VisionApiWeb, :controller
 
@@ -32,7 +36,7 @@ defmodule VisionApiWeb.ExporterController do
       status: {:ok, "Answering"},
       outputs:
         Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++
-          detection_outputs(config),
+          detection_outputs(config) ++ segmentation_outputs(config),
       actions: []
     }
   end
@@ -49,6 +53,14 @@ defmodule VisionApiWeb.ExporterController do
         do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source)}
   end
 
+  defp segmentation_outputs(nil), do: []
+
+  defp segmentation_outputs(config) do
+    for {output, {:camera, _camera} = source} <-
+          VisionCore.Segmentation.Supervisor.sources(config),
+        do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source)}
+  end
+
   defp source_name(:stereo), do: "left"
   defp source_name({:camera, name}), do: Atom.to_string(name)
 
@@ -57,6 +69,9 @@ defmodule VisionApiWeb.ExporterController do
 
   defp channel_max_hz({:detections, name}),
     do: call_or_nil(fn -> VisionCore.Detection.Live.max_hz(name) end)
+
+  defp channel_max_hz({:segmentation, name}),
+    do: call_or_nil(fn -> VisionCore.Segmentation.Live.max_hz(name) end)
 
   defp channel_max_hz(_preview_output), do: call_or_nil(&preview_max_hz/0)
 

@@ -68,7 +68,14 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
          name: :hq_people,
          backend: VisionCore.Detection.Backend.Stub,
          source: {:camera, :hq},
-         max_hz: 3}
+         max_hz: 3},
+        {:segmenter,
+         name: :road_surface,
+         backend: VisionCore.Segmentation.Backend.Stub,
+         source: {:camera, :hq},
+         max_hz: 1},
+        # Left down: a segmentation pipeline needs a camera.
+        {:segmenter, name: :sourceless, backend: VisionCore.Segmentation.Backend.Stub}
       ],
       preview: [max_hz: 5]
     })
@@ -83,7 +90,8 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              %{"name" => "camera_frame:hq", "maxHz" => 5},
              %{"name" => "detections", "maxHz" => 4, "source" => "left"},
              %{"name" => "detections:road", "maxHz" => 2, "source" => "left"},
-             %{"name" => "detections:hq_people", "maxHz" => 3, "source" => "hq"}
+             %{"name" => "detections:hq_people", "maxHz" => 3, "source" => "hq"},
+             %{"name" => "segmentation:road_surface", "maxHz" => 1, "source" => "hq"}
            ]
   end
 end
@@ -113,7 +121,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
         %{output: :detections, max_hz: nil},
-        %{output: {:detections, :road}, max_hz: 3, source: "hq"}
+        %{output: {:detections, :road}, max_hz: 3, source: "hq"},
+        %{output: {:segmentation, :lanes}, max_hz: 5, source: "hq"}
       ],
       actions: [%{name: :export, label: "Export", description: "Writes a zip."}]
     }
@@ -129,7 +138,8 @@ defmodule VisionApiWeb.ExporterJSONTest do
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
                %{name: "detections", maxHz: nil},
-               %{name: "detections:road", maxHz: 3, source: "hq"}
+               %{name: "detections:road", maxHz: 3, source: "hq"},
+               %{name: "segmentation:lanes", maxHz: 5, source: "hq"}
              ],
              actions: [%{name: "export", label: "Export", description: "Writes a zip."}]
            }
