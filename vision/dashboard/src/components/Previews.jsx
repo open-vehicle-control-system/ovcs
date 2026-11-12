@@ -71,7 +71,7 @@ const PAIR_TILE = 'row-span-3 grid grid-cols-[minmax(0,1fr)] grid-rows-subgrid'
 const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-rows-subgrid'
 const ROW_FRAME = 'lg:aspect-auto lg:min-h-0'
 // Beside the frame, the aside takes the frame's track in a column of its own, as wide in every preview of the row, and
-// scrolls what its track cannot hold.
+// scrolls what its track cannot hold. `ASIDE_REM` is the `14rem` of its track.
 const ASIDE_REM = 14
 const ROW_TILE_BESIDE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)_14rem] lg:grid-rows-subgrid'
 const ROW_ASIDE_BESIDE = 'lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pt-2'
@@ -79,10 +79,10 @@ const ROW_ASIDE_BESIDE = 'lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y
 /**
  * Whether the asides of the row `ref` holds go beside their frames: when the frame left beside an aside would be at
  * least as wide as tall. Its previews are as wide and as tall as each other, and their captions span them either way,
- * so the first one's size and caption decide; measured again as the row or that caption resizes, or the row's
- * `previews`, their number, change, and never without `ResizeObserver`.
+ * so the first one's size and caption decide; measured again as that preview or its caption resizes, and never
+ * without `ResizeObserver`.
  */
-function useBeside(ref, previews) {
+function useBeside(ref) {
   const [beside, setBeside] = useState(false)
 
   useLayoutEffect(() => {
@@ -93,10 +93,10 @@ function useBeside(ref, previews) {
     const observer = new ResizeObserver(() =>
       setBeside(preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
     )
-    observer.observe(ref.current)
+    observer.observe(preview)
     observer.observe(caption)
     return () => observer.disconnect()
-  }, [ref, previews])
+  }, [ref])
 
   return beside
 }
@@ -228,7 +228,7 @@ function DepthPreview({ status, socket, layout }) {
 export default function Previews({ status, socket }) {
   const cameras = useCameraNames()
   const rowRef = useRef(null)
-  const layout = rowLayout(useBeside(rowRef, cameras.length))
+  const layout = rowLayout(useBeside(rowRef))
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
