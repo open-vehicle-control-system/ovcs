@@ -15,7 +15,7 @@
 use std::fs::File;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use framing::{log_record, metadata_record, output_frame_header, LogLevel, Writer};
@@ -202,11 +202,20 @@ fn capture(
     })
 }
 
+/// A frame's images, one per output, shared by the threads that read them.
+type FrameImages = Arc<Vec<Vec<u8>>>;
+
 /// A record for the writer thread: a frame's outputs, each image with its
 /// header, or another record whole.
 enum Record {
-    Frame(Vec<[u8; 14]>, Vec<Vec<u8>>),
+    Frame(Vec<[u8; 14]>, FrameImages),
     Other(Vec<u8>),
+}
+
+/// A frame's images back from the writer thread, and what writing them took.
+struct Written {
+    images: Vec<Vec<u8>>,
+    write: Duration,
 }
 
 /// Writes each record `queued` holds to `records`, in order, a frame's
@@ -215,16 +224,18 @@ enum Record {
 fn write_records(
     records: &impl Records,
     queued: mpsc::Receiver<Record>,
-    written: mpsc::Sender<(Vec<Vec<u8>>, Duration)>,
+    written: mpsc::Sender<Written>,
 ) -> io::Result<()> {
     for record in queued {
         match record {
             Record::Frame(headers, images) => {
                 let writing = Instant::now();
-                for (header, image) in headers.iter().zip(&images) {
+                for (header, image) in headers.iter().zip(images.iter()) {
                     records.write(&[header, image])?;
                 }
-                let _ = written.send((images, writing.elapsed()));
+                let write = writing.elapsed();
+                let images = Arc::into_inner(images).expect("no other thread holds the images");
+                let _ = written.send(Written { images, write });
             }
             Record::Other(record) => records.write(&[&record])?,
         }
@@ -236,7 +247,7 @@ fn write_records(
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
-    images: mpsc::Receiver<(Vec<Vec<u8>>, Duration)>,
+    images: mpsc::Receiver<Written>,
 }
 
 impl Queue {
@@ -244,9 +255,8 @@ impl Queue {
         self.records.send(record).map_err(|_| writer_stopped())
     }
 
-    /// The next frame's images written, waiting for their writes to end,
-    /// and the time they took.
-    fn written(&self) -> io::Result<(Vec<Vec<u8>>, Duration)> {
+    /// The next frame's images written, waiting for their writes to end.
+    fn written(&self) -> io::Result<Written> {
         self.images.recv().map_err(|_| writer_stopped())
     }
 }
@@ -442,9 +452,9 @@ fn convert_frames(
             let free = match spare.take() {
                 Some(images) => images,
                 None => {
-                    let (images, took) = queue.written()?;
-                    (writes, write_ns) = (writes + 1, write_ns + took.as_nanos());
-                    images
+                    let written = queue.written()?;
+                    (writes, write_ns) = (writes + 1, write_ns + written.write.as_nanos());
+                    written.images
                 }
             };
             let headers = (outputs.iter().enumerate())
@@ -453,7 +463,8 @@ fn convert_frames(
                     output_frame_header(index as u8, width, height, start_ns)
                 })
                 .collect();
-            queue.send(Record::Frame(headers, std::mem::replace(&mut images, free)))?;
+            let frame_images = Arc::new(std::mem::replace(&mut images, free));
+            queue.send(Record::Frame(headers, frame_images))?;
         }
     }
 }
@@ -492,7 +503,7 @@ mod tests {
     use std::sync::{mpsc, Mutex};
 
     use super::*;
-    use crate::arguments::Output;
+    use crate::arguments::{Format, Output};
     use crate::bands::{Conversion, Measures};
     use crate::bayer::Layout;
     use crate::bayer::{self, tests::padded_packed12};
@@ -987,6 +998,7 @@ mod tests {
         source: Source::Cpu(Output::Full),
         width: WIDTH as u32,
         height: HEIGHT as u32,
+        format: Format::Rgb,
     };
 
     // The frame loop over `frames` from the IMX477, writing to `records`,
@@ -1084,6 +1096,7 @@ mod tests {
             source: Source::From(0),
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
+            format: Format::Rgb,
         };
         let full = captured(scenes(6, Some(2)), vec![]);
         let records = captured_as(&[FULL, half], scenes(6, Some(2)), vec![]);
@@ -1133,6 +1146,7 @@ mod tests {
             source: Source::From(source),
             width,
             height,
+            format: Format::Rgb,
         };
         // The first 2x2 average of the CPU output is made as it converts,
         // the others after it.
@@ -1168,6 +1182,7 @@ mod tests {
             source: Source::Cpu(Output::Half),
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
+            format: Format::Rgb,
         };
         let full = captured(scenes(6, None), vec![]);
         let half_alone = captured_as(&[half], scenes(6, None), vec![]);
@@ -1292,6 +1307,7 @@ mod tests {
             source: Source::From(0),
             width: WIDTH as u32 / 2,
             height: HEIGHT as u32 / 2,
+            format: Format::Rgb,
         };
         let (frames, mut input) = TestFrames::new(scenes(4, None), vec![]);
         let records = Collected::default();

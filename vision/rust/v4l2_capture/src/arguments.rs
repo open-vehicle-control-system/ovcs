@@ -36,13 +36,21 @@ pub struct SingleArguments {
     pub settings: ColourSettings,
 }
 
-/// One of a single camera's outputs: the size of its RGB frames and what
-/// makes them.
+/// One of a single camera's outputs: the size of its frames, what makes
+/// them and how they are sent.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OutputSpec {
     pub source: Source,
     pub width: u32,
     pub height: u32,
+    pub format: Format,
+}
+
+/// How an output's frames are sent.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Format {
+    /// 8-bit red, green and blue pixels.
+    Rgb,
 }
 
 /// What makes an output.
@@ -244,6 +252,7 @@ fn output_spec(
         source,
         width,
         height,
+        format: Format::Rgb,
     })
 }
 
@@ -425,6 +434,7 @@ mod tests {
             source: Source::Cpu(output),
             width,
             height,
+            format: Format::Rgb,
         }
     }
 
@@ -443,7 +453,8 @@ mod tests {
                 OutputSpec {
                     source: Source::From(0),
                     width: 1014,
-                    height: 760
+                    height: 760,
+                    format: Format::Rgb,
                 }
             ]
         );
