@@ -15,6 +15,7 @@ mod input;
 mod jpeg;
 mod lock;
 mod pairing;
+mod plan;
 mod processor;
 mod scale;
 mod sensor;

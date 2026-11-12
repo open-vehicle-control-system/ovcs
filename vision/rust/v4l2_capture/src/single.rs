@@ -20,16 +20,13 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
-use framing::{
-    log_record, metadata_record, output_frame_header, output_jpeg_header, LogLevel, Writer,
-};
+use framing::{log_record, metadata_record, LogLevel, Writer};
 
-use crate::arguments::{Format, OutputSpec, SingleArguments, Source};
-use crate::bands::Images;
+use crate::arguments::{OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::jpeg::{self, Encoded};
-use crate::processor::{Cpu, Development, Processor};
-use crate::scale;
+use crate::plan::Plan;
+use crate::processor::Development;
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
@@ -190,16 +187,9 @@ fn capture(
     input: &mut File,
     records: &impl Records,
 ) -> io::Result<()> {
-    let jpeg_outputs = jpeg::jpeg_outputs(&setup.outputs);
-    let mut jpegs = 0;
-    let jpeg_slots: Vec<Option<usize>> = (setup.outputs.iter())
-        .map(|spec| {
-            matches!(spec.format, Format::Jpeg { .. }).then(|| {
-                jpegs += 1;
-                jpegs - 1
-            })
-        })
-        .collect();
+    let plan = Plan::new(&setup.outputs, setup.model);
+    let jpeg_outputs = plan.jpeg_outputs();
+    let jpeg_slots = plan.jpeg_slots();
     std::thread::scope(|scope| {
         let (sender, queued) = mpsc::channel();
         let (written, images) = mpsc::channel();
@@ -216,7 +206,7 @@ fn capture(
             to_encode: encoder.is_some().then_some(to_encode),
             images,
         };
-        let converted = convert_frames(setup, frames, set_exposure, input, &queue);
+        let converted = convert_frames(setup, plan, frames, set_exposure, input, &queue);
         drop(queue);
         let joined = |thread: std::thread::ScopedJoinHandle<io::Result<()>>| {
             thread
@@ -383,17 +373,18 @@ impl Statistics {
 /// `capture`'s loop, sending its records to `queue`.
 fn convert_frames(
     setup: Setup,
+    mut plan: Plan,
     frames: &impl Frames,
     set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
     input: &mut File,
     queue: &Queue,
 ) -> io::Result<()> {
     let Setup {
-        outputs,
         model,
         frame_us,
         mut settings,
         statistics_every,
+        ..
     } = setup;
     let log = |level, message: &str| {
         let _ = queue.send(Record::Other(log_record(level, message)));
@@ -406,47 +397,12 @@ fn convert_frames(
         )
     };
     let tuning = model.tuning();
-    let mut processors: Vec<Option<Box<dyn Processor>>> = (outputs.iter())
-        .map(|spec| match spec.source {
-            Source::Cpu(output) => Some(Box::new(Cpu::new(model, output)) as Box<dyn Processor>),
-            Source::From(_) => None,
-        })
-        .collect();
-    let default_threads = (outputs.iter())
-        .filter_map(|spec| match spec.source {
-            Source::Cpu(output) => Some(output.threads()),
-            Source::From(_) => None,
-        })
-        .max()
-        .unwrap_or(1);
-    // A CPU output's 2x2 average is made as the conversion writes its rows,
-    // while they are in cache; `scale` makes every other RGB `from:` output.
-    let averaged_along: Vec<Option<usize>> = (processors.iter().enumerate())
-        .map(|(index, processor)| {
-            processor
-                .as_ref()
-                .filter(|processor| processor.averages_2x2())?;
-            (outputs.iter()).position(|spec| {
-                spec.source == Source::From(index)
-                    && spec.format == Format::Rgb
-                    && spec.block(&outputs[index]) == (2, 2)
-            })
-        })
-        .collect();
-    let scaled_after: Vec<bool> = (outputs.iter().enumerate())
-        .map(|(index, spec)| {
-            matches!(spec.source, Source::From(_))
-                && spec.format == Format::Rgb
-                && !averaged_along.contains(&Some(index))
-        })
-        .collect();
-    let jpegs_per_frame = (outputs.iter())
-        .filter(|spec| matches!(spec.format, Format::Jpeg { .. }))
-        .count() as u64;
+    let default_threads = plan.default_threads();
+    let jpegs_per_frame = plan.jpeg_slots().into_iter().flatten().count() as u64;
     // Two sets of images alternate: one converts while the writer writes the other.
     let (mut images, mut spare) = (
-        vec![Vec::new(); outputs.len()],
-        Some(vec![Vec::new(); outputs.len()]),
+        vec![Vec::new(); plan.output_count()],
+        Some(vec![Vec::new(); plan.output_count()]),
     );
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
@@ -508,27 +464,15 @@ fn convert_frames(
             let measure_exposure =
                 settings.capture.auto_exposure && converted.is_multiple_of(EXPOSURE_EVERY_FRAMES);
             let threads = settings.threads.unwrap_or(default_threads);
-            let mut measured = None;
-            for (index, processor) in processors.iter_mut().enumerate() {
-                let Some(processor) = processor else { continue };
-                // The first output a processor makes measures the frame.
-                let development = Development {
-                    settings: &settings,
-                    gains,
-                    tone: &tone,
-                    channel_means: settings.awb && measured.is_none(),
-                    green_mean: measure_exposure && measured.is_none(),
-                    threads,
-                };
-                let (made, later) = images.split_at_mut(index + 1);
-                let target = Images {
-                    rgb: &mut made[index],
-                    averaged: averaged_along[index].map(|output| &mut later[output - index - 1]),
-                };
-                let measures = processor.develop(&raw, &development, target);
-                measured.get_or_insert(measures);
-            }
-            let measures = measured.expect("an output made by a processor");
+            let development = Development {
+                settings: &settings,
+                gains,
+                tone: &tone,
+                channel_means: settings.awb,
+                green_mean: measure_exposure,
+                threads,
+            };
+            let measures = plan.develop(&raw, &development, &mut images);
             if let Some(means) = measures.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
@@ -547,10 +491,10 @@ fn convert_frames(
                     queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
             }
-            if scaled_after.contains(&true) {
+            if plan.scales() {
                 let scaling = Instant::now();
                 let threads = settings.threads.unwrap_or(default_threads);
-                scale_outputs(&outputs, &scaled_after, threads, &mut images);
+                plan.scale(threads, &mut images);
                 statistics.scaling += scaling.elapsed();
             }
             let free = match spare.take() {
@@ -566,44 +510,9 @@ fn convert_frames(
                     written.images
                 }
             };
-            let headers = (outputs.iter().enumerate())
-                .filter(|(_, spec)| spec.send)
-                .map(|(index, spec)| {
-                    let (width, height) = (spec.width as u16, spec.height as u16);
-                    let header = match spec.format {
-                        Format::Rgb => output_frame_header,
-                        Format::Jpeg { .. } => output_jpeg_header,
-                    };
-                    (index, header(index as u8, width, height, start_ns))
-                })
-                .collect();
+            let headers = plan.headers(start_ns);
             queue.send_frame(headers, Arc::new(std::mem::replace(&mut images, free)))?;
         }
-    }
-}
-
-/// Makes each of `outputs` scaled from another that `scaled_after` marks,
-/// in order, into its image of `images`, on `threads` threads.
-fn scale_outputs(
-    outputs: &[OutputSpec],
-    scaled_after: &[bool],
-    threads: usize,
-    images: &mut [Vec<u8>],
-) {
-    for (index, spec) in outputs.iter().enumerate() {
-        let (Source::From(from), true) = (spec.source, scaled_after[index]) else {
-            continue;
-        };
-        let (made, rest) = images.split_at_mut(index);
-        let source = &outputs[from];
-        let block = spec.block(source);
-        scale::average_blocks(
-            &made[from],
-            source.width as usize,
-            block,
-            threads,
-            &mut rest[0],
-        );
     }
 }
 
@@ -616,12 +525,13 @@ mod tests {
     use std::sync::{mpsc, Mutex};
 
     use super::*;
-    use crate::arguments::{Format, Output};
-    use crate::bands::Conversion;
+    use crate::arguments::{Format, Output, Source};
+    use crate::bands::{Conversion, Images};
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
+    use crate::scale;
 
     // A pipe's reading and writing ends.
     fn pipe() -> (File, File) {

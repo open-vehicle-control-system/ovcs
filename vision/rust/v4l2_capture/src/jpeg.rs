@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::arguments::{Format, OutputSpec, Source};
+use crate::arguments::OutputSpec;
 use crate::scale;
 
 /// One output sent as a JPEG.
@@ -24,21 +24,19 @@ pub struct JpegOutput {
     quality: u8,
 }
 
-/// Each of `outputs` sent as a JPEG, in their order.
-pub fn jpeg_outputs(outputs: &[OutputSpec]) -> Vec<JpegOutput> {
-    (outputs.iter())
-        .filter_map(|spec| match (spec.source, spec.format) {
-            (Source::From(from), Format::Jpeg { quality }) => Some(JpegOutput {
-                from,
-                source_width: outputs[from].width as usize,
-                block: spec.block(&outputs[from]),
-                width: spec.width as usize,
-                height: spec.height as usize,
-                quality,
-            }),
-            _ => None,
-        })
-        .collect()
+impl JpegOutput {
+    /// `spec`, sent as a JPEG at `quality`, encoded from the output `from`,
+    /// which is `source`.
+    pub fn new(from: usize, source: &OutputSpec, spec: &OutputSpec, quality: u8) -> JpegOutput {
+        JpegOutput {
+            from,
+            source_width: source.width as usize,
+            block: spec.block(source),
+            width: spec.width as usize,
+            height: spec.height as usize,
+            quality,
+        }
+    }
 }
 
 /// A frame's JPEGs, one per JPEG output in their order, with the handle
