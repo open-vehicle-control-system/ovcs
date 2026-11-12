@@ -17,11 +17,15 @@ While reset mode is active, the heartbeat alternates between RESETTING and the v
 
 ## Acceptance Criteria
 
-- [ ] Every loop during reset keeps the heartbeat in RESETTING.
-- [ ] Leaving reset restores the latest vehicle status, including FAILURE.
-- [ ] A regression exercises consecutive loops with a real Cantastic emitter.
-- [ ] Core checks pass.
+- [x] Every loop during reset keeps the heartbeat in RESETTING.
+- [x] Leaving reset restores the latest vehicle status, including FAILURE.
+- [x] A regression exercises consecutive loops with a real Cantastic emitter.
+- [x] Core checks pass.
 
 ## Design
 
 Extract the existing status decision into a pure module in a behavior-preserving commit. Then make reset mode dominate vehicle status until reset ends. This preserves the existing reset command and timing; redesigning automatic rearming remains TASK-20.
+
+## Validation
+
+Two regressions reproduced the alternating status before the fix. The real emitter test keeps transmission disabled. Formatting, compilation with warnings as errors, strict Credo and 260 core tests pass.
