@@ -198,4 +198,62 @@ mod tests {
         let row: Vec<u8> = (0..4).map(|x| pixel(&destination, 4, x, 1)[0]).collect();
         assert_eq!(row, [0, 25, 75, 100]);
     }
+
+    /// `length` bytes of a fixed pseudo-random sequence.
+    fn noise(length: usize) -> Vec<u8> {
+        let mut state = 0x1234_5678u32;
+        (0..length)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    /// FNV-1a of `bytes`.
+    fn digest(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    #[test]
+    fn the_letterboxed_images_keep_their_digests() {
+        let digests: Vec<u64> = [
+            (1014, 760, 3, 640),
+            (1014, 760, 1, 640),
+            (37, 23, 3, 64),
+            (100, 200, 3, 64),
+            (5, 3, 1, 16),
+        ]
+        .iter()
+        .map(|&(width, height, channels, model)| {
+            let source = noise((width * height) as usize * usize::from(channels));
+            let letterbox = letterbox_for(width, height, model);
+            let mut destination = vec![0u8; (model * model * 3) as usize];
+            letterbox_into(
+                &source,
+                width,
+                height,
+                channels,
+                &mut destination,
+                model,
+                &letterbox,
+            );
+            digest(&destination)
+        })
+        .collect();
+        assert_eq!(
+            digests,
+            [
+                10712080232157905521,
+                10406381458494913635,
+                7139128084787517588,
+                10434094345790059633,
+                17656103293008597410,
+            ]
+        );
+    }
 }

@@ -110,4 +110,48 @@ mod tests {
             [10, 0, 0, 50, 0, 0, 10, 100, 0, 50, 100, 0]
         );
     }
+
+    /// `length` bytes of a fixed pseudo-random sequence.
+    fn noise(length: usize) -> Vec<u8> {
+        let mut state = 0x1234_5678u32;
+        (0..length)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    /// FNV-1a of `bytes`.
+    fn digest(bytes: &[u8]) -> u64 {
+        bytes.iter().fold(0xcbf2_9ce4_8422_2325, |hash, &byte| {
+            (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
+        })
+    }
+
+    #[test]
+    fn the_resized_bands_keep_their_digests() {
+        let digests: Vec<u64> = [
+            (1014, 760, 126..633, (1024, 512)),
+            (1014, 760, 0..760, (256, 128)),
+            (13, 9, 2..7, (40, 17)),
+            (7, 5, 4..5, (3, 2)),
+        ]
+        .into_iter()
+        .map(|(width, height, rows, output)| {
+            digest(&resized(&noise(width * height * 3), width, rows, output))
+        })
+        .collect();
+        assert_eq!(
+            digests,
+            [
+                7170474687542579749,
+                12029912228537717427,
+                16906896625238522488,
+                13368472135222443375,
+            ]
+        );
+    }
 }
