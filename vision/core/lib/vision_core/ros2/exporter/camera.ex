@@ -81,7 +81,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       image_topic: "#{topic_root}/image_raw/compressed",
       camera_info_topic: "#{topic_root}/camera_info",
       service_name: service_name(options[:topic_prefix], settings.name),
-      calibration: load_calibration(settings.calibration_path, settings.name),
+      calibration: calibration(settings.calibration_path, settings.name),
       pose: load_pose(settings.pose_path, settings.name),
       raw_image_max_hz: options[:raw_image_max_hz],
       camera_info_interval_frames: options[:camera_info_interval_frames],
@@ -102,7 +102,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   def reload(camera, calibration_path),
     do: %{
       camera
-      | calibration: load_calibration(calibration_path, camera.name),
+      | calibration: calibration(calibration_path, camera.name),
         misfit_size: nil
     }
 
@@ -266,7 +266,12 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     %Quaternion{x: x / norm, y: y / norm, z: z / norm, w: w / norm}
   end
 
-  defp load_calibration(nil, name) do
+  @doc """
+  The calibration at `path` of the camera `name`; `nil` without a path or
+  when it cannot be read, with a warning that its camera info is empty.
+  """
+  @spec calibration(Path.t() | nil, atom()) :: CameraCalibration.t() | nil
+  def calibration(nil, name) do
     Logger.warning(
       "#{__MODULE__}: no calibration for camera #{name}; publishing empty CameraInfo"
     )
@@ -274,7 +279,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     nil
   end
 
-  defp load_calibration(path, name) do
+  def calibration(path, name) do
     case CameraCalibration.load(path) do
       {:ok, calibration} ->
         calibration
