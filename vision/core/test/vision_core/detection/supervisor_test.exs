@@ -323,4 +323,13 @@ defmodule VisionCore.Detection.SupervisorTest do
              ]
     end
   end
+
+  test "hands the pipeline the :config its camera is read from" do
+    config = %VisionCore.Config{}
+    options = @options ++ [name: :people, source: {:camera, :hq}, config: config]
+    {:ok, {_flags, children}} = Supervisor.init(options)
+
+    assert [_backend, %{start: {Pipeline, :start_link, [pipeline_options]}}, _live] = children
+    assert pipeline_options[:config] == config
+  end
 end

@@ -214,7 +214,7 @@ defmodule VisionCore.Detection.Supervisor do
 
   defp pipeline_keys do
     [:source, :detect_every_n, :labels, :min_score, :max_detections, :depth_sample_fraction] ++
-      [:outline_segments, :reprojection_stride, :pair_wait_ms]
+      [:outline_segments, :reprojection_stride, :pair_wait_ms, :config]
   end
 
   # The options of `Backend.Hailo`, `Backend.Qnn` and `Backend.Stub`.
