@@ -31,7 +31,7 @@ A unit runs one detection pipeline per detector its vehicle lists, each with its
  subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
                Detection pipeline ──► hailo_detect Port (Hailo-8)
                Status (rates, load, alignment, sharpness)
-               Preview ──► jpeg_codec Port ──► dashboard channels
+               Preview ──► jpeg_codec Ports ──► dashboard channels
 ```
 
 A Port's row below names the process that owns it.
@@ -51,7 +51,7 @@ A Port's row below names the process that owns it.
 | `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
 | Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
-| `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, the Preview and the exporters encode on `VisionCore.Jpeg.Export` | `VisionCore.Supervisor` |
+| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` |
 
 The drivers, the Pipeline and the detection and segmentation pipelines publish their frames, pairs, detections and label grids through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
 
@@ -157,6 +157,8 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 ## The dashboard's previews
 
 The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
+
+Each preview encodes apart from the others, one frame at a time, so a slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one. The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports, `jpeg: [ports: 3]` in your vehicle's `VisionCore.Config` by default: each encode runs on a free Port, and once every Port is busy the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
 
 The dashboard draws each pipeline's results over its source's preview: a detection pipeline's boxes from its `detections` or `detections:<name>` channel, a segmentation pipeline's label grid from its `segmentation:<name>` channel, a binary message holding the band and the grid at most `max_hz` a second, sent, as a preview's frame, only once the previous one is acknowledged ([Vision API](./api.md#segmentation)).
 
