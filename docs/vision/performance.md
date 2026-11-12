@@ -63,18 +63,28 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 
 ## Measured on an Arduino VENTUNO Q
 
-The unit is the OVCS1 reference vehicle's: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623, with YOLOX detecting on the NPU. These are measurements on one unit, not guarantees.
+The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623. Its Raspberry Pi HQ Camera (IMX477), `:center`, runs in the 2028 × 1520 sensor mode, its full image kept on the unit (`send: false`), sent as a JPEG (`view_jpeg`) and averaged 2 × 2 for the models (`inference`). YOLOX detection (`:objects`) and FFNet-122NS-LowRes segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile. These are measurements on one unit, not guarantees.
 
 | Figure | Measured |
 |---|---|
-| One pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 ms: depth at about 34.5 Hz of the cameras' 35, the stereo segment busy about 98% of the time |
-| One pair, `search: "coarse_to_fine"`, `paths: 3` | 25 ms |
-| Each camera | 35 frames a second |
+| One stereo pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 ms |
+| Stereo cameras, depth, `:center`'s outputs, `:objects`, `:scene` | 30 a second each |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
-| One detection request, letterbox included | 17 to 22 ms, on about 92% of the pairs at 35 Hz |
-| YOLOX's inference time, the HTP's execution time without waits (`npu.pipelines.detection.inferenceMs`) | 8.7 ms |
-| The NPU's load with YOLOX alone (`npu.loadPercent`) | about 21% |
-| Generating the context binary, first boot only | about 2.4 s |
+| `:center`'s conversion, the 2 × 2 average taken in it, 3 threads | 21.9 ms a frame |
+| `:center`'s JPEG encode, 2028 × 1520 at quality 80, its own thread | 18.2 ms a frame |
+| `:center`'s write to the Port, `view_jpeg` and `inference` | 6.5 ms a frame |
+| YOLOX on the HTP (`npu.pipelines.objects.inferenceMs`) | 2.1 ms |
+| FFNet-122NS-LowRes on the HTP | 5.6 ms |
+| The NPU's load, both models on every frame (`npu.loadPercent`) | about 23% |
+| One detection request in `qnn_detect`: read, letterbox on 3 threads, `graphExecute` | about 1.4, 4.6 and 4.3 ms |
+| One band in `qnn_segment`: read, resize on 3 threads, `graphExecute`, argmax | about 1.1, 5.4, 7.0 and 1.1 ms |
+| CPU, all cores, a dashboard open with previews at 30 Hz | about 65% |
+
+The QNN Ports' performance profile makes the largest difference: with no power vote and the context binaries built at QNN's default optimisation level, YOLOX took 8.7 ms on the HTP and FFNet 26.9 ms, too much for both models on every frame at 30 Hz. Qualcomm AI Hub's figures for the same models on this board, 2.3 and 6.0 ms, are close to the `burst` ones.
+
+On the `:center` camera, sending its 9.2 MB full image to the core at every frame took the writer 24 ms a frame and slowed the conversion to 34.5 ms, past the 33.3 ms of a frame: the camera fell to about 27 frames a second. Averaging the half-size image in a second pass after the conversion cost 4.9 ms more than taking it during the conversion. Above 3 conversion threads, the conversion slows down on this unit.
+
+A 2028 × 1520 frame encoded to JPEG by `jpeg_codec` in the core took 43 to 91 ms with libjpeg-turbo, 85 to 184 ms with the pure-Rust encoder it replaced, including the frame's 9.2 MB through the Port; encoded by `v4l2_capture`, it takes 18.2 ms.
 
 ### Measuring a change on the board
 
@@ -113,6 +123,8 @@ Each setting trades rate against something else. The matching dominates, and its
 | `:stereo_match_threads` | `config :vision_core` | One per core by default, which measured fastest; fewer threads leave room for other work at a lower rate. |
 | `:raw_image_max_hz`, the preview's `:max_hz` | the ROS 2 exporter's `stereo:` options, `VisionCore.Config` | Fewer JPEG encodes for the raw image topics and the dashboard previews. |
 | `jpeg: [ports: n]` | `VisionCore.Config` | How many JPEG encodes for the previews and the exporters run at once, 3 by default. More keep a slow encode from holding the others back, each taking a core while it encodes. |
+| A camera's `outputs:` | the `:camera` component | Each output costs its conversion or average and its write to the Port at every frame. Give the models an output at their scale (`from:` an average), the previews and ROS 2 a `format: :jpeg` output, and keep a large image no consumer takes off the Port with `send: false`. |
+| `performance:` | each QNN backend | `burst`, the default, holds the HTP at its highest voltage corner: the models' fastest times, at more power and heat; `sustained_high_performance` and `balanced` trade time for both. |
 | Camera frame rate | `:fps` | Pairs the stages cannot take are dropped. On the Pi 5, 24 frames a second instead of 30 did not raise the depth rate. |
 
 The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute. On a busy board, single readings vary by about 15 %.
