@@ -236,6 +236,7 @@ pub struct Model {
     pub graph_name: String,
     pub inputs: Vec<Tensor>,
     pub outputs: Vec<Tensor>,
+    // QNN's tensors point into the session's system context: valid as long as `session`.
     raw_inputs: Vec<Qnn_Tensor_t>,
     raw_outputs: Vec<Qnn_Tensor_t>,
     /// Why executions are timed by the wall time, once the profile is unavailable.
@@ -270,6 +271,8 @@ struct PowerVote {
 impl Drop for PowerVote {
     fn drop(&mut self) {
         if let Some(destroy) = self.destroy {
+            // SAFETY: the session destroys the vote while its library is loaded, and `id`
+            // is the one that library created.
             unsafe { destroy(self.id) };
         }
     }
@@ -285,6 +288,9 @@ const POWER_CONFIG_CALLS: [&str; 3] = [
 /// Votes `performance` on the HTP through the device's performance infrastructure. The vote
 /// holds while the returned id lives; there is none when the DCVS_V3 call fails. The message
 /// names each call that failed.
+///
+/// # Safety
+/// `interface` is of a library still loaded, after its `deviceCreate`.
 unsafe fn vote(
     interface: &QnnInterface_ImplementationV2_39_t,
     performance: Performance,
@@ -352,6 +358,9 @@ unsafe fn vote(
 }
 
 /// The interface of `libQnnHtp.so` of this QNN API version.
+///
+/// # Safety
+/// `library` is `libQnnHtp.so`, and the interface is used only while it stays loaded.
 unsafe fn backend_interface(
     library: &Library,
 ) -> Result<QnnInterface_ImplementationV2_39_t, String> {
@@ -365,10 +374,7 @@ unsafe fn backend_interface(
         get_providers(&mut providers, &mut count),
     )?;
     let built = (QNN_API_VERSION_MAJOR, QNN_API_VERSION_MINOR);
-    let providers: Vec<&QnnInterface_t> = std::slice::from_raw_parts(providers, count as usize)
-        .iter()
-        .map(|&provider| &*provider)
-        .collect();
+    let providers = offered("libQnnHtp.so", providers, count)?;
     let version = |provider: &&QnnInterface_t| provider.apiVersion.coreApiVersion;
     match providers
         .iter()
@@ -380,6 +386,26 @@ unsafe fn backend_interface(
             Err(unserved("libQnnHtp.so", "QNN API", &offered, built))
         }
     }
+}
+
+/// The interface providers `library` gave: `count` of them at `providers`.
+///
+/// # Safety
+/// `providers` is null or the array of `count` pointers the library's `getProviders` gave,
+/// each null or to a provider that lives as long as the library stays loaded.
+unsafe fn offered<'library, Provider>(
+    library: &str,
+    providers: *mut *const Provider,
+    count: u32,
+) -> Result<Vec<&'library Provider>, String> {
+    let none = || format!("{library} gave no interface provider");
+    if providers.is_null() {
+        return Err(none());
+    }
+    std::slice::from_raw_parts(providers, count as usize)
+        .iter()
+        .map(|&provider| provider.as_ref().ok_or_else(none))
+        .collect()
 }
 
 /// Whether a library whose interface is of API version `offered` has every function a build
@@ -406,6 +432,9 @@ fn unserved(
 }
 
 /// The interface of `libQnnSystem.so` of this QNN system API version.
+///
+/// # Safety
+/// `library` is `libQnnSystem.so`, and the interface is used only while it stays loaded.
 unsafe fn system_interface(
     library: &Library,
 ) -> Result<QnnSystemInterface_ImplementationV1_14_t, String> {
@@ -419,11 +448,7 @@ unsafe fn system_interface(
         get_system_providers(&mut system_providers, &mut count),
     )?;
     let built = (QNN_SYSTEM_API_VERSION_MAJOR, QNN_SYSTEM_API_VERSION_MINOR);
-    let providers: Vec<&QnnSystemInterface_t> =
-        std::slice::from_raw_parts(system_providers, count as usize)
-            .iter()
-            .map(|&provider| &*provider)
-            .collect();
+    let providers = offered("libQnnSystem.so", system_providers, count)?;
     let version = |provider: &&QnnSystemInterface_t| provider.systemApiVersion;
     match providers
         .iter()
@@ -446,6 +471,8 @@ unsafe fn system_interface(
 pub fn dlc_graph_names(path: &str) -> Result<Vec<String>, String> {
     let terminated_path =
         CString::new(path).map_err(|_| format!("{path}: a path holding a NUL"))?;
+    // SAFETY: the library stays loaded to the end of the block, past the DLC's free, and
+    // the names are copied out of it before.
     unsafe {
         let library =
             Library::new("libQnnSystem.so").map_err(|e| format!("libQnnSystem.so: {e}"))?;
@@ -482,6 +509,8 @@ pub fn print_dlc_graph_names(path: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// # Safety
+/// `dlc` is a handle `system` created and has not freed.
 unsafe fn composable_graph_names(
     system: &QnnSystemInterface_ImplementationV1_14_t,
     dlc: QnnSystemDlc_Handle_t,
@@ -546,10 +575,15 @@ fn element_bytes(data_type: Qnn_DataType_t) -> Option<usize> {
 }
 
 /// The tensor's version 1 fields, which version 2 begins with.
+///
+/// # Safety
+/// `tensor` is of version 1 or 2.
 unsafe fn fields(tensor: &Qnn_Tensor_t) -> &Qnn_TensorV1_t {
     &tensor.__bindgen_anon_1.v1
 }
 
+/// # Safety
+/// `raw` is a tensor QNN described, its name and dimensions still allocated.
 unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
     if raw.version != QNN_TENSOR_VERSION_1 && raw.version != QNN_TENSOR_VERSION_2 {
         return Err(format!("unknown tensor version {}", raw.version));
@@ -584,6 +618,8 @@ unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
     })
 }
 
+/// # Safety
+/// `tensors` is null or points to `count` tensors as `describe` takes them.
 unsafe fn describe_all(tensors: *const Qnn_Tensor_t, count: u32) -> Result<Tensors, String> {
     if tensors.is_null() {
         return Ok(Tensors::default());
@@ -597,6 +633,9 @@ unsafe fn describe_all(tensors: *const Qnn_Tensor_t, count: u32) -> Result<Tenso
 }
 
 /// The first graph's name, inputs and outputs, from the binary's description.
+///
+/// # Safety
+/// `info` is a description a system context gave and still holds.
 unsafe fn first_graph(
     info: &QnnSystemContext_BinaryInfo_t,
 ) -> Result<(*const std::os::raw::c_char, Tensors, Tensors), String> {
@@ -622,7 +661,11 @@ unsafe fn first_graph(
     macro_rules! graph_fields {
         ($v:expr) => {
             (
-                $v.graphName,
+                if $v.graphName.is_null() {
+                    return Err("the context binary's first graph has no name".to_string());
+                } else {
+                    $v.graphName
+                },
                 describe_all($v.graphInputs, $v.numGraphInputs)?,
                 describe_all($v.graphOutputs, $v.numGraphOutputs)?,
             )
@@ -644,6 +687,9 @@ unsafe fn first_graph(
 
 impl Session {
     /// The HTP backend's and the system's libraries, loaded, with their interfaces.
+    ///
+    /// # Safety
+    /// Loading runs the libraries' initialisers; nothing else is asked of the caller.
     unsafe fn load() -> Result<Session, String> {
         let backend_library =
             Library::new("libQnnHtp.so").map_err(|e| format!("libQnnHtp.so: {e}"))?;
@@ -663,6 +709,9 @@ impl Session {
     }
 
     /// `binary`'s description, which stays in the system context: the tensors point into it.
+    ///
+    /// # Safety
+    /// Called once, on a session just loaded.
     unsafe fn describe_binary(
         &mut self,
         binary: &[u8],
@@ -693,6 +742,9 @@ impl Session {
     }
 
     /// Creates the backend and, where the library has one, its device.
+    ///
+    /// # Safety
+    /// Called once, on a session without a backend.
     unsafe fn create_backend(&mut self) -> Result<(), String> {
         check(
             "backendCreate",
@@ -714,6 +766,9 @@ impl Session {
     }
 
     /// Creates the context `binary` holds on the backend and its device.
+    ///
+    /// # Safety
+    /// Called once, after `create_backend`.
     unsafe fn create_context(&mut self, binary: &[u8]) -> Result<(), String> {
         check(
             "contextCreateFromBinary",
@@ -732,6 +787,9 @@ impl Session {
     }
 
     /// The context's graph named `name`.
+    ///
+    /// # Safety
+    /// Called after `create_context`, `name` a NUL-terminated string.
     unsafe fn retrieve_graph(
         &self,
         name: *const std::os::raw::c_char,
@@ -764,10 +822,16 @@ impl Model {
     /// holds. A vote that fails leaves the HTP under its default power policy, the reason in
     /// `power_vote_error`.
     pub fn open(binary: &[u8], performance: Performance) -> Result<Model, String> {
+        // SAFETY: the steps run once each in the order they depend on, on handles the
+        // session's libraries gave; `info`, the graph's name and the tensors' pointers
+        // belong to the system context, which the session keeps with them.
         unsafe {
             let mut session = Session::load()?;
             let info = session.describe_binary(binary)?;
-            let (graph_name, inputs, outputs) = first_graph(&*info)?;
+            let info = info
+                .as_ref()
+                .ok_or("systemContextGetBinaryInfo gave no description")?;
+            let (graph_name, inputs, outputs) = first_graph(info)?;
             let graph_name_text = CStr::from_ptr(graph_name).to_string_lossy().into_owned();
             session.create_backend()?;
             let (power_vote, power_vote_error) = vote(&session.interface, performance);
@@ -817,6 +881,8 @@ impl Model {
             .as_ref()
             .map_or(ptr::null_mut(), |profile| profile.handle);
         let started = Instant::now();
+        // SAFETY: the graph and the profile are the session's; each tensor is QNN's own
+        // description on a buffer of its size that outlives the call.
         let executed = check("graphExecute", unsafe {
             graph_execute(
                 self.graph,
@@ -858,11 +924,13 @@ impl Model {
             return ProfiledTimes::default();
         };
         let interface = &session.interface;
+        // SAFETY: the handle is the session's live profile.
         let top_level = unsafe { top_level_events(interface, profile.handle) };
         let latest = profile.cursor.latest_execution(top_level.len());
         let replace = latest.is_none() || profile.cursor.executions >= EXECUTIONS_PER_PROFILE;
         let mut events = Vec::new();
         for &id in &top_level[latest.unwrap_or_default()] {
+            // SAFETY: the profile that gave `id` is still alive.
             unsafe { collect_events(interface, id, &mut events) };
         }
         if !self.profile_reported && !events.is_empty() {
@@ -888,6 +956,7 @@ impl Model {
             return;
         };
         let freed = match self.session.interface.profileFree {
+            // SAFETY: the handle is one this interface created, freed once: it was taken.
             Some(profile_free) => check("profileFree", unsafe { profile_free(profile.handle) }),
             None => Err(missing("profileFree")),
         };
@@ -915,7 +984,7 @@ fn bind(
                 ));
             }
             let mut raw = *raw;
-            // Version 2 begins with version 1's fields.
+            // SAFETY: version 2 begins with version 1's fields, which are plain data.
             let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
             v1.memType = QNN_TENSORMEMTYPE_RAW;
             v1.__bindgen_anon_1.clientBuf = Qnn_ClientBuffer_t {
@@ -936,6 +1005,7 @@ fn create_profile(
         .profileCreate
         .ok_or_else(|| missing("profileCreate"))?;
     let mut handle: Qnn_ProfileHandle_t = ptr::null_mut();
+    // SAFETY: `backend` is the session's live backend, and QNN writes only the handle.
     check("profileCreate", unsafe {
         profile_create(backend, QNN_PROFILE_LEVEL_BASIC, &mut handle)
     })?;
@@ -943,6 +1013,9 @@ fn create_profile(
 }
 
 /// The profile's top-level events; none when they cannot be read.
+///
+/// # Safety
+/// `profile` is a live handle of `interface`'s library.
 unsafe fn top_level_events(
     interface: &QnnInterface_ImplementationV2_39_t,
     profile: Qnn_ProfileHandle_t,
@@ -960,6 +1033,9 @@ unsafe fn top_level_events(
 
 /// `id`'s data, then its sub-events', depth first; an event whose data cannot be
 /// read is skipped.
+///
+/// # Safety
+/// `id` is an event of a profile handle still alive.
 unsafe fn collect_events(
     interface: &QnnInterface_ImplementationV2_39_t,
     id: QnnProfile_EventId_t,
@@ -1037,6 +1113,39 @@ mod tests {
         assert_eq!(
             unserved("libQnnHtp.so", "QNN API", &offered, (2, 39)),
             "libQnnHtp.so offers the QNN API 2.31, 1.9, not 2.39 or a later 2.x"
+        );
+    }
+
+    #[test]
+    fn a_library_giving_no_provider_is_an_error() {
+        let none: *mut *const QnnInterface_t = ptr::null_mut();
+        // SAFETY: a null array, and an array of one null provider.
+        let (no_array, null_provider) = unsafe {
+            (
+                offered("libQnnHtp.so", none, 0).map(|providers| providers.len()),
+                offered("libQnnHtp.so", [ptr::null()].as_mut_ptr(), 1)
+                    .map(|providers: Vec<&QnnInterface_t>| providers.len()),
+            )
+        };
+        let message = "libQnnHtp.so gave no interface provider".to_string();
+        assert_eq!(no_array, Err(message.clone()));
+        assert_eq!(null_provider, Err(message));
+    }
+
+    #[test]
+    fn a_graph_without_a_name_is_an_error() {
+        // SAFETY: both structs are plain data whose zero is a null pointer or a zero count.
+        let (mut graph, mut info): (QnnSystemContext_GraphInfo_t, QnnSystemContext_BinaryInfo_t) =
+            unsafe { (std::mem::zeroed(), std::mem::zeroed()) };
+        graph.version = QNN_SYSTEM_CONTEXT_GRAPH_INFO_VERSION_1;
+        info.version = QNN_SYSTEM_CONTEXT_BINARY_INFO_VERSION_1;
+        info.__bindgen_anon_1.contextBinaryInfoV1.numGraphs = 1;
+        info.__bindgen_anon_1.contextBinaryInfoV1.graphs = &mut graph;
+        // SAFETY: `info` describes one graph, without a name or tensors.
+        let described = unsafe { first_graph(&info) }.map(|(name, _, _)| name);
+        assert_eq!(
+            described,
+            Err("the context binary's first graph has no name".to_string())
         );
     }
 

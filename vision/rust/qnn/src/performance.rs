@@ -294,6 +294,7 @@ mod tests {
             configs[0].option,
             QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_DCVS_V3
         );
+        // SAFETY: the option just checked says which field of the union is set.
         unsafe { configs[0].__bindgen_anon_1.dcvsV3Config }
     }
 
@@ -306,6 +307,7 @@ mod tests {
             configs[2].option,
             QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME
         );
+        // SAFETY: the options just checked say which fields of the unions are set.
         unsafe {
             (
                 configs[1].__bindgen_anon_1.rpcControlLatencyConfig,
