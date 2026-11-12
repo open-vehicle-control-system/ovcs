@@ -142,7 +142,7 @@ The ROS 2 exporter's `cameras:` option publishes each camera of its own (`Vision
 The pose comes from pictures of a chessboard that both the stereo left camera and the camera see. [`scripts/camera_pose.py`](../../scripts/camera_pose.py) solves it with OpenCV, holding both calibrations fixed.
 
 > [!WARNING]
-> Use a board whose inner corners are one odd and one even count, such as 9 × 6. A board such as 8 × 6 looks the same after a half turn. Two cameras turned far from each other can number its corners differently, which gives a wrong pose and a large error.
+> Use a board whose inner corners are one odd and one even count, such as 9 × 6. A board such as 8 × 6 looks the same after a half turn. Two cameras turned far from each other can number its corners differently, which gives a wrong pose and a large error. The script refuses such a board unless you pass `--allow-symmetric`.
 
 The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. The unit is reached as `<vehicle>-vision.local`, and its `calibration_store_dir` is `/data/vision/calibration`. They work the same with your camera's name, board and store.
 
@@ -180,10 +180,10 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    scp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml .
    ```
 
-9. Solve the pose on your workstation, with OpenCV and NumPy (`python3-opencv` on Debian and Ubuntu):
+9. Solve the pose on your workstation. The script needs OpenCV and NumPy, which the repository's pinned Python does not have. On Debian and Ubuntu, install `python3-opencv` and run it with the system Python:
 
    ```sh
-   python3 -I scripts/camera_pose.py --pairs pairs \
+   /usr/bin/python3 -I scripts/camera_pose.py --pairs pairs \
        --left stereo_left.yaml --camera camera_center.yaml \
        --board 9x6 --square 0.025 \
        --output vehicles/<vehicle>/priv/calibration/center_pose.yaml
@@ -195,7 +195,9 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    <n> pairs, RMS reprojection error <error> px, pose written to vehicles/<vehicle>/priv/calibration/center_pose.yaml
    ```
 
-   Under a pixel, the pose fits. Above, a pair is blurred or the board moved between the two captures: record again.
+   Elsewhere, run it with a Python that has the `opencv-python-headless` and `numpy` packages.
+
+   Under a pixel, the pose fits. Above, a pair is blurred or the board moved between the two captures. The script then lists each pair's error, worst first: record those pairs again, or leave them out with `--exclude <n>`.
 10. Point the `:camera` component's `pose:` at the YAML in your vehicle package's `priv/calibration`.
 11. Rebuild the unit and update it:
 
