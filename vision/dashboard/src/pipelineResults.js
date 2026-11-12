@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useExporters } from './stores/exporters.js'
+import { useApiOutputs } from './stores/exporters.js'
 import { decodeSegmentation } from './segmentation.js'
 
 const DETECTIONS = 'detections'
@@ -9,9 +9,9 @@ const DETECTIONS = 'detections'
  * API exporter lists whose pipeline's source it is, `left` when the API names none.
  */
 export function useDetectionTopics(source) {
-  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+  const outputs = useApiOutputs()
 
-  return (outputs ?? [])
+  return outputs
     .filter(({ name }) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
     .filter((output) => (output.source ?? 'left') === source)
     .map(({ name }) => name)
@@ -21,9 +21,9 @@ export const SEGMENTATION = 'segmentation:'
 
 /** The segmentation channels to join on the preview of the camera `source`: each `segmentation` output the API exporter lists on it. */
 export function useSegmentationTopics(source) {
-  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+  const outputs = useApiOutputs()
 
-  return (outputs ?? []).filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source).map(({ name }) => name)
+  return outputs.filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source).map(({ name }) => name)
 }
 
 // How long a class stays shown present in a pipeline's legend after its last grid with it, so its styling does not flicker at the grids' rate.

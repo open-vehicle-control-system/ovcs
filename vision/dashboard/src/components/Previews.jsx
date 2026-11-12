@@ -7,7 +7,7 @@ import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
 import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
-import { useExporters } from '../stores/exporters.js'
+import { useApiOutputs } from '../stores/exporters.js'
 import {
   SEGMENTATION,
   useDetectionTopics,
@@ -147,9 +147,9 @@ const STEREO_SIDES = ['left', 'right']
 
 /** The cameras of their own: each `camera_frame:<name>` output the API exporter lists, but the stereo pair's sides. */
 function useCameraNames() {
-  const outputs = useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs)
+  const outputs = useApiOutputs()
 
-  return (outputs ?? [])
+  return outputs
     .map(({ name }) => name)
     .filter((name) => name.startsWith(CAMERA_FRAME))
     .map((name) => name.slice(CAMERA_FRAME.length))
