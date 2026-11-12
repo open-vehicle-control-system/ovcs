@@ -48,6 +48,19 @@ defmodule VmsCore.Components.OVCS.RosCommand.FreshnessTest do
     assert {:fresh, _} = Freshness.check(freshness, 1_001)
   end
 
+  test "reports expiry when a recovery sample expires before its first check" do
+    {:stale, freshness} = Freshness.check(Freshness.new(@timeout_ms, 0), 501)
+    {:new, freshness} = Freshness.observe(freshness, 1, 600)
+
+    assert {:stale, freshness} = Freshness.check(freshness, 1_101)
+    assert Freshness.stale?(freshness)
+    assert {:repeat, freshness} = Freshness.observe(freshness, 1, 1_200)
+    assert {:unchanged, freshness} = Freshness.check(freshness, 1_201)
+
+    {:new, freshness} = Freshness.observe(freshness, 2, 1_300)
+    assert {:fresh, _freshness} = Freshness.check(freshness, 1_301)
+  end
+
   test "the sequence wrapping to zero is still a change" do
     freshness = Freshness.new(@timeout_ms, 0)
     {:new, freshness} = Freshness.observe(freshness, 255, 10)
