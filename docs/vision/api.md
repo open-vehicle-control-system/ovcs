@@ -268,7 +268,9 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "stereo_pair", "maxHz": null},
           {"name": "camera_frame:left", "maxHz": null},
           {"name": "camera_frame:right", "maxHz": null},
-          {"name": "detections", "maxHz": null}
+          {"name": "detections:objects", "maxHz": null},
+          {"name": "segmentation:scene", "maxHz": null},
+          {"name": "camera_frame:center", "maxHz": null}
         ],
         "actions": []
       }
@@ -285,7 +287,8 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "camera_frame:right", "maxHz": 10},
           {"name": "stereo_pair", "maxHz": 10},
           {"name": "camera_frame:center", "maxHz": 10},
-          {"name": "detections", "maxHz": 10, "source": "left"}
+          {"name": "detections:objects", "maxHz": 10, "source": "center"},
+          {"name": "segmentation:scene", "maxHz": 5, "source": "center"}
         ],
         "actions": []
       }
@@ -294,9 +297,9 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` in the example. Each has a `preview:<name>` channel ([Previews](#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
+The example is the OVCS1 reference vehicle's unit: a camera `center` with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
 
-A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for a pipeline on the camera `center`.
+A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 
@@ -395,7 +398,7 @@ status.join()
   "cameras": {
     "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
     "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]},
-    "center": {"present": true, "fps": 10.0, "exposureTimeUs": 12000, "analogueGain": 4}
+    "center": {"present": true, "fps": 30.0, "exposureTimeUs": 12000, "analogueGain": 4}
   },
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
   "pair": {
@@ -418,7 +421,8 @@ status.join()
   "depthHz": 26.0,
   "stereoLoadPercent": 98.0,
   "cpuPercent": 84.8,
-  "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 64.5, "pipelines": {"detection": {"inferenceMs": 21.5}}},
+  "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 23.1,
+          "pipelines": {"objects": {"inferenceMs": 2.1}, "scene": {"inferenceMs": 5.6}}},
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}}]
 }
 ```
@@ -482,7 +486,7 @@ depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.l
 
 ### Detections
 
-On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline, whose vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
+On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
