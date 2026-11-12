@@ -244,6 +244,22 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert points(clouds.off_road) == [left_point({9, 10})]
   end
 
+  test "publishes without clouds at once, without waiting, frames its calibration cannot be projected at",
+       %{tmp_dir: dir} do
+    log =
+      capture_log(fn ->
+        start_pipeline(dir, pair_wait_ms: 60_000)
+        publish_pair(0)
+        publish_pair(1_000)
+        # 4:1 frames, against a calibration of square ones.
+        publish_frame(1_400, size: {40, 10})
+
+        assert {%{band: {0, 0, 40, 10}}, nil} = segmentation()
+      end)
+
+    assert log =~ "cannot project the stereo points at 40x10"
+  end
+
   test "takes :road_classes as road, every other class as off-road", %{tmp_dir: dir} do
     start_pipeline(dir,
       band_top: 0.25,

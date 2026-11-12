@@ -21,8 +21,11 @@ defmodule VisionCore.Segmentation.Pipeline do
       any other cell, each `x, y, z` in metres in the rectified left
       optical frame, packed little-endian 32-bit floats, in the order the
       depth map's rows give them, and `frame_id` that frame's, the pair's
-      (`VisionCore.Stereo.Pair.frame_id/1`). `nil` without a matched pair,
-      or when the camera's calibration or pose is missing.
+      (`VisionCore.Stereo.Pair.frame_id/1`), `nil` when the stereo unit's
+      left camera was given none. `nil` without a matched pair, when the
+      camera's calibration or pose is missing, or when its calibration
+      cannot be projected at the frame's size, such as one of another
+      aspect ratio (`VisionCore.Detection.CameraDepth.lens/2`).
 
   ## The band
 
@@ -57,8 +60,9 @@ defmodule VisionCore.Segmentation.Pipeline do
   calibration and pose
   (`VisionCore.Detection.Reprojection.project_with_origin/4`, every
   `:reprojection_stride`-th pixel and row). A camera without a
-  calibration or a pose publishes its label images at once, without
-  clouds.
+  calibration or a pose, or whose calibration cannot be projected at the
+  frame's size, publishes its label images without clouds, without
+  waiting for a pair.
 
   The model needs colour: a frame without RGB pixels is skipped, which
   is logged once.
@@ -370,13 +374,14 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   defp wait_for_pair(state, frame, labels) do
     now_ns = System.monotonic_time(:nanosecond)
+    {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =
-      if CameraDepth.projectable?(state.camera),
+      if lens && CameraDepth.projectable?(camera),
         do: DepthQueue.put(state.waiting, {frame, labels}, frame.capture_ns, now_ns),
         else: DepthQueue.put_without_depth(state.waiting, {frame, labels})
 
-    publish_settled(%{state | waiting: waiting}, now_ns)
+    publish_settled(%{state | camera: camera, waiting: waiting}, now_ns)
   end
 
   # Publishes the label images whose pair is known, in capture order, and has the pipeline told when to look again.
