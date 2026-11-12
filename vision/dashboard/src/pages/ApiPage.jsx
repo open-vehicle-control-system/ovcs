@@ -18,9 +18,10 @@ const resources = (parameterId) => [
 
 const CHANNELS = [
   ['status', 'The unit status every second, as the top bar and the video captions show it'],
-  ['preview:left, preview:right', 'Camera frames as binary JPEG messages; the client acks each frame to get the next'],
+  ['preview:left, preview:right', "The stereo pair's frames as binary JPEG messages; the client acks each frame to get the next"],
+  ['preview:<name>', "A camera of its own's frames, as the pair's; the exporter listing names each camera"],
   ['preview:depth', 'The coloured depth map, as binary JPEG messages; push depth_range to read or set its colour range'],
-  ['detections', 'The objects detected, with their label, score, distance and outline on the left image'],
+  ['detections', "The default detection pipeline's objects, with their label, score, distance and outline on the image it reads"],
   ['detections:<name>', "A named detection pipeline's objects, shaped like detections; the exporter listing names each pipeline"],
   ['segmentation:<name>', "A segmentation pipeline's class grid over its camera's image, as binary messages the client acks, and its class names"]
 ]
