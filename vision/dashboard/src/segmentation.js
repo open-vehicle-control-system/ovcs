@@ -37,13 +37,15 @@ export function decodeSegmentation(buffer) {
     view.getUint16(index * 2, true)
   )
   const data = new Uint8Array(buffer, HEADER_BYTES, gridWidth * gridHeight)
+  const inGrid = new Uint8Array(256)
+  for (let index = 0; index < data.length; index++) inGrid[data[index]] = 1
 
   return {
     frame: { width: frameWidth, height: frameHeight },
     band: { x, y, width, height },
     grid: { width: gridWidth, height: gridHeight },
     data,
-    present: [...new Set(data)].sort((a, b) => a - b)
+    present: Array.from(inGrid.keys()).filter((id) => inGrid[id] === 1)
   }
 }
 
