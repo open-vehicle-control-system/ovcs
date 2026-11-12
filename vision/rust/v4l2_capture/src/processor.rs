@@ -3,7 +3,7 @@
 //! made after the processors (`scale`).
 
 use crate::arguments::Output;
-use crate::bands::{Conversion, Measures};
+use crate::bands::{Conversion, Images, Measures};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
 use crate::sensor::SensorModel;
@@ -17,14 +17,9 @@ pub const MEASURED_ROW_STEP: usize = 4;
 
 /// Makes an output from each raw frame.
 pub trait Processor: Send {
-    /// `frame` as `development` says, into `image`, with what it asks to
+    /// `frame` as `development` says, into `images`, with what it asks to
     /// measure.
-    fn develop(
-        &mut self,
-        frame: &RawFrame,
-        development: &Development,
-        image: &mut Vec<u8>,
-    ) -> Measures;
+    fn develop(&mut self, frame: &RawFrame, development: &Development, images: Images) -> Measures;
 }
 
 /// How a frame is developed, as the settings stand when it comes.
@@ -63,12 +58,7 @@ impl Cpu {
 }
 
 impl Processor for Cpu {
-    fn develop(
-        &mut self,
-        frame: &RawFrame,
-        development: &Development,
-        image: &mut Vec<u8>,
-    ) -> Measures {
+    fn develop(&mut self, frame: &RawFrame, development: &Development, images: Images) -> Measures {
         let settings = development.settings;
         let conversion = Conversion {
             output: self.output,
@@ -85,7 +75,7 @@ impl Processor for Cpu {
                 settings,
                 development.gains,
                 tuned,
-                image,
+                images,
                 &mut self.buffers,
             ),
             None => bayer::develop(
@@ -93,7 +83,7 @@ impl Processor for Cpu {
                 development.tone,
                 development.gains,
                 &conversion,
-                image,
+                images,
                 &mut self.fallback_buffers,
             ),
         }
@@ -115,7 +105,7 @@ impl TunedColour {
     }
 }
 
-/// `raw` through `tuned`'s colour path as `conversion` asks, into `rgb`
+/// `raw` through `tuned`'s colour path as `conversion` asks, into `images`
 /// through `buffers`, at the colour temperature of `gains`, with the colour
 /// correction matrix and the chroma denoise as `settings` switch them.
 pub fn develop_tuned(
@@ -124,7 +114,7 @@ pub fn develop_tuned(
     settings: &ColourSettings,
     gains: Gains,
     tuned: &TunedColour,
-    rgb: &mut Vec<u8>,
+    images: Images,
     buffers: &mut colour::Buffers,
 ) -> Measures {
     let kelvin = tuned.tuning.colour_temperature(gains);
@@ -141,5 +131,5 @@ pub fn develop_tuned(
         contrast: &tuned.contrast,
         denoise: settings.denoise,
     };
-    colour::develop(raw, &colour, conversion, rgb, buffers)
+    colour::develop(raw, &colour, conversion, images, buffers)
 }

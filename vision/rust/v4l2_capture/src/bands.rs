@@ -69,16 +69,24 @@ impl Sums {
     }
 }
 
-/// Converts an image of rows of `width` pixels into `rgb`, turned by 180
+/// What a frame is converted into: `rgb`, and with `averaged` each 2x2 block
+/// of it averaged, as `scale::average_blocks` does.
+pub struct Images<'a> {
+    pub rgb: &'a mut Vec<u8>,
+    pub averaged: Option<&'a mut Vec<u8>>,
+}
+
+/// Converts an image of rows of `width` pixels into `images`, turned by 180
 /// degrees with `rotate_180`, its rows grouped by `cell`, in up to
 /// `threads` bands of groups (`split`): `convert(cell_rows, image,
 /// scratch)` writes the rows of the groups `cell_rows` into `image`, which
-/// holds those rows of `rgb`, through a `scratch` of the band's own, and
-/// returns what it measured of them. Each band but the last runs on a
-/// thread of its own, the last on the calling one. Returns the sums
-/// measured, added up.
+/// holds those rows of `images`, through a `scratch` of the band's own, and
+/// returns what it measured of them. With an averaged image, each band
+/// starts on an even row and the image's width and height are even. Each
+/// band but the last runs on a thread of its own, the last on the calling
+/// one. Returns the sums measured, added up.
 pub fn convert<S: Default + Send>(
-    rgb: &mut [u8],
+    Images { rgb, averaged }: Images,
     width: usize,
     cell: usize,
     rotate_180: bool,
@@ -86,35 +94,67 @@ pub fn convert<S: Default + Send>(
     scratch: &mut Vec<S>,
     convert: impl Fn(Range<usize>, Image, &mut S) -> Sums + Sync,
 ) -> Sums {
+    let rgb = &mut rgb[..];
     let height = rgb.len() / (width * 3).max(1);
-    let bands = split(height / cell, threads);
+    // Groups of cells whose rows are a whole number of 2x2 blocks' rows.
+    let group = if averaged.is_some() && cell % 2 == 1 {
+        2
+    } else {
+        1
+    };
+    let bands: Vec<Range<usize>> = (split(height / cell / group, threads).into_iter())
+        .map(|groups| group * groups.start..group * groups.end)
+        .collect();
     if scratch.len() < bands.len() {
         scratch.resize_with(bands.len(), S::default);
     }
-    let image = |part, cells: &Range<usize>| {
+    let averaged_row_bytes = width / 2 * 3;
+    let averaged = averaged.map(|averaged| {
+        averaged.resize(averaged_row_bytes * (height / 2), 0);
+        &mut averaged[..]
+    });
+    let image = |part, averaged, cells: &Range<usize>| {
         Image::band(
             part,
+            averaged,
             width,
             cell * cells.start..cell * cells.end,
             rotate_180,
         )
     };
     if let [cells] = &bands[..] {
-        return convert(cells.clone(), image(rgb, cells), &mut scratch[0]);
+        return convert(cells.clone(), image(rgb, averaged, cells), &mut scratch[0]);
     }
-    let parts = parts(rgb, width * 3 * cell, &bands, rotate_180);
+    let rows = |band: &Range<usize>| band.len() * cell;
+    let rgb_parts = parts(
+        rgb,
+        bands.iter().map(|band| rows(band) * width * 3),
+        rotate_180,
+    );
+    let averaged_parts: Vec<Option<&mut [u8]>> = match averaged {
+        Some(averaged) => {
+            let lengths = bands.iter().map(|band| rows(band) / 2 * averaged_row_bytes);
+            (parts(averaged, lengths, rotate_180).into_iter())
+                .map(Some)
+                .collect()
+        }
+        None => bands.iter().map(|_| None).collect(),
+    };
     let convert = &convert;
     std::thread::scope(|scope| {
-        let mut jobs = bands.iter().zip(parts).zip(scratch.iter_mut());
-        let ((last_cells, last_part), last_scratch) = jobs.next_back().expect("a band");
+        let mut jobs = (bands.iter())
+            .zip(rgb_parts.into_iter().zip(averaged_parts))
+            .zip(scratch.iter_mut());
+        let ((last_cells, (last_part, last_averaged)), last_scratch) =
+            jobs.next_back().expect("a band");
         let running: Vec<_> = jobs
-            .map(|((cells, part), scratch)| {
-                scope.spawn(move || convert(cells.clone(), image(part, cells), scratch))
+            .map(|((cells, (part, averaged)), scratch)| {
+                scope.spawn(move || convert(cells.clone(), image(part, averaged, cells), scratch))
             })
             .collect();
         let last = convert(
             last_cells.clone(),
-            image(last_part, last_cells),
+            image(last_part, last_averaged, last_cells),
             last_scratch,
         );
         running.into_iter().fold(last, |sums, band| {
@@ -135,28 +175,26 @@ pub(crate) fn split(cell_rows: usize, count: usize) -> Vec<Range<usize>> {
         .collect()
 }
 
-/// The part of `rgb` each band of `bands`, rows of `row_bytes` bytes each,
-/// fills: in their order, or with `rotate_180` from the end, where the
-/// turned image has them.
-fn parts<'a>(
-    mut rgb: &'a mut [u8],
-    row_bytes: usize,
-    bands: &[Range<usize>],
+/// The part of `image` each band fills, top to bottom, the bands' parts
+/// `lengths` bytes long: in their order, or with `rotate_180` from the end,
+/// where the turned image has them.
+fn parts(
+    mut image: &mut [u8],
+    lengths: impl DoubleEndedIterator<Item = usize>,
     rotate_180: bool,
-) -> Vec<&'a mut [u8]> {
-    let mut parts = Vec::with_capacity(bands.len());
-    let mut take = |rows: usize| {
-        let (part, rest) = std::mem::take(&mut rgb).split_at_mut(rows * row_bytes);
-        rgb = rest;
-        parts.push(part);
+) -> Vec<&mut [u8]> {
+    let mut take = |length: usize| {
+        let (part, rest) = std::mem::take(&mut image).split_at_mut(length);
+        image = rest;
+        part
     };
     if rotate_180 {
-        bands.iter().rev().for_each(|band| take(band.len()));
+        let mut parts: Vec<_> = lengths.rev().map(&mut take).collect();
         parts.reverse();
+        parts
     } else {
-        bands.iter().for_each(|band| take(band.len()));
+        lengths.map(take).collect()
     }
-    parts
 }
 
 #[cfg(test)]
@@ -181,8 +219,12 @@ mod tests {
     fn row_indices(rows: usize, cell: usize, rotate_180: bool, threads: usize) -> (Vec<u8>, u64) {
         let mut rgb = vec![0; rows * 2 * 3];
         let mut scratch: Vec<()> = Vec::new();
+        let images = Images {
+            rgb: &mut rgb,
+            averaged: None,
+        };
         let sums = convert(
-            &mut rgb,
+            images,
             2,
             cell,
             rotate_180,

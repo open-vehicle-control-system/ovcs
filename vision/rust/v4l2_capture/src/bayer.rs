@@ -3,7 +3,8 @@
 use std::ops::Range;
 
 use crate::arguments::Output;
-use crate::bands::{self, Conversion, Measures, Sums};
+use crate::bands::{self, Conversion, Images, Measures, Sums};
+use crate::scale;
 use crate::white_balance::Gains;
 
 /// Maps a raw sample to 8 bits: the sensor's black level to 0, full scale
@@ -192,8 +193,8 @@ pub struct Buffers {
     bands: Vec<DemosaicRows<u8>>,
 }
 
-/// `frame` into `rgb`, 8-bit red, green and blue per pixel, row-major,
-/// through `buffers`, at the size of `conversion.output`, each
+/// `frame` into `images`' `rgb`, 8-bit red, green and blue per pixel,
+/// row-major, through `buffers`, at the size of `conversion.output`, each
 /// sample through `tone`, red and blue scaled by `gains` first. At its own
 /// size, each pixel keeps its own sample and takes each missing colour as
 /// the mean of its nearest samples of that colour, the 4 axial ones for
@@ -210,7 +211,7 @@ pub fn develop(
     tone: &Tone,
     gains: Gains,
     conversion: &Conversion,
-    rgb: &mut Vec<u8>,
+    images: Images,
     Buffers { bands }: &mut Buffers,
 ) -> Measures {
     let rotate_180 = conversion.rotate_180;
@@ -228,9 +229,11 @@ pub fn develop(
                 green: &tone.table,
                 blue: &blue,
             };
-            rgb.resize(frame.width * frame.cell_row_count() * 2 * 3, 0);
+            images
+                .rgb
+                .resize(frame.width * frame.cell_row_count() * 2 * 3, 0);
             bands::convert(
-                rgb,
+                images,
                 frame.width,
                 2,
                 rotate_180,
@@ -245,9 +248,11 @@ pub fn develop(
         }
         Output::Half => {
             let gains_q12 = (q12(gains.red), q12(gains.blue));
-            rgb.resize(frame.width / 2 * frame.cell_row_count() * 3, 0);
+            images
+                .rgb
+                .resize(frame.width / 2 * frame.cell_row_count() * 3, 0);
             bands::convert(
-                rgb,
+                images,
                 frame.width / 2,
                 1,
                 rotate_180,
@@ -308,10 +313,12 @@ fn half_band(
     });
 }
 
-/// Rows of an 8-bit red, green and blue image written a row at a time,
-/// turned by 180 degrees with `rotate_180` for a sensor mounted upside down.
+/// Rows of an 8-bit red, green and blue image written a row at a time, top
+/// to bottom, turned by 180 degrees with `rotate_180` for a sensor mounted
+/// upside down, and with `averaged` each 2x2 block of it averaged.
 pub(crate) struct Image<'a> {
     rgb: &'a mut [u8],
+    averaged: Option<&'a mut [u8]>,
     row_bytes: usize,
     rows: Range<usize>,
     rotate_180: bool,
@@ -320,15 +327,18 @@ pub(crate) struct Image<'a> {
 impl<'a> Image<'a> {
     /// Rows `rows` of an image of rows of `width` pixels, held in `rgb`
     /// where the image has them: in their order, or with `rotate_180` in
-    /// reverse.
+    /// reverse; with `averaged`, the rows of its 2x2 average they make, the
+    /// band starting on an even row.
     pub(crate) fn band(
         rgb: &'a mut [u8],
+        averaged: Option<&'a mut [u8]>,
         width: usize,
         rows: Range<usize>,
         rotate_180: bool,
     ) -> Image<'a> {
         Image {
             rgb,
+            averaged,
             row_bytes: width * 3,
             rows,
             rotate_180,
@@ -337,12 +347,13 @@ impl<'a> Image<'a> {
 
     /// Writes row `y` with `write`.
     pub(crate) fn write(&mut self, y: usize, write: impl FnOnce(&mut [u8])) {
+        let row_bytes = self.row_bytes;
         let target = if self.rotate_180 {
             self.rows.end - 1 - y
         } else {
             y - self.rows.start
         };
-        let out = &mut self.rgb[target * self.row_bytes..(target + 1) * self.row_bytes];
+        let out = &mut self.rgb[target * row_bytes..(target + 1) * row_bytes];
         write(out);
         if self.rotate_180 {
             // Reversing the bytes reverses the pixels but turns each into
@@ -351,6 +362,18 @@ impl<'a> Image<'a> {
             for pixel in out.chunks_exact_mut(3) {
                 pixel.swap(0, 2);
             }
+        }
+        if let (Some(averaged), 1) = (&mut self.averaged, y % 2) {
+            // Averaged while the pair of rows is in cache rather than in a
+            // pass over the whole image (`scale`, the general path).
+            let pair = if self.rotate_180 { target } else { target - 1 };
+            let averaged_bytes = row_bytes / 2;
+            scale::average_rows(
+                &self.rgb[pair * row_bytes..(pair + 2) * row_bytes],
+                row_bytes / 3,
+                (2, 2),
+                &mut averaged[pair / 2 * averaged_bytes..(pair / 2 + 1) * averaged_bytes],
+            );
         }
     }
 }
@@ -715,7 +738,10 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            &mut rgb,
+            Images {
+                rgb: &mut rgb,
+                averaged: None,
+            },
             &mut Buffers::default(),
         );
         rgb
@@ -729,7 +755,10 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            &mut rgb,
+            Images {
+                rgb: &mut rgb,
+                averaged: None,
+            },
             &mut Buffers::default(),
         );
         rgb
@@ -747,7 +776,10 @@ pub(crate) mod tests {
             tone,
             UNITY,
             &conversion,
-            &mut Vec::new(),
+            Images {
+                rgb: &mut Vec::new(),
+                averaged: None,
+            },
             &mut Buffers::default(),
         )
         .green_mean
@@ -767,7 +799,10 @@ pub(crate) mod tests {
             &tone,
             UNITY,
             &conversion,
-            &mut Vec::new(),
+            Images {
+                rgb: &mut Vec::new(),
+                averaged: None,
+            },
             &mut Buffers::default(),
         )
         .channel_means

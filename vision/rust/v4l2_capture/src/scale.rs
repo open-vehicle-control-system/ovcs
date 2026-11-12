@@ -57,7 +57,7 @@ pub fn average_blocks(
 
 /// The rows of blocks of `rows`, rows of `source_width` pixels, averaged
 /// into `out`.
-fn average_rows(
+pub(crate) fn average_rows(
     rows: &[u8],
     source_width: usize,
     (block_width, block_height): (usize, usize),

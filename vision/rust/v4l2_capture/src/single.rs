@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 use framing::{log_record, metadata_record, output_frame_header, LogLevel, Writer};
 
 use crate::arguments::{OutputSpec, SingleArguments, Source};
+use crate::bands::Images;
 use crate::bayer::{RawFrame, Tone};
 use crate::processor::{Cpu, Development, Processor};
 use crate::scale;
@@ -387,7 +388,11 @@ fn convert_frames(
                     green_mean: measure_exposure && measured.is_none(),
                     threads,
                 };
-                let measures = processor.develop(&raw, &development, image);
+                let images = Images {
+                    rgb: image,
+                    averaged: None,
+                };
+                let measures = processor.develop(&raw, &development, images);
                 measured.get_or_insert(measures);
             }
             let measures = measured.expect("an output made by a processor");
@@ -584,7 +589,10 @@ mod tests {
                         &tone,
                         gains,
                         &conversion,
-                        &mut rgb,
+                        Images {
+                            rgb: &mut rgb,
+                            averaged: None,
+                        },
                         &mut bayer::Buffers::default(),
                     ),
                     _ => develop_tuned(
@@ -593,7 +601,10 @@ mod tests {
                         &settings,
                         gains,
                         &tuned,
-                        &mut rgb,
+                        Images {
+                            rgb: &mut rgb,
+                            averaged: None,
+                        },
                         &mut colour::Buffers::default(),
                     ),
                 };
@@ -654,7 +665,10 @@ mod tests {
                                 &settings,
                                 gains,
                                 &tuned,
-                                &mut rgb,
+                                Images {
+                                    rgb: &mut rgb,
+                                    averaged: None,
+                                },
                                 &mut buffers,
                             );
                             let tuned = outcome(&rgb, measures);
@@ -663,7 +677,10 @@ mod tests {
                                 &tone,
                                 gains,
                                 &conversion,
-                                &mut rgb,
+                                Images {
+                                    rgb: &mut rgb,
+                                    averaged: None,
+                                },
                                 &mut fallback,
                             );
                             (tuned, outcome(&rgb, measures))
@@ -679,6 +696,152 @@ mod tests {
                     }
                 }
             }
+        }
+    }
+
+    // `frame` developed along `path` into `images`, through `buffers`.
+    fn develop_along(
+        path: Path,
+        frame: &RawFrame,
+        conversion: &Conversion,
+        images: Images,
+        (buffers, fallback): &mut (colour::Buffers, bayer::Buffers),
+    ) -> Measures {
+        let tuned = TunedColour::new(&imx477::TUNING);
+        let tone = Tone::with_sample_bits(256, 2.2, 12);
+        let gains = Gains {
+            red: 2.1,
+            blue: 1.6,
+        };
+        let settings = ColourSettings {
+            denoise: !matches!(path, Path::Undenoised),
+            ..ColourSettings::default()
+        };
+        match path {
+            Path::Untuned => bayer::develop(frame, &tone, gains, conversion, images, fallback),
+            _ => develop_tuned(frame, conversion, &settings, gains, &tuned, images, buffers),
+        }
+    }
+
+    #[test]
+    fn an_image_averaged_as_it_converts_is_the_one_averaged_after() {
+        // Rows of cells split unevenly; at half size, in pairs of rows.
+        for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 6)] {
+            let stride = width * 3 / 2 + 6;
+            let raw = padded_packed12(&samples(width, height), width, stride);
+            let frame = RawFrame {
+                raw: &raw,
+                width,
+                height,
+                row_stride: stride,
+                layout: Layout::Packed12,
+            };
+            for output in [Output::Full, Output::Half] {
+                let (output_width, output_height) = output.size(width as u32, height as u32);
+                if output_height % 2 != 0 {
+                    continue;
+                }
+                for rotate_180 in [false, true] {
+                    for path in [Path::Denoised, Path::Undenoised, Path::Untuned] {
+                        let mut buffers = Default::default();
+                        let (mut alone, mut rgb, mut averaged) =
+                            (Vec::new(), vec![0xaa; 7], vec![0x55; 5]);
+                        for threads in [1, 2, 3, 4, 3, 1] {
+                            let conversion = Conversion {
+                                output,
+                                rotate_180,
+                                channel_means: true,
+                                green_mean: true,
+                                row_step: MEASURED_ROW_STEP,
+                                threads,
+                            };
+                            let images = Images {
+                                rgb: &mut alone,
+                                averaged: None,
+                            };
+                            let measures =
+                                develop_along(path, &frame, &conversion, images, &mut buffers);
+                            let expected = outcome(&alone, measures);
+                            let images = Images {
+                                rgb: &mut rgb,
+                                averaged: Some(&mut averaged),
+                            };
+                            let measures =
+                                develop_along(path, &frame, &conversion, images, &mut buffers);
+                            let mut after = Vec::new();
+                            scale::average_blocks(
+                                &alone,
+                                output_width as usize,
+                                (2, 2),
+                                1,
+                                &mut after,
+                            );
+                            let case = format!(
+                                "{width}x{height} {output:?} rotated {rotate_180} {path:?} \
+                                 on {threads} threads"
+                            );
+                            assert!(outcome(&rgb, measures) == expected, "{case}");
+                            assert!(averaged == after, "{case}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Prints the host's time per frame for OVCS1's HQ camera, 2028 x 1520
+    // on 3 threads, converted alone, then averaged 2 x 2 after, then
+    // averaged as it converts:
+    // `cargo test --release -p v4l2_capture -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn host_time_of_a_full_frame_converted_and_averaged() {
+        let (width, height) = (2028, 1520);
+        let stride = width * 3 / 2;
+        let raw = padded_packed12(&samples(width, height), width, stride);
+        let frame = RawFrame {
+            raw: &raw,
+            width,
+            height,
+            row_stride: stride,
+            layout: Layout::Packed12,
+        };
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: true,
+            green_mean: true,
+            row_step: MEASURED_ROW_STEP,
+            threads: 3,
+        };
+        let (mut rgb, mut averaged, mut buffers) = (Vec::new(), Vec::new(), Default::default());
+        // 0: converted alone; 1: then averaged; 2: averaged as it converts.
+        let mut times: [Vec<Duration>; 3] = Default::default();
+        for round in 0..150 {
+            let way = round % 3;
+            let started = Instant::now();
+            let images = Images {
+                rgb: &mut rgb,
+                averaged: (way == 2).then_some(&mut averaged),
+            };
+            develop_along(Path::Denoised, &frame, &conversion, images, &mut buffers);
+            if way == 1 {
+                scale::average_blocks(&rgb, width, (2, 2), 3, &mut averaged);
+            }
+            times[way].push(started.elapsed());
+        }
+        let ways = [
+            "converted",
+            "converted, averaged after",
+            "converted, averaged as it converts",
+        ];
+        for (way, times) in ways.iter().zip(&mut times) {
+            times.sort();
+            println!(
+                "{way}: median {:?}, fastest {:?}",
+                times[times.len() / 2],
+                times[0]
+            );
         }
     }
 

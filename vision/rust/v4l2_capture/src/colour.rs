@@ -6,7 +6,7 @@
 use std::ops::Range;
 
 use crate::arguments::Output;
-use crate::bands::{self, Conversion, Measures, Sums};
+use crate::bands::{self, Conversion, Images, Measures, Sums};
 use crate::bayer::{self, DemosaicRows, Image, RawFrame};
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
@@ -112,8 +112,8 @@ struct Band {
     measured_row_gains: [Vec<u32>; 2],
 }
 
-/// `frame` through `colour` into `rgb`, 8-bit red, green and blue per
-/// pixel, row-major, through `buffers`, at the size of
+/// `frame` through `colour` into `images`' `rgb`, 8-bit red, green and blue
+/// per pixel, row-major, through `buffers`, at the size of
 /// `conversion.output`: at its own size demosaiced as `bayer::rgb_full`
 /// does, on linear values, each sample's signal above the black level times
 /// its lens shading and white balance gains, the sensor's full scale at
@@ -124,16 +124,18 @@ pub fn develop(
     frame: &RawFrame,
     colour: &Colour,
     conversion: &Conversion,
-    rgb: &mut Vec<u8>,
+    images: Images,
     Buffers { bands }: &mut Buffers,
 ) -> Measures {
     let (width, cell) = match conversion.output {
         Output::Full => (frame.width, 2),
         Output::Half => (frame.width / 2, 1),
     };
-    rgb.resize(width * frame.cell_row_count() * cell * 3, 0);
+    images
+        .rgb
+        .resize(width * frame.cell_row_count() * cell * 3, 0);
     let sums = bands::convert(
-        rgb,
+        images,
         width,
         cell,
         conversion.rotate_180,
@@ -1355,7 +1357,10 @@ mod tests {
             frame,
             colour,
             &conversion(Output::Full, rotate_180),
-            rgb,
+            Images {
+                rgb,
+                averaged: None,
+            },
             buffers,
         );
         rgb
@@ -1372,7 +1377,10 @@ mod tests {
             frame,
             colour,
             &conversion(Output::Half, rotate_180),
-            rgb,
+            Images {
+                rgb,
+                averaged: None,
+            },
             buffers,
         );
         rgb
@@ -1391,9 +1399,18 @@ mod tests {
             row_step,
             ..conversion(Output::Half, false)
         };
-        develop(frame, colour, &conversion, &mut Vec::new(), buffers)
-            .green_mean
-            .unwrap()
+        develop(
+            frame,
+            colour,
+            &conversion,
+            Images {
+                rgb: &mut Vec::new(),
+                averaged: None,
+            },
+            buffers,
+        )
+        .green_mean
+        .unwrap()
     }
 
     // The mean red, green and blue above `black_level` over every
@@ -1423,7 +1440,10 @@ mod tests {
             frame,
             &colour,
             &conversion,
-            &mut Vec::new(),
+            Images {
+                rgb: &mut Vec::new(),
+                averaged: None,
+            },
             &mut Buffers::default(),
         )
         .channel_means
