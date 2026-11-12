@@ -86,7 +86,7 @@ pub fn labels_record(
     record.extend_from_slice(&height.to_le_bytes());
     record.extend_from_slice(labels);
     if let Some(micros) = inference_micros {
-        let micros = u32::try_from(micros).unwrap_or(u32::MAX);
+        let micros = detection::protocol::inference_micros(u128::from(micros));
         record.extend_from_slice(&micros.to_le_bytes());
     }
     record
