@@ -4,7 +4,8 @@ defmodule VisionApiWeb.ExporterJSON do
   by its id: `name`, `module`, `status` (`level`, `ok`, `warning` or
   `off`, and `detail`) and `outputs`, each output's `name`
   (`stereo_pair`, `camera_frame:left`, `camera_frame:right`,
-  `camera_frame:<name>` for the camera `<name>`'s frames, `detections`
+  `camera_frame:<name>` for the camera `<name>`'s frames,
+  `camera_frame:<name>:<output>` for those of its output `<output>`, `detections`
   for the default detection pipeline's, `detections:<name>` for the
   pipeline `<name>`'s, or `segmentation:<name>` for the segmentation
   pipeline `<name>`'s) and `maxHz`, the most values it takes a second,
@@ -44,5 +45,6 @@ defmodule VisionApiWeb.ExporterJSON do
       )
 
   defp output_name({output, name}), do: "#{output}:#{name}"
+  defp output_name({output, name, camera_output}), do: "#{output}:#{name}:#{camera_output}"
   defp output_name(output), do: Atom.to_string(output)
 end

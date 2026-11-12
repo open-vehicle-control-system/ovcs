@@ -120,6 +120,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
       outputs: [
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
+        %{output: {:camera_frame, :hq, :inference}, max_hz: 10},
         %{output: :detections, max_hz: nil},
         %{output: {:detections, :road}, max_hz: 3, source: "hq"},
         %{output: {:segmentation, :lanes}, max_hz: 5, source: "hq"}
@@ -137,6 +138,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
              outputs: [
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
+               %{name: "camera_frame:hq:inference", maxHz: 10},
                %{name: "detections", maxHz: nil},
                %{name: "detections:road", maxHz: 3, source: "hq"},
                %{name: "segmentation:lanes", maxHz: 5, source: "hq"}
