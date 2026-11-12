@@ -44,10 +44,10 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       size of the camera's image the 2D boxes and the overlay are drawn
       on, the camera output the exporter publishes, when it is not the
       one the pipeline detects on: the boxes and outlines are scaled
-      from the frame's size to it, `x × width / frame width`, which maps
-      pixel centres onto pixel centres as a camera's outputs are made
-      (`VisionCore.Camera.Output`). Without it, they are drawn in the
-      frame's pixels.
+      from the frame's size to it, `(x + ½) × width / frame width − ½`,
+      which maps pixel centres onto pixel centres as a camera's outputs
+      are made (`VisionCore.Camera.Output`). Without it, they are drawn
+      in the frame's pixels.
 
   ## Drawing on the raw image
 
@@ -202,19 +202,14 @@ defmodule VisionCore.Ros2.Exporter.Detections do
     do: detections
 
   defp on_image(detections, %Frame{} = frame, {image_width, image_height}) do
-    {scale_x, scale_y} = {image_width / frame.width, image_height / frame.height}
+    to_x = &((&1 + 0.5) * image_width / frame.width - 0.5)
+    to_y = &((&1 + 0.5) * image_height / frame.height - 0.5)
 
     Enum.map(detections, fn %{box: box, outline: outline} = detection ->
       %{
         detection
-        | box: %{
-            box
-            | x0: box.x0 * scale_x,
-              y0: box.y0 * scale_y,
-              x1: box.x1 * scale_x,
-              y1: box.y1 * scale_y
-          },
-          outline: Enum.map(outline, fn {x, y} -> {x * scale_x, y * scale_y} end)
+        | box: %{box | x0: to_x.(box.x0), y0: to_y.(box.y0), x1: to_x.(box.x1), y1: to_y.(box.y1)},
+          outline: Enum.map(outline, fn {x, y} -> {to_x.(x), to_y.(y)} end)
       }
     end)
   end

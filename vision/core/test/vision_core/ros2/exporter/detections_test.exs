@@ -200,7 +200,7 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
       assert Enum.map(overlay.texts, & &1.text) == ["person 0.80 2.00m", "car 0.80"]
     end
 
-    test "draws the 2D boxes and the overlay on an image of another size, scaled to it" do
+    test "draws the 2D boxes and the overlay on an image of another size, pixel centres on pixel centres" do
       settings =
         Detections.new(topic_prefix: "front", pipeline: :hq_people, image_size: {2028, 1520})
 
@@ -211,16 +211,16 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
         List.keyfind(messages, Detection2DArray, 1)
 
       assert {bbox.center.position.x, bbox.center.position.y, bbox.size_x, bbox.size_y} ==
-               {100.0, 40.0, 40.0, 40.0}
+               {100.5, 40.5, 40.0, 40.0}
 
       {_topic, ImageAnnotations, overlay} = List.keyfind(messages, ImageAnnotations, 1)
       assert [%{points: points}] = overlay.points
 
       assert Enum.map(points, &{&1.x, &1.y}) == [
-               {80.0, 20.0},
-               {120.0, 20.0},
-               {120.0, 60.0},
-               {80.0, 60.0}
+               {80.5, 20.5},
+               {120.5, 20.5},
+               {120.5, 60.5},
+               {80.5, 60.5}
              ]
     end
 
