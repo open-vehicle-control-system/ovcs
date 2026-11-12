@@ -307,7 +307,7 @@ defmodule VisionCore.Detection.Backend.QnnTest do
         ] do
       backend = start_supervised!({Qnn, missing ++ opts})
 
-      assert :sys.get_state(backend).cache_dir == cache_dir
+      assert :sys.get_state(backend).settings.cache_dir == cache_dir
       stop_supervised!(Qnn)
     end
   end

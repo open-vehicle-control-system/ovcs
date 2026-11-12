@@ -288,7 +288,7 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
         {Qnn, dlc_path: Path.join(dir, "missing.dlc"), executable: @segmenter, pipeline: :road}
       )
 
-    assert :sys.get_state(backend).cache_dir == "/data/vision/qnn/road"
+    assert :sys.get_state(backend).settings.cache_dir == "/data/vision/qnn/road"
   end
 
   test "a missing DLC or QAIRT leaves the backend unavailable", %{tmp_dir: dir} do

@@ -3,8 +3,7 @@ defmodule VisionCore.Detection.QnnPort do
   What `VisionCore.Detection.Backend.Qnn` and
   `VisionCore.Segmentation.Backend.Qnn` share about their Port: the
   context binary it runs (`VisionCore.Detection.QnnContext`), the program
-  started with QNN's environment, its performance profile, and the wait
-  before it is reopened.
+  started with QNN's environment, and its performance profile.
 
   ## The board
 
@@ -21,9 +20,6 @@ defmodule VisionCore.Detection.QnnPort do
 
   alias VisionCore.Detection.QnnContext
 
-  # Detects a wedged Port; not a latency budget.
-  @default_infer_timeout_ms 2_000
-  @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
   @default_runtime [
     qairt_dir: "/opt/qairt",
     dsp_library_path: "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp",
@@ -39,13 +35,13 @@ defmodule VisionCore.Detection.QnnPort do
         ]
 
   @doc """
-  The options every QNN backend takes: the board's, `:cache_dir`,
-  `:executable`, `timings!/1`'s and `:performance`.
+  The options every QNN backend takes beside its Port's
+  (`VisionCore.Inference.PortBackend`): the board's, `:cache_dir`,
+  `:executable` and `:performance`.
   """
   @spec options() :: [atom()]
   def options do
-    Keyword.keys(@default_runtime) ++
-      [:cache_dir, :executable, :infer_timeout_ms, :reopen_delays_ms, :performance]
+    Keyword.keys(@default_runtime) ++ [:cache_dir, :executable, :performance]
   end
 
   @doc "The board's options among `opts`, each with its default (see the module doc)."
@@ -55,26 +51,25 @@ defmodule VisionCore.Detection.QnnPort do
   end
 
   @doc """
-  The context binary of `dlc_path` for the program `executable`, generated
-  when missing: `{:error, {:missing_binary, executable}}` without the
-  program. `context_opts` are `VisionCore.Detection.QnnContext.ensure/2`'s
-  but `:executable`, which is `executable`.
+  The context binary of a backend's model, generated when missing
+  (`VisionCore.Detection.QnnContext.ensure/2`), from its settings: its
+  `:dlc_path`, its `:executable`, which reads the DLC's graph names, its
+  `:cache_dir` and its board, `:runtime`.
+  `{:error, {:missing_binary, executable}}` without the program.
   """
-  @spec context(Path.t(), Path.t(), QnnContext.opts()) :: {:ok, Path.t()} | {:error, term()}
-  def context(dlc_path, executable, context_opts) do
+  @spec context(%{
+          dlc_path: Path.t(),
+          executable: Path.t(),
+          cache_dir: Path.t(),
+          runtime: runtime()
+        }) :: {:ok, Path.t()} | {:error, term()}
+  def context(%{dlc_path: dlc_path, executable: executable} = settings) do
+    context_opts = [cache_dir: settings.cache_dir, executable: executable] ++ settings.runtime
+
     if File.exists?(executable),
-      do: QnnContext.ensure(dlc_path, Keyword.put(context_opts, :executable, executable)),
+      do: QnnContext.ensure(dlc_path, context_opts),
       else: {:error, {:missing_binary, executable}}
   end
-
-  @doc """
-  Runs `context/3` in a task linked to the caller, which gets its result
-  as `Task.async/1` delivers it, so the caller keeps answering while the
-  context binary is generated.
-  """
-  @spec start_context(Path.t(), Path.t(), QnnContext.opts()) :: Task.t()
-  def start_context(dlc_path, executable, context_opts),
-    do: Task.async(fn -> context(dlc_path, executable, context_opts) end)
 
   @doc """
   Starts `executable` with `args` as a Port of 4-byte framed binary
@@ -100,31 +95,6 @@ defmodule VisionCore.Detection.QnnPort do
     {:ok, port}
   rescue
     error -> {:error, error}
-  end
-
-  @doc """
-  `opts`' `:infer_timeout_ms` (`2000`), a positive integer, and
-  `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`), a non-empty
-  list of non-negative integers; raises `ArgumentError` on another value.
-  """
-  @spec timings!(keyword()) :: {pos_integer(), [non_neg_integer(), ...]}
-  def timings!(opts) do
-    infer_timeout_ms = Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms)
-    reopen_delays_ms = Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms)
-
-    unless is_integer(infer_timeout_ms) and infer_timeout_ms > 0,
-      do: refuse!(:infer_timeout_ms, infer_timeout_ms, "a positive integer")
-
-    unless is_list(reopen_delays_ms) and reopen_delays_ms != [] and
-             Enum.all?(reopen_delays_ms, &(is_integer(&1) and &1 >= 0)),
-           do:
-             refuse!(
-               :reopen_delays_ms,
-               reopen_delays_ms,
-               "a non-empty list of non-negative integers"
-             )
-
-    {infer_timeout_ms, reopen_delays_ms}
   end
 
   @doc """
@@ -161,12 +131,4 @@ defmodule VisionCore.Detection.QnnPort do
     do: true
 
   def final?(_reason), do: false
-
-  @doc """
-  The wait before reopening a Port that failed `failures` times in a row:
-  that entry of `reopen_delays_ms`, its last one past its end.
-  """
-  @spec reopen_delay_ms([non_neg_integer()], non_neg_integer()) :: non_neg_integer()
-  def reopen_delay_ms(reopen_delays_ms, failures),
-    do: Enum.at(reopen_delays_ms, failures, List.last(reopen_delays_ms))
 end
