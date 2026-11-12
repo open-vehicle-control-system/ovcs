@@ -36,11 +36,11 @@ function seenClasses(seen = {}, segmentation, now) {
 
 /**
  * One channel an output of `outputs`, its name the topic, joined as long as `socket` and the names stay, with each
- * topic's latest state: `bind(channel, update)` binds a channel's events before it joins, and `update(change)` sets its
- * topic's state to `change` of the one before. Returns the states by topic, none for a topic until its first update,
- * and a ref to the channels by topic.
+ * topic's latest state: `handlers(channel, update)` gives a channel's handlers by event, bound before it joins, and
+ * `update(change)` sets its topic's state to `change` of the one before. Returns the states by topic, none for a topic
+ * until its first update, and a ref to the channels by topic.
  */
-function useTopicChannels(socket, outputs, bind) {
+function useTopicChannels(socket, outputs, handlers) {
   const [latest, setLatest] = useState({})
   const channelsRef = useRef({})
   // The exporters' store lists new outputs on every load: the names as one string keep the channels through a load that changes none.
@@ -52,24 +52,32 @@ function useTopicChannels(socket, outputs, bind) {
       .filter(Boolean)
       .map((topic) => {
         const channel = socket.channel(topic, {})
-        bind(channel, (change) => setLatest((states) => ({ ...states, [topic]: change(states[topic]) })))
+        const update = (change) => setLatest((states) => ({ ...states, [topic]: change(states[topic]) }))
+        const events = Object.entries(handlers(channel, update)).map(([event, handler]) => {
+          channel.on(event, handler)
+          return event
+        })
         channel.join()
         channelsRef.current[topic] = channel
-        return channel
+        return { channel, events }
       })
     return () => {
-      channels.forEach((channel) => channel.leave())
+      channels.forEach(({ channel, events }) => {
+        // An event already on its way would otherwise set a state for a channel that was left.
+        events.forEach((event) => channel.off(event))
+        channel.leave()
+      })
       channelsRef.current = {}
       setLatest({})
     }
-  }, [socket, topics, bind])
+  }, [socket, topics, handlers])
 
   return [latest, channelsRef]
 }
 
-function bindSegmentation(channel, update) {
-  channel.on('classes', (classes) => update((last) => ({ ...last, classes })))
-  channel.on('segmentation', (payload) => {
+const segmentationHandlers = (channel, update) => ({
+  classes: (classes) => update((last) => ({ ...last, classes })),
+  segmentation: (payload) => {
     let segmentation
     try {
       segmentation = decodeSegmentation(payload)
@@ -80,8 +88,8 @@ function bindSegmentation(channel, update) {
     }
     const now = Date.now()
     update((last) => ({ ...last, segmentation, seen: seenClasses(last?.seen, segmentation, now) }))
-  })
-}
+  }
+})
 
 /**
  * The latest result of the segmentation channel of each of `outputs`, by topic, with the pipeline's
@@ -89,7 +97,7 @@ function bindSegmentation(channel, update) {
  * until its first comes. Each grid is acked once rendered, and the unit sends the next only then.
  */
 export function useSegmentations(socket, outputs) {
-  const [segmentations, channelsRef] = useTopicChannels(socket, outputs, bindSegmentation)
+  const [segmentations, channelsRef] = useTopicChannels(socket, outputs, segmentationHandlers)
   const ackedRef = useRef(new WeakSet())
 
   // After the commit, so the overlay has drawn the grid it acks.
@@ -105,9 +113,9 @@ export function useSegmentations(socket, outputs) {
   return segmentations
 }
 
-const bindDetections = (channel, update) => channel.on('detections', (payload) => update(() => payload.detections))
+const detectionHandlers = (_channel, update) => ({ detections: (payload) => update(() => payload.detections) })
 
 /** The latest detection result of the channel of each of `outputs`, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
 export function useDetections(socket, outputs) {
-  return useTopicChannels(socket, outputs, bindDetections)[0]
+  return useTopicChannels(socket, outputs, detectionHandlers)[0]
 }
