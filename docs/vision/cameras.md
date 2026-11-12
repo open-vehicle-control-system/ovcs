@@ -82,7 +82,7 @@ The IMX477's colour follows libcamera's Raspberry Pi pipeline, with Raspberry Pi
 1. subtracts the black level and applies the lens shading and white balance gains;
 2. demosaics on linear 16-bit values;
 3. applies the colour correction matrix of the colour temperature that the white balance gives;
-4. runs a chroma denoise against high gain's coloured speckle, blurring the colour at the 2 × 2 Bayer cells' resolution and keeping each pixel's brightness;
+4. blurs the colour at the 2 × 2 Bayer cells' resolution against high gain's coloured speckle, and keeps each pixel's brightness;
 5. encodes the result to 8 bits through the tuning's contrast curve.
 
 Auto exposure measures the green after lens shading and white balance, through the contrast curve, before the colour matrix and the denoise. `ccm: false` leaves the matrix out, and `denoise: false` the denoise. On this sensor `gamma` only sets how far auto exposure steps. On a sensor without a tuning, it also encodes the image.
@@ -128,13 +128,13 @@ The camera's `camera_info` and a segmentation pipeline's label `camera_info` tak
 
 ## On ROS 2
 
-The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists.
+The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists. `<camera>` is the camera's name.
 
 | Topic or service | Type | What |
 |---|---|---|
-| `<prefix>/<name>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
-| `<prefix>/<name>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
-| `<prefix>/<name>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
+| `<prefix>/<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
+| `<prefix>/<camera>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
+| `<prefix>/<camera>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
 | `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. The parent is the frame the depth is published in, in rectified coordinates: the rectified left camera, not the raw one. |
 
 ## Measure the pose
@@ -155,7 +155,7 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode, in the `calibrator` compose service. It reads `<prefix>/center/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), which the service decompresses. It passes the calibrator no camera-model option: the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with.
 2. Move the board until the calibrator's coverage bars fill.
 3. Press CALIBRATE.
-4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. The ROS 2 exporter publishes it in the camera info at once. A pipeline on the camera reads its calibration at start, so it takes the new one once the unit restarts.
+4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. Restart the unit for the camera's pipelines to take it ([Calibration and pose](#calibration-and-pose)).
 5. Open the unit's IEx shell:
 
    ```sh

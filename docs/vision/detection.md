@@ -1,6 +1,6 @@
 ---
 title: Object detection
-description: Run one or more named detection pipelines on the stereo pair or a camera of its own, read the accelerator's load, and choose a model.
+description: Run named detection pipelines on the stereo pair or a camera of its own, read the accelerator's load and choose a model.
 ---
 
 Find objects in a camera's image and place them in 3D with the stereo depth. Run several detection pipelines, detect on a camera of its own, and choose a model you may ship. You need a board with an accelerator: the Hailo-8 on a Raspberry Pi 5, or the Arduino VENTUNO Q's NPU. The table in [The OKdo Nano C100](./README.md#the-okdo-nano-c100) compares the boards.
@@ -72,10 +72,10 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
 - **Backlog.** While 32 frames' boxes wait, the camera's frames are skipped, which is logged.
 - **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped. Its position and size are `nil`. Its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, says where it is seen: azimuth positive to the right, elevation positive up.
 - **Without a pose.** On a camera without a pose, or whose pose or calibration cannot be read, every detection has no distance. A warning is logged once. Without a calibration, a detection has no bearing either.
-- **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`. It publishes those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels, on `<prefix>/<name>/detections_2d`. All of them go on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)).
+- **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`. It publishes those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels, on `<prefix>/<pipeline>/detections_2d`. All of them go on `<prefix>/<pipeline>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)).
 - **Another output.** When the exporter publishes a camera output other than the pipeline's, it scales the boxes to the published image.
 
-The pipeline reads the camera's calibration and pose at start. A calibration committed through the camera's `set_camera_info` reaches the ROS 2 exporter's camera info at once, and the pipeline once the unit restarts.
+The pipeline reads the camera's calibration and pose at start, so it takes a committed calibration once the unit restarts ([Calibration and pose](./cameras.md#calibration-and-pose)).
 
 ## Detection models
 

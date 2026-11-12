@@ -25,7 +25,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5`, `okdo_c100` and `arduino_ventuno_q` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app for the unit's status, previews and parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, road segmentation, JPEG and stereo matching on the CPU. |
 
 ## Opting in
@@ -166,7 +166,7 @@ The vision parameters are the unit's own settings, grouped by component and pipe
 
 Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
 
-The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. Each detection pipeline is its input, inference, filtering and placement ([Several pipelines](./detection.md#several-pipelines)). The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
+The dashboard keeps the selected step in the URL (`?box=stereo.disparity`), so a link opens it again.
 
 A box's panel lists its parameters with their constraints and defaults:
 
