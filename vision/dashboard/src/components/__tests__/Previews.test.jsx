@@ -204,47 +204,85 @@ describe('Previews', () => {
     })
   })
 
-  describe('bands', () => {
+  describe('asides', () => {
     const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs }] })
-    afterEach(() => act(() => useExporters.setState({ exporters: [] })))
 
-    // A preview's band: its last part, under its caption.
-    const band = (stream) => {
+    // jsdom lays nothing out: the row's observer reports each preview `width` × `height` px, `caption` px of it its caption's.
+    let observers
+    beforeEach(() => {
+      observers = []
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          constructor(callback) {
+            observers.push(callback)
+          }
+          observe() {}
+          disconnect() {}
+        }
+      )
+    })
+    afterEach(() => {
+      act(() => useExporters.setState({ exporters: [] }))
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+    function previewsSized(width, height, caption) {
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function () {
+        return this.tagName === 'FIGURE' ? width : 0
+      })
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+        return { FIGURE: height, FIGCAPTION: caption }[this.tagName] ?? 0
+      })
+      act(() => observers.forEach((callback) => callback([])))
+    }
+
+    // A preview's aside: its last part, after its frame and caption.
+    const aside = (stream) => {
       const last = figure(stream).lastElementChild
-      return last.hasAttribute('data-band') ? last : null
+      return last.hasAttribute('data-aside') ? last : null
     }
     const classes = (element) => element.className.split(' ')
+    const frameOf = (stream) => figure(stream).firstElementChild
+    const captionOf = (stream) => figure(stream).querySelector('figcaption')
 
-    it("puts the depth's colour scale in its band, out of its figures", () => {
+    function renderAll() {
+      listed({ name: 'camera_frame:hq', maxHz: 5 }, { name: 'camera_frame:usb', maxHz: 5 }, { name: 'segmentation:road', maxHz: 5, source: 'hq' })
+      const { socket, push } = liveSocket({ depthRange: 8 })
+      render(<Previews status={snapshot} socket={socket} />)
+      push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
+    }
+
+    it("puts the depth's colour scale in its aside, out of its figures", () => {
       const { socket } = liveSocket({ depthRange: 8 })
       render(<Previews status={snapshot} socket={socket} />)
 
-      expect(band('depth').querySelector('[data-colour-scale]').textContent).toContain('8.0 m')
+      expect(aside('depth').querySelector('[data-colour-scale]').textContent).toContain('8.0 m')
       expect(card('depth').querySelector('[data-colour-scale]')).toBeNull()
     })
 
-    it("puts a camera's segmentation legend in its band", () => {
+    it("puts a camera's segmentation legend in its aside", () => {
       listed({ name: 'camera_frame:hq', maxHz: 5 }, { name: 'segmentation:road', maxHz: 5, source: 'hq' })
       const { socket, push } = liveSocket({ depthRange: 8 })
       render(<Previews status={snapshot} socket={socket} />)
 
       push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
 
-      expect(band('hq').contains(screen.getByRole('list', { name: 'road classes' }))).toBe(true)
+      expect(aside('hq').contains(screen.getByRole('list', { name: 'road classes' }))).toBe(true)
     })
 
-    it('gives every preview a band, empty with nothing to show, sized by the row it shares with its neighbours', () => {
-      listed({ name: 'camera_frame:hq', maxHz: 5 }, { name: 'camera_frame:usb', maxHz: 5 }, { name: 'segmentation:road', maxHz: 5, source: 'hq' })
-      const { socket, push } = liveSocket({ depthRange: 8 })
-      render(<Previews status={snapshot} socket={socket} />)
-      push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
+    it('gives every preview an aside under its caption, empty with nothing to show, sized by the row it shares with its neighbours', () => {
+      renderAll()
+      // The frame beside a 14rem aside would be 319 px wide and 320 px tall.
+      previewsSized(543, 400, 80)
 
       const streams = ['left', 'right', 'depth', 'hq', 'usb']
-      for (const stream of streams) expect(band(stream)).not.toBeNull()
-      for (const stream of streams) expect(band(stream).className).toBe(band('depth').className)
-      for (const stream of ['left', 'right', 'usb']) expect(band(stream).childElementCount).toBe(0)
+      for (const stream of streams) expect(aside(stream)).not.toBeNull()
+      for (const stream of streams) expect(aside(stream).className).toBe(aside('depth').className)
+      for (const stream of streams) expect(frameOf(stream).className).not.toContain('col-')
+      for (const stream of ['left', 'right', 'usb']) expect(aside(stream).childElementCount).toBe(0)
 
-      // Each preview spans its row's three tracks, frame, caption and band, which size them across the row.
+      // Each preview spans its row's three tracks, frame, caption and aside, which size them across the row.
       const pair = screen.getByRole('list', { name: 'Camera pair' })
       expect(classes(pair.parentElement)).toEqual(expect.arrayContaining(['grid-rows-[auto_auto_1fr]', 'gap-y-0']))
       expect(classes(pair)).toEqual(expect.arrayContaining(['row-span-3', 'self-center']))
@@ -257,6 +295,44 @@ describe('Previews', () => {
         expect(figure(stream).parentElement).toBe(row)
         expect(classes(figure(stream))).toEqual(expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)]', 'lg:grid-rows-subgrid']))
       }
+    })
+
+    it("puts the asides of the depth's row beside their frames, from lg, once the frame left is as wide as tall", () => {
+      renderAll()
+      previewsSized(544, 400, 80)
+
+      const row = document.querySelector('[data-cameras]')
+      for (const stream of ['depth', 'hq', 'usb']) {
+        expect(classes(figure(stream))).toEqual(
+          expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)_14rem]', 'lg:grid-rows-subgrid'])
+        )
+        // The aside takes the frame's track, in a column as wide in every preview, empty or not; the caption spans both columns.
+        expect(classes(aside(stream))).toEqual(expect.arrayContaining(['lg:col-start-2', 'lg:row-start-1']))
+        expect(aside(stream).className).toBe(aside('depth').className)
+        expect(classes(captionOf(stream))).toContain('col-span-full')
+        expect(figure(stream).parentElement).toBe(row)
+      }
+      expect(aside('depth').querySelector('[data-colour-scale]')).not.toBeNull()
+      expect(aside('hq').contains(screen.getByRole('list', { name: 'road classes' }))).toBe(true)
+      expect(aside('usb').childElementCount).toBe(0)
+
+      // The pair's row keeps its asides under the captions, where they take the height the pair's checks add.
+      for (const stream of ['left', 'right']) {
+        expect(classes(figure(stream))).toEqual(expect.arrayContaining(['grid-cols-[minmax(0,1fr)]']))
+        expect(aside(stream).className).not.toContain('col-start')
+      }
+
+      previewsSized(544, 401, 80)
+      expect(aside('depth').className).toBe(aside('left').className)
+      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)]')
+    })
+
+    it('keeps the asides under the captions without an observer to measure the previews', () => {
+      vi.unstubAllGlobals()
+      vi.stubGlobal('ResizeObserver', undefined)
+      renderAll()
+
+      expect(aside('hq').className).toBe(aside('left').className)
     })
   })
 

@@ -68,11 +68,12 @@ export default function SegmentationOverlay({ segmentation, classes }) {
 
 /**
  * Every class a segmentation pipeline names, in class order, each with its colour, the road's in bold and those not
- * `present` dimmed, in a grid whose rows depend on the number of classes and the width alone.
+ * `present` dimmed, in a grid whose rows depend on the number of classes and the width alone, two columns in the aside
+ * beside a preview's frame.
  */
 export function SegmentationLegend({ name, classes, present }) {
   return (
-    <ul aria-label={`${name} classes`} className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-x-3 gap-y-1 text-xs">
+    <ul aria-label={`${name} classes`} className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-x-3 gap-y-0.5 text-xs">
       {classes.labels.map((_, id) => {
         const item = classOf(id, classes)
         const isPresent = present.has(id)

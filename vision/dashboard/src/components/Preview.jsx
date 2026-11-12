@@ -7,11 +7,11 @@ const FrameSize = createContext(null)
 export const useFrameSize = () => use(FrameSize)
 
 /**
- * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `band`
- * under the caption, in a part of its own, there and empty without one, so previews sharing a row's tracks keep their
- * frames level. `onChannel` gets the stream's channel before it joins, to bind its own events, and `overlay` is drawn
- * over the frame once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning
- * ring around it, frame or not.
+ * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `aside`
+ * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
+ * frames level; `asideClassName` can place it beside the frame, the caption spanning both. `onChannel` gets the
+ * stream's channel before it joins, to bind its own events, and `overlay` is drawn over the frame once its size is
+ * known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
  */
 export default function Preview({
   stream,
@@ -19,10 +19,11 @@ export default function Preview({
   onChannel,
   overlay,
   badge,
-  band,
+  aside,
   alert = false,
   className = '',
   frameClassName = '',
+  asideClassName = '',
   children
 }) {
   const [frame, setFrame] = useState(null)
@@ -80,7 +81,7 @@ export default function Preview({
         {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
         {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
       </div>
-      <figcaption className="flex flex-col gap-1.5 px-3 py-2 text-sm">
+      <figcaption className="col-span-full flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">
           <span className="font-medium capitalize text-ovcs-text">{stream}</span>
           {size ? (
@@ -91,8 +92,8 @@ export default function Preview({
         </div>
         {children}
       </figcaption>
-      <div data-band className="flex flex-col gap-1.5 px-3 pb-2 text-sm empty:p-0">
-        {band}
+      <div data-aside className={`flex flex-col gap-1.5 px-3 pb-2 text-sm empty:p-0 ${asideClassName}`}>
+        {aside}
       </div>
     </OvcsCard>
   )
