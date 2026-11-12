@@ -17,11 +17,15 @@ The ignition-off rule only runs when the selected gear is not parking. A subsequ
 
 ## Acceptance Criteria
 
-- [ ] Parking remains selected across repeated ticks with the ignition off, for every requested gear.
-- [ ] An active gear returns to parking with the ignition off even when readiness remains true.
-- [ ] Turning the ignition on permits the existing normal gear-selection rules.
-- [ ] Core checks pass.
+- [x] Parking remains selected across repeated ticks with the ignition off, for every requested gear.
+- [x] An active gear returns to parking with the ignition off even when readiness remains true.
+- [x] Turning the ignition on permits the existing normal gear-selection rules.
+- [x] Core checks pass.
 
 ## Design
 
 Move the existing selection function to a pure module without changing behavior. Then make the ignition-off rule cover parking itself, preventing later conditions from accepting a request. Preserve the existing policy of selecting parking when contact is off; input freshness and alternative stopping policies remain separate work.
+
+## Validation
+
+Two regressions failed before the fix. Formatting, compilation with warnings as errors, strict Credo and all 260 core tests pass.

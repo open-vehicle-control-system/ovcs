@@ -8,9 +8,11 @@ defmodule VmsCore.Managers.Gear.Selection do
   @gear_shift_speed_limit_km_h D.new("1")
 
   @doc "The gear to engage, or nil to keep the selected gear."
+  def next_gear(%{contact: :off, selected_gear: :parking}), do: nil
+  def next_gear(%{contact: :off}), do: :parking
+
   def next_gear(state) do
     %{
-      contact: contact,
       requested_gear: requested_gear,
       selected_gear: selected_gear,
       ready_to_drive: ready_to_drive,
@@ -26,9 +28,6 @@ defmodule VmsCore.Managers.Gear.Selection do
     can_engage = speed_near_zero && throttle_near_zero
 
     cond do
-      contact == :off && selected_gear != :parking ->
-        :parking
-
       !ready_to_drive && selected_gear in [:reverse, :drive] ->
         :neutral
 
