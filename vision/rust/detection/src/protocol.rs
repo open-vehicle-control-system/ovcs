@@ -45,13 +45,19 @@ pub fn parse_request(record: &[u8]) -> Option<Request<'_>> {
 }
 
 impl Request<'_> {
-    /// The channel count and pixel byte count; `Err` is the message to log before
-    /// answering with no detections.
+    /// The channel count, the size and the pixel byte count; `Err` is the message to log
+    /// before answering with no detections.
     pub fn check(&self) -> Result<(), String> {
         if self.channels != 1 && self.channels != 3 {
             return Err(format!(
                 "frame {}: unsupported channel count {}",
                 self.sequence, self.channels
+            ));
+        }
+        if self.width == 0 || self.height == 0 {
+            return Err(format!(
+                "frame {}: a {}x{} image has no pixels",
+                self.sequence, self.width, self.height
             ));
         }
         let expected = self.width as usize * self.height as usize * self.channels as usize;
@@ -160,6 +166,17 @@ mod tests {
             parse_request(&record).unwrap().check(),
             Err("frame 9: expected 4 pixel bytes, got 3".to_string())
         );
+    }
+
+    #[test]
+    fn check_rejects_an_image_without_pixels() {
+        for (width, height) in [(0, 0), (0, 4), (4, 0)] {
+            let record = request(9, width, height, 3, &[]);
+            assert_eq!(
+                parse_request(&record).unwrap().check(),
+                Err(format!("frame 9: a {width}x{height} image has no pixels"))
+            );
+        }
     }
 
     #[test]
