@@ -1,4 +1,4 @@
-import { createContext, use, useEffect, useRef, useState } from 'react'
+import { Children, createContext, use, useEffect, useRef, useState } from 'react'
 import { OvcsCard } from '@ovcs/ui/react'
 
 const FrameSize = createContext(null)
@@ -10,8 +10,8 @@ export const useFrameSize = () => use(FrameSize)
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `aside`
  * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
  * frames level; `asideClassName` can place it beside the frame, the caption spanning both. `onChannel` gets the
- * stream's channel before it joins, to bind its own events, and `overlay` is drawn over the frame once its size is
- * known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
+ * stream's channel before it joins, to bind its own events, and `overlay`, elements or none, is drawn over the frame
+ * once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
  */
 export default function Preview({
   stream,
@@ -77,7 +77,7 @@ export default function Preview({
         ) : (
           <p className="text-sm text-ovcs-muted">No frame</p>
         )}
-        {frame && size && overlay ? <FrameSize value={size}>{overlay}</FrameSize> : null}
+        {frame && size && Children.count(overlay) > 0 ? <FrameSize value={size}>{overlay}</FrameSize> : null}
         {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
         {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
       </div>

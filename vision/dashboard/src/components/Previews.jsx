@@ -114,8 +114,7 @@ function useSourceDetections(socket, source) {
   const answered = outputs.map(({ name }) => name).filter((topic) => latest[topic])
 
   return {
-    overlay:
-      answered.length > 0 ? answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />) : null,
+    overlays: answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />),
     detections: answered.length > 0 ? answered.flatMap((topic) => latest[topic]) : null
   }
 }
@@ -162,13 +161,12 @@ function useCameraNames() {
  * drawn over it with a legend of their classes, and the objects its detection pipelines detect drawn over those and counted.
  */
 function CameraPreview({ name, status, socket, layout }) {
-  const { overlay, detections } = useSourceDetections(socket, name)
-  const { overlays, legends } = useSourceSegmentations(socket, name)
-  const layers = [...overlays, ...(overlay ?? [])]
+  const { overlays: boxes, detections } = useSourceDetections(socket, name)
+  const { overlays: grids, legends } = useSourceSegmentations(socket, name)
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
 
   return (
-    <Preview stream={name} socket={socket} overlay={layers.length > 0 ? layers : null} aside={legends} {...layout}>
+    <Preview stream={name} socket={socket} overlay={[...grids, ...boxes]} aside={legends} {...layout}>
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
     </Preview>
   )
@@ -176,13 +174,13 @@ function CameraPreview({ name, status, socket, layout }) {
 
 /** The left camera with the stereo pipelines' detected objects drawn over it and counted; their results re-render it alone. */
 function LeftPreview({ status, socket }) {
-  const { overlay, detections } = useSourceDetections(socket, 'left')
+  const { overlays, detections } = useSourceDetections(socket, 'left')
 
   return (
     <Preview
       stream="left"
       socket={socket}
-      overlay={overlay}
+      overlay={overlays}
       className={PAIR_TILE}
       badge={badges(cameraIssues(status?.cameras?.left))}
       alert={needsAction(cameraIssues(status?.cameras?.left))}
