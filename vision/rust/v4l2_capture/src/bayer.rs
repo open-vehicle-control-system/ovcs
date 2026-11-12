@@ -97,8 +97,11 @@ impl Layout {
 fn samples(row: &[u8], layout: Layout, out: &mut [u16]) {
     match layout {
         Layout::Unpacked16 => {
+            // The container holds more than the sample's depth, which the colour path's
+            // fixed point counts on.
+            let full_scale = (1u16 << layout.sample_bits()) - 1;
             for (sample, bytes) in out.iter_mut().zip(row.chunks_exact(2)) {
-                *sample = u16::from_le_bytes([bytes[0], bytes[1]]);
+                *sample = u16::from_le_bytes([bytes[0], bytes[1]]).min(full_scale);
             }
         }
         Layout::Packed10 => {
@@ -596,6 +599,14 @@ pub(crate) mod tests {
             assert_eq!(layout.samples_per_group(), group);
             assert_eq!(layout.row_bytes(group), bytes);
         }
+    }
+
+    #[test]
+    fn an_unpacked_sample_above_its_depth_is_full_scale() {
+        let mut row = [0u16; 3];
+        let raw = little_endian_samples(&[1023, 1024, 0xffff]);
+        samples(&raw, Layout::Unpacked16, &mut row);
+        assert_eq!(row, [1023, 1023, 1023]);
     }
 
     #[test]
