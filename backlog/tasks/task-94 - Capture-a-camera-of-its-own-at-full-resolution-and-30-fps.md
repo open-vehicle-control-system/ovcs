@@ -1,6 +1,6 @@
 ---
 id: TASK-94
-title: Capture a camera of its own at full resolution and 35 fps
+title: Capture a camera of its own at full resolution and 30 fps
 status: In Progress
 assignee: []
 created_date: '2026-11-11 23:00'

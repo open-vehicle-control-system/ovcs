@@ -50,5 +50,5 @@ Checks before review: `mix test` in `vehicles/ovcs1`, `elixir scripts/check_docs
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-The camera is named `:center`, the segmenter `:scene`; both pipelines run on every frame of its `inference` output. With the QNN Ports at the `burst` profile and the context binaries at optimisation level 3, YOLOX takes 2.1 ms on the HTP and FFNet 5.6 ms (8.7 and 26.9 ms without).
+The camera is named `:center`, the segmenter `:scene`; both pipelines run on every frame of its `inference` output, their source `{:camera, :center, :inference}`. Its calibration is `center.yaml` and its pose `center_pose.yaml`. With the QNN Ports at the `burst` profile and the context binaries at optimisation level 3, YOLOX takes 2.1 ms on the HTP and FFNet 5.6 ms (8.7 and 26.9 ms without).
 <!-- SECTION:NOTES:END -->
