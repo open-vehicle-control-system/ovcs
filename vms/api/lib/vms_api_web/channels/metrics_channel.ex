@@ -1,18 +1,22 @@
 defmodule VmsApiWeb.MetricsChannel do
+  @moduledoc "Streams subscribed metrics at a validated dashboard refresh interval."
   use VmsApiWeb, :channel
+  alias VmsApiWeb.RefreshInterval
   alias VmsCore.Metrics
 
   intercept ["update"]
 
   @impl Phoenix.Channel
   def join("metrics", payload, socket) do
-    socket =
-      socket
-      |> assign(:timer_interval, payload["interval"])
-      |> assign(:timer, nil)
-      |> assign(:metrics, %{})
+    with {:ok, interval} <- RefreshInterval.fetch(payload) do
+      socket =
+        socket
+        |> assign(:timer_interval, interval)
+        |> assign(:timer, nil)
+        |> assign(:metrics, %{})
 
-    {:ok, socket}
+      {:ok, socket}
+    end
   end
 
   def handle_in(
