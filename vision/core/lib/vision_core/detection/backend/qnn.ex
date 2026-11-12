@@ -44,7 +44,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   require Logger
 
-  alias VisionCore.Detection.{Pipeline, QnnContext}
+  alias VisionCore.Detection.{Pipeline, QnnPort}
   alias VisionCore.Stereo.Parameters
 
   # Port protocol tags; must match `qnn_detect`.
@@ -174,29 +174,14 @@ defmodule VisionCore.Detection.Backend.Qnn do
   defp open_port(state) do
     context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
 
-    with true <- File.exists?(state.executable) || {:error, {:missing_binary, state.executable}},
-         {:ok, binary} <- QnnContext.ensure(state.dlc_path, context_opts) do
-      spawn_detector_port(state, binary)
+    with {:ok, binary} <- QnnPort.context(state.dlc_path, state.executable, context_opts) do
+      QnnPort.open(
+        state.executable,
+        [binary, to_string(state.score_threshold)],
+        state.qairt_dir,
+        state.dsp_library_path
+      )
     end
-  end
-
-  defp spawn_detector_port(state, binary) do
-    env =
-      for {name, value} <- QnnContext.env(state.qairt_dir, state.dsp_library_path),
-          do: {String.to_charlist(name), String.to_charlist(value)}
-
-    port =
-      Port.open({:spawn_executable, state.executable}, [
-        :binary,
-        :exit_status,
-        {:packet, 4},
-        {:env, env},
-        {:args, [binary, to_string(state.score_threshold)]}
-      ])
-
-    {:ok, port}
-  rescue
-    error -> {:error, error}
   end
 
   # Answers the frame in flight with no detections and reopens the Port after the next wait.
@@ -206,7 +191,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
       send(inflight.reply_to, {:inference_detections, inflight.sequence, nil})
     end
 
-    delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
+    delay_ms = QnnPort.reopen_delay_ms(state.reopen_delays_ms, state.failures)
     Process.send_after(self(), :reopen, delay_ms)
     %{state | port: nil, inflight: nil, times: nil, failures: state.failures + 1}
   end

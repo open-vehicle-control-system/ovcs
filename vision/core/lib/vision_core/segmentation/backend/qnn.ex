@@ -44,7 +44,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   require Logger
 
-  alias VisionCore.Detection.QnnContext
+  alias VisionCore.Detection.QnnPort
   alias VisionCore.Stereo.Parameters
 
   # Port protocol tags; must match `qnn_segment`.
@@ -164,29 +164,9 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   defp open_port(state) do
     context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
 
-    with true <- File.exists?(state.executable) || {:error, {:missing_binary, state.executable}},
-         {:ok, binary} <- QnnContext.ensure(state.dlc_path, context_opts) do
-      spawn_port(state, binary)
+    with {:ok, binary} <- QnnPort.context(state.dlc_path, state.executable, context_opts) do
+      QnnPort.open(state.executable, [binary], state.qairt_dir, state.dsp_library_path)
     end
-  end
-
-  defp spawn_port(state, binary) do
-    env =
-      for {name, value} <- QnnContext.env(state.qairt_dir, state.dsp_library_path),
-          do: {String.to_charlist(name), String.to_charlist(value)}
-
-    port =
-      Port.open({:spawn_executable, state.executable}, [
-        :binary,
-        :exit_status,
-        {:packet, 4},
-        {:env, env},
-        {:args, [binary]}
-      ])
-
-    {:ok, port}
-  rescue
-    error -> {:error, error}
   end
 
   # Answers the band in flight with no labels and reopens the Port after the next wait.
@@ -196,7 +176,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       send(inflight.reply_to, {:inference_labels, inflight.sequence, nil})
     end
 
-    delay_ms = Enum.at(state.reopen_delays_ms, state.failures, List.last(state.reopen_delays_ms))
+    delay_ms = QnnPort.reopen_delay_ms(state.reopen_delays_ms, state.failures)
     Process.send_after(self(), :reopen, delay_ms)
     %{state | port: nil, inflight: nil, times: nil, failures: state.failures + 1}
   end
