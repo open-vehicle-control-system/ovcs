@@ -29,9 +29,11 @@ defmodule VisionCore.Application do
 
   A configuration with two detectors of one name, or of two names whose
   processes would be registered alike (`VisionCore.Detection.server/2`:
-  `:road_2` and `:road2`), fails the start, naming them. So does one with
-  two cameras of one name (`VisionCore.Camera.Unit`), or a camera named
-  as a detection pipeline, both publishing under `<prefix>/<name>/`.
+  `:road_2` and `:road2`), fails the start, naming them, and so does one
+  with two such segmenters (`VisionCore.Segmentation`), or a detector and
+  a segmenter of one name. So does one with two cameras of one name
+  (`VisionCore.Camera.Unit`), or a camera named as a detection or a
+  segmentation pipeline, both publishing under `<prefix>/<name>/`.
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
@@ -47,7 +49,7 @@ defmodule VisionCore.Application do
   """
   use Application
 
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Segmentation}
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
@@ -89,7 +91,9 @@ defmodule VisionCore.Application do
         ]
 
     component_children = Enum.flat_map(config.components, &resolve_component/1)
-    check_detector_names!(component_children)
+    check_unit_names!(component_children, Detection.Supervisor, "detectors")
+    check_unit_names!(component_children, Segmentation.Supervisor, "segmenters")
+    check_pipeline_names!(component_children)
     check_camera_names!(component_children)
 
     consumer_children = [
@@ -152,25 +156,37 @@ defmodule VisionCore.Application do
   defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
 
   # Two units whose processes would share their names; the supervisor would refuse them less clearly.
-  defp check_detector_names!(children) do
+  defp check_unit_names!(children, supervisor, units) do
     children
-    |> Enum.flat_map(fn
-      %{start: {Detection.Supervisor, _function, [opts]}} -> [Detection.pipeline_name(opts)]
-      _child -> []
-    end)
-    |> Enum.group_by(&Detection.server(Detection.Supervisor, &1))
+    |> pipeline_names(supervisor)
+    |> Enum.group_by(&Detection.server(supervisor, &1))
     |> Enum.find(fn {_server, names} -> length(names) > 1 end)
     |> case do
       nil ->
         :ok
 
       {_server, [name, name | _others]} ->
-        raise ArgumentError, "two detectors are named #{inspect(name)}: give each its own :name"
+        raise ArgumentError, "two #{units} are named #{inspect(name)}: give each its own :name"
 
       {server, [first, second | _others]} ->
         raise ArgumentError,
-              "detectors #{inspect(first)} and #{inspect(second)} would both run as " <>
+              "#{units} #{inspect(first)} and #{inspect(second)} would both run as " <>
                 "#{inspect(server)}: give them names that camelize apart"
+    end
+  end
+
+  # Detection and segmentation pipelines share their parameter groups', topics' and statuses' names.
+  defp check_pipeline_names!(children) do
+    detection = pipeline_names(children, Detection.Supervisor)
+
+    case Enum.find(pipeline_names(children, Segmentation.Supervisor), &(&1 in detection)) do
+      nil ->
+        :ok
+
+      name ->
+        raise ArgumentError,
+              "the detection pipeline and the segmentation pipeline #{inspect(name)} share " <>
+                "their name: give them names apart"
     end
   end
 
@@ -178,22 +194,35 @@ defmodule VisionCore.Application do
     cameras = for %{id: {:camera, name}} <- children, do: name
 
     pipelines =
-      for %{start: {Detection.Supervisor, _function, [opts]}} <- children,
-          do: Detection.pipeline_name(opts)
+      Enum.map(pipeline_names(children, Detection.Supervisor), &{"detection", &1}) ++
+        Enum.map(pipeline_names(children, Segmentation.Supervisor), &{"segmentation", &1})
 
-    case {cameras -- Enum.uniq(cameras), Enum.find(cameras, &(&1 in pipelines))} do
+    case {cameras -- Enum.uniq(cameras),
+          Enum.find(pipelines, fn {_kind, name} -> name in cameras end)} do
       {[name | _others], _shared} ->
         raise ArgumentError, "two cameras are named #{inspect(name)}: give each its own :name"
 
       {[], nil} ->
         :ok
 
-      {[], name} ->
+      {[], {kind, name}} ->
         raise ArgumentError,
-              "the camera and the detection pipeline #{inspect(name)} share their name, " <>
+              "the camera and the #{kind} pipeline #{inspect(name)} share their name, " <>
                 "under which both publish: give them names apart"
     end
   end
+
+  # The pipeline names of the units `supervisor` starts among `children`.
+  defp pipeline_names(children, Detection.Supervisor = supervisor),
+    do:
+      for(
+        %{start: {^supervisor, _function, [opts]}} <- children,
+        do: Detection.pipeline_name(opts)
+      )
+
+  defp pipeline_names(children, Segmentation.Supervisor = supervisor),
+    do:
+      for(%{start: {^supervisor, _function, [opts]}} <- children, do: Keyword.fetch!(opts, :name))
 
   defp resolve_component(name) when is_atom(name), do: VisionCore.Components.start(name, [])
 

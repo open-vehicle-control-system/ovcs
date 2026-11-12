@@ -436,6 +436,62 @@ defmodule VisionCore.ApplicationTest do
     end
   end
 
+  @segmenter {:segmenter,
+              name: :road, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :hq}}
+
+  test "a segmenter named as a detection pipeline or another segmenter fails the start, naming it" do
+    for {other, message} <- [
+          {{:detector, name: :road, backend: VisionCore.Detection.Backend.Stub},
+           "the detection pipeline and the segmentation pipeline :road share their name"},
+          {@segmenter, "two segmenters are named :road"}
+        ] do
+      assert start_error([@segmenter, other]) =~ message
+    end
+  end
+
+  test "two segmenters whose names give their processes one name fail the start, naming both" do
+    reason =
+      start_error([
+        {:segmenter, name: :road_2, source: {:camera, :hq}},
+        {:segmenter, name: :road2, source: {:camera, :hq}}
+      ])
+
+    assert reason =~ "segmenters :road_2 and :road2"
+    assert reason =~ "VisionCore.Segmentation.Supervisor.Road2"
+  end
+
+  test "a camera named as a segmentation pipeline fails the start, naming both" do
+    reason =
+      start_error([
+        {:segmenter,
+         name: :hq, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :hq}},
+        {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"}
+      ])
+
+    assert reason =~ "the camera and the segmentation pipeline :hq share their name"
+  end
+
+  test "a segmenter runs beside a detector, and one that cannot start leaves the unit running" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:detector, name: :people, backend: VisionCore.Detection.Backend.Stub},
+            {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"},
+            @segmenter,
+            {:segmenter,
+             name: :lane, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :usb}}
+          ]
+        })
+      end)
+
+    assert Process.alive?(Process.whereis(VisionCore.Segmentation.Pipeline.Road))
+    assert Process.alive?(Process.whereis(VisionCore.Detection.Pipeline.People))
+    assert log =~ "VisionCore.Segmentation.Supervisor.Lane failed to start, lane down"
+    refute Process.whereis(VisionCore.Segmentation.Supervisor.Lane)
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+  end
+
   test "a camera whose name is not a valid name fails the start, stating the rule" do
     for name <- ["hq", :right, :"hq-cam"] do
       Application.put_env(:vision_core, :test_config, %VisionCore.Config{

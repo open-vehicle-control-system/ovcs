@@ -25,6 +25,35 @@ defmodule VisionCore.ComponentsTest do
     end
   end
 
+  test "each segmenter's unit is a child of its own, identified by its pipeline's name, not restarted once it gives up" do
+    for {component, opts, id} <- [
+          {:segmenter, [name: :road, source: {:camera, :hq}],
+           VisionCore.Segmentation.Supervisor.Road},
+          {:qnn_segmenter, [name: :lane, source: {:camera, :hq}],
+           VisionCore.Segmentation.Supervisor.Lane}
+        ] do
+      assert [%{id: ^id, restart: :transient, type: :supervisor}] =
+               Components.start(component, opts)
+    end
+  end
+
+  test ":qnn_segmenter runs on the QNN backend" do
+    assert [%{start: {VisionCore.Segmentation.Supervisor, :start_link, [opts]}}] =
+             Components.start(:qnn_segmenter, name: :road)
+
+    assert opts[:backend] == VisionCore.Segmentation.Backend.Qnn
+  end
+
+  test "a segmenter without a valid name is refused, saying so" do
+    for {opts, message} <- [
+          {[], "a segmenter needs a :name"},
+          {[name: :stereo], "a segmentation pipeline's name is an atom"}
+        ] do
+      error = assert_raise ArgumentError, fn -> Components.start(:segmenter, opts) end
+      assert error.message =~ message
+    end
+  end
+
   test "a camera is a unit of its own, identified by its name" do
     assert [%{id: {:camera, :hq}, restart: :transient, type: :supervisor}] =
              Components.start(:camera, name: :hq, driver: VisionCore.Camera.V4L2Single, csiphy: 2)

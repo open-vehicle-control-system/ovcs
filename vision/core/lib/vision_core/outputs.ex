@@ -17,6 +17,9 @@ defmodule VisionCore.Outputs do
       the one named `pipeline` (`VisionCore.Detection`), the
       `%VisionCore.Camera.Frame{}` the boxes were found on in place of
       `pair` on a camera source.
+    * `{:segmentation, name}` — `{:segmentation, pipeline, frame, labels,
+      clouds}` from the `VisionCore.Segmentation.Pipeline` registered as
+      `name`, the segmentation pipeline `pipeline`'s.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. A subscription belongs to the subscriber, not to the
@@ -35,7 +38,7 @@ defmodule VisionCore.Outputs do
   """
 
   @typedoc "An output and the name of the producer publishing it."
-  @type key :: {:camera_frame | :stereo_pair | :detections, atom()}
+  @type key :: {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
 
   @doc "Starts the registry."
   @spec start_link(keyword()) :: Supervisor.on_start()

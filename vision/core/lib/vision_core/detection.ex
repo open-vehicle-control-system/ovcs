@@ -8,7 +8,10 @@ defmodule VisionCore.Detection do
   processes (`server/2`), its `VisionCore.Outputs` key, its parameter
   groups (`<name>.*`), its exporters' outputs and its ROS 2 topics
   (`<prefix>/<name>/…`). The default pipeline, `:detection`, keeps its
-  processes registered under their modules.
+  processes registered under their modules. The segmentation pipelines
+  (`VisionCore.Segmentation`) and the cameras of their own
+  (`VisionCore.Camera.Unit`) follow the same rule, and no two of them,
+  nor a detection pipeline, share a name (`VisionCore.Application`).
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
   and is none of the reserved names: `:stereo`, the stereo pipeline's;

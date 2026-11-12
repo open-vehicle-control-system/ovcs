@@ -39,6 +39,20 @@ defmodule VisionCore.Components do
     * `:hailo_detector` — `:detector` with the Hailo backend.
     * `:qnn_detector` — `:detector` with the QNN backend
       (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.
+    * `:segmenter` — `VisionCore.Segmentation.Supervisor`: a road
+      segmentation pipeline on a camera of its own, `source: {:camera,
+      name}`, its `:backend` `VisionCore.Segmentation.Backend.Qnn` by
+      default. `:name` is required, the child id of its unit, and shares
+      the detection pipelines' and the cameras' namespace
+      (`VisionCore.Segmentation`):
+
+          {:qnn_segmenter,
+           name: :road,
+           source: {:camera, :hq},
+           dlc_path: Path.join(models_dir, "ffnet_122ns_lowres.dlc")}
+
+    * `:qnn_segmenter` — `:segmenter` with the QNN backend, on a Qualcomm
+      Hexagon NPU.
     * `:camera` — `VisionCore.Camera.Unit`: a camera of its own, outside
       the stereo pair, its `:name` the child id of its unit, `{:camera,
       name}`, and its frames the output `{:camera_frame, name}`. `:name`
@@ -81,6 +95,22 @@ defmodule VisionCore.Components do
 
     # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
     [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]
+  end
+
+  def start(:qnn_segmenter, opts) do
+    start(:segmenter, Keyword.put_new(opts, :backend, VisionCore.Segmentation.Backend.Qnn))
+  end
+
+  def start(:segmenter, opts) do
+    id = Detection.server(VisionCore.Segmentation.Supervisor, VisionCore.Segmentation.name!(opts))
+
+    # Its own budget, and not restarted once it gives up, as a detector.
+    [
+      Supervisor.child_spec({VisionCore.Segmentation.Supervisor, opts},
+        id: id,
+        restart: :transient
+      )
+    ]
   end
 
   def start(:camera, opts) do
