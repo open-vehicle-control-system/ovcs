@@ -1,4 +1,4 @@
-defmodule VisionCore.Detection.Reprojection do
+defmodule VisionCore.CameraDepth.Reprojection do
   @moduledoc """
   The stereo depth seen from a camera of its own (`VisionCore.Camera.Unit`):
   each measured pixel of a pair's depth map, as a point in the rectified

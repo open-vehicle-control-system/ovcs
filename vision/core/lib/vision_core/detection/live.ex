@@ -5,7 +5,7 @@ defmodule VisionCore.Detection.Live do
   one without, and outline on its source's image as it is captured, the
   left camera's or, on a camera source, the camera's, which that
   camera's preview shows. Each pipeline has its own, registered as
-  `VisionCore.Detection.server(VisionCore.Detection.Live, name)`.
+  `VisionCore.Pipelines.server(VisionCore.Detection.Live, name)`.
 
   A subscriber (`subscribe/1`) receives `{:vision_detections,
   detections}` after a detection result, at most `:max_hz` times a
@@ -24,7 +24,7 @@ defmodule VisionCore.Detection.Live do
       integer from 1 on.
   """
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Pipelines}
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Stereo.Pair
 
@@ -37,8 +37,8 @@ defmodule VisionCore.Detection.Live do
     name = Detection.pipeline_name(opts)
 
     VisionCore.Live.start_link(
-      name: Detection.server(__MODULE__, name),
-      key: {:detections, Detection.server(Pipeline, name)},
+      name: Pipelines.server(__MODULE__, name),
+      key: {:detections, Pipelines.server(Pipeline, name)},
       tag: :vision_detections,
       describe: &describe/1,
       max_hz: Keyword.get(opts, :max_hz, @default_max_hz)
@@ -51,11 +51,11 @@ defmodule VisionCore.Detection.Live do
   """
   @spec subscribe(atom()) :: :ok
   def subscribe(name \\ :detection),
-    do: VisionCore.Live.subscribe(Detection.server(__MODULE__, name))
+    do: VisionCore.Live.subscribe(Pipelines.server(__MODULE__, name))
 
   @doc "The most results a subscriber of the pipeline `name` receives a second, its `:max_hz`."
   @spec max_hz(atom()) :: pos_integer()
-  def max_hz(name \\ :detection), do: VisionCore.Live.max_hz(Detection.server(__MODULE__, name))
+  def max_hz(name \\ :detection), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
   defp describe({:detections, source, positioned}), do: {:ok, describe(positioned, image(source))}
 

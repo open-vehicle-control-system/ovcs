@@ -11,11 +11,11 @@ defmodule VisionCore.Detection.Fusion do
   computes depth from the same rectified pair.
 
   A box on a camera of its own is placed from the stereo depth projected
-  into that camera's image (`VisionCore.Detection.Reprojection`):
+  into that camera's image (`VisionCore.CameraDepth.Reprojection`):
   `projected_depths/3` and `unproject_camera/3`.
   """
 
-  alias VisionCore.Detection.Reprojection
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Pair
 

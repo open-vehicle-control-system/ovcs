@@ -464,7 +464,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     defp publish_named_detections(name, pair, detections),
       do:
         Outputs.publish(
-          {:detections, VisionCore.Detection.server(VisionCore.Detection.Pipeline, name)},
+          {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name)},
           {:detections, pair, detections, name}
         )
 
@@ -525,7 +525,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     defp publish_segmentation(name, frame, labels, clouds),
       do:
         Outputs.publish(
-          {:segmentation, VisionCore.Detection.server(VisionCore.Segmentation.Pipeline, name)},
+          {:segmentation, VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, name)},
           {:segmentation, name, frame, labels, clouds}
         )
 

@@ -3,7 +3,8 @@ defmodule Ovcs1.VisionComposerTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Detection.{CameraDepth, Reprojection}
+  alias VisionCore.CameraDepth
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.Ros2.CameraCalibration
 
   test "OVCS1's vision unit targets the VENTUNO Q" do

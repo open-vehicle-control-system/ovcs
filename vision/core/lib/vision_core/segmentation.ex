@@ -9,8 +9,8 @@ defmodule VisionCore.Segmentation do
 
   A segmentation pipeline is always named, by its `:name` option. Its
   name follows the rule of the detection pipelines' and shares their
-  namespace and the cameras' (`VisionCore.Detection`): it keys the
-  pipeline's processes (`VisionCore.Detection.server/2`), its
+  namespace and the cameras' (`VisionCore.Pipelines`): it keys the
+  pipeline's processes (`VisionCore.Pipelines.server/2`), its
   `VisionCore.Outputs` key, its parameter groups (`<name>.*`), its
   exporters' output (`output/1`) and its ROS 2 topics.
   """
@@ -29,13 +29,13 @@ defmodule VisionCore.Segmentation do
 
   @doc """
   The name a segmenter's `opts` give, valid as a pipeline name
-  (`VisionCore.Detection.name!/2`). Raises `ArgumentError` without one,
+  (`VisionCore.Pipelines.name!/2`). Raises `ArgumentError` without one,
   or with one that breaks the rule.
   """
   @spec name!(keyword()) :: atom()
   def name!(opts) do
     case Keyword.fetch(opts, :name) do
-      {:ok, name} -> VisionCore.Detection.name!(name, "a segmentation pipeline")
+      {:ok, name} -> VisionCore.Pipelines.name!(name, "a segmentation pipeline")
       :error -> raise ArgumentError, "a segmenter needs a :name, its pipeline's"
     end
   end

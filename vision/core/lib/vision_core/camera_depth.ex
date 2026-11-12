@@ -1,4 +1,4 @@
-defmodule VisionCore.Detection.CameraDepth do
+defmodule VisionCore.CameraDepth do
   @moduledoc """
   The stereo depth a pipeline on a camera of its own
   (`source: {:camera, name}`) takes: the camera's calibration and pose,
@@ -19,7 +19,7 @@ defmodule VisionCore.Detection.CameraDepth do
   after its capture, so the pair captured closest to a frame may come
   after the frame's result: `match/3` says `:wait` until a pair captured
   at or after the frame has come, and the pipeline's results wait for it
-  (`VisionCore.Detection.DepthQueue`).
+  (`VisionCore.CameraDepth.Queue`).
 
   The stereo pairs have stalled (`stalled?/2`) before two have come, or
   when none has come for two pair periods since the last one was handed
@@ -37,7 +37,7 @@ defmodule VisionCore.Detection.CameraDepth do
   The camera's calibration is resampled to each frame size it sees,
   pixel centres onto pixel centres, as a camera's outputs are made
   (`VisionCore.Ros2.CameraCalibration.resample_to/3`), and read once for that
-  size (`VisionCore.Detection.Reprojection.lens/1`). A size of another
+  size (`VisionCore.CameraDepth.Reprojection.lens/1`). A size of another
   aspect ratio, a sensor mode that crops, has no lens: its pixels see
   another part of the sensor than the calibration's.
   """
@@ -45,7 +45,7 @@ defmodule VisionCore.Detection.CameraDepth do
   require VisionCore.Outputs, as: Outputs
 
   alias VisionCore.Camera.{Frame, Pose, Unit}
-  alias VisionCore.Detection.Reprojection
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Pair
 
@@ -104,7 +104,7 @@ defmodule VisionCore.Detection.CameraDepth do
   The camera `name` of `config`, its calibration and pose read, each
   missing or unreadable one logged once as a warning naming `owner` and
   saying what is lost (`wording`), as is a calibration whose lens cannot
-  be projected with (`VisionCore.Detection.Reprojection.check_lens/1`),
+  be projected with (`VisionCore.CameraDepth.Reprojection.check_lens/1`),
   which is left out. Takes `:pair_wait_ms`, the longest a
   result waits for its pair, which the pairs kept cover, and `:output`,
   the camera's output taken, its default without

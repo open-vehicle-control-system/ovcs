@@ -3,7 +3,7 @@ defmodule VisionCore.Segmentation.Live do
   The latest label image of a `VisionCore.Segmentation.Pipeline`, for
   the dashboard, which draws it over its camera's preview. Each pipeline
   has its own, registered as
-  `VisionCore.Detection.server(VisionCore.Segmentation.Live, name)`.
+  `VisionCore.Pipelines.server(VisionCore.Segmentation.Live, name)`.
 
   A subscriber (`subscribe/1`) receives `{:vision_segmentation,
   segmentation}` after a result, at most `:max_hz` times a second;
@@ -23,7 +23,7 @@ defmodule VisionCore.Segmentation.Live do
     * `:max_hz` (`5`) — results a second sent to each subscriber, an
       integer from 1 on.
   """
-  alias VisionCore.Detection
+  alias VisionCore.Pipelines
   alias VisionCore.Segmentation.Pipeline
 
   @default_max_hz 5
@@ -35,8 +35,8 @@ defmodule VisionCore.Segmentation.Live do
     name = Keyword.fetch!(opts, :name)
 
     VisionCore.Live.start_link(
-      name: Detection.server(__MODULE__, name),
-      key: {:segmentation, Detection.server(Pipeline, name)},
+      name: Pipelines.server(__MODULE__, name),
+      key: {:segmentation, Pipelines.server(Pipeline, name)},
       tag: :vision_segmentation,
       describe: &describe/1,
       max_hz: Keyword.get(opts, :max_hz, @default_max_hz)
@@ -45,11 +45,11 @@ defmodule VisionCore.Segmentation.Live do
 
   @doc "Sends the calling process every later result of the pipeline `name`, until it exits."
   @spec subscribe(atom()) :: :ok
-  def subscribe(name), do: VisionCore.Live.subscribe(Detection.server(__MODULE__, name))
+  def subscribe(name), do: VisionCore.Live.subscribe(Pipelines.server(__MODULE__, name))
 
   @doc "The most results a subscriber of the pipeline `name` receives a second, its `:max_hz`."
   @spec max_hz(atom()) :: pos_integer()
-  def max_hz(name), do: VisionCore.Live.max_hz(Detection.server(__MODULE__, name))
+  def max_hz(name), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
   defp describe({:segmentation, _name, frame, labels, _clouds}),
     do: {:ok, Map.put(labels, :frame, {frame.width, frame.height})}

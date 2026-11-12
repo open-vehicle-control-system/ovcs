@@ -3,7 +3,7 @@ defmodule VisionCore.Detection.CameraSource do
   Places the boxes of a `VisionCore.Detection.Pipeline` whose source is
   a camera of its own (`source: {:camera, name}` or `{:camera, name,
   output}`) with the camera's stereo depth,
-  `VisionCore.Detection.CameraDepth`, which reads its calibration and
+  `VisionCore.CameraDepth`, which reads its calibration and
   pose once at start, keeps the stereo pairs to take the depth from and
   matches each frame with one.
 
@@ -23,7 +23,9 @@ defmodule VisionCore.Detection.CameraSource do
   or past the lens's fold.
   """
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection.{CameraDepth, Fusion, Reprojection}
+  alias VisionCore.CameraDepth
+  alias VisionCore.CameraDepth.Reprojection
+  alias VisionCore.Detection.Fusion
   alias VisionCore.Stereo.Pair
 
   @doc """

@@ -12,7 +12,7 @@ defmodule VisionApiWeb.DetectionChannel do
   use VisionApiWeb, {:channel, log_join: :debug}
 
   alias VisionApiWeb.{ConfiguredPipeline, DetectionJSON, SourceMonitor}
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Pipelines}
   alias VisionCore.Detection.Live
 
   @default_name :detection
@@ -37,5 +37,5 @@ defmodule VisionApiWeb.DetectionChannel do
     do: SourceMonitor.handle_down(monitor_reference, socket)
 
   defp join_pipeline(socket, name),
-    do: SourceMonitor.join(socket, Detection.server(Live, name), fn -> Live.subscribe(name) end)
+    do: SourceMonitor.join(socket, Pipelines.server(Live, name), fn -> Live.subscribe(name) end)
 end

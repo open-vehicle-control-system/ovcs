@@ -1,8 +1,8 @@
-defmodule VisionCore.Detection.QnnPort do
+defmodule VisionCore.Inference.QnnPort do
   @moduledoc """
   What `VisionCore.Detection.Backend.Qnn` and
   `VisionCore.Segmentation.Backend.Qnn` share about their Port: the
-  context binary it runs (`VisionCore.Detection.QnnContext`), the program
+  context binary it runs (`VisionCore.Inference.QnnContext`), the program
   started with QNN's environment, and its performance profile.
 
   ## The board
@@ -18,7 +18,7 @@ defmodule VisionCore.Detection.QnnPort do
       of the board's NPU, the directory of QAIRT's DSP libraries for it.
   """
 
-  alias VisionCore.Detection.QnnContext
+  alias VisionCore.Inference.QnnContext
 
   @default_runtime [
     qairt_dir: "/opt/qairt",
@@ -52,7 +52,7 @@ defmodule VisionCore.Detection.QnnPort do
 
   @doc """
   The context binary of a backend's model, generated when missing
-  (`VisionCore.Detection.QnnContext.ensure/2`), from its settings: its
+  (`VisionCore.Inference.QnnContext.ensure/2`), from its settings: its
   `:dlc_path`, its `:executable`, which reads the DLC's graph names, its
   `:cache_dir` and its board, `:runtime`.
   `{:error, {:missing_binary, executable}}` without the program.
@@ -74,7 +74,7 @@ defmodule VisionCore.Detection.QnnPort do
   @doc """
   Starts `executable` with `args` as a Port of 4-byte framed binary
   packets reporting its exit status, in QNN's environment on the board
-  `runtime` (`VisionCore.Detection.QnnContext.env/3`).
+  `runtime` (`VisionCore.Inference.QnnContext.env/3`).
   """
   @spec open(Path.t(), [String.t()], runtime()) :: {:ok, port()} | {:error, term()}
   def open(executable, args, runtime) do

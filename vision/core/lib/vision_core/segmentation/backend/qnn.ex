@@ -7,7 +7,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   the class scoring highest.
 
   The model is a DLC whose context binary is generated on the board the
-  first time and cached (`VisionCore.Detection.QnnContext`), in a task:
+  first time and cached (`VisionCore.Inference.QnnContext`), in a task:
   until the Port opens on it, `segment/3` answers `{:error, :unavailable}`
   at once, so the pipeline skips its frames instead of waiting.
 
@@ -34,10 +34,10 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       the pipeline names, which `qnn_segment` refuses a model scoring
       another number of.
     * `:qairt_dir`, `:dsp_library_path` and `:dsp_architecture` — where
-      QNN is on the board (`VisionCore.Detection.QnnPort`).
+      QNN is on the board (`VisionCore.Inference.QnnPort`).
     * `:name` (the module) — the name it registers under.
     * `:cache_dir` (`"/data/vision/qnn/<pipeline>"`) — where the context
-      binary is kept, which `VisionCore.Detection.QnnContext` keeps alone
+      binary is kept, which `VisionCore.Inference.QnnContext` keeps alone
       in it.
     * `:executable` — the program (default `priv/qnn_segment`).
     * `:infer_timeout_ms` (`2000`), a positive integer, and
@@ -46,12 +46,12 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       fails the start (`VisionCore.Inference.PortBackend.timings!/1`).
     * `:performance` (`qnn_segment`'s own, `:burst`) — the power vote the
       Port holds on the HTP; an unknown profile fails the start
-      (`VisionCore.Detection.QnnPort.performance_args!/1`).
+      (`VisionCore.Inference.QnnPort.performance_args!/1`).
   """
   @behaviour VisionCore.Segmentation.Backend
   @behaviour VisionCore.Inference.PortBackend
 
-  alias VisionCore.Detection.QnnPort
+  alias VisionCore.Inference.QnnPort
   alias VisionCore.Inference.PortBackend
   alias VisionCore.Stereo.Parameters
 

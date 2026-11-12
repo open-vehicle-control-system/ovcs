@@ -33,8 +33,8 @@ defmodule VisionCore.CameraPipeline do
   ## The stereo pair
 
   A result that needs depth (`c:result/3`) waits for the stereo pair
-  captured closest to its frame (`VisionCore.Detection.CameraDepth`) in
-  a queue (`VisionCore.Detection.DepthQueue`) while the next frames go
+  captured closest to its frame (`VisionCore.CameraDepth`) in
+  a queue (`VisionCore.CameraDepth.Queue`) while the next frames go
   to the backend, and leaves it in capture order: at most
   `:pair_wait_ms`, and not at all while the stereo pairs have stalled,
   two pair periods without one. A result that needs none, and any
@@ -58,7 +58,7 @@ defmodule VisionCore.CameraPipeline do
   use GenServer
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection.{CameraDepth, DepthQueue}
+  alias VisionCore.CameraDepth
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
@@ -83,7 +83,7 @@ defmodule VisionCore.CameraPipeline do
 
   @doc """
   The owner the warnings about the camera's depth name, and what they
-  say is lost (`VisionCore.Detection.CameraDepth.new/5`).
+  say is lost (`VisionCore.CameraDepth.new/5`).
   """
   @callback depth_wording(settings()) :: {owner :: String.t(), CameraDepth.wording()}
 
@@ -149,7 +149,7 @@ defmodule VisionCore.CameraPipeline do
       # The newest frame to infer on that came while one was in flight, with its pixels.
       held: nil,
       # Frames' results waiting for the pair captured closest to each.
-      waiting: DepthQueue.new(settings.pair_wait_ms),
+      waiting: CameraDepth.Queue.new(settings.pair_wait_ms),
       clock: Keyword.get(opts, :clock, &monotonic_ns/0)
     }
 
@@ -184,7 +184,7 @@ defmodule VisionCore.CameraPipeline do
   end
 
   def handle_cast({:camera_frame, %Frame{} = frame}, state) do
-    case DepthQueue.admit(state.waiting, state.camera) do
+    case CameraDepth.Queue.admit(state.waiting, state.camera) do
       {:ok, waiting} -> {:noreply, take_frame(frame, %{state | waiting: waiting})}
       {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
     end
@@ -213,7 +213,7 @@ defmodule VisionCore.CameraPipeline do
   defp submit_held(%{held: nil} = state), do: state
 
   defp submit_held(%{held: frame} = state) do
-    case DepthQueue.admit(state.waiting, state.camera) do
+    case CameraDepth.Queue.admit(state.waiting, state.camera) do
       {:ok, waiting} -> submit(frame, %{state | held: nil, waiting: waiting})
       {:full, waiting} -> %{state | held: nil, waiting: waiting}
     end
@@ -270,8 +270,8 @@ defmodule VisionCore.CameraPipeline do
 
     waiting =
       if needs_depth? and lens != nil and CameraDepth.projectable?(camera),
-        do: DepthQueue.put(state.waiting, {frame, result}, frame.capture_ns, now_ns),
-        else: DepthQueue.put_without_depth(state.waiting, {frame, result})
+        do: CameraDepth.Queue.put(state.waiting, {frame, result}, frame.capture_ns, now_ns),
+        else: CameraDepth.Queue.put_without_depth(state.waiting, {frame, result})
 
     # Submitted first, so the backend runs while the results are finished.
     %{state | camera: camera, waiting: waiting}
@@ -282,8 +282,8 @@ defmodule VisionCore.CameraPipeline do
   # Publishes the results whose pair is known, in capture order, and has the pipeline told when to look again.
   defp publish_settled(state, now_ns) do
     state = %{state | camera: CameraDepth.add_queued_pairs(state.camera, now_ns)}
-    {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
-    state = %{state | waiting: DepthQueue.schedule(waiting, state.camera, now_ns)}
+    {settled, waiting} = CameraDepth.Queue.settle(state.waiting, state.camera, now_ns)
+    state = %{state | waiting: CameraDepth.Queue.schedule(waiting, state.camera, now_ns)}
 
     Enum.reduce(settled, state, fn {{frame, result}, pair}, state ->
       {message, camera} = state.module.finish(frame, result, pair, state.camera, state.settings)

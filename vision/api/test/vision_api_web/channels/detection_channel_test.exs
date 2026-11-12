@@ -2,7 +2,7 @@ defmodule VisionApiWeb.DetectionChannelTest do
   use VisionApiWeb.ChannelCase, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection
+  alias VisionCore.Pipelines
   alias VisionCore.Detection.Live
   alias VisionCore.Stereo.Pair
 
@@ -61,7 +61,7 @@ defmodule VisionApiWeb.DetectionChannelTest do
       GenServer.cast(Live, {:detections, pair(), [person]})
 
       GenServer.cast(
-        Detection.server(Live, :road_signs),
+        Pipelines.server(Live, :road_signs),
         {:detections, pair(), [stop], :road_signs}
       )
 

@@ -1,4 +1,4 @@
-defmodule VisionCore.Detection.QnnContext do
+defmodule VisionCore.Inference.QnnContext do
   @moduledoc """
   The QNN context binary of a DLC, generated on the board: a context
   binary is tied to the chip and the QAIRT version, so none ships with

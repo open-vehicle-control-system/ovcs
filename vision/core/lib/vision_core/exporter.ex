@@ -312,20 +312,20 @@ defmodule VisionCore.Exporter do
   @doc """
   Whether `term` is one of the outputs an exporter can name:
   `{:detections, name}` for a valid pipeline name other than the
-  default's, `:detection` (`VisionCore.Detection.name?/1`),
+  default's, `:detection` (`VisionCore.Pipelines.name?/1`),
   `{:segmentation, name}` for a valid pipeline name, and
   `{:camera_frame, name}` for a stereo side or a valid camera name, and
   `{:camera_frame, name, output}` for a valid camera name and an atom.
   """
   @spec output?(term()) :: boolean()
   def output?({:detections, :detection}), do: false
-  def output?({:detections, name}), do: VisionCore.Detection.name?(name)
-  def output?({:segmentation, name}), do: VisionCore.Detection.name?(name)
+  def output?({:detections, name}), do: VisionCore.Pipelines.name?(name)
+  def output?({:segmentation, name}), do: VisionCore.Pipelines.name?(name)
   def output?({:camera_frame, side}) when side in [:left, :right], do: true
-  def output?({:camera_frame, name}), do: VisionCore.Detection.name?(name)
+  def output?({:camera_frame, name}), do: VisionCore.Pipelines.name?(name)
 
   def output?({:camera_frame, name, output}),
-    do: name not in [:left, :right] and VisionCore.Detection.name?(name) and is_atom(output)
+    do: name not in [:left, :right] and VisionCore.Pipelines.name?(name) and is_atom(output)
 
   def output?(term), do: is_map_key(@outputs, term)
 

@@ -28,14 +28,14 @@ defmodule VisionCore.Application do
   `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
 
   A configuration with two detectors of one name, or of two names whose
-  processes would be registered alike (`VisionCore.Detection.server/2`:
+  processes would be registered alike (`VisionCore.Pipelines.server/2`:
   `:road_2` and `:road2`), fails the start, naming them, and so does one
   with two such segmenters (`VisionCore.Segmentation`), or a detector and
   a segmenter of one name. So does one with two cameras of one name
   (`VisionCore.Camera.Unit`), or a camera named as a detection or a
   segmentation pipeline, both publishing under `<prefix>/<name>/`. So
   does a detector or a segmenter whose `:name` is not a valid pipeline
-  name, or a segmenter without one (`VisionCore.Detection.name!/2`).
+  name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
@@ -54,7 +54,7 @@ defmodule VisionCore.Application do
   """
   use Application
 
-  alias VisionCore.{Detection, Segmentation}
+  alias VisionCore.{Detection, Pipelines, Segmentation}
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
@@ -174,7 +174,7 @@ defmodule VisionCore.Application do
   defp check_unit_names!(children, supervisor, units) do
     children
     |> pipeline_names(supervisor)
-    |> Enum.group_by(&Detection.server(supervisor, &1))
+    |> Enum.group_by(&Pipelines.server(supervisor, &1))
     |> Enum.find(fn {_server, names} -> length(names) > 1 end)
     |> case do
       nil ->

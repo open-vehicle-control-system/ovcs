@@ -9,7 +9,7 @@ defmodule VisionCore.Detection.Supervisor do
 
   `:name` (`:detection`) names the pipeline (`VisionCore.Detection`): the
   unit, its backend, pipeline and `Live` register under it
-  (`VisionCore.Detection.server/2`), so a unit runs several pipelines,
+  (`VisionCore.Pipelines.server/2`), so a unit runs several pipelines,
   each under its own supervisor, with its own backend and model. A name
   that is not a valid pipeline name leaves the unit down.
 
@@ -52,7 +52,7 @@ defmodule VisionCore.Detection.Supervisor do
   """
   use Supervisor
 
-  alias VisionCore.{Detection, Unit}
+  alias VisionCore.{Detection, Pipelines, Unit}
   alias VisionCore.Detection.{Live, Pipeline}
   alias VisionCore.Detection.Backend.Hailo
 
@@ -68,7 +68,7 @@ defmodule VisionCore.Detection.Supervisor do
   """
   def start_link(opts) do
     name = Detection.pipeline_name(opts)
-    server = Detection.server(__MODULE__, name)
+    server = Pipelines.server(__MODULE__, name)
 
     Unit.start_contained(__MODULE__, opts, [name: server], "#{name}")
   end
@@ -77,8 +77,8 @@ defmodule VisionCore.Detection.Supervisor do
   def init(opts) do
     {backend, backend_opts} = split_backend_options(opts)
     Unit.refuse_unknown!(opts, options(backend), refusal_hints())
-    name = opts |> Detection.pipeline_name() |> Detection.name!()
-    backend_server = Detection.server(backend, name)
+    name = opts |> Detection.pipeline_name() |> Pipelines.name!()
+    backend_server = Pipelines.server(backend, name)
 
     children =
       device_claim(backend, name) ++
@@ -114,7 +114,7 @@ defmodule VisionCore.Detection.Supervisor do
   def outputs(config) do
     for opts <- units_options(config) do
       name = Detection.pipeline_name(opts)
-      {Detection.output(name), {:detections, Detection.server(Pipeline, name)}}
+      {Detection.output(name), {:detections, Pipelines.server(Pipeline, name)}}
     end
   end
 
@@ -159,7 +159,7 @@ defmodule VisionCore.Detection.Supervisor do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)
       name = Detection.pipeline_name(opts)
-      {name, backend, Detection.server(backend, name)}
+      {name, backend, Pipelines.server(backend, name)}
     end
   end
 

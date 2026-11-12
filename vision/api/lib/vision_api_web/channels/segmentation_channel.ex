@@ -29,7 +29,7 @@ defmodule VisionApiWeb.SegmentationChannel do
   use VisionApiWeb, {:channel, log_join: :debug, log_handle_in: false}
 
   alias VisionApiWeb.{ConfiguredPipeline, SourceMonitor}
-  alias VisionCore.Detection
+  alias VisionCore.Pipelines
   alias VisionCore.Segmentation.Live
 
   @impl Phoenix.Channel
@@ -38,7 +38,7 @@ defmodule VisionApiWeb.SegmentationChannel do
       {:ok, pipeline} ->
         socket
         |> assign(awaiting_ack: false, waiting: nil)
-        |> SourceMonitor.join(Detection.server(Live, pipeline), fn -> subscribe(pipeline) end)
+        |> SourceMonitor.join(Pipelines.server(Live, pipeline), fn -> subscribe(pipeline) end)
 
       :error ->
         SourceMonitor.unavailable()

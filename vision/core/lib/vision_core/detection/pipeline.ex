@@ -6,7 +6,7 @@ defmodule VisionCore.Detection.Pipeline do
   `VisionCore.Detection.Backend`, fuses the boxes it returns with that
   pair's depth map, and publishes the result through
   `VisionCore.Outputs` under `{:detections, server}`, `server` being the
-  name it is registered under (`VisionCore.Detection.server/2`). The
+  name it is registered under (`VisionCore.Pipelines.server/2`). The
   default pipeline, `:detection`, publishes `{:detections, pair,
   detections}` under `{:detections, VisionCore.Detection.Pipeline}`; a
   named one `{:detections, pair, detections, name}`.
@@ -113,7 +113,7 @@ defmodule VisionCore.Detection.Pipeline do
   ## Options
 
     * `:name` (`:detection`) — the pipeline's name: it registers as
-      `VisionCore.Detection.server(VisionCore.Detection.Pipeline, name)`
+      `VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name)`
       and declares its parameter groups as `<name>.*`.
     * `:backend` (`VisionCore.Detection.Backend.Hailo`) — the detection
       backend module.
@@ -147,7 +147,7 @@ defmodule VisionCore.Detection.Pipeline do
   `:max_detections` and `:pair_wait_ms` from 0 on, and `:min_score` is a
   number: another value fails the start (`VisionCore.Options`).
   """
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Pipelines}
   alias VisionCore.Detection.{CameraPipeline, StereoPipeline}
   alias VisionCore.{Options, Parameters}
 
@@ -215,7 +215,7 @@ defmodule VisionCore.Detection.Pipeline do
   def child_spec(opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
 
   def start_link(opts) do
-    registration = [name: Detection.server(__MODULE__, Detection.pipeline_name(opts))]
+    registration = [name: Pipelines.server(__MODULE__, Detection.pipeline_name(opts))]
 
     case Keyword.get(opts, :source, :stereo) do
       camera when is_tuple(camera) -> CameraPipeline.start_link(opts, registration)
@@ -413,7 +413,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   @doc "The `VisionCore.Outputs` key the pipeline publishes under."
   @spec output_key(map()) :: VisionCore.Outputs.key()
-  def output_key(settings), do: {:detections, Detection.server(__MODULE__, settings.name)}
+  def output_key(settings), do: {:detections, Pipelines.server(__MODULE__, settings.name)}
 
   @doc "The message the pipeline publishes for the `detections` found on `source`."
   @spec message(map(), VisionCore.Stereo.Pair.t() | VisionCore.Camera.Frame.t(), [map()]) ::

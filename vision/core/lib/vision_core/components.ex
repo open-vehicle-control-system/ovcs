@@ -72,7 +72,7 @@ defmodule VisionCore.Components do
       driver's (`VisionCore.Camera.Unit`).
   """
 
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Pipelines}
 
   @doc """
   Returns the child specs to start `component` with `opts`. Raises on
@@ -90,9 +90,9 @@ defmodule VisionCore.Components do
 
   def start(:detector, opts) do
     id =
-      Detection.server(
+      Pipelines.server(
         Detection.Supervisor,
-        opts |> Detection.pipeline_name() |> Detection.name!()
+        opts |> Detection.pipeline_name() |> Pipelines.name!()
       )
 
     # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
@@ -104,7 +104,7 @@ defmodule VisionCore.Components do
   end
 
   def start(:segmenter, opts) do
-    id = Detection.server(VisionCore.Segmentation.Supervisor, VisionCore.Segmentation.name!(opts))
+    id = Pipelines.server(VisionCore.Segmentation.Supervisor, VisionCore.Segmentation.name!(opts))
 
     # Its own budget, and not restarted once it gives up, as a detector.
     [

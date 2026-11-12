@@ -3,7 +3,7 @@ defmodule VisionApiWeb.SegmentationChannelTest do
 
   alias Phoenix.Socket.Message
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection
+  alias VisionCore.Pipelines
   alias VisionCore.Segmentation.Live
 
   @moduletag :capture_log
@@ -56,7 +56,7 @@ defmodule VisionApiWeb.SegmentationChannelTest do
   end
 
   defp publish(name \\ :road, data),
-    do: GenServer.cast(Detection.server(Live, name), result(name, data))
+    do: GenServer.cast(Pipelines.server(Live, name), result(name, data))
 
   defp grid(<<_header::binary-16, data::binary>>), do: data
 
@@ -91,11 +91,11 @@ defmodule VisionApiWeb.SegmentationChannelTest do
     {:ok, _reply, socket} = join("segmentation:road")
     assert_push "classes", _classes
     monitor = Process.monitor(socket.channel_pid)
-    live = GenServer.whereis(Detection.server(Live, :road))
+    live = GenServer.whereis(Pipelines.server(Live, :road))
 
     Process.exit(live, :kill)
     assert_receive {:DOWN, ^monitor, :process, _pid, :source_restarted}, 500
-    :ok = wait_for_restart(Detection.server(Live, :road), live)
+    :ok = wait_for_restart(Pipelines.server(Live, :road), live)
 
     {:ok, _reply, _socket} = join("segmentation:road")
     assert_push "classes", %{roadClasses: ["road", "terrain"]}

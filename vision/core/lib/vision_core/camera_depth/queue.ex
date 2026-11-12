@@ -1,4 +1,4 @@
-defmodule VisionCore.Detection.DepthQueue do
+defmodule VisionCore.CameraDepth.Queue do
   @moduledoc """
   The results of a camera's frames waiting for the stereo pair to take
   their depth from, oldest first, which a pipeline on a camera of its
@@ -7,10 +7,10 @@ defmodule VisionCore.Detection.DepthQueue do
   going to the model while the stereo pipeline, slower, catches up.
 
   `settle/3` gives back, in the order they were put, the results whose
-  pair is known (`VisionCore.Detection.CameraDepth.match/3`): a result
+  pair is known (`VisionCore.CameraDepth.match/3`): a result
   waits for its pair at most `pair_wait_ms` from when it is put, and
   not at all while the stereo pairs have stalled
-  (`VisionCore.Detection.CameraDepth.stalled?/2`), then takes the pairs
+  (`VisionCore.CameraDepth.stalled?/2`), then takes the pairs
   there are. A result that needs no depth leaves once the results put
   before it have. `schedule/3` has the owner told when to settle again
   without a new pair.
@@ -21,7 +21,7 @@ defmodule VisionCore.Detection.DepthQueue do
   """
   require Logger
 
-  alias VisionCore.Detection.CameraDepth
+  alias VisionCore.CameraDepth
   alias VisionCore.Stereo.Pair
 
   @ns_per_ms 1_000_000

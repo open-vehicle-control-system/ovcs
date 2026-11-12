@@ -6,7 +6,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   The model is a DLC. Its context binary, tied to the chip and the QAIRT
   version, is generated on the board the first time and cached
-  (`VisionCore.Detection.QnnContext`), in a task: until the Port opens
+  (`VisionCore.Inference.QnnContext`), in a task: until the Port opens
   on it, `detect/3` answers `{:error, :unavailable}` at once, so neither
   the vision core's start nor the pipeline's frames wait for a first
   boot's generation.
@@ -28,13 +28,13 @@ defmodule VisionCore.Detection.Backend.Qnn do
     * `:dlc_path` — the model (required).
     * `:score_threshold` (`0.4`) — the lowest score `qnn_detect` reports.
     * `:qairt_dir`, `:dsp_library_path` and `:dsp_architecture` — where
-      QNN is on the board (`VisionCore.Detection.QnnPort`).
+      QNN is on the board (`VisionCore.Inference.QnnPort`).
     * `:name` (the module) — the name it registers under.
     * `:pipeline` (`:detection`) — the detection pipeline whose inference
       step it declares.
     * `:cache_dir` (`"/data/vision/qnn"`, `"/data/vision/qnn/<pipeline>"`
       for a pipeline other than `:detection`) — where the context binary
-      is kept. `VisionCore.Detection.QnnContext` removes every other
+      is kept. `VisionCore.Inference.QnnContext` removes every other
       binary in it, so two pipelines never share one.
     * `:executable` — the program (default `priv/qnn_detect`).
     * `:infer_timeout_ms` (`2000`), a positive integer, and
@@ -43,13 +43,14 @@ defmodule VisionCore.Detection.Backend.Qnn do
       fails the start (`VisionCore.Inference.PortBackend.timings!/1`).
     * `:performance` (`qnn_detect`'s own, `:burst`) — the power vote the
       Port holds on the HTP; an unknown profile fails the start
-      (`VisionCore.Detection.QnnPort.performance_args!/1`).
+      (`VisionCore.Inference.QnnPort.performance_args!/1`).
   """
   @behaviour VisionCore.Detection.Backend
   @behaviour VisionCore.Inference.PortBackend
 
   alias VisionCore.Detection.Backend.Wire
-  alias VisionCore.Detection.{Pipeline, QnnPort}
+  alias VisionCore.Detection.Pipeline
+  alias VisionCore.Inference.QnnPort
   alias VisionCore.Inference.PortBackend
   alias VisionCore.Stereo.Parameters
 

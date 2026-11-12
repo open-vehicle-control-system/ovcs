@@ -1,7 +1,7 @@
-defmodule VisionCore.Detection.QnnContextTest do
+defmodule VisionCore.Inference.QnnContextTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Detection.QnnContext
+  alias VisionCore.Inference.QnnContext
 
   @moduletag :tmp_dir
 

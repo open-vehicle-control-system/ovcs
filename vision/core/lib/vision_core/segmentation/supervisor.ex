@@ -8,7 +8,7 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   `:name` (required) names the pipeline (`VisionCore.Segmentation`): the
   unit, its backend, pipeline and `Live` register under it
-  (`VisionCore.Detection.server/2`). Started from a configuration, a
+  (`VisionCore.Pipelines.server/2`). Started from a configuration, a
   segmenter without a valid name fails the vision core's start, as a
   detector with an invalid one does (`VisionCore.Application`); started
   directly, a unit without one is left down.
@@ -34,7 +34,7 @@ defmodule VisionCore.Segmentation.Supervisor do
   """
   use Supervisor
 
-  alias VisionCore.{Detection, Segmentation, Unit}
+  alias VisionCore.{Pipelines, Segmentation, Unit}
   alias VisionCore.Segmentation.{Live, Pipeline}
 
   @default_backend Segmentation.Backend.Qnn
@@ -52,7 +52,7 @@ defmodule VisionCore.Segmentation.Supervisor do
     name = Keyword.get(opts, :name)
 
     registration =
-      if Detection.name?(name), do: [name: Detection.server(__MODULE__, name)], else: []
+      if Pipelines.name?(name), do: [name: Pipelines.server(__MODULE__, name)], else: []
 
     Unit.start_contained(__MODULE__, opts, registration, "#{name}")
   end
@@ -62,7 +62,7 @@ defmodule VisionCore.Segmentation.Supervisor do
     {backend, backend_opts} = split_backend_options(opts)
     Unit.refuse_unknown!(opts, options(backend), %{topic_prefix: @topic_prefix_hint})
     name = Segmentation.name!(opts)
-    backend_server = Detection.server(backend, name)
+    backend_server = Pipelines.server(backend, name)
     classes = length(Keyword.get(opts, :labels, Segmentation.labels()))
 
     children = [
@@ -90,7 +90,7 @@ defmodule VisionCore.Segmentation.Supervisor do
   def outputs(config) do
     for opts <- units_options(config) do
       name = Keyword.fetch!(opts, :name)
-      {Segmentation.output(name), {:segmentation, Detection.server(Pipeline, name)}}
+      {Segmentation.output(name), {:segmentation, Pipelines.server(Pipeline, name)}}
     end
   end
 
@@ -148,7 +148,7 @@ defmodule VisionCore.Segmentation.Supervisor do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)
       name = Keyword.fetch!(opts, :name)
-      {name, backend, Detection.server(backend, name)}
+      {name, backend, Pipelines.server(backend, name)}
     end
   end
 

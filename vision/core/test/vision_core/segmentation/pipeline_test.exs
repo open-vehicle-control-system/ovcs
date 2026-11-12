@@ -764,7 +764,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
   test "two pipelines on one camera publish apart, each its own backend's labels", %{tmp_dir: dir} do
     for {name, data} <- [road: <<0>>, lane: <<1>>] do
-      server = VisionCore.Detection.server(Stub, name)
+      server = VisionCore.Pipelines.server(Stub, name)
       labels = %{width: 1, height: 1, data: data}
 
       start_supervised!(

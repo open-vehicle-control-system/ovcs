@@ -5,7 +5,7 @@ defmodule VisionCore.Camera.Unit do
   (`VisionCore.Components`) starts with its options.
 
   `:name` names the camera. It follows the rule of a detection
-  pipeline's name (`VisionCore.Detection.name?/1`), whose reserved names
+  pipeline's name (`VisionCore.Pipelines.name?/1`), whose reserved names
   include `:left` and `:right`, so no camera takes a stereo side's name;
   and no camera shares a detection pipeline's name, since both publish
   under `<prefix>/<name>/` (`VisionCore.Application` refuses both, and
@@ -52,7 +52,7 @@ defmodule VisionCore.Camera.Unit do
   use Supervisor
 
   alias VisionCore.Camera.Output
-  alias VisionCore.Detection
+  alias VisionCore.Pipelines
 
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
@@ -80,7 +80,7 @@ defmodule VisionCore.Camera.Unit do
   def name!(opts) do
     name =
       case Keyword.fetch(opts, :name) do
-        {:ok, name} -> Detection.name!(name, "a camera")
+        {:ok, name} -> Pipelines.name!(name, "a camera")
         :error -> raise ArgumentError, "a :camera component needs a :name"
       end
 
@@ -137,7 +137,7 @@ defmodule VisionCore.Camera.Unit do
     for {:camera, opts} <- components,
         is_list(opts),
         name = Keyword.get(opts, :name),
-        Detection.name?(name),
+        Pipelines.name?(name),
         driver = Keyword.get(opts, :driver),
         camera_driver?(driver),
         do: {name, driver, driver.name_for(Atom.to_string(name))}

@@ -271,7 +271,7 @@ defmodule VisionCore.Detection.FusionTest do
 
   describe "projected_depths/3" do
     alias VisionCore.Camera.{Frame, Pose}
-    alias VisionCore.Detection.Reprojection
+    alias VisionCore.CameraDepth.Reprojection
     alias VisionCore.Ros2.CameraCalibration
     alias VisionCore.Stereo.Pair
 
@@ -443,7 +443,7 @@ defmodule VisionCore.Detection.FusionTest do
       assert Fusion.unproject_camera(
                box,
                2.0,
-               VisionCore.Detection.Reprojection.lens(calibration)
+               VisionCore.CameraDepth.Reprojection.lens(calibration)
              ) ==
                Fusion.unproject_camera(box, 2.0, calibration)
     end

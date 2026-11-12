@@ -7,7 +7,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   seen in the band into road and off-road by the class of the cell they
   land in, and publishes the result through `VisionCore.Outputs` under
   `{:segmentation, server}`, `server` being the name it is registered
-  under (`VisionCore.Detection.server/2`):
+  under (`VisionCore.Pipelines.server/2`):
 
       {:segmentation, name, frame, labels, clouds}
 
@@ -27,7 +27,7 @@ defmodule VisionCore.Segmentation.Pipeline do
       the points' geometry belongs to. `nil` without a matched pair, when the
       camera's calibration or pose is missing, or when its calibration
       cannot be projected at the frame's size, such as one of another
-      aspect ratio (`VisionCore.Detection.CameraDepth.lens/2`).
+      aspect ratio (`VisionCore.CameraDepth.lens/2`).
 
   ## The band
 
@@ -50,9 +50,9 @@ defmodule VisionCore.Segmentation.Pipeline do
   ## The stereo pair
 
   The frame is matched with the stereo pair captured closest to it
-  (`VisionCore.Detection.CameraDepth`, as a detection pipeline on a
+  (`VisionCore.CameraDepth`, as a detection pipeline on a
   camera does), once its label image is back: the label images wait for
-  their pairs in a queue (`VisionCore.Detection.DepthQueue`) while the
+  their pairs in a queue (`VisionCore.CameraDepth.Queue`) while the
   next frames go to the backend, and are published in capture order; each
   waits at most `:pair_wait_ms`, and not at all while the stereo pairs
   have stalled, two pair periods without one. While 32 label images wait,
@@ -60,7 +60,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   The pair's depth is projected into the frame through the camera's
   calibration and pose
-  (`VisionCore.Detection.Reprojection.project_with_origin/4`, every
+  (`VisionCore.CameraDepth.Reprojection.project_with_origin/4`, every
   `:reprojection_stride`-th pixel and row). A camera without a
   calibration or a pose, or whose calibration cannot be projected at the
   frame's size, publishes its label images without clouds, without
@@ -82,7 +82,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   ## Options
 
     * `:name` (required) — the pipeline's name: it registers as
-      `VisionCore.Detection.server(VisionCore.Segmentation.Pipeline, name)`
+      `VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, name)`
       and declares its parameter groups as `<name>.*`.
     * `:source` (required) — `{:camera, name}`, the camera of its own
       `name` (`VisionCore.Camera.Unit`), or `{:camera, name, output}`,
@@ -112,8 +112,9 @@ defmodule VisionCore.Segmentation.Pipeline do
   require Logger
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection
-  alias VisionCore.Detection.{CameraDepth, Reprojection}
+  alias VisionCore.Pipelines
+  alias VisionCore.CameraDepth
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.{CameraPipeline, Options}
   alias VisionCore.Stereo.Pair
 
@@ -137,7 +138,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     registration =
       case Keyword.get(opts, :name) do
         nil -> []
-        name -> [name: Detection.server(__MODULE__, name)]
+        name -> [name: Pipelines.server(__MODULE__, name)]
       end
 
     CameraPipeline.start_link(__MODULE__, opts, registration)
@@ -203,7 +204,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   def depth_wording(settings), do: {"segmentation pipeline #{settings.name}", @wording}
 
   @impl CameraPipeline
-  def output_key(settings), do: {:segmentation, Detection.server(__MODULE__, settings.name)}
+  def output_key(settings), do: {:segmentation, Pipelines.server(__MODULE__, settings.name)}
 
   defp band_top!(band_top)
        when is_nil(band_top) or (is_number(band_top) and band_top >= 0 and band_top <= 1),

@@ -1,10 +1,10 @@
-defmodule VisionCore.Detection.CameraDepthTest do
+defmodule VisionCore.CameraDepthTest do
   use ExUnit.Case, async: true
 
   import ExUnit.CaptureLog
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Detection.CameraDepth
+  alias VisionCore.CameraDepth
   alias VisionCore.Stereo.Pair
 
   @moduletag :capture_log
@@ -18,7 +18,7 @@ defmodule VisionCore.Detection.CameraDepthTest do
     lens: "project"
   }
 
-  @calibration Path.expand("../../support/calibration", __DIR__)
+  @calibration Path.expand("../support/calibration", __DIR__)
 
   # A camera with a calibration and a pose, or with `files` of them only.
   defp depth(pair_wait_ms \\ 500, files \\ [:calibration, :pose]) do

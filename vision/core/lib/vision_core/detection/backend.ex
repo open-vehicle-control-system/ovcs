@@ -73,7 +73,7 @@ defmodule VisionCore.Detection.Backend do
 
   A backend registers under its `:name` option, the module by default;
   `VisionCore.Detection.Supervisor` gives each pipeline's backend its own
-  (`VisionCore.Detection.server/2`), and `detect/3`, `available?/1` and
+  (`VisionCore.Pipelines.server/2`), and `detect/3`, `available?/1` and
   `inference_times/1` take it.
   """
 

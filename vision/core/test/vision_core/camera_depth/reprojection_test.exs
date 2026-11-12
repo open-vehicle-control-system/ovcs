@@ -1,8 +1,8 @@
-defmodule VisionCore.Detection.ReprojectionTest do
+defmodule VisionCore.CameraDepth.ReprojectionTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Camera.{Frame, Pose}
-  alias VisionCore.Detection.Reprojection
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Pair
 
