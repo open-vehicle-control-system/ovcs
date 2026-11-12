@@ -63,9 +63,13 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 
 ## Measured on an Arduino VENTUNO Q
 
-The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623. Its Raspberry Pi HQ Camera (IMX477), `:center`, runs in the 2028 × 1520 sensor mode. Its full image stays on the unit (`send: false`), sent as a JPEG (`view_jpeg`) and averaged 2 × 2 for the models (`inference`).
+The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623. Its Raspberry Pi HQ Camera (IMX477), `:center`, runs in the 2028 × 1520 sensor mode, with three outputs:
 
-YOLOX detection (`:objects`) and FFNet-122NS-LowRes segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile. These are measurements on one unit, not guarantees.
+- `view`, the full image, kept on the unit (`send: false`);
+- `view_jpeg`, that image as a JPEG;
+- `inference`, that image averaged 2 × 2, for the models.
+
+YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile. These are measurements on one unit, not guarantees.
 
 | Figure | Measured |
 |---|---|
@@ -75,18 +79,20 @@ YOLOX detection (`:objects`) and FFNet-122NS-LowRes segmentation (`:scene`) run 
 | `:center`'s conversion, the 2 × 2 average taken in it, 3 threads | 21.9 ms a frame |
 | `:center`'s JPEG encode, 2028 × 1520 at quality 80, its own thread | 18.2 ms a frame |
 | `:center`'s write to the Port, `view_jpeg` and `inference` | 6.5 ms a frame |
-| YOLOX on the HTP (`npu.pipelines.objects.inferenceMs`) | 2.1 ms |
-| FFNet-122NS-LowRes on the HTP | 5.6 ms |
+| YOLOX on the NPU (`npu.pipelines.objects.inferenceMs`) | 2.1 ms |
+| FFNet-122NS-LowRes on the NPU | 5.6 ms |
 | The NPU's load, both models on every frame (`npu.loadPercent`) | about 23% |
 | One detection request in `qnn_detect`: read, letterbox on 3 threads, `graphExecute` | about 1.4, 4.6 and 4.3 ms |
 | One band in `qnn_segment`: read, resize on 3 threads, `graphExecute`, argmax | about 1.1, 5.4, 7.0 and 1.1 ms |
 | CPU, all cores, a dashboard open with previews at 30 Hz | about 65% |
 
-The QNN Ports' performance profile makes the largest difference. With no power vote and the context binaries built at QNN's default optimisation level, YOLOX took 8.7 ms on the HTP and FFNet 26.9 ms. That is too much for both models on every frame at 30 Hz. Qualcomm AI Hub's figures for the same models on this board, 2.3 and 6.0 ms, are close to the `burst` ones.
+The QNN Ports' performance profile makes the largest difference. With no power vote and the context binaries built at QNN's default optimisation level, YOLOX took 8.7 ms on the NPU and FFNet 26.9 ms. That is too much for both models on every frame at 30 Hz. Qualcomm AI Hub's figures for the same models on this board, 2.3 and 6.0 ms, are close to the `burst` ones.
 
-On the `:center` camera, sending its 9.2 MB full image to the core at every frame took the writer 24 ms a frame. It slowed the conversion to 34.5 ms, past the 33.3 ms of a frame, and the camera fell to about 27 frames a second. Averaging the half-size image in a second pass after the conversion cost 4.9 ms more than taking it during the conversion. Above 3 conversion threads, the conversion slows down on this unit.
+On the `:center` camera, sending its 9.2 MB full image to the core at every frame took the writer 24 ms a frame. It slowed the conversion to 34.5 ms, past the 33.3 ms of a frame, and the camera fell to about 27 frames a second.
 
-`jpeg_codec` in the core took 43 to 91 ms to encode a 2028 × 1520 frame with libjpeg-turbo, including the frame's 9.2 MB through the Port. The pure-Rust encoder it replaced took 85 to 184 ms, measured the same way. Encoded by `v4l2_capture`, the frame takes 18.2 ms.
+Averaging the half-size image in a second pass after the conversion cost 4.9 ms more than taking it during the conversion. Above 3 conversion threads, the conversion slows down on this unit.
+
+`jpeg_codec` in the core took 43 to 91 ms to encode a 2028 × 1520 frame with libjpeg-turbo. That includes the frame's 9.2 MB through the Port. The pure-Rust encoder it replaced took 85 to 184 ms, measured the same way. Encoded by `v4l2_capture`, the frame takes 18.2 ms.
 
 ### Measuring a change on the board
 
@@ -126,7 +132,7 @@ Each setting trades rate against something else. The matching dominates, and its
 | `:raw_image_max_hz`, the preview's `:max_hz` | the ROS 2 exporter's `stereo:` options, `VisionCore.Config` | Fewer JPEG encodes for the raw image topics and the dashboard previews. |
 | `jpeg: [ports: n]` | `VisionCore.Config` | How many JPEG encodes for the previews and the exporters run at once, 3 by default. More keep a slow encode from holding the others back, each taking a core while it encodes. |
 | A camera's `outputs:` | the `:camera` component | Each output costs its conversion or average and its write to the Port at every frame. Give the models an output at their scale (`from:` an average), and the previews and ROS 2 a `format: :jpeg` output. Keep a large image that no consumer takes off the Port with `send: false`. |
-| `performance:` | each QNN backend | `burst`, the default, holds the HTP at its highest voltage corner: the models' fastest times, at more power and heat; `sustained_high_performance` and `balanced` trade time for both. |
+| `performance:` | each QNN backend | `burst`, the default, holds the NPU at its highest voltage corner: the models' fastest times, at more power and heat. `sustained_high_performance` and `balanced` trade time for both. |
 | Camera frame rate | `:fps` | Pairs the stages cannot take are dropped. On the Pi 5, 24 frames a second instead of 30 did not raise the depth rate. |
 
 The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute. On a busy board, single readings vary by about 15 %.

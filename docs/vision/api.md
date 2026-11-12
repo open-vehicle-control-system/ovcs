@@ -509,7 +509,9 @@ The channel pushes each result as a `segmentation` event whose payload is binary
 | 12–15 | The grid's width and height, in cells |
 | 16– | One class id a cell, one byte each, row by row |
 
-The grid is stretched over the band. Each cell is the band's width over the grid's width wide, and the band's height over the grid's height high. On every join, a rejoin included, the channel pushes a `classes` event before any grid. It holds `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
+The grid is stretched over the band. Each cell is the band's width over the grid's width wide, and the band's height over the grid's height high.
+
+On every join, a rejoin included, the channel pushes a `classes` event before any grid. It holds `labels`, the class names indexed by class id, and `roadClasses`, those the pipeline counts as road.
 
 ```javascript
 const scene = socket.channel('segmentation:scene')

@@ -1,6 +1,6 @@
 ---
 title: Vision unit
-description: The vision role, a Pi 5, OKdo Nano C100 or Arduino VENTUNO Q that turns cameras into depth, detection and road segmentation, and how a vehicle opts in.
+description: Run depth, detection and road segmentation from cameras on a Pi 5, OKdo Nano C100 or Arduino VENTUNO Q, and opt your vehicle in.
 ---
 
 The vision unit is an optional fourth role next to `vms`, `infotainment` and the bridges. It runs on a Raspberry Pi 5, an OKdo Nano C100 or an Arduino VENTUNO Q, where it:
@@ -14,7 +14,7 @@ It has no CAN controller and does not touch the `ovcs` bus. It reaches the vehic
 A vehicle without cameras omits the role and nothing is built for it. Among the reference vehicles:
 
 - The OVCS Mini reference vehicle runs one on a Raspberry Pi 5 with two Camera Module 3 and a Hailo-8 (`OvcsMini.Vision.Composer`).
-- The OVCS1 reference vehicle runs one on an Arduino VENTUNO Q (`Ovcs1.Vision.Composer`). Two Global Shutter Cameras give depth, and an HQ Camera in colour, `:center`, feeds detection and road segmentation.
+- The OVCS1 reference vehicle runs one on an Arduino VENTUNO Q with two Global Shutter Cameras and an HQ Camera (`Ovcs1.Vision.Composer`).
 
 ## Layers
 
@@ -25,7 +25,7 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 | Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
 | API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5`, `okdo_c100` and `arduino_ventuno_q` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. It previews each camera of its own too. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app showing the unit's status, the left, right and depth previews, and the unit as its pipeline with each box's parameters. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, road segmentation, JPEG and stereo matching on the CPU. |
 
 ## Opting in
@@ -75,11 +75,13 @@ The OKdo Nano C100 carries a Jetson Nano module: a GPU, two CSI camera ports and
 
 The Arduino VENTUNO Q carries a Qualcomm QCS8300: 4 Cortex-A78C and 4 Cortex-A55 cores, an Adreno 623 GPU, a Hexagon NPU (HTP v75) and 16 GB of memory. Its CAMSS camera subsystem has three CSI connectors, Camera 0, 1 and 2. Its system is [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q). The stereo stages run on the GPU, as on the C100 ([On the VENTUNO Q's GPU](./compute.md#on-the-ventuno-qs-gpu)), and detection on the NPU.
 
-**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options. `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl. At boot it waits up to 30 s for the media graph and the sensors. `v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors. A camera of its own also takes the IMX477, in packed 12-bit Bayer (pRCC) ([A camera of its own](./cameras.md)).
+**Cameras.** `/boot/cameras.cfg`, in your vehicle's `priv/firmware/vision/rootfs_overlay/`, names the sensor on each connector. `VisionCore.Camera.V4L2` takes the left and right cameras' connectors as `left_csiphy:` and `right_csiphy:` among the `:left` camera's options. `VisionCore.Camera.Camss` routes each one's sensor through CSID and VFE with media-ctl. At boot it waits up to 30 s for the media graph and the sensors.
+
+`v4l2_capture` captures through V4L2's multiplanar API in packed 10-bit Bayer (pRAA), and knows the IMX708 and IMX296 sensors. A camera of its own also takes the IMX477 ([A camera of its own](./cameras.md)).
 
 **Detection and segmentation.** The `:qnn_detector` and `:qnn_segmenter` components run their models on the NPU through QNN ([On the VENTUNO Q's NPU](./detection.md#on-the-ventuno-qs-npu), [Road segmentation](./segmentation.md)).
 
-QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too. The `qnn` crate's bindings, which `qnn_detect` and `qnn_segment` share, are generated at build time from the cached QAIRT archive. Nothing derived from them is committed.
+QAIRT is not in the repository: its licence allows shipping it only inside a firmware. `mise run fetch-qairt` downloads it into the firmware's rootfs overlay, and the image carries it as `/opt/qairt`. QNN's headers are proprietary too. The QNN Ports' bindings are generated at build time from the cached QAIRT archive. Nothing derived from them is committed.
 
 To build a unit for this board, run from the repository root:
 
@@ -96,9 +98,9 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths, which keeps depth at the cameras' 30 pairs a second. The pair computes depth only.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths. Depth keeps up with the cameras' 30 pairs a second. The pair computes depth only.
 
-A Raspberry Pi HQ Camera (IMX477) on Camera 2, `:center`, is a camera of its own. Detection and road segmentation run on it ([A camera of its own](./cameras.md#worked-example-the-ovcs1-reference-vehicle)).
+Detection and road segmentation run on `:center`, a Raspberry Pi HQ Camera (IMX477) on Camera 2 ([A camera of its own](./cameras.md#worked-example-the-ovcs1-reference-vehicle)).
 
 The stereo pair's calibration, `priv/calibration/stereo_left.yaml` and `stereo_right.yaml`, comes from `cameracalibrator`. To replace it, calibrate the pair ([Calibration](./basics.md#calibration)), then do one of two things:
 
@@ -119,11 +121,11 @@ The stereo stages turn each pair of camera frames into a disparity, then a depth
 
 ## Cameras and pipelines
 
-A camera outside the stereo pair, and the pipelines that run on its image, have guides of their own:
+A camera outside the stereo pair, and the pipelines on its image:
 
-- [A camera of its own](./cameras.md): the `:camera` component, its outputs, its calibration and how to measure its pose.
-- [Object detection](./detection.md): named detection pipelines, detection on a camera of its own, the accelerator's load and the models you may ship.
-- [Road segmentation](./segmentation.md): the road and off-road clouds from a camera of its own, and the model's licence.
+- [A camera of its own](./cameras.md): the `:camera` component, its outputs, calibration and pose.
+- [Object detection](./detection.md): detection pipelines, the accelerator's load and the models you may ship.
+- [Road segmentation](./segmentation.md): road and off-road clouds from a camera of its own.
 
 ## Build, burn, upload
 
@@ -164,7 +166,7 @@ The vision parameters are the unit's own settings, grouped by component and pipe
 
 Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
 
-The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. Each detection pipeline is its input, inference, filtering and placement: `<name>.input`, `<name>.inference`, `<name>.filtering` and `<name>.placement` for a named one, `detection.*` for the default. The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
+The dashboard shows each step of the unit's pipelines as a box. The stereo pipeline is the cameras, then each stage your vehicle composes, in order. Each detection pipeline is its input, inference, filtering and placement ([Several pipelines](./detection.md#several-pipelines)). The selected box stays in the URL (`?box=stereo.disparity`), so a link opens it again.
 
 A box's panel lists its parameters with their constraints and defaults:
 

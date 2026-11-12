@@ -3,7 +3,7 @@ title: Object detection
 description: Run one or more named detection pipelines on the stereo pair or a camera of its own, read the accelerator's load, and choose a model.
 ---
 
-A detection pipeline finds objects in a camera's image and places them in 3D with the stereo depth. This page shows how to run several pipelines, detect on a camera of its own, and choose a model you may ship. You need a board with an accelerator: the Hailo-8 on a Raspberry Pi 5, or the Arduino VENTUNO Q's NPU. The table in [The OKdo Nano C100](./README.md#the-okdo-nano-c100) compares the boards.
+Find objects in a camera's image and place them in 3D with the stereo depth. Run several detection pipelines, detect on a camera of its own, and choose a model you may ship. You need a board with an accelerator: the Hailo-8 on a Raspberry Pi 5, or the Arduino VENTUNO Q's NPU. The table in [The OKdo Nano C100](./README.md#the-okdo-nano-c100) compares the boards.
 
 ## Detector components
 
@@ -12,17 +12,17 @@ Each detector component runs the model its option names:
 - `:hailo_detector` runs the HEF its `:hef_path` names, compiled for the Hailo-8.
 - `:qnn_detector` runs the DLC its `:dlc_path` names, on the VENTUNO Q's NPU.
 
-A stereo detection pipeline leaves out an object with no depth in the middle of its box, such as one nearer than the depth can measure. A pipeline on a camera of its own keeps it, without a distance.
+A stereo detection pipeline leaves out an object with no depth in its box's middle, such as one nearer than the depth can measure. A pipeline on a camera of its own keeps it, without a distance.
 
 ### On the VENTUNO Q's NPU
 
 The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, at the HTP's graph optimisation level 3, into `/data/vision/qnn`. Later boots reuse it. A new DLC, a new QAIRT or new generator options make a new one (`VisionCore.Detection.QnnContext`).
 
-Each QNN Port holds a power vote on the HTP for as long as it runs, with the performance profile its `performance:` names:
+Each QNN Port holds a power vote on the NPU for as long as it runs, with the performance profile its `performance:` names:
 
 - `:burst`, the default: the highest voltage corner, with dynamic clock scaling off;
 - `:sustained_high_performance`, `:balanced` or `:power_saver`;
-- `:none`, for the HTP's default power policy.
+- `:none`, for the NPU's default power policy.
 
 The Port's log says the profile it applied, or why it could not.
 
@@ -30,11 +30,11 @@ The board needs QAIRT in its image: [The Arduino VENTUNO Q](./README.md#the-ardu
 
 ## Several pipelines
 
-A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`. The name is a lowercase atom such as `:vehicle_detection`, `:detection` by default. Each named pipeline has its own supervisor, backend, model and parameter groups.
+A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`. The name is a lowercase atom such as `:vehicle_detection`, `:detection` by default. Each named pipeline has its own supervisor, backend, model and parameter groups: `<name>.input`, `<name>.inference`, `<name>.filtering` and `<name>.placement`.
 
 Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, the stereo pipeline's name, or the Hailo-8 claim. `VisionCore.Detection` lists them. Two detectors with the same name are refused.
 
-The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the Hexagon; a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
+The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
 
 Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./api.md#detections)). The Debug exporter reads the default pipeline only.
 
@@ -45,14 +45,16 @@ The status's `npu` gives the accelerator's kind and load, and each detection or 
 - A pipeline's inference time is the mean over the second's frames.
 - The load is the share of the second the pipelines spent inferring, summed over every pipeline on the accelerator, at most 100 %.
 - On the Hailo-8, the time runs from writing the input to reading the output: the device's work and the PCIe transfer.
-- On the Hexagon, it is the NPU's execute time as QNN's profiling reports it, without the wait for the NPU to be free. Two pipelines sharing it are therefore not counted twice.
+- On the VENTUNO Q's NPU, it is the execute time QNN's profiling reports, without the wait for the NPU to be free. Two pipelines sharing it are therefore not counted twice.
 - Where QNN's profiling is unavailable, it is the wall time around the graph's execution. That includes the FastRPC call and overstates the NPU's work.
 
 The load is `null` until a Port has reported a time. A pipeline's time is `null` in a second without a frame, never 0.
 
 ## Detect on a camera of its own
 
-A named detector with `source: {:camera, name}` detects on the camera of its own `name` instead of the stereo pair's left image ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera. `source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. The default pipeline, `:detection`, stays the stereo pair's. With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference` output, it reads as below; it works the same with your camera and backend:
+A named detector with `source: {:camera, name}` detects on the camera of its own `name` ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera. The default pipeline, `:detection`, stays the stereo pair's.
+
+`source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference` output, it reads as below; it works the same with your camera and backend:
 
 ```elixir
 {:qnn_detector,
@@ -69,9 +71,9 @@ A named detector with `source: {:camera, name}` detects on the camera of its own
 - **No pair coming.** When no stereo pair has come for two pair periods, the boxes are published at once. They are placed with the pair already kept if one was captured within half a pair period of the frame, otherwise without a distance.
 - **Backlog.** While 32 frames' boxes wait, the camera's frames are skipped, which is logged.
 - **Without a distance.** A box with no depth in its middle, outside the stereo view or without a matched pair, is kept rather than dropped. Its position and size are `nil`. Its `bearing`, `{azimuth, elevation}` in radians in the camera's optical frame, says where it is seen: azimuth positive to the right, elevation positive up.
-- **Without a pose.** A camera without a pose, or one whose pose or calibration cannot be read, runs its pipeline with every detection without a distance. A warning is logged once. Without a calibration, a detection has no bearing either.
+- **Without a pose.** On a camera without a pose, or whose pose or calibration cannot be read, every detection has no distance. A warning is logged once. Without a calibration, a detection has no bearing either.
 - **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`. It publishes those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels, on `<prefix>/<name>/detections_2d`. All of them go on `<prefix>/<name>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)).
-- **Another output.** When the exporter publishes another output of the camera than the one the pipeline detects on, it scales these boxes to the published image.
+- **Another output.** When the exporter publishes a camera output other than the pipeline's, it scales the boxes to the published image.
 
 The pipeline reads the camera's calibration and pose at start. A calibration committed through the camera's `set_camera_info` reaches the ROS 2 exporter's camera info at once, and the pipeline once the unit restarts.
 

@@ -19,7 +19,7 @@ The diagram shows the Pi 5. The other boards differ:
 - A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
-A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model. The diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames as well as the pairs, whose depth it projects into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
+A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model. The diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames and to the pairs. It projects the pairs' depth into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
 
 ```text
  left camera Port ──► LibCamera / V4L2 driver ─┐
@@ -158,11 +158,15 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 
 The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
 
-Each preview encodes apart from the others, one frame at a time, so a slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one.
+Each preview encodes apart from the others, one frame at a time. A slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one.
 
-The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports: `jpeg: [ports: 3]` in your vehicle's `VisionCore.Config` by default. Each encode runs on a free Port. Once every Port is busy, the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
+The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports. Set its size with `jpeg: [ports: n]` in your vehicle's `VisionCore.Config`, 3 by default.
 
-A camera frame is encoded once for every preview and exporter that asks for it at the same quality. A request for a frame already waiting or encoding, or for the last one its stream encoded, takes that JPEG. The stereo cameras' frames that the preview and the ROS 2 exporter both send therefore cost one encode each. A camera output sent as JPEG ([Outputs](./cameras.md#outputs)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
+Each encode runs on a free Port. Once every Port is busy, the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
+
+A camera frame is encoded once for every preview and exporter that asks for it at the same quality. A request for a frame already waiting or encoding, or for the last one its stream encoded, takes that JPEG. The stereo cameras' frames that the preview and the ROS 2 exporter both send therefore cost one encode each.
+
+A camera output sent as JPEG ([Outputs](./cameras.md#outputs)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
 
 Each pipeline's results reach the dashboard on a channel of their own: `detections` or `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision API](./api.md#segmentation)).
 
