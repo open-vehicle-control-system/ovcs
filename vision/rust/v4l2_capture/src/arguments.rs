@@ -238,6 +238,9 @@ fn output_spec(
     let (source, size, format) = match value.split(':').collect::<Vec<_>>()[..] {
         ["cpu", size] => (None, size, Format::Rgb),
         ["from", index, size] => (Some(output_index(index)?), size, Format::Rgb),
+        ["from", _index, _size, "jpeg", _quality] if !send => {
+            return Err(format!("a JPEG is always sent: {OUTPUT_FORMS}"))
+        }
         ["from", index, size, "jpeg", quality] => {
             (Some(output_index(index)?), size, jpeg(quality)?)
         }
@@ -621,8 +624,9 @@ mod tests {
         );
         assert_eq!(
             refused(&["cpu:2028x1520", "from:0:2028x1520:jpeg:80:unsent"]),
-            "--output from:0:2028x1520:jpeg:80:unsent: \
-             it is not sent and no output is made from it"
+            "--output from:0:2028x1520:jpeg:80:unsent: a JPEG is always sent: \
+             cpu:<width>x<height>[:unsent], from:<index>:<width>x<height>[:unsent] \
+             or from:<index>:<width>x<height>:jpeg:<quality>"
         );
         assert_eq!(
             refused(&["cpu:2028x1520:unsent:unsent", "from:0:1014x760"]),
