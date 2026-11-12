@@ -136,14 +136,15 @@ function UnitStatusBar({ connection }) {
 }
 
 /**
- * The videos and their figures: at the full width on the overview, beside the selected stage's panel on the pipeline.
+ * The videos and their figures: at the full width on the overview, beside the selected stage's panel on the pipeline,
+ * filling the main's height from lg.
  * Both pages render them at the same place, so going from one to the other keeps the videos playing.
  */
 function PreviewsPage({ page, groupId }) {
   const pipeline = page === 'pipeline'
   const layout = pipeline
-    ? 'grid min-w-0 gap-4 lg:min-h-0 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1'
-    : 'flex min-w-0 flex-col lg:min-h-0'
+    ? 'grid min-w-0 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1'
+    : 'flex min-w-0 flex-col lg:min-h-0 lg:flex-1'
 
   return (
     <div className={layout}>
@@ -156,7 +157,7 @@ function PreviewsPage({ page, groupId }) {
         </OvcsCard>
       ) : null}
 
-      <div className="flex min-w-0 flex-col lg:min-h-0">
+      <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
         <LivePreviews />
       </div>
     </div>

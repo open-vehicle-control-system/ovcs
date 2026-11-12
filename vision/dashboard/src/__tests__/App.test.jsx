@@ -200,6 +200,21 @@ describe('App', () => {
     expect(channels().filter((channel) => channel.leave.mock.calls.length > 0)).toEqual([])
   })
 
+  it("lets the previews fill the main's height from lg, on the overview and beside a stage", () => {
+    useParameters.setState({ groups })
+    render(<App />)
+    // Each box between the main and the previews grows into the main's height, as the previews do in it.
+    const growing = () => {
+      const boxes = []
+      for (let box = screen.getByRole('region', { name: 'Previews' }); box.tagName !== 'MAIN'; box = box.parentElement) boxes.push(box)
+      return boxes.map((box) => box.className.split(' ').includes('lg:flex-1'))
+    }
+
+    expect(growing().every(Boolean)).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Match' }))
+    expect(growing().every(Boolean)).toBe(true)
+  })
+
   it('opens a stage from the menu on the pipeline page, then leaves it for another page', () => {
     useParameters.setState({ groups })
     render(<App />)
