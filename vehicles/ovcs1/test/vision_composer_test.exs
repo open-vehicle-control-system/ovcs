@@ -36,7 +36,7 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert [detector] = Keyword.get_values(components, :qnn_detector)
     assert detector[:name] == :objects
-    assert detector[:source] == {:camera, :hq}
+    assert detector[:source] == {:camera, :hq, :inference}
     assert detector[:score_threshold] == 0.4
     assert String.ends_with?(detector[:dlc_path], "priv/models/yolox_w8a8.dlc")
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
@@ -47,12 +47,12 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert [segmenter] = Keyword.get_values(components, :qnn_segmenter)
     assert segmenter[:name] == :road
-    assert segmenter[:source] == {:camera, :hq}
+    assert segmenter[:source] == {:camera, :hq, :inference}
     assert String.ends_with?(segmenter[:dlc_path], "priv/models/ffnet_122ns_lowres.dlc")
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour, for driving" do
+  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour and at half for the models" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
@@ -60,7 +60,21 @@ defmodule Ovcs1.VisionComposerTest do
     assert camera[:driver] == VisionCore.Camera.V4L2Single
     assert camera[:csiphy] == 2
     assert camera[:fps] == 30
-    assert camera[:output] == :full
+    refute camera[:output]
+
+    assert camera[:outputs] == [
+             view: [resolution: {2028, 1520}, processor: :cpu],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]
+
+    config = Ovcs1.Vision.Composer.config(:target)
+    assert [%{outputs: [view, inference]}] = VisionCore.Camera.Unit.settings(config)
+    assert {view.name, view.index, view.width, view.height} == {:view, 0, 2028, 1520}
+    assert {inference.name, inference.index, inference.from} == {:inference, 1, :view}
+
+    assert VisionCore.Camera.Unit.output_key(config, :hq, :inference) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
+
     assert camera[:max_exposure_us] == 25_000
     assert camera[:frame_id] == "hq_optical"
   end
@@ -122,7 +136,11 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert options[:detections][:pipelines] == [:objects]
     assert options[:cameras][:names] == [:hq]
+    refute options[:cameras][:outputs]
     assert options[:segmentation][:pipelines] == [:road]
+
+    assert VisionCore.Exporter.output_key({:camera_frame, :hq}, config) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :view}
   end
 
   test "the ROS 2 exporter's outputs are all produced by the configuration" do

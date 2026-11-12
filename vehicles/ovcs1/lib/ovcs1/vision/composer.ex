@@ -6,10 +6,14 @@ defmodule Ovcs1.Vision.Composer do
   with the right sensor phase-locked to the left, depth computed on the
   GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
   is a camera of its own, `:hq`, captured in colour by
-  `VisionCore.Camera.V4L2Single`. On the Hexagon NPU, YOLOX detects
-  objects on it, the `:objects` pipeline, and FFNet segments the road on
-  it, the `:road` pipeline; both take their distances from the stereo
-  depth projected into the camera.
+  `VisionCore.Camera.V4L2Single`, at every frame in two outputs: `:view`,
+  2028 × 1520, which the ROS 2 exporter and the preview show, and
+  `:inference`, 1014 × 760, averaged from it 2 × 2. On the Hexagon NPU,
+  YOLOX detects objects on `:inference`, the `:objects` pipeline, and
+  FFNet segments the road on it, the `:road` pipeline: the models' inputs
+  are smaller still, so the full image would cross to their Ports only
+  to be shrunk there. Both take their distances from the stereo depth
+  projected into the camera.
 
   `priv/firmware/vision/rootfs_overlay/boot/cameras.cfg` names the sensor on
   each of the board's connectors. The stereo cameras deliver 728x544, half
@@ -64,11 +68,13 @@ defmodule Ovcs1.Vision.Composer do
         hq_camera(),
         {:qnn_detector,
          name: :objects,
-         source: {:camera, :hq},
+         source: {:camera, :hq, :inference},
          dlc_path: Application.app_dir(:ovcs1, @detection_model),
          score_threshold: 0.4},
         {:qnn_segmenter,
-         name: :road, source: {:camera, :hq}, dlc_path: Application.app_dir(:ovcs1, @road_model)}
+         name: :road,
+         source: {:camera, :hq, :inference},
+         dlc_path: Application.app_dir(:ovcs1, @road_model)}
       ],
       exporters: [
         {VisionCore.Ros2.Exporter,
@@ -99,7 +105,10 @@ defmodule Ovcs1.Vision.Composer do
      driver: VisionCore.Camera.V4L2Single,
      csiphy: 2,
      fps: 30,
-     output: :full,
+     outputs: [
+       view: [resolution: {2028, 1520}, processor: :cpu],
+       inference: [resolution: {1014, 760}, from: :view]
+     ],
      max_exposure_us: 25_000,
      frame_id: "hq_optical",
      calibration: Application.app_dir(:ovcs1, @hq_calibration),
