@@ -120,3 +120,21 @@ pub fn encode(
         })
         .map_err(io::Error::other)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_chroma_is_subsampled_below_quality_90_only_as_jpeg_codec_does() {
+        let pixels: Vec<u8> = (0..16 * 16 * 3).map(|byte| (byte * 7) as u8).collect();
+        let mut compressor = Compressor::new().unwrap();
+        let mut subsampling = |quality| {
+            let jpeg = encode(&mut compressor, &pixels, (16, 16), quality).unwrap();
+            turbojpeg::read_header(&jpeg).unwrap().subsamp
+        };
+        assert_eq!(subsampling(89), Subsamp::Sub2x2);
+        assert_eq!(subsampling(90), Subsamp::None);
+        assert_eq!(subsampling(80), Subsamp::Sub2x2);
+    }
+}

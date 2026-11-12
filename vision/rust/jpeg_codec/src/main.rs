@@ -624,12 +624,13 @@ mod tests {
     }
 
     #[test]
-    fn subsamples_the_chroma_below_quality_90_only() {
+    fn subsamples_the_chroma_below_quality_90_only_as_v4l2_capture_does() {
         let rgb = scene_rgb();
         let at =
             |quality| sampling_factors(&reply_to(&request_at(quality, 64, 48, 3, &rgb)).unwrap());
 
         assert_eq!(at(80), [(2, 2), (1, 1), (1, 1)]);
+        assert_eq!(at(89), [(2, 2), (1, 1), (1, 1)]);
         assert_eq!(at(90), [(1, 1), (1, 1), (1, 1)]);
         let grey = luma(&rgb);
         let jpeg = reply_to(&request_at(80, 64, 48, 1, &grey)).unwrap();
