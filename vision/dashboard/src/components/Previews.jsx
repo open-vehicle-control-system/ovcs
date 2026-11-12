@@ -171,12 +171,12 @@ function useSegmentationTopics(source) {
   return (outputs ?? []).filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source).map(({ name }) => name)
 }
 
-// How long a class stays in a pipeline's legend after its last grid with it, so the legend does not reflow at the grids' rate.
-const LEGEND_HOLD_MS = 3000
+// How long a class stays shown present in a pipeline's legend after its last grid with it, so its styling does not flicker at the grids' rate.
+const PRESENCE_HOLD_MS = 1000
 
-/** Each class id seen in the last `LEGEND_HOLD_MS`, by the time it was last seen, with those of `segmentation` seen at `now`. */
+/** Each class id seen in the last `PRESENCE_HOLD_MS`, by the time it was last seen, with those of `segmentation` seen at `now`. */
 function seenClasses(seen = {}, segmentation, now) {
-  const kept = Object.entries(seen).filter(([, at]) => now - at < LEGEND_HOLD_MS)
+  const kept = Object.entries(seen).filter(([, at]) => now - at < PRESENCE_HOLD_MS)
   return Object.fromEntries([...kept, ...segmentation.present.map((id) => [id, now])])
 }
 
@@ -235,23 +235,23 @@ function useSegmentations(socket, topics) {
   return segmentations
 }
 
-/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends. */
+/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends once their classes come. */
 function useSourceSegmentations(socket, source) {
   const topics = useSegmentationTopics(source)
   const latest = useSegmentations(socket, topics.join(' '))
   const answered = topics.filter((topic) => latest[topic]?.segmentation)
-  const legendIds = (seen) => Object.keys(seen).map(Number).sort((a, b) => a - b)
+  const named = topics.filter((topic) => latest[topic]?.classes)
 
   return {
     overlays: answered.map((topic) => (
       <SegmentationOverlay key={topic} segmentation={latest[topic].segmentation} classes={latest[topic].classes} />
     )),
-    legends: answered.map((topic) => (
+    legends: named.map((topic) => (
       <SegmentationLegend
         key={topic}
         name={topic.slice(SEGMENTATION.length)}
-        ids={legendIds(latest[topic].seen)}
         classes={latest[topic].classes}
+        present={new Set(Object.keys(latest[topic].seen ?? {}).map(Number))}
       />
     ))
   }

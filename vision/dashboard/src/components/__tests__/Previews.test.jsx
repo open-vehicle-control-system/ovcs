@@ -463,6 +463,16 @@ describe('Previews', () => {
     const pixel = (svg, index) => [...put(svg).data.slice(index * 4, index * 4 + 4)]
     const legend = (name = 'road') => screen.getByRole('list', { name: `${name} classes` })
     const items = (name) => [...legend(name).querySelectorAll('li')].map((item) => item.textContent)
+    const present = (name = 'road') => [...legend(name).querySelectorAll('li[data-present]')].map((item) => item.dataset.class)
+    // The legend's markup without its styling or presence: what decides its size.
+    function shape(list) {
+      const copy = list.cloneNode(true)
+      for (const element of [copy, ...copy.querySelectorAll('*')]) {
+        element.removeAttribute('class')
+        element.removeAttribute('data-present')
+      }
+      return copy.outerHTML
+    }
     // The channel the dashboard opened on `topic`.
     const channelOf = (socket, topic) => socket.channel.mock.results[socket.channel.mock.calls.findIndex(([called]) => called === topic)].value
     const acks = (socket, topic) => channelOf(socket, topic).push.mock.calls.filter(([event]) => event === 'ack').length
@@ -588,7 +598,7 @@ describe('Previews', () => {
       expect([...legend().querySelectorAll('[data-road]')].map((item) => item.dataset.class)).toEqual(['road', 'sidewalk'])
     })
 
-    it('lists the classes present under the preview, in class order, marking the road', () => {
+    it('lists every class the pipeline names under the preview, in class order, the present ones in full and the road in bold', () => {
       listed(...outputs)
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
@@ -597,41 +607,71 @@ describe('Previews', () => {
       push('segmentation:road', 'segmentation', result)
 
       expect(figure('hq').contains(legend())).toBe(true)
-      expect(items('road')).toEqual(['road', 'sidewalk', 'sky', 'car'])
-      expect(legend().querySelector('[data-class="road"]').hasAttribute('data-road')).toBe(true)
-      expect(legend().querySelector('[data-class="car"]').hasAttribute('data-road')).toBe(false)
+      expect(items('road')).toEqual(cityscapes.map((name) => name.replaceAll('_', ' ')))
+      expect(present()).toEqual(['road', 'sidewalk', 'sky', 'car'])
+      const item = (name) => legend().querySelector(`[data-class="${name}"]`)
+      expect(item('car').classList.contains('opacity-40')).toBe(false)
+      expect(item('bus').classList.contains('opacity-40')).toBe(true)
+      expect(item('road').hasAttribute('data-road')).toBe(true)
+      expect(item('road').lastChild.classList.contains('font-semibold')).toBe(true)
+      expect(item('car').hasAttribute('data-road')).toBe(false)
+      expect(item('car').lastChild.classList.contains('font-semibold')).toBe(false)
     })
 
-    it('keeps a class in the legend for three seconds after the last grid with it', () => {
+    it('keeps the bold of a road class while it is absent', () => {
+      listed(...outputs)
+      const { socket, push } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road', 'terrain'] })
+      push('segmentation:road', 'segmentation', result)
+
+      const terrain = legend().querySelector('[data-class="terrain"]')
+      expect(terrain.hasAttribute('data-present')).toBe(false)
+      expect(terrain.lastChild.classList.contains('font-semibold')).toBe(true)
+    })
+
+    it('shows a class present for a second after the last grid with it, by its styling alone', () => {
       listed(...outputs)
       const { socket, push } = liveSocket()
       const now = vi.spyOn(Date, 'now')
       render(<Previews status={snapshot} socket={socket} />)
       push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
       const roadOnly = gridOf([0, 0, 0, 0, 0, 0, 0, 0])
+      const many = gridOf([0, 1, 2, 5, 8, 10, 13, 11])
 
       now.mockReturnValue(10_000)
       push('segmentation:road', 'segmentation', result)
-      now.mockReturnValue(12_999)
+      const before = shape(legend())
+      now.mockReturnValue(10_999)
       push('segmentation:road', 'segmentation', roadOnly)
-      expect(items('road')).toEqual(['road', 'sidewalk', 'sky', 'car'])
+      expect(present()).toEqual(['road', 'sidewalk', 'sky', 'car'])
 
-      now.mockReturnValue(13_000)
+      now.mockReturnValue(11_000)
       push('segmentation:road', 'segmentation', roadOnly)
-      expect(items('road')).toEqual(['road'])
+      expect(present()).toEqual(['road'])
+      expect(shape(legend())).toBe(before)
+
+      now.mockReturnValue(11_100)
+      push('segmentation:road', 'segmentation', many)
+      expect(present()).toEqual(['road', 'sidewalk', 'building', 'pole', 'vegetation', 'sky', 'person', 'car'])
+      expect(shape(legend())).toBe(before)
     })
 
-    it('names a class by its id until the class names come', () => {
+    it('lists no class until the class names come', () => {
       listed(...outputs)
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
+      showFrame(push, 'hq')
 
       push('segmentation:road', 'segmentation', result)
 
-      expect(items('road')).toEqual(['class 0', 'class 1', 'class 10', 'class 13'])
+      expect(figure('hq').querySelector('[data-segmentation]')).not.toBeNull()
+      expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
+      expect(figure('hq').querySelector('[data-class]')).toBeNull()
     })
 
-    it('draws nothing and lists nothing before the first result', () => {
+    it('draws nothing before the first result, and lists every class absent', () => {
       listed(...outputs)
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
@@ -640,7 +680,8 @@ describe('Previews', () => {
       push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
 
       expect(figure('hq').querySelector('[data-segmentation]')).toBeNull()
-      expect(screen.queryByRole('list', { name: 'road classes' })).toBeNull()
+      expect(items('road')).toHaveLength(cityscapes.length)
+      expect(present()).toEqual([])
     })
 
     it('acks each grid once it is rendered, with or without a frame to draw it on, and nothing else', () => {
@@ -672,6 +713,7 @@ describe('Previews', () => {
 
       push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
       push('segmentation:lanes', 'classes', { labels: cityscapes, roadClasses: ['sidewalk'] })
+      push('segmentation:far', 'classes', { labels: cityscapes, roadClasses: ['road'] })
       push('segmentation:road', 'segmentation', gridOf([0, 0, 0, 0, 13, 13, 13, 13]))
       push('segmentation:lanes', 'segmentation', gridOf([1, 1, 1, 1, 0, 0, 0, 0]))
       push('segmentation:far', 'segmentation', gridOf([10, 10, 10, 10, 10, 10, 10, 10]))
@@ -681,8 +723,10 @@ describe('Previews', () => {
       expect([...figure('hq').querySelectorAll('[data-segmentation]')]).toEqual([road, lanes])
       expect([pixel(road, 0), pixel(road, 4)]).toEqual([[128, 64, 128, 153], [0, 0, 142, 102]])
       expect([pixel(lanes, 0), pixel(lanes, 4)]).toEqual([[244, 35, 232, 153], [128, 64, 128, 102]])
-      expect(items('road')).toEqual(['road', 'car'])
-      expect(items('lanes')).toEqual(['road', 'sidewalk'])
+      expect(present('road')).toEqual(['road', 'car'])
+      expect(present('lanes')).toEqual(['road', 'sidewalk'])
+      expect([...legend('road').querySelectorAll('[data-road]')].map((item) => item.dataset.class)).toEqual(['road'])
+      expect([...legend('lanes').querySelectorAll('[data-road]')].map((item) => item.dataset.class)).toEqual(['sidewalk'])
       expect(figure('hq').contains(legend('far'))).toBe(false)
       expect(figure('usb').contains(legend('far'))).toBe(true)
     })

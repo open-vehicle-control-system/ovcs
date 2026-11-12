@@ -66,16 +66,26 @@ export default function SegmentationOverlay({ segmentation, classes }) {
   )
 }
 
-/** The classes `ids` of a segmentation pipeline, each with its colour, the road's in bold. */
-export function SegmentationLegend({ name, ids, classes }) {
+/**
+ * Every class a segmentation pipeline names, in class order, each with its colour, the road's in bold and those not
+ * `present` dimmed, in a grid whose rows depend on the number of classes and the width alone.
+ */
+export function SegmentationLegend({ name, classes, present }) {
   return (
-    <ul aria-label={`${name} classes`} className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-ovcs-muted">
-      {ids.map((id) => {
+    <ul aria-label={`${name} classes`} className="grid grid-cols-[repeat(auto-fill,minmax(6.5rem,1fr))] gap-x-3 gap-y-1 text-xs">
+      {classes.labels.map((_, id) => {
         const item = classOf(id, classes)
+        const isPresent = present.has(id)
         return (
-          <li key={id} data-class={item.name} data-road={item.road ? '' : undefined} className="flex items-center gap-1">
-            <span aria-hidden="true" className="size-2.5 rounded-sm" style={{ backgroundColor: `rgb(${item.colour.join(' ')})` }} />
-            <span className={item.road ? 'font-semibold text-ovcs-text' : undefined}>{shown(item.name)}</span>
+          <li
+            key={id}
+            data-class={item.name}
+            data-road={item.road ? '' : undefined}
+            data-present={isPresent ? '' : undefined}
+            className={`flex min-w-0 items-center gap-1 ${isPresent ? 'text-ovcs-text' : 'text-ovcs-muted opacity-40'}`}
+          >
+            <span aria-hidden="true" className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: `rgb(${item.colour.join(' ')})` }} />
+            <span className={`truncate${item.road ? ' font-semibold' : ''}`}>{shown(item.name)}</span>
           </li>
         )
       })}
