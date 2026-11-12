@@ -499,6 +499,12 @@ impl Capture {
                 "asked for {width}x{height}, the sensor gives {set_width}x{set_height}"
             )));
         }
+        if !(width as usize).is_multiple_of(layout.samples_per_group()) {
+            return Err(unsupported(format!(
+                "{width} samples a row, not a multiple of the {} {layout:?} stores together",
+                layout.samples_per_group()
+            )));
+        }
         if (bytesperline as usize) < layout.row_bytes(width as usize) {
             return Err(unsupported(format!(
                 "{bytesperline} bytes per row for {width} samples as {layout:?}"

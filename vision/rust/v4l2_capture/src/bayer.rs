@@ -75,6 +75,15 @@ impl Layout {
         }
     }
 
+    /// The samples stored together: a row's width is a multiple of it.
+    pub fn samples_per_group(self) -> usize {
+        match self {
+            Layout::Unpacked16 => 1,
+            Layout::Packed10 => 4,
+            Layout::Packed12 => 2,
+        }
+    }
+
     /// The bits of each sample.
     pub fn sample_bits(self) -> u32 {
         match self {
@@ -575,6 +584,18 @@ pub(crate) mod tests {
 
     fn little_endian_samples(samples: &[u16]) -> Vec<u8> {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
+    }
+
+    #[test]
+    fn a_row_holds_whole_groups_of_its_layouts_samples() {
+        for (layout, group, bytes) in [
+            (Layout::Unpacked16, 1, 2),
+            (Layout::Packed10, 4, 5),
+            (Layout::Packed12, 2, 3),
+        ] {
+            assert_eq!(layout.samples_per_group(), group);
+            assert_eq!(layout.row_bytes(group), bytes);
+        }
     }
 
     #[test]

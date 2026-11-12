@@ -352,10 +352,12 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
     })
 }
 
-/// A sample count that covers whole RGGB cells.
+/// A sample count that covers whole RGGB cells and fits a record's 16-bit size.
 fn even(flag: &str, value: &str) -> Result<u32, String> {
     let samples: u32 = number(flag, value)?;
-    if samples.is_multiple_of(2) {
+    if samples > u32::from(u16::MAX) {
+        Err(format!("{flag}: at most {} samples, got {value}", u16::MAX))
+    } else if samples.is_multiple_of(2) {
         Ok(samples)
     } else {
         Err(format!("{flag}: an even number of samples, got {value}"))
@@ -461,6 +463,37 @@ mod tests {
         assert_eq!(
             ten_bit(&["--black-level", "2000"]),
             Err("black_level: invalid value 2000".to_string())
+        );
+    }
+
+    #[test]
+    fn a_capture_size_fits_a_records_16_bit_size() {
+        let sized = |width: &str, height: &str| {
+            let command_line: Vec<String> = [
+                "--video",
+                "video0",
+                "--sensor",
+                "imx477",
+                "--fps",
+                "15",
+                "--sensor-width",
+                width,
+                "--sensor-height",
+                height,
+            ]
+            .iter()
+            .map(|argument| argument.to_string())
+            .collect();
+            parse_single(&command_line).map(|arguments| arguments.outputs.len())
+        };
+        assert_eq!(sized("65534", "65534"), Ok(1));
+        assert_eq!(
+            sized("65536", "1520"),
+            Err("--sensor-width: at most 65535 samples, got 65536".to_string())
+        );
+        assert_eq!(
+            sized("2028", "70000"),
+            Err("--sensor-height: at most 65535 samples, got 70000".to_string())
         );
     }
 
