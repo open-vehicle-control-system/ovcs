@@ -122,7 +122,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
-  alias VisionCore.Detection.{CameraSource, Fusion}
+  alias VisionCore.Detection.{CameraDepth, CameraSource, Fusion}
   alias VisionCore.Outputs
   alias VisionCore.Stereo.Pair
 
@@ -360,7 +360,7 @@ defmodule VisionCore.Detection.Pipeline do
     do: VisionCore.Stereo.Parameters.build_parameter({key, Map.fetch!(state, key)}, description)
 
   @impl GenServer
-  def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraSource{} = camera} = state) do
+  def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraDepth{} = camera} = state) do
     state = %{state | camera: CameraSource.add_pair(camera, pair)}
 
     case state.awaiting do
@@ -381,10 +381,10 @@ defmodule VisionCore.Detection.Pipeline do
   end
 
   # A frame that comes while boxes wait for their pair is skipped, as one that comes during an inference.
-  def handle_cast({:camera_frame, %Frame{}}, %{camera: %CameraSource{}, awaiting: %{}} = state),
+  def handle_cast({:camera_frame, %Frame{}}, %{camera: %CameraDepth{}, awaiting: %{}} = state),
     do: {:noreply, state}
 
-  def handle_cast({:camera_frame, %Frame{} = frame}, %{camera: %CameraSource{}} = state) do
+  def handle_cast({:camera_frame, %Frame{} = frame}, %{camera: %CameraDepth{}} = state) do
     pair_count = state.pair_count + 1
     state = %{state | pair_count: pair_count}
 
