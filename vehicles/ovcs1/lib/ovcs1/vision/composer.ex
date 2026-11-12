@@ -73,7 +73,7 @@ defmodule Ovcs1.Vision.Composer do
       exporters: [
         {VisionCore.Ros2.Exporter,
          heartbeat: [],
-         stereo: [raw_image_max_hz: 35],
+         stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],
          cameras: [names: [:hq]],
          segmentation: [pipelines: [:road]]}
@@ -98,7 +98,7 @@ defmodule Ovcs1.Vision.Composer do
      name: :hq,
      driver: VisionCore.Camera.V4L2Single,
      csiphy: 2,
-     fps: 35,
+     fps: 30,
      output: :full,
      max_exposure_us: 25_000,
      frame_id: "hq_optical",
@@ -113,7 +113,7 @@ defmodule Ovcs1.Vision.Composer do
        driver: VisionCore.Camera.V4L2,
        width: 728,
        height: 544,
-       fps: 35,
+       fps: 30,
        match_width: 728,
        match_height: 544,
        # The Port pairs frames whose starts are within 1 ms.

@@ -52,14 +52,14 @@ defmodule Ovcs1.VisionComposerTest do
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the HQ camera runs on Camera 2 at 35 fps in full-resolution colour, for driving" do
+  test "the HQ camera runs on Camera 2 at 30 fps in full-resolution colour, for driving" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
     assert camera[:name] == :hq
     assert camera[:driver] == VisionCore.Camera.V4L2Single
     assert camera[:csiphy] == 2
-    assert camera[:fps] == 35
+    assert camera[:fps] == 30
     assert camera[:output] == :full
     assert camera[:max_exposure_us] == 25_000
     assert camera[:frame_id] == "hq_optical"
