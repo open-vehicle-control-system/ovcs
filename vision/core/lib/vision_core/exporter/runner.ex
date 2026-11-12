@@ -55,7 +55,10 @@ defmodule VisionCore.Exporter.Runner do
       outputs resolve in (`VisionCore.Exporter.output_key/2`).
 
   It does not start when the exporter's outputs are invalid, with the
-  error `VisionCore.Exporter.output_specs/2` says.
+  error `VisionCore.Exporter.output_specs/2` says, nor when two of them
+  resolve to one key in the configuration, such as `{:camera_frame,
+  :hq}` and `{:camera_frame, :hq, :view}` on a camera whose default
+  output is `:view`: `{:invalid_output, second}`.
   """
   use GenServer
   require Logger
@@ -111,32 +114,49 @@ defmodule VisionCore.Exporter.Runner do
     exporter = Code.ensure_loaded!(Keyword.fetch!(opts, :exporter))
     options = Keyword.get(opts, :options, [])
 
-    case Exporter.output_specs(exporter, options) do
-      {:ok, specs} ->
-        if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
+    config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
 
-        {:ok,
-         %{
-           exporter: exporter,
-           options: options,
-           config: Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0),
-           outputs: slots(specs),
-           slots: %{},
-           started: false,
-           exporter_state: nil,
-           not_started: nil,
-           retry_ms: @first_retry_ms,
-           failures: 0,
-           logged: %{
-             init: MapSet.new(),
-             status: MapSet.new(),
-             output: MapSet.new(),
-             action: MapSet.new()
-           }
-         }, {:continue, :start_exporter}}
+    with {:ok, specs} <- Exporter.output_specs(exporter, options),
+         :ok <- check_keys_apart(specs, config) do
+      if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
 
-      {:error, reason} ->
-        {:stop, reason}
+      {:ok,
+       %{
+         exporter: exporter,
+         options: options,
+         config: config,
+         outputs: slots(specs),
+         slots: %{},
+         started: false,
+         exporter_state: nil,
+         not_started: nil,
+         retry_ms: @first_retry_ms,
+         failures: 0,
+         logged: %{
+           init: MapSet.new(),
+           status: MapSet.new(),
+           output: MapSet.new(),
+           action: MapSet.new()
+         }
+       }, {:continue, :start_exporter}}
+    else
+      {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  # One key feeds one slot: a camera's default output named a second time by its name never would.
+  defp check_keys_apart(specs, config) do
+    specs
+    |> Enum.reduce_while(%{}, fn {output, _max_hz}, keys ->
+      case Exporter.output_key(output, config) do
+        nil -> {:cont, keys}
+        key when is_map_key(keys, key) -> {:halt, {:error, {:invalid_output, output}}}
+        key -> {:cont, Map.put(keys, key, output)}
+      end
+    end)
+    |> case do
+      {:error, _reason} = error -> error
+      _keys -> :ok
     end
   end
 

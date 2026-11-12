@@ -385,6 +385,30 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_receive {:exported, _output, _value, _at}, 100
     end
 
+    test "refuses to start on two outputs naming one camera output, its default named twice" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      assert {:error, {{:invalid_output, {:camera_frame, :hq, :view}}, _child}} =
+               start_supervised(
+                 {Runner,
+                  exporter: Forwarder,
+                  options: [
+                    test: self(),
+                    outputs: [{:camera_frame, :hq}, {:camera_frame, :hq, :view}]
+                  ],
+                  config: config}
+               )
+    end
+
     test "leaves out an output the configuration has no producer of" do
       runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
 
