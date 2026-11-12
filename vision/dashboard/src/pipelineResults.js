@@ -36,14 +36,14 @@ function seenClasses(seen = {}, segmentation, now) {
 }
 
 /**
- * The latest result of each segmentation channel in `topics`, a space-separated list, by topic, with the pipeline's
- * classes, which the unit pushes on every join before any grid, and the classes seen lately; a channel has no result
- * until its first comes. Each grid is acked once rendered, and the unit sends the next only then.
+ * One channel a topic of `topics`, a space-separated list, joined as long as `socket` and the list stay, with each
+ * topic's latest state: `bind(channel, update)` binds a channel's events before it joins, and `update(change)` sets its
+ * topic's state to `change` of the one before. Returns the states by topic, none for a topic until its first update,
+ * and a ref to the channels by topic.
  */
-export function useSegmentations(socket, topics) {
-  const [segmentations, setSegmentations] = useState({})
+function useTopicChannels(socket, topics, bind) {
+  const [latest, setLatest] = useState({})
   const channelsRef = useRef({})
-  const ackedRef = useRef({})
 
   useEffect(() => {
     const channels = topics
@@ -51,20 +51,7 @@ export function useSegmentations(socket, topics) {
       .filter(Boolean)
       .map((topic) => {
         const channel = socket.channel(topic, {})
-        const update = (change) => setSegmentations((latest) => ({ ...latest, [topic]: { ...latest[topic], ...change(latest[topic]) } }))
-        channel.on('classes', (classes) => update(() => ({ classes })))
-        channel.on('segmentation', (payload) => {
-          let segmentation
-          try {
-            segmentation = decodeSegmentation(payload)
-          } catch {
-            // Never rendered, so acked here, or the unit would send no other grid.
-            channel.push('ack', {})
-            return
-          }
-          const now = Date.now()
-          update((last) => ({ segmentation, seen: seenClasses(last?.seen, segmentation, now) }))
-        })
+        bind(channel, (change) => setLatest((states) => ({ ...states, [topic]: change(states[topic]) })))
         channel.join()
         channelsRef.current[topic] = channel
         return channel
@@ -72,43 +59,54 @@ export function useSegmentations(socket, topics) {
     return () => {
       channels.forEach((channel) => channel.leave())
       channelsRef.current = {}
-      ackedRef.current = {}
-      setSegmentations({})
+      setLatest({})
     }
-  }, [socket, topics])
+  }, [socket, topics, bind])
+
+  return [latest, channelsRef]
+}
+
+function bindSegmentation(channel, update) {
+  channel.on('classes', (classes) => update((last) => ({ ...last, classes })))
+  channel.on('segmentation', (payload) => {
+    let segmentation
+    try {
+      segmentation = decodeSegmentation(payload)
+    } catch {
+      // Never rendered, so acked here, or the unit would send no other grid.
+      channel.push('ack', {})
+      return
+    }
+    const now = Date.now()
+    update((last) => ({ ...last, segmentation, seen: seenClasses(last?.seen, segmentation, now) }))
+  })
+}
+
+/**
+ * The latest result of each segmentation channel in `topics`, a space-separated list, by topic, with the pipeline's
+ * classes, which the unit pushes on every join before any grid, and the classes seen lately; a channel has no result
+ * until its first comes. Each grid is acked once rendered, and the unit sends the next only then.
+ */
+export function useSegmentations(socket, topics) {
+  const [segmentations, channelsRef] = useTopicChannels(socket, topics, bindSegmentation)
+  const ackedRef = useRef(new WeakSet())
 
   // After the commit, so the overlay has drawn the grid it acks.
   useEffect(() => {
     for (const [topic, { segmentation }] of Object.entries(segmentations)) {
-      if (segmentation && ackedRef.current[topic] !== segmentation) {
-        ackedRef.current[topic] = segmentation
+      if (segmentation && !ackedRef.current.has(segmentation)) {
+        ackedRef.current.add(segmentation)
         channelsRef.current[topic]?.push('ack', {})
       }
     }
-  }, [segmentations])
+  }, [segmentations, channelsRef])
 
   return segmentations
 }
 
+const bindDetections = (channel, update) => channel.on('detections', (payload) => update(() => payload.detections))
+
 /** The latest detection result of each channel in `topics`, a space-separated list, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
 export function useDetections(socket, topics) {
-  const [detections, setDetections] = useState({})
-
-  useEffect(() => {
-    const channels = topics
-      .split(' ')
-      .filter(Boolean)
-      .map((topic) => {
-        const channel = socket.channel(topic, {})
-        channel.on('detections', (payload) => setDetections((latest) => ({ ...latest, [topic]: payload.detections })))
-        channel.join()
-        return channel
-      })
-    return () => {
-      channels.forEach((channel) => channel.leave())
-      setDetections({})
-    }
-  }, [socket, topics])
-
-  return detections
+  return useTopicChannels(socket, topics, bindDetections)[0]
 }
