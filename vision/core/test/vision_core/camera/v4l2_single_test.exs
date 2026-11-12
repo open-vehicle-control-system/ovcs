@@ -20,6 +20,10 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     <<7, output, 2::little-16, 1::little-16, capture_ns::little-signed-64, rgb::binary>>
   end
 
+  defp jpeg_record(capture_ns, jpeg, output) do
+    <<8, output, 2028::little-16, 1520::little-16, capture_ns::little-signed-64, jpeg::binary>>
+  end
+
   defp write_records(tmp_dir, records) do
     path = Path.join(tmp_dir, "records.bin")
 
@@ -171,6 +175,55 @@ defmodule VisionCore.Camera.V4L2SingleTest do
            ]
 
     assert flags |> Enum.drop_while(&(&1 != "--threads")) |> Enum.at(1) == "3"
+  end
+
+  test "asks the program for a JPEG output, by default at the size of its source",
+       %{tmp_dir: tmp_dir} do
+    {script, arguments, _commands} = listening_program(tmp_dir)
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        view_jpeg: [from: :view, format: :jpeg, quality: 85],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    )
+
+    assert Enum.slice(arguments(arguments), 10, 6) == [
+             "--output",
+             "cpu:2028x1520",
+             "--output",
+             "from:0:2028x1520:jpeg:85",
+             "--output",
+             "from:0:1014x760"
+           ]
+  end
+
+  test "publishes the frames of a JPEG output carrying the JPEG the program sends",
+       %{tmp_dir: tmp_dir} do
+    jpeg = <<0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9>>
+
+    records =
+      write_records(tmp_dir, [
+        rgb_record(5, <<1, 2, 3, 4, 5, 6>>, 0),
+        jpeg_record(5, jpeg, 1)
+      ])
+
+    script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq"), :view_jpeg})
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        view_jpeg: [from: :view, format: :jpeg]
+      ]
+    )
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :view_jpeg} = frame}}, 2_000
+    assert %Frame{label: "hq", width: 2028, height: 1520, jpeg: ^jpeg, rgb: nil} = frame
+    assert_in_delta frame.capture_ns, Timing.monotonic_from_kernel(5), 1_000_000
   end
 
   test "publishes the frames of each output under its own key, each naming its output",
@@ -383,6 +436,8 @@ defmodule VisionCore.Camera.V4L2SingleTest do
              V4L2Single.parse_record(metadata_record(8_000.0, 2.0))
 
     assert V4L2Single.parse_record(rgb_record(5, <<1, 2, 3>>)) == {:error, :malformed_record}
+    assert V4L2Single.parse_record(<<8, 1, 2::little-16>>) == {:error, :malformed_record}
+    assert V4L2Single.parse_record(jpeg_record(5, <<>>, 1)) == {:error, :malformed_record}
     assert V4L2Single.parse_record(<<4, 2::little-16>>) == {:error, :malformed_record}
   end
 

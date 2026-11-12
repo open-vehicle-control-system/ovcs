@@ -12,7 +12,11 @@ defmodule VisionCore.Camera.V4L2Single do
   software conversion, makes the sensor mode's size, 2028 × 1520 by
   default, demosaiced bilinearly, or half of it in each axis, 1014 × 760,
   each 2x2 Bayer cell one pixel; an output `:from` another is averaged
-  from it in blocks on the same threads. Each output's frames are
+  from it in blocks on the same threads, or with `format: :jpeg`
+  encoded from it by the program with libjpeg-turbo on a thread of its
+  own, its frames carrying the JPEG (`%Frame{jpeg: ...}`), which
+  `VisionCore.Camera.Frame.to_jpeg/2` hands its consumers as it is.
+  Each output's frames are
   published under `{:camera_frame, name, output}`, `name` the instance's
   registered name, each frame carrying its output's name as its
   `:output` and the size its record gives.
@@ -28,7 +32,9 @@ defmodule VisionCore.Camera.V4L2Single do
       int64   capture_ns LE       # frame start, kernel CLOCK_MONOTONIC
       bytes   rgb                 # width * height * 3, R, G, B
 
-  one per output per frame, in the order of their indices, or the log
+  or, for a JPEG output, the same header under tag 8, OUTPUT_JPEG, then
+  the JPEG of the `width` x `height` image, one record per output per
+  frame, in the order of their indices, or the log
   and metadata records `VisionCore.Camera.V4L2` reads. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
@@ -66,11 +72,14 @@ defmodule VisionCore.Camera.V4L2Single do
     * `:fps` (15) — the frame rate.
     * `:outputs` — the camera's named outputs, each `[resolution:
       {width, height}, processor: :cpu]` or `[resolution: {width, height},
-      from: output]`, a whole fraction of that output's size; the first
-      is the camera's default. Passed as `--output cpu:<width>x<height>`
-      or `--output from:<index>:<width>x<height>`, in the order of their
-      indices. Outputs it cannot make stop the camera at start, saying
-      why.
+      from: output]`, a whole fraction of that output's size, its size by
+      default, which `format: :jpeg` and a `:quality` send as a JPEG
+      (`VisionCore.Camera.Output`); the first is the camera's default.
+      Passed as `--output cpu:<width>x<height>`, `--output
+      from:<index>:<width>x<height>` or `--output
+      from:<index>:<width>x<height>:jpeg:<quality>`, in the order of
+      their indices. Outputs it cannot make stop the camera at start,
+      saying why.
     * `:output` (`:full`) — the one-output shorthand, without
       `:outputs`: `:full`, the sensor mode's size, or `:half`, half of it
       in each axis, made by `:cpu` and named as the value.
@@ -94,6 +103,7 @@ defmodule VisionCore.Camera.V4L2Single do
   alias VisionCore.{Outputs, Timing}
 
   @output_frame_tag 7
+  @output_jpeg_tag 8
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
   # How long CAMSS and the sensor may take to register after the VM starts.
@@ -216,7 +226,24 @@ defmodule VisionCore.Camera.V4L2Single do
      }}
   end
 
-  def parse_record(<<@output_frame_tag, _rest::binary>>), do: {:error, :malformed_record}
+  def parse_record(
+        <<@output_jpeg_tag, output, width::little-16, height::little-16,
+          kernel_ns::little-signed-64, jpeg::binary>>
+      )
+      when byte_size(jpeg) > 0 do
+    {:frame, output,
+     %Frame{
+       label: nil,
+       width: width,
+       height: height,
+       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
+       jpeg: jpeg
+     }}
+  end
+
+  def parse_record(<<tag, _rest::binary>>) when tag in [@output_frame_tag, @output_jpeg_tag],
+    do: {:error, :malformed_record}
+
   def parse_record(record), do: Capture.parse_record(record)
 
   @impl GenServer
@@ -263,8 +290,9 @@ defmodule VisionCore.Camera.V4L2Single do
   @doc """
   The camera's outputs from `opts`: its `:outputs`, or the one output
   `:output` names, `:full` by default; `{:error, message}` for outputs it
-  cannot make (`VisionCore.Camera.Output.resolve/2`). Its one processor,
-  `:cpu`, makes the sensor mode's size or half of it.
+  cannot make (`VisionCore.Camera.Output.resolve/3`). Its one processor,
+  `:cpu`, makes the sensor mode's size or half of it; it sends RGB and
+  JPEG outputs.
   """
   @impl VisionCore.Camera
   def outputs(opts) do
@@ -272,7 +300,7 @@ defmodule VisionCore.Camera.V4L2Single do
       {{:ok, outputs}, _output} ->
         if Keyword.has_key?(opts, :output),
           do: {:error, ":output is the shorthand of one output: give :outputs or :output"},
-          else: Output.resolve(outputs, processors(opts))
+          else: Output.resolve(outputs, processors(opts), formats: [:rgb, :jpeg])
 
       {:error, output} when output in [:full, :half] ->
         Output.resolve(
@@ -342,6 +370,12 @@ defmodule VisionCore.Camera.V4L2Single do
     Enum.flat_map(Output.port_order(outputs), fn
       %Output{processor: :cpu} = output ->
         ["--output", "cpu:#{output.width}x#{output.height}"]
+
+      %Output{from: from, format: :jpeg} = output ->
+        [
+          "--output",
+          "from:#{indices[from]}:#{output.width}x#{output.height}:jpeg:#{output.quality}"
+        ]
 
       %Output{from: from} = output ->
         ["--output", "from:#{indices[from]}:#{output.width}x#{output.height}"]

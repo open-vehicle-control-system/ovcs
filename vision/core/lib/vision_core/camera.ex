@@ -55,7 +55,7 @@ defmodule VisionCore.Camera do
   @doc """
   The named outputs of a camera given `opts`, the options it is started
   with, in their configured order, the first the default
-  (`VisionCore.Camera.Output.resolve/2`): `{:error, message}` for
+  (`VisionCore.Camera.Output.resolve/3`): `{:error, message}` for
   outputs it cannot make. Optional: a driver without it makes one
   output, unnamed.
   """
