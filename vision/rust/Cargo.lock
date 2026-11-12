@@ -331,6 +331,7 @@ dependencies = [
 name = "qnn_segment"
 version = "0.1.0"
 dependencies = [
+ "detection",
  "framing",
  "qnn",
 ]

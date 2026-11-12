@@ -2,6 +2,8 @@
 
 use std::ops::Range;
 
+use detection::bilinear;
+
 /// Bilinear resize of the RGB image's `rows`, `width` pixels wide, into `destination`, an
 /// `output_width` × `output_height` RGB image. Samples are taken at pixel centres, and a tap
 /// past the band's edge takes the edge's pixel, never a row outside the band.
@@ -13,72 +15,22 @@ pub fn resize_band(
     output_width: usize,
     output_height: usize,
 ) {
-    let columns = taps(width, output_width);
-    let image_row = |row: usize| &image[(rows.start + row) * width * 3..][..width * 3];
-    let (mut upper, mut lower) = (vec![0f32; output_width * 3], vec![0f32; output_width * 3]);
-    let (mut upper_row, mut lower_row) = (None, None);
-    for (tap, output_row) in taps(rows.len(), output_height)
-        .into_iter()
-        .zip(destination.chunks_exact_mut(output_width * 3))
-    {
-        if upper_row != Some(tap.first) {
-            if lower_row == Some(tap.first) {
-                std::mem::swap(&mut upper, &mut lower);
-                lower_row = upper_row;
-            } else {
-                blend_row(image_row(tap.first), &columns, &mut upper);
-            }
-            upper_row = Some(tap.first);
-        }
-        if lower_row != Some(tap.second) {
-            blend_row(image_row(tap.second), &columns, &mut lower);
-            lower_row = Some(tap.second);
-        }
-        let (upper_weight, lower_weight) = (1.0 - tap.weight, tap.weight);
-        for ((sample, &upper), &lower) in output_row.iter_mut().zip(&upper).zip(&lower) {
-            *sample = (upper * upper_weight + lower * lower_weight).round() as u8;
-        }
-    }
-}
-
-/// The two pixels a sample falls between, clamped to the input, and the second's weight.
-#[derive(Clone, Copy)]
-struct Tap {
-    first: usize,
-    second: usize,
-    weight: f32,
-}
-
-/// For each of `output` samples over `input` pixels, its tap.
-fn taps(input: usize, output: usize) -> Vec<Tap> {
-    let scale = input as f32 / output as f32;
-    let last = input as isize - 1;
-    (0..output)
-        .map(|sample| {
-            let position = (sample as f32 + 0.5) * scale - 0.5;
-            let first = position.floor();
-            let weight = position - first;
-            let first = first as isize;
-            Tap {
-                first: first.clamp(0, last) as usize,
-                second: (first + 1).clamp(0, last) as usize,
-                weight,
-            }
-        })
-        .collect()
-}
-
-/// The RGB `row` blended between each column tap's two pixels into `blended`.
-fn blend_row(row: &[u8], columns: &[Tap], blended: &mut [f32]) {
-    for (tap, samples) in columns.iter().zip(blended.chunks_exact_mut(3)) {
-        let (first_weight, second_weight) = (1.0 - tap.weight, tap.weight);
-        let first = &row[tap.first * 3..][..3];
-        let second = &row[tap.second * 3..][..3];
-        for channel in 0..3 {
-            samples[channel] = f32::from(first[channel]) * first_weight
-                + f32::from(second[channel]) * second_weight;
-        }
-    }
+    let to_pixels = |input: usize, output: usize| {
+        let scale = input as f32 / output as f32;
+        move |samples: f32| samples * scale
+    };
+    bilinear::resize_into::<3>(
+        &image[rows.start * width * 3..],
+        width,
+        &bilinear::taps(output_width, width, to_pixels(width, output_width)),
+        &bilinear::taps(
+            output_height,
+            rows.len(),
+            to_pixels(rows.len(), output_height),
+        ),
+        destination,
+        output_width * 3,
+    );
 }
 
 #[cfg(test)]
