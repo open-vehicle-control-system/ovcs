@@ -6,6 +6,9 @@
 //! The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and
 //! `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
+//! The model takes one 640x640 uint8 RGB image of pixel values and gives YOLOX's uint8
+//! `boxes`, `scores` and `class_idx`; another model is refused at start (`model`).
+//!
 //! Records are `hailo_detect`'s (`detection::protocol`): a request carries a
 //! sequence, the image's size, 1 (grey) or 3 (RGB) channels and its pixels;
 //! the reply the detections in the image's pixels and, when the graph ran, its
@@ -13,6 +16,7 @@
 //! when the profile is unavailable; or a LOG record.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
+mod model;
 mod yolox;
 
 use std::process::exit;
@@ -21,9 +25,10 @@ use std::time::Instant;
 use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{LogLevel, Writer};
+use model::Layout;
 use qnn::port::{self, Clock, Start};
 use qnn::{Performance, TimeLog};
-use yolox::{decode, Outputs, Quantisation, ANCHORS, MODEL_SIZE};
+use yolox::{decode, Outputs, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 const NMS_IOU: f32 = 0.45;
@@ -55,30 +60,6 @@ fn main() {
     }
 }
 
-/// The output tensor named `name`, which must hold `bytes` bytes.
-fn output_index(model: &qnn::Model, name: &str, bytes: usize) -> Result<usize, String> {
-    let index = model
-        .outputs
-        .iter()
-        .position(|tensor| tensor.name == name)
-        .ok_or_else(|| format!("the model has no output {name}"))?;
-    match model.outputs[index].bytes {
-        actual if actual == bytes => Ok(index),
-        actual => Err(format!("output {name} holds {actual} bytes, not {bytes}")),
-    }
-}
-
-fn quantisation(model: &qnn::Model, index: usize) -> Result<Quantisation, String> {
-    let tensor = &model.outputs[index];
-    let (scale, offset) = tensor
-        .scale_offset
-        .ok_or_else(|| format!("output {} is not quantised", tensor.name))?;
-    Ok(Quantisation {
-        scale,
-        zero_point: -offset,
-    })
-}
-
 fn run(
     context_path: &str,
     score_threshold: f32,
@@ -87,21 +68,13 @@ fn run(
 ) -> Result<(), String> {
     let mut model = port::open_model(context_path, performance, writer)?;
 
-    let input_bytes = (MODEL_SIZE * MODEL_SIZE * 3) as usize;
-    match model.inputs.as_slice() {
-        [input] if input.bytes == input_bytes => {}
-        _ => {
-            return Err(format!(
-                "the model takes {} inputs, not one {MODEL_SIZE}x{MODEL_SIZE} RGB image",
-                model.inputs.len()
-            ))
-        }
-    }
-    let boxes = output_index(&model, "boxes", ANCHORS * 4)?;
-    let scores = output_index(&model, "scores", ANCHORS)?;
-    let classes = output_index(&model, "class_idx", ANCHORS)?;
-    let (box_quantisation, score_quantisation) =
-        (quantisation(&model, boxes)?, quantisation(&model, scores)?);
+    let Layout {
+        boxes,
+        box_quantisation,
+        scores,
+        score_quantisation,
+        classes,
+    } = model::layout(&model.inputs, &model.outputs)?;
 
     port::log(
         writer,
@@ -119,7 +92,7 @@ fn run(
         ),
     );
 
-    let mut input = vec![0u8; input_bytes];
+    let mut input = vec![0u8; model.inputs[0].bytes];
     let mut buffers: Vec<Vec<u8>> = model
         .outputs
         .iter()
