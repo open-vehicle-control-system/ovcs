@@ -28,13 +28,13 @@ defmodule VisionApiWeb.SegmentationChannel do
   # On a unit without the pipeline, the client keeps retrying the refused join; logged, the acks would push everything else out of the log.
   use VisionApiWeb, {:channel, log_join: :debug, log_handle_in: false}
 
-  alias VisionApiWeb.SourceMonitor
+  alias VisionApiWeb.{ConfiguredPipeline, SourceMonitor}
   alias VisionCore.Detection
   alias VisionCore.Segmentation.Live
 
   @impl Phoenix.Channel
   def join("segmentation:" <> name, _payload, socket) do
-    case pipeline_name(name) do
+    case ConfiguredPipeline.fetch(name, :segmentation, VisionCore.Segmentation.Supervisor) do
       {:ok, pipeline} ->
         socket
         |> assign(awaiting_ack: false, waiting: nil)
@@ -88,24 +88,5 @@ defmodule VisionApiWeb.SegmentationChannel do
     <<frame_width::little-16, frame_height::little-16, x::little-16, y::little-16, w::little-16,
       h::little-16, segmentation.width::little-16, segmentation.height::little-16,
       segmentation.data::binary>>
-  end
-
-  # A name among the configured pipelines, which are existing atoms: a client's topics cannot grow the atom table nor reach another module's process.
-  defp pipeline_name(name) do
-    pipeline = String.to_existing_atom(name)
-
-    if {:segmentation, pipeline} in configured_outputs(), do: {:ok, pipeline}, else: :error
-  rescue
-    ArgumentError -> :error
-  end
-
-  defp configured_outputs do
-    case VisionCore.Application.active_config() do
-      nil ->
-        []
-
-      config ->
-        for {output, _key} <- VisionCore.Segmentation.Supervisor.outputs(config), do: output
-    end
   end
 end

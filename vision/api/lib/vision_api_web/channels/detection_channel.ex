@@ -11,7 +11,7 @@ defmodule VisionApiWeb.DetectionChannel do
   # On a unit without the pipeline, the client keeps retrying the refused join.
   use VisionApiWeb, {:channel, log_join: :debug}
 
-  alias VisionApiWeb.{DetectionJSON, SourceMonitor}
+  alias VisionApiWeb.{ConfiguredPipeline, DetectionJSON, SourceMonitor}
   alias VisionCore.Detection
   alias VisionCore.Detection.Live
 
@@ -21,7 +21,7 @@ defmodule VisionApiWeb.DetectionChannel do
   def join("detections", _payload, socket), do: join_pipeline(socket, @default_name)
 
   def join("detections:" <> name, _payload, socket) do
-    case pipeline_name(name) do
+    case ConfiguredPipeline.fetch(name, :detections, Detection.Supervisor) do
       {:ok, pipeline} -> join_pipeline(socket, pipeline)
       :error -> SourceMonitor.unavailable()
     end
@@ -38,22 +38,4 @@ defmodule VisionApiWeb.DetectionChannel do
 
   defp join_pipeline(socket, name),
     do: SourceMonitor.join(socket, Detection.server(Live, name), fn -> Live.subscribe(name) end)
-
-  # A name among the configured pipelines, which are existing atoms: a client's topics cannot grow the atom table nor reach another module's process.
-  defp pipeline_name(name) do
-    pipeline = String.to_existing_atom(name)
-
-    if pipeline != @default_name and {:detections, pipeline} in configured_outputs(),
-      do: {:ok, pipeline},
-      else: :error
-  rescue
-    ArgumentError -> :error
-  end
-
-  defp configured_outputs do
-    case VisionCore.Application.active_config() do
-      nil -> []
-      config -> for {output, _key} <- Detection.Supervisor.outputs(config), do: output
-    end
-  end
 end
