@@ -26,10 +26,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
     * `:dlc_path` — the model (required).
     * `:score_threshold` (`0.4`) — the lowest score `qnn_detect` reports.
-    * `:qairt_dir` (`"/opt/qairt"`) — QAIRT's runtime, as the firmware's
-      overlay installs it.
-    * `:dsp_library_path` (`"/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"`)
-      — the board's DSP libraries.
+    * `:qairt_dir`, `:dsp_library_path` and `:dsp_architecture` — where
+      QNN is on the board (`VisionCore.Detection.QnnPort`).
     * `:name` (the module) — the name it registers under.
     * `:pipeline` (`:detection`) — the detection pipeline whose inference
       step it declares.
@@ -129,9 +127,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
       dlc_path: Keyword.fetch!(opts, :dlc_path),
       performance_args: QnnPort.performance_args!(opts),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
-      qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
-      dsp_library_path:
-        Keyword.get(opts, :dsp_library_path, "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"),
+      runtime: QnnPort.runtime(opts),
       cache_dir: Keyword.get_lazy(opts, :cache_dir, fn -> default_cache_dir(pipeline) end),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       infer_timeout_ms: infer_timeout_ms,
@@ -172,7 +168,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl GenServer
   def handle_continue(:open, state) do
-    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
+    context_opts = [cache_dir: state.cache_dir] ++ state.runtime
     opening = QnnPort.start_context(state.dlc_path, state.executable, context_opts)
     {:noreply, %{state | opening: opening}}
   end
@@ -181,7 +177,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
     with {:ok, binary} <- context,
          args = [binary, to_string(state.score_threshold) | state.performance_args],
          {:ok, port} <-
-           QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
+           QnnPort.open(state.executable, args, state.runtime) do
       Logger.info(
         "#{label(state)} loaded #{Path.basename(state.dlc_path)} (score >= #{state.score_threshold})"
       )

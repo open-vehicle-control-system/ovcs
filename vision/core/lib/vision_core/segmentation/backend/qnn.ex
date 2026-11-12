@@ -33,9 +33,8 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
     * `:classes` (19, the Cityscapes classes) — the number of classes
       the pipeline names, which `qnn_segment` refuses a model scoring
       another number of.
-    * `:qairt_dir` (`"/opt/qairt"`) — QAIRT's runtime.
-    * `:dsp_library_path` (`"/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"`)
-      — the board's DSP libraries.
+    * `:qairt_dir`, `:dsp_library_path` and `:dsp_architecture` — where
+      QNN is on the board (`VisionCore.Detection.QnnPort`).
     * `:name` (the module) — the name it registers under.
     * `:cache_dir` (`"/data/vision/qnn/<pipeline>"`) — where the context
       binary is kept, which `VisionCore.Detection.QnnContext` keeps alone
@@ -131,9 +130,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       dlc_path: Keyword.fetch!(opts, :dlc_path),
       performance_args: QnnPort.performance_args!(opts),
       classes: Keyword.get(opts, :classes, length(VisionCore.Segmentation.labels())),
-      qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
-      dsp_library_path:
-        Keyword.get(opts, :dsp_library_path, "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"),
+      runtime: QnnPort.runtime(opts),
       cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn/#{pipeline}"),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       infer_timeout_ms: infer_timeout_ms,
@@ -169,7 +166,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   @impl GenServer
   def handle_continue(:open, state) do
-    context_opts = Map.take(state, [:qairt_dir, :dsp_library_path, :cache_dir]) |> Keyword.new()
+    context_opts = [cache_dir: state.cache_dir] ++ state.runtime
     opening = QnnPort.start_context(state.dlc_path, state.executable, context_opts)
     {:noreply, %{state | opening: opening}}
   end
@@ -178,7 +175,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
     with {:ok, binary} <- context,
          args = [binary, Integer.to_string(state.classes) | state.performance_args],
          {:ok, port} <-
-           QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
+           QnnPort.open(state.executable, args, state.runtime) do
       Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")
       %{state | port: port}
     else

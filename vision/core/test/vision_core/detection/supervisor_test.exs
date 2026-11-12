@@ -230,6 +230,7 @@ defmodule VisionCore.Detection.SupervisorTest do
       dlc_path: "/models/m.dlc",
       qairt_dir: "/opt/qairt",
       dsp_library_path: "/dsp",
+      dsp_architecture: "hexagon-v79",
       cache_dir: "/data/qnn",
       score_threshold: 0.4,
       performance: :sustained_high_performance

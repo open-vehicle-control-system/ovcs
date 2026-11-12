@@ -35,6 +35,7 @@ defmodule VisionCore.Detection.QnnContextTest do
     QnnContext.ensure(dlc,
       qairt_dir: qairt,
       dsp_library_path: "/dsp",
+      dsp_architecture: "hexagon-v75",
       cache_dir: cache,
       executable: @executable,
       runner: runner(self(), graph_names)
@@ -66,6 +67,13 @@ defmodule VisionCore.Detection.QnnContextTest do
     File.write!(Path.join(qairt, "lib/libQnnHtp.so"), "library two")
     assert {:ok, third} = ensure(dlc, qairt, cache)
     assert third not in [first, second]
+  end
+
+  test "QNN's environment names the DSP libraries of the board's Hexagon architecture" do
+    assert QnnContext.env("/qairt", "/dsp", "hexagon-v79") == [
+             {"LD_LIBRARY_PATH", "/qairt/lib"},
+             {"ADSP_LIBRARY_PATH", "/qairt/lib/hexagon-v79/unsigned;/dsp"}
+           ]
   end
 
   test "a binary cached under a key without the HTP graph options is generated again", %{
@@ -149,6 +157,7 @@ defmodule VisionCore.Detection.QnnContextTest do
       QnnContext.ensure(context.dlc,
         qairt_dir: context.qairt,
         dsp_library_path: "/dsp",
+        dsp_architecture: "hexagon-v75",
         cache_dir: context.cache,
         executable: @executable,
         runner: runner

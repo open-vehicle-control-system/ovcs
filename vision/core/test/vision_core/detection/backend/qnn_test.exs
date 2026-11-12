@@ -203,6 +203,21 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert Qnn.detect(1, @image) == {:error, :unavailable}
   end
 
+  test "takes the board's QAIRT, DSP libraries and Hexagon architecture, the VENTUNO Q's by default" do
+    assert VisionCore.Detection.QnnPort.runtime([]) == [
+             qairt_dir: "/opt/qairt",
+             dsp_library_path: "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp",
+             dsp_architecture: "hexagon-v75"
+           ]
+
+    assert VisionCore.Detection.QnnPort.runtime(
+             qairt_dir: "/qairt",
+             dsp_library_path: "/dsp",
+             dsp_architecture: "hexagon-v79",
+             dlc_path: "/model.dlc"
+           ) == [qairt_dir: "/qairt", dsp_library_path: "/dsp", dsp_architecture: "hexagon-v79"]
+  end
+
   test "hands the Port its performance profile when one is given", %{tmp_dir: dir} do
     for {opts, arguments} <- [
           {[], "0.4"},

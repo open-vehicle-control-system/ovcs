@@ -220,7 +220,7 @@ defmodule VisionCore.Detection.Supervisor do
   # The options of `Backend.Hailo`, `Backend.Qnn` and `Backend.Stub`.
   defp backend_keys do
     [:hef_path, :score_threshold, :executable, :working_directory, :library_path] ++
-      [:dlc_path, :qairt_dir, :dsp_library_path, :cache_dir] ++
+      [:dlc_path, :qairt_dir, :dsp_library_path, :dsp_architecture, :cache_dir] ++
       [:infer_timeout_ms, :reopen_delays_ms, :performance, :boxes]
   end
 end

@@ -70,6 +70,7 @@ defmodule VisionCore.Segmentation.SupervisorTest do
       dlc_path: "/model.dlc",
       qairt_dir: "/qairt",
       dsp_library_path: "/dsp",
+      dsp_architecture: "hexagon-v79",
       cache_dir: "/cache",
       executable: "/qnn_segment",
       infer_timeout_ms: 100,

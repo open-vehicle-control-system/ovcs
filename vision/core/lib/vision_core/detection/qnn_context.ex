@@ -34,6 +34,7 @@ defmodule VisionCore.Detection.QnnContext do
   @type opts :: [
           qairt_dir: Path.t(),
           dsp_library_path: Path.t(),
+          dsp_architecture: String.t(),
           cache_dir: Path.t(),
           executable: Path.t(),
           runner: (String.t(), [String.t()], [{String.t(), String.t()}] ->
@@ -43,8 +44,8 @@ defmodule VisionCore.Detection.QnnContext do
   @doc """
   The context binary of `dlc_path`, generated when missing.
 
-  Options: `:qairt_dir`, `:dsp_library_path`, `:cache_dir` and
-  `:executable`, the Port program that reads the DLC's graph names
+  Options: `:qairt_dir`, `:dsp_library_path`, `:dsp_architecture`,
+  `:cache_dir` and `:executable`, the Port program that reads the DLC's graph names
   (required), and `:runner`, which runs a program as `(command, args, env)
   -> {output, status}` (`System.cmd/3` by default).
   """
@@ -97,13 +98,14 @@ defmodule VisionCore.Detection.QnnContext do
 
   @doc """
   The environment QNN needs: its libraries, and the HTP's DSP libraries
-  with the board's own.
+  for the board's Hexagon architecture, `dsp_architecture`
+  (`"hexagon-v75"`), with the board's own.
   """
-  @spec env(Path.t(), Path.t()) :: [{String.t(), String.t()}]
-  def env(qairt_dir, dsp_library_path) do
+  @spec env(Path.t(), Path.t(), String.t()) :: [{String.t(), String.t()}]
+  def env(qairt_dir, dsp_library_path, dsp_architecture) do
     [
       {"LD_LIBRARY_PATH", Path.join(qairt_dir, "lib")},
-      {"ADSP_LIBRARY_PATH", "#{qairt_dir}/lib/hexagon-v75/unsigned;#{dsp_library_path}"}
+      {"ADSP_LIBRARY_PATH", "#{qairt_dir}/lib/#{dsp_architecture}/unsigned;#{dsp_library_path}"}
     ]
   end
 
@@ -118,7 +120,13 @@ defmodule VisionCore.Detection.QnnContext do
     qairt_dir = Keyword.fetch!(opts, :qairt_dir)
     cache_dir = Keyword.fetch!(opts, :cache_dir)
     runner = Keyword.get(opts, :runner, &System.cmd(&1, &2, env: &3, stderr_to_stdout: true))
-    env = env(qairt_dir, Keyword.fetch!(opts, :dsp_library_path))
+
+    env =
+      env(
+        qairt_dir,
+        Keyword.fetch!(opts, :dsp_library_path),
+        Keyword.fetch!(opts, :dsp_architecture)
+      )
 
     with {:ok, graph_names} <-
            graph_names(dlc_path, Keyword.fetch!(opts, :executable), runner, env) do

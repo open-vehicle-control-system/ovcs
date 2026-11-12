@@ -5,6 +5,18 @@ defmodule VisionCore.Detection.QnnPort do
   context binary it runs (`VisionCore.Detection.QnnContext`), the program
   started with QNN's environment, its performance profile, and the wait
   before it is reopened.
+
+  ## The board
+
+  Where QNN is on the board, `runtime/1`'s options, by default the
+  Arduino VENTUNO Q's:
+
+    * `:qairt_dir` (`"/opt/qairt"`) — QAIRT's runtime, as the firmware's
+      overlay installs it.
+    * `:dsp_library_path` (`"/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"`)
+      — the board's DSP libraries.
+    * `:dsp_architecture` (`"hexagon-v75"`) — the Hexagon architecture
+      of the board's NPU, the directory of QAIRT's DSP libraries for it.
   """
 
   alias VisionCore.Detection.QnnContext
@@ -12,7 +24,25 @@ defmodule VisionCore.Detection.QnnPort do
   # Detects a wedged Port; not a latency budget.
   @default_infer_timeout_ms 2_000
   @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
+  @default_runtime [
+    qairt_dir: "/opt/qairt",
+    dsp_library_path: "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp",
+    dsp_architecture: "hexagon-v75"
+  ]
   @performance_profiles [:burst, :sustained_high_performance, :balanced, :power_saver, :none]
+
+  @typedoc "Where QNN is on the board; see the module doc."
+  @type runtime :: [
+          qairt_dir: Path.t(),
+          dsp_library_path: Path.t(),
+          dsp_architecture: String.t()
+        ]
+
+  @doc "The board's options among `opts`, each with its default (see the module doc)."
+  @spec runtime(keyword()) :: runtime()
+  def runtime(opts) do
+    for {key, default} <- @default_runtime, do: {key, Keyword.get(opts, key, default)}
+  end
 
   @doc """
   The context binary of `dlc_path` for the program `executable`, generated
@@ -38,14 +68,15 @@ defmodule VisionCore.Detection.QnnPort do
 
   @doc """
   Starts `executable` with `args` as a Port of 4-byte framed binary
-  packets reporting its exit status, in QNN's environment
-  (`VisionCore.Detection.QnnContext.env/2`).
+  packets reporting its exit status, in QNN's environment on the board
+  `runtime` (`VisionCore.Detection.QnnContext.env/3`).
   """
-  @spec open(Path.t(), [String.t()], Path.t(), Path.t()) :: {:ok, port()} | {:error, term()}
-  def open(executable, args, qairt_dir, dsp_library_path) do
-    env =
-      for {name, value} <- QnnContext.env(qairt_dir, dsp_library_path),
-          do: {String.to_charlist(name), String.to_charlist(value)}
+  @spec open(Path.t(), [String.t()], runtime()) :: {:ok, port()} | {:error, term()}
+  def open(executable, args, runtime) do
+    qnn_env =
+      QnnContext.env(runtime[:qairt_dir], runtime[:dsp_library_path], runtime[:dsp_architecture])
+
+    env = for {name, value} <- qnn_env, do: {String.to_charlist(name), String.to_charlist(value)}
 
     port =
       Port.open({:spawn_executable, executable}, [
