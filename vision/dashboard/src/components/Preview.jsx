@@ -7,11 +7,24 @@ const FrameSize = createContext(null)
 export const useFrameSize = () => use(FrameSize)
 
 /**
- * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, `onChannel`
- * gets the stream's channel before it joins, to bind its own events, and `overlay` is drawn over the frame once its
- * size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
+ * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `band`
+ * under the caption, in a part of its own, there and empty without one, so previews sharing a row's tracks keep their
+ * frames level. `onChannel` gets the stream's channel before it joins, to bind its own events, and `overlay` is drawn
+ * over the frame once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning
+ * ring around it, frame or not.
  */
-export default function Preview({ stream, socket, onChannel, overlay, badge, alert = false, className = '', frameClassName = '', children }) {
+export default function Preview({
+  stream,
+  socket,
+  onChannel,
+  overlay,
+  badge,
+  band,
+  alert = false,
+  className = '',
+  frameClassName = '',
+  children
+}) {
   const [frame, setFrame] = useState(null)
   const [size, setSize] = useState(null)
   const frameRef = useRef(null)
@@ -78,6 +91,9 @@ export default function Preview({ stream, socket, onChannel, overlay, badge, ale
         </div>
         {children}
       </figcaption>
+      <div data-band className="flex flex-col gap-1.5 px-3 pb-2 text-sm empty:p-0">
+        {band}
+      </div>
     </OvcsCard>
   )
 }

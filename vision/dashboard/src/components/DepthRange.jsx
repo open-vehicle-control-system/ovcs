@@ -40,7 +40,7 @@ export default function DepthRange({ channel, metres, onChange }) {
   }
 
   return (
-    <div data-figure="colour scale" className="flex min-w-56 flex-1 select-none flex-col gap-1">
+    <div data-colour-scale className="flex select-none flex-col gap-1">
       <div className="flex items-center gap-2">
         <span className="flex items-center gap-1 text-xs text-ovcs-muted">
           <span id={labelId}>colour scale</span>

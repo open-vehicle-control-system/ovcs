@@ -145,7 +145,7 @@ describe('Previews', () => {
   })
 
   describe('colour range', () => {
-    const scale = () => card('depth').querySelector('[data-figure="colour scale"]')
+    const scale = () => figure('depth').querySelector('[data-colour-scale]')
 
     it('shows the range the depth stream pushes as it joins, then each one pushed after a rejoin or a change', () => {
       const { socket, push } = liveSocket({ depthRange: 8 })
@@ -200,7 +200,63 @@ describe('Previews', () => {
       const row = document.querySelector('[data-cameras]')
       expect(row.children).toHaveLength(1)
       expect(row.firstElementChild.contains(figure('depth'))).toBe(true)
-      expect(row.className).toContain('lg:grid-rows-[minmax(0,1fr)]')
+      expect(row.className.split(' ')).toContain('lg:grid-rows-[minmax(0,1fr)_auto_auto]')
+    })
+  })
+
+  describe('bands', () => {
+    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs }] })
+    afterEach(() => act(() => useExporters.setState({ exporters: [] })))
+
+    // A preview's band: its last part, under its caption.
+    const band = (stream) => {
+      const last = figure(stream).lastElementChild
+      return last.hasAttribute('data-band') ? last : null
+    }
+    const classes = (element) => element.className.split(' ')
+
+    it("puts the depth's colour scale in its band, out of its figures", () => {
+      const { socket } = liveSocket({ depthRange: 8 })
+      render(<Previews status={snapshot} socket={socket} />)
+
+      expect(band('depth').querySelector('[data-colour-scale]').textContent).toContain('8.0 m')
+      expect(card('depth').querySelector('[data-colour-scale]')).toBeNull()
+    })
+
+    it("puts a camera's segmentation legend in its band", () => {
+      listed({ name: 'camera_frame:hq', maxHz: 5 }, { name: 'segmentation:road', maxHz: 5, source: 'hq' })
+      const { socket, push } = liveSocket({ depthRange: 8 })
+      render(<Previews status={snapshot} socket={socket} />)
+
+      push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
+
+      expect(band('hq').contains(screen.getByRole('list', { name: 'road classes' }))).toBe(true)
+    })
+
+    it('gives every preview a band, empty with nothing to show, sized by the row it shares with its neighbours', () => {
+      listed({ name: 'camera_frame:hq', maxHz: 5 }, { name: 'camera_frame:usb', maxHz: 5 }, { name: 'segmentation:road', maxHz: 5, source: 'hq' })
+      const { socket, push } = liveSocket({ depthRange: 8 })
+      render(<Previews status={snapshot} socket={socket} />)
+      push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
+
+      const streams = ['left', 'right', 'depth', 'hq', 'usb']
+      for (const stream of streams) expect(band(stream)).not.toBeNull()
+      for (const stream of streams) expect(band(stream).className).toBe(band('depth').className)
+      for (const stream of ['left', 'right', 'usb']) expect(band(stream).childElementCount).toBe(0)
+
+      // Each preview spans its row's three tracks, frame, caption and band, which size them across the row.
+      const pair = screen.getByRole('list', { name: 'Camera pair' })
+      expect(classes(pair.parentElement)).toEqual(expect.arrayContaining(['grid-rows-[auto_auto_1fr]', 'gap-y-0']))
+      expect(classes(pair)).toEqual(expect.arrayContaining(['row-span-3', 'self-center']))
+      for (const stream of ['left', 'right']) {
+        expect(classes(figure(stream))).toEqual(expect.arrayContaining(['row-span-3', 'grid', 'grid-cols-[minmax(0,1fr)]', 'grid-rows-subgrid']))
+      }
+      const row = document.querySelector('[data-cameras]')
+      expect(classes(row)).toEqual(expect.arrayContaining(['lg:grid-rows-[minmax(0,1fr)_auto_auto]', 'lg:gap-y-0']))
+      for (const stream of ['depth', 'hq', 'usb']) {
+        expect(figure(stream).parentElement).toBe(row)
+        expect(classes(figure(stream))).toEqual(expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)]', 'lg:grid-rows-subgrid']))
+      }
     })
   })
 
@@ -606,7 +662,7 @@ describe('Previews', () => {
       push('segmentation:road', 'classes', { labels: cityscapes, roadClasses: ['road'] })
       push('segmentation:road', 'segmentation', result)
 
-      expect(figure('hq').contains(legend())).toBe(true)
+      expect(figure('hq').lastElementChild.contains(legend())).toBe(true)
       expect(items('road')).toEqual(cityscapes.map((name) => name.replaceAll('_', ' ')))
       expect(present()).toEqual(['road', 'sidewalk', 'sky', 'car'])
       const item = (name) => legend().querySelector(`[data-class="${name}"]`)

@@ -19,7 +19,7 @@ import {
 } from '../status.js'
 
 // Each figure is a small label over its value; the one with a tone carries the stream's health dot.
-function Figures({ id, figures, children }) {
+function Figures({ id, figures }) {
   return (
     <div data-card={id} className="flex flex-wrap items-end gap-x-4 gap-y-1">
       {figures.map(({ label, value, tone, hint }) => (
@@ -37,7 +37,6 @@ function Figures({ id, figures, children }) {
           )}
         </div>
       ))}
-      {children}
     </div>
   )
 }
@@ -107,7 +106,7 @@ function PairStatus({ status }) {
   const items = status ? pairStatus(status) : PAIR_CHECKS.map((check) => ({ ...check, value: '–', tone: 'muted', issues: [] }))
 
   return (
-    <ul aria-label="Camera pair" className="flex w-52 flex-col gap-3">
+    <ul aria-label="Camera pair" className="row-span-3 flex w-52 flex-col gap-3 self-center">
       {items.map((item) => (
         <PairCheck key={item.id} item={item} />
       ))}
@@ -133,6 +132,12 @@ function badges({ actions, wording }) {
 
 // Whether a preview has something to do, for the ring around its frame.
 const needsAction = ({ actions }) => actions.length > 0
+
+// A preview's part of its row's tracks, frame, caption and band: always beside the pair's checks, from `lg` in the
+// depth's row, whose previews stack below it. Its column shrinks below its content's width, as the card does.
+const PAIR_TILE = 'row-span-3 grid grid-cols-[minmax(0,1fr)] grid-rows-subgrid'
+const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-rows-subgrid'
+const ROW_FRAME = 'lg:aspect-auto lg:min-h-0'
 
 const DETECTIONS = 'detections'
 
@@ -286,11 +291,11 @@ function CameraPreview({ name, status, socket }) {
       stream={name}
       socket={socket}
       overlay={layers.length > 0 ? layers : null}
-      className="lg:flex lg:min-h-0 lg:flex-col"
-      frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
+      band={legends}
+      className={ROW_TILE}
+      frameClassName={ROW_FRAME}
     >
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
-      {legends}
     </Preview>
   )
 }
@@ -332,6 +337,7 @@ function LeftPreview({ status, socket }) {
       stream="left"
       socket={socket}
       overlay={overlay}
+      className={PAIR_TILE}
       badge={badges(cameraIssues(status?.cameras?.left))}
       alert={needsAction(cameraIssues(status?.cameras?.left))}
     >
@@ -359,35 +365,43 @@ function DepthPreview({ status, socket }) {
       stream="depth"
       socket={socket}
       onChannel={follow}
-      className="lg:flex lg:min-h-0 lg:flex-col"
-      frameClassName="lg:aspect-auto lg:min-h-0 lg:flex-1"
+      band={<DepthRange channel={channel} metres={metres} onChange={setMetres} />}
+      className={ROW_TILE}
+      frameClassName={ROW_FRAME}
       badge={badges(depthIssues(status))}
       alert={needsAction(depthIssues(status))}
     >
-      <Figures id="depth" figures={status ? depthFigures(status) : []}>
-        <DepthRange channel={channel} metres={metres} onChange={setMetres} />
-      </Figures>
+      <Figures id="depth" figures={status ? depthFigures(status) : []} />
     </Preview>
   )
 }
 
-/** Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of their own side by side, filling the height left. */
+/**
+ * Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of
+ * their own side by side, filling the height left. Each preview of a row spans the row's three tracks, frame, caption
+ * and band, so its frame starts and ends level with its neighbours' whatever their captions and bands hold.
+ */
 export default function Previews({ status, socket }) {
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+      {/* The band's track takes the height the pair's checks add, under the captions. */}
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0">
         <LeftPreview status={status} socket={socket} />
         <PairStatus status={status} />
         <Preview
           stream="right"
           socket={socket}
+          className={PAIR_TILE}
           badge={badges(cameraIssues(status?.cameras?.right))}
           alert={needsAction(cameraIssues(status?.cameras?.right))}
         >
           {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}
         </Preview>
       </div>
-      <div data-cameras className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)]">
+      <div
+        data-cameras
+        className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:gap-y-0"
+      >
         <DepthPreview status={status} socket={socket} />
         <CameraPreviews status={status} socket={socket} />
       </div>
