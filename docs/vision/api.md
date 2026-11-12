@@ -297,6 +297,8 @@ The API lists a `camera_frame:<name>` output for each camera of its own, as in t
 
 A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one, on the ROS 2 exporter (when its `detections:` lists the pipeline) and on the API. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on: `left` for the stereo pair, or the name of a camera of its own, `hq` for a pipeline on the camera `hq`.
 
+A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections: on the ROS 2 exporter when its `segmentation:` lists the pipeline, every one by default, and on the API, with the pipeline's camera as its `source`.
+
 A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
 An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`. The action's parameters go in `attributes` when it takes any.
