@@ -49,7 +49,7 @@ defmodule VisionCore.JpegTest do
 
     assert {:ok, jpeg} = Jpeg.encode_tensor(image, codec: :second_codec)
     assert {:ok, {8, 8, _pixels}} = Jpeg.decode_grey(jpeg, codec: :second_codec)
-    assert :sys.get_state(Jpeg).port == nil
+    assert :sys.get_state(Jpeg).ports == %{}
   end
 
   test "encodes at the quality asked for" do
@@ -71,20 +71,86 @@ defmodule VisionCore.JpegTest do
     assert {:error, {:no_encoder, "/nonexistent/jpeg_codec"}} = Jpeg.encode(<<0>>, 1, 1, 1)
   end
 
-  test "a late reply does not reach the next caller" do
-    path = Application.get_env(:vision_core, :jpeg_codec_path)
-    on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)
+  describe "a pool of Ports" do
+    setup do
+      path = Application.get_env(:vision_core, :jpeg_codec_path)
+      on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)
 
-    Application.put_env(
-      :vision_core,
-      :jpeg_codec_path,
-      Path.expand("../support/slow_jpeg_codec.py", __DIR__)
-    )
+      Application.put_env(
+        :vision_core,
+        :jpeg_codec_path,
+        Path.expand("../support/slow_jpeg_codec.py", __DIR__)
+      )
 
-    stop_supervised!(Jpeg)
-    start_supervised!({Jpeg, timeout_ms: 100})
+      stop_supervised!(Jpeg)
+      :ok
+    end
 
-    assert {:error, :timeout} = Jpeg.encode(<<1>>, 1, 1, 1)
-    assert {:ok, "fast"} = Jpeg.encode(<<0>>, 1, 1, 1)
+    # The fake jpeg_codec answers by a request's last byte; see slow_jpeg_codec.py.
+    defp fake(byte), do: Jpeg.encode(<<byte>>, 1, 1, 1)
+    defp slow, do: Task.async(fn -> fake(1) end)
+
+    defp await_busy(ports) do
+      busy = :sys.get_state(Jpeg).ports |> Map.values() |> Enum.count(&(&1 != nil))
+      if busy < ports, do: await_busy(ports)
+    end
+
+    test "a late reply does not reach the next caller" do
+      start_supervised!({Jpeg, ports: 1, timeout_ms: 100})
+
+      assert {:error, :timeout} = fake(1)
+      assert {:ok, "fast"} = fake(0)
+    end
+
+    test "a request runs on a free Port while another Port encodes" do
+      start_supervised!({Jpeg, ports: 2})
+      slow = slow()
+      await_busy(1)
+
+      assert {:ok, "fast"} = fake(0)
+      assert Task.yield(slow, 0) == nil
+      assert {:ok, "slow"} = Task.await(slow)
+    end
+
+    test "requests wait for a Port once every Port is busy, served in arrival order" do
+      start_supervised!({Jpeg, ports: 1})
+      test_pid = self()
+
+      Task.start_link(fn ->
+        for round <- 1..3, do: send(test_pid, {:steady, round, fake(1)})
+      end)
+
+      await_busy(1)
+      assert {:ok, "fast"} = fake(0)
+
+      assert_receive {:steady, 1, {:ok, "slow"}}
+      refute_received {:steady, 2, _reply}
+      assert_receive {:steady, 3, {:ok, "slow"}}, 2_000
+    end
+
+    test "a free Port is reused, and no more Ports open than requests need" do
+      start_supervised!({Jpeg, ports: 3})
+
+      assert {:ok, pid} = fake(3)
+      assert {:ok, ^pid} = fake(3)
+      assert map_size(:sys.get_state(Jpeg).ports) == 1
+    end
+
+    @tag :capture_log
+    test "a Port that exits fails its own request only, and reopens on the next" do
+      start_supervised!({Jpeg, ports: 2})
+      slow = slow()
+      await_busy(1)
+
+      assert {:error, {:exited, 3}} = fake(2)
+      assert {:ok, "slow"} = Task.await(slow)
+      assert {:ok, "fast"} = fake(0)
+    end
+
+    test "its size is a positive integer" do
+      for ports <- [0, -1, 1.5, :three] do
+        assert_raise ArgumentError, ~r/:ports/, fn -> Jpeg.start_link(ports: ports) end
+      end
+    end
   end
 end

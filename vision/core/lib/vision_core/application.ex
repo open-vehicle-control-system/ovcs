@@ -43,8 +43,9 @@ defmodule VisionCore.Application do
   sources does not restart the exporters.
 
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
-  on `VisionCore.Jpeg`, while the exporters and `VisionCore.Preview`
-  encode on `VisionCore.Jpeg.Export`, apart from those decodes. The
+  on `VisionCore.Jpeg`, one Port, while the exporters and
+  `VisionCore.Preview` encode on `VisionCore.Jpeg.Export`, a pool of
+  Ports, apart from those decodes. The
   second starts after the components, before the exporters, so that its
   restart reaches only what starts after it, its users among them, not
   the cameras and pipelines.
@@ -86,7 +87,7 @@ defmodule VisionCore.Application do
       [VisionCore.Parameters.Storage, VisionCore.Parameters, VisionCore.Outputs] ++
         ros2_children(config.ros2) ++
         [
-          VisionCore.Jpeg,
+          {VisionCore.Jpeg, ports: 1},
           {VisionCore.Stereo.Matcher,
            path: Application.get_env(:vision_core, :stereo_match_path),
            threads: Application.get_env(:vision_core, :stereo_match_threads)}

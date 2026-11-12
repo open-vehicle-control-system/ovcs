@@ -1,30 +1,42 @@
 defmodule VisionCore.Jpeg do
   @moduledoc """
-  JPEG through the `jpeg_codec` Port: encodes grey frames and rectified
-  images, colours and encodes depth previews, and decodes JPEG camera
-  frames to grey.
-  Requests are served one at a time.
+  JPEG through a pool of `jpeg_codec` Ports: encodes grey frames and
+  rectified images, colours and encodes depth previews, and decodes JPEG
+  camera frames to grey.
 
-  `VisionCore.Application` starts two instances: `VisionCore.Jpeg`, on
-  which the stereo pipeline decodes JPEG camera frames, and
-  `VisionCore.Jpeg.Export`, on which `VisionCore.Preview` and the
-  exporters encode, so that those encodes and the pipeline's decodes do
-  not wait on each other. Each function runs on the instance its
-  `:codec` option names, `VisionCore.Jpeg` by default.
+  Each Port serves one request at a time. A request goes to any free
+  Port, so a slow encode holds only its own Port; once all `:ports` are
+  busy, requests wait in one queue, served in arrival order. A caller
+  waits for its reply, so it has one request in the pool at a time:
+  the queue is no longer than the number of callers, and a caller
+  sending request after request waits its turn like the others,
+  starving none.
+
+  `VisionCore.Application` starts two instances: `VisionCore.Jpeg`, one
+  Port on which the stereo pipeline decodes JPEG camera frames, and
+  `VisionCore.Jpeg.Export`, the pool `VisionCore.Preview` and the
+  exporters encode on, so that those encodes and the pipeline's decodes
+  do not wait on each other. Each function runs on the instance
+  its `:codec` option names, `VisionCore.Jpeg` by default.
 
   The binary is `priv/jpeg_codec`, or `config :vision_core,
-  :jpeg_codec_path`. The Port opens on the first request and reopens
-  after it exits. A request without a reply within `:timeout_ms` closes
-  the Port, so its late reply cannot answer the next one.
+  :jpeg_codec_path`. A Port opens when a request finds every open Port
+  busy and fewer than `:ports` open. A Port that exits fails its own
+  request only, and another opens for the next. A request without a
+  reply within `:timeout_ms` of reaching its Port closes that Port, so
+  its late reply cannot answer the next one.
 
   ## Options
 
     * `:name` (`VisionCore.Jpeg`) — the server's name, and its child id.
-    * `:timeout_ms` (`5000`) — how long a request may wait for its reply.
+    * `:ports` (`3`) — the most Ports open at once, a positive integer.
+    * `:timeout_ms` (`5000`) — how long a request may wait for its
+      reply once on a Port.
   """
   use GenServer
   require Logger
 
+  @default_ports 3
   @default_timeout_ms 5_000
   @default_quality 80
   @encode 0
@@ -34,9 +46,20 @@ defmodule VisionCore.Jpeg do
   @typedoc "`:codec`, the instance a request runs on, and an encode's `:quality` (`80`)."
   @type option :: {:codec, GenServer.server()} | {:quality, 1..100}
 
-  @doc "Starts the codec server; see the module doc for `opts`."
-  def start_link(opts \\ []),
-    do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
+  @doc """
+  Starts the codec server; see the module doc for `opts`. Raises
+  `ArgumentError` when `:ports` is not a positive integer.
+  """
+  def start_link(opts \\ []) do
+    case Keyword.get(opts, :ports, @default_ports) do
+      ports when is_integer(ports) and ports > 0 ->
+        GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
+
+      ports ->
+        raise ArgumentError,
+              "#{inspect(__MODULE__)} :ports is a positive integer, got #{inspect(ports)}"
+    end
+  end
 
   @doc false
   def child_spec(opts),
@@ -112,56 +135,124 @@ defmodule VisionCore.Jpeg do
 
   defp quality(options), do: Keyword.get(options, :quality, @default_quality)
 
+  # `ports` maps each open Port to its request, `nil` while free; `waiting` holds the
+  # requests no Port is free for, oldest first.
   @impl GenServer
-  def init(opts),
-    do: {:ok, %{port: nil, timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms)}}
+  def init(opts) do
+    {:ok,
+     %{
+       size: Keyword.get(opts, :ports, @default_ports),
+       timeout_ms: Keyword.get(opts, :timeout_ms, @default_timeout_ms),
+       ports: %{},
+       waiting: :queue.new()
+     }}
+  end
 
   @impl GenServer
-  def handle_call({:request, request}, _from, state) do
-    case ensure_port(state) do
-      {:ok, %{port: port} = state} ->
-        Port.command(port, request)
+  def handle_call({:request, request}, from, state),
+    do: {:noreply, dispatch(%{state | waiting: :queue.in({from, request}, state.waiting)})}
 
-        receive do
-          {^port, {:data, <<>>}} ->
-            {:reply, {:error, :bad_request}, state}
+  @impl GenServer
+  def handle_info({port, {:data, data}}, state) when is_map_key(state.ports, port) do
+    case state.ports[port] do
+      nil ->
+        {:noreply, state}
 
-          {^port, {:data, reply}} ->
-            {:reply, {:ok, reply}, state}
-
-          {^port, {:exit_status, status}} ->
-            {:reply, {:error, {:exited, status}}, %{state | port: nil}}
-        after
-          state.timeout_ms ->
-            Port.close(port)
-            {:reply, {:error, :timeout}, %{state | port: nil}}
-        end
-
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
+      %{from: from, timer: timer} ->
+        Process.cancel_timer(timer)
+        GenServer.reply(from, if(data == <<>>, do: {:error, :bad_request}, else: {:ok, data}))
+        {:noreply, dispatch(put_in(state.ports[port], nil))}
     end
   end
 
-  @impl GenServer
-  def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
+  def handle_info({port, {:exit_status, status}}, state) when is_map_key(state.ports, port) do
     Logger.warning("#{__MODULE__}: jpeg_codec exited with #{status}")
-    {:noreply, %{state | port: nil}}
+    {:noreply, state |> drop(port, {:error, {:exited, status}}) |> dispatch()}
   end
 
+  def handle_info({:timeout, port, reference}, state) do
+    case state.ports do
+      %{^port => %{reference: ^reference}} ->
+        close(port)
+        {:noreply, state |> drop(port, {:error, :timeout}) |> dispatch()}
+
+      _ports ->
+        {:noreply, state}
+    end
+  end
+
+  # Replies from a Port closed on a timeout come here, answering no one.
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp ensure_port(%{port: nil} = state) do
-    path = executable()
+  defp dispatch(state) do
+    case :queue.out(state.waiting) do
+      {:empty, _waiting} ->
+        state
 
-    if File.exists?(path) do
-      port = Port.open({:spawn_executable, path}, [:binary, {:packet, 4}, :exit_status])
-      {:ok, %{state | port: port}}
-    else
-      {:error, {:no_encoder, path}}
+      {{:value, {from, request}}, waiting} ->
+        case free_port(state) do
+          {:ok, port} ->
+            %{state | waiting: waiting} |> run(port, from, request) |> dispatch()
+
+          :busy ->
+            state
+
+          {:error, _reason} = error ->
+            GenServer.reply(from, error)
+            dispatch(%{state | waiting: waiting})
+        end
     end
   end
 
-  defp ensure_port(state), do: {:ok, state}
+  defp free_port(state) do
+    case Enum.find(state.ports, fn {_port, job} -> job == nil end) do
+      {port, nil} -> {:ok, port}
+      nil when map_size(state.ports) < state.size -> open_port()
+      nil -> :busy
+    end
+  end
+
+  defp run(state, port, from, request) do
+    Port.command(port, request)
+    reference = make_ref()
+    timer = Process.send_after(self(), {:timeout, port, reference}, state.timeout_ms)
+    put_in(state.ports[port], %{from: from, reference: reference, timer: timer})
+  rescue
+    # The Port exited while free, its exit status not yet handled: the request takes another.
+    ArgumentError ->
+      %{
+        state
+        | ports: Map.delete(state.ports, port),
+          waiting: :queue.in_r({from, request}, state.waiting)
+      }
+  end
+
+  defp drop(state, port, reply) do
+    case state.ports[port] do
+      %{from: from, timer: timer} ->
+        Process.cancel_timer(timer)
+        GenServer.reply(from, reply)
+
+      nil ->
+        :ok
+    end
+
+    %{state | ports: Map.delete(state.ports, port)}
+  end
+
+  defp close(port) do
+    Port.close(port)
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp open_port do
+    path = executable()
+
+    if File.exists?(path),
+      do: {:ok, Port.open({:spawn_executable, path}, [:binary, {:packet, 4}, :exit_status])},
+      else: {:error, {:no_encoder, path}}
+  end
 
   defp executable do
     Application.get_env(:vision_core, :jpeg_codec_path) ||
