@@ -7,12 +7,14 @@
 //! correction matrix of its colour temperature, the chroma denoise and the
 //! contrast curve; another one its gamma.
 
+use std::fs::File;
 use std::io;
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::{AsFd, AsRawFd, RawFd};
+use std::time::{Duration, Instant};
 
-use framing::{metadata_record, rgb_frame_header, LogLevel, Writer};
+use framing::{log_record, metadata_record, rgb_frame_header, LogLevel, Writer};
 
-use crate::arguments::SingleArguments;
+use crate::arguments::{Output, SingleArguments};
 use crate::bands::{Conversion, Measures};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
@@ -60,15 +62,135 @@ pub fn run(
         sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
         Ok((f64::from(lines) * line_ns / 1_000.0, model.gain(code)))
     };
-    // Tells the host the exposure and gain just applied, stamped with a frame start.
-    let report_exposure = |(exposure_us, gain): (f64, f64), capture_ns: i64| -> io::Result<()> {
-        let mut values = [0.0; framing::METADATA_FIELDS];
-        values[0] = exposure_us;
-        values[1] = gain;
-        writer.write_record(&metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values))
-    };
     sensor.set_control(v4l2::CID_VBLANK, vblank)?;
 
+    let settings = arguments.settings.clone();
+    writer.write_record(&exposure_record(
+        set_exposure(
+            f64::from(settings.capture.exposure_us),
+            settings.capture.analogue_gain,
+        )?,
+        0,
+    ))?;
+    log(
+        LogLevel::Info,
+        &format!(
+            "{sensor_width}x{sensor_height} {:?} to {width}x{height} {:?}, line {line_ns:.1} ns, \
+             vblank {vblank}, period {period_ns} ns, {settings:?}",
+            camera.capture.layout, arguments.output
+        ),
+    );
+    let frames = CameraFrames {
+        capture: &camera.capture,
+        width: sensor_width as usize,
+        height: sensor_height as usize,
+    };
+    let setup = Setup {
+        output: arguments.output,
+        model,
+        frame_us,
+        settings,
+        statistics_every: Duration::from_secs(STATISTICS_EVERY_S),
+    };
+    let mut input = input::unbuffered(io::stdin().as_fd())?;
+    capture(setup, &frames, &set_exposure, &mut input, writer)
+}
+
+/// The record telling the host the exposure and gain just applied, stamped
+/// with a frame start.
+fn exposure_record((exposure_us, gain): (f64, f64), capture_ns: i64) -> Vec<u8> {
+    let mut values = [0.0; framing::METADATA_FIELDS];
+    values[0] = exposure_us;
+    values[1] = gain;
+    metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
+}
+
+/// Where the frame loop takes its frames from.
+trait Frames {
+    /// The descriptor `poll` reports a frame ready on.
+    fn descriptor(&self) -> RawFd;
+
+    /// Hands the next frame ready to `take`, with its start, or `None` for
+    /// one incomplete, then gives its buffer back to the driver; `None`
+    /// when no frame is ready.
+    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>>;
+}
+
+/// The frames of a capture node, `width` x `height` samples each.
+struct CameraFrames<'a> {
+    capture: &'a v4l2::Capture,
+    width: usize,
+    height: usize,
+}
+
+impl Frames for CameraFrames<'_> {
+    fn descriptor(&self) -> RawFd {
+        self.capture.node.fd
+    }
+
+    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>> {
+        let Some(frame) = self.capture.dequeue()? else {
+            return Ok(None);
+        };
+        let whole = self.capture.complete(&frame).then(|| {
+            let raw = RawFrame {
+                raw: self.capture.pixels(&frame),
+                width: self.width,
+                height: self.height,
+                row_stride: self.capture.row_stride,
+                layout: self.capture.layout,
+            };
+            (raw, frame.start_ns)
+        });
+        let taken = take(whole);
+        self.capture.queue(frame.index)?;
+        Ok(Some(taken))
+    }
+}
+
+/// Where the frame loop writes its records.
+trait Records: Sync {
+    /// Writes one record of `parts`.
+    fn write(&self, parts: &[&[u8]]) -> io::Result<()>;
+}
+
+impl Records for Writer {
+    fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
+        self.write_record_parts(parts)
+    }
+}
+
+/// What the frame loop starts from.
+struct Setup {
+    output: Output,
+    model: SensorModel,
+    /// A frame's period.
+    frame_us: f64,
+    settings: ColourSettings,
+    /// How often the statistics are logged.
+    statistics_every: Duration,
+}
+
+/// Converts the frames of `frames` as `setup` says and writes them to
+/// `records`, steering the sensor's exposure through `set_exposure` and
+/// applying the settings `input` sends, until `input` closes.
+fn capture(
+    setup: Setup,
+    frames: &impl Frames,
+    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    input: &mut File,
+    records: &impl Records,
+) -> io::Result<()> {
+    let Setup {
+        output,
+        model,
+        frame_us,
+        mut settings,
+        statistics_every,
+    } = setup;
+    let log = |level, message: &str| {
+        let _ = records.write(&[&log_record(level, message)]);
+    };
     let tone_for = |settings: &ColourSettings| {
         Tone::with_sample_bits(
             settings.capture.black_level,
@@ -83,34 +205,17 @@ pub fn run(
     let mut rgb = Vec::new();
     let mut buffers = colour::Buffers::default();
     let mut fallback_buffers = bayer::Buffers::default();
-    let mut settings = arguments.settings.clone();
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
     let mut last_ns = None;
-    report_exposure(
-        set_exposure(
-            f64::from(settings.capture.exposure_us),
-            settings.capture.analogue_gain,
-        )?,
-        0,
-    )?;
-    log(
-        LogLevel::Info,
-        &format!(
-            "{sensor_width}x{sensor_height} {:?} to {width}x{height} {:?}, line {line_ns:.1} ns, \
-             vblank {vblank}, period {period_ns} ns, {settings:?}",
-            camera.capture.layout, arguments.output
-        ),
-    );
 
-    let mut frames = 0u32;
+    let mut converted = 0u32;
     // Frames converted, and frames dropped as incomplete.
     let mut statistics = [0u64; 2];
     let mut conversion_ns = 0u128;
-    let mut statistics_since = std::time::Instant::now();
-    let mut input = input::unbuffered(io::stdin().as_fd())?;
-    let mut poll_descriptors = [pollfd(camera.capture.node.fd), pollfd(input.as_raw_fd())];
+    let mut statistics_since = Instant::now();
+    let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
         // SAFETY: `poll_descriptors` is a valid array of two pollfds.
         if unsafe { libc::poll(poll_descriptors.as_mut_ptr(), 2, 1_000) } < 0 {
@@ -121,7 +226,7 @@ pub fn run(
             return Err(error);
         }
         if poll_descriptors[1].revents != 0 {
-            match framing::read_record(&mut input)? {
+            match framing::read_record(input)? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {
@@ -135,7 +240,7 @@ pub fn run(
                                 f64::from(settings.capture.exposure_us),
                                 settings.capture.analogue_gain,
                             )?;
-                            report_exposure(applied, last_ns.unwrap_or(0))?;
+                            records.write(&[&exposure_record(applied, last_ns.unwrap_or(0))])?;
                             Ok(applied)
                         })?;
                         auto_exposure =
@@ -146,12 +251,13 @@ pub fn run(
                 },
             }
         }
-        if statistics_since.elapsed().as_secs() >= STATISTICS_EVERY_S {
+        if statistics_since.elapsed() >= statistics_every {
             log(
                 LogLevel::Info,
                 &format!(
-                    "last {STATISTICS_EVERY_S} s: frames {}, incomplete {}, \
+                    "last {} s: frames {}, incomplete {}, \
                      {} us per conversion, white balance {gains:?}{}",
+                    statistics_every.as_secs(),
                     statistics[0],
                     statistics[1],
                     conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
@@ -163,38 +269,23 @@ pub fn run(
             );
             statistics = [0; 2];
             conversion_ns = 0;
-            statistics_since = std::time::Instant::now();
+            statistics_since = Instant::now();
         }
-        while let Some(frame) = camera.capture.dequeue()? {
-            if !camera.capture.complete(&frame) {
-                statistics[1] += 1;
-                camera.capture.queue(frame.index)?;
-                continue;
-            }
-            statistics[0] += 1;
-            let converting = std::time::Instant::now();
-            let raw = RawFrame {
-                raw: camera.capture.pixels(&frame),
-                width: sensor_width as usize,
-                height: sensor_height as usize,
-                row_stride: camera.capture.row_stride,
-                layout: camera.capture.layout,
-            };
-            frames += 1;
+        while let Some(taken) = frames.next(|whole| {
+            let (raw, start_ns) = whole?;
+            let converting = Instant::now();
+            converted += 1;
             let measure_exposure =
-                settings.capture.auto_exposure && frames.is_multiple_of(EXPOSURE_EVERY_FRAMES);
+                settings.capture.auto_exposure && converted.is_multiple_of(EXPOSURE_EVERY_FRAMES);
             let conversion = Conversion {
-                output: arguments.output,
+                output,
                 rotate_180: settings.capture.rotation == 180,
                 channel_means: settings.awb,
                 green_mean: measure_exposure,
                 row_step: MEASURED_ROW_STEP,
-                threads: settings.threads.unwrap_or(arguments.output.threads()),
+                threads: settings.threads.unwrap_or(output.threads()),
             };
-            let Measures {
-                channel_means,
-                green_mean,
-            } = match &tuned {
+            let developed = match &tuned {
                 Some(tuned) => develop_tuned(
                     &raw,
                     &conversion,
@@ -213,19 +304,27 @@ pub fn run(
                     &mut fallback_buffers,
                 ),
             };
-            if let Some(means) = channel_means {
+            if let Some(means) = developed.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
             conversion_ns += converting.elapsed().as_nanos();
-            camera.capture.queue(frame.index)?;
-            last_ns = Some(frame.start_ns);
+            Some((start_ns, raw.width, raw.height, developed.green_mean))
+        })? {
+            let Some((start_ns, sensor_width, sensor_height, green_mean)) = taken else {
+                statistics[1] += 1;
+                continue;
+            };
+            statistics[0] += 1;
+            last_ns = Some(start_ns);
             if let Some(mean) = green_mean {
                 if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                    report_exposure(set_exposure(exposure_us, gain)?, frame.start_ns)?;
+                    let applied = set_exposure(exposure_us, gain)?;
+                    records.write(&[&exposure_record(applied, start_ns)])?;
                 }
             }
-            writer.write_record_parts(&[
-                &rgb_frame_header(width as u16, height as u16, frame.start_ns),
+            let (width, height) = output.size(sensor_width as u32, sensor_height as u32);
+            records.write(&[
+                &rgb_frame_header(width as u16, height as u16, start_ns),
                 &rgb,
             ])?;
         }
@@ -269,8 +368,12 @@ fn develop_tuned(
 
 #[cfg(test)]
 mod tests {
+    use std::cell::{Cell, RefCell};
+    use std::io::Write;
+    use std::os::fd::FromRawFd;
+    use std::sync::Mutex;
+
     use super::*;
-    use crate::arguments::Output;
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
     use crate::tuning::imx477;
@@ -491,5 +594,154 @@ mod tests {
                 }
             }
         }
+    }
+
+    // A pipe's reading and writing ends.
+    fn pipe() -> (File, File) {
+        let mut ends = [0; 2];
+        // SAFETY: `ends` has room for the two descriptors.
+        assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
+        // SAFETY: both descriptors were just created and nothing else owns them.
+        unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) }
+    }
+
+    const WIDTH: usize = 24;
+    const HEIGHT: usize = 46;
+    const STRIDE: usize = WIDTH * 3 / 2 + 6;
+
+    // Frames in order, `None` for an incomplete one, each starting a
+    // millisecond after the one before; the host's end of the settings
+    // pipe sends `settings` as the frame of their index is taken, and
+    // closes once the frames run out.
+    struct TestFrames {
+        frames: Vec<Option<Vec<u8>>>,
+        taken: Cell<usize>,
+        // Readable for as long as the test runs: a byte nobody reads.
+        ready: (File, File),
+        host: RefCell<Option<File>>,
+        settings: Vec<(usize, &'static str)>,
+    }
+
+    impl TestFrames {
+        // The frames and the input the loop reads the settings from.
+        fn new(frames: Vec<Option<Vec<u8>>>, settings: Vec<(usize, &'static str)>) -> (Self, File) {
+            let ready = pipe();
+            (&ready.1).write_all(&[1]).unwrap();
+            let (input, host) = pipe();
+            let frames = TestFrames {
+                frames,
+                taken: Cell::new(0),
+                ready,
+                host: RefCell::new(Some(host)),
+                settings,
+            };
+            (frames, input)
+        }
+    }
+
+    impl Frames for TestFrames {
+        fn descriptor(&self) -> RawFd {
+            self.ready.0.as_raw_fd()
+        }
+
+        fn next<T>(
+            &self,
+            take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
+        ) -> io::Result<Option<T>> {
+            let index = self.taken.get();
+            let Some(frame) = self.frames.get(index) else {
+                self.host.borrow_mut().take();
+                return Ok(None);
+            };
+            self.taken.set(index + 1);
+            for (_, setting) in self.settings.iter().filter(|(at, _)| *at == index) {
+                let record = [
+                    &(setting.len() as u32).to_be_bytes()[..],
+                    setting.as_bytes(),
+                ];
+                let mut host = self.host.borrow_mut();
+                host.as_mut().unwrap().write_all(&record.concat())?;
+            }
+            let whole = frame.as_ref().map(|raw| {
+                let frame = RawFrame {
+                    raw,
+                    width: WIDTH,
+                    height: HEIGHT,
+                    row_stride: STRIDE,
+                    layout: Layout::Packed12,
+                };
+                (frame, 1_000_000 * (index as i64 + 1))
+            });
+            Ok(Some(take(whole)))
+        }
+    }
+
+    // Each record written, whole.
+    #[derive(Default)]
+    struct Collected(Mutex<Vec<Vec<u8>>>);
+
+    impl Records for Collected {
+        fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
+            self.0.lock().unwrap().push(parts.concat());
+            Ok(())
+        }
+    }
+
+    // `count` frames of the same scene, a little brighter each time, the
+    // frame at `incomplete` incomplete.
+    fn scenes(count: usize, incomplete: usize) -> Vec<Option<Vec<u8>>> {
+        (0..count)
+            .map(|index| {
+                let samples: Vec<u16> = samples(WIDTH, HEIGHT)
+                    .iter()
+                    .map(|sample| (sample + 150 * index as u16).min(4095))
+                    .collect();
+                (index != incomplete).then(|| padded_packed12(&samples, WIDTH, STRIDE))
+            })
+            .collect()
+    }
+
+    // The records the frame loop writes for `frames` from the IMX477.
+    fn captured(
+        frames: Vec<Option<Vec<u8>>>,
+        settings: Vec<(usize, &'static str)>,
+    ) -> Vec<Vec<u8>> {
+        let (frames, mut input) = TestFrames::new(frames, settings);
+        let records = Collected::default();
+        let setup = Setup {
+            output: Output::Full,
+            model: SensorModel::Imx477,
+            frame_us: 28_571.0,
+            settings: ColourSettings::default(),
+            statistics_every: Duration::from_secs(3_600),
+        };
+        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
+        capture(setup, &frames, &set_exposure, &mut input, &records).unwrap();
+        records.0.into_inner().unwrap()
+    }
+
+    // FNV-1a of each record's length then bytes, in order.
+    fn records_digest(records: &[Vec<u8>]) -> u64 {
+        records
+            .iter()
+            .flat_map(|record| {
+                (record.len() as u32)
+                    .to_be_bytes()
+                    .into_iter()
+                    .chain(record.iter().copied())
+            })
+            .fold(0xcbf2_9ce4_8422_2325, |hash, byte| {
+                (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3)
+            })
+    }
+
+    #[test]
+    fn a_sequence_of_frames_gives_the_same_records_in_the_same_order() {
+        let records = captured(scenes(12, 5), vec![]);
+        let tags: Vec<u8> = records.iter().map(|record| record[0]).collect();
+        // Frames (6), each fourth whole one after the exposure it sets (3).
+        assert_eq!(tags, [6, 6, 6, 3, 6, 6, 6, 6, 3, 6, 6, 6, 6]);
+        // The digest of the loop converting then writing each frame in turn.
+        assert_eq!(records_digest(&records), 0xf88a5dbe53ea288a);
     }
 }
