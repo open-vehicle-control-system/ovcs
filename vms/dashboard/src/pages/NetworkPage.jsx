@@ -113,7 +113,7 @@ function InterfacesTable({ interfaces, loads }) {
                   <td className="py-2 pr-3 font-mono text-xs">{attributes.interfaceName}</td>
                   <td className="py-2 pr-3 font-mono text-xs">{attributes.spiInterfaceName}</td>
                   <td className="py-2 pr-3">
-                    <OvcsStatus tone={STATE_TONES[statistics.operstate] ?? 'muted'}>{statistics.operstate}</OvcsStatus>
+                    <OvcsStatus tone={STATE_TONES[statistics.operstate] ?? 'muted'}>{statistics.operstate ?? 'Unavailable'}</OvcsStatus>
                   </td>
                   <td className="whitespace-nowrap py-2 pr-3 tabular-nums">{formatBitrate(attributes.bitrate)}</td>
                   <td className="py-2 pr-3 tabular-nums">{statistics.txqlen}</td>
@@ -145,19 +145,23 @@ function Counters({ networkInterface }) {
   return (
     <OvcsCard className="flex flex-col gap-3">
       <h3 className="font-semibold">{networkInterface.attributes.interfaceName}</h3>
-      {COUNTERS.map(([title, direction, fields]) => (
-        <section key={title} aria-label={title} className="flex flex-col gap-1">
-          <h4 className="text-xs font-semibold uppercase tracking-wide text-ovcs-muted">{title}</h4>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-6">
-            {fields.map(([field, label]) => (
-              <div key={field}>
-                <dt className="text-xs text-ovcs-muted">{label}</dt>
-                <Counter field={field} value={stats64[direction][field]} />
-              </div>
-            ))}
-          </dl>
-        </section>
-      ))}
+      {!stats64 ? (
+        <p className="text-sm text-ovcs-muted">Statistics unavailable</p>
+      ) : (
+        COUNTERS.map(([title, direction, fields]) => (
+          <section key={title} aria-label={title} className="flex flex-col gap-1">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-ovcs-muted">{title}</h4>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-6">
+              {fields.map(([field, label]) => (
+                <div key={field}>
+                  <dt className="text-xs text-ovcs-muted">{label}</dt>
+                  <Counter field={field} value={stats64[direction][field]} />
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))
+      )}
     </OvcsCard>
   )
 }

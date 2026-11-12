@@ -105,4 +105,22 @@ describe('NetworkPage', () => {
     act(() => update({ data: [can0(1000)] }))
     expect(within(screen.getByRole('row', { name: /drivetrain/ })).getByText('500 kbit/s')).toBeTruthy()
   })
+
+  it('shows unavailable statistics and recovers when the interface returns', () => {
+    render(<NetworkPage />)
+    const unavailable = can0(0)
+    unavailable.attributes.statistics = {}
+    act(() => update({ data: [unavailable] }))
+
+    const row = screen.getByRole('row', { name: /drivetrain/ })
+    expect(within(row).getByText('Unavailable')).toBeTruthy()
+    expect(screen.getByText('Statistics unavailable')).toBeTruthy()
+    expect(screen.queryByText('Packets')).toBeNull()
+
+    act(() => update({ data: [can0(1000)] }))
+    expect(within(row).getByText('UP')).toBeTruthy()
+    expect(screen.queryByText('Statistics unavailable')).toBeNull()
+    expect(screen.getAllByText('Packets')).toHaveLength(2)
+  })
+
 })
