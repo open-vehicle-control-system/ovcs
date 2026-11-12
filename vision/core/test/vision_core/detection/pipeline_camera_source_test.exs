@@ -124,14 +124,14 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     Outputs.publish({:stereo_pair, VisionCore.Stereo.Pipeline}, {:stereo_pair, pair})
   end
 
-  defp publish_frame(capture_ms) do
+  defp publish_frame(capture_ms, {width, height} \\ {40, 20}) do
     frame = %Frame{
       label: "hq",
       frame_id: "hq_optical",
-      width: 40,
-      height: 20,
+      width: width,
+      height: height,
       capture_ns: capture_ms * @ms,
-      rgb: :binary.copy(<<1, 2, 3>>, 40 * 20)
+      rgb: :binary.copy(<<1, 2, 3>>, width * height)
     }
 
     Outputs.publish({:camera_frame, @camera_server}, {:camera_frame, frame})
@@ -321,6 +321,24 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert %{label: "car", z: nil, x: nil, width: nil} = car
     {azimuth, _elevation} = car.bearing
     assert_in_delta azimuth, :math.atan(0.2), 1.0e-6
+  end
+
+  test "publishes at once, without a distance nor a bearing, the boxes of frames its calibration cannot be projected at",
+       %{tmp_dir: dir} do
+    log =
+      capture_log(fn ->
+        start_pipeline(dir, pair_wait_ms: 60_000)
+        publish_pair(0)
+        publish_pair(1_000)
+        # 4:1 frames, against a calibration of 2:1 ones.
+        publish_frame(1_400, {40, 10})
+
+        assert [person] = detections()
+        assert_no_distance(person)
+        assert person.bearing == nil
+      end)
+
+    assert log =~ "cannot place detections at 40x10"
   end
 
   test "keeps a box without a distance, with its bearing, at once while no pair came",

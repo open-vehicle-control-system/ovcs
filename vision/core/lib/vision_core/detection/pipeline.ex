@@ -72,7 +72,8 @@ defmodule VisionCore.Detection.Pipeline do
   backend, and leave it in capture order: at most `:pair_wait_ms`, and
   not at all while the stereo pairs have stalled, two pair periods
   without one. While 32 frames' boxes wait, the camera's frames are
-  skipped.
+  skipped. The boxes of a frame whose size the calibration cannot be
+  projected at, such as one of another aspect ratio, wait for no pair.
 
   A box with no distance is kept: its position and size are `nil`, and
   its `:bearing` says where it is seen. Each detection is in the
@@ -459,13 +460,15 @@ defmodule VisionCore.Detection.Pipeline do
       ) do
     labelled = detections |> select(state) |> Enum.map(&labelled(&1, state))
     now_ns = state.clock.()
+    {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =
-      if labelled != [] and CameraSource.placeable?(state.camera),
+      if labelled != [] and lens != nil and CameraSource.placeable?(camera),
         do: DepthQueue.put(state.waiting, {frame, labelled}, frame.capture_ns, now_ns),
         else: DepthQueue.put_without_depth(state.waiting, {frame, labelled})
 
-    {:noreply, place_settled(%{state | pending: nil, waiting: waiting}, now_ns)}
+    state = %{state | pending: nil, camera: camera, waiting: waiting}
+    {:noreply, place_settled(state, now_ns)}
   end
 
   # A reply for a pair no longer waited on.
