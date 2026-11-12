@@ -1,11 +1,11 @@
 defmodule VisionCore.Detection.CameraSource do
   @moduledoc """
-  What a `VisionCore.Detection.Pipeline` whose source is a camera of its
-  own (`source: {:camera, name}` or `{:camera, name, output}`) needs to
-  place its boxes: the camera's
-  stereo depth, `VisionCore.Detection.CameraDepth`, which reads its
-  calibration and pose once at start, keeps the stereo pairs to take the
-  depth from and matches each frame with one, and the placement itself.
+  Places the boxes of a `VisionCore.Detection.Pipeline` whose source is
+  a camera of its own (`source: {:camera, name}` or `{:camera, name,
+  output}`) with the camera's stereo depth,
+  `VisionCore.Detection.CameraDepth`, which reads its calibration and
+  pose once at start, keeps the stereo pairs to take the depth from and
+  matches each frame with one.
 
   ## Placing a box
 
@@ -26,47 +26,15 @@ defmodule VisionCore.Detection.CameraSource do
   alias VisionCore.Detection.{CameraDepth, Fusion, Reprojection}
   alias VisionCore.Stereo.Pair
 
-  @wording %{
-    calibration: "its detections have no distance nor bearing",
-    pose: "its detections have no distance",
-    unreadable: "its detections have no distance",
-    unmatched: "its detections have no distance",
-    lens: "place detections"
-  }
-
-  @type t :: CameraDepth.t()
-
-  @doc """
-  The camera `name` of `config`, its output `output`, its default with
-  `nil`, its calibration and pose read, each missing one logged once as
-  a warning naming `pipeline`, keeping the pairs `pair_wait_ms` covers.
-  Raises `ArgumentError` when `config` has no camera `name` or no such
-  output of it.
-  """
-  @spec new(atom(), VisionCore.Config.t(), atom(), non_neg_integer(), atom() | nil) :: t()
-  def new(name, config, pipeline, pair_wait_ms, output \\ nil),
-    do:
-      CameraDepth.new(name, config, "detection pipeline #{pipeline}", @wording,
-        pair_wait_ms: pair_wait_ms,
-        output: output
-      )
-
-  @doc "Whether boxes can be placed in 3D: the camera has a calibration and a pose."
-  @spec placeable?(t()) :: boolean()
-  defdelegate placeable?(source), to: CameraDepth, as: :projectable?
-
-  @doc "Keeps `pair`, arrived at `now_ns`; see `VisionCore.Detection.CameraDepth.add_pair/3`."
-  @spec add_pair(t(), Pair.t(), integer()) :: t()
-  defdelegate add_pair(source, pair, now_ns), to: CameraDepth
-
   @doc """
   `detections`, boxes in `frame`'s pixels, placed with `pair`'s depth,
   `nil` for none, each sampled in its central `fraction` from every
   `stride`-th projected pixel (see the moduledoc), with their `:bearing`.
-  Returns them with the source, which keeps the lens of `frame`'s size.
+  Returns them with the camera's depth, which keeps the lens of
+  `frame`'s size.
   """
-  @spec place(t(), [map()], Frame.t(), Pair.t() | nil, float(), pos_integer()) ::
-          {[map()], t()}
+  @spec place(CameraDepth.t(), [map()], Frame.t(), Pair.t() | nil, float(), pos_integer()) ::
+          {[map()], CameraDepth.t()}
   def place(source, detections, %Frame{} = frame, pair, fraction, stride) do
     {lens, source} = CameraDepth.lens(source, {frame.width, frame.height})
     distances = distances(lens, source.pose, detections, pair, fraction, stride)

@@ -3,7 +3,7 @@ defmodule Ovcs1.VisionComposerTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Detection.{CameraSource, Reprojection}
+  alias VisionCore.Detection.{CameraDepth, Reprojection}
   alias VisionCore.Ros2.CameraCalibration
 
   test "OVCS1's vision unit targets the VENTUNO Q" do
@@ -143,11 +143,16 @@ defmodule Ovcs1.VisionComposerTest do
     assert [%{pose_path: pose_path}] = VisionCore.Camera.Unit.settings(config)
     refute File.exists?(pose_path)
 
-    {source, log} = with_log(fn -> CameraSource.new(:center, config, :objects, 500) end)
+    wording = %{pose: "its detections have no distance", unreadable: "they have none"}
 
-    assert source.calibration
-    refute source.pose
-    refute CameraSource.placeable?(source)
+    {depth, log} =
+      with_log(fn ->
+        CameraDepth.new(:center, config, "detection pipeline objects", wording, pair_wait_ms: 500)
+      end)
+
+    assert depth.calibration
+    refute depth.pose
+    refute CameraDepth.projectable?(depth)
     assert log =~ "camera center has no pose"
     assert log =~ "center_pose.yaml unreadable (:enoent)"
   end

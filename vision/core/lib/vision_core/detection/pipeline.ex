@@ -180,6 +180,14 @@ defmodule VisionCore.Detection.Pipeline do
   @default_reprojection_stride 3
   @default_pair_wait_ms 500
 
+  @wording %{
+    calibration: "its detections have no distance nor bearing",
+    pose: "its detections have no distance",
+    unreadable: "its detections have no distance",
+    unmatched: "its detections have no distance",
+    lens: "place detections"
+  }
+
   @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
   @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
                        "lines up with pixel for pixel, and hands it to the detector. " <>
@@ -297,7 +305,10 @@ defmodule VisionCore.Detection.Pipeline do
       Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
         %VisionCore.Config{}
 
-    CameraSource.new(camera, config, name, pair_wait_ms, output)
+    CameraDepth.new(camera, config, "detection pipeline #{name}", @wording,
+      pair_wait_ms: pair_wait_ms,
+      output: output
+    )
   end
 
   defp camera_source(_source, _name, _pair_wait_ms, opts),
@@ -426,7 +437,7 @@ defmodule VisionCore.Detection.Pipeline do
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, %{camera: %CameraDepth{} = camera} = state) do
     now_ns = state.clock.()
-    state = %{state | camera: CameraSource.add_pair(camera, pair, now_ns)}
+    state = %{state | camera: CameraDepth.add_pair(camera, pair, now_ns)}
     {:noreply, place_settled(state, now_ns)}
   end
 
@@ -547,7 +558,7 @@ defmodule VisionCore.Detection.Pipeline do
     {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =
-      if labelled != [] and lens != nil and CameraSource.placeable?(camera),
+      if labelled != [] and lens != nil and CameraDepth.projectable?(camera),
         do: DepthQueue.put(state.waiting, {frame, labelled}, frame.capture_ns, now_ns),
         else: DepthQueue.put_without_depth(state.waiting, {frame, labelled})
 
