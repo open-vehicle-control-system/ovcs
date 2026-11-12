@@ -25,7 +25,12 @@ defmodule VisionCore.Exporter do
     * `{:detections, name}` — `{pair, detections}`, the result for
       `pair` of the detection pipeline named `name`, or `{frame,
       detections}`, the result for the `VisionCore.Camera.Frame` `frame`
-      of one whose source is a camera of its own.
+      of one whose source is a camera of its own;
+    * `{:segmentation, name}` — `{frame, labels, clouds}`, the result for
+      the `VisionCore.Camera.Frame` `frame` of the segmentation pipeline
+      named `name`: its label image and its road and off-road points,
+      `nil` without a stereo pair matched with the frame
+      (`VisionCore.Segmentation.Pipeline`).
 
   An entry is an output, or `{output, options}` whose one option is
   `:max_hz`, the most values of the output handed over a second
@@ -43,12 +48,13 @@ defmodule VisionCore.Exporter do
   are dropped, and under `:max_hz` the latest one is held until the
   output's next slot opens.
 
-  An output's messages are `{output, value}`, but for two kinds: a
+  An output's messages are `{output, value}`, but for three kinds: a
   camera's are `{:camera_frame, frame}`, the frame carrying the camera's
-  side, or its name, as its `:label`, and the detections are
+  side, or its name, as its `:label`, the detections are
   `{:detections, pair, detections}` from the default pipeline and
   `{:detections, pair, detections, name}` from the pipeline `name`, a
-  frame in place of the pair on a camera source. A
+  frame in place of the pair on a camera source, and a segmentation
+  pipeline's are `{:segmentation, name, frame, labels, clouds}`. A
   new output is one more entry in this module's table of outputs, with
   the unit whose `outputs/1` gives its key, its messages
   `{output, value}`.
@@ -179,13 +185,21 @@ defmodule VisionCore.Exporter do
 
   @typedoc "One of the unit's outputs; see the module doc."
   @type output ::
-          :stereo_pair | :detections | {:detections, atom()} | {:camera_frame, atom()}
+          :stereo_pair
+          | :detections
+          | {:detections, atom()}
+          | {:segmentation, atom()}
+          | {:camera_frame, atom()}
 
   @typedoc "An entry of `c:outputs/1`: an output, with its options or without."
   @type output_spec :: output() | {output(), [{:max_hz, number()}]}
 
   @typedoc "What an output hands over; see the module doc."
-  @type value :: Pair.t() | Frame.t() | {Pair.t(), [map()]}
+  @type value ::
+          Pair.t()
+          | Frame.t()
+          | {Pair.t() | Frame.t(), [map()]}
+          | {Frame.t(), map(), map() | nil}
 
   @typedoc "How the exporter is doing, with a sentence saying why."
   @type status :: {:ok | :warning | :off, String.t()}
@@ -293,17 +307,20 @@ defmodule VisionCore.Exporter do
   @doc """
   Whether `term` is one of the outputs an exporter can name:
   `{:detections, name}` for a valid pipeline name other than the
-  default's, `:detection` (`VisionCore.Detection.name?/1`), and
+  default's, `:detection` (`VisionCore.Detection.name?/1`),
+  `{:segmentation, name}` for a valid pipeline name, and
   `{:camera_frame, name}` for a stereo side or a valid camera name.
   """
   @spec output?(term()) :: boolean()
   def output?({:detections, :detection}), do: false
   def output?({:detections, name}), do: VisionCore.Detection.name?(name)
+  def output?({:segmentation, name}), do: VisionCore.Detection.name?(name)
   def output?({:camera_frame, side}) when side in [:left, :right], do: true
   def output?({:camera_frame, name}), do: VisionCore.Detection.name?(name)
   def output?(term), do: is_map_key(@outputs, term)
 
   defp producer({:detections, _name}), do: VisionCore.Detection.Supervisor
+  defp producer({:segmentation, _name}), do: VisionCore.Segmentation.Supervisor
 
   defp producer({:camera_frame, name}) when name not in [:left, :right],
     do: VisionCore.Camera.Unit
@@ -396,7 +413,7 @@ defmodule VisionCore.Exporter do
   `config` describes, the active `VisionCore.Config` by default, from
   the `outputs/1` of the unit that produces it
   (`VisionCore.Stereo.Supervisor`, `VisionCore.Detection.Supervisor`,
-  `VisionCore.Camera.Unit`).
+  `VisionCore.Segmentation.Supervisor`, `VisionCore.Camera.Unit`).
   `nil` when nothing in `config` produces `output`; raises
   `ArgumentError` for a term that is no output (`output?/1`).
   """

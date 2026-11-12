@@ -438,6 +438,67 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  describe "segmentation pipelines" do
+    @segmentation_outputs [{:segmentation, :road}, {:segmentation, :lanes}, {:detections, :road}]
+
+    defp segmenters_config,
+      do:
+        config([
+          {:segmenter, name: :road, source: {:camera, :hq}},
+          {:segmenter, name: :lanes, source: {:camera, :hq}},
+          {:detector, name: :road}
+        ])
+
+    defp publish_segmentation(name, frame, labels, clouds),
+      do:
+        Outputs.publish(
+          {:segmentation, VisionCore.Detection.server(VisionCore.Segmentation.Pipeline, name)},
+          {:segmentation, name, frame, labels, clouds}
+        )
+
+    test "hands each pipeline's result to its own output only, as its frame, labels and clouds" do
+      start_forwarder([outputs: @segmentation_outputs], segmenters_config())
+
+      publish_segmentation(:road, :road_frame, :road_labels, nil)
+      assert_receive {:exported, {:segmentation, :road}, {:road_frame, :road_labels, nil}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_segmentation(:lanes, :lanes_frame, :lanes_labels, :lanes_clouds)
+
+      assert_receive {:exported, {:segmentation, :lanes},
+                      {:lanes_frame, :lanes_labels, :lanes_clouds}, _at}
+
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_named_detections(:road, :road_pair, [:car])
+      assert_receive {:exported, {:detections, :road}, {:road_pair, [:car]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+    end
+
+    test "a busy exporter is handed each pipeline's newest result, none taken for another's" do
+      runner =
+        start_forwarder(
+          [outputs: @segmentation_outputs, block_on: {0, :labels, nil}],
+          segmenters_config()
+        )
+
+      publish_segmentation(:road, 0, :labels, nil)
+      assert_receive {:exported, {:segmentation, :road}, {0, :labels, nil}, _at}
+
+      for index <- 1..3 do
+        publish_segmentation(:road, index, :labels, nil)
+        publish_segmentation(:lanes, index, :labels, nil)
+      end
+
+      publish_segmentation(:lanes, 4, :labels, nil)
+      send(runner, :release)
+
+      assert_receive {:exported, {:segmentation, :road}, {3, :labels, nil}, _at}
+      assert_receive {:exported, {:segmentation, :lanes}, {4, :labels, nil}, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
+    end
+  end
+
   describe "flow control" do
     test "a busy exporter is handed the newest value of each output, the older ones dropped" do
       runner =

@@ -45,6 +45,12 @@ defmodule VisionCore.ExporterTest do
              {:ok, [{:detections, nil}, {{:detections, :road}, nil}, {{:detections, :signs}, 2}]}
   end
 
+  test "a segmentation pipeline's results are an output of their own" do
+    assert Exporter.output_specs(Reading,
+             outputs: [{:segmentation, :road}, {{:segmentation, :lanes}, max_hz: 2}]
+           ) == {:ok, [{{:segmentation, :road}, nil}, {{:segmentation, :lanes}, 2}]}
+  end
+
   test "outputs naming no output, one twice, or an option other than a positive :max_hz are invalid" do
     for {outputs, entry} <- [
           {[:stereo_pairs], :stereo_pairs},
@@ -58,7 +64,11 @@ defmodule VisionCore.ExporterTest do
           {[{:detections, :stereo}], {:detections, :stereo}},
           {[{:detections, :"front-cam"}], {:detections, :"front-cam"}},
           {[{:detections, "road"}], {:detections, "road"}},
-          {[{:detections, :road}, {:detections, :road}], {:detections, :road}}
+          {[{:detections, :road}, {:detections, :road}], {:detections, :road}},
+          {[{:segmentation, :stereo}], {:segmentation, :stereo}},
+          {[{:segmentation, "road"}], {:segmentation, "road"}},
+          {[:segmentation], :segmentation},
+          {[{:segmentation, :road}, {:segmentation, :road}], {:segmentation, :road}}
         ] do
       assert Exporter.output_specs(Reading, outputs: outputs) ==
                {:error, {:invalid_output, entry}}
@@ -127,6 +137,22 @@ defmodule VisionCore.ExporterTest do
     assert Exporter.output_key(:detections, config([{:detector, name: :road}])) == nil
   end
 
+  test "a segmentation pipeline's results resolve to its own key" do
+    config =
+      config([
+        {:segmenter, name: :road, source: {:camera, :hq}},
+        {:qnn_segmenter, name: :lanes, source: {:camera, :hq}}
+      ])
+
+    assert Exporter.output_key({:segmentation, :road}, config) ==
+             {:segmentation, VisionCore.Segmentation.Pipeline.Road}
+
+    assert Exporter.output_key({:segmentation, :lanes}, config) ==
+             {:segmentation, VisionCore.Segmentation.Pipeline.Lanes}
+
+    assert Exporter.output_key({:segmentation, :signs}, config) == nil
+  end
+
   test "an output no component of the configuration produces has no key" do
     for output <- [
           :stereo_pair,
@@ -134,7 +160,8 @@ defmodule VisionCore.ExporterTest do
           {:camera_frame, :right},
           {:camera_frame, :hq},
           :detections,
-          {:detections, :road}
+          {:detections, :road},
+          {:segmentation, :road}
         ] do
       assert Exporter.output_key(output, config([])) == nil
       assert Exporter.output_key(output, nil) == nil

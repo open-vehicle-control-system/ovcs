@@ -21,7 +21,9 @@ defmodule VisionCore.Exporter.Runner do
   `:detections` only, the pipeline `name`'s
   `{:detections, pair, detections, name}` to `{:detections, name}` only,
   each handed over as `{pair, detections}`, or `{frame, detections}`
-  from a pipeline on a camera.
+  from a pipeline on a camera. A segmentation pipeline's
+  `{:segmentation, name, frame, labels, clouds}` go to
+  `{:segmentation, name}` only, handed over as `{frame, labels, clouds}`.
 
   The runner starts without waiting for its exporter: the exporter's
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or
@@ -346,12 +348,17 @@ defmodule VisionCore.Exporter.Runner do
 
   defp message_output({:detections, _pair, _detections}), do: :detections
   defp message_output({:detections, _pair, _detections, name}), do: {:detections, name}
+
+  defp message_output({:segmentation, name, _frame, _labels, _clouds}),
+    do: {:segmentation, name}
+
   defp message_output({tag, _value}), do: tag
   defp message_output(_message), do: nil
 
   defp payload({_tag, value}), do: value
   defp payload({:detections, pair, detections}), do: {pair, detections}
   defp payload({:detections, pair, detections, _name}), do: {pair, detections}
+  defp payload({:segmentation, _name, frame, labels, clouds}), do: {frame, labels, clouds}
 
   # The newest value of the output waiting in the mailbox replaces `value`.
   defp newest({:camera_frame, side} = output, value) do
@@ -367,6 +374,15 @@ defmodule VisionCore.Exporter.Runner do
   defp newest({:detections, name} = output, value) do
     receive do
       {:"$gen_cast", {:detections, pair, detections, ^name}} -> newest(output, {pair, detections})
+    after
+      0 -> value
+    end
+  end
+
+  defp newest({:segmentation, name} = output, value) do
+    receive do
+      {:"$gen_cast", {:segmentation, ^name, frame, labels, clouds}} ->
+        newest(output, {frame, labels, clouds})
     after
       0 -> value
     end
