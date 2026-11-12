@@ -9,7 +9,9 @@ defmodule VisionCore.Detection.CameraDepth do
 
   ## Matching a frame with a pair
 
-  The last 4 pairs are kept. A frame is matched with the pair whose left
+  The pairs captured within `:pair_wait_ms` of the newest one are kept,
+  at least two, each with its depth, its geometry and its left frame's
+  capture time and frame id only. A frame is matched with the pair whose left
   capture time is closest to its own, within half the pair period, the
   median spacing of the pairs kept; otherwise it has no depth, rather
   than a stale one. The stereo pipeline publishes a pair well after its
@@ -28,14 +30,24 @@ defmodule VisionCore.Detection.CameraDepth do
   """
   require Logger
 
-  alias VisionCore.Camera.{Pose, Unit}
+  alias VisionCore.Camera.{Frame, Pose, Unit}
   alias VisionCore.Detection.Reprojection
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Pair
 
-  @kept_pairs 4
+  @ns_per_ms 1_000_000
 
-  defstruct [:name, :server, :calibration, :pose, :owner, :wording, lenses: %{}, pairs: []]
+  defstruct [
+    :name,
+    :server,
+    :calibration,
+    :pose,
+    :owner,
+    :wording,
+    :keep_ns,
+    lenses: %{},
+    pairs: []
+  ]
 
   @typedoc """
   What the owner's warnings say is lost: without a calibration, without a
@@ -54,7 +66,8 @@ defmodule VisionCore.Detection.CameraDepth do
   The camera `name`, the name its driver publishes under, its calibration
   and pose, `nil` without, the owner its warnings name and their wording,
   its lens by frame size, `nil` for a size its calibration cannot be
-  projected at, and the last pairs, newest first.
+  projected at, how far before the newest pair's capture pairs are kept,
+  and the pairs kept, newest first.
   """
   @type t :: %__MODULE__{
           name: atom(),
@@ -63,6 +76,7 @@ defmodule VisionCore.Detection.CameraDepth do
           pose: Pose.t() | nil,
           owner: String.t(),
           wording: wording(),
+          keep_ns: non_neg_integer(),
           lenses: %{{pos_integer(), pos_integer()} => Reprojection.lens() | nil},
           pairs: [Pair.t()]
         }
@@ -70,18 +84,25 @@ defmodule VisionCore.Detection.CameraDepth do
   @doc """
   The camera `name` of `config`, its calibration and pose read, each
   missing or unreadable one logged once as a warning naming `owner` and
-  saying what is lost (`wording`). Raises `ArgumentError` when `config`
-  has no camera `name`.
+  saying what is lost (`wording`). Takes `:pair_wait_ms`, the longest a
+  result waits for its pair, which the pairs kept cover. Raises
+  `ArgumentError` when `config` has no camera `name`.
   """
-  @spec new(atom(), VisionCore.Config.t(), String.t(), wording()) :: t()
-  def new(name, config, owner, wording) do
+  @spec new(atom(), VisionCore.Config.t(), String.t(), wording(), keyword()) :: t()
+  def new(name, config, owner, wording, opts) do
     settings =
       Enum.find(Unit.settings(config), &(&1.name == name)) ||
         raise ArgumentError,
               "its source names the camera #{inspect(name)}, which is no camera of the " <>
                 "configuration"
 
-    depth = %__MODULE__{name: name, server: settings.server, owner: owner, wording: wording}
+    depth = %__MODULE__{
+      name: name,
+      server: settings.server,
+      owner: owner,
+      wording: wording,
+      keep_ns: Keyword.fetch!(opts, :pair_wait_ms) * @ns_per_ms
+    }
 
     %{
       depth
@@ -120,13 +141,38 @@ defmodule VisionCore.Detection.CameraDepth do
   @spec projectable?(t()) :: boolean()
   def projectable?(depth), do: not is_nil(depth.calibration) and not is_nil(depth.pose)
 
-  @doc "Keeps `pair` among the last pairs, when it has a depth map."
+  @doc """
+  Keeps `pair`, when it has a depth map, without its images, and drops
+  the pairs captured more than `:pair_wait_ms` before it, keeping two.
+  """
   @spec add_pair(t(), Pair.t()) :: t()
   def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair)
       when is_binary(depth_map) and is_map(geometry),
-      do: %{depth | pairs: Enum.take([pair | depth.pairs], @kept_pairs)}
+      do: %{depth | pairs: recent([slim(pair) | depth.pairs], depth.keep_ns)}
 
   def add_pair(depth, _pair_without_depth), do: depth
+
+  # What matching and projecting read: the depth, its size, the geometry and the left frame's times.
+  defp slim(%Pair{left_frame: %Frame{} = left_frame} = pair) do
+    {width, height} = Pair.size(pair)
+
+    %Pair{
+      left_frame: %Frame{left_frame | jpeg: nil, grey: nil, rgb: nil},
+      right_frame: nil,
+      geometry: Map.merge(pair.geometry, %{width: width, height: height}),
+      # A slice of the stereo Port's reply would keep the whole reply.
+      depth: :binary.copy(pair.depth)
+    }
+  end
+
+  defp recent([newest | _older] = pairs, keep_ns) do
+    oldest_ns = Pair.capture_ns(newest) - keep_ns
+
+    case Enum.take_while(pairs, &(Pair.capture_ns(&1) >= oldest_ns)) do
+      [_newest] -> Enum.take(pairs, 2)
+      recent -> recent
+    end
+  end
 
   @doc """
   The pair to take the depth of a frame captured at `capture_ns` from:

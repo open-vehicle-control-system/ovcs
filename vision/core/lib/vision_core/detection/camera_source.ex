@@ -37,12 +37,16 @@ defmodule VisionCore.Detection.CameraSource do
 
   @doc """
   The camera `name` of `config`, its calibration and pose read, each
-  missing one logged once as a warning naming `pipeline`. Raises
-  `ArgumentError` when `config` has no camera `name`.
+  missing one logged once as a warning naming `pipeline`, keeping the
+  pairs `pair_wait_ms` covers. Raises `ArgumentError` when `config` has
+  no camera `name`.
   """
-  @spec new(atom(), VisionCore.Config.t(), atom()) :: t()
-  def new(name, config, pipeline),
-    do: CameraDepth.new(name, config, "detection pipeline #{pipeline}", @wording)
+  @spec new(atom(), VisionCore.Config.t(), atom(), non_neg_integer()) :: t()
+  def new(name, config, pipeline, pair_wait_ms),
+    do:
+      CameraDepth.new(name, config, "detection pipeline #{pipeline}", @wording,
+        pair_wait_ms: pair_wait_ms
+      )
 
   @doc "Whether boxes can be placed in 3D: the camera has a calibration and a pose."
   @spec placeable?(t()) :: boolean()

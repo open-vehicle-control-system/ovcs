@@ -198,7 +198,7 @@ defmodule VisionCore.Detection.Pipeline do
     state = %{
       name: name,
       source: source,
-      camera: camera_source(source, name, opts),
+      camera: camera_source(source, name, pair_wait_ms, opts),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
       detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
@@ -226,9 +226,9 @@ defmodule VisionCore.Detection.Pipeline do
     {:ok, state}
   end
 
-  defp camera_source(:stereo, _name, _opts), do: nil
+  defp camera_source(:stereo, _name, _pair_wait_ms, _opts), do: nil
 
-  defp camera_source({:camera, _camera}, :detection, _opts),
+  defp camera_source({:camera, _camera}, :detection, _pair_wait_ms, _opts),
     do:
       raise(
         ArgumentError,
@@ -236,15 +236,15 @@ defmodule VisionCore.Detection.Pipeline do
           "is the stereo pair's"
       )
 
-  defp camera_source({:camera, camera}, name, opts) when is_atom(camera) do
+  defp camera_source({:camera, camera}, name, pair_wait_ms, opts) when is_atom(camera) do
     config =
       Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
         %VisionCore.Config{}
 
-    CameraSource.new(camera, config, name)
+    CameraSource.new(camera, config, name, pair_wait_ms)
   end
 
-  defp camera_source(source, _name, _opts),
+  defp camera_source(source, _name, _pair_wait_ms, _opts),
     do:
       raise(
         ArgumentError,

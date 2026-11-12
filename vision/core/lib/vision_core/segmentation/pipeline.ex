@@ -138,7 +138,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
     state = %{
       name: name,
-      camera: camera_depth(Keyword.get(opts, :source), name, opts),
+      camera: camera_depth(Keyword.get(opts, :source), name, pair_wait_ms, opts),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
       band_top: band_top!(Keyword.get(opts, :band_top)),
@@ -165,15 +165,17 @@ defmodule VisionCore.Segmentation.Pipeline do
     {:ok, state}
   end
 
-  defp camera_depth({:camera, camera}, name, opts) when is_atom(camera) do
+  defp camera_depth({:camera, camera}, name, pair_wait_ms, opts) when is_atom(camera) do
     config =
       Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
         %VisionCore.Config{}
 
-    CameraDepth.new(camera, config, "segmentation pipeline #{name}", @wording)
+    CameraDepth.new(camera, config, "segmentation pipeline #{name}", @wording,
+      pair_wait_ms: pair_wait_ms
+    )
   end
 
-  defp camera_depth(source, _name, _opts),
+  defp camera_depth(source, _name, _pair_wait_ms, _opts),
     do:
       raise(
         ArgumentError,
