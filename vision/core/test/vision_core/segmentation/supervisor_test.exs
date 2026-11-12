@@ -50,11 +50,26 @@ defmodule VisionCore.Segmentation.SupervisorTest do
              source: {:camera, :hq}
            ]
 
-    assert Enum.sort(live_options) == [
-             max_hz: 4,
-             name: :road,
-             road_classes: ["road", "sidewalk"]
-           ]
+    assert Enum.sort(live_options) == [max_hz: 4, name: :road]
+  end
+
+  test "names a unit's classes and those that are road, the Cityscapes ones and road by default" do
+    config = %VisionCore.Config{
+      components: [
+        {:segmenter, @options},
+        {:segmenter, name: :lanes, source: {:camera, :hq}, labels: ["lane", "other"]}
+      ]
+    }
+
+    assert %{labels: ["road", "sidewalk" | _others], road_classes: ["road", "sidewalk"]} =
+             Supervisor.classes(config, :road)
+
+    assert Supervisor.classes(config, :lanes) == %{
+             labels: ["lane", "other"],
+             road_classes: ["road"]
+           }
+
+    assert Supervisor.classes(config, :signs) == nil
   end
 
   test "tells the backend how many classes its labels name" do

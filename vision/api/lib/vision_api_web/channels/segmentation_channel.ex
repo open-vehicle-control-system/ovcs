@@ -77,7 +77,10 @@ defmodule VisionApiWeb.SegmentationChannel do
 
   # The classes go out before subscribing, so no grid can come first; a rejoin hears them again.
   defp subscribe(name) do
-    send(self(), {:vision_segmentation_classes, Live.classes(name)})
+    classes =
+      VisionCore.Segmentation.Supervisor.classes(VisionCore.Application.active_config(), name)
+
+    send(self(), {:vision_segmentation_classes, classes})
     Live.subscribe(name)
   end
 

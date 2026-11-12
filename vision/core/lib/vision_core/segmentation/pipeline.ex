@@ -128,7 +128,6 @@ defmodule VisionCore.Segmentation.Pipeline do
   alias VisionCore.Stereo.Pair
 
   @default_backend VisionCore.Segmentation.Backend.Qnn
-  @default_road_classes ["road"]
   @default_segment_every_n 1
   @default_reprojection_stride 3
   @default_pair_wait_ms 500
@@ -169,7 +168,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     name = VisionCore.Segmentation.name!(opts)
     backend = Keyword.get(opts, :backend, @default_backend)
     labels = Keyword.get(opts, :labels, VisionCore.Segmentation.labels())
-    road_classes = Keyword.get(opts, :road_classes, @default_road_classes)
+    road_classes = Keyword.get(opts, :road_classes, VisionCore.Segmentation.road_classes())
     pair_wait_ms = Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
 
     state = %{

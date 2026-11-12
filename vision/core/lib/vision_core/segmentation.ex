@@ -23,6 +23,10 @@ defmodule VisionCore.Segmentation do
   @spec labels() :: [String.t()]
   def labels, do: @cityscapes_labels
 
+  @doc "The classes that are road unless a pipeline's `:road_classes` says otherwise."
+  @spec road_classes() :: [String.t()]
+  def road_classes, do: ["road"]
+
   @doc """
   The name a segmenter's `opts` give, valid as a pipeline name
   (`VisionCore.Detection.name!/2`). Raises `ArgumentError` without one,

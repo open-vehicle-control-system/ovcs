@@ -62,10 +62,9 @@ defmodule VisionCore.Segmentation.LiveTest do
     end
   end
 
-  test "answers its :max_hz, 5 by default, and its pipeline's classes" do
+  test "answers its :max_hz, 5 by default" do
     start_supervised!({Live, name: :road})
 
     assert Live.max_hz(:road) == 5
-    assert %{labels: ["road", "sidewalk" | _others], road_classes: ["road"]} = Live.classes(:road)
   end
 end

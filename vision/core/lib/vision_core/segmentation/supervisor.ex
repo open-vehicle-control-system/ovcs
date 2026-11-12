@@ -24,8 +24,8 @@ defmodule VisionCore.Segmentation.Supervisor do
   reply the restarted backend will never send starts over.
 
   The backend's options go to the backend, with `:classes`, the number
-  of `:labels`; the pipeline's to the pipeline, and `:max_hz`, `:labels`
-  and `:road_classes` to `Live`; see their docs. A unit that fails to
+  of `:labels`; the pipeline's to the pipeline, and `:max_hz` to `Live`;
+  see their docs. A unit that fails to
   start, such as one given an option it does not take, is left down,
   with the reason logged, and the rest of the vision core runs on; the
   log names the ROS 2 exporter's `segmentation:` for its
@@ -86,7 +86,7 @@ defmodule VisionCore.Segmentation.Supervisor do
       {Pipeline,
        Keyword.take(opts, pipeline_keys()) ++
          [backend: backend, backend_server: backend_server, name: name]},
-      {Live, Keyword.take(opts, [:max_hz, :labels, :road_classes]) ++ [name: name]}
+      {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
     ]
 
     Supervisor.init(children,
@@ -132,6 +132,23 @@ defmodule VisionCore.Segmentation.Supervisor do
     for {{:segmentation, name}, source} <- sources(config),
         camera = camera_name(source),
         do: {name, camera}
+  end
+
+  @doc """
+  The names of the classes of the segmentation unit `name` in `config`,
+  indexed by class id, and those of them that are road: its `:labels`
+  and `:road_classes`. `nil` when `config` has no such unit.
+  """
+  @spec classes(VisionCore.Config.t(), atom()) ::
+          %{labels: [String.t()], road_classes: [String.t()]} | nil
+  def classes(config, name) do
+    with opts when is_list(opts) <-
+           Enum.find(units_options(config), &(Keyword.get(&1, :name) == name)) do
+      %{
+        labels: Keyword.get(opts, :labels, Segmentation.labels()),
+        road_classes: Keyword.get(opts, :road_classes, Segmentation.road_classes())
+      }
+    end
   end
 
   defp camera_name({:camera, camera}), do: camera
