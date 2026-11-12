@@ -213,6 +213,35 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
       assert_all_in_delta(info.p, [k0, k1, k2, 0.0, k3, k4, k5, 0.0, k6, k7, k8, 0.0])
     end
 
+    test "on a 1014 x 760 output averaged 2 x 2, maps a 2028 x 1520 calibration onto the grid" do
+      calibration =
+        calibration("plumb_bob", {1161.3, 1161.3, 1013.5, 759.5}, [0.0], {2028, 1520})
+
+      frame = %Frame{frame() | width: 1014, height: 760}
+      {x, y, w, h} = band = Pipeline.band(1014, 760, nil)
+      assert band == {0, 253, 1014, 507}
+      labels = %{width: 256, height: 128, data: :binary.copy(<<0>>, 256 * 128), band: band}
+
+      assert [_labels, {_topic, CameraInfo, info}] =
+               Segmentation.messages(frame, labels, nil, settings(calibration: calibration))
+
+      {sx, sy} = {256 / w, 128 / h}
+      # The output's own intrinsics: f / 2, (c + 1/2) / 2 - 1/2.
+      {fx, cx, cy} = {580.65, 506.5, 379.5}
+
+      assert_all_in_delta(info.k, [
+        fx * sx,
+        0.0,
+        (cx - x + 0.5) * sx - 0.5,
+        0.0,
+        fx * sy,
+        (cy - y + 0.5) * sy - 0.5,
+        0.0,
+        0.0,
+        1.0
+      ])
+    end
+
     for {model, coefficients, focal} <- [
           {"plumb_bob", [-0.05, 0.01, 1.0e-3, -1.0e-3, 0.0], 600.0},
           {"equidistant", [0.03, -0.01, 4.0e-3, -1.0e-3], 900.0}

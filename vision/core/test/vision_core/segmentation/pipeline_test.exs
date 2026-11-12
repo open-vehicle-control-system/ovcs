@@ -162,7 +162,102 @@ defmodule VisionCore.Segmentation.PipelineTest do
         [frame_id: "hq_optical"] ++ image
       )
 
-    Outputs.publish({:camera_frame, @camera_server}, {:camera_frame, frame})
+    Outputs.publish(
+      Keyword.get(opts, :key, {:camera_frame, @camera_server}),
+      {:camera_frame, frame}
+    )
+  end
+
+  # A camera of twice the pair's size, `:view`, its calibration that size, and `:inference`
+  # averaged from it 2 x 2. Resampled exactly, its principal point is 0.3 px right of the pair's:
+  # column 9 lands at 9.3, in the first cell; scaled from the corner, at 9.55, in the second.
+  defp outputs_config(dir) do
+    calibration = %{
+      calibration({41.1, 40.5})
+      | width: 2 * @size,
+        height: 2 * @size,
+        camera_matrix: [100.0, 0.0, 41.1, 0.0, 100.0, 40.5, 0.0, 0.0, 1.0],
+        projection_matrix: [100.0, 0.0, 41.1, 0.0, 0.0, 100.0, 40.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    }
+
+    calibration_path = Path.join(dir, "hq.yaml")
+    File.write!(calibration_path, CameraCalibration.to_yaml(calibration, "hq"))
+    pose_path = Path.join(dir, "hq_pose.yaml")
+    File.write!(pose_path, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [0, 0, 0]\n")
+
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      sensor_width: 2 * @size,
+      sensor_height: 2 * @size,
+      outputs: [
+        view: [resolution: {2 * @size, 2 * @size}, processor: :cpu],
+        inference: [resolution: {@size, @size}, from: :view]
+      ],
+      calibration: calibration_path,
+      pose: pose_path
+    ]
+
+    %VisionCore.Config{components: [{:camera, camera}]}
+  end
+
+  test "on a camera's output, takes its band and sorts its points at that output's size",
+       %{tmp_dir: dir} do
+    road = [{0, 10}, {9, 10}, {39, 10}, {39, 29}]
+    off_road = [{10, 10}, {0, 29}]
+    outside = [{0, 9}, {39, 9}, {0, 30}, {39, 30}]
+    inference = {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
+    start_supervised!({Stub, pipeline: :road, label_image: @label_image})
+
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: Stub,
+       source: {:camera, :hq, :inference},
+       config: outputs_config(dir),
+       band_top: 0.25,
+       reprojection_stride: 1,
+       clock: start_clock()}
+    )
+
+    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    publish_pair(0, road ++ off_road ++ outside)
+    publish_pair(100, road ++ off_road ++ outside)
+    publish_frame(100, key: inference)
+
+    assert {%{band: {0, 10, 40, 20}}, clouds} = segmentation()
+    assert points(clouds.road) == Enum.map(road, &left_point/1)
+
+    assert points(clouds.off_road) ==
+             Enum.map(Enum.sort_by(off_road, &elem(&1, 1)), &left_point/1)
+  end
+
+  test "on a 1014 x 760 output, sees the 1014 x 507 band touching its bottom" do
+    camera = [
+      name: :hq,
+      driver: VisionCore.Camera.V4L2Single,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+    ]
+
+    start_supervised!({Stub, pipeline: :road, label_image: @label_image})
+
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: Stub,
+       source: {:camera, :hq, :inference},
+       config: %VisionCore.Config{components: [{:camera, camera}]},
+       clock: start_clock()}
+    )
+
+    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    inference = {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
+    publish_frame(100, size: {1014, 760}, key: inference)
+
+    assert {%{band: {0, 253, 1014, 507}}, nil} = segmentation()
   end
 
   defp segmentation(timeout \\ 1_000) do
