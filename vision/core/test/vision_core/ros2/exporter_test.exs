@@ -786,6 +786,37 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert reason =~ "cameras: outputs names the camera :hq, which it does not publish"
     end
 
+    test "publishes a camera's JPEG output as the camera sent it, each frame, without an encode" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        view_jpeg: [from: :view, format: :jpeg]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      no_codec = Module.concat(__MODULE__, NoCodec)
+
+      options =
+        options(Camera,
+          cameras: [outputs: [hq: :view_jpeg], raw_image_max_hz: 1],
+          jpeg_codec: no_codec
+        )
+
+      {:ok, state} = Exporter.init(Keyword.put(options, :config, config))
+
+      jpegs = for byte <- 1..3, do: <<0xFF, 0xD8, byte, 0xFF, 0xD9>>
+
+      Enum.reduce(Enum.with_index(jpegs, 1), state, fn {jpeg, capture_ns}, state ->
+        frame = %{jpeg_frame("hq", capture_ns) | output: :view_jpeg, jpeg: jpeg}
+        {:ok, state} = Exporter.handle_output({:camera_frame, :hq, :view_jpeg}, frame, state)
+        state
+      end)
+
+      for jpeg <- jpegs do
+        assert_received {:published, "stereo/hq/image_raw/compressed",
+                         %CompressedImage{data: ^jpeg}}
+      end
+    end
+
     test "draws a camera pipeline's 2D boxes at the detected frame's size when it publishes no image of the camera" do
       for cameras <- [nil, [names: []]] do
         options =

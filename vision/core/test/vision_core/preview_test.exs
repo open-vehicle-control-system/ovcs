@@ -200,6 +200,40 @@ defmodule VisionCore.PreviewTest do
       assert_receive {:vision_preview, :hq, "inference"}, 500
     end
 
+    test "a camera's JPEG output is previewed as the camera sent it, without an encode" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu],
+          view_jpeg: [from: :view, format: :jpeg]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      no_codec = Module.concat(__MODULE__, NoCodec)
+
+      start_supervised!(
+        {Preview, config: config, max_hz: 50, outputs: [hq: :view_jpeg], jpeg_codec: no_codec}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      jpeg = <<0xFF, 0xD8, 9, 8, 7, 0xFF, 0xD9>>
+
+      frame = %Frame{
+        label: "hq",
+        output: :view_jpeg,
+        width: 2028,
+        height: 1520,
+        capture_ns: 1,
+        jpeg: jpeg
+      }
+
+      Outputs.publish({:camera_frame, server, :view_jpeg}, {:camera_frame, frame})
+      assert_receive {:vision_preview, :hq, ^jpeg}, 500
+    end
+
     test "a camera whose outputs cannot be made has nothing to show, and the rest previews on" do
       camera = [
         name: :hq,
