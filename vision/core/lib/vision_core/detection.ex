@@ -15,8 +15,8 @@ defmodule VisionCore.Detection do
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
   and is none of the reserved names: `:stereo`, the stereo pipeline's;
-  `:left`, `:right`, `:depth`, `:disparity`, `:points`, `:detections`
-  and `:live`, the first segments of the topics the ROS 2 exporter
+  `:left`, `:right`, `:depth`, `:disparity`, `:points`, `:detections`,
+  `:detections_2d` and `:live`, the first segments of the topics the ROS 2 exporter
   publishes under `<prefix>/`; and `:device`, whose Hailo backend
   process would take the name of the Hailo-8 claim
   (`VisionCore.Detection.Backend.Hailo.Device`).
@@ -32,6 +32,7 @@ defmodule VisionCore.Detection do
     :disparity,
     :points,
     :detections,
+    :detections_2d,
     :live,
     :device
   ]

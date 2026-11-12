@@ -26,6 +26,7 @@ defmodule VisionCore.DetectionTest do
     refute Detection.name?(:stereo)
     refute Detection.name?(:left)
     refute Detection.name?(:device)
+    refute Detection.name?(:detections_2d)
     refute Detection.name?(:"front-cam")
     refute Detection.name?("road")
     refute Detection.name?(nil)
