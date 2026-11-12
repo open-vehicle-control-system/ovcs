@@ -526,6 +526,111 @@ mod tests {
         assert_eq!(reply_to(&depth_request(16, 8, 0, 0, &depth[..10])), None);
     }
 
+    fn request_at(quality: u8, width: u16, height: u16, channels: u8, pixels: &[u8]) -> Vec<u8> {
+        let mut request = request(width, height, channels, pixels);
+        request[6] = quality;
+        request
+    }
+
+    /// Each component's (horizontal, vertical) sampling factors, from the
+    /// baseline frame header.
+    fn sampling_factors(jpeg: &[u8]) -> Vec<(u8, u8)> {
+        let mut at = 2;
+        loop {
+            let length = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
+            if jpeg[at + 1] == 0xC0 {
+                let components = usize::from(jpeg[at + 9]);
+                return (0..components)
+                    .map(|index| jpeg[at + 11 + index * 3])
+                    .map(|factors| (factors >> 4, factors & 0x0F))
+                    .collect();
+            }
+            at += 2 + length;
+        }
+    }
+
+    fn luma(rgb: &[u8]) -> Vec<u8> {
+        rgb.chunks_exact(3)
+            .map(|rgb| {
+                let [red, green, blue] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
+                ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
+            })
+            .collect()
+    }
+
+    fn psnr(decoded: &[u8], expected: &[u8]) -> f64 {
+        assert_eq!(decoded.len(), expected.len());
+        let squared: f64 = decoded
+            .iter()
+            .zip(expected)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum();
+        10.0 * (255.0f64.powi(2) / (squared / decoded.len() as f64)).log10()
+    }
+
+    /// Smooth shading with hard edges, 64 × 48.
+    fn scene_rgb() -> Vec<u8> {
+        (0..48u32)
+            .flat_map(|y| (0..64u32).map(move |x| (x, y)))
+            .flat_map(|(x, y)| {
+                let edge = if (x / 16 + y / 16) % 2 == 0 { 0 } else { 60 };
+                [
+                    (x * 3 + edge) as u8,
+                    (y * 4 + edge / 2) as u8,
+                    (100 + x + y) as u8,
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn subsamples_the_chroma_below_quality_90_only() {
+        let rgb = scene_rgb();
+        let at =
+            |quality| sampling_factors(&reply_to(&request_at(quality, 64, 48, 3, &rgb)).unwrap());
+
+        assert_eq!(at(80), [(2, 2), (1, 1), (1, 1)]);
+        assert_eq!(at(90), [(1, 1), (1, 1), (1, 1)]);
+        let grey = luma(&rgb);
+        let jpeg = reply_to(&request_at(80, 64, 48, 1, &grey)).unwrap();
+        assert_eq!(sampling_factors(&jpeg), [(1, 1)]);
+    }
+
+    #[test]
+    fn a_grey_image_round_trips() {
+        let grey = luma(&scene_rgb());
+        let jpeg = reply_to(&request_at(80, 64, 48, 1, &grey)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        assert_eq!(&reply[..4], &[64, 0, 48, 0]);
+        let decibels = psnr(&reply[4..], &grey);
+        assert!(decibels > 40.0, "{decibels} dB");
+    }
+
+    #[test]
+    fn an_rgb_image_round_trips_to_its_luma() {
+        let rgb = scene_rgb();
+        let jpeg = reply_to(&request_at(80, 64, 48, 3, &rgb)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        assert_eq!(&reply[..4], &[64, 0, 48, 0]);
+        let decibels = psnr(&reply[4..], &luma(&rgb));
+        assert!(decibels > 40.0, "{decibels} dB");
+    }
+
+    #[test]
+    fn a_depth_preview_round_trips_to_the_luma_of_its_colours() {
+        let depth: Vec<u16> = (0..64 * 48)
+            .map(|i| 500 + (i % 64) * 40 + (i / 64) * 10)
+            .collect();
+        let jpeg = reply_to(&depth_request(64, 48, 500, 4_000, &depth)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        let colours = luma(&depth_colours(&depth, Some((500, 4_000))));
+        let decibels = psnr(&reply[4..], &colours);
+        assert!(decibels > 40.0, "{decibels} dB");
+    }
+
     #[test]
     fn refuses_data_that_is_not_a_jpeg() {
         assert_eq!(reply_to(&decode_request(b"not a jpeg")), None);
