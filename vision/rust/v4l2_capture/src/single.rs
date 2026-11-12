@@ -1184,6 +1184,19 @@ mod tests {
     }
 
     #[test]
+    fn the_loop_stops_with_the_error_of_an_encode() {
+        // A quality the command line refuses, and the encoder too.
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 0 })];
+        let (frames, mut input) = TestFrames::new(scenes(12, None), vec![]);
+        let records = Collected::default();
+        let hour = Duration::from_secs(3_600);
+        let error = run_outputs(&outputs, &frames, &mut input, &records, hour).unwrap_err();
+        let message = error.to_string();
+        assert!(!message.contains("thread stopped"), "{message}");
+        assert!(frames.taken.get() < 12);
+    }
+
+    #[test]
     fn the_statistics_give_the_time_a_frame_takes_to_write() {
         let (frames, mut input) = TestFrames::new(scenes(4, None), vec![]);
         let records = Collected::default();
