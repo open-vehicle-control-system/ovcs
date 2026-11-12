@@ -135,6 +135,37 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   describe "check/1" do
+    test "refuses detections: that is no keyword list, or names no detection pipeline has" do
+      with_detectors = fn detections ->
+        Keyword.update!(options(Camera, detections: detections), :config, fn config ->
+          stub = VisionCore.Detection.Backend.Stub
+
+          detectors = [
+            {:detector, backend: stub},
+            {:detector, backend: stub, name: :signs, source: :hq}
+          ]
+
+          %{config | components: config.components ++ detectors}
+        end)
+      end
+
+      assert Exporter.check(with_detectors.(pipelines: [:detection])) == :ok
+      assert Exporter.check(with_detectors.(topic_prefix: "front")) == :ok
+
+      for {detections, refusal} <- [
+            {[pipelines: [:detection, :people]],
+             "detections: pipelines :people, which is no detection pipeline of the configuration"},
+            {[pipelines: [:signs]],
+             "detections: pipelines :signs, which is no detection pipeline of the configuration"},
+            {:detection, "detections: is not a keyword list: :detection"},
+            {[pipelines: :detection],
+             "detections: pipelines: is not a list of detection pipeline names: :detection"}
+          ] do
+        assert {:error, reason} = Exporter.check(with_detectors.(detections))
+        assert reason =~ refusal
+      end
+    end
+
     test "runs with the ROS 2 link, whatever it publishes" do
       assert Exporter.check(options(Camera, stereo: [], detections: [], heartbeat: [])) == :ok
 

@@ -157,7 +157,8 @@ defmodule VisionCore.Ros2.Exporter do
 
     with :ok <- check_link(config),
          :ok <- check_stereo(options[:stereo], config),
-         :ok <- check_cameras(options[:cameras], config) do
+         :ok <- check_cameras(options[:cameras], config),
+         :ok <- check_detections(options[:detections], config) do
       check_segmentation(options[:segmentation], config)
     end
   end
@@ -235,6 +236,37 @@ defmodule VisionCore.Ros2.Exporter do
       true ->
         :ok
     end
+  end
+
+  defp check_detections(nil, _config), do: :ok
+
+  defp check_detections(detections_options, config) do
+    cond do
+      not (is_list(detections_options) and Keyword.keyword?(detections_options)) ->
+        {:error, "its detections: is not a keyword list: #{inspect(detections_options)}"}
+
+      not is_list(listed = Keyword.get(detections_options, :pipelines, [])) ->
+        {:error,
+         "its detections: pipelines: is not a list of detection pipeline names: " <>
+           inspect(listed)}
+
+      (missing =
+         detections_options
+         |> Keyword.get(:pipelines, [])
+         |> Enum.reject(&detection_pipeline?(&1, config))) != [] ->
+        {:error,
+         "its detections: pipelines #{Enum.map_join(missing, ", ", &inspect/1)}, " <>
+           "which is no detection pipeline of the configuration"}
+
+      true ->
+        :ok
+    end
+  end
+
+  # Those with a source a pipeline takes: a detector with another never runs.
+  defp detection_pipeline?(name, config) do
+    outputs = for {output, _source} <- Detection.Supervisor.sources(config), do: output
+    is_atom(name) and Detection.output(name) in outputs
   end
 
   defp check_segmentation(nil, _config), do: :ok
