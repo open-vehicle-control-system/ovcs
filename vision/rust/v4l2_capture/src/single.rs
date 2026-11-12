@@ -885,16 +885,8 @@ mod tests {
         assert!(records
             .iter()
             .all(|record| record[0] != 7 || record[1] == 0));
-        // Hashed with each frame record's tag set to 6 and its output index
-        // dropped: which thread writes the records changes none of them
-        // nor their order.
-        let rgb_frames: Vec<Vec<u8>> = (records.iter())
-            .map(|record| match record[0] {
-                OUTPUT_FRAME => [&[6][..], &record[2..]].concat(),
-                _ => record.clone(),
-            })
-            .collect();
-        assert_eq!(records_digest(&rgb_frames), 0xf88a5dbe53ea288a);
+        // Which thread writes the records changes none of them nor their order.
+        assert_eq!(records_digest(&records), 0xd4ba9e80010111ea);
     }
 
     #[test]
