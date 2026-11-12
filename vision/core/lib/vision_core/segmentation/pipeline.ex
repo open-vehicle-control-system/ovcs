@@ -393,6 +393,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   # Publishes the label images whose pair is known, in capture order, and has the pipeline told when to look again.
   defp publish_settled(state, now_ns) do
+    state = %{state | camera: CameraDepth.add_queued_pairs(state.camera, now_ns)}
     {settled, waiting} = DepthQueue.settle(state.waiting, state.camera, now_ns)
     state = %{state | waiting: DepthQueue.schedule(waiting, state.camera, now_ns)}
 

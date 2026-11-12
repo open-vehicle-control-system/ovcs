@@ -22,10 +22,15 @@ defmodule VisionCore.Detection.CameraDepth do
   (`VisionCore.Detection.DepthQueue`).
 
   The stereo pairs have stalled (`stalled?/2`) before two have come, or
-  when none has come for two pair periods, by the time each arrived: the
-  stereo latency is more than a period, so capture times would always
-  look stalled. A pair that comes after a stall is kept alone, so the
-  pairs from before it do not stretch the period.
+  when none has come for two pair periods since the last one was handed
+  over (`add_pair/3`): the stereo latency is more than a period, so
+  capture times would always look stalled. A pipeline takes the pairs
+  waiting in its mailbox (`add_queued_pairs/2`) before it settles a
+  result, so running late does not make them look stalled. A pair
+  captured more than two pair periods after the newest one kept is kept
+  alone, so the pairs from before the gap do not stretch the period;
+  that gap is in capture times, which the pipeline's delay does not
+  change.
 
   ## The lens
 
@@ -169,14 +174,15 @@ defmodule VisionCore.Detection.CameraDepth do
   @doc """
   Keeps `pair`, arrived at `now_ns`, when it has a depth map and the
   camera is `projectable?/1`, without its images, and drops the pairs
-  captured more than `:pair_wait_ms` before it, keeping two; after a
-  stall of two pair periods, it is kept alone.
+  captured more than `:pair_wait_ms` before it, keeping two; a pair
+  captured more than two pair periods after the newest one is kept
+  alone.
   """
   @spec add_pair(t(), Pair.t(), integer()) :: t()
   def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair, now_ns)
       when is_binary(depth_map) and is_map(geometry) do
     if projectable?(depth) do
-      kept = if gone_quiet?(depth, now_ns), do: [], else: depth.pairs
+      kept = if after_gap?(depth.pairs, pair), do: [], else: depth.pairs
       %{depth | pairs: recent([slim(pair) | kept], depth.keep_ns), received_ns: now_ns}
     else
       depth
@@ -184,6 +190,32 @@ defmodule VisionCore.Detection.CameraDepth do
   end
 
   def add_pair(depth, _pair_without_depth, _now_ns), do: depth
+
+  @doc """
+  `depth` with the stereo pairs waiting in the calling process's mailbox
+  as `{:"$gen_cast", {:stereo_pair, pair}}` taken out and kept
+  (`add_pair/3`), arrived at `now_ns`: a pipeline running late takes the
+  pairs already sent before settling a result on the pairs it has.
+  """
+  @spec add_queued_pairs(t(), integer()) :: t()
+  def add_queued_pairs(depth, now_ns) do
+    receive do
+      {:"$gen_cast", {:stereo_pair, %Pair{} = pair}} ->
+        depth |> add_pair(pair, now_ns) |> add_queued_pairs(now_ns)
+    after
+      0 -> depth
+    end
+  end
+
+  # Whether `pair` was captured more than two pair periods after the newest one kept.
+  defp after_gap?([newest | _older] = pairs, pair) do
+    case period_ns(pairs) do
+      nil -> false
+      period -> Pair.capture_ns(pair) - Pair.capture_ns(newest) > 2 * period
+    end
+  end
+
+  defp after_gap?([], _pair), do: false
 
   # What matching and projecting read: the depth, its size, the geometry and the left frame's times.
   defp slim(%Pair{left_frame: %Frame{} = left_frame} = pair) do
@@ -236,9 +268,6 @@ defmodule VisionCore.Detection.CameraDepth do
       period -> depth.received_ns + 2 * period
     end
   end
-
-  # Stalled with two pairs or more: none came for two periods.
-  defp gone_quiet?(depth, now_ns), do: not is_nil(stalls_at(depth)) and stalled?(depth, now_ns)
 
   @doc """
   The pair to take the depth of a frame captured at `capture_ns` from:

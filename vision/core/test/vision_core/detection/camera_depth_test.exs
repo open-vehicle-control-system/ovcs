@@ -214,7 +214,7 @@ defmodule VisionCore.Detection.CameraDepthTest do
       assert CameraDepth.stalled?(depth, 5_300 * @ms + 1)
     end
 
-    test "keeps only the pair that comes after a stall" do
+    test "keeps only the pair captured two pair periods after the one before" do
       depth =
         with_pairs(depth(60_000), [0, 100])
         |> CameraDepth.add_pair(pair(2_000), 2_000 * @ms)
@@ -227,6 +227,31 @@ defmodule VisionCore.Detection.CameraDepthTest do
       refute CameraDepth.stalled?(depth, 2_100 * @ms)
       assert matched_capture_ms(depth, 2_040) == 2_000
       assert matched_capture_ms(depth, 1_900) == :none
+    end
+
+    test "keeps the pairs before a pair captured on time, however late it is handled" do
+      depth =
+        with_pairs(depth(60_000), [0, 100])
+        |> CameraDepth.add_pair(pair(200), 1_000 * @ms)
+
+      refute CameraDepth.stalled?(depth, 1_000 * @ms)
+      assert matched_capture_ms(depth, 160) == 200
+      assert matched_capture_ms(depth, 140) == 100
+    end
+  end
+
+  describe "add_queued_pairs/2" do
+    test "keeps the stereo pairs waiting in the mailbox, and leaves every other message" do
+      depth = with_pairs(depth(60_000), [0])
+
+      for capture_ms <- [100, 200], do: GenServer.cast(self(), {:stereo_pair, pair(capture_ms)})
+      send(self(), :other)
+
+      depth = CameraDepth.add_queued_pairs(depth, 200 * @ms)
+
+      assert matched_capture_ms(depth, 190) == 200
+      refute_received {:"$gen_cast", {:stereo_pair, _pair}}
+      assert_received :other
     end
   end
 end

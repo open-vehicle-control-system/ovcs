@@ -34,6 +34,20 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     def inference_times(_server), do: nil
   end
 
+  # Tells the test of each frame it is handed and leaves the answer to it.
+  defmodule Held do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(test, sequence, _image) do
+      send(test, {:submitted, sequence})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   # Fails the first frame, as a backend whose Port went down, and finds a person in the next.
   defmodule FirstFrameLost do
     @behaviour VisionCore.Detection.Backend
@@ -276,6 +290,37 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     publish_frame(1_100)
     assert_receive {:submitted, 33}
+  end
+
+  test "places boxes with their pair when it waits in the mailbox behind them, the pipeline running late",
+       %{tmp_dir: dir} do
+    start_supervised!(
+      {Pipeline,
+       name: :hq_people,
+       backend: Held,
+       backend_server: self(),
+       source: {:camera, :hq},
+       pair_wait_ms: 60_000,
+       config: config(dir, [:calibration, :pose]),
+       clock: start_clock()}
+    )
+
+    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    publish_pair(0)
+    publish_pair(1_000)
+    publish_frame(1_400)
+    assert_receive {:submitted, 1}
+
+    # Past the stall the pairs' period would give, with the frame's pair already sent.
+    :sys.suspend(Pipeline.HqPeople)
+    person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0}
+    send(Pipeline.HqPeople, {:inference_detections, 1, [person]})
+    publish_pair(1_500, distance_mm: 3000)
+    set_clock(5_000)
+    :sys.resume(Pipeline.HqPeople)
+
+    assert [placed] = detections()
+    assert_in_delta placed.z, 3.0, 1.0e-6
   end
 
   test "a stray :pair_wait places nothing before the boxes' pair comes", %{tmp_dir: dir} do
