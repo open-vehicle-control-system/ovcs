@@ -35,6 +35,7 @@ defmodule VisionCore.Segmentation.SupervisorTest do
            ] = children
 
     assert Enum.sort(backend_options) == [
+             classes: 19,
              label_image: %{width: 1, height: 1, data: <<0>>},
              name: Stub.Road,
              pipeline: :road
@@ -54,6 +55,14 @@ defmodule VisionCore.Segmentation.SupervisorTest do
              name: :road,
              road_classes: ["road", "sidewalk"]
            ]
+  end
+
+  test "tells the backend how many classes its labels name" do
+    {:ok, {_flags, [backend | _children]}} =
+      Supervisor.init(@options ++ [labels: ["road", "sidewalk", "sky"]])
+
+    assert %{start: {Stub, :start_link, [backend_options]}} = backend
+    assert backend_options[:classes] == 3
   end
 
   test "runs on the QNN backend by default, keeping every QNN option to it" do

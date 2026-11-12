@@ -29,9 +29,11 @@ defmodule VisionCore.Segmentation.Backend do
   `inference_times/1` are `VisionCore.Detection.Backend`'s, so
   `VisionCore.Status` counts both kinds of backends alike.
 
-  A backend registers under its `:name` option and declares the
-  inference step of its `:pipeline` in `VisionCore.Parameters`
-  (`VisionCore.Segmentation.inference_group/2`).
+  A backend registers under its `:name` option, declares the inference
+  step of its `:pipeline` in `VisionCore.Parameters`
+  (`VisionCore.Segmentation.inference_group/2`), and is given
+  `:classes`, the number of classes the pipeline names: a backend
+  running a model refuses one scoring another number.
   """
 
   @typedoc """

@@ -29,6 +29,9 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
     * `:dlc_path` — the model (required).
     * `:pipeline` — the segmentation pipeline whose inference step it
       declares (required).
+    * `:classes` (19, the Cityscapes classes) — the number of classes
+      the pipeline names, which `qnn_segment` refuses a model scoring
+      another number of.
     * `:qairt_dir` (`"/opt/qairt"`) — QAIRT's runtime.
     * `:dsp_library_path` (`"/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"`)
       — the board's DSP libraries.
@@ -111,6 +114,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       port: nil,
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
+      classes: Keyword.get(opts, :classes, length(VisionCore.Segmentation.labels())),
       qairt_dir: Keyword.get(opts, :qairt_dir, "/opt/qairt"),
       dsp_library_path:
         Keyword.get(opts, :dsp_library_path, "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"),
@@ -156,8 +160,9 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   defp open_port(state, context) do
     with {:ok, binary} <- context,
+         args = [binary, Integer.to_string(state.classes)],
          {:ok, port} <-
-           QnnPort.open(state.executable, [binary], state.qairt_dir, state.dsp_library_path) do
+           QnnPort.open(state.executable, args, state.qairt_dir, state.dsp_library_path) do
       Logger.info("#{label(state)} loaded #{Path.basename(state.dlc_path)}")
       %{state | port: port}
     else

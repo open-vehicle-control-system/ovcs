@@ -9,12 +9,15 @@
 # "hang" reads requests and never replies; "die" exits with status 1 on its first
 # request; "exit" exits with status 1 at once.
 # A program that runs logs "ready" first. Each start appends a line to
-# <binary>.starts. It exits when its stdin or its stdout closes.
+# <binary>.starts and writes its arguments after the binary to <binary>.arguments.
+# It exits when its stdin or its stdout closes.
 import os, struct, sys
 
 binary = sys.argv[1]
 with open(binary + ".starts", "a") as starts:
     starts.write("start\n")
+with open(binary + ".arguments", "w") as arguments:
+    arguments.write(" ".join(sys.argv[2:]))
 with open(binary) as model:
     mode = model.read().strip()
 if mode == "exit":

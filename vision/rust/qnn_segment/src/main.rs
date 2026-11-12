@@ -1,14 +1,16 @@
-//! `qnn_segment <context.bin>`: the Port behind `VisionCore.Segmentation.Backend.Qnn`. A semantic
-//! segmentation model on the Hexagon NPU through QNN's HTP backend, from a context binary
-//! built for this chip and QAIRT version. The environment's `LD_LIBRARY_PATH` holds
-//! `libQnnHtp.so` and `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
+//! `qnn_segment <context.bin> <classes>`: the Port behind `VisionCore.Segmentation.Backend.Qnn`.
+//! A semantic segmentation model on the Hexagon NPU through QNN's HTP backend, from a context
+//! binary built for this chip and QAIRT version, scoring the `classes` classes the pipeline
+//! names. The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and `libQnnSystem.so`, its
+//! `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
-//! The model takes one `[1, H, W, 3]` uint8 RGB image of pixel values and gives one
-//! `[1, H, W, C]` uint8 grid of C scores per cell. A request (`protocol`) carries an RGB image
-//! and a band of its rows; the band, resized to the model's input, is inferred, and the reply
-//! carries each cell's class, the highest of its scores, and, when the graph ran, its time on
-//! the HTP from QNN's profile, or the wall time around its execution when the profile is
-//! unavailable; or a LOG record.
+//! The model takes one `[1, H, W, 3]` uint8 RGB image of pixel values, unquantised or quantised
+//! with a scale of 1/255 and an offset of 0, and gives one `[1, H, W, C]` uint8 grid of C scores
+//! per cell, C being `classes`; another model is refused at start. A request (`protocol`)
+//! carries an RGB image and a band of its rows; the band, resized to the model's input, is
+//! inferred, and the reply carries each cell's class, the highest of its scores, and, when the
+//! graph ran, its time on the HTP from QNN's profile, or the wall time around its execution when
+//! the profile is unavailable; or a LOG record.
 
 mod band;
 mod labels;
@@ -34,10 +36,13 @@ fn exit_early(message: &str, status: i32) -> ! {
 
 fn main() {
     let command_line: Vec<String> = std::env::args().collect();
-    if command_line.len() != 2 {
-        exit_early("usage: qnn_segment <context.bin>", 2);
-    }
-    let context_path = &command_line[1];
+    let (context_path, classes) = match command_line.as_slice() {
+        [_program, context_path, classes] => match classes.parse::<usize>() {
+            Ok(classes) => (context_path, classes),
+            Err(_) => exit_early(&format!("classes: {classes} is not a count"), 2),
+        },
+        _ => exit_early("usage: qnn_segment <context.bin> <classes>", 2),
+    };
 
     // Before any QNN call: its libraries may log onto stdout.
     let writer = match Writer::from_stdout_redirecting() {
@@ -46,7 +51,7 @@ fn main() {
     };
     writer.log_panics();
 
-    if let Err(message) = run(context_path, &writer) {
+    if let Err(message) = run(context_path, classes, &writer) {
         log(&writer, LogLevel::Error, &message);
         exit(1);
     }
@@ -59,12 +64,12 @@ fn shapes(tensors: &[qnn::Tensor]) -> Vec<Shape<'_>> {
             name: &tensor.name,
             dimensions: &tensor.dimensions,
             unsigned_8bit: tensor.unsigned_8bit,
-            scale: tensor.scale_offset.map(|(scale, _)| scale),
+            scale_offset: tensor.scale_offset,
         })
         .collect()
 }
 
-fn run(context_path: &str, writer: &Writer) -> Result<(), String> {
+fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(), String> {
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
     let mut model = qnn::Model::open(&binary)?;
     drop(binary);
@@ -75,7 +80,11 @@ fn run(context_path: &str, writer: &Writer) -> Result<(), String> {
         output_width,
         output_height,
         classes,
-    } = model::geometry(&shapes(&model.inputs), &shapes(&model.outputs))?;
+    } = model::geometry(
+        &shapes(&model.inputs),
+        &shapes(&model.outputs),
+        expected_classes,
+    )?;
 
     log(
         writer,

@@ -11,6 +11,7 @@ defmodule VisionCore.Segmentation.Backend.Stub do
     * `:name` (the module) — the name it registers under.
     * `:pipeline` — the segmentation pipeline whose inference step it
       declares.
+    * `:classes` — unused: its label image is fixed.
     * `:label_image` — the `%{width:, height:, data:}` it answers with.
       Defaults to a 4 × 2 grid, its top row `sky` (10) and its bottom
       row `road` (0).

@@ -21,9 +21,9 @@ defmodule VisionCore.Segmentation.Supervisor do
   restarts the pipeline with its backend, so a pipeline waiting for a
   reply the restarted backend will never send starts over.
 
-  The backend's options go to the backend, the pipeline's to the
-  pipeline, and `:max_hz`, `:labels` and `:road_classes` to `Live`; see
-  their docs. A unit that fails to start, such as one given an option it
+  The backend's options go to the backend, with `:classes`, the number
+  of `:labels`; the pipeline's to the pipeline, and `:max_hz`, `:labels`
+  and `:road_classes` to `Live`; see their docs. A unit that fails to start, such as one given an option it
   does not take, is left down, with the reason logged, and the rest of
   the vision core runs on; the log names the ROS 2 exporter's
   `segmentation:` for its `:topic_prefix`.
@@ -76,9 +76,10 @@ defmodule VisionCore.Segmentation.Supervisor do
     name = Segmentation.name!(opts)
     {backend, backend_opts} = split_backend_options(opts)
     backend_server = Detection.server(backend, name)
+    classes = length(Keyword.get(opts, :labels, Segmentation.labels()))
 
     children = [
-      {backend, backend_opts ++ [name: backend_server, pipeline: name]},
+      {backend, backend_opts ++ [name: backend_server, pipeline: name, classes: classes]},
       {Pipeline,
        Keyword.take(opts, pipeline_keys()) ++
          [backend: backend, backend_server: backend_server, name: name]},

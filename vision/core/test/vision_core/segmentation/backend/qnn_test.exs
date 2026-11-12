@@ -54,6 +54,21 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert labels == %{width: 4, height: 2, data: <<0, 3, 3, 5, 1, 45, 3, 15>>}
   end
 
+  test "hands the Port the number of classes its pipeline names, the 19 Cityscapes ones by default",
+       %{tmp_dir: dir} do
+    for {opts, classes} <- [{[], "19"}, {[classes: 3], "3"}] do
+      start_backend(dir, "answer", opts)
+      eventually(&Qnn.available?/0)
+      assert Qnn.segment(1, @band) == :ok
+      assert_receive {:inference_labels, 1, %{}}, 2_000
+
+      assert [arguments] = dir |> Path.join("cache/*.bin.arguments") |> Path.wildcard()
+      assert File.read!(arguments) == classes
+      stop_supervised!(Qnn)
+      File.rm!(arguments)
+    end
+  end
+
   test "an empty label image is no labels, and leaves the Port open for the next band", %{
     tmp_dir: dir
   } do
