@@ -10,9 +10,9 @@ import Hint from './Hint.jsx'
 import { useApiOutputs } from '../stores/exporters.js'
 import {
   SEGMENTATION,
-  useDetectionTopics,
+  useDetectionOutputs,
   useDetections,
-  useSegmentationTopics,
+  useSegmentationOutputs,
   useSegmentations
 } from '../pipelineResults.js'
 import {
@@ -109,9 +109,9 @@ const rowLayout = (beside) =>
 
 /** The latest results of the detection channels drawn on the preview of `source`: their overlays, and all their objects, `null` before any answers. */
 function useSourceDetections(socket, source) {
-  const topics = useDetectionTopics(source)
-  const latest = useDetections(socket, topics.join(' '))
-  const answered = topics.filter((topic) => latest[topic])
+  const outputs = useDetectionOutputs(source)
+  const latest = useDetections(socket, outputs)
+  const answered = outputs.map(({ name }) => name).filter((topic) => latest[topic])
 
   return {
     overlay:
@@ -122,8 +122,9 @@ function useSourceDetections(socket, source) {
 
 /** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends once their classes come. */
 function useSourceSegmentations(socket, source) {
-  const topics = useSegmentationTopics(source)
-  const latest = useSegmentations(socket, topics.join(' '))
+  const outputs = useSegmentationOutputs(source)
+  const latest = useSegmentations(socket, outputs)
+  const topics = outputs.map(({ name }) => name)
   const answered = topics.filter((topic) => latest[topic]?.segmentation)
   const named = topics.filter((topic) => latest[topic]?.classes)
 

@@ -5,25 +5,24 @@ import { decodeSegmentation } from './segmentation.js'
 const DETECTIONS = 'detections'
 
 /**
- * The detection channels to join on the preview of `source`, `left` or a camera's name: each `detections` output the
- * API exporter lists whose pipeline's source it is, `left` when the API names none.
+ * The detection outputs whose channels to join on the preview of `source`, `left` or a camera's name: each
+ * `detections` output the API exporter lists whose pipeline's source it is, `left` when the API names none.
  */
-export function useDetectionTopics(source) {
+export function useDetectionOutputs(source) {
   const outputs = useApiOutputs()
 
   return outputs
     .filter(({ name }) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
     .filter((output) => (output.source ?? 'left') === source)
-    .map(({ name }) => name)
 }
 
 export const SEGMENTATION = 'segmentation:'
 
-/** The segmentation channels to join on the preview of the camera `source`: each `segmentation` output the API exporter lists on it. */
-export function useSegmentationTopics(source) {
+/** The segmentation outputs whose channels to join on the preview of the camera `source`: each `segmentation` output the API exporter lists on it. */
+export function useSegmentationOutputs(source) {
   const outputs = useApiOutputs()
 
-  return outputs.filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source).map(({ name }) => name)
+  return outputs.filter((output) => output.name.startsWith(SEGMENTATION) && output.source === source)
 }
 
 // How long a class stays shown present in a pipeline's legend after its last grid with it, so its styling does not flicker at the grids' rate.
@@ -36,14 +35,16 @@ function seenClasses(seen = {}, segmentation, now) {
 }
 
 /**
- * One channel a topic of `topics`, a space-separated list, joined as long as `socket` and the list stay, with each
+ * One channel an output of `outputs`, its name the topic, joined as long as `socket` and the names stay, with each
  * topic's latest state: `bind(channel, update)` binds a channel's events before it joins, and `update(change)` sets its
  * topic's state to `change` of the one before. Returns the states by topic, none for a topic until its first update,
  * and a ref to the channels by topic.
  */
-function useTopicChannels(socket, topics, bind) {
+function useTopicChannels(socket, outputs, bind) {
   const [latest, setLatest] = useState({})
   const channelsRef = useRef({})
+  // The exporters' store lists new outputs on every load: the names as one string keep the channels through a load that changes none.
+  const topics = outputs.map(({ name }) => name).join(' ')
 
   useEffect(() => {
     const channels = topics
@@ -83,12 +84,12 @@ function bindSegmentation(channel, update) {
 }
 
 /**
- * The latest result of each segmentation channel in `topics`, a space-separated list, by topic, with the pipeline's
+ * The latest result of the segmentation channel of each of `outputs`, by topic, with the pipeline's
  * classes, which the unit pushes on every join before any grid, and the classes seen lately; a channel has no result
  * until its first comes. Each grid is acked once rendered, and the unit sends the next only then.
  */
-export function useSegmentations(socket, topics) {
-  const [segmentations, channelsRef] = useTopicChannels(socket, topics, bindSegmentation)
+export function useSegmentations(socket, outputs) {
+  const [segmentations, channelsRef] = useTopicChannels(socket, outputs, bindSegmentation)
   const ackedRef = useRef(new WeakSet())
 
   // After the commit, so the overlay has drawn the grid it acks.
@@ -106,7 +107,7 @@ export function useSegmentations(socket, topics) {
 
 const bindDetections = (channel, update) => channel.on('detections', (payload) => update(() => payload.detections))
 
-/** The latest detection result of each channel in `topics`, a space-separated list, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
-export function useDetections(socket, topics) {
-  return useTopicChannels(socket, topics, bindDetections)[0]
+/** The latest detection result of the channel of each of `outputs`, by topic; a channel has none until its first comes or while its pipeline is unavailable. */
+export function useDetections(socket, outputs) {
+  return useTopicChannels(socket, outputs, bindDetections)[0]
 }
