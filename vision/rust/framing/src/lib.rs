@@ -31,11 +31,15 @@ struct PollDescriptor {
 }
 
 const POLLHUP: i16 = 0x10;
+const F_SETPIPE_SZ: i32 = 1031;
+/// The most an unprivileged process may ask for by default (`/proc/sys/fs/pipe-max-size`).
+const UNPRIVILEGED_PIPE_BYTES: i32 = 1 << 20;
 
 extern "C" {
     fn dup(fd: RawFd) -> RawFd;
     fn dup2(old: RawFd, new: RawFd) -> RawFd;
     fn poll(descriptors: *mut PollDescriptor, count: std::ffi::c_ulong, timeout_ms: i32) -> i32;
+    fn fcntl(fd: RawFd, command: i32, ...) -> i32;
     #[cfg(test)]
     #[link_name = "pipe"]
     fn libc_pipe(ends: *mut RawFd) -> i32;
@@ -87,6 +91,20 @@ pub fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
     };
     // SAFETY: one valid descriptor, polled without waiting.
     unsafe { poll(&mut polled, 1, 0) == 1 && polled.revents & POLLHUP != 0 }
+}
+
+/// Enlarges the pipe `descriptor` reads from or writes to so it holds `bytes`, or, refused, 1
+/// MiB: a record that fits is written in one go rather than in turns with its reader.
+/// Returns the pipe's size.
+pub fn enlarge_pipe(descriptor: BorrowedFd<'_>, bytes: usize) -> io::Result<usize> {
+    let set = |bytes: i32| {
+        // SAFETY: a plain fcntl on a valid descriptor; a failure leaves the pipe as it was.
+        match unsafe { fcntl(descriptor.as_raw_fd(), F_SETPIPE_SZ, bytes) } {
+            size if size < 0 => Err(io::Error::last_os_error()),
+            size => Ok(size as usize),
+        }
+    };
+    set(i32::try_from(bytes).unwrap_or(i32::MAX)).or_else(|_| set(UNPRIVILEGED_PIPE_BYTES))
 }
 
 /// Record output on the real stdout. Libraries that print to stdout would
@@ -279,6 +297,23 @@ mod tests {
         assert!(!hung_up(pipe_out.as_fd()));
         drop(pipe_in);
         assert!(hung_up(pipe_out.as_fd()));
+    }
+
+    #[test]
+    fn a_pipe_is_enlarged_to_the_size_asked_or_to_one_mebibyte() {
+        let mut ends = [0; 2];
+        // SAFETY: `ends` has room for the two descriptors.
+        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
+        // SAFETY: both descriptors were just created and nothing else owns them.
+        let (pipe_out, _pipe_in) =
+            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+
+        assert_eq!(
+            enlarge_pipe(pipe_out.as_fd(), 256 << 10).unwrap(),
+            256 << 10
+        );
+        let size = enlarge_pipe(pipe_out.as_fd(), 64 << 20).unwrap();
+        assert!(size == 1 << 20 || size == 64 << 20, "{size}");
     }
 
     #[test]

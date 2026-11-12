@@ -18,6 +18,7 @@ mod labels;
 mod model;
 mod protocol;
 
+use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
@@ -25,6 +26,9 @@ use framing::{log_record, LogLevel, Writer};
 use model::{Geometry, Shape};
 use protocol::{labels_record, parse_request};
 use qnn::{StageTimes, TimeLog, EXECUTION_STAGES, STAGE_TIMES_EVERY};
+
+/// Room in the request pipe for a whole request, which the BEAM then writes in one go.
+const REQUEST_PIPE_BYTES: usize = 4 << 20;
 
 fn log(writer: &Writer, level: LogLevel, message: &str) {
     let _ = writer.write_record(&log_record(level, message));
@@ -72,6 +76,18 @@ fn shapes(tensors: &[qnn::Tensor]) -> Vec<Shape<'_>> {
 }
 
 fn run(context_path: &str, expected_classes: usize, writer: &Writer) -> Result<(), String> {
+    match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
+        Ok(bytes) => log(
+            writer,
+            LogLevel::Info,
+            &format!("request pipe: {bytes} bytes"),
+        ),
+        Err(error) => log(
+            writer,
+            LogLevel::Warning,
+            &format!("request pipe not enlarged: {error}"),
+        ),
+    }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
     let mut model = qnn::Model::open(&binary)?;
     drop(binary);
