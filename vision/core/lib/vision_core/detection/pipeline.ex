@@ -140,13 +140,17 @@ defmodule VisionCore.Detection.Pipeline do
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
       waits of a camera source are measured with, a function of no
       argument.
+
+  `:detect_every_n` and `:reprojection_stride` are integers from 1 on,
+  `:max_detections` and `:pair_wait_ms` from 0 on, and `:min_score` is a
+  number: another value fails the start (`VisionCore.Options`).
   """
   use GenServer
 
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
   alias VisionCore.Detection.{CameraDepth, CameraSource, DepthQueue, Fusion}
-  alias VisionCore.Outputs
+  alias VisionCore.{Options, Outputs}
   alias VisionCore.Stereo.Pair
 
   @coco_labels ~w(person bicycle car motorcycle airplane bus train truck boat
@@ -223,7 +227,7 @@ defmodule VisionCore.Detection.Pipeline do
     backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
     name = Detection.pipeline_name(opts)
     source = opts |> Keyword.get(:source, :stereo) |> with_output()
-    pair_wait_ms = Keyword.get(opts, :pair_wait_ms, @default_pair_wait_ms)
+    pair_wait_ms = Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
 
     state = %{
       name: name,
@@ -231,14 +235,15 @@ defmodule VisionCore.Detection.Pipeline do
       camera: camera_source(source, name, pair_wait_ms, opts),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
-      detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
+      detect_every_n: Options.integer!(opts, :detect_every_n, @default_detect_every_n, 1),
       labels: Keyword.get(opts, :labels, @coco_labels),
-      min_score: Keyword.get(opts, :min_score, @default_min_score),
-      max_detections: Keyword.get(opts, :max_detections, @default_max_detections),
+      min_score: Options.number!(opts, :min_score, @default_min_score),
+      max_detections: Options.integer!(opts, :max_detections, @default_max_detections, 0),
       depth_sample_fraction:
         Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
-      reprojection_stride: Keyword.get(opts, :reprojection_stride, @default_reprojection_stride),
+      reprojection_stride:
+        Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
       pair_wait_ms: pair_wait_ms,
       # The sequence of the last submission, accepted or not.
       sequence: 0,

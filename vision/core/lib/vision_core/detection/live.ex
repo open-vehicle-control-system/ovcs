@@ -22,7 +22,8 @@ defmodule VisionCore.Detection.Live do
   ## Options
 
     * `:name` (`:detection`) — the pipeline whose results it hands on.
-    * `:max_hz` (`10`) — results a second sent to each subscriber.
+    * `:max_hz` (`10`) — results a second sent to each subscriber, an
+      integer from 1 on.
   """
   use GenServer
 
@@ -56,7 +57,7 @@ defmodule VisionCore.Detection.Live do
     :ok =
       Outputs.subscribe({:detections, Detection.server(Pipeline, Detection.pipeline_name(opts))})
 
-    max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
+    max_hz = VisionCore.Options.integer!(opts, :max_hz, @default_max_hz, 1)
 
     {:ok,
      %{

@@ -124,7 +124,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection
   alias VisionCore.Detection.{CameraDepth, DepthQueue, Reprojection}
-  alias VisionCore.Outputs
+  alias VisionCore.{Options, Outputs}
   alias VisionCore.Stereo.Pair
 
   @default_backend VisionCore.Segmentation.Backend.Qnn
@@ -170,7 +170,7 @@ defmodule VisionCore.Segmentation.Pipeline do
     backend = Keyword.get(opts, :backend, @default_backend)
     labels = Keyword.get(opts, :labels, VisionCore.Segmentation.labels())
     road_classes = Keyword.get(opts, :road_classes, @default_road_classes)
-    pair_wait_ms = integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
+    pair_wait_ms = Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
 
     state = %{
       name: name,
@@ -181,8 +181,9 @@ defmodule VisionCore.Segmentation.Pipeline do
       labels: labels,
       road_classes: road_classes,
       road: road!(road_classes, labels),
-      segment_every_n: integer!(opts, :segment_every_n, @default_segment_every_n, 1),
-      reprojection_stride: integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
+      segment_every_n: Options.integer!(opts, :segment_every_n, @default_segment_every_n, 1),
+      reprojection_stride:
+        Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
       pair_wait_ms: pair_wait_ms,
       # The sequence of the last submission, accepted or not.
       sequence: 0,
@@ -240,18 +241,6 @@ defmodule VisionCore.Segmentation.Pipeline do
         ArgumentError,
         "its :band_top is a fraction of the frame's height, from 0 to 1, got #{inspect(band_top)}"
       )
-
-  # `opts`' `key`, an integer from `least` on.
-  defp integer!(opts, key, default, least) do
-    case Keyword.get(opts, key, default) do
-      value when is_integer(value) and value >= least ->
-        value
-
-      value ->
-        raise ArgumentError,
-              "its #{inspect(key)} is an integer from #{least} on, got #{inspect(value)}"
-    end
-  end
 
   # Whether each class id, 0 to 255, is road.
   defp road!(road_classes, labels) do

@@ -136,7 +136,7 @@ defmodule VisionCore.Preview do
 
     streams = @stereo_streams ++ for {name, _driver, _server} <- cameras, do: name
 
-    max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
+    max_hz = VisionCore.Options.integer!(opts, :max_hz, @default_max_hz, 1)
     jpeg_codec = Keyword.get(opts, :jpeg_codec, VisionCore.Jpeg)
 
     {:ok,

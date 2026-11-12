@@ -585,4 +585,13 @@ defmodule VisionCore.PreviewTest do
       assert %{max_hz: 15} = Preview.options()
     end
   end
+
+  test "refuses at start a :max_hz that is no integer from 1 on" do
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+             Preview.start_link(config: @config, max_hz: 0)
+
+    assert message == "its :max_hz is an integer from 1 on, got 0"
+  end
 end

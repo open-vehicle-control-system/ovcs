@@ -20,7 +20,8 @@ defmodule VisionCore.Segmentation.Live do
   ## Options
 
     * `:name` (required) — the pipeline whose results it hands on.
-    * `:max_hz` (`5`) — results a second sent to each subscriber.
+    * `:max_hz` (`5`) — results a second sent to each subscriber, an
+      integer from 1 on.
     * `:labels` (the Cityscapes classes) and `:road_classes`
       (`["road"]`) — the pipeline's, which `classes/1` answers.
   """
@@ -57,10 +58,7 @@ defmodule VisionCore.Segmentation.Live do
   def init(opts) do
     name = Keyword.fetch!(opts, :name)
     :ok = Outputs.subscribe({:segmentation, Detection.server(Pipeline, name)})
-    max_hz = Keyword.get(opts, :max_hz, @default_max_hz)
-
-    unless is_integer(max_hz) and max_hz > 0,
-      do: raise(ArgumentError, "its :max_hz is a positive integer, got #{inspect(max_hz)}")
+    max_hz = VisionCore.Options.integer!(opts, :max_hz, @default_max_hz, 1)
 
     {:ok,
      %{

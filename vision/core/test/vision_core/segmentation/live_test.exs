@@ -51,14 +51,14 @@ defmodule VisionCore.Segmentation.LiveTest do
     assert_receive {:vision_segmentation, %{data: <<3, 3>>}}, 300
   end
 
-  test "refuses a :max_hz that is no positive integer" do
+  test "refuses a :max_hz that is no integer from 1 on" do
     Process.flag(:trap_exit, true)
 
     for max_hz <- [0, 2.5, nil] do
       assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
                Live.start_link(name: :road, max_hz: max_hz)
 
-      assert message =~ ":max_hz is a positive integer"
+      assert message == "its :max_hz is an integer from 1 on, got #{inspect(max_hz)}"
     end
   end
 

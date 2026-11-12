@@ -290,4 +290,22 @@ defmodule VisionCore.Detection.PipelineTest do
              {"road.inference", :road, 102}
            ]
   end
+
+  test "refuses at start an option whose value it cannot run with" do
+    Process.flag(:trap_exit, true)
+
+    for {option, refused} <- [
+          {{:detect_every_n, 0}, "its :detect_every_n is an integer from 1 on, got 0"},
+          {{:detect_every_n, 1.5}, "its :detect_every_n is an integer from 1 on, got 1.5"},
+          {{:max_detections, -1}, "its :max_detections is an integer from 0 on, got -1"},
+          {{:reprojection_stride, 0}, "its :reprojection_stride is an integer from 1 on, got 0"},
+          {{:pair_wait_ms, -1}, "its :pair_wait_ms is an integer from 0 on, got -1"},
+          {{:min_score, "0.4"}, "its :min_score is a number, got \"0.4\""}
+        ] do
+      assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+               Pipeline.start_link([option, backend: VisionCore.Detection.Backend.Stub])
+
+      assert message == refused
+    end
+  end
 end
