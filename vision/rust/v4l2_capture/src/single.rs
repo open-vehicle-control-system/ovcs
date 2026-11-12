@@ -2,12 +2,13 @@
 //! outputs from them, demosaiced at the capture's size or each 2x2 cell into
 //! one pixel by the processor (`processor`), with grey-world white balance,
 //! or averaged from another output (`scale`), the 2x2 average of a CPU
-//! output as the processor converts it, runs auto exposure on the
+//! output as the processor converts it, or encoded from another output as
+//! a JPEG on an encoder thread (`jpeg`), runs auto exposure on the
 //! green of the RGGB cells as the image tones it, and writes one
-//! OUTPUT_FRAME record per output per frame on stdout, in the outputs'
-//! order, each frame converted in bands of rows on as many threads as
-//! `threads` sets and written on a writer thread while the next one
-//! converts. A sensor with a tuning
+//! OUTPUT_FRAME or OUTPUT_JPEG record per output per frame on stdout, in
+//! the outputs' order, each frame converted in bands of rows on as many
+//! threads as `threads` sets and written on a writer thread while the next
+//! one converts. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
 //! correction matrix of its colour temperature, the chroma denoise and the
 //! contrast curve; another one its gamma.
@@ -18,11 +19,14 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
-use framing::{log_record, metadata_record, output_frame_header, LogLevel, Writer};
+use framing::{
+    log_record, metadata_record, output_frame_header, output_jpeg_header, LogLevel, Writer,
+};
 
-use crate::arguments::{OutputSpec, SingleArguments, Source};
+use crate::arguments::{Format, OutputSpec, SingleArguments, Source};
 use crate::bands::Images;
 use crate::bayer::{RawFrame, Tone};
+use crate::jpeg::{self, Encoded};
 use crate::processor::{Cpu, Development, Processor};
 use crate::scale;
 use crate::sensor::{self, SensorModel};
@@ -173,10 +177,11 @@ struct Setup {
 }
 
 /// Converts the frames of `frames` as `setup` says and writes them to
-/// `records`, each on a writer thread while the next one converts,
-/// steering the sensor's exposure through `set_exposure` and applying the
-/// settings `input` sends, until `input` closes. The records keep the order
-/// they are sent in.
+/// `records`, each on a writer thread while the next one converts, its
+/// JPEG outputs encoded on an encoder thread while the writer writes its
+/// other outputs, steering the sensor's exposure through `set_exposure`
+/// and applying the settings `input` sends, until `input` closes. The
+/// records keep the order they are sent in.
 fn capture(
     setup: Setup,
     frames: &impl Frames,
@@ -184,21 +189,43 @@ fn capture(
     input: &mut File,
     records: &impl Records,
 ) -> io::Result<()> {
+    let jpeg_outputs = jpeg::jpeg_outputs(&setup.outputs);
+    let mut jpegs = 0;
+    let jpeg_slots: Vec<Option<usize>> = (setup.outputs.iter())
+        .map(|spec| {
+            matches!(spec.format, Format::Jpeg { .. }).then(|| {
+                jpegs += 1;
+                jpegs - 1
+            })
+        })
+        .collect();
     std::thread::scope(|scope| {
         let (sender, queued) = mpsc::channel();
         let (written, images) = mpsc::channel();
-        let writer = scope.spawn(move || write_records(records, queued, written));
+        let (to_encode, frames_to_encode) = mpsc::channel();
+        let (encoded_sender, encoded) = mpsc::channel();
+        let encoder = (!jpeg_outputs.is_empty()).then(|| {
+            scope
+                .spawn(move || jpeg::encode_frames(&jpeg_outputs, frames_to_encode, encoded_sender))
+        });
+        let writer =
+            scope.spawn(move || write_records(records, &jpeg_slots, queued, encoded, written));
         let queue = Queue {
             records: sender,
+            to_encode: encoder.is_some().then_some(to_encode),
             images,
         };
         let converted = convert_frames(setup, frames, set_exposure, input, &queue);
         drop(queue);
-        let written = writer
-            .join()
-            .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
-        // After a failed write the loop's own error only says the writer stopped.
-        written.and(converted)
+        let joined = |thread: std::thread::ScopedJoinHandle<io::Result<()>>| {
+            thread
+                .join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+        };
+        let written = joined(writer);
+        let encoded = encoder.map_or(Ok(()), joined);
+        // After a failed encode or write the others' errors only say that thread stopped.
+        encoded.and(written).and(converted)
     })
 }
 
@@ -212,30 +239,52 @@ enum Record {
     Other(Vec<u8>),
 }
 
-/// A frame's images back from the writer thread, and what writing them took.
+/// A frame's images back from the writer thread, what writing them took,
+/// and what encoding its JPEGs took when it has some.
 struct Written {
     images: Vec<Vec<u8>>,
     write: Duration,
+    encode: Option<Duration>,
 }
 
 /// Writes each record `queued` holds to `records`, in order, a frame's
-/// outputs one record each, handing each frame's images back to `written`
-/// with the time their writes took.
+/// outputs one record each, each output `jpeg_slots` places among the
+/// frame's JPEGs as its JPEG from `encoded`, handing each frame's images
+/// back to `written` with the time their writes and encodes took.
 fn write_records(
     records: &impl Records,
+    jpeg_slots: &[Option<usize>],
     queued: mpsc::Receiver<Record>,
+    encoded: mpsc::Receiver<Encoded>,
     written: mpsc::Sender<Written>,
 ) -> io::Result<()> {
     for record in queued {
         match record {
             Record::Frame(headers, images) => {
-                let writing = Instant::now();
-                for (header, image) in headers.iter().zip(images.iter()) {
-                    records.write(&[header, image])?;
+                let mut jpegs = None;
+                let mut write = Duration::ZERO;
+                for (index, header) in headers.iter().enumerate() {
+                    if jpeg_slots[index].is_some() && jpegs.is_none() {
+                        jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+                    }
+                    let body = match (jpeg_slots[index], &jpegs) {
+                        (Some(slot), Some(encoded)) => &encoded.jpegs[slot],
+                        _ => &images[index],
+                    };
+                    let writing = Instant::now();
+                    records.write(&[header, body])?;
+                    write += writing.elapsed();
                 }
-                let write = writing.elapsed();
+                let encode = jpegs.map(|encoded| {
+                    drop(encoded.images);
+                    encoded.took
+                });
                 let images = Arc::into_inner(images).expect("no other thread holds the images");
-                let _ = written.send(Written { images, write });
+                let _ = written.send(Written {
+                    images,
+                    write,
+                    encode,
+                });
             }
             Record::Other(record) => records.write(&[&record])?,
         }
@@ -243,16 +292,26 @@ fn write_records(
     Ok(())
 }
 
-/// The records on their way to the writer thread, and the images it has
+/// The records on their way to the writer thread, the frames on their way
+/// to the encoder thread when there is one, and the images the writer has
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
+    to_encode: Option<mpsc::Sender<FrameImages>>,
     images: mpsc::Receiver<Written>,
 }
 
 impl Queue {
     fn send(&self, record: Record) -> io::Result<()> {
         self.records.send(record).map_err(|_| writer_stopped())
+    }
+
+    /// Sends a frame's outputs to the writer, and its images to the encoder.
+    fn send_frame(&self, headers: Vec<[u8; 14]>, images: FrameImages) -> io::Result<()> {
+        if let Some(to_encode) = &self.to_encode {
+            (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
+        }
+        self.send(Record::Frame(headers, images))
     }
 
     /// The next frame's images written, waiting for their writes to end.
@@ -263,6 +322,10 @@ impl Queue {
 
 fn writer_stopped() -> io::Error {
     io::Error::other("the writer thread stopped")
+}
+
+fn encoder_stopped() -> io::Error {
+    io::Error::other("the encoder thread stopped")
 }
 
 /// `capture`'s loop, sending its records to `queue`.
@@ -305,22 +368,29 @@ fn convert_frames(
         .max()
         .unwrap_or(1);
     // A CPU output's 2x2 average is made as the conversion writes its rows,
-    // while they are in cache; `scale` makes every other `from:` output.
+    // while they are in cache; `scale` makes every other RGB `from:` output.
     let averaged_along: Vec<Option<usize>> = (processors.iter().enumerate())
         .map(|(index, processor)| {
             processor
                 .as_ref()
                 .filter(|processor| processor.averages_2x2())?;
             (outputs.iter()).position(|spec| {
-                spec.source == Source::From(index) && spec.block(&outputs[index]) == (2, 2)
+                spec.source == Source::From(index)
+                    && spec.format == Format::Rgb
+                    && spec.block(&outputs[index]) == (2, 2)
             })
         })
         .collect();
     let scaled_after: Vec<bool> = (outputs.iter().enumerate())
         .map(|(index, spec)| {
-            matches!(spec.source, Source::From(_)) && !averaged_along.contains(&Some(index))
+            matches!(spec.source, Source::From(_))
+                && spec.format == Format::Rgb
+                && !averaged_along.contains(&Some(index))
         })
         .collect();
+    let jpegs_per_frame = (outputs.iter())
+        .filter(|spec| matches!(spec.format, Format::Jpeg { .. }))
+        .count() as u64;
     // Two sets of images alternate: one converts while the writer writes the other.
     let (mut images, mut spare) = (
         vec![Vec::new(); outputs.len()],
@@ -336,6 +406,7 @@ fn convert_frames(
     let mut statistics = [0u64; 2];
     let (mut conversion_ns, mut scaling_ns) = (0u128, 0u128);
     let (mut writes, mut write_ns) = (0u64, 0u128);
+    let (mut encodes, mut encode_ns) = (0u64, 0u128);
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
@@ -379,13 +450,15 @@ fn convert_frames(
                 LogLevel::Info,
                 &format!(
                     "last {} s: frames {}, incomplete {}, {} us per conversion, \
-                     {} us per scaling, {} us per write, white balance {gains:?}{}",
+                     {} us per scaling, {} us per write, {} us per JPEG encode, \
+                     white balance {gains:?}{}",
                     statistics_every.as_secs(),
                     statistics[0],
                     statistics[1],
                     conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
                     scaling_ns / 1_000 / u128::from(statistics[0].max(1)),
                     write_ns / 1_000 / u128::from(writes.max(1)),
+                    encode_ns / 1_000 / u128::from(encodes.max(1)),
                     tuning
                         .map(|tuning| format!(", {:.0} K", tuning.colour_temperature(gains)))
                         .unwrap_or_default()
@@ -394,6 +467,7 @@ fn convert_frames(
             statistics = [0; 2];
             (conversion_ns, scaling_ns) = (0, 0);
             (writes, write_ns) = (0, 0);
+            (encodes, encode_ns) = (0, 0);
             statistics_since = Instant::now();
         }
         // One frame a round: the settings and statistics are served between frames.
@@ -454,17 +528,24 @@ fn convert_frames(
                 None => {
                     let written = queue.written()?;
                     (writes, write_ns) = (writes + 1, write_ns + written.write.as_nanos());
+                    if let Some(took) = written.encode {
+                        (encodes, encode_ns) =
+                            (encodes + jpegs_per_frame, encode_ns + took.as_nanos());
+                    }
                     written.images
                 }
             };
             let headers = (outputs.iter().enumerate())
                 .map(|(index, spec)| {
                     let (width, height) = (spec.width as u16, spec.height as u16);
-                    output_frame_header(index as u8, width, height, start_ns)
+                    let header = match spec.format {
+                        Format::Rgb => output_frame_header,
+                        Format::Jpeg { .. } => output_jpeg_header,
+                    };
+                    header(index as u8, width, height, start_ns)
                 })
                 .collect();
-            let frame_images = Arc::new(std::mem::replace(&mut images, free));
-            queue.send(Record::Frame(headers, frame_images))?;
+            queue.send_frame(headers, Arc::new(std::mem::replace(&mut images, free)))?;
         }
     }
 }
@@ -1192,6 +1273,123 @@ mod tests {
         assert_eq!(output_images(&both, 1), output_images(&full, 0));
     }
 
+    const OUTPUT_JPEG: u8 = 8;
+
+    // An output scaled from the output `source`, as `format`.
+    fn from(source: usize, (width, height): (usize, usize), format: Format) -> OutputSpec {
+        OutputSpec {
+            source: Source::From(source),
+            width: width as u32,
+            height: height as u32,
+            format,
+        }
+    }
+
+    // The JPEGs of the output `index`'s records, in order.
+    fn output_jpegs(records: &[Vec<u8>], index: u8) -> Vec<Vec<u8>> {
+        let jpegs = records
+            .iter()
+            .filter(|record| record[..2] == [OUTPUT_JPEG, index]);
+        jpegs.map(|record| record[14..].to_vec()).collect()
+    }
+
+    // A JPEG's size and RGB pixels.
+    fn decoded(jpeg: &[u8]) -> (usize, usize, Vec<u8>) {
+        let image = turbojpeg::decompress(jpeg, turbojpeg::PixelFormat::RGB).unwrap();
+        (image.width, image.height, image.pixels)
+    }
+
+    fn psnr(decoded: &[u8], expected: &[u8]) -> f64 {
+        assert_eq!(decoded.len(), expected.len());
+        let squared: f64 = (decoded.iter().zip(expected))
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum();
+        10.0 * (255.0f64.powi(2) / (squared / decoded.len() as f64)).log10()
+    }
+
+    // The index of the image of `images` closest to `decoded`, and its PSNR.
+    fn closest(decoded: &[u8], images: &[Vec<u8>]) -> (usize, f64) {
+        (images.iter().map(|image| psnr(decoded, image)).enumerate())
+            .max_by(|a, b| a.1.total_cmp(&b.1))
+            .unwrap()
+    }
+
+    #[test]
+    fn each_jpeg_decodes_to_the_image_of_its_own_frame() {
+        let (width, height) = (WIDTH, HEIGHT);
+        let outputs = [
+            FULL,
+            from(0, (width, height), Format::Jpeg { quality: 80 }),
+            from(0, (width / 2, height / 2), Format::Jpeg { quality: 95 }),
+        ];
+        let records = captured_as(&outputs, scenes(8, None), vec![]);
+        let views = output_images(&records, 0);
+        let halves: Vec<Vec<u8>> = (views.iter())
+            .map(|view| {
+                let mut half = Vec::new();
+                scale::average_blocks(view, width, (2, 2), 1, &mut half);
+                half
+            })
+            .collect();
+
+        for (index, expected, size) in [
+            (1, &views, (width, height)),
+            (2, &halves, (width / 2, height / 2)),
+        ] {
+            let jpegs = output_jpegs(&records, index);
+            assert_eq!(jpegs.len(), 8);
+            for (frame, jpeg) in jpegs.iter().enumerate() {
+                let (jpeg_width, jpeg_height, rgb) = decoded(jpeg);
+                assert_eq!((jpeg_width, jpeg_height), size);
+                let (closest, decibels) = closest(&rgb, expected);
+                assert_eq!(closest, frame, "output {index}");
+                assert!(
+                    decibels > 30.0,
+                    "output {index} frame {frame}: {decibels} dB"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_frame_gives_its_jpeg_record_in_the_order_of_its_outputs() {
+        let half = (WIDTH / 2, HEIGHT / 2);
+        let rgb_only = [FULL, from(0, half, Format::Rgb)];
+        let outputs = [
+            FULL,
+            from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 80 }),
+            from(0, half, Format::Rgb),
+        ];
+        let without = captured_as(&rgb_only, scenes(6, Some(2)), vec![]);
+        let records = captured_as(&outputs, scenes(6, Some(2)), vec![]);
+
+        // Each frame's outputs in order, the fourth's after the exposure it sets (3).
+        let heads: Vec<(u8, u8)> = (records.iter())
+            .map(|record| match record[0] {
+                OUTPUT_FRAME | OUTPUT_JPEG => (record[0], record[1]),
+                tag => (tag, 0),
+            })
+            .collect();
+        let frame = [(7, 0), (8, 1), (7, 2)];
+        let expected = [&frame[..], &frame, &frame, &[(3, 0)], &frame, &frame].concat();
+        assert_eq!(heads, expected);
+        let frame_records: Vec<&Vec<u8>> = (records.iter())
+            .filter(|record| [OUTPUT_FRAME, OUTPUT_JPEG].contains(&record[0]))
+            .collect();
+        for outputs in frame_records.chunks(3) {
+            let starts: Vec<&[u8]> = outputs.iter().map(|record| &record[6..14]).collect();
+            assert!(starts.iter().all(|start| *start == starts[0]));
+        }
+        let size = |record: &Vec<u8>| (record[2..4].to_vec(), record[4..6].to_vec());
+        let jpeg_record = records.iter().find(|record| record[0] == OUTPUT_JPEG);
+        assert_eq!(
+            jpeg_record.map(size),
+            Some((vec![WIDTH as u8, 0], vec![HEIGHT as u8, 0]))
+        );
+        assert_eq!(output_images(&records, 0), output_images(&without, 0));
+        assert_eq!(output_images(&records, 2), output_images(&without, 1));
+    }
+
     #[test]
     fn a_setting_sent_while_frames_arrive_applies_from_the_next_frame() {
         let upright = captured(scenes(8, None), vec![]);
@@ -1216,9 +1414,10 @@ mod tests {
         assert_eq!(applied, third_frame.map(|position| position + 1));
     }
 
-    // Holds the first frame's record until the loop takes the next frame,
-    // two seconds at most, and tells whether it did.
+    // Holds the first frame's first record of the tag `held` until the loop
+    // takes the next frame, two seconds at most, and tells whether it did.
     struct Held {
+        held: u8,
         taken: Mutex<mpsc::Receiver<usize>>,
         overlapped: Mutex<Option<bool>>,
     }
@@ -1226,7 +1425,7 @@ mod tests {
     impl Records for Held {
         fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
             let mut overlapped = self.overlapped.lock().unwrap();
-            if parts[0][0] == OUTPUT_FRAME && overlapped.is_none() {
+            if parts[0][0] == self.held && overlapped.is_none() {
                 let taken = self.taken.lock().unwrap();
                 let mut taken =
                     std::iter::from_fn(|| taken.recv_timeout(Duration::from_secs(2)).ok());
@@ -1242,11 +1441,28 @@ mod tests {
         let (on_take, taken) = mpsc::channel();
         frames.on_take = Some(on_take);
         let records = Held {
+            held: OUTPUT_FRAME,
             taken: Mutex::new(taken),
             overlapped: Mutex::new(None),
         };
         let hour = Duration::from_secs(3_600);
         run_loop(&frames, &mut input, &records, hour).unwrap();
+        assert_eq!(*records.overlapped.lock().unwrap(), Some(true));
+    }
+
+    #[test]
+    fn a_frame_s_jpeg_is_written_while_the_next_one_converts() {
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 80 })];
+        let (mut frames, mut input) = TestFrames::new(scenes(3, None), vec![]);
+        let (on_take, taken) = mpsc::channel();
+        frames.on_take = Some(on_take);
+        let records = Held {
+            held: OUTPUT_JPEG,
+            taken: Mutex::new(taken),
+            overlapped: Mutex::new(None),
+        };
+        let hour = Duration::from_secs(3_600);
+        run_outputs(&outputs, &frames, &mut input, &records, hour).unwrap();
         assert_eq!(*records.overlapped.lock().unwrap(), Some(true));
     }
 
@@ -1299,6 +1515,88 @@ mod tests {
             "{:?}",
             statistics.collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn the_statistics_give_the_time_a_jpeg_takes_to_encode() {
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 80 })];
+        let (frames, mut input) = TestFrames::new(scenes(6, None), vec![]);
+        let records = Collected::default();
+        run_outputs(&outputs, &frames, &mut input, &records, Duration::ZERO).unwrap();
+        let records = records.0.into_inner().unwrap();
+        let encodes: Vec<u64> = (records.iter())
+            .filter_map(|record| {
+                let message = String::from_utf8(record.strip_prefix(b"\x02\x00last ")?.to_vec());
+                let message = message.unwrap();
+                let (before, _) = message.split_once(" us per JPEG encode")?;
+                before.rsplit(' ').next()?.parse().ok()
+            })
+            .collect();
+        assert!(encodes.len() > 1, "{encodes:?}");
+        assert!(encodes.iter().any(|&us| us > 0), "{encodes:?}");
+    }
+
+    // Prints the host's time to encode a frame of OVCS1's HQ camera,
+    // 2028 x 1520, as a JPEG at quality 80:
+    // `cargo test --release -p v4l2_capture -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn host_time_of_a_full_frame_encoded_as_a_jpeg() {
+        let (width, height) = (2028, 1520);
+        let stride = width * 3 / 2;
+        let raw = padded_packed12(&samples(width, height), width, stride);
+        let frame = RawFrame {
+            raw: &raw,
+            width,
+            height,
+            row_stride: stride,
+            layout: Layout::Packed12,
+        };
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: false,
+            green_mean: false,
+            row_step: MEASURED_ROW_STEP,
+            threads: 3,
+        };
+        let mut rgb = Vec::new();
+        let images = Images {
+            rgb: &mut rgb,
+            averaged: None,
+        };
+        develop_along(
+            Path::Denoised,
+            &frame,
+            &conversion,
+            images,
+            &mut Default::default(),
+        );
+        // A smooth scene too: the test frame's noise makes the encoder's work heavier.
+        let smooth: Vec<u8> = (0..width * height)
+            .flat_map(|pixel| {
+                let (x, y) = (pixel % width, pixel / width);
+                [(x / 8) as u8, (y / 6) as u8, ((x + y) / 14) as u8]
+            })
+            .collect();
+        let mut compressor = turbojpeg::Compressor::new().unwrap();
+        for (scene, pixels) in [("converted noise", &rgb), ("smooth", &smooth)] {
+            let mut times = Vec::new();
+            let mut length = 0;
+            for _ in 0..30 {
+                let started = Instant::now();
+                length = jpeg::encode(&mut compressor, pixels, (width, height), 80)
+                    .unwrap()
+                    .len();
+                times.push(started.elapsed());
+            }
+            times.sort();
+            println!(
+                "{scene}: median {:?}, fastest {:?}, {length} bytes",
+                times[times.len() / 2],
+                times[0]
+            );
+        }
     }
 
     #[test]

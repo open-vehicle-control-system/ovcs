@@ -51,6 +51,8 @@ pub struct OutputSpec {
 pub enum Format {
     /// 8-bit red, green and blue pixels.
     Rgb,
+    /// A JPEG of those pixels at `quality`, 1 to 100.
+    Jpeg { quality: u8 },
 }
 
 /// What makes an output.
@@ -144,8 +146,9 @@ pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
 /// underscores. Each `--output`, in the order of their indices, is
 /// `cpu:<width>x<height>`, made by the software conversion at the capture's
 /// size or half of it, or `from:<index>:<width>x<height>`, scaled from an
-/// earlier output to a whole fraction of its size; without, one output of
-/// the capture's size. The error is the message to log.
+/// earlier output to a whole fraction of its size, sent as a JPEG with
+/// `:jpeg:<quality>` after it; without, one output of the capture's size.
+/// The error is the message to log.
 pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let (mut sensor_width, mut sensor_height, mut fps) = (None, None, None);
     let (mut video, mut sensor) = (None, None);
@@ -197,23 +200,26 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     })
 }
 
-/// The output `value` describes, `cpu:<width>x<height>` or
-/// `from:<index>:<width>x<height>`, of a `sensor` capture, after the
-/// outputs `earlier`.
+const OUTPUT_FORMS: &str = "cpu:<width>x<height>, from:<index>:<width>x<height> \
+                            or from:<index>:<width>x<height>:jpeg:<quality>";
+
+/// The output `value` describes, one of `OUTPUT_FORMS`, of a `sensor`
+/// capture, after the outputs `earlier`.
 fn output_spec(
     value: &str,
     sensor: (u32, u32),
     earlier: &[OutputSpec],
 ) -> Result<OutputSpec, String> {
-    let (source, size) = match value.split(':').collect::<Vec<_>>()[..] {
-        ["cpu", size] => (None, size),
-        ["from", index, size] => {
-            let index: usize = index
-                .parse()
-                .map_err(|_| format!("no output index {index}"))?;
-            (Some(index), size)
+    let (source, size, format) = match value.split(':').collect::<Vec<_>>()[..] {
+        ["cpu", size] => (None, size, Format::Rgb),
+        ["from", index, size] => (Some(output_index(index)?), size, Format::Rgb),
+        ["from", index, size, "jpeg", quality] => {
+            (Some(output_index(index)?), size, jpeg(quality)?)
         }
-        _ => return Err("cpu:<width>x<height> or from:<index>:<width>x<height>".to_string()),
+        ["from", _index, _size, format, _quality] => {
+            return Err(format!("no format {format}: {OUTPUT_FORMS}"))
+        }
+        _ => return Err(OUTPUT_FORMS.to_string()),
     };
     let (width, height) = size
         .split_once('x')
@@ -239,6 +245,11 @@ fn output_spec(
             let from = earlier
                 .get(index)
                 .ok_or_else(|| format!("no earlier output {index}"))?;
+            if let Format::Jpeg { .. } = from.format {
+                return Err(format!(
+                    "output {index} is a JPEG, which no output is made from"
+                ));
+            }
             if from.width % width != 0 || from.height % height != 0 {
                 return Err(format!(
                     "{width}x{height} is no whole fraction of output {index}'s {}x{}",
@@ -252,8 +263,21 @@ fn output_spec(
         source,
         width,
         height,
-        format: Format::Rgb,
+        format,
     })
+}
+
+fn output_index(index: &str) -> Result<usize, String> {
+    index
+        .parse()
+        .map_err(|_| format!("no output index {index}"))
+}
+
+fn jpeg(quality: &str) -> Result<Format, String> {
+    match quality.parse() {
+        Ok(quality @ 1..=100) => Ok(Format::Jpeg { quality }),
+        _ => Err(format!("a JPEG's quality is 1 to 100, got {quality}")),
+    }
 }
 
 /// Parses the arguments after the program name: the size and rate, each
@@ -468,6 +492,83 @@ mod tests {
     }
 
     #[test]
+    fn an_output_made_from_another_may_be_sent_as_a_jpeg() {
+        let parsed = |extra: &[&str]| parse_single(&single_command_line(extra)).unwrap();
+        let jpeg = |width, height, quality| OutputSpec {
+            source: Source::From(0),
+            width,
+            height,
+            format: Format::Jpeg { quality },
+        };
+        assert_eq!(
+            parsed(&[
+                "--output",
+                "cpu:2028x1520",
+                "--output",
+                "from:0:2028x1520:jpeg:80",
+                "--output",
+                "from:0:1014x760:jpeg:100",
+                "--output",
+                "from:0:507x380:jpeg:1"
+            ])
+            .outputs[1..],
+            [
+                jpeg(2028, 1520, 80),
+                jpeg(1014, 760, 100),
+                jpeg(507, 380, 1)
+            ]
+        );
+    }
+
+    #[test]
+    fn a_jpeg_output_is_refused_without_its_quality_or_as_a_source() {
+        let refused = |output: &str| {
+            parse_single(&single_command_line(&[
+                "--output",
+                "cpu:2028x1520",
+                "--output",
+                output,
+            ]))
+            .unwrap_err()
+        };
+        let forms = "cpu:<width>x<height>, from:<index>:<width>x<height> \
+                     or from:<index>:<width>x<height>:jpeg:<quality>";
+        for quality in ["0", "101", "x", ""] {
+            assert_eq!(
+                refused(&format!("from:0:2028x1520:jpeg:{quality}")),
+                format!(
+                    "--output from:0:2028x1520:jpeg:{quality}: \
+                     a JPEG's quality is 1 to 100, got {quality}"
+                )
+            );
+        }
+        assert_eq!(
+            refused("from:0:2028x1520:png:80"),
+            format!("--output from:0:2028x1520:png:80: no format png: {forms}")
+        );
+        assert_eq!(
+            refused("from:0:2028x1520:jpeg"),
+            format!("--output from:0:2028x1520:jpeg: {forms}")
+        );
+        assert_eq!(
+            refused("cpu:2028x1520:jpeg:80"),
+            format!("--output cpu:2028x1520:jpeg:80: {forms}")
+        );
+        let from_a_jpeg = parse_single(&single_command_line(&[
+            "--output",
+            "cpu:2028x1520",
+            "--output",
+            "from:0:2028x1520:jpeg:80",
+            "--output",
+            "from:1:1014x760",
+        ]));
+        assert_eq!(
+            from_a_jpeg.unwrap_err(),
+            "--output from:1:1014x760: output 1 is a JPEG, which no output is made from"
+        );
+    }
+
+    #[test]
     fn an_output_is_refused_unless_its_processor_or_source_can_make_its_size() {
         let refused = |outputs: &[&str]| {
             let extra: Vec<&str> = outputs
@@ -482,7 +583,8 @@ mod tests {
         );
         assert_eq!(
             refused(&["isp:2028x1520"]),
-            "--output isp:2028x1520: cpu:<width>x<height> or from:<index>:<width>x<height>"
+            "--output isp:2028x1520: cpu:<width>x<height>, from:<index>:<width>x<height> \
+             or from:<index>:<width>x<height>:jpeg:<quality>"
         );
         assert_eq!(refused(&["cpu:2028"]), "--output cpu:2028: no size 2028");
         assert_eq!(

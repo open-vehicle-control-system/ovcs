@@ -45,9 +45,9 @@ BINDGEN_ARGS := --target=$(RUST_TARGET) --sysroot=$(SYSROOT) \
 	-isystem $(NERVES_TOOLCHAIN)/lib/gcc/$(GCC_TRIPLE)/$(GCC_VERSION)/include \
 	-isystem $(SYSROOT)/usr/include
 
-# jpeg_codec links the system's libturbojpeg where the system ships one, and
-# otherwise libjpeg-turbo built statically from the turbojpeg-sys crate's
-# source, which needs cmake.
+# jpeg_codec and v4l2_capture link the system's libturbojpeg where the system
+# ships one, and otherwise libjpeg-turbo built statically from the
+# turbojpeg-sys crate's source, which needs cmake.
 TURBOJPEG_SOURCE := $(if $(wildcard $(SYSROOT)/usr/lib/pkgconfig/libturbojpeg.pc),pkg-config,vendor)
 
 # The Nerves CC, CFLAGS and PKG_CONFIG_* would also apply to the host

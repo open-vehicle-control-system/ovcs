@@ -12,6 +12,7 @@ mod bayer;
 mod colour;
 mod exposure;
 mod input;
+mod jpeg;
 mod lock;
 mod pairing;
 mod processor;
