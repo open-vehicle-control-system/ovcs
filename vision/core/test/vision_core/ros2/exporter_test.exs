@@ -672,7 +672,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       Outputs.publish(
         {:detections, VisionCore.Detection.Pipeline.Road},
-        {:detections, pair(), [detection("lane")], :road}
+        {{:detections, :road}, {pair(), [detection("lane")]}}
       )
 
       assert_receive {:published, "stereo/road/detections", _array}, 1_000
@@ -680,7 +680,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       Outputs.publish(
         {:detections, VisionCore.Detection.Pipeline},
-        {:detections, pair(), [detection("person")]}
+        {:detections, {pair(), [detection("person")]}}
       )
 
       assert_receive {:published, "stereo/detections", _array}, 1_000
@@ -1334,7 +1334,8 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       Outputs.publish(
         {:segmentation, VisionCore.Segmentation.Pipeline.Lanes},
-        {:segmentation, :lanes, segmented_frame(), segmentation_labels(), segmentation_clouds()}
+        {{:segmentation, :lanes},
+         {segmented_frame(), segmentation_labels(), segmentation_clouds()}}
       )
 
       assert_receive {:published, "stereo/lanes/labels", %Image{}}, 1_000

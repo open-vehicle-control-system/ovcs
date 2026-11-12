@@ -261,7 +261,8 @@ defmodule VisionCore.Segmentation.PipelineTest do
   end
 
   defp segmentation(timeout \\ 1_000) do
-    assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{label: "hq"}, labels, clouds}},
+    assert_receive {:"$gen_cast",
+                    {{:segmentation, :road}, {%Frame{label: "hq"}, labels, clouds}}},
                    timeout
 
     {labels, clouds}
@@ -310,7 +311,8 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_pair(1_500)
 
     assert_receive {:"$gen_cast",
-                    {:segmentation, :road, %Frame{rgb: nil, frame_id: "hq_optical"}, _labels, %{}}}
+                    {{:segmentation, :road},
+                     {%Frame{rgb: nil, frame_id: "hq_optical"}, _labels, %{}}}}
   end
 
   test "takes the whole frame as its band when the frame is wider than 2:1", %{tmp_dir: dir} do
@@ -422,7 +424,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
     set_clock(19)
     send(Pipeline.Road, :pair_wait)
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     set_clock(21)
     send(Pipeline.Road, :pair_wait)
 
@@ -438,7 +440,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
     set_clock(499)
     send(Pipeline.Road, :pair_wait)
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     set_clock(500)
     send(Pipeline.Road, :pair_wait)
 
@@ -461,15 +463,15 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_frame(1_900)
     await_labels()
 
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     publish_pair(1_500)
     publish_pair(2_000)
 
     assert_receive {:"$gen_cast",
-                    {:segmentation, :road, %Frame{capture_ns: 1_400_000_000}, _labels, first}}
+                    {{:segmentation, :road}, {%Frame{capture_ns: 1_400_000_000}, _labels, first}}}
 
     assert_receive {:"$gen_cast",
-                    {:segmentation, :road, %Frame{capture_ns: 1_900_000_000}, _labels, second}}
+                    {{:segmentation, :road}, {%Frame{capture_ns: 1_900_000_000}, _labels, second}}}
 
     assert %{road: <<_road::binary>>} = first
     assert %{road: <<_road_too::binary>>} = second
@@ -510,7 +512,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
       capture_ns = capture_ms * @ms
 
       assert_receive {:"$gen_cast",
-                      {:segmentation, :road, %Frame{capture_ns: ^capture_ns}, _labels, %{}}}
+                      {{:segmentation, :road}, {%Frame{capture_ns: ^capture_ns}, _labels, %{}}}}
     end
 
     publish_frame(1_100)
@@ -538,7 +540,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
         start_pipeline(dir, files: [])
         publish_frame(100, grey: true)
         publish_frame(200, grey: true)
-        refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+        refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
       end)
 
     assert [_once] = Regex.scan(~r/camera hq's images have no colour/, log)
@@ -558,7 +560,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_frame(100)
 
     assert_receive {:band, _band}
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
   end
 
   defp start_scripted(dir, script, opts \\ []) do
@@ -586,7 +588,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
     capture_ns = capture_ms * @ms
 
     assert_receive {:"$gen_cast",
-                    {:segmentation, :road, %Frame{capture_ns: ^capture_ns}, _labels, _clouds}}
+                    {{:segmentation, :road}, {%Frame{capture_ns: ^capture_ns}, _labels, _clouds}}}
   end
 
   test "keeps a frame that comes while a band is in flight, and submits it on the reply, before publishing",
@@ -628,7 +630,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
     refute_receive {:submitted, _another}, 100
     reply(held, @label_image)
     assert_published(300)
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
   end
 
   test "submits the frame kept once the band in flight could not be segmented", %{tmp_dir: dir} do
@@ -642,7 +644,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert_receive {:submitted, held}
     reply(held, @label_image)
     assert_published(200)
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
   end
 
   test "keeps the frame for the reply in flight, not a late reply to a refused band", %{
@@ -658,7 +660,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
     reply(refused, @label_image)
     refute_receive {:submitted, _sequence}, 100
-    refute_received {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}
+    refute_received {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}
     reply(in_flight, @label_image)
     assert_published(200)
     assert_receive {:submitted, held}
@@ -757,9 +759,11 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert_receive {:submitted, taken}
 
     send(Pipeline.Road, {:inference_labels, refused, @label_image})
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     send(Pipeline.Road, {:inference_labels, taken, @label_image})
-    assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{capture_ns: 200_000_000}, _, nil}}
+
+    assert_receive {:"$gen_cast",
+                    {{:segmentation, :road}, {%Frame{capture_ns: 200_000_000}, _, nil}}}
   end
 
   test "two pipelines on one camera publish apart, each its own backend's labels", %{tmp_dir: dir} do
@@ -790,17 +794,17 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_frame(100)
 
     assert {%{data: <<0>>}, nil} = segmentation()
-    refute_receive {:"$gen_cast", {:segmentation, :lane, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, _labels, _clouds}}}, 100
     :ok = Outputs.subscribe({:segmentation, Pipeline.Lane})
     publish_frame(200)
 
-    assert_receive {:"$gen_cast", {:segmentation, :lane, _frame, %{data: <<1>>}, nil}}
+    assert_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, %{data: <<1>>}, nil}}}
   end
 
   test "segments every :segment_every_n-th frame", %{tmp_dir: dir} do
     start_pipeline(dir, files: [], segment_every_n: 2)
     publish_frame(100)
-    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     publish_frame(200)
 
     assert {_labels, nil} = segmentation()

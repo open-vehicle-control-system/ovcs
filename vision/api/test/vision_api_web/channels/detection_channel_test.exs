@@ -27,7 +27,7 @@ defmodule VisionApiWeb.DetectionChannelTest do
 
     GenServer.cast(
       Live,
-      {:detections, pair(), [%{label: "person", score: 0.6, z: 1.8, outline: outline}]}
+      {:detections, {pair(), [%{label: "person", score: 0.6, z: 1.8, outline: outline}]}}
     )
 
     assert_push "detections", %{detections: [detection]}
@@ -58,11 +58,11 @@ defmodule VisionApiWeb.DetectionChannelTest do
       outline = [{120.0, 54.0}, {360.0, 54.0}, {360.0, 216.0}, {120.0, 216.0}]
       person = %{label: "person", score: 0.6, z: 1.8, outline: outline}
       stop = %{label: "stop", score: 0.9, z: 4.0, outline: outline}
-      GenServer.cast(Live, {:detections, pair(), [person]})
+      GenServer.cast(Live, {:detections, {pair(), [person]}})
 
       GenServer.cast(
         Pipelines.server(Live, :road_signs),
-        {:detections, pair(), [stop], :road_signs}
+        {{:detections, :road_signs}, {pair(), [stop]}}
       )
 
       assert_push "detections", %{detections: [%{label: "person"}]}

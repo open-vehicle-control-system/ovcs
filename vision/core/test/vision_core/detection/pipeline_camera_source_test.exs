@@ -176,7 +176,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
   end
 
   defp detections(timeout \\ 1_000) do
-    assert_receive {:"$gen_cast", {:detections, %Frame{label: "hq"}, detections, :hq_people}},
+    assert_receive {:"$gen_cast", {{:detections, :hq_people}, {%Frame{label: "hq"}, detections}}},
                    timeout
 
     detections
@@ -249,7 +249,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_in_delta person.x, -0.4, 1.0e-6
     assert_in_delta person.width, 0.8, 1.0e-6
     assert_bearing(person)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
   end
 
   test "on a camera whose outputs cannot be made, refuses to start saying why" do
@@ -318,7 +318,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     publish_pair(1_000)
     publish_frame(1_400)
 
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_pair(1_500)
 
     assert [person] = detections()
@@ -335,15 +335,15 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     publish_frame(1_900)
     await_boxes()
 
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_pair(1_500, distance_mm: 3000)
     publish_pair(2_000, distance_mm: 4000)
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{capture_ns: 1_400_000_000}, [first], :hq_people}}
+                    {{:detections, :hq_people}, {%Frame{capture_ns: 1_400_000_000}, [first]}}}
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{capture_ns: 1_900_000_000}, [second], :hq_people}}
+                    {{:detections, :hq_people}, {%Frame{capture_ns: 1_900_000_000}, [second]}}}
 
     assert_in_delta first.z, 3.0, 1.0e-6
     assert_in_delta second.z, 4.0, 1.0e-6
@@ -356,7 +356,8 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     publish_frame(100)
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{rgb: nil, frame_id: "hq_optical"}, [_person], :hq_people}}
+                    {{:detections, :hq_people},
+                     {%Frame{rgb: nil, frame_id: "hq_optical"}, [_person]}}}
   end
 
   test "skips the frames that come while 32 frames' boxes wait for their pair", %{tmp_dir: dir} do
@@ -388,7 +389,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       capture_ns = capture_ms * @ms
 
       assert_receive {:"$gen_cast",
-                      {:detections, %Frame{capture_ns: ^capture_ns}, [_person], :hq_people}}
+                      {{:detections, :hq_people}, {%Frame{capture_ns: ^capture_ns}, [_person]}}}
     end
 
     publish_frame(1_100)
@@ -434,7 +435,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     await_boxes()
 
     send(Pipeline.HqPeople, :pair_wait)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
   end
 
   test "publishes without a distance once the stereo pairs stop for two pair periods",
@@ -447,7 +448,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     set_clock(19)
     send(Pipeline.HqPeople, :pair_wait)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     set_clock(21)
     send(Pipeline.HqPeople, :pair_wait)
 
@@ -464,7 +465,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     set_clock(499)
     send(Pipeline.HqPeople, :pair_wait)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     set_clock(500)
     send(Pipeline.HqPeople, :pair_wait)
 
@@ -538,11 +539,11 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
     publish_frame(100)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_frame(200)
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{capture_ns: 200_000_000}, [_person], :hq_people}}
+                    {{:detections, :hq_people}, {%Frame{capture_ns: 200_000_000}, [_person]}}}
   end
 
   test "keeps a box without a distance, with its bearing, at once while no pair came",
@@ -606,7 +607,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
   test "detects on every :detect_every_n-th frame", %{tmp_dir: dir} do
     start_pipeline(dir, boxes: [], detect_every_n: 2)
     publish_frame(100)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_frame(200)
 
     assert [] = detections()
@@ -641,7 +642,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     capture_ns = capture_ms * @ms
 
     assert_receive {:"$gen_cast",
-                    {:detections, %Frame{capture_ns: ^capture_ns}, _detections, :hq_people}}
+                    {{:detections, :hq_people}, {%Frame{capture_ns: ^capture_ns}, _detections}}}
   end
 
   test "keeps a frame that comes while one is in flight, and submits it on the reply, before publishing",
@@ -681,7 +682,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     refute_receive {:submitted, _another}, 100
     reply(held, [])
     assert_published(300)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
   end
 
   test "submits the frame kept once the frame in flight could not be detected on", %{
@@ -696,7 +697,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_receive {:submitted, held}
     reply(held, [])
     assert_published(200)
-    refute_receive {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}, 100
+    refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
   end
 
   test "keeps the frame for the reply in flight, not a late reply to a refused frame", %{
@@ -711,7 +712,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     reply(refused, [])
     refute_receive {:submitted, _sequence}, 100
-    refute_received {:"$gen_cast", {:detections, _frame, _detections, :hq_people}}
+    refute_received {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}
     reply(in_flight, [])
     assert_published(200)
     assert_receive {:submitted, held}

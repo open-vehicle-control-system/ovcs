@@ -9,7 +9,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   `{:segmentation, server}`, `server` being the name it is registered
   under (`VisionCore.Pipelines.server/2`):
 
-      {:segmentation, name, frame, labels, clouds}
+      {{:segmentation, name}, {frame, labels, clouds}}
 
     * `frame` — the `VisionCore.Camera.Frame` segmented, without its pixels.
     * `labels` — `%{width:, height:, data:, band: {x, y, w, h}}`: the
@@ -333,12 +333,15 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   @impl CameraPipeline
   def finish(frame, labels, nil, camera, settings),
-    do: {{:segmentation, settings.name, frame, labels, nil}, camera}
+    do: {message(settings, frame, labels, nil), camera}
 
   def finish(frame, labels, pair, camera, settings) do
     {clouds, camera} = clouds(frame, labels, pair, camera, settings)
-    {{:segmentation, settings.name, frame, labels, clouds}, camera}
+    {message(settings, frame, labels, clouds), camera}
   end
+
+  defp message(settings, frame, labels, clouds),
+    do: {VisionCore.Segmentation.output(settings.name), {frame, labels, clouds}}
 
   defp clouds(frame, labels, pair, camera, settings) do
     {lens, camera} = CameraDepth.lens(camera, {frame.width, frame.height})

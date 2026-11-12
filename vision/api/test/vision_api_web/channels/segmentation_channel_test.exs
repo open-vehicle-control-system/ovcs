@@ -52,7 +52,7 @@ defmodule VisionApiWeb.SegmentationChannelTest do
   defp result(name, data) do
     frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: 0}
     labels = %{width: 4, height: 2, data: data, band: {0, 253, 1014, 507}}
-    {:segmentation, name, frame, labels, nil}
+    {{:segmentation, name}, {frame, labels, nil}}
   end
 
   defp publish(name \\ :road, data),

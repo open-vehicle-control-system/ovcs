@@ -13,15 +13,16 @@ defmodule VisionCore.Outputs do
       frames of its output `output` (`VisionCore.Camera.Unit.output_key/3`).
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
-    * `{:detections, name}` — from the `VisionCore.Detection.Pipeline`
-      registered as `name`: `{:detections, pair, detections}` from the
-      default pipeline, `{:detections, pair, detections, pipeline}` from
-      the one named `pipeline` (`VisionCore.Detection`), the
+    * `{:detections, name}` — `{output, {pair, detections}}` from the
+      `VisionCore.Detection.Pipeline` registered as `name`, `output`
+      being its `VisionCore.Exporter` output
+      (`VisionCore.Detection.output/1`), and the
       `%VisionCore.Camera.Frame{}` the boxes were found on, without its
       pixels, in place of `pair` on a camera source.
-    * `{:segmentation, name}` — `{:segmentation, pipeline, frame, labels,
-      clouds}` from the `VisionCore.Segmentation.Pipeline` registered as
-      `name`, the segmentation pipeline `pipeline`'s.
+    * `{:segmentation, name}` — `{output, {frame, labels, clouds}}` from
+      the `VisionCore.Segmentation.Pipeline` registered as `name`,
+      `output` being its `VisionCore.Exporter` output
+      (`VisionCore.Segmentation.output/1`).
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. One that takes messages out of its mailbox itself matches

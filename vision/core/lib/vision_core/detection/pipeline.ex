@@ -6,16 +6,15 @@ defmodule VisionCore.Detection.Pipeline do
   `VisionCore.Detection.Backend`, fuses the boxes it returns with that
   pair's depth map, and publishes the result through
   `VisionCore.Outputs` under `{:detections, server}`, `server` being the
-  name it is registered under (`VisionCore.Pipelines.server/2`). The
-  default pipeline, `:detection`, publishes `{:detections, pair,
-  detections}` under `{:detections, VisionCore.Detection.Pipeline}`; a
-  named one `{:detections, pair, detections, name}`.
+  name it is registered under (`VisionCore.Pipelines.server/2`), as
+  `{output, {pair, detections}}`, `output` being its
+  `VisionCore.Exporter` output (`VisionCore.Detection.output/1`).
 
   With `source: {:camera, name}` it detects on the frames of the camera
   of its own `name` instead, its default output, or with
   `source: {:camera, name, output}` on those of its output `output`
   (`VisionCore.Camera.Output`; see "A camera source" below), and publishes
-  `{:detections, frame, detections, name}`, `frame` the
+  `{output, {frame, detections}}`, `frame` the
   `VisionCore.Camera.Frame` the boxes were found on, without its pixels.
 
   Subscribes to the pairs of `VisionCore.Stereo.Pipeline`, so it sees
@@ -418,6 +417,6 @@ defmodule VisionCore.Detection.Pipeline do
   @doc "The message the pipeline publishes for the `detections` found on `source`."
   @spec message(map(), VisionCore.Stereo.Pair.t() | VisionCore.Camera.Frame.t(), [map()]) ::
           tuple()
-  def message(%{name: :detection}, source, detections), do: {:detections, source, detections}
-  def message(%{name: name}, source, detections), do: {:detections, source, detections, name}
+  def message(%{name: name}, source, detections),
+    do: {Detection.output(name), {source, detections}}
 end

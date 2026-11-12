@@ -52,16 +52,11 @@ defmodule VisionCore.Exporter do
   are dropped, and under `:max_hz` the latest one is held until the
   output's next slot opens.
 
-  An output's messages are `{output, value}`, but for three kinds: a
-  camera's are `{:camera_frame, frame}`, the frame carrying the camera's
-  side, or its name, as its `:label`, the detections are
-  `{:detections, pair, detections}` from the default pipeline and
-  `{:detections, pair, detections, name}` from the pipeline `name`, a
-  frame in place of the pair on a camera source, and a segmentation
-  pipeline's are `{:segmentation, name, frame, labels, clouds}`. A
-  new output is one more entry in this module's table of outputs, with
-  the unit whose `outputs/1` gives its key, its messages
-  `{output, value}`.
+  An output's messages are `{output, value}`, but a camera's, which are
+  `{:camera_frame, frame}`, the frame carrying the camera's side, or
+  its name, as its `:label`. A new output is one more entry in this
+  module's table of outputs, with the unit whose `outputs/1` gives its
+  key, its messages `{output, value}`.
 
   ## Callbacks
 

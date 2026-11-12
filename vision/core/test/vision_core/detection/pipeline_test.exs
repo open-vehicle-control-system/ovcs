@@ -85,7 +85,7 @@ defmodule VisionCore.Detection.PipelineTest do
 
     defp detections do
       publish_pair()
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, detections}}, 1_000
+      assert_receive {:"$gen_cast", {:detections, {%Pair{}, detections}}}, 1_000
       detections
     end
 
@@ -118,7 +118,7 @@ defmodule VisionCore.Detection.PipelineTest do
       :ok = Outputs.subscribe({:detections, Pipeline})
 
       publish_pair()
-      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 100
+      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 100
 
       assert [%{label: "person"}] = detections()
     end
@@ -134,7 +134,7 @@ defmodule VisionCore.Detection.PipelineTest do
       refute_receive {:submitted, _sequence}, 100
 
       send(Pipeline, {:inference_detections, in_flight, []})
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, []}}, 1_000
+      assert_receive {:"$gen_cast", {:detections, {%Pair{}, []}}}, 1_000
       publish_pair()
       assert_receive {:submitted, _next}
     end
@@ -150,9 +150,9 @@ defmodule VisionCore.Detection.PipelineTest do
       assert_receive {:submitted, taken}
 
       send(Pipeline, {:inference_detections, refused, []})
-      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 100
+      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 100
       send(Pipeline, {:inference_detections, taken, []})
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, []}}, 1_000
+      assert_receive {:"$gen_cast", {:detections, {%Pair{}, []}}}, 1_000
     end
 
     test "ignores a stray :pair_wait on the stereo source" do
@@ -177,7 +177,7 @@ defmodule VisionCore.Detection.PipelineTest do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], detect_every_n: 2)
 
       publish_pair()
-      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 200
+      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 200
       assert [_person] = detections()
     end
 
@@ -191,7 +191,7 @@ defmodule VisionCore.Detection.PipelineTest do
 
       publish_pair()
 
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, [], :road}}, 1_000
+      assert_receive {:"$gen_cast", {{:detections, :road}, {%Pair{}, []}}}, 1_000
       assert Process.whereis(Pipeline.Road)
       refute Process.whereis(Pipeline)
     end
@@ -221,9 +221,9 @@ defmodule VisionCore.Detection.PipelineTest do
       assert_receive :subscribed
       publish_pair()
 
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, [%{label: "person"}]}}, 1_000
-      assert_receive {:road, {:detections, %Pair{}, [], :road}}, 1_000
-      refute_receive {:"$gen_cast", {:detections, _pair, _detections, :road}}, 100
+      assert_receive {:"$gen_cast", {:detections, {%Pair{}, [%{label: "person"}]}}}, 1_000
+      assert_receive {:road, {{:detections, :road}, {%Pair{}, []}}}, 1_000
+      refute_receive {:"$gen_cast", {{:detections, :road}, {_pair, _detections}}}, 100
     end
   end
 

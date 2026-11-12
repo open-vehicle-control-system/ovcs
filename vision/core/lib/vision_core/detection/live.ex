@@ -57,9 +57,7 @@ defmodule VisionCore.Detection.Live do
   @spec max_hz(atom()) :: pos_integer()
   def max_hz(name \\ :detection), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
-  defp describe({:detections, source, positioned}), do: {:ok, describe(positioned, image(source))}
-
-  defp describe({:detections, source, positioned, _name}),
+  defp describe({_output, {source, positioned}}),
     do: {:ok, describe(positioned, image(source))}
 
   defp describe(_message), do: :ignore

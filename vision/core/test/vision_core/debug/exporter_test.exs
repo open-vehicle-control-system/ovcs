@@ -369,14 +369,14 @@ defmodule VisionCore.Debug.ExporterTest do
       outline: [{2.0, 3.0}, {4.0, 6.0}]
     }
 
-    Outputs.publish(@detections, {:detections, pair(0), [%{detection | label: "before"}]})
+    Outputs.publish(@detections, {:detections, {pair(0), [%{detection | label: "before"}]}})
     :sys.get_state(runner)
 
     task = export(runner)
     assert_receive {:burst_started, _at_ms}
     publish_pair(runner, pair(1))
 
-    Outputs.publish(@detections, {:detections, pair(1), [detection]})
+    Outputs.publish(@detections, {:detections, {pair(1), [detection]}})
     publish_pairs(runner, 2..3)
 
     assert {:file, _filename, _type, zip} = Task.await(task)

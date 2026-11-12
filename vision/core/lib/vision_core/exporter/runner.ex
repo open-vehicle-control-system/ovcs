@@ -16,15 +16,11 @@ defmodule VisionCore.Exporter.Runner do
   output, is held, replaced by any newer one, and handed over once the
   slot is open and the exporter ready. The camera outputs tell their
   frames apart by `:label`, `"left"`, `"right"` or a camera's name, and
-  by `:output`, the camera output a frame is of, and the detection
-  outputs their pipelines by the name a named pipeline's messages end
-  with: the default pipeline's `{:detections, pair, detections}` go to
-  `:detections` only, the pipeline `name`'s
-  `{:detections, pair, detections, name}` to `{:detections, name}` only,
-  each handed over as `{pair, detections}`, or `{frame, detections}`
-  from a pipeline on a camera. A segmentation pipeline's
-  `{:segmentation, name, frame, labels, clouds}` go to
-  `{:segmentation, name}` only, handed over as `{frame, labels, clouds}`.
+  by `:output`, the camera output a frame is of. Every other message is
+  `{output, value}`, `output` being the output it is of: a detection
+  pipeline's value is `{pair, detections}`, or `{frame, detections}`
+  from a pipeline on a camera, a segmentation pipeline's
+  `{frame, labels, clouds}`.
 
   The runner starts without waiting for its exporter: the exporter's
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or
@@ -391,19 +387,10 @@ defmodule VisionCore.Exporter.Runner do
   defp camera_label({:camera_frame, name, _output}), do: Atom.to_string(name)
   defp camera_label(_output), do: nil
 
-  defp message_output({:detections, _pair, _detections}), do: :detections
-  defp message_output({:detections, _pair, _detections, name}), do: {:detections, name}
-
-  defp message_output({:segmentation, name, _frame, _labels, _clouds}),
-    do: {:segmentation, name}
-
-  defp message_output({tag, _value}), do: tag
+  defp message_output({output, _value}), do: output
   defp message_output(_message), do: nil
 
-  defp payload({_tag, value}), do: value
-  defp payload({:detections, pair, detections}), do: {pair, detections}
-  defp payload({:detections, pair, detections, _name}), do: {pair, detections}
-  defp payload({:segmentation, _name, frame, labels, clouds}), do: {frame, labels, clouds}
+  defp payload({_output, value}), do: value
 
   # The newest value of the output waiting in the mailbox replaces `value`.
   defp newest(output, %Frame{label: label, output: frame_output} = value)
@@ -416,34 +403,9 @@ defmodule VisionCore.Exporter.Runner do
     end
   end
 
-  defp newest({:detections, name} = output, value) do
+  defp newest(output, value) do
     receive do
-      Outputs.queued({:detections, pair, detections, ^name}) -> newest(output, {pair, detections})
-    after
-      0 -> value
-    end
-  end
-
-  defp newest({:segmentation, name} = output, value) do
-    receive do
-      Outputs.queued({:segmentation, ^name, frame, labels, clouds}) ->
-        newest(output, {frame, labels, clouds})
-    after
-      0 -> value
-    end
-  end
-
-  defp newest(:detections, value) do
-    receive do
-      Outputs.queued({:detections, pair, detections}) -> newest(:detections, {pair, detections})
-    after
-      0 -> value
-    end
-  end
-
-  defp newest(tag, value) do
-    receive do
-      Outputs.queued({^tag, next}) -> newest(tag, next)
+      Outputs.queued({^output, next}) -> newest(output, next)
     after
       0 -> value
     end

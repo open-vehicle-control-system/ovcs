@@ -51,7 +51,7 @@ defmodule VisionCore.Segmentation.Live do
   @spec max_hz(atom()) :: pos_integer()
   def max_hz(name), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
-  defp describe({:segmentation, _name, frame, labels, _clouds}),
+  defp describe({_output, {frame, labels, _clouds}}),
     do: {:ok, Map.put(labels, :frame, {frame.width, frame.height})}
 
   defp describe(_message), do: :ignore

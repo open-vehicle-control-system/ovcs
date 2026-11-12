@@ -286,7 +286,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     do:
       Outputs.publish(
         {:detections, VisionCore.Detection.Pipeline},
-        {:detections, pair, []}
+        {:detections, {pair, []}}
       )
 
   defp publish_frame(%Frame{label: label} = frame),
@@ -316,7 +316,7 @@ defmodule VisionCore.Exporter.RunnerTest do
 
       Outputs.publish(
         {:detections, VisionCore.Detection.Pipeline},
-        {:detections, :pair, [:person]}
+        {:detections, {:pair, [:person]}}
       )
 
       publish_frame(left)
@@ -465,7 +465,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       do:
         Outputs.publish(
           {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name)},
-          {:detections, pair, detections, name}
+          {{:detections, name}, {pair, detections}}
         )
 
     test "hands each pipeline's detections to its own output only" do
@@ -477,7 +477,7 @@ defmodule VisionCore.Exporter.RunnerTest do
 
       Outputs.publish(
         {:detections, VisionCore.Detection.Pipeline},
-        {:detections, :pair, [:person]}
+        {:detections, {:pair, [:person]}}
       )
 
       assert_receive {:exported, :detections, {:pair, [:person]}, _at}
@@ -526,7 +526,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       do:
         Outputs.publish(
           {:segmentation, VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, name)},
-          {:segmentation, name, frame, labels, clouds}
+          {{:segmentation, name}, {frame, labels, clouds}}
         )
 
     test "hands each pipeline's result to its own output only, as its frame, labels and clouds" do
