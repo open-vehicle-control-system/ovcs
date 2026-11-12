@@ -7,7 +7,7 @@ Guidance for Claude Code working in this repository.
 Before making changes, read the relevant docs rather than rediscovering the project from the code:
 
 - [README.md](./README.md) — high-level overview and prerequisites.
-- [CODE_STYLING.md](./CODE_STYLING.md) — conventions to match when editing: layout, naming, Elixir idioms, config placement, shell scripts, CAN YAML, and anti-patterns to avoid. Read this before non-trivial changes.
+- [CODE_STYLING.md](./CODE_STYLING.md) — conventions to match when editing: layout, naming, Elixir idioms, config placement, shell scripts, CAN YAML, guides, and anti-patterns to avoid. Read this before non-trivial changes.
 - [docs/README.md](./docs/README.md) — index of all guides (and the website's docs tree).
 - [docs/framework.md](./docs/framework.md) — the framework / vehicle / reference-vehicle vocabulary.
 - [docs/architecture.md](./docs/architecture.md) — bus isolation, the vehicle contract, the Erlang mesh.
@@ -101,27 +101,7 @@ Rewrite the offending commits locally and push with `--force-with-lease` — on 
 
 ## Documentation is published on ovcs.be
 
-Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by the [website](https://github.com/open-vehicle-control-system/website) (https://ovcs.be/docs). The index's sections, its `###` sub-sections and their order are the site's navigation; a new guide gets a line there. A component's guides live in its folder under `docs/`, with the overview as the folder's `README.md`; a guide's URL is its path under `docs/`, so renaming or moving one needs a redirect in the website's `lib/redirects.mjs`. Write guides as public pages, not developer notes. `elixir scripts/check_docs.exs` enforces the rules below and runs in CI.
-
-### Vocabulary (non-negotiable)
-
-- **OVCS is a framework** for vehicle embedded systems: cores, APIs, dashboards, Nerves firmware shells, bridges, generic controller firmware, shared libraries, the `ovcs` CLI. It contains no vehicle-specific code.
-- A package under `vehicles/<name>/` is a **vehicle** built on the framework. The reader's own is "your vehicle".
-- **OVCS1, OVCS Mini and OBD2 are the three reference vehicles.** They are worked examples, never requirements. Name the one you use ("the OVCS1 reference vehicle") and label vehicle-specific detail as a worked example.
-- A command shown on `ovcs1` / `ovcs_mini` / `obd2` must make clear it works the same on the reader's own vehicle. Placeholders are `<vehicle>` / `<Vehicle>`.
-- Module and env-var names stay as they are in the code (`VEHICLE`, `VmsCore.Vehicle`, `vehicles/`); the vocabulary applies to prose.
-
-### Format
-
-- Start with YAML frontmatter carrying `title` and `description` (one sentence). No H1: the site renders the title from the frontmatter.
-- GitHub-flavoured Markdown only. No Mermaid: use prose, tables or `text` blocks for diagrams. No raw HTML, not even `<vehicle>` in prose: wrap it in backticks (the site's build rejects it).
-- Every code fence carries a language.
-- Links are repo-relative (`./running_hardware.md`, `../vehicles/ovcs1/WIRING.md`); the site rewrites them. Pages that exist only on the site are linked absolutely (`https://ovcs.be/docs/framework`).
-- Voice: direct and technical, second person, no marketing adjectives.
-
-### API reference comes from the code
-
-Behaviour callbacks, function signatures and module summaries belong in `@moduledoc` / `@doc` / `@callback`, not retyped in a guide. A guide explains the concept and links to the module; keep the moduledoc accurate when you change the code.
+Every guide linked from [docs/README.md](./docs/README.md) is rendered as-is by the [website](https://github.com/open-vehicle-control-system/website) (https://ovcs.be/docs). The rules a guide follows (writing, structure, the framework / vehicle / reference-vehicle vocabulary, format, code references) are in [CODE_STYLING.md](./CODE_STYLING.md#guides); read them before editing a guide. `elixir scripts/check_docs.exs` enforces the checkable ones and runs in CI.
 
 ## Repo-specific notes for Claude
 

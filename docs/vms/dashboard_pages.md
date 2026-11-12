@@ -3,7 +3,9 @@ title: Dashboard pages
 description: The page, block and row model your composers return, every block and row type the dashboards render, and how a row finds its metric or action.
 ---
 
-Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flutter infotainment app knows anything about your vehicle. Your composers return a map of pages and blocks, the API serves it as JSON, and the dashboard renders whatever it finds. This guide covers the exact shape of that map, every block and row type each dashboard renders, how a row finds the value it shows, and how a button reaches your code. Everything here is framework behaviour and applies to your vehicle as it is; snippets come from the scaffold template and the reference vehicles, labelled as worked examples.
+Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flutter infotainment app knows anything about your vehicle. Your composers return a map of pages and blocks, the API serves it as JSON, and the dashboard renders whatever it finds.
+
+Everything here is framework behaviour and applies to your vehicle as it is. Snippets come from the scaffold template and the reference vehicles, labelled as worked examples.
 
 ## Two dashboards, one pattern
 
@@ -16,7 +18,7 @@ Both dashboards in OVCS are generic: neither the React VMS dashboard nor the Flu
 | Layout | blocks dealt to three columns | fixed grid, blocks placed by cell |
 | Metric values from | the VMS bus, via `VmsCore.Metrics` | `status/0` of the module named in each metric |
 
-Both APIs expose these four routes; the VMS also serves `GET /api/firmware`:
+Both APIs expose these four routes. The VMS also serves `GET /api/firmware`:
 
 ```text
 GET  /api/vehicle                         vehicle name, colour, refresh interval
@@ -29,7 +31,7 @@ Both callbacks are optional in their behaviours, but the API calls them on every
 
 ## The VMS configuration
 
-`dashboard_configuration/0` returns a single map under `:vehicle`. The [scaffold template](../../libraries/ovcs_vehicle/priv/templates/vehicle/) generates this in `lib/my_car/vms/composer/dashboard.ex` for `./ovcs new my_car`; `my_car` and `MyCar` stand for your vehicle throughout this guide:
+`dashboard_configuration/0` returns a single map under `:vehicle`. The [scaffold template](../../libraries/ovcs_vehicle/priv/templates/vehicle/) generates this in `lib/my_car/vms/composer/dashboard.ex` for `./ovcs new my_car`. `my_car` and `MyCar` stand for your vehicle throughout this guide:
 
 ```elixir
 def dashboard_configuration do
@@ -59,9 +61,11 @@ The API reads fields with either dot access (the key must exist, or the request 
 | `order` | yes | Sort position. The first page is served at `/`, the others at `/<page_id>`. |
 | `blocks` | yes | Map of block id to block. |
 
-The menu lists your pages under **Pages**, then the dashboard's own **Network** page under **System**: it shows the board's network interfaces and needs no configuration. A page with the id `network` is hidden behind it. The dashboard uses the `@ovcs/ui` frame and colours shared by the OVCS dashboards, in a light or a dark theme.
+The dashboard has its own **Network** page, which shows the board's network interfaces and needs no configuration. A page with the id `network` is hidden behind it.
 
-Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Each block is a card under its name. The cards are dealt in order to three columns, each column stacking its own cards, so a short card never waits below a tall neighbour; `full_width: true` gives a card its own row across the three, and the cards after it are dealt from the first column again. On a narrow screen every card stacks in one column, in order. [`DynamicPage.jsx`](../../vms/dashboard/src/pages/DynamicPage.jsx) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
+Every block carries `order` (required), `name` (required), `type` (required) and `full_width` (optional). Each block is shown under its name. Blocks are dealt in order to three columns. `full_width: true` gives a block its own row across the three, and the blocks after it are dealt from the first column again.
+
+[`DynamicPage.jsx`](../../vms/dashboard/src/pages/DynamicPage.jsx) renders exactly two block types, `"table"` and `"lineChart"`. The API has a JSON view for those two only, so a block of any other type makes the whole page's blocks request fail.
 
 ## Table blocks and rows
 
@@ -77,7 +81,14 @@ A `"table"` block has a `rows` list. Each row is a metric (show a value) or an a
 | `placeholder` | no | Shown while the value is `nil`. Defaults to `—`. |
 | `hint` | no | Small text under the label. |
 
-[`format.js`](../../vms/dashboard/src/format.js) renders a value by its type: `true` and `false` become a check or a cross, numbers (including decimals, which arrive as strings) are rounded to two places and followed by the unit, lists are joined with commas, and a string containing a newline is shown as a monospace block. The unit `"fraction"` is shown as a percentage.
+[`format.js`](../../vms/dashboard/src/format.js) renders a value by its type:
+
+- `true` and `false` become a check or a cross;
+- numbers (including decimals, which arrive as strings) are rounded to two places and followed by the unit;
+- lists are joined with commas;
+- a string containing a newline is shown as a monospace block.
+
+The unit `"fraction"` is shown as a percentage.
 
 An action row has `type: :action` and one of three `input_type` values:
 
@@ -100,7 +111,7 @@ An action row has `type: :action` and one of three `input_type` values:
 | `hint` | no | Small text under the label. |
 | `step` | no | Increment of a `:number` field. Defaults to `"0.01"`. |
 
-The OVCS1 steering column page is the worked example of `:number` rows: three rows share one action and differ only by `extra_parameters`, from [`steering_column_page.ex`](../../vehicles/ovcs1/lib/ovcs1/vms/composer/dashboard/steering_column_page.ex):
+The OVCS1 steering column page is the worked example of `:number` rows. Three rows share one action and differ only by `extra_parameters`. From [`steering_column_page.ex`](../../vehicles/ovcs1/lib/ovcs1/vms/composer/dashboard/steering_column_page.ex):
 
 ```elixir
 %{
@@ -119,7 +130,12 @@ The OVCS1 steering column page is the worked example of `:number` rows: three ro
 
 ## Line chart blocks
 
-A `"lineChart"` block plots metrics against time with ECharts. It takes `serie_max_size` (required: points kept per series; 300 in every reference vehicle) and `y_axis`, a list of axes. Each axis has `min`, `max` and `label` (all required) and a `series` list; each series is a `name` (legend entry) and a `metric` map with `module` and `key`, resolved like a metric row. From the OVCS Mini reference vehicle's [`dashboard_page.ex`](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer/dashboard/dashboard_page.ex):
+A `"lineChart"` block plots metrics against time with ECharts. It takes:
+
+- `serie_max_size` (required): the points kept per series; 300 in every reference vehicle.
+- `y_axis`: a list of axes. Each axis has `min`, `max` and `label` (all required) and a `series` list.
+
+Each series is a `name` (legend entry) and a `metric` map with `module` and `key`, resolved like a metric row. From the OVCS Mini reference vehicle's [`dashboard_page.ex`](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer/dashboard/dashboard_page.ex):
 
 ```elixir
 "speed-and-rpm" => %{
@@ -149,7 +165,9 @@ A `"lineChart"` block plots metrics against time with ECharts. It takes `serie_m
 }
 ```
 
-The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`: 300 × 70 ms is 21 seconds on the Mini, labelled in seconds up to "now". An axis keeps its `min` and `max` unless a value goes beyond them; it then grows to show that value. An axis may also set `position: "left"` or `"right"`; without it, ECharts puts the first axis on the left and the next on the right. Series take ECharts' default colours.
+The chart appends one point per series every `refresh_interval`, so the visible window is `serie_max_size × refresh_interval`. On the Mini, 300 × 70 ms is 21 seconds.
+
+An axis keeps its `min` and `max` unless a value goes beyond them; it then grows to show that value. An axis may also set `position: "left"` or `"right"`. Without it, ECharts puts the first axis on the left and the next on the right.
 
 ## How a row finds its metric
 
@@ -166,9 +184,9 @@ Bus.broadcast("messages", %Bus.Message{
 
 That message is what `%{type: :metric, module: OVCS.VehicleMotion, key: :speed}` displays, with `km/h` appended because the publisher set a unit. Units come from [`OvcsBus.Units`](../../libraries/ovcs_bus/lib/ovcs_bus/units.ex), one function per unit.
 
-`source` is usually `__MODULE__`, but it can be any atom. Components started several times publish under their process name: `OVCS.InputCurve` uses `source: process_name`, and the OVCS Mini's [`throttle_input_curve.ex`](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer/dashboard/blocks/throttle_input_curve.ex) passes that name as `module:`. When a row shows `—` forever, the `module`/`key` pair doesn't match anything published; `VmsCore.Metrics.metrics()` in the VMS IEx shell lists every source and name the bus has carried.
+`source` is usually `__MODULE__`, but it can be any atom. Components started several times publish under their process name: `OVCS.InputCurve` uses `source: process_name`, and the OVCS Mini's [`throttle_input_curve.ex`](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer/dashboard/blocks/throttle_input_curve.ex) passes that name as `module:`. When a row shows `—` forever, the `module`/`key` pair doesn't match anything published. `VmsCore.Metrics.metrics()` in the VMS IEx shell lists every source and name the bus has carried.
 
-On the wire, the dashboard joins the `metrics` channel on `/sockets/dashboard` with the vehicle's refresh interval and pushes `subscribe` for each metric row, series and `status_metric_key` on the page. The channel converts `module` and `key` with `String.to_existing_atom/1` and then pushes the filtered values every interval ([`metrics_channel.ex`](../../vms/api/lib/vms_api_web/channels/metrics_channel.ex)).
+The dashboard joins the `metrics` channel on `/sockets/dashboard` with the vehicle's refresh interval and pushes `subscribe` for each metric row, series and `status_metric_key` on the page. The channel converts `module` and `key` with `String.to_existing_atom/1` and then pushes the filtered values every interval ([`metrics_channel.ex`](../../vms/api/lib/vms_api_web/channels/metrics_channel.ex)).
 
 ## How an action reaches your code
 
@@ -178,9 +196,9 @@ An action row posts a JSON body to `POST /api/actions`:
 {"module": "Elixir.VmsCore.Components.OVCS.SteeringColumn", "action": "set_pid_parameter", "parameter": "kp", "value": "0.12"}
 ```
 
-[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) looks the `module` and `action` pair up among the action rows of your `dashboard_configuration/0` and runs `module.trigger_action(action, params)`, where `params` is the whole body with string keys. Three rules follow:
+[`ActionsController`](../../vms/api/lib/vms_api_web/controllers/api/actions_controller.ex) looks the `module` and `action` pair up among the action rows of your `dashboard_configuration/0`. It then runs `module.trigger_action(action, params)`, where `params` is the whole body with string keys. Three rules follow:
 
-- Only what your pages declare is callable. A pair no row declares answers `404`, even when the module defines that action, so the API cannot reach code your dashboard does not expose; call anything else from IEx.
+- Only what your pages declare is callable. A pair no row declares answers `404`, even when the module defines that action. The API therefore cannot reach code your dashboard does not expose. Call anything else from IEx.
 - An action's `module` must be a real module that defines `trigger_action/2`, or the request answers `404`. Unlike a metric source, a process name does not work.
 - `trigger_action/2` returns `:ok`, or `{:error, reason}` to refuse: the request then answers `422` and the dashboard shows the reason under the row. Anything else fails the request. A `:number` value arrives as a string; convert it yourself.
 
@@ -201,7 +219,7 @@ The second clause relies on its `handle_call` replying `:ok`. For a parametrised
 
 ## A complete page
 
-This page combines the scaffold's status table, the reset button from the OVCS Mini dashboard and the Mini's speed chart. `Vms` is your vehicle's VMS GenServer, which the template publishes `:vms_status` and `:ready_to_drive` from; `OVCS.VehicleMotion` exists only if your composer starts it, so replace that chart's metrics with one of your own components if it doesn't.
+This page combines the scaffold's status table, the reset button from the OVCS Mini dashboard and the Mini's speed chart. `Vms` is your vehicle's VMS GenServer; the template publishes `:vms_status` and `:ready_to_drive` from it. `OVCS.VehicleMotion` exists only if your composer starts it. If it doesn't, replace that chart's metrics with one of your own components.
 
 ```elixir
 defmodule MyCar.Vms.Composer.Dashboard.DashboardPage do
@@ -251,11 +269,11 @@ defmodule MyCar.Vms.Composer.Dashboard.DashboardPage do
 end
 ```
 
-Register it in `dashboard_configuration/0` under a page id, `"status" => Dashboard.DashboardPage.definition(order: 0)`. The reference vehicles keep one module per page and one per reusable block under `vms/composer/dashboard/blocks/`, which keeps each page readable; [OVCS1's pages](../../vehicles/ovcs1/lib/ovcs1/vms/composer/dashboard/) are the largest set to copy from.
+Register it in `dashboard_configuration/0` under a page id, `"status" => Dashboard.DashboardPage.definition(order: 0)`. The reference vehicles keep one module per page and one per reusable block under `lib/<vehicle>/vms/composer/dashboard/blocks/`, which keeps each page readable. [OVCS1's pages](../../vehicles/ovcs1/lib/ovcs1/vms/composer/dashboard/) are the largest set to copy from.
 
 ## Infotainment pages
 
-The infotainment's pages have the same `vehicle → pages → blocks` shape, on a fixed grid of purpose-built widgets, and read their metrics from a module's `status/0` rather than from the bus. [Infotainment](../infotainment/README.md#pages) lists its block types and the layout validator.
+The infotainment's pages have the same `vehicle → pages → blocks` shape, on a fixed grid of purpose-built widgets. They read their metrics from a module's `status/0`, not from the bus. [Infotainment](../infotainment/README.md#pages) lists its block types and the layout validator.
 
 ## Check what the API serves
 
@@ -265,7 +283,7 @@ Boot your vehicle locally; the reference vehicles work the same way:
 ./ovcs run ovcs_mini
 ```
 
-Then read the layout back from the VMS API. A key missing from your map shows up here as an error rather than as a blank dashboard:
+Then read the layout back from the VMS API. A key missing from your map appears here as an error, not as a blank dashboard:
 
 ```sh
 curl -s http://localhost:4000/api/vehicle
@@ -273,7 +291,9 @@ curl -s http://localhost:4000/api/vehicle/pages
 curl -s http://localhost:4000/api/vehicle/pages/dashboard/blocks
 ```
 
-Pages come back as `{"type": "page", "id": …, "attributes": {"name"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`. To try an action without the UI, post the body the dashboard would send for one of your action rows; on the OVCS1 and OVCS Mini reference vehicles, the status block of the dashboard page declares this one:
+Pages come back as `{"type": "page", "id": …, "attributes": {"name"}}` and blocks as `{"type": "block", "id": …, "attributes": {"name", "subtype", "fullWidth", …}}`, with `subtype` carrying your block's `type`.
+
+To try an action without the UI, post the body the dashboard would send for one of your action rows. On the OVCS1 and OVCS Mini reference vehicles, the status block of the dashboard page declares this one:
 
 ```sh
 curl -s -X POST http://localhost:4000/api/actions \
@@ -281,7 +301,11 @@ curl -s -X POST http://localhost:4000/api/actions \
   -d '{"module": "Elixir.VmsCore.Status", "action": "reset_status"}'
 ```
 
-A `201` means `trigger_action/2` returned `:ok`; a `404` means no row declares that pair. For the infotainment side, use port `4001` on a vehicle with an infotainment composer (`./ovcs run obd2` or `./ovcs run ovcs1`), and start the Flutter app in its own terminal as the [CLI reference](../../cli/README.md) describes. Open the VMS dashboard on the Vite dev server at `http://localhost:5173`, which hot-reloads; `:4000` serves the last prebuilt bundle.
+A `201` means `trigger_action/2` returned `:ok`; a `404` means no row declares that pair.
+
+For the infotainment side, use port `4001` on a vehicle with an infotainment composer (`./ovcs run obd2` or `./ovcs run ovcs1`). Start the Flutter app in its own terminal as the [CLI reference](../../cli/README.md) describes.
+
+Open the VMS dashboard on the Vite dev server at `http://localhost:5173`, which hot-reloads. `:4000` serves the last prebuilt bundle.
 
 ## Next steps
 

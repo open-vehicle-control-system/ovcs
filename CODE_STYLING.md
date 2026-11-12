@@ -261,6 +261,103 @@ These rules are firm, not preferences.
 - Import sibling files with plain relative paths
   (`import!:generic_controller/0x701_...yml`).
 
+## Guides
+
+The [website](https://github.com/open-vehicle-control-system/website)
+renders every guide linked from [docs/README.md](./docs/README.md) as-is
+on https://ovcs.be/docs. `elixir scripts/check_docs.exs` checks what it
+can, in CI.
+
+### Writing
+
+- **Say it once, in few words.** Cut any sentence the reader can act
+  without. No preamble, no recap, no announcing what comes next.
+- **One idea per sentence**, 25 words at most. **One topic per
+  paragraph**, five lines at most.
+- **Open a page with what the reader will be able to do** and what they
+  need first.
+- **Show rather than describe.** Parallel items are a list, items with
+  two attributes a table, a procedure numbered steps with one action
+  each.
+- **Follow a command with what the reader should see.**
+- **Put a limit or a danger before the step it applies to**, as a
+  warning alert.
+- **Active voice, present tense, imperative for instructions**: "Run",
+  not "you can run".
+- **One word per thing**: the [glossary](./docs/glossary.md)'s, explained
+  where it first appears and never varied.
+- **Link text names its target**, never "here".
+- **Plain English**: no idioms, jokes or marketing adjectives. Many
+  readers are not native speakers.
+- **Don't describe the dashboards.** Not their screens (layout, colours,
+  what a gauge or badge looks like), not their frontend code. The reader
+  sees the screen; a guide covers what they declare in their vehicle,
+  the API, and the action to take.
+- One page, one job: a concept, a how-to or a reference. Aim for 1000 to
+  2500 words; a longer page is usually two.
+
+### Structure
+
+- `docs/README.md` is the site's navigation: its sections, `###`
+  sub-sections and order. A new guide gets a line there; a section holds
+  entries or sub-sections, never both.
+- One folder per component under `docs/`, its overview as `README.md`,
+  its pages ordered what → how → extend → reference.
+- A guide's URL is its path under `docs/` (`docs/vms/how_it_works.md` is
+  `/docs/vms/how-it-works`, a `README.md` is its folder). Outside `docs/`
+  it is the file name, or the directory's for a README.
+- Renaming or moving a guide needs a redirect in the website's
+  `lib/redirects.mjs`.
+
+### Vocabulary (non-negotiable)
+
+- **OVCS is a framework** for vehicle embedded systems: cores, APIs,
+  dashboards, Nerves firmware shells, bridges, generic controller
+  firmware, shared libraries, the `ovcs` CLI. It contains no
+  vehicle-specific code.
+- A package under `vehicles/<name>/` is a **vehicle** built on the
+  framework. The reader's own is "your vehicle".
+- **OVCS1, OVCS Mini and OBD2 are the three reference vehicles.** They are
+  worked examples, never requirements. Name the one you use ("the OVCS1
+  reference vehicle") and label vehicle-specific detail as a worked
+  example.
+- A command shown on `ovcs1` / `ovcs_mini` / `obd2` must make clear it
+  works the same on the reader's own vehicle. Placeholders are `<vehicle>`
+  / `<Vehicle>`.
+- Module and env-var names stay as they are in the code (`VEHICLE`,
+  `VmsCore.Vehicle`, `vehicles/`); the vocabulary applies to prose.
+
+### Format
+
+- Frontmatter carries `title` and `description`. No H1: the site renders
+  the title.
+- The description is one sentence of at most 160 characters: the site
+  shows it under the title and on the index card, search engines in
+  their results.
+- GitHub-flavoured Markdown only. No Mermaid: use prose, tables or `text`
+  blocks. No raw HTML, not even `<vehicle>` in prose: wrap it in
+  backticks.
+- Every code fence carries a language.
+- Links are repo-relative (`./running_hardware.md`); the site rewrites
+  them. A page that exists only on the site is linked absolutely
+  (`https://ovcs.be/docs/framework`).
+- An aside the reader must not miss is a GitHub alert (`> [!NOTE]`,
+  `[!TIP]`, `[!WARNING]`, `[!CAUTION]`); the site renders a callout.
+- Images live in `docs/assets/`, linked relatively, with alt text. The
+  site serves them from `main`, so one shows only after its PR merges.
+
+### Code in guides
+
+- **API reference comes from the code**: callbacks, signatures and module
+  summaries belong in `@moduledoc` / `@doc` / `@callback`. A guide
+  explains the concept and links to the module.
+- Name a file by its path from the repository root; the checker verifies
+  it exists. A shortened path (`timing.ex`) is not checked.
+- A change that moves, renames or deletes a file updates the guides that
+  name it, in the same PR.
+- The checker skips paths under the tutorials' names, `my_car` and
+  `board_temperature_bridge`.
+
 ## Commits and pull requests
 
 - One focused change per commit. Use the title line to say what, the body

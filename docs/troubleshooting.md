@@ -3,7 +3,7 @@ title: Troubleshooting
 description: The failures newcomers hit most, collected in one place, each with the check that names the cause.
 ---
 
-Each entry gives the check that names the cause, then the fix. Start with `./ovcs doctor`: it catches the toolchain half of this list on its own. Where an example names OVCS1, OVCS Mini or OBD2, substitute your own vehicle's name, module or channel layout.
+Each entry gives the check that names the cause, then the fix. Start with `./ovcs doctor`: it finds the toolchain failures in this list on its own. Where an example names OVCS1, OVCS Mini or OBD2, substitute your own vehicle's name, module or channel layout.
 
 ## Setup and toolchain
 
@@ -11,11 +11,11 @@ Each entry gives the check that names the cause, then the fix. Start with `./ovc
 
 **Check:** `elixir --version` in the repo reports Erlang/OTP **28** and Elixir **1.19**.
 
-**Cause:** Nerves compiles BEAM files with the host OTP and packages them with the target system's runtime; the OTP majors must agree, and nothing checks host against target. **Fix:** `mise install` at the repo root; don't install Elixir any other way. See [Toolchain and OTP](./toolchain_and_otp.md).
+**Cause:** Nerves compiles BEAM files with the host OTP and packages them with the target system's runtime. The OTP majors must agree, and nothing checks host against target. **Fix:** run `mise install` at the repo root; don't install Elixir any other way. See [Toolchain and OTP](./toolchain_and_otp.md).
 
 ### `fwup: command not found`
 
-**Cause:** `fwup` is not in the Debian/Ubuntu repositories. **Fix:** install the `.deb` from its GitHub releases, as in [Getting started](./getting_started.md). On macOS, `brew install fwup`.
+**Cause:** `fwup` is not in the Debian/Ubuntu repositories. **Fix:** install the `.deb` from its GitHub releases, as in [Getting started](./getting_started.md). On macOS, run `brew install fwup`.
 
 ### `./ovcs can setup` fails with `modprobe: Operation not permitted` (Bluefin, Silverblue, distrobox)
 
@@ -27,7 +27,7 @@ Each entry gives the check that names the cause, then the fix. Start with `./ovc
 
 ### `git: command not found` or `lsmod: command not found` in a fresh container
 
-**Cause:** minimal Ubuntu images ship neither. **Fix:** `sudo apt install -y git kmod`. `mise run libraries` needs `git`; `./ovcs can setup` needs `kmod`.
+**Cause:** minimal Ubuntu images ship neither. **Fix:** run `sudo apt install -y git kmod`. `mise run libraries` needs `git`; `./ovcs can setup` needs `kmod`.
 
 ## Virtual CAN
 
@@ -35,7 +35,7 @@ Each entry gives the check that names the cause, then the fix. Start with `./ovc
 
 **Check:** `ip -br link show | grep vcan`.
 
-**Fix:** `./ovcs can setup <vehicle>`. If loading the module fails:
+**Fix:** run `./ovcs can setup <vehicle>`. If loading the module fails:
 
 ```sh
 sudo modprobe can
@@ -49,7 +49,7 @@ sudo modprobe vcan
 
 **Check**, in order:
 
-1. `VEHICLE` is your vehicle's top-level module name, case-sensitive (`Ovcs1`, `OvcsMini`, `Obd2` for the references).
+1. `VEHICLE` is your vehicle's top-level module name, case-sensitive (`Ovcs1`, `OvcsMini`, `Obd2` for the reference vehicles).
 2. `./ovcs can status <vehicle>` lists the interfaces, and `CAN_NETWORK_MAPPINGS` (or the composer's default host mapping) routes the target network to the interface you send on.
 3. The frame is one the VMS **receives** on that network. In the OVCS1 reference vehicle, the handbrake frame `0x320` belongs to `polo_drive`, which is `vcan2` on the host. A frame the VMS only emits, such as `0x280`, changes nothing when injected.
 
@@ -63,7 +63,7 @@ sudo modprobe vcan
 
 **Check:** the environment the vision role was started with.
 
-**Cause:** the vision role was started without `OVCS_SIM=1`, and the OVCS Mini reference vehicle's composer then runs no cameras on the host. **Fix:** `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
+**Cause:** the vision role was started without `OVCS_SIM=1`, and the OVCS Mini reference vehicle's composer then runs no cameras on the host. **Fix:** set `OVCS_SIM=1`, as in [Simulation](../compose/local/simulation/README.md).
 
 ### Cantastic dies: "CAN network mappings are missing"
 
@@ -71,7 +71,7 @@ sudo modprobe vcan
 
 ### The control level never leaves `:manual` on the host
 
-**Cause:** on the host there is no RC receiver and no generic controller, so nothing emits the switch frames (`0x2A0`, `0x2A1`) or the pulse counter (`0x709`). With an unknown speed every mode change is refused with `:speed_unknown`. **Fix:** synthesise both. A speed stream first, in its own terminal (zero count and frequency is a stationary vehicle):
+**Cause:** on the host there is no RC receiver and no generic controller, so nothing emits the switch frames (`0x2A0`, `0x2A1`) or the pulse counter (`0x709`). With an unknown speed every mode change is refused with `:speed_unknown`. **Fix:** synthesise both. First a speed stream, in its own terminal (a zero count and frequency means a stationary vehicle):
 
 ```sh
 cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
@@ -86,7 +86,7 @@ cansend vcan0 2A1#E803D00700000000   # channel 6 = 2000: level :ros (only reacha
 cansend vcan0 2A1#D007D00700000000   # channel 5 = 2000: commander :autonomous (needs a standstill)
 ```
 
-`ready_to_drive` must be true as well; the Mini hardcodes it. Details in [How the VMS works](./vms/how_it_works.md#driving-on-the-host-bench).
+`ready_to_drive` must be true as well; the OVCS Mini reference vehicle hardcodes it. See [How the VMS works](./vms/how_it_works.md#driving-on-the-host-bench) for details.
 
 ## Generic controllers
 
@@ -94,13 +94,13 @@ cansend vcan0 2A1#D007D00700000000   # channel 5 = 2000: commander :autonomous (
 
 **Check:** `candump vcan0,700:7FF` (or the `ovcs` bus interface on the vehicle) shows the VMS emitting the configuration frame `0x700` during adoption.
 
-**Fix:** clicking Adopt, or `trigger_action("adopt", …)`, broadcasts the configuration for one second; press the adoption button (pin D2) within it. Check the Arduino's USB serial output for parse errors.
+**Fix:** clicking Adopt, or `trigger_action("adopt", …)`, broadcasts the configuration for one second. Press the adoption button (pin D2) within that second. Check the Arduino's USB serial output for parse errors.
 
 ### The controller goes to `VMS_MISSING_ERROR`
 
 **Check:** `candump vcan0,1A0:7FF` shows the VMS heartbeat every 100 ms, and `CAN_NETWORK_MAPPINGS` routes `ovcs` to the interface the controller is on.
 
-**Cause:** every VMS reboot, and so every redeploy, stops the heartbeat longer than the controller tolerates. The VMS resets the controllers itself three seconds after booting, so it usually clears on its own. If not, from IEx on the VMS:
+**Cause:** every VMS reboot, and so every redeploy, stops the heartbeat longer than the controller tolerates. The VMS resets the controllers itself three seconds after booting, so the error usually clears on its own. If not, from IEx on the VMS:
 
 ```elixir
 VmsCore.Status.trigger_action("reset_status", %{})
@@ -138,7 +138,7 @@ sudo udevadm trigger
 
 ### The firmware build fails with `no .env.exs for vehicle`
 
-**Cause:** `vehicles/<vehicle>/.env.exs` doesn't exist; without it the image would have no SSH keys, generated Phoenix secrets, a reset Wi-Fi list and `ZENOH_ENDPOINT_IP=127.0.0.1`, so the build refuses. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE`, `SIGNING_SALT` and, for ROS bridges, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of that vehicle. `CI=true` builds with defaults, for compile checks only.
+**Cause:** `vehicles/<vehicle>/.env.exs` doesn't exist. Without it the image would have no SSH keys, generated Phoenix secrets, a reset Wi-Fi list and `ZENOH_ENDPOINT_IP=127.0.0.1`, so the build refuses. **Fix:** copy `.env.exs.example` next to it and fill in `AUTHORIZED_SSH_KEYS`, `WIFI_NETWORKS`, `SECRET_KEY_BASE`, `SIGNING_SALT` and, for ROS bridges, `ZENOH_ENDPOINT_IP`. The file is gitignored and shared by every firmware of that vehicle. `CI=true` builds with defaults, for compile checks only.
 
 ### `./ovcs attach` or `connect` cannot reach the device
 
@@ -164,11 +164,11 @@ Host 10.42.0.*
 
 ### `ros2 topic echo` fails with `unknown tag 'rclpy.topic_endpoint_info.TopicEndpointInfo'`
 
-**Cause:** a `ros2cli` daemon bug. **Fix:** `ros2 topic echo --no-daemon /odom`.
+**Cause:** a `ros2cli` daemon bug. **Fix:** run `ros2 topic echo --no-daemon /odom`.
 
 ### Nav2 looks healthy but the simulated car doesn't move
 
-**Cause:** the ROS bridge is not running its simulated hardware, or the VMS is on the `teleop` commander. **Fix:** run with `OVCS_SIM=1` and without `OVCS_SIMULATOR_COMMANDER=teleop`; the simulated radio takes the VMS to `:ros` a few seconds after it appears. On the OVCS Mini reference vehicle, `candump vcan1` then shows the VESC commands.
+**Cause:** the ROS bridge is not running its simulated hardware, or the VMS is on the `teleop` commander. **Fix:** run with `OVCS_SIM=1` and without `OVCS_SIMULATOR_COMMANDER=teleop`. The simulated radio takes the VMS to `:ros` a few seconds after it appears. On the OVCS Mini reference vehicle, `candump vcan1` then shows the VESC commands.
 
 ### Topics appear on one machine and not another
 
@@ -176,11 +176,11 @@ Host 10.42.0.*
 
 ### Stereo depth is empty, or coverage is a few percent
 
-**Cause:** the world has no texture (`empty.sdf` gives the matcher nothing to correlate), or the vision unit uses the real Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
+**Cause:** the world has no texture (`empty.sdf` gives the matcher nothing to correlate), or the vision unit uses the real OVCS Mini's calibration against Gazebo's ideal pinhole. **Fix:** use `workshop.sdf` for anything involving depth, and let `OVCS_SIM=1` select the simulator calibration in `vehicles/ovcs_mini/priv/calibration/simulation/`.
 
 ### Nav2 drops every point cloud: "the timestamp on the message is earlier than all the data in the transform cache"
 
-**Cause:** one transform stamped with wall-clock time reached `tf2` before the bridge learned the simulator clock. `tf2` prunes relative to its newest entry, and a stamp decades in the future never ages out. **Fix:** `RosBridge.Clock` blocks in `init/1` until the first `/clock` sample, so `:simulator_clock` must come before every component that publishes stamped messages. If you reordered them, put it back. With no `/clock` within 60 s the bridge stays on wall clock for the whole run, by design; restart it once the simulator is up. Background in [ROS 2](./ros2/README.md).
+**Cause:** one transform stamped with wall-clock time reached `tf2` before the bridge learned the simulator clock. `tf2` prunes relative to its newest entry, and a stamp decades in the future never ages out. **Fix:** `RosBridge.Clock` blocks in `init/1` until the first `/clock` sample, so `:simulator_clock` must come before every component that publishes stamped messages. If you reordered them, put it back. With no `/clock` within 60 s the bridge stays on wall clock for the whole run, by design. Restart it once the simulator is up. [ROS 2](./ros2/README.md) has the background.
 
 ### The image topic looks dead: one frame every fifteen seconds
 

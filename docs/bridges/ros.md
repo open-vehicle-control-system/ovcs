@@ -1,9 +1,11 @@
 ---
 title: ROS bridge
-description: The bridge between the ovcs CAN bus and ROS 2 over native Zenoh, the components a vehicle opts into, how to configure it on the host and the target, tune its stereo cameras at runtime, and check it end to end.
+description: The bridge between the ovcs CAN bus and ROS 2 over native Zenoh, the components a vehicle opts into, and how to configure it and check it end to end.
 ---
 
-The ROS bridge, `RosBridge`, connects your vehicle to a ROS 2 graph. It speaks the [`rmw_zenoh`](https://github.com/ros2/rmw_zenoh) wire format natively over [Zenoh](https://zenoh.io), through [`zenohex`](https://hex.pm/packages/zenohex), and links nothing from ROS: the bridge's board runs Nerves like every other role, and ROS nodes, `ros2 topic echo` and Foxglove see its topics as native. Commands come in from ROS and go out as CAN frames to the VMS; what the vehicle knows goes out as ROS topics.
+The ROS bridge, `RosBridge`, connects your vehicle to a ROS 2 graph. It speaks the [`rmw_zenoh`](https://github.com/ros2/rmw_zenoh) wire format natively over [Zenoh](https://zenoh.io), through [`zenohex`](https://hex.pm/packages/zenohex), and links nothing from ROS. The bridge's board runs Nerves like every other role. ROS nodes, `ros2 topic echo` and Foxglove see its topics as native.
+
+Commands come in from ROS and go out as CAN frames to the VMS. What the vehicle knows goes out as ROS topics.
 
 > [!NOTE]
 > The OVCS1 and OVCS Mini reference vehicles both run it; the OVCS Mini is the worked example. See [Framework and vehicles](../framework.md). How the bridge fits with the compute node, the simulator and Nav2 is in [ROS 2](../ros2/README.md).
@@ -20,8 +22,8 @@ ROS 2 graph ── Zenoh router ── Ros2Zenoh.Client
    ovcs bus: 0x2B0, 0x2B1          │    ovcs bus: 0x1A0, 0x600, 0x60B, 0x60C; drivers on the board
 ```
 
-- **One Zenoh session.** `Ros2Zenoh.Client`, from [`libraries/ros2_zenoh`](../../libraries/ros2_zenoh/README.md), holds a client session with the vehicle's Zenoh router on `tcp/<zenoh_endpoint_ip>:7447`, reconnects with a backoff from 1 s to 30 s, and gives the rest of the bridge `publish` and `subscribe`. The router runs on the [compute node](../ros2/compute_node.md) on a vehicle, or in the local ROS 2 stack on a workstation.
-- **Consumers turn ROS commands into CAN.** `RosBridge.Consumers.Joy` turns a gamepad's `sensor_msgs/Joy`, read through a joystick profile, into the actuator command (`0x2B0`). `RosBridge.Consumers.Velocity` turns a planner's `geometry_msgs/TwistStamped` into the velocity command (`0x2B1`), and the VMS solves the kinematics against its own geometry. Both carry a sequence number; when it stops changing, the VMS zeroes the command.
+- **One Zenoh session.** `Ros2Zenoh.Client`, from [`libraries/ros2_zenoh`](../../libraries/ros2_zenoh/README.md), holds a client session with the vehicle's Zenoh router on `tcp/<zenoh_endpoint_ip>:7447`. It reconnects with a backoff from 1 s to 30 s, and gives the rest of the bridge `publish` and `subscribe`. The router runs on the [compute node](../ros2/compute_node.md) on a vehicle, or in the local ROS 2 stack on a workstation.
+- **Consumers turn ROS commands into CAN.** `RosBridge.Consumers.Joy` turns a gamepad's `sensor_msgs/Joy`, read through a joystick profile, into the actuator command (`0x2B0`). `RosBridge.Consumers.Velocity` turns a planner's `geometry_msgs/TwistStamped` into the velocity command (`0x2B1`), and the VMS solves the kinematics against its own geometry. Both carry a sequence number. When it stops changing, the VMS zeroes the command.
 - **Publishers turn what the vehicle knows into topics.** Some read CAN frames the VMS emits (status, gear, control level, vehicle motion); others own a driver on the bridge's board (an IMU, a lidar, rangefinders, stereo cameras).
 - **Supervision.** The session, the node's parameter server and the components run under one `rest_for_one` supervisor, so a restarted Zenoh session restarts every component after it.
 
@@ -51,7 +53,10 @@ The [vision unit](../vision/README.md) is the other place stereo depth runs, as 
 
 ## Configure it in your vehicle
 
-Declare the bridge in an entry of `bridge_firmwares/0` (see [Bridge firmwares](./README.md#bridge-firmwares)), then implement `ros_bridge_config/1` on your vehicle's top-level module. It returns a `%RosBridge.Config{}` per arm:
+1. Declare the bridge in an entry of `bridge_firmwares/0` (see [Bridge firmwares](./README.md#bridge-firmwares)).
+2. Implement `ros_bridge_config/1` on your vehicle's top-level module.
+
+The callback returns a `%RosBridge.Config{}` per arm:
 
 ```elixir
 def ros_bridge_config(:host) do
@@ -79,9 +84,9 @@ def ros_bridge_config(:target) do
 end
 ```
 
-A bare atom is shorthand for `{atom, []}`. An unknown component name raises at boot, so a typo fails loudly instead of silently dropping a feature.
+A bare atom is shorthand for `{atom, []}`. An unknown component name raises at boot, so a typo is an error instead of a silently dropped feature.
 
-A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead, which also receives the bridge firmware id, so each entry gets its own components.
+A vehicle that bundles `RosBridge` in several `bridge_firmwares/0` entries implements `ros_bridge_config/2` instead. It also receives the bridge firmware id, so each entry gets its own components.
 
 The OVCS Mini reference vehicle implements `ros_bridge_config/1`; its target configuration, abridged:
 
@@ -107,7 +112,7 @@ Order matters where one component reads another: `:odometry_publisher` comes aft
 
 - **Host and target.** The arm is fixed at compile time from `Mix.target()`. The `:host` arm swaps hardware drivers for dummies so `./ovcs run <vehicle>` works without sensors, and usually points at a router on loopback.
 - **The router's address.** On the target, `ZENOH_ENDPOINT_IP` at firmware build time sets `:zenoh_endpoint_ip`; your vehicle's `.env.exs` sets it to the compute node's address. Without a `.env.exs` the build fails, because the image would fall back to `127.0.0.1` and reach no router.
-- **The node name.** `node_name` is what the bridge announces, the name `ros2 node list` and Foxglove show, `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini's is `ovcs_bridge_ros`, next to its vision unit's `ovcs_vision`.
+- **The node name.** `node_name` is what the bridge announces: the name `ros2 node list` and Foxglove show. It is `ovcs_bridge` by default. Two bridge firmwares on one fabric must each set their own, or they collide in the ROS graph and Foxglove renders them as one node. The OVCS Mini's is `ovcs_bridge_ros`, next to its vision unit's `ovcs_vision`.
 
 ## BNO085 reporting
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env elixir
 #
 # Checks the guides published on ovcs.be against the documentation rules
-# in CLAUDE.md. The published set is every Markdown file linked from the
+# in CODE_STYLING.md. The published set is every Markdown file linked from the
 # index, docs/README.md; its sections and order are the site's docs tree.
 #
 # Usage: elixir scripts/check_docs.exs
@@ -42,6 +42,28 @@ anchors_of = fn path ->
   |> MapSet.new()
 end
 
+top_level_directories =
+  files |> Enum.filter(&String.contains?(&1, "/")) |> Enum.map(&(&1 |> String.split("/") |> hd())) |> MapSet.new()
+
+ignored? = fn path -> match?({_, 0}, System.cmd("git", ["check-ignore", "-q", path])) end
+
+# The names the tutorials build under, which exist in no checkout.
+example_names = ~w(my_car board_temperature_bridge)
+
+# Repo paths named in inline code: a path whose first segment is a top-level
+# directory. A numeric last segment is a function arity (`vms/0`).
+code_paths_of = fn text ->
+  text
+  |> String.replace(~r/^[ \t]*(```|~~~).*?^[ \t]*\1/ms, "")
+  |> then(&Regex.scan(~r/`([^`\n]+)`/, &1, capture: :all_but_first))
+  |> List.flatten()
+  |> Enum.filter(&String.match?(&1, ~r{^[\w.-]+(/[\w.-]+)+/?$}))
+  |> Enum.reject(&String.match?(&1, ~r{/\d+$}))
+  |> Enum.filter(&((&1 |> String.split("/") |> hd()) in top_level_directories))
+  |> Enum.reject(fn path -> Enum.any?(example_names, &(&1 in String.split(path, "/"))) end)
+  |> Enum.uniq()
+end
+
 links_of = fn text ->
   Regex.scan(~r/\]\(([^)\s]+)\)/, strip_code.(text), capture: :all_but_first) |> List.flatten()
 end
@@ -55,11 +77,10 @@ published =
   |> Enum.map(&(Path.join("docs", &1) |> Path.expand() |> Path.relative_to_cwd()))
   |> Enum.uniq()
 
-# docs/superpowers/ holds design notes and plans, not guides.
 unindexed =
   files
   |> Enum.filter(&(String.starts_with?(&1, "docs/") and String.ends_with?(&1, ".md") and File.regular?(&1)))
-  |> Enum.reject(&(&1 == index or &1 in published or String.starts_with?(&1, "docs/superpowers/")))
+  |> Enum.reject(&(&1 == index or &1 in published))
   |> Enum.sort()
   |> Enum.map(&"#{&1}: not linked from #{index}")
 
@@ -140,10 +161,18 @@ check_file = fn path ->
         end
       end)
 
+    missing_paths =
+      body
+      |> code_paths_of.()
+      |> Enum.reject(&(exists?.(&1) or ignored?.(&1)))
+      |> Enum.map(&"`#{&1}` does not exist")
+
     [
       front == nil && "no frontmatter",
       front && not String.match?(front, ~r/^title: \S/m) && "frontmatter has no title",
       front && not String.match?(front, ~r/^description: \S/m) && "frontmatter has no description",
+      front && String.match?(front, ~r/^(title|description): [^"'].*: /m) &&
+        "frontmatter value holds `: ` unquoted (invalid YAML)",
       String.match?(prose, ~r/^# /m) && "H1 heading (the title comes from the frontmatter)",
       String.contains?(body, "```mermaid") && "Mermaid block",
       String.match?(prose, ~r/<(?!https?:)[A-Za-z!\/][^>\n]*>/) &&
@@ -153,6 +182,7 @@ check_file = fn path ->
     ]
     |> Enum.filter(& &1)
     |> Kernel.++(links)
+    |> Kernel.++(missing_paths)
     |> Enum.map(&"#{path}: #{&1}")
   else
     ["#{path}: linked from #{index} but missing"]

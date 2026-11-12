@@ -34,7 +34,6 @@ jobs:
       pull-requests: read
     outputs:
       elixir: ${{ steps.filter.outputs.elixir }}
-      docs: ${{ steps.filter.outputs.docs }}
       cli: ${{ steps.filter.outputs.cli }}
       vms_dashboard: ${{ steps.filter.outputs.vms_dashboard }}
       bus_gateway_dashboard: ${{ steps.filter.outputs.bus_gateway_dashboard }}
@@ -73,10 +72,6 @@ jobs:
               - vision/firmware/**
               # vision_core builds its Ports from it and checks them against Nx.
               - vision/rust/**
-            docs:
-              - *shared
-              - scripts/check_docs.exs
-              - '**/*.md'
             cli:
               - *shared
               - cli/**
@@ -137,9 +132,8 @@ jobs:
 
   docs:
     # The guides linked from docs/README.md are rendered as-is on ovcs.be.
+    # Runs on every change: a guide goes stale when the file it names moves.
     name: Docs · published guides
-    needs: changes
-    if: github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

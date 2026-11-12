@@ -3,9 +3,16 @@ title: Your first vehicle
 description: Scaffold a vehicle, give it a CAN frame in and a CAN frame out, a component that links them and a dashboard block, and drive all of it on virtual CAN.
 ---
 
-The [Quickstart](./quickstart.md) boots a reference vehicle. This page builds yours. You scaffold a package, see why it reports `FAILURE`, then add one feature end to end: a coolant temperature sensor that the VMS reads from the `ovcs` bus, a component that decides when the radiator fan must run, a frame that requests the fan, and a dashboard block that shows it all and lets you change the threshold. Everything runs on your laptop on virtual CAN. The last section points to flashing it on a Raspberry Pi.
+The [Quickstart](./quickstart.md) boots a reference vehicle. This page builds yours. You scaffold a package, see why it reports `FAILURE`, then add one feature end to end:
 
-You need the toolchain from [Getting started](./getting_started.md): `./ovcs doctor` green and can-utils installed. The example is small on purpose; every piece of it is the same recipe the framework's own drivers follow.
+- a coolant temperature sensor that the VMS reads from the `ovcs` bus;
+- a component that decides when the radiator fan must run;
+- a frame that requests the fan;
+- a dashboard block that shows it all and lets you change the threshold.
+
+Everything runs on your laptop on virtual CAN. The last section points to flashing it on a Raspberry Pi.
+
+You need the toolchain from [Getting started](./getting_started.md): `./ovcs doctor` green and can-utils installed. The example is deliberately small. Every part of it follows the same recipe as the framework's own drivers.
 
 ## Scaffold it
 
@@ -14,7 +21,9 @@ You need the toolchain from [Getting started](./getting_started.md): `./ovcs doc
 ./ovcs vehicles
 ```
 
-`./ovcs new` renders the template in [`libraries/ovcs_vehicle/priv/templates/vehicle/`](../libraries/ovcs_vehicle/priv/templates/vehicle) into `vehicles/my_car/` and prints the Nerves targets it picked (`ovcs_base_can_system_rpi4` for the VMS, `ovcs_base_can_system_rpi5` for the infotainment). `--no-infotainment` gives a VMS-only vehicle and `--no-bridges` drops the bridge firmware dependency; the defaults are fine for this page. `./ovcs vehicles` now lists `my_car` next to the reference vehicles. Nothing in the framework knows about it: the firmwares load it at boot because `VEHICLE=MyCar`.
+`./ovcs new` renders the template in [`libraries/ovcs_vehicle/priv/templates/vehicle/`](../libraries/ovcs_vehicle/priv/templates/vehicle) into `vehicles/my_car/`. It prints the Nerves targets it picked: `ovcs_base_can_system_rpi4` for the VMS, `ovcs_base_can_system_rpi5` for the infotainment. `--no-infotainment` gives a VMS-only vehicle and `--no-bridges` drops the bridge firmware dependency; the defaults are fine for this page.
+
+`./ovcs vehicles` now lists `my_car` next to the reference vehicles. Nothing in the framework knows about it: the firmwares load it at boot because `VEHICLE=MyCar`.
 
 ## What you got
 
@@ -33,7 +42,7 @@ vehicles/my_car/
   .env.exs.example                     secrets for hardware builds
 ```
 
-The VMS composer starts three children: an example generic controller (`OVCS.GenericController` named `MyCar.Vms.ExampleController`), `VmsCore.Status`, and `MyCar.Vms`. Its CAN mapping is `ovcs:vcan0` on the host and `ovcs:spi0.0` on the Pi. [Your vehicle package](./vehicle_package.md) explains each callback; this page only changes the composer, the topology and the dashboard page.
+The VMS composer starts three children: an example generic controller (`OVCS.GenericController` named `MyCar.Vms.ExampleController`), `VmsCore.Status`, and `MyCar.Vms`. Its CAN mapping is `ovcs:vcan0` on the host and `ovcs:spi0.0` on the Pi. [Your vehicle package](./vehicle_package.md) explains each callback. This page only changes the composer, the topology and the dashboard page.
 
 ## Boot it and read the FAILURE
 
@@ -41,19 +50,32 @@ The VMS composer starts three children: an example generic controller (`OVCS.Gen
 ./ovcs run my_car
 ```
 
-The first run compiles every firmware project the vehicle uses, and with bridges enabled that includes native dependencies such as `zenohex`; it takes a while once, then it's incremental. `./ovcs run` creates `vcan0`, starts one BEAM per role (`my-car-vms` and `my-car-infotainment`, which join one Erlang mesh), and starts the dashboard add-on. Open `http://localhost:5173`: the Status page has one block, VMS, and it reads `Status FAILURE` and `Ready to drive false`.
+The first run compiles every firmware project the vehicle uses. With bridges enabled, that includes native dependencies such as `zenohex`. It takes a while once; later runs are incremental.
 
-That is the scaffold working as written. `MyCar.Vms` computes both values from one fact, whether the example controller is alive, and there is no controller on your laptop. The controller driver watches its alive frame, `0x701`, which a real board sends every 100 ms. Pretend to be the board:
+`./ovcs run` creates `vcan0`, starts one BEAM per role (`my-car-vms` and `my-car-infotainment`, which join one Erlang mesh), and starts the dashboard add-on.
+
+Open `http://localhost:5173`. The Status page has one block, VMS, and it reads `Status FAILURE` and `Ready to drive false`.
+
+That is the scaffold working as written. `MyCar.Vms` computes both values from one fact: whether the example controller is alive. There is no controller on your laptop. The controller driver watches its alive frame, `0x701`, which a real board sends every 100 ms. Send it in the board's place:
 
 ```sh
 cangen vcan0 -I 701 -L 4 -D 00020000 -g 100
 ```
 
-The payload is the alive frame's layout from [`0x7X1_alive_signals.yml`](../libraries/ovcs_can/priv/can/components/ovcs/generic_controller/0x7X1_alive_signals.yml): byte 0 a counter, byte 1 the status (`0x02`, `OK`), then two expansion-board error bytes. Within a second the block reads `OK` and `true`. Stop `cangen` and a few seconds later it falls back to `FAILURE`: the controller's received-frame watchdog declares the frame missing after ten late frames, the `allowed_missing_frames` in `0x701_example_controller_alive.yml`. Your vehicle's real `ready_to_drive` rule goes in `compute_ready_to_drive/1` in `lib/my_car/vms.ex`; keep the controller check if you keep a controller.
+The payload follows the alive frame's layout from [`0x7X1_alive_signals.yml`](../libraries/ovcs_can/priv/can/components/ovcs/generic_controller/0x7X1_alive_signals.yml): byte 0 a counter, byte 1 the status (`0x02`, `OK`), then two expansion-board error bytes. Within a second the block reads `OK` and `true`.
+
+Stop `cangen`. A few seconds later the block falls back to `FAILURE`: the controller's received-frame watchdog declares the frame missing after ten late frames, the `allowed_missing_frames` in `0x701_example_controller_alive.yml`.
+
+Your vehicle's real `ready_to_drive` rule goes in `compute_ready_to_drive/1` in `lib/my_car/vms.ex`. Keep the controller check if you keep a controller.
 
 ## Declare the frames
 
-The feature needs two frames on the `ovcs` bus: `coolant_status` (`0x300`), sent by a sensor node and received by the VMS, and `fan_request` (`0x301`), emitted by the VMS. Neither id is used by the framework's shared specs. Put vehicle-specific frames in your package; the shared library [`ovcs_can`](../libraries/ovcs_can/priv/can/components) is for components several vehicles use.
+The feature needs two frames on the `ovcs` bus:
+
+- `coolant_status` (`0x300`), sent by a sensor node and received by the VMS;
+- `fan_request` (`0x301`), emitted by the VMS.
+
+The framework's shared specs use neither id. Put vehicle-specific frames in your package; the shared library [`ovcs_can`](../libraries/ovcs_can/priv/can/components) is for components several vehicles use.
 
 ```yaml
 # vehicles/my_car/priv/can/cooling/0x300_coolant_status.yml
@@ -88,7 +110,9 @@ signals:
       0x01: true
 ```
 
-One byte of temperature with a -40 offset covers -40 °C to 215 °C: raw `0x6E` (110) is 70 °C. `frequency` is the period in milliseconds: for a received frame it is what the watchdog expects, for an emitted one it is how often the VMS sends it. Then import both in `priv/can/vms.yml`, under the `ovcs` network. The path is relative to the importing file:
+One byte of temperature with a -40 offset covers -40 °C to 215 °C: raw `0x6E` (110) is 70 °C. `frequency` is the period in milliseconds. For a received frame it is what the watchdog expects; for an emitted one it is how often the VMS sends it.
+
+Then import both in `priv/can/vms.yml`, under the `ovcs` network. The path is relative to the importing file:
 
 ```yaml
 can_networks:
@@ -106,7 +130,13 @@ can_networks:
 
 ## Add a component
 
-A component is a GenServer the composer starts. This one subscribes to `coolant_status`, watches it for silence, configures the `fan_request` emitter, decides on a 100 ms loop, and publishes its state on the bus so the dashboard can show it:
+A component is a GenServer the composer starts. This one:
+
+- subscribes to `coolant_status`;
+- watches it for silence;
+- configures the `fan_request` emitter;
+- decides on a 100 ms loop;
+- publishes its state on the bus, so the dashboard can show it.
 
 ```elixir
 # vehicles/my_car/lib/my_car/vms/coolant_fan.ex
@@ -218,7 +248,13 @@ defmodule MyCar.Vms.CoolantFan do
 end
 ```
 
-Three things are worth reading twice. Decoded `decimal` signals are `Decimal` structs, so compare them with `Decimal.compare/2`, not `>`. The emitter sends on its own timer; `Emitter.update/3` only changes the data it sends next. And a sensor that stops talking is treated as a missing reading, not as its last value: the fan runs. That is a choice for this example; your safe state depends on your hardware. [Add a component](./vms/add_a_component.md) covers each call, the watchdog thresholds, and the framework drivers you can reuse instead of writing your own.
+Three points in this code need attention:
+
+- Decoded `decimal` signals are `Decimal` structs, so compare them with `Decimal.compare/2`, not `>`.
+- The emitter sends on its own timer; `Emitter.update/3` only changes the data it sends next.
+- A sensor that stops sending is treated as a missing reading, not as its last value: the fan runs. That is a choice for this example; your safe state depends on your hardware.
+
+[Add a component](./vms/add_a_component.md) covers each call, the watchdog thresholds, and the framework drivers you can reuse instead of writing your own.
 
 Start it from the composer's `children/0`, before `{Vms, []}`:
 
@@ -253,24 +289,30 @@ The dashboard page is a map of blocks. Add a `cooling` block next to the scaffol
 }
 ```
 
-A `:metric` row names the message's `source` and `name`: every value your component broadcasts is already a metric. The `:action` row posts to `/api/actions`, which calls `MyCar.Vms.CoolantFan.trigger_action("set_on_threshold", %{"value" => "…"})`; the value arrives as a string, and the function must return `:ok`. [Dashboard pages](./vms/dashboard_pages.md) lists every block and row type.
+A `:metric` row names the message's `source` and `name`: every value your component broadcasts is already a metric. The `:action` row posts to `/api/actions`, which calls `MyCar.Vms.CoolantFan.trigger_action("set_on_threshold", %{"value" => "…"})`. The value arrives as a string, and the function must return `:ok`. [Dashboard pages](./vms/dashboard_pages.md) lists every block and row type.
 
 ## Drive it on virtual CAN
 
-Stop `./ovcs run` with `Ctrl+C` and start it again so the package recompiles. With no sensor on the bus, the block shows no temperature, `Sensor alive false` and `Fan on true`, and the VMS is already asking for the fan:
+Stop `./ovcs run` with `Ctrl+C` and start it again so the package recompiles. With no sensor on the bus, the block shows no temperature, `Sensor alive false` and `Fan on true`. The VMS is already requesting the fan:
 
 ```sh
 candump vcan0,301:7FF
 #  vcan0  301   [1]  01
 ```
 
-Be the sensor. Send 70 °C (raw `0x6E`) every 100 ms in another terminal:
+Now send the sensor's frame: 70 °C (raw `0x6E`) every 100 ms, in another terminal:
 
 ```sh
 cangen vcan0 -I 300 -L 1 -D 6E -g 100
 ```
 
-`Sensor alive` turns `true`, the temperature reads `70.00` and `fan_request` drops to `00`. Stop `cangen`: about two seconds later the watchdog declares the frame missing, the temperature goes blank and the fan request returns to `01`. Send 95 °C (`-D 87`) and it stays on. Type `65` into "Fan on above (°C)" and press Set while 70 °C streams: the threshold row reads 65 and the fan comes on. The same request from a shell, which is what the button sends:
+`Sensor alive` turns `true`, the temperature reads `70.00` and `fan_request` drops to `00`. Then:
+
+1. Stop `cangen`. About two seconds later the watchdog declares the frame missing, the temperature goes blank and the fan request returns to `01`.
+2. Send 95 °C (`-D 87`). The fan stays on.
+3. While 70 °C streams, type `65` into "Fan on above (°C)" and press Set. The threshold row reads 65 and the fan comes on.
+
+The same request from a shell, which is what the button sends:
 
 ```sh
 curl -X POST http://localhost:4000/api/actions \
@@ -286,10 +328,12 @@ The same package boots on a Raspberry Pi 4 with a CAN interface. The steps are i
 
 1. Check the target side of the composer: `default_can_mapping(:target)` is `ovcs:spi0.0`, and `priv/firmware/vms/config.txt` must load the overlay that creates that interface for your HAT. [Hardware](./hardware.md) gives the `config.txt` line for common HATs.
 2. Copy `.env.exs.example` to `.env.exs` and fill in your SSH key and Wi-Fi.
-3. `./ovcs host-keys generate my_car`, then `./ovcs build my_car vms` and `./ovcs burn my_car vms`.
-4. Boot the Pi and `./ovcs attach my_car`.
+3. Run `./ovcs host-keys generate my_car`.
+4. Run `./ovcs build my_car vms`.
+5. Run `./ovcs burn my_car vms`.
+6. Boot the Pi and run `./ovcs attach my_car`.
 
-To replace the fake alive frames with a real board, flash the generic controller firmware on an Arduino and adopt it: [Generic controllers](./generic_controllers/README.md). The example controller is controller 0, on `0x701`–`0x709`.
+To replace the fake alive frames with a real board, flash the generic controller firmware on an Arduino and adopt it: see [Generic controllers](./generic_controllers/README.md). The example controller is controller 0, on `0x701`–`0x709`.
 
 ## Next steps
 

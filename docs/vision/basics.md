@@ -1,6 +1,6 @@
 ---
 title: Stereo vision basics
-description: How two cameras measure distance, explained from the lens up, with the vocabulary the vision unit uses (focal length, baseline, rectification, disparity, depth, point cloud) and the numbers that decide range and precision.
+description: How two cameras measure distance, from focal length and baseline to disparity, depth and point cloud, and what decides range and precision.
 ---
 
 The vision unit measures distance the way your two eyes do: it compares what two cameras side by side see. This guide explains the principle and the words used everywhere else in this section, with diagrams and one worked example. The stages that implement it are in [Stereo stages](./stages.md).
@@ -9,7 +9,7 @@ The worked example is two Raspberry Pi HQ Cameras with 8 mm lenses, mounted 8 cm
 
 ## One camera: the lens and the focal length
 
-A camera turns a point in the world into a pixel. The lens acts like a pinhole: light from a point goes straight through the lens centre to the sensor. The sensor sits behind the lens and gets an upside-down image; the diagrams here draw the image plane in front of the lens instead, at the same distance `f`, which gives the same geometry without the flip.
+A camera turns a point in the world into a pixel. The lens acts like a pinhole: light from a point goes straight through the lens centre to the sensor. The sensor sits behind the lens and gets an upside-down image. The diagrams here draw the image plane in front of the lens instead, at the same distance `f`. That gives the same geometry without the flip.
 
 ```text
                    image plane
@@ -135,7 +135,7 @@ Range and precision both come from `f × B`:
 | More `num_disparities` | same | nearer | slower |
 | `search: "coarse_to_fine"` instead of a smaller image | same as the full size | same | much faster than the full search; thin structures can be missed |
 
-For a vehicle that must stop for obstacles between 0.5 and 3 m, a short `f × B` and enough disparities matter more than far precision; for mapping farther away, the opposite.
+For a vehicle that must stop for obstacles between 0.5 and 3 m, a short `f × B` and enough disparities matter more than far precision. For mapping farther away, the opposite holds.
 
 ## Rectification: making the search one row
 
@@ -201,7 +201,9 @@ Y = (v − cy) × Z / f           vertical, positive downwards
 Z                              forward, along the optical axis
 ```
 
-The axes are the camera's **optical frame**: x right, y down, z forward, in metres, from the left camera's lens. ROS places this frame on the vehicle with a transform from the camera's mounting position. The unit's cloud is **organized**: it keeps the image's grid, one point every few pixels (`decimation`), with NaN where nothing was measured, so a consumer knows which pixel each point came from.
+The axes are the camera's **optical frame**: x right, y down, z forward, in metres, from the left camera's lens. ROS places this frame on the vehicle with a transform from the camera's mounting position.
+
+The unit's cloud is **organized**: it keeps the image's grid, one point every few pixels (`decimation`), with NaN where nothing was measured. A consumer therefore knows which pixel each point came from.
 
 ## What stereo needs from the scene
 
@@ -216,7 +218,7 @@ Stereo matches **texture**: small patterns of light and dark that can be told ap
 | Darkness | The cameras raise their gain and lengthen their exposure: noise and motion blur, fewer matches. |
 | Motion with unsynchronised cameras | The two images are taken at different instants: at 1 m/s, 33 ms apart means 3.3 cm of movement, read as a false disparity. The cameras' frame starts are synchronised for that reason. |
 
-The median that ends the matching and the speckle and temporal filters after it remove isolated wrong pixels; [Stereo stages](./stages.md) describes each one.
+The median that ends the matching and the speckle and temporal filters after it remove isolated wrong pixels. [Stereo stages](./stages.md) describes each one.
 
 ## Words used in this section
 

@@ -1,16 +1,34 @@
 ---
 title: Hardware
-description: What to buy at each stage, from a laptop alone to a full vehicle, the boards and CAN interfaces the framework targets, and the OVCS1, OVCS Mini and OBD2 builds as worked examples.
+description: What to buy at each stage, from a laptop alone to a full vehicle, the boards and CAN interfaces the framework targets, and the three reference vehicles' builds.
 ---
 
-You can go a long way with OVCS before you buy anything. This page walks through the stages in the order most builds take them: a laptop alone, a laptop on a real CAN bus, a VMS board, generic controllers, then bridges and extras. For each it says what to get and what the repository configures for it. Then it describes what the framework targets, and the three reference vehicles' builds as worked examples: OVCS1 with five isolated buses on a full-size car, the OVCS Mini with two buses on an RC car, and the OBD2 scan tool.
+This page covers the hardware stages in the order most builds take them. The first stage needs no purchase.
+
+1. A laptop alone.
+2. A laptop on a real CAN bus.
+3. A VMS board.
+4. Generic controllers.
+5. Bridges and extras.
+
+For each stage it says what to get and what the repository configures for it. It then describes what the framework targets, and the three reference vehicles' builds as worked examples:
+
+- OVCS1, with five isolated buses on a full-size car;
+- the OVCS Mini, with two buses on an RC car;
+- the OBD2 scan tool.
 
 > [!NOTE]
-> The boards, overlays, CAN interface hardware and generic controllers below are framework-level: your vehicle uses them as they are. Which buses your vehicle has, at what bitrate, and what hangs off them is your vehicle's decision, declared in its `priv/can/vms.yml` and its VMS composer. Everything tied to OVCS1, OVCS Mini or OBD2 is labelled as a worked example. See [Framework and vehicles](./framework.md).
+> The boards, overlays, CAN interface hardware and generic controllers below are framework-level: your vehicle uses them as they are. Which buses your vehicle has, at what bitrate, and what connects to them is your vehicle's decision, declared in its `priv/can/vms.yml` and its VMS composer. Everything tied to OVCS1, OVCS Mini or OBD2 is labelled as a worked example. See [Framework and vehicles](./framework.md).
 
 ## Nothing but a laptop
 
-A Linux laptop runs a whole vehicle. `./ovcs run <vehicle>` creates the virtual CAN interfaces the vehicle's `default_can_mapping(:host)` names, compiles every firmware for the host and boots one BEAM per role, joined in an Erlang cluster. The [Quickstart](./quickstart.md) does this with a reference vehicle; the commands are the same for yours.
+A Linux laptop runs a whole vehicle. `./ovcs run <vehicle>` does it in three steps:
+
+1. It creates the virtual CAN interfaces the vehicle's `default_can_mapping(:host)` names.
+2. It compiles every firmware for the host.
+3. It boots one BEAM per role, joined in an Erlang cluster.
+
+The [Quickstart](./quickstart.md) does this with a reference vehicle; the commands are the same for yours.
 
 What works with zero hardware:
 
@@ -19,7 +37,7 @@ What works with zero hardware:
 - injecting and replaying traffic with `cansend`, `cangen` and `canplayer`, including real captures under `candumps/` ([Testing with CAN](./testing_with_can.md));
 - the Gazebo simulator, with Docker: the OVCS Mini reference vehicle's VMS drives its model over the same `vcan` interfaces ([Simulation](../compose/local/simulation/README.md)).
 
-The one requirement is the `vcan` kernel module: it ships in standard Linux kernels, not in WSL2's or most cloud kernels, so on macOS or Windows use a full Linux VM. [Getting started](./getting_started.md) covers the setup.
+The one requirement is the `vcan` kernel module. It ships in standard Linux kernels, not in WSL2's or most cloud kernels, so on macOS or Windows use a full Linux VM. [Getting started](./getting_started.md) covers the setup.
 
 ## A laptop on a real bus
 
@@ -33,7 +51,7 @@ sudo ip link set can0 txqueuelen 10000
 sudo ip link set up can0
 ```
 
-Edit it to match the bitrates in your vehicle's `vms.yml` and the interfaces you actually have.
+Edit it to match the bitrates in your vehicle's `vms.yml` and the interfaces you have.
 
 Then point the host VMS at the adapter instead of a `vcan` with `CAN_NETWORK_MAPPINGS`, which replaces the composer's mapping at boot. Cantastic refuses a mapping that names a network the side's YAML doesn't declare. With the OVCS Mini reference vehicle, putting `ovcs` on the adapter and leaving `misc` virtual:
 
@@ -61,7 +79,12 @@ The OVCS1 and OVCS Mini reference vehicles use a custom multi-CAN SPI hub with M
 
 The Pi learns about the controller from a device-tree overlay in `config.txt`. The VMS firmware takes `vehicles/<vehicle>/priv/firmware/vms/config.txt` when your vehicle ships one and falls back to [`vms/firmware/targets/ovcs_base_can_system_rpi4/config.txt`](../vms/firmware/targets/ovcs_base_can_system_rpi4/config.txt) otherwise ([`vms/firmware/config/config.exs`](../vms/firmware/config/config.exs)). The default is the five-controller hub, so with an off-the-shelf HAT, add your own file.
 
-An **MCP2515** HAT with 16 MHz crystals, such as the Waveshare 2-CH CAN HAT the OBD2 reference vehicle uses: CAN0 on SPI0 chip select 0 with its interrupt on GPIO 23, CAN1 on chip select 1 with its interrupt on GPIO 25 ([`vehicles/obd2/priv/firmware/vms/config.txt`](../vehicles/obd2/priv/firmware/vms/config.txt)). A single-channel HAT needs only the `mcp2515-can0` line:
+An **MCP2515** HAT with 16 MHz crystals, such as the Waveshare 2-CH CAN HAT the OBD2 reference vehicle uses ([`vehicles/obd2/priv/firmware/vms/config.txt`](../vehicles/obd2/priv/firmware/vms/config.txt)):
+
+- CAN0 on SPI0 chip select 0, with its interrupt on GPIO 23;
+- CAN1 on chip select 1, with its interrupt on GPIO 25.
+
+A single-channel HAT needs only the `mcp2515-can0` line:
 
 ```text
 dtparam=spi=on
@@ -80,7 +103,9 @@ dtoverlay=mcp251xfd,spi0-0,oscillator=40000000,interrupt=4 # cs_pin=8
 dtoverlay=mcp251xfd,spi1-0,oscillator=40000000,interrupt=5 # cs_pin=18
 ```
 
-OVCS1 adds three more on the same pattern: `spi0-1` (interrupt 14), `spi1-1` (interrupt 6) and `spi1-2` (interrupt 12) ([`vehicles/ovcs1/priv/firmware/vms/config.txt`](../vehicles/ovcs1/priv/firmware/vms/config.txt)). The `oscillator=` and `interrupt=` values belong to the board, not the framework: the reference numbers are the custom hub's. Take the crystal frequency and the INT GPIO from your HAT's documentation.
+OVCS1 adds three more on the same pattern: `spi0-1` (interrupt 14), `spi1-1` (interrupt 6) and `spi1-2` (interrupt 12) ([`vehicles/ovcs1/priv/firmware/vms/config.txt`](../vehicles/ovcs1/priv/firmware/vms/config.txt)).
+
+The `oscillator=` and `interrupt=` values belong to the board, not the framework: the reference numbers are the custom hub's. Take the crystal frequency and the INT GPIO from your HAT's documentation.
 
 ### The mapping must match the overlays
 
@@ -133,25 +158,33 @@ The Nerves system each role builds against is listed in [Supported hardware and 
 ### Why every bridge firmware is its own Pi
 
 - **Failure isolation.** A misbehaving radio link or ROS publisher can hang its own BEAM without taking the VMS supervision tree down.
-- **Cabling.** RC receivers live near the antenna and the ROS sensors ride with the autonomy stack; both are far from the VMS bay.
+- **Cabling.** RC receivers live near the antenna and the ROS sensors sit with the autonomy stack; both are far from the VMS bay.
 - **Targets.** The Pi 3A is cheap and adequate for the radio control bridge; the ROS bridge needs the memory of a Pi 4 or 5.
 
 The BEAMs still join one Erlang cluster through `OvcsBus.Cluster`, so at the application level they talk as if they were processes in one VM. Any vehicle can make the same choice, or bundle several bridges into one image through `bridge_firmwares/0`.
 
 ## Power, ground and termination
 
-The repository documents a few specifics and no general wiring rules. What it says:
+The repository documents a few specifics and no general wiring rules:
 
 - **VESC drivetrain.** The VESC has no termination resistor of its own, so the bus keeps its existing terminations. Its CAN ground is the vehicle ground. It stays powered from the traction battery; the VMS doesn't switch it ([VESC](./vms/drivers.md#wiring)).
-- **OBD2 cable.** Pin 6 is CAN-High, pin 14 CAN-Low, pins 4 and 5 ground; pin 16 carries 12 V, used only if the VMS draws its power from the port ([OBD2](./obd2.md#prerequisites)). Continuous polling keeps the car's ECUs awake and drains a parked car's 12 V battery.
-- **Compute node supply.** A Pi 5 booting from USB behind a DC-DC converter needs `PSU_MAX_CURRENT=5000` in its bootloader EEPROM, and the converter must then deliver 5 A at 5 V, or boot failures turn into brownouts under load ([Boot media](./ros2/compute_node.md#boot-media)).
+- **OBD2 cable.** Pin 6 is CAN-High, pin 14 CAN-Low, pins 4 and 5 ground. Pin 16 carries 12 V, used only if the VMS draws its power from the port ([OBD2](./obd2.md#prerequisites)). Continuous polling keeps the car's ECUs awake and drains a parked car's 12 V battery.
+- **Compute node supply.** A Pi 5 booting from USB behind a DC-DC converter needs `PSU_MAX_CURRENT=5000` in its bootloader EEPROM. The converter must then deliver 5 A at 5 V, or boot failures turn into brownouts under load ([Boot media](./ros2/compute_node.md#boot-media)).
 - **OVCS1 harnesses.** [`vehicles/ovcs1/WIRING.md`](../vehicles/ovcs1/WIRING.md) lists the Leaf inverter's ignition relay, ground and 12 V pins, and the CAN-High/CAN-Low pins of the iBooster, steering pump and Polo drive bus connectors. It is marked work in progress: the 12 V distribution and the OVCS controller looms are not captured yet.
 
 For termination, grounding and supply on your own buses, follow the documentation of your transceivers and components.
 
 ## What the framework targets
 
-The framework targets off-the-shelf boards: Raspberry Pis for the Elixir firmwares, with an OKdo Nano C100 and an Arduino VENTUNO Q as the vision unit's other boards, and Arduino R4 Minimas for I/O, joined by CAN interface boards. Every vehicle shares that. Two principles shape it: each manufacturer's CAN bus stays isolated, bridged only through the VMS ([Architecture](./architecture.md#bus-isolation)), and the parts stay off the shelf, so the kit is affordable and accessible.
+The framework targets off-the-shelf boards, joined by CAN interface boards:
+
+- Raspberry Pis for the Elixir firmwares, with an OKdo Nano C100 and an Arduino VENTUNO Q as the vision unit's other boards;
+- Arduino R4 Minimas for I/O.
+
+Every vehicle shares that. Two principles shape it:
+
+- each manufacturer's CAN bus stays isolated, bridged only through the VMS ([Architecture](./architecture.md#bus-isolation));
+- the parts stay off the shelf, so the kit is affordable and accessible.
 
 ### Computing devices
 
@@ -185,7 +218,15 @@ The framework's `ovcs` bus carries controller adoption, heartbeats, infotainment
 | Vision unit | Raspberry Pi 5, OKdo Nano C100, or Arduino VENTUNO Q | `rpi5` (the `ovcs_bridges_system_rpi5` system), `okdo_c100` (the [`nerves_system_okdo_c100`](https://github.com/Spin42/nerves_system_okdo_c100) system), or `arduino_ventuno_q` (the [`nerves_system_arduino_ventuno_q`](https://github.com/Spin42/nerves_system_arduino_ventuno_q) system) |
 | Generic controller | Arduino R4 Minima | PlatformIO, not Nerves |
 
-The OVCS systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them. Each role's Nerves target comes from the vehicle's module (`vms_target/0`, `infotainment_target/0`, `vision_target/0`, the `:target` key of each `bridge_firmwares/0` entry), so moving a vehicle to different boards means changing those values and adding the matching system dependency to the framework firmware's `mix.exs`, plus a `targets/<target>/fwup.conf` in that firmware (the vision firmware falls back to the system's own), and for bridges a `system_deps/1` clause and the bridge library's `targets:` list. Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
+The OVCS systems add the CAN kernel modules and device-tree overlays the SPI CAN boards need. They matter only when building firmware for physical hardware; local development never touches them.
+
+Each role's Nerves target comes from the vehicle's module: `vms_target/0`, `infotainment_target/0`, `vision_target/0`, the `:target` key of each `bridge_firmwares/0` entry. Moving a vehicle to different boards therefore means changing those values and adding:
+
+- the matching system dependency to the framework firmware's `mix.exs`;
+- a `targets/<target>/fwup.conf` in that firmware (the vision firmware falls back to the system's own);
+- for bridges, a `system_deps/1` clause and the bridge library's `targets:` list.
+
+Why the host Elixir/OTP pin is tied to these systems is in [Toolchain and OTP](./toolchain_and_otp.md).
 
 ## Worked example: the OVCS1 reference vehicle
 

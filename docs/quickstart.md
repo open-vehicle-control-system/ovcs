@@ -3,10 +3,12 @@ title: Quickstart
 description: Boot the OVCS Mini reference vehicle on your laptop with virtual CAN, open the dashboard, attach the TUI and feed it its first frames.
 ---
 
-You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole vehicle boots on a Linux laptop: one BEAM per firmware, joined in an Erlang cluster, talking over virtual CAN. This page runs the OVCS Mini reference vehicle end to end. It assumes you completed [Getting started](./getting_started.md): `./ovcs doctor` is green and `./ovcs can status ovcs_mini` reports `All interfaces up.`
+You need no car, Raspberry Pi or CAN adapter to see OVCS work. A whole vehicle boots on a Linux laptop: one BEAM per firmware, joined in an Erlang cluster, talking over virtual CAN. This page runs the OVCS Mini reference vehicle end to end.
+
+Complete [Getting started](./getting_started.md) first: `./ovcs doctor` is green and `./ovcs can status ovcs_mini` reports `All interfaces up.`
 
 > [!NOTE]
-> The OVCS Mini is a worked example, used because it is ready to run and small. Every command here takes any vehicle under `vehicles/`, including one you scaffold with `./ovcs new`: replace `ovcs_mini` with its name, and the frames with ones its `priv/can/` YAMLs declare. See [Framework and vehicles](./framework.md).
+> The OVCS Mini is a worked example, used because it is ready to run and small. Every command here takes any vehicle under `vehicles/`, including one you scaffold with `./ovcs new`. Replace `ovcs_mini` with its name, and the frames with ones its `priv/can/` YAMLs declare. See [Framework and vehicles](./framework.md).
 
 > [!TIP]
 > Once it runs, [Simulation](../compose/local/simulation/README.md) puts the same VMS behind a Gazebo model of the OVCS Mini reference vehicle: Nav2, the vision unit and the gamepad drive it over virtual CAN.
@@ -25,7 +27,7 @@ The CLI:
 2. Compiles, for the host, each framework firmware project the vehicle uses (`build.sh` with `MIX_TARGET=host`), in parallel: `vms/firmware`, `vision/firmware`, and `bridges/firmware` once for both bridges.
 3. Spawns one BEAM per role from that firmware's directory: `vms`, `vision`, then `bridge-radio_control` and `bridge-ros`.
 
-The first run takes a while. It fetches and builds every dependency of the firmware projects, the native ones (`zenohex`, the vision unit's Ports) among them, and installs the VMS and vision dashboards' Node packages. Later runs only recompile what changed.
+The first run takes a while. It fetches and builds every dependency of the firmware projects, including the native ones (`zenohex`, the vision unit's Ports). It also installs the VMS and vision dashboards' Node packages. Later runs only recompile what changed.
 
 Output is prefixed per role (`[vms] …`, `[bridge-ros] …`). The VMS API is on `http://localhost:4000`. `Ctrl+C` stops everything. The BEAMs find each other with no broker, the same way they do on a deployed vehicle: see [One Erlang mesh, no broker](./architecture.md#one-erlang-mesh-no-broker).
 
@@ -50,7 +52,7 @@ http://localhost:5173
 
 `:4000` serves the last prebuilt bundle from `vms/api/priv/static/` and does not hot-reload. `--no-addons` boots only the BEAMs.
 
-The dashboard renders the pages the vehicle's VMS composer declares. The Mini's are **Dashboard**, **Drivetrain**, **Radio Control**, **ROS Control** and **Generic Controllers**: metric tables, live charts, and action buttons that call into components. Open **Drivetrain**: the motor's rpm and the vehicle's speed are empty, because nothing on the virtual buses reports them yet.
+The dashboard renders the pages the vehicle's VMS composer declares. The Mini's are **Dashboard**, **Drivetrain**, **Radio Control**, **ROS Control** and **Generic Controllers**: metric tables, live charts, and action buttons that call into components. Open **Drivetrain**. The motor's rpm and the vehicle's speed are empty, because nothing on the virtual buses reports them yet.
 
 ## Attach the TUI
 
@@ -60,7 +62,12 @@ In a second terminal:
 ./ovcs attach ovcs_mini
 ```
 
-It first looks for deployed boards (`<vehicle>-<role>.local`, port 22); when none answers, it discovers the local BEAMs through `epmd`, and shows four panes: merged **logs** from every node, the **bus** (`OvcsBus.Message`s), every **CAN** frame decoded into named signals, and an **IEx** shell on the node picked in its tab strip.
+It first looks for deployed boards (`<vehicle>-<role>.local`, port 22). When none answers, it discovers the local BEAMs through `epmd`. It shows four panes:
+
+- merged **logs** from every node;
+- the **bus** (`OvcsBus.Message`s);
+- every **CAN** frame, decoded into named signals;
+- an **IEx** shell on the node picked in its tab strip.
 
 | Key | Action |
 |---|---|
@@ -71,15 +78,15 @@ It first looks for deployed boards (`<vehicle>-<role>.local`, port 22); when non
 | `Ctrl+Y`, or mouse drag | Copy a pane to the clipboard |
 | `q` (read-only panes) or `Ctrl+C` | Quit attach; the BEAMs keep running |
 
-The CAN pane decodes every frame on the vehicle's interfaces, the ones the VMS emits as well as the ones you are about to send. The rest of the TUI is in the [CLI reference](../cli/README.md).
+The CAN pane decodes every frame on the vehicle's interfaces: the ones the VMS emits and the ones you are about to send. The rest of the TUI is in the [CLI reference](../cli/README.md).
 
 ## Send your first frames
 
-On the bench nothing plays the part of the Mini's sensors. You synthesise them with `cangen`, which repeats a frame at a fixed gap. Use streams, not single `cansend` frames: the VMS watches the freshness of each frame it receives and treats one that stops arriving as unknown again.
+On the bench, nothing sends the frames of the Mini's sensors. Synthesise them with `cangen`, which repeats a frame at a fixed gap. Use streams, not single `cansend` frames: the VMS watches the freshness of each frame it receives and treats one that stops arriving as unknown again.
 
 ### The speed sensor
 
-The Mini's generic controller reports a magnet on the spur gear as a pulse counter frame, `0x709` on `ovcs` (`vcan0`). A count and a frequency of zero is a stationary car. In a third terminal:
+The Mini's generic controller reports a magnet on the spur gear as a pulse counter frame, `0x709` on `ovcs` (`vcan0`). A count and a frequency of zero mean a stationary car. In a third terminal:
 
 ```sh
 cangen vcan0 -I 709 -L 4 -D 00000000 -g 10
@@ -93,7 +100,7 @@ A known speed is also what lets the VMS change control level: every mode change 
 
 ### The motor controller
 
-The VESC reports its telemetry on `misc` (`vcan1`) with extended ids: `0x0901` carries the electrical rpm as a big-endian signed 32-bit integer, then the motor current and the duty cycle. Leave the first stream running, and in a fourth terminal report 2000 erpm (`0x000007D0`):
+The VESC reports its telemetry on `misc` (`vcan1`) with extended ids. `0x0901` carries the electrical rpm as a big-endian signed 32-bit integer, then the motor current and the duty cycle. Leave the first stream running, and in a fourth terminal report 2000 erpm (`0x000007D0`):
 
 ```sh
 cangen vcan1 -e -I 901 -L 8 -D 000007D000000000 -g 20
@@ -110,13 +117,13 @@ For your vehicle, pick frames its VMS **receives**, as declared in its `priv/can
 
 ## Override the CAN mapping
 
-`CAN_NETWORK_MAPPINGS` in `./ovcs run`'s environment moves networks to other interfaces, such as a real adapter, for the VMS and the infotainment BEAM; bridges keep the host mapping from `bridge_firmwares/0`. With the OVCS1 reference vehicle, putting `ovcs` on an adapter and the four manufacturer buses on virtual interfaces:
+`CAN_NETWORK_MAPPINGS` in `./ovcs run`'s environment moves networks to other interfaces, such as a real adapter. It applies to the VMS and the infotainment BEAM; bridges keep the host mapping from `bridge_firmwares/0`. This example, on the OVCS1 reference vehicle, puts `ovcs` on an adapter and the four manufacturer buses on virtual interfaces:
 
 ```sh
 CAN_NETWORK_MAPPINGS=ovcs:can0,leaf_drive:vcan1,polo_drive:vcan2,orion_bms:vcan3,misc:vcan4 ./ovcs run ovcs1
 ```
 
-A mapping that names a network the side's YAML doesn't declare is refused at boot. [CAN interfaces](./running_hardware.md#can-interfaces) has the rules, and [A laptop on a real bus](./hardware.md#a-laptop-on-a-real-bus) brings an adapter up.
+A mapping that names a network the side's YAML doesn't declare is refused at boot. [CAN interfaces](./running_hardware.md#can-interfaces) has the rules, and [A laptop on a real bus](./hardware.md#a-laptop-on-a-real-bus) shows how to bring an adapter up.
 
 ## Next steps
 

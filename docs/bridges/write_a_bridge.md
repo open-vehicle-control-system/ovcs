@@ -1,9 +1,9 @@
 ---
 title: Write a bridge
-description: When to write a bridge rather than a VMS component, what a bridge library is made of, a complete worked bridge with its test, and how to list it in the bridge firmware and declare it in your vehicle.
+description: When to write a bridge rather than a VMS component, what a bridge library is made of, a worked bridge with its test, and how to declare it in your vehicle.
 ---
 
-A bridge is the place for a world your vehicle has no CAN link to: a serial protocol, a network service, a sensor on a USB port. This page builds one end to end, `BoardTemperatureBridge`, which reads its board's temperature and publishes it on the OVCS bus. It is small on purpose: every bridge the framework ships, the [radio control bridge](./radio_control.md) and the [ROS bridge](./ros.md), follows the same recipe with more components.
+A bridge connects your vehicle to a world it has no CAN link to: a serial protocol, a network service, a sensor on a USB port. This page builds a complete one, `BoardTemperatureBridge`, which reads its board's temperature and publishes it on the OVCS bus. It is small on purpose. Every bridge the framework ships, the [radio control bridge](./radio_control.md) and the [ROS bridge](./ros.md), follows the same recipe with more components.
 
 ## Bridge, component or child
 
@@ -13,12 +13,14 @@ Pick the smallest thing that fits:
 - **A bridge** when the data lives outside CAN and needs its own board, or a board shared with other bridges: a radio receiver on a UART, a ROS graph, a lidar on USB.
 - **A child of a bridge firmware entry** when a library only reads the bus and has no per-vehicle wiring of its own. The [bus gateway](../bus/gateway.md) runs that way, listed in an entry's `children`.
 
-A bridge never commands an actuator. Commands it produces go to the VMS as CAN frames on the `ovcs` bus, where the VMS checks their freshness and its [control levels](../vms/how_it_works.md#control-levels) decide whether they are in force. Everything a bridge publishes on its own bus stays on its own board: a broadcast is [node-local](../bus/README.md#scope).
+A bridge never commands an actuator. Commands it produces go to the VMS as CAN frames on the `ovcs` bus. There, the VMS checks their freshness, and its [control levels](../vms/how_it_works.md#control-levels) decide whether they are in force.
+
+Everything a bridge publishes on its own bus stays on its own board: a broadcast is [node-local](../bus/README.md#scope).
 
 ## What a bridge is made of
 
 - **A Mix project under `bridges/<name>/`** that depends on [`ovcs_bridge`](../../libraries/ovcs_bridge/README.md). That one dependency brings `ovcs_bus`, `ovcs_vehicle` and `cantastic`.
-- **A module implementing [`OvcsBridge`](../../libraries/ovcs_bridge/lib/ovcs_bridge.ex).** `children/0` returns the child specs the bridge firmware supervises; the optional `apply_runtime_config/2` runs before any application starts, for a dependency that reads its application environment once at boot. The behaviour's moduledoc documents both.
+- **A module implementing [`OvcsBridge`](../../libraries/ovcs_bridge/lib/ovcs_bridge.ex).** `children/0` returns the child specs the bridge firmware supervises. The optional `apply_runtime_config/2` runs before any application starts, for a dependency that reads its application environment once at boot. The behaviour's moduledoc documents both.
 - **A configuration callback on your vehicle module**, with a `:host` and a `:target` arm, returning the bridge's config struct. The bridge reads the active vehicle from `:ovcs_vehicle`'s `:module` environment, which the bridge firmware sets at boot.
 
 ## A worked bridge
@@ -144,15 +146,19 @@ defmodule BoardTemperatureBridge.PublisherTest do
 end
 ```
 
-Run it with `mix test --no-start`, as CI does for every bridge library: without `--no-start`, Mix starts Cantastic, which refuses to boot with no CAN configuration.
+Run it with `mix test --no-start`, as CI does for every bridge library. Without `--no-start`, Mix starts Cantastic, which refuses to boot with no CAN configuration.
 
 ## Talk to the CAN bus
 
-This bridge only publishes on its own bus. A bridge that sends to the VMS, or reads what the VMS emits, does it with Cantastic on the `ovcs` network, exactly as a VMS component does ([Receiving frames](../vms/add_a_component.md#receiving-frames), [Emitting frames](../vms/add_a_component.md#emitting-frames)). The frames go in your vehicle's topology for that bridge firmware, `priv/can/bridges/<id>.yml` by default (see [Bridge firmwares](./README.md#bridge-firmwares)), and can import the shared specs from `ovcs_can`. A command frame should carry a sequence number that changes with every sample, as the ROS commands do, so the VMS can tell a live command from a stuck one.
+This bridge only publishes on its own bus. A bridge that sends to the VMS, or reads what the VMS emits, uses Cantastic on the `ovcs` network, exactly as a VMS component does: see [Receiving frames](../vms/add_a_component.md#receiving-frames) and [Emitting frames](../vms/add_a_component.md#emitting-frames).
+
+The frames go in your vehicle's topology for that bridge firmware, `priv/can/bridges/<id>.yml` by default (see [Bridge firmwares](./README.md#bridge-firmwares)). They can import the shared specs from `ovcs_can`.
+
+A command frame should carry a sequence number that changes with every sample, as the ROS commands do. The VMS can then tell a live command from a stuck one.
 
 ## List it in the bridge firmware
 
-No firmware depends on a vehicle as a Mix dependency: vehicles are loaded at boot with `Code.prepend_path`. So a bridge library can't arrive transitively through your vehicle; it is listed in [`bridges/firmware/mix.exs`](../../bridges/firmware/mix.exs), gated to the targets it supports:
+No firmware depends on a vehicle as a Mix dependency: vehicles are loaded at boot with `Code.prepend_path`. So a bridge library can't arrive transitively through your vehicle. List it in [`bridges/firmware/mix.exs`](../../bridges/firmware/mix.exs), gated to the targets it supports:
 
 ```elixir
 {:board_temperature_bridge,
@@ -174,7 +180,7 @@ Implement the callback on your vehicle's top-level module:
 def board_temperature_bridge_config(_arm), do: %BoardTemperatureBridge.Config{}
 ```
 
-and bundle the bridge in an entry of `bridge_firmwares/0`, alone or next to others:
+Then bundle the bridge in an entry of `bridge_firmwares/0`, alone or next to others:
 
 ```elixir
 "telemetry" => %{
@@ -184,7 +190,9 @@ and bundle the bridge in an entry of `bridge_firmwares/0`, alone or next to othe
 }
 ```
 
-`./ovcs run <vehicle>` now starts a `<vehicle>-bridge-telemetry` BEAM, and `./ovcs build <vehicle> bridge-telemetry` builds its image. If your vehicle runs the [bus gateway](../bus/gateway.md), which collects from every node of the mesh, the signal shows up in its dashboard, on MQTT and at `/api/signals?filter[name]=board_temperature`.
+`./ovcs run <vehicle>` now starts a `<vehicle>-bridge-telemetry` BEAM, and `./ovcs build <vehicle> bridge-telemetry` builds its image.
+
+The [bus gateway](../bus/gateway.md) collects from every node of the mesh. If your vehicle runs it, the signal shows up in its dashboard, on MQTT and at `/api/signals?filter[name]=board_temperature`.
 
 ## Where next
 

@@ -1,9 +1,11 @@
 ---
 title: Bridges
-description: What a bridge is, the radio control and ROS bridges the framework ships, the bridge firmware image that hosts them, and how your vehicle declares, configures and boots its bridge firmwares.
+description: What a bridge is, the bridges the framework ships, the bridge firmware image that hosts them, and how your vehicle declares and boots its bridge firmwares.
 ---
 
-A bridge carries data between the `ovcs` CAN bus and a world that has no CAN: a radio transmitter's link, a ROS 2 graph. Each bridge is an Elixir library under `bridges/<name>/` that implements the [`OvcsBridge`](../../libraries/ovcs_bridge/lib/ovcs_bridge.ex) behaviour. None of them is a firmware: the shared bridge firmware image, `bridges/firmware/`, hosts whichever bridges an entry of your vehicle's `bridge_firmwares/0` lists, and each entry becomes one board's image.
+A bridge carries data between the `ovcs` CAN bus and a world that has no CAN: a radio transmitter's link, a ROS 2 graph. Each bridge is an Elixir library under `bridges/<name>/` that implements the [`OvcsBridge`](../../libraries/ovcs_bridge/lib/ovcs_bridge.ex) behaviour.
+
+None of them is a firmware. The shared bridge firmware image, `bridges/firmware/`, hosts whichever bridges an entry of your vehicle's `bridge_firmwares/0` lists. Each entry becomes one board's image.
 
 > [!NOTE]
 > Everything on this page holds for any vehicle. The OVCS1 and OVCS Mini reference vehicles appear as worked examples. See [Framework and vehicles](../framework.md).
@@ -15,7 +17,7 @@ A bridge carries data between the `ovcs` CAN bus and a world that has no CAN: a 
 | [Radio control bridge](./radio_control.md) | `RadioControlBridge` | a MAVLink-capable transmitter's eight channels, from an ExpressLRS receiver on a UART, onto `0x2A0` and `0x2A1` |
 | [ROS bridge](./ros.md) | `RosBridge` | ROS 2 over native Zenoh: joystick and planner commands onto `0x2B0` and `0x2B1`; the vehicle's status, IMU, odometry, lidar and rangefinders onto ROS topics |
 
-Commands from a bridge always reach the VMS as CAN frames on the `ovcs` bus, where the VMS checks their freshness and its [control levels](../vms/how_it_works.md#control-levels) decide whether they are in force. A bridge never commands an actuator directly.
+Commands from a bridge always reach the VMS as CAN frames on the `ovcs` bus. There, the VMS checks their freshness, and its [control levels](../vms/how_it_works.md#control-levels) decide whether they are in force. A bridge never commands an actuator directly.
 
 A bridge firmware entry can also run children that are not bridges: the OVCS Mini reference vehicle runs the [bus gateway](../bus/gateway.md) in its `ros` bridge firmware that way.
 
@@ -27,7 +29,7 @@ A vehicle often runs several bridge firmwares on different boards: the OVCS1 ref
 - your vehicle composes its own subset of bridges per image in `bridge_firmwares/0`;
 - a bridge library can be bundled into several images without duplication.
 
-Bridge libraries get [`OvcsBus`](../bus/README.md) for free: `ovcs_bridge` depends on `ovcs_bus`, so a bridge's processes subscribe and broadcast like any VMS component. A broadcast stays on the bridge's own BEAM.
+Every bridge library has [`OvcsBus`](../bus/README.md): `ovcs_bridge` depends on `ovcs_bus`, so a bridge's processes subscribe and broadcast like any VMS component. A broadcast stays on the bridge's own BEAM.
 
 ## Bridge firmwares
 
@@ -86,11 +88,16 @@ The bridge firmware's `mix.exs` target-gates the bridge libraries it compiles, s
 
 The CLI sets `VEHICLE`, `BRIDGE_FIRMWARE_ID` and `MIX_TARGET` from the entry, and the image is built once per entry. At boot:
 
-1. `bridges/firmware`'s `config/runtime.exs` calls `apply_runtime_config/2` on every bundled bridge that exports it, before any application starts. A bridge uses it to write the application environment a dependency reads once at boot: the radio control bridge stamps the ExpressLRS receiver's UART there.
-2. `BridgeFirmware.Application` starts `OvcsBridge.Supervisor`, which reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks the entry up in `bridge_firmwares/0`, and starts `OvcsBus.Cluster` so this BEAM joins the vehicle's [mesh](../bus/README.md#the-mesh).
+1. `bridges/firmware`'s `config/runtime.exs` calls `apply_runtime_config/2` on every bundled bridge that exports it, before any application starts. A bridge uses it to write the application environment a dependency reads once at boot. For example, the radio control bridge writes the ExpressLRS receiver's UART there.
+2. `BridgeFirmware.Application` starts `OvcsBridge.Supervisor`. The supervisor reads `VEHICLE` and `BRIDGE_FIRMWARE_ID`, looks the entry up in `bridge_firmwares/0`, and starts `OvcsBus.Cluster` so this BEAM joins the vehicle's [mesh](../bus/README.md#the-mesh).
 3. It supervises each listed bridge's `children/0`, then the entry's `children`, under `one_for_one`. On the host, where bridges are `runtime: false` dependencies, it starts each bridge's OTP application first.
 
-Each bridge reads its own configuration from a callback on your vehicle module, with a `:host` and a `:target` arm: `radio_control_bridge_config/1` for the radio control bridge, `ros_bridge_config/1` for the ROS bridge. The `:host` arm usually drops what needs hardware, so `./ovcs run <vehicle>` starts every bridge firmware on your workstation, as the `<vehicle>-bridge-<id>` BEAM, against virtual CAN.
+Each bridge reads its own configuration from a callback on your vehicle module, with a `:host` and a `:target` arm:
+
+- `radio_control_bridge_config/1` for the radio control bridge;
+- `ros_bridge_config/1` for the ROS bridge.
+
+The `:host` arm usually drops what needs hardware. So `./ovcs run <vehicle>` starts every bridge firmware on your workstation, as the `<vehicle>-bridge-<id>` BEAM, against virtual CAN.
 
 ## Where next
 

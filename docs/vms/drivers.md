@@ -1,15 +1,20 @@
 ---
 title: Drivers
-description: Every component driver the framework ships, grouped by what it drives, with the network it talks on, the options it takes and what it publishes, and the VESC motor controller in depth.
+description: Every component driver the framework ships, with the network it talks on, its options and what it publishes, and the VESC motor controller in depth.
 ---
 
-A driver is a GenServer in `vms_core` that manages one piece of hardware or one input, following the [component pattern](./how_it_works.md#the-component-pattern). The framework ships the drivers its reference vehicles need. Your VMS composer lists the ones your vehicle uses among its `children/0`, each with its options; for hardware the framework doesn't cover, you [add a component](./add_a_component.md) of your own. Module names are `VmsCore.Components.*`, aliased in composers as in the tables below.
+A driver is a GenServer in `vms_core` that manages one piece of hardware or one input, following the [component pattern](./how_it_works.md#the-component-pattern). The framework ships the drivers its reference vehicles need. Your VMS composer lists the ones your vehicle uses among its `children/0`, each with its options. For hardware the framework doesn't cover, [add a component](./add_a_component.md) of your own. Module names are `VmsCore.Components.*`, aliased in composers as in the tables below.
 
 ## Using a framework driver
 
-Most drivers hard-code the network name they talk on, the name the OVCS1 reference vehicle uses for that bus. To use one, your topology YAML and `default_can_mapping/1` must declare a network with that name, carrying the frames the driver subscribes to and emits; [CAN frames and topology](../can_frames.md) shows how. Drivers that take `network:` name their bus in the options instead.
+Most drivers hard-code the network name they talk on, the name the OVCS1 reference vehicle uses for that bus. To use one, your topology YAML and `default_can_mapping/1` must declare a network with that name, carrying the frames the driver subscribes to and emits. [CAN frames and topology](../can_frames.md) shows how. Drivers that take `network:` name their bus in the options instead.
 
-In the tables, sources are the `*_source` options, which tell a driver which module publishes what it needs; "controller" means a [generic controller](../generic_controllers/README.md) process plus the pin options named. The moduledoc of each driver is the reference for its options, and the composers of the [OVCS1](../../vehicles/ovcs1/lib/ovcs1/vms/composer.ex) and [OVCS Mini](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex) reference vehicles are worked examples of every option.
+In the tables:
+
+- sources are the `*_source` options, which tell a driver which module publishes what it needs;
+- "controller" means a [generic controller](../generic_controllers/README.md) process plus the pin options named.
+
+The moduledoc of each driver is the reference for its options. The composers of the [OVCS1](../../vehicles/ovcs1/lib/ovcs1/vms/composer.ex) and [OVCS Mini](../../vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex) reference vehicles are worked examples of every option.
 
 ## Drivetrain and energy
 
@@ -24,7 +29,11 @@ In the tables, sources are the `*_source` options, which tell a driver which mod
 | `OVCS.HighVoltageContactors` | none, through a controller | a controller and its pins, plus sources | `:ready_to_drive` |
 | `Matek.PM12S3` | none, through a controller | `controller`, `voltage_pin`; `current_pin` with the sensor's `current_scale` and `current_offset` | `:voltage`, `:current` |
 
-`OVCS.HighVoltageContactors` closes the negative contactor, then the precharge, waits for the voltages to equalise, then closes the positive and opens the precharge, which prevents inrush damage.
+`OVCS.HighVoltageContactors` closes the contactors in a sequence that prevents inrush damage:
+
+1. It closes the negative contactor, then the precharge.
+2. It waits for the voltages to equalise.
+3. It closes the positive and opens the precharge.
 
 ## Brakes and steering
 
@@ -58,7 +67,7 @@ A commander is a component that requests throttle, steering or direction; [contr
 | `OVCS.RosActuatorCommand.Steering`, `.Throttle`, `.Direction`, and `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
 | `OVCS.Infotainment` | `ovcs` | none | `:requested_gear` |
 
-The ROS commands carry a sequence number per ROS sample; when it stops changing, the command is zeroed, whether the bridge died or its input did.
+The ROS commands carry a sequence number per ROS sample. When it stops changing, the command is zeroed, whether the bridge died or its input did.
 
 ## Motion sensing
 
@@ -84,10 +93,10 @@ This section covers driving a traction motor behind a VESC motor controller from
 
 ### Why a VESC rather than a hobby ESC
 
-A hobby ESC takes a servo pulse and gives nothing back. The VMS has to guess the edge of motion, can't ask for a speed, and can't brake and reverse without the ESC's own brake-then-reverse sequence getting in the way. A VESC on CAN closes all three gaps:
+A hobby ESC takes a servo pulse and gives nothing back. The VMS has to guess the edge of motion, can't ask for a speed, and can't brake and reverse without the ESC's own brake-then-reverse sequence interfering. A VESC on CAN removes all three limits:
 
-- **Closed-loop speed.** `vesc_set_rpm` asks for an electrical rpm and the VESC's speed loop holds it under load, so a planner's velocity is followed rather than approximated by a pulse width. A zero velocity goes out as zero duty, a passive brake from any motor state. Below the loop's minimum erpm the VESC brakes the same way, so a planner must never command a non-zero velocity below it (see [the settings](#vesc-tool-settings)).
-- **Telemetry.** `vesc_status` reports the signed motor rpm and motor current at 50 Hz; `vesc_status_5` adds the battery voltage and the tachometer, which also gives the distance the wheels have rolled for odometry. The signed rpm is a rotation `OVCS.VehicleMotion` turns into the vehicle's speed, direction included.
+- **Closed-loop speed.** `vesc_set_rpm` asks for an electrical rpm, and the VESC's speed loop holds it under load. A planner's velocity is followed rather than approximated by a pulse width. A zero velocity goes out as zero duty, a passive brake from any motor state. Below the loop's minimum erpm the VESC brakes the same way, so a planner must never command a non-zero velocity below it (see [the settings](#vesc-tool-settings)).
+- **Telemetry.** `vesc_status` reports the signed motor rpm and motor current at 50 Hz. `vesc_status_5` adds the battery voltage and the tachometer, which also gives the distance the wheels have rolled, for odometry. The signed rpm is a rotation `OVCS.VehicleMotion` turns into the vehicle's speed, direction included.
 - **Reverse.** A negative rpm is reverse, with no brake-then-reverse sequence, so a planner may plan in reverse.
 
 Use a sensored motor (Hall or encoder) for clean starts under load; a sensorless motor works but starts roughly.
@@ -114,7 +123,14 @@ Set these once in VESC Tool, after motor detection:
 
 The VESC id defaults to one derived from the board's serial number, so set it explicitly. The 500 kbps baud rate, the 1000 ms timeout and the 50 Hz status rate are the firmware defaults.
 
-**Minimum ERPM matters.** A speed setpoint under it doesn't run the speed loop: a running motor holds zero duty, a passive brake, and a released motor isn't started. On the Mini (2 pole pairs, geared 11.82:1, 52.2 mm wheel radius) 900 erpm is 0.21 m/s. The Mini's sensored motor turns steadily from about 150 rpm, so its Minimum ERPM is 300, 0.07 m/s, and the planner is floored above it: `OVCS.RosVelocityCommand` drives any non-zero velocity slower than its `:min_speed_m_s` (0.15 m/s on the Mini) at that speed, and the behaviours that drive a fixed speed floor at 0.10 m/s (`vehicles/ovcs_mini/nav2/`). The vehicle drives above the floor, or stops; it never sits in the band where the VESC brakes. How low Minimum ERPM can go depends on the motor's sensor, which the [bench check](#bench-checks) measures.
+**Minimum ERPM matters.** A speed setpoint under it doesn't run the speed loop: a running motor holds zero duty, a passive brake, and a released motor isn't started. On the Mini (2 pole pairs, geared 11.82:1, 52.2 mm wheel radius) 900 erpm is 0.21 m/s.
+
+The Mini's sensored motor turns steadily from about 150 rpm, so its Minimum ERPM is 300, 0.07 m/s. The planner is floored above it:
+
+- `OVCS.RosVelocityCommand` drives any non-zero velocity slower than its `:min_speed_m_s` (0.15 m/s on the Mini) at that speed;
+- the behaviours that drive a fixed speed are floored at 0.10 m/s (`vehicles/ovcs_mini/nav2/`).
+
+The vehicle drives above the floor, or stops. It never stays in the band where the VESC brakes. How low Minimum ERPM can go depends on the motor's sensor, which the [bench check](#bench-checks) measures.
 
 Motor current, battery current and erpm limits are set in VESC Tool's *Motor Settings* and hold whatever the VMS asks for. Set them for the motor and the battery first; the VMS's caps come on top.
 
@@ -150,7 +166,7 @@ The payloads, as the signals files decode them:
 
 Exactly one command frame is emitted at a time, every 20 ms; `Vesc.MotorController` switches emitters when the selected source changes kind. The VESC applies whichever control mode it last received.
 
-Zero velocity goes out as zero duty rather than zero rpm because the VESC only starts its speed loop above *Minimum ERPM*. Below it a running motor holds zero duty, but a released motor (what the release command and the timeout leave behind) stays released, and a zero rpm would never start it. Zero duty brakes from any state and leaves the motor running for the next setpoint.
+Zero velocity goes out as zero duty rather than zero rpm because the VESC only starts its speed loop above *Minimum ERPM*. Below it, a running motor holds zero duty. A released motor (what the release command and the timeout leave behind) stays released, and a zero rpm would never start it. Zero duty brakes from any state and leaves the motor running for the next setpoint.
 
 #### Duty or current for hands
 
@@ -165,7 +181,7 @@ With `:current` the vehicle keeps accelerating while the request is held, up to 
 
 #### Gears for hands
 
-With `selected_gear_source: Managers.Gear`, a hand's request no longer carries the direction; the gear does, as in a car. The radio's direction switch, or the gear a joy profile reads from the controller (the Xbox controller's triggers, the G923's shifter), requests `:drive` or `:reverse`, and the gear manager shifts only below 1 km/h with the trigger released.
+With `selected_gear_source: Managers.Gear`, a hand's request no longer carries the direction; the gear does, as in a car. The radio's direction switch, or the gear a joy profile reads from the controller (the Xbox controller's triggers, the G923's shifter), requests `:drive` or `:reverse`. The gear manager shifts only below 1 km/h with the trigger released.
 
 - A positive request drives in the selected gear.
 - Pulling the trigger back brakes in every gear, with `vesc_set_current_brake` at up to `:max_brake_current`, and never reverses.
@@ -176,7 +192,7 @@ A velocity ignores the gear: its sign is the direction.
 
 ### Wiring it into a composer
 
-`Vesc.MotorController` takes the place of `Traxxas.MotorController` as the throttle actuator. The Mini's composer (`vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex`) is the worked example. Frame names follow the process name, so with `process_name: Vms.Vesc` the topology YAML declares the frames under the `vesc_` prefix on the VESC's network, each wrapping the shared signals with the VESC's id in the low byte:
+`Vesc.MotorController` takes the place of `Traxxas.MotorController` as the throttle actuator. The Mini's composer (`vehicles/ovcs_mini/lib/ovcs_mini/vms/composer.ex`) is the worked example. Frame names follow the process name. With `process_name: Vms.Vesc`, the topology YAML declares the frames under the `vesc_` prefix on the VESC's network. Each wraps the shared signals with the VESC's id in the low byte:
 
 ```yaml
 # vehicles/ovcs_mini/priv/can/vms.yml
@@ -236,7 +252,7 @@ The motor controller knows nothing about the vehicle: it takes the motor rpm at 
  }}
 ```
 
-`VehicleMotion` takes the motor's rotation through an `OVCS.RotationFusion`, which couples the VESC with a pulse sensor on the same shaft. The VESC gives the value, signed and at 50 Hz; the pulse sensor cross-checks it and takes over when the VESC goes quiet, signed by the direction the VESC is driven in. When every source reads within its noise the fused rotation is exactly zero, which `Managers.ControlLevel`'s standstill gate needs: a stopped VESC still reports an erpm or two. Every rpm in the fusion's options is of the output shaft, here the motor:
+`VehicleMotion` takes the motor's rotation through an `OVCS.RotationFusion`, which couples the VESC with a pulse sensor on the same shaft. The VESC gives the value, signed and at 50 Hz. The pulse sensor cross-checks it and takes over when the VESC goes quiet, signed by the direction the VESC is driven in. When every source reads within its noise, the fused rotation is exactly zero. `Managers.ControlLevel`'s standstill gate needs that: a stopped VESC still reports an erpm or two. Every rpm in the fusion's options is of the output shaft, here the motor:
 
 ```elixir
 {OVCS.RotationFusion,
@@ -262,13 +278,22 @@ The motor controller knows nothing about the vehicle: it takes the motor rpm at 
 
 The Mini wires the fusion health and cross-check fault into `Managers.ControlLevel`. A missing primary source, stale health heartbeat or sustained disagreement forces ROS control back to radio and requires the operator to rearm it. The pulse fallback remains available for diagnostics; it cannot restore ROS control. Each rotation source and the cumulative revolution counter expire independently after 300 ms without an update. Both sensors sit upstream of the slipper clutch, so agreement does not detect clutch slip or wheel slip.
 
-`@max_speed_m_s` is the speed at a linear request of 1 on both sides (what `RosVelocityCommand` normalises against and what the motor rpm is derived from), so it is one constant in the composer. Unlike a PWM throttle's cap, it is a real speed: the VESC holds it.
+`@max_speed_m_s` is the speed at a linear request of 1 on both sides: what `RosVelocityCommand` normalises against, and what the motor rpm is derived from. It is therefore one constant in the composer. Unlike a PWM throttle's cap, it is a real speed: the VESC holds it.
 
 #### Bench checks
 
-The motor-to-wheel ratio and the pole pairs turn the planner's velocity into the motor rpm the VESC holds, so an error there drives the vehicle at the wrong speed. The check has to come from a source that doesn't depend on them: on the Mini, the pulse sensor on the spur, whose `:rotation_per_minute` is independent of anything the VESC reports. Lift the vehicle, command a known velocity through the ROS bridge (a `/cmd_vel` with a fixed `linear.x`) with the control level on `:ros` and the commander on `:autonomous`, and compare the motor controller's `:rotation_per_minute` with the spur sensor's times the spur-to-pinion ratio (54/13 on the Mini). The rotation fusion runs the same comparison continuously above `cross_check_from_rpm`. The fused `:speed` is derived from the motor-to-wheel ratio and proves nothing about it: that needs a measured distance.
+The motor-to-wheel ratio and the pole pairs turn the planner's velocity into the motor rpm the VESC holds, so an error there drives the vehicle at the wrong speed. The check has to come from a source that doesn't depend on them. On the Mini, that is the pulse sensor on the spur, whose `:rotation_per_minute` is independent of anything the VESC reports.
 
-Then find the slowest speed the loop holds cleanly: with the vehicle lifted, step the rpm setpoint down until the wheels stutter or stop, and make sure *Minimum ERPM* sits below that and the planner's velocity floor (the smoother's deadband) above it.
+1. Lift the vehicle.
+2. With the control level on `:ros` and the commander on `:autonomous`, command a known velocity through the ROS bridge (a `/cmd_vel` with a fixed `linear.x`).
+3. Compare the motor controller's `:rotation_per_minute` with the spur sensor's times the spur-to-pinion ratio (54/13 on the Mini).
+
+The rotation fusion runs the same comparison continuously above `cross_check_from_rpm`. The fused `:speed` is derived from the motor-to-wheel ratio and proves nothing about it: that needs a measured distance.
+
+Then find the slowest speed the loop holds cleanly:
+
+1. With the vehicle lifted, step the rpm setpoint down until the wheels stutter or stop.
+2. Make sure *Minimum ERPM* sits below that and the planner's velocity floor (the smoother's deadband) above it.
 
 ### On the host bench
 
