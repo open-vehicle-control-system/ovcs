@@ -56,9 +56,10 @@ defmodule VisionApiWeb.ExporterController do
   defp segmentation_outputs(nil), do: []
 
   defp segmentation_outputs(config) do
-    for {output, {:camera, _camera} = source} <-
-          VisionCore.Segmentation.Supervisor.sources(config),
-        do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source)}
+    for {name, camera} <- VisionCore.Segmentation.Supervisor.cameras(config) do
+      output = VisionCore.Segmentation.output(name)
+      %{output: output, max_hz: channel_max_hz(output), source: Atom.to_string(camera)}
+    end
   end
 
   defp source_name(:stereo), do: "left"

@@ -108,12 +108,23 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   @doc """
   The source of each segmentation unit in `config`, in config order, by
-  its output (`outputs/1`): `{:camera, name}`.
+  its output (`outputs/1`): `{:camera, name}`, or whatever its `:source`
+  holds, `nil` without one, for a unit left down.
   """
-  @spec sources(VisionCore.Config.t()) :: [{{:segmentation, atom()}, {:camera, atom()}}]
+  @spec sources(VisionCore.Config.t()) :: [{{:segmentation, atom()}, term()}]
   def sources(config) do
     for opts <- units_options(config),
         do: {Segmentation.output(Keyword.fetch!(opts, :name)), Keyword.get(opts, :source)}
+  end
+
+  @doc """
+  Each segmentation unit in `config` whose source is a camera of its
+  own, in config order, as its pipeline name and the camera's name; a
+  unit with another source never runs, so it is left out.
+  """
+  @spec cameras(VisionCore.Config.t()) :: [{atom(), atom()}]
+  def cameras(config) do
+    for {{:segmentation, name}, {:camera, camera}} <- sources(config), do: {name, camera}
   end
 
   @doc """

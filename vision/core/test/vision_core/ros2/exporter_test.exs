@@ -933,7 +933,9 @@ defmodule VisionCore.Ros2.ExporterTest do
       segmentation = [
         {:camera, name: :hq, driver: driver, frame_id: "hq_lens"},
         {:segmenter, name: :road, source: {:camera, :hq}},
-        {:segmenter, name: :lanes, source: {:camera, :hq}}
+        {:segmenter, name: :lanes, source: {:camera, :hq}},
+        # Left down: a segmentation pipeline needs a camera.
+        {:segmenter, name: :sourceless}
       ]
 
       %{config | components: config.components ++ segmentation}
@@ -966,6 +968,8 @@ defmodule VisionCore.Ros2.ExporterTest do
       for {segmentation, refusal} <- [
             {[pipelines: [:road, :signs]],
              "segmentation: pipelines :signs, which is no segmentation pipeline of the configuration"},
+            {[pipelines: [:sourceless]],
+             "segmentation: pipelines :sourceless, which is no segmentation pipeline of the configuration on a camera"},
             {[max_hz: 5], "segmentation: has no option :max_hz"},
             {:road, "segmentation: is not a keyword list: :road"},
             {[pipelines: :road],

@@ -87,8 +87,9 @@ defmodule VisionCore.Ros2.Exporter do
       camera for frames it encodes, JPEG frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
     * `:segmentation` — publishes the results of each segmentation
-      pipeline its `:pipelines` list, every one of the configuration by
-      default, on the topics `VisionCore.Ros2.Exporter.Segmentation`
+      pipeline its `:pipelines` lists, by default every one of the
+      configuration on a camera (`VisionCore.Segmentation.Supervisor.cameras/1`),
+      on the topics `VisionCore.Ros2.Exporter.Segmentation`
       documents, under `:topic_prefix`, the stereo unit's `:prefix` by
       default, else `"stereo"`. Clouds whose pair carries no frame id are
       in the stereo unit's left `:frame_id`, else in `"<prefix>_left"`,
@@ -210,15 +211,16 @@ defmodule VisionCore.Ros2.Exporter do
       (missing = Keyword.get(segmentation_options, :pipelines, []) -- names) != [] ->
         {:error,
          "its segmentation: pipelines #{Enum.map_join(missing, ", ", &inspect/1)}, " <>
-           "which is no segmentation pipeline of the configuration"}
+           "which is no segmentation pipeline of the configuration on a camera"}
 
       true ->
         :ok
     end
   end
 
+  # Those on a camera: a segmenter with another source never runs.
   defp segmentation_names(config),
-    do: for({name, _backend, _server} <- SegmentationSupervisor.pipelines(config), do: name)
+    do: for({name, _camera} <- SegmentationSupervisor.cameras(config), do: name)
 
   @impl VisionCore.Exporter
   def outputs(options) do
@@ -461,13 +463,12 @@ defmodule VisionCore.Ros2.Exporter do
 
       pipelines ->
         config = config(options)
-        sources = Map.new(SegmentationSupervisor.sources(config))
+        pipeline_cameras = Map.new(SegmentationSupervisor.cameras(config))
         frame_ids = Map.new(Unit.settings(config), &{&1.name, &1.frame_id})
         topic_prefix = Keyword.get(options[:segmentation], :topic_prefix, unit_prefix(cameras))
 
-        Map.new(pipelines, fn pipeline ->
+        for pipeline <- pipelines, camera = pipeline_cameras[pipeline], into: %{} do
           output = Segmentation.output(pipeline)
-          camera = source_camera(sources[output])
 
           settings =
             SegmentationMessages.new(
@@ -484,12 +485,9 @@ defmodule VisionCore.Ros2.Exporter do
           )
 
           {output, settings}
-        end)
+        end
     end
   end
-
-  defp source_camera({:camera, camera}), do: camera
-  defp source_camera(_source), do: nil
 
   defp unit_prefix({:ok, cameras}), do: cameras[:prefix]
   defp unit_prefix({:error, _reason}), do: @default_prefix

@@ -136,6 +136,15 @@ defmodule VisionCore.Segmentation.SupervisorTest do
              ]
     end
 
+    test "its pipelines on a camera, each with the camera's name, leaving out one without a camera" do
+      components = @components ++ [{:segmenter, name: :sourceless}]
+
+      assert Supervisor.sources(config(components)) |> List.last() ==
+               {{:segmentation, :sourceless}, nil}
+
+      assert Supervisor.cameras(config(components)) == [road: :hq, lane: :front]
+    end
+
     test "its pipelines: each one's name with its backend and server" do
       assert Supervisor.pipelines(config(@components)) == [
                {:road, Qnn, Qnn.Road},
