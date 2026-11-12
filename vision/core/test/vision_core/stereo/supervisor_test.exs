@@ -57,7 +57,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
   describe "pipeline_options/1" do
     @stereo [
-      driver: VisionCore.Camera.V4L2,
+      driver: VisionCore.Camera.V4L2Pair,
       left: [calibration_path: "/rom/stereo_left.yaml"],
       right: [calibration_path: "/rom/stereo_right.yaml"]
     ]
@@ -126,7 +126,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
     test "the driver, the prefix, the capture size and rate, and each side's frame id and calibration path" do
       assert StereoSupervisor.camera_options(
                stereo_config(
-                 driver: VisionCore.Camera.V4L2,
+                 driver: VisionCore.Camera.V4L2Pair,
                  width: 640,
                  height: 360,
                  calibration_dir: "/rom/calibration",
@@ -136,7 +136,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
              ) ==
                {:ok,
                 [
-                  driver: VisionCore.Camera.V4L2,
+                  driver: VisionCore.Camera.V4L2Pair,
                   prefix: "stereo",
                   width: 640,
                   height: 360,
@@ -158,7 +158,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
       assert {:ok, options} =
                StereoSupervisor.camera_options(
                  stereo_config(
-                   driver: VisionCore.Camera.V4L2,
+                   driver: VisionCore.Camera.V4L2Pair,
                    prefix: "front",
                    calibration_dir: "/rom/calibration",
                    left: [],
@@ -271,11 +271,11 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
     test "its cameras, left then right, and its outputs: the pipeline's pairs, then each camera's frames" do
       config = config([{:detector, []}, {:stereo, @stereo}])
-      left = VisionCore.Camera.V4L2.name_for("left")
-      right = VisionCore.Camera.V4L2.name_for("right")
+      left = VisionCore.Camera.V4L2Pair.name_for("left")
+      right = VisionCore.Camera.V4L2Pair.name_for("right")
 
       assert StereoSupervisor.cameras(config) ==
-               [{VisionCore.Camera.V4L2, left}, {VisionCore.Camera.V4L2, right}]
+               [{VisionCore.Camera.V4L2Pair, left}, {VisionCore.Camera.V4L2Pair, right}]
 
       assert StereoSupervisor.outputs(config) == [
                {:stereo_pair, {:stereo_pair, Pipeline}},
@@ -320,7 +320,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
       )
 
     driver_options = fn side ->
-      %{start: {VisionCore.Camera.V4L2, :start_link, [options]}} =
+      %{start: {VisionCore.Camera.V4L2Pair, :start_link, [options]}} =
         Enum.find(children, &(&1.id == {:stereo, :driver, side}))
 
       options

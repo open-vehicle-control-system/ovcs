@@ -328,7 +328,7 @@ The task does not read the configuration, the calibration, the frames or the det
   The parameter ids depend on the camera driver. Read `GET /api/parameters` for the ids your unit has: the camera controls are the ids that start with `stereo.cameras.` (with the default prefix).
 
   - With `VisionCore.Camera.LibCamera`, the switches are `stereo.cameras.auto_exposure` and `stereo.cameras.auto_gain`, and the settings `stereo.cameras.exposure_time_us` and `stereo.cameras.analogue_gain`.
-  - With `VisionCore.Camera.V4L2`, the one switch is `stereo.cameras.auto_exposure`, which covers the gain too: there is no `auto_gain`. The settings are `stereo.cameras.exposure_us` and `stereo.cameras.analogue_gain`.
+  - With `VisionCore.Camera.V4L2Pair`, the one switch is `stereo.cameras.auto_exposure`, which covers the gain too: there is no `auto_gain`. The settings are `stereo.cameras.exposure_us` and `stereo.cameras.analogue_gain`.
 - **Light.** Daylight, a cloud, a lamp that you switch: any of them changes the images, and the matched pixels with them. Keep the light steady, and use the noise floor ([The loop](#the-loop)) to see what one setup does by itself.
 - **An open dashboard.** The unit encodes the previews only while a dashboard is showing them, and the encoding takes processor time. A dashboard open for one export and closed for the other moves the depth rate and the load figures. Take both exports with the same pages open, or with none: use the API.
 - **What else runs.** The other exporters, the detection and the dashboard load the unit too: keep them the same for both exports.

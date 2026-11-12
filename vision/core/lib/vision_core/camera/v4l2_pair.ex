@@ -1,4 +1,4 @@
-defmodule VisionCore.Camera.V4L2 do
+defmodule VisionCore.Camera.V4L2Pair do
   @moduledoc """
   `VisionCore.Camera` driver for a stereo pair of IMX708 sensors
   (Raspberry Pi Camera Module 3) captured over raw V4L2 by one
@@ -79,7 +79,7 @@ defmodule VisionCore.Camera.V4L2 do
   @behaviour VisionCore.Camera
 
   alias VisionCore.Camera.{Camss, Frame}
-  alias VisionCore.Camera.V4L2.Capture
+  alias VisionCore.Camera.V4L2Capture
   alias VisionCore.{Outputs, Timing}
 
   @pair_tag 4
@@ -228,9 +228,9 @@ defmodule VisionCore.Camera.V4L2 do
 
     nodes =
       for {key, default} <- @default_nodes,
-          do: [Capture.flag(key), Keyword.get(opts, key, default)]
+          do: [V4L2Capture.flag(key), Keyword.get(opts, key, default)]
 
-    List.flatten(size ++ nodes) ++ Capture.arguments(@settings, opts)
+    List.flatten(size ++ nodes) ++ V4L2Capture.arguments(@settings, opts)
   end
 
   @doc """
@@ -238,7 +238,7 @@ defmodule VisionCore.Camera.V4L2 do
   or why one of them is refused.
   """
   @spec control_commands(keyword()) :: {:ok, [String.t()]} | {:error, String.t()}
-  def control_commands(controls), do: Capture.commands(@settings, controls)
+  def control_commands(controls), do: V4L2Capture.commands(@settings, controls)
 
   @impl VisionCore.Camera
   def shared_controls?, do: true
@@ -271,7 +271,7 @@ defmodule VisionCore.Camera.V4L2 do
      frame("right", width, height, right_ns, right)}
   end
 
-  def parse_record(record), do: Capture.parse_record(record)
+  def parse_record(record), do: V4L2Capture.parse_record(record)
 
   defp frame(label, width, height, kernel_ns, grey) do
     %Frame{
@@ -286,8 +286,8 @@ defmodule VisionCore.Camera.V4L2 do
   @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
-    opts = Capture.accepted(@settings, opts, "#{__MODULE__}[#{label}]")
-    controls = Capture.controls(@settings, opts)
+    opts = V4L2Capture.accepted(@settings, opts, "#{__MODULE__}[#{label}]")
+    controls = V4L2Capture.controls(@settings, opts)
 
     state = %{
       label: label,
@@ -314,7 +314,7 @@ defmodule VisionCore.Camera.V4L2 do
 
   defp open_port(state, opts) do
     timeouts = [stall_timeout_ms: @stall_timeout_ms, startup_timeout_ms: @startup_timeout_ms]
-    Map.merge(state, Capture.open(opts, port_arguments(opts), timeouts, "#{__MODULE__}"))
+    Map.merge(state, V4L2Capture.open(opts, port_arguments(opts), timeouts, "#{__MODULE__}"))
   end
 
   @impl GenServer
@@ -331,7 +331,7 @@ defmodule VisionCore.Camera.V4L2 do
       {:ok, commands} ->
         Enum.each(commands, &Port.command(state.port, &1))
 
-        updated = Capture.update(@settings, state.controls, controls)
+        updated = V4L2Capture.update(@settings, state.controls, controls)
 
         {:reply, {:ok, updated}, %{state | controls: updated}}
 
@@ -352,7 +352,9 @@ defmodule VisionCore.Camera.V4L2 do
       {:pair, left, right} ->
         publish_frame(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
-        {:noreply, %{state | last_frame_at: Capture.now_ms(), applied: refreshed(state.applied)}}
+
+        {:noreply,
+         %{state | last_frame_at: V4L2Capture.now_ms(), applied: refreshed(state.applied)}}
 
       {:metadata, metadata} ->
         applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
@@ -373,7 +375,7 @@ defmodule VisionCore.Camera.V4L2 do
     {:stop, {:v4l2_capture_exit, status}, state}
   end
 
-  def handle_info(:watchdog, state), do: Capture.watchdog(state, "#{__MODULE__}")
+  def handle_info(:watchdog, state), do: V4L2Capture.watchdog(state, "#{__MODULE__}")
 
   def handle_info(_message, state), do: {:noreply, state}
 

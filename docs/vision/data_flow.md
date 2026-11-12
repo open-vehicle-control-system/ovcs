@@ -22,11 +22,11 @@ The diagram shows the Pi 5. The other boards differ:
 A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model. The diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames and to the pairs. It projects the pairs' depth into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
 
 ```text
- left camera Port ──► LibCamera / V4L2 driver ─┐
-                                                ├─► Pairer ──► Pipeline ──► subscribers
- right camera Port ─► LibCamera / V4L2 driver ─┘                │
-                                                                 ├─ stereo_match Port (Pi 5)
-                                                                 └─ GPU through nx_iree (C100, VENTUNO Q)
+ left camera Port ──► LibCamera / V4L2Pair driver ─┐
+                                                    ├─► Pairer ──► Pipeline ──► subscribers
+ right camera Port ─► LibCamera / V4L2Pair driver ─┘                │
+                                                                     ├─ stereo_match Port (Pi 5)
+                                                                     └─ GPU through nx_iree (C100, VENTUNO Q)
 
  subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
                Detection pipeline ──► hailo_detect Port (Hailo-8)
@@ -38,7 +38,7 @@ A Port's row below names the process that owns it.
 
 | Box | Process | Started by |
 |---|---|---|
-| LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
+| LibCamera / V4L2Pair driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2Pair`](../../vision/core/lib/vision_core/camera/v4l2_pair.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
 | Camera of its own | [`VisionCore.Camera.V4L2Single`](../../vision/core/lib/vision_core/camera/v4l2_single.ex), with its `v4l2_capture` Port, for a `:camera` component | `VisionCore.Camera.Unit` |
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |

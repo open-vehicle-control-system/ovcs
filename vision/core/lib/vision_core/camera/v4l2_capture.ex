@@ -1,6 +1,6 @@
-defmodule VisionCore.Camera.V4L2.Capture do
+defmodule VisionCore.Camera.V4L2Capture do
   @moduledoc """
-  What the drivers running `v4l2_capture`, `VisionCore.Camera.V4L2` and
+  What the drivers running `v4l2_capture`, `VisionCore.Camera.V4L2Pair` and
   `VisionCore.Camera.V4L2Single`, share: their settings, given as a list
   of specs (`%{key:, type:, range:, default:, description:}`), the
   program's Port, its log and metadata records, and the watchdog that

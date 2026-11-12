@@ -126,7 +126,7 @@ defmodule Ovcs1.Vision.Composer do
   defp stereo_component do
     {:stereo,
      [
-       driver: VisionCore.Camera.V4L2,
+       driver: VisionCore.Camera.V4L2Pair,
        width: 728,
        height: 544,
        fps: 30,

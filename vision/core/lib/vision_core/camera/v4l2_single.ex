@@ -36,14 +36,14 @@ defmodule VisionCore.Camera.V4L2Single do
   or, for a JPEG output, the same header under tag 8, OUTPUT_JPEG, then
   the JPEG of the `width` x `height` image, one record per sent output
   per frame, in the order of their indices, or the log
-  and metadata records `VisionCore.Camera.V4L2` reads. Records
+  and metadata records `VisionCore.Camera.V4L2Pair` reads. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
 
   ## Settings
 
   The settings of `control_specs/0`, given in the opts and changed while
-  running through `set_controls/2`. Those `VisionCore.Camera.V4L2`
+  running through `set_controls/2`. Those `VisionCore.Camera.V4L2Pair`
   shares apply as they do to the pair, but `black_level`, a 12-bit
   sample, and the auto exposure, which steers the mean green. `awb`
   balances the white on each frame from the previous one; `red_gain` and
@@ -101,7 +101,7 @@ defmodule VisionCore.Camera.V4L2Single do
   @behaviour VisionCore.Camera
 
   alias VisionCore.Camera.{Camss, Frame, Output}
-  alias VisionCore.Camera.V4L2.Capture
+  alias VisionCore.Camera.V4L2Capture
   alias VisionCore.{Outputs, Timing}
 
   @output_frame_tag 7
@@ -130,7 +130,7 @@ defmodule VisionCore.Camera.V4L2Single do
   }
 
   @settings for(
-              spec <- VisionCore.Camera.V4L2.control_specs(),
+              spec <- VisionCore.Camera.V4L2Pair.control_specs(),
               spec.key != :focus,
               do: Map.merge(spec, Map.get(@colour_overrides, spec.key, %{}))
             )
@@ -205,7 +205,7 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @doc """
   The exposure and gain the capture program applies, as
-  `VisionCore.Camera.V4L2.live/1` reports them; `nil` before the first
+  `VisionCore.Camera.V4L2Pair.live/1` reports them; `nil` before the first
   report.
   """
   @spec live(GenServer.server()) :: map() | nil
@@ -246,7 +246,7 @@ defmodule VisionCore.Camera.V4L2Single do
   def parse_record(<<tag, _rest::binary>>) when tag in [@output_frame_tag, @output_jpeg_tag],
     do: {:error, :malformed_record}
 
-  def parse_record(record), do: Capture.parse_record(record)
+  def parse_record(record), do: V4L2Capture.parse_record(record)
 
   @impl GenServer
   def init(opts) do
@@ -256,7 +256,7 @@ defmodule VisionCore.Camera.V4L2Single do
     unless Keyword.has_key?(opts, :csiphy),
       do: raise(ArgumentError, "#{who} needs a :csiphy, the CSI PHY its sensor is wired to")
 
-    opts = Capture.accepted(@settings, opts, who)
+    opts = V4L2Capture.accepted(@settings, opts, who)
 
     state = %{
       label: label,
@@ -277,12 +277,12 @@ defmodule VisionCore.Camera.V4L2Single do
 
       state =
         Map.merge(state, %{
-          controls: Capture.controls(@settings, opts),
+          controls: V4L2Capture.controls(@settings, opts),
           outputs:
             Map.new(Output.sent(outputs), &{&1.index, {output_key(label, &1.name), &1.name}})
         })
 
-      {:ok, Map.merge(state, Capture.open(opts, arguments, timeouts, who))}
+      {:ok, Map.merge(state, V4L2Capture.open(opts, arguments, timeouts, who))}
     else
       {:error, message} ->
         Logger.error("#{who}: #{message}")
@@ -364,7 +364,7 @@ defmodule VisionCore.Camera.V4L2Single do
       Integer.to_string(Keyword.get(opts, :sensor_height, @default_sensor_height)),
       "--fps",
       Integer.to_string(Keyword.get(opts, :fps, @default_fps))
-    ] ++ output_arguments(outputs) ++ Capture.arguments(@settings, opts)
+    ] ++ output_arguments(outputs) ++ V4L2Capture.arguments(@settings, opts)
   end
 
   defp output_arguments(outputs) do
@@ -389,10 +389,10 @@ defmodule VisionCore.Camera.V4L2Single do
   def handle_call(:live, _from, state), do: {:reply, state.applied, state}
 
   def handle_call({:set_controls, controls}, _from, state) do
-    case Capture.commands(@settings, controls) do
+    case V4L2Capture.commands(@settings, controls) do
       {:ok, commands} ->
         Enum.each(commands, &Port.command(state.port, &1))
-        updated = Capture.update(@settings, state.controls, controls)
+        updated = V4L2Capture.update(@settings, state.controls, controls)
         {:reply, {:ok, updated}, %{state | controls: updated}}
 
       {:error, _reason} = error ->
@@ -411,7 +411,8 @@ defmodule VisionCore.Camera.V4L2Single do
           {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id, output: output}}
         )
 
-        {:noreply, %{state | last_frame_at: Capture.now_ms(), applied: refreshed(state.applied)}}
+        {:noreply,
+         %{state | last_frame_at: V4L2Capture.now_ms(), applied: refreshed(state.applied)}}
 
       {:metadata, metadata} ->
         applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
@@ -432,7 +433,7 @@ defmodule VisionCore.Camera.V4L2Single do
     {:stop, {:v4l2_capture_exit, status}, state}
   end
 
-  def handle_info(:watchdog, state), do: Capture.watchdog(state, state.who)
+  def handle_info(:watchdog, state), do: V4L2Capture.watchdog(state, state.who)
   def handle_info(_message, state), do: {:noreply, state}
 
   # The program reports only when the exposure changes; frames keep it fresh.

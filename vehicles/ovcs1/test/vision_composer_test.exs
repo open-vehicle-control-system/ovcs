@@ -17,7 +17,7 @@ defmodule Ovcs1.VisionComposerTest do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     stereo = Keyword.fetch!(components, :stereo)
 
-    assert stereo[:driver] == VisionCore.Camera.V4L2
+    assert stereo[:driver] == VisionCore.Camera.V4L2Pair
     assert {stereo[:width], stereo[:height]} == {728, 544}
     assert {stereo[:match_width], stereo[:match_height]} == {728, 544}
     assert stereo[:defn_options][:byte_storage] == false

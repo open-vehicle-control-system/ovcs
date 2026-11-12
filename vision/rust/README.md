@@ -14,7 +14,7 @@ Cargo workspace of the programs `vision_core` runs as Ports.
 | `jpeg_codec` | Encodes grey or RGB images as JPEG with libjpeg-turbo, colours depth previews, and decodes JPEG frames to grey, for `VisionCore.Jpeg` |
 | `framing` | The `{:packet, 4}` framing the binaries share: a big-endian length prefix, little-endian scalars |
 
-The Elixir side of the protocol is `VisionCore.Camera.LibCamera`, `VisionCore.Detection.Backend.Hailo`, `VisionCore.Detection.Backend.Qnn`, `VisionCore.Camera.V4L2` and `VisionCore.Jpeg`; `qnn_segment`'s records are described in `qnn_segment/src/protocol.rs`. The stereo stages' native Port, `stereo_match`, is nx_stereo's: it builds it when it compiles.
+The Elixir side of the protocol is `VisionCore.Camera.LibCamera`, `VisionCore.Detection.Backend.Hailo`, `VisionCore.Detection.Backend.Qnn`, `VisionCore.Camera.V4L2Pair` and `VisionCore.Jpeg`; `qnn_segment`'s records are described in `qnn_segment/src/protocol.rs`. The stereo stages' native Port, `stereo_match`, is nx_stereo's: it builds it when it compiles.
 
 The `device` feature of `camera_capture` and `hailo_detect` links the device libraries: libcamera from the system, `libhailort` from [`libraries/hailort`](../../libraries/hailort), whose header and library directories `../core/Makefile` passes as `HAILORT_INCLUDE_DIR` and `HAILORT_LINK_DIR`. Without it the crates build on any host, all but `qnn`, `qnn_detect` and `qnn_segment`, which is what the unit tests use:
 

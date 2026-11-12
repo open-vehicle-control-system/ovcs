@@ -17,7 +17,7 @@ defmodule Mix.Tasks.VisionCore.NxCacheTest do
         components: [
           stereo:
             [
-              driver: VisionCore.Camera.V4L2,
+              driver: VisionCore.Camera.V4L2Pair,
               width: 192,
               height: 108,
               match_width: 96,

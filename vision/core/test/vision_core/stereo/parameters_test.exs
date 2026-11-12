@@ -27,14 +27,14 @@ defmodule VisionCore.Stereo.ParametersTest do
     end
   end
 
-  # A driver whose one set of controls drives both cameras, as V4L2's.
+  # A driver whose one set of controls drives both cameras, as V4L2Pair's.
   defmodule Driver do
     use Agent
 
     def start_link(state), do: Agent.start_link(fn -> state end, name: __MODULE__)
     def name_for(label), do: label
     def shared_controls?, do: true
-    def control_specs, do: VisionCore.Camera.V4L2.control_specs()
+    def control_specs, do: VisionCore.Camera.V4L2Pair.control_specs()
     def controls("left"), do: Agent.get(__MODULE__, & &1.controls)
     def live("left"), do: Agent.get(__MODULE__, & &1.live)
 
@@ -81,7 +81,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     def handle_call({:put, snapshot}, _from, _snapshot), do: {:reply, :ok, snapshot}
   end
 
-  @controls Map.new(VisionCore.Camera.V4L2.control_specs(), &{&1.key, &1.default})
+  @controls Map.new(VisionCore.Camera.V4L2Pair.control_specs(), &{&1.key, &1.default})
 
   setup do
     start_supervised!({Pipeline, stages()})

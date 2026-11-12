@@ -1,9 +1,9 @@
-defmodule VisionCore.Camera.V4L2Test do
+defmodule VisionCore.Camera.V4L2PairTest do
   use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Camera.{Frame, V4L2}
+  alias VisionCore.Camera.{Frame, V4L2Pair}
   alias VisionCore.{Outputs, Timing}
 
   defp eventually(check, attempts \\ 100) do
@@ -21,7 +21,7 @@ defmodule VisionCore.Camera.V4L2Test do
 
   test "port arguments carry the size, each side's nodes and every setting, defaults included" do
     arguments =
-      V4L2.port_arguments(
+      V4L2Pair.port_arguments(
         width: 768,
         height: 432,
         fps: 30,
@@ -51,7 +51,7 @@ defmodule VisionCore.Camera.V4L2Test do
     assert settings["--auto-exposure"] == "true"
     assert settings["--gamma"] == "2.2"
     assert settings["--focus"] == "428"
-    assert map_size(settings) == length(V4L2.control_specs())
+    assert map_size(settings) == length(V4L2Pair.control_specs())
   end
 
   # Answers `media-ctl -p` with a CAMSS graph captured on the Arduino VENTUNO Q.
@@ -62,7 +62,7 @@ defmodule VisionCore.Camera.V4L2Test do
 
   test "CSI PHY options route both sides and pass their nodes to the Port" do
     assert {:ok, opts} =
-             V4L2.routed(
+             V4L2Pair.routed(
                width: 728,
                height: 544,
                fps: 30,
@@ -71,7 +71,8 @@ defmodule VisionCore.Camera.V4L2Test do
                media_runner: media_runner("media-ctl-p.txt")
              )
 
-    arguments = opts |> V4L2.port_arguments() |> Enum.chunk_every(2) |> Map.new(&List.to_tuple/1)
+    arguments =
+      opts |> V4L2Pair.port_arguments() |> Enum.chunk_every(2) |> Map.new(&List.to_tuple/1)
 
     assert Map.take(arguments, ~w(--left-video --left-sensor --right-video --right-sensor)) == %{
              "--left-video" => "msm_vfe0_video0",
@@ -87,7 +88,7 @@ defmodule VisionCore.Camera.V4L2Test do
     log =
       capture_log(fn ->
         assert {:error, message} =
-                 V4L2.start_link(
+                 V4L2Pair.start_link(
                    label: "left",
                    width: 728,
                    height: 544,
@@ -105,12 +106,12 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "settings become name=value commands, checked against their specs" do
-    assert V4L2.control_commands(rotation: 180, gamma: 1.8, auto_exposure: false) ==
+    assert V4L2Pair.control_commands(rotation: 180, gamma: 1.8, auto_exposure: false) ==
              {:ok, ["rotation=180", "gamma=1.8", "auto_exposure=false"]}
 
-    assert {:error, "rotation" <> _} = V4L2.control_commands(rotation: 90)
-    assert {:error, "max_gain" <> _} = V4L2.control_commands(max_gain: 40)
-    assert {:error, "unknown camera setting zoom"} = V4L2.control_commands(zoom: 2)
+    assert {:error, "rotation" <> _} = V4L2Pair.control_commands(rotation: 90)
+    assert {:error, "max_gain" <> _} = V4L2Pair.control_commands(max_gain: 40)
+    assert {:error, "unknown camera setting zoom"} = V4L2Pair.control_commands(zoom: 2)
   end
 
   @tag :tmp_dir
@@ -120,17 +121,17 @@ defmodule VisionCore.Camera.V4L2Test do
     File.write!(script, "#!/bin/sh\ncat > #{commands}\n")
     File.chmod!(script, 0o755)
 
-    start_supervised!(Supervisor.child_spec({V4L2, label: "right"}, id: :right))
+    start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
 
     start_supervised!(
       Supervisor.child_spec(
-        {V4L2, label: "left", executable: script, width: 2, height: 1, fps: 30},
+        {V4L2Pair, label: "left", executable: script, width: 2, height: 1, fps: 30},
         id: :left
       )
     )
 
-    assert {:ok, %{gamma: 1.8}} = V4L2.set_controls(V4L2.name_for("right"), gamma: 1.8)
-    assert %{gamma: 1.8, rotation: 0} = V4L2.controls(V4L2.name_for("right"))
+    assert {:ok, %{gamma: 1.8}} = V4L2Pair.set_controls(V4L2Pair.name_for("right"), gamma: 1.8)
+    assert %{gamma: 1.8, rotation: 0} = V4L2Pair.controls(V4L2Pair.name_for("right"))
 
     eventually(fn -> File.read(commands) == {:ok, <<9::32, "gamma=1.8">>} end)
   end
@@ -145,7 +146,7 @@ defmodule VisionCore.Camera.V4L2Test do
     log =
       capture_log(fn ->
         start_supervised!(
-          {V4L2,
+          {V4L2Pair,
            label: "left",
            executable: script,
            width: 2,
@@ -159,12 +160,12 @@ defmodule VisionCore.Camera.V4L2Test do
       end)
 
     assert log =~ "gamma: invalid value 9.0"
-    assert %{gamma: 2.2, rotation: 180} = V4L2.controls(V4L2.name_for("left"))
+    assert %{gamma: 2.2, rotation: 180} = V4L2Pair.controls(V4L2Pair.name_for("left"))
     eventually(fn -> File.read!(arguments) =~ "--gamma 2.2" end)
   end
 
   test "a pair record becomes a left and a right grey frame" do
-    assert {:pair, left, right} = V4L2.parse_record(pair_record(5, 6))
+    assert {:pair, left, right} = V4L2Pair.parse_record(pair_record(5, 6))
 
     assert %Frame{label: "left", width: 2, height: 1, grey: <<1, 2>>} = left
     assert %Frame{label: "right", width: 2, height: 1, grey: <<3, 4>>} = right
@@ -174,8 +175,8 @@ defmodule VisionCore.Camera.V4L2Test do
   end
 
   test "log and malformed records" do
-    assert V4L2.parse_record(<<2, 2, "busy">>) == {:log, :error, "busy"}
-    assert V4L2.parse_record(<<4, 2::little-16>>) == {:error, :malformed_record}
+    assert V4L2Pair.parse_record(<<2, 2, "busy">>) == {:log, :error, "busy"}
+    assert V4L2Pair.parse_record(<<4, 2::little-16>>) == {:error, :malformed_record}
   end
 
   @tag :tmp_dir
@@ -189,16 +190,18 @@ defmodule VisionCore.Camera.V4L2Test do
     File.chmod!(script, 0o755)
 
     for label <- ["left", "right"],
-        do: :ok = Outputs.subscribe({:camera_frame, V4L2.name_for(label)})
+        do: :ok = Outputs.subscribe({:camera_frame, V4L2Pair.name_for(label)})
 
     start_supervised!(
-      Supervisor.child_spec({V4L2, label: "right", frame_id: "stereo_right_optical"}, id: :right)
+      Supervisor.child_spec({V4L2Pair, label: "right", frame_id: "stereo_right_optical"},
+        id: :right
+      )
     )
 
     left =
       start_supervised!(
         Supervisor.child_spec(
-          {V4L2,
+          {V4L2Pair,
            label: "left",
            frame_id: "stereo_left_optical",
            executable: script,
@@ -236,7 +239,7 @@ defmodule VisionCore.Camera.V4L2Test do
 
   test "parses a metadata record into what the sensors apply" do
     assert {:metadata, %{exposure_time_us: 8000, analogue_gain: 2.0}} =
-             V4L2.parse_record(metadata_record(8_000.0, 2.0))
+             V4L2Pair.parse_record(metadata_record(8_000.0, 2.0))
   end
 
   @tag :tmp_dir
@@ -247,17 +250,17 @@ defmodule VisionCore.Camera.V4L2Test do
     File.write!(script, "#!/bin/sh\nsleep 5\n")
     File.chmod!(script, 0o755)
 
-    start_supervised!(Supervisor.child_spec({V4L2, label: "right"}, id: :right))
+    start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
 
     left =
       start_supervised!(
         Supervisor.child_spec(
-          {V4L2, label: "left", executable: script, width: 2, height: 1, fps: 30},
+          {V4L2Pair, label: "left", executable: script, width: 2, height: 1, fps: 30},
           id: :left
         )
       )
 
-    assert V4L2.live(V4L2.name_for("right")) == nil
+    assert V4L2Pair.live(V4L2Pair.name_for("right")) == nil
 
     %{port: port} = :sys.get_state(left)
     send(left, {port, {:data, metadata_record(8_000.0, 2.0)}})
@@ -265,17 +268,17 @@ defmodule VisionCore.Camera.V4L2Test do
 
     for label <- ["left", "right"] do
       assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: received_ms} =
-               V4L2.live(V4L2.name_for(label))
+               V4L2Pair.live(V4L2Pair.name_for(label))
 
       assert_in_delta received_ms, System.system_time(:millisecond), 1_000
     end
 
-    %{received_ms: before_ms} = V4L2.live(V4L2.name_for("left"))
+    %{received_ms: before_ms} = V4L2Pair.live(V4L2Pair.name_for("left"))
     Process.sleep(20)
     send(left, {port, {:data, pair_record(5, 6)}})
 
     assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: after_ms} =
-             V4L2.live(V4L2.name_for("right"))
+             V4L2Pair.live(V4L2Pair.name_for("right"))
 
     assert after_ms > before_ms
   end
