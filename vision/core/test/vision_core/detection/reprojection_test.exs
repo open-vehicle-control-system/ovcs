@@ -268,6 +268,23 @@ defmodule VisionCore.Detection.ReprojectionTest do
     end
   end
 
+  describe "check_lens/1" do
+    test "accepts a calibration without an image size, and refuses a lens it cannot project with" do
+      valid = calibration("plumb_bob", {400.0, 400.0, 320.0, 240.0}, [])
+
+      assert Reprojection.check_lens(%{valid | width: 0, height: 0}) == :ok
+
+      for invalid <- [
+            %{valid | distortion_model: "rational_polynomial"},
+            %{valid | distortion_coefficients: [0.1, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.0]},
+            %{valid | camera_matrix: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]}
+          ] do
+        assert {:error, message} = Reprojection.check_lens(invalid)
+        assert is_binary(message)
+      end
+    end
+  end
+
   describe "ray/2" do
     test "gives the direction of the point a plumb_bob pixel sees, as OpenCV projects it" do
       calibration =

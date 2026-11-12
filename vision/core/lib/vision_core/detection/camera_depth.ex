@@ -90,7 +90,9 @@ defmodule VisionCore.Detection.CameraDepth do
   @doc """
   The camera `name` of `config`, its calibration and pose read, each
   missing or unreadable one logged once as a warning naming `owner` and
-  saying what is lost (`wording`). Takes `:pair_wait_ms`, the longest a
+  saying what is lost (`wording`), as is a calibration whose lens cannot
+  be projected with (`VisionCore.Detection.Reprojection.check_lens/1`),
+  which is left out. Takes `:pair_wait_ms`, the longest a
   result waits for its pair, which the pairs kept cover. Raises
   `ArgumentError` when `config` has no camera `name`.
   """
@@ -126,14 +128,22 @@ defmodule VisionCore.Detection.CameraDepth do
   end
 
   defp read(depth, kind, path) do
-    case load(kind, path) do
-      {:ok, value} ->
-        value
-
+    with {:ok, value} <- load(kind, path),
+         :ok <- check(kind, value) do
+      value
+    else
       {:error, reason} ->
         Logger.warning(
           "#{depth.owner}: camera #{depth.name} has no #{kind}, #{path} " <>
             "unreadable (#{inspect(reason)}), so #{depth.wording.unreadable}"
+        )
+
+        nil
+
+      {:refused, message} ->
+        Logger.warning(
+          "#{depth.owner}: camera #{depth.name}'s calibration cannot #{depth.wording.lens}: " <>
+            "#{message}, so #{depth.wording.calibration}"
         )
 
         nil
@@ -142,6 +152,12 @@ defmodule VisionCore.Detection.CameraDepth do
 
   defp load(:calibration, path), do: CameraCalibration.load(path)
   defp load(:pose, path), do: Pose.load(path)
+
+  defp check(:calibration, calibration) do
+    with {:error, message} <- Reprojection.check_lens(calibration), do: {:refused, message}
+  end
+
+  defp check(:pose, _pose), do: :ok
 
   @doc "Whether the depth can be projected into the camera: it has a calibration and a pose."
   @spec projectable?(t()) :: boolean()

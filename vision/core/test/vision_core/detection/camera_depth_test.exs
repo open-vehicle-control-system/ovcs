@@ -1,6 +1,8 @@
 defmodule VisionCore.Detection.CameraDepthTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias VisionCore.Camera.Frame
   alias VisionCore.Detection.CameraDepth
   alias VisionCore.Stereo.Pair
@@ -99,6 +101,39 @@ defmodule VisionCore.Detection.CameraDepthTest do
       assert {:ok, kept} = CameraDepth.match(depth, 100 * @ms)
       assert kept.depth == binary_part(reply, 0, 400)
       assert :binary.referenced_byte_size(kept.depth) == 400
+    end
+  end
+
+  describe "new/5" do
+    @tag :tmp_dir
+    test "refuses a calibration it cannot project with at start, saying so once", %{tmp_dir: dir} do
+      calibration = %VisionCore.Ros2.CameraCalibration{
+        width: 40,
+        height: 20,
+        distortion_model: "rational_polynomial",
+        distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        camera_matrix: [50.0, 0.0, 20.0, 0.0, 50.0, 10.0, 0.0, 0.0, 1.0],
+        rectification_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        projection_matrix: [50.0, 0.0, 20.0, 0.0, 0.0, 50.0, 10.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+      }
+
+      path = Path.join(dir, "hq.yaml")
+      File.write!(path, VisionCore.Ros2.CameraCalibration.to_yaml(calibration, "hq"))
+
+      config = %VisionCore.Config{
+        components: [
+          {:camera, [name: :hq, driver: VisionCore.Camera.GStreamer, calibration: path]}
+        ]
+      }
+
+      log =
+        capture_log(fn ->
+          depth = CameraDepth.new(:hq, config, "test pipeline", @wording, pair_wait_ms: 500)
+          assert {nil, _depth} = CameraDepth.lens(depth, {40, 20})
+        end)
+
+      assert [_once] = Regex.scan(~r/rational_polynomial/, log)
+      assert log =~ "test pipeline: camera hq's calibration cannot project"
     end
   end
 

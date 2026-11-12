@@ -98,11 +98,19 @@ defmodule VisionCore.Detection.Reprojection do
   """
   @spec check(CameraCalibration.t()) :: :ok | {:error, String.t()}
   def check(%CameraCalibration{} = calibration) do
+    with :ok <- check_lens(calibration), do: check_size(calibration)
+  end
+
+  @doc """
+  `check/1` without the image size: whether `calibration`'s lens can be
+  projected with at any size, for a calibration not yet scaled to the
+  frames.
+  """
+  @spec check_lens(CameraCalibration.t()) :: :ok | {:error, String.t()}
+  def check_lens(%CameraCalibration{} = calibration) do
     with :ok <- check_model(calibration),
          :ok <- check_coefficients(calibration),
-         :ok <- check_focal_length(calibration) do
-      check_size(calibration)
-    end
+         do: check_focal_length(calibration)
   end
 
   @doc """
