@@ -87,13 +87,13 @@ defmodule VisionCore.Detection.Pipeline do
 
   ## One inference in flight
 
-  Only one submitted pair is held, and a reply is matched on the
-  current sequence number. That relies on the backend answering
-  `{:error, :busy}` while an inference is in flight, so the sequence
-  only advances on an accepted frame; a backend that accepted
-  overlapping requests would have its earlier replies discarded as
-  stale. A pair or frame the backend could not detect on, answered with
-  `nil`, publishes nothing.
+  Only one submitted pair is held, with the sequence number it was
+  submitted under, and a reply is matched on that number. Every
+  submission takes a new number, a refused one included, so a late
+  reply to a call that timed out never matches a later pair; a backend
+  that accepted overlapping requests would have its earlier replies
+  discarded as stale. A pair or frame the backend could not detect on,
+  answered with `nil`, publishes nothing.
 
   ## Options
 
@@ -226,9 +226,11 @@ defmodule VisionCore.Detection.Pipeline do
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
       reprojection_stride: Keyword.get(opts, :reprojection_stride, @default_reprojection_stride),
       pair_wait_ms: pair_wait_ms,
+      # The sequence of the last submission, accepted or not.
       sequence: 0,
       image_count: 0,
-      # The pair, or camera frame, submitted with the in-flight inference: its boxes belong to it.
+      # `{sequence, source}`: the pair, or camera frame, submitted with the in-flight inference, to
+      # which its boxes belong.
       pending: nil,
       # Camera frames' boxes waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
@@ -425,9 +427,10 @@ defmodule VisionCore.Detection.Pipeline do
   # Overwrites `pending`; see "One inference in flight" in the moduledoc.
   defp submit(source, image, state) do
     sequence = state.sequence + 1
+    state = %{state | sequence: sequence}
 
     case state.backend.detect(state.backend_server, sequence, image) do
-      :ok -> %{state | sequence: sequence, pending: source}
+      :ok -> %{state | pending: {sequence, source}}
       # Busy or unavailable: skip this pair silently. The backend logs
       # the unavailable case once at startup; a per-frame log here
       # would be the loudest thing in the RingLogger.
@@ -436,12 +439,15 @@ defmodule VisionCore.Detection.Pipeline do
   end
 
   @impl GenServer
-  def handle_info({:inference_detections, sequence, nil}, %{sequence: sequence} = state),
-    do: {:noreply, %{state | pending: nil}}
+  def handle_info(
+        {:inference_detections, sequence, nil},
+        %{pending: {sequence, _source}} = state
+      ),
+      do: {:noreply, %{state | pending: nil}}
 
   def handle_info(
         {:inference_detections, sequence, detections},
-        %{sequence: sequence, pending: %Pair{} = pair} = state
+        %{pending: {sequence, %Pair{} = pair}} = state
       ) do
     positioned =
       detections
@@ -460,7 +466,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   def handle_info(
         {:inference_detections, sequence, detections},
-        %{sequence: sequence, pending: %Frame{} = frame} = state
+        %{pending: {sequence, %Frame{} = frame}} = state
       ) do
     labelled = detections |> select(state) |> Enum.map(&labelled(&1, state))
     now_ns = state.clock.()

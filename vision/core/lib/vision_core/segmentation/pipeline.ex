@@ -162,9 +162,10 @@ defmodule VisionCore.Segmentation.Pipeline do
       segment_every_n: integer!(opts, :segment_every_n, @default_segment_every_n, 1),
       reprojection_stride: integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
       pair_wait_ms: pair_wait_ms,
+      # The sequence of the last submission, accepted or not.
       sequence: 0,
       frame_count: 0,
-      # The frame submitted with the in-flight inference, with its band.
+      # The in-flight inference's sequence, and the frame submitted with it, with its band.
       pending: nil,
       # Frames' label images waiting for the pair captured closest to each.
       waiting: DepthQueue.new(pair_wait_ms),
@@ -336,15 +337,19 @@ defmodule VisionCore.Segmentation.Pipeline do
     {_x, top, width, height} = band = band(frame.width, frame.height, state.band_top)
     rgb = binary_part(frame.rgb, top * width * 3, height * width * 3)
     sequence = state.sequence + 1
+    state = %{state | sequence: sequence}
 
     case state.backend.segment(state.backend_server, sequence, %{
            width: width,
            height: height,
            rgb: rgb
          }) do
-      :ok -> %{state | sequence: sequence, pending: %{frame: %{frame | rgb: nil}, band: band}}
+      :ok ->
+        %{state | pending: %{sequence: sequence, frame: %{frame | rgb: nil}, band: band}}
+
       # Busy or unavailable: the backend logs the unavailable case once.
-      {:error, _reason} -> state
+      {:error, _reason} ->
+        state
     end
   end
 
@@ -362,7 +367,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   @impl GenServer
   def handle_info(
         {:inference_labels, sequence, labels},
-        %{sequence: sequence, pending: %{frame: frame, band: band}} = state
+        %{pending: %{sequence: sequence, frame: frame, band: band}} = state
       ) do
     state = %{state | pending: nil}
 

@@ -35,6 +35,25 @@ defmodule VisionCore.Segmentation.PipelineTest do
     def inference_times(_server), do: nil
   end
 
+  # Tells the test each sequence it is handed and answers what the test scripted, `:ok` once the
+  # script is spent; never replies, the test does.
+  defmodule Scripted do
+    @behaviour VisionCore.Segmentation.Backend
+
+    def segment({test, script}, sequence, _band) do
+      send(test, {:submitted, sequence})
+
+      Agent.get_and_update(script, fn
+        [answer | rest] -> {answer, rest}
+        [] -> {:ok, []}
+      end)
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   # The pair's rectified intrinsics by default: a stereo pixel lands on the centre of the
   # camera's pixel of the same column and row, which OpenCV puts on integer coordinates.
   defp calibration({cx, cy}) do
@@ -445,6 +464,50 @@ defmodule VisionCore.Segmentation.PipelineTest do
 
     assert_receive {:band, _band}
     refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+  end
+
+  defp start_scripted(dir, script) do
+    script = start_supervised!({Agent, fn -> script end})
+
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: Scripted,
+       backend_server: {self(), script},
+       source: {:camera, :hq},
+       config: config(dir, [])}
+    )
+
+    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+  end
+
+  test "publishes the reply to the band in flight while the next frames find the backend busy",
+       %{tmp_dir: dir} do
+    start_scripted(dir, [:ok, {:error, :busy}])
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    publish_frame(200)
+    assert_receive {:submitted, _busy}
+
+    send(Pipeline.Road, {:inference_labels, in_flight, @label_image})
+    assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{capture_ns: 100_000_000}, _, nil}}
+  end
+
+  test "drops a late reply to a band the backend refused, matching only the band it took", %{
+    tmp_dir: dir
+  } do
+    start_scripted(dir, [{:error, :unavailable}, :ok])
+
+    publish_frame(100)
+    assert_receive {:submitted, refused}
+    publish_frame(200)
+    assert_receive {:submitted, taken}
+
+    send(Pipeline.Road, {:inference_labels, refused, @label_image})
+    refute_receive {:"$gen_cast", {:segmentation, _name, _frame, _labels, _clouds}}, 100
+    send(Pipeline.Road, {:inference_labels, taken, @label_image})
+    assert_receive {:"$gen_cast", {:segmentation, :road, %Frame{capture_ns: 200_000_000}, _, nil}}
   end
 
   test "two pipelines on one camera publish apart, each its own backend's labels", %{tmp_dir: dir} do

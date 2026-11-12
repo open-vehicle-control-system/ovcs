@@ -22,6 +22,25 @@ defmodule VisionCore.Detection.PipelineTest do
     def inference_times(_server), do: nil
   end
 
+  # Tells the test each sequence it is handed and answers what the test scripted, `:ok` once the
+  # script is spent; never replies, the test does.
+  defmodule Scripted do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect({test, script}, sequence, _image) do
+      send(test, {:submitted, sequence})
+
+      Agent.get_and_update(script, fn
+        [answer | rest] -> {answer, rest}
+        [] -> {:ok, []}
+      end)
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def inference_times(_server), do: nil
+  end
+
   describe "a pair through the backend" do
     alias VisionCore.Camera.Frame
     alias VisionCore.Detection.Backend.Stub
@@ -102,6 +121,36 @@ defmodule VisionCore.Detection.PipelineTest do
       refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 100
 
       assert [%{label: "person"}] = detections()
+    end
+
+    test "publishes the reply to the pair in flight while the next pairs find the backend busy" do
+      script = start_supervised!({Agent, fn -> [:ok, {:error, :busy}] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      :ok = Outputs.subscribe({:detections, Pipeline})
+
+      publish_pair()
+      assert_receive {:submitted, in_flight}
+      publish_pair()
+      assert_receive {:submitted, _busy}
+
+      send(Pipeline, {:inference_detections, in_flight, []})
+      assert_receive {:"$gen_cast", {:detections, %Pair{}, []}}, 1_000
+    end
+
+    test "drops a late reply to a pair the backend refused, matching only the pair it took" do
+      script = start_supervised!({Agent, fn -> [{:error, :unavailable}, :ok] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      :ok = Outputs.subscribe({:detections, Pipeline})
+
+      publish_pair()
+      assert_receive {:submitted, refused}
+      publish_pair()
+      assert_receive {:submitted, taken}
+
+      send(Pipeline, {:inference_detections, refused, []})
+      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 100
+      send(Pipeline, {:inference_detections, taken, []})
+      assert_receive {:"$gen_cast", {:detections, %Pair{}, []}}, 1_000
     end
 
     test "ignores a stray :pair_wait on the stereo source" do
