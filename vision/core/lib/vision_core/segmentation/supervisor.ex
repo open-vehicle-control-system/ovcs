@@ -8,8 +8,10 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   `:name` (required) names the pipeline (`VisionCore.Segmentation`): the
   unit, its backend, pipeline and `Live` register under it
-  (`VisionCore.Detection.server/2`). A unit without a valid name is left
-  down.
+  (`VisionCore.Detection.server/2`). Started from a configuration, a
+  segmenter without a valid name fails the vision core's start, as a
+  detector with an invalid one does (`VisionCore.Application`); started
+  directly, a unit without one is left down.
 
   Which backend is `:backend`, defaulting to
   `VisionCore.Segmentation.Backend.Qnn`, on a Qualcomm Hexagon NPU;
@@ -23,10 +25,11 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   The backend's options go to the backend, with `:classes`, the number
   of `:labels`; the pipeline's to the pipeline, and `:max_hz`, `:labels`
-  and `:road_classes` to `Live`; see their docs. A unit that fails to start, such as one given an option it
-  does not take, is left down, with the reason logged, and the rest of
-  the vision core runs on; the log names the ROS 2 exporter's
-  `segmentation:` for its `:topic_prefix`.
+  and `:road_classes` to `Live`; see their docs. A unit that fails to
+  start, such as one given an option it does not take, is left down,
+  with the reason logged, and the rest of the vision core runs on; the
+  log names the ROS 2 exporter's `segmentation:` for its
+  `:topic_prefix`.
   """
   use Supervisor
   require Logger

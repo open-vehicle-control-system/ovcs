@@ -66,6 +66,11 @@ defmodule VisionCore.Segmentation.Pipeline do
   frame's size, publishes its label images without clouds, without
   waiting for a pair.
 
+  The calibration and the pose are read at start. A calibration
+  committed through the camera's `set_camera_info` reaches the ROS 2
+  exporter's label `camera_info` at once, but the clouds are sorted
+  with the start-time calibration until the unit restarts.
+
   The model needs colour: a frame without RGB pixels is skipped, which
   is logged once.
 
