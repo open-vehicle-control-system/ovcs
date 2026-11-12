@@ -17,7 +17,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
   end
 
   defp rgb_record(capture_ns, rgb \\ <<1, 2, 3, 4, 5, 6>>) do
-    <<6, 2::little-16, 1::little-16, capture_ns::little-signed-64, rgb::binary>>
+    <<7, 0, 2::little-16, 1::little-16, capture_ns::little-signed-64, rgb::binary>>
   end
 
   defp metadata_record(exposure_us, gain) do
@@ -127,7 +127,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
              "--fps",
              "15",
              "--output",
-             "full"
+             "cpu:2028x1520"
            ]
   end
 
@@ -135,7 +135,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     {script, arguments, _commands} = listening_program(tmp_dir)
     start_camera(executable: script, output: :half)
 
-    assert ["--output", "half"] = arguments |> arguments() |> Enum.slice(10, 2)
+    assert ["--output", "cpu:1014x760"] = arguments |> arguments() |> Enum.slice(10, 2)
   end
 
   test "a camera without a :csiphy is refused, naming the option" do
@@ -172,9 +172,9 @@ defmodule VisionCore.Camera.V4L2SingleTest do
   test "takes each frame's size from its record, whatever the sensor mode" do
     rgb = :binary.copy(<<1, 2, 3>>, 4 * 3)
 
-    assert {:frame, %Frame{width: 4, height: 3, rgb: ^rgb}} =
+    assert {:frame, 1, %Frame{width: 4, height: 3, rgb: ^rgb}} =
              V4L2Single.parse_record(
-               <<6, 4::little-16, 3::little-16, 5::little-signed-64, rgb::binary>>
+               <<7, 1, 4::little-16, 3::little-16, 5::little-signed-64, rgb::binary>>
              )
   end
 

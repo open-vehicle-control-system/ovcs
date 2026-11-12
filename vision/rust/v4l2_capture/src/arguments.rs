@@ -30,15 +30,48 @@ pub struct SingleArguments {
     pub sensor_height: u32,
     pub fps: u32,
     pub camera: Nodes,
-    pub output: Output,
+    /// Each output, in the order of their indices; one of the capture's
+    /// size by default.
+    pub outputs: Vec<OutputSpec>,
     pub settings: ColourSettings,
 }
 
-/// The size of a single camera's RGB frames.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+/// One of a single camera's outputs: the size of its RGB frames and what
+/// makes them.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OutputSpec {
+    pub source: Source,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// What makes an output.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Source {
+    /// The software conversion of the sensor's frame (`processor::Cpu`).
+    Cpu(Output),
+    /// Each pixel the average of a block of the output of this index,
+    /// an earlier one (`scale`).
+    From(usize),
+}
+
+impl OutputSpec {
+    /// The block of `source`'s pixels each of this output's averages.
+    pub fn block(&self, source: &OutputSpec) -> (usize, usize) {
+        (
+            (source.width / self.width) as usize,
+            (source.height / self.height) as usize,
+        )
+    }
+}
+
+/// The most outputs a single camera has: a record's output index is a byte.
+const MAX_OUTPUTS: usize = 256;
+
+/// The size of the RGB frames the processor makes.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Output {
     /// The capture size, every sample a pixel.
-    #[default]
     Full,
     /// Half the capture size in each axis, every RGGB cell a pixel.
     Half,
@@ -99,13 +132,16 @@ pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
 }
 
 /// Parses a single camera's arguments: its capture size and rate, its nodes,
-/// its `--output` (`full`, the default, or `half`), then any setting as
-/// `--name value`, with dashes for underscores. The error is the message to
-/// log.
+/// its outputs, then any setting as `--name value`, with dashes for
+/// underscores. Each `--output`, in the order of their indices, is
+/// `cpu:<width>x<height>`, made by the software conversion at the capture's
+/// size or half of it, or `from:<index>:<width>x<height>`, scaled from an
+/// earlier output to a whole fraction of its size; without, one output of
+/// the capture's size. The error is the message to log.
 pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let (mut sensor_width, mut sensor_height, mut fps) = (None, None, None);
     let (mut video, mut sensor) = (None, None);
-    let mut output = Output::default();
+    let mut outputs = Vec::new();
     let mut settings = ColourSettings::default();
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
@@ -118,29 +154,96 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
             "--fps" => fps = Some(number(flag, value)?),
             "--video" => video = Some(value.clone()),
             "--sensor" => sensor = Some(value.clone()),
-            "--output" => {
-                output = match value.as_str() {
-                    "full" => Output::Full,
-                    "half" => Output::Half,
-                    _ => return Err(format!("{flag}: full or half, got {value}")),
-                }
-            }
+            "--output" => outputs.push(value.as_str()),
             setting => match setting.strip_prefix("--") {
                 Some(name) => settings.set(&name.replace('-', "_"), value)?,
                 None => return Err(format!("unknown argument {flag}")),
             },
         }
     }
+    let sensor_width = sensor_width.ok_or("missing --sensor-width")?;
+    let sensor_height = sensor_height.ok_or("missing --sensor-height")?;
+    let full = format!("cpu:{sensor_width}x{sensor_height}");
+    if outputs.is_empty() {
+        outputs.push(&full);
+    }
+    if outputs.len() > MAX_OUTPUTS {
+        return Err(format!("--output: at most {MAX_OUTPUTS} outputs"));
+    }
+    let mut specs: Vec<OutputSpec> = Vec::with_capacity(outputs.len());
+    for value in outputs {
+        let spec = output_spec(value, (sensor_width, sensor_height), &specs)
+            .map_err(|message| format!("--output {value}: {message}"))?;
+        specs.push(spec);
+    }
     Ok(SingleArguments {
-        sensor_width: sensor_width.ok_or("missing --sensor-width")?,
-        sensor_height: sensor_height.ok_or("missing --sensor-height")?,
+        sensor_width,
+        sensor_height,
         fps: fps.ok_or("missing --fps")?,
         camera: Nodes {
             video: video.ok_or("missing --video")?,
             sensor: sensor.ok_or("missing --sensor")?,
         },
-        output,
+        outputs: specs,
         settings,
+    })
+}
+
+/// The output `value` describes, `cpu:<width>x<height>` or
+/// `from:<index>:<width>x<height>`, of a `sensor` capture, after the
+/// outputs `earlier`.
+fn output_spec(
+    value: &str,
+    sensor: (u32, u32),
+    earlier: &[OutputSpec],
+) -> Result<OutputSpec, String> {
+    let (source, size) = match value.split(':').collect::<Vec<_>>()[..] {
+        ["cpu", size] => (None, size),
+        ["from", index, size] => {
+            let index: usize = index
+                .parse()
+                .map_err(|_| format!("no output index {index}"))?;
+            (Some(index), size)
+        }
+        _ => return Err("cpu:<width>x<height> or from:<index>:<width>x<height>".to_string()),
+    };
+    let (width, height) = size
+        .split_once('x')
+        .and_then(|(width, height)| Some((width.parse().ok()?, height.parse().ok()?)))
+        .filter(|&(width, height): &(u32, u32)| width > 0 && height > 0)
+        .ok_or_else(|| format!("no size {size}"))?;
+    let source = match source {
+        None => Source::Cpu(
+            [Output::Full, Output::Half]
+                .into_iter()
+                .find(|output| output.size(sensor.0, sensor.1) == (width, height))
+                .ok_or_else(|| {
+                    format!(
+                        "the cpu makes {}x{} or {}x{}",
+                        sensor.0,
+                        sensor.1,
+                        sensor.0 / 2,
+                        sensor.1 / 2
+                    )
+                })?,
+        ),
+        Some(index) => {
+            let from = earlier
+                .get(index)
+                .ok_or_else(|| format!("no earlier output {index}"))?;
+            if from.width % width != 0 || from.height % height != 0 {
+                return Err(format!(
+                    "{width}x{height} is no whole fraction of output {index}'s {}x{}",
+                    from.width, from.height
+                ));
+            }
+            Source::From(index)
+        }
+    };
+    Ok(OutputSpec {
+        source,
+        width,
+        height,
     })
 }
 
@@ -317,16 +420,82 @@ mod tests {
         assert_eq!(parsed.settings.threads, Some(4));
     }
 
+    fn cpu(output: Output, (width, height): (u32, u32)) -> OutputSpec {
+        OutputSpec {
+            source: Source::Cpu(output),
+            width,
+            height,
+        }
+    }
+
     #[test]
-    fn a_single_camera_writes_full_size_frames_unless_asked_for_half() {
-        let parsed = |extra: &[&str]| parse_single(&single_command_line(extra));
-        assert_eq!(parsed(&[]).unwrap().output, Output::Full);
-        assert_eq!(parsed(&["--output", "half"]).unwrap().output, Output::Half);
-        assert_eq!(parsed(&["--output", "full"]).unwrap().output, Output::Full);
+    fn a_single_camera_has_one_output_of_the_capture_size_unless_given_its_outputs() {
+        let parsed = |extra: &[&str]| parse_single(&single_command_line(extra)).unwrap();
+        assert_eq!(parsed(&[]).outputs, [cpu(Output::Full, (2028, 1520))]);
         assert_eq!(
-            parsed(&["--output", "quarter"]),
-            Err("--output: full or half, got quarter".to_string())
+            parsed(&["--output", "cpu:1014x760"]).outputs,
+            [cpu(Output::Half, (1014, 760))]
         );
+        assert_eq!(
+            parsed(&["--output", "cpu:2028x1520", "--output", "from:0:1014x760"]).outputs,
+            [
+                cpu(Output::Full, (2028, 1520)),
+                OutputSpec {
+                    source: Source::From(0),
+                    width: 1014,
+                    height: 760
+                }
+            ]
+        );
+        assert_eq!(
+            parsed(&["--output", "cpu:1014x760", "--output", "cpu:2028x1520"]).outputs,
+            [
+                cpu(Output::Half, (1014, 760)),
+                cpu(Output::Full, (2028, 1520))
+            ]
+        );
+    }
+
+    #[test]
+    fn an_output_is_refused_unless_its_processor_or_source_can_make_its_size() {
+        let refused = |outputs: &[&str]| {
+            let extra: Vec<&str> = outputs
+                .iter()
+                .flat_map(|output| ["--output", output])
+                .collect();
+            parse_single(&single_command_line(&extra)).unwrap_err()
+        };
+        assert_eq!(
+            refused(&["cpu:1000x750"]),
+            "--output cpu:1000x750: the cpu makes 2028x1520 or 1014x760"
+        );
+        assert_eq!(
+            refused(&["isp:2028x1520"]),
+            "--output isp:2028x1520: cpu:<width>x<height> or from:<index>:<width>x<height>"
+        );
+        assert_eq!(refused(&["cpu:2028"]), "--output cpu:2028: no size 2028");
+        assert_eq!(
+            refused(&["cpu:0x1520"]),
+            "--output cpu:0x1520: no size 0x1520"
+        );
+        assert_eq!(
+            refused(&["from:0:1014x760"]),
+            "--output from:0:1014x760: no earlier output 0"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "from:1:1014x760"]),
+            "--output from:1:1014x760: no earlier output 1"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "from:x:1014x760"]),
+            "--output from:x:1014x760: no output index x"
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "from:0:1000x760"]),
+            "--output from:0:1000x760: 1000x760 is no whole fraction of output 0's 2028x1520"
+        );
+        let many = vec!["cpu:2028x1520"; MAX_OUTPUTS + 1];
+        assert_eq!(refused(&many), "--output: at most 256 outputs");
     }
 
     #[test]

@@ -15,6 +15,7 @@ mod input;
 mod lock;
 mod pairing;
 mod processor;
+mod scale;
 mod sensor;
 mod settings;
 mod single;

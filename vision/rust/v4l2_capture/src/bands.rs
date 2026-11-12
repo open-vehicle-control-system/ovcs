@@ -128,7 +128,7 @@ pub fn convert<S: Default + Send>(
 
 /// `cell_rows` rows of cells split into up to `count` bands, top to bottom,
 /// none empty but for an image without rows, their sizes at most one apart.
-fn split(cell_rows: usize, count: usize) -> Vec<Range<usize>> {
+pub(crate) fn split(cell_rows: usize, count: usize) -> Vec<Range<usize>> {
     let count = count.clamp(1, cell_rows.max(1));
     (0..count)
         .map(|band| cell_rows * band / count..cell_rows * (band + 1) / count)

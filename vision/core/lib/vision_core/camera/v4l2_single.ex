@@ -16,7 +16,8 @@ defmodule VisionCore.Camera.V4L2Single do
 
   Records on the Port's stdout are `{:packet, 4}`:
 
-      uint8   tag                 # 6 = RGB_FRAME
+      uint8   tag                 # 7 = OUTPUT_FRAME
+      uint8   output              # the output's index
       uint16  width   LE
       uint16  height  LE
       int64   capture_ns LE       # frame start, kernel CLOCK_MONOTONIC
@@ -78,7 +79,7 @@ defmodule VisionCore.Camera.V4L2Single do
   alias VisionCore.Camera.V4L2.Capture
   alias VisionCore.{Outputs, Timing}
 
-  @rgb_frame_tag 6
+  @output_frame_tag 7
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
   # How long CAMSS and the sensor may take to register after the VM starts.
@@ -187,11 +188,11 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @doc false
   def parse_record(
-        <<@rgb_frame_tag, width::little-16, height::little-16, kernel_ns::little-signed-64,
-          rgb::binary>>
+        <<@output_frame_tag, output, width::little-16, height::little-16,
+          kernel_ns::little-signed-64, rgb::binary>>
       )
       when byte_size(rgb) == width * height * 3 do
-    {:frame,
+    {:frame, output,
      %Frame{
        label: nil,
        width: width,
@@ -201,7 +202,7 @@ defmodule VisionCore.Camera.V4L2Single do
      }}
   end
 
-  def parse_record(<<@rgb_frame_tag, _rest::binary>>), do: {:error, :malformed_record}
+  def parse_record(<<@output_frame_tag, _rest::binary>>), do: {:error, :malformed_record}
   def parse_record(record), do: Capture.parse_record(record)
 
   @impl GenServer
@@ -280,8 +281,15 @@ defmodule VisionCore.Camera.V4L2Single do
       "--fps",
       Integer.to_string(Keyword.get(opts, :fps, @default_fps)),
       "--output",
-      Atom.to_string(output)
+      "cpu:#{output_size(output, opts)}"
     ] ++ Capture.arguments(@settings, opts)
+  end
+
+  defp output_size(output, opts) do
+    divisor = if output == :half, do: 2, else: 1
+    width = div(Keyword.get(opts, :sensor_width, @default_sensor_width), divisor)
+    height = div(Keyword.get(opts, :sensor_height, @default_sensor_height), divisor)
+    "#{width}x#{height}"
   end
 
   @impl GenServer
@@ -303,7 +311,7 @@ defmodule VisionCore.Camera.V4L2Single do
   @impl GenServer
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
     case parse_record(packet) do
-      {:frame, frame} ->
+      {:frame, _output, frame} ->
         Outputs.publish(
           state.output,
           {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id}}

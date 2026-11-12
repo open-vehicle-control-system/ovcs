@@ -12,7 +12,7 @@ const TAG_LOG: u8 = 2;
 const TAG_METADATA: u8 = 3;
 const TAG_PAIR: u8 = 4;
 const TAG_GREY_FRAME: u8 = 5;
-const TAG_RGB_FRAME: u8 = 6;
+const TAG_OUTPUT_FRAME: u8 = 7;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -196,10 +196,16 @@ pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) 
     [&grey_frame_header(width, height, capture_ns)[..], grey].concat()
 }
 
-/// The start of an RGB_FRAME record, which `width` x `height` pixels of
-/// 8-bit red, green and blue follow, row-major.
-pub fn rgb_frame_header(width: u16, height: u16, capture_ns: i64) -> [u8; 13] {
-    image_header(TAG_RGB_FRAME, width, height, capture_ns)
+/// The start of an OUTPUT_FRAME record, a camera output's frame: the tag,
+/// the output's index, then the size and capture time an image record
+/// starts with, which `width` x `height` pixels of 8-bit red, green and
+/// blue follow, row-major.
+pub fn output_frame_header(output: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 14] {
+    let mut header = [0; 14];
+    header[0] = TAG_OUTPUT_FRAME;
+    header[1] = output;
+    header[2..].copy_from_slice(&image_header(TAG_OUTPUT_FRAME, width, height, capture_ns)[1..]);
+    header
 }
 
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
@@ -329,10 +335,10 @@ mod tests {
     }
 
     #[test]
-    fn rgb_frame_record_layout() {
-        let got = [&rgb_frame_header(2, 1, -5)[..], &[1, 2, 3, 4, 5, 6]].concat();
+    fn output_frame_record_layout() {
+        let got = [&output_frame_header(3, 2, 1, -5)[..], &[1, 2, 3, 4, 5, 6]].concat();
         let want = [
-            6, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4, 5, 6,
+            7, 3, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4, 5, 6,
         ];
         assert_eq!(got, want);
     }

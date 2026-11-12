@@ -1,9 +1,12 @@
-//! A single colour camera: captures its raw RGGB frames, demosaics them at
-//! the capture's size or each 2x2 cell into one pixel, with grey-world white
-//! balance, runs auto exposure on the green of the RGGB cells as the image
-//! tones it, and writes RGB_FRAME records on stdout, each frame converted in
-//! bands of rows on as many threads as `threads` sets and written on a
-//! writer thread while the next one converts. A sensor with a tuning
+//! A single colour camera: captures its raw RGGB frames, makes each of its
+//! outputs from them, demosaiced at the capture's size or each 2x2 cell into
+//! one pixel by the processor (`processor`), with grey-world white balance,
+//! or averaged from another output (`scale`), runs auto exposure on the
+//! green of the RGGB cells as the image tones it, and writes one
+//! OUTPUT_FRAME record per output per frame on stdout, in the outputs'
+//! order, each frame converted in bands of rows on as many threads as
+//! `threads` sets and written on a writer thread while the next one
+//! converts. A sensor with a tuning
 //! takes its colour path (`colour`): lens shading, white balance, the colour
 //! correction matrix of its colour temperature, the chroma denoise and the
 //! contrast curve; another one its gamma.
@@ -14,11 +17,12 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use framing::{log_record, metadata_record, rgb_frame_header, LogLevel, Writer};
+use framing::{log_record, metadata_record, output_frame_header, LogLevel, Writer};
 
-use crate::arguments::{Output, SingleArguments};
+use crate::arguments::{OutputSpec, SingleArguments, Source};
 use crate::bayer::{RawFrame, Tone};
 use crate::processor::{Cpu, Development, Processor};
+use crate::scale;
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
@@ -29,14 +33,13 @@ use crate::{
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
-/// host closes stdin, writing each frame at the size of `arguments.output`.
+/// host closes stdin, writing each frame as each of `arguments.outputs`.
 pub fn run(
     arguments: &SingleArguments,
     writer: &Writer,
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.sensor_width, arguments.sensor_height);
-    let (width, height) = arguments.output.size(sensor_width, sensor_height);
     let model = SensorModel::for_sensor(&arguments.camera.sensor);
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
@@ -71,9 +74,9 @@ pub fn run(
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} {:?} to {width}x{height} {:?}, line {line_ns:.1} ns, \
+            "{sensor_width}x{sensor_height} {:?} to {:?}, line {line_ns:.1} ns, \
              vblank {vblank}, period {period_ns} ns, {settings:?}",
-            camera.capture.layout, arguments.output
+            camera.capture.layout, arguments.outputs
         ),
     );
     let frames = CameraFrames {
@@ -82,7 +85,7 @@ pub fn run(
         height: sensor_height as usize,
     };
     let setup = Setup {
-        output: arguments.output,
+        outputs: arguments.outputs.clone(),
         model,
         frame_us,
         settings,
@@ -158,7 +161,7 @@ impl Records for Writer {
 
 /// What the frame loop starts from.
 struct Setup {
-    output: Output,
+    outputs: Vec<OutputSpec>,
     model: SensorModel,
     /// A frame's period.
     frame_us: f64,
@@ -197,26 +200,29 @@ fn capture(
     })
 }
 
-/// A record for the writer thread: a frame's header and image, or another
-/// record whole.
+/// A record for the writer thread: a frame's outputs, each image with its
+/// header, or another record whole.
 enum Record {
-    Frame([u8; 13], Vec<u8>),
+    Frame(Vec<[u8; 14]>, Vec<Vec<u8>>),
     Other(Vec<u8>),
 }
 
-/// Writes each record `queued` holds to `records`, in order, handing each
-/// frame's image back to `written` with the time its write took.
+/// Writes each record `queued` holds to `records`, in order, a frame's
+/// outputs one record each, handing each frame's images back to `written`
+/// with the time their writes took.
 fn write_records(
     records: &impl Records,
     queued: mpsc::Receiver<Record>,
-    written: mpsc::Sender<(Vec<u8>, Duration)>,
+    written: mpsc::Sender<(Vec<Vec<u8>>, Duration)>,
 ) -> io::Result<()> {
     for record in queued {
         match record {
-            Record::Frame(header, image) => {
+            Record::Frame(headers, images) => {
                 let writing = Instant::now();
-                records.write(&[&header, &image])?;
-                let _ = written.send((image, writing.elapsed()));
+                for (header, image) in headers.iter().zip(&images) {
+                    records.write(&[header, image])?;
+                }
+                let _ = written.send((images, writing.elapsed()));
             }
             Record::Other(record) => records.write(&[&record])?,
         }
@@ -228,7 +234,7 @@ fn write_records(
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
-    images: mpsc::Receiver<(Vec<u8>, Duration)>,
+    images: mpsc::Receiver<(Vec<Vec<u8>>, Duration)>,
 }
 
 impl Queue {
@@ -236,9 +242,9 @@ impl Queue {
         self.records.send(record).map_err(|_| writer_stopped())
     }
 
-    /// The next image written, waiting for its write to end, and the time
-    /// it took.
-    fn written(&self) -> io::Result<(Vec<u8>, Duration)> {
+    /// The next frame's images written, waiting for their writes to end,
+    /// and the time they took.
+    fn written(&self) -> io::Result<(Vec<Vec<u8>>, Duration)> {
         self.images.recv().map_err(|_| writer_stopped())
     }
 }
@@ -256,7 +262,7 @@ fn convert_frames(
     queue: &Queue,
 ) -> io::Result<()> {
     let Setup {
-        output,
+        outputs,
         model,
         frame_us,
         mut settings,
@@ -273,9 +279,24 @@ fn convert_frames(
         )
     };
     let tuning = model.tuning();
-    let mut processor = Cpu::new(model, output);
-    // Two images alternate: one converts while the writer writes the other.
-    let (mut rgb, mut spare) = (Vec::new(), Some(Vec::new()));
+    let mut processors: Vec<Option<Cpu>> = (outputs.iter())
+        .map(|spec| match spec.source {
+            Source::Cpu(output) => Some(Cpu::new(model, output)),
+            Source::From(_) => None,
+        })
+        .collect();
+    let default_threads = (outputs.iter())
+        .filter_map(|spec| match spec.source {
+            Source::Cpu(output) => Some(output.threads()),
+            Source::From(_) => None,
+        })
+        .max()
+        .unwrap_or(1);
+    // Two sets of images alternate: one converts while the writer writes the other.
+    let (mut images, mut spare) = (
+        vec![Vec::new(); outputs.len()],
+        Some(vec![Vec::new(); outputs.len()]),
+    );
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
@@ -284,7 +305,7 @@ fn convert_frames(
     let mut converted = 0u32;
     // Frames converted, and frames dropped as incomplete.
     let mut statistics = [0u64; 2];
-    let mut conversion_ns = 0u128;
+    let (mut conversion_ns, mut scaling_ns) = (0u128, 0u128);
     let (mut writes, mut write_ns) = (0u64, 0u128);
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
@@ -328,12 +349,13 @@ fn convert_frames(
             log(
                 LogLevel::Info,
                 &format!(
-                    "last {} s: frames {}, incomplete {}, \
-                     {} us per conversion, {} us per write, white balance {gains:?}{}",
+                    "last {} s: frames {}, incomplete {}, {} us per conversion, \
+                     {} us per scaling, {} us per write, white balance {gains:?}{}",
                     statistics_every.as_secs(),
                     statistics[0],
                     statistics[1],
                     conversion_ns / 1_000 / u128::from(statistics[0].max(1)),
+                    scaling_ns / 1_000 / u128::from(statistics[0].max(1)),
                     write_ns / 1_000 / u128::from(writes.max(1)),
                     tuning
                         .map(|tuning| format!(", {:.0} K", tuning.colour_temperature(gains)))
@@ -341,7 +363,7 @@ fn convert_frames(
                 ),
             );
             statistics = [0; 2];
-            conversion_ns = 0;
+            (conversion_ns, scaling_ns) = (0, 0);
             (writes, write_ns) = (0, 0);
             statistics_since = Instant::now();
         }
@@ -352,22 +374,30 @@ fn convert_frames(
             converted += 1;
             let measure_exposure =
                 settings.capture.auto_exposure && converted.is_multiple_of(EXPOSURE_EVERY_FRAMES);
-            let development = Development {
-                settings: &settings,
-                gains,
-                tone: &tone,
-                channel_means: settings.awb,
-                green_mean: measure_exposure,
-                threads: settings.threads.unwrap_or(output.threads()),
-            };
-            let developed = processor.develop(&raw, &development, &mut rgb);
-            if let Some(means) = developed.channel_means {
+            let threads = settings.threads.unwrap_or(default_threads);
+            let mut measured = None;
+            for (processor, image) in processors.iter_mut().zip(&mut images) {
+                let Some(processor) = processor else { continue };
+                // The first output a processor makes measures the frame.
+                let development = Development {
+                    settings: &settings,
+                    gains,
+                    tone: &tone,
+                    channel_means: settings.awb && measured.is_none(),
+                    green_mean: measure_exposure && measured.is_none(),
+                    threads,
+                };
+                let measures = processor.develop(&raw, &development, image);
+                measured.get_or_insert(measures);
+            }
+            let measures = measured.expect("an output made by a processor");
+            if let Some(means) = measures.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
             conversion_ns += converting.elapsed().as_nanos();
-            Some((start_ns, raw.width, raw.height, developed.green_mean))
+            Some((start_ns, measures.green_mean))
         })? {
-            let Some((start_ns, sensor_width, sensor_height, green_mean)) = taken else {
+            let Some((start_ns, green_mean)) = taken else {
                 statistics[1] += 1;
                 continue;
             };
@@ -379,18 +409,46 @@ fn convert_frames(
                     queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
             }
+            let scaling = Instant::now();
+            let threads = settings.threads.unwrap_or(default_threads);
+            scale_outputs(&outputs, threads, &mut images);
+            scaling_ns += scaling.elapsed().as_nanos();
             let free = match spare.take() {
-                Some(image) => image,
+                Some(images) => images,
                 None => {
-                    let (image, took) = queue.written()?;
+                    let (images, took) = queue.written()?;
                     (writes, write_ns) = (writes + 1, write_ns + took.as_nanos());
-                    image
+                    images
                 }
             };
-            let (width, height) = output.size(sensor_width as u32, sensor_height as u32);
-            let header = rgb_frame_header(width as u16, height as u16, start_ns);
-            queue.send(Record::Frame(header, std::mem::replace(&mut rgb, free)))?;
+            let headers = (outputs.iter().enumerate())
+                .map(|(index, spec)| {
+                    let (width, height) = (spec.width as u16, spec.height as u16);
+                    output_frame_header(index as u8, width, height, start_ns)
+                })
+                .collect();
+            queue.send(Record::Frame(headers, std::mem::replace(&mut images, free)))?;
         }
+    }
+}
+
+/// Makes each of `outputs` scaled from another, in order, into its image
+/// of `images`, on `threads` threads.
+fn scale_outputs(outputs: &[OutputSpec], threads: usize, images: &mut [Vec<u8>]) {
+    for (index, spec) in outputs.iter().enumerate() {
+        let Source::From(from) = spec.source else {
+            continue;
+        };
+        let (made, rest) = images.split_at_mut(index);
+        let source = &outputs[from];
+        let block = spec.block(source);
+        scale::average_blocks(
+            &made[from],
+            source.width as usize,
+            block,
+            threads,
+            &mut rest[0],
+        );
     }
 }
 
@@ -403,6 +461,7 @@ mod tests {
     use std::sync::{mpsc, Mutex};
 
     use super::*;
+    use crate::arguments::Output;
     use crate::bands::{Conversion, Measures};
     use crate::bayer::Layout;
     use crate::bayer::{self, tests::padded_packed12};
@@ -734,6 +793,13 @@ mod tests {
             .collect()
     }
 
+    // One output of the test frames' size, converted by the processor.
+    const FULL: OutputSpec = OutputSpec {
+        source: Source::Cpu(Output::Full),
+        width: WIDTH as u32,
+        height: HEIGHT as u32,
+    };
+
     // The frame loop over `frames` from the IMX477, writing to `records`,
     // logging its statistics every `statistics_every`.
     fn run_loop(
@@ -742,8 +808,19 @@ mod tests {
         records: &impl Records,
         statistics_every: Duration,
     ) -> io::Result<()> {
+        run_outputs(&[FULL], frames, input, records, statistics_every)
+    }
+
+    // `run_loop` making `outputs`.
+    fn run_outputs(
+        outputs: &[OutputSpec],
+        frames: &TestFrames,
+        input: &mut File,
+        records: &impl Records,
+        statistics_every: Duration,
+    ) -> io::Result<()> {
         let setup = Setup {
-            output: Output::Full,
+            outputs: outputs.to_vec(),
             model: SensorModel::Imx477,
             frame_us: 28_571.0,
             settings: ColourSettings::default(),
@@ -758,11 +835,30 @@ mod tests {
         frames: Vec<Option<Vec<u8>>>,
         settings: Vec<(usize, &'static str)>,
     ) -> Vec<Vec<u8>> {
+        captured_as(&[FULL], frames, settings)
+    }
+
+    // `captured` making `outputs`.
+    fn captured_as(
+        outputs: &[OutputSpec],
+        frames: Vec<Option<Vec<u8>>>,
+        settings: Vec<(usize, &'static str)>,
+    ) -> Vec<Vec<u8>> {
         let (frames, mut input) = TestFrames::new(frames, settings);
         let records = Collected::default();
         let hour = Duration::from_secs(3_600);
-        run_loop(&frames, &mut input, &records, hour).unwrap();
+        run_outputs(outputs, &frames, &mut input, &records, hour).unwrap();
         records.0.into_inner().unwrap()
+    }
+
+    const OUTPUT_FRAME: u8 = 7;
+
+    // The images of the output `index`'s records, in order.
+    fn output_images(records: &[Vec<u8>], index: u8) -> Vec<Vec<u8>> {
+        let frames = records
+            .iter()
+            .filter(|record| record[..2] == [OUTPUT_FRAME, index]);
+        frames.map(|record| record[14..].to_vec()).collect()
     }
 
     // FNV-1a of each record's length then bytes, in order.
@@ -784,20 +880,92 @@ mod tests {
     fn a_sequence_of_frames_gives_the_same_records_in_the_same_order() {
         let records = captured(scenes(12, Some(5)), vec![]);
         let tags: Vec<u8> = records.iter().map(|record| record[0]).collect();
-        // Frames (6), each fourth whole one after the exposure it sets (3).
-        assert_eq!(tags, [6, 6, 6, 3, 6, 6, 6, 6, 3, 6, 6, 6, 6]);
-        // Which thread writes the records changes none of them nor their order.
-        assert_eq!(records_digest(&records), 0xf88a5dbe53ea288a);
+        // Frames (7), each fourth whole one after the exposure it sets (3).
+        assert_eq!(tags, [7, 7, 7, 3, 7, 7, 7, 7, 3, 7, 7, 7, 7]);
+        assert!(records
+            .iter()
+            .all(|record| record[0] != 7 || record[1] == 0));
+        // Pinned on the RGB_FRAME records (6) that the OUTPUT_FRAME records
+        // of one output are, but for their tag and output index: which
+        // thread writes the records changes none of them nor their order.
+        let rgb_frames: Vec<Vec<u8>> = (records.iter())
+            .map(|record| match record[0] {
+                OUTPUT_FRAME => [&[6][..], &record[2..]].concat(),
+                _ => record.clone(),
+            })
+            .collect();
+        assert_eq!(records_digest(&rgb_frames), 0xf88a5dbe53ea288a);
+    }
+
+    #[test]
+    fn a_frame_gives_one_record_per_output_in_their_order() {
+        let half = OutputSpec {
+            source: Source::From(0),
+            width: WIDTH as u32 / 2,
+            height: HEIGHT as u32 / 2,
+        };
+        let full = captured(scenes(6, Some(2)), vec![]);
+        let records = captured_as(&[FULL, half], scenes(6, Some(2)), vec![]);
+
+        // Each frame's outputs (7) in order, the fourth's after the exposure it sets (3).
+        let heads: Vec<(u8, u8)> = (records.iter())
+            .map(|record| {
+                (
+                    record[0],
+                    if record[0] == OUTPUT_FRAME {
+                        record[1]
+                    } else {
+                        0
+                    },
+                )
+            })
+            .collect();
+        let frame = [(7, 0), (7, 1)];
+        let expected = [&frame[..], &frame, &frame, &[(3, 0)], &frame, &frame].concat();
+        assert_eq!(heads, expected);
+        assert_eq!(output_images(&records, 0), output_images(&full, 0));
+        for (view, small) in output_images(&records, 0)
+            .iter()
+            .zip(output_images(&records, 1))
+        {
+            let mut averaged = Vec::new();
+            scale::average_blocks(view, WIDTH, (2, 2), 1, &mut averaged);
+            assert!(small == averaged);
+        }
+        for record in records.iter().filter(|record| record[0] == OUTPUT_FRAME) {
+            let size = (
+                u16::from_le_bytes([record[2], record[3]]),
+                u16::from_le_bytes([record[4], record[5]]),
+            );
+            let expected = [(24, 46), (12, 23)][usize::from(record[1])];
+            assert_eq!(size, expected);
+            assert_eq!(
+                record.len(),
+                14 + 24 * 46 * 3 / [1, 4][usize::from(record[1])]
+            );
+        }
+    }
+
+    #[test]
+    fn each_output_a_processor_makes_has_the_image_of_its_own_size() {
+        let half = OutputSpec {
+            source: Source::Cpu(Output::Half),
+            width: WIDTH as u32 / 2,
+            height: HEIGHT as u32 / 2,
+        };
+        let full = captured(scenes(6, None), vec![]);
+        let half_alone = captured_as(&[half], scenes(6, None), vec![]);
+        let both = captured_as(&[half, FULL], scenes(6, None), vec![]);
+
+        assert_eq!(output_images(&both, 0), output_images(&half_alone, 0));
+        assert_eq!(output_images(&both, 1), output_images(&full, 0));
     }
 
     #[test]
     fn a_setting_sent_while_frames_arrive_applies_from_the_next_frame() {
         let upright = captured(scenes(8, None), vec![]);
         let turned = captured(scenes(8, None), vec![(2, "rotation=180")]);
-        let frames = |records: &[Vec<u8>]| -> Vec<Vec<u8>> {
-            let frames = records.iter().filter(|record| record[0] == 6);
-            frames.map(|record| record[13..].to_vec()).collect()
-        };
+        let frames = |records: &[Vec<u8>]| -> Vec<Vec<u8>> { output_images(records, 0) };
         let turn =
             |rgb: &[u8]| -> Vec<u8> { rgb.chunks_exact(3).rev().flatten().copied().collect() };
         let (upright, turned_frames) = (frames(&upright), frames(&turned));
@@ -811,7 +979,7 @@ mod tests {
             .iter()
             .position(|record| record.starts_with(b"\x02\x00settings: "));
         let third_frame = (turned.iter().enumerate())
-            .filter(|(_, record)| record[0] == 6)
+            .filter(|(_, record)| record[0] == OUTPUT_FRAME)
             .nth(2)
             .map(|(position, _)| position);
         assert_eq!(applied, third_frame.map(|position| position + 1));
@@ -827,7 +995,7 @@ mod tests {
     impl Records for Held {
         fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
             let mut overlapped = self.overlapped.lock().unwrap();
-            if parts[0][0] == 6 && overlapped.is_none() {
+            if parts[0][0] == OUTPUT_FRAME && overlapped.is_none() {
                 let taken = self.taken.lock().unwrap();
                 let mut taken =
                     std::iter::from_fn(|| taken.recv_timeout(Duration::from_secs(2)).ok());
@@ -858,7 +1026,7 @@ mod tests {
 
     impl Records for Closing {
         fn write(&self, parts: &[&[u8]]) -> io::Result<()> {
-            if parts[0][0] != 6 {
+            if parts[0][0] != OUTPUT_FRAME {
                 return Ok(());
             }
             let left = self.frames.fetch_sub(1, Ordering::SeqCst);
