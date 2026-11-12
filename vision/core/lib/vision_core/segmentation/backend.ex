@@ -56,6 +56,16 @@ defmodule VisionCore.Segmentation.Backend do
   @doc "False when the backend could not initialise. Never raises."
   @callback available?(GenServer.server()) :: boolean()
 
+  @doc """
+  Where the backend is: `:starting` while it prepares its model and
+  opens its accelerator, `:running` once it takes bands, `:failed` when it
+  does not and is not about to. Never raises. Without it,
+  `available?/1` tells `:running` from `:failed`.
+  """
+  @callback state(GenServer.server()) :: :starting | :running | :failed
+
+  @optional_callbacks state: 1
+
   @doc "The kind of accelerator the backend runs on, `nil` without one."
   @callback npu_kind() :: String.t() | nil
 

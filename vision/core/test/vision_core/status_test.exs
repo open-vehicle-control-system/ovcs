@@ -184,14 +184,37 @@ defmodule VisionCore.StatusTest do
            }
   end
 
-  # A backend that is available and reports `times` as its inference times.
-  defp answer_backend(times \\ nil) do
+  # A backend in `state` that reports `times` as its inference times.
+  defp answer_backend(times \\ nil, state \\ :running) do
     receive do
-      {:"$gen_call", from, :available?} -> GenServer.reply(from, true)
+      {:"$gen_call", from, :state} -> GenServer.reply(from, state)
       {:"$gen_call", from, :inference_times} -> GenServer.reply(from, times)
     end
 
-    answer_backend(times)
+    answer_backend(times, state)
+  end
+
+  test "a Hexagon has failed while a backend has, and is starting while one opens its Port" do
+    starting = spawn(fn -> answer_backend(nil, :starting) end)
+    Process.register(starting, VisionCore.Detection.Backend.Qnn)
+    on_exit(fn -> Process.exit(starting, :kill) end)
+    running = spawn(&answer_backend/0)
+    Process.register(running, VisionCore.Detection.Backend.Qnn.Road)
+    on_exit(fn -> Process.exit(running, :kill) end)
+
+    start_supervised!(
+      {Status,
+       config:
+         config([:qnn_detector, {:qnn_detector, name: :road}, {:qnn_detector, name: :signs}])}
+    )
+
+    assert %{state: :failed} = Status.snapshot().npu
+
+    signs = spawn(&answer_backend/0)
+    Process.register(signs, VisionCore.Detection.Backend.Qnn.Signs)
+    on_exit(fn -> Process.exit(signs, :kill) end)
+
+    assert %{state: :starting} = Status.snapshot().npu
   end
 
   defp register_backend(name, times) do

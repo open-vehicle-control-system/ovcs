@@ -142,9 +142,11 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     submitted = Task.async(fn -> Qnn.detect(1, @image) end)
     assert Task.yield(submitted, 500) == {:ok, {:error, :unavailable}}
     refute Qnn.available?()
+    assert Qnn.state() == :starting
 
     File.rm!(hold)
     eventually(&Qnn.available?/0)
+    assert Qnn.state() == :running
     assert Qnn.detect(2, @image) == :ok
     assert_receive {:inference_detections, 2, [_detection]}, 2_000
   end
@@ -182,6 +184,7 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     Process.sleep(200)
 
     refute Qnn.available?()
+    assert Qnn.state() == :failed
     assert is_nil(:sys.get_state(Qnn).opening)
   end
 

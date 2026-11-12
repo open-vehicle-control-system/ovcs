@@ -3,8 +3,9 @@ defmodule VisionCore.Status do
   The vision unit's health at a glance, for the dashboard: each camera's
   frame rate and exposure, the pair's sync, the NPU the detection and
   segmentation pipelines run on (`:npu`: the kind of the first one's,
-  the detection pipelines' first, failed while any of their backends is
-  unavailable, its `:load_percent` and each pipeline's
+  the detection pipelines' first, failed while any of their backends
+  has, starting while one prepares its model and none has failed, its
+  `:load_percent` and each pipeline's
   `:inference_ms`), the depth rate, each exporter's
   status (`VisionCore.Exporters.list/1`), the CPU's busy share
   (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
@@ -73,7 +74,7 @@ defmodule VisionCore.Status do
           npu:
             %{
               kind: String.t(),
-              state: :running | :failed,
+              state: :starting | :running | :failed,
               load_percent: float() | nil,
               pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
             }
@@ -391,12 +392,25 @@ defmodule VisionCore.Status do
   end
 
   defp npu_calls(%{npu_backends: backends}, moment) do
-    available =
+    states =
       Map.new(backends, fn {_name, backend, server} ->
-        {{:npu, server}, {fn -> backend.available?(server) end, false}}
+        {{:npu, server}, {fn -> backend_state(backend, server) end, :failed}}
       end)
 
-    if moment == :tick, do: Map.merge(available, npu_times_calls(backends)), else: available
+    if moment == :tick, do: Map.merge(states, npu_times_calls(backends)), else: states
+  end
+
+  defp backend_state(backend, server) do
+    cond do
+      Code.ensure_loaded?(backend) and function_exported?(backend, :state, 1) ->
+        backend.state(server)
+
+      backend.available?(server) ->
+        :running
+
+      true ->
+        :failed
+    end
   end
 
   defp npu_times_calls(backends) do
@@ -470,12 +484,11 @@ defmodule VisionCore.Status do
   defp npu(%{npu_backends: []}, _replies), do: nil
 
   defp npu(%{npu_backends: [{_name, first, _server} | _others] = backends} = state, replies) do
-    available? =
-      Enum.all?(backends, fn {_name, _backend, server} -> Map.fetch!(replies, {:npu, server}) end)
+    states = for {_name, _backend, server} <- backends, do: Map.fetch!(replies, {:npu, server})
 
     %{
       kind: first.npu_kind(),
-      state: if(available?, do: :running, else: :failed),
+      state: Enum.find([:failed, :starting], :running, &(&1 in states)),
       load_percent: state.npu_times && state.npu_times.load_percent,
       pipelines: pipelines(state)
     }

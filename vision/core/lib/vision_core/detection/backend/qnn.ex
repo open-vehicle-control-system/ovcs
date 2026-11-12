@@ -102,6 +102,17 @@ defmodule VisionCore.Detection.Backend.Qnn do
     :exit, _ -> nil
   end
 
+  @doc """
+  `:starting` while the context binary is generated, `:running` once the
+  Port is open, `:failed` otherwise, the backend gone included.
+  """
+  @impl VisionCore.Detection.Backend
+  def state(server \\ __MODULE__) do
+    GenServer.call(server, :state)
+  catch
+    :exit, _ -> :failed
+  end
+
   @impl VisionCore.Detection.Backend
   def npu_kind, do: "Hexagon"
 
@@ -216,6 +227,10 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl GenServer
   def handle_call(:available?, _from, state), do: {:reply, not is_nil(state.port), state}
+
+  def handle_call(:state, _from, %{port: nil, opening: nil} = state), do: {:reply, :failed, state}
+  def handle_call(:state, _from, %{port: nil} = state), do: {:reply, :starting, state}
+  def handle_call(:state, _from, state), do: {:reply, :running, state}
 
   def handle_call(:inference_times, _from, state), do: take_times(state)
 

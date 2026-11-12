@@ -205,11 +205,11 @@ defmodule VisionCore.Detection.Backend.HailoTest do
        reopen_delays_ms: [20]}
     )
 
-    refute Hailo.available?()
+    assert Hailo.state() == :failed
 
     File.chmod!(executable, 0o755)
 
-    eventually(&Hailo.available?/0)
+    eventually(fn -> Hailo.state() == :running end)
     assert Hailo.detect(1, @image) == :ok
   end
 

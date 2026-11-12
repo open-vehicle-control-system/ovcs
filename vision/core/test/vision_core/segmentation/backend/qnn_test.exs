@@ -169,9 +169,11 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     submitted = Task.async(fn -> Qnn.segment(1, @band) end)
     assert Task.yield(submitted, 500) == {:ok, {:error, :unavailable}}
     refute Qnn.available?()
+    assert Qnn.state() == :starting
 
     File.rm!(hold)
     eventually(&Qnn.available?/0)
+    assert Qnn.state() == :running
     assert Qnn.segment(2, @band) == :ok
     assert_receive {:inference_labels, 2, %{}}, 2_000
   end
@@ -210,6 +212,7 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     Process.sleep(200)
 
     refute Qnn.available?()
+    assert Qnn.state() == :failed
     assert is_nil(:sys.get_state(Qnn).opening)
   end
 
