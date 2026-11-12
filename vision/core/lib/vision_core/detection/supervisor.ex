@@ -50,9 +50,8 @@ defmodule VisionCore.Detection.Supervisor do
   option another component or exporter takes names where it belongs.
   """
   use Supervisor
-  require Logger
 
-  alias VisionCore.Detection
+  alias VisionCore.{Detection, Unit}
   alias VisionCore.Detection.{Live, Pipeline}
   alias VisionCore.Detection.Backend.Hailo
 
@@ -70,28 +69,12 @@ defmodule VisionCore.Detection.Supervisor do
     name = Detection.pipeline_name(opts)
     server = Detection.server(__MODULE__, name)
 
-    case Supervisor.start_link(__MODULE__, opts, name: server) do
-      {:error, reason} ->
-        Logger.error("#{inspect(server)} failed to start, #{name} down: #{failure_text(reason)}")
-        :ignore
-
-      started ->
-        started
-    end
+    Unit.start_contained(__MODULE__, opts, [name: server], "#{name}")
   end
-
-  defp failure_text({:shutdown, {:failed_to_start_child, _child, reason}}),
-    do: failure_text(reason)
-
-  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
-    do: Exception.message(exception)
-
-  defp failure_text(reason) when is_binary(reason), do: reason
-  defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
   def init(opts) do
-    check_options!(opts)
+    Unit.refuse_unknown!(opts, options(), refusal_hints())
     name = opts |> Detection.pipeline_name() |> Detection.name!()
     {backend, backend_opts} = split_backend_options(opts)
     backend_server = Detection.server(backend, name)
@@ -179,30 +162,22 @@ defmodule VisionCore.Detection.Supervisor do
     end
   end
 
-  # The options of the units `config`'s components start, as `VisionCore.Components` resolves them.
-  defp units_options(%VisionCore.Config{components: components}) do
-    for component <- components,
-        {name, opts} = if(is_atom(component), do: {component, []}, else: component),
-        %{start: {__MODULE__, _function, [unit_opts]}} <- VisionCore.Components.start(name, opts),
-        do: unit_opts
+  defp units_options(config), do: Unit.options_of(config, __MODULE__)
+
+  defp refusal_hints do
+    exporter_options =
+      Map.new(@exporter_options, fn option ->
+        {option,
+         "its #{inspect(option)} is the ROS 2 exporter's detections: option " <>
+           "(VisionCore.Ros2.Exporter)"}
+      end)
+
+    Map.put(
+      exporter_options,
+      :frame_id,
+      "its :frame_id is the stereo unit's: each side's :frame_id, which the pairs carry"
+    )
   end
-
-  defp check_options!(opts) do
-    case Enum.uniq(Keyword.keys(opts)) -- options() do
-      [] -> :ok
-      refused -> raise ArgumentError, Enum.map_join(refused, "; ", &refused_option/1)
-    end
-  end
-
-  defp refused_option(:frame_id),
-    do: "its :frame_id is the stereo unit's: each side's :frame_id, which the pairs carry"
-
-  defp refused_option(option) when option in @exporter_options,
-    do:
-      "its #{inspect(option)} is the ROS 2 exporter's detections: option " <>
-        "(VisionCore.Ros2.Exporter)"
-
-  defp refused_option(option), do: "it has no option #{inspect(option)}"
 
   defp options, do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
 

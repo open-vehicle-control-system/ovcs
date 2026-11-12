@@ -50,7 +50,6 @@ defmodule VisionCore.Camera.Unit do
   cannot, is left down with the reason logged.
   """
   use Supervisor
-  require Logger
 
   alias VisionCore.Camera.Output
   alias VisionCore.Detection
@@ -103,28 +102,8 @@ defmodule VisionCore.Camera.Unit do
   def start_link(opts) do
     name = Keyword.fetch!(opts, :name)
 
-    case Supervisor.start_link(__MODULE__, opts) do
-      {:error, reason} ->
-        Logger.error(
-          "#{inspect(__MODULE__)} failed to start, camera #{inspect(name)} down: " <>
-            failure_text(reason)
-        )
-
-        :ignore
-
-      started ->
-        started
-    end
+    VisionCore.Unit.start_contained(__MODULE__, opts, [], "camera #{inspect(name)}")
   end
-
-  defp failure_text({:shutdown, {:failed_to_start_child, _child, reason}}),
-    do: failure_text(reason)
-
-  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
-    do: Exception.message(exception)
-
-  defp failure_text(reason) when is_binary(reason), do: reason
-  defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
   def init(opts) do

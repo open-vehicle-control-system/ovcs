@@ -32,12 +32,13 @@ defmodule VisionCore.Segmentation.Supervisor do
   `:topic_prefix`.
   """
   use Supervisor
-  require Logger
 
-  alias VisionCore.{Detection, Segmentation}
+  alias VisionCore.{Detection, Segmentation, Unit}
   alias VisionCore.Segmentation.{Live, Pipeline}
 
   @default_backend Segmentation.Backend.Qnn
+  @topic_prefix_hint "its :topic_prefix is the ROS 2 exporter's segmentation: option " <>
+                       "(VisionCore.Ros2.Exporter)"
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
   @max_seconds 60
@@ -52,30 +53,12 @@ defmodule VisionCore.Segmentation.Supervisor do
     registration =
       if Detection.name?(name), do: [name: Detection.server(__MODULE__, name)], else: []
 
-    server = Keyword.get(registration, :name, __MODULE__)
-
-    case Supervisor.start_link(__MODULE__, opts, registration) do
-      {:error, reason} ->
-        Logger.error("#{inspect(server)} failed to start, #{name} down: #{failure_text(reason)}")
-        :ignore
-
-      started ->
-        started
-    end
+    Unit.start_contained(__MODULE__, opts, registration, "#{name}")
   end
-
-  defp failure_text({:shutdown, {:failed_to_start_child, _child, reason}}),
-    do: failure_text(reason)
-
-  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
-    do: Exception.message(exception)
-
-  defp failure_text(reason) when is_binary(reason), do: reason
-  defp failure_text(reason), do: inspect(reason)
 
   @impl Supervisor
   def init(opts) do
-    check_options!(opts)
+    Unit.refuse_unknown!(opts, options(), %{topic_prefix: @topic_prefix_hint})
     name = Segmentation.name!(opts)
     {backend, backend_opts} = split_backend_options(opts)
     backend_server = Detection.server(backend, name)
@@ -168,27 +151,7 @@ defmodule VisionCore.Segmentation.Supervisor do
     end
   end
 
-  # The options of the units `config`'s components start, as `VisionCore.Components` resolves them.
-  defp units_options(%VisionCore.Config{components: components}) do
-    for component <- components,
-        {name, opts} = if(is_atom(component), do: {component, []}, else: component),
-        %{start: {__MODULE__, _function, [unit_opts]}} <- VisionCore.Components.start(name, opts),
-        do: unit_opts
-  end
-
-  defp check_options!(opts) do
-    case Enum.uniq(Keyword.keys(opts)) -- options() do
-      [] -> :ok
-      refused -> raise ArgumentError, Enum.map_join(refused, "; ", &refused_option/1)
-    end
-  end
-
-  defp refused_option(:topic_prefix),
-    do:
-      "its :topic_prefix is the ROS 2 exporter's segmentation: option " <>
-        "(VisionCore.Ros2.Exporter)"
-
-  defp refused_option(option), do: "it has no option #{inspect(option)}"
+  defp units_options(config), do: Unit.options_of(config, __MODULE__)
 
   defp options, do: [:name, :backend, :max_hz] ++ pipeline_keys() ++ backend_keys()
 
