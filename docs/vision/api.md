@@ -388,7 +388,7 @@ status.join()
 - `loadPercent`, the share of the last second its pipelines spent inferring, at most 100, `null` until a Port has reported a time;
 - each pipeline's mean `inferenceMs` over that second, `null` in a second without a frame.
 
-[Several detection pipelines](./README.md#several-detection-pipelines) says what they measure on each accelerator.
+[Accelerator load](./detection.md#accelerator-load) says what they measure on each accelerator.
 
 ```json
 {
@@ -457,7 +457,7 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 ### Previews
 
-`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary. So does `preview:<name>` for each camera of its own, a `:camera` component ([The Arduino VENTUNO Q](./README.md#the-arduino-ventuno-q)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one: at most `preview.max_hz` a second, whatever the camera's own rate.
+`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary. So does `preview:<name>` for each camera of its own, a `:camera` component ([A camera of its own](./cameras.md)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one: at most `preview.max_hz` a second, whatever the camera's own rate.
 
 The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
 
@@ -498,7 +498,7 @@ On a unit without detection, the join is refused with `{"reason": "unavailable"}
 
 ### Segmentation
 
-A unit with a segmentation pipeline ([Road segmentation](./README.md#road-segmentation)) has a channel per pipeline, `segmentation:<name>`. The names come from `GET /api/exporters`, with the camera each one segments as its `source`.
+A unit with a segmentation pipeline ([Road segmentation](./segmentation.md)) has a channel per pipeline, `segmentation:<name>`. The names come from `GET /api/exporters`, with the camera each one segments as its `source`.
 
 The channel pushes each result as a `segmentation` event whose payload is binary, at most the pipeline's `maxHz` a second (5 by default). It pushes the next one only once you push `ack`, as on the previews. A result that comes before replaces the one waiting, so a slow link gets the newest grid instead of a backlog. The payload is eight unsigned 16-bit little-endian integers, then the label grid.
 
