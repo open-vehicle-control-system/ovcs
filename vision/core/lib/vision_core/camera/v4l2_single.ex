@@ -38,7 +38,9 @@ defmodule VisionCore.Camera.V4L2Single do
   balance, through the tuning's contrast curve, before the colour matrix
   and the denoise; `ccm` and `denoise` switch its colour correction
   matrix and its chroma denoise, and `gamma` only sets how far auto
-  exposure steps, the contrast curve encoding the image.
+  exposure steps, the contrast curve encoding the image. `threads`, 1 to
+  8, is how many threads convert each frame, in bands of rows: without
+  it, 3 for `:full` frames and 1 for `:half` ones.
 
   ## Opts
 
@@ -138,6 +140,15 @@ defmodule VisionCore.Camera.V4L2Single do
                 default: true,
                 description:
                   "Chroma denoise against coloured speckle at high gain, on a sensor with a tuning (IMX477)"
+              },
+              %{
+                key: :threads,
+                type: :integer,
+                range: {1, 8},
+                # The output decides: `default_threads/1`.
+                default: nil,
+                description:
+                  "Threads converting each frame, 1 to 8; without, 3 for full-size frames and 1 for half-size ones"
               }
             ])
 
@@ -208,11 +219,11 @@ defmodule VisionCore.Camera.V4L2Single do
       who: who,
       frame_id: Keyword.get(opts, :frame_id),
       output: {:camera_frame, name_for(label)},
-      controls: Capture.controls(@settings, opts),
       applied: nil
     }
 
     with {:ok, output} <- output(opts),
+         opts = Keyword.put_new(opts, :threads, default_threads(output)),
          {:ok, nodes} <- route(opts) do
       timeouts = [
         stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @stall_timeout_ms),
@@ -220,6 +231,7 @@ defmodule VisionCore.Camera.V4L2Single do
       ]
 
       arguments = port_arguments(nodes, output, opts)
+      state = Map.put(state, :controls, Capture.controls(@settings, opts))
       {:ok, Map.merge(state, Capture.open(opts, arguments, timeouts, who))}
     else
       {:error, message} ->
@@ -234,6 +246,10 @@ defmodule VisionCore.Camera.V4L2Single do
       other -> {:error, ":output is :full or :half, got #{inspect(other)}"}
     end
   end
+
+  # A full-size frame takes several cores to keep up with the sensor.
+  defp default_threads(:full), do: 3
+  defp default_threads(:half), do: 1
 
   # `--video` takes the node's V4L2 name, which the program looks up, not the route's /dev path.
   defp route(opts) do

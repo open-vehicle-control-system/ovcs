@@ -75,7 +75,7 @@ defmodule VisionCore.Camera.V4L2SingleTest do
   end
 
   defp arguments(path) do
-    eventually(fn -> File.exists?(path) and File.read!(path) =~ "--blue-gain" end)
+    eventually(fn -> File.exists?(path) and File.read!(path) =~ "--threads" end)
     path |> File.read!() |> String.split("\n", trim: true)
   end
 
@@ -198,9 +198,32 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert settings["--gamma"] == "2.2"
     assert settings["--ccm"] == "true"
     assert settings["--denoise"] == "true"
+    assert settings["--threads"] == "3"
     refute Map.has_key?(settings, "--focus")
     assert map_size(settings) == length(V4L2Single.control_specs())
     assert "10" in arguments(arguments)
+  end
+
+  test "converts full-size frames on 3 threads and half-size ones on 1 unless told otherwise",
+       %{tmp_dir: tmp_dir} do
+    threads = fn opts ->
+      {script, arguments, _commands} = listening_program(tmp_dir)
+      camera = start_camera([executable: script] ++ opts)
+      flags = arguments(arguments)
+      flag = flags |> Enum.drop_while(&(&1 != "--threads")) |> Enum.at(1)
+      %{threads: control} = V4L2Single.controls(camera)
+      stop_supervised!(V4L2Single)
+      File.rm!(arguments)
+      {flag, control}
+    end
+
+    assert %{default: nil} = Enum.find(V4L2Single.control_specs(), &(&1.key == :threads))
+    assert threads.([]) == {"3", 3}
+    assert threads.(output: :half) == {"1", 1}
+    assert threads.(output: :half, threads: 4) == {"4", 4}
+
+    log = capture_log(fn -> assert threads.(output: :half, threads: 9) == {"1", 1} end)
+    assert log =~ "threads: invalid value 9"
   end
 
   test "settings become name=value commands on the program stdin, checked against their specs",
