@@ -9,7 +9,7 @@ use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
 use crate::sensor::SensorModel;
 use crate::settings::ColourSettings;
-use crate::tuning::Tuning;
+use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
 
 /// White balance and auto exposure measure every this many rows of RGGB
@@ -114,10 +114,19 @@ impl Processor for Cpu {
     }
 }
 
-/// A sensor's tuning, and the table of its contrast curve.
+/// A sensor's tuning, the table of its contrast curve, and what it gives at the white
+/// balance gains of the last frame.
 pub struct TunedColour {
     pub tuning: &'static Tuning,
     contrast: ContrastTable,
+    at_gains: Option<AtGains>,
+}
+
+/// The lens shading and the colour correction matrix of the colour temperature of `gains`.
+struct AtGains {
+    gains: Gains,
+    shading: LensShading,
+    matrix: [f64; 9],
 }
 
 impl TunedColour {
@@ -125,6 +134,7 @@ impl TunedColour {
         TunedColour {
             tuning,
             contrast: ContrastTable::new(tuning),
+            at_gains: None,
         }
     }
 }
@@ -132,23 +142,32 @@ impl TunedColour {
 /// `raw` through `tuned`'s colour path as `conversion` asks, into `images`
 /// through `buffers`, at the colour temperature of `gains`, with the colour
 /// correction matrix and the chroma denoise as `settings` switch them.
+/// `tuned` keeps what the tuning gives at `gains` for the next frame's.
 pub fn develop_tuned(
     raw: &RawFrame,
     conversion: &Conversion,
     settings: &ColourSettings,
     gains: Gains,
-    tuned: &TunedColour,
+    tuned: &mut TunedColour,
     images: Images,
     buffers: &mut colour::Buffers,
 ) -> Measures {
-    let kelvin = tuned.tuning.colour_temperature(gains);
-    let shading = tuned.tuning.lens_shading(kelvin);
+    let tuning = tuned.tuning;
+    let kept = tuned.at_gains.take().filter(|kept| kept.gains == gains);
+    let at_gains = tuned.at_gains.insert(kept.unwrap_or_else(|| {
+        let kelvin = tuning.colour_temperature(gains);
+        AtGains {
+            gains,
+            shading: tuning.lens_shading(kelvin),
+            matrix: tuning.colour_matrix(kelvin),
+        }
+    }));
     let colour = Colour {
         black_level: settings.capture.black_level,
-        shading: &shading,
+        shading: &at_gains.shading,
         white_balance: gains,
         matrix: if settings.ccm {
-            tuned.tuning.colour_matrix(kelvin)
+            at_gains.matrix
         } else {
             colour::IDENTITY
         },
@@ -217,7 +236,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_frame_converts_to_the_same_image_and_measures_on_any_number_of_threads() {
-        let tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -292,7 +311,7 @@ pub(crate) mod tests {
                         &conversion,
                         &settings,
                         gains,
-                        &tuned,
+                        &mut tuned,
                         Images {
                             rgb: &mut rgb,
                             averaged: None,
@@ -310,8 +329,59 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_frame_after_a_change_of_gains_is_the_one_a_fresh_tuning_makes() {
+        let (width, height) = (24, 46);
+        let stride = width * 3 / 2 + 6;
+        let raw = padded_packed12(&samples(width, height), width, stride);
+        let frame = RawFrame {
+            raw: &raw,
+            width,
+            height,
+            row_stride: stride,
+            layout: Layout::Packed12,
+        };
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: true,
+            green_mean: true,
+            row_step: MEASURED_ROW_STEP,
+            threads: 1,
+        };
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
+        let developed = |tuned: &mut TunedColour, red: f64, blue: f64| {
+            let mut rgb = Vec::new();
+            let images = Images {
+                rgb: &mut rgb,
+                averaged: None,
+            };
+            let gains = Gains { red, blue };
+            let mut buffers = colour::Buffers::default();
+            let measures = develop_tuned(
+                &frame,
+                &conversion,
+                &settings,
+                gains,
+                tuned,
+                images,
+                &mut buffers,
+            );
+            outcome(&rgb, measures)
+        };
+        let fresh = |red, blue| developed(&mut TunedColour::new(&imx477::TUNING), red, blue);
+        let mut kept = TunedColour::new(&imx477::TUNING);
+        for (red, blue) in [(2.1, 1.6), (2.1, 1.6), (1.4, 2.3), (1.4, 1.6), (2.1, 1.6)] {
+            assert!(
+                developed(&mut kept, red, blue) == fresh(red, blue),
+                "red {red}, blue {blue}"
+            );
+        }
+        assert!(fresh(2.1, 1.6) != fresh(1.4, 2.3));
+    }
+
+    #[test]
     fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
-        let tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -356,7 +426,7 @@ pub(crate) mod tests {
                                 &conversion,
                                 &settings,
                                 gains,
-                                &tuned,
+                                &mut tuned,
                                 Images {
                                     rgb: &mut rgb,
                                     averaged: None,
@@ -399,7 +469,7 @@ pub(crate) mod tests {
         images: Images,
         (buffers, fallback): &mut (colour::Buffers, bayer::Buffers),
     ) -> Measures {
-        let tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -411,7 +481,9 @@ pub(crate) mod tests {
         };
         match path {
             Path::Untuned => bayer::develop(frame, &tone, gains, conversion, images, fallback),
-            _ => develop_tuned(frame, conversion, &settings, gains, &tuned, images, buffers),
+            _ => develop_tuned(
+                frame, conversion, &settings, gains, &mut tuned, images, buffers,
+            ),
         }
     }
 
