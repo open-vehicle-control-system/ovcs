@@ -36,8 +36,10 @@ defmodule VisionCore.Detection.Backend.Qnn do
       is kept. `VisionCore.Detection.QnnContext` removes every other
       binary in it, so two pipelines never share one.
     * `:executable` — the program (default `priv/qnn_detect`).
-    * `:infer_timeout_ms` (`2000`), `:reopen_delays_ms`
-      (`[1000, 2000, 5000, 10000, 30000]`, the last repeated).
+    * `:infer_timeout_ms` (`2000`), a positive integer, and
+      `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`, the last
+      repeated), a non-empty list of non-negative integers; another value
+      fails the start (`VisionCore.Detection.QnnPort.timings!/1`).
   """
   use GenServer
 
@@ -59,10 +61,6 @@ defmodule VisionCore.Detection.Backend.Qnn do
                  "The model and score_threshold, the lowest score the NPU reports, are fixed in " <>
                  "the build. When the NPU is not ready, inference waits and starts again, and " <>
                  "the depth carries on without it."
-
-  # Detects a wedged Port; not a latency budget.
-  @default_infer_timeout_ms 2_000
-  @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
 
   def start_link(opts),
     do: GenServer.start_link(__MODULE__, opts, name: Keyword.get(opts, :name, __MODULE__))
@@ -107,6 +105,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
     Process.flag(:trap_exit, true)
 
     pipeline = Keyword.get(opts, :pipeline, :detection)
+    {infer_timeout_ms, reopen_delays_ms} = QnnPort.timings!(opts)
 
     state = %{
       port: nil,
@@ -118,8 +117,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
         Keyword.get(opts, :dsp_library_path, "/usr/share/qcom/qcs8300/Arduino/Monza/dsp/cdsp"),
       cache_dir: Keyword.get_lazy(opts, :cache_dir, fn -> default_cache_dir(pipeline) end),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
-      infer_timeout_ms: Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms),
-      reopen_delays_ms: Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms),
+      infer_timeout_ms: infer_timeout_ms,
+      reopen_delays_ms: reopen_delays_ms,
       # The task generating the context binary, until the Port opens.
       opening: nil,
       failures: 0,

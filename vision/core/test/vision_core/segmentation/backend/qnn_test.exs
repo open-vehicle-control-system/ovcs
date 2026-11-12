@@ -166,6 +166,33 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert Qnn.segment(1, @band) == {:error, :unavailable}
   end
 
+  test "refuses at start an :infer_timeout_ms or :reopen_delays_ms it cannot wait on", %{
+    tmp_dir: dir
+  } do
+    for {key, value, expected} <- [
+          {:infer_timeout_ms, 0, "a positive integer"},
+          {:infer_timeout_ms, 1.5, "a positive integer"},
+          {:reopen_delays_ms, [], "a non-empty list of non-negative integers"},
+          {:reopen_delays_ms, [1_000, -1], "a non-empty list of non-negative integers"},
+          {:reopen_delays_ms, 1_000, "a non-empty list of non-negative integers"}
+        ] do
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {Qnn,
+                  [
+                    {key, value}
+                    | [
+                        dlc_path: Path.join(dir, "model.dlc"),
+                        executable: @segmenter,
+                        pipeline: :road
+                      ]
+                  ]}
+               )
+
+      assert message == "its #{inspect(key)} is #{expected}, got #{inspect(value)}"
+    end
+  end
+
   test "runs on the Hexagon" do
     assert Qnn.npu_kind() == "Hexagon"
   end

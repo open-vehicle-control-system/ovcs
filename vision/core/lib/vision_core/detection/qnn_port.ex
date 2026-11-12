@@ -8,6 +8,10 @@ defmodule VisionCore.Detection.QnnPort do
 
   alias VisionCore.Detection.QnnContext
 
+  # Detects a wedged Port; not a latency budget.
+  @default_infer_timeout_ms 2_000
+  @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
+
   @doc """
   The context binary of `dlc_path` for the program `executable`, generated
   when missing: `{:error, {:missing_binary, executable}}` without the
@@ -53,6 +57,34 @@ defmodule VisionCore.Detection.QnnPort do
   rescue
     error -> {:error, error}
   end
+
+  @doc """
+  `opts`' `:infer_timeout_ms` (`2000`), a positive integer, and
+  `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`), a non-empty
+  list of non-negative integers; raises `ArgumentError` on another value.
+  """
+  @spec timings!(keyword()) :: {pos_integer(), [non_neg_integer(), ...]}
+  def timings!(opts) do
+    infer_timeout_ms = Keyword.get(opts, :infer_timeout_ms, @default_infer_timeout_ms)
+    reopen_delays_ms = Keyword.get(opts, :reopen_delays_ms, @default_reopen_delays_ms)
+
+    unless is_integer(infer_timeout_ms) and infer_timeout_ms > 0,
+      do: refuse!(:infer_timeout_ms, infer_timeout_ms, "a positive integer")
+
+    unless is_list(reopen_delays_ms) and reopen_delays_ms != [] and
+             Enum.all?(reopen_delays_ms, &(is_integer(&1) and &1 >= 0)),
+           do:
+             refuse!(
+               :reopen_delays_ms,
+               reopen_delays_ms,
+               "a non-empty list of non-negative integers"
+             )
+
+    {infer_timeout_ms, reopen_delays_ms}
+  end
+
+  defp refuse!(key, value, expected),
+    do: raise(ArgumentError, "its #{inspect(key)} is #{expected}, got #{inspect(value)}")
 
   @doc """
   The wait before reopening a Port that failed `failures` times in a row:

@@ -159,6 +159,26 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     assert Qnn.detect(1, @image) == {:error, :unavailable}
   end
 
+  test "refuses at start an :infer_timeout_ms or :reopen_delays_ms it cannot wait on", %{
+    tmp_dir: dir
+  } do
+    for {key, value, expected} <- [
+          {:infer_timeout_ms, 0, "a positive integer"},
+          {:infer_timeout_ms, 1.5, "a positive integer"},
+          {:reopen_delays_ms, [], "a non-empty list of non-negative integers"},
+          {:reopen_delays_ms, [1_000, -1], "a non-empty list of non-negative integers"},
+          {:reopen_delays_ms, 1_000, "a non-empty list of non-negative integers"}
+        ] do
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {Qnn,
+                  [{key, value} | [dlc_path: Path.join(dir, "model.dlc"), executable: @detector]]}
+               )
+
+      assert message == "its #{inspect(key)} is #{expected}, got #{inspect(value)}"
+    end
+  end
+
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",
        %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
