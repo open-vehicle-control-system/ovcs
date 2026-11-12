@@ -40,6 +40,14 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       markers do not flicker, short enough that a stale box goes away
       promptly.
     * `:label_font_size` (`12.0`) — 2D overlay label size, in pixels.
+    * `:image_size` (`nil`) — on a camera source, `{width, height}`, the
+      size of the camera's image the 2D boxes and the overlay are drawn
+      on, the camera output the exporter publishes, when it is not the
+      one the pipeline detects on: the boxes and outlines are scaled
+      from the frame's size to it, `x × width / frame width`, which maps
+      pixel centres onto pixel centres as a camera's outputs are made
+      (`VisionCore.Camera.Output`). Without it, they are drawn in the
+      frame's pixels.
 
   ## Drawing on the raw image
 
@@ -99,7 +107,8 @@ defmodule VisionCore.Ros2.Exporter.Detections do
           namespace: String.t(),
           default_frame_id: String.t(),
           marker_lifetime: struct(),
-          label_font_size: float()
+          label_font_size: float(),
+          image_size: {pos_integer(), pos_integer()} | nil
         }
 
   @doc "The topics and settings of the detection `options`; see the module doc."
@@ -116,7 +125,8 @@ defmodule VisionCore.Ros2.Exporter.Detections do
         options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
-      label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size)
+      label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size),
+      image_size: Keyword.get(options, :image_size)
     })
   end
 
@@ -173,6 +183,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       frame_id: frame.frame_id || settings.default_frame_id
     }
 
+    detections = on_image(detections, frame, settings.image_size)
     {placed, unplaced} = detections |> Enum.with_index() |> Enum.split_with(&placed?/1)
     placed_detections = Enum.map(placed, &elem(&1, 0))
 
@@ -183,6 +194,29 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       {settings.detections_2d_topic, Detection2DArray, detection_2d_array(unplaced, header)},
       {settings.overlay_topic, ImageAnnotations, overlay(detections, header, settings)}
     ]
+  end
+
+  defp on_image(detections, _frame, nil), do: detections
+
+  defp on_image(detections, %Frame{width: width, height: height}, {width, height}),
+    do: detections
+
+  defp on_image(detections, %Frame{} = frame, {image_width, image_height}) do
+    {scale_x, scale_y} = {image_width / frame.width, image_height / frame.height}
+
+    Enum.map(detections, fn %{box: box, outline: outline} = detection ->
+      %{
+        detection
+        | box: %{
+            box
+            | x0: box.x0 * scale_x,
+              y0: box.y0 * scale_y,
+              x1: box.x1 * scale_x,
+              y1: box.y1 * scale_y
+          },
+          outline: Enum.map(outline, fn {x, y} -> {x * scale_x, y * scale_y} end)
+      }
+    end)
   end
 
   @doc "How many markers `detections` draw: those with a distance."

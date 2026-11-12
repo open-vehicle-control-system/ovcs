@@ -132,7 +132,13 @@ defmodule VisionCore.Ros2.Exporter do
   @default_prefix "stereo"
   @transform_topic "/tf_static"
   @transform_interval_ms 1_000
-  @camera_options [:names, :topic_prefix, :raw_image_max_hz, :camera_info_interval_frames]
+  @camera_options [
+    :names,
+    :outputs,
+    :topic_prefix,
+    :raw_image_max_hz,
+    :camera_info_interval_frames
+  ]
   @segmentation_options [:pipelines, :topic_prefix]
 
   @doc "The heartbeat numbered `counter` of the node `node_name`, sent at `system_time_ms`."
@@ -191,6 +197,32 @@ defmodule VisionCore.Ros2.Exporter do
            "which is no camera of the configuration"}
 
       true ->
+        published = Keyword.get(camera_options, :names, names)
+        check_camera_outputs(Keyword.get(camera_options, :outputs, []), published, config)
+    end
+  end
+
+  defp check_camera_outputs(outputs, published, config) do
+    cond do
+      not (is_list(outputs) and Keyword.keyword?(outputs)) ->
+        {:error,
+         "its cameras: outputs: is not a keyword list of camera names and outputs: " <>
+           inspect(outputs)}
+
+      (unpublished = Keyword.keys(outputs) -- published) != [] ->
+        {:error,
+         "its cameras: outputs names the camera #{inspect(hd(unpublished))}, " <>
+           "which it does not publish"}
+
+      missing =
+          Enum.find(outputs, fn {name, output} -> !Unit.output_key(config, name, output) end) ->
+        {name, output} = missing
+
+        {:error,
+         "its cameras: outputs gives the camera #{inspect(name)} the output " <>
+           "#{inspect(output)}, which it does not have"}
+
+      true ->
         :ok
     end
   end
@@ -236,8 +268,19 @@ defmodule VisionCore.Ros2.Exporter do
     stereo ++
       Enum.map(detection_pipelines(options[:detections]), &Detection.output/1) ++
       Enum.map(segmentation_pipelines(options), &Segmentation.output/1) ++
-      Enum.map(published_camera_names(options), &{:camera_frame, &1})
+      Enum.map(published_camera_names(options), &camera_frame_output(&1, options))
   end
+
+  # The output `cameras: [outputs: ...]` names for the camera `name`, its default otherwise.
+  defp camera_frame_output(name, options) do
+    case published_output(name, options) do
+      nil -> {:camera_frame, name}
+      output -> {:camera_frame, name, output}
+    end
+  end
+
+  defp published_output(name, options),
+    do: options |> Keyword.get(:cameras, []) |> Keyword.get(:outputs, []) |> Keyword.get(name)
 
   defp segmentation_pipelines(options) do
     case options[:segmentation] do
@@ -375,7 +418,7 @@ defmodule VisionCore.Ros2.Exporter do
         jpeg_codec: Keyword.get(options, :jpeg_codec, VisionCore.Jpeg),
         heartbeat: options[:heartbeat] && start_heartbeat(options, config),
         stereo: stereo,
-        detections: start_detections(options[:detections], cameras),
+        detections: start_detections(options[:detections], cameras, options),
         segmentation: start_segmentation(options, cameras),
         cameras: start_cameras(options),
         transform_parent_frame_id: left_frame_id(cameras),
@@ -441,13 +484,16 @@ defmodule VisionCore.Ros2.Exporter do
   end
 
   # Each pipeline's settings and the count of its markers drawn last, by its output.
-  defp start_detections(options, cameras) do
+  defp start_detections(options, cameras, all) do
+    sources = all |> config() |> Detection.Supervisor.sources() |> Map.new()
+
     Map.new(detection_pipelines(options), fn pipeline ->
       settings =
         options
         |> Keyword.delete(:pipelines)
         |> Keyword.put(:pipeline, pipeline)
         |> Keyword.put_new(:topic_prefix, unit_prefix(cameras))
+        |> Keyword.put(:image_size, camera_image_size(sources[Detection.output(pipeline)], all))
         |> Detections.new()
 
       Logger.info(
@@ -458,6 +504,26 @@ defmodule VisionCore.Ros2.Exporter do
       {Detection.output(pipeline), %{settings: settings, drawn: 0}}
     end)
   end
+
+  # The size of the published camera image a pipeline on `source` is drawn on; `nil` without.
+  defp camera_image_size({:camera, camera}, options),
+    do: camera_image_size({:camera, camera, nil}, options)
+
+  defp camera_image_size({:camera, camera, _detected}, options) do
+    published = published_output(camera, options)
+    settings = options |> config() |> Unit.settings() |> Enum.find(&(&1.name == camera))
+
+    case camera in published_camera_names(options) && settings do
+      %{outputs: [default | _others] = outputs} ->
+        output = Enum.find(outputs, default, &(&1.name == published))
+        {output.width, output.height}
+
+      _no_named_outputs ->
+        nil
+    end
+  end
+
+  defp camera_image_size(_stereo, _options), do: nil
 
   # Each published segmentation pipeline's topics, frames and camera calibration, by its output.
   defp start_segmentation(options, cameras) do
@@ -516,7 +582,7 @@ defmodule VisionCore.Ros2.Exporter do
       published ->
         camera_options =
           options[:cameras]
-          |> Keyword.delete(:names)
+          |> Keyword.drop([:names, :outputs])
           |> Keyword.put(:topic_prefix, camera_topic_prefix(options))
 
         Map.new(published, fn settings ->
@@ -569,6 +635,9 @@ defmodule VisionCore.Ros2.Exporter do
 
     {:ok, %{state | telemetry: telemetry, last_pair_at_ns: now_ns}}
   end
+
+  def handle_output({:camera_frame, name, _output}, %Frame{} = frame, state),
+    do: handle_output({:camera_frame, name}, frame, state)
 
   def handle_output({:camera_frame, name}, %Frame{} = frame, state)
       when is_map_key(state.cameras, name) do

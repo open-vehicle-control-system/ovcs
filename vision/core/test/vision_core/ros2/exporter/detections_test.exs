@@ -200,6 +200,30 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
       assert Enum.map(overlay.texts, & &1.text) == ["person 0.80 2.00m", "car 0.80"]
     end
 
+    test "draws the 2D boxes and the overlay on an image of another size, scaled to it" do
+      settings =
+        Detections.new(topic_prefix: "front", pipeline: :hq_people, image_size: {2028, 1520})
+
+      messages =
+        Detections.messages([unplaced("car", square(40.0, 10.0))], camera_frame(), settings, 0)
+
+      {_topic, Detection2DArray, %{detections: [%{bbox: bbox}]}} =
+        List.keyfind(messages, Detection2DArray, 1)
+
+      assert {bbox.center.position.x, bbox.center.position.y, bbox.size_x, bbox.size_y} ==
+               {100.0, 40.0, 40.0, 40.0}
+
+      {_topic, ImageAnnotations, overlay} = List.keyfind(messages, ImageAnnotations, 1)
+      assert [%{points: points}] = overlay.points
+
+      assert Enum.map(points, &{&1.x, &1.y}) == [
+               {80.0, 20.0},
+               {120.0, 20.0},
+               {120.0, 60.0},
+               {80.0, 60.0}
+             ]
+    end
+
     test "publishes an empty Detection2DArray once every detection has a distance, so the last goes" do
       assert {_topic, Detection2DArray, %Detection2DArray{detections: []}} =
                List.keyfind(

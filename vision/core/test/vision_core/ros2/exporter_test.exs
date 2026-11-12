@@ -746,6 +746,77 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert reason =~ "cameras: names: is not a list of camera names: :hq"
     end
 
+    # A camera :hq of V4L2Single, its default output `view`, `inference` averaged from it.
+    defp outputs_options(exporter_options) do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config =
+        Camera
+        |> config()
+        |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+        |> Map.update!(:components, fn components ->
+          components ++
+            [
+              {:detector,
+               name: :objects,
+               backend: VisionCore.Detection.Backend.Stub,
+               source: {:camera, :hq, :inference}}
+            ]
+        end)
+
+      Keyword.put(options(Camera, exporter_options), :config, config)
+    end
+
+    test "its frames are those of its default output, or of the output cameras: outputs names" do
+      assert Exporter.outputs(outputs_options(cameras: [])) == [{:camera_frame, :hq}]
+
+      options = outputs_options(cameras: [outputs: [hq: :inference]])
+      assert Exporter.check(options) == :ok
+      assert Exporter.outputs(options) == [{:camera_frame, :hq, :inference}]
+
+      assert {:error, reason} = Exporter.check(outputs_options(cameras: [outputs: [hq: :small]]))
+      assert reason =~ "cameras: outputs gives the camera :hq the output :small"
+
+      assert {:error, reason} =
+               Exporter.check(outputs_options(cameras: [names: [], outputs: [hq: :inference]]))
+
+      assert reason =~ "cameras: outputs names the camera :hq, which it does not publish"
+    end
+
+    test "draws a camera pipeline's 2D boxes at the detected frame's size when it publishes no image of the camera" do
+      for cameras <- [nil, [names: []]] do
+        options =
+          [detections: [pipelines: [:objects]]] ++ if(cameras, do: [cameras: cameras], else: [])
+
+        {:ok, state} = Exporter.init(outputs_options(options))
+        assert state.detections[{:detections, :objects}].settings.image_size == nil
+      end
+    end
+
+    test "draws a camera pipeline's 2D boxes on the camera output it publishes" do
+      {:ok, state} =
+        Exporter.init(outputs_options(cameras: [], detections: [pipelines: [:objects]]))
+
+      assert state.detections[{:detections, :objects}].settings.image_size == {2028, 1520}
+
+      {:ok, state} =
+        Exporter.init(
+          outputs_options(
+            cameras: [outputs: [hq: :inference]],
+            detections: [pipelines: [:objects]]
+          )
+        )
+
+      assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
+
+      frame = %{jpeg_frame("hq", 1) | output: :inference}
+      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
+      assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+    end
+
     test "its frames are read with cameras:, every camera by default, or those it names" do
       options = hq_options(Camera, [], cameras: [])
       assert Exporter.outputs(options) == [{:camera_frame, :hq}]
