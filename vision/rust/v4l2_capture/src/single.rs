@@ -662,7 +662,7 @@ mod tests {
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
     use crate::encoder::EncodedFrame;
-    use crate::nv12::{Nv12Converter, Nv12Layout};
+    use crate::nv12::{self, Nv12Layout};
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
     use crate::scale;
@@ -1491,7 +1491,7 @@ mod tests {
             assert_eq!(&video[6..14], starts[frame]);
             assert_eq!(video[14], u8::from(frame % 3 == 0), "frame {frame}");
             let mut nv12 = vec![0; TEST_LAYOUT.size];
-            Nv12Converter::default().convert(&views[frame], &TEST_LAYOUT, 1, &mut nv12);
+            nv12::convert(&views[frame], &TEST_LAYOUT, 1, &mut nv12);
             assert!(video[15..] == nv12, "frame {frame}");
         }
     }

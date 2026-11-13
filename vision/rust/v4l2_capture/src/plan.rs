@@ -7,7 +7,7 @@ use crate::arguments::{Format, OutputSpec, Source};
 use crate::bands::{Images, Measures};
 use crate::bayer::RawFrame;
 use crate::jpeg::JpegOutput;
-use crate::nv12::{Nv12Converter, Nv12Layout};
+use crate::nv12::{self, Nv12Layout};
 use crate::processor::{Cpu, Development, Processor};
 use crate::scale::Averager;
 use crate::sensor::SensorModel;
@@ -49,7 +49,6 @@ struct OutputPlan {
 pub struct Plan {
     outputs: Vec<OutputPlan>,
     averager: Averager,
-    nv12: Nv12Converter,
     /// An H.264 output's source averaged, when it is a fraction of it.
     averaged: Vec<u8>,
 }
@@ -116,7 +115,6 @@ impl Plan {
         Plan {
             outputs: planned,
             averager: Averager::default(),
-            nv12: Nv12Converter::default(),
             averaged: Vec::new(),
         }
     }
@@ -246,7 +244,7 @@ impl Plan {
                 &self.averaged
             };
             rest[0].resize(layout.size, 0);
-            self.nv12.convert(source, &layout, threads, &mut rest[0]);
+            nv12::convert(source, &layout, threads, &mut rest[0]);
         }
     }
 
@@ -415,7 +413,7 @@ mod tests {
         Averager::default().average_blocks(&rgb, 24, (2, 1), 1, &mut halved);
         for (image, source, layout) in [(2, &rgb, layouts[0]), (3, &halved, layouts[1])] {
             let mut expected = vec![0; layout.size];
-            Nv12Converter::default().convert(source, &layout, 1, &mut expected);
+            nv12::convert(source, &layout, 1, &mut expected);
             assert!(images[image] == expected, "output {image}");
         }
     }

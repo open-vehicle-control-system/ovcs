@@ -60,104 +60,84 @@ fn difference(channel: u32, luma: u32, divisor: u32, pixels: u32) -> u8 {
     (centred as u32 / divisor) as u8
 }
 
-/// Converts RGB images to NV12 through buffers kept from one image to the next.
-#[derive(Default)]
-pub struct Nv12Converter {
-    /// Each band's sums down a pair of rows.
-    column_sums: Vec<Vec<u16>>,
-}
-
-impl Nv12Converter {
-    /// `rgb`, `layout.width` x `layout.height` 8-bit red, green and blue
-    /// pixels, into `nv12` laid out as `layout`, in bands of pairs of rows on
-    /// up to `threads` threads. The padding is left as it is. The width and
-    /// height are even.
-    pub fn convert(&mut self, rgb: &[u8], layout: &Nv12Layout, threads: usize, nv12: &mut [u8]) {
-        let (width, stride) = (layout.width, layout.stride);
-        let (luma, chroma) = nv12[..layout.size].split_at_mut(layout.chroma_offset());
-        let pairs = bands::split(layout.height / 2, threads);
-        if self.column_sums.len() < pairs.len() {
-            self.column_sums.resize_with(pairs.len(), Vec::new);
-        }
-        let (mut luma, mut chroma) = (&mut luma[..], &mut chroma[..]);
-        let mut jobs = Vec::with_capacity(pairs.len());
-        for (band, column_sums) in pairs.iter().zip(self.column_sums.iter_mut()) {
-            let (band_luma, rest) = std::mem::take(&mut luma).split_at_mut(band.len() * 2 * stride);
-            luma = rest;
-            let (band_chroma, rest) = std::mem::take(&mut chroma).split_at_mut(band.len() * stride);
-            chroma = rest;
-            let band_rgb = &rgb[band.start * 2 * width * 3..band.end * 2 * width * 3];
-            jobs.push((band_rgb, band_luma, band_chroma, column_sums));
-        }
-        let convert_band =
-            move |(rgb, luma, chroma, column_sums): (
-                &[u8],
-                &mut [u8],
-                &mut [u8],
-                &mut Vec<u16>,
-            )| { convert_rows(rgb, width, stride, luma, chroma, column_sums) };
-        let last = jobs.pop().expect("a band");
-        if jobs.is_empty() {
-            return convert_band(last);
-        }
-        std::thread::scope(|scope| {
-            let running: Vec<_> = (jobs.into_iter())
-                .map(|job| scope.spawn(move || convert_band(job)))
-                .collect();
-            convert_band(last);
-            for band in running {
-                band.join()
-                    .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
-            }
-        });
+/// `rgb`, `layout.width` x `layout.height` 8-bit red, green and blue pixels,
+/// into `nv12` laid out as `layout`, in bands of pairs of rows on up to
+/// `threads` threads. The padding is left as it is. The width and height are
+/// even.
+pub fn convert(rgb: &[u8], layout: &Nv12Layout, threads: usize, nv12: &mut [u8]) {
+    let (width, stride) = (layout.width, layout.stride);
+    let (luma, chroma) = nv12[..layout.size].split_at_mut(layout.chroma_offset());
+    let pairs = bands::split(layout.height / 2, threads);
+    let (mut luma, mut chroma) = (&mut luma[..], &mut chroma[..]);
+    let mut jobs = Vec::with_capacity(pairs.len());
+    for band in &pairs {
+        let (band_luma, rest) = std::mem::take(&mut luma).split_at_mut(band.len() * 2 * stride);
+        luma = rest;
+        let (band_chroma, rest) = std::mem::take(&mut chroma).split_at_mut(band.len() * stride);
+        chroma = rest;
+        let band_rgb = &rgb[band.start * 2 * width * 3..band.end * 2 * width * 3];
+        jobs.push((band_rgb, band_luma, band_chroma));
     }
+    let convert_band = move |(rgb, luma, chroma): (&[u8], &mut [u8], &mut [u8])| {
+        convert_rows(rgb, width, stride, luma, chroma)
+    };
+    let last = jobs.pop().expect("a band");
+    if jobs.is_empty() {
+        return convert_band(last);
+    }
+    std::thread::scope(|scope| {
+        let running: Vec<_> = (jobs.into_iter())
+            .map(|job| scope.spawn(move || convert_band(job)))
+            .collect();
+        convert_band(last);
+        for band in running {
+            band.join()
+                .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+        }
+    });
 }
 
 /// The pairs of rows of `rgb`, rows of `width` pixels, into the rows of
-/// `luma` and `chroma` they make, `stride` bytes apart, through `column_sums`.
-fn convert_rows(
+/// `luma` and `chroma` they make, `stride` bytes apart.
+fn convert_rows(rgb: &[u8], width: usize, stride: usize, luma: &mut [u8], chroma: &mut [u8]) {
+    for ((pair, luma_rows), chroma_row) in (rgb.chunks_exact(width * 6))
+        .zip(luma.chunks_mut(stride * 2))
+        .zip(chroma.chunks_mut(stride))
+    {
+        convert_pair(pair, width, stride, luma_rows, chroma_row);
+    }
+}
+
+/// A pair of rows of `width` pixels, `rgb`, into the two rows of `luma`
+/// they make, `stride` bytes apart, and the row of `chroma`.
+pub(crate) fn convert_pair(
     rgb: &[u8],
     width: usize,
     stride: usize,
     luma: &mut [u8],
     chroma: &mut [u8],
-    column_sums: &mut Vec<u16>,
 ) {
-    let row_bytes = width * 3;
-    column_sums.resize(row_bytes, 0);
-    for ((pair, luma_rows), chroma_samples) in (rgb.chunks_exact(row_bytes * 2))
-        .zip(luma.chunks_mut(stride * 2))
-        .zip(chroma.chunks_mut(stride))
-    {
-        let (top, bottom) = pair.split_at(row_bytes);
-        let (luma_top, luma_bottom) = luma_rows.split_at_mut(stride);
-        luma_row(top, &mut luma_top[..width]);
-        luma_row(bottom, &mut luma_bottom[..width]);
-        for ((sum, &top), &bottom) in column_sums.iter_mut().zip(top).zip(bottom) {
-            *sum = u16::from(top) + u16::from(bottom);
-        }
-        chroma_row(column_sums, &mut chroma_samples[..width]);
+    let (top, bottom) = rgb.split_at(width * 3);
+    let (luma_top, luma_bottom) = luma.split_at_mut(stride);
+    luma_row(top, &mut luma_top[..width]);
+    luma_row(bottom, &mut luma_bottom[..width]);
+    let blocks = top.chunks_exact(6).zip(bottom.chunks_exact(6));
+    for ((top, bottom), samples) in blocks.zip(chroma[..width].chunks_exact_mut(2)) {
+        let sums = [0, 1, 2].map(|channel| {
+            u32::from(top[channel])
+                + u32::from(top[channel + 3])
+                + u32::from(bottom[channel])
+                + u32::from(bottom[channel + 3])
+        });
+        let luma = weighted(sums);
+        samples[0] = difference(sums[2], luma, BLUE_DIVISOR, 4);
+        samples[1] = difference(sums[0], luma, RED_DIVISOR, 4);
     }
 }
 
 fn luma_row(rgb: &[u8], samples: &mut [u8]) {
     for (pixel, sample) in rgb.chunks_exact(3).zip(samples) {
         *sample = luma([pixel[0], pixel[1], pixel[2]].map(u32::from));
-    }
-}
-
-/// The blue and red difference of each 2x2 block, from the sums of each
-/// column of pixels down its pair of rows.
-fn chroma_row(column_sums: &[u16], chroma: &mut [u8]) {
-    for (pair, samples) in column_sums.chunks_exact(6).zip(chroma.chunks_exact_mut(2)) {
-        let sums = [
-            u32::from(pair[0] + pair[3]),
-            u32::from(pair[1] + pair[4]),
-            u32::from(pair[2] + pair[5]),
-        ];
-        let luma = weighted(sums);
-        samples[0] = difference(sums[2], luma, BLUE_DIVISOR, 4);
-        samples[1] = difference(sums[0], luma, RED_DIVISOR, 4);
     }
 }
 
@@ -232,7 +212,7 @@ mod tests {
 
     fn converted(rgb: &[u8], layout: &Nv12Layout, threads: usize) -> Vec<u8> {
         let mut nv12 = vec![0; layout.size];
-        Nv12Converter::default().convert(rgb, layout, threads, &mut nv12);
+        convert(rgb, layout, threads, &mut nv12);
         nv12
     }
 
@@ -296,13 +276,12 @@ mod tests {
         let layout = layout(2028, 1520, 2048, 1536);
         let rgb = noise(2028 * 1520 * 3);
         let mut nv12 = vec![0; layout.size];
-        let mut converter = Nv12Converter::default();
         for threads in [1, 3] {
-            converter.convert(&rgb, &layout, threads, &mut nv12);
+            convert(&rgb, &layout, threads, &mut nv12);
             let runs = 30;
             let started = std::time::Instant::now();
             for _ in 0..runs {
-                converter.convert(&rgb, &layout, threads, &mut nv12);
+                convert(&rgb, &layout, threads, &mut nv12);
             }
             println!(
                 "NV12 of 2028x1520 on {threads} threads: {:?}",
