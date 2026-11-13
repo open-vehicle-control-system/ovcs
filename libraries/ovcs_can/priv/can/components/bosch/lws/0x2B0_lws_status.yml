@@ -12,6 +12,11 @@ signals:
     value_start: 16
     value_length: 8
     scale: "4"
+  - name: filler
+    kind: static
+    value_start: 24
+    value_length: 5
+    value: 0
   - name: steering_wheel_trimming_valid
     value_start: 29
     value_length: 1
