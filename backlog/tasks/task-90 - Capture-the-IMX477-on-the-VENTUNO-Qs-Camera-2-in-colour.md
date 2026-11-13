@@ -116,4 +116,5 @@ Measured on the OVCS1 reference vehicle's VENTUNO Q, IMX477 on Camera 2 (`imx477
 | `full`, denoise off | 35 fps | 21.3 fps | — |
 
 The sensor's `horizontal_flip` and `vertical_flip` read 0, so Raspberry Pi's lens-shading tables apply turned by 180°; its analogue gain spans 0..978. Indoors in the evening, auto exposure reached its limits (60 ms then 25 ms, gain about 16) with white balance at about 2850 K. With the camera at 35 fps half, the stereo pair kept about 33 pairs a second and detection about 10 results a second. Full resolution at 35 fps is TASK-94.
+The stereo pair's driver, `V4L2` in the plan, is `VisionCore.Camera.V4L2Pair`.
 <!-- SECTION:NOTES:END -->

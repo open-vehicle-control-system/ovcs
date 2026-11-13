@@ -102,4 +102,5 @@ Steps 1, 2 and 3 depend on nothing. Step 4 depends on 2; it is developed on the 
 
 <!-- SECTION:NOTES:BEGIN -->
 Checked on the OVCS1 unit at 30 fps: every stereo and `:center` stream, `:objects` and `:scene` at 30 a second. Distances and clouds on a camera source wait for the camera's measured pose.
+A pipeline's processes are named by `VisionCore.Pipelines.server/2`, a `Registry` via tuple. Every detection pipeline's channel is `detections:<name>`; a detector without `:name` is the pipeline `detection`, on `detections:detection`.
 <!-- SECTION:NOTES:END -->

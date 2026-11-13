@@ -75,3 +75,9 @@ Review focus, each pinned by a test in the owning task:
 
 Checks before review: `mix format --check-formatted`, `mix compile --warnings-as-errors`, `mix credo --strict`, `mix test` in `vision/core`, `vision/api` and `vehicles/ovcs1`; the dashboard's tests; `elixir scripts/check_docs.exs`. No commit until the change is validated.
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+`VisionCore.Detection.server/2` is `VisionCore.Pipelines.server/2`, a `Registry` via tuple, for the default pipeline too. There is no bare `detections` channel or output: every pipeline's is `detections:<name>`, and a detector without `:name` is the pipeline `detection`, on `detections:detection`.
+<!-- SECTION:NOTES:END -->

@@ -90,4 +90,5 @@ Follow-ups: TASK-99 (QNN Port reopen), TASK-101 (unknown detection names), TASK-
 
 Checked on the unit: pending (the VENTUNO was off).
 On OVCS1 the pipeline is named `:scene`, as it labels the whole scene; its clouds are still `road` and `off_road`.
+`VisionCore.Detection.server/2` is `VisionCore.Pipelines.server/2`, a `Registry` via tuple; `CameraDepth` is `VisionCore.CameraDepth` and `DepthQueue` is `VisionCore.CameraDepth.Queue`.
 <!-- SECTION:NOTES:END -->

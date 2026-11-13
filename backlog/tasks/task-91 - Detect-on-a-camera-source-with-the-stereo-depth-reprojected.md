@@ -75,4 +75,5 @@ Checks before review: `mix format --check-formatted`, `mix compile --warnings-as
 
 <!-- SECTION:NOTES:BEGIN -->
 The waits for a stereo pair are shared with segmentation: `CameraDepth` keeps the pairs, `DepthQueue` queues the results, and the newest frame arriving while one is in flight is held and submitted on its reply. Distances on the unit wait for the `:center` camera's pose.
+`VisionCore.Detection.Reprojection` is `VisionCore.CameraDepth.Reprojection`; `CameraDepth` is `VisionCore.CameraDepth` and `DepthQueue` is `VisionCore.CameraDepth.Queue`.
 <!-- SECTION:NOTES:END -->
