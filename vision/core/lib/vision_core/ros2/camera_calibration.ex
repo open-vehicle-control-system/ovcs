@@ -366,7 +366,8 @@ defmodule VisionCore.Ros2.CameraCalibration do
   distortion, no rectification, and the projection matrix the camera
   matrix padded with a zero column.
   """
-  @spec camera_info(t(), struct(), pos_integer(), pos_integer(), [float()]) :: CameraInfo.t()
+  @spec camera_info(t(), struct(), pos_integer(), pos_integer(), [float()] | nil) ::
+          CameraInfo.t()
   def camera_info(calibration, header, width, height, camera_matrix \\ nil) do
     [k0, k1, k2, k3, k4, k5, k6, k7, k8] = k = camera_matrix || calibration.camera_matrix
 

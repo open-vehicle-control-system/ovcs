@@ -52,7 +52,7 @@ defmodule VisionCore.CameraDepth.Queue do
 
   @doc "An empty queue whose results wait at most `pair_wait_ms` for their pair."
   @spec new(non_neg_integer()) :: t()
-  def new(pair_wait_ms), do: %__MODULE__{pair_wait_ms: pair_wait_ms}
+  def new(pair_wait_ms), do: %__MODULE__{pair_wait_ms: pair_wait_ms, entries: :queue.new()}
 
   @doc """
   `:ok` when the queue has room for the result of another of the

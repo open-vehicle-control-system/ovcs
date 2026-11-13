@@ -9,7 +9,7 @@ defmodule VisionCore.Options do
   `opts`' `key`, `default` without it, when it is an integer from `least`
   on. Raises `ArgumentError` naming the option otherwise.
   """
-  @spec integer!(keyword(), atom(), integer(), integer()) :: integer()
+  @spec integer!(keyword(), atom(), integer() | nil, integer()) :: integer()
   def integer!(opts, key, default, least) do
     case Keyword.get(opts, key, default) do
       value when is_integer(value) and value >= least ->
