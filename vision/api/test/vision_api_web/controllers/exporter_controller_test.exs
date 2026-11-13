@@ -13,17 +13,12 @@ defmodule VisionApiWeb.ExporterControllerTest do
              "attributes" => %{
                "name" => "ROS 2",
                "module" => "VisionCore.Ros2.Exporter",
-               "status" => status,
                "outputs" => [],
                "actions" => []
              }
            } = ros2
 
-    # The link's: connected while a Zenoh router runs where the tests do.
-    assert status in [
-             %{"level" => "ok", "detail" => "Connected"},
-             %{"level" => "warning", "detail" => "Disconnected"}
-           ]
+    refute Map.has_key?(ros2["attributes"], "status")
 
     assert api == %{
              "type" => "exporters",
@@ -31,7 +26,6 @@ defmodule VisionApiWeb.ExporterControllerTest do
              "attributes" => %{
                "name" => "API",
                "module" => "VisionApiWeb.Endpoint",
-               "status" => %{"level" => "ok", "detail" => "Answering"},
                "outputs" => [],
                "actions" => []
              }
@@ -190,7 +184,6 @@ defmodule VisionApiWeb.ExporterJSONTest do
     assert attributes == %{
              name: "Recorder",
              module: "MyCar.Recorder",
-             status: %{level: "off", detail: "Not running"},
              outputs: [
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},

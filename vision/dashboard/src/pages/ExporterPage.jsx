@@ -106,12 +106,14 @@ function GenericExporterPage({ id }) {
   return (
     <OvcsPageFrame title={exporter.name} summary="What this exporter takes out of the unit.">
       <OvcsCard className="flex flex-wrap items-center gap-x-8 gap-y-2">
-        <div className="flex flex-col">
-          <span className="text-xs text-ovcs-muted">status</span>
-          <OvcsStatus tone={TONES[status.level]} className="font-semibold">
-            {status.detail}
-          </OvcsStatus>
-        </div>
+        {status ? (
+          <div className="flex flex-col">
+            <span className="text-xs text-ovcs-muted">status</span>
+            <OvcsStatus tone={TONES[status.level]} className="font-semibold">
+              {status.detail}
+            </OvcsStatus>
+          </div>
+        ) : null}
         <div className="flex flex-col">
           <span className="text-xs text-ovcs-muted">module</span>
           <code className="font-semibold">{exporter.module}</code>

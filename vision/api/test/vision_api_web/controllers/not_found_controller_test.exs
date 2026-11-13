@@ -22,14 +22,26 @@ defmodule VisionApiWeb.NotFoundControllerTest do
     end
   end
 
-  test "another method on a known path answers the same 404", %{conn: conn} do
-    conn = conn |> put_req_header("accept", @media_type) |> delete("/api/parameters/x")
+  test "another method on a known path answers 405, naming the methods it takes", %{conn: conn} do
+    for {request, allow} <- [
+          {&delete(&1, "/api/parameters/x"), "GET, PATCH"},
+          {&post(&1, "/api/stages"), "GET"},
+          {&get(&1, "/api/parameter-saves"), "POST"}
+        ] do
+      conn = request.(conn)
 
-    assert %{
-             "errors" => [
-               %{"status" => "404", "detail" => "no route for DELETE /api/parameters/x"}
-             ]
-           } =
+      assert get_resp_header(conn, "content-type") == [@media_type]
+      assert get_resp_header(conn, "allow") == [allow]
+
+      assert %{"errors" => [%{"status" => "405", "title" => "Method Not Allowed"}]} =
+               json_response(conn, 405)
+    end
+  end
+
+  test "a method no path takes answers the 404 of an unknown path", %{conn: conn} do
+    conn = delete(conn, "/api/unknown")
+
+    assert %{"errors" => [%{"status" => "404", "detail" => "no route for DELETE /api/unknown"}]} =
              json_response(conn, 404)
   end
 end

@@ -3,29 +3,19 @@ import { useState } from 'react'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import DepthRange from '../DepthRange.jsx'
 
-// A channel whose pushes answer `ok` with the range in force, or `error` when told to refuse.
-function fakeChannel(initial) {
-  let range = initial
-  const channel = {
-    refuse: false,
-    push: vi.fn((event, payload) => {
-      const replies = {}
-      const push = { receive: (status, callback) => ((replies[status] = callback), push) }
-      queueMicrotask(() => {
-        if (channel.refuse) return replies.error?.({ reason: 'refused' })
-        if (payload.metres !== undefined) range = payload.metres
-        replies.ok?.({ metres: range })
-      })
-      return push
-    })
-  }
-  return channel
+// Sets the range as the unit does: answers the range in force, or rejects when told to refuse.
+function fakeSet() {
+  const set = vi.fn(async (metres) => {
+    if (set.refuse) throw new Error('refused')
+    return metres
+  })
+  return set
 }
 
 // The range as the depth preview keeps it: the last one `onChange` gave.
-function Owned({ channel, initial }) {
+function Owned({ set, initial }) {
   const [metres, setMetres] = useState(initial)
-  return <DepthRange channel={channel} metres={metres} onChange={setMetres} />
+  return <DepthRange set={set} metres={metres} onChange={setMetres} />
 }
 
 const flush = () => act(() => Promise.resolve())
@@ -33,33 +23,33 @@ const flush = () => act(() => Promise.resolve())
 describe('DepthRange', () => {
 
   it('shows the range it is given, without asking the unit', async () => {
-    const channel = fakeChannel(8)
-    render(<Owned channel={channel} initial={8} />)
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
     await flush()
 
     expect(screen.getByText('8.0 m')).toBeTruthy()
-    expect(channel.push).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
   })
 
   it('sets the range on the unit once released', async () => {
-    const channel = fakeChannel(8)
-    render(<Owned channel={channel} initial={8} />)
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
 
     fireEvent.change(slider, { target: { value: '10' } })
     fireEvent.change(slider, { target: { value: '12.5' } })
-    expect(channel.push).not.toHaveBeenCalled()
+    expect(set).not.toHaveBeenCalled()
     expect(screen.getByText('12.5 m')).toBeTruthy()
 
     fireEvent.pointerUp(slider)
     await flush()
-    expect(channel.push).toHaveBeenCalledExactlyOnceWith('depth_range', { metres: 12.5 })
+    expect(set).toHaveBeenCalledExactlyOnceWith(12.5)
     expect(screen.getByText('12.5 m')).toBeTruthy()
   })
 
   it('puts infinity, a range of 0, at the far end of the slider', async () => {
-    const channel = fakeChannel(0)
-    render(<Owned channel={channel} initial={0} />)
+    const set = fakeSet()
+    render(<Owned set={set} initial={0} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
 
     expect(screen.getByText('∞')).toBeTruthy()
@@ -68,15 +58,15 @@ describe('DepthRange', () => {
     fireEvent.change(slider, { target: { value: '50' } })
     fireEvent.pointerUp(slider)
     await flush()
-    expect(channel.push).toHaveBeenLastCalledWith('depth_range', { metres: 50 })
+    expect(set).toHaveBeenLastCalledWith(50)
   })
 
   it('goes back to the range in force when the unit refuses one', async () => {
-    const channel = fakeChannel(8)
-    render(<Owned channel={channel} initial={8} />)
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
 
-    channel.refuse = true
+    set.refuse = true
     fireEvent.change(slider, { target: { value: '12' } })
     fireEvent.pointerUp(slider)
     await flush()
@@ -84,7 +74,7 @@ describe('DepthRange', () => {
   })
 
   it('lays the scale out along a line by default: near to far from left to right, over a horizontal slider', async () => {
-    render(<Owned channel={fakeChannel(8)} initial={8} />)
+    render(<Owned set={fakeSet()} initial={8} />)
     await flush()
 
     const scale = document.querySelector('[data-colour-scale]')
@@ -100,8 +90,8 @@ describe('DepthRange', () => {
   })
 
   it("stands the scale up when vertical: far, the range and the slider's maximum at the top, near at the bottom", async () => {
-    const channel = fakeChannel(8)
-    render(<DepthRange vertical channel={channel} metres={8} onChange={vi.fn()} />)
+    const set = fakeSet()
+    render(<DepthRange vertical set={set} metres={8} onChange={vi.fn()} />)
     await flush()
 
     const scale = document.querySelector('[data-colour-scale]')
@@ -125,22 +115,19 @@ describe('DepthRange', () => {
   })
 
   it('sets the range from the vertical slider as from the horizontal one', async () => {
-    const channel = fakeChannel(8)
-    render(<DepthRange vertical channel={channel} metres={8} onChange={vi.fn()} />)
+    const set = fakeSet()
+    render(<DepthRange vertical set={set} metres={8} onChange={vi.fn()} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
 
     fireEvent.change(slider, { target: { value: '12.5' } })
     fireEvent.keyUp(slider)
     await flush()
 
-    expect(channel.push).toHaveBeenCalledExactlyOnceWith('depth_range', { metres: 12.5 })
+    expect(set).toHaveBeenCalledExactlyOnceWith(12.5)
   })
 
-  it('shows nothing without the depth stream, or until the range is known', () => {
-    const { container, rerender } = render(<DepthRange channel={null} metres={8} onChange={vi.fn()} />)
-    expect(container.textContent).toBe('')
-
-    rerender(<DepthRange channel={fakeChannel(8)} metres={null} onChange={vi.fn()} />)
+  it('shows nothing until the range is known', () => {
+    const { container } = render(<DepthRange set={fakeSet()} metres={null} onChange={vi.fn()} />)
     expect(container.textContent).toBe('')
   })
 })

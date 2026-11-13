@@ -1,8 +1,9 @@
 defmodule VisionApiWeb.ExporterController do
   @moduledoc """
   What takes the unit's outputs out of it, read-only: its exporters
-  (`VisionCore.Exporters.list/1`), then the API itself, which is
-  answering, as `exporters`. The API's outputs are those its channels
+  (`VisionCore.Exporters.describe/0`), then the API itself, which is
+  answering, as `exporters`. Their statuses come with the unit's status
+  (`VisionApiWeb.StatusJSON`). The API's outputs are those its channels
   carry, each with the most values a channel carries a second: the
   previews' rate (`VisionCore.Preview.options/0`) for the camera frames
   and each pair's depth, `{:camera_frame, name}` for each camera of its
@@ -24,17 +25,16 @@ defmodule VisionApiWeb.ExporterController do
   @preview_outputs [{:camera_frame, :left}, {:camera_frame, :right}, :stereo_pair]
 
   def index(conn, _params),
-    do: render(conn, :index, exporters: VisionCore.Exporters.list() ++ [api()])
+    do: render(conn, :index, exporters: VisionCore.Exporters.describe() ++ [api()])
 
   defp api do
     config = VisionCore.Application.active_config()
     outputs = Enum.filter(@preview_outputs, &VisionCore.Exporter.output_key(&1, config))
 
     %{
-      id: "api",
-      name: "API",
+      id: VisionApiWeb.ExporterJSON.api().id,
+      name: VisionApiWeb.ExporterJSON.api().name,
       module: VisionApiWeb.Endpoint,
-      status: {:ok, "Answering"},
       outputs:
         Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++
           video_outputs() ++ detection_outputs(config) ++ segmentation_outputs(config),

@@ -201,7 +201,7 @@ The compute node's `foxglove_bridge` offers the parameters under `/ovcs_vision.s
 
 The API follows [JSON:API](https://jsonapi.org/). [Vision API](./api.md) shows how a program reads and changes the parameters and follows the live channels. [`vision/api/README.md`](../../vision/api/README.md) lists its routes.
 
-The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`: each exporter with its status, the API last. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them.
+The dashboard's Exporters menu lists what takes the unit's outputs out of it, from `GET /api/exporters`, the API last, each with its status from the `status` channel. [Tune with exports](./tuning.md) shows how to record the unit's results before and after a change of parameters, with the debug exporter's export action, and compare them.
 
 `GET /api/ros2-node` describes what the unit exports over ROS 2:
 

@@ -116,7 +116,6 @@ defmodule VisionApiWeb.StatusJSONTest do
                pipelines: %{detection: %{inferenceMs: 21.5}, road: %{inferenceMs: nil}}
              },
              depthHz: 29.9,
-             cpuPercent: 61.0,
              stereoLoadPercent: 96.5,
              alignment: %{offsetRows: -0.02, bandOffsetRows: [0.1, -0.1]},
              sharpness: %{left: 0.01, right: 0.012},
@@ -127,7 +126,8 @@ defmodule VisionApiWeb.StatusJSONTest do
                jitterPx: 0.13
              },
              exporters: [
-               %{id: "ros2", name: "ROS 2", status: %{level: "ok", detail: "Connected"}}
+               %{id: "ros2", name: "ROS 2", status: %{level: "ok", detail: "Connected"}},
+               %{id: "api", name: "API", status: %{level: "ok", detail: "Answering"}}
              ]
            }
   end
@@ -158,13 +158,14 @@ defmodule VisionApiWeb.StatusJSONTest do
 
     assert %{
              sync: %{present: false},
-             cpuPercent: nil,
              alignment: nil,
              sharpness: nil,
              quality: nil,
              npu: nil,
-             exporters: []
-           } = StatusJSON.status(snapshot)
+             exporters: [%{id: "api"}]
+           } = payload = StatusJSON.status(snapshot)
+
+    refute Map.has_key?(payload, :cpuPercent)
   end
 
   test "the channels guide lists every issue a pair or depth check can raise" do

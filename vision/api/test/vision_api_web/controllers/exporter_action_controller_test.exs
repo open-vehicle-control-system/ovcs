@@ -124,6 +124,15 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
              |> json_response(409)
   end
 
+  test "answers 403 for a document carrying an id of the client's", %{conn: conn} do
+    assert %{"errors" => [%{"status" => "403", "source" => %{"pointer" => "/data/id"}}]} =
+             conn
+             |> run_action("/api/exporters/acting/actions/export", %{
+               data: %{type: "exporter-actions", id: "mine"}
+             })
+             |> json_response(403)
+  end
+
   test "answers 404 for an unknown exporter, the API's own entry among them", %{conn: conn} do
     for id <- ["nothing", "api"] do
       assert %{"errors" => [%{"status" => "404", "detail" => "no exporter " <> ^id}]} =

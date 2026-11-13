@@ -151,7 +151,7 @@ The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_co
 
 Each time it starts, it reads the stereo unit's cameras in the configuration, the calibration a commit stored first. The camera info it publishes is therefore the calibration the stereo unit uses.
 
-`GET /api/exporters` lists the exporters with their statuses, the outputs they read and their actions. An exporter that does not run says why. The API comes last, as it is the one answering. The dashboard's Exporters menu is built from it.
+`GET /api/exporters` lists the exporters with the outputs they read and their actions. Their statuses come on the `status` channel, where an exporter that does not run says why. The API comes last, as it is the one answering. The dashboard's Exporters menu is built from it.
 
 ## The dashboard's previews
 

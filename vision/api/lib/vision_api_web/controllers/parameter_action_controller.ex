@@ -17,7 +17,7 @@ defmodule VisionApiWeb.ParameterActionController do
     act(conn, "parameter-saves", fn _data ->
       case Parameters.save() do
         {:ok, ids} -> {:ok, ids}
-        {:error, reason} -> {:error, 503, "Saved values unavailable", reason, nil}
+        {:error, reason} -> {:error, 503, reason, [title: "Saved values unavailable"]}
       end
     end)
   end
@@ -31,15 +31,15 @@ defmodule VisionApiWeb.ParameterActionController do
       with {:ok, scope} <- scope(data) do
         case Parameters.reset(scope) do
           {:ok, ids} -> {:ok, ids}
-          {:error, :not_found} -> {:error, 404, "Not Found", not_found(scope), nil}
-          {:error, reason} -> {:error, 422, "Not reset", reason, nil}
+          {:error, :not_found} -> {:error, 404, not_found(scope), []}
+          {:error, reason} -> {:error, 422, reason, [title: "Not reset"]}
         end
       end
     end)
   end
 
   defp act(conn, type, run) do
-    with {:ok, data} <- fetch_data(conn.body_params, type),
+    with {:ok, data} <- fetch_data(JsonApi.document(conn), type),
          {:ok, ids} <- run.(data) do
       id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
@@ -47,31 +47,39 @@ defmodule VisionApiWeb.ParameterActionController do
       |> put_status(:created)
       |> render(:show, type: type, id: id, parameters: ids)
     else
-      {:error, status, title, detail, pointer} ->
-        JsonApi.error(conn, status, title, detail, pointer)
+      {:error, status, detail, options} ->
+        JsonApi.error(conn, status, detail, options)
     end
   end
+
+  defp fetch_data(%{"data" => %{"type" => type, "id" => _id}}, type),
+    do: JsonApi.client_id_refusal()
 
   defp fetch_data(%{"data" => %{"type" => type} = data}, type), do: {:ok, data}
 
   defp fetch_data(%{"data" => %{"type" => _other}}, type),
-    do: {:error, 409, "Conflict", "type must be #{type}", "/data/type"}
+    do: {:error, 409, "type must be #{type}", [source: "/data/type"]}
 
   defp fetch_data(_params, _type),
-    do: {:error, 400, "Bad Request", "data with a type is required", "/data"}
+    do: {:error, 400, "data with a type is required", [source: "/data"]}
 
-  defp scope(%{"relationships" => %{"target" => %{"data" => target}}}) do
-    case target do
-      %{"type" => type, "id" => id} when is_map_key(@target_types, type) and is_binary(id) ->
-        {:ok, {Map.fetch!(@target_types, type), id}}
-
-      _target ->
-        {:error, 400, "Bad Request", "target must be a parameter or a stage",
-         "/data/relationships/target/data"}
-    end
-  end
-
+  defp scope(%{"relationships" => relationships}), do: target(relationships)
   defp scope(_data), do: {:ok, :all}
+
+  defp target(%{"target" => %{"data" => %{"type" => type, "id" => id}}})
+       when is_map_key(@target_types, type) and is_binary(id),
+       do: {:ok, {Map.fetch!(@target_types, type), id}}
+
+  defp target(%{"target" => %{"data" => _data}}),
+    do:
+      {:error, 400, "target must be a parameter or a stage",
+       [source: "/data/relationships/target/data"]}
+
+  defp target(%{"target" => _target}),
+    do: {:error, 400, "target must hold data", [source: "/data/relationships/target"]}
+
+  defp target(_relationships),
+    do: {:error, 400, "relationships must hold a target", [source: "/data/relationships"]}
 
   defp not_found({:group, id}), do: "no stage #{id}"
   defp not_found({:parameter, id}), do: "no parameter #{id}"

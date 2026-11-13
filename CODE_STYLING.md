@@ -143,6 +143,36 @@ first, evidence before a claim, small reviewed PRs) is in
   returns its own reasons; callers never match on the library's.
 - **Handle and log an error once**, where something is done about it.
 
+## HTTP APIs
+
+- **An API is RESTful.** A route names a resource, never an operation: a
+  plural noun in kebab-case (`/api/parameters`, `/api/parameters/:id`), or
+  a singular one for a resource there is one of (`/api/firmware`). The
+  HTTP method is the verb: `GET` reads and changes nothing, `POST`
+  creates, `PATCH` changes the members it sends, `DELETE` removes. An
+  operation that is not a change to one resource is a resource of its own,
+  created with `POST` (`POST /api/parameter-saves`).
+- **The status code is the outcome.** 200, 201 or 204 on success; 400 for
+  a document that cannot be read, 404 for an unknown resource, 409 for a
+  `type` or `id` that does not match the route, 422 for a value the
+  resource refuses; 5xx only for a fault of the server. Never a 200
+  carrying an error.
+- **Documents follow [JSON:API 1.1](https://jsonapi.org/format/1.1/).**
+  Every response under `/api` is `application/vnd.api+json`, errors and
+  unknown routes included. A resource object has its `type` (plural,
+  kebab-case), a string `id`, `attributes` and `relationships`; member
+  names are camelCase. A link to another resource is a relationship, not
+  an id in `attributes`. A refusal is an `errors` array whose objects
+  carry `status`, `title`, `detail` and the `source` of the fault.
+- **A write takes a JSON:API document**, in a JSON body, whose `type` and
+  `id` are checked against the route. A form or a query string is
+  refused.
+- **Requests are untrusted input.** A controller validates the document
+  and answers 4xx; it does not let a malformed request crash into a 500,
+  and never turns a request's strings into atoms.
+- **Each route has a controller test** covering its success document, its
+  media type and each refusal it documents.
+
 ## Safety-relevant code
 
 Code is safety-relevant when its failure can move, stop, steer or

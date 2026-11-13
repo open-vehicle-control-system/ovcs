@@ -61,12 +61,14 @@ The unit's certificate is self-signed. In a browser, accept it on the dashboard 
   "quality": {"matchedPercent": 64.7, "jitterPx": 0.087, "meanDisparityPx": 11.9, "spreadPx": 7.7},
   "depthHz": 26.0,
   "stereoLoadPercent": 98.0,
-  "cpuPercent": 84.8,
   "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 23.1,
           "pipelines": {"objects": {"inferenceMs": 2.1}, "scene": {"inferenceMs": 5.6}}},
-  "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}}]
+  "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}},
+                {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]
 }
 ```
+
+`exporters` holds the status of each exporter `GET /api/exporters` lists, the API's own last. A `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. The processors' load is the board's, in `GET /api/board`.
 
 `pair` judges the two cameras together, so a reader computes nothing. Each check has:
 
@@ -116,13 +118,12 @@ left.on('frame', (jpeg) => {
 left.join()
 ```
 
-On `preview:depth`, push `depth_range` with `metres` to set the distance the depth video colours blue, or without to read it. `0` colours blue only what is infinitely far. The reply is the range in force. The range is the unit's, shared by every client. The channel pushes it as a `depth_range` event after every join and on every change, whoever makes it.
+`preview:depth` pushes the distance the depth video colours blue as a `depth_range` event, `metres`, after every join and on every change, whoever makes it. `0` colours blue only what is infinitely far. The range is the unit's, shared by every client, and set with [`PATCH /api/depth-preview`](./api.md#the-depth-videos-colour-range).
 
 ```javascript
 const depth = socket.channel('preview:depth')
 depth.on('depth_range', ({ metres }) => console.log(`blue at ${metres} m`))
 depth.join()
-depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.log(metres))
 ```
 
 ## Video

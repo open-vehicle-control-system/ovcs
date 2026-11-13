@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useExporters } from '../exporters.js'
+import { exporterStatus, useExporters } from '../exporters.js'
 import * as unit from '../../services/unit.js'
 
 vi.mock('../../services/unit.js')
@@ -57,5 +57,14 @@ describe('exporters store', () => {
 
     await vi.advanceTimersByTimeAsync(60000)
     expect(unit.fetchExporters).toHaveBeenCalledTimes(3)
+  })
+
+  it("takes an exporter's status from the unit status alone: none until it reports one", () => {
+    const listed = { id: 'ros2', name: 'ROS 2', status: { level: 'off', detail: 'Listed' } }
+    const live = { level: 'ok', detail: 'Connected' }
+
+    expect(exporterStatus(listed, null)).toBeNull()
+    expect(exporterStatus(listed, { exporters: [] })).toBeNull()
+    expect(exporterStatus(listed, { exporters: [{ id: 'ros2', status: live }] })).toEqual(live)
   })
 })

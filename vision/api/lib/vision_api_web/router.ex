@@ -3,13 +3,18 @@ defmodule VisionApiWeb.Router do
 
   import VisionApiWeb.JsonApi, only: [put_media_type: 2]
 
-  pipeline :jsonapi do
-    plug :accepts, ["jsonapi", "json"]
+  pipeline :jsonapi_media_type do
     plug :put_media_type
   end
 
+  # After `:jsonapi_media_type`, a pipeline of its own: an error raised here, a refused `Accept` or a body that is not JSON, is rendered on the conn this pipeline was given.
+  pipeline :jsonapi do
+    plug :accepts, ["jsonapi", "json"]
+    plug Plug.Parsers, parsers: [:json], pass: ["*/*"], json_decoder: Phoenix.json_library()
+  end
+
   scope "/api", VisionApiWeb do
-    pipe_through :jsonapi
+    pipe_through [:jsonapi_media_type, :jsonapi]
     get "/stages", StageController, :index
     get "/parameters", ParameterController, :index
     get "/parameters/:id", ParameterController, :show
@@ -17,6 +22,8 @@ defmodule VisionApiWeb.Router do
     post "/parameter-saves", ParameterActionController, :save
     post "/parameter-discards", ParameterActionController, :discard
     post "/parameter-resets", ParameterActionController, :reset
+    get "/depth-preview", DepthPreviewController, :show
+    patch "/depth-preview", DepthPreviewController, :update
     get "/configuration", ConfigurationController, :show
     get "/firmware", FirmwareController, :show
     get "/board", BoardController, :show

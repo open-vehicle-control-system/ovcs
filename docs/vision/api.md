@@ -20,7 +20,7 @@ The examples come from units of several builds, shortened where a list is long. 
 
 ## Requests and errors
 
-Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400.
+Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400. A body that is not valid JSON is a 400 too, and a request whose `Accept` header takes no JSON a 406. A path sent a method it does not take answers a 405, with the methods it takes in the `allow` header. A `POST` creates a resource the unit names: a document carrying an `id` is a 403.
 
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 
@@ -160,7 +160,7 @@ curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/parameter-sa
 
 - `POST /api/parameter-saves` stores the unsaved values on the unit, which applies them again at every boot. It answers a 503 when the store fails.
 - `POST /api/parameter-discards` returns every unsaved parameter to its saved value, or to its default without one.
-- `POST /api/parameter-resets` returns parameters to their defaults: the stage or parameter its `target` relationship names, or every parameter without one.
+- `POST /api/parameter-resets` returns parameters to their defaults: the stage or parameter its `target` relationship names, or every parameter in a document without `relationships`. `relationships` that do not hold a well-formed `target` are a 400, and nothing is reset.
 
 A reset of the Disparity stage:
 
@@ -174,6 +174,38 @@ A reset of the Disparity stage:
 ```
 
 The same parameters are reachable over ROS 2 under the same ids ([Vision unit](./README.md#dashboard-and-api)).
+
+## The depth video's colour range
+
+`GET /api/depth-preview` returns the distance the depth video colours blue, in metres. `0` colours blue only what is infinitely far.
+
+```json
+{
+  "data": {
+    "type": "depth-previews",
+    "id": "current",
+    "attributes": {"colourRangeM": 8.0}
+  }
+}
+```
+
+`PATCH /api/depth-preview` sets it, from 0 to 50:
+
+```sh
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/depth-preview \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "depth-previews", "id": "current", "attributes": {"colourRangeM": 12}}}'
+```
+
+The range is a view setting of the unit, shared by every client: it is not saved, and a restart puts back the one of the vehicle's configuration. The answers are:
+
+- a 200 with the resource;
+- a 422 for a range the unit refuses;
+- a 409 for another `type` or `id`;
+- a 400 for a document without `data.type`, `data.id` or `data.attributes.colourRangeM`;
+- a 503 while the previews do not run.
+
+The `preview:depth` channel pushes the range to its clients on every change; see [Live channels](./channels.md).
 
 ## The unit and its exports
 
@@ -254,7 +286,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter, then the API itself. Each entry has its status, the outputs it reads and the actions you can run on it. `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
+`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter, then the API itself. Each entry has the outputs it reads and the actions you can run on it; its status comes with the unit's, on the [`status` channel](./channels.md). `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
 
 ```json
 {
@@ -265,7 +297,6 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
       "attributes": {
         "name": "ROS 2",
         "module": "VisionCore.Ros2.Exporter",
-        "status": {"level": "ok", "detail": "Connected"},
         "outputs": [
           {"name": "stereo_pair", "maxHz": null},
           {"name": "camera_frame:left", "maxHz": null},
@@ -284,7 +315,6 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
       "attributes": {
         "name": "API",
         "module": "VisionApiWeb.Endpoint",
-        "status": {"level": "ok", "detail": "Answering"},
         "outputs": [
           {"name": "camera_frame:left", "maxHz": 10},
           {"name": "camera_frame:right", "maxHz": 10},
@@ -306,7 +336,7 @@ A unit lists each detection pipeline's output: `detections:<name>` for the pipel
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 
-A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
+Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
 An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`. The action's parameters go in `attributes` when it takes any.
 

@@ -449,6 +449,22 @@ defmodule VisionCore.ExportersTest do
       assert elapsed_us < 180_000
     end
 
+    @tag timeout: 10_000
+    test "describes each exporter without asking its status, so a stuck one does not delay it" do
+      start_supervised!(
+        {Exporters, config: config(), exporters: [{Stuck, stuck_id: :first}, {Described, []}]}
+      )
+
+      for id <- [:first, :described], do: await_runner(id)
+
+      {elapsed_us, described} = :timer.tc(fn -> Exporters.describe() end)
+
+      assert [%{id: "first", module: Stuck}, %{id: "described", name: "Described"}] = described
+      refute Enum.any?(described, &Map.has_key?(&1, :status))
+      assert described == Enum.map(Exporters.list(100), &Map.delete(&1, :status))
+      assert elapsed_us < 50_000
+    end
+
     test "is empty while the exporters are not running" do
       assert Exporters.list() == []
     end

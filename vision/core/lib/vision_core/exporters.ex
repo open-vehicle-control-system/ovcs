@@ -50,6 +50,13 @@ defmodule VisionCore.Exporters do
   @type listed_output :: %{output: Exporter.output(), max_hz: number() | nil}
 
   @typedoc "An exporter as `list/1` lists it."
+  @type description :: %{
+          id: String.t(),
+          name: String.t(),
+          module: module(),
+          outputs: [listed_output()],
+          actions: [Exporter.action()]
+        }
   @type entry :: %{
           id: String.t(),
           name: String.t(),
@@ -78,15 +85,28 @@ defmodule VisionCore.Exporters do
   """
   @spec list(timeout()) :: [entry()]
   def list(timeout_ms \\ @default_status_timeout_ms) do
+    listed = listed()
+    statuses = statuses(listed, timeout_ms)
+
+    Enum.zip_with(listed, statuses, fn {_id, opts, _supervisor}, status ->
+      opts |> description() |> Map.put(:status, status)
+    end)
+  end
+
+  @doc """
+  The exporters as `list/1` lists them, without their statuses: no
+  exporter is asked anything, so one that is stuck does not delay it.
+  """
+  @spec describe() :: [description()]
+  def describe, do: for({_id, opts, _supervisor} <- listed(), do: description(opts))
+
+  defp listed do
     listed =
       for {id, supervisor, :supervisor, _modules} <- children(__MODULE__),
           {:ok, %{start: {_module, _function, [opts]}}} <- [exporter_spec(id)],
           do: {id, opts, supervisor}
 
-    listed = Enum.reverse(listed)
-    statuses = statuses(listed, timeout_ms)
-
-    Enum.zip_with(listed, statuses, fn {_id, opts, _supervisor}, status -> entry(opts, status) end)
+    Enum.reverse(listed)
   end
 
   @doc """
@@ -154,7 +174,7 @@ defmodule VisionCore.Exporters do
     :exit, _reason -> {:error, :not_running}
   end
 
-  defp entry(opts, status) do
+  defp description(opts) do
     exporter = Keyword.fetch!(opts, :exporter)
     options = Keyword.get(opts, :options, [])
     %{id: id, name: name} = Exporter.identity(exporter, options)
@@ -164,7 +184,6 @@ defmodule VisionCore.Exporters do
       id: id_text(id),
       name: name,
       module: exporter,
-      status: status,
       outputs: listed_outputs(exporter, options, config),
       actions: Exporter.actions(exporter, options)
     }

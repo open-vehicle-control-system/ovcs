@@ -18,14 +18,14 @@ defmodule VisionApiWeb.Ros2NodeController do
 
   def show(conn, params) do
     with true <- ros2_link?(),
-         {:ok, includes} <- includes(params) do
+         {:ok, includes} <- JsonApi.includes(params, @relationships) do
       render(conn, :show, link: Node.link(), topics: Topics.topics(), includes: includes)
     else
       false ->
-        JsonApi.error(conn, 404, "Not Found", "the unit has no ROS 2 link: no ros2: section")
+        JsonApi.error(conn, 404, "the unit has no ROS 2 link: no ros2: section")
 
       :error ->
-        JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
+        JsonApi.error(conn, 400, "unsupported include", source: %{parameter: "include"})
     end
   end
 
@@ -35,11 +35,4 @@ defmodule VisionApiWeb.Ros2NodeController do
       nil -> false
     end
   end
-
-  defp includes(%{"include" => include}) do
-    includes = include |> String.split(",", trim: true) |> Enum.uniq()
-    if Enum.all?(includes, &(&1 in @relationships)), do: {:ok, includes}, else: :error
-  end
-
-  defp includes(_params), do: {:ok, []}
 end

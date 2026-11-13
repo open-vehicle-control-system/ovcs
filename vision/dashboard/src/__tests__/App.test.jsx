@@ -6,6 +6,7 @@ import { exporterFromUrl, pageFromUrl, useNavigation } from '../stores/navigatio
 import { useExporters } from '../stores/exporters.js'
 import * as service from '../services/parameters.js'
 import { dashboardSocket } from '../services/socket.js'
+import { useStatus } from '../stores/status.js'
 
 vi.mock('../services/parameters.js')
 vi.mock('../services/socket.js', () => ({
@@ -174,6 +175,7 @@ describe('App', () => {
 
   it("opens an exporter without a page of its own on the exporters' page: its status and outputs", () => {
     render(<App />)
+    act(() => useStatus.setState({ snapshot: { exporters: [{ id: 'recorder', name: 'Recorder', status: { level: 'ok', detail: 'Recording' } }] } }))
 
     fireEvent.click(screen.getByRole('button', { name: /^Recorder/ }))
 

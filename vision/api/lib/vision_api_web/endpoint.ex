@@ -20,11 +20,6 @@ defmodule VisionApiWeb.Endpoint do
   # The dashboard polls the parameters: logged, the polls would push everything else out of the log.
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint], log: :debug
 
-  plug Plug.Parsers,
-    parsers: [:json],
-    pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
-
   plug Plug.Head
 
   if Application.compile_env(:vision_api, :allow_cross_origin, false) do

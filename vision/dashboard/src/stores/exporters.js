@@ -29,8 +29,8 @@ const NO_OUTPUTS = []
 export const useApiOutputs = () =>
   useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs ?? NO_OUTPUTS)
 
-/** The status of `exporter`: the latest the unit status reports for it, else the one it was listed with. */
+/** The status of `exporter`: the latest the unit status reports for it, `null` until it reports one. */
 export function exporterStatus(exporter, snapshot) {
   const live = snapshot?.exporters?.find((reported) => reported.id === exporter.id)
-  return live?.status ?? exporter.status
+  return live?.status ?? null
 }

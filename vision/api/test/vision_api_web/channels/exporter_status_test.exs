@@ -44,22 +44,13 @@ defmodule VisionApiWeb.ExporterStatusTest do
     end)
   end
 
-  @malformed %{"level" => "warning", "detail" => "Malformed status: :ok"}
-
-  test "GET /api/exporters reports an exporter whose status is malformed as a warning" do
-    assert %{"data" => [%{"id" => "malformed", "attributes" => %{"status" => status}}, _api]} =
-             build_conn() |> get("/api/exporters") |> json_response(200)
-
-    assert status == @malformed
-  end
-
   test "the status channel goes on pushing the unit's status beside a malformed exporter status" do
     {:ok, _reply, _socket} =
       VisionApiWeb.DashboardSocket
       |> socket()
       |> subscribe_and_join(VisionApiWeb.StatusChannel, "status")
 
-    assert_push "status", %{exporters: [%{id: "malformed", status: status}], npu: nil}
+    assert_push "status", %{exporters: [%{id: "malformed", status: status}, _api], npu: nil}
     assert status == %{level: "warning", detail: "Malformed status: :ok"}
   end
 end

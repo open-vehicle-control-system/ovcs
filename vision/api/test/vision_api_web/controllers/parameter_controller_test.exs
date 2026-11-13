@@ -137,4 +137,20 @@ defmodule VisionApiWeb.ParameterControllerTest do
 
     assert %{"attributes" => %{"state" => "builtin"}} = parameter(conn, id)
   end
+
+  test "PATCH sent as a form or as text answers 400", %{conn: conn} do
+    for content_type <- ["application/x-www-form-urlencoded", "text/plain"] do
+      conn =
+        conn
+        |> put_req_header("content-type", content_type)
+        |> patch("/api/parameters/test.disparity.p1", "data[attributes][value]=12")
+
+      assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+
+      assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data"}}]} =
+               json_response(conn, 400)
+    end
+
+    assert parameter(conn, "test.disparity.p1")["attributes"]["value"] == 8
+  end
 end
