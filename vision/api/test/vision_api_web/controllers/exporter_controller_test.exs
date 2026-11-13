@@ -128,6 +128,28 @@ defmodule VisionApiWeb.ExporterControllerWithVideoTest do
              %{"name" => "camera_video:hq:full_h264", "maxHz" => nil}
            ]
   end
+
+  test "GET /api/exporters lists the video of a camera that sends no image, without camera frames",
+       %{conn: conn} do
+    VisionApiWeb.TestUnit.start(%VisionCore.Config{
+      components: [
+        {:camera,
+         name: :hq,
+         driver: VisionCore.Camera.V4L2Single,
+         csiphy: 2,
+         outputs: [
+           full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+           full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+         ]}
+      ],
+      preview: [max_hz: 5, videos: [hq: :full_h264]]
+    })
+
+    assert %{"data" => [%{"id" => "api", "attributes" => %{"outputs" => outputs}}]} =
+             conn |> get("/api/exporters") |> json_response(200)
+
+    assert outputs == [%{"name" => "camera_video:hq:full_h264", "maxHz" => nil}]
+  end
 end
 
 defmodule VisionApiWeb.ExporterControllerWithoutPipelineTest do

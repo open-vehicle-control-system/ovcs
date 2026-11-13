@@ -182,15 +182,18 @@ const CAMERA_FRAME = 'camera_frame:'
 const CAMERA_VIDEO = 'camera_video:'
 const STEREO_SIDES = ['left', 'right']
 
-/** The cameras of their own: each `camera_frame:<name>` output the API exporter lists, but the stereo pair's sides. */
-function useCameraNames() {
+/**
+ * The cameras of their own: each camera the API exporter lists a `camera_frame:<name>` output for, then each other one
+ * whose video it relays, but the stereo pair's sides.
+ */
+function useCameraNames(videos) {
   const outputs = useApiOutputs()
-
-  return outputs
+  const framed = outputs
     .map(({ name }) => name)
     .filter((name) => name.startsWith(CAMERA_FRAME))
     .map((name) => name.slice(CAMERA_FRAME.length))
-    .filter((name) => !STEREO_SIDES.includes(name))
+
+  return [...new Set([...framed, ...videos])].filter((name) => !STEREO_SIDES.includes(name))
 }
 
 /** The cameras whose video the API relays: each `camera_video:<name>:<output>` output it lists. */
@@ -279,8 +282,8 @@ function DepthPreview({ status, socket, beside }) {
  * at least as wide as tall (`useBeside`).
  */
 export default function Previews({ status, socket }) {
-  const cameras = useCameraNames()
   const videos = useVideoCameras()
+  const cameras = useCameraNames(videos)
   const rowRef = useRef(null)
   const beside = useBeside(rowRef)
 
