@@ -81,6 +81,15 @@ describe('UnitStatus and the pair status', () => {
     expect(card('npu').textContent).not.toContain('%')
   })
 
+  it('shows an NPU whose backend is starting as starting in grey: it has not failed', () => {
+    show({ ...snapshot, npu: { kind: 'Hexagon', state: 'starting', loadPercent: null, pipelines: {} } })
+    expect(card('npu').textContent).toContain('starting')
+    expect(card('npu').querySelector('.ovcs-status--error')).toBeNull()
+    expect(card('npu').querySelector('.ovcs-status--ok')).toBeNull()
+    expect(card('npu').querySelector('[data-warning]')).toBeNull()
+    expect(card('npu').textContent).not.toContain('unhealthy')
+  })
+
   it('shows an NPU that failed by its kind, in red', () => {
     show({ ...snapshot, npu: { kind: 'Hexagon', state: 'failed' } })
     expect(card('npu').textContent).toContain('Hexagon')

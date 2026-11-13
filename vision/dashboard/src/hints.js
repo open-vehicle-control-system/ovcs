@@ -107,7 +107,7 @@ export const HINTS = {
     text:
       "The accelerator running the unit's inference, by kind, with its load: the share of the last second its pipelines spent inferring, summed over them. " +
       'On a Hexagon it counts the time the NPU spent executing; on a Hailo-8 the time from writing the input to reading the output, PCIe transfer included. ' +
-      "Each pipeline's Inference step shows its mean time per frame. Red when its backend cannot run; none on a unit without one."
+      "Each pipeline's Inference step shows its mean time per frame. Starting while a backend prepares its model, red when one cannot run; none on a unit without one."
   },
   objects: {
     title: 'Objects',
