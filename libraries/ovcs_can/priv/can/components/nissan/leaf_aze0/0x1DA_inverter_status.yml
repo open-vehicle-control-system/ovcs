@@ -9,6 +9,11 @@ signals:
     value_length: 8
     scale: "2"
     unit: V
+  - name: filler
+    kind: static
+    value_start: 8
+    value_length: 13
+    value: 0
   - name: effective_torque
     endianness: big
     sign: signed

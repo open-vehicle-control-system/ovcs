@@ -29,7 +29,12 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.InverterTest do
   end
 
   test "the frame labels its temperatures in Fahrenheit" do
-    units = frame_specification().signal_specifications |> Enum.map(& &1.unit) |> Enum.uniq()
+    units =
+      for signal <- frame_specification().signal_specifications,
+          String.ends_with?(signal.name, "temperature"),
+          uniq: true,
+          do: signal.unit
+
     assert units == ["°F"]
   end
 
