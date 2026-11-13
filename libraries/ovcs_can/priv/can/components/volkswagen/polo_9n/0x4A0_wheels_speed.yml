@@ -1,6 +1,8 @@
 ---
 name: wheels_speed
 id: 0x4A0
+# Not measured on the Polo 9N: abs_status's period, for an emitter.
+frequency: 20
 signals:
   - name: front_left_wheel_speed # TODO verify that this is the right wheel order
     unit: km/h
