@@ -24,7 +24,9 @@ vi.mock('../../services/socket.js', () => ({
 
 vi.mock('../../services/calibration.js', async (original) => ({ ...(await original()), downloadYaml: vi.fn() }))
 
-const side = (fx, yaml) => ({
+const side = (name, fx, yaml) => ({
+  name,
+  file: `ovcs_mini_${name}.yaml`,
   imageWidth: 1280,
   imageHeight: 720,
   fx,
@@ -36,28 +38,51 @@ const side = (fx, yaml) => ({
 })
 
 const stored = {
+  id: 'ovcs_mini',
+  kind: 'stereo',
   source: 'stored',
   storedAt: '2026-10-30T14:05:00Z',
   canReset: true,
-  prefix: 'ovcs_mini',
   baselineM: 0.0601,
   rectifiedFx: 905.67,
-  left: side(912.34, 'left in use'),
-  right: side(915.5, 'right in use')
+  cameras: [side('left', 912.34, 'left in use'), side('right', 915.5, 'right in use')]
 }
 
 const builtIn = { ...stored, source: 'builtIn', storedAt: null, canReset: false }
 
-const blank = { imageWidth: null, imageHeight: null, fx: null, fy: null, cx: null, cy: null, distortion: null, yaml: null }
+const blank = (name) => ({
+  name,
+  file: `ovcs_mini_${name}.yaml`,
+  imageWidth: null,
+  imageHeight: null,
+  fx: null,
+  fy: null,
+  cx: null,
+  cy: null,
+  distortion: null,
+  yaml: null
+})
 const none = {
+  id: 'ovcs_mini',
+  kind: 'stereo',
   source: 'none',
   storedAt: null,
   canReset: false,
-  prefix: 'ovcs_mini',
   baselineM: null,
   rectifiedFx: null,
-  left: blank,
-  right: blank
+  cameras: [blank('left'), blank('right')]
+}
+
+// A camera of its own, beside the stereo pair.
+const center = {
+  id: 'center',
+  kind: 'camera',
+  source: 'builtIn',
+  storedAt: null,
+  canReset: false,
+  baselineM: null,
+  rectifiedFx: null,
+  cameras: [{ ...side('center', 880.5, 'center in use'), file: 'center.yaml' }]
 }
 
 const board = { columns: 8, rows: 6, squareMm: 25 }
@@ -77,15 +102,21 @@ const session = (attributes) => ({
 
 const capturing = (attributes) => session({ phase: 'capturing', board, samples: 12, progress, ...attributes })
 
+// A detection as the unit pushes it: each camera's corners, `null` where it does not see the board.
+const detection = (views, sample = false) => ({
+  views: Object.entries(views).map(([camera, points]) => ({ camera, points })),
+  sample
+})
+
 const result = {
-  leftRmsPx: 0.31,
-  rightRmsPx: 0.87,
+  cameras: [
+    { name: 'left', file: 'ovcs_mini_left.yaml', rmsPx: 0.31, yaml: 'left solved' },
+    { name: 'right', file: 'ovcs_mini_right.yaml', rmsPx: 0.87, yaml: 'right solved' }
+  ],
   stereoRmsPx: 2.4,
   baselineM: 0.0598,
   fxPx: 910.12,
-  samples: 40,
-  left: { yaml: 'left solved' },
-  right: { yaml: 'right solved' }
+  samples: 40
 }
 
 const initialStatus = useStatus.getState()
@@ -112,7 +143,8 @@ describe('CalibrationPage', () => {
     useStatus.setState({ ...initialStatus, snapshot: null })
     useCalibration.setState({
       session: null,
-      inUse: null,
+      calibrations: {},
+      selected: null,
       error: null,
       busy: false,
       unavailable: false,
@@ -128,8 +160,10 @@ describe('CalibrationPage', () => {
     delete URL.revokeObjectURL
   })
 
-  const show = (state) => {
-    useCalibration.setState(state)
+  // `inUse` is the calibration picked, the only one the unit has unless `calibrations` lists more.
+  const show = ({ inUse, ...state }) => {
+    const picked = inUse ? { calibrations: { [inUse.id]: inUse }, selected: inUse.id } : {}
+    useCalibration.setState({ ...picked, ...state })
     return render(<CalibrationPage />)
   }
 
@@ -292,11 +326,11 @@ describe('CalibrationPage', () => {
       show({ inUse: stored, session: capturing({ board: { columns: 9, rows: 7, squareMm: 25 } }) })
       expect(screen.getByText(/Looking for a board with 9 × 7 inner corners/)).toBeTruthy()
 
-      act(() => useCalibration.setState({ session: capturing({ detection: { left: null, right: null, sample: false } }) }))
+      act(() => useCalibration.setState({ session: capturing({ detection: detection({ left: null, right: null }) }) }))
       expect(screen.getByText(/Looking for a board with 8 × 6 inner corners/)).toBeTruthy()
 
       act(() =>
-        useCalibration.setState({ session: capturing({ detection: { left: [[0.1, 0.2]], right: null, sample: false } }) })
+        useCalibration.setState({ session: capturing({ detection: detection({ left: [[0.1, 0.2]], right: null }) }) })
       )
       expect(screen.queryByText(/Looking for a board/)).toBeNull()
     })
@@ -312,7 +346,7 @@ describe('CalibrationPage', () => {
       }
 
       const corners = [[0.1, 0.2], [0.2, 0.2], [0.1, 0.3], [0.2, 0.3]]
-      act(() => useCalibration.setState({ session: capturing({ detection: { left: corners, right: null, sample: false } }) }))
+      act(() => useCalibration.setState({ session: capturing({ detection: detection({ left: corners, right: null }) }) }))
       const left = figure('left').querySelector('svg[data-corners]')
       expect(left.getAttribute('viewBox')).toBe('0 0 640 480')
       expect(left.querySelectorAll('circle')).toHaveLength(4)
@@ -320,7 +354,7 @@ describe('CalibrationPage', () => {
       const detected = left.getAttribute('class')
       expect(figure('right').querySelectorAll('svg[data-corners] circle')).toHaveLength(0)
 
-      act(() => useCalibration.setState({ session: capturing({ detection: { left: corners, right: corners, sample: true } }) }))
+      act(() => useCalibration.setState({ session: capturing({ detection: detection({ left: corners, right: corners }, true) }) }))
       expect(figure('left').querySelector('svg[data-corners]').getAttribute('class')).not.toBe(detected)
       expect(figure('right').querySelectorAll('svg[data-corners] circle')).toHaveLength(4)
     })
@@ -353,7 +387,7 @@ describe('CalibrationPage', () => {
     })
 
     it('reads 0.5 and 2 px as fair', () => {
-      show({ inUse: stored, session: session({ phase: 'solved', board, result: { ...result, leftRmsPx: 0.5, rightRmsPx: 2 } }) })
+      show({ inUse: stored, session: session({ phase: 'solved', board, result: { ...result, cameras: [{ ...result.cameras[0], rmsPx: 0.5 }, { ...result.cameras[1], rmsPx: 2 }] } }) })
 
       expect(rms('Left RMS').textContent).toContain('fair')
       expect(rms('Right RMS').textContent).toContain('fair')
@@ -420,10 +454,75 @@ describe('CalibrationPage', () => {
     expect(screen.getByText(/depth starts once a calibration is applied/)).toBeTruthy()
   })
 
-  it('says so on a unit without stereo cameras', () => {
+  it('says so on a unit with no camera to calibrate', () => {
     show({ unavailable: true })
 
-    expect(screen.getByText(/no stereo cameras/)).toBeTruthy()
+    expect(screen.getByText(/no camera to calibrate/)).toBeTruthy()
     expect(query('Start')).toBeNull()
+  })
+
+  describe('with a camera of its own beside the stereo pair', () => {
+    const both = { calibrations: { ovcs_mini: stored, center }, selected: 'ovcs_mini' }
+    const targets = () => screen.getByRole('group', { name: 'Calibrate' })
+
+    it('lets the user pick what to calibrate, the stereo pair first', () => {
+      show({ ...both, session: session() })
+
+      const pair = within(targets()).getByRole('button', { name: 'Stereo pair' })
+      const camera = within(targets()).getByRole('button', { name: 'Camera center' })
+      expect(pair.getAttribute('aria-pressed')).toBe('true')
+      expect(camera.getAttribute('aria-pressed')).toBe('false')
+
+      fireEvent.click(camera)
+      expect(useCalibration.getState().selected).toBe('center')
+      expect(camera.getAttribute('aria-pressed')).toBe('true')
+    })
+
+    it('offers no pick on a unit with one calibration', () => {
+      show({ inUse: stored, session: session() })
+
+      expect(screen.queryByRole('group', { name: 'Calibrate' })).toBeNull()
+    })
+
+    it("shows a camera's one calibration, without a baseline, and downloads its YAML", () => {
+      show({ ...both, selected: 'center', session: session() })
+
+      expect(within(inUseCard()).getAllByRole('row')).toHaveLength(2)
+      expect(within(inUseCard()).getByRole('row', { name: /center/ }).textContent).toContain('880.5')
+      expect(within(inUseCard()).queryByText('baseline')).toBeNull()
+
+      fireEvent.click(button('Download the calibration in use'))
+      expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center in use']])
+    })
+
+    it('holds the pick to the calibration a running session works on', () => {
+      show({ ...both, session: capturing({ calibration: 'center' }) })
+
+      expect(within(targets()).getByRole('button', { name: 'Camera center' }).getAttribute('aria-pressed')).toBe('true')
+      expect(within(targets()).getByRole('button', { name: 'Stereo pair' }).disabled).toBe(true)
+      expect(screen.getByText(/in view of the camera/)).toBeTruthy()
+      expect(screen.getByText('center', { selector: 'figcaption span' })).toBeTruthy()
+      expect(screen.queryByText('left', { selector: 'figcaption span' })).toBeNull()
+    })
+
+    it("reads a camera's solve: its one reprojection error and focal length, no baseline", () => {
+      const solved = {
+        cameras: [{ name: 'center', file: 'center.yaml', rmsPx: 0.2, yaml: 'center solved' }],
+        stereoRmsPx: null,
+        baselineM: null,
+        fxPx: 870.25,
+        samples: 30
+      }
+      show({ ...both, session: session({ phase: 'solved', board, calibration: 'center', result: solved }) })
+
+      const figures = screen.getByRole('region', { name: 'Result' })
+      expect(within(figures).getByRole('row', { name: /Center RMS/ }).textContent).toContain('0.20 px, good')
+      expect(within(figures).queryByRole('row', { name: /Stereo RMS/ })).toBeNull()
+      expect(within(figures).queryByRole('row', { name: /Baseline/ })).toBeNull()
+      expect(within(figures).getByRole('row', { name: /focal length/ }).textContent).toContain('870.3 px')
+
+      fireEvent.click(button('Download the solved calibration'))
+      expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center solved']])
+    })
   })
 })

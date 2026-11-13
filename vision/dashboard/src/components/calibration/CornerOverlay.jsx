@@ -10,12 +10,14 @@ const round = (value) => Math.round(value * 10) / 10
 
 /**
  * The board corners the session's latest detection found on one camera's frame, given as fractions of the image: a
- * circle each, joined in their order, row by row, as OpenCV draws them. Coloured once the pair became a sample. The
+ * circle each, joined in their order, row by row, as OpenCV draws them. Coloured once the detection became a sample. The
  * view box is the frame's own size, fitted like the frame, so the corners stay on it at any size.
  */
-export default function CornerOverlay({ side }) {
+export default function CornerOverlay({ camera }) {
   const { width, height } = useFrameSize()
-  const corners = useCalibration((state) => state.session?.detection?.[side] ?? null)
+  const corners = useCalibration(
+    (state) => state.session?.detection?.views?.find((view) => view.camera === camera)?.points ?? null
+  )
   const kind = useCalibration((state) => (state.session?.detection?.sample ? 'sample' : 'detected'))
 
   if (!corners) return null

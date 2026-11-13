@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { useCalibration } from '../calibration.js'
+import { selectedCalibration, selectedId, useCalibration } from '../calibration.js'
 import { loadBoard, saveBoard } from '../../services/calibration.js'
 
 function fakeChannel() {
@@ -19,29 +19,50 @@ function fakeChannel() {
   return { channel, handlers, receivers }
 }
 
-const initial = { session: null, inUse: null, error: null, busy: false, unavailable: false }
+const initial = { session: null, calibrations: {}, selected: null, error: null, busy: false, unavailable: false }
 const fallback = { columns: 8, rows: 6, squareMm: 25 }
 
 describe('calibration store', () => {
   beforeEach(() => useCalibration.setState(initial))
   afterEach(() => vi.unstubAllGlobals())
 
-  it('joins calibration, takes session and in_use pushes, and leaves on unlisten', () => {
+  it('joins calibration, takes the session and each calibration pushed, and leaves on unlisten', () => {
     const { channel, handlers } = fakeChannel()
     const socket = { channel: vi.fn(() => channel) }
     const unlisten = useCalibration.getState().listen(socket)
     expect(socket.channel).toHaveBeenCalledWith('calibration', {})
 
-    handlers.session({ phase: 'capturing' })
-    handlers.in_use({ source: 'builtIn' })
-    expect(useCalibration.getState().session).toEqual({ phase: 'capturing' })
-    expect(useCalibration.getState().inUse).toEqual({ source: 'builtIn' })
+    handlers.session({ phase: 'idle', calibration: null })
+    handlers.calibration({ id: 'stereo', kind: 'stereo', source: 'builtIn' })
+    handlers.calibration({ id: 'center', kind: 'camera', source: 'none' })
+    handlers.calibration({ id: 'stereo', kind: 'stereo', source: 'stored' })
+
+    const state = useCalibration.getState()
+    expect(state.session).toEqual({ phase: 'idle', calibration: null })
+    expect(Object.keys(state.calibrations)).toEqual(['stereo', 'center'])
+    expect(state.calibrations.stereo.source).toBe('stored')
+    // The first calibration pushed is the one picked, until the user picks another.
+    expect(selectedId(state)).toBe('stereo')
+    expect(selectedCalibration(state).source).toBe('stored')
 
     unlisten()
     expect(channel.leave).toHaveBeenCalled()
   })
 
-  it('stops rejoining when the unit has no stereo unit, and keeps rejoining otherwise', () => {
+  it('works on the calibration picked, and on the one of a running session whatever the pick', () => {
+    useCalibration.setState({
+      calibrations: { stereo: { id: 'stereo' }, center: { id: 'center' } },
+      selected: 'stereo'
+    })
+
+    useCalibration.getState().select('center')
+    expect(selectedId(useCalibration.getState())).toBe('center')
+
+    useCalibration.setState({ session: { phase: 'capturing', calibration: 'stereo' } })
+    expect(selectedCalibration(useCalibration.getState())).toEqual({ id: 'stereo' })
+  })
+
+  it('stops rejoining when the unit has nothing to calibrate, and keeps rejoining otherwise', () => {
     const { channel, receivers } = fakeChannel()
     useCalibration.getState().listen({ channel: () => channel })
 
@@ -49,7 +70,7 @@ describe('calibration store', () => {
     expect(channel.leave).not.toHaveBeenCalled()
     expect(useCalibration.getState().unavailable).toBe(false)
 
-    receivers.error({ reason: 'no stereo unit' })
+    receivers.error({ reason: 'nothing to calibrate' })
     expect(channel.leave).toHaveBeenCalled()
     expect(useCalibration.getState().unavailable).toBe(true)
   })
@@ -75,12 +96,24 @@ describe('calibration store', () => {
     const fetch = vi.fn(async () => ({ ok: true, json: async () => ({ data: { attributes: { phase: 'capturing' } } }) }))
     vi.stubGlobal('fetch', fetch)
 
+    useCalibration.setState({ calibrations: { center: { id: 'center' } }, selected: 'center' })
+
     await useCalibration.getState().start(fallback)
 
     const [url, options] = fetch.mock.calls[0]
     expect(url).toMatch(/\/api\/calibration-sessions$/)
     expect(JSON.parse(options.body)).toEqual({
-      data: { type: 'calibration-sessions', attributes: { board: fallback } }
+      data: {
+        type: 'calibration-sessions',
+        attributes: { board: fallback },
+        relationships: { calibration: { data: { type: 'calibrations', id: 'center' } } }
+      }
+    })
+
+    await useCalibration.getState().reset()
+    expect(fetch.mock.calls[1][0]).toMatch(/\/api\/calibration-resets$/)
+    expect(JSON.parse(fetch.mock.calls[1][1].body)).toEqual({
+      data: { type: 'calibration-resets', relationships: { calibration: { data: { type: 'calibrations', id: 'center' } } } }
     })
     expect(useCalibration.getState()).toMatchObject({ session: null, busy: false, error: null })
   })

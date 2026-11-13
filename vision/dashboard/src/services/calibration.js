@@ -4,18 +4,20 @@ import { downloadFile } from './download.js'
 export const DEFAULT_BOARD = { columns: 8, rows: 6, squareMm: 25 }
 const BOARD_KEY = 'vision.calibration.board'
 
-const act = async (type, attributes) => {
+// `calibration` is the id of the calibration the action works on, for those that name one.
+const act = async (type, { attributes, calibration } = {}) => {
   const data = { type }
   if (attributes) data.attributes = attributes
+  if (calibration) data.relationships = { calibration: { data: { type: 'calibrations', id: calibration } } }
   const document = await request(type, { method: 'POST', body: { data } })
   return document.data.attributes
 }
 
-export const startSession = (board) => act('calibration-sessions', { board })
+export const startSession = (calibration, board) => act('calibration-sessions', { attributes: { board }, calibration })
 export const cancelSession = () => act('calibration-cancels')
 export const solveSession = () => act('calibration-solves')
 export const applySession = () => act('calibration-applies')
-export const resetCalibration = () => act('calibration-resets')
+export const resetCalibration = (calibration) => act('calibration-resets', { calibration })
 
 export function loadBoard() {
   try {

@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { OvcsPageFrame } from '@ovcs/ui/react'
 import InUse from '../components/calibration/InUse.jsx'
+import Targets from '../components/calibration/Targets.jsx'
 import { BoardForm, Capturing, Solving } from '../components/calibration/Capture.jsx'
 import { Applying, Solved } from '../components/calibration/Result.jsx'
 import { ActionError } from '../components/calibration/Errors.jsx'
@@ -46,9 +47,10 @@ export default function CalibrationPage() {
       ) : null}
       <ActionError />
       {unavailable ? (
-        <p className="text-sm text-ovcs-muted">This unit has no stereo cameras to calibrate.</p>
+        <p className="text-sm text-ovcs-muted">This unit has no camera to calibrate.</p>
       ) : (
         <>
+          <Targets />
           <InUse />
           <Step phase={phase} />
         </>

@@ -5,7 +5,7 @@ import CornerOverlay from './CornerOverlay.jsx'
 import Coverage from './Coverage.jsx'
 import Section from './Section.jsx'
 import { SessionError } from './Errors.jsx'
-import { useCalibration } from '../../stores/calibration.js'
+import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { loadBoard, saveBoard } from '../../services/calibration.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
 
@@ -14,9 +14,6 @@ const FIELDS = [
   { key: 'rows', label: 'Inner corners (rows)', step: 1, valid: (count) => Number.isInteger(count) && count >= 2 },
   { key: 'squareMm', label: 'Square size (mm)', step: 'any', valid: (millimetres) => millimetres > 0 }
 ]
-
-const LEFT_CORNERS = <CornerOverlay side="left" />
-const RIGHT_CORNERS = <CornerOverlay side="right" />
 
 const asFields = (board) => Object.fromEntries(FIELDS.map(({ key }) => [key, String(board[key])]))
 
@@ -79,9 +76,9 @@ export function BoardForm() {
   )
 }
 
-// Shown while neither camera finds the board: the usual cause is a board entered in squares.
+// Shown while no camera finds the board: the usual cause is a board entered in squares.
 function BoardHint() {
-  const searching = useCalibration((state) => !state.session?.detection?.left && !state.session?.detection?.right)
+  const searching = useCalibration((state) => !state.session?.detection?.views?.some((view) => view.points))
   const columns = useCalibration((state) => state.session?.board?.columns)
   const rows = useCalibration((state) => state.session?.board?.rows)
 
@@ -92,8 +89,12 @@ function BoardHint() {
   ) : null
 }
 
-/** Both cameras with the board corners found, the samples' coverage, then Calibrate once it is good enough. */
+// The names of the cameras being calibrated, as one string so that a push changing none does not render again.
+const cameraNames = (state) => (selectedCalibration(state)?.cameras ?? []).map((camera) => camera.name).join(',')
+
+/** Each camera with the board corners found, the samples' coverage, then Calibrate once it is good enough. */
 export function Capturing({ socket }) {
+  const cameras = useCalibration(cameraNames).split(',').filter(Boolean)
   const goodEnough = useCalibration((state) => state.session?.goodEnough === true)
   const busy = useCalibration((state) => state.busy)
   const solve = useCalibration((state) => state.solve)
@@ -102,13 +103,15 @@ export function Capturing({ socket }) {
   return (
     <Section title="Calibrate">
       <p className="text-sm text-ovcs-muted">
-        Hold the board in view of both cameras and move it: across the image, nearer and farther, tilted. A view becomes
-        a sample when it differs enough from the ones kept.
+        {cameras.length > 1 ? 'Hold the board in view of both cameras' : 'Hold the board in view of the camera'} and move
+        it: across the image, nearer and farther, tilted. A view becomes a sample when it differs enough from the ones
+        kept.
       </p>
       <BoardHint />
-      <div className="grid gap-3 md:grid-cols-2">
-        <Preview stream="left" socket={socket} overlay={LEFT_CORNERS} />
-        <Preview stream="right" socket={socket} overlay={RIGHT_CORNERS} />
+      <div className={`grid gap-3 ${cameras.length > 1 ? 'md:grid-cols-2' : ''}`}>
+        {cameras.map((camera) => (
+          <Preview key={camera} stream={camera} socket={socket} overlay={<CornerOverlay camera={camera} />} />
+        ))}
       </div>
       <Coverage />
       <SessionError />

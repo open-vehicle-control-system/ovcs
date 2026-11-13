@@ -1,6 +1,6 @@
 import { OvcsBadge } from '@ovcs/ui/react'
 import Section from './Section.jsx'
-import { useCalibration } from '../../stores/calibration.js'
+import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON } from '../../styles.js'
@@ -28,16 +28,15 @@ function CameraRow({ name, camera }) {
   )
 }
 
-/** The calibration the cameras use: where it comes from, per camera its intrinsics, the baseline and image size. */
+/** The calibration picked: where it comes from, per camera its intrinsics, a pair's baseline and the image size. */
 export default function InUse() {
-  const inUse = useCalibration((state) => state.inUse)
+  const inUse = useCalibration(selectedCalibration)
   const busy = useCalibration((state) => state.busy)
   const applying = useCalibration((state) => state.session?.phase === 'applying')
   const reset = useCalibration((state) => state.reset)
 
   const download = () => {
-    downloadYaml(`${inUse.prefix}_left.yaml`, inUse.left.yaml)
-    downloadYaml(`${inUse.prefix}_right.yaml`, inUse.right.yaml)
+    for (const camera of inUse.cameras) downloadYaml(camera.file, camera.yaml)
   }
 
   const returnToBuiltIn = () => {
@@ -65,23 +64,26 @@ export default function InUse() {
                 </tr>
               </thead>
               <tbody>
-                <CameraRow name="left" camera={inUse.left} />
-                <CameraRow name="right" camera={inUse.right} />
+                {inUse.cameras.map((camera) => (
+                  <CameraRow key={camera.name} name={camera.name} camera={camera} />
+                ))}
               </tbody>
             </table>
           </div>
           <dl className="flex flex-wrap gap-x-6 gap-y-1 text-sm tabular-nums">
-            <div className="flex gap-2">
-              <dt className="text-ovcs-muted">baseline</dt>
-              <dd>{millimetres(inUse.baselineM)}</dd>
-            </div>
+            {inUse.kind === 'stereo' ? (
+              <div className="flex gap-2">
+                <dt className="text-ovcs-muted">baseline</dt>
+                <dd>{millimetres(inUse.baselineM)}</dd>
+              </div>
+            ) : null}
             <div className="flex gap-2">
               <dt className="text-ovcs-muted">image</dt>
-              <dd>{inUse.left.imageWidth ? `${inUse.left.imageWidth} × ${inUse.left.imageHeight}` : '–'}</dd>
+              <dd>{inUse.cameras[0]?.imageWidth ? `${inUse.cameras[0].imageWidth} × ${inUse.cameras[0].imageHeight}` : '–'}</dd>
             </div>
           </dl>
           <div className="flex flex-wrap gap-2">
-            {inUse.left.yaml && inUse.right.yaml ? (
+            {inUse.cameras.every((camera) => camera.yaml) ? (
               <button type="button" aria-label="Download the calibration in use" onClick={download} className={BUTTON}>
                 Download
               </button>

@@ -2,7 +2,7 @@ import { OvcsStatus } from '@ovcs/ui/react'
 import { HealthValue } from '../UnitStatus.jsx'
 import Section from './Section.jsx'
 import { SessionError } from './Errors.jsx'
-import { useCalibration } from '../../stores/calibration.js'
+import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
@@ -13,11 +13,7 @@ const rmsVerdict = (px) =>
 
 const pixels = (px) => (px == null ? '–' : `${formatNumber(px)} px`)
 
-const RMS = [
-  { key: 'leftRmsPx', label: 'Left RMS' },
-  { key: 'rightRmsPx', label: 'Right RMS' },
-  { key: 'stereoRmsPx', label: 'Stereo RMS' }
-]
+const capitalised = (name) => name.charAt(0).toUpperCase() + name.slice(1)
 
 function Row({ label, solved, inUse }) {
   return (
@@ -41,10 +37,10 @@ function RmsValue({ px }) {
   )
 }
 
-/** The solved calibration's reprojection errors, then its baseline and rectified focal length beside the ones in use. */
+/** The solved calibration's reprojection errors, then a pair's baseline and the focal length beside the ones in use. */
 function Figures() {
   const solution = useCalibration((state) => state.session?.result)
-  const inUse = useCalibration((state) => state.inUse)
+  const inUse = useCalibration(selectedCalibration)
 
   return solution ? (
     <div className="overflow-x-auto">
@@ -59,10 +55,15 @@ function Figures() {
           </tr>
         </thead>
         <tbody>
-          {RMS.map(({ key, label }) => (
-            <Row key={key} label={label} solved={<RmsValue px={solution[key]} />} />
+          {solution.cameras.map((camera) => (
+            <Row key={camera.name} label={`${capitalised(camera.name)} RMS`} solved={<RmsValue px={camera.rmsPx} />} />
           ))}
-          <Row label="Baseline" solved={millimetres(solution.baselineM)} inUse={millimetres(inUse?.baselineM)} />
+          {solution.stereoRmsPx == null ? null : (
+            <>
+              <Row label="Stereo RMS" solved={<RmsValue px={solution.stereoRmsPx} />} />
+              <Row label="Baseline" solved={millimetres(solution.baselineM)} inUse={millimetres(inUse?.baselineM)} />
+            </>
+          )}
           <Row label="focal length (rectified)" solved={pixels(solution.fxPx)} inUse={pixels(inUse?.rectifiedFx)} />
         </tbody>
       </table>
@@ -73,14 +74,12 @@ function Figures() {
 /** The solved calibration; Apply has the unit take it, Download saves its YAMLs, Discard drops it. */
 export function Solved() {
   const solution = useCalibration((state) => state.session?.result)
-  const prefix = useCalibration((state) => state.inUse?.prefix)
   const busy = useCalibration((state) => state.busy)
   const apply = useCalibration((state) => state.apply)
   const cancel = useCalibration((state) => state.cancel)
 
   const download = () => {
-    downloadYaml(`${prefix}_left.yaml`, solution.left.yaml)
-    downloadYaml(`${prefix}_right.yaml`, solution.right.yaml)
+    for (const camera of solution.cameras) downloadYaml(camera.file, camera.yaml)
   }
 
   return (
@@ -94,7 +93,7 @@ export function Solved() {
         <button
           type="button"
           aria-label="Download the solved calibration"
-          disabled={!prefix || !solution}
+          disabled={!solution}
           onClick={download}
           className={BUTTON}
         >
