@@ -44,6 +44,22 @@ describe('segmentation', () => {
     expect(words[1]).toBe(0)
   })
 
+  it("reads the frame's size, the band, the capture time and the grid", () => {
+    const buffer = new ArrayBuffer(24 + 2)
+    const view = new DataView(buffer)
+    ;[4, 2, 0, 1, 4, 1, 2, 1].forEach((value, index) => view.setUint16(index * 2, value, true))
+    view.setBigInt64(16, -1234567n, true)
+    new Uint8Array(buffer, 24).set([0, 13])
+
+    expect(decodeSegmentation(buffer)).toMatchObject({
+      frame: { width: 4, height: 2 },
+      band: { x: 0, y: 1, width: 4, height: 1 },
+      grid: { width: 2, height: 1 },
+      captureUs: -1234567,
+      present: [0, 13]
+    })
+  })
+
   it('refuses a payload shorter than its grid', () => {
     expect(() => decodeSegmentation(new Uint8Array([4, 0, 2, 0]).buffer)).toThrow(RangeError)
   })

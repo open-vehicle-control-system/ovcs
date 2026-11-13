@@ -50,7 +50,7 @@ defmodule VisionApiWeb.SegmentationChannelTest do
 
   # As the pipeline publishes it: a 4 × 2 grid over the bottom band of a 1014 × 760 frame.
   defp result(name, data) do
-    frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: 0}
+    frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: -1_234_567_890}
     labels = %{width: 4, height: 2, data: data, band: {0, 253, 1014, 507}}
     {{:segmentation, name}, {frame, labels, nil}}
   end
@@ -58,9 +58,9 @@ defmodule VisionApiWeb.SegmentationChannelTest do
   defp publish(name \\ :road, data),
     do: GenServer.cast(Pipelines.server(Live, name), result(name, data))
 
-  defp grid(<<_header::binary-16, data::binary>>), do: data
+  defp grid(<<_header::binary-24, data::binary>>), do: data
 
-  test "pushes each result as its frame's size, its band and its label grid, little-endian" do
+  test "pushes each result as its frame's size, its band, its capture time and its label grid, little-endian" do
     start_unit()
     {:ok, _reply, _socket} = join("segmentation:road")
 
@@ -70,7 +70,8 @@ defmodule VisionApiWeb.SegmentationChannelTest do
 
     assert payload ==
              <<1014::little-16, 760::little-16, 0::little-16, 253::little-16, 1014::little-16,
-               507::little-16, 4::little-16, 2::little-16, 10, 10, 10, 10, 0, 0, 1, 13>>
+               507::little-16, 4::little-16, 2::little-16, -1_234_567::little-signed-64, 10, 10,
+               10, 10, 0, 0, 1, 13>>
   end
 
   test "pushes the pipeline's class names and its road classes before its first grid" do
@@ -133,10 +134,10 @@ defmodule VisionApiWeb.SegmentationChannelTest do
     publish(<<1, 1, 1, 1, 1, 1, 1, 1>>)
     publish(<<2, 2, 2, 2, 2, 2, 2, 2>>)
 
-    assert_push "segmentation", {:binary, <<_header::binary-16, 0, _rest::binary>>}
+    assert_push "segmentation", {:binary, <<_header::binary-24, 0, _rest::binary>>}
     push(socket, "ack", %{})
     refute_push "segmentation", _payload, 200
-    assert_push "segmentation", {:binary, <<_header::binary-16, 2, _rest::binary>>}, 2_000
+    assert_push "segmentation", {:binary, <<_header::binary-24, 2, _rest::binary>>}, 2_000
     push(socket, "ack", %{})
     refute_push "segmentation", _payload, 300
   end

@@ -9,8 +9,9 @@ defmodule VisionCore.Segmentation.Live do
   segmentation}` after a result, at most `:max_hz` times a second;
   `VisionCore.Live` holds the latest meanwhile.
 
-  `segmentation` is `%{frame: {width, height}, band: {x, y, w, h},
-  width:, height:, data:}`: the size of the camera's image, the band of
+  `segmentation` is `%{frame: {width, height}, capture_ns:, band: {x,
+  y, w, h}, width:, height:, data:}`: the size of the camera's image, the
+  capture time of the frame it was segmented from, the band of
   it the label image covers, in its pixels, and the label image,
   `width * height` class ids, one byte each, row by row.
   `VisionCore.Segmentation.Supervisor.classes/2` names them.
@@ -51,7 +52,9 @@ defmodule VisionCore.Segmentation.Live do
   def max_hz(name), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
   defp describe({_output, {frame, labels, _clouds}}),
-    do: {:ok, Map.put(labels, :frame, {frame.width, frame.height})}
+    do:
+      {:ok,
+       Map.merge(labels, %{frame: {frame.width, frame.height}, capture_ns: frame.capture_ns})}
 
   defp describe(_message), do: :ignore
 end

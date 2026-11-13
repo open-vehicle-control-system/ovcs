@@ -32,10 +32,10 @@ const person = { label: 'person', score: 0.62, distanceM: 1.84, outline: [[0.25,
 
 // A 2 × 1 grid of the classes `ids` over a whole 4 × 2 frame.
 function grid(ids) {
-  const buffer = new ArrayBuffer(16 + ids.length)
+  const buffer = new ArrayBuffer(24 + ids.length)
   const view = new DataView(buffer)
   ;[4, 2, 0, 0, 4, 2, 2, 1].forEach((value, index) => view.setUint16(index * 2, value, true))
-  new Uint8Array(buffer, 16).set(ids)
+  new Uint8Array(buffer, 24).set(ids)
   return buffer
 }
 

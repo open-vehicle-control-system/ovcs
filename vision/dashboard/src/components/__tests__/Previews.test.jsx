@@ -653,12 +653,12 @@ describe('Previews', () => {
       { name: 'segmentation:road', maxHz: 5, source: 'hq' }
     ]
 
-    // The channel's binary payload: eight little-endian 16-bit integers, then the label grid.
+    // The channel's binary payload: eight little-endian 16-bit integers, the capture time, then the label grid.
     function payload({ frame, band, grid, data }) {
-      const buffer = new ArrayBuffer(16 + data.length)
+      const buffer = new ArrayBuffer(24 + data.length)
       const view = new DataView(buffer)
       ;[...frame, ...band, ...grid].forEach((value, index) => view.setUint16(index * 2, value, true))
-      new Uint8Array(buffer, 16).set(data)
+      new Uint8Array(buffer, 24).set(data)
       return buffer
     }
 
