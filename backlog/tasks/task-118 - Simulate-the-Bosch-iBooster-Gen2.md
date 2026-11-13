@@ -1,10 +1,11 @@
 ---
 id: TASK-118
 title: Simulate the Bosch iBooster Gen2
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 12:00'
+updated_date: '2026-11-13 22:03'
 labels:
   - simulator
   - ovcs1

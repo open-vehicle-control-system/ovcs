@@ -1,10 +1,11 @@
 ---
 id: TASK-114
 title: Echo pin requests in the simulated generic controller
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 08:57'
+updated_date: '2026-11-13 22:03'
 labels:
   - simulator
 dependencies: []
