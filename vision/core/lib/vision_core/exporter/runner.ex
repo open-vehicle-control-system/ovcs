@@ -11,7 +11,11 @@ defmodule VisionCore.Exporter.Runner do
 
   When the runner takes a value from its mailbox, the newest value of
   the same output waiting there replaces it, so a slow exporter skips
-  values instead of falling behind. A value that comes before its
+  values instead of falling behind. A camera's video is the exception:
+  each of its frames is handed over in order, from a key frame, with no
+  `:max_hz`, those that come while the exporter is busy with it queued,
+  up to a bound past which it skips to the next key frame
+  (`VisionCore.Camera.VideoQueue`). A value that comes before its
   output's next slot opens, or while the exporter is busy with the
   output, is held, replaced by any newer one, and handed over once the
   slot is open and the exporter ready. The camera outputs tell their
@@ -56,19 +60,23 @@ defmodule VisionCore.Exporter.Runner do
   :hq}` and `{:camera_frame, :hq, :view}` on a camera whose default
   output is `:view`: `{:invalid_output, second}`, nor on a camera's
   output the camera does not send (`VisionCore.Camera.Unit.unsent_output?/3`):
-  `{:unsent_output, output}`.
+  `{:unsent_output, output}`, nor on a video named as an image,
+  `{:video_output, output}`, or an image named as a video,
+  `{:image_output, output}`.
   """
   use GenServer
   require Logger
   require VisionCore.Outputs, as: Outputs
 
-  alias VisionCore.Camera.Frame
+  alias VisionCore.Camera.{Frame, Unit, VideoQueue}
   alias VisionCore.Exporter
 
   @default_status_timeout_ms 200
   @first_retry_ms 500
   @max_retry_ms 30_000
   @max_logged_failures 32
+  # A second of a 30 fps video: an exporter further behind skips to the next key frame.
+  @video_backlog_frames 30
 
   @doc "Starts the runner; see the module doc for `opts`."
   def start_link(opts) do
@@ -147,8 +155,14 @@ defmodule VisionCore.Exporter.Runner do
   defp check_sent(specs, config) do
     Enum.find_value(specs, :ok, fn
       {{:camera_frame, name, output} = camera_output, _max_hz} ->
-        if VisionCore.Camera.Unit.unsent_output?(config, name, output),
-          do: {:error, {:unsent_output, camera_output}}
+        cond do
+          Unit.unsent_output?(config, name, output) -> {:error, {:unsent_output, camera_output}}
+          Unit.video_output?(config, name, output) -> {:error, {:video_output, camera_output}}
+          true -> nil
+        end
+
+      {{:camera_video, name, output} = video, _max_hz} ->
+        if Unit.output_key(config, name, output), do: {:error, {:image_output, video}}
 
       _other ->
         nil
@@ -196,6 +210,7 @@ defmodule VisionCore.Exporter.Runner do
   def handle_cast(message, state) do
     case route(message, state.slots) do
       nil -> {:noreply, state}
+      {:camera_video, _name, _output} = video -> {:noreply, queue(state, video, payload(message))}
       output -> {:noreply, offer(state, output, newest(output, payload(message)))}
     end
   end
@@ -336,7 +351,7 @@ defmodule VisionCore.Exporter.Runner do
     end
   end
 
-  # Per output: :max_hz interval, last hand-over, held value, slot timer, busy, last failure.
+  # Per output: :max_hz interval, last hand-over, held value, timer, busy, failure, video queue.
   defp slots(specs) do
     Map.new(specs, fn {output, max_hz} ->
       {output,
@@ -346,10 +361,14 @@ defmodule VisionCore.Exporter.Runner do
          held: nil,
          timer: nil,
          busy: false,
-         failed: nil
+         failed: nil,
+         queue: video_queue(output)
        }}
     end)
   end
+
+  defp video_queue({:camera_video, _name, _output}), do: VideoQueue.new(@video_backlog_frames)
+  defp video_queue(_output), do: nil
 
   defp subscribe(outputs, config) do
     outputs
@@ -385,6 +404,7 @@ defmodule VisionCore.Exporter.Runner do
 
   defp camera_label({:camera_frame, name}), do: Atom.to_string(name)
   defp camera_label({:camera_frame, name, _output}), do: Atom.to_string(name)
+  defp camera_label({:camera_video, name, _output}), do: Atom.to_string(name)
   defp camera_label(_output), do: nil
 
   defp message_output({output, _value}), do: output
@@ -414,12 +434,30 @@ defmodule VisionCore.Exporter.Runner do
   defp offer(state, output, value),
     do: state |> put_in([:slots, output, :held], value) |> release(output)
 
+  defp queue(state, video, frame),
+    do: state |> update_in([:slots, video, :queue], &VideoQueue.push(&1, frame)) |> release(video)
+
   defp ready(state, outputs) do
     outputs
     |> Enum.filter(&is_map_key(state.slots, &1))
     |> Enum.reduce(state, fn output, state ->
       state |> put_in([:slots, output, :busy], false) |> release(output)
     end)
+  end
+
+  # A video's queued frames, in order, while the exporter is not busy with it.
+  defp release(state, {:camera_video, _name, _output} = video) do
+    slot = state.slots[video]
+
+    with false <- slot.busy,
+         {:ok, frame, queue} <- VideoQueue.pop(slot.queue) do
+      state
+      |> put_in([:slots, video, :queue], queue)
+      |> hand_over(video, frame, now_ms())
+      |> release(video)
+    else
+      _busy_or_empty -> state
+    end
   end
 
   # Hands the held value over when the slot is open and the exporter not busy, or awaits the slot.
