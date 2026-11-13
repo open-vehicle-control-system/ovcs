@@ -90,7 +90,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     @behaviour VisionCore.Exporter
 
     @impl VisionCore.Exporter
-    def outputs(_options), do: [stereo_pair: [max_hz: 5], detections: []]
+    def outputs(_options), do: [{:stereo_pair, max_hz: 5}, {:detections, :detection}]
 
     @impl VisionCore.Exporter
     def init(options), do: {:ok, Keyword.fetch!(options, :test)}
@@ -102,7 +102,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
 
     @impl VisionCore.Exporter
-    def handle_info(:sent, test), do: {:ready, [:stereo_pair, :detections], test}
+    def handle_info(:sent, test), do: {:ready, [:stereo_pair, {:detections, :detection}], test}
   end
 
   # Tells the test each time its init/1 runs.
@@ -285,8 +285,8 @@ defmodule VisionCore.Exporter.RunnerTest do
   defp publish_detections(pair),
     do:
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, {pair, []}}
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {{:detections, :detection}, {pair, []}}
       )
 
   defp publish_frame(%Frame{label: label} = frame),
@@ -306,7 +306,12 @@ defmodule VisionCore.Exporter.RunnerTest do
   describe "outputs" do
     test "hands the exporter what the configuration's producers publish, by the outputs it names" do
       start_forwarder(
-        outputs: [:stereo_pair, :detections, {:camera_frame, :left}, {:camera_frame, :right}]
+        outputs: [
+          :stereo_pair,
+          {:detections, :detection},
+          {:camera_frame, :left},
+          {:camera_frame, :right}
+        ]
       )
 
       left = frame("left", 1)
@@ -315,15 +320,15 @@ defmodule VisionCore.Exporter.RunnerTest do
       publish_pair(:pair)
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, {:pair, [:person]}}
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {{:detections, :detection}, {:pair, [:person]}}
       )
 
       publish_frame(left)
       publish_frame(right)
 
       assert_receive {:exported, :stereo_pair, :pair, _at}
-      assert_receive {:exported, :detections, {:pair, [:person]}, _at}
+      assert_receive {:exported, {:detections, :detection}, {:pair, [:person]}, _at}
       assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
       assert_receive {:exported, {:camera_frame, :right}, ^right, _at}
     end
@@ -456,7 +461,7 @@ defmodule VisionCore.Exporter.RunnerTest do
   end
 
   describe "named detection pipelines" do
-    @detection_outputs [:detections, {:detections, :road}, {:detections, :signs}]
+    @detection_outputs [{:detections, :detection}, {:detections, :road}, {:detections, :signs}]
 
     defp detectors_config,
       do: config([:detector, {:detector, name: :road}, {:detector, name: :signs}])
@@ -476,11 +481,11 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_receive {:exported, _output, _value, _at}, 50
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, {:pair, [:person]}}
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {{:detections, :detection}, {:pair, [:person]}}
       )
 
-      assert_receive {:exported, :detections, {:pair, [:person]}, _at}
+      assert_receive {:exported, {:detections, :detection}, {:pair, [:person]}, _at}
       refute_receive {:exported, _output, _value, _at}, 50
 
       publish_named_detections(:signs, :signs_pair, [:stop])
@@ -493,7 +498,7 @@ defmodule VisionCore.Exporter.RunnerTest do
         start_forwarder([outputs: @detection_outputs, block_on: {0, []}], detectors_config())
 
       publish_detections(0)
-      assert_receive {:exported, :detections, {0, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {0, []}, _at}
 
       for index <- 1..3 do
         publish_named_detections(:road, {:road, index}, [])
@@ -504,7 +509,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       publish_named_detections(:road, {:road, 4}, [])
       send(runner, :release)
 
-      assert_receive {:exported, :detections, {3, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {3, []}, _at}
       assert_receive {:exported, {:detections, :road}, {{:road, 4}, []}, _at}
       assert_receive {:exported, {:detections, :signs}, {{:signs, 3}, []}, _at}
       refute_receive {:exported, _output, _value, _at}, 100
@@ -679,7 +684,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       publish_pair(1)
       publish_detections(1)
       assert_receive {:exported, :stereo_pair, 1, _at}
-      assert_receive {:exported, :detections, {1, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {1, []}, _at}
 
       publish_pair(2)
       publish_detections(2)
@@ -687,7 +692,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_received {:exported, _output, _value, _at}
 
       send(runner, :sent)
-      assert_receive {:exported, :detections, {2, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {2, []}, _at}
       assert_receive {:exported, :stereo_pair, 2, _at}, 1_000
     end
 
@@ -802,11 +807,11 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
 
     test "an output whose last value was not exported is a warning while another output exports" do
-      runner = start_forwarder(outputs: [:stereo_pair, :detections], reject: [1])
+      runner = start_forwarder(outputs: [:stereo_pair, {:detections, :detection}], reject: [1])
       publish_pair(1)
       assert_receive {:exported, :stereo_pair, 1, _at}
       publish_detections(:pair)
-      assert_receive {:exported, :detections, {:pair, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {:pair, []}, _at}
 
       assert Runner.status(runner) == {:warning, "1 values not exported, the last for :rejected"}
 

@@ -32,9 +32,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
     * `:name` (the module) — the name it registers under.
     * `:pipeline` (`:detection`) — the detection pipeline whose inference
       step it declares.
-    * `:cache_dir` (`"/data/vision/qnn"`, `"/data/vision/qnn/<pipeline>"`
-      for a pipeline other than `:detection`) — where the context binary
-      is kept. `VisionCore.Inference.QnnContext` removes every other
+    * `:cache_dir` (`"/data/vision/qnn/<pipeline>"`) — where the context
+      binary is kept. `VisionCore.Inference.QnnContext` removes every other
       binary in it, so two pipelines never share one.
     * `:executable` — the program (default `priv/qnn_detect`).
     * `:infer_timeout_ms` (`2000`), a positive integer, and
@@ -110,7 +109,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
       performance_args: QnnPort.performance_args!(opts),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
       runtime: QnnPort.runtime(opts),
-      cache_dir: Keyword.get_lazy(opts, :cache_dir, fn -> default_cache_dir(pipeline) end),
+      cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn/#{pipeline}"),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0)
     }
   end
@@ -118,16 +117,13 @@ defmodule VisionCore.Detection.Backend.Qnn do
   @impl PortBackend
   def wording(settings) do
     %{
-      label: label(settings),
+      label: "#{inspect(__MODULE__)} (#{settings.pipeline})",
       program: "qnn_detect",
       loaded: "loaded #{Path.basename(settings.dlc_path)} (score >= #{settings.score_threshold})",
       input: "frame",
       output: "detections"
     }
   end
-
-  defp label(%{pipeline: :detection}), do: inspect(__MODULE__)
-  defp label(%{pipeline: pipeline}), do: "#{inspect(__MODULE__)} (#{pipeline})"
 
   @impl PortBackend
   def inference_group(settings) do
@@ -168,9 +164,6 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl PortBackend
   def reply_tag, do: :inference_detections
-
-  defp default_cache_dir(:detection), do: "/data/vision/qnn"
-  defp default_cache_dir(pipeline), do: "/data/vision/qnn/#{pipeline}"
 
   defp default_executable_path, do: :vision_core |> :code.priv_dir() |> Path.join("qnn_detect")
 end

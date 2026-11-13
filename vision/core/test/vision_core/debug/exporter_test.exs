@@ -10,7 +10,8 @@ defmodule VisionCore.Debug.ExporterTest do
 
   @moduletag :capture_log
   @pairs {:stereo_pair, VisionCore.Stereo.Pipeline}
-  @detections {:detections, VisionCore.Detection.Pipeline}
+  @detections {:detections,
+               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
   @options [burst_pairs: 3, burst_ms: 50, settle_ms: 100, deadline_ms: 2_000]
   @calibration Path.expand("../../support/calibration", __DIR__)
   @width 8
@@ -369,14 +370,18 @@ defmodule VisionCore.Debug.ExporterTest do
       outline: [{2.0, 3.0}, {4.0, 6.0}]
     }
 
-    Outputs.publish(@detections, {:detections, {pair(0), [%{detection | label: "before"}]}})
+    Outputs.publish(
+      @detections,
+      {{:detections, :detection}, {pair(0), [%{detection | label: "before"}]}}
+    )
+
     :sys.get_state(runner)
 
     task = export(runner)
     assert_receive {:burst_started, _at_ms}
     publish_pair(runner, pair(1))
 
-    Outputs.publish(@detections, {:detections, {pair(1), [detection]}})
+    Outputs.publish(@detections, {{:detections, :detection}, {pair(1), [detection]}})
     publish_pairs(runner, 2..3)
 
     assert {:file, _filename, _type, zip} = Task.await(task)
@@ -398,7 +403,11 @@ defmodule VisionCore.Debug.ExporterTest do
 
   test "reads the pairs, and the detections when the configuration has a detector" do
     assert Exporter.outputs(config: config()) == [:stereo_pair]
-    assert Exporter.outputs(config: config([stereo(), :detector])) == [:stereo_pair, :detections]
+
+    assert Exporter.outputs(config: config([stereo(), :detector])) == [
+             :stereo_pair,
+             {:detections, :detection}
+           ]
   end
 
   test "does nothing with pairs between exports" do

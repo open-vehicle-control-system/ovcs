@@ -8,8 +8,8 @@ defmodule VisionCore.DetectionTest do
     assert Detection.pipeline_name(backend: Detection.Backend.Stub) == :detection
   end
 
-  test "the exporter output of a pipeline's detections, :detections for the default one" do
-    assert Detection.output(:detection) == :detections
+  test "the exporter output of a pipeline's detections" do
+    assert Detection.output(:detection) == {:detections, :detection}
     assert Detection.output(:road) == {:detections, :road}
   end
 end

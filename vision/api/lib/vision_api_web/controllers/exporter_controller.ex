@@ -7,9 +7,8 @@ defmodule VisionApiWeb.ExporterController do
   previews' rate (`VisionCore.Preview.options/0`) for the camera frames
   and each pair's depth, `{:camera_frame, name}` for each camera of its
   own, in the order of the configuration's cameras, and then each
-  detection pipeline's detections,
-  in the order of the configuration's detectors: `:detections` for the
-  default pipeline and `{:detections, name}` for a named one, each at
+  detection pipeline's detections, `{:detections, name}`, in the order
+  of the configuration's detectors, each at
   its pipeline's `VisionCore.Detection.Live.max_hz/1` and with its
   source, the preview its boxes are drawn on: `"left"` for the stereo
   pair, the camera's name for a camera of its own; then each
@@ -67,8 +66,6 @@ defmodule VisionApiWeb.ExporterController do
   defp source_name({:camera, name, _output}), do: Atom.to_string(name)
 
   # A channel whose process is not running carries nothing to bound.
-  defp channel_max_hz(:detections), do: call_or_nil(&VisionCore.Detection.Live.max_hz/0)
-
   defp channel_max_hz({:detections, name}),
     do: call_or_nil(fn -> VisionCore.Detection.Live.max_hz(name) end)
 

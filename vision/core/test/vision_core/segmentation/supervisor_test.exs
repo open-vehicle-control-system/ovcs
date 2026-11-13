@@ -37,13 +37,13 @@ defmodule VisionCore.Segmentation.SupervisorTest do
     assert Enum.sort(backend_options) == [
              classes: 19,
              label_image: %{width: 1, height: 1, data: <<0>>},
-             name: Stub.Road,
+             name: VisionCore.Pipelines.server(Stub, :road),
              pipeline: :road
            ]
 
     assert Enum.sort(pipeline_options) == [
              backend: Stub,
-             backend_server: Stub.Road,
+             backend_server: VisionCore.Pipelines.server(Stub, :road),
              band_top: 0.5,
              name: :road,
              road_classes: ["road", "sidewalk"],
@@ -103,7 +103,7 @@ defmodule VisionCore.Segmentation.SupervisorTest do
   test "starts the backend, then the pipeline, then Live, registered under its name" do
     unit = start_supervised!({Supervisor, @options ++ [config: camera_config()]})
 
-    assert Process.whereis(Supervisor.Road) == unit
+    assert GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :road)) == unit
 
     assert unit |> Elixir.Supervisor.which_children() |> Enum.map(&elem(&1, 0)) ==
              [Live, Pipeline, Stub]
@@ -150,8 +150,10 @@ defmodule VisionCore.Segmentation.SupervisorTest do
 
     test "its outputs, keyed by each pipeline's name, in config order" do
       assert Supervisor.outputs(config(@components)) == [
-               {{:segmentation, :road}, {:segmentation, Pipeline.Road}},
-               {{:segmentation, :lane}, {:segmentation, Pipeline.Lane}}
+               {{:segmentation, :road},
+                {:segmentation, VisionCore.Pipelines.server(Pipeline, :road)}},
+               {{:segmentation, :lane},
+                {:segmentation, VisionCore.Pipelines.server(Pipeline, :lane)}}
              ]
     end
 
@@ -178,8 +180,8 @@ defmodule VisionCore.Segmentation.SupervisorTest do
 
     test "its pipelines: each one's name with its backend and server" do
       assert Supervisor.pipelines(config(@components)) == [
-               {:road, Qnn, Qnn.Road},
-               {:lane, Stub, Stub.Lane}
+               {:road, Qnn, VisionCore.Pipelines.server(Qnn, :road)},
+               {:lane, Stub, VisionCore.Pipelines.server(Stub, :lane)}
              ]
     end
 

@@ -3,12 +3,10 @@ defmodule VisionCore.PipelinesTest do
 
   alias VisionCore.Pipelines
 
-  test "the default pipeline's processes are registered under their modules" do
+  test "a pipeline's processes are registered under their modules and its name" do
     assert Pipelines.server(VisionCore.Detection.Pipeline, :detection) ==
-             VisionCore.Detection.Pipeline
-  end
+             VisionCore.Detection.Pipeline.Detection
 
-  test "a named pipeline's processes are registered under their modules and its name" do
     assert Pipelines.server(VisionCore.Detection.Pipeline, :road_signs) ==
              VisionCore.Detection.Pipeline.RoadSigns
   end
@@ -18,7 +16,7 @@ defmodule VisionCore.PipelinesTest do
     refute Pipelines.name?(:stereo)
     refute Pipelines.name?(:left)
     refute Pipelines.name?(:device)
-    refute Pipelines.name?(:detections_2d)
+    assert Pipelines.name?(:detections)
     refute Pipelines.name?(:"front-cam")
     refute Pipelines.name?("road")
     refute Pipelines.name?(nil)

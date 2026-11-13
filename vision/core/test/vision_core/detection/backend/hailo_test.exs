@@ -191,24 +191,32 @@ defmodule VisionCore.Detection.Backend.HailoTest do
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",
        %{tmp_dir: tmp_dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
-    start_backend(tmp_dir, "answer", name: Hailo.Road, pipeline: :road)
 
-    assert Hailo.detect(Hailo.Road, 7, @image) == :ok
+    start_backend(tmp_dir, "answer",
+      name: VisionCore.Pipelines.server(Hailo, :road),
+      pipeline: :road
+    )
+
+    assert Hailo.detect(VisionCore.Pipelines.server(Hailo, :road), 7, @image) == :ok
     assert_receive {:inference_detections, 7, [_detection]}, 2_000
-    assert Hailo.available?(Hailo.Road)
+    assert Hailo.available?(VisionCore.Pipelines.server(Hailo, :road))
     refute Process.whereis(Hailo)
 
     assert %{pipeline: :road, position: 102} =
              Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
   end
 
-  test "log lines name a named pipeline, the default's do not", %{tmp_dir: tmp_dir} do
+  test "log lines name the pipeline", %{tmp_dir: tmp_dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
 
     log =
       ExUnit.CaptureLog.capture_log(fn ->
-        start_backend(tmp_dir, "answer", name: Hailo.Road, pipeline: :road)
-        eventually(fn -> Hailo.available?(Hailo.Road) end)
+        start_backend(tmp_dir, "answer",
+          name: VisionCore.Pipelines.server(Hailo, :road),
+          pipeline: :road
+        )
+
+        eventually(fn -> Hailo.available?(VisionCore.Pipelines.server(Hailo, :road)) end)
       end)
 
     assert log =~ "#{inspect(Hailo)} (road) loaded model.hef"

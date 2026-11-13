@@ -5,9 +5,10 @@ defmodule VisionApiWeb.ExporterJSON do
   `off`, and `detail`) and `outputs`, each output's `name`
   (`stereo_pair`, `camera_frame:left`, `camera_frame:right`,
   `camera_frame:<name>` for the camera `<name>`'s frames,
-  `camera_frame:<name>:<output>` for those of its output `<output>`, `detections`
-  for the default detection pipeline's, `detections:<name>` for the
-  pipeline `<name>`'s, or `segmentation:<name>` for the segmentation
+  `camera_frame:<name>:<output>` for those of its output `<output>`,
+  `detections:<name>` for the detection pipeline `<name>`'s,
+  `detections:detection` for a detector without a name, or
+  `segmentation:<name>` for the segmentation
   pipeline `<name>`'s) and `maxHz`, the most values it takes a second,
   `null` when unbounded, and for the API's pipeline outputs `source`,
   the preview the pipeline's results are drawn on, `left` or a camera's

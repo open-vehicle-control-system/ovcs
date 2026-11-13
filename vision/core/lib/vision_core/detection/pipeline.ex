@@ -88,9 +88,6 @@ defmodule VisionCore.Detection.Pipeline do
   radians, `nil` without a calibration. Its caption has its distance
   only when it has one: `"person 0.62"`.
 
-  Only a named pipeline takes a camera source: the default pipeline is
-  the stereo pair's.
-
   ## One inference in flight
 
   On the stereo source (`VisionCore.Detection.StereoPipeline`), one pair

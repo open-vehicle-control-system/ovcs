@@ -16,10 +16,14 @@ defmodule VisionCore.ComponentsTest do
   # The vision core's supervisor refuses two children with one id.
   test "each detector's unit is a child of its own, identified by its pipeline's name" do
     for {component, opts, id} <- [
-          {:detector, [], VisionCore.Detection.Supervisor},
-          {:detector, [name: :road], VisionCore.Detection.Supervisor.Road},
-          {:qnn_detector, [name: :signs], VisionCore.Detection.Supervisor.Signs},
-          {:hailo_detector, [], VisionCore.Detection.Supervisor}
+          {:detector, [],
+           VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)},
+          {:detector, [name: :road],
+           VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road)},
+          {:qnn_detector, [name: :signs],
+           VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :signs)},
+          {:hailo_detector, [],
+           VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)}
         ] do
       assert [%{id: ^id}] = Components.start(component, opts)
     end
@@ -28,9 +32,9 @@ defmodule VisionCore.ComponentsTest do
   test "each segmenter's unit is a child of its own, identified by its pipeline's name, not restarted once it gives up" do
     for {component, opts, id} <- [
           {:segmenter, [name: :road, source: {:camera, :hq}],
-           VisionCore.Segmentation.Supervisor.Road},
+           VisionCore.Pipelines.server(VisionCore.Segmentation.Supervisor, :road)},
           {:qnn_segmenter, [name: :lane, source: {:camera, :hq}],
-           VisionCore.Segmentation.Supervisor.Lane}
+           VisionCore.Pipelines.server(VisionCore.Segmentation.Supervisor, :lane)}
         ] do
       assert [%{id: ^id, restart: :transient, type: :supervisor}] =
                Components.start(component, opts)

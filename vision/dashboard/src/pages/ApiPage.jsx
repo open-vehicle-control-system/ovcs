@@ -21,8 +21,7 @@ const CHANNELS = [
   ['preview:left, preview:right', "The stereo pair's frames as binary JPEG messages; the client acks each frame to get the next"],
   ['preview:<name>', "A camera of its own's frames, as the pair's; the exporter listing names each camera"],
   ['preview:depth', 'The coloured depth map, as binary JPEG messages; push depth_range to read or set its colour range'],
-  ['detections', "The default detection pipeline's objects, with their label, score, distance and outline on the image it reads"],
-  ['detections:<name>', "A named detection pipeline's objects, shaped like detections; the exporter listing names each pipeline"],
+  ['detections:<name>', "A detection pipeline's objects, with their label, score, distance and outline on the image it reads; the exporter listing names each pipeline, detection for a detector without a name"],
   ['segmentation:<name>', "A segmentation pipeline's class grid over its camera's image, as binary messages the client acks, and its class names"]
 ]
 

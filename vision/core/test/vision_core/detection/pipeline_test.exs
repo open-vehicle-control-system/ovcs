@@ -72,7 +72,7 @@ defmodule VisionCore.Detection.PipelineTest do
     defp start_detection(boxes, opts) do
       start_supervised!({Stub, boxes: boxes})
       start_supervised!({Pipeline, [backend: Stub] ++ opts})
-      :ok = Outputs.subscribe({:detections, Pipeline})
+      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
     end
 
     # As the stereo pipeline publishes it, which need not be running.
@@ -85,7 +85,7 @@ defmodule VisionCore.Detection.PipelineTest do
 
     defp detections do
       publish_pair()
-      assert_receive {:"$gen_cast", {:detections, {%Pair{}, detections}}}, 1_000
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, detections}}}, 1_000
       detections
     end
 
@@ -115,10 +115,10 @@ defmodule VisionCore.Detection.PipelineTest do
 
     test "publishes nothing for a pair the backend could not detect on, and detects the next" do
       start_supervised!({Pipeline, backend: EveryOtherFrame})
-      :ok = Outputs.subscribe({:detections, Pipeline})
+      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
 
       publish_pair()
-      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 100
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 100
 
       assert [%{label: "person"}] = detections()
     end
@@ -126,15 +126,19 @@ defmodule VisionCore.Detection.PipelineTest do
     test "submits no pair while one is in flight, so its reply is published" do
       script = start_supervised!({Agent, fn -> [] end})
       start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
-      :ok = Outputs.subscribe({:detections, Pipeline})
+      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
 
       publish_pair()
       assert_receive {:submitted, in_flight}
       publish_pair()
       refute_receive {:submitted, _sequence}, 100
 
-      send(Pipeline, {:inference_detections, in_flight, []})
-      assert_receive {:"$gen_cast", {:detections, {%Pair{}, []}}}, 1_000
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, in_flight, []}
+      )
+
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
       publish_pair()
       assert_receive {:submitted, _next}
     end
@@ -142,26 +146,35 @@ defmodule VisionCore.Detection.PipelineTest do
     test "drops a late reply to a pair the backend refused, matching only the pair it took" do
       script = start_supervised!({Agent, fn -> [{:error, :unavailable}, :ok] end})
       start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
-      :ok = Outputs.subscribe({:detections, Pipeline})
+      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
 
       publish_pair()
       assert_receive {:submitted, refused}
       publish_pair()
       assert_receive {:submitted, taken}
 
-      send(Pipeline, {:inference_detections, refused, []})
-      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 100
-      send(Pipeline, {:inference_detections, taken, []})
-      assert_receive {:"$gen_cast", {:detections, {%Pair{}, []}}}, 1_000
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, refused, []}
+      )
+
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 100
+
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, taken, []}
+      )
+
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
     end
 
     test "ignores a stray :pair_wait on the stereo source" do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
       publish_pair()
-      send(Pipeline, :pair_wait)
+      send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)), :pair_wait)
 
       assert [%{label: "person"}] = detections()
-      assert Process.alive?(Process.whereis(Pipeline))
+      assert Process.alive?(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)))
     end
 
     test "keeps the highest scores, up to :max_detections" do
@@ -177,35 +190,46 @@ defmodule VisionCore.Detection.PipelineTest do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], detect_every_n: 2)
 
       publish_pair()
-      refute_receive {:"$gen_cast", {:detections, {_pair, _detections}}}, 200
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 200
       assert [_person] = detections()
     end
 
     test "a named pipeline infers on its own backend and publishes under its own key, its name in the message" do
       start_supervised!(
-        Supervisor.child_spec({Stub, name: Stub.Road, pipeline: :road, boxes: []}, id: :road_stub)
+        Supervisor.child_spec(
+          {Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road, boxes: []},
+          id: :road_stub
+        )
       )
 
-      start_supervised!({Pipeline, name: :road, backend: Stub, backend_server: Stub.Road})
-      :ok = Outputs.subscribe({:detections, Pipeline.Road})
+      start_supervised!(
+        {Pipeline,
+         name: :road, backend: Stub, backend_server: VisionCore.Pipelines.server(Stub, :road)}
+      )
+
+      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :road)})
 
       publish_pair()
 
       assert_receive {:"$gen_cast", {{:detections, :road}, {%Pair{}, []}}}, 1_000
-      assert Process.whereis(Pipeline.Road)
-      refute Process.whereis(Pipeline)
+      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road))
+      refute GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
     end
 
     test "two pipelines side by side each publish only under their own key" do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
 
       start_supervised!(
-        Supervisor.child_spec({Stub, name: Stub.Road, pipeline: :road, boxes: []}, id: :road_stub)
+        Supervisor.child_spec(
+          {Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road, boxes: []},
+          id: :road_stub
+        )
       )
 
       start_supervised!(
         Supervisor.child_spec(
-          {Pipeline, name: :road, backend: Stub, backend_server: Stub.Road},
+          {Pipeline,
+           name: :road, backend: Stub, backend_server: VisionCore.Pipelines.server(Stub, :road)},
           id: :road_pipeline
         )
       )
@@ -213,7 +237,7 @@ defmodule VisionCore.Detection.PipelineTest do
       road_listener = self()
 
       spawn_link(fn ->
-        :ok = Outputs.subscribe({:detections, Pipeline.Road})
+        :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :road)})
         send(road_listener, :subscribed)
         receive do: ({:"$gen_cast", message} -> send(road_listener, {:road, message}))
       end)
@@ -221,7 +245,9 @@ defmodule VisionCore.Detection.PipelineTest do
       assert_receive :subscribed
       publish_pair()
 
-      assert_receive {:"$gen_cast", {:detections, {%Pair{}, [%{label: "person"}]}}}, 1_000
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, [%{label: "person"}]}}},
+                     1_000
+
       assert_receive {:road, {{:detections, :road}, {%Pair{}, []}}}, 1_000
       refute_receive {:"$gen_cast", {{:detections, :road}, {_pair, _detections}}}, 100
     end

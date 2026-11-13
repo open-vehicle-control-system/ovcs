@@ -172,7 +172,12 @@ defmodule VisionCore.StatusTest do
 
   test "a QNN detector whose backend is available is reported as a running Hexagon" do
     available = spawn(&answer_backend/0)
-    Process.register(available, VisionCore.Detection.Backend.Qnn)
+
+    Process.register(
+      available,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
+    )
+
     on_exit(fn -> Process.exit(available, :kill) end)
     start_supervised!({Status, config: config([:qnn_detector])})
 
@@ -196,10 +201,20 @@ defmodule VisionCore.StatusTest do
 
   test "a Hexagon has failed while a backend has, and is starting while one opens its Port" do
     starting = spawn(fn -> answer_backend(nil, :starting) end)
-    Process.register(starting, VisionCore.Detection.Backend.Qnn)
+
+    Process.register(
+      starting,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
+    )
+
     on_exit(fn -> Process.exit(starting, :kill) end)
     running = spawn(&answer_backend/0)
-    Process.register(running, VisionCore.Detection.Backend.Qnn.Road)
+
+    Process.register(
+      running,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road)
+    )
+
     on_exit(fn -> Process.exit(running, :kill) end)
 
     start_supervised!(
@@ -211,7 +226,7 @@ defmodule VisionCore.StatusTest do
     assert %{state: :failed} = Status.snapshot().npu
 
     signs = spawn(&answer_backend/0)
-    Process.register(signs, VisionCore.Detection.Backend.Qnn.Signs)
+    Process.register(signs, VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :signs))
     on_exit(fn -> Process.exit(signs, :kill) end)
 
     assert %{state: :starting} = Status.snapshot().npu
@@ -229,7 +244,11 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a QNN pipeline's inference times over a tick give the Hexagon's load and its mean time" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 100_000, count: 4})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 100_000,
+      count: 4
+    })
+
     start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 200})
     :ok = Status.subscribe()
 
@@ -241,8 +260,15 @@ defmodule VisionCore.StatusTest do
   end
 
   test "two QNN pipelines' times add up in the load, each keeping its own mean time" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
-    register_backend(VisionCore.Detection.Backend.Qnn.Road, %{sum_us: 40_000, count: 2})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 30_000,
+      count: 3
+    })
+
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road), %{
+      sum_us: 40_000,
+      count: 2
+    })
 
     start_supervised!(
       {Status, config: config([:qnn_detector, {:qnn_detector, name: :road}]), tick_ms: 200}
@@ -270,8 +296,15 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a QNN detector's and a QNN segmenter's times add up in the load, each keeping its own mean time" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
-    register_backend(VisionCore.Segmentation.Backend.Qnn.Road, %{sum_us: 40_000, count: 2})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 30_000,
+      count: 3
+    })
+
+    register_backend(VisionCore.Pipelines.server(VisionCore.Segmentation.Backend.Qnn, :road), %{
+      sum_us: 40_000,
+      count: 2
+    })
 
     start_supervised!({Status, config: config([:qnn_detector, @road_segmenter]), tick_ms: 200})
     :ok = Status.subscribe()
@@ -297,8 +330,15 @@ defmodule VisionCore.StatusTest do
   end
 
   test "the load adds up only the pipelines on the reported accelerator's kind" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 30_000, count: 3})
-    register_backend(VisionCore.Detection.Backend.Hailo.Road, %{sum_us: 80_000, count: 2})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 30_000,
+      count: 3
+    })
+
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :road), %{
+      sum_us: 80_000,
+      count: 2
+    })
 
     start_supervised!(
       {Status, config: config([:qnn_detector, {:hailo_detector, name: :road}]), tick_ms: 200}
@@ -313,7 +353,11 @@ defmodule VisionCore.StatusTest do
   end
 
   test "the load is clamped to 100" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 900_000_000, count: 1})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 900_000_000,
+      count: 1
+    })
+
     start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
     :ok = Status.subscribe()
 
@@ -321,7 +365,11 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a window without an inference is a load of zero and no mean time" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 0, count: 0})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 0,
+      count: 0
+    })
+
     start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
     :ok = Status.subscribe()
 
@@ -329,7 +377,11 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a backend that reports no times leaves the load and the mean time nil" do
-    register_backend(VisionCore.Detection.Backend.Qnn, nil)
+    register_backend(
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection),
+      nil
+    )
+
     start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 100})
     :ok = Status.subscribe()
 
@@ -341,7 +393,11 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a snapshot asked between ticks does not take the backends' times" do
-    register_backend(VisionCore.Detection.Backend.Qnn, %{sum_us: 100_000, count: 4})
+    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection), %{
+      sum_us: 100_000,
+      count: 4
+    })
+
     start_supervised!({Status, config: config([:qnn_detector]), tick_ms: 60_000})
 
     assert %{load_percent: nil} = Status.snapshot().npu
@@ -359,7 +415,12 @@ defmodule VisionCore.StatusTest do
 
   test "a Hailo pipeline beside a stub one reports the Hailo-8" do
     available = spawn(&answer_backend/0)
-    Process.register(available, VisionCore.Detection.Backend.Hailo.Road)
+
+    Process.register(
+      available,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :road)
+    )
+
     on_exit(fn -> Process.exit(available, :kill) end)
 
     start_supervised!(
@@ -381,7 +442,12 @@ defmodule VisionCore.StatusTest do
 
   test "two QNN pipelines report a running Hexagon while both backends are available, failed when one is not" do
     available = spawn(&answer_backend/0)
-    Process.register(available, VisionCore.Detection.Backend.Qnn)
+
+    Process.register(
+      available,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
+    )
+
     on_exit(fn -> Process.exit(available, :kill) end)
     two_pipelines = config([:qnn_detector, {:qnn_detector, name: :road}])
     start_supervised!({Status, config: two_pipelines})
@@ -394,7 +460,7 @@ defmodule VisionCore.StatusTest do
            }
 
     road = spawn(&answer_backend/0)
-    Process.register(road, VisionCore.Detection.Backend.Qnn.Road)
+    Process.register(road, VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road))
     on_exit(fn -> Process.exit(road, :kill) end)
 
     assert Status.snapshot().npu == %{
@@ -415,7 +481,12 @@ defmodule VisionCore.StatusTest do
 
   test "a detector that does not answer is reported failed without stalling the snapshot" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
-    Process.register(silent, VisionCore.Detection.Backend.Hailo)
+
+    Process.register(
+      silent,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
+    )
+
     on_exit(fn -> Process.exit(silent, :kill) end)
     start_supervised!({Status, config: config([:hailo_detector])})
 
@@ -427,7 +498,12 @@ defmodule VisionCore.StatusTest do
 
   test "callees that do not answer delay the snapshot by one timeout, not one each" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
-    Process.register(silent, VisionCore.Detection.Backend.Hailo)
+
+    Process.register(
+      silent,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
+    )
+
     on_exit(fn -> Process.exit(silent, :kill) end)
     start_exporter(delay_ms: 1_000)
     start_supervised!({Status, config: config([:hailo_detector])})

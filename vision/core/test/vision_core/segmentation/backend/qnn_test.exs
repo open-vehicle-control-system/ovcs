@@ -275,8 +275,8 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
 
     log =
       ExUnit.CaptureLog.capture_log(fn ->
-        start_backend(dir, "answer", name: Qnn.Road)
-        eventually(fn -> Qnn.available?(Qnn.Road) end)
+        start_backend(dir, "answer", name: VisionCore.Pipelines.server(Qnn, :road))
+        eventually(fn -> Qnn.available?(VisionCore.Pipelines.server(Qnn, :road)) end)
       end)
 
     assert log =~ "#{inspect(Qnn)} (road) loaded model.dlc"

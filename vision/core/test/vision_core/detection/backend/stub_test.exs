@@ -32,11 +32,13 @@ defmodule VisionCore.Detection.Backend.StubTest do
 
   test "a named pipeline's backend runs under its server name and declares that pipeline's step" do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
-    start_supervised!({Stub, name: Stub.Road, pipeline: :road})
+    start_supervised!({Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road})
 
-    assert Stub.detect(Stub.Road, 3, Nx.iota({2, 4}, type: :u8)) == :ok
+    assert Stub.detect(VisionCore.Pipelines.server(Stub, :road), 3, Nx.iota({2, 4}, type: :u8)) ==
+             :ok
+
     assert_receive {:inference_detections, 3, [%{class_id: 0}]}
-    assert Stub.available?(Stub.Road)
+    assert Stub.available?(VisionCore.Pipelines.server(Stub, :road))
     refute Process.whereis(Stub)
 
     assert %{pipeline: :road, position: 102} =

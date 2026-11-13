@@ -105,7 +105,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
   end
 
   # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
@@ -220,7 +220,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
     publish_pair(0, road ++ off_road ++ outside)
     publish_pair(100, road ++ off_road ++ outside)
     publish_frame(100, key: inference)
@@ -253,7 +253,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
     inference = {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
     publish_frame(100, size: {1014, 760}, key: inference)
 
@@ -423,10 +423,10 @@ defmodule VisionCore.Segmentation.PipelineTest do
     await_labels()
 
     set_clock(19)
-    send(Pipeline.Road, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)), :pair_wait)
     refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     set_clock(21)
-    send(Pipeline.Road, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)), :pair_wait)
 
     assert {%{width: 4}, nil} = segmentation()
   end
@@ -439,18 +439,18 @@ defmodule VisionCore.Segmentation.PipelineTest do
     await_labels()
 
     set_clock(499)
-    send(Pipeline.Road, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)), :pair_wait)
     refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
     set_clock(500)
-    send(Pipeline.Road, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)), :pair_wait)
 
     assert {%{width: 4}, nil} = segmentation()
   end
 
   # The first call lets the frame's labels reach the pipeline, the second has them handled.
   defp await_labels do
-    _submitted = :sys.get_state(Pipeline.Road)
-    _handled = :sys.get_state(Pipeline.Road)
+    _submitted = :sys.get_state(VisionCore.Pipelines.server(Pipeline, :road))
+    _handled = :sys.get_state(VisionCore.Pipelines.server(Pipeline, :road))
   end
 
   test "segments the frames that come while label images wait, publishing each in capture order with clouds",
@@ -495,7 +495,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
     publish_pair(0)
     publish_pair(1_000)
 
@@ -556,7 +556,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        config: config(dir, [])}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
     publish_frame(100)
 
     assert_receive {:band, _band}
@@ -579,10 +579,15 @@ defmodule VisionCore.Segmentation.PipelineTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
   end
 
-  defp reply(sequence, labels), do: send(Pipeline.Road, {:inference_labels, sequence, labels})
+  defp reply(sequence, labels),
+    do:
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)),
+        {:inference_labels, sequence, labels}
+      )
 
   defp assert_published(capture_ms) do
     capture_ns = capture_ms * @ms
@@ -758,9 +763,17 @@ defmodule VisionCore.Segmentation.PipelineTest do
     publish_frame(200)
     assert_receive {:submitted, taken}
 
-    send(Pipeline.Road, {:inference_labels, refused, @label_image})
+    send(
+      GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)),
+      {:inference_labels, refused, @label_image}
+    )
+
     refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
-    send(Pipeline.Road, {:inference_labels, taken, @label_image})
+
+    send(
+      GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road)),
+      {:inference_labels, taken, @label_image}
+    )
 
     assert_receive {:"$gen_cast",
                     {{:segmentation, :road}, {%Frame{capture_ns: 200_000_000}, _, nil}}}
@@ -790,12 +803,12 @@ defmodule VisionCore.Segmentation.PipelineTest do
       )
     end
 
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Road})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
     publish_frame(100)
 
     assert {%{data: <<0>>}, nil} = segmentation()
     refute_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, _labels, _clouds}}}, 100
-    :ok = Outputs.subscribe({:segmentation, Pipeline.Lane})
+    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :lane)})
     publish_frame(200)
 
     assert_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, %{data: <<1>>}, nil}}}

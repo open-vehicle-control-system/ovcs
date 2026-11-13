@@ -90,7 +90,7 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              %{"name" => "camera_frame:right", "maxHz" => 5},
              %{"name" => "stereo_pair", "maxHz" => 5},
              %{"name" => "camera_frame:hq", "maxHz" => 5},
-             %{"name" => "detections", "maxHz" => 4, "source" => "left"},
+             %{"name" => "detections:detection", "maxHz" => 4, "source" => "left"},
              %{"name" => "detections:road", "maxHz" => 2, "source" => "left"},
              %{"name" => "detections:hq_people", "maxHz" => 3, "source" => "hq"},
              %{"name" => "segmentation:road_surface", "maxHz" => 1, "source" => "hq"}
@@ -123,7 +123,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
         %{output: {:camera_frame, :hq, :inference}, max_hz: 10},
-        %{output: :detections, max_hz: nil},
+        %{output: {:detections, :detection}, max_hz: nil},
         %{output: {:detections, :road}, max_hz: 3, source: "hq"},
         %{output: {:segmentation, :lanes}, max_hz: 5, source: "hq"}
       ],
@@ -141,7 +141,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
                %{name: "camera_frame:hq:inference", maxHz: 10},
-               %{name: "detections", maxHz: nil},
+               %{name: "detections:detection", maxHz: nil},
                %{name: "detections:road", maxHz: 3, source: "hq"},
                %{name: "segmentation:lanes", maxHz: 5, source: "hq"}
              ],

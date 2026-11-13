@@ -29,17 +29,7 @@ defmodule VisionCore.Detection.CameraPipeline do
 
   @impl VisionCore.CameraPipeline
   def init(opts) do
-    settings = Pipeline.settings(opts)
-
-    if settings.name == :detection,
-      do:
-        raise(
-          ArgumentError,
-          "a detection pipeline on a camera needs a :name: the default pipeline, :detection, " <>
-            "is the stereo pair's"
-        )
-
-    Map.put(settings, :undecodable_logged, false)
+    opts |> Pipeline.settings() |> Map.put(:undecodable_logged, false)
   end
 
   @impl VisionCore.CameraPipeline

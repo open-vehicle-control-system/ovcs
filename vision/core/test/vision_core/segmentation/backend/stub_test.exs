@@ -19,9 +19,12 @@ defmodule VisionCore.Segmentation.Backend.StubTest do
   test "answers the label image it is given, under its name, declaring its pipeline's step" do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
     labels = %{width: 1, height: 1, data: <<13>>}
-    start_supervised!({Stub, name: Stub.Road, pipeline: :road, label_image: labels})
 
-    assert Stub.segment(Stub.Road, 1, @band) == :ok
+    start_supervised!(
+      {Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road, label_image: labels}
+    )
+
+    assert Stub.segment(VisionCore.Pipelines.server(Stub, :road), 1, @band) == :ok
     assert_receive {:inference_labels, 1, ^labels}
 
     assert %{position: 102} =

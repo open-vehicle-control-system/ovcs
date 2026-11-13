@@ -34,9 +34,10 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
   defp messages(detections, drawn \\ 0) do
     assert [
-             {"stereo/detections/markers", MarkerArray, %MarkerArray{markers: markers}, _options},
-             {"stereo/detections", Detection3DArray, array},
-             {"stereo/left/detections", ImageAnnotations, overlay}
+             {"stereo/detection/detections/markers", MarkerArray, %MarkerArray{markers: markers},
+              _options},
+             {"stereo/detection/detections", Detection3DArray, array},
+             {"stereo/detection/annotations", ImageAnnotations, overlay}
            ] = Detections.messages(detections, pair(), Detections.new([]), drawn)
 
     {markers, array, overlay}
@@ -53,7 +54,7 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
              {3, Marker.text_view_facing()}
            ]
 
-    assert Enum.all?(markers, &(&1.ns == "detections"))
+    assert Enum.all?(markers, &(&1.ns == "detection"))
 
     assert Enum.map(array.detections, & &1.id) == ["0", "1"]
     assert Enum.at(markers, 1).text == "person 0.80 2.00m"
@@ -110,9 +111,9 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
     messages = Detections.messages([detection("person", square(0.0, 0.0))], pair, settings, 0)
 
     assert Enum.map(messages, &elem(&1, 0)) == [
-             "front/detections/markers",
-             "front/detections",
-             "front/left/detections"
+             "front/detection/detections/markers",
+             "front/detection/detections",
+             "front/detection/annotations"
            ]
 
     assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)

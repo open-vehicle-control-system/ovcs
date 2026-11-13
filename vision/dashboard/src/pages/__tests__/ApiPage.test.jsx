@@ -44,11 +44,10 @@ describe('ApiPage', () => {
       'preview:left, preview:right',
       'preview:<name>',
       'preview:depth',
-      'detections',
       'detections:<name>',
       'segmentation:<name>'
     ])
-    expect(screen.getByRole('row', { name: /^detections / }).textContent).not.toContain('left image')
+    expect(screen.getByRole('row', { name: /^detections:<name> / }).textContent).not.toContain('left image')
   })
 
   it('lists the exporters, and says nothing of the unit but how to reach it', () => {

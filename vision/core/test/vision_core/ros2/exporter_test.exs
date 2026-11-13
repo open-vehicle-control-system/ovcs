@@ -203,7 +203,7 @@ defmodule VisionCore.Ros2.ExporterTest do
                :stereo_pair,
                {:camera_frame, :left},
                {:camera_frame, :right},
-               :detections
+               {:detections, :detection}
              ]
 
       assert Exporter.outputs(heartbeat: []) == []
@@ -211,7 +211,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "reads the detections of each pipeline its detection options list" do
       assert Exporter.outputs(detections: [pipelines: [:detection, :road]]) ==
-               [:detections, {:detections, :road}]
+               [{:detections, :detection}, {:detections, :road}]
 
       assert Exporter.outputs(detections: [pipelines: [:road, :signs]]) ==
                [{:detections, :road}, {:detections, :signs}]
@@ -562,20 +562,22 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     {:ok, state} =
       Exporter.handle_output(
-        :detections,
+        {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
       )
 
-    assert_received {:published, "stereo/detections/markers",
+    assert_received {:published, "stereo/detection/detections/markers",
                      %MarkerArray{markers: [marker | _markers]}}
 
     assert marker.header.frame_id == "stereo_left_optical"
-    assert_received {:published, "stereo/left/detections", %ImageAnnotations{}}
+    assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
 
-    {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detections/markers", %MarkerArray{markers: markers}}
+    assert_received {:published, "stereo/detection/detections/markers",
+                     %MarkerArray{markers: markers}}
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
@@ -626,13 +628,13 @@ defmodule VisionCore.Ros2.ExporterTest do
         Exporter.init(options(Camera, detections: [pipelines: [:detection, :road]]))
 
       two = [detection("person"), detection("car")]
-      {:ok, state} = Exporter.handle_output(:detections, {pair(), two}, state)
+      {:ok, state} = Exporter.handle_output({:detections, :detection}, {pair(), two}, state)
 
-      assert markers_of("stereo/detections/markers") ==
-               List.duplicate({"detections", Marker.add()}, 4)
+      assert markers_of("stereo/detection/detections/markers") ==
+               List.duplicate({"detection", Marker.add()}, 4)
 
-      assert_received {:published, "stereo/detections", _array}
-      assert_received {:published, "stereo/left/detections", %ImageAnnotations{}}
+      assert_received {:published, "stereo/detection/detections", _array}
+      assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
 
       {:ok, state} =
         Exporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
@@ -644,11 +646,12 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert_received {:published, "stereo/road/annotations", %ImageAnnotations{}}
       refute_received {:published, "stereo/" <> _topic, _message}
 
-      {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+      {:ok, _state} =
+        Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-      assert markers_of("stereo/detections/markers") ==
-               List.duplicate({"detections", Marker.add()}, 2) ++
-                 List.duplicate({"detections", Marker.delete()}, 2)
+      assert markers_of("stereo/detection/detections/markers") ==
+               List.duplicate({"detection", Marker.add()}, 2) ++
+                 List.duplicate({"detection", Marker.delete()}, 2)
 
       refute_received {:published, "stereo/road/" <> _topic, _message}
     end
@@ -671,19 +674,19 @@ defmodule VisionCore.Ros2.ExporterTest do
       )
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline.Road},
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)},
         {{:detections, :road}, {pair(), [detection("lane")]}}
       )
 
       assert_receive {:published, "stereo/road/detections", _array}, 1_000
-      refute_receive {:published, "stereo/detections", _array}, 100
+      refute_receive {:published, "stereo/detection/detections", _array}, 100
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, {pair(), [detection("person")]}}
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {{:detections, :detection}, {pair(), [detection("person")]}}
       )
 
-      assert_receive {:published, "stereo/detections", _array}, 1_000
+      assert_receive {:published, "stereo/detection/detections", _array}, 1_000
       refute_receive {:published, "stereo/road/detections", _array}, 100
     end
   end
@@ -695,16 +698,17 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     {:ok, state} =
       Exporter.handle_output(
-        :detections,
+        {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
       )
 
-    assert_received {:published, "stereo/detections/markers", [keep: false]}
+    assert_received {:published, "stereo/detection/detections/markers", [keep: false]}
 
-    {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detections/markers", [keep: true]}
+    assert_received {:published, "stereo/detection/detections/markers", [keep: true]}
   end
 
   describe "on its own JPEG codec" do
@@ -1333,7 +1337,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       start_runner(options, options[:config])
 
       Outputs.publish(
-        {:segmentation, VisionCore.Segmentation.Pipeline.Lanes},
+        {:segmentation, VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :lanes)},
         {{:segmentation, :lanes},
          {segmented_frame(), segmentation_labels(), segmentation_clouds()}}
       )

@@ -34,15 +34,26 @@ defmodule VisionCore.ExporterTest do
 
   test "the outputs an exporter reads, each with the most values it takes a second, if bounded" do
     assert Exporter.output_specs(Reading,
-             outputs: [{:camera_frame, :left}, stereo_pair: [max_hz: 5], detections: []]
-           ) == {:ok, [{{:camera_frame, :left}, nil}, {:stereo_pair, 5}, {:detections, nil}]}
+             outputs: [{:camera_frame, :left}, {:stereo_pair, max_hz: 5}, {:detections, :road}]
+           ) ==
+             {:ok,
+              [{{:camera_frame, :left}, nil}, {:stereo_pair, 5}, {{:detections, :road}, nil}]}
   end
 
-  test "a named detection pipeline's detections are an output of their own" do
+  test "a detection pipeline's detections are an output of their own, detection without a name" do
     assert Exporter.output_specs(Reading,
-             outputs: [:detections, {:detections, :road}, {{:detections, :signs}, max_hz: 2}]
+             outputs: [
+               {:detections, :detection},
+               {:detections, :road},
+               {{:detections, :signs}, max_hz: 2}
+             ]
            ) ==
-             {:ok, [{:detections, nil}, {{:detections, :road}, nil}, {{:detections, :signs}, 2}]}
+             {:ok,
+              [
+                {{:detections, :detection}, nil},
+                {{:detections, :road}, nil},
+                {{:detections, :signs}, 2}
+              ]}
   end
 
   test "a segmentation pipeline's results are an output of their own" do
@@ -60,7 +71,7 @@ defmodule VisionCore.ExporterTest do
           {[stereo_pair: [rate: 5]], {:stereo_pair, [rate: 5]}},
           {[stereo_pair: [max_hz: 0]], {:stereo_pair, [max_hz: 0]}},
           {[:stereo_pair, stereo_pair: [max_hz: 5]], {:stereo_pair, [max_hz: 5]}},
-          {[{:detections, :detection}], {:detections, :detection}},
+          {[:detections], :detections},
           {[{:detections, :stereo}], {:detections, :stereo}},
           {[{:detections, :"front-cam"}], {:detections, :"front-cam"}},
           {[{:detections, "road"}], {:detections, "road"}},
@@ -134,31 +145,34 @@ defmodule VisionCore.ExporterTest do
     assert Exporter.output_key({:camera_frame, :right}, config) ==
              {:camera_frame, Camera.name_for("right")}
 
-    assert Exporter.output_key(:detections, config) ==
-             {:detections, VisionCore.Detection.Pipeline}
+    assert Exporter.output_key({:detections, :detection}, config) ==
+             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
   end
 
   test "every detector component produces detections" do
     for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
-      assert Exporter.output_key(:detections, config([detector])) ==
-               {:detections, VisionCore.Detection.Pipeline}
+      assert Exporter.output_key({:detections, :detection}, config([detector])) ==
+               {:detections,
+                VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
     end
   end
 
-  test "a named pipeline's detections resolve to its own key, the default's to the default's" do
+  test "a pipeline's detections resolve to its own key" do
     config = config([{:detector, name: :road}, :detector, {:hailo_detector, name: :signs}])
 
-    assert Exporter.output_key(:detections, config) ==
-             {:detections, VisionCore.Detection.Pipeline}
+    assert Exporter.output_key({:detections, :detection}, config) ==
+             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
 
     assert Exporter.output_key({:detections, :road}, config) ==
-             {:detections, VisionCore.Detection.Pipeline.Road}
+             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)}
 
     assert Exporter.output_key({:detections, :signs}, config) ==
-             {:detections, VisionCore.Detection.Pipeline.Signs}
+             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :signs)}
 
     assert Exporter.output_key({:detections, :lanes}, config) == nil
-    assert Exporter.output_key(:detections, config([{:detector, name: :road}])) == nil
+
+    assert Exporter.output_key({:detections, :detection}, config([{:detector, name: :road}])) ==
+             nil
   end
 
   test "a segmentation pipeline's results resolve to its own key" do
@@ -169,10 +183,11 @@ defmodule VisionCore.ExporterTest do
       ])
 
     assert Exporter.output_key({:segmentation, :road}, config) ==
-             {:segmentation, VisionCore.Segmentation.Pipeline.Road}
+             {:segmentation, VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road)}
 
     assert Exporter.output_key({:segmentation, :lanes}, config) ==
-             {:segmentation, VisionCore.Segmentation.Pipeline.Lanes}
+             {:segmentation,
+              VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :lanes)}
 
     assert Exporter.output_key({:segmentation, :signs}, config) == nil
   end
@@ -183,7 +198,7 @@ defmodule VisionCore.ExporterTest do
           {:camera_frame, :left},
           {:camera_frame, :right},
           {:camera_frame, :hq},
-          :detections,
+          {:detections, :detection},
           {:detections, :road},
           {:segmentation, :road}
         ] do

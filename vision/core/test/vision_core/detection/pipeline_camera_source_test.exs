@@ -119,7 +119,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
   end
 
   # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
@@ -308,8 +308,8 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
   # The first call lets the frame's boxes reach the pipeline, the second has them handled.
   defp await_boxes do
-    _submitted = :sys.get_state(Pipeline.HqPeople)
-    _handled = :sys.get_state(Pipeline.HqPeople)
+    _submitted = :sys.get_state(VisionCore.Pipelines.server(Pipeline, :hq_people))
+    _handled = :sys.get_state(VisionCore.Pipelines.server(Pipeline, :hq_people))
   end
 
   test "waits for a pair captured after the frame, which may be closer", %{tmp_dir: dir} do
@@ -372,7 +372,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
     publish_pair(0)
     publish_pair(1_000)
 
@@ -409,19 +409,24 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
     publish_pair(0)
     publish_pair(1_000)
     publish_frame(1_400)
     assert_receive {:submitted, 1}
 
     # Past the stall the pairs' period would give, with the frame's pair already sent.
-    :sys.suspend(Pipeline.HqPeople)
+    :sys.suspend(VisionCore.Pipelines.server(Pipeline, :hq_people))
     person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0}
-    send(Pipeline.HqPeople, {:inference_detections, 1, [person]})
+
+    send(
+      GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)),
+      {:inference_detections, 1, [person]}
+    )
+
     publish_pair(1_500, distance_mm: 3000)
     set_clock(5_000)
-    :sys.resume(Pipeline.HqPeople)
+    :sys.resume(VisionCore.Pipelines.server(Pipeline, :hq_people))
 
     assert [placed] = detections()
     assert_in_delta placed.z, 3.0, 1.0e-6
@@ -434,7 +439,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     publish_frame(1_400)
     await_boxes()
 
-    send(Pipeline.HqPeople, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)), :pair_wait)
     refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
   end
 
@@ -447,10 +452,10 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     await_boxes()
 
     set_clock(19)
-    send(Pipeline.HqPeople, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)), :pair_wait)
     refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     set_clock(21)
-    send(Pipeline.HqPeople, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)), :pair_wait)
 
     assert [person] = detections()
     assert_no_distance(person)
@@ -464,10 +469,10 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     await_boxes()
 
     set_clock(499)
-    send(Pipeline.HqPeople, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)), :pair_wait)
     refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     set_clock(500)
-    send(Pipeline.HqPeople, :pair_wait)
+    send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)), :pair_wait)
 
     assert [person] = detections()
     assert_no_distance(person)
@@ -537,7 +542,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
     publish_frame(100)
     refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_frame(200)
@@ -632,11 +637,15 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:detections, Pipeline.HqPeople})
+    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
   end
 
   defp reply(sequence, detections),
-    do: send(Pipeline.HqPeople, {:inference_detections, sequence, detections})
+    do:
+      send(
+        VisionCore.Pipelines.server(Pipeline, :hq_people),
+        {:inference_detections, sequence, detections}
+      )
 
   defp assert_published(capture_ms) do
     capture_ns = capture_ms * @ms
@@ -813,20 +822,6 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
              {"reprojection_stride", 3},
              {"pair_wait_ms", 500}
            ]
-  end
-
-  test "the default pipeline does not take a camera source", %{tmp_dir: dir} do
-    Process.flag(:trap_exit, true)
-    start_supervised!({Stub, []})
-
-    assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
-             Pipeline.start_link(
-               backend: Stub,
-               source: {:camera, :hq},
-               config: config(dir, [:calibration, :pose])
-             )
-
-    assert message =~ "needs a :name"
   end
 
   test "a camera source names a camera of the configuration", %{tmp_dir: dir} do

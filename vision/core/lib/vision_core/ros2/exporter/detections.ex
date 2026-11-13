@@ -27,12 +27,9 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   ## Options
 
     * `:pipeline` (`:detection`) — the detection pipeline whose
-      detections these are (`VisionCore.Detection`). The default
-      pipeline's markers go to `<prefix>/detections/markers` in the
-      marker namespace `"detections"`, its detections to
-      `<prefix>/detections`, and the 2D image overlay to
-      `<prefix>/left/detections`. A named pipeline's go to
-      `<prefix>/<name>/detections/markers` in the namespace `"<name>"`,
+      detections these are (`VisionCore.Detection`), `<name>`: its
+      markers go to `<prefix>/<name>/detections/markers` in the
+      marker namespace `"<name>"`, its detections to
       `<prefix>/<name>/detections` and `<prefix>/<name>/annotations`.
     * `:topic_prefix` (`"stereo"`) — the `<prefix>` of the topics.
     * `:marker_lifetime_ms` (`500`) — how long a marker survives
@@ -128,16 +125,6 @@ defmodule VisionCore.Ros2.Exporter.Detections do
       label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size),
       image_size: Keyword.get(options, :image_size)
     })
-  end
-
-  defp topics(:detection, topic_prefix) do
-    %{
-      markers_topic: "#{topic_prefix}/detections/markers",
-      detections_topic: "#{topic_prefix}/detections",
-      detections_2d_topic: "#{topic_prefix}/detections_2d",
-      overlay_topic: "#{topic_prefix}/left/detections",
-      namespace: "detections"
-    }
   end
 
   defp topics(pipeline, topic_prefix) do

@@ -26,9 +26,15 @@ defmodule VisionCore.Detection.LiveTest do
     }
   end
 
-  defp subscriber_count, do: map_size(:sys.get_state(Live).subscribers)
+  defp subscriber_count,
+    do: map_size(:sys.get_state(VisionCore.Pipelines.server(Live, :detection)).subscribers)
 
-  defp cast_detections(positioned), do: GenServer.cast(Live, {:detections, {pair(), positioned}})
+  defp cast_detections(positioned),
+    do:
+      GenServer.cast(
+        VisionCore.Pipelines.server(Live, :detection),
+        {{:detections, :detection}, {pair(), positioned}}
+      )
 
   setup do
     start_supervised!({Live, max_hz: 1_000})
@@ -44,8 +50,8 @@ defmodule VisionCore.Detection.LiveTest do
     positioned = [person(240, 108, 720, 432, 1.8)]
 
     Outputs.publish(
-      {:detections, VisionCore.Detection.Pipeline},
-      {:detections, {pair(), positioned}}
+      {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+      {{:detections, :detection}, {pair(), positioned}}
     )
 
     assert_receive {:vision_detections, [%{label: "person", distance_m: 1.8}]}
@@ -64,7 +70,11 @@ defmodule VisionCore.Detection.LiveTest do
   test "a camera source's result: its outline as fractions of the camera's frame, without a distance where there is none" do
     :ok = Live.subscribe()
     frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: 0, rgb: <<>>}
-    GenServer.cast(Live, {{:detections, :hq_people}, {frame, [person(0, 0, 507, 380, nil)]}})
+
+    GenServer.cast(
+      VisionCore.Pipelines.server(Live, :detection),
+      {{:detections, :hq_people}, {frame, [person(0, 0, 507, 380, nil)]}}
+    )
 
     assert_receive {:vision_detections, [%{distance_m: nil, outline: outline}]}
     assert outline == [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
@@ -104,7 +114,13 @@ defmodule VisionCore.Detection.LiveTest do
 
     Process.sleep(50)
     assert subscriber_count() == 1
-    assert {:monitors, [{:process, ^subscriber}]} = Process.info(Process.whereis(Live), :monitors)
+
+    assert {:monitors, [{:process, ^subscriber}]} =
+             Process.info(
+               GenServer.whereis(VisionCore.Pipelines.server(Live, :detection)),
+               :monitors
+             )
+
     Process.exit(subscriber, :kill)
     Process.sleep(50)
     assert subscriber_count() == 0
@@ -136,7 +152,7 @@ defmodule VisionCore.Detection.LiveTest do
       :ok = Live.subscribe()
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline.Road},
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)},
         {{:detections, :road}, {pair(), [person(240, 108, 720, 432, 3.0)]}}
       )
 
@@ -144,8 +160,8 @@ defmodule VisionCore.Detection.LiveTest do
       refute_receive {:vision_detections, _detections}, 100
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, {pair(), [person(240, 108, 720, 432, 1.8)]}}
+        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {{:detections, :detection}, {pair(), [person(240, 108, 720, 432, 1.8)]}}
       )
 
       assert_receive {:vision_detections, [%{distance_m: 1.8}]}

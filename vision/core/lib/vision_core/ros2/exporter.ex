@@ -79,7 +79,7 @@ defmodule VisionCore.Ros2.Exporter do
       `:prefix` by default, the `:publish_*` switches,
       `:raw_image_max_hz` and `:camera_info_interval_frames`.
     * `:detections` — publishes the detections of each pipeline its
-      `:pipelines` list (`[:detection]`, the default pipeline), each on
+      `:pipelines` list (`[:detection]`, a detector without a name), each on
       topics and in a marker namespace of its own;
       `VisionCore.Ros2.Exporter.Detections` documents its other options
       and the topics, its `:topic_prefix` the stereo unit's `:prefix` by

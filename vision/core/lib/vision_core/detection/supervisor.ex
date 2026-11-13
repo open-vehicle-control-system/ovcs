@@ -103,8 +103,7 @@ defmodule VisionCore.Detection.Supervisor do
   @doc """
   The outputs of the detection units in `config`, in config order, with
   their `VisionCore.Outputs` keys: each pipeline's detections, as
-  `VisionCore.Exporter` names them, `:detections` for the default
-  pipeline and `{:detections, name}` for a named one. `[]` when no
+  `VisionCore.Exporter` names them, `{:detections, name}`. `[]` when no
   component of `config` starts a unit, as `VisionCore.Components`
   resolves them.
   """

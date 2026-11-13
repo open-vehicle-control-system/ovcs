@@ -22,13 +22,12 @@ defmodule VisionCore.Exporter do
       of its default output;
     * `{:camera_frame, name, output}` — a frame of the camera `name`'s
       output `output` (`VisionCore.Camera.Output`);
-    * `:detections` — `{pair, detections}`, the result for `pair` of the
-      default detection pipeline, the one a detector without a `:name`
-      starts (`VisionCore.Detection`);
     * `{:detections, name}` — `{pair, detections}`, the result for
-      `pair` of the detection pipeline named `name`, or `{frame,
-      detections}`, the result for the `VisionCore.Camera.Frame` `frame`
-      of one whose source is a camera of its own;
+      `pair` of the detection pipeline named `name`, `:detection` for
+      the one a detector without a `:name` starts
+      (`VisionCore.Detection`), or `{frame, detections}`, the result for
+      the `VisionCore.Camera.Frame` `frame` of one whose source is a
+      camera of its own;
     * `{:segmentation, name}` — `{frame, labels, clouds}`, the result for
       the `VisionCore.Camera.Frame` `frame` of the segmentation pipeline
       named `name`: its label image and its road and off-road points,
@@ -45,8 +44,7 @@ defmodule VisionCore.Exporter do
   The runner subscribes to each output through `VisionCore.Outputs`,
   under the key `output_key/2` resolves in the configuration, and leaves
   out an output nothing in the configuration produces, such as
-  `:detections` on a unit without a detector, `{:detections, :road}`
-  on one without a detector named `:road`, or `{:camera_frame, :hq}` on
+  `{:detections, :road}` on a unit without a detector named `:road`, or `{:camera_frame, :hq}` on
   one without a camera named `:hq`. The exporter is handed the
   newest value of each output only: values that came while it was busy
   are dropped, and under `:max_hz` the latest one is held until the
@@ -131,7 +129,7 @@ defmodule VisionCore.Exporter do
         def children(options), do: [{MyCar.Mqtt, broker: Keyword.fetch!(options, :broker)}]
 
         @impl VisionCore.Exporter
-        def outputs(_options), do: [stereo_pair: [max_hz: 5], detections: []]
+        def outputs(_options), do: [{:stereo_pair, max_hz: 5}, {:detections, :detection}]
 
         @impl VisionCore.Exporter
         def init(options) do
@@ -143,8 +141,8 @@ defmodule VisionCore.Exporter do
         def handle_output(:stereo_pair, pair, state),
           do: publish(state, "/depth", pair.depth, :stereo_pair)
 
-        def handle_output(:detections, {_pair, detections}, state),
-          do: publish(state, "/detections", Jason.encode!(detections), :detections)
+        def handle_output({:detections, :detection} = output, {_pair, detections}, state),
+          do: publish(state, "/detections", Jason.encode!(detections), output)
 
         @impl VisionCore.Exporter
         def handle_info({:mqtt_published, output}, state), do: {:ready, output, state}
@@ -178,14 +176,12 @@ defmodule VisionCore.Exporter do
   @outputs %{
     :stereo_pair => VisionCore.Stereo.Supervisor,
     {:camera_frame, :left} => VisionCore.Stereo.Supervisor,
-    {:camera_frame, :right} => VisionCore.Stereo.Supervisor,
-    :detections => VisionCore.Detection.Supervisor
+    {:camera_frame, :right} => VisionCore.Stereo.Supervisor
   }
 
   @typedoc "One of the unit's outputs; see the module doc."
   @type output ::
           :stereo_pair
-          | :detections
           | {:detections, atom()}
           | {:segmentation, atom()}
           | {:camera_frame, atom()}
@@ -306,14 +302,12 @@ defmodule VisionCore.Exporter do
 
   @doc """
   Whether `term` is one of the outputs an exporter can name:
-  `{:detections, name}` for a valid pipeline name other than the
-  default's, `:detection` (`VisionCore.Pipelines.name?/1`),
-  `{:segmentation, name}` for a valid pipeline name, and
+  `{:detections, name}` and `{:segmentation, name}` for a valid pipeline
+  name (`VisionCore.Pipelines.name?/1`),
   `{:camera_frame, name}` for a stereo side or a valid camera name, and
   `{:camera_frame, name, output}` for a valid camera name and an atom.
   """
   @spec output?(term()) :: boolean()
-  def output?({:detections, :detection}), do: false
   def output?({:detections, name}), do: VisionCore.Pipelines.name?(name)
   def output?({:segmentation, name}), do: VisionCore.Pipelines.name?(name)
   def output?({:camera_frame, side}) when side in [:left, :right], do: true

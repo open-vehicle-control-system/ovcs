@@ -13,14 +13,13 @@ defmodule VisionCore.Pipelines do
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
   and is none of the reserved names: `:stereo`, the stereo pipeline's;
-  `:left`, `:right`, `:depth`, `:disparity`, `:points`, `:detections`,
-  `:detections_2d` and `:live`, the first segments of the topics the
-  ROS 2 exporter publishes under `<prefix>/`; and `:device`, whose Hailo
+  `:left`, `:right`, `:depth`, `:disparity`, `:points` and `:live`, the
+  first segments of the topics the ROS 2 exporter publishes under
+  `<prefix>/`; and `:device`, whose Hailo
   backend process would take the name of the Hailo-8 claim
   (`VisionCore.Detection.Backend.Hailo.Device`).
   """
 
-  @default_detection_name :detection
   @name_pattern ~r/^[a-z][a-z0-9_]*$/
   @reserved_names [
     :stereo,
@@ -29,20 +28,16 @@ defmodule VisionCore.Pipelines do
     :depth,
     :disparity,
     :points,
-    :detections,
-    :detections_2d,
     :live,
     :device
   ]
 
   @doc """
   The name `module`'s process of the pipeline `name` is registered under:
-  `module` itself for the default detection pipeline, `:detection`,
-  `module` followed by the camelized name otherwise
+  `module` followed by the camelized name
   (`VisionCore.Detection.Pipeline.RoadSigns` for `:road_signs`).
   """
   @spec server(module(), atom()) :: module()
-  def server(module, @default_detection_name), do: module
   def server(module, name), do: Module.concat(module, Macro.camelize(Atom.to_string(name)))
 
   @doc """

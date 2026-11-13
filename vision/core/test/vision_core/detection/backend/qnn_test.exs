@@ -199,7 +199,7 @@ defmodule VisionCore.Detection.Backend.QnnTest do
         refute Qnn.available?()
       end)
 
-    assert log =~ "#{inspect(Qnn)} unavailable"
+    assert log =~ "#{inspect(Qnn)} (detection) unavailable"
     assert Qnn.detect(1, @image) == {:error, :unavailable}
   end
 
@@ -262,10 +262,10 @@ defmodule VisionCore.Detection.Backend.QnnTest do
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",
        %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
-    start_backend(dir, "answer", name: Qnn.Road, pipeline: :road)
-    eventually(fn -> Qnn.available?(Qnn.Road) end)
+    start_backend(dir, "answer", name: VisionCore.Pipelines.server(Qnn, :road), pipeline: :road)
+    eventually(fn -> Qnn.available?(VisionCore.Pipelines.server(Qnn, :road)) end)
 
-    assert Qnn.detect(Qnn.Road, 7, @image) == :ok
+    assert Qnn.detect(VisionCore.Pipelines.server(Qnn, :road), 7, @image) == :ok
     assert_receive {:inference_detections, 7, [_detection]}, 2_000
     refute Process.whereis(Qnn)
 
@@ -278,32 +278,37 @@ defmodule VisionCore.Detection.Backend.QnnTest do
 
     log =
       ExUnit.CaptureLog.capture_log(fn ->
-        start_backend(dir, "answer", name: Qnn.Road, pipeline: :road)
-        eventually(fn -> Qnn.available?(Qnn.Road) end)
+        start_backend(dir, "answer",
+          name: VisionCore.Pipelines.server(Qnn, :road),
+          pipeline: :road
+        )
+
+        eventually(fn -> Qnn.available?(VisionCore.Pipelines.server(Qnn, :road)) end)
       end)
 
     assert log =~ "#{inspect(Qnn)} (road) loaded model.dlc"
   end
 
-  test "log lines of the default pipeline carry no pipeline name", %{tmp_dir: dir} do
+  test "log lines name the pipeline, detection without one", %{tmp_dir: dir} do
     log =
       ExUnit.CaptureLog.capture_log(fn ->
         start_backend(dir, "answer")
         eventually(fn -> Qnn.available?() end)
       end)
 
-    assert log =~ "#{inspect(Qnn)} loaded model.dlc"
+    assert log =~ "#{inspect(Qnn)} (detection) loaded model.dlc"
   end
 
   # The context cache removes every other binary in its directory, so each pipeline has its own.
-  test "keeps the default pipeline's context binary in /data/vision/qnn, a named one's in a directory of its own",
+  test "keeps each pipeline's context binary in a directory of its own",
        %{tmp_dir: dir} do
     missing = [dlc_path: Path.join(dir, "missing.dlc"), executable: @detector]
 
     for {opts, cache_dir} <- [
-          {[], "/data/vision/qnn"},
-          {[name: Qnn.Road, pipeline: :road], "/data/vision/qnn/road"},
-          {[name: Qnn.Road, pipeline: :road, cache_dir: dir], dir}
+          {[], "/data/vision/qnn/detection"},
+          {[name: VisionCore.Pipelines.server(Qnn, :road), pipeline: :road],
+           "/data/vision/qnn/road"},
+          {[name: VisionCore.Pipelines.server(Qnn, :road), pipeline: :road, cache_dir: dir], dir}
         ] do
       backend = start_supervised!({Qnn, missing ++ opts})
 

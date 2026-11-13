@@ -1,11 +1,12 @@
 defmodule VisionApiWeb.DetectionChannel do
   @moduledoc """
   Pushes a detection pipeline's results as `"detections"` events, shaped
-  by `VisionApiWeb.DetectionJSON`: the `"detections"` channel carries the
-  default pipeline's, `"detections:<name>"` the named pipeline `<name>`'s.
+  by `VisionApiWeb.DetectionJSON`: the `"detections:<name>"` channel
+  carries the pipeline `<name>`'s, `"detections:detection"` that of a
+  detector without a name.
   Each stops when its `VisionCore.Detection.Live` restarts, and refuses
   the join while it is not running, as on a unit without that pipeline,
-  and for a name that is not a configured named pipeline's; see
+  and for a name that is not a configured pipeline's; see
   `VisionApiWeb.SourceMonitor`.
   """
   # On a unit without the pipeline, the client keeps retrying the refused join.
@@ -15,11 +16,7 @@ defmodule VisionApiWeb.DetectionChannel do
   alias VisionCore.{Detection, Pipelines}
   alias VisionCore.Detection.Live
 
-  @default_name :detection
-
   @impl Phoenix.Channel
-  def join("detections", _payload, socket), do: join_pipeline(socket, @default_name)
-
   def join("detections:" <> name, _payload, socket) do
     case ConfiguredPipeline.fetch(name, :detections, Detection.Supervisor) do
       {:ok, pipeline} -> join_pipeline(socket, pipeline)

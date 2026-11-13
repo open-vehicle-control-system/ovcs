@@ -13,7 +13,7 @@
         "flipHorizontal": false,
         "flipVertical": false,
         "annotations": {
-          "/stereo/left/detections": {
+          "/stereo/detection/annotations": {
             "visible": true
           }
         }
@@ -130,7 +130,7 @@
           "maxValue": 4.0,
           "pointSize": 3
         },
-        "/stereo/detections/markers": {
+        "/stereo/detection/detections/markers": {
           "visible": true
         },
         "/scan": {
@@ -154,7 +154,7 @@
       "foxglovePanelTitle": "Obstacles: stereo cloud, detections, lidar, ultrasound"
     },
     "RawMessages!detections": {
-      "topicPath": "/stereo/detections.detections",
+      "topicPath": "/stereo/detection/detections.detections",
       "diffEnabled": false,
       "showFullMessageForDiff": false,
       "diffMethod": "custom",

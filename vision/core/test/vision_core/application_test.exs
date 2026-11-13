@@ -327,8 +327,12 @@ defmodule VisionCore.ApplicationTest do
   test "a detector that cannot start leaves the unit running without it, the reason logged" do
     log = capture_log(fn -> start_pipeline(%VisionCore.Config{components: [:hailo_detector]}) end)
 
-    assert log =~ "VisionCore.Detection.Supervisor failed to start, detection down"
-    refute Process.whereis(VisionCore.Detection.Supervisor)
+    assert log =~ "VisionCore.Detection.Supervisor.Detection failed to start, detection down"
+
+    refute GenServer.whereis(
+             VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+           )
+
     assert Process.alive?(Process.whereis(VisionCore.Status))
     assert Process.alive?(Process.whereis(VisionCore.Preview))
   end
@@ -345,9 +349,19 @@ defmodule VisionCore.ApplicationTest do
       end)
 
     assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
-    refute Process.whereis(VisionCore.Detection.Supervisor.Road)
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Pipeline))
+    refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)
+             )
+           )
   end
 
   test "a second Hailo detector is left down, the Hailo-8 serving the first, which runs" do
@@ -362,8 +376,13 @@ defmodule VisionCore.ApplicationTest do
       end)
 
     assert log =~ "road down: the Hailo-8 already serves another pipeline, :detection"
-    refute Process.whereis(VisionCore.Detection.Supervisor.Road)
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
+    refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
   end
 
   test "a Hailo detector and a stub one both run" do
@@ -374,8 +393,17 @@ defmodule VisionCore.ApplicationTest do
       ]
     })
 
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor))
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Supervisor.Road))
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road)
+             )
+           )
   end
 
   test "two detectors of one name fail the start, naming it" do
@@ -513,10 +541,24 @@ defmodule VisionCore.ApplicationTest do
         })
       end)
 
-    assert Process.alive?(Process.whereis(VisionCore.Segmentation.Pipeline.Road))
-    assert Process.alive?(Process.whereis(VisionCore.Detection.Pipeline.People))
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :people)
+             )
+           )
+
     assert log =~ "VisionCore.Segmentation.Supervisor.Lane failed to start, lane down"
-    refute Process.whereis(VisionCore.Segmentation.Supervisor.Lane)
+
+    refute GenServer.whereis(
+             VisionCore.Pipelines.server(VisionCore.Segmentation.Supervisor, :lane)
+           )
+
     assert Process.alive?(Process.whereis(VisionCore.Status))
   end
 

@@ -134,16 +134,13 @@ defmodule VisionCore.Detection.Backend.Hailo do
   @impl PortBackend
   def wording(settings) do
     %{
-      label: label(settings),
+      label: "#{inspect(__MODULE__)} (#{settings.pipeline})",
       program: "hailo_detect",
       loaded: "loaded #{Path.basename(settings.hef_path)} (score >= #{settings.score_threshold})",
       input: "frame",
       output: "detections"
     }
   end
-
-  defp label(%{pipeline: :detection}), do: inspect(__MODULE__)
-  defp label(%{pipeline: pipeline}), do: "#{inspect(__MODULE__)} (#{pipeline})"
 
   @impl PortBackend
   def inference_group(settings) do
