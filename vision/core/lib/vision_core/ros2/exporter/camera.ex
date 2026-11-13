@@ -18,6 +18,9 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       padded with a zero column: the camera is not one of a rectified
       pair. Without a calibration, or with one of another aspect ratio
       than the frames', which is logged, it is empty.
+    * Its **video**, each frame of an H.264 output, as
+      `foxglove_msgs/CompressedVideo` on `<topic_prefix>/<name>/video`,
+      in the frame id the frame carries (`video_message/2`).
     * Its **pose** relative to the stereo pair (`VisionCore.Camera.Pose`)
       as a `tf2_msgs/TFMessage` transform from the stereo left optical
       frame to the camera's `frame_id` (`transform_message/3`).
@@ -26,6 +29,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   """
   require Logger
 
+  alias Ros2Zenoh.FoxgloveMsgs.Msg.CompressedVideo
   alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Transform, TransformStamped, Vector3}
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage}
   alias Ros2Zenoh.StdMsgs.Msg.Header
@@ -47,6 +51,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
           frame_id: String.t(),
           image_topic: String.t(),
           camera_info_topic: String.t(),
+          video_topic: String.t(),
           service_name: String.t(),
           calibration: CameraCalibration.t() | nil,
           pose: Pose.t() | nil,
@@ -80,6 +85,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       frame_id: settings.frame_id,
       image_topic: "#{topic_root}/image_raw/compressed",
       camera_info_topic: "#{topic_root}/camera_info",
+      video_topic: "#{topic_root}/video",
       service_name: service_name(options[:topic_prefix], settings.name),
       calibration: calibration(settings.calibration_path, settings.name),
       pose: load_pose(settings.pose_path, settings.name),
@@ -150,6 +156,23 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       :skip ->
         {[], camera}
     end
+  end
+
+  @doc """
+  The message of `frame`, a frame of the camera's H.264 output: its
+  stream frame as `foxglove_msgs/CompressedVideo`, stamped with its
+  capture time, in the frame id it carries or the camera's.
+  """
+  @spec video_message(Frame.t(), t()) :: Stereo.message()
+  def video_message(%Frame{h264: h264} = frame, camera) when is_binary(h264) do
+    video = %CompressedVideo{
+      timestamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      frame_id: frame.frame_id || camera.frame_id,
+      data: h264,
+      format: "h264"
+    }
+
+    {camera.video_topic, CompressedVideo, video}
   end
 
   defp camera_info(%{calibration: nil} = camera, header, frame),

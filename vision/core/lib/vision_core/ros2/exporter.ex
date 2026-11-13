@@ -20,8 +20,8 @@ defmodule VisionCore.Ros2.Exporter do
       from the camera's calibration at each start of its runner, and
       again when a calibration is committed through the camera's
       `set_camera_info`.
-    * Each camera of its own's image, camera info and pose relative to
-      the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
+    * Each camera of its own's image, camera info, video and pose
+      relative to the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
     * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
       see the unit alive even when no other topic flows. Its data names
       the node, so nodes sharing the topic tell themselves apart.
@@ -87,7 +87,8 @@ defmodule VisionCore.Ros2.Exporter do
     * `:cameras` — publishes the cameras of their own its `:names` list,
       every camera of the configuration by default, each its default
       output or the one `:outputs` names for each camera it publishes (`hq: :view`;
-      `VisionCore.Camera.Output`):
+      `VisionCore.Camera.Output`), and the H.264 output `:videos` names
+      for a camera as its video, every frame of it (`hq: :view_h264`):
       `:topic_prefix`, the stereo unit's `:prefix` by default, else
       `"stereo"`; `:raw_image_max_hz` (10), the most images a second per
       camera for frames it encodes, JPEG frames going out as they arrive;
@@ -137,6 +138,7 @@ defmodule VisionCore.Ros2.Exporter do
   @camera_options [
     :names,
     :outputs,
+    :videos,
     :topic_prefix,
     :raw_image_max_hz,
     :camera_info_interval_frames
@@ -201,7 +203,35 @@ defmodule VisionCore.Ros2.Exporter do
 
       true ->
         published = Keyword.get(camera_options, :names, names)
-        check_camera_outputs(Keyword.get(camera_options, :outputs, []), published, config)
+
+        with :ok <-
+               check_camera_outputs(Keyword.get(camera_options, :outputs, []), published, config),
+             do: check_camera_videos(Keyword.get(camera_options, :videos, []), published, config)
+    end
+  end
+
+  defp check_camera_videos(videos, published, config) do
+    cond do
+      not (is_list(videos) and Keyword.keyword?(videos)) ->
+        {:error,
+         "its cameras: videos: is not a keyword list of camera names and H.264 outputs: " <>
+           inspect(videos)}
+
+      (unpublished = Keyword.keys(videos) -- published) != [] ->
+        {:error,
+         "its cameras: videos names the camera #{inspect(hd(unpublished))}, " <>
+           "which it does not publish"}
+
+      not_video =
+          Enum.find(videos, fn {name, output} -> !Unit.video_output?(config, name, output) end) ->
+        {name, output} = not_video
+
+        {:error,
+         "its cameras: videos gives the camera #{inspect(name)} the output " <>
+           "#{inspect(output)}, which is no H.264 output of it"}
+
+      true ->
+        :ok
     end
   end
 
@@ -224,6 +254,14 @@ defmodule VisionCore.Ros2.Exporter do
         {:error,
          "its cameras: outputs gives the camera #{inspect(name)} the output " <>
            "#{inspect(output)}, which it does not send (send: false)"}
+
+      video =
+          Enum.find(outputs, fn {name, output} -> Unit.video_output?(config, name, output) end) ->
+        {name, output} = video
+
+        {:error,
+         "its cameras: outputs gives the camera #{inspect(name)} the output " <>
+           "#{inspect(output)}, an H.264 video: give it in videos:"}
 
       missing =
           Enum.find(outputs, fn {name, output} -> !Unit.output_key(config, name, output) end) ->
@@ -310,7 +348,16 @@ defmodule VisionCore.Ros2.Exporter do
     stereo ++
       Enum.map(detection_pipelines(options[:detections]), &Detection.output/1) ++
       Enum.map(segmentation_pipelines(options), &Segmentation.output/1) ++
-      Enum.map(published_camera_names(options), &camera_frame_output(&1, options))
+      Enum.map(published_camera_names(options), &camera_frame_output(&1, options)) ++
+      camera_video_outputs(options)
+  end
+
+  defp camera_video_outputs(options) do
+    published = published_camera_names(options)
+
+    for {name, output} <- options |> Keyword.get(:cameras, []) |> Keyword.get(:videos, []),
+        name in published,
+        do: {:camera_video, name, output}
   end
 
   # The output `cameras: [outputs: ...]` names for the camera `name`, its default otherwise.
@@ -624,7 +671,7 @@ defmodule VisionCore.Ros2.Exporter do
       published ->
         camera_options =
           options[:cameras]
-          |> Keyword.drop([:names, :outputs])
+          |> Keyword.drop([:names, :outputs, :videos])
           |> Keyword.put(:topic_prefix, camera_topic_prefix(options))
 
         Map.new(published, fn settings ->
@@ -676,6 +723,11 @@ defmodule VisionCore.Ros2.Exporter do
       |> StageTimer.tick()
 
     {:ok, %{state | telemetry: telemetry, last_pair_at_ns: now_ns}}
+  end
+
+  def handle_output({:camera_video, name, _output}, %Frame{} = frame, state) do
+    publish(state, Camera.video_message(frame, state.cameras[name]))
+    {:ok, state}
   end
 
   def handle_output({:camera_frame, name, _output}, %Frame{} = frame, state),
