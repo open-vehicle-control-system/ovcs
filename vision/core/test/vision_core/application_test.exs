@@ -183,7 +183,7 @@ defmodule VisionCore.ApplicationTest do
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 10) == [
+    assert Enum.take(ids, 11) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
@@ -764,7 +764,8 @@ defmodule VisionCore.ApplicationTest do
        %{tmp_dir: tmp_dir} do
     start_idle_unit(tmp_dir)
 
-    assert Enum.take(child_ids(VisionCore.Supervisor), 4) == [
+    assert Enum.take(child_ids(VisionCore.Supervisor), 5) == [
+             VisionCore.Video,
              VisionCore.Preview,
              VisionCore.Status,
              VisionCore.Calibration.Session,

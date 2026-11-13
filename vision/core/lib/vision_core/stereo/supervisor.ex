@@ -500,6 +500,22 @@ defmodule VisionCore.Stereo.Supervisor do
   end
 
   @doc """
+  Reloads the pipeline from the stored calibration once both sides
+  are stored, as `reload_calibration/3`. COMMIT stores one side at a
+  time.
+  """
+  def reload_stored_calibration(pipeline, prefix, left_store, right_store) do
+    if File.exists?(left_store) and File.exists?(right_store) do
+      reload_calibration(pipeline, prefix,
+        left_calibration_path: left_store,
+        right_calibration_path: right_store
+      )
+    else
+      :ok
+    end
+  end
+
+  @doc """
   Forgets the saved `right_row_offset` of the stage that declares it among
   the stages of the stereo unit in `config`, the active
   `VisionCore.Config`, as `reload_calibration/3` does: called before the

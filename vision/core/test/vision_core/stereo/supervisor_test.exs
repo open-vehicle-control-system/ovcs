@@ -416,8 +416,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
     end
 
     defp in_dir(tmp_dir),
-      do:
-        Keyword.merge(@stereo, calibration_dir: tmp_dir, left: [device: "/dev/video0"], right: [])
+      do: Keyword.merge(@stereo, calibration_dir: tmp_dir, left: [], right: [])
 
     defp install_calibration(tmp_dir, sides) do
       for side <- sides,
