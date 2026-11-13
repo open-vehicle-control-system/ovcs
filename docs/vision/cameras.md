@@ -12,13 +12,13 @@ The `:camera` component runs one camera outside the stereo pair: `{:camera, name
 - `:name` follows the rule of a detection pipeline's name, whose reserved names include `left`, `right` and `depth`. No camera shares a pipeline's name.
 - The camera's frames are the output `{:camera_frame, name}`, which an exporter lists like the stereo cameras' (`{:camera_frame, :center}`).
 - Each frame carries the optical frame `"<name>_optical"` unless you set `:frame_id`.
-- A camera whose driver has named outputs makes each at every frame. `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` is its first sent one, the default.
+- A camera whose driver has named outputs makes each at every frame. `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` is its first sent image output, the default.
 
 A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit starts, so a mistyped one fails the boot. A unit that fails later, such as one whose sensor never registers, stays down with the reason logged. The stereo unit and the rest of the vision core run on.
 
 ## Outputs
 
-`VisionCore.Camera.V4L2Single` captures a Raspberry Pi HQ Camera (IMX477) on a CAMSS connector, Camera 2 on the VENTUNO Q ([The Arduino VENTUNO Q](./README.md#the-arduino-ventuno-q)). It takes the sensor's 2028 × 1520 12-bit binned mode as packed Bayer (pRCC). `v4l2_capture` demosaics it to 8-bit RGB in the camera's outputs. In the example below, one output is made only for the others, and one is sent as a JPEG:
+`VisionCore.Camera.V4L2Single` captures a Raspberry Pi HQ Camera (IMX477) on a CAMSS connector, Camera 2 on the VENTUNO Q ([The Arduino VENTUNO Q](./README.md#the-arduino-ventuno-q)). It takes the sensor's 2028 × 1520 12-bit binned mode as packed Bayer (pRCC). `v4l2_capture` demosaics it to 8-bit RGB in the camera's outputs. In the example below, one output is made only for the others, one is sent as H.264, one averaged to half its size, and that half sent as a JPEG:
 
 ```elixir
 {:camera,
@@ -26,9 +26,10 @@ A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit
  driver: VisionCore.Camera.V4L2Single,
  csiphy: 2,
  outputs: [
-   view: [resolution: {2028, 1520}, processor: :cpu, send: false],
-   view_jpeg: [from: :view, format: :jpeg, quality: 80],
-   inference: [resolution: {1014, 760}, from: :view]
+   full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+   half: [resolution: {1014, 760}, from: :full],
+   half_jpeg: [from: :half, format: :jpeg, quality: 80],
+   full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
  ]}
 ```
 
@@ -41,23 +42,42 @@ Each output is made at every frame, so each path runs all the time, not only whi
 | `resolution:` | For an output made `from:` another, a whole fraction of its source's size, 2 × 2 here. Without it, the output has its source's size. |
 | `format: :jpeg` | An output made `from:` another is that image, or its average, encoded by `v4l2_capture` with libjpeg-turbo. |
 | `quality:` | The JPEG's quality, 1 to 100, 80 by default. |
+| `format: :h264` | An output made `from:` another is that image, or its average, encoded as an H.264 stream on the board's video encoder. Its width and height are even. |
+| `bitrate_kbps:` | The stream's constant bitrate in kilobits a second, 1 to 2000000. Required with `format: :h264`. |
+| `keyframe_interval:` | The frames from one key frame to the next. A viewer that joins the stream starts at the next key frame. Required with `format: :h264`. |
 | `send: false` | The output is still made at every frame, for the outputs made `from:` it, but `v4l2_capture` writes none of its frames. No consumer can take it. |
 
 A 2 × 2 average of a `processor: :cpu` output is taken as each pair of rows is converted, while they are in the cache. Other blocks, and outputs of other outputs, are averaged after the conversion.
 
 A JPEG output is encoded on a thread of its own, beside the one writing the frame's other outputs. The conversion does not wait for it. Its frames carry the JPEG, which the preview and the ROS 2 exporter send as it is. The image is encoded once a frame for both, and the core encodes none of it.
 
-Each sent output crosses the Port at every frame: 9.2 MB a frame at 2028 × 1520, 2.3 MB at 1014 × 760. Here nothing takes the raw `view`, only its JPEG and its average, so `send: false` keeps it on the capture side. The unit's `VisionCore.Preview` encodes an RGB output only at the preview's rate, apart from the other previews, so its encode delays only its own stream.
+An H.264 output is converted to NV12 on the conversion's threads and encoded on a thread of its own, on a V4L2 memory-to-memory encoder: Qualcomm's Iris (`qcom-iris-encoder`) on the VENTUNO Q. Each frame of the stream crosses the Port as one record, its key frame flag beside it, and every key frame carries the stream's parameter sets.
+
+> [!WARNING]
+> The encoder needs the firmware `qcom/vpu/vpu30_p4_s6.mbn`. On a board without an encoder or its firmware, `v4l2_capture` stops at start, and the camera's unit with it: none of the camera's outputs run.
+
+An H.264 output is a video, not an image. A decoder needs every frame from a key frame on, so its consumers take every frame in order, where an image's take the newest. Only the consumers of videos take it:
+
+| Consumer | Takes the video with |
+|---|---|
+| An exporter | `{:camera_video, name, output}`, every frame in order from a key frame, without `max_hz` |
+| The ROS 2 exporter | `cameras: [videos: [center: :full_h264]]` |
+
+A pipeline, an exporter or the preview that names an H.264 output as an image is refused, as for an output with `send: false`.
+
+Each sent output crosses the Port at every frame: 9.2 MB a frame at 2028 × 1520, 2.3 MB at 1014 × 760. Here nothing takes the raw `full`, only its video and its average, so `send: false` keeps it on the capture side. The unit's `VisionCore.Preview` encodes an RGB output only at the preview's rate, apart from the other previews, so its encode delays only its own stream.
 
 `output: :full`, the default, and `output: :half` are the shorthand of one output, named as the value.
 
 Each of these stops the camera's unit at start, saying why:
 
 - a processor the driver lacks, or a resolution its processor cannot make;
-- a `from:` that names no output, names a JPEG, or runs in a cycle;
+- a `from:` that names no output, names a JPEG or an H.264 output, or runs in a cycle;
 - a size that is no whole fraction of its source's;
-- a JPEG made by a processor;
+- a JPEG or an H.264 output made by a processor;
 - a `quality:` outside 1 to 100, or without `format: :jpeg`;
+- a `bitrate_kbps:` or a `keyframe_interval:` missing, out of range, or without `format: :h264`;
+- an H.264 output of an odd width or height;
 - an output with `send: false` that no output is made from;
 - a name given twice.
 
@@ -67,8 +87,8 @@ Each consumer takes the camera's default output unless told otherwise:
 |---|---|
 | A pipeline | `source: {:camera, name, output}` |
 | An exporter | `{:camera_frame, name, output}` |
-| The ROS 2 exporter | `cameras: [outputs: [center: :view_jpeg]]` |
-| The preview | its `outputs:` option, `preview: [outputs: [center: :view_jpeg]]` |
+| The ROS 2 exporter | `cameras: [outputs: [center: :half_jpeg]]` |
+| The preview | its `outputs:` option, `preview: [outputs: [center: :half_jpeg]]` |
 | The pose capture | `output:` |
 
 A pipeline, an exporter or the ROS 2 exporter that names an output with `send: false` is refused at start, saying so. The pose capture answers `{:error, {:unsent_output, name, output}}`. The preview logs it and shows the camera's default.
@@ -91,10 +111,11 @@ Auto exposure measures the green after lens shading and white balance, through t
 
 ## Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs a Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`. It captures 2028 × 1520 in colour at 30 frames a second. That image, its `:view` output, is not sent. `v4l2_capture` makes two outputs from it:
+`Ovcs1.Vision.Composer` runs a Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`. It captures 2028 × 1520 in colour at 30 frames a second. That image, its `:full` output, is not sent. `v4l2_capture` makes three outputs from it:
 
-- `:view_jpeg`, the image encoded once a frame, which the preview and ROS 2 show;
-- `:inference`, the image averaged 2 × 2 to 1014 × 760. The unit runs YOLOX detection, the `:objects` pipeline, and FFNet road segmentation, the `:scene` pipeline, on it, on the NPU.
+- `:full_h264`, the image encoded as H.264 at 8000 kbps with a key frame every 30 frames, the camera's video, which ROS 2 publishes;
+- `:half`, the image averaged 2 × 2 to 1014 × 760, the camera's default. The unit runs YOLOX detection, the `:objects` pipeline, and FFNet road segmentation, the `:scene` pipeline, on it, on the NPU;
+- `:half_jpeg`, the half image encoded once a frame, which ROS 2 publishes as the camera's image.
 
 The models' inputs are smaller still, so the full image would cross to their Ports only to be shrunk there.
 
@@ -134,6 +155,7 @@ The ROS 2 exporter's `cameras:` option publishes each camera of its own (`Vision
 |---|---|---|
 | `<prefix>/<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
 | `<prefix>/<camera>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
+| `<prefix>/<camera>/video` | `foxglove_msgs/CompressedVideo` | With `videos:`, each frame of the camera's H.264 output, format `h264`, its NAL units in Annex B form. Foxglove's Image panel decodes it. It needs `ros-<distro>-foxglove-msgs` on the ROS side. |
 | `<prefix>/<camera>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
 | `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. The parent is the frame the depth is published in, in rectified coordinates: the rectified left camera, not the raw one. |
 
@@ -170,7 +192,7 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
 
    It answers `{:ok, %{left: path, camera: path, offset_ms: offset}}`. It writes the stereo left camera's raw frame and the camera's frame captured closest to it in time, within half a stereo pair period.
 
-   They go to `/data/vision/pose_pairs/center/` as `left-<n>.png` and `camera-<n>.png`, numbered after the pairs already there. A JPEG output, such as the OVCS1 reference vehicle's default `:view_jpeg`, gives `camera-<n>.jpg`. When no two frames come that close, it answers `{:error, :no_matching_pair}`. `directory:` writes elsewhere, as on a workstation without `/data`.
+   They go to `/data/vision/pose_pairs/center/` as `left-<n>.png` and `camera-<n>.png`, numbered after the pairs already there. A JPEG output, such as the OVCS1 reference vehicle's `:half_jpeg`, gives `camera-<n>.jpg`. When no two frames come that close, it answers `{:error, :no_matching_pair}`. `directory:` writes elsewhere, as on a workstation without `/data`.
 7. Repeat step 6 for twenty poses or so, at several distances and tilts, with the board across the camera's image.
 8. Copy the pairs and the calibrations the unit runs to your workstation. `stereo_left.yaml` is in the store only when the stereo pair's calibration was committed through `set_camera_info`. Otherwise the stereo unit runs `vehicles/<vehicle>/priv/calibration/stereo_left.yaml`: pass that one to the script instead of copying it.
 
