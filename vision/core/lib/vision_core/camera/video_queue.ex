@@ -23,7 +23,8 @@ defmodule VisionCore.Camera.VideoQueue do
 
   @doc "An empty queue holding at most `limit` frames, waiting for a key frame."
   @spec new(pos_integer()) :: t()
-  def new(limit) when is_integer(limit) and limit > 0, do: %__MODULE__{limit: limit}
+  def new(limit) when is_integer(limit) and limit > 0,
+    do: %__MODULE__{limit: limit, frames: :queue.new()}
 
   @doc "`queue` with `frame` at its end, or without the frames it drops; see the module doc."
   @spec push(t(), VisionCore.Camera.Frame.t()) :: t()
