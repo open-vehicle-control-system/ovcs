@@ -90,7 +90,7 @@ const HEADER_MODE_JOINED_WITH_FIRST_FRAME: i32 = 1;
 
 /// Buffers asked for on each queue; the device may set more.
 const BUFFERS: u32 = 4;
-/// How long a frame or the drain may take before the encoder counts as stuck.
+/// How long a frame or the drain may take before the encoder counts as stuck, by default.
 const ENCODE_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// The ioctls of a V4L2 memory-to-memory encoder.
@@ -142,6 +142,8 @@ pub struct M2mEncoder<D: M2mDevice> {
     streaming: bool,
     /// The setup's steps the device did not take.
     skipped: Vec<String>,
+    /// How long a frame or the drain may take before the encoder counts as stuck.
+    timeout: Duration,
 }
 
 impl<D: M2mDevice> M2mEncoder<D> {
@@ -219,6 +221,7 @@ impl<D: M2mDevice> M2mEncoder<D> {
             pending: VecDeque::new(),
             streaming: true,
             skipped,
+            timeout: ENCODE_TIMEOUT,
         })
     }
 
@@ -245,7 +248,7 @@ impl<D: M2mDevice> M2mEncoder<D> {
         if left.is_zero() {
             return Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                format!("the encoder gave no {waiting_for} in {ENCODE_TIMEOUT:?}"),
+                format!("the encoder gave no {waiting_for} in {:?}", self.timeout),
             ));
         }
         self.device.wait(stream, left)
@@ -339,7 +342,7 @@ impl<D: M2mDevice> Encoder for M2mEncoder<D> {
     }
 
     fn encode(&mut self, nv12: &[u8], capture_ns: i64) -> io::Result<Option<EncodedFrame>> {
-        let deadline = Instant::now() + ENCODE_TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         let index = self.free_raw_buffer(deadline)?;
         self.device.raw_buffer(index)[..nv12.len()].copy_from_slice(nv12);
         self.device
@@ -380,7 +383,7 @@ impl<D: M2mDevice> M2mEncoder<D> {
     /// Asks the encoder to finish and dequeues its stream, dropped, up to the last buffer.
     fn drain(&mut self) -> io::Result<()> {
         self.device.stop_encoding()?;
-        let deadline = Instant::now() + ENCODE_TIMEOUT;
+        let deadline = Instant::now() + self.timeout;
         loop {
             match self.device.dequeue(Stream::Coded) {
                 Ok(Some(coded)) if coded.flags & BUF_FLAG_LAST != 0 => return Ok(()),
@@ -836,11 +839,12 @@ pub(crate) mod tests {
         let mut encoder = M2mEncoder::start(FakeDevice::new(), &SETTINGS).unwrap();
         encoder.encode(&raw_frame(0), 1_000).unwrap();
         encoder.device.hold = true;
+        encoder.timeout = Duration::from_millis(10);
         let start = encoder.device.calls().len();
 
         let stuck = encoder.encode(&raw_frame(1), 2_000).unwrap_err();
         assert_eq!(stuck.kind(), io::ErrorKind::TimedOut);
-        assert_eq!(stuck.to_string(), "the encoder gave no frame in 1s");
+        assert_eq!(stuck.to_string(), "the encoder gave no frame in 10ms");
         encoder.stop().unwrap();
         encoder.stop().unwrap();
 
