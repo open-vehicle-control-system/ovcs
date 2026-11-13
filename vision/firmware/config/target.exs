@@ -192,7 +192,7 @@ config :vision_api, VisionApiWeb.Endpoint,
   server: true,
   code_reloader: false
 
-# Port 4100 served plain HTTP before: its addresses keep working.
+# Addresses that name port 4100 reach the dashboard over HTTPS.
 config :vision_api, https_redirect_ports: [80, 4100]
 
 config :logger, :console,

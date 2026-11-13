@@ -121,7 +121,7 @@ defmodule Ovcs1.Vision.Composer do
        full: [resolution: {2028, 1520}, processor: :cpu, send: false],
        half: [resolution: {1014, 760}, from: :full],
        half_jpeg: [from: :half, format: :jpeg, quality: 80],
-       # A key frame a second: a viewer joining the stream shows it within a second.
+       # The key frame interval bounds how long a viewer joining the stream waits for a picture.
        full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
      ],
      max_exposure_us: 25_000,

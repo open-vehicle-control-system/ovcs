@@ -75,7 +75,7 @@ defmodule VisionCore.Exporter.Runner do
   @first_retry_ms 500
   @max_retry_ms 30_000
   @max_logged_failures 32
-  # A second of a 30 fps video: an exporter further behind skips to the next key frame.
+  # An exporter further behind skips to the next key frame.
   @video_backlog_frames 30
 
   @doc "Starts the runner; see the module doc for `opts`."
