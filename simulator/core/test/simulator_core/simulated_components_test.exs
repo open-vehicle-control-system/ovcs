@@ -163,10 +163,64 @@ defmodule SimulatorCore.SimulatedComponentsTest do
       assert Decimal.to_float(stopped["pulse_pin0_frequency"]) == 0.0
     end
 
-    test "no pulse frame without a pulse sensor, and nothing to report each tick" do
-      {state, [], emitted} = GenericController.init([])
+    test "no pulse frame without a pulse sensor, and nothing to report before a pin request" do
+      {state, _received, emitted} = GenericController.init([])
       refute List.keymember?(emitted, "main_controller_pulse_counter_status", 1)
       assert GenericController.report(state, vehicle(0.0), 0) == {state, []}
+    end
+
+    test "each instance reads its own digital pin request" do
+      assert {_state, [{:ovcs, "front_controller_digital_pin_request"}], _emitted} =
+               GenericController.init(name: "front_controller")
+
+      assert {_state, [{:ovcs, "rear_controller_digital_pin_request"}], _emitted} =
+               GenericController.init(name: "rear_controller")
+    end
+
+    test "reports the digital pins the VMS requested, on its own frames, keeping its analog readings" do
+      {state, _received, _emitted} =
+        GenericController.init(name: "front_controller", analog_pins: %{1 => 1_234})
+
+      request = signals(%{"digital_pin3_enabled" => true, "digital_pin5_enabled" => false})
+
+      state =
+        GenericController.handle_frame("front_controller_digital_pin_request", request, state, 0)
+
+      assert {state, [{:ovcs, "front_controller_digital_and_analog_pin_status", status}]} =
+               GenericController.report(state, vehicle(0.0), 0)
+
+      assert status["digital_pin3_enabled"] == true
+      assert status["digital_pin5_enabled"] == false
+      assert status["digital_pin4_enabled"] == false
+      assert status["analog_pin1_value"] == 1_234
+      assert GenericController.report(state, vehicle(0.0), 20) == {state, []}
+    end
+
+    test "reports nothing when a request repeats the pins it already reports" do
+      {state, _received, _emitted} = GenericController.init([])
+      request = signals(%{"digital_pin3_enabled" => true})
+
+      state =
+        GenericController.handle_frame("main_controller_digital_pin_request", request, state, 0)
+
+      {state, [_status]} = GenericController.report(state, vehicle(0.0), 0)
+
+      state =
+        GenericController.handle_frame("main_controller_digital_pin_request", request, state, 10)
+
+      assert GenericController.report(state, vehicle(0.0), 20) == {state, []}
+    end
+
+    test "echoes only the pins of a request, not its filler" do
+      {state, _received, _emitted} = GenericController.init([])
+      request = signals(%{"digital_pin7_enabled" => true, "filler0" => <<0::5>>})
+
+      state =
+        GenericController.handle_frame("main_controller_digital_pin_request", request, state, 0)
+
+      {_state, [{_network, _frame, status}]} = GenericController.report(state, vehicle(0.0), 0)
+      assert status["digital_pin7_enabled"] == true
+      assert status["filler0"] == 0
     end
   end
 
