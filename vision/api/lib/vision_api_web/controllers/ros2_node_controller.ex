@@ -18,7 +18,7 @@ defmodule VisionApiWeb.Ros2NodeController do
 
   def show(conn, params) do
     with true <- ros2_link?(),
-         {:ok, includes} <- includes(params) do
+         {:ok, includes} <- JsonApi.includes(params, @relationships) do
       render(conn, :show, link: Node.link(), topics: Topics.topics(), includes: includes)
     else
       false ->
@@ -35,11 +35,4 @@ defmodule VisionApiWeb.Ros2NodeController do
       nil -> false
     end
   end
-
-  defp includes(%{"include" => include}) do
-    includes = include |> String.split(",", trim: true) |> Enum.uniq()
-    if Enum.all?(includes, &(&1 in @relationships)), do: {:ok, includes}, else: :error
-  end
-
-  defp includes(_params), do: {:ok, []}
 end

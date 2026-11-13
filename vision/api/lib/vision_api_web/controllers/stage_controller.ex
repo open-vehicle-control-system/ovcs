@@ -9,22 +9,12 @@ defmodule VisionApiWeb.StageController do
   alias VisionCore.Parameters
 
   def index(conn, params) do
-    case includes(params) do
-      {:ok, include_parameters} ->
-        render(conn, :index, groups: Parameters.groups(), include_parameters: include_parameters)
+    case JsonApi.includes(params, ["parameters"]) do
+      {:ok, includes} ->
+        render(conn, :index, groups: Parameters.groups(), include_parameters: includes != [])
 
       :error ->
         JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
     end
   end
-
-  defp includes(%{"include" => include}) do
-    case String.split(include, ",", trim: true) do
-      [] -> {:ok, false}
-      ["parameters"] -> {:ok, true}
-      _unsupported -> :error
-    end
-  end
-
-  defp includes(_params), do: {:ok, false}
 end

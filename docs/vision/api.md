@@ -20,7 +20,7 @@ The examples come from units of several builds, shortened where a list is long. 
 
 ## Requests and errors
 
-Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400.
+Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400. A body that is not valid JSON is a 400 too, and a request whose `Accept` header takes no JSON a 406.
 
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 
@@ -160,7 +160,7 @@ curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/parameter-sa
 
 - `POST /api/parameter-saves` stores the unsaved values on the unit, which applies them again at every boot. It answers a 503 when the store fails.
 - `POST /api/parameter-discards` returns every unsaved parameter to its saved value, or to its default without one.
-- `POST /api/parameter-resets` returns parameters to their defaults: the stage or parameter its `target` relationship names, or every parameter without one.
+- `POST /api/parameter-resets` returns parameters to their defaults: the stage or parameter its `target` relationship names, or every parameter in a document without `relationships`. `relationships` that do not hold a well-formed `target` are a 400, and nothing is reset.
 
 A reset of the Disparity stage:
 

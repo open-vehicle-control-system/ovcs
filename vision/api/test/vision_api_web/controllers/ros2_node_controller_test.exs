@@ -79,6 +79,11 @@ defmodule VisionApiWeb.Ros2NodeControllerTest do
              conn |> get("/api/ros2-node?include=parameters") |> json_response(400)
   end
 
+  test "GET /api/ros2-node answers 400 for an include that is not text", %{conn: conn} do
+    assert %{"errors" => [%{"status" => "400", "source" => %{"parameter" => "include"}}]} =
+             conn |> get("/api/ros2-node?include[]=topics") |> json_response(400)
+  end
+
   test "GET /api/ros2-node answers 404 while the vision core does not run", %{conn: conn} do
     Application.stop(:vision_core)
 

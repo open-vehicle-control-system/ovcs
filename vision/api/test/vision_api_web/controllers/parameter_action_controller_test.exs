@@ -175,4 +175,29 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
              |> post("/api/parameter-saves", "{}")
              |> json_response(400)
   end
+
+  test "POST /api/parameter-resets answers 400 for relationships without a well-formed target, and resets nothing",
+       %{conn: conn} do
+    set("test.disparity.p1", 12)
+
+    for relationships <- [
+          %{target: %{type: "parameters", id: "test.disparity.p1"}},
+          %{target: "test.disparity.p1"},
+          %{},
+          "target"
+        ] do
+      conn =
+        post_action(conn, "/api/parameter-resets", %{
+          type: "parameter-resets",
+          relationships: relationships
+        })
+
+      assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => pointer}}]} =
+               json_response(conn, 400)
+
+      assert String.starts_with?(pointer, "/data/relationships")
+    end
+
+    assert parameter(conn, "test.disparity.p1")["attributes"]["value"] == 12
+  end
 end

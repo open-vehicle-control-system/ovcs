@@ -12,6 +12,25 @@ defmodule VisionApiWeb.JsonApi do
   @spec put_media_type(Plug.Conn.t(), term()) :: Plug.Conn.t()
   def put_media_type(conn, _opts), do: put_resp_content_type(conn, @media_type, nil)
 
+  @doc "The request's document: its JSON body, `%{}` for a body that is not JSON."
+  @spec document(Plug.Conn.t()) :: map()
+  def document(%Plug.Conn{body_params: %Plug.Conn.Unfetched{}}), do: %{}
+  def document(%Plug.Conn{body_params: document}), do: document
+
+  @doc """
+  The relationships the `include` query parameter of `params` names, each
+  once; `:error` for one that is not among `supported`, and for an
+  `include` that is not text.
+  """
+  @spec includes(map(), [String.t()]) :: {:ok, [String.t()]} | :error
+  def includes(%{"include" => include}, supported) when is_binary(include) do
+    includes = include |> String.split(",", trim: true) |> Enum.uniq()
+    if Enum.all?(includes, &(&1 in supported)), do: {:ok, includes}, else: :error
+  end
+
+  def includes(%{"include" => _include}, _supported), do: :error
+  def includes(_params, _supported), do: {:ok, []}
+
   @doc "Sends an error object; `source` is a JSON pointer, or a map such as `%{parameter: \"include\"}`."
   @spec error(Plug.Conn.t(), pos_integer(), String.t(), String.t(), map() | String.t() | nil) ::
           Plug.Conn.t()

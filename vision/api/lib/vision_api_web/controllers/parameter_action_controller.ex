@@ -39,7 +39,7 @@ defmodule VisionApiWeb.ParameterActionController do
   end
 
   defp act(conn, type, run) do
-    with {:ok, data} <- fetch_data(conn.body_params, type),
+    with {:ok, data} <- fetch_data(JsonApi.document(conn), type),
          {:ok, ids} <- run.(data) do
       id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
@@ -60,18 +60,23 @@ defmodule VisionApiWeb.ParameterActionController do
   defp fetch_data(_params, _type),
     do: {:error, 400, "Bad Request", "data with a type is required", "/data"}
 
-  defp scope(%{"relationships" => %{"target" => %{"data" => target}}}) do
-    case target do
-      %{"type" => type, "id" => id} when is_map_key(@target_types, type) and is_binary(id) ->
-        {:ok, {Map.fetch!(@target_types, type), id}}
-
-      _target ->
-        {:error, 400, "Bad Request", "target must be a parameter or a stage",
-         "/data/relationships/target/data"}
-    end
-  end
-
+  defp scope(%{"relationships" => relationships}), do: target(relationships)
   defp scope(_data), do: {:ok, :all}
+
+  defp target(%{"target" => %{"data" => %{"type" => type, "id" => id}}})
+       when is_map_key(@target_types, type) and is_binary(id),
+       do: {:ok, {Map.fetch!(@target_types, type), id}}
+
+  defp target(%{"target" => %{"data" => _data}}),
+    do:
+      {:error, 400, "Bad Request", "target must be a parameter or a stage",
+       "/data/relationships/target/data"}
+
+  defp target(%{"target" => _target}),
+    do: {:error, 400, "Bad Request", "target must hold data", "/data/relationships/target"}
+
+  defp target(_relationships),
+    do: {:error, 400, "Bad Request", "relationships must hold a target", "/data/relationships"}
 
   defp not_found({:group, id}), do: "no stage #{id}"
   defp not_found({:parameter, id}), do: "no parameter #{id}"

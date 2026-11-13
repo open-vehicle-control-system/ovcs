@@ -23,7 +23,7 @@ defmodule VisionApiWeb.ParameterController do
   end
 
   def update(conn, %{"id" => id}) do
-    data = conn.body_params["data"]
+    data = JsonApi.document(conn)["data"]
 
     with :ok <- check_resource(data, "parameters", id),
          {:ok, value} <- fetch_value(data) do

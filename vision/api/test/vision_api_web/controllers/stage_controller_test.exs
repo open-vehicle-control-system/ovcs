@@ -169,4 +169,11 @@ defmodule VisionApiWeb.StageControllerTest do
     assert %{"errors" => [%{"status" => "400", "source" => %{"parameter" => "include"}}]} =
              json_response(get(conn, "/api/stages?include=nope"), 400)
   end
+
+  test "GET /api/stages answers 400 for an include that is not text", %{conn: conn} do
+    for query <- ["include[]=parameters", "include[parameters]=true"] do
+      assert %{"errors" => [%{"status" => "400", "source" => %{"parameter" => "include"}}]} =
+               conn |> get("/api/stages?" <> query) |> json_response(400)
+    end
+  end
 end

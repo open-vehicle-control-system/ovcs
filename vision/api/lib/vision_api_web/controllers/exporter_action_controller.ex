@@ -17,7 +17,7 @@ defmodule VisionApiWeb.ExporterActionController do
   @timeout_ms 60_000
 
   def run(conn, %{"id" => id, "name" => name}) do
-    case fetch_attributes(conn.body_params) do
+    case fetch_attributes(JsonApi.document(conn)) do
       {:ok, attributes} ->
         id |> Exporters.action(name, attributes, @timeout_ms) |> answer(conn, id, name)
 
