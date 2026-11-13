@@ -3,7 +3,8 @@ defmodule VmsCore.Managers.ControlLevel do
   Selects the control level from the one requested and the vehicle's
   state, and routes each actuator's request from the source that level
   names. Broadcasts the selected level, the selected ROS commander and
-  the source in force for gear, direction, throttle and steering.
+  the source in force for gear, direction, throttle, steering and
+  braking.
 
   ## Two orthogonal axes
 
@@ -33,6 +34,10 @@ defmodule VmsCore.Managers.ControlLevel do
         radio: OVCS.RadioControl.Throttle,
         ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
       }
+
+  `requested_braking_sources`, optional, names whose negative
+  `:requested_throttle` a brake actuator follows; without it nothing
+  brakes automatically.
 
   A missing key resolves to `nil`, which means nothing commands that
   actuator. That is the safe direction: a vehicle with no planner wires
@@ -113,12 +118,15 @@ defmodule VmsCore.Managers.ControlLevel do
           speed_source: speed_source
         } = args
       ) do
+    requested_braking_sources = Map.get(args, :requested_braking_sources, %{})
+
     Enum.each(
       [
         requested_gear_sources: requested_gear_sources,
         requested_direction_sources: requested_direction_sources,
         requested_throttle_sources: requested_throttle_sources,
-        requested_steering_sources: requested_steering_sources
+        requested_steering_sources: requested_steering_sources,
+        requested_braking_sources: requested_braking_sources
       ],
       fn {key, sources} -> validate_sources!(key, sources) end
     )
@@ -138,6 +146,7 @@ defmodule VmsCore.Managers.ControlLevel do
        requested_direction_sources: requested_direction_sources,
        requested_throttle_sources: requested_throttle_sources,
        requested_steering_sources: requested_steering_sources,
+       requested_braking_sources: requested_braking_sources,
        requested_control_level_source: requested_control_level_source,
        requested_ros_commander_source: requested_ros_commander_source,
        requested_ros_commander: @default_ros_commander,
@@ -165,6 +174,8 @@ defmodule VmsCore.Managers.ControlLevel do
          source_for(requested_throttle_sources, default_control_level, @default_ros_commander),
        requested_steering_source:
          source_for(requested_steering_sources, default_control_level, @default_ros_commander),
+       requested_braking_source:
+         source_for(requested_braking_sources, default_control_level, @default_ros_commander),
        ready_to_drive_source: ready_to_drive_source,
        ready_to_drive: false,
        speed_source: speed_source,
@@ -413,7 +424,8 @@ defmodule VmsCore.Managers.ControlLevel do
           source_for(state.requested_direction_sources, level, commander),
         requested_gear_source: source_for(state.requested_gear_sources, level, commander),
         requested_throttle_source: source_for(state.requested_throttle_sources, level, commander),
-        requested_steering_source: source_for(state.requested_steering_sources, level, commander)
+        requested_steering_source: source_for(state.requested_steering_sources, level, commander),
+        requested_braking_source: source_for(state.requested_braking_sources, level, commander)
     }
   end
 
@@ -495,6 +507,12 @@ defmodule VmsCore.Managers.ControlLevel do
     Bus.broadcast("messages", %Bus.Message{
       name: :requested_steering_source,
       value: state.requested_steering_source,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_braking_source,
+      value: state.requested_braking_source,
       source: __MODULE__
     })
 

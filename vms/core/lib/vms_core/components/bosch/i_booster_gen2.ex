@@ -5,9 +5,11 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   The pedal acts on the booster mechanically at all times. While the
   contact is on, a generic controller's relay powers the booster and its
-  keep-alive frames are emitted. Under the `:radio` control level a
-  negative throttle request becomes a rod position target, which a PID
-  loop reaches by commanding the booster's flow rate.
+  keep-alive frames are emitted. While `Managers.ControlLevel` names a
+  braking source, that source's negative `:requested_throttle` becomes
+  a rod position target, which a PID loop reaches by commanding the
+  booster's flow rate: the vehicle's `requested_braking_sources` decide
+  which control levels brake.
 
   Publishes the booster's status, rod position and target, flow rate,
   `:manual_braking` (the driver is braking or the booster cannot) and
@@ -18,7 +20,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     * `:network` — the CAN network it sits on, as named in the vehicle's
       CAN topology.
     * `:selected_control_level_source` — the manager that names the
-      control level and the throttle source.
+      braking source.
     * `:contact_source` — the component publishing `:contact`.
     * `:controller`, `:power_relay_pin` — the generic controller digital
       pin switching the booster's power.
@@ -106,8 +108,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
        loop_timer: timer,
        enabled: false,
        selected_control_level_source: selected_control_level_source,
-       selected_control_level: nil,
-       requested_throttle_source: nil,
+       requested_braking_source: nil,
        requested_throttle: @zero,
        contact_source: contact_source,
        contact: :off,
@@ -162,20 +163,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
 
   def handle_info(
         %Bus.Message{
-          name: :selected_control_level,
-          value: selected_control_level,
-          source: source
-        },
-        state
-      )
-      when source == state.selected_control_level_source do
-    {:noreply, %{state | selected_control_level: selected_control_level}}
-  end
-
-  def handle_info(
-        %Bus.Message{
-          name: :requested_throttle_source,
-          value: requested_throttle_source,
+          name: :requested_braking_source,
+          value: requested_braking_source,
           source: source
         },
         state
@@ -184,12 +173,12 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     # Zero on the way to a level that commands nothing: with no source
     # no request message matches, and the last request would be held.
     requested_throttle =
-      if is_nil(requested_throttle_source), do: @zero, else: state.requested_throttle
+      if is_nil(requested_braking_source), do: @zero, else: state.requested_throttle
 
     {:noreply,
      %{
        state
-       | requested_throttle_source: requested_throttle_source,
+       | requested_braking_source: requested_braking_source,
          requested_throttle: requested_throttle
      }}
   end
@@ -198,7 +187,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
         state
       )
-      when source == state.requested_throttle_source do
+      when source == state.requested_braking_source do
     {:noreply, %{state | requested_throttle: requested_throttle}}
   end
 
@@ -242,7 +231,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   end
 
   defp toggle_automatic_mode(state) do
-    enable_automatic_mode = state.selected_control_level == :radio
+    enable_automatic_mode = not is_nil(state.requested_braking_source)
 
     cond do
       enable_automatic_mode && !state.automatic_mode_enabled ->
@@ -382,8 +371,8 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
     })
 
     Bus.broadcast("messages", %Bus.Message{
-      name: :requested_throttle_source,
-      value: state.requested_throttle_source,
+      name: :requested_braking_source,
+      value: state.requested_braking_source,
       source: __MODULE__
     })
 

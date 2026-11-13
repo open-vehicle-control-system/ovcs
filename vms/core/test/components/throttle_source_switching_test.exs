@@ -1,7 +1,8 @@
 defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
   @moduledoc """
   Every consumer of `:requested_throttle` stops acting on it when
-  `Managers.ControlLevel` names no source.
+  `Managers.ControlLevel` names no source for it: the inverter's
+  throttle source, the brake booster's braking source.
 
   The handler for `:requested_throttle` gates on the source, so with a
   nil source no message matches and the last request would be held.
@@ -23,48 +24,79 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
   @manager ControlLevelManager
   @commander SomeCommander
 
-  defp state(overrides \\ %{}) do
-    Map.merge(
-      %{
-        selected_control_level_source: @manager,
-        requested_throttle_source: @commander,
-        requested_throttle: D.new("0.6")
-      },
-      overrides
-    )
+  @source_keys %{
+    Inverter => :requested_throttle_source,
+    IBoosterGen2 => :requested_braking_source
+  }
+
+  defp state(module) do
+    %{
+      :selected_control_level_source => @manager,
+      @source_keys[module] => @commander,
+      :requested_throttle => D.new("0.6")
+    }
   end
 
-  defp source_message(value, source),
-    do: %Message{name: :requested_throttle_source, value: value, source: source}
+  defp source_message(module, value, source),
+    do: %Message{name: @source_keys[module], value: value, source: source}
 
-  for module <- [Inverter, IBoosterGen2] do
+  for {module, source_key} <- @source_keys do
     describe "#{inspect(module)} on a level that commands nothing" do
       test "zeroes the throttle rather than holding it" do
-        {:noreply, state} =
-          unquote(module).handle_info(source_message(nil, @manager), state())
+        module = unquote(module)
 
-        assert state.requested_throttle_source == nil
+        {:noreply, state} =
+          module.handle_info(source_message(module, nil, @manager), state(module))
+
+        assert state[unquote(source_key)] == nil
 
         assert D.eq?(state.requested_throttle, D.new(0)),
                "the last throttle survived a switch to a level with no commander"
       end
 
       test "keeps the request across a switch between commanders" do
-        {:noreply, state} =
-          unquote(module).handle_info(source_message(AnotherCommander, @manager), state())
+        module = unquote(module)
 
-        assert state.requested_throttle_source == AnotherCommander
+        {:noreply, state} =
+          module.handle_info(source_message(module, AnotherCommander, @manager), state(module))
+
+        assert state[unquote(source_key)] == AnotherCommander
         assert D.eq?(state.requested_throttle, D.new("0.6"))
       end
 
       test "ignores a source named by anything but the manager" do
-        original = state()
+        module = unquote(module)
+        original = state(module)
 
         {:noreply, state} =
-          unquote(module).handle_info(source_message(Impostor, NotTheManager), original)
+          module.handle_info(source_message(module, Impostor, NotTheManager), original)
 
         assert state == original
       end
+    end
+  end
+
+  describe "IBoosterGen2's braking request" do
+    test "comes from the braking source, not the throttle source" do
+      booster = %{
+        selected_control_level_source: @manager,
+        requested_braking_source: @commander,
+        requested_throttle: D.new(0)
+      }
+
+      {:noreply, booster} =
+        IBoosterGen2.handle_info(
+          %Message{name: :requested_throttle_source, value: Pedal, source: @manager},
+          booster
+        )
+
+      {:noreply, booster} =
+        IBoosterGen2.handle_info(
+          %Message{name: :requested_throttle, value: D.new("-0.4"), source: @commander},
+          booster
+        )
+
+      assert D.eq?(booster.requested_throttle, D.new("-0.4"))
     end
   end
 end

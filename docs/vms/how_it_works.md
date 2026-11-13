@@ -140,6 +140,8 @@ radio_braking_source: OVCS.RadioControl.Throttle
 
 A velocity is a physical quantity and is named directly, as is the takeover: `radio_braking` reads the raw trigger. A hand wired to an actuator without a curve gets no dead zone, and a trigger that drifts at rest makes the vehicle creep.
 
+An actuator acts only while its map names a source on the selected level, so the map, not the actuator, decides which levels drive it. OVCS1's steering column steers under `:radio` and `:ros` because its `requested_steering_sources` gives `manual: nil`. A brake actuator follows the optional `requested_braking_sources`, whose sources' negative `:requested_throttle` is the braking request; OVCS1's iBooster brakes on the radio's and on teleop's throttle.
+
 A missing key resolves to `nil`: nothing commands that actuator. That is the safe direction. A vehicle without a planner is expressed that way: `ros: %{teleop: ...}` leaves the autonomous position commanding nothing. Such a vehicle also omits `requested_ros_commander_source`, which pins the commander to `:teleop`.
 
 ### Driving on the host bench
