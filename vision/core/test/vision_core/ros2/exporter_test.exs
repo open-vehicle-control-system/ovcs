@@ -4,10 +4,12 @@ defmodule VisionCore.Ros2.ExporterTest do
 
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.FoxgloveMsgs.Msg.ImageAnnotations
-  alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image}
+  alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2}
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
+  alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
+  alias Ros2Zenoh.VisionMsgs.Msg.Detection2DArray
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Camera.Frame
   alias VisionCore.Exporter.Runner
@@ -133,6 +135,37 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   describe "check/1" do
+    test "refuses detections: that is no keyword list, or names no detection pipeline has" do
+      with_detectors = fn detections ->
+        Keyword.update!(options(Camera, detections: detections), :config, fn config ->
+          stub = VisionCore.Detection.Backend.Stub
+
+          detectors = [
+            {:detector, backend: stub},
+            {:detector, backend: stub, name: :signs, source: :hq}
+          ]
+
+          %{config | components: config.components ++ detectors}
+        end)
+      end
+
+      assert Exporter.check(with_detectors.(pipelines: [:detection])) == :ok
+      assert Exporter.check(with_detectors.(topic_prefix: "front")) == :ok
+
+      for {detections, refusal} <- [
+            {[pipelines: [:detection, :people]],
+             "detections: pipelines :people, which is no detection pipeline of the configuration"},
+            {[pipelines: [:signs]],
+             "detections: pipelines :signs, which is no detection pipeline of the configuration"},
+            {:detection, "detections: is not a keyword list: :detection"},
+            {[pipelines: :detection],
+             "detections: pipelines: is not a list of detection pipeline names: :detection"}
+          ] do
+        assert {:error, reason} = Exporter.check(with_detectors.(detections))
+        assert reason =~ refusal
+      end
+    end
+
     test "runs with the ROS 2 link, whatever it publishes" do
       assert Exporter.check(options(Camera, stereo: [], detections: [], heartbeat: [])) == :ok
 
@@ -170,10 +203,18 @@ defmodule VisionCore.Ros2.ExporterTest do
                :stereo_pair,
                {:camera_frame, :left},
                {:camera_frame, :right},
-               :detections
+               {:detections, :detection}
              ]
 
       assert Exporter.outputs(heartbeat: []) == []
+    end
+
+    test "reads the detections of each pipeline its detection options list" do
+      assert Exporter.outputs(detections: [pipelines: [:detection, :road]]) ==
+               [{:detections, :detection}, {:detections, :road}]
+
+      assert Exporter.outputs(detections: [pipelines: [:road, :signs]]) ==
+               [{:detections, :road}, {:detections, :signs}]
     end
   end
 
@@ -521,23 +562,133 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     {:ok, state} =
       Exporter.handle_output(
-        :detections,
+        {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
       )
 
-    assert_received {:published, "stereo/detections/markers",
+    assert_received {:published, "stereo/detection/detections/markers",
                      %MarkerArray{markers: [marker | _markers]}}
 
     assert marker.header.frame_id == "stereo_left_optical"
-    assert_received {:published, "stereo/left/detections", %ImageAnnotations{}}
+    assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
 
-    {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detections/markers", %MarkerArray{markers: markers}}
+    assert_received {:published, "stereo/detection/detections/markers",
+                     %MarkerArray{markers: markers}}
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
+  end
+
+  test "publishes a camera source's detections in the camera's frame, deleting only the markers it drew" do
+    {:ok, state} = Exporter.init(options(Camera, detections: [pipelines: [:hq_people]]))
+    frame = %Frame{label: "hq", frame_id: "hq_optical", width: 40, height: 20, capture_ns: 1}
+
+    unplaced =
+      "car"
+      |> detection()
+      |> Map.merge(%{x: nil, y: nil, z: nil, width: nil, height: nil, depth: nil})
+      |> Map.put(:box, %{x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0})
+
+    {:ok, state} =
+      Exporter.handle_output(
+        {:detections, :hq_people},
+        {frame, [detection("person"), unplaced]},
+        state
+      )
+
+    assert_received {:published, "stereo/hq_people/detections/markers",
+                     %MarkerArray{markers: [marker, _label]}}
+
+    assert marker.header.frame_id == "hq_optical"
+
+    assert_received {:published, "stereo/hq_people/detections_2d",
+                     %Detection2DArray{detections: [_car]}}
+
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :hq_people}, {frame, [unplaced]}, state)
+
+    assert_received {:published, "stereo/hq_people/detections/markers",
+                     %MarkerArray{markers: markers}}
+
+    assert Enum.map(markers, & &1.action) == List.duplicate(Marker.delete(), 2)
+  end
+
+  describe "several detection pipelines" do
+    defp markers_of(topic) do
+      assert_received {:published, ^topic, %MarkerArray{markers: markers}}
+      Enum.map(markers, &{&1.ns, &1.action})
+    end
+
+    test "publish each its own detections on its own topics, each deleting only its own markers" do
+      {:ok, state} =
+        Exporter.init(options(Camera, detections: [pipelines: [:detection, :road]]))
+
+      two = [detection("person"), detection("car")]
+      {:ok, state} = Exporter.handle_output({:detections, :detection}, {pair(), two}, state)
+
+      assert markers_of("stereo/detection/detections/markers") ==
+               List.duplicate({"detection", Marker.add()}, 4)
+
+      assert_received {:published, "stereo/detection/detections", _array}
+      assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
+
+      {:ok, state} =
+        Exporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
+
+      assert markers_of("stereo/road/detections/markers") ==
+               List.duplicate({"road", Marker.add()}, 2)
+
+      assert_received {:published, "stereo/road/detections", _array}
+      assert_received {:published, "stereo/road/annotations", %ImageAnnotations{}}
+      refute_received {:published, "stereo/" <> _topic, _message}
+
+      {:ok, _state} =
+        Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
+
+      assert markers_of("stereo/detection/detections/markers") ==
+               List.duplicate({"detection", Marker.add()}, 2) ++
+                 List.duplicate({"detection", Marker.delete()}, 2)
+
+      refute_received {:published, "stereo/road/" <> _topic, _message}
+    end
+
+    test "through the runner, each pipeline's detections reach only its own topics" do
+      config = config(OtherCamera)
+
+      config = %{
+        config
+        | components: config.components ++ [:detector, {:detector, name: :road}]
+      }
+
+      start_runner(
+        [
+          config: config,
+          publish: publish_to(self()),
+          detections: [pipelines: [:detection, :road]]
+        ],
+        config
+      )
+
+      Outputs.publish(
+        {:detections, :road},
+        {{:detections, :road}, {pair(), [detection("lane")]}}
+      )
+
+      assert_receive {:published, "stereo/road/detections", _array}, 1_000
+      refute_receive {:published, "stereo/detection/detections", _array}, 100
+
+      Outputs.publish(
+        {:detections, :detection},
+        {{:detections, :detection}, {pair(), [detection("person")]}}
+      )
+
+      assert_receive {:published, "stereo/detection/detections", _array}, 1_000
+      refute_receive {:published, "stereo/road/detections", _array}, 100
+    end
   end
 
   test "has the client keep the marker array that deletes the markers of boxes gone" do
@@ -547,16 +698,17 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     {:ok, state} =
       Exporter.handle_output(
-        :detections,
+        {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
       )
 
-    assert_received {:published, "stereo/detections/markers", [keep: false]}
+    assert_received {:published, "stereo/detection/detections/markers", [keep: false]}
 
-    {:ok, _state} = Exporter.handle_output(:detections, {pair(), [detection("person")]}, state)
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detections/markers", [keep: true]}
+    assert_received {:published, "stereo/detection/detections/markers", [keep: true]}
   end
 
   describe "on its own JPEG codec" do
@@ -589,6 +741,610 @@ defmodule VisionCore.Ros2.ExporterTest do
                        %CompressedImage{data: rectified}}
 
       assert <<0xFF, 0xD8, _rest::binary>> = rectified
+    end
+  end
+
+  describe "a camera of its own" do
+    # `config`'s components with a camera `:hq` of `driver` and `options`.
+    defp with_camera(config, driver, options) do
+      camera = {:camera, [name: :hq, driver: driver] ++ options}
+      %{config | components: config.components ++ [camera]}
+    end
+
+    defp hq_options(driver, camera_options, exporter_options) do
+      config = driver |> config() |> with_camera(driver, camera_options)
+      Keyword.put(options(driver, exporter_options), :config, config)
+    end
+
+    defp pose_file(tmp_dir) do
+      path = Path.join(tmp_dir, "hq_pose.yaml")
+      File.write!(path, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [-0.1, 0, 0]\n")
+      path
+    end
+
+    test "check/1 refuses cameras: options it does not take, or names no camera has" do
+      assert Exporter.check(hq_options(Camera, [], cameras: [names: [:hq], raw_image_max_hz: 5])) ==
+               :ok
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [max_hz: 5]))
+      assert reason =~ "cameras: has no option :max_hz"
+
+      assert {:error, reason} =
+               Exporter.check(hq_options(Camera, [], cameras: [names: [:hq, :usb]]))
+
+      assert reason =~ "cameras: names :usb, which is no camera of the configuration"
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: :hq))
+      assert reason =~ "cameras: is not a keyword list"
+
+      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [names: :hq]))
+      assert reason =~ "cameras: names: is not a list of camera names: :hq"
+    end
+
+    # A camera :hq of V4L2Single, its default output `view`, `inference` averaged from it.
+    defp outputs_options(exporter_options) do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config =
+        Camera
+        |> config()
+        |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+        |> Map.update!(:components, fn components ->
+          components ++
+            [
+              {:detector,
+               name: :objects,
+               backend: VisionCore.Detection.Backend.Stub,
+               source: {:camera, :hq, :inference}}
+            ]
+        end)
+
+      Keyword.put(options(Camera, exporter_options), :config, config)
+    end
+
+    test "its frames are those of its default output, or of the output cameras: outputs names" do
+      assert Exporter.outputs(outputs_options(cameras: [])) == [{:camera_frame, :hq}]
+
+      options = outputs_options(cameras: [outputs: [hq: :inference]])
+      assert Exporter.check(options) == :ok
+      assert Exporter.outputs(options) == [{:camera_frame, :hq, :inference}]
+
+      assert {:error, reason} = Exporter.check(outputs_options(cameras: [outputs: [hq: :small]]))
+      assert reason =~ "cameras: outputs gives the camera :hq the output :small"
+
+      assert {:error, reason} =
+               Exporter.check(outputs_options(cameras: [names: [], outputs: [hq: :inference]]))
+
+      assert reason =~ "cameras: outputs names the camera :hq, which it does not publish"
+    end
+
+    test "refuses to publish an output its camera does not send" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_jpeg: [from: :view, format: :jpeg],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      options = &Keyword.put(options(Camera, &1), :config, config)
+
+      assert Exporter.outputs(options.(cameras: [])) == [{:camera_frame, :hq}]
+      assert Exporter.check(options.(cameras: [outputs: [hq: :view_jpeg]])) == :ok
+
+      assert Exporter.check(options.(cameras: [outputs: [hq: :view]])) ==
+               {:error,
+                "its cameras: outputs gives the camera :hq the output :view, " <>
+                  "which it does not send (send: false)"}
+    end
+
+    test "publishes a camera's JPEG output as the camera sent it, each frame, without an encode" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        view_jpeg: [from: :view, format: :jpeg]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      no_codec = Module.concat(__MODULE__, NoCodec)
+
+      options =
+        options(Camera,
+          cameras: [outputs: [hq: :view_jpeg], raw_image_max_hz: 1],
+          jpeg_codec: no_codec
+        )
+
+      {:ok, state} = Exporter.init(Keyword.put(options, :config, config))
+
+      jpegs = for byte <- 1..3, do: <<0xFF, 0xD8, byte, 0xFF, 0xD9>>
+
+      Enum.reduce(Enum.with_index(jpegs, 1), state, fn {jpeg, capture_ns}, state ->
+        frame = %{jpeg_frame("hq", capture_ns) | output: :view_jpeg, jpeg: jpeg}
+        {:ok, state} = Exporter.handle_output({:camera_frame, :hq, :view_jpeg}, frame, state)
+        state
+      end)
+
+      for jpeg <- jpegs do
+        assert_received {:published, "stereo/hq/image_raw/compressed",
+                         %CompressedImage{data: ^jpeg}}
+      end
+    end
+
+    test "draws a camera pipeline's 2D boxes at the detected frame's size when it publishes no image of the camera" do
+      for cameras <- [nil, [names: []]] do
+        options =
+          [detections: [pipelines: [:objects]]] ++ if(cameras, do: [cameras: cameras], else: [])
+
+        {:ok, state} = Exporter.init(outputs_options(options))
+        assert state.detections[{:detections, :objects}].settings.image_size == nil
+      end
+    end
+
+    test "draws a camera pipeline's 2D boxes on the camera output it publishes" do
+      {:ok, state} =
+        Exporter.init(outputs_options(cameras: [], detections: [pipelines: [:objects]]))
+
+      assert state.detections[{:detections, :objects}].settings.image_size == {2028, 1520}
+
+      {:ok, state} =
+        Exporter.init(
+          outputs_options(
+            cameras: [outputs: [hq: :inference]],
+            detections: [pipelines: [:objects]]
+          )
+        )
+
+      assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
+
+      frame = %{jpeg_frame("hq", 1) | output: :inference}
+      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
+      assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+    end
+
+    test "draws a camera pipeline's 2D boxes on the camera's first sent output by default" do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        inference: [resolution: {1014, 760}, from: :view]
+      ]
+
+      config =
+        Camera
+        |> config()
+        |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+        |> Map.update!(:components, fn components ->
+          components ++
+            [
+              {:detector,
+               name: :objects,
+               backend: VisionCore.Detection.Backend.Stub,
+               source: {:camera, :hq, :inference}}
+            ]
+        end)
+
+      options =
+        Camera
+        |> options(cameras: [], detections: [pipelines: [:objects]])
+        |> Keyword.put(:config, config)
+
+      {:ok, state} = Exporter.init(options)
+      assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
+    end
+
+    test "its frames are read with cameras:, every camera by default, or those it names" do
+      options = hq_options(Camera, [], cameras: [])
+      assert Exporter.outputs(options) == [{:camera_frame, :hq}]
+
+      assert Exporter.outputs(Keyword.put(options, :cameras, names: [:hq])) ==
+               [{:camera_frame, :hq}]
+
+      assert Exporter.outputs(Keyword.put(options, :cameras, names: [])) == []
+      assert Exporter.outputs(Keyword.delete(options, :cameras)) == []
+    end
+
+    @tag :tmp_dir
+    test "answers set_camera_info on <prefix>/<name>/set_camera_info, writing to its store",
+         %{tmp_dir: tmp_dir} do
+      options =
+        hq_options(Camera, [calibration: "hq.yaml", calibration_store_dir: tmp_dir], cameras: [])
+
+      assert [server] = Exporter.children(options)
+
+      assert %{id: {SetCameraInfoServer, :hq}, start: {SetCameraInfoServer, :start_link, [args]}} =
+               server
+
+      assert args[:service_name] == "stereo/hq/set_camera_info"
+      assert args[:calibration_path] == Path.join(tmp_dir, "camera_hq.yaml")
+      assert args[:camera_name] == "hq"
+      assert args[:reload] == nil
+    end
+
+    test "without a store, set_camera_info writes its calibration file; with neither, no service" do
+      options = hq_options(Camera, [calibration: "hq.yaml"], cameras: [topic_prefix: "front"])
+
+      assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] = Exporter.children(options)
+      assert args[:service_name] == "front/hq/set_camera_info"
+      assert args[:calibration_path] == "hq.yaml"
+
+      assert Exporter.children(hq_options(Camera, [], cameras: [])) == []
+    end
+
+    test "publishes its image and camera info through the runner, in the frame it carries" do
+      calibration = Path.join(@calibration, "distorted_left.yaml")
+      options = hq_options(OtherCamera, [calibration: calibration], cameras: [])
+      start_runner(options, options[:config])
+
+      Outputs.publish(
+        {:camera_frame, OtherCamera.name_for("hq")},
+        {:camera_frame, %{jpeg_frame("hq", 1) | width: 96, height: 72}}
+      )
+
+      assert_receive {:published, "stereo/hq/image_raw/compressed", %CompressedImage{} = image},
+                     1_000
+
+      assert image.header.frame_id == "hq_optical"
+
+      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}, 1_000
+      assert camera_info.k == [81.3, 0.0, 47.2, 0.0, 80.9, 35.6, 0.0, 0.0, 1.0]
+      assert camera_info.r == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    end
+
+    @tag :tmp_dir
+    test "publishes its pose as a static transform from the stereo left optical frame, again and again",
+         %{tmp_dir: tmp_dir} do
+      options = hq_options(Camera, [pose: pose_file(tmp_dir)], cameras: [])
+
+      {:ok, state} = Exporter.init(options)
+      assert_received :publish_transforms
+
+      {:ok, _state} = Exporter.handle_info(:publish_transforms, state)
+
+      assert_received {:published, "/tf_static", %TFMessage{transforms: [transform]}}
+      assert transform.header.frame_id == "stereo_left"
+      assert transform.child_frame_id == "hq_optical"
+      assert transform.transform.translation.x == 0.1
+      assert_receive :publish_transforms, 2_000
+    end
+
+    @tag :tmp_dir
+    test "no transform without a stereo unit, or without a pose", %{tmp_dir: tmp_dir} do
+      no_stereo =
+        %VisionCore.Config{ros2: [zenoh_endpoint_ip: "127.0.0.1"]}
+        |> with_camera(Camera, pose: pose_file(tmp_dir))
+
+      {:ok, _state} =
+        Exporter.init(Keyword.put(options(Camera, cameras: []), :config, no_stereo))
+
+      {:ok, _state} = Exporter.init(hq_options(Camera, [], cameras: []))
+
+      refute_received :publish_transforms
+    end
+
+    @tag :tmp_dir
+    test "a committed calibration is published as its camera info", %{tmp_dir: tmp_dir} do
+      stored = Path.join(tmp_dir, "camera_hq.yaml")
+
+      options =
+        hq_options(
+          Camera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: []
+        )
+
+      {:ok, state} = Exporter.init(options)
+      File.cp!(Path.join(@calibration, "identity_left.yaml"), stored)
+
+      {:ok, state} =
+        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
+
+      frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
+      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
+
+      assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
+      assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+
+    @tag :tmp_dir
+    test "a calibration committed through its service is stored and published as its camera info",
+         %{tmp_dir: tmp_dir} do
+      options =
+        hq_options(
+          OtherCamera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: [camera_info_interval_frames: 1]
+        )
+
+      supervisor =
+        start_supervised!(
+          {VisionCore.Exporter.Supervisor,
+           exporter: Exporter, options: options, config: options[:config]}
+        )
+
+      runner(supervisor)
+      identity = CameraCalibration.load!(Path.join(@calibration, "identity_left.yaml"))
+
+      camera_info = %CameraInfo{
+        header: %Header{stamp: %Time{}, frame_id: "hq_optical"},
+        width: identity.width,
+        height: identity.height,
+        distortion_model: identity.distortion_model,
+        d: identity.distortion_coefficients,
+        k: identity.camera_matrix,
+        r: identity.rectification_matrix,
+        p: identity.projection_matrix
+      }
+
+      server = SetCameraInfoServer.name_for("stereo/hq/set_camera_info")
+
+      send(
+        server,
+        {:service_request,
+         %{query: %Zenohex.Query{}, request_payload: CameraInfo.encode(camera_info)}}
+      )
+
+      :sys.get_state(server)
+      runner(supervisor)
+
+      assert File.exists?(Path.join(tmp_dir, "camera_hq.yaml"))
+
+      Outputs.publish(
+        {:camera_frame, OtherCamera.name_for("hq")},
+        {:camera_frame, %{jpeg_frame("hq", 1) | width: 192, height: 108}}
+      )
+
+      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = published}, 1_000
+      assert published.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+  end
+
+  describe "segmentation pipelines" do
+    # A stereo unit of `driver`'s cameras, a camera `:hq` of `camera_options` and the pipelines
+    # `:road` and `:lanes` on it.
+    defp segmentation_config(driver, camera_options \\ []) do
+      config =
+        config(driver,
+          left: [
+            sync: :server,
+            frame_id: "rig_left",
+            calibration_path: Path.join(@calibration, "stereo_left.yaml")
+          ]
+        )
+
+      segmentation = [
+        {:camera, [name: :hq, driver: driver, frame_id: "hq_lens"] ++ camera_options},
+        {:segmenter, name: :road, source: {:camera, :hq}},
+        {:segmenter, name: :lanes, source: {:camera, :hq}},
+        # Left down: a segmentation pipeline needs a camera.
+        {:segmenter, name: :sourceless}
+      ]
+
+      %{config | components: config.components ++ segmentation}
+    end
+
+    defp segmentation_options(driver, exporter_options, camera_options \\ []),
+      do:
+        Keyword.put(
+          options(driver, exporter_options),
+          :config,
+          segmentation_config(driver, camera_options)
+        )
+
+    defp segmented_frame(frame_id \\ "hq_optical"),
+      do: %Frame{label: "hq", frame_id: frame_id, width: 8, height: 6, capture_ns: 7}
+
+    defp segmentation_labels,
+      do: %{width: 2, height: 1, data: <<0, 10>>, band: {0, 2, 8, 4}}
+
+    defp segmentation_clouds(frame_id \\ "stereo_left_optical"),
+      do: %{
+        road: <<1.0::float-32-little, 2.0::float-32-little, 3.0::float-32-little>>,
+        off_road: <<>>,
+        frame_id: frame_id,
+        capture_ns: 5
+      }
+
+    test "check/1 refuses segmentation: options it does not take, or names no pipeline has" do
+      assert Exporter.check(segmentation_options(Camera, segmentation: [pipelines: [:road]])) ==
+               :ok
+
+      assert Exporter.check(segmentation_options(Camera, segmentation: [topic_prefix: "front"])) ==
+               :ok
+
+      for {segmentation, refusal} <- [
+            {[pipelines: [:road, :signs]],
+             "segmentation: pipelines :signs, which is no segmentation pipeline of the configuration"},
+            {[pipelines: [:sourceless]],
+             "segmentation: pipelines :sourceless, which is no segmentation pipeline of the configuration on a camera"},
+            {[max_hz: 5], "segmentation: has no option :max_hz"},
+            {:road, "segmentation: is not a keyword list: :road"},
+            {[pipelines: :road],
+             "segmentation: pipelines: is not a list of segmentation pipeline names: :road"}
+          ] do
+        assert {:error, reason} =
+                 Exporter.check(segmentation_options(Camera, segmentation: segmentation))
+
+        assert reason =~ refusal
+      end
+    end
+
+    test "its results are read with segmentation:, every pipeline by default, or those it names" do
+      options = segmentation_options(Camera, segmentation: [])
+      assert Exporter.outputs(options) == [{:segmentation, :road}, {:segmentation, :lanes}]
+
+      assert Exporter.outputs(Keyword.put(options, :segmentation, pipelines: [:lanes])) ==
+               [{:segmentation, :lanes}]
+
+      assert Exporter.outputs(Keyword.delete(options, :segmentation)) == []
+    end
+
+    test "publishes each pipeline's labels and clouds on its own topics" do
+      {:ok, state} = Exporter.init(segmentation_options(Camera, segmentation: []))
+
+      {:ok, state} =
+        Exporter.handle_output(
+          {:segmentation, :road},
+          {segmented_frame(), segmentation_labels(), segmentation_clouds()},
+          state
+        )
+
+      assert_received {:published, "stereo/road/labels", %Image{} = labels}
+      assert labels.header.frame_id == "hq_optical"
+      assert labels.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(7)
+      assert labels.data == <<0, 10>>
+
+      # The camera has no calibration.
+      assert_received {:published, "stereo/road/camera_info", %CameraInfo{} = camera_info}
+      assert camera_info == %CameraInfo{header: labels.header, width: 2, height: 1}
+
+      assert_received {:published, "stereo/road/road/points", %PointCloud2{width: 1} = road}
+      assert road.header.frame_id == "stereo_left_optical"
+      assert road.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(5)
+      assert_received {:published, "stereo/road/off_road/points", %PointCloud2{width: 0}}
+      refute_received {:published, _topic, _message}
+
+      {:ok, _state} =
+        Exporter.handle_output(
+          {:segmentation, :lanes},
+          {segmented_frame(), segmentation_labels(), nil},
+          state
+        )
+
+      assert_received {:published, "stereo/lanes/labels", %Image{}}
+      assert_received {:published, "stereo/lanes/camera_info", %CameraInfo{}}
+      refute_received {:published, _topic, _message}
+    end
+
+    # The 192 x 108 frame's band is its bottom 96 rows; the 8 x 4 grid is 24 pixels a cell.
+    defp grid_labels, do: %{width: 8, height: 4, data: <<0::256>>, band: {0, 12, 192, 96}}
+
+    defp grid_k(fx, fy, cx, cy),
+      do: [
+        fx / 24,
+        0.0,
+        (cx + 0.5) / 24 - 0.5,
+        0.0,
+        fy / 24,
+        (cy - 12 + 0.5) / 24 - 0.5,
+        0.0,
+        0.0,
+        1.0
+      ]
+
+    defp published_k(state) do
+      frame = %{segmented_frame() | width: 192, height: 108}
+
+      {:ok, state} =
+        Exporter.handle_output({:segmentation, :road}, {frame, grid_labels(), nil}, state)
+
+      assert_received {:published, "stereo/road/camera_info", %CameraInfo{k: k}}
+      {k, state}
+    end
+
+    defp assert_k(k, expected) do
+      assert length(k) == 9
+      Enum.zip_with(k, expected, fn value, wanted -> assert_in_delta value, wanted, 1.0e-12 end)
+    end
+
+    test "publishes the label image's camera info from its camera's calibration" do
+      calibration = Path.join(@calibration, "identity_left.yaml")
+
+      {:ok, state} =
+        Exporter.init(segmentation_options(Camera, [segmentation: []], calibration: calibration))
+
+      assert {k, _state} = published_k(state)
+      assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
+    end
+
+    @tag :tmp_dir
+    test "a calibration committed through the camera's service reaches its label images' camera info",
+         %{tmp_dir: tmp_dir} do
+      options =
+        segmentation_options(Camera, [segmentation: [], cameras: []],
+          calibration: Path.join(@calibration, "distorted_left.yaml"),
+          calibration_store_dir: tmp_dir
+        )
+
+      {:ok, state} = Exporter.init(options)
+
+      # The 96 x 72 calibration does not fit the 192 x 108 frames: an empty camera info.
+      {k, state} = published_k(state)
+      assert k == List.duplicate(0.0, 9)
+
+      File.cp!(
+        Path.join(@calibration, "identity_left.yaml"),
+        Path.join(tmp_dir, "camera_hq.yaml")
+      )
+
+      {:ok, state} =
+        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
+
+      assert {k, _state} = published_k(state)
+      assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
+    end
+
+    test "a frame or pair without a frame id goes out in the camera's and the stereo left one's" do
+      {:ok, state} =
+        Exporter.init(segmentation_options(Camera, segmentation: [topic_prefix: "front"]))
+
+      {:ok, _state} =
+        Exporter.handle_output(
+          {:segmentation, :road},
+          {segmented_frame(nil), segmentation_labels(), segmentation_clouds(nil)},
+          state
+        )
+
+      assert_received {:published, "front/road/labels", %Image{} = labels}
+      assert labels.header.frame_id == "hq_lens"
+      assert_received {:published, "front/road/road/points", %PointCloud2{} = road}
+      assert road.header.frame_id == "rig_left"
+    end
+
+    test "without a stereo unit in its configuration, publishes under stereo, its clouds' fallback frame the prefix's left one" do
+      config = %VisionCore.Config{
+        ros2: [zenoh_endpoint_ip: "127.0.0.1"],
+        components: [
+          {:camera, name: :hq, driver: Camera},
+          {:segmenter, name: :road, source: {:camera, :hq}}
+        ]
+      }
+
+      for {segmentation, prefix} <- [{[], "stereo"}, {[topic_prefix: "front"], "front"}] do
+        options = [config: config, publish: publish_to(self()), segmentation: segmentation]
+        assert Exporter.check(options) == :ok
+        {:ok, state} = Exporter.init(options)
+
+        {:ok, _state} =
+          Exporter.handle_output(
+            {:segmentation, :road},
+            {segmented_frame(), segmentation_labels(), segmentation_clouds(nil)},
+            state
+          )
+
+        road_topic = "#{prefix}/road/road/points"
+        assert_received {:published, ^road_topic, %PointCloud2{} = road}
+        assert road.header.frame_id == "#{prefix}_left"
+      end
+    end
+
+    test "through the runner, each pipeline's results reach only its own topics" do
+      options = segmentation_options(OtherCamera, segmentation: [])
+      start_runner(options, options[:config])
+
+      Outputs.publish(
+        {:segmentation, :lanes},
+        {{:segmentation, :lanes},
+         {segmented_frame(), segmentation_labels(), segmentation_clouds()}}
+      )
+
+      assert_receive {:published, "stereo/lanes/labels", %Image{}}, 1_000
+      assert_receive {:published, "stereo/lanes/road/points", %PointCloud2{}}, 1_000
+      refute_receive {:published, "stereo/road/" <> _topic, _message}, 100
     end
   end
 end

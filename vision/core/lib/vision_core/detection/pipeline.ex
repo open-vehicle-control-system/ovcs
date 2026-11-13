@@ -1,17 +1,26 @@
 defmodule VisionCore.Detection.Pipeline do
   @moduledoc """
-  Detects objects on the stereo unit's pairs and places them in 3D:
-  hands the rectified left image of every `:detect_every_n`-th
-  `VisionCore.Stereo.Pair` to a `VisionCore.Detection.Backend`, fuses
-  the boxes it returns with that pair's depth map, and publishes the
-  result as `{:detections, pair, detections}` through
-  `VisionCore.Outputs`, under `{:detections, VisionCore.Detection.Pipeline}`.
+  Detects objects on the stereo unit's pairs, or on a camera of its own,
+  and places them in 3D: hands the rectified left image of every
+  `:detect_every_n`-th `VisionCore.Stereo.Pair` to a
+  `VisionCore.Detection.Backend`, fuses the boxes it returns with that
+  pair's depth map, and publishes the result through
+  `VisionCore.Outputs` under its `VisionCore.Exporter` output,
+  `{:detections, name}` (`VisionCore.Detection.output/1`), as
+  `{output, {pair, detections}}`.
+
+  With `source: {:camera, name}` it detects on the frames of the camera
+  of its own `name` instead, its default output, or with
+  `source: {:camera, name, output}` on those of its output `output`
+  (`VisionCore.Camera.Output`; see "A camera source" below), and publishes
+  `{output, {frame, detections}}`, `frame` the
+  `VisionCore.Camera.Frame` the boxes were found on, without its pixels.
 
   Subscribes to the pairs of `VisionCore.Stereo.Pipeline`, so it sees
   the pairs every other consumer does, rectified left image and metric
-  depth included. That is why detection is nearly free here: the pixels
-  are already decoded and rectified, the depth is already computed, and
-  the accelerator is otherwise idle.
+  depth included. On the stereo source, that is why detection is nearly
+  free: the pixels are already decoded and rectified, the depth is
+  already computed, and the accelerator is otherwise idle.
 
   ## How a box becomes a position
 
@@ -49,20 +58,67 @@ defmodule VisionCore.Detection.Pipeline do
     * `:caption` — its label, score and distance, as a viewer writes them
       next to the box: `"person 0.62 1.80m"`.
 
+  ## A camera source
+
+  Hands every `:detect_every_n`-th frame of the camera, as a tensor
+  (`VisionCore.Camera.Frame.to_tensor/1`: RGB for an RGB frame, its luma
+  for a JPEG one), to the backend, which shrinks it whole to its model's
+  input. Its boxes are placed with the depth of the stereo pair captured
+  closest to the frame, projected into the camera's image through its
+  calibration and pose (`VisionCore.Detection.CameraSource`), only for a
+  frame with boxes. The stereo pipeline publishes a pair after the
+  frame's boxes may be back, so they wait for it in a queue
+  (`VisionCore.CameraPipeline`) while the next frames go to the backend,
+  and leave it in capture order: at most `:pair_wait_ms`, and not at all
+  while the stereo pairs have stalled, two pair periods without one.
+  While 32 frames' boxes wait, the camera's frames are skipped. The
+  boxes of a frame whose size the calibration cannot be projected at,
+  such as one of another aspect ratio, wait for no pair.
+
+  The calibration and the pose are read at start. A calibration
+  committed through the camera's `set_camera_info` reaches the ROS 2
+  exporter's `camera_info` at once, but the boxes are placed with the
+  start-time calibration until the unit restarts.
+
+  A box with no distance is kept: its position and size are `nil`, and
+  its `:bearing` says where it is seen. Each detection is in the
+  camera's optical frame, its `:box` and `:outline`, its four corners,
+  in the frame's pixels, and has a `:bearing`, `{azimuth, elevation}` in
+  radians, `nil` without a calibration. Its caption has its distance
+  only when it has one: `"person 0.62"`.
+
   ## One inference in flight
 
-  Only one submitted pair is held, and a reply is matched on the
-  current sequence number. That relies on the backend answering
-  `{:error, :busy}` while an inference is in flight, so the sequence
-  only advances on an accepted frame; a backend that accepted
-  overlapping requests would have its earlier replies discarded as
-  stale.
+  On the stereo source (`VisionCore.Detection.StereoPipeline`), one pair
+  is in flight at a time, kept with the sequence number it was submitted
+  under, and a reply is matched on that number. Every submission takes a
+  new number, a refused one included, so a late reply to a call that
+  timed out never matches a later pair. `:detect_every_n` counts the
+  pairs, those that come while a submission is in flight included: the
+  `n`th, `2n`th, `3n`th… of them are to be detected on. A pair that
+  comes while a submission is in flight is skipped, and one the backend
+  could not detect on, answered with `nil`, publishes nothing.
+
+  On a camera source (`VisionCore.Detection.CameraPipeline`),
+  `VisionCore.CameraPipeline` runs the pipeline: it detects on every
+  `:detect_every_n`-th frame, one in flight at a time, the newest frame
+  held meanwhile. A frame whose JPEG does not decode is skipped, which
+  is logged once until one decodes.
 
   ## Options
 
+    * `:name` (`:detection`) — the pipeline's name: it registers as
+      `VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name)`
+      and declares its parameter groups as `<name>.*`.
     * `:backend` (`VisionCore.Detection.Backend.Hailo`) — the detection
-      backend module, which is also its registered name.
-    * `:detect_every_n` (`1`) — run inference on every nth pair.
+      backend module.
+    * `:backend_server` (the `:backend` module) — the name the backend is
+      registered under.
+    * `:source` (`:stereo`) — the stereo pairs, `{:camera, name}`,
+      the camera of its own `name` (`VisionCore.Camera.Unit`), or
+      `{:camera, name, output}`, that camera's output `output`.
+    * `:detect_every_n` (`1`) — run inference on every nth pair, or
+      frame of a camera source (see "One inference in flight").
     * `:labels` (COCO 80) — class id to name.
     * `:min_score` (`0.4`) — the backend filters at its own threshold
       too; this is the floor for what is passed on.
@@ -70,13 +126,25 @@ defmodule VisionCore.Detection.Pipeline do
     * `:depth_sample_fraction` (`0.5`) — central fraction of the box
       used for the depth median.
     * `:outline_segments` (`4`) — pieces each edge of an outline is cut
-      into.
-  """
-  use GenServer
+      into, on the stereo source.
+    * `:reprojection_stride` (`3`) — on a camera source, every nth pixel
+      and row of the depth map projected into the camera's image.
+    * `:pair_wait_ms` (`500`) — on a camera source, the longest a frame's
+      boxes wait for the pair captured closest to it, and how far before
+      the newest pair's capture the pairs are kept.
+    * `:config` (the active `VisionCore.Config`) — the configuration the
+      camera of a camera source is read from.
+    * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
+      waits of a camera source are measured with, a function of no
+      argument.
 
-  alias VisionCore.Detection.Fusion
-  alias VisionCore.Outputs
-  alias VisionCore.Stereo.Pair
+  `:detect_every_n` and `:reprojection_stride` are integers from 1 on,
+  `:max_detections` and `:pair_wait_ms` from 0 on, and `:min_score` is a
+  number: another value fails the start (`VisionCore.Options`).
+  """
+  alias VisionCore.{Detection, Pipelines}
+  alias VisionCore.Detection.{CameraPipeline, StereoPipeline}
+  alias VisionCore.{Options, Parameters}
 
   @coco_labels ~w(person bicycle car motorcycle airplane bus train truck boat
                   traffic_light fire_hydrant stop_sign parking_meter bench bird cat
@@ -94,8 +162,9 @@ defmodule VisionCore.Detection.Pipeline do
   @default_depth_sample_fraction 0.5
   @default_detect_every_n 1
   @default_outline_segments 4
+  @default_reprojection_stride 3
+  @default_pair_wait_ms 500
 
-  @on_the_beam %{runs_on: :cpu, implementation: :elixir, backend: nil}
   @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
                        "lines up with pixel for pixel, and hands it to the detector. " <>
                        "detect_every_n, fixed in the build, runs detection on one pair out of " <>
@@ -116,187 +185,234 @@ defmodule VisionCore.Detection.Pipeline do
                            "box with no depth in its middle is dropped rather than given a " <>
                            "guessed distance. Watch the outlines and distances on the left " <>
                            "video."
+  @camera_placement_explanation "Places each box in 3D with the depth of the stereo pair " <>
+                                  "captured closest to the image, projected into the " <>
+                                  "camera's image through its calibration and its pose " <>
+                                  "relative to the stereo pair. It takes the median depth " <>
+                                  "projected in the middle of the box, then turns the box's " <>
+                                  "centre and size into metres in the camera's frame. Fixed " <>
+                                  "in the build: depth_sample_fraction, the share of the " <>
+                                  "box's width and height it samples; reprojection_stride, " <>
+                                  "every how many pixels and rows of the depth it projects, " <>
+                                  "a higher value placing faster and less finely; and " <>
+                                  "pair_wait_ms, how long the boxes wait for that pair. The " <>
+                                  "next images go to the detector meanwhile, and the boxes " <>
+                                  "are published in the images' order; while the stereo " <>
+                                  "pairs have stopped, they are published at once, with " <>
+                                  "the pair already kept if one was captured within half " <>
+                                  "a pair period of the image. A " <>
+                                  "box with no depth in its middle, or out of the stereo " <>
+                                  "pair's view, is kept without a distance, with its " <>
+                                  "bearing. Watch the outlines and distances on the camera's " <>
+                                  "video."
 
-  def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  @doc false
+  def child_spec(opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
+
+  def start_link(opts) do
+    registration = [name: Pipelines.server(__MODULE__, Detection.pipeline_name(opts))]
+
+    case Keyword.get(opts, :source, :stereo) do
+      camera when is_tuple(camera) -> CameraPipeline.start_link(opts, registration)
+      _stereo -> StereoPipeline.start_link(opts, registration)
+    end
+  end
 
   @doc "The COCO class names, indexed by class id."
   def labels, do: @coco_labels
 
-  @impl GenServer
-  def init(opts) do
-    state = %{
-      # Doubles as the server name: every backend registers under its own module.
-      backend: Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo),
-      detect_every_n: Keyword.get(opts, :detect_every_n, @default_detect_every_n),
+  @doc """
+  What a detection pipeline keeps of `opts`, on either source: its
+  `:name`, its `:source`, a camera's with its output, `nil` for the
+  camera's default, its backend and the options of the module doc, each
+  with its default. Raises `ArgumentError` on a value it cannot run
+  with.
+  """
+  @spec settings(keyword()) :: map()
+  def settings(opts) do
+    backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
+
+    %{
+      name: Detection.pipeline_name(opts),
+      source: source!(Keyword.get(opts, :source, :stereo)),
+      backend: backend,
+      backend_server: Keyword.get(opts, :backend_server, backend),
+      detect_every_n: Options.integer!(opts, :detect_every_n, @default_detect_every_n, 1),
       labels: Keyword.get(opts, :labels, @coco_labels),
-      min_score: Keyword.get(opts, :min_score, @default_min_score),
-      max_detections: Keyword.get(opts, :max_detections, @default_max_detections),
+      min_score: Options.number!(opts, :min_score, @default_min_score),
+      max_detections: Options.integer!(opts, :max_detections, @default_max_detections, 0),
       depth_sample_fraction:
         Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
       outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
-      sequence: 0,
-      pair_count: 0,
-      # The pair submitted with the in-flight inference: its boxes belong to that depth map.
-      pending: nil
+      reprojection_stride:
+        Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
+      pair_wait_ms: Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
     }
-
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(groups(state))
-
-    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    {:ok, state}
   end
 
+  defp source!(:stereo), do: :stereo
+  defp source!({:camera, camera}), do: source!({:camera, camera, nil})
+
+  defp source!({:camera, camera, output} = source) when is_atom(camera) and is_atom(output),
+    do: source
+
+  defp source!(source),
+    do:
+      raise(
+        ArgumentError,
+        "its :source is :stereo, {:camera, name}, a camera of its own, or " <>
+          "{:camera, name, output}, one of its outputs, got #{inspect(source)}"
+      )
+
   @doc """
-  The detection pipeline's steps around the inference, for a running
-  `state`: their parameter groups, with their settings fixed at start. The
-  backend declares the inference step itself (`inference_group/1`).
+  The detection pipeline's steps around the inference, for its
+  settings (`settings/1`): their parameter groups, `<name>.input`, `<name>.filtering` and
+  `<name>.placement` in the pipeline `name`, with their settings fixed at
+  start. The backend declares the inference step itself
+  (`inference_group/2`).
   """
-  @spec groups(map()) :: [VisionCore.Parameters.group_declaration()]
+  @spec groups(map()) :: [Parameters.group_declaration()]
   def groups(state) do
+    source = state.source
+
     [
-      step("input", "Input", 101, %{
-        summary: "Hands the rectified left image of every nth stereo pair to the detector.",
-        explanation: @input_explanation,
-        compute: @on_the_beam,
+      Parameters.step(state.name, "input", "Input", 101, %{
+        summary: input_summary(source),
+        explanation: input_explanation(source),
+        compute: Parameters.on_the_beam(),
         parameters: [
-          build_parameter(state, :detect_every_n, "Pairs per detection; 1 detects on every pair")
+          build_parameter(state, :detect_every_n, detect_every_n_description(source))
         ]
       }),
-      step("filtering", "Filtering", 103, %{
+      Parameters.step(state.name, "filtering", "Filtering", 103, %{
         summary: "Keeps the most confident detections.",
         explanation: @filtering_explanation,
-        compute: @on_the_beam,
+        compute: Parameters.on_the_beam(),
         parameters: [
           build_parameter(state, :min_score, "Lowest score of a detection passed on"),
           build_parameter(state, :max_detections, "Most detections passed on per image")
         ]
       }),
-      step("placement", "Placement", 104, %{
+      Parameters.step(state.name, "placement", "Placement", 104, %{
         summary: "Places each box in 3D with the median depth in its middle.",
-        explanation: @placement_explanation,
-        compute: @on_the_beam,
-        parameters: [
-          build_parameter(
-            state,
-            :depth_sample_fraction,
-            "Share of the box's width and height whose depths are sampled"
-          )
-        ]
+        explanation: placement_explanation(source),
+        compute: Parameters.on_the_beam(),
+        parameters: placement_parameters(source, state)
       })
     ]
   end
 
-  @doc """
-  The detection pipeline's inference step, between its input and its
-  filtering. The backend running the model declares it, `fields` giving
-  its summary, explanation, compute and parameters.
-  """
-  @spec inference_group(map()) :: VisionCore.Parameters.group_declaration()
-  def inference_group(fields), do: step("inference", "Inference", 102, fields)
+  defp input_summary(:stereo),
+    do: "Hands the rectified left image of every nth stereo pair to the detector."
 
-  defp step(id, name, position, fields) do
-    Map.merge(
-      %{
-        id: "detection.#{id}",
-        name: name,
-        kind: :stage,
-        pipeline: :detection,
-        position: position
-      },
-      fields
-    )
+  defp input_summary({:camera, camera, output}),
+    do: "Hands every nth image of #{camera_text(camera, output)} to the detector."
+
+  defp detect_every_n_description(:stereo), do: "Pairs per detection; 1 detects on every pair"
+
+  defp detect_every_n_description({:camera, _camera, _output}),
+    do: "Images per detection; 1 detects on every image"
+
+  defp input_explanation(:stereo), do: @input_explanation
+
+  defp input_explanation({:camera, camera, output}),
+    do:
+      "Takes the images of #{camera_text(camera, output)} and hands them to the detector, which " <>
+        "shrinks each whole to its model's input. detect_every_n, fixed in the build, runs " <>
+        "detection on one image out of n: a higher value leaves the accelerator and the " <>
+        "processor more time, and updates the boxes less often. An image to detect on that " <>
+        "arrives while the detector is still busy waits, the newest one only, and goes to the " <>
+        "detector as soon as it is done."
+
+  defp placement_explanation(:stereo), do: @placement_explanation
+  defp placement_explanation({:camera, _camera, _output}), do: @camera_placement_explanation
+
+  defp camera_text(camera, nil), do: "the camera #{camera}"
+  defp camera_text(camera, output), do: "the camera #{camera}'s output #{output}"
+
+  defp placement_parameters(source, state) do
+    [
+      build_parameter(
+        state,
+        :depth_sample_fraction,
+        "Share of the box's width and height whose depths are sampled"
+      )
+    ] ++
+      case source do
+        :stereo ->
+          []
+
+        {:camera, _camera, _output} ->
+          [
+            build_parameter(
+              state,
+              :reprojection_stride,
+              "Every how many pixels and rows of the depth are projected"
+            ),
+            build_parameter(state, :pair_wait_ms, "Longest wait for the matching pair, in ms")
+          ]
+      end
   end
+
+  @doc """
+  The inference step of the detection pipeline `pipeline`,
+  `<pipeline>.inference`, between its input and its filtering. The
+  backend running the model declares it, `fields` giving its summary,
+  explanation, compute and parameters.
+  """
+  @spec inference_group(atom(), map()) :: Parameters.group_declaration()
+  def inference_group(pipeline, fields),
+    do: Parameters.step(pipeline, "inference", "Inference", 102, fields)
 
   defp build_parameter(state, key, description),
     do: VisionCore.Stereo.Parameters.build_parameter({key, Map.fetch!(state, key)}, description)
 
-  @impl GenServer
-  def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
-    pair_count = state.pair_count + 1
-    state = %{state | pair_count: pair_count}
-
-    cond do
-      rem(pair_count, state.detect_every_n) != 0 -> {:noreply, state}
-      is_nil(pair.left) or is_nil(pair.depth) -> {:noreply, state}
-      true -> {:noreply, submit(pair, state)}
-    end
+  @doc """
+  The `detections` worth passing on: those scoring at least the
+  pipeline's `:min_score`, its `:max_detections` at most, best first.
+  """
+  @spec select([Detection.Backend.detection()], map()) :: [Detection.Backend.detection()]
+  def select(detections, settings) do
+    detections
+    |> Enum.filter(&(&1.score >= settings.min_score))
+    |> Enum.sort_by(& &1.score, :desc)
+    |> Enum.take(settings.max_detections)
   end
 
-  def handle_cast(_message, state), do: {:noreply, state}
+  @doc "The name of `detection`'s class among the pipeline's `:labels`, `class_<id>` without one."
+  @spec label(Detection.Backend.detection(), map()) :: String.t()
+  def label(detection, settings),
+    do: Enum.at(settings.labels, detection.class_id, "class_#{detection.class_id}")
 
-  # Overwrites `pending`; see "One inference in flight" in the moduledoc.
-  defp submit(pair, state) do
-    sequence = state.sequence + 1
+  @doc """
+  What a viewer writes next to a placed `detection`: its label, its
+  score and its distance, `"person 0.62 1.80m"`, without the distance
+  when it has none.
+  """
+  @spec caption(map()) :: String.t()
+  def caption(%{z: nil} = detection),
+    do: "#{detection.label} #{:erlang.float_to_binary(detection.score / 1, decimals: 2)}"
 
-    case state.backend.detect(state.backend, sequence, pair.left) do
-      :ok -> %{state | sequence: sequence, pending: pair}
-      # Busy or unavailable: skip this pair silently. The backend logs
-      # the unavailable case once at startup; a per-frame log here
-      # would be the loudest thing in the RingLogger.
-      {:error, _reason} -> state
-    end
-  end
+  def caption(detection),
+    do:
+      "#{caption(%{detection | z: nil})} #{:erlang.float_to_binary(detection.z / 1, decimals: 2)}m"
 
-  @impl GenServer
-  def handle_info(
-        {:inference_detections, sequence, detections},
-        %{sequence: sequence, pending: %Pair{} = pair} = state
-      ) do
-    positioned =
-      detections
-      |> Enum.filter(&(&1.score >= state.min_score))
-      |> Enum.sort_by(& &1.score, :desc)
-      |> Enum.take(state.max_detections)
-      |> Enum.map(&position(&1, pair, state))
-      |> Enum.reject(&is_nil/1)
-      |> outline(pair, state.outline_segments)
+  @doc """
+  Publishes the pipeline's `detections` found on `source`, a stereo pair
+  or a camera's frame, through `VisionCore.Outputs` (see the module
+  doc).
+  """
+  @spec publish(map(), VisionCore.Stereo.Pair.t() | VisionCore.Camera.Frame.t(), [map()]) :: :ok
+  def publish(settings, source, detections),
+    do: VisionCore.Outputs.publish(output_key(settings), message(settings, source, detections))
 
-    Outputs.publish({:detections, __MODULE__}, {:detections, pair, positioned})
-    {:noreply, %{state | pending: nil}}
-  end
+  @doc "The `VisionCore.Outputs` key the pipeline publishes under."
+  @spec output_key(map()) :: VisionCore.Outputs.key()
+  def output_key(settings), do: Detection.output(settings.name)
 
-  # A reply for a pair no longer waited on.
-  def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
-
-  def handle_info(_message, state), do: {:noreply, state}
-
-  defp outline(positioned, pair, segments) do
-    outlines = positioned |> Enum.map(& &1.box) |> Fusion.outlines(segments, pair)
-
-    Enum.zip_with(positioned, outlines, fn detection, outline ->
-      Map.merge(detection, %{outline: outline, caption: caption(detection)})
-    end)
-  end
-
-  defp caption(detection) do
-    "#{detection.label} #{:erlang.float_to_binary(detection.score / 1, decimals: 2)} " <>
-      "#{:erlang.float_to_binary(detection.z / 1, decimals: 2)}m"
-  end
-
-  defp position(detection, %Pair{} = pair, state) do
-    {width, height} = Pair.size(pair)
-
-    case Fusion.median_depth(pair.depth, {width, height}, detection, state.depth_sample_fraction) do
-      nil ->
-        nil
-
-      depth_m ->
-        detection
-        |> Fusion.unproject(
-          depth_m,
-          pair.geometry.principal_point,
-          pair.geometry.focal_length_px
-        )
-        |> Map.merge(%{
-          box: detection,
-          class_id: detection.class_id,
-          label: Enum.at(state.labels, detection.class_id, "class_#{detection.class_id}"),
-          score: detection.score,
-          # One view cannot measure extent along the optical axis; a
-          # thin slab marks where the surface is, not how deep it goes.
-          depth: 0.1
-        })
-    end
-  end
+  @doc "The message the pipeline publishes for the `detections` found on `source`."
+  @spec message(map(), VisionCore.Stereo.Pair.t() | VisionCore.Camera.Frame.t(), [map()]) ::
+          tuple()
+  def message(%{name: name}, source, detections),
+    do: {Detection.output(name), {source, detections}}
 end

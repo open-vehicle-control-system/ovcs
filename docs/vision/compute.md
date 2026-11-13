@@ -11,6 +11,7 @@ The [stereo stages](./stages.md) are written once and run one of two ways, depen
 | Runs on | the GPU: 128 Maxwell cores | the GPU: an Adreno 623 | the CPU: 4 Cortex-A76 cores |
 | Composer | `defn_options: VisionCore.Stereo.NxSegment.c100_defn_options/1` | `defn_options: VisionCore.Stereo.NxSegment.ventuno_q_defn_options/1` | `compute: :native` |
 | Detection | none | the Hexagon NPU, through `qnn_detect` | the Hailo-8, through `hailo_detect` |
+| Road segmentation | none | the Hexagon NPU, through `qnn_segment` | none |
 
 Both give the same results: the native stages are tested against the Nx ones, image for image.
 
@@ -201,11 +202,12 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | Port | Board | What it does |
 |---|---|---|
 | `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG; takes camera controls on stdin. |
-| `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. |
+| `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. A camera of its own in colour, its outputs converted, averaged or encoded as JPEG with libjpeg-turbo. |
 | `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
-| `jpeg_codec` | every board | Encodes grey images and coloured depth previews as JPEG, and decodes JPEG frames to grey. |
+| `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
 | `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
+| `qnn_segment` | VENTUNO Q | Runs the road segmentation model's context binary on the Hexagon NPU through QNN, over a band of a colour frame. Returns each output cell's class. |
 
 Compiling `vision_core` for a vision target cross-builds that target's Ports through `vision/core/Makefile`:
 
@@ -213,11 +215,13 @@ Compiling `vision_core` for a vision target cross-builds that target's Ports thr
 |---|---|
 | `rpi5` | `camera_capture`, `hailo_detect` and `jpeg_codec` |
 | `okdo_c100` | `v4l2_capture` and `jpeg_codec` |
-| `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec` and `qnn_detect` |
+| `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec`, `qnn_detect` and `qnn_segment` |
+
+`qnn_detect` and `qnn_segment` share the `qnn` crate's QNN bindings, generated from the QAIRT archive `mise run fetch-qairt` caches.
 
 On a workstation, `mix compile` builds `jpeg_codec` for the host. nx_stereo builds `stereo_match` itself, for the workstation or the target, whenever cargo is installed; `NX_STEREO_NATIVE=false` skips it.
 
-The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. [`vision/rust/README.md`](../../vision/rust/README.md) describes each crate.
+The build host needs the `aarch64-unknown-linux-gnu` Rust target, which `mise install` provides, and libclang for bindgen. It also needs cmake, which builds libjpeg-turbo for `jpeg_codec` and `v4l2_capture` on the workstation and on `okdo_c100`, whose system does not ship it. On an x86-64 workstation, nasm gives that build its SIMD code. [`vision/rust/README.md`](../../vision/rust/README.md) describes each crate.
 
 ## Grey frames on the Pi 5
 

@@ -24,7 +24,7 @@ firmware build would be reproducible offline. That tradeoff is real and
 it has not gone away — you now need network access and one command
 before a first build. The licence is why it changed anyway.
 
-See the Detection models section of `docs/vision/README.md` for the
+See the Detection models section of `docs/vision/detection.md` for the
 licensing note in full, including the permissively licensed models.
 
 ## nanodet_repvgg.hef — the default

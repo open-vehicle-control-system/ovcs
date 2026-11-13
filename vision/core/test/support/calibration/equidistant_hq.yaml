@@ -1,0 +1,20 @@
+image_width: 2028
+image_height: 1520
+camera_name: hq
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [810.0, 0.0, 1014.5, 0.0, 809.0, 760.5, 0.0, 0.0, 1.0]
+distortion_model: equidistant
+distortion_coefficients:
+  rows: 1
+  cols: 4
+  data: [0.05, -0.02, 0.006, -0.002]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [600.0, 0.0, 1014.5, 0.0, 0.0, 600.0, 760.5, 0.0, 0.0, 0.0, 1.0, 0.0]

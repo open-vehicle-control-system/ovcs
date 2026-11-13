@@ -9,8 +9,13 @@ defmodule VisionCore.Detection.Fusion do
   pixel, which is what makes this a lookup rather than a registration
   problem: the stereo pipeline rectifies the image it detects on and
   computes depth from the same rectified pair.
+
+  A box on a camera of its own is placed from the stereo depth projected
+  into that camera's image (`VisionCore.CameraDepth.Reprojection`):
+  `projected_depths/3` and `unproject_camera/3`.
   """
 
+  alias VisionCore.CameraDepth.Reprojection
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Pair
 
@@ -62,6 +67,110 @@ defmodule VisionCore.Detection.Fusion do
       width: (box.x1 - box.x0) * distance_m / fx,
       height: (box.y1 - box.y0) * distance_m / fx
     }
+  end
+
+  @doc """
+  The distance of each of `boxes` on a camera of its own, in metres: the
+  median `z` of the stereo `points` projected into its image
+  (`Reprojection.project/4`) that fall inside the box's central
+  `fraction`, the sample `median_depth/4` takes on the stereo source.
+  All boxes in one pass over the points.
+
+  `nil` for a box with no point inside, and for one whose median is not
+  in front of the camera: a fisheye box past 90° off-axis, which no
+  distance along the optical axis places.
+  """
+  @spec projected_depths(Reprojection.points(), [map()], float()) :: [float() | nil]
+  def projected_depths(_points, [], _fraction), do: []
+
+  def projected_depths(%{points: points}, boxes, fraction) do
+    windows = Enum.map(boxes, &central_window(&1, fraction))
+    empty = List.to_tuple(List.duplicate([], length(boxes)))
+
+    points
+    |> collect_depths(windows, empty)
+    |> Tuple.to_list()
+    |> Enum.map(&distance_ahead/1)
+  end
+
+  @doc """
+  `unproject/4` for a box on a camera of its own, through its lens
+  model (`Reprojection.rays/2`): the ray through the box's centre at
+  `distance_m` along the optical axis, and the width and height between
+  the rays through the middles of its opposite edges. `camera` is the
+  camera's calibration at the size of its frames, or its
+  `Reprojection.lens/1`.
+
+  `nil` when one of those rays is 90° or more off-axis, where a distance
+  along the axis places nothing, or has none, its pixel past the lens's
+  fold.
+  """
+  @spec unproject_camera(map(), float(), Reprojection.camera()) :: map() | nil
+  def unproject_camera(box, distance_m, camera) do
+    middle_u = (box.x0 + box.x1) / 2
+    middle_v = (box.y0 + box.y1) / 2
+
+    [centre, left, right, top, bottom] =
+      camera
+      |> Reprojection.rays([
+        {middle_u, middle_v},
+        {box.x0, middle_v},
+        {box.x1, middle_v},
+        {middle_u, box.y0},
+        {middle_u, box.y1}
+      ])
+      |> Enum.map(&axis_plane_point/1)
+
+    if Enum.all?([centre, left, right, top, bottom]) do
+      {centre_x, centre_y} = centre
+
+      %{
+        x: centre_x * distance_m,
+        y: centre_y * distance_m,
+        z: distance_m,
+        width: (elem(right, 0) - elem(left, 0)) * distance_m,
+        height: (elem(bottom, 1) - elem(top, 1)) * distance_m
+      }
+    end
+  end
+
+  # Where a ray crosses the plane 1 m ahead, nil when it never does or there is no ray.
+  defp axis_plane_point({x, y, z}) when z > 0, do: {x / z, y / z}
+  defp axis_plane_point(_ray), do: nil
+
+  defp central_window(box, fraction) do
+    half_width = (box.x1 - box.x0) * fraction / 2
+    half_height = (box.y1 - box.y0) * fraction / 2
+    middle_u = (box.x0 + box.x1) / 2
+    middle_v = (box.y0 + box.y1) / 2
+    {middle_u - half_width, middle_u + half_width, middle_v - half_height, middle_v + half_height}
+  end
+
+  defp collect_depths(
+         <<u::float-32-native, v::float-32-native, z::float-32-native, rest::binary>>,
+         windows,
+         depths
+       ),
+       do: collect_depths(rest, windows, add_to_windows(windows, u, v, z, 0, depths))
+
+  defp collect_depths(<<>>, _windows, depths), do: depths
+
+  defp add_to_windows([{left, right, top, bottom} | windows], u, v, z, index, depths)
+       when u >= left and u < right and v >= top and v < bottom do
+    depths = put_elem(depths, index, [z | elem(depths, index)])
+    add_to_windows(windows, u, v, z, index + 1, depths)
+  end
+
+  defp add_to_windows([_outside | windows], u, v, z, index, depths),
+    do: add_to_windows(windows, u, v, z, index + 1, depths)
+
+  defp add_to_windows([], _u, _v, _z, _index, depths), do: depths
+
+  defp distance_ahead(depths) do
+    case median(depths) do
+      distance when is_float(distance) and distance > 0 -> distance
+      _none_or_behind -> nil
+    end
   end
 
   @doc """

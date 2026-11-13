@@ -5,5 +5,8 @@ edition = "2021"
 
 [dependencies]
 framing = { path = "../framing" }
-jpeg-encoder = "0.6"
+# Without `require-simd`, a host without nasm builds the vendored library
+# without its x86 SIMD; Arm builds have NEON either way.
+turbojpeg = { version = "1.5", default-features = false, features = ["cmake", "pkg-config"] }
+# Decodes instead of TurboJPEG, which refuses a JPEG it warns about, as camera MJPEG frames can be.
 jpeg-decoder = { version = "0.3", default-features = false }

@@ -2,9 +2,10 @@ defmodule VisionCore.Camera do
   @moduledoc """
   Contract for the camera drivers under `VisionCore.Camera.*`. A driver
   instance represents one image sensor, named by its `:label`: it
-  captures and publishes frames, as JPEG or grey
+  captures and publishes frames, as JPEG, grey or RGB
   `VisionCore.Camera.Frame`s. A stereo pair is two instances, `"left"`
-  and `"right"`.
+  and `"right"`; a camera of its own (`VisionCore.Camera.Unit`) is one,
+  labelled with its name's text.
 
   A driver MUST:
 
@@ -13,6 +14,9 @@ defmodule VisionCore.Camera do
     * publish each new frame through `VisionCore.Outputs` as
       `{:camera_frame, %VisionCore.Camera.Frame{}}`, under
       `{:camera_frame, name}`, `name` being the instance's registered name;
+      a driver with named outputs (`c:outputs/1`) publishes each output's
+      frames under `{:camera_frame, name, output}` instead, each frame
+      carrying its output's name as its `:output`;
     * put its `:label` and `:frame_id` options on each
       `VisionCore.Camera.Frame`: the stereo unit gives each side's
       `:frame_id`, and the exporters stamp the frame's messages, and its
@@ -48,9 +52,32 @@ defmodule VisionCore.Camera do
   @doc "What the camera applied to a recent frame, as it reports it; `nil` before a report."
   @callback live(GenServer.server()) :: map() | nil
 
-  @optional_callbacks set_controls: 2,
+  @doc """
+  The named outputs of a camera given `opts`, the options it is started
+  with, in their configured order, the first the default
+  (`VisionCore.Camera.Output.resolve/3`): `{:error, message}` for
+  outputs it cannot make. Optional: a driver without it makes one
+  output, unnamed.
+  """
+  @callback outputs(keyword()) :: {:ok, [VisionCore.Camera.Output.t()]} | {:error, String.t()}
+
+  @doc """
+  For a driver that captures both cameras of a stereo pair together:
+  `:pair`, the `:stereo` component's options it takes once for both
+  cameras, beside `:width`, `:height` and `:fps`, and `:side`, those each
+  side takes beside `:frame_id` and `:calibration_path`. The stereo unit
+  refuses any other option under a side, and gives each instance the
+  pair's options and both sides' as `:left` and `:right`. Optional: a
+  driver without it takes any option under a side, each side's options
+  its instance's.
+  """
+  @callback pair_options() :: %{pair: [atom()], side: [atom()]}
+
+  @optional_callbacks pair_options: 0,
+                      set_controls: 2,
                       controls: 1,
                       shared_controls?: 0,
                       control_specs: 0,
-                      live: 1
+                      live: 1,
+                      outputs: 1
 end

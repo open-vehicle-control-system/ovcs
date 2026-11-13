@@ -212,7 +212,7 @@ defmodule VisionCore.ExportersTest do
     @behaviour VisionCore.Exporter
 
     @impl VisionCore.Exporter
-    def outputs(_options), do: [:stereo_pair, detections: [max_hz: 2]]
+    def outputs(_options), do: [:stereo_pair, {{:detections, :detection}, max_hz: 2}]
 
     @impl VisionCore.Exporter
     def init(_options), do: {:ok, nil}

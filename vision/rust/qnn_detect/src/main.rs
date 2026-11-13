@@ -1,112 +1,90 @@
-//! `qnn_detect <context.bin> [score_threshold]`: the Port behind
-//! `VisionCore.Detection.Backend.Qnn`. YOLOX on the Hexagon NPU through QNN's
-//! HTP backend, from a context binary built for this chip and QAIRT version.
+//! `qnn_detect <context.bin> [score_threshold] [--performance <profile>]
+//! [--rpc-polling-us <us>]`: the Port behind `VisionCore.Detection.Backend.Qnn`. YOLOX on the
+//! Hexagon NPU through QNN's HTP backend, from a context binary built for this chip and QAIRT
+//! version, under a power vote (`qnn::Power`): the performance profile, burst by default, and
+//! the RPC polling, 0 µs by default.
+//! `qnn_detect --graph-names <model.dlc>` prints the DLC's graph names, one a line.
 //! The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and
 //! `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
+//! The model takes one 640x640 uint8 RGB image of pixel values and gives YOLOX's uint8
+//! `boxes`, `scores` and `class_idx`; another model is refused at start (`model`).
+//!
 //! Records are `hailo_detect`'s (`detection::protocol`): a request carries a
-//! sequence, the image's size, 1 (grey) or 3 (BGR) channels and its pixels;
-//! the reply the detections in the image's pixels, or a LOG record.
+//! sequence, the image's size, 1 (grey) or 3 (RGB) channels and its pixels;
+//! the reply the detections in the image's pixels and, when the graph ran, its
+//! time on the HTP from QNN's profile, or the wall time around its execution
+//! when the profile is unavailable; or a LOG record.
+//! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
-mod qnn;
+mod model;
 mod yolox;
 
 use std::process::exit;
+use std::time::Instant;
 
-use detection::letterbox::{letterbox_for, letterbox_into};
-use detection::protocol::{detections_record, parse_request};
-use framing::{log_record, LogLevel, Writer};
-use yolox::{decode, Outputs, Quantisation, ANCHORS, MODEL_SIZE};
+use detection::letterbox::{letterbox_for, letterbox_into, Frame};
+use detection::protocol::{detections_record, inference_micros, parse_request};
+use framing::{LogLevel, Writer};
+use model::Layout;
+use qnn::port::{self, Clock, Start};
+use qnn::{Power, TimeLog};
+use yolox::{decode, Outputs, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
 const NMS_IOU: f32 = 0.45;
 
-fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
+/// Threads the letterbox splits its rows across.
+const LETTERBOX_THREADS: usize = 3;
 
-/// A failure before stdout carries records goes to stderr.
-fn exit_early(message: &str, status: i32) -> ! {
-    eprintln!("qnn_detect: {message}");
-    exit(status)
-}
+const NAME: &str = "qnn_detect";
+const USAGE: &str = "usage: qnn_detect <context.bin> [score_threshold] \
+                     [--performance <profile>] [--rpc-polling-us <us>] \
+                     | --graph-names <model.dlc>";
 
 fn main() {
-    let command_line: Vec<String> = std::env::args().collect();
-    if command_line.len() < 2 {
-        exit_early("usage: qnn_detect <context.bin> [score_threshold]", 2);
-    }
-    let context_path = &command_line[1];
-    let score_threshold = match command_line.get(2).map(|s| s.parse::<f32>()) {
+    let Start {
+        arguments,
+        power,
+        writer,
+    } = port::start(NAME, USAGE);
+    let Some(context_path) = arguments.first() else {
+        port::exit_early(NAME, USAGE, 2);
+    };
+    let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => exit_early(&format!("bad score threshold {}", command_line[2]), 2),
+        Some(Err(_)) => port::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2),
     };
-
-    // Before any QNN call: its libraries may log onto stdout.
-    let writer = match Writer::from_stdout_redirecting() {
-        Ok(writer) => writer,
-        Err(error) => exit_early(&format!("stdout: {error}"), 1),
-    };
-    writer.log_panics();
-
-    if let Err(message) = run(context_path, score_threshold, &writer) {
-        log(&writer, LogLevel::Error, &message);
+    if let Err(message) = run(context_path, score_threshold, power, &writer) {
+        port::log(&writer, LogLevel::Error, &message);
         exit(1);
     }
 }
 
-/// The output tensor named `name`, which must hold `bytes` bytes.
-fn output_index(model: &qnn::Model, name: &str, bytes: usize) -> Result<usize, String> {
-    let index = model
-        .outputs
-        .iter()
-        .position(|tensor| tensor.name == name)
-        .ok_or_else(|| format!("the model has no output {name}"))?;
-    match model.outputs[index].bytes {
-        actual if actual == bytes => Ok(index),
-        actual => Err(format!("output {name} holds {actual} bytes, not {bytes}")),
-    }
-}
+fn run(
+    context_path: &str,
+    score_threshold: f32,
+    power: Power,
+    writer: &Writer,
+) -> Result<(), String> {
+    let mut model = port::open_model(context_path, power, writer)?;
 
-fn quantisation(model: &qnn::Model, index: usize) -> Result<Quantisation, String> {
-    let tensor = &model.outputs[index];
-    let (scale, offset) = tensor
-        .scale_offset
-        .ok_or_else(|| format!("output {} is not quantised", tensor.name))?;
-    Ok(Quantisation {
-        scale,
-        zero_point: -offset,
-    })
-}
+    let Layout {
+        boxes,
+        box_quantisation,
+        scores,
+        score_quantisation,
+        classes,
+    } = model::layout(&model.inputs, &model.outputs)?;
 
-fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), String> {
-    let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
-    let model = qnn::Model::open(&binary)?;
-    drop(binary);
-
-    let input_bytes = (MODEL_SIZE * MODEL_SIZE * 3) as usize;
-    match model.inputs.as_slice() {
-        [input] if input.bytes == input_bytes => {}
-        _ => {
-            return Err(format!(
-                "the model takes {} inputs, not one {MODEL_SIZE}x{MODEL_SIZE} RGB image",
-                model.inputs.len()
-            ))
-        }
-    }
-    let boxes = output_index(&model, "boxes", ANCHORS * 4)?;
-    let scores = output_index(&model, "scores", ANCHORS)?;
-    let classes = output_index(&model, "class_idx", ANCHORS)?;
-    let (box_quantisation, score_quantisation) =
-        (quantisation(&model, boxes)?, quantisation(&model, scores)?);
-
-    log(
+    port::log(
         writer,
         LogLevel::Info,
         &format!(
-            "ready: {context_path}, input {:?}, outputs {:?}, boxes {box_quantisation:?}, \
-             scores {score_quantisation:?}, threshold {score_threshold}",
+            "ready: {context_path}, graph {}, input {:?}, outputs {:?}, \
+             boxes {box_quantisation:?}, scores {score_quantisation:?}, threshold {score_threshold}",
+            model.graph_name,
             model.inputs[0].dimensions,
             model
                 .outputs
@@ -116,65 +94,71 @@ fn run(context_path: &str, score_threshold: f32, writer: &Writer) -> Result<(), 
         ),
     );
 
-    let mut input = vec![0u8; input_bytes];
+    let mut input = vec![0u8; model.inputs[0].bytes];
     let mut buffers: Vec<Vec<u8>> = model
         .outputs
         .iter()
         .map(|tensor| vec![0u8; tensor.bytes])
         .collect();
+    let mut time_log = TimeLog::default();
+    let mut clock = Clock::new("letterbox", "decode", Instant::now());
     let mut stdin = std::io::stdin().lock();
-
-    while let Ok(Some(record)) = framing::read_record(&mut stdin) {
-        let Some(request) = parse_request(&record) else {
-            continue;
-        };
+    port::serve(&mut stdin, writer, &mut clock, |record, clock| {
+        let request = parse_request(record)?;
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, MODEL_SIZE);
-        let detections = match request.check() {
+        let (detections, time) = match request.check() {
             Err(message) => {
-                log(writer, LogLevel::Warning, &message);
-                Vec::new()
+                port::log(writer, LogLevel::Warning, &message);
+                (Vec::new(), None)
             }
             Ok(()) => {
                 letterbox_into(
-                    request.pixels,
-                    width,
-                    height,
-                    request.channels,
+                    &Frame {
+                        pixels: request.pixels,
+                        width,
+                        height,
+                        channels: request.channels,
+                    },
                     &mut input,
                     MODEL_SIZE,
                     &letterbox,
+                    LETTERBOX_THREADS,
                 );
+                clock.prepared();
                 let mut outputs: Vec<&mut [u8]> = buffers
                     .iter_mut()
                     .map(|buffer| buffer.as_mut_slice())
                     .collect();
                 match model.execute(&mut [input.as_mut_slice()], &mut outputs) {
-                    Ok(()) => decode(
-                        &Outputs {
-                            boxes: &buffers[boxes],
-                            box_quantisation,
-                            scores: &buffers[scores],
-                            score_quantisation,
-                            classes: &buffers[classes],
-                        },
-                        score_threshold,
-                        NMS_IOU,
-                        &letterbox,
-                    ),
+                    Ok(timing) => {
+                        port::log_execution(writer, &mut model, &mut time_log, &timing);
+                        clock.executed(&timing);
+                        let detections = decode(
+                            &Outputs {
+                                boxes: &buffers[boxes],
+                                box_quantisation,
+                                scores: &buffers[scores],
+                                score_quantisation,
+                                classes: &buffers[classes],
+                            },
+                            score_threshold,
+                            NMS_IOU,
+                            &letterbox,
+                        );
+                        clock.finished();
+                        (
+                            detections,
+                            Some(inference_micros(u128::from(timing.micros))),
+                        )
+                    }
                     Err(message) => {
-                        log(writer, LogLevel::Error, &message);
-                        Vec::new()
+                        port::log(writer, LogLevel::Error, &message);
+                        (Vec::new(), None)
                     }
                 }
             }
         };
-        if writer
-            .write_record(&detections_record(request.sequence, &detections))
-            .is_err()
-        {
-            break;
-        }
-    }
-    Ok(())
+        Some(detections_record(request.sequence, &detections, time))
+    })
 }

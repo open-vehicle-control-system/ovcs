@@ -1,0 +1,402 @@
+defmodule VisionCore.CameraDepth do
+  @moduledoc """
+  The stereo depth a pipeline on a camera of its own
+  (`source: {:camera, name}`) takes: the camera's calibration and pose,
+  read once at start, its lens for each frame size, and the stereo pairs
+  matched with its frames. `VisionCore.Detection.CameraSource` places a
+  detection pipeline's boxes with it, and `VisionCore.Segmentation.Pipeline`
+  classes a segmentation pipeline's points with it.
+
+  ## Matching a frame with a pair
+
+  For a camera with a calibration and a pose, the pairs captured within
+  `:pair_wait_ms` of the newest one are kept, at least two, each with its
+  depth, its geometry and its left frame's capture time and frame id
+  only. A frame is matched with the pair whose
+  left capture time is closest to its own, within half the pair period,
+  the median spacing of the pairs kept; otherwise it has no depth,
+  rather than a stale one. The stereo pipeline publishes a pair well
+  after its capture, so the pair captured closest to a frame may come
+  after the frame's result: `match/3` says `:wait` until a pair captured
+  at or after the frame has come, and the pipeline's results wait for it
+  (`VisionCore.CameraDepth.Queue`).
+
+  The stereo pairs have stalled (`stalled?/2`) before two have come, or
+  when none has come for two pair periods since the last one was handed
+  over (`add_pair/3`): the stereo latency is more than a period, so
+  capture times would always look stalled. A pipeline takes the pairs
+  waiting in its mailbox (`add_queued_pairs/2`) before it settles a
+  result, so running late does not make them look stalled. A pair
+  captured more than two pair periods after the newest one kept is kept
+  alone, so the pairs from before the gap do not stretch the period;
+  that gap is in capture times, which the pipeline's delay does not
+  change.
+
+  ## The lens
+
+  The camera's calibration is resampled to each frame size it sees,
+  pixel centres onto pixel centres, as a camera's outputs are made
+  (`VisionCore.Ros2.CameraCalibration.resample_to/3`), and read once for that
+  size (`VisionCore.CameraDepth.Reprojection.lens/1`). A size of another
+  aspect ratio, a sensor mode that crops, has no lens: its pixels see
+  another part of the sensor than the calibration's.
+  """
+  require Logger
+  require VisionCore.Outputs, as: Outputs
+
+  alias VisionCore.Camera.{Frame, Pose, Unit}
+  alias VisionCore.CameraDepth.Reprojection
+  alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Stereo.Pair
+
+  @ns_per_ms 1_000_000
+
+  defstruct [
+    :name,
+    :output,
+    :key,
+    :calibration,
+    :pose,
+    :owner,
+    :wording,
+    :keep_ns,
+    :received_ns,
+    lenses: %{},
+    pairs: []
+  ]
+
+  @typedoc """
+  What the owner's warnings say is lost: without a calibration, without a
+  pose, with either unreadable, and without a matched pair, and what a
+  calibration that cannot be projected with cannot do.
+  """
+  @type wording :: %{
+          calibration: String.t(),
+          pose: String.t(),
+          unreadable: String.t(),
+          unmatched: String.t(),
+          lens: String.t()
+        }
+
+  @typedoc """
+  The camera `name`, the output taken, `nil` for its default, the
+  `VisionCore.Outputs` key its frames come under, its calibration
+  and pose, `nil` without, the owner its warnings name and their wording,
+  its lens by frame size, `nil` for a size its calibration cannot be
+  projected at, how far before the newest pair's capture pairs are kept,
+  when the newest pair arrived and the pairs kept, newest first.
+  """
+  @type t :: %__MODULE__{
+          name: atom(),
+          output: atom() | nil,
+          key: VisionCore.Outputs.key(),
+          calibration: CameraCalibration.t() | nil,
+          pose: Pose.t() | nil,
+          owner: String.t(),
+          wording: wording(),
+          keep_ns: non_neg_integer(),
+          received_ns: integer() | nil,
+          lenses: %{{pos_integer(), pos_integer()} => Reprojection.lens() | nil},
+          pairs: [Pair.t()]
+        }
+
+  @doc """
+  The camera `name` of `config`, its calibration and pose read, each
+  missing or unreadable one logged once as a warning naming `owner` and
+  saying what is lost (`wording`), as is a calibration whose lens cannot
+  be projected with (`VisionCore.CameraDepth.Reprojection.check_lens/1`),
+  which is left out. Takes `:pair_wait_ms`, the longest a
+  result waits for its pair, which the pairs kept cover, and `:output`,
+  the camera's output taken, its default without
+  (`VisionCore.Camera.Unit.output_key/3`). Raises `ArgumentError` when
+  `config` has no camera `name`, no such output of it, or one it does
+  not send.
+  """
+  @spec new(atom(), VisionCore.Config.t(), String.t(), wording(), keyword()) :: t()
+  def new(name, config, owner, wording, opts) do
+    settings =
+      Enum.find(Unit.settings(config), &(&1.name == name)) ||
+        raise ArgumentError,
+              "its source names the camera #{inspect(name)}, which is no camera of the " <>
+                "configuration"
+
+    output = Keyword.get(opts, :output)
+
+    with {:error, message} <- Unit.camera_outputs(config, name),
+         do:
+           raise(
+             ArgumentError,
+             "its source names the camera #{inspect(name)}, whose outputs cannot be made: " <>
+               message
+           )
+
+    if Unit.unsent_output?(config, name, output),
+      do:
+        raise(
+          ArgumentError,
+          "its source names the output #{inspect(output)} of the camera #{inspect(name)}, " <>
+            "which it does not send (send: false)"
+        )
+
+    key =
+      Unit.output_key(config, name, output) ||
+        raise ArgumentError,
+              "its source names the output #{inspect(output)} of the camera #{inspect(name)}, " <>
+                outputs_text(settings.outputs)
+
+    depth = %__MODULE__{
+      name: name,
+      output: output,
+      key: key,
+      owner: owner,
+      wording: wording,
+      keep_ns: Keyword.fetch!(opts, :pair_wait_ms) * @ns_per_ms
+    }
+
+    %{
+      depth
+      | calibration: read(depth, :calibration, settings.calibration_path),
+        pose: read(depth, :pose, settings.pose_path)
+    }
+  end
+
+  defp outputs_text([]), do: "which has no named outputs"
+
+  defp outputs_text(outputs),
+    do: "whose outputs are #{Enum.map_join(outputs, ", ", &inspect(&1.name))}"
+
+  defp read(depth, kind, nil) do
+    Logger.warning(
+      "#{depth.owner}: camera #{depth.name} has no #{kind}, so #{Map.fetch!(depth.wording, kind)}"
+    )
+
+    nil
+  end
+
+  defp read(depth, kind, path) do
+    with {:ok, value} <- load(kind, path),
+         :ok <- check(kind, value) do
+      value
+    else
+      {:error, reason} ->
+        Logger.warning(
+          "#{depth.owner}: camera #{depth.name} has no #{kind}, #{path} " <>
+            "unreadable (#{inspect(reason)}), so #{depth.wording.unreadable}"
+        )
+
+        nil
+
+      {:refused, message} ->
+        Logger.warning(
+          "#{depth.owner}: camera #{depth.name}'s calibration cannot #{depth.wording.lens}: " <>
+            "#{message}, so #{depth.wording.calibration}"
+        )
+
+        nil
+    end
+  end
+
+  defp load(:calibration, path), do: CameraCalibration.load(path)
+  defp load(:pose, path), do: Pose.load(path)
+
+  defp check(:calibration, calibration) do
+    with {:error, message} <- Reprojection.check_lens(calibration), do: {:refused, message}
+  end
+
+  defp check(:pose, _pose), do: :ok
+
+  @doc "Whether the depth can be projected into the camera: it has a calibration and a pose."
+  @spec projectable?(t()) :: boolean()
+  def projectable?(depth), do: not is_nil(depth.calibration) and not is_nil(depth.pose)
+
+  @doc """
+  Keeps `pair`, arrived at `now_ns`, when it has a depth map and the
+  camera is `projectable?/1`, without its images, and drops the pairs
+  captured more than `:pair_wait_ms` before it, keeping two; a pair
+  captured more than two pair periods after the newest one is kept
+  alone.
+  """
+  @spec add_pair(t(), Pair.t(), integer()) :: t()
+  def add_pair(depth, %Pair{depth: depth_map, geometry: geometry} = pair, now_ns)
+      when is_binary(depth_map) and is_map(geometry) do
+    if projectable?(depth) do
+      kept = if after_gap?(depth.pairs, pair), do: [], else: depth.pairs
+      %{depth | pairs: recent([slim(pair) | kept], depth.keep_ns), received_ns: now_ns}
+    else
+      depth
+    end
+  end
+
+  def add_pair(depth, _pair_without_depth, _now_ns), do: depth
+
+  @doc """
+  `depth` with the stereo pairs waiting in the calling process's mailbox
+  (`VisionCore.Outputs.queued/1`) taken out and kept
+  (`add_pair/3`), arrived at `now_ns`: a pipeline running late takes the
+  pairs already sent before settling a result on the pairs it has.
+  """
+  @spec add_queued_pairs(t(), integer()) :: t()
+  def add_queued_pairs(depth, now_ns) do
+    receive do
+      Outputs.queued({:stereo_pair, %Pair{} = pair}) ->
+        depth |> add_pair(pair, now_ns) |> add_queued_pairs(now_ns)
+    after
+      0 -> depth
+    end
+  end
+
+  # Whether `pair` was captured more than two pair periods after the newest one kept.
+  defp after_gap?([newest | _older] = pairs, pair) do
+    case period_ns(pairs) do
+      nil -> false
+      period -> Pair.capture_ns(pair) - Pair.capture_ns(newest) > 2 * period
+    end
+  end
+
+  defp after_gap?([], _pair), do: false
+
+  # What matching and projecting read: the depth, its size, the geometry and the left frame's times.
+  defp slim(%Pair{left_frame: %Frame{} = left_frame} = pair) do
+    {width, height} = Pair.size(pair)
+
+    %Pair{
+      left_frame: %Frame{left_frame | jpeg: nil, grey: nil, rgb: nil},
+      right_frame: nil,
+      geometry: Map.merge(pair.geometry, %{width: width, height: height}),
+      depth: own_binary(pair.depth)
+    }
+  end
+
+  # A slice of the stereo Port's reply would keep the whole reply.
+  defp own_binary(depth_map) do
+    if :binary.referenced_byte_size(depth_map) > byte_size(depth_map),
+      do: :binary.copy(depth_map),
+      else: depth_map
+  end
+
+  defp recent([newest | _older] = pairs, keep_ns) do
+    oldest_ns = Pair.capture_ns(newest) - keep_ns
+
+    case Enum.take_while(pairs, &(Pair.capture_ns(&1) >= oldest_ns)) do
+      [_newest] -> Enum.take(pairs, 2)
+      recent -> recent
+    end
+  end
+
+  @doc """
+  Whether the stereo pairs have stalled at `now_ns`: fewer than two have
+  come, or none for two pair periods or more since the last one was handed
+  over.
+  """
+  @spec stalled?(t(), integer()) :: boolean()
+  def stalled?(depth, now_ns) do
+    case stalls_at(depth) do
+      nil -> true
+      stall_ns -> now_ns >= stall_ns
+    end
+  end
+
+  @doc """
+  When the stereo pairs stall if no other comes, `nil` while fewer than
+  two have come.
+  """
+  @spec stalls_at(t()) :: integer() | nil
+  def stalls_at(depth) do
+    case period_ns(depth.pairs) do
+      nil -> nil
+      period -> depth.received_ns + 2 * period
+    end
+  end
+
+  @doc """
+  The pair to take the depth of a frame captured at `capture_ns` from:
+  `{:ok, pair}`, `:none` when no pair kept was captured within half the
+  pair period, or `:wait` while a pair captured at or after the frame
+  may still come; with `final: true`, never `:wait`.
+  """
+  @spec match(t(), integer(), keyword()) :: {:ok, Pair.t()} | :none | :wait
+  def match(depth, capture_ns, opts \\ []) do
+    final? = Keyword.get(opts, :final, false)
+
+    case depth.pairs do
+      [newest | _older] = pairs ->
+        if final? or Pair.capture_ns(newest) >= capture_ns,
+          do: closest(pairs, capture_ns),
+          else: :wait
+
+      [] ->
+        if final?, do: :none, else: :wait
+    end
+  end
+
+  defp closest(pairs, capture_ns) do
+    pair = Enum.min_by(pairs, &abs(Pair.capture_ns(&1) - capture_ns))
+
+    case period_ns(pairs) do
+      nil ->
+        :none
+
+      period ->
+        if abs(Pair.capture_ns(pair) - capture_ns) * 2 <= period, do: {:ok, pair}, else: :none
+    end
+  end
+
+  defp period_ns(pairs) when length(pairs) < 2, do: nil
+
+  defp period_ns(pairs) do
+    spacings =
+      pairs
+      |> Enum.map(&Pair.capture_ns/1)
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.map(fn [newer, older] -> newer - older end)
+      |> Enum.sort()
+
+    median(spacings, length(spacings))
+  end
+
+  defp median(sorted, count) when rem(count, 2) == 1, do: Enum.at(sorted, div(count, 2))
+
+  defp median(sorted, count),
+    do: div(Enum.at(sorted, div(count, 2) - 1) + Enum.at(sorted, div(count, 2)), 2)
+
+  @doc """
+  The camera's lens at frames of `size`, `{width, height}`: `nil`
+  without a calibration, or with one that cannot be projected at that
+  size or is of another aspect ratio, which is logged once. Returns it
+  with the depth, which keeps it.
+  """
+  @spec lens(t(), {pos_integer(), pos_integer()}) :: {Reprojection.lens() | nil, t()}
+  def lens(%{calibration: nil} = depth, _size), do: {nil, depth}
+
+  def lens(depth, size) when is_map_key(depth.lenses, size), do: {depth.lenses[size], depth}
+
+  def lens(depth, {width, height} = size) do
+    calibration = depth.calibration
+
+    lens =
+      with true <- CameraCalibration.proportional?(calibration, width, height),
+           scaled = CameraCalibration.resample_to(calibration, width, height),
+           :ok <- Reprojection.check(scaled) do
+        Reprojection.lens(scaled)
+      else
+        false ->
+          Logger.warning(
+            "#{depth.owner}: camera #{depth.name}'s #{calibration.width}x#{calibration.height} " <>
+              "calibration cannot #{depth.wording.lens} at #{width}x#{height}, of another " <>
+              "aspect ratio: calibrate the camera at that size"
+          )
+
+          nil
+
+        {:error, message} ->
+          Logger.warning(
+            "#{depth.owner}: camera #{depth.name}'s calibration cannot #{depth.wording.lens} at " <>
+              "#{width}x#{height}: #{message}"
+          )
+
+          nil
+      end
+
+    {lens, put_in(depth.lenses[size], lens)}
+  end
+end

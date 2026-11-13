@@ -1,11 +1,12 @@
 defmodule VisionApiWeb.StatusJSON do
   @moduledoc """
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
-  same fields with camelCase keys, states as strings, and
-  `:stereo_segment_percent` as `stereoLoadPercent`. A camera's or the
-  sync's fields that were not measured are left out. Each exporter's
-  status is a `level` and a `detail`, as in `VisionApiWeb.ExporterJSON`.
-  `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`,
+  same fields with camelCase keys (`cameras` holds the sides and each camera
+  of its own, by name), states as strings, and
+  `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
+  without one. A camera's or the sync's fields that were not measured
+  are left out. Each exporter's status is a `level` and a `detail`, as
+  in `VisionApiWeb.ExporterJSON`. `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`,
   `rows`, `focus` and `brightness`, and `depth` the
   `VisionCore.Stereo.DepthCheck` checks, `rate` and `range`, with
   camelCase keys; their levels, cameras, directions and issues are
@@ -34,14 +35,12 @@ defmodule VisionApiWeb.StatusJSON do
   @spec status(VisionCore.Status.snapshot()) :: map()
   def status(snapshot) do
     %{
-      cameras: %{
-        left: rename(snapshot.cameras.left, @camera_keys),
-        right: rename(snapshot.cameras.right, @camera_keys)
-      },
+      cameras:
+        Map.new(snapshot.cameras, fn {name, camera} -> {name, rename(camera, @camera_keys)} end),
       sync: rename(snapshot.sync, @sync_keys),
       pair: checks(snapshot.pair),
       depth: checks(snapshot.depth),
-      hailo: Atom.to_string(snapshot.hailo),
+      npu: npu(snapshot.npu),
       depthHz: snapshot.depth_hz,
       cpuPercent: snapshot.cpu_percent,
       stereoLoadPercent: snapshot.stereo_segment_percent,
@@ -67,6 +66,18 @@ defmodule VisionApiWeb.StatusJSON do
       [first | rest] = key |> Atom.to_string() |> String.split("_")
       {String.to_atom(Enum.join([first | Enum.map(rest, &String.capitalize/1)])), value}
     end)
+  end
+
+  defp npu(nil), do: nil
+
+  defp npu(npu) do
+    %{
+      kind: npu.kind,
+      state: Atom.to_string(npu.state),
+      loadPercent: npu.load_percent,
+      pipelines:
+        Map.new(npu.pipelines, fn {name, %{inference_ms: ms}} -> {name, %{inferenceMs: ms}} end)
+    }
   end
 
   defp alignment(nil), do: nil

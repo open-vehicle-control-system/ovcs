@@ -86,7 +86,7 @@
           "maxValue": 4.0,
           "pointSize": 2
         },
-        "/stereo/detections/markers": {
+        "/stereo/detection/detections/markers": {
           "visible": true
         },
         "/odom": {
@@ -299,7 +299,7 @@
         "flipHorizontal": false,
         "flipVertical": false,
         "annotations": {
-          "/stereo/left/detections": {
+          "/stereo/detection/annotations": {
             "visible": true
           }
         }

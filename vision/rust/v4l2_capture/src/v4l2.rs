@@ -14,6 +14,7 @@ const READ_WRITE: u64 = 3;
 const READ: u64 = 2;
 const WRITE: u64 = 1;
 const VIDIOC_QUERYCAP: u64 = ioc(READ, 0, 104);
+const VIDIOC_ENUM_FMT: u64 = ioc(READ_WRITE, 2, 64);
 const VIDIOC_S_FMT: u64 = ioc(READ_WRITE, 5, 208);
 const VIDIOC_REQBUFS: u64 = ioc(READ_WRITE, 8, 20);
 const VIDIOC_QUERYBUF: u64 = ioc(READ_WRITE, 9, 88);
@@ -36,6 +37,7 @@ const MEMORY_FLAG_NON_COHERENT: u8 = 1;
 const BUF_FLAG_ERROR: u32 = 0x0000_0040;
 const PIX_FMT_SRGGB10: u32 = u32::from_le_bytes(*b"RG10");
 const PIX_FMT_SRGGB10P: u32 = u32::from_le_bytes(*b"pRAA");
+const PIX_FMT_SRGGB12P: u32 = u32::from_le_bytes(*b"pRCC");
 
 pub const CID_EXPOSURE: u32 = 0x0098_0911;
 pub const CID_VBLANK: u32 = 0x009e_0901;
@@ -97,6 +99,17 @@ struct FormatMplane {
     _pad: u32,
     pix: PixFormatMplane,
     _rest: [u8; 200 - 192],
+}
+
+#[repr(C)]
+struct FormatDescription {
+    index: u32,
+    kind: u32,
+    flags: u32,
+    description: [u8; 32],
+    pixelformat: u32,
+    mbus_code: u32,
+    _reserved: [u32; 3],
 }
 
 #[repr(C)]
@@ -315,8 +328,8 @@ impl Drop for Node {
     }
 }
 
-/// A capture node streaming raw 10-bit RGGB into mmapped buffers, through
-/// the single-plane or the multiplanar API, whichever the node offers.
+/// A capture node streaming raw RGGB into mmapped buffers, through the
+/// single-plane or the multiplanar API, whichever the node offers.
 pub struct Capture {
     pub node: Node,
     /// Bytes from one row's start to the next, padding included.
@@ -348,24 +361,72 @@ fn layout_of(pixelformat: u32) -> Option<Layout> {
     match pixelformat {
         PIX_FMT_SRGGB10 => Some(Layout::Unpacked16),
         PIX_FMT_SRGGB10P => Some(Layout::Packed10),
+        PIX_FMT_SRGGB12P => Some(Layout::Packed12),
         _ => None,
     }
 }
 
-/// Asks for RG10, then pRAA, through `request`, which returns the pixel
-/// format and bytes per row the node set; the first the node keeps decides
-/// the layout. A node replaces a format it does not support with another.
-fn negotiate(mut request: impl FnMut(u32) -> io::Result<(u32, u32)>) -> io::Result<(Layout, u32)> {
-    for asked in [PIX_FMT_SRGGB10, PIX_FMT_SRGGB10P] {
+/// The pixel formats that carry `sample_bits`-bit RGGB, in the order asked.
+fn formats_for(sample_bits: u32) -> &'static [u32] {
+    match sample_bits {
+        12 => &[PIX_FMT_SRGGB12P],
+        _ => &[PIX_FMT_SRGGB10, PIX_FMT_SRGGB10P],
+    }
+}
+
+/// Pixel formats as their fourccs, comma-separated.
+fn fourccs(pixelformats: &[u32]) -> String {
+    pixelformats
+        .iter()
+        .map(|pixelformat| {
+            String::from_utf8_lossy(&pixelformat.to_le_bytes())
+                .trim_end()
+                .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Asks for each format that carries `sample_bits`-bit RGGB through
+/// `request`, which returns the pixel format and bytes per row the node set;
+/// the first the node keeps decides the layout. A node replaces a format it
+/// does not support with another; when it keeps none, the error names the
+/// formats `offered` lists.
+fn negotiate(
+    sample_bits: u32,
+    mut request: impl FnMut(u32) -> io::Result<(u32, u32)>,
+    offered: impl FnOnce() -> io::Result<Vec<u32>>,
+) -> io::Result<(Layout, u32)> {
+    let formats = formats_for(sample_bits);
+    for &asked in formats {
         let (pixelformat, bytesperline) = request(asked)?;
         if let Some(layout) = layout_of(pixelformat).filter(|_| pixelformat == asked) {
             return Ok((layout, bytesperline));
         }
     }
+    let offered = match offered() {
+        Ok(offered) => format!("it offers {}", fourccs(&offered)),
+        Err(error) => format!("listing its formats failed: {error}"),
+    };
     Err(io::Error::new(
         io::ErrorKind::Unsupported,
-        "the node takes neither RG10 nor pRAA",
+        format!("the node takes none of {}; {offered}", fourccs(formats)),
     ))
+}
+
+/// The pixel formats `node` offers for buffers of `kind`.
+fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
+    let mut offered = Vec::new();
+    loop {
+        let mut description: FormatDescription = zeroed();
+        description.index = offered.len() as u32;
+        description.kind = kind;
+        match xioctl(node.fd, VIDIOC_ENUM_FMT, &mut description) {
+            Ok(()) => offered.push(description.pixelformat),
+            Err(error) if error.raw_os_error() == Some(libc::EINVAL) => return Ok(offered),
+            Err(error) => return Err(error),
+        }
+    }
 }
 
 /// Asks `node` for `width` x `height` in `pixelformat` and returns the format
@@ -405,22 +466,43 @@ fn set_format(
 }
 
 impl Capture {
-    /// Sets `width` x `height` raw 10-bit RGGB on `node`, maps `count` buffers
-    /// and starts streaming.
-    pub fn start(node: Node, width: u32, height: u32, count: u32) -> io::Result<Capture> {
+    /// Sets `width` x `height` raw `sample_bits`-bit RGGB on `node`, maps
+    /// `count` buffers and starts streaming.
+    pub fn start(
+        node: Node,
+        width: u32,
+        height: u32,
+        sample_bits: u32,
+        count: u32,
+    ) -> io::Result<Capture> {
         let multiplanar = node.multiplanar()?;
+        let kind = if multiplanar {
+            BUF_TYPE_VIDEO_CAPTURE_MPLANE
+        } else {
+            BUF_TYPE_VIDEO_CAPTURE
+        };
         let mut set_size = (0, 0);
-        let (layout, bytesperline) = negotiate(|pixelformat| {
-            let (set_width, set_height, set, bytesperline) =
-                set_format(&node, multiplanar, width, height, pixelformat)?;
-            set_size = (set_width, set_height);
-            Ok((set, bytesperline))
-        })?;
+        let (layout, bytesperline) = negotiate(
+            sample_bits,
+            |pixelformat| {
+                let (set_width, set_height, set, bytesperline) =
+                    set_format(&node, multiplanar, width, height, pixelformat)?;
+                set_size = (set_width, set_height);
+                Ok((set, bytesperline))
+            },
+            || formats_offered(&node, kind),
+        )?;
         let (set_width, set_height) = set_size;
         let unsupported = |message: String| io::Error::new(io::ErrorKind::Unsupported, message);
         if (set_width, set_height) != (width, height) {
             return Err(unsupported(format!(
                 "asked for {width}x{height}, the sensor gives {set_width}x{set_height}"
+            )));
+        }
+        if !(width as usize).is_multiple_of(layout.samples_per_group()) {
+            return Err(unsupported(format!(
+                "{width} samples a row, not a multiple of the {} {layout:?} stores together",
+                layout.samples_per_group()
             )));
         }
         if (bytesperline as usize) < layout.row_bytes(width as usize) {
@@ -429,11 +511,6 @@ impl Capture {
             )));
         }
 
-        let kind = if multiplanar {
-            BUF_TYPE_VIDEO_CAPTURE_MPLANE
-        } else {
-            BUF_TYPE_VIDEO_CAPTURE
-        };
         let mut request = RequestBuffers {
             count,
             kind,
@@ -553,6 +630,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<Capability>(), 104);
         assert_eq!(std::mem::size_of::<Plane>(), 64);
         assert_eq!(std::mem::size_of::<Buffer>(), 88);
+        assert_eq!(std::mem::size_of::<FormatDescription>(), 64);
     }
 
     #[test]
@@ -561,17 +639,64 @@ mod tests {
         let packed = u32::from_le_bytes(*b"pRAA");
         let uyvy = u32::from_le_bytes(*b"UYVY");
         let mut asked = Vec::new();
-        let reply = negotiate(|pixelformat| {
-            asked.push(pixelformat);
-            Ok(if pixelformat == packed {
-                (packed, 1824)
-            } else {
-                (uyvy, 1456)
-            })
-        });
+        let reply = negotiate(
+            10,
+            |pixelformat| {
+                asked.push(pixelformat);
+                Ok(if pixelformat == packed {
+                    (packed, 1824)
+                } else {
+                    (uyvy, 1456)
+                })
+            },
+            || Ok(vec![uyvy, packed]),
+        );
         assert_eq!(reply.unwrap(), (Layout::Packed10, 1824));
         assert_eq!(asked, [rg10, packed]);
-        assert!(negotiate(|_| Ok((uyvy, 1456))).is_err());
+        assert!(negotiate(10, |_| Ok((uyvy, 1456)), || Ok(vec![uyvy])).is_err());
+    }
+
+    #[test]
+    fn a_12_bit_sensor_is_captured_as_packed_12_bit_samples() {
+        let packed = u32::from_le_bytes(*b"pRCC");
+        let mut asked = Vec::new();
+        let reply = negotiate(
+            12,
+            |pixelformat| {
+                asked.push(pixelformat);
+                Ok((pixelformat, 3072))
+            },
+            || panic!("no format list when the node keeps the format"),
+        );
+        assert_eq!(reply.unwrap(), (Layout::Packed12, 3072));
+        assert_eq!(asked, [packed]);
+    }
+
+    #[test]
+    fn a_node_that_refuses_the_format_names_the_formats_it_offers() {
+        let offered = [*b"UYVY", *b"pRAA", *b"BA81"].map(u32::from_le_bytes);
+        let refused = negotiate(12, |_| Ok((offered[0], 4056)), || Ok(offered.to_vec()));
+        let error = refused.unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
+        assert_eq!(
+            error.to_string(),
+            "the node takes none of pRCC; it offers UYVY, pRAA, BA81"
+        );
+    }
+
+    #[test]
+    fn a_refusal_still_names_the_format_when_listing_fails() {
+        let uyvy = u32::from_le_bytes(*b"UYVY");
+        let refused = negotiate(
+            12,
+            |_| Ok((uyvy, 4056)),
+            || Err(io::Error::from_raw_os_error(libc::ENOTTY)),
+        );
+        let message = refused.unwrap_err().to_string();
+        assert!(
+            message.starts_with("the node takes none of pRCC; listing its formats failed: "),
+            "{message}"
+        );
     }
 
     #[test]
@@ -583,6 +708,10 @@ mod tests {
         assert_eq!(
             layout_of(u32::from_le_bytes(*b"pRAA")),
             Some(Layout::Packed10)
+        );
+        assert_eq!(
+            layout_of(u32::from_le_bytes(*b"pRCC")),
+            Some(Layout::Packed12)
         );
         assert_eq!(layout_of(u32::from_le_bytes(*b"YUYV")), None);
     }

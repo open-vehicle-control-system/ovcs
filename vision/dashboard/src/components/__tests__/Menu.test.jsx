@@ -80,4 +80,15 @@ describe('Menu', () => {
     expect(within(pipelines).getByText('No detector on this unit')).toBeTruthy()
     expect(within(pipelines).queryByRole('button', { name: /Detection/ })).toBeNull()
   })
+
+  it('lists a named pipeline without the greyed detection line', () => {
+    useParameters.setState({
+      groups: [group('cameras', 'Cameras', 0, 'stereo', 'source'), group('road_signs.input', 'Input', 101, 'road_signs')]
+    })
+    render(<Menu />)
+
+    const pipelines = screen.getByRole('region', { name: 'Pipelines' })
+    expect(within(pipelines).getByRole('list', { name: 'Road signs' })).toBeTruthy()
+    expect(within(pipelines).queryByText('No detector on this unit')).toBeNull()
+  })
 })

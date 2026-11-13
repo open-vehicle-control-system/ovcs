@@ -36,6 +36,10 @@ defmodule VisionApiWeb.SourceMonitor do
     end
   end
 
+  @doc "The refused join's reply, for a source that is not available."
+  @spec unavailable() :: {:error, %{reason: String.t()}}
+  def unavailable, do: @unavailable
+
   @doc "The channel's reply to a `:DOWN` message."
   @spec handle_down(reference(), Phoenix.Socket.t()) ::
           {:stop, :source_restarted, Phoenix.Socket.t()} | {:noreply, Phoenix.Socket.t()}

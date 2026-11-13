@@ -40,9 +40,13 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [How a pair flows](./vision/data_flow.md)
 - [Stereo stages](./vision/stages.md)
 - [Where depth is computed](./vision/compute.md)
+- [A camera of its own](./vision/cameras.md)
+- [Object detection](./vision/detection.md)
+- [Road segmentation](./vision/segmentation.md)
 - [Vision performance](./vision/performance.md)
 - [Tune with exports](./vision/tuning.md)
 - [Vision API](./vision/api.md)
+- [Vision channels](./vision/channels.md)
 
 ### Bus
 

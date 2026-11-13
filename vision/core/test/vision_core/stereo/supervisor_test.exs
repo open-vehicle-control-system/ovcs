@@ -57,7 +57,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
   describe "pipeline_options/1" do
     @stereo [
-      driver: VisionCore.Camera.V4L2,
+      driver: VisionCore.Camera.V4L2Pair,
       left: [calibration_path: "/rom/stereo_left.yaml"],
       right: [calibration_path: "/rom/stereo_right.yaml"]
     ]
@@ -126,7 +126,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
     test "the driver, the prefix, the capture size and rate, and each side's frame id and calibration path" do
       assert StereoSupervisor.camera_options(
                stereo_config(
-                 driver: VisionCore.Camera.V4L2,
+                 driver: VisionCore.Camera.GStreamer,
                  width: 640,
                  height: 360,
                  calibration_dir: "/rom/calibration",
@@ -136,7 +136,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
              ) ==
                {:ok,
                 [
-                  driver: VisionCore.Camera.V4L2,
+                  driver: VisionCore.Camera.GStreamer,
                   prefix: "stereo",
                   width: 640,
                   height: 360,
@@ -158,7 +158,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
       assert {:ok, options} =
                StereoSupervisor.camera_options(
                  stereo_config(
-                   driver: VisionCore.Camera.V4L2,
+                   driver: VisionCore.Camera.V4L2Pair,
                    prefix: "front",
                    calibration_dir: "/rom/calibration",
                    left: [],
@@ -216,6 +216,48 @@ defmodule VisionCore.Stereo.SupervisorTest do
       end
     end
 
+    test "take a pair-capturing driver's pair settings once, and each side's own options" do
+      assert {:ok, options} =
+               StereoSupervisor.camera_options(
+                 stereo_config(
+                   driver: VisionCore.Camera.V4L2Pair,
+                   black_level: 60,
+                   gamma: 1.8,
+                   left: [frame_id: "stereo_left_optical", csiphy: 0],
+                   right: [calibration_path: "/rom/right.yaml", video: "vi-4", sensor: "imx708"]
+                 )
+               )
+
+      assert options[:left] == [calibration_path: nil, frame_id: "stereo_left_optical", csiphy: 0]
+      refute Keyword.has_key?(options, :black_level)
+    end
+
+    test "refuse a pair setting under a side, and an option a side does not take, saying where it goes" do
+      for {side, reason} <- [
+            {[black_level: 60], "its :left :black_level is the pair's: give it beside :width"},
+            {[device: "/dev/video0"],
+             "its :left has no option :device; a side takes :frame_id, :calibration_path, " <>
+               ":csiphy, :video and :sensor"}
+          ] do
+        assert {:error, ^reason} =
+                 StereoSupervisor.camera_options(
+                   stereo_config(Keyword.update!(@stereo, :left, &(&1 ++ side)))
+                 )
+      end
+    end
+
+    test "refuse pair settings for a driver whose cameras each take their own" do
+      assert {:error, "it has no option :black_level"} =
+               StereoSupervisor.camera_options(
+                 stereo_config(
+                   driver: VisionCore.Camera.GStreamer,
+                   black_level: 60,
+                   left: [device: "/dev/video0"],
+                   right: [device: "/dev/video2"]
+                 )
+               )
+    end
+
     test "take every option the unit documents" do
       assert {:ok, _options} =
                StereoSupervisor.camera_options(
@@ -271,11 +313,11 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
     test "its cameras, left then right, and its outputs: the pipeline's pairs, then each camera's frames" do
       config = config([{:detector, []}, {:stereo, @stereo}])
-      left = VisionCore.Camera.V4L2.name_for("left")
-      right = VisionCore.Camera.V4L2.name_for("right")
+      left = VisionCore.Camera.V4L2Pair.name_for("left")
+      right = VisionCore.Camera.V4L2Pair.name_for("right")
 
       assert StereoSupervisor.cameras(config) ==
-               [{VisionCore.Camera.V4L2, left}, {VisionCore.Camera.V4L2, right}]
+               [{VisionCore.Camera.V4L2Pair, left}, {VisionCore.Camera.V4L2Pair, right}]
 
       assert StereoSupervisor.outputs(config) == [
                {:stereo_pair, {:stereo_pair, Pipeline}},
@@ -320,7 +362,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
       )
 
     driver_options = fn side ->
-      %{start: {VisionCore.Camera.V4L2, :start_link, [options]}} =
+      %{start: {VisionCore.Camera.V4L2Pair, :start_link, [options]}} =
         Enum.find(children, &(&1.id == {:stereo, :driver, side}))
 
       options
@@ -329,6 +371,32 @@ defmodule VisionCore.Stereo.SupervisorTest do
     assert driver_options.(:left)[:frame_id] == "front_left"
     assert driver_options.(:right)[:frame_id] == "front_right_optical"
     refute Enum.any?(children, &match?(%{id: {:stereo, :set_camera_info, _side}}, &1))
+  end
+
+  test "gives each instance of a pair-capturing driver the pair settings and both sides" do
+    {:ok, {_flags, children}} =
+      StereoSupervisor.init(
+        driver: VisionCore.Camera.V4L2Pair,
+        width: 728,
+        height: 544,
+        black_level: 60,
+        executable: "/opt/v4l2_capture",
+        align_correction: false,
+        left: [frame_id: "stereo_left_optical", csiphy: 0, calibration_path: "/rom/left.yaml"],
+        right: [frame_id: "stereo_right_optical", csiphy: 1, calibration_path: "/rom/right.yaml"]
+      )
+
+    for side <- [:left, :right] do
+      %{start: {VisionCore.Camera.V4L2Pair, :start_link, [options]}} =
+        Enum.find(children, &(&1.id == {:stereo, :driver, side}))
+
+      assert options[:label] == Atom.to_string(side)
+      assert options[:frame_id] == "stereo_#{side}_optical"
+      assert {options[:width], options[:height], options[:black_level]} == {728, 544, 60}
+      assert options[:executable] == "/opt/v4l2_capture"
+      assert options[:left] == [frame_id: "stereo_left_optical", csiphy: 0]
+      assert options[:right] == [frame_id: "stereo_right_optical", csiphy: 1]
+    end
   end
 
   describe "reload_calibration/3" do

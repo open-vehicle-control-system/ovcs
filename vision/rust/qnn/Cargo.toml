@@ -1,0 +1,15 @@
+[package]
+name = "qnn"
+version = "0.1.0"
+edition = "2021"
+
+# The generated bindings carry QNN's header comments, which rustdoc would run as code.
+[lib]
+doctest = false
+
+[dependencies]
+framing = { path = "../framing" }
+libloading = "0.8"
+
+[build-dependencies]
+bindgen = "0.70"

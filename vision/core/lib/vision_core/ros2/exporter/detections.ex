@@ -1,30 +1,50 @@
 defmodule VisionCore.Ros2.Exporter.Detections do
   @moduledoc """
-  The ROS 2 messages of the detections of `VisionCore.Detection.Pipeline`,
-  which `VisionCore.Ros2.Exporter` publishes: a
-  `visualization_msgs/MarkerArray` (what Foxglove's 3D panel renders), a
-  `vision_msgs/Detection3DArray` (what nav2 will consume), and a 2D
-  overlay on the left raw image.
+  The ROS 2 messages of the detections of one detection pipeline
+  (`VisionCore.Detection.Pipeline`), which `VisionCore.Ros2.Exporter`
+  publishes: a `visualization_msgs/MarkerArray` (what Foxglove's 3D
+  panel renders), a `vision_msgs/Detection3DArray` (what nav2 will
+  consume), and a 2D overlay on the left raw image.
+
+  A pipeline on a camera of its own publishes its detections with a
+  distance as markers and a `Detection3DArray`, those without one as a
+  `vision_msgs/Detection2DArray` of boxes in the camera's pixels, on
+  `<prefix>/<name>/detections_2d`, an empty one included, and all of
+  them on its overlay, over the camera's image. Each array's
+  detections are numbered (`id`) by their place in the pipeline's
+  result, so the two arrays never share a number.
 
   ## Frames
 
   Everything is published in the depth image's own optical frame, the
   frame the pair's left frame carries (`VisionCore.Stereo.Pair.frame_id/1`),
-  so it lines up with the point cloud without further transformation.
+  so it lines up with the point cloud without further transformation; on
+  a camera source, in the camera's, which its frames carry, and stamped
+  as its image.
   The vehicle's transform tree relates that frame to the vehicle body
   — without it a viewer has boxes but nowhere to put them.
 
   ## Options
 
-    * `:topic_prefix` (`"stereo"`) — markers go to
-      `<prefix>/detections/markers`, detections to
-      `<prefix>/detections`, and the 2D image overlay to
-      `<prefix>/left/detections`.
+    * `:pipeline` (`:detection`) — the detection pipeline whose
+      detections these are (`VisionCore.Detection`), `<name>`: its
+      markers go to `<prefix>/<name>/detections/markers` in the
+      marker namespace `"<name>"`, its detections to
+      `<prefix>/<name>/detections` and `<prefix>/<name>/annotations`.
+    * `:topic_prefix` (`"stereo"`) — the `<prefix>` of the topics.
     * `:marker_lifetime_ms` (`500`) — how long a marker survives
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
       promptly.
     * `:label_font_size` (`12.0`) — 2D overlay label size, in pixels.
+    * `:image_size` (`nil`) — on a camera source, `{width, height}`, the
+      size of the camera's image the 2D boxes and the overlay are drawn
+      on, the camera output the exporter publishes, when it is not the
+      one the pipeline detects on: the boxes and outlines are scaled
+      from the frame's size to it, `(x + ½) × width / frame width − ½`,
+      which maps pixel centres onto pixel centres as a camera's outputs
+      are made (`VisionCore.Camera.Output`). Without it, they are drawn
+      in the frame's pixels.
 
   ## Drawing on the raw image
 
@@ -45,6 +65,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Duration
   alias Ros2Zenoh.GeometryMsgs.Msg.{Point, Pose, PoseWithCovariance, Quaternion, Vector3}
   alias Ros2Zenoh.StdMsgs.Msg.{ColorRGBA, Header}
+  alias Ros2Zenoh.VisionMsgs.Msg.{BoundingBox2D, Detection2D, Detection2DArray, Point2D, Pose2D}
   alias Ros2Zenoh.VisionMsgs.Msg.{BoundingBox3D, Detection3D, Detection3DArray}
   alias Ros2Zenoh.VisionMsgs.Msg.{ObjectHypothesis, ObjectHypothesisWithPose}
 
@@ -57,14 +78,13 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   }
 
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
+  alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.Stamp
   alias VisionCore.Stereo.Pair
 
   @default_topic_prefix "stereo"
   @default_marker_lifetime_ms 500
   @default_label_font_size 12.0
-
-  @namespace "detections"
 
   @typedoc """
   A message to publish: its topic, its module and the message, and for the
@@ -73,16 +93,19 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   @type message :: {String.t(), module(), struct()} | {String.t(), module(), struct(), keyword()}
 
   @typedoc """
-  The topics, the frame of a pair that carries none, the marker lifetime
-  and the font size, from `new/1`.
+  The topics, the marker namespace, the frame of a pair that carries
+  none, the marker lifetime and the font size, from `new/1`.
   """
   @type t :: %{
           markers_topic: String.t(),
           detections_topic: String.t(),
+          detections_2d_topic: String.t(),
           overlay_topic: String.t(),
+          namespace: String.t(),
           default_frame_id: String.t(),
           marker_lifetime: struct(),
-          label_font_size: float()
+          label_font_size: float(),
+          image_size: {pos_integer(), pos_integer()} | nil
         }
 
   @doc "The topics and settings of the detection `options`; see the module doc."
@@ -90,41 +113,99 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   def new(options) do
     topic_prefix = Keyword.get(options, :topic_prefix, @default_topic_prefix)
 
-    %{
-      markers_topic: "#{topic_prefix}/detections/markers",
-      detections_topic: "#{topic_prefix}/detections",
-      overlay_topic: "#{topic_prefix}/left/detections",
+    options
+    |> Keyword.get(:pipeline, :detection)
+    |> topics(topic_prefix)
+    |> Map.merge(%{
       default_frame_id: "#{topic_prefix}_left",
       marker_lifetime:
         options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
-      label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size)
+      label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size),
+      image_size: Keyword.get(options, :image_size)
+    })
+  end
+
+  defp topics(pipeline, topic_prefix) do
+    %{
+      markers_topic: "#{topic_prefix}/#{pipeline}/detections/markers",
+      detections_topic: "#{topic_prefix}/#{pipeline}/detections",
+      detections_2d_topic: "#{topic_prefix}/#{pipeline}/detections_2d",
+      overlay_topic: "#{topic_prefix}/#{pipeline}/annotations",
+      namespace: Atom.to_string(pipeline)
     }
   end
 
   @doc """
-  The messages of `detections`, found on `pair`: the markers, the
-  detections and the overlay. The markers of the detections past the
-  last of these, among the `drawn` of the result before, are deleted:
-  a vanished box would otherwise stay on screen until its lifetime ends.
-  A marker array that deletes is published with `keep: true`, since the
-  arrays after it do not delete those markers again.
+  The messages of `detections`, found on `pair`, or on a camera's
+  `frame`: the markers, the detections, the 2D detections of a camera
+  source and the overlay. The markers of the detections past the last
+  of these, among the `drawn` of the result before (`drawn/1`), are
+  deleted: a vanished box would otherwise stay on screen until its
+  lifetime ends. A marker array that deletes is published with
+  `keep: true`, since the arrays after it do not delete those markers
+  again.
   """
-  @spec messages([map()], Pair.t(), t(), non_neg_integer()) :: [message()]
+  @spec messages([map()], Pair.t() | Frame.t(), t(), non_neg_integer()) :: [message()]
   def messages(detections, %Pair{} = pair, settings, drawn) do
     header = %Header{
       stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
       frame_id: Pair.frame_id(pair) || settings.default_frame_id
     }
 
+    numbered = Enum.with_index(detections)
+
     [
       {settings.markers_topic, MarkerArray, markers(detections, header, settings, drawn),
        keep: drawn > length(detections)},
-      {settings.detections_topic, Detection3DArray, detection_array(detections, header)},
+      {settings.detections_topic, Detection3DArray, detection_array(numbered, header)},
       {settings.overlay_topic, ImageAnnotations, overlay(detections, header, settings)}
     ]
   end
+
+  def messages(detections, %Frame{} = frame, settings, drawn) do
+    header = %Header{
+      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      frame_id: frame.frame_id || settings.default_frame_id
+    }
+
+    detections = on_image(detections, frame, settings.image_size)
+    {placed, unplaced} = detections |> Enum.with_index() |> Enum.split_with(&placed?/1)
+    placed_detections = Enum.map(placed, &elem(&1, 0))
+
+    [
+      {settings.markers_topic, MarkerArray, markers(placed_detections, header, settings, drawn),
+       keep: drawn > length(placed)},
+      {settings.detections_topic, Detection3DArray, detection_array(placed, header)},
+      {settings.detections_2d_topic, Detection2DArray, detection_2d_array(unplaced, header)},
+      {settings.overlay_topic, ImageAnnotations, overlay(detections, header, settings)}
+    ]
+  end
+
+  defp on_image(detections, _frame, nil), do: detections
+
+  defp on_image(detections, %Frame{width: width, height: height}, {width, height}),
+    do: detections
+
+  defp on_image(detections, %Frame{} = frame, {image_width, image_height}) do
+    to_x = &((&1 + 0.5) * image_width / frame.width - 0.5)
+    to_y = &((&1 + 0.5) * image_height / frame.height - 0.5)
+
+    Enum.map(detections, fn %{box: box, outline: outline} = detection ->
+      %{
+        detection
+        | box: %{box | x0: to_x.(box.x0), y0: to_y.(box.y0), x1: to_x.(box.x1), y1: to_y.(box.y1)},
+          outline: Enum.map(outline, fn {x, y} -> {to_x.(x), to_y.(y)} end)
+      }
+    end)
+  end
+
+  @doc "How many markers `detections` draw: those with a distance."
+  @spec drawn([map()]) :: non_neg_integer()
+  def drawn(detections), do: Enum.count(detections, &placed?({&1, nil}))
+
+  defp placed?({%{z: z}, _index}), do: not is_nil(z)
 
   defp markers(detections, header, settings, drawn) do
     markers =
@@ -140,8 +221,18 @@ defmodule VisionCore.Ros2.Exporter.Detections do
     stale_markers =
       Enum.flat_map(length(detections)..(drawn - 1)//1, fn index ->
         [
-          %Marker{header: header, ns: @namespace, id: box_id(index), action: Marker.delete()},
-          %Marker{header: header, ns: @namespace, id: label_id(index), action: Marker.delete()}
+          %Marker{
+            header: header,
+            ns: settings.namespace,
+            id: box_id(index),
+            action: Marker.delete()
+          },
+          %Marker{
+            header: header,
+            ns: settings.namespace,
+            id: label_id(index),
+            action: Marker.delete()
+          }
         ]
       end)
 
@@ -151,7 +242,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   defp box_marker(detection, index, header, settings) do
     %Marker{
       header: header,
-      ns: @namespace,
+      ns: settings.namespace,
       id: box_id(index),
       type: Marker.cube(),
       action: Marker.add(),
@@ -165,7 +256,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   defp label_marker(detection, index, header, settings) do
     %Marker{
       header: header,
-      ns: @namespace,
+      ns: settings.namespace,
       id: label_id(index),
       type: Marker.text_view_facing(),
       action: Marker.add(),
@@ -193,19 +284,14 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   defp box_id(index), do: index * 2
   defp label_id(index), do: index * 2 + 1
 
-  defp detection_array(detections, header) do
+  defp detection_array(numbered, header) do
     detections =
-      detections
-      |> Enum.with_index()
-      |> Enum.map(fn {detection, index} ->
+      Enum.map(numbered, fn {detection, index} ->
         %Detection3D{
           header: header,
           results: [
             %ObjectHypothesisWithPose{
-              hypothesis: %ObjectHypothesis{
-                class_id: detection.label,
-                score: detection.score / 1.0
-              },
+              hypothesis: hypothesis(detection),
               pose: %PoseWithCovariance{pose: pose_for(detection)}
             }
           ],
@@ -219,6 +305,30 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
     %Detection3DArray{header: header, detections: detections}
   end
+
+  defp detection_2d_array(numbered, header) do
+    detections =
+      Enum.map(numbered, fn {%{box: box} = detection, index} ->
+        %Detection2D{
+          header: header,
+          results: [%ObjectHypothesisWithPose{hypothesis: hypothesis(detection)}],
+          bbox: %BoundingBox2D{
+            center: %Pose2D{
+              position: %Point2D{x: (box.x0 + box.x1) / 2.0, y: (box.y0 + box.y1) / 2.0},
+              theta: 0.0
+            },
+            size_x: (box.x1 - box.x0) / 1.0,
+            size_y: (box.y1 - box.y0) / 1.0
+          },
+          id: Integer.to_string(index)
+        }
+      end)
+
+    %Detection2DArray{header: header, detections: detections}
+  end
+
+  defp hypothesis(detection),
+    do: %ObjectHypothesis{class_id: detection.label, score: detection.score / 1.0}
 
   # LINE_LOOP closes a box in four points where a LINE_LIST needs eight.
   defp overlay(detections, header, settings) do

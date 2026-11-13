@@ -161,19 +161,26 @@ function ros2Status(exporters) {
   ]
 }
 
+// The NPU's kind, with its load once known; starting while a backend prepares its model, none on a unit without one.
+function npuValue(npu) {
+  if (!npu) return 'none'
+  if (npu.state === 'starting') return 'starting'
+  return npu.loadPercent == null ? npu.kind : `${npu.kind} ${formatNumber(npu.loadPercent, 0)} %`
+}
+
 /** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
     ...ros2Status(status.exporters),
-    // Absent is a unit built without an accelerator, not a fault.
+    // Neither is a fault: no NPU is a unit built without an accelerator, one starting is preparing its model.
     {
-      id: 'hailo',
-      title: 'Hailo',
-      value: status.hailo,
-      widest: 'running',
-      healthy: status.hailo === 'running',
-      tone: status.hailo === 'absent' ? 'muted' : undefined,
-      hint: HINTS.hailo
+      id: 'npu',
+      title: 'NPU',
+      value: npuValue(status.npu),
+      widest: 'Hexagon 100 %',
+      healthy: status.npu?.state === 'running',
+      tone: !status.npu || status.npu.state === 'starting' ? 'muted' : undefined,
+      hint: HINTS.npu
     },
     { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]

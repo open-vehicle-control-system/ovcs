@@ -1,10 +1,11 @@
 //! `hailo_detect <model.hef> [score_threshold]`: the Port behind `VisionCore.Detection.Backend.Hailo`.
 //! The HEF carries its NMS in-graph, so this binary letterboxes pixels in and reads boxes back out.
 //!
-//! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 BGR), pixels.
+//! Request (stdin): u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 gray, 3 RGB), pixels.
 //! Response (stdout): u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0, x1, y1}
-//! in the caller's pixel coordinates, or a LOG record (`framing::log_record`). Scalars are
-//! little-endian.
+//! in the caller's pixel coordinates, then, when the frame was inferred, a u32 inference time
+//! in µs (the input's write and the output's read); or a LOG record (`framing::log_record`).
+//! Scalars are little-endian.
 
 #[cfg(feature = "device")]
 mod hailo;
@@ -19,6 +20,14 @@ use std::process::exit;
 use framing::{log_record, LogLevel, Writer};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
+
+/// The longest request taken: above any camera's whole RGB frame.
+#[cfg(feature = "device")]
+const MAX_REQUEST_BYTES: usize = 64 << 20;
+
+/// Threads the letterbox splits its rows across.
+#[cfg(feature = "device")]
+const LETTERBOX_THREADS: usize = 1;
 
 /// A LOG record, which `VisionCore.Detection.Backend.Hailo` hands to the Logger.
 fn log(writer: &Writer, level: LogLevel, message: &str) {
@@ -63,9 +72,9 @@ fn main() {
 
 #[cfg(feature = "device")]
 fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
-    use letterbox::{letterbox_for, letterbox_into};
+    use letterbox::{letterbox_for, letterbox_into, Frame};
     use outcome::{reply_for, FrameOutcome, Reply};
-    use protocol::{detections_record, parse_request};
+    use protocol::{detections_record, inference_micros, parse_request};
 
     let mut detector = match hailo::Detector::open(hef_path) {
         Ok(detector) => detector,
@@ -90,12 +99,13 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
     let mut output = vec![0f32; detector.output_bytes.div_ceil(std::mem::size_of::<f32>())];
     let mut stdin = std::io::stdin().lock();
 
-    while let Ok(Some(record)) = framing::read_record(&mut stdin) {
+    while let Ok(Some(record)) = framing::read_record(&mut stdin, MAX_REQUEST_BYTES) {
         let Some(request) = parse_request(&record) else {
             continue;
         };
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, model_size);
+        let mut inference_time = None;
         let outcome = match request.check() {
             Err(message) => {
                 log(writer, LogLevel::Warning, &message);
@@ -103,17 +113,23 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             }
             Ok(()) => {
                 letterbox_into(
-                    request.pixels,
-                    width,
-                    height,
-                    request.channels,
+                    &Frame {
+                        pixels: request.pixels,
+                        width,
+                        height,
+                        channels: request.channels,
+                    },
                     &mut model_input,
                     model_size,
                     &letterbox,
+                    LETTERBOX_THREADS,
                 );
 
                 match detector.infer(&model_input, &mut output) {
-                    Ok(()) => FrameOutcome::Inferred,
+                    Ok(elapsed) => {
+                        inference_time = Some(inference_micros(elapsed.as_micros()));
+                        FrameOutcome::Inferred
+                    }
                     Err(failure) => {
                         log(writer, LogLevel::Error, &failure.message);
                         failure.outcome
@@ -126,7 +142,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             // The Elixir side holds per-sequence state until it gets an answer.
             Reply::Empty => {
                 if writer
-                    .write_record(&detections_record(request.sequence, &[]))
+                    .write_record(&detections_record(request.sequence, &[], None))
                     .is_err()
                 {
                     break;
@@ -139,7 +155,7 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
                     LogLevel::Warning,
                     "vstreams may hold a frame in flight; exiting for a restart",
                 );
-                let _ = writer.write_record(&detections_record(request.sequence, &[]));
+                let _ = writer.write_record(&detections_record(request.sequence, &[], None));
                 return 1;
             }
         }
@@ -165,7 +181,11 @@ fn run(hef_path: &str, score_threshold: f32, writer: &Writer) -> i32 {
             score_threshold,
         );
         if writer
-            .write_record(&detections_record(request.sequence, &detections))
+            .write_record(&detections_record(
+                request.sequence,
+                &detections,
+                inference_time,
+            ))
             .is_err()
         {
             break;

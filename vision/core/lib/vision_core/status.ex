@@ -1,11 +1,16 @@
 defmodule VisionCore.Status do
   @moduledoc """
   The vision unit's health at a glance, for the dashboard: each camera's
-  frame rate and exposure, the pair's sync, the Hailo detector, the depth
-  rate, each exporter's status (`VisionCore.Exporters.list/1`), the CPU's
-  busy share (`OvcsVehicle.SystemLoad`) and the share of time the stereo
-  pipeline spent in its compiled Nx or native segments
-  (`Pair` `:device_ms`). Where they run on the GPU, that time
+  frame rate and exposure, the pair's sync, the NPU the detection and
+  segmentation pipelines run on (`:npu`: the kind of the first one's,
+  the detection pipelines' first, failed while any of their backends
+  has, starting while one prepares its model and none has failed, its
+  `:load_percent` and each pipeline's
+  `:inference_ms`), the depth rate, each exporter's
+  status (`VisionCore.Exporters.list/1`), the CPU's busy share
+  (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
+  spent in its compiled Nx or native segments (`Pair` `:device_ms`).
+  Where they run on the GPU, that time
   includes uploading the frames and waiting for the results, so it is
   not the GPU's busy share. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness
@@ -30,6 +35,20 @@ defmodule VisionCore.Status do
   and the depth rate is zero; the sync is absent too while neither camera
   runs, as once the stereo unit gave up.
 
+  Each camera of its own (`VisionCore.Camera.Unit.cameras/1`) is reported
+  beside the sides under its name, with its rate and the figures its
+  driver's `live/1` gives, but no `:issues`, as the pair checks do not
+  judge it.
+
+  The NPU's load is the share of the last tick its pipelines spent
+  inferring, summed over them and clamped to 100, and a pipeline's
+  inference time the mean over the tick's frames, both from the
+  accelerator times the backends report
+  (`VisionCore.Detection.Backend.inference_times/1`, and
+  `VisionCore.Segmentation.Backend`'s alike), which each tick
+  reads and starts over, a snapshot asked between two not. Both are `nil`
+  while no backend has reported a time.
+
   Rates are counted over the last tick, one second by default (`:tick_ms`),
   and every subscriber receives `{:vision_status, snapshot}` each tick.
   """
@@ -39,9 +58,8 @@ defmodule VisionCore.Status do
   alias VisionCore.Stereo.{AlignmentCorrection, DepthCheck, PairCheck, Pairer, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias OvcsVehicle.SystemLoad
-  alias VisionCore.Detection.Backend.Hailo
   alias VisionCore.Stereo.Pair
-  alias VisionCore.Camera.Frame
+  alias VisionCore.Camera.{Frame, Unit}
 
   @default_tick_ms 1_000
   @call_timeout_ms 200
@@ -51,9 +69,16 @@ defmodule VisionCore.Status do
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
   @type exporter :: %{id: String.t(), name: String.t(), status: Exporter.status()}
   @type snapshot :: %{
-          cameras: %{left: camera(), right: camera()},
+          cameras: %{required(atom()) => camera()},
           sync: map(),
-          hailo: :running | :absent | :failed,
+          npu:
+            %{
+              kind: String.t(),
+              state: :starting | :running | :failed,
+              load_percent: float() | nil,
+              pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
+            }
+            | nil,
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -114,17 +139,25 @@ defmodule VisionCore.Status do
   def init(opts) do
     config = Keyword.fetch!(opts, :config)
     tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
-    for {_output, key} <- StereoSupervisor.outputs(config), do: :ok = Outputs.subscribe(key)
+    own_cameras = Unit.cameras(config)
+
+    for {_output, key} <- StereoSupervisor.outputs(config) ++ Unit.outputs(config),
+        do: :ok = Outputs.subscribe(key)
+
+    own_names = Enum.map(own_cameras, fn {name, _driver, _server} -> name end)
     Process.send_after(self(), :tick, tick_ms)
 
     {:ok,
      %{
        tick_ms: tick_ms,
        cameras: StereoSupervisor.cameras(config),
-       hailo_configured?: hailo_configured?(config),
+       own_cameras: own_cameras,
+       npu_backends: npu_backends(config),
+       npu_times: nil,
+       window_ms: 0,
        exporters: [],
        subscribers: %{},
-       counts: %{left: 0, right: 0, depth: 0},
+       counts: zero_counts(own_names),
        device_ms: 0.0,
        cpu_times: SystemLoad.cpu_times(),
        cpu_percent: nil,
@@ -142,7 +175,7 @@ defmodule VisionCore.Status do
        qualities: [],
        quality: nil,
        window_start_ms: now_ms(),
-       rates_hz: %{left: 0.0, right: 0.0, depth: 0.0}
+       rates_hz: Map.new(Map.keys(zero_counts(own_names)), &{&1, 0.0})
      }}
   end
 
@@ -182,15 +215,19 @@ defmodule VisionCore.Status do
      }}
   end
 
-  def handle_cast({:camera_frame, %Frame{label: label}}, state) when label in ["left", "right"],
-    do: {:noreply, count(state, String.to_existing_atom(label))}
+  def handle_cast({:camera_frame, %Frame{label: label}}, state) do
+    case Enum.find(Map.keys(state.counts), &(Atom.to_string(&1) == label)) do
+      nil -> {:noreply, state}
+      key -> {:noreply, count(state, key)}
+    end
+  end
 
   def handle_cast(_message, state), do: {:noreply, state}
 
   @impl GenServer
   def handle_info(:tick, state) do
     Process.send_after(self(), :tick, state.tick_ms)
-    {snapshot, state} = state |> close_window() |> build_snapshot()
+    {snapshot, state} = state |> close_window() |> build_snapshot(:tick)
     Enum.each(Map.keys(state.subscribers), &send(&1, {:vision_status, snapshot}))
     {:noreply, state}
   end
@@ -199,6 +236,9 @@ defmodule VisionCore.Status do
     do: {:noreply, %{state | subscribers: Map.delete(state.subscribers, pid)}}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp zero_counts(own_names),
+    do: Map.new([:left, :right, :depth | own_names], &{&1, 0})
 
   defp count(state, key), do: %{state | counts: Map.update!(state.counts, key, &(&1 + 1))}
 
@@ -211,8 +251,9 @@ defmodule VisionCore.Status do
     %{
       state
       | rates_hz: rates_hz,
-        counts: %{left: 0, right: 0, depth: 0},
+        counts: Map.new(state.counts, fn {key, _count} -> {key, 0} end),
         window_start_ms: now,
+        window_ms: elapsed_ms,
         cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
         cpu_times: cpu_times,
         stereo_segment_percent: min(100 * state.device_ms / elapsed_ms, 100.0),
@@ -279,8 +320,9 @@ defmodule VisionCore.Status do
     end
   end
 
-  defp build_snapshot(state) do
-    replies = state |> calls() |> call_all_within_timeout()
+  defp build_snapshot(state, moment \\ :between_ticks) do
+    replies = state |> calls(moment) |> call_all_within_timeout()
+    state = npu_times(state, replies)
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
     sync = sync(cameras, replies)
     state = listed(state, replies.exporters)
@@ -312,13 +354,15 @@ defmodule VisionCore.Status do
     issues = PairCheck.camera_issues(pair)
     state = %{state | pair: pair, depth: depth}
 
+    sides =
+      Map.new(cameras, fn {side, camera} -> {side, Map.put(camera, :issues, issues[side])} end)
+
     snapshot = %{
-      cameras:
-        Map.new(cameras, fn {side, camera} -> {side, Map.put(camera, :issues, issues[side])} end),
+      cameras: Map.merge(own_cameras(state, replies), sides),
       sync: sync,
       pair: pair,
       depth: depth,
-      hailo: hailo(state, replies),
+      npu: npu(state, replies),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,
@@ -340,18 +384,67 @@ defmodule VisionCore.Status do
   defp listed(state, exporters), do: %{state | exporters: exporters}
 
   # What the snapshot asks other processes, by key: the function and its answer when it fails.
-  defp calls(state) do
-    hailo = if state.hailo_configured?, do: %{hailo: {&Hailo.available?/0, false}}, else: %{}
-
+  defp calls(state, moment) do
     %{exporters: {&exporters/0, :late}}
-    |> Map.merge(hailo)
+    |> Map.merge(npu_calls(state, moment))
     |> Map.merge(stereo_calls(state))
+    |> Map.merge(own_calls(state))
+  end
+
+  defp npu_calls(%{npu_backends: backends}, moment) do
+    states =
+      Map.new(backends, fn {_name, backend, server} ->
+        {{:npu, server}, {fn -> backend_state(backend, server) end, :failed}}
+      end)
+
+    if moment == :tick, do: Map.merge(states, npu_times_calls(backends)), else: states
+  end
+
+  defp backend_state(backend, server) do
+    cond do
+      Code.ensure_loaded?(backend) and function_exported?(backend, :state, 1) ->
+        backend.state(server)
+
+      backend.available?(server) ->
+        :running
+
+      true ->
+        :failed
+    end
+  end
+
+  defp npu_times_calls(backends) do
+    Map.new(backends, fn {_name, backend, server} ->
+      {{:npu_times, server}, {fn -> backend.inference_times(server) end, nil}}
+    end)
   end
 
   # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
   defp exporters do
     for exporter <- Exporters.list(div(@call_timeout_ms, 2)),
         do: Map.take(exporter, [:id, :name, :status])
+  end
+
+  defp own_calls(%{own_cameras: own_cameras}) do
+    for {name, driver, server} <- own_cameras,
+        function_exported?(driver, :live, 1),
+        into: %{},
+        do: {{:own, name}, {fn -> live(driver, server) end, %{}}}
+  end
+
+  defp live(driver, server), do: Map.take(driver.live(server) || %{}, @camera_metadata_keys)
+
+  defp own_cameras(state, replies) do
+    Map.new(state.own_cameras, fn {name, _driver, server} ->
+      if GenServer.whereis(server),
+        do:
+          {name,
+           Map.merge(
+             %{present: true, fps: state.rates_hz[name]},
+             Map.get(replies, {:own, name}, %{})
+           )},
+        else: {name, %{present: false}}
+    end)
   end
 
   defp stereo_calls(%{cameras: []}), do: %{}
@@ -363,7 +456,7 @@ defmodule VisionCore.Status do
     for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
         function_exported?(driver, :live, 1),
         into: %{sync: sync, row_correction: row_correction},
-        do: {side, {fn -> Map.take(driver.live(server) || %{}, @camera_metadata_keys) end, %{}}}
+        do: {side, {fn -> live(driver, server) end, %{}}}
   end
 
   # The rows the stage declaring `right_row_offset` moves the right image by, as the row correction sets them.
@@ -388,17 +481,63 @@ defmodule VisionCore.Status do
   defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
   defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
 
-  defp hailo(%{hailo_configured?: false}, _replies), do: :absent
-  defp hailo(_state, %{hailo: available?}), do: if(available?, do: :running, else: :failed)
+  defp npu(%{npu_backends: []}, _replies), do: nil
 
-  defp hailo_configured?(%VisionCore.Config{components: components}),
-    do: Enum.any?(components, &hailo_component?/1)
+  defp npu(%{npu_backends: [{_name, first, _server} | _others] = backends} = state, replies) do
+    states = for {_name, _backend, server} <- backends, do: Map.fetch!(replies, {:npu, server})
 
-  defp hailo_component?(:hailo_detector), do: true
-  defp hailo_component?({:hailo_detector, _options}), do: true
-  defp hailo_component?(:detector), do: true
-  defp hailo_component?({:detector, options}), do: Keyword.get(options, :backend, Hailo) == Hailo
-  defp hailo_component?(_component), do: false
+    %{
+      kind: first.npu_kind(),
+      state: Enum.find([:failed, :starting], :running, &(&1 in states)),
+      load_percent: state.npu_times && state.npu_times.load_percent,
+      pipelines: pipelines(state)
+    }
+  end
+
+  defp pipelines(%{npu_backends: backends, npu_times: nil}),
+    do: Map.new(backends, fn {name, _backend, _server} -> {name, %{inference_ms: nil}} end)
+
+  defp pipelines(%{npu_times: %{pipelines: pipelines}}), do: pipelines
+
+  # The detection and segmentation units' backends that run on an accelerator, with their pipeline's name.
+  defp npu_backends(config) do
+    for {_name, backend, _server} = pipeline <-
+          VisionCore.Detection.Supervisor.pipelines(config) ++
+            VisionCore.Segmentation.Supervisor.pipelines(config),
+        backend.npu_kind(),
+        do: pipeline
+  end
+
+  # What the tick's replies make of the backends' inference times; other snapshots keep the last tick's.
+  defp npu_times(%{npu_backends: []} = state, _replies), do: state
+
+  defp npu_times(state, replies) do
+    times =
+      for {name, backend, server} <- state.npu_backends,
+          do: {name, backend, Map.get(replies, {:npu_times, server}, :unasked)}
+
+    if Enum.any?(times, fn {_name, _backend, reply} -> reply == :unasked end),
+      do: state,
+      else: %{state | npu_times: window_times(times, state.window_ms)}
+  end
+
+  # The load is the first accelerator's own: only the pipelines on its kind add up.
+  defp window_times([{_name, first, _reply} | _others] = times, window_ms) do
+    reported =
+      for {_name, backend, %{sum_us: sum_us}} <- times,
+          backend.npu_kind() == first.npu_kind(),
+          do: sum_us
+
+    %{
+      load_percent:
+        if(reported != [], do: min(100 * Enum.sum(reported) / 1_000 / window_ms, 100.0)),
+      pipelines:
+        Map.new(times, fn {name, _backend, reply} -> {name, %{inference_ms: mean_ms(reply)}} end)
+    }
+  end
+
+  defp mean_ms(%{count: count, sum_us: sum_us}) when count > 0, do: sum_us / count / 1_000
+  defp mean_ms(_none), do: nil
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 

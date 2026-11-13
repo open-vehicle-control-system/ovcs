@@ -127,4 +127,95 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
       assert CameraCalibration.scale_to(sized, 640, 360) == sized
     end
   end
+
+  describe "resample_to/3" do
+    setup do
+      calibration = %{
+        CameraCalibration.parse(@ost_style)
+        | width: 2028,
+          height: 1520,
+          camera_matrix: [1161.3, 0.0, 1013.5, 0.0, 1161.3, 759.5, 0.0, 0.0, 1.0],
+          projection_matrix: [
+            1161.3,
+            0.0,
+            1013.5,
+            -72.0,
+            0.0,
+            1161.3,
+            759.5,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            0.0
+          ]
+      }
+
+      %{calibration: calibration}
+    end
+
+    test "maps pixel centres for a 2x2 block average: f / 2, (c + 1/2) / 2 - 1/2",
+         %{calibration: calibration} do
+      averaged = CameraCalibration.resample_to(calibration, 1014, 760)
+
+      assert {averaged.width, averaged.height} == {1014, 760}
+      [fx, skew, cx, _, fy, cy, _, _, _] = averaged.camera_matrix
+      assert_in_delta fx, 580.65, 1.0e-9
+      assert_in_delta fy, 580.65, 1.0e-9
+      assert skew == 0.0
+      assert_in_delta cx, 506.5, 1.0e-9
+      assert_in_delta cy, 379.5, 1.0e-9
+
+      [pfx, _, pcx, ptx, _, pfy, pcy, pty | _] = averaged.projection_matrix
+      assert_in_delta pfx, 580.65, 1.0e-9
+      assert_in_delta pcx, 506.5, 1.0e-9
+      assert_in_delta ptx, -36.0, 1.0e-9
+      assert_in_delta pfy, 580.65, 1.0e-9
+      assert_in_delta pcy, 379.5, 1.0e-9
+      assert pty == 0.0
+      assert averaged.distortion_coefficients == calibration.distortion_coefficients
+      assert averaged.rectification_matrix == calibration.rectification_matrix
+    end
+
+    test "maps a centre back where it was", %{calibration: calibration} do
+      back =
+        calibration
+        |> CameraCalibration.resample_to(507, 380)
+        |> CameraCalibration.resample_to(2028, 1520)
+
+      for {value, original} <- Enum.zip(back.camera_matrix, calibration.camera_matrix),
+          do: assert_in_delta(value, original, 1.0e-9)
+    end
+
+    test "is a no-op at the same resolution, and takes a calibration without a size as it is",
+         %{calibration: calibration} do
+      assert CameraCalibration.resample_to(calibration, 2028, 1520) == calibration
+
+      sizeless = %{calibration | width: 0, height: 0}
+
+      assert CameraCalibration.resample_to(sizeless, 1014, 760) ==
+               %{sizeless | width: 1014, height: 760}
+    end
+  end
+
+  describe "proportional?/3" do
+    setup do
+      %{calibration: %{CameraCalibration.parse(@ost_style) | width: 4056, height: 3040}}
+    end
+
+    test "is true for a resize that keeps the aspect ratio within 1 %", %{
+      calibration: calibration
+    } do
+      assert CameraCalibration.proportional?(calibration, 2028, 1520)
+      assert CameraCalibration.proportional?(calibration, 1014, 760)
+      assert CameraCalibration.proportional?(%{calibration | width: 0, height: 0}, 2028, 1080)
+    end
+
+    test "is false for a size of another aspect ratio, as a cropping sensor mode gives", %{
+      calibration: calibration
+    } do
+      refute CameraCalibration.proportional?(calibration, 2028, 1080)
+      refute CameraCalibration.proportional?(calibration, 4056, 2980)
+    end
+  end
 end

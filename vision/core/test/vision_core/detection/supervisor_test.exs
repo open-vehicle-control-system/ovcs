@@ -20,17 +20,56 @@ defmodule VisionCore.Detection.SupervisorTest do
     {:ok, {_flags, children}} = Supervisor.init(@options)
 
     assert [
-             %{start: {Stub, :start_link, [[boxes: [{0, 0.9, _box}]]]}},
+             %{start: {Stub, :start_link, [backend_options]}},
              %{start: {Pipeline, :start_link, [pipeline_options]}},
-             %{start: {Live, :start_link, [[max_hz: 4]]}}
+             %{start: {Live, :start_link, [live_options]}}
            ] = children
 
-    assert Enum.sort(pipeline_options) == [backend: Stub, min_score: 0.6, outline_segments: 2]
+    assert [boxes: [{0, 0.9, _box}], name: backend_server, pipeline: :detection] =
+             Enum.sort(backend_options)
+
+    assert backend_server == VisionCore.Pipelines.server(Stub, :detection)
+
+    assert Enum.sort(pipeline_options) == [
+             backend: Stub,
+             backend_server: VisionCore.Pipelines.server(Stub, :detection),
+             min_score: 0.6,
+             name: :detection,
+             outline_segments: 2
+           ]
+
+    assert Enum.sort(live_options) == [max_hz: 4, name: :detection]
+  end
+
+  test "hands the pipeline its source and the camera source's options" do
+    camera_options = [source: {:camera, :hq}, reprojection_stride: 4, pair_wait_ms: 200]
+    {:ok, {_flags, children}} = Supervisor.init(@options ++ [name: :people] ++ camera_options)
+
+    assert [_backend, %{start: {Pipeline, :start_link, [pipeline_options]}}, _live] = children
+    assert camera_options -- pipeline_options == []
+  end
+
+  test "names a named unit's backend, pipeline and Live after it" do
+    {:ok, {_flags, children}} = Supervisor.init(@options ++ [name: :road])
+
+    assert [
+             %{start: {Stub, :start_link, [backend_options]}},
+             %{start: {Pipeline, :start_link, [pipeline_options]}},
+             %{start: {Live, :start_link, [live_options]}}
+           ] = children
+
+    assert {backend_options[:name], backend_options[:pipeline]} ==
+             {VisionCore.Pipelines.server(Stub, :road), :road}
+
+    assert {pipeline_options[:name], pipeline_options[:backend_server]} ==
+             {:road, VisionCore.Pipelines.server(Stub, :road)}
+
+    assert live_options[:name] == :road
   end
 
   test "takes an option given twice, as a keyword list may hold it" do
     assert {:ok, {_flags, [_backend, _pipeline, live]}} = Supervisor.init(@options ++ [max_hz: 2])
-    assert %{start: {Live, :start_link, [[max_hz: 4, max_hz: 2]]}} = live
+    assert %{start: {Live, :start_link, [[max_hz: 4, max_hz: 2, name: :detection]]}} = live
   end
 
   test "starts the backend, then the pipeline, then Live" do
@@ -38,6 +77,61 @@ defmodule VisionCore.Detection.SupervisorTest do
 
     assert unit |> Elixir.Supervisor.which_children() |> Enum.map(&elem(&1, 0)) ==
              [Live, Pipeline, Stub]
+
+    assert GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :detection)) == unit
+  end
+
+  test "registers a named unit and its processes under its name, beside the default one" do
+    default = start_supervised!({Supervisor, @options})
+
+    road =
+      start_supervised!(
+        Elixir.Supervisor.child_spec({Supervisor, @options ++ [name: :road]}, id: :road)
+      )
+
+    assert GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :road)) == road
+    assert GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :detection)) == default
+
+    for module <- [Stub, Pipeline, Live], name <- [:road, :detection] do
+      assert GenServer.whereis(VisionCore.Pipelines.server(module, name))
+    end
+  end
+
+  test "is left down, saying why, with a name that is no valid pipeline name" do
+    Process.flag(:trap_exit, true)
+
+    for name <- [:"front-cam", :stereo] do
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
+
+      assert log =~ "failed to start"
+      assert log =~ "^[a-z][a-z0-9_]*$"
+      assert log =~ inspect(name)
+    end
+  end
+
+  # Each a first segment of the ROS 2 topics under the stereo prefix.
+  test "is left down, saying why, with a name the unit's topics already take" do
+    Process.flag(:trap_exit, true)
+
+    for name <- [:stereo, :left, :right, :depth, :disparity, :points, :live] do
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
+
+      assert log =~ "failed to start"
+      assert log =~ "^[a-z][a-z0-9_]*$"
+      assert log =~ "not one of :stereo, :left"
+      assert log =~ "got #{inspect(name)}"
+    end
+  end
+
+  test "a named unit that fails to start names its pipeline in the log" do
+    Process.flag(:trap_exit, true)
+
+    log =
+      capture_log(fn -> assert Supervisor.start_link(backend: Hailo, name: :road) == :ignore end)
+
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
   end
 
   test "is left down, saying why, with an option it does not take, naming where a moved one went" do
@@ -54,7 +148,7 @@ defmodule VisionCore.Detection.SupervisorTest do
 
       assert log =~ "failed to start, detection down: "
       assert log =~ reason
-      refute Process.whereis(Supervisor)
+      refute GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :detection))
     end
   end
 
@@ -64,6 +158,68 @@ defmodule VisionCore.Detection.SupervisorTest do
 
     assert log =~ "failed to start, detection down"
     assert log =~ "hef_path"
+  end
+
+  describe "the Hailo-8" do
+    @hailo [backend: Hailo, hef_path: "/missing.hef"]
+
+    test "a Hailo unit claims the device before its backend starts; another unit claims nothing" do
+      {:ok, {_flags, [claim, backend | _rest]}} = Supervisor.init(@hailo ++ [name: :road])
+
+      assert %{start: {Hailo.Device, :start_link, [[pipeline: :road]]}} = claim
+      assert %{start: {Hailo, :start_link, _options}} = backend
+
+      {:ok, {_flags, [stub | _rest]}} = Supervisor.init(@options)
+      assert %{start: {Stub, :start_link, _options}} = stub
+    end
+
+    test "a second Hailo unit is left down, saying the Hailo-8 serves another pipeline; the first runs" do
+      Process.flag(:trap_exit, true)
+      first = start_supervised!({Supervisor, @hailo})
+
+      log =
+        capture_log(fn -> assert Supervisor.start_link(@hailo ++ [name: :road]) == :ignore end)
+
+      assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
+      assert log =~ "the Hailo-8 already serves another pipeline, :detection"
+      refute GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :road))
+      assert Process.alive?(first)
+      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
+    end
+
+    test "a Hailo unit runs beside a unit on another backend" do
+      start_supervised!({Supervisor, @hailo})
+
+      start_supervised!(
+        Elixir.Supervisor.child_spec({Supervisor, @options ++ [name: :road]}, id: :road)
+      )
+
+      assert Process.whereis(Hailo.Device)
+      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
+      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road))
+    end
+
+    test "a backend restart keeps the claim" do
+      start_supervised!({Supervisor, @hailo})
+      claim = Process.whereis(Hailo.Device)
+      backend = GenServer.whereis(VisionCore.Pipelines.server(Hailo, :detection))
+
+      Process.exit(backend, :kill)
+
+      eventually(fn ->
+        GenServer.whereis(VisionCore.Pipelines.server(Hailo, :detection)) not in [nil, backend]
+      end)
+
+      assert Process.whereis(Hailo.Device) == claim
+    end
+  end
+
+  defp eventually(check, attempts \\ 100) do
+    cond do
+      check.() -> :ok
+      attempts == 0 -> flunk("condition not met")
+      true -> Process.sleep(10) && eventually(check, attempts - 1)
+    end
   end
 
   test "keeps every Hailo option to the backend" do
@@ -82,8 +238,11 @@ defmodule VisionCore.Detection.SupervisorTest do
       dlc_path: "/models/m.dlc",
       qairt_dir: "/opt/qairt",
       dsp_library_path: "/dsp",
+      dsp_architecture: "hexagon-v79",
       cache_dir: "/data/qnn",
-      score_threshold: 0.4
+      score_threshold: 0.4,
+      performance: :sustained_high_performance,
+      rpc_polling_us: 9999
     ]
 
     assert Supervisor.split_backend_options(
@@ -98,12 +257,105 @@ defmodule VisionCore.Detection.SupervisorTest do
     test "its output: the detection pipeline's detections, whichever component starts it" do
       for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
         assert Supervisor.outputs(config([detector])) ==
-                 [detections: {:detections, VisionCore.Detection.Pipeline}]
+                 [
+                   {{:detections, :detection}, {:detections, :detection}}
+                 ]
       end
     end
 
     test "none without a component starting it" do
       assert Supervisor.outputs(config([{:stereo, []}])) == []
     end
+
+    test "each pipeline's output, in config order, a named one's keyed by its name" do
+      components = [
+        {:detector, backend: Stub, name: :road},
+        {:stereo, []},
+        :qnn_detector,
+        {:hailo_detector, name: :signs}
+      ]
+
+      assert Supervisor.outputs(config(components)) == [
+               {{:detections, :road}, {:detections, :road}},
+               {{:detections, :detection}, {:detections, :detection}},
+               {{:detections, :signs}, {:detections, :signs}}
+             ]
+    end
+
+    test "its backends: the one each component names, the Hailo one by default, with its server" do
+      assert Supervisor.backends(config([{:stereo, []}, :qnn_detector])) ==
+               [
+                 {VisionCore.Detection.Backend.Qnn,
+                  VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)}
+               ]
+
+      assert Supervisor.backends(config([{:hailo_detector, hef_path: "/m.hef"}])) ==
+               [{Hailo, VisionCore.Pipelines.server(Hailo, :detection)}]
+
+      assert Supervisor.backends(config([{:detector, backend: Stub}])) == [
+               {Stub, VisionCore.Pipelines.server(Stub, :detection)}
+             ]
+
+      assert Supervisor.backends(config([:detector])) == [
+               {Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+             ]
+    end
+
+    test "each pipeline's backend, in config order, a named one's server named after it" do
+      components = [{:detector, backend: Stub, name: :road}, {:hailo_detector, []}]
+
+      assert Supervisor.backends(config(components)) == [
+               {Stub, VisionCore.Pipelines.server(Stub, :road)},
+               {Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+             ]
+    end
+
+    test "its pipelines: each one's name with its backend and server, in config order" do
+      components = [{:detector, backend: Stub, name: :road}, {:hailo_detector, []}]
+
+      assert Supervisor.pipelines(config(components)) ==
+               [
+                 {:road, Stub, VisionCore.Pipelines.server(Stub, :road)},
+                 {:detection, Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+               ]
+    end
+
+    test "no backend without a component starting the unit" do
+      assert Supervisor.backends(config([{:stereo, []}])) == []
+    end
+
+    test "each pipeline's source, in config order, by its output: the stereo pair's by default" do
+      components = [
+        {:detector, backend: Stub, name: :people, source: {:camera, :hq}},
+        {:stereo, []},
+        :qnn_detector
+      ]
+
+      assert Supervisor.sources(config(components)) == [
+               {{:detections, :people}, {:camera, :hq}},
+               {{:detections, :detection}, :stereo}
+             ]
+    end
+
+    test "a pipeline whose source is none of those, which never runs, is left out" do
+      components = [
+        {:detector, backend: Stub, name: :people, source: :hq},
+        {:detector, backend: Stub, name: :signs, source: {:camera, :hq, :inference}},
+        {:stereo, []}
+      ]
+
+      assert Supervisor.sources(config(components)) == [
+               {{:detections, :signs}, {:camera, :hq, :inference}}
+             ]
+    end
+  end
+
+  test "hands the pipeline the :config its camera is read from" do
+    config = %VisionCore.Config{}
+    options = @options ++ [name: :people, source: {:camera, :hq}, config: config]
+    {:ok, {_flags, children}} = Supervisor.init(options)
+
+    assert [_backend, %{start: {Pipeline, :start_link, [pipeline_options]}}, _live] = children
+    assert pipeline_options[:config] == config
   end
 end

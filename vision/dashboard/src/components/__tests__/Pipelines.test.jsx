@@ -4,6 +4,7 @@ import { render, screen, fireEvent, within, act } from '@testing-library/react'
 import Pipelines from '../Pipelines.jsx'
 import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
+import { useStatus } from '../../stores/status.js'
 
 vi.mock('../../services/parameters.js')
 
@@ -34,6 +35,7 @@ describe('Pipelines', () => {
     select = vi.fn()
     useParameters.setState({ groups, parameters, selectedGroupId: 'stereo.match', select })
     useNavigation.setState({ page: 'pipeline' })
+    useStatus.setState({ snapshot: null })
   })
 
   it('draws each pipeline as its own numbered flow, in order with arrows, the stereo pipeline first', () => {
@@ -52,6 +54,28 @@ describe('Pipelines', () => {
     expect(stereo.compareDocumentPosition(detection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it("shows each detection pipeline's inference time in its Inference box, once the unit reports one", () => {
+    const road = group('road.inference', 'Inference', 102, { pipeline: 'road' })
+    useParameters.setState({ groups: [...groups, road] })
+    useStatus.setState({
+      snapshot: { npu: { kind: 'Hexagon', state: 'running', loadPercent: 40, pipelines: { detection: { inferenceMs: 21.54 }, road: { inferenceMs: null } } } }
+    })
+    render(<Pipelines />)
+
+    const inference = (pipeline) => within(screen.getByRole('list', { name: pipeline })).getByRole('button', { name: /^Inference/ })
+    expect(inference('Detection').textContent).toContain('21.5 ms')
+    expect(inference('Detection').getAttribute('aria-label')).toContain('21.5 ms')
+    expect(inference('Road').textContent).not.toContain('ms')
+    expect(screen.getByRole('button', { name: /^Match/ }).textContent).not.toContain('ms')
+  })
+
+  it('shows no inference time without an NPU status', () => {
+    useStatus.setState({ snapshot: null })
+    render(<Pipelines />)
+
+    expect(screen.getByRole('list', { name: 'Detection' }).textContent).not.toContain('ms')
+  })
+
   it('shows the detection pipeline as one greyed line on a unit without a detector', () => {
     useParameters.setState({ groups: groups.filter((g) => g.pipeline === 'stereo') })
     render(<Pipelines />)
@@ -61,6 +85,17 @@ describe('Pipelines', () => {
     const line = screen.getByText('No detector on this unit')
     expect(line.closest('button')).toBeNull()
     expect(line.className).toContain('text-ovcs-muted')
+  })
+
+  it('shows no greyed detection line on a unit with only a named pipeline', () => {
+    useParameters.setState({
+      groups: [group('cameras', 'Cameras', 1, { role: 'source' }), group('road_signs.input', 'Input', 101, { pipeline: 'road_signs' })]
+    })
+    render(<Pipelines />)
+
+    expect(screen.getByRole('list', { name: 'Road signs' })).toBeTruthy()
+    expect(screen.queryByRole('heading', { name: 'Detection' })).toBeNull()
+    expect(screen.queryByText('No detector on this unit')).toBeNull()
   })
 
   it('shows no pipeline before the stages have loaded', () => {

@@ -1,0 +1,5 @@
+# From the rectified left optical frame to the camera's optical frame:
+# p_camera = rotation * p_left + translation, in metres.
+rotation: [0.9955536329797132, -0.05111739366074137, -0.07912000964501414, 0.04871935302058673, 0.9983013878798904, -0.0319493912045273, 0.0806187850451108, 0.02795265680426956, 0.9963529798597648]
+translation: [-0.12, 0.03, 0.01]
+rms_px: 0.31

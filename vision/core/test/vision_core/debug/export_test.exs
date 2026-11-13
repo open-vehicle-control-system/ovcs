@@ -322,7 +322,7 @@ defmodule VisionCore.Debug.ExportTest do
         right: %{present: true, fps: depth_hz - 1.0}
       },
       sync: %{present: true, pairs: 30, offset_max_ms: offset_max_ms, offset_median_ms: 1.0},
-      hailo: :absent,
+      npu: %{kind: "Hexagon", state: :running},
       depth_hz: depth_hz,
       exporters: [],
       cpu_percent: cpu_percent,

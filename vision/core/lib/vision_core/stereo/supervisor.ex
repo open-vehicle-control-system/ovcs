@@ -47,16 +47,21 @@ defmodule VisionCore.Stereo.Supervisor do
       Same module for both sides; each side gets a separate
       GenServer instance addressed via the per-side opts.
     * `:left`, `:right` — keyword lists of per-side opts. Must
-      contain the driver-specific addressing
-      (`:device` for v4l2/gstreamer, `:camera_id` for libcamera).
-      Optionally `:frame_id`, the camera's optical frame, and
-      `:calibration_path` (override the defaults derived from
-      `:prefix` and `:calibration_dir`).
+      contain the driver-specific addressing (`:device` for GStreamer,
+      `:camera_id` for libcamera, `:csiphy` for `VisionCore.Camera.V4L2Pair`
+      on a CAMSS board). Optionally `:frame_id`, the camera's optical
+      frame, and `:calibration_path` (override the defaults derived from
+      `:prefix` and `:calibration_dir`). A driver that captures both
+      cameras together (`c:VisionCore.Camera.pair_options/0`) takes only
+      its side options there, and its settings for both cameras beside
+      `:width`.
 
   ## Optional opts (sensible defaults)
 
     * `:width` (1280), `:height` (720), `:fps` (30) — applied to
       both camera drivers.
+    * the pair options of a driver that captures both cameras together
+      (`c:VisionCore.Camera.pair_options/0`), given once for both.
     * `:match_width`, `:match_height` (`:width`, `:height`) — the size
       the pipeline matches at, and so the size of the disparity, depth
       and point cloud. Smaller than the capture size, the frames are
@@ -122,6 +127,7 @@ defmodule VisionCore.Stereo.Supervisor do
   @options [:driver, :left, :right, :width, :height, :fps, :match_width, :match_height] ++
              [:prefix, :calibration_dir, :calibration_store_dir, :pair_tolerance_ms] ++
              [:align_correction, :stages, :compute, :backends, :defn_options]
+  @side_options [:frame_id, :calibration_path]
   @exporter_options [
     :publish_disparity_image,
     :publish_rectified_image,
@@ -242,11 +248,12 @@ defmodule VisionCore.Stereo.Supervisor do
 
   defp stereo_camera_options(opts) do
     with :ok <- check_keyword(opts, "the :stereo component's options"),
-         :ok <- check_options(opts),
          driver = Keyword.get(opts, :driver),
+         :ok <- check_options(opts, driver),
          :ok <- check_driver(driver),
          :ok <- check_keyword(Keyword.get(opts, :left), "its :left options"),
-         :ok <- check_keyword(Keyword.get(opts, :right), "its :right options") do
+         :ok <- check_keyword(Keyword.get(opts, :right), "its :right options"),
+         :ok <- check_sides(driver, Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right)) do
       prefix = Keyword.get(opts, :prefix, @default_prefix)
 
       {left, right} =
@@ -271,11 +278,47 @@ defmodule VisionCore.Stereo.Supervisor do
       else: {:error, "#{what}, #{inspect(options)}, are not a keyword list"}
   end
 
-  defp check_options(opts) do
-    case Enum.uniq(Keyword.keys(opts)) -- @options do
+  defp check_options(opts, driver) do
+    pair = Map.get(pair_options(driver) || %{}, :pair, [])
+
+    case Enum.uniq(Keyword.keys(opts)) -- (@options ++ pair) do
       [] -> :ok
       refused -> {:error, Enum.map_join(refused, "; ", &refused_option/1)}
     end
+  end
+
+  defp pair_options(driver) do
+    if camera_driver?(driver) and function_exported?(driver, :pair_options, 0),
+      do: driver.pair_options()
+  end
+
+  defp check_sides(driver, left, right) do
+    case pair_options(driver) do
+      nil ->
+        :ok
+
+      %{pair: pair, side: side} ->
+        taken = @side_options ++ side
+
+        refused =
+          for {name, options} <- [left: left, right: right],
+              key <- Enum.uniq(Keyword.keys(options)),
+              key not in taken,
+              do: refused_side_option(name, key, pair, taken)
+
+        if refused == [], do: :ok, else: {:error, Enum.join(refused, "; ")}
+    end
+  end
+
+  defp refused_side_option(side, key, pair, taken) do
+    if key in pair,
+      do: "its #{inspect(side)} #{inspect(key)} is the pair's: give it beside :width",
+      else: "its #{inspect(side)} has no option #{inspect(key)}; a side takes #{and_list(taken)}"
+  end
+
+  defp and_list(keys) do
+    {others, [last]} = keys |> Enum.map(&inspect/1) |> Enum.split(-1)
+    Enum.join(others, ", ") <> " and " <> last
   end
 
   defp refused_option(:topic_prefix), do: "its :topic_prefix is now :prefix"
@@ -303,6 +346,7 @@ defmodule VisionCore.Stereo.Supervisor do
     :ok = AlignmentCorrection.check_stages!(stages)
 
     Map.merge(cameras, %{
+      pair: pair_settings(opts, cameras.driver),
       match_width: Keyword.get(opts, :match_width, cameras.width),
       match_height: Keyword.get(opts, :match_height, cameras.height),
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
@@ -311,6 +355,14 @@ defmodule VisionCore.Stereo.Supervisor do
       backends: backends(opts),
       compute: Keyword.get(opts, :compute, :nx)
     })
+  end
+
+  # The pair's options, for a driver that captures both cameras together; `nil` for another.
+  defp pair_settings(opts, driver) do
+    case pair_options(driver) do
+      nil -> nil
+      %{pair: pair} -> Keyword.take(opts, pair)
+    end
   end
 
   defp backends(opts) do
@@ -471,12 +523,23 @@ defmodule VisionCore.Stereo.Supervisor do
       |> Keyword.put_new(:width, config.width)
       |> Keyword.put_new(:height, config.height)
       |> Keyword.put_new(:fps, config.fps)
-      # Not the driver's: the calibration is the pipeline's.
-      |> Keyword.delete(:calibration_path)
-      |> Keyword.delete(:calibration_store_path)
+      |> without_calibration()
 
-    Supervisor.child_spec({config.driver, driver_opts}, id: {:stereo, :driver, side})
+    Supervisor.child_spec({config.driver, driver_opts ++ pair_driver_options(config)},
+      id: {:stereo, :driver, side}
+    )
   end
+
+  defp pair_driver_options(%{pair: nil}), do: []
+
+  defp pair_driver_options(config),
+    do:
+      config.pair ++
+        [left: without_calibration(config.left), right: without_calibration(config.right)]
+
+  # Not the driver's: the calibration is the pipeline's.
+  defp without_calibration(options),
+    do: Keyword.drop(options, [:calibration_path, :calibration_store_path])
 
   defp pipeline_spec(config) do
     {Pipeline,

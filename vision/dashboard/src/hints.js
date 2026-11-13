@@ -102,9 +102,12 @@ export const HINTS = {
       "The dashboard's live link to the unit, which carries the statuses beside it and the previews. " +
       'Disconnected, the page shows nothing new until the link comes back.'
   },
-  hailo: {
-    title: 'Hailo',
-    text: 'The Hailo accelerator running object detection. Absent when the vehicle configures none.'
+  npu: {
+    title: 'NPU',
+    text:
+      "The accelerator running the unit's inference, by kind, with its load: the share of the last second its pipelines spent inferring, summed over them. " +
+      'On a Hexagon it counts the time the NPU spent executing; on a Hailo-8 the time from writing the input to reading the output, PCIe transfer included. ' +
+      "Each pipeline's Inference step shows its mean time per frame. Starting while a backend prepares its model, red when one cannot run; none on a unit without one."
   },
   objects: {
     title: 'Objects',

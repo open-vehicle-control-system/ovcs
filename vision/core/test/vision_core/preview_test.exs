@@ -61,6 +61,260 @@ defmodule VisionCore.PreviewTest do
     assert length(frames) >= 3
   end
 
+  describe "a camera of its own" do
+    @camera_config %VisionCore.Config{components: [{:camera, name: :hq, driver: Camera}]}
+
+    defp hq_frame(sequence),
+      do: %Frame{label: "hq", width: 2, height: 2, capture_ns: sequence, rgb: <<sequence>>}
+
+    defp publish_hq(frame),
+      do: Outputs.publish({:camera_frame, Camera.name_for("hq")}, {:camera_frame, frame})
+
+    test "its frames are previewed as the stream of its name, encoded at the preview's own rate" do
+      test_pid = self()
+
+      encode_frame = fn %Frame{rgb: <<sequence>>} ->
+        send(test_pid, {:encoded, sequence})
+        {:ok, "hq#{sequence}"}
+      end
+
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      refute_receive {:vision_preview, :hq, _}, 50
+
+      publish_hq(hq_frame(1))
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+
+      for sequence <- 2..6, do: publish_hq(hq_frame(sequence))
+      :sys.get_state(Preview)
+      refute_receive {:vision_preview, :hq, _}, 100
+
+      Preview.ack(:hq)
+      assert_receive {:vision_preview, :hq, "hq6"}, 500
+      for skipped <- 2..5, do: refute_received({:encoded, ^skipped})
+    end
+
+    test "its frames that fail to encode are skipped, logged once until one encodes" do
+      encode_frame = fn
+        %Frame{rgb: <<0>>} -> {:error, :no_codec}
+        %Frame{rgb: <<sequence>>} -> {:ok, "hq#{sequence}"}
+      end
+
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
+      )
+
+      :ok = Preview.subscribe(:hq)
+
+      log =
+        capture_log(fn ->
+          for _ <- 1..3 do
+            publish_hq(hq_frame(0))
+            :sys.get_state(Preview)
+            Process.sleep(30)
+          end
+
+          refute_receive {:vision_preview, :hq, _jpeg}, 100
+        end)
+
+      assert length(String.split(log, "cannot encode the hq preview: :no_codec")) == 2
+
+      publish_hq(hq_frame(1))
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+    end
+
+    # Encodes the left frames at once, and each hq frame once the test sends the encode :release.
+    defp held_hq_encoder(test_pid) do
+      fn
+        %Frame{label: "hq", rgb: <<sequence>>} ->
+          send(test_pid, {:encoding, self(), sequence})
+
+          receive do
+            :release -> {:ok, "hq#{sequence}"}
+          end
+
+        %Frame{jpeg: jpeg} ->
+          {:ok, jpeg}
+      end
+    end
+
+    test "a slow stream does not delay another's" do
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe(:left)
+
+      publish_hq(hq_frame(1))
+      assert_receive {:encoding, encode, 1}, 500
+      feed_left(1)
+
+      assert_receive {:vision_preview, :left, "1"}, 500
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+    end
+
+    test "one frame a stream encodes at a time, the newest waiting, sent though newer came" do
+      start_supervised!(
+        {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      publish_hq(hq_frame(1))
+      assert_receive {:encoding, encode, 1}, 500
+
+      for sequence <- 2..4, do: publish_hq(hq_frame(sequence))
+      :sys.get_state(Preview)
+      refute_receive {:encoding, _encode, _sequence}, 100
+
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq1"}, 500
+      Preview.ack(:hq)
+
+      assert_receive {:encoding, encode, 4}, 500
+      send(encode, :release)
+      assert_receive {:vision_preview, :hq, "hq4"}, 500
+      refute_received {:encoding, _encode, _skipped}
+    end
+
+    test "a stream's frames reach only its subscribers" do
+      start_supervised!({Preview, config: @camera_config, max_hz: 50})
+      :ok = Preview.subscribe(:left)
+
+      publish_hq(%{hq_frame(1) | jpeg: "hq"})
+      :sys.get_state(Preview)
+
+      refute_receive {:vision_preview, _stream, _jpeg}, 100
+    end
+
+    test "its stream shows its default output, or the one :outputs names" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu],
+          inference: [resolution: {1014, 760}, from: :view]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      encode_frame = fn %Frame{output: output} -> {:ok, "#{output}"} end
+
+      preview =
+        start_supervised!({Preview, config: config, max_hz: 50, frame_encoder: encode_frame})
+
+      assert preview in Outputs.subscribers({:camera_frame, server, :view})
+      refute preview in Outputs.subscribers({:camera_frame, server, :inference})
+      stop_supervised!(Preview)
+
+      preview =
+        start_supervised!(
+          {Preview,
+           config: config, max_hz: 50, frame_encoder: encode_frame, outputs: [hq: :inference]}
+        )
+
+      refute preview in Outputs.subscribers({:camera_frame, server, :view})
+      :ok = Preview.subscribe(:hq)
+
+      Outputs.publish(
+        {:camera_frame, server, :inference},
+        {:camera_frame, %{hq_frame(1) | output: :inference}}
+      )
+
+      assert_receive {:vision_preview, :hq, "inference"}, 500
+    end
+
+    test "its stream shows its camera's first sent output, not one it does not send" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+          view_jpeg: [from: :view, format: :jpeg],
+          inference: [resolution: {1014, 760}, from: :view]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+      preview = start_supervised!({Preview, config: config, max_hz: 50})
+      assert preview in Outputs.subscribers({:camera_frame, server, :view_jpeg})
+      stop_supervised!(Preview)
+
+      log =
+        capture_log(fn ->
+          preview = start_supervised!({Preview, config: config, max_hz: 50, outputs: [hq: :view]})
+          assert preview in Outputs.subscribers({:camera_frame, server, :view_jpeg})
+          refute preview in Outputs.subscribers({:camera_frame, server, :view})
+        end)
+
+      assert log =~
+               "camera hq does not send its output :view (send: false); " <>
+                 "its stream shows its default output"
+    end
+
+    test "a camera's JPEG output is previewed as the camera sent it, without an encode" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu],
+          view_jpeg: [from: :view, format: :jpeg]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      no_codec = Module.concat(__MODULE__, NoCodec)
+
+      start_supervised!(
+        {Preview, config: config, max_hz: 50, outputs: [hq: :view_jpeg], jpeg_codec: no_codec}
+      )
+
+      :ok = Preview.subscribe(:hq)
+      jpeg = <<0xFF, 0xD8, 9, 8, 7, 0xFF, 0xD9>>
+
+      frame = %Frame{
+        label: "hq",
+        output: :view_jpeg,
+        width: 2028,
+        height: 1520,
+        capture_ns: 1,
+        jpeg: jpeg
+      }
+
+      Outputs.publish({:camera_frame, server, :view_jpeg}, {:camera_frame, frame})
+      assert_receive {:vision_preview, :hq, ^jpeg}, 500
+    end
+
+    test "a camera whose outputs cannot be made has nothing to show, and the rest previews on" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [view: [resolution: {640, 480}, processor: :cpu]]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      preview = start_supervised!({Preview, config: config, max_hz: 50})
+
+      refute preview in Outputs.subscribers(nil)
+      assert Preview.subscribe(:hq) == :ok
+    end
+
+    test "a stream the configuration has no camera for cannot be subscribed to" do
+      start_supervised!({Preview, config: @camera_config, max_hz: 50})
+
+      assert Preview.subscribe(:other) == {:error, :unknown_stream}
+      assert Preview.subscribe(:hq) == :ok
+    end
+  end
+
   @tag :jpeg
   test "a grey frame is previewed as a JPEG" do
     start_supervised!(VisionCore.Jpeg)
@@ -87,6 +341,35 @@ defmodule VisionCore.PreviewTest do
     assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
     assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _rest::binary>>}, 1_000
     assert Process.whereis(VisionCore.Jpeg) == nil
+  end
+
+  test "the previews and an exporter encoding back to back share one Port, neither starving" do
+    path = Application.get_env(:vision_core, :jpeg_codec_path)
+    on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)
+    fake_codec = Path.expand("../support/slow_jpeg_codec.py", __DIR__)
+    Application.put_env(:vision_core, :jpeg_codec_path, fake_codec)
+    start_supervised!({VisionCore.Jpeg, name: :shared_codec, ports: 1})
+    test_pid = self()
+
+    # Each of its encodes is a slow one on the fake codec, answered "slow".
+    export = fn ->
+      reply = VisionCore.Jpeg.encode(<<1>>, 1, 1, 1, codec: :shared_codec)
+      send(test_pid, {:exported, reply})
+    end
+
+    start_supervised!({Task, fn -> Stream.repeatedly(export) |> Stream.run() end})
+    start_supervised!({Preview, config: @config, max_hz: 50, jpeg_codec: :shared_codec})
+    :ok = Preview.subscribe(:left)
+
+    for sequence <- 1..2 do
+      frame = %Frame{label: "left", width: 1, height: 1, capture_ns: sequence, grey: <<0>>}
+      GenServer.cast(Preview, {:camera_frame, frame})
+      assert_receive {:vision_preview, :left, "fast"}, 1_500
+      Preview.ack(:left)
+    end
+
+    assert_receive {:exported, {:ok, "slow"}}, 1_500
+    assert_receive {:exported, {:ok, "slow"}}, 1_500
   end
 
   test "preview delivers only the latest frame to a slow subscriber" do
@@ -330,5 +613,14 @@ defmodule VisionCore.PreviewTest do
 
       assert %{max_hz: 15} = Preview.options()
     end
+  end
+
+  test "refuses at start a :max_hz that is no integer from 1 on" do
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+             Preview.start_link(config: @config, max_hz: 0)
+
+    assert message == "its :max_hz is an integer from 1 on, got 0"
   end
 end

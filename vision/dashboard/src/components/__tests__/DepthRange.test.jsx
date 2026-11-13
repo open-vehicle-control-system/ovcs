@@ -83,6 +83,59 @@ describe('DepthRange', () => {
     expect(screen.getByText('8.0 m')).toBeTruthy()
   })
 
+  it('lays the scale out along a line by default: near to far from left to right, over a horizontal slider', async () => {
+    render(<Owned channel={fakeChannel(8)} initial={8} />)
+    await flush()
+
+    const scale = document.querySelector('[data-colour-scale]')
+    expect(scale.dataset.orientation).toBe('horizontal')
+    // The colour map is the slider's own track.
+    const slider = screen.getByRole('slider', { name: 'colour scale' })
+    expect(scale.querySelectorAll('[data-colours]')).toHaveLength(1)
+    expect(slider.hasAttribute('data-colours')).toBe(true)
+    expect(slider.style.getPropertyValue('--colours')).toContain('to right')
+    expect(slider.className.split(' ')).toContain('colour-slider')
+    expect(slider.hasAttribute('aria-orientation')).toBe(false)
+    expect(slider.className).not.toContain('writing-mode')
+  })
+
+  it("stands the scale up when vertical: far, the range and the slider's maximum at the top, near at the bottom", async () => {
+    const channel = fakeChannel(8)
+    render(<DepthRange vertical channel={channel} metres={8} onChange={vi.fn()} />)
+    await flush()
+
+    const scale = document.querySelector('[data-colour-scale]')
+    expect(scale.dataset.orientation).toBe('vertical')
+    // The colour map is the slider's own track, near at the bottom.
+    const slider = screen.getByRole('slider', { name: 'colour scale' })
+    expect(scale.querySelectorAll('[data-colours]')).toHaveLength(1)
+    expect(slider.style.getPropertyValue('--colours')).toContain('to top')
+    // A vertical writing mode stands the slider up, and its right-to-left direction puts its maximum at the top.
+    expect(slider.getAttribute('aria-orientation')).toBe('vertical')
+    expect(slider.className.split(' ')).toEqual(
+      expect.arrayContaining(['colour-slider', '[writing-mode:vertical-lr]', '[direction:rtl]', 'min-h-0', 'flex-1'])
+    )
+    expect(slider.getAttribute('aria-valuetext')).toBe('blue at 8.0 m')
+    // From the top: the range, the slider, then near.
+    const before = (first, second) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(before(screen.getByText('8.0 m'), slider)).toBe(true)
+    expect(before(slider, screen.getByText('near'))).toBe(true)
+    // The scale takes the height its aside has.
+    expect(scale.className.split(' ')).toEqual(expect.arrayContaining(['flex-1', 'min-h-0', 'flex-col']))
+  })
+
+  it('sets the range from the vertical slider as from the horizontal one', async () => {
+    const channel = fakeChannel(8)
+    render(<DepthRange vertical channel={channel} metres={8} onChange={vi.fn()} />)
+    const slider = screen.getByRole('slider', { name: 'colour scale' })
+
+    fireEvent.change(slider, { target: { value: '12.5' } })
+    fireEvent.keyUp(slider)
+    await flush()
+
+    expect(channel.push).toHaveBeenCalledExactlyOnceWith('depth_range', { metres: 12.5 })
+  })
+
   it('shows nothing without the depth stream, or until the range is known', () => {
     const { container, rerender } = render(<DepthRange channel={null} metres={8} onChange={vi.fn()} />)
     expect(container.textContent).toBe('')

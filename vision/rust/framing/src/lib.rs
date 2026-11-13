@@ -6,14 +6,21 @@ use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};
 use std::sync::{Arc, Mutex, TryLockError};
+use std::time::{Duration, Instant};
 
 const TAG_FRAME: u8 = 1;
 const TAG_LOG: u8 = 2;
 const TAG_METADATA: u8 = 3;
 const TAG_PAIR: u8 = 4;
 const TAG_GREY_FRAME: u8 = 5;
+const TAG_OUTPUT_FRAME: u8 = 7;
+const TAG_OUTPUT_JPEG: u8 = 8;
 
 pub const METADATA_FIELDS: usize = 8;
+
+/// How long a panic waits for the thread writing a record before it gives up its own.
+const PANIC_LOCK_WAIT: Duration = Duration::from_millis(500);
+const PANIC_LOCK_RETRY: Duration = Duration::from_millis(1);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogLevel {
@@ -30,27 +37,57 @@ struct PollDescriptor {
 }
 
 const POLLHUP: i16 = 0x10;
+const F_SETPIPE_SZ: i32 = 1031;
+/// The most an unprivileged process may ask for by default (`/proc/sys/fs/pipe-max-size`).
+const UNPRIVILEGED_PIPE_BYTES: i32 = 1 << 20;
 
 extern "C" {
     fn dup(fd: RawFd) -> RawFd;
     fn dup2(old: RawFd, new: RawFd) -> RawFd;
     fn poll(descriptors: *mut PollDescriptor, count: std::ffi::c_ulong, timeout_ms: i32) -> i32;
+    fn fcntl(fd: RawFd, command: i32, ...) -> i32;
     #[cfg(test)]
     #[link_name = "pipe"]
     fn libc_pipe(ends: *mut RawFd) -> i32;
 }
 
-/// Reads one length-prefixed record. `None` on clean EOF or a truncated record.
-pub fn read_record<R: Read>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
-    let mut length = [0u8; 4];
-    if !read_exact_or_eof(reader, &mut length)? {
+/// Reads one length-prefixed record of at most `max_bytes`. `None` on clean EOF or a
+/// truncated record.
+pub fn read_record<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<Vec<u8>>> {
+    let Some(length) = read_length(reader, max_bytes)? else {
+        return Ok(None);
+    };
+    let mut body = Vec::new();
+    Ok(read_body_into(reader, length, &mut body)?.then_some(body))
+}
+
+/// Waits for the next record's length prefix. `None` on clean EOF or a
+/// truncated prefix; an error for a length over `max_bytes`, which no record
+/// of the Port's has: the stream is out of step.
+pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
+    let mut prefix = [0u8; 4];
+    if !read_exact_or_eof(reader, &mut prefix)? {
         return Ok(None);
     }
-    let mut body = vec![0u8; u32::from_be_bytes(length) as usize];
-    if !read_exact_or_eof(reader, &mut body)? {
-        return Ok(None);
+    let length = u32::from_be_bytes(prefix) as usize;
+    if length > max_bytes {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("a record of {length} bytes, over the {max_bytes} taken"),
+        ));
     }
-    Ok(Some(body))
+    Ok(Some(length))
+}
+
+/// Reads a record's body of `length` bytes into `body` in place of its
+/// contents, reusing its allocation. `false` on a truncated body.
+pub fn read_body_into<R: Read>(
+    reader: &mut R,
+    length: usize,
+    body: &mut Vec<u8>,
+) -> io::Result<bool> {
+    body.resize(length, 0);
+    read_exact_or_eof(reader, body)
 }
 
 fn read_exact_or_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<bool> {
@@ -72,6 +109,20 @@ pub fn hung_up(descriptor: BorrowedFd<'_>) -> bool {
     };
     // SAFETY: one valid descriptor, polled without waiting.
     unsafe { poll(&mut polled, 1, 0) == 1 && polled.revents & POLLHUP != 0 }
+}
+
+/// Enlarges the pipe `descriptor` reads from or writes to so it holds `bytes`, or, refused, 1
+/// MiB: a record that fits is written in one go rather than in turns with its reader.
+/// Returns the pipe's size.
+pub fn enlarge_pipe(descriptor: BorrowedFd<'_>, bytes: usize) -> io::Result<usize> {
+    let set = |bytes: i32| {
+        // SAFETY: a plain fcntl on a valid descriptor; a failure leaves the pipe as it was.
+        match unsafe { fcntl(descriptor.as_raw_fd(), F_SETPIPE_SZ, bytes) } {
+            size if size < 0 => Err(io::Error::last_os_error()),
+            size => Ok(size as usize),
+        }
+    };
+    set(i32::try_from(bytes).unwrap_or(i32::MAX)).or_else(|_| set(UNPRIVILEGED_PIPE_BYTES))
 }
 
 /// Record output on the real stdout. Libraries that print to stdout would
@@ -96,23 +147,36 @@ impl Writer {
         }
     }
 
-    fn from_file(output: File) -> Writer {
+    /// Record output on `output`.
+    pub fn from_file(output: File) -> Writer {
         Writer {
             stdout: Arc::new(Mutex::new(output)),
         }
     }
 
     /// Also sends a panic's message as an error LOG record before the usual
-    /// report on stderr, which the Port does not read. Skipped while another
-    /// thread is writing a record, which it would cut.
+    /// report on stderr, which the Port does not read. It waits its turn
+    /// behind a thread writing a record, which it would cut, and is skipped
+    /// when that thread still writes after `PANIC_LOCK_WAIT`, or is the one
+    /// panicking.
     pub fn log_panics(&self) {
+        self.log_panics_waiting(PANIC_LOCK_WAIT, || std::thread::sleep(PANIC_LOCK_RETRY));
+    }
+
+    /// `log_panics`, waiting up to `wait` for the lock, with `pause` between two tries.
+    fn log_panics_waiting(&self, wait: Duration, pause: impl Fn() + Send + Sync + 'static) {
         let stdout = Arc::clone(&self.stdout);
         let report = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
-            let output = match stdout.try_lock() {
-                Ok(output) => Some(output),
-                Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
-                Err(TryLockError::WouldBlock) => None,
+            let deadline = Instant::now() + wait;
+            // Never `lock`: the panicking thread may hold the lock itself.
+            let output = loop {
+                match stdout.try_lock() {
+                    Ok(output) => break Some(output),
+                    Err(TryLockError::Poisoned(poisoned)) => break Some(poisoned.into_inner()),
+                    Err(TryLockError::WouldBlock) if Instant::now() < deadline => pause(),
+                    Err(TryLockError::WouldBlock) => break None,
+                }
             };
             if let Some(mut output) = output {
                 let record = log_record(LogLevel::Error, &format!("panic: {info}"));
@@ -195,6 +259,27 @@ pub fn grey_frame_record(width: u16, height: u16, capture_ns: i64, grey: &[u8]) 
     [&grey_frame_header(width, height, capture_ns)[..], grey].concat()
 }
 
+/// The start of an OUTPUT_FRAME record, a camera output's frame: the tag,
+/// the output's index, then the size and capture time an image record
+/// starts with, which `width` x `height` pixels of 8-bit red, green and
+/// blue follow, row-major.
+pub fn output_frame_header(output: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 14] {
+    let mut header = [0; 14];
+    header[0] = TAG_OUTPUT_FRAME;
+    header[1] = output;
+    header[2..].copy_from_slice(&image_header(TAG_OUTPUT_FRAME, width, height, capture_ns)[1..]);
+    header
+}
+
+/// The start of an OUTPUT_JPEG record, a camera output's frame as a JPEG:
+/// an OUTPUT_FRAME record's header under its own tag, which the JPEG of
+/// the `width` x `height` image follows.
+pub fn output_jpeg_header(output: u8, width: u16, height: u16, capture_ns: i64) -> [u8; 14] {
+    let mut header = output_frame_header(output, width, height, capture_ns);
+    header[0] = TAG_OUTPUT_JPEG;
+    header
+}
+
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
     let mut record = Vec::with_capacity(2 + message.len());
     record.push(TAG_LOG);
@@ -255,14 +340,47 @@ mod tests {
     }
 
     #[test]
-    fn a_panic_is_sent_as_an_error_log_record() {
+    fn a_pipe_is_enlarged_to_the_size_asked_or_to_one_mebibyte() {
         let mut ends = [0; 2];
         // SAFETY: `ends` has room for the two descriptors.
         assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
         // SAFETY: both descriptors were just created and nothing else owns them.
-        let (mut pipe_out, pipe_in) =
+        let (pipe_out, _pipe_in) =
             unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
-        let writer = Writer::from_file(pipe_in);
+
+        assert_eq!(
+            enlarge_pipe(pipe_out.as_fd(), 256 << 10).unwrap(),
+            256 << 10
+        );
+        let size = enlarge_pipe(pipe_out.as_fd(), 64 << 20).unwrap();
+        assert!(size == 1 << 20 || size == 64 << 20, "{size}");
+    }
+
+    // The panic hook is the process's: one test sets it at a time.
+    static PANIC_HOOK: Mutex<()> = Mutex::new(());
+
+    // A writer and the end its records are read from.
+    fn piped_writer() -> (Writer, File) {
+        let mut ends = [0; 2];
+        // SAFETY: `ends` has room for the two descriptors.
+        assert_eq!(unsafe { libc_pipe(ends.as_mut_ptr()) }, 0);
+        // SAFETY: both descriptors were just created and nothing else owns them.
+        let (pipe_out, pipe_in) =
+            unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) };
+        (Writer::from_file(pipe_in), pipe_out)
+    }
+
+    fn assert_panic_record(record: &[u8], panic_message: &str) {
+        assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
+        let message = String::from_utf8(record[2..].to_vec()).unwrap();
+        assert!(message.starts_with("panic: "), "{message}");
+        assert!(message.contains(panic_message), "{message}");
+    }
+
+    #[test]
+    fn a_panic_is_sent_as_an_error_log_record() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
         writer.log_panics();
 
         let panicked = std::panic::catch_unwind(|| panic!("no frame left"));
@@ -270,11 +388,58 @@ mod tests {
 
         assert!(panicked.is_err());
         drop(writer);
-        let record = read_record(&mut pipe_out).unwrap().unwrap();
-        assert_eq!(&record[..2], &[TAG_LOG, LogLevel::Error as u8]);
-        let message = String::from_utf8(record[2..].to_vec()).unwrap();
-        assert!(message.starts_with("panic: "), "{message}");
-        assert!(message.contains("no frame left"), "{message}");
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap().unwrap();
+        assert_panic_record(&record, "no frame left");
+    }
+
+    #[test]
+    fn a_panic_while_another_thread_writes_is_sent_once_that_thread_is_done() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
+        let (release, released) = std::sync::mpsc::channel::<()>();
+        let (done, is_done) = std::sync::mpsc::channel::<()>();
+        let (holding, is_holding) = std::sync::mpsc::channel::<()>();
+        let stdout = Arc::clone(&writer.stdout);
+        let holder = std::thread::spawn(move || {
+            let output = stdout.lock().unwrap();
+            holding.send(()).unwrap();
+            released.recv().unwrap();
+            drop(output);
+            done.send(()).unwrap();
+        });
+        is_holding.recv().unwrap();
+        // The first pause lets the other thread finish, as its write would.
+        let (release, is_done) = (Mutex::new(release), Mutex::new(is_done));
+        writer.log_panics_waiting(Duration::from_secs(60), move || {
+            if release.lock().unwrap().send(()).is_ok() {
+                is_done.lock().unwrap().recv().unwrap();
+            }
+        });
+
+        let panicked = std::panic::catch_unwind(|| panic!("conversion failed"));
+        let _ = std::panic::take_hook();
+
+        assert!(panicked.is_err());
+        holder.join().unwrap();
+        drop(writer);
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap();
+        assert_panic_record(&record.expect("the panic's record"), "conversion failed");
+    }
+
+    #[test]
+    fn a_panic_gives_up_its_record_when_the_writer_stays_held() {
+        let _hook = PANIC_HOOK.lock().unwrap_or_else(|e| e.into_inner());
+        let (writer, mut pipe_out) = piped_writer();
+        let output = writer.stdout.lock().unwrap();
+        writer.log_panics_waiting(Duration::ZERO, || {});
+
+        let panicked = std::panic::catch_unwind(|| panic!("held"));
+        let _ = std::panic::take_hook();
+
+        assert!(panicked.is_err());
+        drop(output);
+        drop(writer);
+        assert_eq!(read_record(&mut pipe_out, 1 << 10).unwrap(), None);
     }
 
     #[test]
@@ -322,20 +487,79 @@ mod tests {
     }
 
     #[test]
+    fn output_jpeg_record_layout() {
+        let got = [
+            &output_jpeg_header(3, 2, 1, -5)[..],
+            &[0xff, 0xd8, 0xff, 0xd9],
+        ]
+        .concat();
+        let want = [
+            8, 3, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xd8, 0xff,
+            0xd9,
+        ];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn output_frame_record_layout() {
+        let got = [&output_frame_header(3, 2, 1, -5)[..], &[1, 2, 3, 4, 5, 6]].concat();
+        let want = [
+            7, 3, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 2, 3, 4, 5, 6,
+        ];
+        assert_eq!(got, want);
+    }
+
+    #[test]
+    fn a_record_longer_than_the_maximum_is_an_error_before_it_is_read() {
+        let mut input: &[u8] = &[0, 0, 0, 5, 1, 2, 3, 4, 5];
+        let error = read_record(&mut input, 4).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert_eq!(error.to_string(), "a record of 5 bytes, over the 4 taken");
+        assert_eq!(input, [1, 2, 3, 4, 5]);
+
+        let mut input: &[u8] = &[0, 0, 0, 5, 1, 2, 3, 4, 5];
+        assert_eq!(
+            read_record(&mut input, 5).unwrap(),
+            Some(vec![1, 2, 3, 4, 5])
+        );
+        let mut input: &[u8] = &[0xff, 0xff, 0xff, 0xff];
+        assert!(read_length(&mut input, 64 << 20).is_err());
+    }
+
+    #[test]
     fn read_record_returns_none_on_eof() {
-        assert_eq!(read_record(&mut &[][..]).unwrap(), None);
+        assert_eq!(read_record(&mut &[][..], 16).unwrap(), None);
     }
 
     #[test]
     fn read_record_returns_none_on_truncated_body() {
         let mut input: &[u8] = &[0, 0, 0, 10, 1, 2, 3, 4];
-        assert_eq!(read_record(&mut input).unwrap(), None);
+        assert_eq!(read_record(&mut input, 16).unwrap(), None);
     }
 
     #[test]
     fn read_record_reads_a_record() {
         let mut input: &[u8] = &[0, 0, 0, 2, 9, 8, 7];
-        assert_eq!(read_record(&mut input).unwrap(), Some(vec![9, 8]));
+        assert_eq!(read_record(&mut input, 16).unwrap(), Some(vec![9, 8]));
+    }
+
+    #[test]
+    fn a_body_read_into_a_buffer_replaces_its_contents() {
+        let mut input: &[u8] = &[0, 0, 0, 3, 1, 2, 3, 0, 0, 0, 1, 9, 0, 0];
+        let mut body = vec![7; 5];
+        assert_eq!(read_length(&mut input, 16).unwrap(), Some(3));
+        assert!(read_body_into(&mut input, 3, &mut body).unwrap());
+        assert_eq!(body, [1, 2, 3]);
+        assert_eq!(read_length(&mut input, 16).unwrap(), Some(1));
+        assert!(read_body_into(&mut input, 1, &mut body).unwrap());
+        assert_eq!(body, [9]);
+        assert_eq!(read_length(&mut input, 16).unwrap(), None);
+    }
+
+    #[test]
+    fn a_truncated_body_read_into_a_buffer_is_refused() {
+        let mut input: &[u8] = &[1, 2];
+        assert!(!read_body_into(&mut input, 3, &mut Vec::new()).unwrap());
     }
 
     /// Takes at most three bytes a write, as a full pipe may.

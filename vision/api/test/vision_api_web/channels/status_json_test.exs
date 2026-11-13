@@ -15,7 +15,8 @@ defmodule VisionApiWeb.StatusJSONTest do
           colour_temperature: 5_000,
           issues: []
         },
-        right: %{present: false, issues: [:large_row_correction]}
+        right: %{present: false, issues: [:large_row_correction]},
+        hq: %{present: true, fps: 10.0, exposure_time_us: 4_000, analogue_gain: 1.5}
       },
       sync: %{present: true, pairs: 150, offset_max_ms: 0.7, offset_median_ms: -0.01},
       pair: %{
@@ -48,7 +49,12 @@ defmodule VisionApiWeb.StatusJSONTest do
         },
         range: %{level: :off, camera: nil, issues: []}
       },
-      hailo: :absent,
+      npu: %{
+        kind: "Hexagon",
+        state: :running,
+        load_percent: 64.5,
+        pipelines: %{detection: %{inference_ms: 21.5}, road: %{inference_ms: nil}}
+      },
       depth_hz: 29.9,
       cpu_percent: 61.0,
       stereo_segment_percent: 96.5,
@@ -69,7 +75,8 @@ defmodule VisionApiWeb.StatusJSONTest do
                  colourTemperature: 5_000,
                  issues: []
                },
-               right: %{present: false, issues: [:large_row_correction]}
+               right: %{present: false, issues: [:large_row_correction]},
+               hq: %{present: true, fps: 10.0, exposureTimeUs: 4_000, analogueGain: 1.5}
              },
              sync: %{present: true, pairs: 150, offsetMaxMs: 0.7, offsetMedianMs: -0.01},
              pair: %{
@@ -102,7 +109,12 @@ defmodule VisionApiWeb.StatusJSONTest do
                },
                range: %{level: :off, camera: nil, issues: []}
              },
-             hailo: "absent",
+             npu: %{
+               kind: "Hexagon",
+               state: "running",
+               loadPercent: 64.5,
+               pipelines: %{detection: %{inferenceMs: 21.5}, road: %{inferenceMs: nil}}
+             },
              depthHz: 29.9,
              cpuPercent: 61.0,
              stereoLoadPercent: 96.5,
@@ -134,7 +146,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         rate: %{level: :off, camera: nil, issues: []},
         range: %{level: :off, camera: nil, issues: []}
       },
-      hailo: :running,
+      npu: nil,
       depth_hz: 0.0,
       cpu_percent: nil,
       stereo_segment_percent: 0.0,
@@ -150,15 +162,15 @@ defmodule VisionApiWeb.StatusJSONTest do
              alignment: nil,
              sharpness: nil,
              quality: nil,
-             hailo: "running",
+             npu: nil,
              exporters: []
            } = StatusJSON.status(snapshot)
   end
 
-  test "the API guide lists every issue a pair or depth check can raise" do
-    guide = File.read!(Path.expand("../../../../../docs/vision/api.md", __DIR__))
+  test "the channels guide lists every issue a pair or depth check can raise" do
+    guide = File.read!(Path.expand("../../../../../docs/vision/channels.md", __DIR__))
 
     for issue <- VisionCore.Stereo.PairCheck.issues() ++ VisionCore.Stereo.DepthCheck.issues(),
-        do: assert(guide =~ "`#{issue}`", "docs/vision/api.md does not list #{issue}")
+        do: assert(guide =~ "`#{issue}`", "docs/vision/channels.md does not list #{issue}")
   end
 end

@@ -16,7 +16,11 @@ const recorder = {
   outputs: [
     { name: 'stereo_pair', maxHz: 2 },
     { name: 'camera_frame:left', maxHz: null },
-    { name: 'detections', maxHz: null }
+    { name: 'detections', maxHz: null },
+    { name: 'detections:road_signs', maxHz: 5 },
+    { name: 'camera_frame:center', maxHz: 5 },
+    { name: 'camera_frame:center:inference', maxHz: null },
+    { name: 'segmentation:scene', maxHz: 5 }
   ]
 }
 
@@ -50,7 +54,11 @@ describe('ExporterPage', () => {
     expect(rows.map((row) => row.textContent)).toEqual([
       'Stereo pairsat most 2 Hz',
       'Left camera framesthe newest, unbounded',
-      'Detectionsthe newest, unbounded'
+      'Detectionsthe newest, unbounded',
+      'Detections: road_signsat most 5 Hz',
+      'Camera frames: centerat most 5 Hz',
+      'Camera frames: center, inferencethe newest, unbounded',
+      'Segmentation: sceneat most 5 Hz'
     ])
   })
 

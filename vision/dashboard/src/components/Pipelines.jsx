@@ -4,24 +4,36 @@ import { pipelines as pipelinesOf, unsavedByGroup, useParameters } from '../stor
 import { OvcsBadge, OvcsMenuItem } from '@ovcs/ui/react'
 import { STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
+import { useStatus } from '../stores/status.js'
+import { formatNumber } from '../status.js'
 import { computeTags } from '../compute.js'
 
-function accessibleName(group, unsaved) {
+function accessibleName(group, unsaved, figure) {
   const parts = [group.name]
   const tags = computeTags(group.compute)
   if (tags.length > 0) parts.push(`on ${tags.join(', ')}`)
+  if (figure) parts.push(figure)
   if (unsaved > 0) parts.push(`${unsaved} unsaved`)
   if (group.status) parts.push(group.status.detail ? `${group.status.level}: ${group.status.detail}` : group.status.level)
   return parts.join(', ')
 }
 
+// An inference pipeline's Inference step shows the mean time its accelerator took per frame, as the unit status reports it.
+function useInferenceFigure(group) {
+  const ms = useStatus((state) =>
+    group.id === `${group.pipeline}.inference` ? state.snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
+  )
+  return ms == null ? null : `${formatNumber(ms)} ms`
+}
+
 function GroupBox({ group, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
   const tags = computeTags(group.compute)
+  const figure = useInferenceFigure(group)
   return (
     <OvcsMenuItem
       selected={selected}
-      aria-label={accessibleName(group, unsaved)}
+      aria-label={accessibleName(group, unsaved, figure)}
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
@@ -36,6 +48,11 @@ function GroupBox({ group, unsaved, selected, onSelect }) {
                 {tag}
               </span>
             ))}
+          </span>
+        ) : null}
+        {figure ? (
+          <span aria-hidden="true" data-figure className="text-[10px] font-normal leading-none tabular-nums text-ovcs-muted">
+            {figure}
           </span>
         ) : null}
       </span>
@@ -119,12 +136,12 @@ function Steps({ name, groups, selectedGroupId, box }) {
 
 /**
  * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. Detection is listed on
- * every unit, so the menu reads the same everywhere: without a detector, as one greyed line.
+ * every unit, so the menu reads the same everywhere: on a unit with no pipeline beyond the stereo one, as one greyed line.
  */
 export default function Pipelines() {
   const { pipelines, selectedGroupId, box } = useGroupBoxes()
   if (pipelines.length === 0) return null
-  const withDetector = pipelines.some((pipeline) => pipeline.name === 'detection')
+  const withInference = pipelines.some((pipeline) => pipeline.name !== 'stereo')
 
   return (
     <div className="flex flex-col gap-3">
@@ -133,7 +150,7 @@ export default function Pipelines() {
           <Steps name={name} groups={groups} selectedGroupId={selectedGroupId} box={box} />
         </Pipeline>
       ))}
-      {withDetector ? null : (
+      {withInference ? null : (
         <Pipeline name="detection">
           <p className="px-3 py-1 text-sm text-ovcs-muted">No detector on this unit</p>
         </Pipeline>

@@ -4,18 +4,27 @@ defmodule VisionCore.Outputs do
   consume it, through a `Registry` of subscriptions.
 
   A producer publishes under the key of its output, `{output, name}`:
-  `output` is the tag of the messages it sends and `name` its own
-  registered name, so two producers of one kind stay apart.
+  `output` is its kind and `name` the producer's registered name, or its
+  pipeline's name, so two producers of one kind stay apart.
 
     * `{:camera_frame, name}` — `{:camera_frame, %VisionCore.Camera.Frame{}}`
-      from the `VisionCore.Camera` driver instance registered as `name`.
+      from the `VisionCore.Camera` driver instance registered as `name`;
+      `{:camera_frame, name, output}` from one with named outputs, the
+      frames of its output `output` (`VisionCore.Camera.Unit.output_key/3`).
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
-    * `{:detections, name}` — `{:detections, pair, detections}` from the
-      `VisionCore.Detection.Pipeline` registered as `name`.
+    * `{:detections, name}` — `{output, {pair, detections}}` from the
+      detection pipeline `name` (`VisionCore.Detection.Pipeline`),
+      `output` being the key, its `VisionCore.Exporter` output, and the
+      `%VisionCore.Camera.Frame{}` the boxes were found on, without its
+      pixels, in place of `pair` on a camera source.
+    * `{:segmentation, name}` — `{output, {frame, labels, clouds}}` from
+      the segmentation pipeline `name`
+      (`VisionCore.Segmentation.Pipeline`), `output` being the key.
 
   A consumer subscribes to the keys it reads and receives each message
-  as a cast. A subscription belongs to the subscriber, not to the
+  as a cast. One that takes messages out of its mailbox itself matches
+  them with `queued/1`. A subscription belongs to the subscriber, not to the
   producer: it holds before the producer starts and across its restarts,
   and goes when the subscriber exits. Every subscriber receives every
   message, so one that falls behind lets its mailbox grow.
@@ -31,7 +40,9 @@ defmodule VisionCore.Outputs do
   """
 
   @typedoc "An output and the name of the producer publishing it."
-  @type key :: {:camera_frame | :stereo_pair | :detections, atom()}
+  @type key ::
+          {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
+          | {:camera_frame, atom(), atom()}
 
   @doc "Starts the registry."
   @spec start_link(keyword()) :: Supervisor.on_start()
@@ -66,6 +77,18 @@ defmodule VisionCore.Outputs do
       for {subscriber, _value} <- subscriptions, do: GenServer.cast(subscriber, message)
     end)
   end
+
+  @doc """
+  The pattern of `message`, published, as it waits in a subscriber's
+  mailbox, for a `receive` that takes it out ahead of the others:
+
+      receive do
+        Outputs.queued({:stereo_pair, pair}) -> pair
+      after
+        0 -> nil
+      end
+  """
+  defmacro queued(message), do: quote(do: {:"$gen_cast", unquote(message)})
 
   @doc "The processes subscribed to `key`."
   @spec subscribers(key()) :: [pid()]

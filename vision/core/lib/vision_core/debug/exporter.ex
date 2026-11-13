@@ -125,7 +125,9 @@ defmodule VisionCore.Debug.Exporter do
 
   @impl VisionCore.Exporter
   def outputs(options) do
-    if detector?(config(options)), do: [:stereo_pair, :detections], else: [:stereo_pair]
+    if detector?(config(options)),
+      do: [:stereo_pair, {:detections, :detection}],
+      else: [:stereo_pair]
   end
 
   @impl VisionCore.Exporter
@@ -165,7 +167,8 @@ defmodule VisionCore.Debug.Exporter do
       %VisionCore.Config{}
   end
 
-  defp detector?(config), do: VisionCore.Exporter.output_key(:detections, config) != nil
+  defp detector?(config),
+    do: VisionCore.Exporter.output_key({:detections, :detection}, config) != nil
 
   defp pipeline_name(config) do
     case VisionCore.Exporter.output_key(:stereo_pair, config) do
@@ -193,7 +196,11 @@ defmodule VisionCore.Debug.Exporter do
   def handle_output(:stereo_pair, %Pair{} = pair, %{recording: %{phase: :burst}} = state),
     do: {:ok, state |> record_pair(pair) |> finish_when_done()}
 
-  def handle_output(:detections, {pair, detections}, %{recording: %{phase: :burst}} = state) do
+  def handle_output(
+        {:detections, :detection},
+        {pair, detections},
+        %{recording: %{phase: :burst}} = state
+      ) do
     frame = pair.left_frame
     published = {Pair.capture_ns(pair), {frame.width, frame.height}, detections}
     {:ok, update_in(state.recording.detections, &[published | &1])}

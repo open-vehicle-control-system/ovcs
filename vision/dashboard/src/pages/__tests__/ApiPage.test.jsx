@@ -35,6 +35,21 @@ describe('ApiPage', () => {
     expect(headers(channels)).toEqual(['topic', 'carries'])
   })
 
+  it("lists a camera of its own's preview channel, and each pipeline's channel", () => {
+    render(<ApiPage />)
+
+    const topics = within(screen.getAllByRole('table')[1]).getAllByRole('row').slice(1).map((row) => row.cells[0].textContent)
+    expect(topics).toEqual([
+      'status',
+      'preview:left, preview:right',
+      'preview:<name>',
+      'preview:depth',
+      'detections:<name>',
+      'segmentation:<name>'
+    ])
+    expect(screen.getByRole('row', { name: /^detections:<name> / }).textContent).not.toContain('left image')
+  })
+
   it('lists the exporters, and says nothing of the unit but how to reach it', () => {
     render(<ApiPage />)
 

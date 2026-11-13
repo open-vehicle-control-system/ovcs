@@ -1,4 +1,8 @@
 //! Port records: a detect request in, a detections record out. Scalars are little-endian.
+//!
+//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 RGB), pixels.
+//! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
+//! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 
 const TAG_DETECT: u8 = 1;
 const TAG_DETECTIONS: u8 = 1;
@@ -41,13 +45,19 @@ pub fn parse_request(record: &[u8]) -> Option<Request<'_>> {
 }
 
 impl Request<'_> {
-    /// The channel count and pixel byte count; `Err` is the message to log before
-    /// answering with no detections.
+    /// The channel count, the size and the pixel byte count; `Err` is the message to log
+    /// before answering with no detections.
     pub fn check(&self) -> Result<(), String> {
         if self.channels != 1 && self.channels != 3 {
             return Err(format!(
                 "frame {}: unsupported channel count {}",
                 self.sequence, self.channels
+            ));
+        }
+        if self.width == 0 || self.height == 0 {
+            return Err(format!(
+                "frame {}: a {}x{} image has no pixels",
+                self.sequence, self.width, self.height
             ));
         }
         let expected = self.width as usize * self.height as usize * self.channels as usize;
@@ -63,8 +73,15 @@ impl Request<'_> {
     }
 }
 
-pub fn detections_record(sequence: u32, detections: &[Detection]) -> Vec<u8> {
-    let mut record = Vec::with_capacity(1 + 4 + 2 + detections.len() * DETECTION_BYTES);
+/// The detections record for `sequence`. `inference_micros`, the accelerator's time on
+/// the frame, follows the last detection when the frame was inferred; a reader that stops
+/// after `count` detections ignores it.
+pub fn detections_record(
+    sequence: u32,
+    detections: &[Detection],
+    inference_micros: Option<u32>,
+) -> Vec<u8> {
+    let mut record = Vec::with_capacity(1 + 4 + 2 + detections.len() * DETECTION_BYTES + 4);
     record.push(TAG_DETECTIONS);
     record.extend_from_slice(&sequence.to_le_bytes());
     record.extend_from_slice(&(detections.len() as u16).to_le_bytes());
@@ -80,7 +97,15 @@ pub fn detections_record(sequence: u32, detections: &[Detection]) -> Vec<u8> {
             record.extend_from_slice(&field.to_le_bytes());
         }
     }
+    if let Some(micros) = inference_micros {
+        record.extend_from_slice(&micros.to_le_bytes());
+    }
     record
+}
+
+/// `micros` as a record's u32, saturated.
+pub fn inference_micros(micros: u128) -> u32 {
+    u32::try_from(micros).unwrap_or(u32::MAX)
 }
 
 #[cfg(test)]
@@ -144,6 +169,17 @@ mod tests {
     }
 
     #[test]
+    fn check_rejects_an_image_without_pixels() {
+        for (width, height) in [(0, 0), (0, 4), (4, 0)] {
+            let record = request(9, width, height, 3, &[]);
+            assert_eq!(
+                parse_request(&record).unwrap().check(),
+                Err(format!("frame 9: a {width}x{height} image has no pixels"))
+            );
+        }
+    }
+
+    #[test]
     fn detections_record_matches_cpp_layout() {
         let detection = Detection {
             class_id: 0x0102,
@@ -153,7 +189,7 @@ mod tests {
             x1: 3.0,
             y1: 4.0,
         };
-        let got = detections_record(0x0a0b0c0d, &[detection, detection]);
+        let got = detections_record(0x0a0b0c0d, &[detection, detection], None);
         let mut want = vec![1, 0x0d, 0x0c, 0x0b, 0x0a, 2, 0];
         for _ in 0..2 {
             want.extend_from_slice(&[0x02, 0x01]);
@@ -167,6 +203,32 @@ mod tests {
 
     #[test]
     fn empty_detections_record() {
-        assert_eq!(detections_record(5, &[]), [1, 5, 0, 0, 0, 0, 0]);
+        assert_eq!(detections_record(5, &[], None), [1, 5, 0, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn inference_time_follows_the_detections() {
+        let detection = Detection {
+            class_id: 3,
+            score: 0.5,
+            x0: 1.0,
+            y0: 2.0,
+            x1: 3.0,
+            y1: 4.0,
+        };
+        let without = detections_record(5, &[detection], None);
+        let got = detections_record(5, &[detection], Some(0x01020304));
+        assert_eq!(got[..without.len()], without[..]);
+        assert_eq!(got[without.len()..], [0x04, 0x03, 0x02, 0x01]);
+        assert_eq!(
+            detections_record(5, &[], Some(7)),
+            [1, 5, 0, 0, 0, 0, 0, 7, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn inference_micros_saturates() {
+        assert_eq!(inference_micros(12_345), 12_345);
+        assert_eq!(inference_micros(u128::from(u32::MAX) + 1), u32::MAX);
     }
 }

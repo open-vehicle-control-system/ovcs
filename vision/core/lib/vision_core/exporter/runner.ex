@@ -15,7 +15,12 @@ defmodule VisionCore.Exporter.Runner do
   output's next slot opens, or while the exporter is busy with the
   output, is held, replaced by any newer one, and handed over once the
   slot is open and the exporter ready. The camera outputs tell their
-  frames apart by `:label`, `"left"` or `"right"`.
+  frames apart by `:label`, `"left"`, `"right"` or a camera's name, and
+  by `:output`, the camera output a frame is of. Every other message is
+  `{output, value}`, `output` being the output it is of: a detection
+  pipeline's value is `{pair, detections}`, or `{frame, detections}`
+  from a pipeline on a camera, a segmentation pipeline's
+  `{frame, labels, clouds}`.
 
   The runner starts without waiting for its exporter: the exporter's
   `c:VisionCore.Exporter.init/1` runs right after, and when it fails or
@@ -46,12 +51,19 @@ defmodule VisionCore.Exporter.Runner do
       outputs resolve in (`VisionCore.Exporter.output_key/2`).
 
   It does not start when the exporter's outputs are invalid, with the
-  error `VisionCore.Exporter.output_specs/2` says.
+  error `VisionCore.Exporter.output_specs/2` says, nor when two of them
+  resolve to one key in the configuration, such as `{:camera_frame,
+  :hq}` and `{:camera_frame, :hq, :view}` on a camera whose default
+  output is `:view`: `{:invalid_output, second}`, nor on a camera's
+  output the camera does not send (`VisionCore.Camera.Unit.unsent_output?/3`):
+  `{:unsent_output, output}`.
   """
   use GenServer
   require Logger
+  require VisionCore.Outputs, as: Outputs
 
-  alias VisionCore.{Exporter, Outputs}
+  alias VisionCore.Camera.Frame
+  alias VisionCore.Exporter
 
   @default_status_timeout_ms 200
   @first_retry_ms 500
@@ -101,33 +113,61 @@ defmodule VisionCore.Exporter.Runner do
     exporter = Code.ensure_loaded!(Keyword.fetch!(opts, :exporter))
     options = Keyword.get(opts, :options, [])
 
-    case Exporter.output_specs(exporter, options) do
-      {:ok, specs} ->
-        if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
+    config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
 
-        {:ok,
-         %{
-           exporter: exporter,
-           options: options,
-           config: Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0),
-           outputs: slots(specs),
-           slots: %{},
-           routes: %{},
-           started: false,
-           exporter_state: nil,
-           not_started: nil,
-           retry_ms: @first_retry_ms,
-           failures: 0,
-           logged: %{
-             init: MapSet.new(),
-             status: MapSet.new(),
-             output: MapSet.new(),
-             action: MapSet.new()
-           }
-         }, {:continue, :start_exporter}}
+    with {:ok, specs} <- Exporter.output_specs(exporter, options),
+         :ok <- check_sent(specs, config),
+         :ok <- check_keys_apart(specs, config) do
+      if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
 
-      {:error, reason} ->
-        {:stop, reason}
+      {:ok,
+       %{
+         exporter: exporter,
+         options: options,
+         config: config,
+         outputs: slots(specs),
+         slots: %{},
+         started: false,
+         exporter_state: nil,
+         not_started: nil,
+         retry_ms: @first_retry_ms,
+         failures: 0,
+         logged: %{
+           init: MapSet.new(),
+           status: MapSet.new(),
+           output: MapSet.new(),
+           action: MapSet.new()
+         }
+       }, {:continue, :start_exporter}}
+    else
+      {:error, reason} -> {:stop, reason}
+    end
+  end
+
+  defp check_sent(specs, config) do
+    Enum.find_value(specs, :ok, fn
+      {{:camera_frame, name, output} = camera_output, _max_hz} ->
+        if VisionCore.Camera.Unit.unsent_output?(config, name, output),
+          do: {:error, {:unsent_output, camera_output}}
+
+      _other ->
+        nil
+    end)
+  end
+
+  # One key feeds one slot: a camera's default output named a second time by its name never would.
+  defp check_keys_apart(specs, config) do
+    specs
+    |> Enum.reduce_while(%{}, fn {output, _max_hz}, keys ->
+      case Exporter.output_key(output, config) do
+        nil -> {:cont, keys}
+        key when is_map_key(keys, key) -> {:halt, {:error, {:invalid_output, output}}}
+        key -> {:cont, Map.put(keys, key, output)}
+      end
+    end)
+    |> case do
+      {:error, _reason} = error -> error
+      _keys -> :ok
     end
   end
 
@@ -154,7 +194,7 @@ defmodule VisionCore.Exporter.Runner do
 
   @impl GenServer
   def handle_cast(message, state) do
-    case route(message, state.routes) do
+    case route(message, state.slots) do
       nil -> {:noreply, state}
       output -> {:noreply, offer(state, output, newest(output, payload(message)))}
     end
@@ -212,8 +252,7 @@ defmodule VisionCore.Exporter.Runner do
           | started: true,
             exporter_state: exporter_state,
             not_started: nil,
-            slots: slots,
-            routes: Map.new(slots, fn {output, _slot} -> {message_tag(output), output} end)
+            slots: slots
         }
 
       {:error, reason} ->
@@ -321,39 +360,52 @@ defmodule VisionCore.Exporter.Runner do
 
         key ->
           :ok = Outputs.subscribe(key)
-          [{output, slot}]
+          [{output, Map.put(slot, :frame_output, frame_output(key))}]
       end
     end)
     |> Map.new()
   end
 
-  # An output's messages: its tag, and for a camera's, the frames' label.
-  defp message_tag({tag, side}), do: {tag, Atom.to_string(side)}
-  defp message_tag(tag), do: {tag, nil}
+  # The output name a camera's frames published under `key` carry.
+  defp frame_output({:camera_frame, _server, output}), do: output
+  defp frame_output(_key), do: nil
 
-  defp route(message, routes) when tuple_size(message) >= 2 do
-    tag = elem(message, 0)
-    Map.get(routes, {tag, label(elem(message, 1))}) || Map.get(routes, {tag, nil})
+  # The output a message is of, among those subscribed; `newest/2` matches the same shapes.
+  defp route({:camera_frame, %{label: label, output: frame_output}}, slots) do
+    Enum.find_value(slots, fn
+      {output, %{frame_output: ^frame_output}} -> if camera_label(output) == label, do: output
+      _slot -> nil
+    end)
   end
 
-  defp route(_message, _routes), do: nil
+  defp route(message, slots) do
+    output = message_output(message)
+    if is_map_key(slots, output), do: output
+  end
 
-  defp label(%{label: label}), do: label
-  defp label(_payload), do: nil
+  defp camera_label({:camera_frame, name}), do: Atom.to_string(name)
+  defp camera_label({:camera_frame, name, _output}), do: Atom.to_string(name)
+  defp camera_label(_output), do: nil
 
-  defp payload({_tag, value}), do: value
-  defp payload(message), do: Tuple.delete_at(message, 0)
+  defp message_output({output, _value}), do: output
+  defp message_output(_message), do: nil
+
+  defp payload({_output, value}), do: value
 
   # The newest value of the output waiting in the mailbox replaces `value`.
-  defp newest(output, value) do
-    {tag, label} = message_tag(output)
-
+  defp newest(output, %Frame{label: label, output: frame_output} = value)
+       when is_tuple(output) and elem(output, 0) == :camera_frame do
     receive do
-      {:"$gen_cast", message}
-      when tuple_size(message) >= 2 and elem(message, 0) == tag and
-             (is_nil(label) or
-                (is_map(elem(message, 1)) and :erlang.map_get(:label, elem(message, 1)) == label)) ->
-        newest(output, payload(message))
+      Outputs.queued({:camera_frame, %{label: ^label, output: ^frame_output} = frame}) ->
+        newest(output, frame)
+    after
+      0 -> value
+    end
+  end
+
+  defp newest(output, value) do
+    receive do
+      Outputs.queued({^output, next}) -> newest(output, next)
     after
       0 -> value
     end

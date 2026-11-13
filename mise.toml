@@ -64,7 +64,7 @@ tools = { gitleaks = "8.30.1" }
 run = 'gitleaks git --redact --no-banner --log-opts="${SECRETS_RANGE:-origin/main..HEAD}"'
 
 [tasks.fetch-models]
-description = "Download + verify the detection models (not vendored — see scripts/models.tsv for why)"
+description = "Download + verify the inference models (not vendored — see scripts/models.tsv for why)"
 run = "./scripts/fetch_models.sh"
 
 [tasks.fetch-qairt]
@@ -75,6 +75,10 @@ run = 'test -n "$VEHICLE" || { echo "VEHICLE=<Vehicle> mise run fetch-qairt" >&2
 [tasks.urdf]
 description = "Expand each vehicle's xacro into the URDF its package reads (needs ROS's xacro on the PATH)"
 run = "./scripts/expand_urdf.sh"
+
+[tasks.pose-test]
+description = "Test scripts/camera_pose.py with the system Python, which needs python3-opencv"
+run = "/usr/bin/python3 -I -B -m unittest discover -s scripts/tests"
 
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"

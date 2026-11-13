@@ -16,38 +16,44 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
 The diagram shows the Pi 5. The other boards differ:
 
 - On the C100 and the VENTUNO Q, one `v4l2_capture` Port captures both cameras and sends their frames as pairs.
+- A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
+A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model. The diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames and to the pairs. It projects the pairs' depth into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
+
 ```text
- left camera Port ──► LibCamera / V4L2 driver ─┐
-                                                ├─► Pairer ──► Pipeline ──► subscribers
- right camera Port ─► LibCamera / V4L2 driver ─┘                │
-                                                                 ├─ stereo_match Port (Pi 5)
-                                                                 └─ GPU through nx_iree (C100, VENTUNO Q)
+ left camera Port ──► LibCamera / V4L2Pair driver ─┐
+                                                    ├─► Pairer ──► Pipeline ──► subscribers
+ right camera Port ─► LibCamera / V4L2Pair driver ─┘                │
+                                                                     ├─ stereo_match Port (Pi 5)
+                                                                     └─ GPU through nx_iree (C100, VENTUNO Q)
 
  subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
                Detection pipeline ──► hailo_detect Port (Hailo-8)
                Status (rates, load, alignment, sharpness)
-               Preview ──► jpeg_codec Port ──► dashboard channels
+               Preview ──► jpeg_codec Ports ──► dashboard channels
 ```
 
 A Port's row below names the process that owns it.
 
 | Box | Process | Started by |
 |---|---|---|
-| LibCamera / V4L2 driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2`](../../vision/core/lib/vision_core/camera/v4l2.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
+| LibCamera / V4L2Pair driver | [`VisionCore.Camera.LibCamera`](../../vision/core/lib/vision_core/camera/lib_camera.ex) on the Pi 5, [`VisionCore.Camera.V4L2Pair`](../../vision/core/lib/vision_core/camera/v4l2_pair.ex) on the C100 and the VENTUNO Q, one per side | `VisionCore.Stereo.Supervisor` |
+| Camera of its own | [`VisionCore.Camera.V4L2Single`](../../vision/core/lib/vision_core/camera/v4l2_single.ex), with its `v4l2_capture` Port, for a `:camera` component | `VisionCore.Camera.Unit` |
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
 | ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
-| Detection pipeline | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor` |
+| Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
+| Segmentation pipeline, one per segmenter | [`VisionCore.Segmentation.Pipeline`](../../vision/core/lib/vision_core/segmentation/pipeline.ex), with [`VisionCore.Segmentation.Live`](../../vision/core/lib/vision_core/segmentation/live.ex) passing its label grids to the dashboard | `VisionCore.Segmentation.Supervisor`, one per pipeline |
+| `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |
 | Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
 | Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
-| `jpeg_codec` Port | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, the Preview and the exporters encode on `VisionCore.Jpeg.Export` | `VisionCore.Supervisor` |
+| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` |
 
-The drivers, the Pipeline and the Detection pipeline publish their frames, pairs and detections through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
+The drivers, the Pipeline and the detection and segmentation pipelines publish their frames, pairs, detections and label grids through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
 
 `VisionCore.Stereo.Supervisor` is one stereo unit. It starts its children in order and restarts everything after a child that fails (`:rest_for_one`):
 
@@ -85,13 +91,19 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 
 | Topic | Content |
 |---|---|
-| `<prefix>/<side>/image_raw/compressed` | Each camera's frames as JPEG. Grey frames are encoded by `jpeg_codec`, at most `:raw_image_max_hz` a second per side. |
+| `<prefix>/<side>/image_raw/compressed` | Each camera's frames as JPEG. Grey frames are encoded by `jpeg_codec`, at most `:raw_image_max_hz` a second per side; JPEG frames go out as they arrive. |
 | `<prefix>/<side>/camera_info` | Each camera's calibration. |
 | `<prefix>/disparity` | `stereo_msgs/DisparityImage`, the disparity in 32-bit float pixels. |
 | `<prefix>/depth/image_rect` | The depth as a 16UC1 image of millimetres, 0 where there is no measurement: the ROS depth-image convention, at half the bytes of 32-bit metres. |
 | `<prefix>/depth/camera_info` | The left camera's rectified intrinsics, next to the depth image so viewers can project it. |
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
-| `<prefix>/detections`, `<prefix>/detections/markers` | Detected objects with their position in metres, and markers for RViz or Foxglove. |
+| `<prefix>/<pipeline>/detections`, `<prefix>/<pipeline>/detections/markers`, `<prefix>/<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A detector without a name is the pipeline `detection`. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
+| `<prefix>/<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
+| `<prefix>/<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
+| `<prefix>/<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
+| `<prefix>/<pipeline>/road/points`, `<prefix>/<pipeline>/off_road/points` | The segmentation pipeline `<pipeline>`'s stereo points in a road cell and in any other cell, as `sensor_msgs/PointCloud2` in the stereo left optical frame. They are stamped with their stereo pair's capture time, as `<prefix>/points` is, so syncing them with the label image takes an approximate-time policy. None is published for a frame without a matched stereo pair. None is published either when the camera's calibration or pose is missing, or its calibration cannot be projected at the frame's size. |
+
+A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline). Segmentation pipelines are published only with the exporter's `segmentation:` option: those its `pipelines:` lists, or without `pipelines:` every one on a camera. Clouds whose pair carries no frame id, the stereo unit's left camera having been given none, are in `<prefix>_left`.
 
 `VisionCore.Ros2.Exporter.Stereo`'s documentation lists the topics that are off unless you turn them on, such as the rectified images. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./README.md#dashboard-and-api)).
 
@@ -100,6 +112,7 @@ Each message is stamped with the frame id of what it comes from:
 - The stereo component's sides set each camera's frame id (`left: [frame_id: "stereo_left_optical"]`, `<prefix>_left` without one).
 - Every frame carries its camera's frame id.
 - A pair's outputs and its detections are in the left camera's frame.
+- A camera of its own's detections are in that camera's frame.
 
 One setting therefore reaches every exporter.
 
@@ -143,6 +156,18 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 ## The dashboard's previews
 
 The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
+
+Each preview encodes apart from the others, one frame at a time. A slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one.
+
+The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports. Set its size with `jpeg: [ports: n]` in your vehicle's `VisionCore.Config`, 3 by default.
+
+Each encode runs on a free Port. Once every Port is busy, the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
+
+A camera frame is encoded once for every preview and exporter that asks for it at the same quality. A request for a frame already waiting or encoding, or for the last one its stream encoded, takes that JPEG. The stereo cameras' frames that the preview and the ROS 2 exporter both send therefore cost one encode each.
+
+A camera output sent as JPEG ([Outputs](./cameras.md#outputs)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
+
+Each pipeline's results reach the dashboard on a channel of their own: `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision channels](./channels.md#segmentation)).
 
 The depth preview is the depth image coloured by `jpeg_codec`, near red and far blue, scaled by 1/depth.
 

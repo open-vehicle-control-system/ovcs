@@ -4,6 +4,45 @@ defmodule VisionCore.Detection.PipelineTest do
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Outputs
 
+  # Fails the odd frames, as a backend whose Port went down, and finds a person on the left half of
+  # the even ones.
+  defmodule EveryOtherFrame do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(_server, sequence, image) do
+      {height, width} = image |> Nx.shape() |> then(&{elem(&1, 0), elem(&1, 1)})
+      person = %{class_id: 0, score: 0.9, x0: 0.0, y0: 0.0, x1: width / 2, y1: height / 1}
+      detections = if rem(sequence, 2) == 1, do: nil, else: [person]
+      send(self(), {:inference_detections, sequence, detections})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def options, do: []
+    def inference_times(_server), do: nil
+  end
+
+  # Tells the test each sequence it is handed and answers what the test scripted, `:ok` once the
+  # script is spent; never replies, the test does.
+  defmodule Scripted do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect({test, script}, sequence, _image) do
+      send(test, {:submitted, sequence})
+
+      Agent.get_and_update(script, fn
+        [answer | rest] -> {answer, rest}
+        [] -> {:ok, []}
+      end)
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def options, do: []
+    def inference_times(_server), do: nil
+  end
+
   describe "a pair through the backend" do
     alias VisionCore.Camera.Frame
     alias VisionCore.Detection.Backend.Stub
@@ -35,7 +74,7 @@ defmodule VisionCore.Detection.PipelineTest do
     defp start_detection(boxes, opts) do
       start_supervised!({Stub, boxes: boxes})
       start_supervised!({Pipeline, [backend: Stub] ++ opts})
-      :ok = Outputs.subscribe({:detections, Pipeline})
+      :ok = Outputs.subscribe({:detections, :detection})
     end
 
     # As the stereo pipeline publishes it, which need not be running.
@@ -48,7 +87,7 @@ defmodule VisionCore.Detection.PipelineTest do
 
     defp detections do
       publish_pair()
-      assert_receive {:"$gen_cast", {:detections, %Pair{}, detections}}, 1_000
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, detections}}}, 1_000
       detections
     end
 
@@ -76,6 +115,70 @@ defmodule VisionCore.Detection.PipelineTest do
       assert person.caption == "person 0.90 2.00m"
     end
 
+    test "publishes nothing for a pair the backend could not detect on, and detects the next" do
+      start_supervised!({Pipeline, backend: EveryOtherFrame})
+      :ok = Outputs.subscribe({:detections, :detection})
+
+      publish_pair()
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 100
+
+      assert [%{label: "person"}] = detections()
+    end
+
+    test "submits no pair while one is in flight, so its reply is published" do
+      script = start_supervised!({Agent, fn -> [] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      :ok = Outputs.subscribe({:detections, :detection})
+
+      publish_pair()
+      assert_receive {:submitted, in_flight}
+      publish_pair()
+      refute_receive {:submitted, _sequence}, 100
+
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, in_flight, []}
+      )
+
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
+      publish_pair()
+      assert_receive {:submitted, _next}
+    end
+
+    test "drops a late reply to a pair the backend refused, matching only the pair it took" do
+      script = start_supervised!({Agent, fn -> [{:error, :unavailable}, :ok] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      :ok = Outputs.subscribe({:detections, :detection})
+
+      publish_pair()
+      assert_receive {:submitted, refused}
+      publish_pair()
+      assert_receive {:submitted, taken}
+
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, refused, []}
+      )
+
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 100
+
+      send(
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)),
+        {:inference_detections, taken, []}
+      )
+
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
+    end
+
+    test "ignores a stray :pair_wait on the stereo source" do
+      start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
+      publish_pair()
+      send(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)), :pair_wait)
+
+      assert [%{label: "person"}] = detections()
+      assert Process.alive?(GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)))
+    end
+
     test "keeps the highest scores, up to :max_detections" do
       start_detection(
         [{1, 0.5, {0.0, 0.0, 0.5, 1.0}}, {0, 0.9, {0.0, 0.0, 0.5, 1.0}}],
@@ -89,13 +192,79 @@ defmodule VisionCore.Detection.PipelineTest do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], detect_every_n: 2)
 
       publish_pair()
-      refute_receive {:"$gen_cast", {:detections, _pair, _detections}}, 200
+      refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 200
       assert [_person] = detections()
+    end
+
+    test "a named pipeline infers on its own backend and publishes under its own key, its name in the message" do
+      start_supervised!(
+        Supervisor.child_spec(
+          {Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road, boxes: []},
+          id: :road_stub
+        )
+      )
+
+      start_supervised!(
+        {Pipeline,
+         name: :road, backend: Stub, backend_server: VisionCore.Pipelines.server(Stub, :road)}
+      )
+
+      :ok = Outputs.subscribe({:detections, :road})
+
+      publish_pair()
+
+      assert_receive {:"$gen_cast", {{:detections, :road}, {%Pair{}, []}}}, 1_000
+      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road))
+      refute GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
+    end
+
+    test "two pipelines side by side each publish only under their own key" do
+      start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
+
+      start_supervised!(
+        Supervisor.child_spec(
+          {Stub, name: VisionCore.Pipelines.server(Stub, :road), pipeline: :road, boxes: []},
+          id: :road_stub
+        )
+      )
+
+      start_supervised!(
+        Supervisor.child_spec(
+          {Pipeline,
+           name: :road, backend: Stub, backend_server: VisionCore.Pipelines.server(Stub, :road)},
+          id: :road_pipeline
+        )
+      )
+
+      road_listener = self()
+
+      spawn_link(fn ->
+        :ok = Outputs.subscribe({:detections, :road})
+        send(road_listener, :subscribed)
+        receive do: ({:"$gen_cast", message} -> send(road_listener, {:road, message}))
+      end)
+
+      assert_receive :subscribed
+      publish_pair()
+
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, [%{label: "person"}]}}},
+                     1_000
+
+      assert_receive {:road, {{:detections, :road}, {%Pair{}, []}}}, 1_000
+      refute_receive {:"$gen_cast", {{:detections, :road}, {_pair, _detections}}}, 100
     end
   end
 
   test "declares the steps around the inference, in the detection pipeline, their settings fixed at start" do
-    state = %{detect_every_n: 2, min_score: 0.5, max_detections: 10, depth_sample_fraction: 0.25}
+    state = %{
+      name: :detection,
+      source: :stereo,
+      detect_every_n: 2,
+      min_score: 0.5,
+      max_detections: 10,
+      depth_sample_fraction: 0.25
+    }
+
     groups = Pipeline.groups(state)
 
     assert Enum.map(groups, &{&1.id, &1.name, &1.position}) == [
@@ -129,6 +298,44 @@ defmodule VisionCore.Detection.PipelineTest do
              pipeline: :detection,
              position: 102,
              summary: "Infers"
-           } = Pipeline.inference_group(%{summary: "Infers", parameters: []})
+           } = Pipeline.inference_group(:detection, %{summary: "Infers", parameters: []})
+  end
+
+  test "a named pipeline's steps carry its name, at the same positions" do
+    state = %{
+      name: :road,
+      source: :stereo,
+      detect_every_n: 1,
+      min_score: 0.5,
+      max_detections: 10,
+      depth_sample_fraction: 0.5
+    }
+
+    groups = Pipeline.groups(state) ++ [Pipeline.inference_group(:road, %{parameters: []})]
+
+    assert Enum.map(groups, &{&1.id, &1.pipeline, &1.position}) == [
+             {"road.input", :road, 101},
+             {"road.filtering", :road, 103},
+             {"road.placement", :road, 104},
+             {"road.inference", :road, 102}
+           ]
+  end
+
+  test "refuses at start an option whose value it cannot run with" do
+    Process.flag(:trap_exit, true)
+
+    for {option, refused} <- [
+          {{:detect_every_n, 0}, "its :detect_every_n is an integer from 1 on, got 0"},
+          {{:detect_every_n, 1.5}, "its :detect_every_n is an integer from 1 on, got 1.5"},
+          {{:max_detections, -1}, "its :max_detections is an integer from 0 on, got -1"},
+          {{:reprojection_stride, 0}, "its :reprojection_stride is an integer from 1 on, got 0"},
+          {{:pair_wait_ms, -1}, "its :pair_wait_ms is an integer from 0 on, got -1"},
+          {{:min_score, "0.4"}, "its :min_score is a number, got \"0.4\""}
+        ] do
+      assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+               Pipeline.start_link([option, backend: VisionCore.Detection.Backend.Stub])
+
+      assert message == refused
+    end
   end
 end

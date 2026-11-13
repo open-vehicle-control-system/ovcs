@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 framing = { path = "../framing" }
 libc = "0.2"
+# Linked as jpeg_codec links it: see its Cargo.toml.
+turbojpeg = { version = "1.5", default-features = false, features = ["cmake", "pkg-config"] }

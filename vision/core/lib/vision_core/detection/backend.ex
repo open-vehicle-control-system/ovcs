@@ -24,7 +24,9 @@ defmodule VisionCore.Detection.Backend do
       {:inference_detections, sequence, detections}
 
   where `sequence` is the sequence number the caller passed to `detect/3`,
-  and each detection is
+  and `detections` is `nil` when the backend could not detect on the frame,
+  as when its Port went down with the frame in flight: a frame accepted gets
+  exactly one reply. Each detection is
 
       %{class_id: 0..79, score: 0.0..1.0, x0: _, y0: _, x1: _, y1: _}
 
@@ -46,12 +48,33 @@ defmodule VisionCore.Detection.Backend do
   `available?/1` exists so a caller can say something useful at
   startup instead of discovering this per-frame.
 
+  ## The accelerator
+
+  `npu_kind/0` names the accelerator a backend runs on, as the
+  dashboard shows it, or `nil` for a backend that runs on none.
+
+  ## The inference time
+
+  A backend whose Port reports the accelerator time of each inference
+  keeps the sum and the count of those times, and `inference_times/1`
+  hands them over and starts them again: the status reads them once per
+  tick. It answers `nil` until the Port has reported a time, as a backend
+  without a Port, or one of an older build, never does. What the time is
+  depends on the accelerator: see `docs/vision/README.md`.
+
   ## The inference step
 
-  A backend declares the detection pipeline's inference step in
-  `VisionCore.Parameters` when it starts, built with
-  `VisionCore.Detection.Pipeline.inference_group/1`: what it runs, where,
-  and its settings.
+  A backend declares the inference step of its detection pipeline, its
+  `:pipeline` option, in `VisionCore.Parameters` when it starts, built
+  with `VisionCore.Detection.Pipeline.inference_group/2`: what it runs,
+  where, and its settings.
+
+  ## Its name
+
+  A backend registers under its `:name` option, the module by default;
+  `VisionCore.Detection.Supervisor` gives each pipeline's backend its own
+  (`VisionCore.Pipelines.server/2`), and `detect/3`, `available?/1` and
+  `inference_times/1` take it.
   """
 
   @typedoc "A 2D box in the submitted image's pixel coordinates."
@@ -68,8 +91,9 @@ defmodule VisionCore.Detection.Backend do
   @type server :: GenServer.server()
 
   @doc """
-  Submit one image, a `u8` `{height, width}` tensor, for detection,
-  tagged with `sequence`.
+  Submit one image, a `u8` tensor, `{height, width}` grey or
+  `{height, width, 3}` RGB, for detection, tagged with `sequence`. The
+  backend shrinks it whole to its model's input, letterboxed.
 
   `:ok` means the frame was accepted and a reply will follow.
   `{:error, :busy}` means one is already in flight and this frame was
@@ -81,4 +105,32 @@ defmodule VisionCore.Detection.Backend do
 
   @doc "False when the backend could not initialise. Never raises."
   @callback available?(server()) :: boolean()
+
+  @doc """
+  Where the backend is: `:starting` while it prepares its model and
+  opens its accelerator, `:running` once it takes frames, `:failed` when it
+  does not and is not about to. Never raises. Without it,
+  `available?/1` tells `:running` from `:failed`.
+  """
+  @callback state(GenServer.server()) :: :starting | :running | :failed
+
+  @optional_callbacks state: 1
+
+  @doc """
+  The options the backend takes beside `:name` and those its unit's
+  supervisor gives it: the supervisor hands it these of the unit's
+  options, and refuses the unit one that neither it nor the backend
+  takes.
+  """
+  @callback options() :: [atom()]
+
+  @doc "The kind of accelerator the backend runs on, `nil` without one."
+  @callback npu_kind() :: String.t() | nil
+
+  @doc """
+  The inference times, in microseconds, of the frames answered since the
+  last call: their sum and their count. Starts them again.
+  """
+  @callback inference_times(server()) ::
+              %{sum_us: non_neg_integer(), count: non_neg_integer()} | nil
 end

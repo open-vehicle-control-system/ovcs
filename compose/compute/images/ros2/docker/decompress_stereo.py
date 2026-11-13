@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""Subscribe to the bridge's stereo compressed topics, decode the
+"""Subscribe to the vision unit's compressed camera topics, decode the
 JPEG payload via OpenCV, and republish as raw `sensor_msgs/Image`
-on a fresh pair of topics that cameracalibrator can consume.
+on fresh topics that cameracalibrator can consume:
+`/<prefix>/<camera>/image_raw/compressed` to
+`/<prefix>/<camera>/image_calibration`.
+
+Usage: `decompress_stereo [<prefix> [<camera> ...]]`, the stereo pair,
+`stereo left right`, by default; `decompress_stereo stereo center` for the
+camera of its own named `center`.
 
 We use this instead of `image_transport republish` because the
 latter's CompressedImage subscriber and our Elixir bridge's
@@ -22,7 +28,7 @@ from sensor_msgs.msg import CompressedImage, Image
 
 
 class CompressedToRaw(Node):
-    def __init__(self):
+    def __init__(self, prefix, cameras):
         super().__init__("compressed_to_raw")
         self.bridge = CvBridge()
 
@@ -36,9 +42,9 @@ class CompressedToRaw(Node):
             history=HistoryPolicy.KEEP_LAST,
         )
 
-        for side in ("left", "right"):
-            in_topic = f"/stereo/{side}/image_raw/compressed"
-            out_topic = f"/stereo/{side}/image_calibration"
+        for side in cameras:
+            in_topic = f"/{prefix}/{side}/image_raw/compressed"
+            out_topic = f"/{prefix}/{side}/image_calibration"
             pub = self.create_publisher(Image, out_topic, qos)
             self.create_subscription(
                 CompressedImage,
@@ -63,9 +69,11 @@ class CompressedToRaw(Node):
 
 
 def main():
+    prefix = sys.argv[1] if len(sys.argv) > 1 else "stereo"
+    cameras = sys.argv[2:] or ["left", "right"]
     rclpy.init()
-    node = CompressedToRaw()
-    node.get_logger().info("decompressing stereo compressed → raw")
+    node = CompressedToRaw(prefix, cameras)
+    node.get_logger().info(f"decompressing {', '.join(cameras)} compressed → raw")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

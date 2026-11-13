@@ -1,7 +1,7 @@
 defmodule Ros2Zenoh.FoxgloveMsgs.ImageAnnotationsTest do
   @moduledoc """
   Byte-equality against `test/support/golden_cdr.json` for the
-  annotation overlay — `<prefix>/left/detections`, the labelled boxes
+  annotation overlay — `<prefix>/<name>/annotations`, the labelled boxes
   Foxglove draws on the camera image.
 
   These are the most alignment-dependent encoders in the tree:

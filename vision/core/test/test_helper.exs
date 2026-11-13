@@ -31,6 +31,9 @@ Ecto.Migrator.run(VisionCore.Repo, :up, all: true, log: false)
 # producers and consumers the tests start on their own.
 {:ok, _pid} = VisionCore.Outputs.start_link()
 
+# The registry of the pipelines' processes, likewise.
+{:ok, _pid} = VisionCore.Processes.start_link()
+
 # The Ports the tests run: jpeg_codec (VisionCore.Jpeg), built from the Rust
 # workspace, for the :jpeg tests, and the stereo_match nx_stereo builds when
 # it compiles (VisionCore.Stereo.Matcher) for the :stereo_match tests. CI

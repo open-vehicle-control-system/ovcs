@@ -1,7 +1,7 @@
 defmodule VisionCore.Camera.RustFramingTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Camera.{Frame, LibCamera, V4L2}
+  alias VisionCore.Camera.{Frame, LibCamera, V4L2Pair}
 
   @moduletag :rust
 
@@ -35,7 +35,7 @@ defmodule VisionCore.Camera.RustFramingTest do
     refute Map.has_key?(reported, :sync_timer_us)
 
     assert {:pair, %Frame{width: 2, height: 1, grey: <<1, 2>>}, %Frame{grey: <<3, 4>>}} =
-             V4L2.parse_record(pair)
+             V4L2Pair.parse_record(pair)
 
     assert {:ok, %Frame{width: 3, height: 2, grey: <<1, 2, 3, 4, 5, 6>>}} =
              LibCamera.parse_record(grey)

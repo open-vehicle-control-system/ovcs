@@ -17,14 +17,17 @@
 
 use std::io::{self, Write};
 
-use jpeg_decoder::{Decoder, PixelFormat};
-use jpeg_encoder::{ColorType, Encoder};
+use jpeg_decoder::Decoder;
+use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 const ENCODE: u8 = 0;
 const DECODE: u8 = 1;
 const DEPTH: u8 = 2;
 const ENCODE_HEADER: usize = 6;
 const DEPTH_HEADER: usize = 9;
+
+/// The longest request taken: above any camera's whole RGB frame.
+const MAX_REQUEST_BYTES: usize = 64 << 20;
 
 // OpenCV's COLORMAP_TURBO, as RGB.
 const TURBO: [[u8; 3]; 256] = [
@@ -286,23 +289,23 @@ const TURBO: [[u8; 3]; 256] = [
     [122, 4, 3],
 ];
 
-fn reply_to(request: &[u8]) -> Option<Vec<u8>> {
+fn reply_to(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     match request.split_first()? {
-        (&ENCODE, body) => encode(body),
+        (&ENCODE, body) => encode(compressor, body),
         (&DECODE, body) => decode_luma(body),
-        (&DEPTH, body) => encode_depth(body),
+        (&DEPTH, body) => encode_depth(compressor, body),
         _ => None,
     }
 }
 
-fn encode(request: &[u8]) -> Option<Vec<u8>> {
+fn encode(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     let header = request.get(..ENCODE_HEADER)?;
     let width = u16::from_le_bytes([header[0], header[1]]);
     let height = u16::from_le_bytes([header[2], header[3]]);
     let (channels, quality) = (header[4], header[5]);
-    let color = match channels {
-        1 => ColorType::Luma,
-        3 => ColorType::Rgb,
+    let format = match channels {
+        1 => PixelFormat::GRAY,
+        3 => PixelFormat::RGB,
         _ => return None,
     };
     let pixels = &request[ENCODE_HEADER..];
@@ -312,11 +315,36 @@ fn encode(request: &[u8]) -> Option<Vec<u8>> {
     {
         return None;
     }
-    let mut jpeg = Vec::new();
-    Encoder::new(&mut jpeg, quality.clamp(1, 100))
-        .encode(pixels, width, height, color)
-        .ok()?;
-    Some(jpeg)
+    compress(compressor, pixels, (width, height), format, quality)
+}
+
+/// Grey or RGB `pixels` as a JPEG, its chroma 4:2:0 below quality 90 and
+/// 4:4:4 from 90 up. The caller checks that `pixels` holds the image.
+fn compress(
+    compressor: &mut Compressor,
+    pixels: &[u8],
+    (width, height): (u16, u16),
+    format: PixelFormat,
+    quality: u8,
+) -> Option<Vec<u8>> {
+    let subsamp = match format {
+        PixelFormat::GRAY => Subsamp::Gray,
+        _ if quality < 90 => Subsamp::Sub2x2,
+        _ => Subsamp::None,
+    };
+    let (width, height) = (usize::from(width), usize::from(height));
+    let image = Image {
+        pixels,
+        width,
+        pitch: width * format.size(),
+        height,
+        format,
+    };
+    compressor
+        .set_quality(i32::from(quality.clamp(1, 100)))
+        .and_then(|()| compressor.set_subsamp(subsamp))
+        .and_then(|()| compressor.compress_to_vec(image))
+        .ok()
 }
 
 // A colour JPEG's luma is computed back from its RGB with BT.601 weights,
@@ -329,8 +357,8 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     reply.extend_from_slice(&properties.width.to_le_bytes());
     reply.extend_from_slice(&properties.height.to_le_bytes());
     match properties.pixel_format {
-        PixelFormat::L8 => reply.extend_from_slice(&samples),
-        PixelFormat::RGB24 => reply.extend(samples.chunks_exact(3).map(|rgb| {
+        jpeg_decoder::PixelFormat::L8 => reply.extend_from_slice(&samples),
+        jpeg_decoder::PixelFormat::RGB24 => reply.extend(samples.chunks_exact(3).map(|rgb| {
             let [red, green, blue] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
             ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
         })),
@@ -339,7 +367,7 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     Some(reply)
 }
 
-fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
+fn encode_depth(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
     let header = request.get(..DEPTH_HEADER)?;
     let u16_at = |offset: usize| u16::from_le_bytes([header[offset], header[offset + 1]]);
     let (width, height, quality) = (u16_at(0), u16_at(2), header[4]);
@@ -359,11 +387,13 @@ fn encode_depth(request: &[u8]) -> Option<Vec<u8>> {
     };
     let far = if far_mm == 0 { u16::MAX } else { far_mm };
     let range = near.map(|near| (near, far.max(near.saturating_add(1))));
-    let mut jpeg = Vec::new();
-    Encoder::new(&mut jpeg, quality.clamp(1, 100))
-        .encode(&depth_colours(&depth, range), width, height, ColorType::Rgb)
-        .ok()?;
-    Some(jpeg)
+    compress(
+        compressor,
+        &depth_colours(&depth, range),
+        (width, height),
+        PixelFormat::RGB,
+        quality,
+    )
 }
 
 /// The 2nd percentile of the measured depths, so a few stray near matches do
@@ -416,8 +446,9 @@ fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
 fn main() -> io::Result<()> {
     let mut input = io::stdin().lock();
     let mut output = io::stdout().lock();
-    while let Some(request) = framing::read_record(&mut input)? {
-        let reply = reply_to(&request).unwrap_or_default();
+    let mut compressor = Compressor::new().map_err(io::Error::other)?;
+    while let Some(request) = framing::read_record(&mut input, MAX_REQUEST_BYTES)? {
+        let reply = reply_to(&mut compressor, &request).unwrap_or_default();
         output.write_all(&(reply.len() as u32).to_be_bytes())?;
         output.write_all(&reply)?;
         output.flush()?;
@@ -428,6 +459,15 @@ fn main() -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The reply of a codec that kept its compressor from other requests.
+    fn reply_to(request: &[u8]) -> Option<Vec<u8>> {
+        thread_local! {
+            static COMPRESSOR: std::cell::RefCell<Compressor> =
+                std::cell::RefCell::new(Compressor::new().unwrap());
+        }
+        COMPRESSOR.with_borrow_mut(|compressor| super::reply_to(compressor, request))
+    }
 
     fn request(width: u16, height: u16, channels: u8, pixels: &[u8]) -> Vec<u8> {
         let mut request = vec![ENCODE];
@@ -524,6 +564,112 @@ mod tests {
         let jpeg = reply_to(&depth_request(16, 8, 0, 0, &depth)).unwrap();
         assert!(is_jpeg(&jpeg));
         assert_eq!(reply_to(&depth_request(16, 8, 0, 0, &depth[..10])), None);
+    }
+
+    fn request_at(quality: u8, width: u16, height: u16, channels: u8, pixels: &[u8]) -> Vec<u8> {
+        let mut request = request(width, height, channels, pixels);
+        request[6] = quality;
+        request
+    }
+
+    /// Each component's (horizontal, vertical) sampling factors, from the
+    /// baseline frame header.
+    fn sampling_factors(jpeg: &[u8]) -> Vec<(u8, u8)> {
+        let mut at = 2;
+        loop {
+            let length = usize::from(u16::from_be_bytes([jpeg[at + 2], jpeg[at + 3]]));
+            if jpeg[at + 1] == 0xC0 {
+                let components = usize::from(jpeg[at + 9]);
+                return (0..components)
+                    .map(|index| jpeg[at + 11 + index * 3])
+                    .map(|factors| (factors >> 4, factors & 0x0F))
+                    .collect();
+            }
+            at += 2 + length;
+        }
+    }
+
+    fn luma(rgb: &[u8]) -> Vec<u8> {
+        rgb.chunks_exact(3)
+            .map(|rgb| {
+                let [red, green, blue] = [rgb[0], rgb[1], rgb[2]].map(u32::from);
+                ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
+            })
+            .collect()
+    }
+
+    fn psnr(decoded: &[u8], expected: &[u8]) -> f64 {
+        assert_eq!(decoded.len(), expected.len());
+        let squared: f64 = decoded
+            .iter()
+            .zip(expected)
+            .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+            .sum();
+        10.0 * (255.0f64.powi(2) / (squared / decoded.len() as f64)).log10()
+    }
+
+    /// Smooth shading with hard edges, 64 × 48.
+    fn scene_rgb() -> Vec<u8> {
+        (0..48u32)
+            .flat_map(|y| (0..64u32).map(move |x| (x, y)))
+            .flat_map(|(x, y)| {
+                let edge = if (x / 16 + y / 16) % 2 == 0 { 0 } else { 60 };
+                [
+                    (x * 3 + edge) as u8,
+                    (y * 4 + edge / 2) as u8,
+                    (100 + x + y) as u8,
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn subsamples_the_chroma_below_quality_90_only_as_v4l2_capture_does() {
+        let rgb = scene_rgb();
+        let at =
+            |quality| sampling_factors(&reply_to(&request_at(quality, 64, 48, 3, &rgb)).unwrap());
+
+        assert_eq!(at(80), [(2, 2), (1, 1), (1, 1)]);
+        assert_eq!(at(89), [(2, 2), (1, 1), (1, 1)]);
+        assert_eq!(at(90), [(1, 1), (1, 1), (1, 1)]);
+        let grey = luma(&rgb);
+        let jpeg = reply_to(&request_at(80, 64, 48, 1, &grey)).unwrap();
+        assert_eq!(sampling_factors(&jpeg), [(1, 1)]);
+    }
+
+    #[test]
+    fn a_grey_image_round_trips() {
+        let grey = luma(&scene_rgb());
+        let jpeg = reply_to(&request_at(80, 64, 48, 1, &grey)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        assert_eq!(&reply[..4], &[64, 0, 48, 0]);
+        let decibels = psnr(&reply[4..], &grey);
+        assert!(decibels > 40.0, "{decibels} dB");
+    }
+
+    #[test]
+    fn an_rgb_image_round_trips_to_its_luma() {
+        let rgb = scene_rgb();
+        let jpeg = reply_to(&request_at(80, 64, 48, 3, &rgb)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        assert_eq!(&reply[..4], &[64, 0, 48, 0]);
+        let decibels = psnr(&reply[4..], &luma(&rgb));
+        assert!(decibels > 40.0, "{decibels} dB");
+    }
+
+    #[test]
+    fn a_depth_preview_round_trips_to_the_luma_of_its_colours() {
+        let depth: Vec<u16> = (0..64 * 48)
+            .map(|i| 500 + (i % 64) * 40 + (i / 64) * 10)
+            .collect();
+        let jpeg = reply_to(&depth_request(64, 48, 500, 4_000, &depth)).unwrap();
+        let reply = reply_to(&decode_request(&jpeg)).unwrap();
+
+        let colours = luma(&depth_colours(&depth, Some((500, 4_000))));
+        let decibels = psnr(&reply[4..], &colours);
+        assert!(decibels > 40.0, "{decibels} dB");
     }
 
     #[test]

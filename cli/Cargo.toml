@@ -19,7 +19,7 @@ crossterm = "0.29"
 regex = "1.11"
 glob = "0.3"
 ansi-to-tui = "8"
-russh = { version = "0.62", default-features = false, features = ["flate2", "aws-lc-rs"] }
+russh = { version = "0.65", default-features = false, features = ["flate2", "aws-lc-rs"] }
 tokio = { version = "1.42", features = ["rt", "macros", "io-util", "net", "time", "sync"] }
 libc = "0.2"
 indicatif = "0.18.4"

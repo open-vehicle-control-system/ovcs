@@ -1,18 +1,29 @@
 //! Captures two IMX708 (Raspberry Pi Camera Module 3) or IMX296 sensors over
 //! raw V4L2, locks the right sensor's frame starts to the left one's, and writes grey
 //! frame pairs as `{:packet, 4}` records on stdout. The command line names
-//! each side's capture node and sensor subdevice. Records on stdin change a
-//! setting each (`name=value`, see `settings`); stdin EOF stops it.
+//! each side's capture node and sensor subdevice. Given one capture node and
+//! sensor instead, it captures that camera in colour (see `single`). Records
+//! on stdin change a setting each (`name=value`, see `settings`); stdin EOF
+//! stops it.
 
 mod arguments;
+mod bands;
 mod bayer;
+mod colour;
 mod exposure;
 mod input;
+mod jpeg;
 mod lock;
 mod pairing;
+mod plan;
+mod processor;
+mod scale;
 mod sensor;
 mod settings;
+mod single;
+mod tuning;
 mod v4l2;
+mod white_balance;
 
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
@@ -64,10 +75,12 @@ fn main() -> ExitCode {
         let _ = writer.write_record(&log_record(level, message));
     };
     let command_line: Vec<String> = std::env::args().skip(1).collect();
-    match arguments::parse(&command_line)
+    match arguments::parse_command(&command_line)
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))
-        .and_then(|arguments| run(&arguments, &writer, &log))
-    {
+        .and_then(|command| match command {
+            arguments::Command::Pair(arguments) => run(&arguments, &writer, &log),
+            arguments::Command::Single(arguments) => single::run(&arguments, &writer, &log),
+        }) {
         Ok(()) => ExitCode::SUCCESS,
         // The host closed the Port, at startup or by closing stdout.
         Err(error) if error.kind() == io::ErrorKind::BrokenPipe => ExitCode::SUCCESS,
@@ -100,7 +113,8 @@ fn wait_for_node(name: &str) -> io::Result<String> {
 }
 
 fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<Camera> {
-    let has_lens = SensorModel::for_sensor(&nodes.sensor).has_lens();
+    let model = SensorModel::for_sensor(&nodes.sensor);
+    let has_lens = model.has_lens();
     let open = || -> io::Result<Camera> {
         host_present()?;
         let sensor = Node::open(&wait_for_node(&nodes.sensor)?)?;
@@ -110,7 +124,7 @@ fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<
             .and_then(|name| v4l2::node_named(&name).ok())
             .and_then(|path| Node::open(&path).ok());
         Ok(Camera {
-            capture: Capture::start(node, width, height, BUFFERS)?,
+            capture: Capture::start(node, width, height, model.sample_bits(), BUFFERS)?,
             sensor,
             lens,
         })
@@ -223,7 +237,7 @@ fn run(
             return Err(error);
         }
         if poll_descriptors[2].revents != 0 {
-            match framing::read_record(&mut input)? {
+            match framing::read_record(&mut input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {

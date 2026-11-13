@@ -67,6 +67,29 @@ defmodule VisionCore.Parameters do
                       [:description]
 
   @doc """
+  A step of the pipeline `pipeline`: the group `<pipeline>.<id>`, named
+  `name`, at `position` in the pipeline, `fields` giving its summary,
+  explanation, compute and parameters.
+  """
+  @spec step(atom(), String.t(), String.t(), non_neg_integer(), map()) :: group_declaration()
+  def step(pipeline, id, name, position, fields) do
+    Map.merge(
+      %{
+        id: "#{pipeline}.#{id}",
+        name: name,
+        kind: :stage,
+        pipeline: pipeline,
+        position: position
+      },
+      fields
+    )
+  end
+
+  @doc "The `:compute` of a step that runs in Elixir on the CPU."
+  @spec on_the_beam() :: %{runs_on: :cpu, implementation: :elixir, backend: nil}
+  def on_the_beam, do: %{runs_on: :cpu, implementation: :elixir, backend: nil}
+
+  @doc """
   Starts the registry. Options: `:store`, the module holding saved values
   (`VisionCore.Parameters.Store`), and `:name` (`VisionCore.Parameters`).
   """

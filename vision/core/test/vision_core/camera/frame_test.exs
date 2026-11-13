@@ -18,6 +18,32 @@ defmodule VisionCore.Camera.FrameTest do
     assert Nx.to_binary(image) == <<1, 2, 3, 4, 5, 6, 7, 8>>
   end
 
+  @rgb %Frame{
+    label: "hq",
+    width: 2,
+    height: 2,
+    capture_ns: 0,
+    rgb: <<255, 0, 0, 0, 255, 0, 0, 0, 255, 10, 20, 30>>
+  }
+
+  test "an RGB frame becomes a u8 height x width x 3 tensor with its bytes" do
+    {:ok, image} = Frame.to_tensor(@rgb)
+
+    assert Nx.shape(image) == {2, 2, 3}
+    assert Nx.type(image) == {:u, 8}
+    assert Nx.to_binary(image) == @rgb.rgb
+    assert Nx.to_flat_list(image[0][1]) == [0, 255, 0]
+  end
+
+  @tag :jpeg
+  test "an RGB frame is encoded to a colour JPEG" do
+    start_supervised!(VisionCore.Jpeg)
+    assert {:ok, <<0xFF, 0xD8, _rest::binary>> = jpeg} = Frame.to_jpeg(@rgb)
+
+    assert %Evision.Mat{shape: {2, 2, 3}} =
+             Evision.imdecode(jpeg, Evision.Constant.cv_IMREAD_UNCHANGED())
+  end
+
   @tag :jpeg
   test "a grey frame is encoded to JPEG" do
     start_supervised!(VisionCore.Jpeg)

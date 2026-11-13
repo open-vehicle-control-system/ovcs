@@ -49,12 +49,35 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
+  # A camera of its own that captures nothing.
+  defmodule NamedCamera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def child_spec(opts), do: %{id: __MODULE__, start: {__MODULE__, :start_link, [opts]}}
+    def start_link(_opts), do: {:ok, spawn_link(fn -> Process.sleep(:infinity) end)}
+  end
+
   test "GET /api/exporters gives each output of the API the most values its channel carries a second",
        %{conn: conn} do
     VisionApiWeb.TestUnit.start(%VisionCore.Config{
       components: [
         {:stereo, driver: Camera, left: [], right: []},
-        {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4}
+        {:camera, name: :hq, driver: NamedCamera},
+        {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4},
+        {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub, max_hz: 2},
+        {:detector,
+         name: :hq_people,
+         backend: VisionCore.Detection.Backend.Stub,
+         source: {:camera, :hq},
+         max_hz: 3},
+        {:segmenter,
+         name: :road_surface,
+         backend: VisionCore.Segmentation.Backend.Stub,
+         source: {:camera, :hq},
+         max_hz: 1},
+        # Left down: its source is none a detection pipeline takes.
+        {:detector, name: :mistyped, backend: VisionCore.Detection.Backend.Stub, source: :hq},
+        # Left down: a segmentation pipeline needs a camera.
+        {:segmenter, name: :sourceless, backend: VisionCore.Segmentation.Backend.Stub}
       ],
       preview: [max_hz: 5]
     })
@@ -66,7 +89,11 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              %{"name" => "camera_frame:left", "maxHz" => 5},
              %{"name" => "camera_frame:right", "maxHz" => 5},
              %{"name" => "stereo_pair", "maxHz" => 5},
-             %{"name" => "detections", "maxHz" => 4}
+             %{"name" => "camera_frame:hq", "maxHz" => 5},
+             %{"name" => "detections:detection", "maxHz" => 4, "source" => "left"},
+             %{"name" => "detections:road", "maxHz" => 2, "source" => "left"},
+             %{"name" => "detections:hq_people", "maxHz" => 3, "source" => "hq"},
+             %{"name" => "segmentation:road_surface", "maxHz" => 1, "source" => "hq"}
            ]
   end
 end
@@ -86,7 +113,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
 
   alias VisionApiWeb.ExporterJSON
 
-  test "names each output, a camera's with its side, with the most values it takes a second" do
+  test "names each output, a camera's with its side and a named pipeline's with its name, with the most values it takes a second and the source it has" do
     exporter = %{
       id: "recorder",
       name: "Recorder",
@@ -95,7 +122,10 @@ defmodule VisionApiWeb.ExporterJSONTest do
       outputs: [
         %{output: :stereo_pair, max_hz: 2},
         %{output: {:camera_frame, :left}, max_hz: nil},
-        %{output: :detections, max_hz: nil}
+        %{output: {:camera_frame, :hq, :inference}, max_hz: 10},
+        %{output: {:detections, :detection}, max_hz: nil},
+        %{output: {:detections, :road}, max_hz: 3, source: "hq"},
+        %{output: {:segmentation, :lanes}, max_hz: 5, source: "hq"}
       ],
       actions: [%{name: :export, label: "Export", description: "Writes a zip."}]
     }
@@ -110,7 +140,10 @@ defmodule VisionApiWeb.ExporterJSONTest do
              outputs: [
                %{name: "stereo_pair", maxHz: 2},
                %{name: "camera_frame:left", maxHz: nil},
-               %{name: "detections", maxHz: nil}
+               %{name: "camera_frame:hq:inference", maxHz: 10},
+               %{name: "detections:detection", maxHz: nil},
+               %{name: "detections:road", maxHz: 3, source: "hq"},
+               %{name: "segmentation:lanes", maxHz: 5, source: "hq"}
              ],
              actions: [%{name: "export", label: "Export", description: "Writes a zip."}]
            }

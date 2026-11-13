@@ -1,6 +1,6 @@
 # vision
 
-The vision unit: stereo depth and, optionally, object detection on a single board, published as ROS 2 messages over Zenoh, with its own dashboard. The guide is [Vision unit](../docs/vision/README.md).
+The vision unit: stereo depth and, optionally, object detection and road segmentation on a single board, with its own dashboard. It publishes its results as ROS 2 messages over Zenoh. The guide is [Vision unit](../docs/vision/README.md).
 
 | Path | What it is |
 |---|---|
@@ -45,7 +45,7 @@ A vehicle picks the board with `vision_target/0`, and the capture driver, the st
 | [TurboJPEG](https://libjpeg-turbo.org/) | `camera_capture`: JPEG encoding of each frame, over FFI. |
 | [HailoRT](https://github.com/hailo-ai/hailort) | `hailo_detect`: inference on the Hailo-8, through its C API (bindgen). |
 | [libc](https://github.com/rust-lang/libc) | `v4l2_capture` on the C100 and the VENTUNO Q: the V4L2 ioctls, mmap and poll. |
-| QNN, from Qualcomm's AI Runtime (QAIRT) | `qnn_detect`: inference on the Hexagon NPU, through its C API, loaded at run time with [libloading](https://github.com/nagisa/rust_libloading); the bindings are generated with bindgen from QAIRT's headers at build time. |
+| QNN, from Qualcomm's AI Runtime (QAIRT) | `qnn_detect` and `qnn_segment`, through the `qnn` crate: inference on the Hexagon NPU, through its C API, loaded at run time with [libloading](https://github.com/nagisa/rust_libloading). The bindings are generated with bindgen from QAIRT's headers at build time. |
 
 ### Dashboard
 

@@ -13,7 +13,7 @@ defmodule VisionCore.Camera.FocusSweep do
   settle, then reads the next.
   """
 
-  alias VisionCore.Camera.V4L2
+  alias VisionCore.Camera.V4L2Pair
   alias VisionCore.Status
 
   @type result :: %{focus: non_neg_integer(), left: float(), right: float()}
@@ -102,7 +102,7 @@ defmodule VisionCore.Camera.FocusSweep do
 
   # The right camera forwards its settings to the left, which drives both lenses.
   defp set_v4l2_focus(focus) do
-    case V4L2.set_controls(V4L2.name_for("left"), focus: focus) do
+    case V4L2Pair.set_controls(V4L2Pair.name_for("left"), focus: focus) do
       {:ok, _controls} -> :ok
       error -> error
     end

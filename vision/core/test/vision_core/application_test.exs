@@ -3,7 +3,7 @@ defmodule VisionCore.ApplicationTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Camera.{Frame, LibCamera}
+  alias VisionCore.Camera.{Frame, GStreamer, LibCamera, V4L2Single}
   alias VisionCore.Parameters.SavedValue
   alias VisionCore.Repo
 
@@ -25,6 +25,7 @@ defmodule VisionCore.ApplicationTest do
     Repo.delete_all(SavedValue)
     :ok = Supervisor.stop(Repo)
     :ok = Supervisor.stop(VisionCore.Outputs)
+    :ok = Supervisor.stop(VisionCore.Processes)
 
     on_exit(fn ->
       Application.stop(:vision_core)
@@ -35,6 +36,8 @@ defmodule VisionCore.ApplicationTest do
       Process.unlink(pid)
       {:ok, outputs} = VisionCore.Outputs.start_link()
       Process.unlink(outputs)
+      {:ok, processes} = VisionCore.Processes.start_link()
+      Process.unlink(processes)
     end)
   end
 
@@ -170,17 +173,18 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(VisionCore.Exporters) == exporters
   end
 
-  test "the core starts the parameter storage and registry, the outputs registry, then the ROS 2 link, before the Port servers" do
+  test "the core starts the parameter storage and registry, the outputs' and the processes' registries, then the ROS 2 link, before the Port servers" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2 ++ [simulator_clock: [acquire_timeout_ms: 10]]
     })
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 9) == [
+    assert Enum.take(ids, 10) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
+             VisionCore.Processes,
              Ros2Zenoh.Client,
              VisionCore.Ros2.Parameters,
              VisionCore.Ros2.Topics,
@@ -188,6 +192,34 @@ defmodule VisionCore.ApplicationTest do
              VisionCore.Jpeg,
              VisionCore.Stereo.Matcher
            ]
+  end
+
+  test "the pipeline decodes on one Port, the previews and exporters encode on a pool of three" do
+    start_pipeline(%VisionCore.Config{})
+
+    assert :sys.get_state(VisionCore.Jpeg).size == 1
+    assert :sys.get_state(VisionCore.Jpeg.Export).size == 3
+  end
+
+  test "the configuration's jpeg: options size the encoders' pool" do
+    start_pipeline(%VisionCore.Config{jpeg: [ports: 2]})
+
+    assert :sys.get_state(VisionCore.Jpeg.Export).size == 2
+  end
+
+  test "jpeg: options other than a positive number of :ports fail the start" do
+    for jpeg <- [[ports: 0], [ports: :many], [size: 2], :ports] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{jpeg: jpeg})
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~ "jpeg:"
+      assert message =~ inspect(jpeg)
+    end
   end
 
   @tag :jpeg
@@ -300,9 +332,129 @@ defmodule VisionCore.ApplicationTest do
     log = capture_log(fn -> start_pipeline(%VisionCore.Config{components: [:hailo_detector]}) end)
 
     assert log =~ "VisionCore.Detection.Supervisor failed to start, detection down"
-    refute Process.whereis(VisionCore.Detection.Supervisor)
+
+    refute GenServer.whereis(
+             VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+           )
+
     assert Process.alive?(Process.whereis(VisionCore.Status))
     assert Process.alive?(Process.whereis(VisionCore.Preview))
+  end
+
+  test "a named detector that cannot start leaves the other detectors running" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:detector, backend: VisionCore.Detection.Backend.Stub},
+            {:hailo_detector, name: :road}
+          ]
+        })
+      end)
+
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
+    refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)
+             )
+           )
+  end
+
+  test "a second Hailo detector is left down, the Hailo-8 serving the first, which runs" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:hailo_detector, hef_path: "/missing.hef"},
+            {:hailo_detector, name: :road, hef_path: "/missing.hef"}
+          ]
+        })
+      end)
+
+    assert log =~ "road down: the Hailo-8 already serves another pipeline, :detection"
+    refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
+  end
+
+  test "a Hailo detector and a stub one both run" do
+    start_pipeline(%VisionCore.Config{
+      components: [
+        {:hailo_detector, hef_path: "/missing.hef"},
+        {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub}
+      ]
+    })
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road)
+             )
+           )
+  end
+
+  test "two detectors of one name fail the start, naming it" do
+    for {components, name} <- [
+          {[{:detector, backend: VisionCore.Detection.Backend.Stub}, :hailo_detector],
+           ":detection"},
+          {[{:detector, name: :road}, {:qnn_detector, name: :road}], ":road"}
+        ] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{components: components})
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
+      assert inspect(reason) =~ "two detectors are named #{name}"
+    end
+  end
+
+  test "a detector whose name is not a valid pipeline name fails the start, stating the rule" do
+    for name <- ["road", nil, :"front-cam", :stereo] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+        components: [{:detector, name: name, backend: VisionCore.Detection.Backend.Stub}]
+      })
+
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~ "a detection pipeline's name is an atom matching"
+      assert message =~ "got #{inspect(name)}"
+    end
+  end
+
+  test "two detectors whose names differ by an underscore run side by side" do
+    stub = VisionCore.Detection.Backend.Stub
+
+    start_pipeline(%VisionCore.Config{
+      components: [
+        {:detector, name: :road_2, backend: stub},
+        {:detector, name: :road2, backend: stub}
+      ]
+    })
+
+    for name <- [:road_2, :road2] do
+      assert GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name))
+    end
   end
 
   test "the pipeline keeps running with no Zenoh router" do
@@ -315,6 +467,113 @@ defmodule VisionCore.ApplicationTest do
 
     assert Process.whereis(VisionCore.Supervisor) |> Process.alive?()
     assert Process.whereis(Ros2Zenoh.Client) |> Process.alive?()
+  end
+
+  defp start_error(components) do
+    Application.put_env(:vision_core, :test_config, %VisionCore.Config{components: components})
+    Application.put_env(:vision_core, :vehicle, Composer)
+
+    assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
+    inspect(reason)
+  end
+
+  test "two cameras of one name fail the start, naming it" do
+    reason =
+      start_error([
+        {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"},
+        {:camera, name: :hq, driver: V4L2Single, csiphy: 2}
+      ])
+
+    assert reason =~ "two cameras are named :hq"
+  end
+
+  test "a camera named as a detection pipeline fails the start, naming both" do
+    for {detector, name} <- [
+          {{:detector, name: :road, backend: VisionCore.Detection.Backend.Stub}, :road},
+          {{:detector, backend: VisionCore.Detection.Backend.Stub}, :detection}
+        ] do
+      reason =
+        start_error([detector, {:camera, name: name, driver: GStreamer, device: "/dev/video0"}])
+
+      assert reason =~ "the camera and the detection pipeline #{inspect(name)} share their name"
+    end
+  end
+
+  @segmenter {:segmenter,
+              name: :road, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :hq}}
+
+  test "a segmenter named as a detection pipeline or another segmenter fails the start, naming it" do
+    for {other, message} <- [
+          {{:detector, name: :road, backend: VisionCore.Detection.Backend.Stub},
+           "the detection pipeline and the segmentation pipeline :road share their name"},
+          {@segmenter, "two segmenters are named :road"}
+        ] do
+      assert start_error([@segmenter, other]) =~ message
+    end
+  end
+
+  test "a camera named as a segmentation pipeline fails the start, naming both" do
+    reason =
+      start_error([
+        {:segmenter,
+         name: :hq, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :hq}},
+        {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"}
+      ])
+
+    assert reason =~ "the camera and the segmentation pipeline :hq share their name"
+  end
+
+  test "a segmenter runs beside a detector, and one that cannot start leaves the unit running" do
+    log =
+      capture_log(fn ->
+        start_pipeline(%VisionCore.Config{
+          components: [
+            {:detector, name: :people, backend: VisionCore.Detection.Backend.Stub},
+            {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"},
+            @segmenter,
+            {:segmenter,
+             name: :lane, backend: VisionCore.Segmentation.Backend.Stub, source: {:camera, :usb}}
+          ]
+        })
+      end)
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road)
+             )
+           )
+
+    assert Process.alive?(
+             GenServer.whereis(
+               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :people)
+             )
+           )
+
+    assert log =~ "VisionCore.Segmentation.Supervisor failed to start, lane down"
+
+    refute GenServer.whereis(
+             VisionCore.Pipelines.server(VisionCore.Segmentation.Supervisor, :lane)
+           )
+
+    assert Process.alive?(Process.whereis(VisionCore.Status))
+  end
+
+  test "a camera whose name is not a valid name fails the start, stating the rule" do
+    for name <- ["hq", :right, :"hq-cam"] do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+        components: [{:camera, name: name, driver: GStreamer, device: "/dev/video0"}]
+      })
+
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~ "a camera's name is an atom matching"
+      assert message =~ "got #{inspect(name)}"
+    end
   end
 
   # The first start of a 64x48 pipeline compiles the Nx stages with EXLA,
@@ -549,6 +808,83 @@ defmodule VisionCore.ApplicationTest do
       assert Process.alive?(Process.whereis(VisionCore.Status))
       assert Process.alive?(Process.whereis(VisionCore.Preview))
     end
+  end
+
+  # Answers `media-ctl` with a CAMSS graph whose CSI PHY 2 has an IMX477.
+  defp media_runner do
+    text = File.read!(Path.expand("../fixtures/camss/media-ctl-p.txt", __DIR__))
+    fn _command, args -> if "-p" in args, do: {text, 0}, else: {"", 0} end
+  end
+
+  # The camera first, so that a fault reaching the vision core's :rest_for_one supervisor would
+  # restart the stereo unit after it; its left side streams a frame every 100 ms.
+  defp start_camera_beside_streaming_pair(tmp_dir, camera_options) do
+    frame_path = write_frame(tmp_dir)
+
+    streaming =
+      write_script(
+        tmp_dir,
+        "streaming_camera.sh",
+        "(while true; do cat \"#{frame_path}\"; sleep 0.1; done) &\nstreamer=$!\ncat > /dev/null\nkill $streamer"
+      )
+
+    idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
+
+    capture_log(fn ->
+      start_pipeline(%VisionCore.Config{
+        components: [
+          {:camera,
+           [name: :hq, driver: V4L2Single, csiphy: 2, media_runner: media_runner()] ++
+             camera_options},
+          stereo_component(streaming, idle, startup_timeout_ms: 60_000)
+        ]
+      })
+    end)
+  end
+
+  defp assert_pair_streams_on(stereo) do
+    assert stereo_processes() == stereo
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left"}}}, 2_000
+  end
+
+  test "a camera that fails to start is left down, the reason logged, and the stereo pair streams on",
+       %{tmp_dir: tmp_dir} do
+    log =
+      start_camera_beside_streaming_pair(tmp_dir, executable: Path.join(tmp_dir, "missing"))
+
+    assert log =~ "VisionCore.Camera.Unit failed to start, camera :hq down"
+    assert log =~ "v4l2_capture missing"
+    assert child_pid(VisionCore.Supervisor, {:camera, :hq}) == :undefined
+    assert_pair_streams_on(stereo_processes())
+  end
+
+  test "a camera that keeps crashing is restarted within its own budget, then left down, and the stereo pair streams on",
+       %{tmp_dir: tmp_dir} do
+    crashing = write_script(tmp_dir, "crashing_camera.sh", "sleep 0.5\nexit 3")
+    start_camera_beside_streaming_pair(tmp_dir, executable: crashing)
+
+    core = Process.whereis(VisionCore.Supervisor)
+    stereo = stereo_processes()
+    unit = child_pid(VisionCore.Supervisor, {:camera, :hq})
+    assert is_pid(unit)
+    first_driver = Process.whereis(V4L2Single.name_for("hq"))
+    assert is_pid(first_driver)
+
+    ref = Process.monitor(unit)
+
+    capture_log(fn ->
+      assert eventually(fn ->
+               driver = Process.whereis(V4L2Single.name_for("hq"))
+               is_pid(driver) and driver != first_driver
+             end)
+
+      assert_receive {:DOWN, ^ref, :process, ^unit, :shutdown}, 10_000
+    end)
+
+    assert child_pid(VisionCore.Supervisor, {:camera, :hq}) == :undefined
+    assert Process.whereis(VisionCore.Supervisor) == core
+    assert_pair_streams_on(stereo)
   end
 
   defp assert_stereo_unit_down do

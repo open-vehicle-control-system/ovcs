@@ -147,6 +147,9 @@ services:
       # calibrator will pair. Our USB cameras aren't HW-synced; 0.05
       # is a good starting point.
       APPROXIMATE_SYNC: ${APPROXIMATE_SYNC:-0.05}
+      # A camera of its own to calibrate alone, in place of the stereo pair.
+      CALIBRATION_CAMERA: ${CALIBRATION_CAMERA:-}
+      CALIBRATION_TOPIC_PREFIX: ${CALIBRATION_TOPIC_PREFIX:-stereo}
     volumes:
       # X socket + Xauthority for GUI forwarding. OVCS_XAUTHORITY
       # is set by scripts/calibrate.sh to the real cookie location —

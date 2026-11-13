@@ -1240,8 +1240,15 @@ impl VerifiedHostKey {
 
 impl russh::client::Handler for VerifiedHostKey {
     type Error = russh::Error;
-    async fn check_server_key(&mut self, key: &PublicKey) -> Result<bool, Self::Error> {
-        Ok(self.accepts(key))
+    /// A host certificate is refused: vehicles present plain host keys.
+    async fn check_server_key(
+        &mut self,
+        key: &russh::keys::PublicKeyOrCertificate,
+    ) -> Result<bool, Self::Error> {
+        match key {
+            russh::keys::PublicKeyOrCertificate::PublicKey { key, .. } => Ok(self.accepts(key)),
+            russh::keys::PublicKeyOrCertificate::Certificate(_) => Ok(false),
+        }
     }
 }
 

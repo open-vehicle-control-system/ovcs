@@ -90,7 +90,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     @behaviour VisionCore.Exporter
 
     @impl VisionCore.Exporter
-    def outputs(_options), do: [stereo_pair: [max_hz: 5], detections: []]
+    def outputs(_options), do: [{:stereo_pair, max_hz: 5}, {:detections, :detection}]
 
     @impl VisionCore.Exporter
     def init(options), do: {:ok, Keyword.fetch!(options, :test)}
@@ -102,7 +102,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
 
     @impl VisionCore.Exporter
-    def handle_info(:sent, test), do: {:ready, [:stereo_pair, :detections], test}
+    def handle_info(:sent, test), do: {:ready, [:stereo_pair, {:detections, :detection}], test}
   end
 
   # Tells the test each time its init/1 runs.
@@ -285,8 +285,8 @@ defmodule VisionCore.Exporter.RunnerTest do
   defp publish_detections(pair),
     do:
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, pair, []}
+        {:detections, :detection},
+        {{:detections, :detection}, {pair, []}}
       )
 
   defp publish_frame(%Frame{label: label} = frame),
@@ -306,7 +306,12 @@ defmodule VisionCore.Exporter.RunnerTest do
   describe "outputs" do
     test "hands the exporter what the configuration's producers publish, by the outputs it names" do
       start_forwarder(
-        outputs: [:stereo_pair, :detections, {:camera_frame, :left}, {:camera_frame, :right}]
+        outputs: [
+          :stereo_pair,
+          {:detections, :detection},
+          {:camera_frame, :left},
+          {:camera_frame, :right}
+        ]
       )
 
       left = frame("left", 1)
@@ -315,15 +320,15 @@ defmodule VisionCore.Exporter.RunnerTest do
       publish_pair(:pair)
 
       Outputs.publish(
-        {:detections, VisionCore.Detection.Pipeline},
-        {:detections, :pair, [:person]}
+        {:detections, :detection},
+        {{:detections, :detection}, {:pair, [:person]}}
       )
 
       publish_frame(left)
       publish_frame(right)
 
       assert_receive {:exported, :stereo_pair, :pair, _at}
-      assert_receive {:exported, :detections, {:pair, [:person]}, _at}
+      assert_receive {:exported, {:detections, :detection}, {:pair, [:person]}, _at}
       assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
       assert_receive {:exported, {:camera_frame, :right}, ^right, _at}
     end
@@ -339,6 +344,97 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_receive {:exported, _output, _value, _at}, 100
     end
 
+    test "hands the exporter a named camera's frames apart from the stereo pair's" do
+      config =
+        config([
+          {:stereo, driver: Camera, left: [], right: []},
+          {:camera, name: :hq, driver: Camera}
+        ])
+
+      start_forwarder([outputs: [{:camera_frame, :hq}, {:camera_frame, :left}]], config)
+
+      hq = frame("hq", 1)
+      left = frame("left", 2)
+      publish_frame(hq)
+      publish_frame(left)
+
+      assert_receive {:exported, {:camera_frame, :hq}, ^hq, _at}
+      assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
+    end
+
+    test "hands the exporter each output of a camera it names apart, the default as the camera's" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      start_forwarder(
+        [outputs: [{:camera_frame, :hq}, {:camera_frame, :hq, :inference}]],
+        config
+      )
+
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+      view = %Frame{frame("hq", 1) | output: :view}
+      inference = %Frame{frame("hq", 1) | output: :inference}
+      Outputs.publish({:camera_frame, server, :view}, {:camera_frame, view})
+      Outputs.publish({:camera_frame, server, :inference}, {:camera_frame, inference})
+
+      assert_receive {:exported, {:camera_frame, :hq}, ^view, _at}
+      assert_receive {:exported, {:camera_frame, :hq, :inference}, ^inference, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
+    end
+
+    test "refuses to start on two outputs naming one camera output, its default named twice" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      assert {:error, {{:invalid_output, {:camera_frame, :hq, :view}}, _child}} =
+               start_supervised(
+                 {Runner,
+                  exporter: Forwarder,
+                  options: [
+                    test: self(),
+                    outputs: [{:camera_frame, :hq}, {:camera_frame, :hq, :view}]
+                  ],
+                  config: config}
+               )
+    end
+
+    test "refuses to start on a camera output the camera does not send" do
+      config =
+        config([
+          {:camera,
+           name: :hq,
+           driver: VisionCore.Camera.V4L2Single,
+           outputs: [
+             view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+             inference: [resolution: {1014, 760}, from: :view]
+           ]}
+        ])
+
+      assert {:error, {{:unsent_output, {:camera_frame, :hq, :view}}, _child}} =
+               start_supervised(
+                 {Runner,
+                  exporter: Forwarder,
+                  options: [test: self(), outputs: [{:camera_frame, :hq, :view}]],
+                  config: config}
+               )
+    end
+
     test "leaves out an output the configuration has no producer of" do
       runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
 
@@ -348,7 +444,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     test "refuses to start on an output it does not know, or an option an output does not take" do
       for outputs <- [
             [:stereo_pairs],
-            [{:camera_frame, :middle}],
+            [{:camera_frame, :"front-cam"}],
             [stereo_pair: [rate: 5]],
             [stereo_pair: [max_hz: 0]],
             [:stereo_pair, stereo_pair: [max_hz: 5]]
@@ -361,6 +457,123 @@ defmodule VisionCore.Exporter.RunnerTest do
                     config: config()}
                  )
       end
+    end
+  end
+
+  describe "named detection pipelines" do
+    @detection_outputs [{:detections, :detection}, {:detections, :road}, {:detections, :signs}]
+
+    defp detectors_config,
+      do: config([:detector, {:detector, name: :road}, {:detector, name: :signs}])
+
+    defp publish_named_detections(name, pair, detections),
+      do:
+        Outputs.publish(
+          {:detections, name},
+          {{:detections, name}, {pair, detections}}
+        )
+
+    test "hands each pipeline's detections to its own output only" do
+      start_forwarder([outputs: @detection_outputs], detectors_config())
+
+      publish_named_detections(:road, :road_pair, [:lane])
+      assert_receive {:exported, {:detections, :road}, {:road_pair, [:lane]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      Outputs.publish(
+        {:detections, :detection},
+        {{:detections, :detection}, {:pair, [:person]}}
+      )
+
+      assert_receive {:exported, {:detections, :detection}, {:pair, [:person]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_named_detections(:signs, :signs_pair, [:stop])
+      assert_receive {:exported, {:detections, :signs}, {:signs_pair, [:stop]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+    end
+
+    test "a busy exporter is handed each pipeline's newest detections, none taken for another's" do
+      runner =
+        start_forwarder([outputs: @detection_outputs, block_on: {0, []}], detectors_config())
+
+      publish_detections(0)
+      assert_receive {:exported, {:detections, :detection}, {0, []}, _at}
+
+      for index <- 1..3 do
+        publish_named_detections(:road, {:road, index}, [])
+        publish_detections(index)
+        publish_named_detections(:signs, {:signs, index}, [])
+      end
+
+      publish_named_detections(:road, {:road, 4}, [])
+      send(runner, :release)
+
+      assert_receive {:exported, {:detections, :detection}, {3, []}, _at}
+      assert_receive {:exported, {:detections, :road}, {{:road, 4}, []}, _at}
+      assert_receive {:exported, {:detections, :signs}, {{:signs, 3}, []}, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
+    end
+  end
+
+  describe "segmentation pipelines" do
+    @segmentation_outputs [{:segmentation, :road}, {:segmentation, :lanes}, {:detections, :road}]
+
+    defp segmenters_config,
+      do:
+        config([
+          {:segmenter, name: :road, source: {:camera, :hq}},
+          {:segmenter, name: :lanes, source: {:camera, :hq}},
+          {:detector, name: :road}
+        ])
+
+    defp publish_segmentation(name, frame, labels, clouds),
+      do:
+        Outputs.publish(
+          {:segmentation, name},
+          {{:segmentation, name}, {frame, labels, clouds}}
+        )
+
+    test "hands each pipeline's result to its own output only, as its frame, labels and clouds" do
+      start_forwarder([outputs: @segmentation_outputs], segmenters_config())
+
+      publish_segmentation(:road, :road_frame, :road_labels, nil)
+      assert_receive {:exported, {:segmentation, :road}, {:road_frame, :road_labels, nil}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_segmentation(:lanes, :lanes_frame, :lanes_labels, :lanes_clouds)
+
+      assert_receive {:exported, {:segmentation, :lanes},
+                      {:lanes_frame, :lanes_labels, :lanes_clouds}, _at}
+
+      refute_receive {:exported, _output, _value, _at}, 50
+
+      publish_named_detections(:road, :road_pair, [:car])
+      assert_receive {:exported, {:detections, :road}, {:road_pair, [:car]}, _at}
+      refute_receive {:exported, _output, _value, _at}, 50
+    end
+
+    test "a busy exporter is handed each pipeline's newest result, none taken for another's" do
+      runner =
+        start_forwarder(
+          [outputs: @segmentation_outputs, block_on: {0, :labels, nil}],
+          segmenters_config()
+        )
+
+      publish_segmentation(:road, 0, :labels, nil)
+      assert_receive {:exported, {:segmentation, :road}, {0, :labels, nil}, _at}
+
+      for index <- 1..3 do
+        publish_segmentation(:road, index, :labels, nil)
+        publish_segmentation(:lanes, index, :labels, nil)
+      end
+
+      publish_segmentation(:lanes, 4, :labels, nil)
+      send(runner, :release)
+
+      assert_receive {:exported, {:segmentation, :road}, {3, :labels, nil}, _at}
+      assert_receive {:exported, {:segmentation, :lanes}, {4, :labels, nil}, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
     end
   end
 
@@ -471,7 +684,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       publish_pair(1)
       publish_detections(1)
       assert_receive {:exported, :stereo_pair, 1, _at}
-      assert_receive {:exported, :detections, {1, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {1, []}, _at}
 
       publish_pair(2)
       publish_detections(2)
@@ -479,7 +692,7 @@ defmodule VisionCore.Exporter.RunnerTest do
       refute_received {:exported, _output, _value, _at}
 
       send(runner, :sent)
-      assert_receive {:exported, :detections, {2, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {2, []}, _at}
       assert_receive {:exported, :stereo_pair, 2, _at}, 1_000
     end
 
@@ -594,11 +807,11 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
 
     test "an output whose last value was not exported is a warning while another output exports" do
-      runner = start_forwarder(outputs: [:stereo_pair, :detections], reject: [1])
+      runner = start_forwarder(outputs: [:stereo_pair, {:detections, :detection}], reject: [1])
       publish_pair(1)
       assert_receive {:exported, :stereo_pair, 1, _at}
       publish_detections(:pair)
-      assert_receive {:exported, :detections, {:pair, []}, _at}
+      assert_receive {:exported, {:detections, :detection}, {:pair, []}, _at}
 
       assert Runner.status(runner) == {:warning, "1 values not exported, the last for :rejected"}
 

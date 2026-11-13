@@ -14,7 +14,15 @@ const OUTPUT_NAMES = {
   stereo_pair: 'Stereo pairs',
   'camera_frame:left': 'Left camera frames',
   'camera_frame:right': 'Right camera frames',
-  detections: 'Detections'
+  camera_frame: 'Camera frames',
+  detections: 'Detections',
+  segmentation: 'Segmentation'
+}
+
+// `detections:road_signs` is the pipeline road_signs's detections, `camera_frame:center:inference` the camera center's output inference.
+const outputName = (name) => {
+  const [output, ...parts] = name.split(':')
+  return OUTPUT_NAMES[name] ?? (parts.length > 0 && OUTPUT_NAMES[output] ? `${OUTPUT_NAMES[output]}: ${parts.join(', ')}` : name)
 }
 
 const REVOKE_DELAY_MS = 10000
@@ -124,7 +132,7 @@ function GenericExporterPage({ id }) {
             <tbody className="divide-y divide-ovcs-border">
               {exporter.outputs.map((output) => (
                 <tr key={output.name}>
-                  <td className="py-2 pr-3">{OUTPUT_NAMES[output.name] ?? output.name}</td>
+                  <td className="py-2 pr-3">{outputName(output.name)}</td>
                   <td className="py-2 tabular-nums text-ovcs-muted">
                     {output.maxHz == null ? 'the newest, unbounded' : `at most ${output.maxHz} Hz`}
                   </td>

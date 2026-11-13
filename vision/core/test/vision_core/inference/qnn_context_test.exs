@@ -1,0 +1,259 @@
+defmodule VisionCore.Inference.QnnContextTest do
+  use ExUnit.Case, async: true
+
+  alias VisionCore.Inference.QnnContext
+
+  @moduletag :tmp_dir
+
+  @executable "/priv/qnn_detect"
+
+  # A QAIRT directory holding only libQnnHtp.so, and a runner that answers the Port's
+  # `--graph-names` with `graph_names`, writes the binary the generator would and counts its
+  # runs.
+  defp setup_qairt(dir, library) do
+    qairt = Path.join(dir, "qairt")
+    File.mkdir_p!(Path.join(qairt, "lib"))
+    File.write!(Path.join(qairt, "lib/libQnnHtp.so"), library)
+    qairt
+  end
+
+  defp runner(test, graph_names) do
+    fn
+      @executable, ["--graph-names", dlc], _env ->
+        send(test, {:graph_names, dlc})
+        graph_names
+
+      command, args, env ->
+        send(test, {:generated, command, args, env})
+        opts = args |> Enum.chunk_every(2) |> Map.new(fn [flag, value] -> {flag, value} end)
+        File.write!(Path.join(opts["--output_dir"], opts["--binary_file"] <> ".bin"), "context")
+        {"", 0}
+    end
+  end
+
+  defp ensure(dlc, qairt, cache, graph_names \\ {"graph_a\n", 0}) do
+    QnnContext.ensure(dlc,
+      qairt_dir: qairt,
+      dsp_library_path: "/dsp",
+      dsp_architecture: "hexagon-v75",
+      cache_dir: cache,
+      executable: @executable,
+      runner: runner(self(), graph_names)
+    )
+  end
+
+  test "the cache key changes with the DLC or libQnnHtp.so", %{tmp_dir: dir} do
+    qairt = setup_qairt(dir, "library one")
+    cache = Path.join(dir, "cache")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model one")
+
+    assert {:ok, first} = ensure(dlc, qairt, cache)
+    assert_received {:generated, generator, args, env}
+    assert generator == Path.join(qairt, "bin/qnn-context-binary-generator")
+    assert ["--backend", backend, "--dlc_path", ^dlc | _] = args
+    assert backend == Path.join(qairt, "lib/libQnnHtp.so")
+    assert {"ADSP_LIBRARY_PATH", "#{qairt}/lib/hexagon-v75/unsigned;/dsp"} in env
+
+    assert {:ok, ^first} = ensure(dlc, qairt, cache)
+    refute_received {:generated, _, _, _}
+
+    File.write!(dlc, "model two")
+    assert {:ok, second} = ensure(dlc, qairt, cache)
+    assert second != first
+    assert_received {:generated, _, _, _}
+    refute File.exists?(first)
+
+    File.write!(Path.join(qairt, "lib/libQnnHtp.so"), "library two")
+    assert {:ok, third} = ensure(dlc, qairt, cache)
+    assert third not in [first, second]
+  end
+
+  test "the binary is named after a hash of the DLC, libQnnHtp.so and the HTP graph options", %{
+    tmp_dir: dir
+  } do
+    qairt = setup_qairt(dir, "library")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model")
+
+    key =
+      :crypto.hash(:sha256, ["model", "library", ~s({"O":3})])
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    assert ensure(dlc, qairt, dir) == {:ok, Path.join(dir, key <> ".bin")}
+  end
+
+  test "QNN's environment names the DSP libraries of the board's Hexagon architecture" do
+    assert QnnContext.env("/qairt", "/dsp", "hexagon-v79") == [
+             {"LD_LIBRARY_PATH", "/qairt/lib"},
+             {"ADSP_LIBRARY_PATH", "/qairt/lib/hexagon-v79/unsigned;/dsp"}
+           ]
+  end
+
+  test "a binary cached under a key without the HTP graph options is generated again", %{
+    tmp_dir: dir
+  } do
+    qairt = setup_qairt(dir, "library")
+    cache = Path.join(dir, "cache")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model")
+    File.mkdir_p!(cache)
+
+    old_key =
+      :crypto.hash(:sha256, ["model", "library"])
+      |> Base.encode16(case: :lower)
+      |> binary_part(0, 16)
+
+    old = Path.join(cache, old_key <> ".bin")
+    File.write!(old, "context at the default optimisation level")
+
+    assert {:ok, binary} = ensure(dlc, qairt, cache)
+    assert binary != old
+    assert_received {:generated, _, _, _}
+    refute File.exists?(old)
+  end
+
+  test "the generator prepares the DLC's graphs at optimisation level 3 through the HTP backend extensions",
+       %{tmp_dir: dir} do
+    qairt = setup_qairt(dir, "library")
+    cache = Path.join(dir, "cache")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model")
+
+    assert {:ok, _binary} = ensure(dlc, qairt, cache, {"graph_a\ngraph_b\n", 0})
+    assert_received {:graph_names, ^dlc}
+    assert_received {:generated, _, args, _}
+    assert ["--config_file", config] = Enum.take(args, -2)
+    assert config == Path.join(cache, "backend_config.json")
+
+    htp_config = Path.join(cache, "htp_backend_extensions.json")
+
+    assert Jason.decode!(File.read!(config)) == %{
+             "backend_extensions" => %{
+               "shared_library_path" => Path.join(qairt, "lib/libQnnHtpNetRunExtensions.so"),
+               "config_file_path" => htp_config
+             }
+           }
+
+    assert Jason.decode!(File.read!(htp_config)) == %{
+             "graphs" => [%{"graph_names" => ["graph_a", "graph_b"], "O" => 3}]
+           }
+  end
+
+  describe "a generation" do
+    setup %{tmp_dir: dir} do
+      dlc = Path.join(dir, "model.dlc")
+      File.write!(dlc, "model")
+      %{dlc: dlc, qairt: setup_qairt(dir, "library"), cache: Path.join(dir, "cache")}
+    end
+
+    # Writes `bytes` where the generator writes its binary, tells the test, and waits for
+    # `:finish` to exit with `status`.
+    defp held_runner(test, bytes, status) do
+      fn
+        @executable, ["--graph-names", _dlc], _env ->
+          {"graph_a\n", 0}
+
+        _generator, args, _env ->
+          opts = args |> Enum.chunk_every(2) |> Map.new(fn [flag, value] -> {flag, value} end)
+          File.write!(Path.join(opts["--output_dir"], opts["--binary_file"] <> ".bin"), bytes)
+          send(test, {:generating, self()})
+
+          receive do
+            :finish -> {"", status}
+          after
+            5_000 -> {"never finished", 1}
+          end
+      end
+    end
+
+    defp ensure_with(context, runner) do
+      QnnContext.ensure(context.dlc,
+        qairt_dir: context.qairt,
+        dsp_library_path: "/dsp",
+        dsp_architecture: "hexagon-v75",
+        cache_dir: context.cache,
+        executable: @executable,
+        runner: runner
+      )
+    end
+
+    test "that failed leaves no binary for the next one to take", context do
+      runner = held_runner(self(), "partial", 1)
+      failing = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+      send(generator, :finish)
+      assert {:error, {:generator_failed, 1, ""}} = Task.await(failing)
+
+      assert {:ok, binary} = ensure(context.dlc, context.qairt, context.cache)
+      assert_received {:generated, _, _, _}
+      assert File.read!(binary) == "context"
+    end
+
+    test "shows its binary only once the generator is done", context do
+      runner = held_runner(self(), "context", 0)
+      generating = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+      assert Path.wildcard(Path.join(context.cache, "*.bin")) == []
+
+      send(generator, :finish)
+
+      assert {:ok, binary} = Task.await(generating)
+      assert File.read!(binary) == "context"
+    end
+
+    test "is the only one of its binary: a second call does not start another", context do
+      runner = held_runner(self(), "context", 0)
+      generating = Task.async(fn -> ensure_with(context, runner) end)
+      assert_receive {:generating, generator}
+
+      assert {:error, {:generating, binary}} = ensure_with(context, runner)
+
+      refute_received {:generating, _second}
+      send(generator, :finish)
+      assert Task.await(generating) == {:ok, binary}
+    end
+
+    test "goes on when its caller exits, and the next call takes its binary", context do
+      runner = held_runner(self(), "context", 0)
+      caller = spawn(fn -> ensure_with(context, runner) end)
+
+      assert_receive {:generating, generator}
+      reference = Process.monitor(caller)
+      Process.exit(caller, :kill)
+      assert_receive {:DOWN, ^reference, :process, ^caller, :killed}
+
+      assert {:error, {:generating, binary}} = ensure(context.dlc, context.qairt, context.cache)
+      generation = Process.monitor(generator)
+      send(generator, :finish)
+      assert_receive {:DOWN, ^generation, :process, ^generator, _reason}
+
+      assert ensure(context.dlc, context.qairt, context.cache) == {:ok, binary}
+      refute_received {:generated, _, _, _}
+    end
+  end
+
+  test "a DLC whose graph names cannot be read is an error, and the generator does not run", %{
+    tmp_dir: dir
+  } do
+    qairt = setup_qairt(dir, "library")
+    dlc = Path.join(dir, "model.dlc")
+    File.write!(dlc, "model")
+
+    assert {:error, {:graph_names_failed, 1, "no DLC"}} = ensure(dlc, qairt, dir, {"no DLC", 1})
+    assert {:error, {:no_graph_names, ^dlc}} = ensure(dlc, qairt, dir, {"", 0})
+    refute_received {:generated, _, _, _}
+  end
+
+  test "a missing DLC or QAIRT is an error, and nothing runs", %{tmp_dir: dir} do
+    qairt = setup_qairt(dir, "library")
+    dlc = Path.join(dir, "model.dlc")
+
+    assert {:error, {:missing_dlc, ^dlc}} = ensure(dlc, qairt, dir)
+    File.write!(dlc, "model")
+    assert {:error, {:missing_qairt, _}} = ensure(dlc, Path.join(dir, "none"), dir)
+    refute_received {:generated, _, _, _}
+    refute_received {:graph_names, _}
+  end
+end

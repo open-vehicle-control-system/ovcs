@@ -103,6 +103,47 @@ describe('Preview', () => {
     expect(image.getAttribute('height')).toBe('270')
   })
 
+  it("gives the frame's cell its image's size once it has loaded, for classes that shape the frame and its aside", () => {
+    const socket = fakeSocket()
+    render(<Preview stream="depth" socket={socket} cellClassName="cell" frameClassName="shaped" />)
+    const frame = () => document.querySelector('[data-frame]')
+    const cell = () => frame().parentElement
+
+    expect(cell().className).toBe('cell')
+    expect(cell().parentElement.tagName).toBe('FIGURE')
+    expect(cell().style.getPropertyValue('--frame-width')).toBe('')
+    expect(frame().className.split(' ')).toContain('shaped')
+    expect(frame().className.split(' ')).not.toContain('aspect-video')
+
+    sendFrame(socket, [1])
+    const image = screen.getByRole('img')
+    Object.defineProperties(image, { naturalWidth: { value: 640 }, naturalHeight: { value: 480 } })
+    fireEvent.load(image)
+
+    expect(frame().contains(image)).toBe(true)
+    expect([cell().style.getPropertyValue('--frame-width'), cell().style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
+  })
+
+  it('keeps its aside next to the frame in its cell when beside, an empty track after the caption', () => {
+    render(<Preview stream="depth" socket={fakeSocket()} aside={<span>scale</span>} asideBeside asideClassName="narrow" />)
+    const frame = document.querySelector('[data-frame]')
+    const aside = document.querySelector('[data-aside]')
+
+    expect(aside.parentElement).toBe(frame.parentElement)
+    expect(aside.previousElementSibling).toBe(frame)
+    expect(aside.className.split(' ')).toContain('narrow')
+    expect(aside.textContent).toBe('scale')
+    const figure = document.querySelector('figure')
+    expect(figure.lastElementChild.hasAttribute('data-aside-track')).toBe(true)
+    expect(figure.lastElementChild.childElementCount).toBe(0)
+  })
+
+  it('keeps a 16:9 frame unless told otherwise', () => {
+    render(<Preview stream="left" socket={fakeSocket()} />)
+
+    expect(document.querySelector('[data-frame]').className.split(' ')).toContain('aspect-video')
+  })
+
   it('hands its channel over before joining, so the events bound on it miss no push', () => {
     const socket = fakeSocket()
     const onChannel = vi.fn()

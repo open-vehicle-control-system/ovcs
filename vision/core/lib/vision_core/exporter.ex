@@ -17,28 +17,44 @@ defmodule VisionCore.Exporter do
       finished;
     * `{:camera_frame, :left}`, `{:camera_frame, :right}` — a
       `VisionCore.Camera.Frame` a stereo camera captured;
-    * `:detections` — `{pair, detections}`, the
-      `VisionCore.Detection.Pipeline` result for `pair`.
+    * `{:camera_frame, name}` — a `VisionCore.Camera.Frame` the camera
+      `name` captured, a `:camera` component (`VisionCore.Camera.Unit`),
+      of its default output;
+    * `{:camera_frame, name, output}` — a frame of the camera `name`'s
+      output `output` (`VisionCore.Camera.Output`);
+    * `{:detections, name}` — `{pair, detections}`, the result for
+      `pair` of the detection pipeline named `name`, `:detection` for
+      the one a detector without a `:name` starts
+      (`VisionCore.Detection`), or `{frame, detections}`, the result for
+      the `VisionCore.Camera.Frame` `frame` of one whose source is a
+      camera of its own;
+    * `{:segmentation, name}` — `{frame, labels, clouds}`, the result for
+      the `VisionCore.Camera.Frame` `frame` of the segmentation pipeline
+      named `name`: its label image and its road and off-road points,
+      `nil` without a stereo pair matched with the frame, or when the
+      camera's calibration or pose is missing or its calibration cannot
+      be projected at the frame's size (`VisionCore.Segmentation.Pipeline`).
 
   An entry is an output, or `{output, options}` whose one option is
   `:max_hz`, the most values of the output handed over a second
   (`output_specs/2`):
 
-      [{:camera_frame, :left}, stereo_pair: [max_hz: 5], detections: []]
+      [{:camera_frame, :left}, {{:detections, :road}, max_hz: 2}, stereo_pair: [max_hz: 5]]
 
   The runner subscribes to each output through `VisionCore.Outputs`,
   under the key `output_key/2` resolves in the configuration, and leaves
   out an output nothing in the configuration produces, such as
-  `:detections` on a unit without a detector. The exporter is handed
-  the newest value of each output only: values that came while it was
-  busy are dropped, and under `:max_hz` the latest one is held until
-  the output's next slot opens.
+  `{:detections, :road}` on a unit without a detector named `:road`, or `{:camera_frame, :hq}` on
+  one without a camera named `:hq`. The exporter is handed the
+  newest value of each output only: values that came while it was busy
+  are dropped, and under `:max_hz` the latest one is held until the
+  output's next slot opens.
 
-  An output's messages are tagged with its name, or for a camera's with
-  its first element, the frames carrying the camera's side as their
-  `:label`; the value is what follows the tag. A new output is one more
-  entry in this module's table of outputs, with the unit whose
-  `outputs/1` gives its key.
+  An output's messages are `{output, value}`, but a camera's, which are
+  `{:camera_frame, frame}`, the frame carrying the camera's side, or
+  its name, as its `:label`. A new output is one more entry in this
+  module's table of outputs, with the unit whose `outputs/1` gives its
+  key, its messages `{output, value}`.
 
   ## Callbacks
 
@@ -113,7 +129,7 @@ defmodule VisionCore.Exporter do
         def children(options), do: [{MyCar.Mqtt, broker: Keyword.fetch!(options, :broker)}]
 
         @impl VisionCore.Exporter
-        def outputs(_options), do: [stereo_pair: [max_hz: 5], detections: []]
+        def outputs(_options), do: [{:stereo_pair, max_hz: 5}, {:detections, :detection}]
 
         @impl VisionCore.Exporter
         def init(options) do
@@ -125,8 +141,8 @@ defmodule VisionCore.Exporter do
         def handle_output(:stereo_pair, pair, state),
           do: publish(state, "/depth", pair.depth, :stereo_pair)
 
-        def handle_output(:detections, {_pair, detections}, state),
-          do: publish(state, "/detections", Jason.encode!(detections), :detections)
+        def handle_output({:detections, :detection} = output, {_pair, detections}, state),
+          do: publish(state, "/detections", Jason.encode!(detections), output)
 
         @impl VisionCore.Exporter
         def handle_info({:mqtt_published, output}, state), do: {:ready, output, state}
@@ -156,22 +172,30 @@ defmodule VisionCore.Exporter do
   alias VisionCore.Camera.Frame
   alias VisionCore.Stereo.Pair
 
-  # Each output, and the unit whose `outputs/1` gives its key.
+  # Each output, and the unit whose `outputs/1` gives its key; named ones in `producer/1`.
   @outputs %{
     :stereo_pair => VisionCore.Stereo.Supervisor,
     {:camera_frame, :left} => VisionCore.Stereo.Supervisor,
-    {:camera_frame, :right} => VisionCore.Stereo.Supervisor,
-    :detections => VisionCore.Detection.Supervisor
+    {:camera_frame, :right} => VisionCore.Stereo.Supervisor
   }
 
   @typedoc "One of the unit's outputs; see the module doc."
-  @type output :: :stereo_pair | :detections | {:camera_frame, :left | :right}
+  @type output ::
+          :stereo_pair
+          | {:detections, atom()}
+          | {:segmentation, atom()}
+          | {:camera_frame, atom()}
+          | {:camera_frame, atom(), atom()}
 
   @typedoc "An entry of `c:outputs/1`: an output, with its options or without."
   @type output_spec :: output() | {output(), [{:max_hz, number()}]}
 
   @typedoc "What an output hands over; see the module doc."
-  @type value :: Pair.t() | Frame.t() | {Pair.t(), [map()]}
+  @type value ::
+          Pair.t()
+          | Frame.t()
+          | {Pair.t() | Frame.t(), [map()]}
+          | {Frame.t(), map(), map() | nil}
 
   @typedoc "How the exporter is doing, with a sentence saying why."
   @type status :: {:ok | :warning | :off, String.t()}
@@ -276,9 +300,31 @@ defmodule VisionCore.Exporter do
                       actions: 1,
                       handle_action: 4
 
-  @doc "Whether `term` is one of the outputs an exporter can name."
+  @doc """
+  Whether `term` is one of the outputs an exporter can name:
+  `{:detections, name}` and `{:segmentation, name}` for a valid pipeline
+  name (`VisionCore.Pipelines.name?/1`),
+  `{:camera_frame, name}` for a stereo side or a valid camera name, and
+  `{:camera_frame, name, output}` for a valid camera name and an atom.
+  """
   @spec output?(term()) :: boolean()
+  def output?({:detections, name}), do: VisionCore.Pipelines.name?(name)
+  def output?({:segmentation, name}), do: VisionCore.Pipelines.name?(name)
+  def output?({:camera_frame, side}) when side in [:left, :right], do: true
+  def output?({:camera_frame, name}), do: VisionCore.Pipelines.name?(name)
+
+  def output?({:camera_frame, name, output}),
+    do: name not in [:left, :right] and VisionCore.Pipelines.name?(name) and is_atom(output)
+
   def output?(term), do: is_map_key(@outputs, term)
+
+  defp producer({:detections, _name}), do: VisionCore.Detection.Supervisor
+  defp producer({:segmentation, _name}), do: VisionCore.Segmentation.Supervisor
+
+  defp producer({:camera_frame, name}) when name not in [:left, :right],
+    do: VisionCore.Camera.Unit
+
+  defp producer(output), do: Map.fetch!(@outputs, output)
 
   @doc """
   The outputs `exporter` reads with `options`, in its `c:outputs/1`
@@ -365,18 +411,27 @@ defmodule VisionCore.Exporter do
   The `VisionCore.Outputs` key `output` is published under on the unit
   `config` describes, the active `VisionCore.Config` by default, from
   the `outputs/1` of the unit that produces it
-  (`VisionCore.Stereo.Supervisor`, `VisionCore.Detection.Supervisor`).
-  `nil` when nothing in `config` produces `output`.
+  (`VisionCore.Stereo.Supervisor`, `VisionCore.Detection.Supervisor`,
+  `VisionCore.Segmentation.Supervisor`, `VisionCore.Camera.Unit`), and for
+  a camera's named output from `VisionCore.Camera.Unit.output_key/3`.
+  `nil` when nothing in `config` produces `output`; raises
+  `ArgumentError` for a term that is no output (`output?/1`).
   """
   @spec output_key(output(), VisionCore.Config.t() | nil) :: VisionCore.Outputs.key() | nil
   def output_key(output, config \\ VisionCore.Application.active_config())
 
   def output_key(_output, nil), do: nil
 
-  def output_key(output, %VisionCore.Config{} = config) when is_map_key(@outputs, output) do
-    unit = Map.fetch!(@outputs, output)
+  def output_key(output, %VisionCore.Config{} = config) do
+    unless output?(output), do: raise(ArgumentError, "no output #{inspect(output)}")
+    key(output, config)
+  end
 
-    case List.keyfind(unit.outputs(config), output, 0) do
+  defp key({:camera_frame, name, output}, config),
+    do: VisionCore.Camera.Unit.output_key(config, name, output)
+
+  defp key(output, config) do
+    case List.keyfind(producer(output).outputs(config), output, 0) do
       {^output, key} -> key
       nil -> nil
     end
