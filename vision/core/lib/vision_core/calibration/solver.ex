@@ -1,11 +1,14 @@
 defmodule VisionCore.Calibration.Solver do
   @moduledoc """
-  Computes a stereo calibration from chessboard corner samples.
+  Computes a calibration from chessboard corner samples: a stereo pair's,
+  or one camera's.
 
-  Each camera is calibrated on its own (`plumb_bob`, `k3` fixed at 0), the
+  Each camera is calibrated on its own (`plumb_bob`, `k3` fixed at 0). A
   pair is then solved for its relative pose with the intrinsics held fixed,
-  and rectified with alpha 0 and zero disparity. The result matches what
-  `cameracalibrator` writes, so both calibrations load like any other.
+  and rectified with alpha 0 and zero disparity. A camera alone keeps an
+  identity rectification, and its projection is its camera matrix refitted
+  to the undistorted image with alpha 0. The results match what
+  `cameracalibrator` writes, so the calibrations load like any other.
   """
 
   alias VisionCore.Calibration.Board
@@ -25,6 +28,58 @@ defmodule VisionCore.Calibration.Solver do
           fx_px: float(),
           samples: pos_integer()
         }
+
+  @type camera_result :: %{
+          camera: CameraCalibration.t(),
+          rms_px: float(),
+          fx_px: float(),
+          samples: pos_integer()
+        }
+
+  @doc """
+  Solves for one camera from `views`, the corners found in each of its
+  frames, as `VisionCore.Calibration.Chessboard.detect/2` returns them.
+  `size` is the capture size in pixels.
+
+  Returns the calibration, its RMS reprojection error and the focal
+  length of its projection in pixels.
+  """
+  @spec solve_camera(Board.t(), {pos_integer(), pos_integer()}, [[{float(), float()}]]) ::
+          {:ok, camera_result()} | {:error, String.t()}
+  def solve_camera(_board, _size, views) when length(views) < @min_samples do
+    {:error, "at least #{@min_samples} samples are needed, got #{length(views)}"}
+  end
+
+  def solve_camera(%Board{} = board, {width, height} = size, views) do
+    object_points = List.duplicate(object_mat(board), length(views))
+
+    with {:ok, {rms, k, d}} <- calibrate(object_points, Enum.map(views, &image_mat/1), size),
+         {:ok, projection} <- projection(k, d, size) do
+      identity = flatten(Evision.Mat.eye(3, :f64))
+
+      {:ok,
+       %{
+         camera: calibration(width, height, k, d, identity, projection),
+         rms_px: rms,
+         fx_px: hd(projection),
+         samples: length(views)
+       }}
+    else
+      {:error, message} -> {:error, "calibration failed: #{message}"}
+    end
+  end
+
+  # The camera matrix of the undistorted image, as a 3 x 4 projection without translation.
+  defp projection(k, d, size) do
+    case Evision.getOptimalNewCameraMatrix(k, d, size, 0) do
+      {:error, _} = error -> error
+      {matrix, _region} -> {:ok, with_zero_column(flatten(matrix))}
+      matrix -> {:ok, with_zero_column(flatten(matrix))}
+    end
+  end
+
+  defp with_zero_column(matrix),
+    do: matrix |> Enum.chunk_every(3) |> Enum.flat_map(&(&1 ++ [0.0]))
 
   @doc """
   Solves for both cameras from `samples`, the corners found in each pair of
@@ -110,7 +165,7 @@ defmodule VisionCore.Calibration.Solver do
       distortion_model: "plumb_bob",
       distortion_coefficients: flatten(d),
       camera_matrix: flatten(k),
-      rectification_matrix: flatten(r),
+      rectification_matrix: flat(r),
       projection_matrix: p
     }
   end
@@ -129,6 +184,9 @@ defmodule VisionCore.Calibration.Solver do
     |> Nx.tensor(type: :f32)
     |> Evision.Mat.from_nx()
   end
+
+  defp flat(list) when is_list(list), do: list
+  defp flat(mat), do: flatten(mat)
 
   defp flatten(mat) do
     mat

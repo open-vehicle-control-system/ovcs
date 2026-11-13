@@ -1,6 +1,7 @@
 defmodule VisionCore.Calibration.Chessboard do
   @moduledoc """
-  Finds the inner corners of a `VisionCore.Calibration.Board` in a frame.
+  Finds the inner corners of a `VisionCore.Calibration.Board` in a frame,
+  grey or colour.
 
   The search runs on a copy downscaled to about 640 x 480 pixels, then the
   corners are refined to sub-pixel accuracy on the full frame.
@@ -25,8 +26,7 @@ defmodule VisionCore.Calibration.Chessboard do
           {:ok, [{float(), float()}]} | :not_found | {:error, term()}
   def detect(%Frame{} = frame, %Board{} = board) do
     with {:ok, tensor} <- Frame.to_tensor(frame) do
-      {height, width} = Nx.shape(tensor)
-      image = Evision.Mat.from_nx_2d(tensor)
+      {image, width, height} = grey_image(tensor)
       {small, scale_x, scale_y} = downscale(image, width, height)
 
       with {:ok, found} <- find(small, board),
@@ -37,6 +37,17 @@ defmodule VisionCore.Calibration.Chessboard do
         :not_found -> :not_found
         false -> :not_found
       end
+    end
+  end
+
+  defp grey_image(tensor) do
+    case Nx.shape(tensor) do
+      {height, width} ->
+        {Evision.Mat.from_nx_2d(tensor), width, height}
+
+      {height, width, 3} ->
+        colour = Evision.Mat.from_nx_2d(tensor)
+        {Evision.cvtColor(colour, Evision.Constant.cv_COLOR_RGB2GRAY()), width, height}
     end
   end
 

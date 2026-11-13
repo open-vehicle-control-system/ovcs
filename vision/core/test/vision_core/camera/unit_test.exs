@@ -295,6 +295,7 @@ defmodule VisionCore.Camera.UnitTest do
                  server: V4L2Single.name_for("hq"),
                  frame_id: "hq_optical",
                  calibration_path: "hq.yaml",
+                 built_in_calibration_path: "hq.yaml",
                  calibration_store_path: nil,
                  pose_path: "hq_pose.yaml",
                  outputs: [
@@ -306,6 +307,7 @@ defmodule VisionCore.Camera.UnitTest do
                  server: GStreamer.name_for("usb"),
                  frame_id: "usb_link",
                  calibration_path: nil,
+                 built_in_calibration_path: nil,
                  calibration_store_path: nil,
                  pose_path: nil,
                  outputs: []

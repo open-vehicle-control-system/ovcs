@@ -51,6 +51,37 @@ defmodule VisionCore.Calibration.SolverTest do
     assert_in_delta Enum.at(result.left.projection_matrix, 3), 0.0, 1.0e-9
   end
 
+  test "solves one camera alone: its intrinsics, an identity rectification and its own projection",
+       %{board: board, samples: samples} do
+    views = Enum.map(samples, & &1.left)
+
+    assert {:ok, result} = Solver.solve_camera(board, {@width, @height}, views)
+
+    {fx, fy, cx, cy} = @left_intrinsics
+    [k_fx, _, k_cx, _, k_fy, k_cy | _] = result.camera.camera_matrix
+    assert_in_delta k_fx, fx, fx * 0.01
+    assert_in_delta k_fy, fy, fy * 0.01
+    assert_in_delta k_cx, cx, 5.0
+    assert_in_delta k_cy, cy, 5.0
+
+    assert result.camera.width == @width
+    assert result.camera.height == @height
+    assert result.camera.distortion_model == "plumb_bob"
+    assert Enum.at(result.camera.distortion_coefficients, 4) == 0.0
+    assert result.camera.rectification_matrix == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+    assert length(result.camera.projection_matrix) == 12
+    assert Enum.at(result.camera.projection_matrix, 3) == 0.0
+    assert result.fx_px == hd(result.camera.projection_matrix)
+    assert result.rms_px < 0.1
+    assert result.samples == 25
+  end
+
+  test "refuses to solve one camera from too few samples", %{board: board, samples: samples} do
+    views = samples |> Enum.take(2) |> Enum.map(& &1.left)
+    assert {:error, message} = Solver.solve_camera(board, {@width, @height}, views)
+    assert message =~ "at least 3 samples"
+  end
+
   test "keeps each camera's own intrinsics and rotation", %{board: board, samples: samples} do
     {:ok, result} = Solver.solve(board, {@width, @height}, samples)
 

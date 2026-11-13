@@ -54,8 +54,9 @@ defmodule VisionCore.Ros2.Exporter do
   unit's store, or without one to the side's calibration path, has the
   stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
   exporter, which reads its camera info again. It reads it again too
-  after a change from the dashboard
-  (`VisionCore.Stereo.Calibration.changed_key/1`).
+  after a change from the dashboard, of the stereo unit's
+  (`VisionCore.Stereo.Calibration.changed_key/1`) or of a camera's
+  (`VisionCore.Camera.Calibration.changed_key/1`).
 
   ## Cameras of their own
 
@@ -520,6 +521,10 @@ defmodule VisionCore.Ros2.Exporter do
       if stereo, do: notify_on_commit(options[:stereo], cameras)
       if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
       notify_cameras_on_commit(state.cameras)
+
+      for name <- Map.keys(state.cameras),
+          do: :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(name))
+
       if transform_message(state), do: send(self(), :publish_transforms)
       if state.heartbeat, do: Process.send_after(self(), :heartbeat, state.heartbeat.interval_ms)
       {:ok, state}
@@ -824,13 +829,15 @@ defmodule VisionCore.Ros2.Exporter do
 
   def handle_info({:calibration_committed, service_name}, state) do
     case Enum.find(Map.values(state.cameras), &(&1.service_name == service_name)) do
-      nil ->
-        reload_stereo_calibration(state)
+      nil -> reload_stereo_calibration(state)
+      camera -> recalibrate_camera(state, camera)
+    end
+  end
 
-      camera ->
-        camera = reload_camera(camera, state.config)
-        state = put_in(state.cameras[camera.name], camera)
-        {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
+  def handle_info({:camera_calibration_changed, name}, state) do
+    case state.cameras do
+      %{^name => camera} -> recalibrate_camera(state, camera)
+      _unpublished -> {:ok, state}
     end
   end
 
@@ -838,6 +845,12 @@ defmodule VisionCore.Ros2.Exporter do
     do: reload_stereo_calibration(state)
 
   def handle_info(_message, state), do: {:ok, state}
+
+  defp recalibrate_camera(state, camera) do
+    camera = reload_camera(camera, state.config)
+    state = put_in(state.cameras[camera.name], camera)
+    {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
+  end
 
   defp reload_camera(camera, config) do
     case Enum.find(Unit.settings(config), &(&1.name == camera.name)) do

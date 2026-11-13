@@ -32,6 +32,14 @@ defmodule VisionCore.Calibration.ChessboardTest do
     assert_corners(corners, image.corners, 0.3)
   end
 
+  test "finds the corners in a colour frame as in a grey one" do
+    image = ChessboardImage.render(@board)
+    rgb = for <<grey <- image.grey>>, into: <<>>, do: <<grey, grey, grey>>
+
+    assert {:ok, corners} = Chessboard.detect(frame(image, grey: nil, rgb: rgb), @board)
+    assert_corners(corners, image.corners, 0.3)
+  end
+
   test "orders an upside-down board like an upright one" do
     image = ChessboardImage.render(@board, rotate: true)
 
