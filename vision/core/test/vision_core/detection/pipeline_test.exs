@@ -72,7 +72,7 @@ defmodule VisionCore.Detection.PipelineTest do
     defp start_detection(boxes, opts) do
       start_supervised!({Stub, boxes: boxes})
       start_supervised!({Pipeline, [backend: Stub] ++ opts})
-      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
+      :ok = Outputs.subscribe({:detections, :detection})
     end
 
     # As the stereo pipeline publishes it, which need not be running.
@@ -115,7 +115,7 @@ defmodule VisionCore.Detection.PipelineTest do
 
     test "publishes nothing for a pair the backend could not detect on, and detects the next" do
       start_supervised!({Pipeline, backend: EveryOtherFrame})
-      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
+      :ok = Outputs.subscribe({:detections, :detection})
 
       publish_pair()
       refute_receive {:"$gen_cast", {{:detections, :detection}, {_pair, _detections}}}, 100
@@ -126,7 +126,7 @@ defmodule VisionCore.Detection.PipelineTest do
     test "submits no pair while one is in flight, so its reply is published" do
       script = start_supervised!({Agent, fn -> [] end})
       start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
-      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
+      :ok = Outputs.subscribe({:detections, :detection})
 
       publish_pair()
       assert_receive {:submitted, in_flight}
@@ -146,7 +146,7 @@ defmodule VisionCore.Detection.PipelineTest do
     test "drops a late reply to a pair the backend refused, matching only the pair it took" do
       script = start_supervised!({Agent, fn -> [{:error, :unavailable}, :ok] end})
       start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
-      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :detection)})
+      :ok = Outputs.subscribe({:detections, :detection})
 
       publish_pair()
       assert_receive {:submitted, refused}
@@ -207,7 +207,7 @@ defmodule VisionCore.Detection.PipelineTest do
          name: :road, backend: Stub, backend_server: VisionCore.Pipelines.server(Stub, :road)}
       )
 
-      :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :road)})
+      :ok = Outputs.subscribe({:detections, :road})
 
       publish_pair()
 
@@ -237,7 +237,7 @@ defmodule VisionCore.Detection.PipelineTest do
       road_listener = self()
 
       spawn_link(fn ->
-        :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :road)})
+        :ok = Outputs.subscribe({:detections, :road})
         send(road_listener, :subscribed)
         receive do: ({:"$gen_cast", message} -> send(road_listener, {:road, message}))
       end)

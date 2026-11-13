@@ -4,8 +4,8 @@ defmodule VisionCore.Outputs do
   consume it, through a `Registry` of subscriptions.
 
   A producer publishes under the key of its output, `{output, name}`:
-  `output` is the tag of the messages it sends and `name` its own
-  registered name, so two producers of one kind stay apart.
+  `output` is its kind and `name` the producer's registered name, or its
+  pipeline's name, so two producers of one kind stay apart.
 
     * `{:camera_frame, name}` — `{:camera_frame, %VisionCore.Camera.Frame{}}`
       from the `VisionCore.Camera` driver instance registered as `name`;
@@ -14,15 +14,13 @@ defmodule VisionCore.Outputs do
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
     * `{:detections, name}` — `{output, {pair, detections}}` from the
-      `VisionCore.Detection.Pipeline` registered as `name`, `output`
-      being its `VisionCore.Exporter` output
-      (`VisionCore.Detection.output/1`), and the
+      detection pipeline `name` (`VisionCore.Detection.Pipeline`),
+      `output` being the key, its `VisionCore.Exporter` output, and the
       `%VisionCore.Camera.Frame{}` the boxes were found on, without its
       pixels, in place of `pair` on a camera source.
     * `{:segmentation, name}` — `{output, {frame, labels, clouds}}` from
-      the `VisionCore.Segmentation.Pipeline` registered as `name`,
-      `output` being its `VisionCore.Exporter` output
-      (`VisionCore.Segmentation.output/1`).
+      the segmentation pipeline `name`
+      (`VisionCore.Segmentation.Pipeline`), `output` being the key.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. One that takes messages out of its mailbox itself matches

@@ -27,11 +27,9 @@ defmodule VisionCore.Application do
   `stereo_match`; the Matcher runs the binary and thread count of
   `config :vision_core, :stereo_match_path` and `:stereo_match_threads`.
 
-  A configuration with two detectors of one name, or of two names whose
-  processes would be registered alike (`VisionCore.Pipelines.server/2`:
-  `:road_2` and `:road2`), fails the start, naming them, and so does one
-  with two such segmenters (`VisionCore.Segmentation`), or a detector and
-  a segmenter of one name. So does one with two cameras of one name
+  A configuration with two detectors of one name fails the start, naming
+  them, and so does one with two such segmenters
+  (`VisionCore.Segmentation`), or a detector and a segmenter of one name. So does one with two cameras of one name
   (`VisionCore.Camera.Unit`), or a camera named as a detection or a
   segmentation pipeline, both publishing under `<prefix>/<name>/`. So
   does a detector or a segmenter whose `:name` is not a valid pipeline
@@ -54,7 +52,7 @@ defmodule VisionCore.Application do
   """
   use Application
 
-  alias VisionCore.{Detection, Pipelines, Segmentation}
+  alias VisionCore.{Detection, Segmentation}
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
@@ -87,6 +85,7 @@ defmodule VisionCore.Application do
   defp pipeline_child(%VisionCore.Config{} = config) do
     core_children =
       [VisionCore.Parameters.Storage, VisionCore.Parameters, VisionCore.Outputs] ++
+        [VisionCore.Processes] ++
         ros2_children(config.ros2) ++
         [
           {VisionCore.Jpeg, ports: 1},
@@ -170,23 +169,16 @@ defmodule VisionCore.Application do
   defp clock_children(true), do: [{VisionCore.Ros2.Clock, []}]
   defp clock_children(options), do: [{VisionCore.Ros2.Clock, options}]
 
-  # Two units whose processes would share their names; the supervisor would refuse them less clearly.
+  # Two units of one name; the supervisor would refuse them less clearly.
   defp check_unit_names!(children, supervisor, units) do
-    children
-    |> pipeline_names(supervisor)
-    |> Enum.group_by(&Pipelines.server(supervisor, &1))
-    |> Enum.find(fn {_server, names} -> length(names) > 1 end)
-    |> case do
-      nil ->
+    names = pipeline_names(children, supervisor)
+
+    case names -- Enum.uniq(names) do
+      [] ->
         :ok
 
-      {_server, [name, name | _others]} ->
+      [name | _others] ->
         raise ArgumentError, "two #{units} are named #{inspect(name)}: give each its own :name"
-
-      {server, [first, second | _others]} ->
-        raise ArgumentError,
-              "#{units} #{inspect(first)} and #{inspect(second)} would both run as " <>
-                "#{inspect(server)}: give them names that camelize apart"
     end
   end
 

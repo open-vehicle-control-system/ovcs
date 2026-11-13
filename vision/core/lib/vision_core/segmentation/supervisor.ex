@@ -90,7 +90,7 @@ defmodule VisionCore.Segmentation.Supervisor do
   def outputs(config) do
     for opts <- units_options(config) do
       name = Keyword.fetch!(opts, :name)
-      {Segmentation.output(name), {:segmentation, Pipelines.server(Pipeline, name)}}
+      {Segmentation.output(name), Segmentation.output(name)}
     end
   end
 
@@ -143,7 +143,7 @@ defmodule VisionCore.Segmentation.Supervisor do
   Each segmentation unit in `config`, in config order, as its pipeline
   name, its backend module and the name the backend is registered under.
   """
-  @spec pipelines(VisionCore.Config.t()) :: [{atom(), module(), server :: module()}]
+  @spec pipelines(VisionCore.Config.t()) :: [{atom(), module(), server :: GenServer.name()}]
   def pipelines(config) do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)

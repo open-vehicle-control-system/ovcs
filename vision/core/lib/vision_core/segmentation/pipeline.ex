@@ -6,8 +6,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   output grid over the band a Cityscapes class, sorts the stereo points
   seen in the band into road and off-road by the class of the cell they
   land in, and publishes the result through `VisionCore.Outputs` under
-  `{:segmentation, server}`, `server` being the name it is registered
-  under (`VisionCore.Pipelines.server/2`):
+  its `VisionCore.Exporter` output, `{:segmentation, name}`:
 
       {{:segmentation, name}, {frame, labels, clouds}}
 
@@ -204,7 +203,7 @@ defmodule VisionCore.Segmentation.Pipeline do
   def depth_wording(settings), do: {"segmentation pipeline #{settings.name}", @wording}
 
   @impl CameraPipeline
-  def output_key(settings), do: {:segmentation, Pipelines.server(__MODULE__, settings.name)}
+  def output_key(settings), do: VisionCore.Segmentation.output(settings.name)
 
   defp band_top!(band_top)
        when is_nil(band_top) or (is_number(band_top) and band_top >= 0 and band_top <= 1),

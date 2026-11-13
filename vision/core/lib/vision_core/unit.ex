@@ -14,15 +14,13 @@ defmodule VisionCore.Unit do
   @doc """
   Starts the supervisor `module` with `opts`, as
   `Supervisor.start_link/3` with `start_options`. `:ignore` when it
-  fails to start, logged as `label` down and why.
+  fails to start, logged as `module` failing and `label` down, and why.
   """
   @spec start_contained(module(), keyword(), keyword(), String.t()) :: Supervisor.on_start()
   def start_contained(module, opts, start_options, label) do
     case Supervisor.start_link(module, opts, start_options) do
       {:error, reason} ->
-        server = Keyword.get(start_options, :name, module)
-
-        Logger.error("#{inspect(server)} failed to start, #{label} down: #{failure_text(reason)}")
+        Logger.error("#{inspect(module)} failed to start, #{label} down: #{failure_text(reason)}")
 
         :ignore
 

@@ -50,7 +50,7 @@ defmodule VisionCore.Detection.LiveTest do
     positioned = [person(240, 108, 720, 432, 1.8)]
 
     Outputs.publish(
-      {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+      {:detections, :detection},
       {{:detections, :detection}, {pair(), positioned}}
     )
 
@@ -152,7 +152,7 @@ defmodule VisionCore.Detection.LiveTest do
       :ok = Live.subscribe()
 
       Outputs.publish(
-        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)},
+        {:detections, :road},
         {{:detections, :road}, {pair(), [person(240, 108, 720, 432, 3.0)]}}
       )
 
@@ -160,7 +160,7 @@ defmodule VisionCore.Detection.LiveTest do
       refute_receive {:vision_detections, _detections}, 100
 
       Outputs.publish(
-        {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)},
+        {:detections, :detection},
         {{:detections, :detection}, {pair(), [person(240, 108, 720, 432, 1.8)]}}
       )
 

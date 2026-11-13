@@ -146,14 +146,13 @@ defmodule VisionCore.ExporterTest do
              {:camera_frame, Camera.name_for("right")}
 
     assert Exporter.output_key({:detections, :detection}, config) ==
-             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
+             {:detections, :detection}
   end
 
   test "every detector component produces detections" do
     for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
       assert Exporter.output_key({:detections, :detection}, config([detector])) ==
-               {:detections,
-                VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
+               {:detections, :detection}
     end
   end
 
@@ -161,13 +160,13 @@ defmodule VisionCore.ExporterTest do
     config = config([{:detector, name: :road}, :detector, {:hailo_detector, name: :signs}])
 
     assert Exporter.output_key({:detections, :detection}, config) ==
-             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
+             {:detections, :detection}
 
     assert Exporter.output_key({:detections, :road}, config) ==
-             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)}
+             {:detections, :road}
 
     assert Exporter.output_key({:detections, :signs}, config) ==
-             {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :signs)}
+             {:detections, :signs}
 
     assert Exporter.output_key({:detections, :lanes}, config) == nil
 
@@ -183,11 +182,10 @@ defmodule VisionCore.ExporterTest do
       ])
 
     assert Exporter.output_key({:segmentation, :road}, config) ==
-             {:segmentation, VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road)}
+             {:segmentation, :road}
 
     assert Exporter.output_key({:segmentation, :lanes}, config) ==
-             {:segmentation,
-              VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :lanes)}
+             {:segmentation, :lanes}
 
     assert Exporter.output_key({:segmentation, :signs}, config) == nil
   end

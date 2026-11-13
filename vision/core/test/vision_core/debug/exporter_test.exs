@@ -10,8 +10,7 @@ defmodule VisionCore.Debug.ExporterTest do
 
   @moduletag :capture_log
   @pairs {:stereo_pair, VisionCore.Stereo.Pipeline}
-  @detections {:detections,
-               VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}
+  @detections {:detections, :detection}
   @options [burst_pairs: 3, burst_ms: 50, settle_ms: 100, deadline_ms: 2_000]
   @calibration Path.expand("../../support/calibration", __DIR__)
   @width 8

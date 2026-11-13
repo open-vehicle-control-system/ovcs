@@ -110,11 +110,11 @@ defmodule VisionCore.Detection.SupervisorTest do
     end
   end
 
-  # Each a first segment of the ROS 2 topics under the stereo prefix, or the Hailo-8 claim's name.
-  test "is left down, saying why, with a name the unit's other processes or topics already take" do
+  # Each a first segment of the ROS 2 topics under the stereo prefix.
+  test "is left down, saying why, with a name the unit's topics already take" do
     Process.flag(:trap_exit, true)
 
-    for name <- [:stereo, :left, :right, :depth, :disparity, :points, :live, :device] do
+    for name <- [:stereo, :left, :right, :depth, :disparity, :points, :live] do
       log =
         capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
 
@@ -131,7 +131,7 @@ defmodule VisionCore.Detection.SupervisorTest do
     log =
       capture_log(fn -> assert Supervisor.start_link(backend: Hailo, name: :road) == :ignore end)
 
-    assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
   end
 
   test "is left down, saying why, with an option it does not take, naming where a moved one went" do
@@ -180,7 +180,7 @@ defmodule VisionCore.Detection.SupervisorTest do
       log =
         capture_log(fn -> assert Supervisor.start_link(@hailo ++ [name: :road]) == :ignore end)
 
-      assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
+      assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
       assert log =~ "the Hailo-8 already serves another pipeline, :detection"
       refute GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :road))
       assert Process.alive?(first)
@@ -257,9 +257,7 @@ defmodule VisionCore.Detection.SupervisorTest do
       for detector <- [:detector, {:detector, boxes: []}, :hailo_detector, {:hailo_detector, []}] do
         assert Supervisor.outputs(config([detector])) ==
                  [
-                   {{:detections, :detection},
-                    {:detections,
-                     VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}}
+                   {{:detections, :detection}, {:detections, :detection}}
                  ]
       end
     end
@@ -277,13 +275,9 @@ defmodule VisionCore.Detection.SupervisorTest do
       ]
 
       assert Supervisor.outputs(config(components)) == [
-               {{:detections, :road},
-                {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :road)}},
-               {{:detections, :detection},
-                {:detections,
-                 VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)}},
-               {{:detections, :signs},
-                {:detections, VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :signs)}}
+               {{:detections, :road}, {:detections, :road}},
+               {{:detections, :detection}, {:detections, :detection}},
+               {{:detections, :signs}, {:detections, :signs}}
              ]
     end
 

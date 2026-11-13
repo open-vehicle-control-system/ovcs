@@ -24,7 +24,6 @@ defmodule VisionCore.Segmentation.Live do
       integer from 1 on.
   """
   alias VisionCore.Pipelines
-  alias VisionCore.Segmentation.Pipeline
 
   @default_max_hz 5
 
@@ -36,7 +35,7 @@ defmodule VisionCore.Segmentation.Live do
 
     VisionCore.Live.start_link(
       name: Pipelines.server(__MODULE__, name),
-      key: {:segmentation, Pipelines.server(Pipeline, name)},
+      key: VisionCore.Segmentation.output(name),
       tag: :vision_segmentation,
       describe: &describe/1,
       max_hz: Keyword.get(opts, :max_hz, @default_max_hz)

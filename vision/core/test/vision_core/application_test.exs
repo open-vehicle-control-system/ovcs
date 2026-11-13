@@ -25,6 +25,7 @@ defmodule VisionCore.ApplicationTest do
     Repo.delete_all(SavedValue)
     :ok = Supervisor.stop(Repo)
     :ok = Supervisor.stop(VisionCore.Outputs)
+    :ok = Supervisor.stop(VisionCore.Processes)
 
     on_exit(fn ->
       Application.stop(:vision_core)
@@ -35,6 +36,8 @@ defmodule VisionCore.ApplicationTest do
       Process.unlink(pid)
       {:ok, outputs} = VisionCore.Outputs.start_link()
       Process.unlink(outputs)
+      {:ok, processes} = VisionCore.Processes.start_link()
+      Process.unlink(processes)
     end)
   end
 
@@ -170,17 +173,18 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(VisionCore.Exporters) == exporters
   end
 
-  test "the core starts the parameter storage and registry, the outputs registry, then the ROS 2 link, before the Port servers" do
+  test "the core starts the parameter storage and registry, the outputs' and the processes' registries, then the ROS 2 link, before the Port servers" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2 ++ [simulator_clock: [acquire_timeout_ms: 10]]
     })
 
     ids = VisionCore.Supervisor |> child_ids() |> Enum.reverse()
 
-    assert Enum.take(ids, 9) == [
+    assert Enum.take(ids, 10) == [
              VisionCore.Parameters.Storage,
              VisionCore.Parameters,
              VisionCore.Outputs,
+             VisionCore.Processes,
              Ros2Zenoh.Client,
              VisionCore.Ros2.Parameters,
              VisionCore.Ros2.Topics,
@@ -327,7 +331,7 @@ defmodule VisionCore.ApplicationTest do
   test "a detector that cannot start leaves the unit running without it, the reason logged" do
     log = capture_log(fn -> start_pipeline(%VisionCore.Config{components: [:hailo_detector]}) end)
 
-    assert log =~ "VisionCore.Detection.Supervisor.Detection failed to start, detection down"
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, detection down"
 
     refute GenServer.whereis(
              VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
@@ -348,7 +352,7 @@ defmodule VisionCore.ApplicationTest do
         })
       end)
 
-    assert log =~ "VisionCore.Detection.Supervisor.Road failed to start, road down"
+    assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
     refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
 
     assert Process.alive?(
@@ -438,16 +442,19 @@ defmodule VisionCore.ApplicationTest do
     end
   end
 
-  test "two detectors whose names give their processes one name fail the start, naming both" do
-    Application.put_env(:vision_core, :test_config, %VisionCore.Config{
-      components: [{:detector, name: :road_2}, {:detector, name: :road2}]
+  test "two detectors whose names differ by an underscore run side by side" do
+    stub = VisionCore.Detection.Backend.Stub
+
+    start_pipeline(%VisionCore.Config{
+      components: [
+        {:detector, name: :road_2, backend: stub},
+        {:detector, name: :road2, backend: stub}
+      ]
     })
 
-    Application.put_env(:vision_core, :vehicle, Composer)
-
-    assert {:error, {:vision_core, reason}} = Application.ensure_all_started(:vision_core)
-    assert inspect(reason) =~ "detectors :road_2 and :road2"
-    assert inspect(reason) =~ "VisionCore.Detection.Supervisor.Road2"
+    for name <- [:road_2, :road2] do
+      assert GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, name))
+    end
   end
 
   test "the pipeline keeps running with no Zenoh router" do
@@ -505,17 +512,6 @@ defmodule VisionCore.ApplicationTest do
     end
   end
 
-  test "two segmenters whose names give their processes one name fail the start, naming both" do
-    reason =
-      start_error([
-        {:segmenter, name: :road_2, source: {:camera, :hq}},
-        {:segmenter, name: :road2, source: {:camera, :hq}}
-      ])
-
-    assert reason =~ "segmenters :road_2 and :road2"
-    assert reason =~ "VisionCore.Segmentation.Supervisor.Road2"
-  end
-
   test "a camera named as a segmentation pipeline fails the start, naming both" do
     reason =
       start_error([
@@ -553,7 +549,7 @@ defmodule VisionCore.ApplicationTest do
              )
            )
 
-    assert log =~ "VisionCore.Segmentation.Supervisor.Lane failed to start, lane down"
+    assert log =~ "VisionCore.Segmentation.Supervisor failed to start, lane down"
 
     refute GenServer.whereis(
              VisionCore.Pipelines.server(VisionCore.Segmentation.Supervisor, :lane)

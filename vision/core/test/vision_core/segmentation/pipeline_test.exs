@@ -105,7 +105,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
   end
 
   # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
@@ -220,7 +220,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
     publish_pair(0, road ++ off_road ++ outside)
     publish_pair(100, road ++ off_road ++ outside)
     publish_frame(100, key: inference)
@@ -253,7 +253,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
     inference = {:camera_frame, VisionCore.Camera.V4L2Single.name_for("hq"), :inference}
     publish_frame(100, size: {1014, 760}, key: inference)
 
@@ -495,7 +495,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
     publish_pair(0)
     publish_pair(1_000)
 
@@ -556,7 +556,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        config: config(dir, [])}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
     publish_frame(100)
 
     assert_receive {:band, _band}
@@ -579,7 +579,7 @@ defmodule VisionCore.Segmentation.PipelineTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
   end
 
   defp reply(sequence, labels),
@@ -803,12 +803,12 @@ defmodule VisionCore.Segmentation.PipelineTest do
       )
     end
 
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :road)})
+    :ok = Outputs.subscribe({:segmentation, :road})
     publish_frame(100)
 
     assert {%{data: <<0>>}, nil} = segmentation()
     refute_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, _labels, _clouds}}}, 100
-    :ok = Outputs.subscribe({:segmentation, VisionCore.Pipelines.server(Pipeline, :lane)})
+    :ok = Outputs.subscribe({:segmentation, :lane})
     publish_frame(200)
 
     assert_receive {:"$gen_cast", {{:segmentation, :lane}, {_frame, %{data: <<1>>}, nil}}}

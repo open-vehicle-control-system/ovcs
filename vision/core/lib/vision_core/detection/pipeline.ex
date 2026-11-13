@@ -5,10 +5,9 @@ defmodule VisionCore.Detection.Pipeline do
   `:detect_every_n`-th `VisionCore.Stereo.Pair` to a
   `VisionCore.Detection.Backend`, fuses the boxes it returns with that
   pair's depth map, and publishes the result through
-  `VisionCore.Outputs` under `{:detections, server}`, `server` being the
-  name it is registered under (`VisionCore.Pipelines.server/2`), as
-  `{output, {pair, detections}}`, `output` being its
-  `VisionCore.Exporter` output (`VisionCore.Detection.output/1`).
+  `VisionCore.Outputs` under its `VisionCore.Exporter` output,
+  `{:detections, name}` (`VisionCore.Detection.output/1`), as
+  `{output, {pair, detections}}`.
 
   With `source: {:camera, name}` it detects on the frames of the camera
   of its own `name` instead, its default output, or with
@@ -409,7 +408,7 @@ defmodule VisionCore.Detection.Pipeline do
 
   @doc "The `VisionCore.Outputs` key the pipeline publishes under."
   @spec output_key(map()) :: VisionCore.Outputs.key()
-  def output_key(settings), do: {:detections, Pipelines.server(__MODULE__, settings.name)}
+  def output_key(settings), do: Detection.output(settings.name)
 
   @doc "The message the pipeline publishes for the `detections` found on `source`."
   @spec message(map(), VisionCore.Stereo.Pair.t() | VisionCore.Camera.Frame.t(), [map()]) ::

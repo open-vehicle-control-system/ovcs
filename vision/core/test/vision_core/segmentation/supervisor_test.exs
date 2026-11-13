@@ -108,7 +108,8 @@ defmodule VisionCore.Segmentation.SupervisorTest do
     assert unit |> Elixir.Supervisor.which_children() |> Enum.map(&elem(&1, 0)) ==
              [Live, Pipeline, Stub]
 
-    for module <- [Stub, Pipeline, Live], do: assert(Process.whereis(Module.concat(module, Road)))
+    for module <- [Stub, Pipeline, Live],
+        do: assert(GenServer.whereis(VisionCore.Pipelines.server(module, :road)))
   end
 
   test "is left down, saying why, without a name, with an invalid one, or with an option it does not take" do
@@ -137,7 +138,7 @@ defmodule VisionCore.Segmentation.SupervisorTest do
         assert Supervisor.start_link(@options ++ [config: config([])]) == :ignore
       end)
 
-    assert log =~ "VisionCore.Segmentation.Supervisor.Road failed to start, road down"
+    assert log =~ "VisionCore.Segmentation.Supervisor failed to start, road down"
     assert log =~ "no camera of the configuration"
   end
 
@@ -150,10 +151,8 @@ defmodule VisionCore.Segmentation.SupervisorTest do
 
     test "its outputs, keyed by each pipeline's name, in config order" do
       assert Supervisor.outputs(config(@components)) == [
-               {{:segmentation, :road},
-                {:segmentation, VisionCore.Pipelines.server(Pipeline, :road)}},
-               {{:segmentation, :lane},
-                {:segmentation, VisionCore.Pipelines.server(Pipeline, :lane)}}
+               {{:segmentation, :road}, {:segmentation, :road}},
+               {{:segmentation, :lane}, {:segmentation, :lane}}
              ]
     end
 

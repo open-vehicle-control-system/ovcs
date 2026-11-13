@@ -1,21 +1,24 @@
 defmodule VisionCore.PipelinesTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias VisionCore.Pipelines
 
-  test "a pipeline's processes are registered under their modules and its name" do
-    assert Pipelines.server(VisionCore.Detection.Pipeline, :detection) ==
-             VisionCore.Detection.Pipeline.Detection
+  test "a pipeline's process is found under its module and its pipeline's name" do
+    server = Pipelines.server(__MODULE__, :road_signs)
+    assert GenServer.whereis(server) == nil
 
-    assert Pipelines.server(VisionCore.Detection.Pipeline, :road_signs) ==
-             VisionCore.Detection.Pipeline.RoadSigns
+    {:ok, process} = Agent.start_link(fn -> :held end, name: server)
+
+    assert GenServer.whereis(server) == process
+    assert Agent.get(server, & &1) == :held
+    assert GenServer.whereis(Pipelines.server(__MODULE__, :road)) == nil
   end
 
   test "tells a valid pipeline name from an invalid one" do
     assert Pipelines.name?(:road_signs)
     refute Pipelines.name?(:stereo)
     refute Pipelines.name?(:left)
-    refute Pipelines.name?(:device)
+    assert Pipelines.name?(:device)
     assert Pipelines.name?(:detections)
     refute Pipelines.name?(:"front-cam")
     refute Pipelines.name?("road")

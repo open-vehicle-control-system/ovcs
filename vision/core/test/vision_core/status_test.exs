@@ -173,7 +173,7 @@ defmodule VisionCore.StatusTest do
   test "a QNN detector whose backend is available is reported as a running Hexagon" do
     available = spawn(&answer_backend/0)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       available,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
     )
@@ -202,7 +202,7 @@ defmodule VisionCore.StatusTest do
   test "a Hexagon has failed while a backend has, and is starting while one opens its Port" do
     starting = spawn(fn -> answer_backend(nil, :starting) end)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       starting,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
     )
@@ -210,7 +210,7 @@ defmodule VisionCore.StatusTest do
     on_exit(fn -> Process.exit(starting, :kill) end)
     running = spawn(&answer_backend/0)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       running,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road)
     )
@@ -226,7 +226,12 @@ defmodule VisionCore.StatusTest do
     assert %{state: :failed} = Status.snapshot().npu
 
     signs = spawn(&answer_backend/0)
-    Process.register(signs, VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :signs))
+
+    VisionCore.TestProcesses.register(
+      signs,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :signs)
+    )
+
     on_exit(fn -> Process.exit(signs, :kill) end)
 
     assert %{state: :starting} = Status.snapshot().npu
@@ -234,7 +239,7 @@ defmodule VisionCore.StatusTest do
 
   defp register_backend(name, times) do
     backend = spawn(fn -> answer_backend(times) end)
-    Process.register(backend, name)
+    VisionCore.TestProcesses.register(backend, name)
     on_exit(fn -> Process.exit(backend, :kill) end)
   end
 
@@ -416,7 +421,7 @@ defmodule VisionCore.StatusTest do
   test "a Hailo pipeline beside a stub one reports the Hailo-8" do
     available = spawn(&answer_backend/0)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       available,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :road)
     )
@@ -443,7 +448,7 @@ defmodule VisionCore.StatusTest do
   test "two QNN pipelines report a running Hexagon while both backends are available, failed when one is not" do
     available = spawn(&answer_backend/0)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       available,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :detection)
     )
@@ -460,7 +465,12 @@ defmodule VisionCore.StatusTest do
            }
 
     road = spawn(&answer_backend/0)
-    Process.register(road, VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road))
+
+    VisionCore.TestProcesses.register(
+      road,
+      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Qnn, :road)
+    )
+
     on_exit(fn -> Process.exit(road, :kill) end)
 
     assert Status.snapshot().npu == %{
@@ -482,7 +492,7 @@ defmodule VisionCore.StatusTest do
   test "a detector that does not answer is reported failed without stalling the snapshot" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       silent,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
     )
@@ -499,7 +509,7 @@ defmodule VisionCore.StatusTest do
   test "callees that do not answer delay the snapshot by one timeout, not one each" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
 
-    Process.register(
+    VisionCore.TestProcesses.register(
       silent,
       VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
     )

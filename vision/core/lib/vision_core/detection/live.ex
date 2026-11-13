@@ -25,7 +25,6 @@ defmodule VisionCore.Detection.Live do
   """
   alias VisionCore.Camera.Frame
   alias VisionCore.{Detection, Pipelines}
-  alias VisionCore.Detection.Pipeline
   alias VisionCore.Stereo.Pair
 
   @default_max_hz 10
@@ -38,7 +37,7 @@ defmodule VisionCore.Detection.Live do
 
     VisionCore.Live.start_link(
       name: Pipelines.server(__MODULE__, name),
-      key: {:detections, Pipelines.server(Pipeline, name)},
+      key: Detection.output(name),
       tag: :vision_detections,
       describe: &describe/1,
       max_hz: Keyword.get(opts, :max_hz, @default_max_hz)

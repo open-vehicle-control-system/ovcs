@@ -119,7 +119,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
+    :ok = Outputs.subscribe({:detections, :hq_people})
   end
 
   # The pipeline's clock, at 0 until a test moves it with `set_clock/1`.
@@ -372,7 +372,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
+    :ok = Outputs.subscribe({:detections, :hq_people})
     publish_pair(0)
     publish_pair(1_000)
 
@@ -409,7 +409,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
+    :ok = Outputs.subscribe({:detections, :hq_people})
     publish_pair(0)
     publish_pair(1_000)
     publish_frame(1_400)
@@ -542,7 +542,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        clock: start_clock()}
     )
 
-    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
+    :ok = Outputs.subscribe({:detections, :hq_people})
     publish_frame(100)
     refute_receive {:"$gen_cast", {{:detections, :hq_people}, {_frame, _detections}}}, 100
     publish_frame(200)
@@ -637,13 +637,13 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
        ] ++ opts}
     )
 
-    :ok = Outputs.subscribe({:detections, VisionCore.Pipelines.server(Pipeline, :hq_people)})
+    :ok = Outputs.subscribe({:detections, :hq_people})
   end
 
   defp reply(sequence, detections),
     do:
       send(
-        VisionCore.Pipelines.server(Pipeline, :hq_people),
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :hq_people)),
         {:inference_detections, sequence, detections}
       )
 

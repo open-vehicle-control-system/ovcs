@@ -15,9 +15,7 @@ defmodule VisionCore.Pipelines do
   and is none of the reserved names: `:stereo`, the stereo pipeline's;
   `:left`, `:right`, `:depth`, `:disparity`, `:points` and `:live`, the
   first segments of the topics the ROS 2 exporter publishes under
-  `<prefix>/`; and `:device`, whose Hailo
-  backend process would take the name of the Hailo-8 claim
-  (`VisionCore.Detection.Backend.Hailo.Device`).
+  `<prefix>/`.
   """
 
   @name_pattern ~r/^[a-z][a-z0-9_]*$/
@@ -28,17 +26,18 @@ defmodule VisionCore.Pipelines do
     :depth,
     :disparity,
     :points,
-    :live,
-    :device
+    :live
   ]
 
   @doc """
-  The name `module`'s process of the pipeline `name` is registered under:
-  `module` followed by the camelized name
-  (`VisionCore.Detection.Pipeline.RoadSigns` for `:road_signs`).
+  The name `module`'s process of the pipeline `name` is registered
+  under, in `VisionCore.Processes`: what to start it under and to call
+  it by, and `GenServer.whereis/1` gives its pid.
+
+      GenServer.whereis(Pipelines.server(VisionCore.Detection.Pipeline, :road_signs))
   """
-  @spec server(module(), atom()) :: module()
-  def server(module, name), do: Module.concat(module, Macro.camelize(Atom.to_string(name)))
+  @spec server(module(), atom()) :: GenServer.name()
+  defdelegate server(module, name), to: VisionCore.Processes, as: :via
 
   @doc """
   Whether `name` is a valid name: an atom matching `^[a-z][a-z0-9_]*$`,

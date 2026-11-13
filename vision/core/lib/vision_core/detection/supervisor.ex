@@ -68,9 +68,9 @@ defmodule VisionCore.Detection.Supervisor do
   """
   def start_link(opts) do
     name = Detection.pipeline_name(opts)
-    server = Pipelines.server(__MODULE__, name)
+    registration = [name: Pipelines.server(__MODULE__, name)]
 
-    Unit.start_contained(__MODULE__, opts, [name: server], "#{name}")
+    Unit.start_contained(__MODULE__, opts, registration, "#{name}")
   end
 
   @impl Supervisor
@@ -113,7 +113,7 @@ defmodule VisionCore.Detection.Supervisor do
   def outputs(config) do
     for opts <- units_options(config) do
       name = Detection.pipeline_name(opts)
-      {Detection.output(name), {:detections, Pipelines.server(Pipeline, name)}}
+      {Detection.output(name), Detection.output(name)}
     end
   end
 
@@ -144,7 +144,7 @@ defmodule VisionCore.Detection.Supervisor do
   module and the name it is registered under. `[]` when no component of
   `config` starts a unit.
   """
-  @spec backends(VisionCore.Config.t()) :: [{module(), server :: module()}]
+  @spec backends(VisionCore.Config.t()) :: [{module(), server :: GenServer.name()}]
   def backends(config) do
     for {_name, backend, server} <- pipelines(config), do: {backend, server}
   end
@@ -153,7 +153,7 @@ defmodule VisionCore.Detection.Supervisor do
   Each detection unit in `config`, in config order, as its pipeline name,
   its backend module and the name the backend is registered under.
   """
-  @spec pipelines(VisionCore.Config.t()) :: [{atom(), module(), server :: module()}]
+  @spec pipelines(VisionCore.Config.t()) :: [{atom(), module(), server :: GenServer.name()}]
   def pipelines(config) do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)

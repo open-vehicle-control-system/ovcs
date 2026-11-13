@@ -10,7 +10,7 @@ defmodule VisionCore.Segmentation.LiveTest do
 
   defp publish(name, data) do
     Outputs.publish(
-      {:segmentation, VisionCore.Pipelines.server(Pipeline, name)},
+      {:segmentation, name},
       {{:segmentation, name}, {@frame, %{@labels | data: data}, nil}}
     )
   end
