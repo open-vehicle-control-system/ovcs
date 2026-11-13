@@ -14,7 +14,7 @@ defmodule VisionApiWeb.StageController do
         render(conn, :index, groups: Parameters.groups(), include_parameters: includes != [])
 
       :error ->
-        JsonApi.error(conn, 400, "Bad Request", "unsupported include", %{parameter: "include"})
+        JsonApi.error(conn, 400, "unsupported include", source: %{parameter: "include"})
     end
   end
 end

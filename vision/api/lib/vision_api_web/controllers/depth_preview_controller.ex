@@ -29,21 +29,21 @@ defmodule VisionApiWeb.DepthPreviewController do
           render(conn, :show, options: options)
 
         {:ok, {:error, reason}} ->
-          JsonApi.error(conn, 422, "Invalid value", reason, @range_pointer)
+          JsonApi.error(conn, 422, reason, source: @range_pointer, title: "Invalid value")
 
         :not_running ->
           not_running(conn)
       end
     else
-      {:error, status, title, detail, pointer} ->
-        JsonApi.error(conn, status, title, detail, pointer)
+      {:error, status, detail, options} ->
+        JsonApi.error(conn, status, detail, options)
     end
   end
 
   defp fetch_range(%{"attributes" => %{"colourRangeM" => range}}), do: {:ok, range}
 
   defp fetch_range(_data),
-    do: {:error, 400, "Bad Request", "data.attributes.colourRangeM is required", @range_pointer}
+    do: {:error, 400, "data.attributes.colourRangeM is required", [source: @range_pointer]}
 
   defp preview(call) do
     {:ok, call.()}
@@ -52,5 +52,5 @@ defmodule VisionApiWeb.DepthPreviewController do
   end
 
   defp not_running(conn),
-    do: JsonApi.error(conn, 503, "Previews not running", "the unit's previews do not run")
+    do: JsonApi.error(conn, 503, "the unit's previews do not run", title: "Previews not running")
 end

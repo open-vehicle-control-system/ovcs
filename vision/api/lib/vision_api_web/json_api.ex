@@ -4,6 +4,9 @@ defmodule VisionApiWeb.JsonApi do
 
   @media_type "application/vnd.api+json"
 
+  @typedoc "A refusal for `error/4`: the status, the detail and its options."
+  @type refusal :: {:error, pos_integer(), String.t(), keyword()}
+
   @doc """
   Plug putting the JSON:API media type on the response, without the
   `charset` parameter JSON:API forbids. `render/3` keeps a content type
@@ -19,32 +22,31 @@ defmodule VisionApiWeb.JsonApi do
 
   @doc """
   Checks that `data`, a write's resource object, is the resource of `type`
-  and `id` its route names: `:ok`, or the refusal `error/5` sends, a 409
+  and `id` its route names: `:ok`, or the refusal `error/4` sends, a 409
   for another `type` or `id` and a 400 for a missing one.
   """
-  @spec check_identity(term(), String.t(), String.t()) ::
-          :ok | {:error, pos_integer(), String.t(), String.t(), String.t()}
+  @spec check_identity(term(), String.t(), String.t()) :: :ok | refusal()
   def check_identity(%{"type" => type}, expected, _id) when type != expected,
-    do: {:error, 409, "Conflict", "type must be #{expected}", "/data/type"}
+    do: {:error, 409, "type must be #{expected}", [source: "/data/type"]}
 
   def check_identity(%{"id" => id}, _type, expected) when id != expected,
-    do: {:error, 409, "Conflict", "id must be #{expected}", "/data/id"}
+    do: {:error, 409, "id must be #{expected}", [source: "/data/id"]}
 
   def check_identity(%{"type" => _type, "id" => _id}, _expected_type, _expected_id), do: :ok
 
   def check_identity(%{"type" => _type}, _expected_type, _expected_id),
-    do: {:error, 400, "Bad Request", "data.id is required", "/data/id"}
+    do: {:error, 400, "data.id is required", [source: "/data/id"]}
 
   def check_identity(%{}, _expected_type, _expected_id),
-    do: {:error, 400, "Bad Request", "data.type is required", "/data/type"}
+    do: {:error, 400, "data.type is required", [source: "/data/type"]}
 
   def check_identity(_data, _type, _id),
-    do: {:error, 400, "Bad Request", "data is required", "/data"}
+    do: {:error, 400, "data is required", [source: "/data"]}
 
-  @doc "The refusal `error/5` sends for a created resource whose document carries an id of the client's."
-  @spec client_id_refusal() :: {:error, 403, String.t(), String.t(), String.t()}
+  @doc "The refusal `error/4` sends for a created resource whose document carries an id of the client's."
+  @spec client_id_refusal() :: refusal()
   def client_id_refusal,
-    do: {:error, 403, "Forbidden", "the unit names the resource: send no id", "/data/id"}
+    do: {:error, 403, "the unit names the resource: send no id", [source: "/data/id"]}
 
   @doc """
   The relationships the `include` query parameter of `params` names, each
@@ -60,12 +62,21 @@ defmodule VisionApiWeb.JsonApi do
   def includes(%{"include" => _include}, _supported), do: :error
   def includes(_params, _supported), do: {:ok, []}
 
-  @doc "Sends an error object; `source` is a JSON pointer, or a map such as `%{parameter: \"include\"}`."
-  @spec error(Plug.Conn.t(), pos_integer(), String.t(), String.t(), map() | String.t() | nil) ::
-          Plug.Conn.t()
-  def error(conn, status, title, detail, source \\ nil) do
+  @doc """
+  Sends an error object for `status`, saying why in `detail`. Options:
+  `:source`, a JSON pointer, or a map such as `%{parameter: "include"}`,
+  and `:title`, when it says more than the status's reason phrase.
+  """
+  @spec error(Plug.Conn.t(), pos_integer(), String.t(), keyword()) :: Plug.Conn.t()
+  def error(conn, status, detail, options \\ []) do
+    title = Keyword.get_lazy(options, :title, fn -> Plug.Conn.Status.reason_phrase(status) end)
     error = %{status: Integer.to_string(status), title: title, detail: detail}
-    error = if source, do: Map.put(error, :source, source(source)), else: error
+
+    error =
+      case Keyword.fetch(options, :source) do
+        {:ok, source} -> Map.put(error, :source, source(source))
+        :error -> error
+      end
 
     conn
     |> put_media_type([])

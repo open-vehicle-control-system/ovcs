@@ -13,14 +13,14 @@ defmodule VisionApiWeb.NotFoundController do
   def show(conn, _params) do
     case allowed(conn) do
       [] ->
-        JsonApi.error(conn, 404, "Not Found", "no route for #{conn.method} #{conn.request_path}")
+        JsonApi.error(conn, 404, "no route for #{conn.method} #{conn.request_path}")
 
       methods ->
         allow = Enum.join(methods, ", ")
 
         conn
         |> put_resp_header("allow", allow)
-        |> JsonApi.error(405, "Method Not Allowed", "#{conn.request_path} takes #{allow}")
+        |> JsonApi.error(405, "#{conn.request_path} takes #{allow}")
     end
   end
 

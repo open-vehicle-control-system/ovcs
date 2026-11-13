@@ -18,7 +18,7 @@ defmodule VisionApiWeb.ParameterController do
         render(conn, :show, parameter: parameter)
 
       {:error, :not_found} ->
-        JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
+        JsonApi.error(conn, 404, "no parameter #{id}")
     end
   end
 
@@ -32,19 +32,19 @@ defmodule VisionApiWeb.ParameterController do
           render(conn, :show, parameter: parameter)
 
         {:error, :not_found} ->
-          JsonApi.error(conn, 404, "Not Found", "no parameter #{id}")
+          JsonApi.error(conn, 404, "no parameter #{id}")
 
         {:error, reason} ->
-          JsonApi.error(conn, 422, "Invalid value", reason, @value_pointer)
+          JsonApi.error(conn, 422, reason, source: @value_pointer, title: "Invalid value")
       end
     else
-      {:error, status, title, detail, pointer} ->
-        JsonApi.error(conn, status, title, detail, pointer)
+      {:error, status, detail, options} ->
+        JsonApi.error(conn, status, detail, options)
     end
   end
 
   defp fetch_value(%{"attributes" => %{"value" => value}}), do: {:ok, value}
 
   defp fetch_value(_data),
-    do: {:error, 400, "Bad Request", "data.attributes.value is required", @value_pointer}
+    do: {:error, 400, "data.attributes.value is required", [source: @value_pointer]}
 end
