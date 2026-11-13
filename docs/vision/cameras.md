@@ -62,6 +62,7 @@ An H.264 output is a video, not an image. A decoder needs every frame from a key
 |---|---|
 | An exporter | `{:camera_video, name, output}`, every frame in order from a key frame, without `max_hz` |
 | The ROS 2 exporter | `cameras: [videos: [center: :full_h264]]` |
+| The dashboard | `preview: [videos: [center: :full_h264]]`, in place of the camera's JPEG preview, decoded in the browser, which needs HTTPS ([Video](./channels.md#video)) |
 
 A pipeline, an exporter or the preview that names an H.264 output as an image is refused, as for an output with `send: false`.
 
@@ -113,7 +114,7 @@ Auto exposure measures the green after lens shading and white balance, through t
 
 `Ovcs1.Vision.Composer` runs a Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`. It captures 2028 × 1520 in colour at 30 frames a second. That image, its `:full` output, is not sent. `v4l2_capture` makes three outputs from it:
 
-- `:full_h264`, the image encoded as H.264 at 8000 kbps with a key frame every 30 frames, the camera's video, which ROS 2 publishes;
+- `:full_h264`, the image encoded as H.264 at 8000 kbps with a key frame every 30 frames, the camera's video, which the dashboard shows and ROS 2 publishes;
 - `:half`, the image averaged 2 × 2 to 1014 × 760, the camera's default. The unit runs YOLOX detection, the `:objects` pipeline, and FFNet road segmentation, the `:scene` pipeline, on it, on the NPU;
 - `:half_jpeg`, the half image encoded once a frame, which ROS 2 publishes as the camera's image.
 

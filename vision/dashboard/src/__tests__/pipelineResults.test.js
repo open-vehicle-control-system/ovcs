@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useDetections, useSegmentations } from '../pipelineResults.js'
+import { resultAt, useDetectionResults, useDetections, useSegmentationResults, useSegmentations } from '../pipelineResults.js'
 
 // A socket whose channels each keep their own handlers until `off`, so a test can deliver to one after it was left,
 // and fail one as the unit stopping it does.
@@ -175,5 +175,56 @@ describe('useSegmentations', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('resultAt', () => {
+  // A frame every 33.3 ms.
+  const history = [
+    { captureUs: 1_000_000, value: 'a' },
+    { captureUs: 1_033_333, value: 'b' },
+    { captureUs: 1_066_666, value: 'c' }
+  ]
+
+  it('is the newest result of a frame captured no later than the one given', () => {
+    expect(resultAt(history, 1_050_000)).toBe('b')
+    expect(resultAt(history, 1_066_666)).toBe('c')
+    expect(resultAt(history, 2_000_000)).toBe('c')
+  })
+
+  it("takes a result of the same frame stamped a little after it, each output's time read on its own", () => {
+    expect(resultAt(history, 1_033_320)).toBe('b')
+    expect(resultAt([{ captureUs: 1_033_333, value: 'next frame' }], 1_000_000)).toBeNull()
+  })
+
+  it('is none for a frame captured before every result', () => {
+    expect(resultAt(history, 900_000)).toBeNull()
+    expect(resultAt([], 900_000)).toBeNull()
+  })
+})
+
+describe('result histories', () => {
+  const detectionOutputs = [{ name: 'detections:objects', maxHz: 10, source: 'center' }]
+  const segmentationOutputs = [{ name: 'segmentation:road', maxHz: 5, source: 'center' }]
+
+  it("keeps each detection result by its frame's capture time, the last three seconds of them", () => {
+    const socket = fakeSocket()
+    const { result } = renderHook(() => useDetectionResults(socket, detectionOutputs))
+
+    for (const captureUs of [0, 1_000_000, 2_000_000, 3_500_000]) socket.channels[0].deliver('detections', { captureUs, detections: [person] })
+
+    expect(result.current.latest).toEqual({ 'detections:objects': [person] })
+    expect(result.current.history.current['detections:objects'].map(({ captureUs }) => captureUs)).toEqual([1_000_000, 2_000_000, 3_500_000])
+  })
+
+  it("keeps each segmentation grid by its frame's capture time", () => {
+    const socket = fakeSocket()
+    const { result } = renderHook(() => useSegmentationResults(socket, segmentationOutputs))
+
+    socket.channels[0].deliver('segmentation', grid([0, 13]))
+
+    const [entry] = result.current.history.current['segmentation:road']
+    expect(entry.captureUs).toBe(0)
+    expect(entry.value.present).toEqual([0, 13])
   })
 })
