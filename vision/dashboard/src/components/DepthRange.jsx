@@ -19,8 +19,8 @@ const fromSlider = (position) => (position > MAX ? 0 : position)
  * it is released; 0, the slider's last notch, is ∞. `onChange` gets the range to show: the one chosen, then the
  * unit's answer, or the previous one again when the unit refuses it. It is the unit's, shared by every dashboard, and
  * a view setting: nothing to save, back to the composer's at the next boot. It lies along a line, near to far from
- * left to right, or, `vertical`, stands as tall as the room it has: near at the bottom, far, the range and the
- * slider's maximum at the top.
+ * left to right, or, `vertical`, stands as tall as the room it has: near at the bottom, far and the range at the top.
+ * The colour map is the slider's track.
  */
 export default function DepthRange({ channel, metres, onChange, vertical = false }) {
   const labelId = useId()
@@ -47,9 +47,11 @@ export default function DepthRange({ channel, metres, onChange, vertical = false
       <Hint hint={HINTS.colourScale} />
     </span>
   )
-  const slider = (className, orientation) => (
+  // The colour map is the slider's own track, near to far along it.
+  const slider = (className, side, orientation) => (
     <input
       type="range"
+      data-colours
       aria-labelledby={labelId}
       aria-orientation={orientation}
       aria-valuetext={`blue at ${show(shown)}`}
@@ -61,20 +63,18 @@ export default function DepthRange({ channel, metres, onChange, vertical = false
       onPointerUp={finish}
       onKeyUp={finish}
       onBlur={finish}
-      className={`accent-ovcs-accent ${className} ${FOCUS}`}
+      style={{ '--colours': colours(side) }}
+      className={`colour-slider rounded-full ${className} ${FOCUS}`}
     />
   )
 
   if (vertical) {
     return (
-      <div data-colour-scale data-orientation="vertical" className="flex min-h-0 flex-1 select-none flex-col gap-1">
+      <div data-colour-scale data-orientation="vertical" className="flex min-h-0 flex-1 select-none flex-col items-start gap-2">
         {label}
         <span className="whitespace-nowrap text-base font-semibold tabular-nums">{show(shown)}</span>
-        <div className="flex min-h-0 flex-1 gap-3">
-          <span data-colours aria-hidden="true" className="w-2 rounded-sm" style={{ backgroundImage: colours('top') }} />
-          {/* A vertical writing mode stands the slider up; right to left, its maximum is at the top. */}
-          {slider('min-h-0 w-4 [direction:rtl] [writing-mode:vertical-lr]', 'vertical')}
-        </div>
+        {/* A vertical writing mode stands the slider up; right to left, its maximum is at the top. */}
+        {slider('min-h-0 w-4 flex-1 [direction:rtl] [writing-mode:vertical-lr]', 'top', 'vertical')}
         <span className="text-xs text-ovcs-muted">near</span>
       </div>
     )
@@ -82,16 +82,12 @@ export default function DepthRange({ channel, metres, onChange, vertical = false
 
   return (
     <div data-colour-scale data-orientation="horizontal" className="flex select-none flex-col gap-1">
-      {/* The scale goes under its label where both do not fit on a line. */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        {label}
-        <span className="flex min-w-40 flex-1 items-center gap-2">
-          <span className="text-xs text-ovcs-muted">near</span>
-          <span data-colours aria-hidden="true" className="h-2 min-w-12 flex-1 rounded-sm" style={{ backgroundImage: colours('right') }} />
-          <span className="w-16 whitespace-nowrap text-base font-semibold tabular-nums">{show(shown)}</span>
-        </span>
-      </div>
-      {slider('h-4 w-full')}
+      {label}
+      <span className="flex items-center gap-2">
+        <span className="text-xs text-ovcs-muted">near</span>
+        {slider('h-4 min-w-12 flex-1', 'right')}
+        <span className="w-16 whitespace-nowrap text-base font-semibold tabular-nums">{show(shown)}</span>
+      </span>
     </div>
   )
 }

@@ -89,8 +89,12 @@ describe('DepthRange', () => {
 
     const scale = document.querySelector('[data-colour-scale]')
     expect(scale.dataset.orientation).toBe('horizontal')
-    expect(scale.querySelector('[data-colours]').style.backgroundImage).toContain('to right')
+    // The colour map is the slider's own track.
     const slider = screen.getByRole('slider', { name: 'colour scale' })
+    expect(scale.querySelectorAll('[data-colours]')).toHaveLength(1)
+    expect(slider.hasAttribute('data-colours')).toBe(true)
+    expect(slider.style.getPropertyValue('--colours')).toContain('to right')
+    expect(slider.className.split(' ')).toContain('colour-slider')
     expect(slider.hasAttribute('aria-orientation')).toBe(false)
     expect(slider.className).not.toContain('writing-mode')
   })
@@ -102,24 +106,22 @@ describe('DepthRange', () => {
 
     const scale = document.querySelector('[data-colour-scale]')
     expect(scale.dataset.orientation).toBe('vertical')
-    const colours = scale.querySelector('[data-colours]')
-    expect(colours.style.backgroundImage).toContain('to top')
-    expect(colours.getAttribute('aria-hidden')).toBe('true')
-    // A vertical writing mode stands the slider up, and its right-to-left direction puts its maximum at the top.
+    // The colour map is the slider's own track, near at the bottom.
     const slider = screen.getByRole('slider', { name: 'colour scale' })
+    expect(scale.querySelectorAll('[data-colours]')).toHaveLength(1)
+    expect(slider.style.getPropertyValue('--colours')).toContain('to top')
+    // A vertical writing mode stands the slider up, and its right-to-left direction puts its maximum at the top.
     expect(slider.getAttribute('aria-orientation')).toBe('vertical')
-    expect(slider.className.split(' ')).toEqual(expect.arrayContaining(['[writing-mode:vertical-lr]', '[direction:rtl]', 'min-h-0']))
+    expect(slider.className.split(' ')).toEqual(
+      expect.arrayContaining(['colour-slider', '[writing-mode:vertical-lr]', '[direction:rtl]', 'min-h-0', 'flex-1'])
+    )
     expect(slider.getAttribute('aria-valuetext')).toBe('blue at 8.0 m')
-    // From the top: the range, the colours beside the slider, then near.
+    // From the top: the range, the slider, then near.
     const before = (first, second) => Boolean(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING)
-    const range = screen.getByText('8.0 m')
-    const near = screen.getByText('near')
-    expect(before(range, colours)).toBe(true)
-    expect(colours.parentElement).toBe(slider.parentElement)
-    expect(before(slider, near)).toBe(true)
-    // The scale and its colours take the height their aside has.
+    expect(before(screen.getByText('8.0 m'), slider)).toBe(true)
+    expect(before(slider, screen.getByText('near'))).toBe(true)
+    // The scale takes the height its aside has.
     expect(scale.className.split(' ')).toEqual(expect.arrayContaining(['flex-1', 'min-h-0', 'flex-col']))
-    expect(colours.parentElement.className.split(' ')).toEqual(expect.arrayContaining(['flex-1', 'min-h-0']))
   })
 
   it('sets the range from the vertical slider as from the horizontal one', async () => {

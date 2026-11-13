@@ -1,3 +1,44 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer components {
+  /* A range input whose track is the colour map in `--colours`; logical sizes keep it right when stood up. */
+  .colour-slider {
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .colour-slider::-webkit-slider-runnable-track {
+    block-size: 0.5rem;
+    border-radius: 9999px;
+    background: var(--colours);
+  }
+
+  .colour-slider::-moz-range-track {
+    block-size: 0.5rem;
+    border-radius: 9999px;
+    background: var(--colours);
+  }
+
+  .colour-slider::-webkit-slider-thumb {
+    appearance: none;
+    inline-size: 1rem;
+    block-size: 1rem;
+    margin-block-start: -0.25rem;
+    border-radius: 9999px;
+    border: 2px solid rgb(15 23 42);
+    background: rgb(241 245 249);
+    box-shadow: 0 0 0 1px rgb(241 245 249 / 0.4);
+  }
+
+  .colour-slider::-moz-range-thumb {
+    inline-size: 0.75rem;
+    block-size: 0.75rem;
+    border-radius: 9999px;
+    border: 2px solid rgb(15 23 42);
+    background: rgb(241 245 249);
+    box-shadow: 0 0 0 1px rgb(241 245 249 / 0.4);
+  }
+}
