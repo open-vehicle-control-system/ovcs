@@ -27,6 +27,59 @@ defmodule OvcsMini.CanTopologyTest do
     end
   end
 
+  test "the simulator's topology loads" do
+    assert [_ | _] = load_topology(:ovcs_mini, OvcsMini.simulator().can_config_path)
+  end
+
+  test "the simulator's topology declares every frame its simulated components read and emit" do
+    load_topology(:ovcs_mini, OvcsMini.simulator().can_config_path)
+
+    declared =
+      for network <- ConfigurationStore.networks(),
+          direction <- [:received_frames, :emitted_frames],
+          frame <- network.network_config[direction] || [],
+          into: MapSet.new(),
+          do: {network.network_name, direction, frame.name}
+
+    for {module, opts} <- OvcsMini.simulator().simulated_components do
+      {_state, received, emitted} = module.init(opts)
+
+      for {network, name} <- received,
+          do:
+            assert(
+              {network, :received_frames, name} in declared,
+              "#{inspect(module)} reads #{network}.#{name}"
+            )
+
+      for {network, name, _signals} <- emitted,
+          do:
+            assert(
+              {network, :emitted_frames, name} in declared,
+              "#{inspect(module)} emits #{network}.#{name}"
+            )
+    end
+  end
+
+  test "the simulator maps its networks on the interfaces the VMS uses for them" do
+    vms_interfaces = mapping(OvcsMini.Vms.Composer.default_can_mapping(:host))
+    simulator_interfaces = mapping(OvcsMini.simulator().can_mapping)
+
+    assert simulator_interfaces == Map.take(vms_interfaces, Map.keys(simulator_interfaces))
+
+    assert Map.keys(simulator_interfaces) ==
+             :ovcs_mini
+             |> network_mappings(OvcsMini.simulator().can_config_path)
+             |> Enum.map(&elem(&1, 0))
+             |> Enum.sort()
+  end
+
+  defp mapping(host_mapping) do
+    for pair <- String.split(host_mapping, ","), into: %{} do
+      [network, interface] = String.split(pair, ":")
+      {network, interface}
+    end
+  end
+
   defp load_topology(otp_app, path) do
     Application.put_env(:cantastic, :otp_app, otp_app)
     Application.put_env(:cantastic, :priv_can_config_path, path)

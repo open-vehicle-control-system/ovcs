@@ -18,8 +18,8 @@ defmodule SimulatorCore.Hardware do
   `SimulatorCore.Vehicle`): the counters match the simulator, and the
   rates match the counters, however fast the simulator runs. The
   reports are cumulative, so samples arriving late or in bursts lose
-  nothing. Before the first one, or from a world that reports none, it
-  reports its own commanded motion instead.
+  nothing. Before the first one, from a world that reports none, or
+  with no world, it reports its own commanded motion instead.
 
   ## Options
 
@@ -27,7 +27,9 @@ defmodule SimulatorCore.Hardware do
       parameters.
     * `:simulated_components` (required) — `{module, opts}` per
       simulated component.
-    * `:world` (required) — `{module, opts}`, a `SimulatorCore.World`.
+    * `:world` — `{module, opts}`, a `SimulatorCore.World`. Without
+      one, nothing outside moves the vehicle: its motion is
+      `SimulatorCore.Vehicle`'s own.
 
   The CAN topology of the firmware running it must declare every frame
   the simulated components read and emit, the other way round from the
@@ -53,8 +55,7 @@ defmodule SimulatorCore.Hardware do
     components =
       opts |> Map.fetch!(:simulated_components) |> Enum.map(&SimulatedComponent.start/1)
 
-    {world, world_opts} = Map.fetch!(opts, :world)
-    world_state = world.init(world_opts)
+    world = init_world(Map.get(opts, :world))
 
     {:ok, _timer} = :timer.send_interval(@period_ms, :step)
 
@@ -66,7 +67,7 @@ defmodule SimulatorCore.Hardware do
      %{
        vehicle: Vehicle.new(Map.fetch!(opts, :vehicle)),
        components: components,
-       world: {world, world_state},
+       world: world,
        last_step_ms: now_ms(),
        wheel_turns: nil,
        wheel_turns_read: nil
@@ -84,8 +85,7 @@ defmodule SimulatorCore.Hardware do
     wheel_turns_step = wheel_turns_step(state.wheel_turns, state.wheel_turns_read)
     vehicle = Vehicle.step(state.vehicle, actuations, dt_s, wheel_turns_step)
     components = Enum.map(state.components, &SimulatedComponent.report(&1, vehicle, now_ms))
-    {world, world_state} = state.world
-    :ok = world.drive(vehicle, world_state)
+    :ok = drive(state.world, vehicle)
 
     {:noreply,
      %{
@@ -103,6 +103,8 @@ defmodule SimulatorCore.Hardware do
     {:noreply, %{state | components: components}}
   end
 
+  def handle_info(_message, %{world: nil} = state), do: {:noreply, state}
+
   def handle_info(message, %{world: {world, world_state}} = state) do
     case world.wheel_turns(message, world_state) do
       nil -> {:noreply, state}
@@ -118,6 +120,12 @@ defmodule SimulatorCore.Hardware do
   def wheel_turns_step(nil, _read), do: nil
   def wheel_turns_step(_turns, nil), do: 0.0
   def wheel_turns_step(turns, read), do: turns - read
+
+  defp init_world(nil), do: nil
+  defp init_world({world, world_opts}), do: {world, world.init(world_opts)}
+
+  defp drive(nil, _vehicle), do: :ok
+  defp drive({world, world_state}, vehicle), do: world.drive(vehicle, world_state)
 
   defp now_ms, do: System.monotonic_time(:millisecond)
 end
