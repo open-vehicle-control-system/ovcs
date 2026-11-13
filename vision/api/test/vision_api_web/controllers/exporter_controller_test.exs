@@ -98,6 +98,38 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
   end
 end
 
+defmodule VisionApiWeb.ExporterControllerWithVideoTest do
+  use VisionApiWeb.ConnCase, async: false
+
+  @moduletag :capture_log
+
+  test "GET /api/exporters lists each video the API relays after its camera's frames, unbounded",
+       %{conn: conn} do
+    VisionApiWeb.TestUnit.start(%VisionCore.Config{
+      components: [
+        {:camera,
+         name: :hq,
+         driver: VisionCore.Camera.V4L2Single,
+         csiphy: 2,
+         outputs: [
+           full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+           half: [resolution: {1014, 760}, from: :full],
+           full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+         ]}
+      ],
+      preview: [max_hz: 5, videos: [hq: :full_h264]]
+    })
+
+    assert %{"data" => [%{"id" => "api", "attributes" => %{"outputs" => outputs}}]} =
+             conn |> get("/api/exporters") |> json_response(200)
+
+    assert outputs == [
+             %{"name" => "camera_frame:hq", "maxHz" => 5},
+             %{"name" => "camera_video:hq:full_h264", "maxHz" => nil}
+           ]
+  end
+end
+
 defmodule VisionApiWeb.ExporterControllerWithoutPipelineTest do
   use VisionApiWeb.ConnCase, async: false
 
