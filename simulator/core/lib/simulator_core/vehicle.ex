@@ -1,7 +1,7 @@
 defmodule SimulatorCore.Vehicle do
   @moduledoc """
   The simulated vehicle's motion, as `SimulatorCore.Hardware`'s
-  simulated components see it: a commanded speed along the heading, a
+  simulated components see it: a commanded speed along its yaw, a
   steering angle, and how far and how fast the wheels turned.
 
   Simulated components act on it through actuations, collected every tick:
@@ -22,7 +22,8 @@ defmodule SimulatorCore.Vehicle do
 
   ## Commanded and measured
 
-  Each `step/4` produces the four fields the rest of the tick uses:
+  Each `step/4` produces the four motion fields the rest of the tick
+  uses:
 
     * `commanded_speed_m_s` and `steering_rad` — what the simulator is
       asked for;
@@ -47,6 +48,16 @@ defmodule SimulatorCore.Vehicle do
 
   Speeds are per wall second, the clock the VMS measures against, and
   `dt_s` is the step's length in wall seconds.
+
+  ## Pose
+
+  Each step also moves the vehicle's pose, in REP-103 axes from where
+  it started: `x_m` forward, `y_m` to the left, and `yaw_rad`
+  counter-clockwise from x, within ±π. The pose is the rear axle's
+  centre, moved as a kinematic bicycle: the step's distance, the wheel
+  turns times the circumference, signed as they are, runs along the
+  arc of `curvature/1`, so a constant steering traces an exact circle
+  whatever the step's length.
 
   ## Examples
 
@@ -94,7 +105,10 @@ defmodule SimulatorCore.Vehicle do
     commanded_speed_m_s: 0.0,
     measured_speed_m_s: 0.0,
     steering_rad: 0.0,
-    wheel_turns_step: 0.0
+    wheel_turns_step: 0.0,
+    x_m: 0.0,
+    y_m: 0.0,
+    yaw_rad: 0.0
   ]
 
   @doc "A vehicle at rest."
@@ -133,9 +147,31 @@ defmodule SimulatorCore.Vehicle do
         steering_rad: steering,
         wheel_turns_step: wheel_turns_step
     }
+    |> moved(wheel_turns_step * circumference(vehicle))
   end
 
+  @doc "The curvature, 1/m, positive to the left, its steering sets on its rear axle's path."
+  def curvature(vehicle), do: :math.tan(vehicle.steering_rad) / vehicle.wheelbase_m
+
   defp circumference(vehicle), do: 2 * :math.pi() * vehicle.wheel_radius_m
+
+  # Along the arc's chord, which points halfway through the yaw change.
+  defp moved(vehicle, distance_m) do
+    yaw_change = distance_m * curvature(vehicle)
+    chord_m = distance_m * sinc(yaw_change / 2)
+    chord_yaw = vehicle.yaw_rad + yaw_change / 2
+    yaw = vehicle.yaw_rad + yaw_change
+
+    %{
+      vehicle
+      | x_m: vehicle.x_m + chord_m * :math.cos(chord_yaw),
+        y_m: vehicle.y_m + chord_m * :math.sin(chord_yaw),
+        yaw_rad: :math.atan2(:math.sin(yaw), :math.cos(yaw))
+    }
+  end
+
+  defp sinc(angle) when angle == 0.0, do: 1.0
+  defp sinc(angle), do: :math.sin(angle) / angle
 
   defp lead_limited(speed, measured) when speed >= 0,
     do: min(speed, max(measured, 0.0) + @command_lead_m_s)

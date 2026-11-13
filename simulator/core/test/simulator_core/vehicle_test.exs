@@ -129,4 +129,78 @@ defmodule SimulatorCore.VehicleTest do
     resting = Vehicle.step(%{vehicle() | measured_speed_m_s: 0.002}, [], @dt, 0.0)
     assert resting.measured_speed_m_s == 0.0
   end
+
+  describe "pose" do
+    # Steering that turns the 0.3 m wheelbase on a 1 m radius.
+    @unit_radius_steering :math.atan(0.3)
+
+    defp turns(distance_m), do: distance_m / (2 * :math.pi() * 0.05)
+
+    defp pose(vehicle), do: {vehicle.x_m, vehicle.y_m, vehicle.yaw_rad}
+
+    defp assert_pose(vehicle, {x, y, yaw}) do
+      assert_in_delta vehicle.x_m, x, 1.0e-6
+      assert_in_delta vehicle.y_m, y, 1.0e-6
+      assert_in_delta vehicle.yaw_rad, yaw, 1.0e-6
+    end
+
+    test "a vehicle starts at the origin, pointing along x" do
+      assert pose(vehicle()) == {0.0, 0.0, 0.0}
+    end
+
+    for {name, speed, steering, {x, y, yaw}} <- [
+          {"straight ahead", 1.0, 0.0, {2.0, 0.0, 0.0}},
+          {"straight in reverse", -0.5, 0.0, {-1.0, 0.0, 0.0}},
+          {"at standstill with the wheels turned", 0.0, @unit_radius_steering, {0.0, 0.0, 0.0}}
+        ] do
+      test "commanded #{name}, it moves and turns as a bicycle on its rear axle" do
+        moved = run(vehicle(), [{:speed, unquote(speed)}, {:steering, unquote(steering)}], 2.0)
+
+        assert_pose(moved, {unquote(x), unquote(y), unquote(yaw)})
+      end
+    end
+
+    test "its curvature is the inverse of its turning radius, positive to the left" do
+      assert_in_delta Vehicle.curvature(%{vehicle() | steering_rad: @unit_radius_steering}),
+                      1.0,
+                      1.0e-9
+
+      assert_in_delta Vehicle.curvature(%{vehicle() | steering_rad: -@unit_radius_steering}),
+                      -1.0,
+                      1.0e-9
+    end
+
+    test "a curvature too small to turn the yaw within a step still moves along the yaw" do
+      pointing = %{vehicle() | yaw_rad: 1.0}
+      stepped = Vehicle.step(pointing, [{:steering, 1.0e-18}], @dt, turns(1.0))
+
+      assert_pose(stepped, {:math.cos(1.0), :math.sin(1.0), 1.0})
+    end
+
+    for {direction, distance_m, pose} <- [
+          {"forward", :math.pi() / 2, {1.0, 1.0, :math.pi() / 2}},
+          {"in reverse", -:math.pi() / 2, {-1.0, 1.0, -:math.pi() / 2}}
+        ] do
+      test "a quarter circle #{direction} in one step lands on the arc's end" do
+        stepped =
+          Vehicle.step(
+            vehicle(),
+            [{:steering, @unit_radius_steering}],
+            @dt,
+            turns(unquote(distance_m))
+          )
+
+        assert_pose(stepped, unquote(Macro.escape(pose)))
+      end
+    end
+
+    test "a full circle at constant steering comes back to the start" do
+      lap =
+        Enum.reduce(1..100, vehicle(), fn _, v ->
+          Vehicle.step(v, [{:steering, @unit_radius_steering}], @dt, turns(2 * :math.pi() / 100))
+        end)
+
+      assert_pose(lap, {0.0, 0.0, 0.0})
+    end
+  end
 end
