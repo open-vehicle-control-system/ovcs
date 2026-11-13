@@ -1,7 +1,8 @@
-//! `qnn_detect <context.bin> [score_threshold] [--performance <profile>]`: the Port behind
-//! `VisionCore.Detection.Backend.Qnn`. YOLOX on the Hexagon NPU through QNN's
-//! HTP backend, from a context binary built for this chip and QAIRT version, under the
-//! power vote of the performance profile (`qnn::Performance`, burst by default).
+//! `qnn_detect <context.bin> [score_threshold] [--performance <profile>]
+//! [--rpc-polling-us <us>]`: the Port behind `VisionCore.Detection.Backend.Qnn`. YOLOX on the
+//! Hexagon NPU through QNN's HTP backend, from a context binary built for this chip and QAIRT
+//! version, under a power vote (`qnn::Power`): the performance profile, burst by default, and
+//! the RPC polling, 0 µs by default.
 //! `qnn_detect --graph-names <model.dlc>` prints the DLC's graph names, one a line.
 //! The environment's `LD_LIBRARY_PATH` holds `libQnnHtp.so` and
 //! `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
@@ -27,7 +28,7 @@ use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{LogLevel, Writer};
 use model::Layout;
 use qnn::port::{self, Clock, Start};
-use qnn::{Performance, TimeLog};
+use qnn::{Power, TimeLog};
 use yolox::{decode, Outputs, MODEL_SIZE};
 
 const DEFAULT_SCORE_THRESHOLD: f32 = 0.4;
@@ -38,12 +39,13 @@ const LETTERBOX_THREADS: usize = 3;
 
 const NAME: &str = "qnn_detect";
 const USAGE: &str = "usage: qnn_detect <context.bin> [score_threshold] \
-                     [--performance <profile>] | --graph-names <model.dlc>";
+                     [--performance <profile>] [--rpc-polling-us <us>] \
+                     | --graph-names <model.dlc>";
 
 fn main() {
     let Start {
         arguments,
-        performance,
+        power,
         writer,
     } = port::start(NAME, USAGE);
     let Some(context_path) = arguments.first() else {
@@ -54,7 +56,7 @@ fn main() {
         Some(Ok(threshold)) => threshold,
         Some(Err(_)) => port::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2),
     };
-    if let Err(message) = run(context_path, score_threshold, performance, &writer) {
+    if let Err(message) = run(context_path, score_threshold, power, &writer) {
         port::log(&writer, LogLevel::Error, &message);
         exit(1);
     }
@@ -63,10 +65,10 @@ fn main() {
 fn run(
     context_path: &str,
     score_threshold: f32,
-    performance: Performance,
+    power: Power,
     writer: &Writer,
 ) -> Result<(), String> {
-    let mut model = port::open_model(context_path, performance, writer)?;
+    let mut model = port::open_model(context_path, power, writer)?;
 
     let Layout {
         boxes,

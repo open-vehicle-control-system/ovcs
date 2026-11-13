@@ -1,20 +1,20 @@
-//! The HTP's performance profile: the power vote a Port holds from the context's creation to
-//! its exit, after the profiles of QAIRT's HTP backend documentation, and the command line
-//! that picks it.
+//! The HTP's power vote a Port holds from the context's creation to its exit: a performance
+//! profile, after the profiles of QAIRT's HTP backend documentation, and the RPC polling; and
+//! the command line that picks them.
 
 use crate::ffi::*;
 
-/// A performance profile. A profile's vote is made once and held, so the HTP stays at its
-/// corner between requests too.
+/// A performance profile: the clocks a vote holds. A vote is made once and held, so the HTP
+/// stays at its corner between requests too.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Performance {
-    /// The highest voltage corner, DCVS off, RPC polling: the fastest execution.
+    /// The highest voltage corner, DCVS off: the fastest execution.
     Burst,
-    /// The TURBO corner, DCVS off, RPC polling.
+    /// The TURBO corner, DCVS off.
     SustainedHighPerformance,
-    /// The NOM_PLUS corner, DCVS off, no RPC polling.
+    /// The NOM_PLUS corner, DCVS off.
     Balanced,
-    /// The SVS corner, DCVS off, no RPC polling.
+    /// The SVS corner, DCVS off.
     PowerSaver,
     /// No vote: the HTP runs under its default power policy.
     NoVote,
@@ -22,6 +22,13 @@ pub enum Performance {
 
 /// The profile a Port runs at unless told otherwise.
 pub const DEFAULT_PERFORMANCE: Performance = Performance::Burst;
+
+/// The RPC polling a Port votes unless told otherwise: none, the waiting thread sleeps until
+/// the HTP signals the execution's end.
+const DEFAULT_RPC_POLLING_MICROS: u32 = 0;
+
+/// The longest RPC polling QNN takes, in µs.
+const MAX_RPC_POLLING_MICROS: u32 = QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIG_MAX_RPC_POLLING_TIME;
 
 const PROFILES: [(&str, Performance); 5] = [
     ("burst", Performance::Burst),
@@ -37,11 +44,19 @@ const PROFILES: [(&str, Performance); 5] = [
 /// The RPC control latency every vote requests, in µs.
 const RPC_CONTROL_LATENCY_MICROS: u32 = 100;
 
-/// A profile's DCVS_V3 vote and RPC polling time.
+/// The power vote a Port holds: its profile's clocks and its RPC polling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Power {
+    pub performance: Performance,
+    /// How long the thread waiting on an execution polls for its end, in µs, before it sleeps
+    /// until the HTP signals it. Polling spends that thread's core to wake up sooner.
+    pub rpc_polling_micros: u32,
+}
+
+/// A profile's DCVS_V3 vote.
 struct Vote {
     sleep_latency_micros: u32,
     corner: QnnHtpPerfInfrastructure_VoltageCorner_t,
-    rpc_polling_micros: u32,
 }
 
 impl Performance {
@@ -69,32 +84,25 @@ impl Performance {
     }
 
     fn vote(self) -> Option<Vote> {
-        let (sleep_latency_micros, corner, rpc_polling_micros) = match self {
-            Performance::Burst => (
-                40,
-                DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER,
-                QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIG_MAX_RPC_POLLING_TIME,
-            ),
-            Performance::SustainedHighPerformance => (
-                100,
-                DCVS_VOLTAGE_VCORNER_TURBO,
-                QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIG_MAX_RPC_POLLING_TIME,
-            ),
-            Performance::Balanced => (1000, DCVS_VOLTAGE_VCORNER_NOM_PLUS, 0),
-            Performance::PowerSaver => (1000, DCVS_VOLTAGE_VCORNER_SVS, 0),
+        let (sleep_latency_micros, corner) = match self {
+            Performance::Burst => (40, DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER),
+            Performance::SustainedHighPerformance => (100, DCVS_VOLTAGE_VCORNER_TURBO),
+            Performance::Balanced => (1000, DCVS_VOLTAGE_VCORNER_NOM_PLUS),
+            Performance::PowerSaver => (1000, DCVS_VOLTAGE_VCORNER_SVS),
             Performance::NoVote => return None,
         };
         Some(Vote {
             sleep_latency_micros,
             corner,
-            rpc_polling_micros,
         })
     }
+}
 
-    /// The `setPowerConfig` calls the profile makes on the power config `id`, one config each:
+impl Power {
+    /// The `setPowerConfig` calls the vote makes on the power config `id`, one config each:
     /// the DCVS_V3 vote, the RPC control latency, the RPC polling time; none for `NoVote`.
     pub(crate) fn power_configs(self, id: u32) -> Vec<QnnHtpPerfInfrastructure_PowerConfig_t> {
-        let Some(vote) = self.vote() else {
+        let Some(vote) = self.performance.vote() else {
             return Vec::new();
         };
         let dcvs = QnnHtpPerfInfrastructure_DcvsV3_t {
@@ -131,7 +139,7 @@ impl Performance {
             QnnHtpPerfInfrastructure_PowerConfig_t {
                 option: QNN_HTP_PERF_INFRASTRUCTURE_POWER_CONFIGOPTION_RPC_POLLING_TIME,
                 __bindgen_anon_1: QnnHtpPerfInfrastructure_PowerConfig_t__bindgen_ty_1 {
-                    rpcPollingTimeConfig: vote.rpc_polling_micros,
+                    rpcPollingTimeConfig: self.rpc_polling_micros,
                 },
             },
         ]
@@ -149,19 +157,22 @@ impl Performance {
         }
     }
 
-    /// What the profile votes, for the log.
+    /// What the vote holds, for the log.
     pub fn describe(self) -> String {
-        match self.vote() {
-            None => format!("{}: no power vote", self.name()),
-            Some(vote) => format!(
-                "{}: DCVS off, bus and core voltage corner {}, sleep latency {} us, \
-                 RPC control latency {RPC_CONTROL_LATENCY_MICROS} us, RPC polling {} us",
-                self.name(),
-                corner_name(vote.corner),
-                vote.sleep_latency_micros,
-                vote.rpc_polling_micros
-            ),
-        }
+        let name = self.performance.name();
+        let Some(vote) = self.performance.vote() else {
+            return format!("{name}: no power vote");
+        };
+        let rpc_polling = match self.rpc_polling_micros {
+            0 => "0 us (interrupt)".to_string(),
+            micros => format!("{micros} us"),
+        };
+        format!(
+            "{name}: DCVS off, bus and core voltage corner {}, sleep latency {} us, \
+             RPC control latency {RPC_CONTROL_LATENCY_MICROS} us, RPC polling {rpc_polling}",
+            corner_name(vote.corner),
+            vote.sleep_latency_micros
+        )
     }
 }
 
@@ -180,33 +191,71 @@ fn corner_name(corner: QnnHtpPerfInfrastructure_VoltageCorner_t) -> &'static str
 pub enum CommandLine<'a> {
     /// `--graph-names <dlc>`: print the DLC's graph names, one a line, and exit.
     GraphNames(&'a str),
-    /// Serve requests: the Port's own positional arguments, then the performance profile, from
-    /// an optional trailing `--performance <profile>`.
+    /// Serve requests: the Port's own positional arguments, then the power vote, from an
+    /// optional trailing `--performance <profile>` and `--rpc-polling-us <us>`, in either order.
     Serve {
         arguments: &'a [String],
-        performance: Performance,
+        power: Power,
     },
 }
 
+const OPTIONS: [&str; 3] = ["--performance", "--rpc-polling-us", "--graph-names"];
+
 /// Reads `arguments`, the program's name excluded.
 pub fn command_line(arguments: &[String]) -> Result<CommandLine<'_>, String> {
-    match arguments {
-        [flag, dlc] if flag == "--graph-names" => Ok(CommandLine::GraphNames(dlc)),
-        [positional @ .., flag, profile] if flag == "--performance" => Ok(CommandLine::Serve {
-            arguments: positional,
-            performance: Performance::parse(profile)?,
-        }),
-        _ if arguments
-            .iter()
-            .any(|argument| argument == "--performance" || argument == "--graph-names") =>
-        {
-            Err("--performance <profile> comes last, --graph-names <dlc> alone".to_string())
+    if let [flag, dlc] = arguments {
+        if flag == "--graph-names" {
+            return Ok(CommandLine::GraphNames(dlc));
         }
-        _ => Ok(CommandLine::Serve {
-            arguments,
-            performance: DEFAULT_PERFORMANCE,
-        }),
     }
+    let mut positional = arguments;
+    let (mut performance, mut rpc_polling_micros) = (None, None);
+    while let [rest @ .., flag, value] = positional {
+        match flag.as_str() {
+            "--performance" if performance.is_none() => {
+                performance = Some(Performance::parse(value)?);
+            }
+            "--rpc-polling-us" if rpc_polling_micros.is_none() => {
+                rpc_polling_micros = Some(parse_rpc_polling(value)?);
+            }
+            _ => break,
+        }
+        positional = rest;
+    }
+    if positional
+        .iter()
+        .any(|argument| OPTIONS.contains(&argument.as_str()))
+    {
+        return Err(
+            "--performance <profile> and --rpc-polling-us <us> come last, once each, \
+                    --graph-names <dlc> alone"
+                .to_string(),
+        );
+    }
+    let performance = performance.unwrap_or(DEFAULT_PERFORMANCE);
+    if performance == Performance::NoVote && rpc_polling_micros.is_some() {
+        return Err(
+            "--rpc-polling-us is part of the power vote, which --performance none does not make"
+                .to_string(),
+        );
+    }
+    Ok(CommandLine::Serve {
+        arguments: positional,
+        power: Power {
+            performance,
+            rpc_polling_micros: rpc_polling_micros.unwrap_or(DEFAULT_RPC_POLLING_MICROS),
+        },
+    })
+}
+
+fn parse_rpc_polling(micros: &str) -> Result<u32, String> {
+    micros
+        .parse::<u32>()
+        .ok()
+        .filter(|&parsed| parsed <= MAX_RPC_POLLING_MICROS)
+        .ok_or_else(|| {
+            format!("RPC polling {micros} us is not an integer from 0 to {MAX_RPC_POLLING_MICROS}")
+        })
 }
 
 #[cfg(test)]
@@ -215,6 +264,20 @@ mod tests {
 
     fn strings(arguments: &[&str]) -> Vec<String> {
         arguments.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn serve(arguments: &[String], positional: usize, power: Power) -> CommandLine<'_> {
+        CommandLine::Serve {
+            arguments: &arguments[..positional],
+            power,
+        }
+    }
+
+    fn power(performance: Performance, rpc_polling_micros: u32) -> Power {
+        Power {
+            performance,
+            rpc_polling_micros,
+        }
     }
 
     #[test]
@@ -231,14 +294,11 @@ mod tests {
     }
 
     #[test]
-    fn the_positional_arguments_default_to_burst() {
+    fn the_positional_arguments_default_to_burst_without_rpc_polling() {
         let arguments = strings(&["model.bin", "0.5"]);
         assert_eq!(
             command_line(&arguments),
-            Ok(CommandLine::Serve {
-                arguments: &arguments,
-                performance: Performance::Burst
-            })
+            Ok(serve(&arguments, 2, power(Performance::Burst, 0)))
         );
     }
 
@@ -247,29 +307,115 @@ mod tests {
         let arguments = strings(&["model.bin", "19", "--performance", "balanced"]);
         assert_eq!(
             command_line(&arguments),
-            Ok(CommandLine::Serve {
-                arguments: &arguments[..2],
-                performance: Performance::Balanced
-            })
+            Ok(serve(&arguments, 2, power(Performance::Balanced, 0)))
         );
         let arguments = strings(&["model.bin", "--performance", "none"]);
         assert_eq!(
             command_line(&arguments),
-            Ok(CommandLine::Serve {
-                arguments: &arguments[..1],
-                performance: Performance::NoVote
-            })
+            Ok(serve(&arguments, 1, power(Performance::NoVote, 0)))
         );
     }
 
     #[test]
-    fn a_misplaced_or_unknown_performance_is_refused() {
+    fn a_trailing_rpc_polling_sets_it_from_0_to_9999_us() {
+        for micros in [0, 1, 9999] {
+            let arguments = strings(&["model.bin", "--rpc-polling-us", &micros.to_string()]);
+            assert_eq!(
+                command_line(&arguments),
+                Ok(serve(&arguments, 1, power(Performance::Burst, micros)))
+            );
+        }
+    }
+
+    #[test]
+    fn performance_and_rpc_polling_come_in_either_order() {
+        for arguments in [
+            &[
+                "ctx.bin",
+                "0.4",
+                "--performance",
+                "balanced",
+                "--rpc-polling-us",
+                "9999",
+            ][..],
+            &[
+                "ctx.bin",
+                "0.4",
+                "--rpc-polling-us",
+                "9999",
+                "--performance",
+                "balanced",
+            ],
+        ] {
+            let arguments = strings(arguments);
+            assert_eq!(
+                command_line(&arguments),
+                Ok(serve(&arguments, 2, power(Performance::Balanced, 9999)))
+            );
+        }
+    }
+
+    #[test]
+    fn an_rpc_polling_out_of_bounds_or_no_integer_is_refused() {
+        for micros in ["10000", "-1", "abc", "1.5", ""] {
+            let error =
+                command_line(&strings(&["model.bin", "--rpc-polling-us", micros])).unwrap_err();
+            assert_eq!(
+                error,
+                format!("RPC polling {micros} us is not an integer from 0 to 9999")
+            );
+        }
+    }
+
+    #[test]
+    fn rpc_polling_without_a_vote_is_refused() {
+        let error = command_line(&strings(&[
+            "model.bin",
+            "--performance",
+            "none",
+            "--rpc-polling-us",
+            "0",
+        ]))
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "--rpc-polling-us is part of the power vote, which --performance none does not make"
+        );
+    }
+
+    #[test]
+    fn a_misplaced_repeated_or_unknown_option_is_refused() {
         for arguments in [
             &["model.bin", "--performance"][..],
+            &["model.bin", "--rpc-polling-us"],
             &["model.bin", "--performance", "burst", "19"],
+            &["model.bin", "--rpc-polling-us", "0", "19"],
+            &[
+                "model.bin",
+                "--performance",
+                "burst",
+                "--performance",
+                "none",
+            ],
+            &[
+                "model.bin",
+                "--rpc-polling-us",
+                "0",
+                "--rpc-polling-us",
+                "1",
+            ],
             &["--graph-names", "model.dlc", "extra"],
+            &["--graph-names", "model.dlc", "--performance", "burst"],
         ] {
-            assert!(command_line(&strings(arguments)).is_err(), "{arguments:?}");
+            assert_eq!(
+                command_line(&strings(arguments)),
+                Err(
+                    "--performance <profile> and --rpc-polling-us <us> come last, once each, \
+                     --graph-names <dlc> alone"
+                        .to_string()
+                ),
+                "{arguments:?}"
+            );
         }
         assert!(
             command_line(&strings(&["model.bin", "--performance", "fast"]))
@@ -317,8 +463,8 @@ mod tests {
     }
 
     #[test]
-    fn burst_votes_the_highest_corner_with_dcvs_off_and_rpc_polling() {
-        let configs = Performance::Burst.power_configs(7);
+    fn burst_votes_the_highest_corner_with_dcvs_off() {
+        let configs = power(Performance::Burst, 0).power_configs(7);
         assert_eq!(configs.len(), 3);
         let vote = dcvs(&configs);
         assert_eq!(vote.contextId, 7);
@@ -336,27 +482,21 @@ mod tests {
         ] {
             assert_eq!(corner, DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER);
         }
-        assert_eq!(rpc(&configs), (100, 9999));
+        assert_eq!(rpc(&configs), (100, 0));
     }
 
     #[test]
     fn the_other_profiles_follow_qairts_table() {
-        for (profile, sleep_latency, corner, polling) in [
+        for (profile, sleep_latency, corner) in [
             (
                 Performance::SustainedHighPerformance,
                 100,
                 DCVS_VOLTAGE_VCORNER_TURBO,
-                9999,
             ),
-            (
-                Performance::Balanced,
-                1000,
-                DCVS_VOLTAGE_VCORNER_NOM_PLUS,
-                0,
-            ),
-            (Performance::PowerSaver, 1000, DCVS_VOLTAGE_VCORNER_SVS, 0),
+            (Performance::Balanced, 1000, DCVS_VOLTAGE_VCORNER_NOM_PLUS),
+            (Performance::PowerSaver, 1000, DCVS_VOLTAGE_VCORNER_SVS),
         ] {
-            let configs = profile.power_configs(1);
+            let configs = power(profile, 0).power_configs(1);
             let vote = dcvs(&configs);
             assert_eq!(vote.dcvsEnable, 0);
             assert_eq!(vote.sleepLatency, sleep_latency);
@@ -364,23 +504,34 @@ mod tests {
                 (vote.busVoltageCornerTarget, vote.coreVoltageCornerMax),
                 (corner, corner)
             );
-            assert_eq!(rpc(&configs), (100, polling));
+            assert_eq!(rpc(&configs), (100, 0));
+        }
+    }
+
+    #[test]
+    fn the_rpc_polling_is_voted_whatever_the_profile() {
+        for profile in [Performance::Burst, Performance::PowerSaver] {
+            for micros in [0, 500, 9999] {
+                let configs = power(profile, micros).power_configs(1);
+                assert_eq!(rpc(&configs), (100, micros));
+            }
         }
     }
 
     #[test]
     fn no_vote_makes_no_call() {
-        assert!(Performance::NoVote.power_configs(1).is_empty());
-        assert_eq!(Performance::NoVote.describe(), "none: no power vote");
+        let no_vote = power(Performance::NoVote, 0);
+        assert!(no_vote.power_configs(1).is_empty());
+        assert_eq!(no_vote.describe(), "none: no power vote");
     }
 
     #[test]
     fn a_failed_vote_is_a_warning_naming_the_call() {
         assert_eq!(
-            Performance::NoVote.outcome(None),
+            power(Performance::NoVote, 0).outcome(None),
             Ok("performance profile none: no power vote".to_string())
         );
-        let warning = Performance::Burst
+        let warning = power(Performance::Burst, 0)
             .outcome(Some("setPowerConfig DCVS_V3 failed with QNN error 1002"))
             .unwrap_err();
         assert!(
@@ -394,11 +545,16 @@ mod tests {
     }
 
     #[test]
-    fn the_description_names_the_vote() {
+    fn the_description_names_the_vote_and_the_rpc_polling() {
         assert_eq!(
-            Performance::Burst.describe(),
+            power(Performance::Burst, 0).describe(),
             "burst: DCVS off, bus and core voltage corner MAX_VOLTAGE_CORNER, sleep latency \
-             40 us, RPC control latency 100 us, RPC polling 9999 us"
+             40 us, RPC control latency 100 us, RPC polling 0 us (interrupt)"
+        );
+        assert_eq!(
+            power(Performance::Balanced, 9999).describe(),
+            "balanced: DCVS off, bus and core voltage corner NOM_PLUS, sleep latency \
+             1000 us, RPC control latency 100 us, RPC polling 9999 us"
         );
     }
 }

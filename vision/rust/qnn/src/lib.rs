@@ -2,7 +2,8 @@
 //! libraries loaded at run time from the library path. Each execution is timed
 //! by QNN's basic profiling, the HTP's own execution time, or by the wall time
 //! around `graphExecute` when the profile is unavailable; `TimeLog` says which.
-//! The HTP runs under the power vote of a performance profile (`Performance`).
+//! The HTP runs under a power vote (`Power`): a performance profile's clocks and the RPC
+//! polling.
 
 #[allow(
     non_upper_case_globals,
@@ -20,7 +21,7 @@ pub mod port;
 mod stage_times;
 mod time_log;
 
-pub use performance::{command_line, CommandLine, Performance, DEFAULT_PERFORMANCE};
+pub use performance::{command_line, CommandLine, Performance, Power, DEFAULT_PERFORMANCE};
 pub use stage_times::{micros, Stage, StageTimes, STAGE_TIMES_EVERY};
 pub use time_log::TimeLog;
 
@@ -244,7 +245,7 @@ pub struct Model {
     /// The first profiled execution's events, until `take_profile_report`.
     profile_report: Option<String>,
     profile_reported: bool,
-    /// Why the performance profile's vote is missing or partial, if it is.
+    /// Why the power vote is missing or partial, if it is.
     pub power_vote_error: Option<String>,
 }
 
@@ -289,7 +290,7 @@ impl Drop for Session {
     }
 }
 
-/// A power config id holding a performance profile's vote, which ends when it is destroyed.
+/// A power config id holding a power vote, which ends when it is destroyed.
 struct PowerVote {
     destroy: QnnHtpPerfInfrastructure_DestroyPowerConfigIdFn_t,
     id: u32,
@@ -305,14 +306,14 @@ impl Drop for PowerVote {
     }
 }
 
-/// The calls of a performance profile's vote, in `Performance::power_configs`' order.
+/// The calls of a power vote, in `Power::power_configs`' order.
 const POWER_CONFIG_CALLS: [&str; 3] = [
     "setPowerConfig DCVS_V3",
     "setPowerConfig RPC_CONTROL_LATENCY",
     "setPowerConfig RPC_POLLING_TIME",
 ];
 
-/// Votes `performance` on the HTP through the device's performance infrastructure. The vote
+/// Votes `power` on the HTP through the device's performance infrastructure. The vote
 /// holds while the returned id lives; there is none when the DCVS_V3 call fails. The message
 /// names each call that failed.
 ///
@@ -320,7 +321,7 @@ const POWER_CONFIG_CALLS: [&str; 3] = [
 /// `interface` is of a library still loaded, after its `deviceCreate`.
 unsafe fn vote(
     interface: &QnnInterface_ImplementationV2_39_t,
-    performance: Performance,
+    power: Power,
 ) -> (Option<PowerVote>, Option<String>) {
     let unvoted = |message: String| {
         (
@@ -330,7 +331,7 @@ unsafe fn vote(
             )),
         )
     };
-    if performance == Performance::NoVote {
+    if power.performance == Performance::NoVote {
         return (None, None);
     }
     let Some(get_infrastructure) = interface.deviceGetInfrastructure else {
@@ -368,7 +369,7 @@ unsafe fn vote(
         id,
     };
     let mut failures = Vec::new();
-    for (config, call) in performance.power_configs(id).iter().zip(POWER_CONFIG_CALLS) {
+    for (config, call) in power.power_configs(id).iter().zip(POWER_CONFIG_CALLS) {
         let mut configs = [
             config as *const QnnHtpPerfInfrastructure_PowerConfig_t,
             ptr::null(),
@@ -845,10 +846,10 @@ impl Session {
 }
 
 impl Model {
-    /// Loads the HTP backend, votes `performance` on it, and creates the context `binary`
+    /// Loads the HTP backend, votes `power` on it, and creates the context `binary`
     /// holds. A vote that fails leaves the HTP under its default power policy, the reason in
     /// `power_vote_error`.
-    pub fn open(binary: &[u8], performance: Performance) -> Result<Model, String> {
+    pub fn open(binary: &[u8], power: Power) -> Result<Model, String> {
         // SAFETY: the steps run once each in the order they depend on, on handles the
         // session's libraries gave; `info`, the graph's name and the tensors' pointers
         // belong to the system context, which the session keeps with them.
@@ -861,7 +862,7 @@ impl Model {
             let (graph_name, inputs, outputs) = first_graph(info)?;
             let graph_name_text = CStr::from_ptr(graph_name).to_string_lossy().into_owned();
             session.create_backend()?;
-            let (power_vote, power_vote_error) = vote(&session.interface, performance);
+            let (power_vote, power_vote_error) = vote(&session.interface, power);
             session.power_vote = power_vote;
             session.create_context(binary)?;
             let graph = session.retrieve_graph(graph_name)?;

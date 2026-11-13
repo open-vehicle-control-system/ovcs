@@ -10,8 +10,7 @@ use framing::{log_record, LogLevel, Writer};
 
 use crate::stage_times::Stage;
 use crate::{
-    CommandLine, Model, Performance, StageTimes, TimeLog, Timing, EXECUTION_STAGES,
-    STAGE_TIMES_EVERY,
+    CommandLine, Model, Power, StageTimes, TimeLog, Timing, EXECUTION_STAGES, STAGE_TIMES_EVERY,
 };
 
 /// Room asked for in the request pipe, which the BEAM then fills in fewer turns with the Port.
@@ -20,11 +19,11 @@ const REQUEST_PIPE_BYTES: usize = 4 << 20;
 /// The longest request taken: above any camera's whole RGB frame.
 const MAX_REQUEST_BYTES: usize = 64 << 20;
 
-/// What a Port serves with: its own positional arguments, the performance profile, and the
-/// writer of its records.
+/// What a Port serves with: its own positional arguments, the power vote, and the writer of
+/// its records.
 pub struct Start {
     pub arguments: Vec<String>,
-    pub performance: Performance,
+    pub power: Power,
     pub writer: Writer,
 }
 
@@ -43,15 +42,12 @@ pub fn exit_early(name: &str, message: &str, status: i32) -> ! {
 /// reports panics as LOG records.
 pub fn start(name: &str, usage: &str) -> Start {
     let command_line: Vec<String> = std::env::args().skip(1).collect();
-    let (arguments, performance) = match crate::command_line(&command_line) {
+    let (arguments, power) = match crate::command_line(&command_line) {
         Ok(CommandLine::GraphNames(dlc)) => match crate::print_dlc_graph_names(dlc) {
             Ok(()) => exit(0),
             Err(message) => exit_early(name, &message, 1),
         },
-        Ok(CommandLine::Serve {
-            arguments,
-            performance,
-        }) => (arguments.to_vec(), performance),
+        Ok(CommandLine::Serve { arguments, power }) => (arguments.to_vec(), power),
         Err(message) => exit_early(name, &format!("{message}; {usage}"), 2),
     };
     // Before any QNN call: its libraries may log onto stdout.
@@ -62,18 +58,14 @@ pub fn start(name: &str, usage: &str) -> Start {
     writer.log_panics();
     Start {
         arguments,
-        performance,
+        power,
         writer,
     }
 }
 
 /// Enlarges the request pipe, then opens the context binary at `context_path` under
-/// `performance`, logging the pipe's size and the vote's outcome.
-pub fn open_model(
-    context_path: &str,
-    performance: Performance,
-    writer: &Writer,
-) -> Result<Model, String> {
+/// `power`, logging the pipe's size and the vote's outcome.
+pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<Model, String> {
     match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
         Ok(bytes) => log(
             writer,
@@ -87,8 +79,8 @@ pub fn open_model(
         ),
     }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
-    let model = Model::open(&binary, performance)?;
-    match performance.outcome(model.power_vote_error.as_deref()) {
+    let model = Model::open(&binary, power)?;
+    match power.outcome(model.power_vote_error.as_deref()) {
         Ok(line) => log(writer, LogLevel::Info, &line),
         Err(line) => log(writer, LogLevel::Warning, &line),
     }

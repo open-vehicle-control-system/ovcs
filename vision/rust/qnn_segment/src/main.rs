@@ -1,8 +1,9 @@
-//! `qnn_segment <context.bin> <classes> [--performance <profile>]`: the Port behind
-//! `VisionCore.Segmentation.Backend.Qnn`. A semantic segmentation model on the Hexagon NPU
-//! through QNN's HTP backend, from a context binary built for this chip and QAIRT version,
-//! scoring the `classes` classes the pipeline names, under the power vote of the performance
-//! profile (`qnn::Performance`, burst by default). `qnn_segment --graph-names <model.dlc>`
+//! `qnn_segment <context.bin> <classes> [--performance <profile>] [--rpc-polling-us <us>]`:
+//! the Port behind `VisionCore.Segmentation.Backend.Qnn`. A semantic segmentation model on the
+//! Hexagon NPU through QNN's HTP backend, from a context binary built for this chip and QAIRT
+//! version, scoring the `classes` classes the pipeline names, under a power vote
+//! (`qnn::Power`): the performance profile, burst by default, and the RPC polling, 0 µs by
+//! default. `qnn_segment --graph-names <model.dlc>`
 //! prints the DLC's graph names, one a line. The environment's `LD_LIBRARY_PATH` holds
 //! `libQnnHtp.so` and `libQnnSystem.so`, its `ADSP_LIBRARY_PATH` the HTP's DSP libraries.
 //!
@@ -27,19 +28,19 @@ use framing::{LogLevel, Writer};
 use model::Geometry;
 use protocol::{labels_record, parse_request};
 use qnn::port::{self, Clock, Start};
-use qnn::{Performance, TimeLog};
+use qnn::{Power, TimeLog};
 
 /// Threads the resize and the argmax each split their rows across.
 const THREADS: usize = 3;
 
 const NAME: &str = "qnn_segment";
 const USAGE: &str = "usage: qnn_segment <context.bin> <classes> [--performance <profile>] \
-                     | --graph-names <model.dlc>";
+                     [--rpc-polling-us <us>] | --graph-names <model.dlc>";
 
 fn main() {
     let Start {
         arguments,
-        performance,
+        power,
         writer,
     } = port::start(NAME, USAGE);
     let (context_path, classes) = match &arguments[..] {
@@ -49,7 +50,7 @@ fn main() {
         },
         _ => port::exit_early(NAME, USAGE, 2),
     };
-    if let Err(message) = run(context_path, classes, performance, &writer) {
+    if let Err(message) = run(context_path, classes, power, &writer) {
         port::log(&writer, LogLevel::Error, &message);
         exit(1);
     }
@@ -58,10 +59,10 @@ fn main() {
 fn run(
     context_path: &str,
     expected_classes: usize,
-    performance: Performance,
+    power: Power,
     writer: &Writer,
 ) -> Result<(), String> {
-    let mut model = port::open_model(context_path, performance, writer)?;
+    let mut model = port::open_model(context_path, power, writer)?;
 
     let Geometry {
         input_width,

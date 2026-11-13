@@ -42,7 +42,7 @@ The Arm builds use its NEON code. An x86-64 host build uses its SIMD code only w
 
 The library the QNN Ports share:
 
-- runs a context binary's first graph on the Hexagon NPU through QNN's HTP backend, under a performance profile's power vote (`--performance <profile>`, `burst` by default);
+- runs a context binary's first graph on the Hexagon NPU through QNN's HTP backend, under a power vote: a performance profile (`--performance <profile>`, `burst` by default) and the RPC polling (`--rpc-polling-us <us>`, 0 by default);
 - times each execution;
 - prints a DLC's graph names (`--graph-names <dlc>`);
 - reads the Ports' command line and requests, and writes their replies (`qnn::port`);
