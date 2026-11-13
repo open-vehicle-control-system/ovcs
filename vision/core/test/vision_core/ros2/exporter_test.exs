@@ -3,7 +3,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   use ExUnit.Case, async: false
 
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
-  alias Ros2Zenoh.FoxgloveMsgs.Msg.ImageAnnotations
+  alias Ros2Zenoh.FoxgloveMsgs.Msg.{CompressedVideo, ImageAnnotations}
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2}
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
@@ -869,6 +869,78 @@ defmodule VisionCore.Ros2.ExporterTest do
         assert_received {:published, "stereo/hq/image_raw/compressed",
                          %CompressedImage{data: ^jpeg}}
       end
+    end
+
+    # A camera :hq of V4L2Single, its view sent as a JPEG and as H.264.
+    defp video_options(exporter_options) do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_jpeg: [from: :view, format: :jpeg],
+        view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      Keyword.put(options(Camera, exporter_options), :config, config)
+    end
+
+    test "reads the H.264 output cameras: videos names, beside the camera's image" do
+      options = video_options(cameras: [videos: [hq: :view_h264]])
+
+      assert Exporter.check(options) == :ok
+
+      assert Exporter.outputs(options) == [
+               {:camera_frame, :hq},
+               {:camera_video, :hq, :view_h264}
+             ]
+    end
+
+    test "refuses a video that is no H.264 output, or one of a camera it does not publish" do
+      assert Exporter.check(video_options(cameras: [videos: [hq: :view_jpeg]])) ==
+               {:error,
+                "its cameras: videos gives the camera :hq the output :view_jpeg, " <>
+                  "which is no H.264 output of it"}
+
+      assert Exporter.check(video_options(cameras: [names: [], videos: [hq: :view_h264]])) ==
+               {:error, "its cameras: videos names the camera :hq, which it does not publish"}
+
+      assert {:error, reason} = Exporter.check(video_options(cameras: [videos: :hq]))
+      assert reason =~ "cameras: videos: is not a keyword list"
+
+      assert Exporter.check(video_options(cameras: [outputs: [hq: :view_h264]])) ==
+               {:error,
+                "its cameras: outputs gives the camera :hq the output :view_h264, " <>
+                  "an H.264 video: give it in videos:"}
+    end
+
+    test "publishes each frame of a camera's video as foxglove_msgs/CompressedVideo" do
+      options = video_options(cameras: [videos: [hq: :view_h264]])
+      {:ok, state} = Exporter.init(options)
+
+      frames =
+        for {h264, capture_ns} <- Enum.with_index([<<0, 0, 0, 1, 0x65>>, <<0, 0, 0, 1, 0x41>>]) do
+          %Frame{
+            label: "hq",
+            frame_id: "hq_optical",
+            output: :view_h264,
+            width: 2028,
+            height: 1520,
+            capture_ns: capture_ns,
+            h264: h264,
+            keyframe?: capture_ns == 0
+          }
+        end
+
+      Enum.reduce(frames, state, fn frame, state ->
+        {:ok, state} = Exporter.handle_output({:camera_video, :hq, :view_h264}, frame, state)
+        state
+      end)
+
+      for %Frame{h264: h264} <- frames do
+        assert_received {:published, "stereo/hq/video",
+                         %CompressedVideo{data: ^h264, format: "h264", frame_id: "hq_optical"}}
+      end
+
+      refute_received {:published, "stereo/hq/image_raw/compressed", _image}
     end
 
     test "draws a camera pipeline's 2D boxes at the detected frame's size when it publishes no image of the camera" do

@@ -5,7 +5,7 @@ defmodule VisionCore.Segmentation.LiveTest do
   alias VisionCore.Outputs
   alias VisionCore.Segmentation.{Live, Pipeline}
 
-  @frame %Frame{label: "hq", width: 1014, height: 760, capture_ns: 0, rgb: <<>>}
+  @frame %Frame{label: "hq", width: 1014, height: 760, capture_ns: 123_456_789, rgb: <<>>}
   @labels %{width: 2, height: 1, data: <<0, 10>>, band: {0, 253, 1014, 507}}
 
   defp publish(name, data) do
@@ -15,7 +15,7 @@ defmodule VisionCore.Segmentation.LiveTest do
     )
   end
 
-  test "hands each subscriber the pipeline's label image, its band and its frame's size" do
+  test "hands each subscriber the pipeline's label image, its band, its frame's size and capture time" do
     start_supervised!({Live, name: :road, max_hz: 1_000})
     :ok = Live.subscribe(:road)
     publish(:road, <<0, 10>>)
@@ -24,6 +24,7 @@ defmodule VisionCore.Segmentation.LiveTest do
 
     assert segmentation == %{
              frame: {1014, 760},
+             capture_ns: 123_456_789,
              band: {0, 253, 1014, 507},
              width: 2,
              height: 1,

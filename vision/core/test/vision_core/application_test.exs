@@ -143,7 +143,8 @@ defmodule VisionCore.ApplicationTest do
       exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
     })
 
-    assert Enum.take(child_ids(VisionCore.Supervisor), 4) == [
+    assert Enum.take(child_ids(VisionCore.Supervisor), 5) == [
+             VisionCore.Video,
              VisionCore.Preview,
              VisionCore.Status,
              VisionCore.Exporters,
@@ -164,7 +165,7 @@ defmodule VisionCore.ApplicationTest do
 
     exporters = Process.whereis(VisionCore.Exporters)
 
-    for name <- [VisionCore.Status, VisionCore.Preview] do
+    for name <- [VisionCore.Status, VisionCore.Preview, VisionCore.Video] do
       pid = Process.whereis(name)
       Process.exit(pid, :kill)
       wait_for_restart(name, pid)

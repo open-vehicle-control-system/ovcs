@@ -8,9 +8,13 @@ defmodule VisionCore.Detection.Live do
   `VisionCore.Pipelines.server(VisionCore.Detection.Live, name)`.
 
   A subscriber (`subscribe/1`) receives `{:vision_detections,
-  detections}` after a detection result, at most `:max_hz` times a
-  second, an empty list included, so the boxes of the last result go
-  away; `VisionCore.Live` holds the latest meanwhile. Each detection is `%{label:, score:, distance_m:, outline:}`, the
+  %{capture_ns:, detections:}}` after a detection result, at most
+  `:max_hz` times a second, an empty list included, so the boxes of the
+  last result go away; `VisionCore.Live` holds the latest meanwhile.
+  `capture_ns` is the capture time of the frame the objects were found
+  on, its `VisionCore.Camera.Frame`'s, so that a client showing the
+  frames draws each result on its frame. Each detection is
+  `%{label:, score:, distance_m:, outline:}`, the
   outline a closed list of `[x, y]` vertices as fractions of the image's
   width and height: the `:outline` the detection pipeline mapped to the
   captured image, which the ROS 2 overlay draws too.
@@ -56,8 +60,10 @@ defmodule VisionCore.Detection.Live do
   @spec max_hz(atom()) :: pos_integer()
   def max_hz(name \\ :detection), do: VisionCore.Live.max_hz(Pipelines.server(__MODULE__, name))
 
-  defp describe({_output, {source, positioned}}),
-    do: {:ok, describe(positioned, image(source))}
+  defp describe({_output, {source, positioned}}) do
+    frame = image(source)
+    {:ok, %{capture_ns: frame.capture_ns, detections: describe(positioned, frame)}}
+  end
 
   defp describe(_message), do: :ignore
 

@@ -6,6 +6,7 @@ use std::io;
 use std::ptr;
 
 use crate::bayer::Layout;
+use crate::encoder::{BufferFormat, DequeuedBuffer, M2mDevice, Stream};
 
 const fn ioc(direction: u64, number: u64, size: u64) -> u64 {
     (direction << 30) | (size << 16) | ((b'V' as u64) << 8) | number
@@ -25,10 +26,24 @@ const VIDIOC_G_CTRL: u64 = ioc(READ_WRITE, 27, 8);
 const VIDIOC_S_CTRL: u64 = ioc(READ_WRITE, 28, 8);
 const VIDIOC_QUERYCTRL: u64 = ioc(READ_WRITE, 36, 68);
 const VIDIOC_G_EXT_CTRLS: u64 = ioc(READ_WRITE, 71, 32);
+const VIDIOC_STREAMOFF: u64 = ioc(WRITE, 19, 4);
+const VIDIOC_S_PARM: u64 = ioc(READ_WRITE, 22, 204);
+const VIDIOC_ENCODER_CMD: u64 = ioc(READ_WRITE, 77, 40);
+const VIDIOC_S_SELECTION: u64 = ioc(READ_WRITE, 95, 64);
 
 const BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
+const BUF_TYPE_VIDEO_OUTPUT: u32 = 2;
 const BUF_TYPE_VIDEO_CAPTURE_MPLANE: u32 = 9;
+const BUF_TYPE_VIDEO_OUTPUT_MPLANE: u32 = 10;
 const CAP_VIDEO_CAPTURE_MPLANE: u32 = 0x0000_1000;
+const CAP_VIDEO_M2M_MPLANE: u32 = 0x0000_4000;
+const FIELD_NONE: u32 = 1;
+const COLORSPACE_SMPTE170M: u32 = 1;
+const YCBCR_ENC_601: u8 = 1;
+const QUANTIZATION_LIM_RANGE: u8 = 2;
+const SEL_TGT_CROP: u32 = 0;
+const ENC_CMD_STOP: u32 = 1;
+const CTRL_FLAG_DISABLED: u32 = 0x0001;
 const CAP_DEVICE_CAPS: u32 = 0x8000_0000;
 const MEMORY_MMAP: u32 = 1;
 /// Cached buffers, synced for the CPU at each dequeue: the default mapping is
@@ -199,6 +214,39 @@ struct ExtControls {
     _reserved: u32,
     _pad: u32,
     controls: *mut ExtControl,
+}
+
+#[repr(C)]
+struct Selection {
+    kind: u32,
+    target: u32,
+    flags: u32,
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    _reserved: [u32; 9],
+}
+
+#[repr(C)]
+struct EncoderCommand {
+    command: u32,
+    flags: u32,
+    _data: [u32; 8],
+}
+
+/// `v4l2_streamparm` holding a `v4l2_outputparm`.
+#[repr(C)]
+struct OutputParameters {
+    kind: u32,
+    capability: u32,
+    output_mode: u32,
+    numerator: u32,
+    denominator: u32,
+    extended_mode: u32,
+    write_buffers: u32,
+    _reserved: [u32; 4],
+    _rest: [u8; 200 - 40],
 }
 
 fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
@@ -618,6 +666,269 @@ impl Drop for Capture {
     }
 }
 
+/// A V4L2 memory-to-memory encoder node, through the multiplanar API, its
+/// buffers mapped.
+pub struct M2mNode {
+    node: Node,
+    raw: Vec<Mapping>,
+    coded: Vec<Mapping>,
+}
+
+/// A buffer mapped into memory, unmapped on drop.
+struct Mapping {
+    address: *mut libc::c_void,
+    length: usize,
+}
+
+impl Drop for Mapping {
+    fn drop(&mut self) {
+        // SAFETY: the mapping was made with this address and length.
+        unsafe { libc::munmap(self.address, self.length) };
+    }
+}
+
+// SAFETY: the mappings are owned by the node and reached only through it.
+unsafe impl Send for M2mNode {}
+
+fn buffer_kind(stream: Stream) -> u32 {
+    match stream {
+        Stream::Raw => BUF_TYPE_VIDEO_OUTPUT_MPLANE,
+        Stream::Coded => BUF_TYPE_VIDEO_CAPTURE_MPLANE,
+    }
+}
+
+impl M2mNode {
+    /// Opens the memory-to-memory node whose sysfs name is `name`.
+    pub fn open_named(name: &str) -> io::Result<M2mNode> {
+        let node = Node::open(&node_named(name)?)?;
+        let mut capability: Capability = zeroed();
+        xioctl(node.fd, VIDIOC_QUERYCAP, &mut capability)?;
+        if capability.device_caps & CAP_VIDEO_M2M_MPLANE == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("{name} is no multiplanar memory-to-memory device"),
+            ));
+        }
+        Ok(M2mNode {
+            node,
+            raw: Vec::new(),
+            coded: Vec::new(),
+        })
+    }
+
+    /// Runs a buffer `request` on buffer `index` of `stream`, its plane
+    /// filled by `prepare`; returns both as the driver filled them.
+    fn buffer_ioctl(
+        &self,
+        request: u64,
+        stream: Stream,
+        index: u32,
+        prepare: impl FnOnce(&mut Buffer, &mut Plane),
+    ) -> io::Result<(Buffer, Plane)> {
+        let mut plane: Plane = zeroed();
+        let mut buffer: Buffer = zeroed();
+        buffer.index = index;
+        buffer.kind = buffer_kind(stream);
+        buffer.memory = MEMORY_MMAP;
+        prepare(&mut buffer, &mut plane);
+        buffer.offset = &mut plane as *mut Plane as u64;
+        buffer.length = 1;
+        xioctl(self.node.fd, request, &mut buffer)?;
+        Ok((buffer, plane))
+    }
+}
+
+impl M2mDevice for M2mNode {
+    fn set_format(
+        &mut self,
+        stream: Stream,
+        pixel_format: u32,
+        width: u32,
+        height: u32,
+    ) -> io::Result<BufferFormat> {
+        let mut format: FormatMplane = zeroed();
+        format.kind = buffer_kind(stream);
+        format.pix.width = width;
+        format.pix.height = height;
+        format.pix.pixelformat = pixel_format;
+        format.pix.field = FIELD_NONE;
+        format.pix.num_planes = 1;
+        if stream == Stream::Raw {
+            format.pix.colorspace = COLORSPACE_SMPTE170M;
+            format.pix.ycbcr_enc = YCBCR_ENC_601;
+            format.pix.quantization = QUANTIZATION_LIM_RANGE;
+        }
+        xioctl(self.node.fd, VIDIOC_S_FMT, &mut format)?;
+        let pix = &format.pix;
+        Ok(BufferFormat {
+            width: pix.width,
+            height: pix.height,
+            bytes_per_line: pix.plane_fmt[0].bytesperline,
+            size: pix.plane_fmt[0].sizeimage,
+        })
+    }
+
+    fn set_crop(&mut self, width: u32, height: u32) -> io::Result<(u32, u32)> {
+        let mut selection: Selection = zeroed();
+        selection.kind = BUF_TYPE_VIDEO_OUTPUT;
+        selection.target = SEL_TGT_CROP;
+        selection.width = width;
+        selection.height = height;
+        xioctl(self.node.fd, VIDIOC_S_SELECTION, &mut selection)?;
+        Ok((selection.width, selection.height))
+    }
+
+    fn set_frame_rate(&mut self, fps: u32) -> io::Result<()> {
+        let mut parameters: OutputParameters = zeroed();
+        parameters.kind = BUF_TYPE_VIDEO_OUTPUT_MPLANE;
+        parameters.numerator = 1;
+        parameters.denominator = fps;
+        xioctl(self.node.fd, VIDIOC_S_PARM, &mut parameters)
+    }
+
+    fn has_control(&self, id: u32) -> bool {
+        let mut query: QueryControl = zeroed();
+        query.id = id;
+        xioctl(self.node.fd, VIDIOC_QUERYCTRL, &mut query).is_ok()
+            && query.flags & CTRL_FLAG_DISABLED == 0
+    }
+
+    fn set_control(&mut self, id: u32, value: i32) -> io::Result<()> {
+        self.node.set_control(id, value)
+    }
+
+    fn request_buffers(&mut self, stream: Stream, count: u32) -> io::Result<u32> {
+        let mut request = RequestBuffers {
+            count,
+            kind: buffer_kind(stream),
+            memory: MEMORY_MMAP,
+            capabilities: 0,
+            flags: 0,
+            _reserved: [0; 3],
+        };
+        xioctl(self.node.fd, VIDIOC_REQBUFS, &mut request)?;
+        let protection = match stream {
+            Stream::Raw => libc::PROT_READ | libc::PROT_WRITE,
+            Stream::Coded => libc::PROT_READ,
+        };
+        let mut mappings = Vec::with_capacity(request.count as usize);
+        for index in 0..request.count {
+            let (_, plane) = self.buffer_ioctl(VIDIOC_QUERYBUF, stream, index, |_, _| {})?;
+            // SAFETY: maps the driver's buffer at the offset and length it reported.
+            let address = unsafe {
+                libc::mmap(
+                    ptr::null_mut(),
+                    plane.length as usize,
+                    protection,
+                    libc::MAP_SHARED,
+                    self.node.fd,
+                    plane.mem_offset as libc::off_t,
+                )
+            };
+            if address == libc::MAP_FAILED {
+                return Err(io::Error::last_os_error());
+            }
+            mappings.push(Mapping {
+                address,
+                length: plane.length as usize,
+            });
+        }
+        match stream {
+            Stream::Raw => self.raw = mappings,
+            Stream::Coded => self.coded = mappings,
+        }
+        Ok(request.count)
+    }
+
+    fn raw_buffer(&mut self, index: u32) -> &mut [u8] {
+        let mapping = &self.raw[index as usize];
+        // SAFETY: a writable mapping that lives as long as `self`, which the
+        // driver does not touch while the buffer is dequeued.
+        unsafe { std::slice::from_raw_parts_mut(mapping.address as *mut u8, mapping.length) }
+    }
+
+    fn coded_buffer(&self, index: u32) -> &[u8] {
+        let mapping = &self.coded[index as usize];
+        // SAFETY: a mapping that lives as long as `self`, which the driver
+        // does not write while the buffer is dequeued.
+        unsafe { std::slice::from_raw_parts(mapping.address as *const u8, mapping.length) }
+    }
+
+    fn queue(
+        &mut self,
+        stream: Stream,
+        index: u32,
+        bytes_used: usize,
+        timestamp_ns: i64,
+    ) -> io::Result<()> {
+        let length = match stream {
+            Stream::Raw => self.raw[index as usize].length,
+            Stream::Coded => self.coded[index as usize].length,
+        };
+        self.buffer_ioctl(VIDIOC_QBUF, stream, index, |buffer, plane| {
+            buffer.field = FIELD_NONE;
+            buffer.tv_sec = timestamp_ns.div_euclid(1_000_000_000);
+            buffer.tv_usec = timestamp_ns.rem_euclid(1_000_000_000) / 1_000;
+            plane.bytesused = bytes_used as u32;
+            plane.length = length as u32;
+        })
+        .map(|_| ())
+    }
+
+    fn dequeue(&mut self, stream: Stream) -> io::Result<Option<DequeuedBuffer>> {
+        match self.buffer_ioctl(VIDIOC_DQBUF, stream, 0, |_, _| {}) {
+            Ok((buffer, plane)) => Ok(Some(DequeuedBuffer {
+                index: buffer.index,
+                bytes_used: plane.bytesused as usize,
+                data_offset: plane.data_offset as usize,
+                flags: buffer.flags,
+                timestamp_ns: buffer.tv_sec * 1_000_000_000 + buffer.tv_usec * 1_000,
+            })),
+            Err(error) if error.raw_os_error() == Some(libc::EAGAIN) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn wait(&mut self, stream: Stream, timeout: std::time::Duration) -> io::Result<()> {
+        let mut polled = libc::pollfd {
+            fd: self.node.fd,
+            events: match stream {
+                Stream::Raw => libc::POLLOUT,
+                Stream::Coded => libc::POLLIN,
+            },
+            revents: 0,
+        };
+        let timeout_ms = timeout.as_millis().clamp(1, i32::MAX as u128) as i32;
+        // SAFETY: one valid pollfd.
+        if unsafe { libc::poll(&mut polled, 1, timeout_ms) } < 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(libc::EINTR) {
+                return Err(error);
+            }
+        }
+        if polled.revents & libc::POLLERR != 0 {
+            return Err(io::Error::other("the encoder's queues stopped"));
+        }
+        Ok(())
+    }
+
+    fn stream_on(&mut self, stream: Stream) -> io::Result<()> {
+        let mut kind = buffer_kind(stream) as i32;
+        xioctl(self.node.fd, VIDIOC_STREAMON, &mut kind)
+    }
+
+    fn stream_off(&mut self, stream: Stream) -> io::Result<()> {
+        let mut kind = buffer_kind(stream) as i32;
+        xioctl(self.node.fd, VIDIOC_STREAMOFF, &mut kind)
+    }
+
+    fn stop_encoding(&mut self) -> io::Result<()> {
+        let mut command: EncoderCommand = zeroed();
+        command.command = ENC_CMD_STOP;
+        xioctl(self.node.fd, VIDIOC_ENCODER_CMD, &mut command)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -631,6 +942,9 @@ mod tests {
         assert_eq!(std::mem::size_of::<Plane>(), 64);
         assert_eq!(std::mem::size_of::<Buffer>(), 88);
         assert_eq!(std::mem::size_of::<FormatDescription>(), 64);
+        assert_eq!(std::mem::size_of::<Selection>(), 64);
+        assert_eq!(std::mem::size_of::<EncoderCommand>(), 40);
+        assert_eq!(std::mem::size_of::<OutputParameters>(), 204);
     }
 
     #[test]

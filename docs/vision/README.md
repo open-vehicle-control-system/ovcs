@@ -144,11 +144,22 @@ The image's hostname is `<vehicle>-vision` and the node joins the Erlang mesh as
 
 ## Dashboard and API
 
-The dashboard and the API are served from the board on port 4100:
+The dashboard and the API are served from the board over HTTPS:
 
 ```text
-http://<vehicle>-vision.local:4100
+https://<vehicle>-vision.local
 ```
+
+The certificate is self-signed: the unit makes it at its first start and keeps it in `/data/vision_api/`, so it stays the same across reboots and firmware updates. Accept it in your browser the first time. The dashboard needs HTTPS to decode a camera's H.264 video. Plain HTTP on port 80 and on port 4100, `http://<vehicle>-vision.local:4100`, redirects to the same page over HTTPS.
+
+A program checks the certificate against a copy of it:
+
+```sh
+scp <vehicle>-vision.local:/data/vision_api/certificate.pem vision.pem
+curl --cacert vision.pem https://<vehicle>-vision.local/api/firmware
+```
+
+The command prints the firmware the unit runs. The certificate names the unit's hostname, so reach it by that name, not by its address.
 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 

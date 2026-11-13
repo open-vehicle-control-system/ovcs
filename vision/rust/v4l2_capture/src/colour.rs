@@ -1362,6 +1362,7 @@ mod tests {
             Images {
                 rgb,
                 averaged: None,
+                nv12: None,
             },
             buffers,
         );
@@ -1382,6 +1383,7 @@ mod tests {
             Images {
                 rgb,
                 averaged: None,
+                nv12: None,
             },
             buffers,
         );
@@ -1408,6 +1410,7 @@ mod tests {
             Images {
                 rgb: &mut Vec::new(),
                 averaged: None,
+                nv12: None,
             },
             buffers,
         )
@@ -1445,6 +1448,7 @@ mod tests {
             Images {
                 rgb: &mut Vec::new(),
                 averaged: None,
+                nv12: None,
             },
             &mut Buffers::default(),
         )

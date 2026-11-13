@@ -309,6 +309,27 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
                "(send: false)"
   end
 
+  test "refuses an H.264 output of its camera, a video", %{tmp_dir: dir} do
+    config =
+      update_in(outputs_config(dir).components, fn [{:camera, camera}] ->
+        video = [from: :view, format: :h264, bitrate_kbps: 1_000, keyframe_interval: 30]
+        [{:camera, update_in(camera[:outputs], &(&1 ++ [view_h264: video]))}]
+      end)
+
+    assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+             start_supervised(
+               {Pipeline,
+                name: :hq_people,
+                backend: Stub,
+                source: {:camera, :hq, :view_h264},
+                config: config}
+             )
+
+    assert message ==
+             "its source names the output :view_h264 of the camera :hq, an H.264 video, " <>
+               "not an image"
+  end
+
   # The first call lets the frame's boxes reach the pipeline, the second has them handled.
   defp await_boxes do
     _submitted = :sys.get_state(VisionCore.Pipelines.server(Pipeline, :hq_people))

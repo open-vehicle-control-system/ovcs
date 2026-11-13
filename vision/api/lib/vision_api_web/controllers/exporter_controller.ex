@@ -6,7 +6,9 @@ defmodule VisionApiWeb.ExporterController do
   carry, each with the most values a channel carries a second: the
   previews' rate (`VisionCore.Preview.options/0`) for the camera frames
   and each pair's depth, `{:camera_frame, name}` for each camera of its
-  own, in the order of the configuration's cameras, and then each
+  own, in the order of the configuration's cameras, then
+  `{:camera_video, name, output}` for each camera video
+  `VisionCore.Video` relays, every frame, unbounded, and then each
   detection pipeline's detections, `{:detections, name}`, in the order
   of the configuration's detectors, each at
   its pipeline's `VisionCore.Detection.Live.max_hz/1` and with its
@@ -35,7 +37,7 @@ defmodule VisionApiWeb.ExporterController do
       status: {:ok, "Answering"},
       outputs:
         Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++
-          detection_outputs(config) ++ segmentation_outputs(config),
+          video_outputs() ++ detection_outputs(config) ++ segmentation_outputs(config),
       actions: []
     }
   end
@@ -44,6 +46,11 @@ defmodule VisionApiWeb.ExporterController do
 
   defp camera_outputs(config),
     do: for({output, _key} <- VisionCore.Camera.Unit.outputs(config), do: output)
+
+  defp video_outputs do
+    for {camera, output} <- call_or_nil(&VisionCore.Video.videos/0) || [],
+        do: %{output: {:camera_video, camera, output}, max_hz: nil}
+  end
 
   defp detection_outputs(nil), do: []
 

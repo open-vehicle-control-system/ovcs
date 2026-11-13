@@ -1,13 +1,15 @@
 ---
 title: Vision API
-description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTP.
+description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTPS.
 ---
 
-The vision unit serves its API next to the dashboard, on port 4100 (see [Vision unit](./README.md#dashboard-and-api)):
+The vision unit serves its API next to the dashboard, over HTTPS:
 
 ```text
-http://<vehicle>-vision.local:4100
+https://<vehicle>-vision.local
 ```
+
+Its certificate is self-signed. The examples check it against a copy, `vision.pem`, as [Dashboard and API](./README.md#dashboard-and-api) shows.
 
 Everything the dashboard shows comes from it:
 
@@ -23,7 +25,7 @@ Every answer under `/api` is `application/vnd.api+json`. A write sends its docum
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 
 ```sh
-curl -X PATCH http://<vehicle>-vision.local:4100/api/parameters/stereo.disparity.p1 \
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/parameters/stereo.disparity.p1 \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameters", "id": "stereo.disparity.p1", "attributes": {"value": 500}}}'
 ```
@@ -127,7 +129,7 @@ A component, such as the cameras, has the role `source` and no `compute`. [Where
 A change is unsaved until you save it, as on the dashboard. Unsaved changes live on the unit, shared by every client, and a reboot drops them. Set a value with `PATCH`:
 
 ```sh
-curl -X PATCH http://<vehicle>-vision.local:4100/api/parameters/stereo.disparity.p1 \
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/parameters/stereo.disparity.p1 \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameters", "id": "stereo.disparity.p1", "attributes": {"value": 10}}}'
 ```
@@ -141,7 +143,7 @@ The answer is the parameter with `value` 10 and `state` `unsaved`. A live parame
 Then save, discard or reset. Each is a `POST` that answers a 201 with the ids of the parameters it touched:
 
 ```sh
-curl -X POST http://<vehicle>-vision.local:4100/api/parameter-saves \
+curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/parameter-saves \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameter-saves"}}'
 ```
@@ -270,7 +272,8 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
           {"name": "camera_frame:right", "maxHz": null},
           {"name": "detections:objects", "maxHz": null},
           {"name": "segmentation:scene", "maxHz": null},
-          {"name": "camera_frame:center", "maxHz": null}
+          {"name": "camera_frame:center:half_jpeg", "maxHz": null},
+          {"name": "camera_video:center:full_h264", "maxHz": null}
         ],
         "actions": []
       }
@@ -297,7 +300,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
+The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own that sends an image, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:half_jpeg`. One that reads a camera's H.264 video lists it as `camera_video:<name>:<output>`, such as `camera_video:center:full_h264`, its `maxHz` `null`.
 
 A unit lists each detection pipeline's output: `detections:<name>` for the pipeline `<name>`, `detections:detection` for a detector without a name. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
 
@@ -310,7 +313,7 @@ An action is listed with its `name`, a `label` and a `description`. `POST /api/e
 This request runs the `export` action of an exporter whose id is `debug`, which answers a zip file ([Tune with exports](./tuning.md)), and saves it:
 
 ```sh
-curl --fail-with-body -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
+curl --cacert vision.pem --fail-with-body -X POST https://<vehicle>-vision.local/api/exporters/debug/actions/export \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "exporter-actions"}}' \
   -o export.zip

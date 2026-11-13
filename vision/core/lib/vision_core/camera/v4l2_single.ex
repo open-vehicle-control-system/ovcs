@@ -17,7 +17,10 @@ defmodule VisionCore.Camera.V4L2Single do
   with `format: :jpeg` encoded from it by the program with libjpeg-turbo
   on a thread of its own, its frames carrying the JPEG (`%Frame{jpeg:
   ...}`), which `VisionCore.Camera.Frame.to_jpeg/2` hands its consumers
-  as it is. Each sent output's frames are published under
+  as it is, or with `format: :h264` converted to NV12 and encoded by the
+  program on the board's V4L2 video encoder, on a thread of its own, its
+  frames carrying the stream's frames (`%Frame{h264: ..., keyframe?:
+  ...}`). Each sent output's frames are published under
   `{:camera_frame, name, output}`, `name` the instance's registered name,
   each frame carrying its output's name as its `:output` and the size its
   record gives.
@@ -34,8 +37,10 @@ defmodule VisionCore.Camera.V4L2Single do
       bytes   rgb                 # width * height * 3, R, G, B
 
   or, for a JPEG output, the same header under tag 8, OUTPUT_JPEG, then
-  the JPEG of the `width` x `height` image, one record per sent output
-  per frame, in the order of their indices, or the log
+  the JPEG of the `width` x `height` image, or, for an H.264 output, the
+  same header under tag 9, OUTPUT_H264, then a byte of flags, bit 0 set
+  on a key frame, then the frame's NAL units in Annex B form; one record
+  per sent output per frame, in the order of their indices, or the log
   and metadata records `VisionCore.Camera.V4L2Pair` reads. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
@@ -75,13 +80,16 @@ defmodule VisionCore.Camera.V4L2Single do
       {width, height}, processor: :cpu]` or `[resolution: {width, height},
       from: output]`, a whole fraction of that output's size, its size by
       default, which `format: :jpeg` and a `:quality` send as a JPEG,
-      and `send: false` makes only for the outputs made from it
-      (`VisionCore.Camera.Output`); the first sent is the camera's
-      default. Passed as `--output cpu:<width>x<height>`, `--output
-      from:<index>:<width>x<height>` or `--output
-      from:<index>:<width>x<height>:jpeg:<quality>`, in the order of
-      their indices, an unsent one with `:unsent` after it. Outputs it
-      cannot make stop the camera at start, saying why.
+      `format: :h264`, a `:bitrate_kbps` and a `:keyframe_interval` as
+      H.264, and `send: false` makes only for the outputs made from it
+      (`VisionCore.Camera.Output`); the first sent image output is the
+      camera's default. Passed as `--output cpu:<width>x<height>`,
+      `--output from:<index>:<width>x<height>`, `--output
+      from:<index>:<width>x<height>:jpeg:<quality>` or `--output
+      from:<index>:<width>x<height>:h264:<bitrate_kbps>:<keyframe_interval>`,
+      in the order of their indices, an unsent one with `:unsent` after
+      it. Outputs it cannot make stop the camera at start, saying why;
+      the program stops at start on a board without a video encoder.
     * `:output` (`:full`) — the one-output shorthand, without
       `:outputs`: `:full`, the sensor mode's size, or `:half`, half of it
       in each axis, made by `:cpu` and named as the value.
@@ -106,6 +114,8 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @output_frame_tag 7
   @output_jpeg_tag 8
+  @output_h264_tag 9
+  @key_frame_flag 1
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
   # How long CAMSS and the sensor may take to register after the VM starts.
@@ -243,8 +253,25 @@ defmodule VisionCore.Camera.V4L2Single do
      }}
   end
 
-  def parse_record(<<tag, _rest::binary>>) when tag in [@output_frame_tag, @output_jpeg_tag],
-    do: {:error, :malformed_record}
+  def parse_record(
+        <<@output_h264_tag, output, width::little-16, height::little-16,
+          kernel_ns::little-signed-64, flags, h264::binary>>
+      )
+      when byte_size(h264) > 0 do
+    {:frame, output,
+     %Frame{
+       label: nil,
+       width: width,
+       height: height,
+       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
+       h264: h264,
+       keyframe?: Bitwise.band(flags, @key_frame_flag) != 0
+     }}
+  end
+
+  def parse_record(<<tag, _rest::binary>>)
+      when tag in [@output_frame_tag, @output_jpeg_tag, @output_h264_tag],
+      do: {:error, :malformed_record}
 
   def parse_record(record), do: V4L2Capture.parse_record(record)
 
@@ -294,8 +321,8 @@ defmodule VisionCore.Camera.V4L2Single do
   The camera's outputs from `opts`: its `:outputs`, or the one output
   `:output` names, `:full` by default; `{:error, message}` for outputs it
   cannot make (`VisionCore.Camera.Output.resolve/3`). Its one processor,
-  `:cpu`, makes the sensor mode's size or half of it; it sends RGB and
-  JPEG outputs.
+  `:cpu`, makes the sensor mode's size or half of it; it sends RGB, JPEG
+  and H.264 outputs.
   """
   @impl VisionCore.Camera
   def outputs(opts) do
@@ -303,7 +330,7 @@ defmodule VisionCore.Camera.V4L2Single do
       {{:ok, outputs}, _output} ->
         if Keyword.has_key?(opts, :output),
           do: {:error, ":output is the shorthand of one output: give :outputs or :output"},
-          else: Output.resolve(outputs, processors(opts), formats: [:rgb, :jpeg])
+          else: Output.resolve(outputs, processors(opts), formats: [:rgb, :jpeg, :h264])
 
       {:error, output} when output in [:full, :half] ->
         Output.resolve(
@@ -380,6 +407,11 @@ defmodule VisionCore.Camera.V4L2Single do
 
   defp output_argument(%Output{from: from, format: :jpeg} = output, indices),
     do: "from:#{indices[from]}:#{output.width}x#{output.height}:jpeg:#{output.quality}"
+
+  defp output_argument(%Output{from: from, format: :h264} = output, indices),
+    do:
+      "from:#{indices[from]}:#{output.width}x#{output.height}:h264:" <>
+        "#{output.bitrate_kbps}:#{output.keyframe_interval}"
 
   defp output_argument(%Output{from: from} = output, indices),
     do: "from:#{indices[from]}:#{output.width}x#{output.height}"

@@ -48,6 +48,18 @@ defmodule VisionApiWeb.DetectionChannelTest do
                detection
     end
 
+    test "pushes each result with its frame's capture time, in microseconds" do
+      {:ok, _reply, _socket} = join()
+      frame = %{pair().left_frame | capture_ns: -1_234_567_890}
+
+      GenServer.cast(
+        Pipelines.server(Live, :detection),
+        {{:detections, :detection}, {%{pair() | left_frame: frame}, []}}
+      )
+
+      assert_push "detections", %{captureUs: -1_234_567, detections: []}
+    end
+
     test "pushes its results on detections:<name> only" do
       {:ok, _reply, _socket} = join()
       {:ok, _reply, _socket} = join("detections:road_signs")

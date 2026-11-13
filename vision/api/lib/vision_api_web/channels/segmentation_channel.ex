@@ -4,10 +4,12 @@ defmodule VisionApiWeb.SegmentationChannel do
   `"segmentation:<name>"`, as `VisionCore.Segmentation.Live` hands them
   on, at most its `:max_hz` a second, each a `"segmentation"` event
   whose binary payload is eight little-endian unsigned 16-bit integers,
-  then the label grid:
+  the capture time of the frame it was segmented from, in microseconds
+  on the unit's monotonic clock as a little-endian signed 64-bit
+  integer, then the label grid:
 
       frame_width, frame_height, band_x, band_y, band_width, band_height,
-      grid_width, grid_height, grid_width * grid_height class ids
+      grid_width, grid_height, capture_us, grid_width * grid_height class ids
 
   The band is the rectangle of the camera's frame, in its pixels, that
   the grid covers; each class id is one byte, row by row.
@@ -87,6 +89,6 @@ defmodule VisionApiWeb.SegmentationChannel do
   defp payload(%{frame: {frame_width, frame_height}, band: {x, y, w, h}} = segmentation) do
     <<frame_width::little-16, frame_height::little-16, x::little-16, y::little-16, w::little-16,
       h::little-16, segmentation.width::little-16, segmentation.height::little-16,
-      segmentation.data::binary>>
+      div(segmentation.capture_ns, 1_000)::little-signed-64, segmentation.data::binary>>
   end
 end

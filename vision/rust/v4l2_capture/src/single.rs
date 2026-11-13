@@ -1,7 +1,8 @@
 //! A single colour camera's frame loop: captures its raw RGGB frames, makes
 //! each output's image of them (`plan`), steers the exposure and the white
-//! balance from what they measure, and writes one OUTPUT_FRAME or OUTPUT_JPEG
-//! record per sent output per frame on stdout, in the outputs' order.
+//! balance from what they measure, and writes one OUTPUT_FRAME, OUTPUT_JPEG
+//! or OUTPUT_H264 record per sent output per frame on stdout, in the
+//! outputs' order.
 
 use std::fs::File;
 use std::io;
@@ -9,12 +10,15 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
-use framing::{log_record, metadata_record, LogLevel, Writer};
+use framing::{log_record, metadata_record, output_h264_header, LogLevel, Writer};
 
-use crate::arguments::{OutputSpec, SingleArguments};
+use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
+use crate::cpus;
+use crate::encoder::{Encoder, H264Settings, M2mEncoder};
+use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
-use crate::plan::Plan;
+use crate::plan::{Plan, Sent};
 use crate::processor::Development;
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
@@ -33,7 +37,17 @@ pub fn run(
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.sensor_width, arguments.sensor_height);
+    // Before any thread starts, so that every thread inherits the CPUs.
+    match cpus::avoid_slowest() {
+        Ok(Some(cpus)) => log(LogLevel::Info, &format!("running on CPUs {cpus:?}")),
+        Ok(None) => {}
+        Err(error) => log(
+            LogLevel::Warning,
+            &format!("running on every CPU, the slowest kept: {error}"),
+        ),
+    }
     let model = SensorModel::for_sensor(&arguments.camera.sensor);
+    let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
 
@@ -83,9 +97,50 @@ pub fn run(
         frame_us,
         settings,
         statistics_every: Duration::from_secs(STATISTICS_EVERY_S),
+        encoders,
     };
     let mut input = input::unbuffered(io::stdin().as_fd())?;
     capture(setup, &frames, &set_exposure, &mut input, writer)
+}
+
+/// The sysfs name of the video encoder node: Qualcomm's Iris, on the VENTUNO Q.
+const VIDEO_ENCODER: &str = "qcom-iris-encoder";
+
+/// An encoder for each output of `arguments` sent as H.264, in their order,
+/// started at the camera's frame rate.
+fn start_encoders(
+    arguments: &SingleArguments,
+    log: &dyn Fn(LogLevel, &str),
+) -> io::Result<Vec<Box<dyn Encoder>>> {
+    let mut encoders: Vec<Box<dyn Encoder>> = Vec::new();
+    for (index, spec) in arguments.outputs.iter().enumerate() {
+        let Format::H264 {
+            bitrate_kbps,
+            keyframe_interval,
+        } = spec.format
+        else {
+            continue;
+        };
+        let settings = H264Settings {
+            width: spec.width,
+            height: spec.height,
+            bitrate_kbps,
+            keyframe_interval,
+            fps: arguments.fps,
+        };
+        let encoder = v4l2::M2mNode::open_named(VIDEO_ENCODER)
+            .and_then(|node| M2mEncoder::start(node, &settings))
+            .map_err(|error| {
+                let message = format!("output {index}: H.264 on {VIDEO_ENCODER}: {error}");
+                io::Error::new(error.kind(), message)
+            })?;
+        log(
+            LogLevel::Info,
+            &format!("output {index}: H.264 {settings:?} from {encoder}"),
+        );
+        encoders.push(Box::new(encoder));
+    }
+    Ok(encoders)
 }
 
 /// The record telling the host the exposure and gain just applied, stamped
@@ -161,38 +216,54 @@ struct Setup {
     settings: ColourSettings,
     /// How often the statistics are logged.
     statistics_every: Duration,
+    /// The encoder of each output sent as H.264, in their order.
+    encoders: Vec<Box<dyn Encoder>>,
 }
 
 /// Converts the frames of `frames` as `setup` says and writes them to
 /// `records`, each on a writer thread while the next one converts, its
-/// JPEG outputs encoded on an encoder thread while the writer writes its
-/// other outputs, steering the sensor's exposure through `set_exposure`
+/// JPEG outputs encoded on an encoder thread and its H.264 outputs on
+/// another while the writer writes its other outputs, steering the sensor's exposure through `set_exposure`
 /// and applying the settings `input` sends, until `input` closes. The
 /// records keep the order they are sent in.
 fn capture(
-    setup: Setup,
+    mut setup: Setup,
     frames: &impl Frames,
     set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
     input: &mut File,
     records: &impl Records,
 ) -> io::Result<()> {
-    let plan = Plan::new(&setup.outputs, setup.model);
+    let encoders = std::mem::take(&mut setup.encoders);
+    let layouts: Vec<_> = encoders.iter().map(|encoder| encoder.layout()).collect();
+    let plan = Plan::new(&setup.outputs, setup.model, &layouts);
     let jpeg_outputs = plan.jpeg_outputs();
-    let jpeg_slots = plan.jpeg_slots();
+    let mut video_outputs: Vec<(usize, Box<dyn Encoder>)> =
+        plan.h264_outputs().into_iter().zip(encoders).collect();
     std::thread::scope(|scope| {
         let (sender, queued) = mpsc::channel();
         let (written, images) = mpsc::channel();
         let (to_encode, frames_to_encode) = mpsc::channel();
         let (encoded_sender, encoded) = mpsc::channel();
-        let encoder = (!jpeg_outputs.is_empty()).then(|| {
+        let (to_video, frames_to_video) = mpsc::channel();
+        let (video_sender, video) = mpsc::channel();
+        let jpeg_encoder = (!jpeg_outputs.is_empty()).then(|| {
             scope
                 .spawn(move || jpeg::encode_frames(&jpeg_outputs, frames_to_encode, encoded_sender))
         });
-        let writer =
-            scope.spawn(move || write_records(records, &jpeg_slots, queued, encoded, written));
+        let video_encoder = (!video_outputs.is_empty()).then(|| {
+            scope.spawn(move || {
+                h264::encode_frames(&mut video_outputs, frames_to_video, video_sender)
+            })
+        });
+        let encodings = Encodings {
+            jpegs: jpeg_encoder.is_some().then_some(encoded),
+            video: video_encoder.is_some().then_some(video),
+        };
+        let writer = scope.spawn(move || write_records(records, encodings, queued, written));
         let queue = Queue {
             records: sender,
-            to_encode: encoder.is_some().then_some(to_encode),
+            to_encode: jpeg_encoder.is_some().then_some(to_encode),
+            to_video: video_encoder.is_some().then_some(to_video),
             images,
         };
         let converted = convert_frames(setup, plan, frames, set_exposure, input, &queue);
@@ -203,9 +274,10 @@ fn capture(
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         };
         let written = joined(writer);
-        let encoded = encoder.map_or(Ok(()), joined);
+        let encoded = jpeg_encoder.map_or(Ok(()), joined);
+        let video = video_encoder.map_or(Ok(()), joined);
         // After a failed encode or write the others' errors only say that thread stopped.
-        encoded.and(written).and(converted)
+        encoded.and(video).and(written).and(converted)
     })
 }
 
@@ -213,66 +285,108 @@ fn capture(
 type FrameImages = Arc<Vec<Vec<u8>>>;
 
 /// A record for the writer thread: a frame's images, one per output, with
-/// the header of each output sent and that output's index, or another
+/// what is written of each output sent and that output's index, or another
 /// record whole.
 enum Record {
-    Frame(Vec<(usize, [u8; 14])>, FrameImages),
+    Frame(Vec<(usize, Sent)>, FrameImages),
     Other(Vec<u8>),
 }
 
 /// A frame's images back from the writer thread, what writing them took,
-/// and what encoding its JPEGs took when it has some.
+/// what encoding its JPEGs took when it has some, and its H.264 frames.
 struct Written {
     images: Vec<Vec<u8>>,
     write: Duration,
     encode: Option<Duration>,
+    video: VideoWritten,
+}
+
+/// H.264 frames written: how many, what encoding them took, and their bytes.
+#[derive(Default)]
+struct VideoWritten {
+    frames: u64,
+    encode: Duration,
+    bytes: u64,
+}
+
+/// What each frame's encoder threads give, from those there are.
+struct Encodings {
+    jpegs: Option<mpsc::Receiver<Encoded>>,
+    video: Option<mpsc::Receiver<EncodedVideo>>,
 }
 
 /// Writes each record of `queued` to `records`, a frame's sent outputs one
-/// record each, a JPEG one from `encoded`, then hands its images to `written`.
+/// record each, its JPEGs and H.264 frames from `encodings`, then hands its
+/// images to `written`.
 fn write_records(
     records: &impl Records,
-    jpeg_slots: &[Option<usize>],
+    encodings: Encodings,
     queued: mpsc::Receiver<Record>,
-    encoded: mpsc::Receiver<Encoded>,
     written: mpsc::Sender<Written>,
 ) -> io::Result<()> {
     for record in queued {
         match record {
-            Record::Frame(headers, images) => {
-                let mut jpegs = None;
-                let receive_jpegs = |jpegs: &mut Option<Encoded>| -> io::Result<()> {
-                    if jpegs.is_none() {
-                        *jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
-                    }
+            Record::Frame(sent, images) => {
+                let (mut jpegs, mut video) = (None, None);
+                let mut write = Duration::ZERO;
+                let mut write_timed = |parts: &[&[u8]]| -> io::Result<()> {
+                    let writing = Instant::now();
+                    records.write(parts)?;
+                    write += writing.elapsed();
                     Ok(())
                 };
-                let mut write = Duration::ZERO;
-                for &(index, ref header) in &headers {
-                    if jpeg_slots[index].is_some() {
-                        receive_jpegs(&mut jpegs)?;
+                for &(index, ref sent) in &sent {
+                    match *sent {
+                        Sent::Image(ref header) => write_timed(&[header, &images[index]])?,
+                        Sent::Jpeg { ref header, slot } => {
+                            let encoded = received(&mut jpegs, &encodings.jpegs)?;
+                            write_timed(&[header, &encoded.jpegs[slot]])?
+                        }
+                        Sent::H264 {
+                            slot,
+                            width,
+                            height,
+                        } => {
+                            let encoded = received(&mut video, &encodings.video)?;
+                            if let Some(frame) = &encoded.frames[slot] {
+                                let header = output_h264_header(
+                                    index as u8,
+                                    width,
+                                    height,
+                                    frame.capture_ns,
+                                    frame.key_frame,
+                                );
+                                write_timed(&[&header, &frame.bytes])?;
+                            }
+                        }
                     }
-                    let body = match (jpeg_slots[index], &jpegs) {
-                        (Some(slot), Some(encoded)) => &encoded.jpegs[slot],
-                        _ => &images[index],
-                    };
-                    let writing = Instant::now();
-                    records.write(&[header, body])?;
-                    write += writing.elapsed();
                 }
-                // The encoder holds the images until the frame's JPEGs are done.
-                if jpeg_slots.iter().any(Option::is_some) {
-                    receive_jpegs(&mut jpegs)?;
+                // The encoders hold the images until the frame's encodes are done.
+                if encodings.jpegs.is_some() {
+                    received(&mut jpegs, &encodings.jpegs)?;
+                }
+                if encodings.video.is_some() {
+                    received(&mut video, &encodings.video)?;
                 }
                 let encode = jpegs.map(|encoded| {
                     drop(encoded.images);
                     encoded.took
+                });
+                let video = video.map_or_else(VideoWritten::default, |encoded| {
+                    drop(encoded.images);
+                    let frames = encoded.frames.iter().flatten();
+                    VideoWritten {
+                        frames: frames.clone().count() as u64,
+                        encode: frames.clone().map(|frame| frame.took).sum(),
+                        bytes: frames.map(|frame| frame.bytes.len() as u64).sum(),
+                    }
                 });
                 let images = Arc::into_inner(images).expect("no other thread holds the images");
                 let _ = written.send(Written {
                     images,
                     write,
                     encode,
+                    video,
                 });
             }
             Record::Other(record) => records.write(&[&record])?,
@@ -281,12 +395,26 @@ fn write_records(
     Ok(())
 }
 
+/// The frame's encodes in `slot`, received from `encoded` unless they already were.
+fn received<'a, T>(
+    slot: &'a mut Option<T>,
+    encoded: &Option<mpsc::Receiver<T>>,
+) -> io::Result<&'a T> {
+    if slot.is_none() {
+        let encoded = encoded.as_ref().expect("an encoder thread");
+        *slot = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+    }
+    Ok(slot.as_ref().expect("the frame's encodes"))
+}
+
 /// The records on their way to the writer thread, the frames on their way
 /// to the encoder thread when there is one, and the images the writer has
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
     to_encode: Option<mpsc::Sender<FrameImages>>,
+    /// The frames on their way to the video encoder thread, with their start.
+    to_video: Option<mpsc::Sender<(FrameImages, i64)>>,
     images: mpsc::Receiver<Written>,
 }
 
@@ -295,12 +423,22 @@ impl Queue {
         self.records.send(record).map_err(|_| writer_stopped())
     }
 
-    /// Sends a frame's outputs to the writer, and its images to the encoder.
-    fn send_frame(&self, headers: Vec<(usize, [u8; 14])>, images: FrameImages) -> io::Result<()> {
+    /// Sends the outputs of the frame started at `start_ns` to the writer,
+    /// and its images to the encoders.
+    fn send_frame(
+        &self,
+        sent: Vec<(usize, Sent)>,
+        images: FrameImages,
+        start_ns: i64,
+    ) -> io::Result<()> {
         if let Some(to_encode) = &self.to_encode {
             (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
         }
-        self.send(Record::Frame(headers, images))
+        if let Some(to_video) = &self.to_video {
+            let frame = (Arc::clone(&images), start_ns);
+            to_video.send(frame).map_err(|_| encoder_stopped())?;
+        }
+        self.send(Record::Frame(sent, images))
     }
 
     /// The next frame's images written, waiting for their writes to end.
@@ -330,6 +468,9 @@ struct Statistics {
     write: Duration,
     jpegs_encoded: u64,
     encode: Duration,
+    /// The time converting frames to NV12 for the H.264 outputs took.
+    nv12_conversion: Duration,
+    video: VideoWritten,
 }
 
 impl Statistics {
@@ -341,7 +482,8 @@ impl Statistics {
         format!(
             "last {} s: frames {}, incomplete {}, {} us per conversion, \
              {} us per scaling, {} us per write, {} us per JPEG encode, \
-             white balance {gains:?}{}",
+             {} us per NV12 conversion, {} us per H.264 encode, \
+             {} bytes per s of H.264, white balance {gains:?}{}",
             period.as_secs(),
             self.frames,
             self.incomplete,
@@ -349,6 +491,9 @@ impl Statistics {
             micros_each(self.scaling, self.frames),
             micros_each(self.write, self.writes),
             micros_each(self.encode, self.jpegs_encoded),
+            micros_each(self.nv12_conversion, self.frames),
+            micros_each(self.video.encode, self.video.frames),
+            (self.video.bytes as f64 / period.as_secs_f64().max(1.0)).round(),
             kelvin
                 .map(|kelvin| format!(", {kelvin:.0} K"))
                 .unwrap_or_default()
@@ -384,7 +529,8 @@ fn convert_frames(
     };
     let tuning = model.tuning();
     let default_threads = plan.default_threads();
-    let jpegs_per_frame = plan.jpeg_slots().into_iter().flatten().count() as u64;
+    let jpegs_per_frame = plan.jpeg_count() as u64;
+    let encodes_video = !plan.h264_outputs().is_empty();
     // Two sets of images alternate: one converts while the writer writes the other.
     let (mut images, mut spare) = (
         vec![Vec::new(); plan.output_count()],
@@ -483,6 +629,12 @@ fn convert_frames(
                 plan.scale(threads, &mut images);
                 statistics.scaling += scaling.elapsed();
             }
+            if encodes_video {
+                let converting = Instant::now();
+                let threads = settings.threads.unwrap_or(default_threads);
+                plan.convert_to_nv12(threads, &mut images);
+                statistics.nv12_conversion += converting.elapsed();
+            }
             let free = match spare.take() {
                 Some(images) => images,
                 None => {
@@ -493,11 +645,15 @@ fn convert_frames(
                         statistics.jpegs_encoded += jpegs_per_frame;
                         statistics.encode += took;
                     }
+                    statistics.video.frames += written.video.frames;
+                    statistics.video.encode += written.video.encode;
+                    statistics.video.bytes += written.video.bytes;
                     written.images
                 }
             };
-            let headers = plan.headers(start_ns);
-            queue.send_frame(headers, Arc::new(std::mem::replace(&mut images, free)))?;
+            let sent = plan.sent(start_ns);
+            let frame_images = Arc::new(std::mem::replace(&mut images, free));
+            queue.send_frame(sent, frame_images, start_ns)?;
         }
     }
 }
@@ -515,6 +671,8 @@ mod tests {
     use crate::bands::{Conversion, Images};
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
+    use crate::encoder::EncodedFrame;
+    use crate::nv12::{self, Nv12Layout};
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
     use crate::scale;
@@ -658,12 +816,32 @@ mod tests {
         records: &impl Records,
         statistics_every: Duration,
     ) -> io::Result<()> {
+        run_encoded(
+            outputs,
+            Vec::new(),
+            frames,
+            input,
+            records,
+            statistics_every,
+        )
+    }
+
+    // `run_outputs` with `encoders` for its H.264 outputs.
+    fn run_encoded(
+        outputs: &[OutputSpec],
+        encoders: Vec<Box<dyn Encoder>>,
+        frames: &TestFrames,
+        input: &mut File,
+        records: &impl Records,
+        statistics_every: Duration,
+    ) -> io::Result<()> {
         let setup = Setup {
             outputs: outputs.to_vec(),
             model: SensorModel::Imx477,
             frame_us: 28_571.0,
             settings: ColourSettings::for_sensor(SensorModel::Imx477),
             statistics_every,
+            encoders,
         };
         let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
         capture(setup, frames, &set_exposure, input, records)
@@ -1181,6 +1359,7 @@ mod tests {
         let images = Images {
             rgb: &mut rgb,
             averaged: None,
+            nv12: None,
         };
         develop_along(
             Path::Denoised,
@@ -1214,6 +1393,182 @@ mod tests {
                 times[0]
             );
         }
+    }
+
+    const OUTPUT_H264: u8 = 9;
+
+    // Gives each frame's NV12 back as its stream, a key frame every third
+    // frame, nothing for the frame at `skip`, and an error at `fail_at`.
+    struct FakeEncoder {
+        layout: Nv12Layout,
+        frames: usize,
+        skip: Option<usize>,
+        fail_at: Option<usize>,
+    }
+
+    // The test frames' NV12, in rows of 32 bytes, chroma after 48 rows.
+    const TEST_LAYOUT: Nv12Layout = Nv12Layout {
+        width: WIDTH,
+        height: HEIGHT,
+        stride: 32,
+        luma_rows: 48,
+        size: 32 * 48 * 3 / 2,
+    };
+
+    fn fake_encoder(skip: Option<usize>, fail_at: Option<usize>) -> Box<dyn Encoder> {
+        Box::new(FakeEncoder {
+            layout: TEST_LAYOUT,
+            frames: 0,
+            skip,
+            fail_at,
+        })
+    }
+
+    impl Encoder for FakeEncoder {
+        fn layout(&self) -> Nv12Layout {
+            self.layout
+        }
+
+        fn encode(&mut self, nv12: &[u8], capture_ns: i64) -> io::Result<Option<EncodedFrame>> {
+            let frame = self.frames;
+            self.frames += 1;
+            if self.fail_at == Some(frame) {
+                return Err(io::Error::other("the encoder failed"));
+            }
+            Ok((self.skip != Some(frame)).then(|| EncodedFrame {
+                capture_ns,
+                key_frame: frame.is_multiple_of(3),
+                bytes: nv12.to_vec(),
+                took: Duration::from_micros(250),
+            }))
+        }
+
+        fn stop(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    const H264: Format = Format::H264 {
+        bitrate_kbps: 4_000,
+        keyframe_interval: 3,
+    };
+
+    // The records the frame loop writes for `frames` making `outputs`, its
+    // H.264 outputs through `encoders`.
+    fn captured_encoded(
+        outputs: &[OutputSpec],
+        encoders: Vec<Box<dyn Encoder>>,
+        frames: Vec<Option<Vec<u8>>>,
+    ) -> Vec<Vec<u8>> {
+        let (frames, mut input) = TestFrames::new(frames, vec![]);
+        let records = Collected::default();
+        let hour = Duration::from_secs(3_600);
+        run_encoded(outputs, encoders, &frames, &mut input, &records, hour).unwrap();
+        records.0.into_inner().unwrap()
+    }
+
+    #[test]
+    fn each_h264_frame_is_a_record_of_its_own_frame_in_the_order_of_the_outputs() {
+        let outputs = [
+            FULL,
+            from(0, (WIDTH, HEIGHT), Format::Jpeg { quality: 80 }),
+            from(0, (WIDTH, HEIGHT), H264),
+            from(0, (WIDTH / 2, HEIGHT / 2), Format::Rgb),
+        ];
+        let records =
+            captured_encoded(&outputs, vec![fake_encoder(None, None)], scenes(6, Some(2)));
+
+        // Each frame's outputs in order, the fourth's after the exposure it sets (3).
+        let heads: Vec<(u8, u8)> = (records.iter())
+            .map(|record| match record[0] {
+                OUTPUT_FRAME | OUTPUT_JPEG | OUTPUT_H264 => (record[0], record[1]),
+                tag => (tag, 0),
+            })
+            .collect();
+        let frame = [(7, 0), (8, 1), (9, 2), (7, 3)];
+        let expected = [&frame[..], &frame, &frame, &[(3, 0)], &frame, &frame].concat();
+        assert_eq!(heads, expected);
+        let views = output_images(&records, 0);
+        let videos: Vec<&Vec<u8>> = (records.iter())
+            .filter(|record| record[0] == OUTPUT_H264)
+            .collect();
+        let starts: Vec<&[u8]> = (records.iter())
+            .filter(|record| record[..2] == [OUTPUT_FRAME, 0])
+            .map(|record| &record[6..14])
+            .collect();
+        assert_eq!(videos.len(), 5);
+        for (frame, video) in videos.iter().enumerate() {
+            assert_eq!(video[2..6], [WIDTH as u8, 0, HEIGHT as u8, 0]);
+            assert_eq!(&video[6..14], starts[frame]);
+            assert_eq!(video[14], u8::from(frame % 3 == 0), "frame {frame}");
+            let mut nv12 = vec![0; TEST_LAYOUT.size];
+            nv12::convert(&views[frame], &TEST_LAYOUT, 1, &mut nv12);
+            assert!(video[15..] == nv12, "frame {frame}");
+        }
+    }
+
+    #[test]
+    fn a_frame_the_encoder_gives_nothing_for_has_no_h264_record() {
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), H264)];
+        let records =
+            captured_encoded(&outputs, vec![fake_encoder(Some(1), None)], scenes(3, None));
+        let heads: Vec<(u8, u8)> = (records.iter())
+            .filter(|record| record[0] != 3)
+            .map(|record| (record[0], record[1]))
+            .collect();
+        assert_eq!(heads, [(7, 0), (9, 1), (7, 0), (7, 0), (9, 1)]);
+    }
+
+    #[test]
+    fn the_loop_stops_with_the_error_of_an_h264_encode() {
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), H264)];
+        let (frames, mut input) = TestFrames::new(scenes(12, None), vec![]);
+        let records = Collected::default();
+        let hour = Duration::from_secs(3_600);
+        let encoders = vec![fake_encoder(None, Some(2))];
+        let error =
+            run_encoded(&outputs, encoders, &frames, &mut input, &records, hour).unwrap_err();
+        assert_eq!(error.to_string(), "the encoder failed");
+        assert!(frames.taken.get() < 12);
+    }
+
+    #[test]
+    fn the_statistics_give_the_nv12_conversion_the_h264_encode_and_its_bytes() {
+        let outputs = [FULL, from(0, (WIDTH, HEIGHT), H264)];
+        let (frames, mut input) = TestFrames::new(scenes(6, None), vec![]);
+        let records = Collected::default();
+        let encoders = vec![fake_encoder(None, None)];
+        run_encoded(
+            &outputs,
+            encoders,
+            &frames,
+            &mut input,
+            &records,
+            Duration::ZERO,
+        )
+        .unwrap();
+        let records = records.0.into_inner().unwrap();
+        let lines: Vec<String> = (records.iter())
+            .filter_map(|record| {
+                let message = record.strip_prefix(b"\x02\x00last ")?;
+                Some(String::from_utf8(message.to_vec()).unwrap())
+            })
+            .collect();
+        let figure = |line: &str, unit: &str| -> u64 {
+            let (before, _) = line.split_once(unit).unwrap();
+            before.rsplit(' ').next().unwrap().parse().unwrap()
+        };
+        assert!(lines.len() > 1, "{lines:?}");
+        let written = lines.iter().filter(|line| {
+            figure(line, " us per H.264 encode") == 250
+                && figure(line, " bytes per s of H.264") % TEST_LAYOUT.size as u64 == 0
+                && figure(line, " bytes per s of H.264") > 0
+        });
+        assert!(written.count() > 0, "{lines:?}");
+        assert!(
+            (lines.iter()).all(|line| line.contains(" us per NV12 conversion")),
+            "{lines:?}"
+        );
     }
 
     #[test]

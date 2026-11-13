@@ -105,6 +105,26 @@ defmodule VisionCore.Exporter.RunnerTest do
     def handle_info(:sent, test), do: {:ready, [:stereo_pair, {:detections, :detection}], test}
   end
 
+  # Sends each video frame on, as a slow transport would, and takes the next once told it is sent.
+  defmodule SlowVideo do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [{:camera_video, :hq, :view_h264}]
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(output, frame, test) do
+      send(test, {:exported, output, frame.capture_ns})
+      {:busy, test}
+    end
+
+    @impl VisionCore.Exporter
+    def handle_info(:sent, test), do: {:ready, {:camera_video, :hq, :view_h264}, test}
+  end
+
   # Tells the test each time its init/1 runs.
   defmodule Announcing do
     @behaviour VisionCore.Exporter
@@ -710,6 +730,141 @@ defmodule VisionCore.Exporter.RunnerTest do
       # Whole milliseconds, each read just after the runner's own reading: a tick may fall between.
       assert third_ms - first_ms >= 200 - 1
       refute_received {:exported, :stereo_pair, 2, _at}
+    end
+  end
+
+  describe "a camera's video" do
+    @video_config %VisionCore.Config{
+      components: [
+        {:camera,
+         name: :hq,
+         driver: VisionCore.Camera.V4L2Single,
+         outputs: [
+           view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+           view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30],
+           view_jpeg: [from: :view, format: :jpeg]
+         ]}
+      ]
+    }
+    @video {:camera_video, :hq, :view_h264}
+
+    defp video_frame(capture_ns, keyframe?) do
+      %Frame{
+        label: "hq",
+        output: :view_h264,
+        width: 2028,
+        height: 1520,
+        capture_ns: capture_ns,
+        h264: <<capture_ns::32>>,
+        keyframe?: keyframe?
+      }
+    end
+
+    defp publish_video(capture_ns, keyframe? \\ false) do
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+      Outputs.publish(
+        {:camera_frame, server, :view_h264},
+        {:camera_frame, video_frame(capture_ns, keyframe?)}
+      )
+    end
+
+    defp exported_video do
+      receive do
+        {:exported, @video, %Frame{capture_ns: capture_ns}, _at} ->
+          [capture_ns | exported_video()]
+
+        {:exported, @video, capture_ns} ->
+          [capture_ns | exported_video()]
+      after
+        200 -> []
+      end
+    end
+
+    test "hands the exporter every frame, in order, from the first key frame, while it works" do
+      runner =
+        start_forwarder([outputs: [@video], block_on: video_frame(2, true)], @video_config)
+
+      publish_video(1)
+      publish_video(2, true)
+      publish_video(3)
+      publish_video(4)
+      send(runner, :release)
+
+      assert exported_video() == [2, 3, 4]
+    end
+
+    test "queues the frames that come while the exporter is busy, and hands them over in order" do
+      runner = start_runner(SlowVideo, [], Runner, @video_config)
+      publish_video(1, true)
+      assert_receive {:exported, @video, 1}
+
+      publish_video(2)
+      publish_video(3)
+      :sys.get_state(runner)
+      refute_received {:exported, @video, _capture_ns}
+
+      send(runner, :sent)
+      assert_receive {:exported, @video, 2}
+      send(runner, :sent)
+      assert_receive {:exported, @video, 3}
+    end
+
+    test "an exporter a whole backlog behind skips to the next key frame" do
+      runner = start_runner(SlowVideo, [], Runner, @video_config)
+      publish_video(0, true)
+      assert_receive {:exported, @video, 0}
+
+      for capture_ns <- 1..100, do: publish_video(capture_ns)
+      publish_video(101, true)
+      publish_video(102)
+      :sys.get_state(runner)
+
+      for _frame <- 1..3, do: send(runner, :sent)
+      assert exported_video() == [101, 102]
+    end
+
+    test "is handed apart from the camera's images" do
+      start_forwarder(
+        [outputs: [@video, {:camera_frame, :hq}]],
+        @video_config
+      )
+
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+      jpeg = %Frame{
+        label: "hq",
+        output: :view_jpeg,
+        width: 2,
+        height: 2,
+        capture_ns: 7,
+        jpeg: <<>>
+      }
+
+      Outputs.publish({:camera_frame, server, :view_jpeg}, {:camera_frame, jpeg})
+      publish_video(8, true)
+
+      assert_receive {:exported, {:camera_frame, :hq}, ^jpeg, _at}
+      assert_receive {:exported, @video, %Frame{capture_ns: 8}, _at}
+    end
+
+    test "refuses to start on a :max_hz, a video named as an image, or an image named as a video" do
+      for {outputs, reason} <- [
+            {[{@video, max_hz: 10}], {:invalid_output, {@video, max_hz: 10}}},
+            {[{:camera_frame, :hq, :view_h264}],
+             {:video_output, {:camera_frame, :hq, :view_h264}}},
+            {[{:camera_video, :hq, :view_jpeg}],
+             {:image_output, {:camera_video, :hq, :view_jpeg}}}
+          ] do
+        assert {:error, {^reason, _child}} =
+                 start_supervised(
+                   {Runner,
+                    exporter: Forwarder,
+                    options: [test: self(), outputs: outputs],
+                    config: @video_config}
+                 ),
+               inspect(outputs)
+      end
     end
   end
 

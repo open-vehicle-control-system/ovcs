@@ -182,6 +182,36 @@ describe('Previews', () => {
       expect(figure('usb')).not.toBeNull()
     })
 
+    it('decodes the video of a camera whose video the API relays, instead of its JPEG preview', () => {
+      globalThis.VideoDecoder = class {}
+      const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({}))
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_video:hq:full_h264', 'camera_frame:usb')
+      const { socket } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      delete globalThis.VideoDecoder
+      getContext.mockRestore()
+
+      const topics = socket.channel.mock.calls.map(([topic]) => topic)
+      expect(topics).toContain('video:hq')
+      expect(topics).not.toContain('preview:hq')
+      expect(topics).toContain('preview:usb')
+    })
+
+    it('shows the video of a camera that sends no image', () => {
+      globalThis.VideoDecoder = class {}
+      const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({}))
+      listed('camera_frame:left', 'camera_frame:right', 'camera_video:hq:full_h264')
+      const { socket } = liveSocket()
+      render(<Previews status={snapshot} socket={socket} />)
+      delete globalThis.VideoDecoder
+      getContext.mockRestore()
+
+      const topics = socket.channel.mock.calls.map(([topic]) => topic)
+      expect(figure('hq')).not.toBeNull()
+      expect(topics).toContain('video:hq')
+      expect(topics).not.toContain('preview:hq')
+    })
+
     it("puts a camera of its own's rate, exposure and gain under its preview, nothing while the status has none", () => {
       listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
       const hq = { present: true, fps: 9.8, exposureTimeUs: 12000, analogueGain: 4.0 }
@@ -653,12 +683,12 @@ describe('Previews', () => {
       { name: 'segmentation:road', maxHz: 5, source: 'hq' }
     ]
 
-    // The channel's binary payload: eight little-endian 16-bit integers, then the label grid.
+    // The channel's binary payload: eight little-endian 16-bit integers, the capture time, then the label grid.
     function payload({ frame, band, grid, data }) {
-      const buffer = new ArrayBuffer(16 + data.length)
+      const buffer = new ArrayBuffer(24 + data.length)
       const view = new DataView(buffer)
       ;[...frame, ...band, ...grid].forEach((value, index) => view.setUint16(index * 2, value, true))
-      new Uint8Array(buffer, 16).set(data)
+      new Uint8Array(buffer, 24).set(data)
       return buffer
     }
 

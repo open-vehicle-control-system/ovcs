@@ -8,6 +8,7 @@ defmodule Ros2Zenoh do
   """
 
   @bulk_messages [
+    Ros2Zenoh.FoxgloveMsgs.Msg.CompressedVideo,
     Ros2Zenoh.SensorMsgs.Msg.CompressedImage,
     Ros2Zenoh.SensorMsgs.Msg.Image,
     Ros2Zenoh.SensorMsgs.Msg.PointCloud2,
@@ -16,7 +17,7 @@ defmodule Ros2Zenoh do
 
   @doc """
   The Zenoh priority a message module's publisher puts at: `:data_low` for
-  images and point clouds, `:data`, Zenoh's default, for every other.
+  images, videos and point clouds, `:data`, Zenoh's default, for every other.
   A router short of bandwidth to a subscriber, a headset on Wi-Fi say,
   sends the higher priorities first and drops a frame rather than make the
   transforms, the odometry and the commands wait behind it.

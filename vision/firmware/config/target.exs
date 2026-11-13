@@ -175,9 +175,15 @@ config :mdns_lite,
 # `OvcsBus.Distribution`.
 config :ovcs_bus, :distribution, domain: "local"
 
+# HTTPS, which the dashboard's video decoder needs, with a self-signed certificate
+# the unit generates at its first start (`VisionApi.SelfSignedCertificate`).
 config :vision_api, VisionApiWeb.Endpoint,
   url: [host: vehicle_host],
-  http: [port: 4100],
+  https: [
+    port: 443,
+    certfile: "/data/vision_api/certificate.pem",
+    keyfile: "/data/vision_api/key.pem"
+  ],
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
   check_origin: false,
   adapter: Bandit.PhoenixAdapter,
@@ -185,6 +191,9 @@ config :vision_api, VisionApiWeb.Endpoint,
   pubsub_server: VisionApi.PubSub,
   server: true,
   code_reloader: false
+
+# Addresses that name port 4100 reach the dashboard over HTTPS.
+config :vision_api, https_redirect_ports: [80, 4100]
 
 config :logger, :console,
   format: "$time $metadata[$level] $message\n",

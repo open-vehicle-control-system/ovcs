@@ -63,7 +63,12 @@ Given one capture node and sensor (`--video`, `--sensor`), `v4l2_capture` captur
 
 - `cpu:<width>x<height>`: made by the software conversion with grey-world white balance, demosaiced bilinearly at the capture's size or 2×2 at half of it;
 - `from:<index>:<width>x<height>`: averaged from an earlier output in blocks of a whole fraction of its size;
-- `from:<index>:<width>x<height>:jpeg:<quality>`: encoded from an earlier output as a JPEG with libjpeg-turbo, at that output's size or a whole fraction of it. It writes one OUTPUT_JPEG record per frame, its chroma 4:2:0 below quality 90 as `jpeg_codec`'s.
+- `from:<index>:<width>x<height>:jpeg:<quality>`: encoded from an earlier output as a JPEG with libjpeg-turbo, at that output's size or a whole fraction of it. It writes one OUTPUT_JPEG record per frame, its chroma 4:2:0 below quality 90 as `jpeg_codec`'s;
+- `from:<index>:<width>x<height>:h264:<bitrate_kbps>:<keyframe_interval>`: encoded from an earlier output as H.264 on the board's video encoder, at that output's size or a whole fraction of it, its width and height even, at a constant `bitrate_kbps` with a key frame every `keyframe_interval` frames. It writes one OUTPUT_H264 record per frame: the frame's NAL units in Annex B form after a key frame flag, the sequence and picture parameter sets before each key frame.
+
+A JPEG or H.264 output is always sent, and no output is made from it.
+
+The H.264 encoder is a V4L2 memory-to-memory device behind an encoder trait: on the VENTUNO Q, Qualcomm's Iris (`qcom-iris-encoder`), which needs the firmware `qcom/vpu/vpu30_p4_s6.mbn`. Without it, the program stops at start. The output's image is converted to NV12 in BT.601 limited range (luma 16 to 235), each chroma sample the mean of a 2×2 block, into the encoder's padded layout. For an output the size of a conversion output, the conversion makes it as each pair of rows is written; otherwise it is made after the averaging, on the same threads.
 
 The conversion sits behind a processor trait, so another processor, such as an ISP, slots in beside it.
 
@@ -78,11 +83,15 @@ Auto exposure measures the green after lens shading and white balance, through t
 
 It converts each frame in bands of rows on `threads` threads, 1 to 8. The default is 3 with an output at the capture's size, and 1 otherwise. The 2×2 average of a conversion output is made as each pair of its rows is written. The other outputs made from others are averaged after it, on the same threads.
 
-A writer thread writes each frame's outputs while the next one converts. An encoder thread encodes the frame's JPEGs while the writer writes its other outputs.
+A writer thread writes each frame's outputs while the next one converts. An encoder thread encodes the frame's JPEGs, and another its H.264 outputs, while the writer writes its other outputs.
 
 Its statistics line, every minute, gives the time per frame of:
 
 - the conversion;
 - the averaging after it (`us per scaling`, 0 when the conversion makes every average);
 - the writes;
-- the JPEG encodes.
+- the JPEG encodes;
+- the conversion to NV12 after it (`us per NV12 conversion`, 0 when the conversion makes every NV12);
+- the H.264 encodes, from the frame queued to the encoder to its stream dequeued;
+
+and the H.264 bytes per second.

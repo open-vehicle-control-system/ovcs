@@ -57,6 +57,12 @@ pub enum Format {
     Rgb,
     /// A JPEG of those pixels at `quality`, 1 to 100.
     Jpeg { quality: u8 },
+    /// An H.264 stream of those pixels at `bitrate_kbps`, a key frame every
+    /// `keyframe_interval` frames.
+    H264 {
+        bitrate_kbps: u32,
+        keyframe_interval: u32,
+    },
 }
 
 /// What makes an output.
@@ -81,6 +87,9 @@ impl OutputSpec {
 
 /// The most outputs a single camera has: a record's output index is a byte.
 const MAX_OUTPUTS: usize = 256;
+/// The encoder takes its bitrate in bits per second, an `i32`.
+const MAX_BITRATE_KBPS: u32 = 2_000_000;
+const MAX_KEYFRAME_INTERVAL: u32 = i32::MAX as u32;
 
 /// The size of the RGB frames the processor makes.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -151,7 +160,9 @@ pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
 /// `cpu:<width>x<height>`, made by the software conversion at the capture's
 /// size or half of it, or `from:<index>:<width>x<height>`, scaled from an
 /// earlier output to a whole fraction of its size, sent as a JPEG with
-/// `:jpeg:<quality>` after it; an RGB one followed by `:unsent` is made
+/// `:jpeg:<quality>` after it or as H.264 with
+/// `:h264:<bitrate_kbps>:<keyframe_interval>`, at an even size; an RGB
+/// one followed by `:unsent` is made
 /// but not sent, for the outputs made from it. Without, one output of the
 /// capture's size. The error is the message to log.
 pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
@@ -221,8 +232,9 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
 }
 
 const OUTPUT_FORMS: &str = "cpu:<width>x<height>[:unsent], \
-                            from:<index>:<width>x<height>[:unsent] \
-                            or from:<index>:<width>x<height>:jpeg:<quality>";
+                            from:<index>:<width>x<height>[:unsent], \
+                            from:<index>:<width>x<height>:jpeg:<quality> \
+                            or from:<index>:<width>x<height>:h264:<bitrate_kbps>:<keyframe_interval>";
 
 /// The output `value` describes, one of `OUTPUT_FORMS`, of a `sensor`
 /// capture, after the outputs `earlier`.
@@ -244,6 +256,13 @@ fn output_spec(
         ["from", index, size, "jpeg", quality] => {
             (Some(output_index(index)?), size, jpeg(quality)?)
         }
+        ["from", _index, _size, "h264", _bitrate, _interval] if !send => {
+            return Err(format!("an H.264 output is always sent: {OUTPUT_FORMS}"))
+        }
+        ["from", index, size, "h264", bitrate, interval] => {
+            (Some(output_index(index)?), size, h264(bitrate, interval)?)
+        }
+        ["from", _index, _size, "h264", ..] => return Err(OUTPUT_FORMS.to_string()),
         ["from", _index, _size, format, _quality] => {
             return Err(format!("no format {format}: {OUTPUT_FORMS}"))
         }
@@ -254,6 +273,12 @@ fn output_spec(
         .and_then(|(width, height)| Some((width.parse().ok()?, height.parse().ok()?)))
         .filter(|&(width, height): &(u32, u32)| width > 0 && height > 0)
         .ok_or_else(|| format!("no size {size}"))?;
+    let odd = width % 2 != 0 || height % 2 != 0;
+    if matches!(format, Format::H264 { .. }) && odd {
+        return Err(format!(
+            "H.264 takes an even width and height, not {width}x{height}"
+        ));
+    }
     let source = match source {
         None => Source::Cpu(
             [Output::Full, Output::Half]
@@ -273,9 +298,14 @@ fn output_spec(
             let from = earlier
                 .get(index)
                 .ok_or_else(|| format!("no earlier output {index}"))?;
-            if let Format::Jpeg { .. } = from.format {
+            let encoded = match from.format {
+                Format::Rgb => None,
+                Format::Jpeg { .. } => Some("a JPEG"),
+                Format::H264 { .. } => Some("H.264"),
+            };
+            if let Some(encoded) = encoded {
                 return Err(format!(
-                    "output {index} is a JPEG, which no output is made from"
+                    "output {index} is {encoded}, which no output is made from"
                 ));
             }
             if from.width % width != 0 || from.height % height != 0 {
@@ -300,6 +330,26 @@ fn output_index(index: &str) -> Result<usize, String> {
     index
         .parse()
         .map_err(|_| format!("no output index {index}"))
+}
+
+fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
+    let bitrate_kbps = match bitrate.parse() {
+        Ok(bitrate @ 1..=MAX_BITRATE_KBPS) => bitrate,
+        _ => {
+            return Err(format!(
+                "an H.264 bitrate is 1 to {MAX_BITRATE_KBPS} kbps, got {bitrate}"
+            ))
+        }
+    };
+    match interval.parse() {
+        Ok(keyframe_interval @ 1..=MAX_KEYFRAME_INTERVAL) => Ok(Format::H264 {
+            bitrate_kbps,
+            keyframe_interval,
+        }),
+        _ => Err(format!(
+            "a key frame interval is 1 frame or more, got {interval}"
+        )),
+    }
 }
 
 fn jpeg(quality: &str) -> Result<Format, String> {
@@ -657,15 +707,20 @@ mod tests {
         );
         assert_eq!(
             refused(&["cpu:2028x1520", "from:0:2028x1520:jpeg:80:unsent"]),
-            "--output from:0:2028x1520:jpeg:80:unsent: a JPEG is always sent: \
-             cpu:<width>x<height>[:unsent], from:<index>:<width>x<height>[:unsent] \
-             or from:<index>:<width>x<height>:jpeg:<quality>"
+            format!(
+                "--output from:0:2028x1520:jpeg:80:unsent: a JPEG is always sent: {OUTPUT_FORMS}"
+            )
+        );
+        assert_eq!(
+            refused(&["cpu:2028x1520", "from:0:2028x1520:h264:4000:30:unsent"]),
+            format!(
+                "--output from:0:2028x1520:h264:4000:30:unsent: \
+                 an H.264 output is always sent: {OUTPUT_FORMS}"
+            )
         );
         assert_eq!(
             refused(&["cpu:2028x1520:unsent:unsent", "from:0:1014x760"]),
-            "--output cpu:2028x1520:unsent:unsent: cpu:<width>x<height>[:unsent], \
-             from:<index>:<width>x<height>[:unsent] \
-             or from:<index>:<width>x<height>:jpeg:<quality>"
+            format!("--output cpu:2028x1520:unsent:unsent: {OUTPUT_FORMS}")
         );
     }
 
@@ -680,8 +735,7 @@ mod tests {
             ]))
             .unwrap_err()
         };
-        let forms = "cpu:<width>x<height>[:unsent], from:<index>:<width>x<height>[:unsent] \
-                     or from:<index>:<width>x<height>:jpeg:<quality>";
+        let forms = OUTPUT_FORMS;
         for quality in ["0", "101", "x", ""] {
             assert_eq!(
                 refused(&format!("from:0:2028x1520:jpeg:{quality}")),
@@ -718,6 +772,72 @@ mod tests {
     }
 
     #[test]
+    fn an_output_made_from_another_may_be_sent_as_h264() {
+        let parsed = parse_single(&single_command_line(&[
+            "--output",
+            "cpu:2028x1520:unsent",
+            "--output",
+            "from:0:2028x1520:h264:4000:30",
+            "--output",
+            "from:0:1014x760:h264:1:1",
+        ]))
+        .unwrap();
+        let h264 = |width, height, bitrate_kbps, keyframe_interval| OutputSpec {
+            source: Source::From(0),
+            width,
+            height,
+            format: Format::H264 {
+                bitrate_kbps,
+                keyframe_interval,
+            },
+            send: true,
+        };
+        assert_eq!(
+            parsed.outputs[1..],
+            [h264(2028, 1520, 4_000, 30), h264(1014, 760, 1, 1)]
+        );
+    }
+
+    #[test]
+    fn an_h264_output_is_refused_without_its_rates_an_even_size_or_as_a_source() {
+        let refused = |outputs: &[&str]| {
+            let extra: Vec<&str> = (["cpu:2028x1520"].iter().chain(outputs))
+                .flat_map(|output| ["--output", output])
+                .collect();
+            parse_single(&single_command_line(&extra)).unwrap_err()
+        };
+        for bitrate in ["0", "2000001", "x"] {
+            let output = format!("from:0:2028x1520:h264:{bitrate}:30");
+            assert_eq!(
+                refused(&[&output]),
+                format!("--output {output}: an H.264 bitrate is 1 to 2000000 kbps, got {bitrate}")
+            );
+        }
+        for interval in ["0", "x", ""] {
+            let output = format!("from:0:2028x1520:h264:4000:{interval}");
+            assert_eq!(
+                refused(&[&output]),
+                format!(
+                    "--output {output}: a key frame interval is 1 frame or more, got {interval}"
+                )
+            );
+        }
+        assert_eq!(
+            refused(&["from:0:2028x1520:h264:4000"]),
+            format!("--output from:0:2028x1520:h264:4000: {OUTPUT_FORMS}")
+        );
+        assert_eq!(
+            refused(&["from:0:507x380:h264:4000:30"]),
+            "--output from:0:507x380:h264:4000:30: H.264 takes an even width and height, \
+             not 507x380"
+        );
+        assert_eq!(
+            refused(&["from:0:2028x1520:h264:4000:30", "from:1:1014x760"]),
+            "--output from:1:1014x760: output 1 is H.264, which no output is made from"
+        );
+    }
+
+    #[test]
     fn an_output_is_refused_unless_its_processor_or_source_can_make_its_size() {
         let refused = |outputs: &[&str]| {
             let extra: Vec<&str> = outputs
@@ -732,9 +852,7 @@ mod tests {
         );
         assert_eq!(
             refused(&["isp:2028x1520"]),
-            "--output isp:2028x1520: cpu:<width>x<height>[:unsent], \
-             from:<index>:<width>x<height>[:unsent] \
-             or from:<index>:<width>x<height>:jpeg:<quality>"
+            format!("--output isp:2028x1520: {OUTPUT_FORMS}")
         );
         assert_eq!(refused(&["cpu:2028"]), "--output cpu:2028: no size 2028");
         assert_eq!(

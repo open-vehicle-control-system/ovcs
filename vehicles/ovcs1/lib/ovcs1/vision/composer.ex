@@ -6,13 +6,15 @@ defmodule Ovcs1.Vision.Composer do
   with the right sensor phase-locked to the left, depth computed on the
   GPU. A Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2
   is a camera of its own, `:center`, captured in colour by
-  `VisionCore.Camera.V4L2Single`, at every frame in three outputs:
-  `:view`, 2028 × 1520, made only for the two others and not sent to the
-  vision core, where nothing takes it; `:view_jpeg`, that image encoded
-  once by the capture program, which the dashboard's preview and the
-  ROS 2 exporter both show as it is; and `:inference`, 1014 × 760,
-  averaged from it 2 × 2. On the Hexagon NPU,
-  YOLOX detects objects on `:inference`, the `:objects` pipeline, and
+  `VisionCore.Camera.V4L2Single`, at every frame in four outputs:
+  `:full`, 2028 × 1520, made only for the others and not sent to the
+  vision core, where nothing takes it; `:full_h264`, that image encoded
+  as H.264 on the board's video encoder, the camera's video, which the
+  dashboard shows and the ROS 2 exporter publishes; `:half`,
+  1014 × 760, averaged from it 2 × 2; and `:half_jpeg`, the half
+  image encoded once by the capture program, which the ROS 2 exporter
+  publishes as the camera's image. On the Hexagon NPU,
+  YOLOX detects objects on `:half`, the `:objects` pipeline, and
   FFNet segments the scene on it, the `:scene` pipeline, its road and
   off-road points among what it publishes: the models' inputs
   are smaller still, so the full image would cross to their Ports only
@@ -72,22 +74,26 @@ defmodule Ovcs1.Vision.Composer do
         center_camera(),
         {:qnn_detector,
          name: :objects,
-         source: {:camera, :center, :inference},
+         source: {:camera, :center, :half},
          dlc_path: Application.app_dir(:ovcs1, @detection_model),
          score_threshold: 0.4},
         {:qnn_segmenter,
          name: :scene,
-         source: {:camera, :center, :inference},
+         source: {:camera, :center, :half},
          dlc_path: Application.app_dir(:ovcs1, @segmentation_model),
          segment_every_n: 1}
       ],
-      preview: [max_hz: 30, outputs: [center: :view_jpeg]],
+      preview: [max_hz: 30, outputs: [center: :half_jpeg], videos: [center: :full_h264]],
       exporters: [
         {VisionCore.Ros2.Exporter,
          heartbeat: [],
          stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],
-         cameras: [names: [:center], outputs: [center: :view_jpeg]],
+         cameras: [
+           names: [:center],
+           outputs: [center: :half_jpeg],
+           videos: [center: :full_h264]
+         ],
          segmentation: [pipelines: [:scene]]}
       ]
     }
@@ -112,9 +118,11 @@ defmodule Ovcs1.Vision.Composer do
      csiphy: 2,
      fps: 30,
      outputs: [
-       view: [resolution: {2028, 1520}, processor: :cpu, send: false],
-       view_jpeg: [from: :view, format: :jpeg, quality: 80],
-       inference: [resolution: {1014, 760}, from: :view]
+       full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+       half: [resolution: {1014, 760}, from: :full],
+       half_jpeg: [from: :half, format: :jpeg, quality: 80],
+       # The key frame interval bounds how long a viewer joining the stream waits for a picture.
+       full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
      ],
      max_exposure_us: 25_000,
      frame_id: "center_optical",

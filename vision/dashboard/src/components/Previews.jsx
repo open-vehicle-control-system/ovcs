@@ -10,10 +10,11 @@ import Hint from './Hint.jsx'
 import { useApiOutputs } from '../stores/exporters.js'
 import {
   SEGMENTATION,
+  resultAt,
   useDetectionOutputs,
-  useDetections,
+  useDetectionResults,
   useSegmentationOutputs,
-  useSegmentations
+  useSegmentationResults
 } from '../pipelineResults.js'
 import {
   cameraFigures,
@@ -124,30 +125,47 @@ const rowLayout = (beside) =>
     ? { className: ROW_TILE, cellClassName: BESIDE_CELL, frameClassName: BESIDE_FRAME, asideClassName: BESIDE_ASIDE, asideBeside: true }
     : { className: ROW_TILE, cellClassName: ROW_CELL, frameClassName: ROW_FRAME }
 
-/** The latest results of the detection channels drawn on the preview of `source`: their overlays, and all their objects, `null` before any answers. */
+/**
+ * The results of the detection channels drawn on the preview of `source`: their overlays for the frame captured at
+ * `captureUs`, each pipeline's result on that frame or the newest when `null`, and all their newest objects, `null`
+ * before any answers.
+ */
 function useSourceDetections(socket, source) {
   const outputs = useDetectionOutputs(source)
-  const latest = useDetections(socket, outputs)
+  const { latest, history } = useDetectionResults(socket, outputs)
   const answered = outputs.map(({ name }) => name).filter((topic) => latest[topic])
+  const shown = (topic, captureUs) => (captureUs === null ? latest[topic] : resultAt(history.current[topic], captureUs))
 
   return {
-    overlays: answered.map((topic) => <DetectionOverlay key={topic} detections={latest[topic]} />),
+    overlays: (captureUs) =>
+      answered.flatMap((topic) => {
+        const detections = shown(topic, captureUs)
+        return detections ? [<DetectionOverlay key={topic} detections={detections} />] : []
+      }),
     detections: answered.length > 0 ? answered.flatMap((topic) => latest[topic]) : null
   }
 }
 
-/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends, `vertical` or not, once their classes come. */
+/**
+ * The segmentation pipelines on the camera `source`: their label grids drawn over its preview for the frame captured
+ * at `captureUs`, each pipeline's grid of that frame or the newest when `null`, and their legends, `vertical` or not,
+ * once their classes come.
+ */
 function useSourceSegmentations(socket, source, vertical) {
   const outputs = useSegmentationOutputs(source)
-  const latest = useSegmentations(socket, outputs)
+  const { latest, history } = useSegmentationResults(socket, outputs)
   const topics = outputs.map(({ name }) => name)
   const answered = topics.filter((topic) => latest[topic]?.segmentation)
   const named = topics.filter((topic) => latest[topic]?.classes)
+  const shown = (topic, captureUs) =>
+    captureUs === null ? latest[topic].segmentation : resultAt(history.current[topic], captureUs)
 
   return {
-    overlays: answered.map((topic) => (
-      <SegmentationOverlay key={topic} segmentation={latest[topic].segmentation} classes={latest[topic].classes} />
-    )),
+    overlays: (captureUs) =>
+      answered.flatMap((topic) => {
+        const segmentation = shown(topic, captureUs)
+        return segmentation ? [<SegmentationOverlay key={topic} segmentation={segmentation} classes={latest[topic].classes} />] : []
+      }),
     legends: named.map((topic) => (
       <SegmentationLegend
         key={topic}
@@ -161,31 +179,47 @@ function useSourceSegmentations(socket, source, vertical) {
 }
 
 const CAMERA_FRAME = 'camera_frame:'
+const CAMERA_VIDEO = 'camera_video:'
 const STEREO_SIDES = ['left', 'right']
 
-/** The cameras of their own: each `camera_frame:<name>` output the API exporter lists, but the stereo pair's sides. */
-function useCameraNames() {
+/**
+ * The cameras of their own: each camera the API exporter lists a `camera_frame:<name>` output for, then each other one
+ * whose video it relays, but the stereo pair's sides.
+ */
+function useCameraNames(videos) {
+  const outputs = useApiOutputs()
+  const framed = outputs
+    .map(({ name }) => name)
+    .filter((name) => name.startsWith(CAMERA_FRAME))
+    .map((name) => name.slice(CAMERA_FRAME.length))
+
+  return [...new Set([...framed, ...videos])].filter((name) => !STEREO_SIDES.includes(name))
+}
+
+/** The cameras whose video the API relays: each `camera_video:<name>:<output>` output it lists. */
+function useVideoCameras() {
   const outputs = useApiOutputs()
 
   return outputs
     .map(({ name }) => name)
-    .filter((name) => name.startsWith(CAMERA_FRAME))
-    .map((name) => name.slice(CAMERA_FRAME.length))
-    .filter((name) => !STEREO_SIDES.includes(name))
+    .filter((name) => name.startsWith(CAMERA_VIDEO))
+    .map((name) => name.slice(CAMERA_VIDEO.length).split(':')[0])
 }
 
 /**
- * A camera of its own, titled by its name, with its rate, exposure and gain, its segmentation pipelines' label grids
- * drawn over it with a legend of their classes, a class a row beside the frame, and the objects its detection
- * pipelines detect drawn over those and counted.
+ * A camera of its own, titled by its name, its video where the API relays one, else its JPEG preview, with its rate,
+ * exposure and gain, its segmentation pipelines' label grids drawn over it with a legend of their classes, a class a
+ * row beside the frame, and the objects its detection pipelines detect drawn over those and counted. Over a video,
+ * each pipeline's result is drawn on the frame it was found on.
  */
-function CameraPreview({ name, status, socket, beside }) {
+function CameraPreview({ name, status, socket, beside, video }) {
   const { overlays: boxes, detections } = useSourceDetections(socket, name)
   const { overlays: grids, legends } = useSourceSegmentations(socket, name, beside)
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
+  const overlay = (captureUs) => [...grids(captureUs), ...boxes(captureUs)]
 
   return (
-    <Preview stream={name} socket={socket} overlay={[...grids, ...boxes]} aside={legends} {...rowLayout(beside)}>
+    <Preview stream={name} socket={socket} video={video} overlay={overlay} aside={legends} {...rowLayout(beside)}>
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
     </Preview>
   )
@@ -248,7 +282,8 @@ function DepthPreview({ status, socket, beside }) {
  * at least as wide as tall (`useBeside`).
  */
 export default function Previews({ status, socket }) {
-  const cameras = useCameraNames()
+  const videos = useVideoCameras()
+  const cameras = useCameraNames(videos)
   const rowRef = useRef(null)
   const beside = useBeside(rowRef)
 
@@ -277,7 +312,7 @@ export default function Previews({ status, socket }) {
       >
         <DepthPreview status={status} socket={socket} beside={beside} />
         {cameras.map((name) => (
-          <CameraPreview key={name} name={name} status={status} socket={socket} beside={beside} />
+          <CameraPreview key={name} name={name} status={status} socket={socket} beside={beside} video={videos.includes(name)} />
         ))}
       </div>
     </section>

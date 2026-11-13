@@ -45,7 +45,9 @@ defmodule VisionCore.Preview do
       shows, by camera name (`hq: :view`), its default output for a
       camera not listed, its first sent one
       (`VisionCore.Camera.Unit.output_key/3`). An output the camera does
-      not have, or does not send, is logged, and its default shown.
+      not have, does not send, or that is an H.264 video
+      (`VisionCore.Video` relays those), is logged, and its default
+      shown.
     * `:depth_range_m` (`0.0`) — the distance coloured blue; 0 colours
       blue only what is infinitely far, so the colours stay put from one
       frame to the next. Red is the nearest measured depths.
@@ -164,19 +166,28 @@ defmodule VisionCore.Preview do
         nil
 
       {nil, default} ->
-        missing =
-          if Camera.Unit.unsent_output?(config, name, output),
-            do: "does not send its output #{inspect(output)} (send: false)",
-            else: "has no output #{inspect(output)}"
-
         Logger.error(
-          "#{inspect(__MODULE__)}: camera #{name} #{missing}; its stream shows its default output"
+          "#{inspect(__MODULE__)}: camera #{name}#{missing(config, name, output)}; " <>
+            "its stream shows its default output"
         )
 
         default
 
       {key, _default} ->
         key
+    end
+  end
+
+  defp missing(config, name, output) do
+    cond do
+      Camera.Unit.unsent_output?(config, name, output) ->
+        " does not send its output #{inspect(output)} (send: false)"
+
+      Camera.Unit.video_output?(config, name, output) ->
+        "'s output #{inspect(output)} is an H.264 video, not an image"
+
+      true ->
+        " has no output #{inspect(output)}"
     end
   end
 

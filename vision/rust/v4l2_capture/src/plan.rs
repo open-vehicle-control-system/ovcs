@@ -4,9 +4,10 @@
 use framing::{output_frame_header, output_jpeg_header};
 
 use crate::arguments::{Format, OutputSpec, Source};
-use crate::bands::{Images, Measures};
+use crate::bands::{Images, Measures, Nv12Target};
 use crate::bayer::RawFrame;
 use crate::jpeg::JpegOutput;
+use crate::nv12::{self, Nv12Layout};
 use crate::processor::{Cpu, Development, Processor};
 use crate::scale::Averager;
 use crate::sensor::SensorModel;
@@ -14,10 +15,12 @@ use crate::sensor::SensorModel;
 /// What makes an output's image of a frame.
 enum Role {
     /// A processor converts the raw frame into it and, with `averaged_into`,
-    /// into the 2x2 average of it that this later output is.
+    /// into the 2x2 average of it that this later output is, with
+    /// `nv12_into`, into the NV12 that this later output is, laid out so.
     Processed {
         processor: Box<dyn Processor>,
         averaged_into: Option<usize>,
+        nv12_into: Option<(usize, Nv12Layout)>,
     },
     /// The processor of the output it is made from averages it as it converts,
     /// while the rows are in cache.
@@ -28,6 +31,17 @@ enum Role {
     /// Encoded from the earlier output `from` on the encoder thread, the
     /// `slot`th of a frame's JPEGs; it has no image.
     Jpeg { from: usize, slot: usize },
+    /// Converted to NV12 laid out as `layout` from the earlier output
+    /// `from`, by its processor as it converts when `converted_along`, after
+    /// the outputs scaled otherwise, averaged first in blocks of `block`
+    /// pixels; encoded by the `slot`th of a frame's video encoders.
+    H264 {
+        from: usize,
+        block: (usize, usize),
+        slot: usize,
+        layout: Nv12Layout,
+        converted_along: bool,
+    },
 }
 
 struct OutputPlan {
@@ -39,15 +53,27 @@ struct OutputPlan {
 pub struct Plan {
     outputs: Vec<OutputPlan>,
     averager: Averager,
+    /// An H.264 output's source averaged, when it is a fraction of it.
+    averaged: Vec<u8>,
 }
 
 impl Plan {
     /// The plan of `outputs` from a `model` sensor. Each `from:` output names
     /// an earlier one, as the command line guarantees: the image a role reads
     /// is made before it, and the one a processor averages into comes after
-    /// its own.
-    pub fn new(outputs: &[OutputSpec], model: SensorModel) -> Plan {
+    /// its own. `layouts` are the NV12 layouts of the H.264 outputs'
+    /// encoders, in the outputs' order.
+    pub fn new(outputs: &[OutputSpec], model: SensorModel, layouts: &[Nv12Layout]) -> Plan {
         let mut roles: Vec<Option<Role>> = outputs.iter().map(|_| None).collect();
+        let mut videos = 0;
+        let video_slots: Vec<Option<usize>> = (outputs.iter())
+            .map(|spec| {
+                let slot = matches!(spec.format, Format::H264 { .. }).then_some(videos);
+                videos += usize::from(slot.is_some());
+                slot
+            })
+            .collect();
+        let mut converted_along = vec![false; outputs.len()];
         for (index, spec) in outputs.iter().enumerate() {
             let Source::Cpu(output) = spec.source else {
                 continue;
@@ -65,14 +91,28 @@ impl Plan {
             if let Some(averaged) = averaged_into {
                 roles[averaged] = Some(Role::AveragedAlong);
             }
+            let nv12_into = (processor.converts_to_nv12())
+                .then(|| {
+                    (outputs.iter().enumerate()).find_map(|(later, later_spec)| {
+                        let slot = video_slots[later]?;
+                        let same_size = later_spec.block(spec) == (1, 1);
+                        (later_spec.source == Source::From(index) && same_size)
+                            .then_some((later, layouts[slot]))
+                    })
+                })
+                .flatten();
+            if let Some((later, _)) = nv12_into {
+                converted_along[later] = true;
+            }
             roles[index] = Some(Role::Processed {
                 processor,
                 averaged_into,
+                nv12_into,
             });
         }
         let mut jpegs = 0;
         let mut planned = Vec::with_capacity(outputs.len());
-        for (&spec, role) in outputs.iter().zip(roles) {
+        for (index, (&spec, role)) in outputs.iter().zip(roles).enumerate() {
             let role = match (role, spec.source, spec.format) {
                 (Some(role), _, _) => role,
                 (None, Source::From(from), Format::Rgb) => Role::ScaledAfter {
@@ -86,6 +126,16 @@ impl Plan {
                         slot: jpegs - 1,
                     }
                 }
+                (None, Source::From(from), Format::H264 { .. }) => {
+                    let slot = video_slots[index].expect("an H.264 output's slot");
+                    Role::H264 {
+                        from,
+                        block: spec.block(&outputs[from]),
+                        slot,
+                        layout: layouts[slot],
+                        converted_along: converted_along[index],
+                    }
+                }
                 (None, Source::Cpu(_), _) => unreachable!("a processor makes it"),
             };
             planned.push(OutputPlan { spec, role });
@@ -93,6 +143,7 @@ impl Plan {
         Plan {
             outputs: planned,
             averager: Averager::default(),
+            averaged: Vec::new(),
         }
     }
 
@@ -113,14 +164,11 @@ impl Plan {
             .unwrap_or(1)
     }
 
-    /// Each output's place among a frame's JPEGs, for those sent as one.
-    pub fn jpeg_slots(&self) -> Vec<Option<usize>> {
+    /// How many of a frame's outputs are sent as JPEGs.
+    pub fn jpeg_count(&self) -> usize {
         (self.outputs.iter())
-            .map(|output| match output.role {
-                Role::Jpeg { slot, .. } => Some(slot),
-                _ => None,
-            })
-            .collect()
+            .filter(|output| matches!(output.role, Role::Jpeg { .. }))
+            .count()
     }
 
     /// The outputs sent as JPEGs, in the order of their slots.
@@ -152,6 +200,7 @@ impl Plan {
             let Role::Processed {
                 processor,
                 averaged_into,
+                nv12_into,
             } = &mut output.role
             else {
                 continue;
@@ -165,9 +214,18 @@ impl Plan {
                 threads: development.threads,
             };
             let (made, later) = images.split_at_mut(index + 1);
+            let (mut averaged, mut nv12) = (None, None);
+            for (output, image) in (index + 1..).zip(later) {
+                if Some(output) == *averaged_into {
+                    averaged = Some(image);
+                } else if let Some((_, layout)) = nv12_into.filter(|(into, _)| *into == output) {
+                    nv12 = Some(Nv12Target { image, layout });
+                }
+            }
             let target = Images {
                 rgb: &mut made[index],
-                averaged: averaged_into.map(|output| &mut later[output - index - 1]),
+                averaged,
+                nv12,
             };
             let measures = processor.develop(raw, &development, target);
             measured.get_or_insert(measures);
@@ -193,21 +251,81 @@ impl Plan {
         }
     }
 
-    /// The header of each output sent, with its index, for the frame started
-    /// at `start_ns`.
-    pub fn headers(&self, start_ns: i64) -> Vec<(usize, [u8; 14])> {
+    /// The indices of the outputs sent as H.264, in the order of their slots.
+    pub fn h264_outputs(&self) -> Vec<usize> {
+        (self.outputs.iter().enumerate())
+            .filter(|(_, output)| matches!(output.role, Role::H264 { .. }))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
+    /// Converts the source of each output sent as H.264 that its processor
+    /// does not convert to its NV12 image of `images`, on `threads` threads.
+    pub fn convert_to_nv12(&mut self, threads: usize, images: &mut [Vec<u8>]) {
+        for (index, output) in self.outputs.iter().enumerate() {
+            let Role::H264 {
+                from,
+                block,
+                layout,
+                converted_along: false,
+                ..
+            } = output.role
+            else {
+                continue;
+            };
+            let (made, rest) = images.split_at_mut(index);
+            let source = if block == (1, 1) {
+                &made[from]
+            } else {
+                let source_width = self.outputs[from].spec.width as usize;
+                let averaged = &mut self.averaged;
+                (self.averager).average_blocks(&made[from], source_width, block, threads, averaged);
+                &self.averaged
+            };
+            rest[0].resize(layout.size, 0);
+            nv12::convert(source, &layout, threads, &mut rest[0]);
+        }
+    }
+
+    /// What the writer writes of each output sent, with its index, for the
+    /// frame started at `start_ns`.
+    pub fn sent(&self, start_ns: i64) -> Vec<(usize, Sent)> {
         (self.outputs.iter().enumerate())
             .filter(|(_, output)| output.spec.send)
             .map(|(index, output)| {
                 let (width, height) = (output.spec.width as u16, output.spec.height as u16);
-                let header = match output.spec.format {
-                    Format::Rgb => output_frame_header,
-                    Format::Jpeg { .. } => output_jpeg_header,
+                let sent = match output.role {
+                    Role::Jpeg { slot, .. } => Sent::Jpeg {
+                        header: output_jpeg_header(index as u8, width, height, start_ns),
+                        slot,
+                    },
+                    Role::H264 { slot, .. } => Sent::H264 {
+                        slot,
+                        width,
+                        height,
+                    },
+                    _ => Sent::Image(output_frame_header(index as u8, width, height, start_ns)),
                 };
-                (index, header(index as u8, width, height, start_ns))
+                (index, sent)
             })
             .collect()
     }
+}
+
+/// What the writer writes of an output sent, in a frame's records.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sent {
+    /// Its image, after this header.
+    Image([u8; 14]),
+    /// The `slot`th of the frame's JPEGs, after this header.
+    Jpeg { header: [u8; 14], slot: usize },
+    /// What the `slot`th of the frame's video encoders gives, a record
+    /// headed by the encoded frame's capture time and key frame flag.
+    H264 {
+        slot: usize,
+        width: u16,
+        height: u16,
+    },
 }
 
 #[cfg(test)]
@@ -226,14 +344,28 @@ mod tests {
     }
 
     // What makes each output, by name.
-    fn roles(outputs: &[OutputSpec]) -> Vec<String> {
-        let plan = Plan::new(outputs, SensorModel::Imx477);
+    fn roles(outputs: &[OutputSpec], layouts: &[Nv12Layout]) -> Vec<String> {
+        let plan = Plan::new(outputs, SensorModel::Imx477, layouts);
         (plan.outputs.iter())
             .map(|output| match output.role {
-                Role::Processed { averaged_into, .. } => format!("processed {averaged_into:?}"),
+                Role::Processed {
+                    averaged_into,
+                    nv12_into,
+                    ..
+                } => match nv12_into {
+                    Some((nv12, _)) => format!("processed {averaged_into:?} nv12 {nv12}"),
+                    None => format!("processed {averaged_into:?}"),
+                },
                 Role::AveragedAlong => "averaged along".to_string(),
                 Role::ScaledAfter { from, block } => format!("scaled {from} {block:?}"),
                 Role::Jpeg { from, slot } => format!("jpeg {from} {slot}"),
+                Role::H264 {
+                    from,
+                    block,
+                    slot,
+                    converted_along,
+                    ..
+                } => format!("h264 {from} {block:?} {slot} along {converted_along}"),
             })
             .collect()
     }
@@ -249,7 +381,7 @@ mod tests {
             spec(Source::From(2), (12, 23), Format::Jpeg { quality: 90 }),
         ];
         assert_eq!(
-            roles(&outputs),
+            roles(&outputs, &[]),
             [
                 "processed Some(2)",
                 "jpeg 0 0",
@@ -259,27 +391,100 @@ mod tests {
                 "jpeg 2 1",
             ]
         );
-        let plan = Plan::new(&outputs, SensorModel::Imx477);
-        assert_eq!(
-            plan.jpeg_slots(),
-            [None, Some(0), None, None, None, Some(1)]
-        );
+        let plan = Plan::new(&outputs, SensorModel::Imx477, &[]);
+        let jpegs: Vec<(usize, usize)> = (plan.sent(5).into_iter())
+            .filter_map(|(index, sent)| match sent {
+                Sent::Jpeg { header, slot } => {
+                    assert_eq!(header[..2], [8, index as u8]);
+                    Some((index, slot))
+                }
+                Sent::Image(_) | Sent::H264 { .. } => None,
+            })
+            .collect();
+        assert_eq!(jpegs, [(1, 0), (5, 1)]);
+        assert_eq!(plan.jpeg_count(), 2);
         assert_eq!(plan.jpeg_outputs().len(), 2);
         assert!(plan.scales());
         assert_eq!(plan.default_threads(), 3);
     }
 
     #[test]
-    fn only_the_outputs_sent_have_a_header() {
+    fn each_h264_output_is_converted_to_the_nv12_layout_of_its_encoder_by_the_processor_of_its_size(
+    ) {
+        let h264 = Format::H264 {
+            bitrate_kbps: 4_000,
+            keyframe_interval: 30,
+        };
+        let outputs = [
+            spec(Source::Cpu(Output::Full), (24, 46), Format::Rgb),
+            spec(Source::From(0), (12, 23), Format::Rgb),
+            spec(Source::From(0), (24, 46), h264),
+            spec(Source::From(0), (12, 46), h264),
+        ];
+        let layout = |width, height, stride, luma_rows| Nv12Layout {
+            width,
+            height,
+            stride,
+            luma_rows,
+            size: stride * luma_rows * 3 / 2,
+        };
+        let layouts = [layout(24, 46, 32, 64), layout(12, 46, 16, 64)];
+        let mut plan = Plan::new(&outputs, SensorModel::Imx477, &layouts);
+        assert_eq!(
+            roles(&outputs, &layouts),
+            [
+                "processed Some(1) nv12 2",
+                "averaged along",
+                "h264 0 (1, 1) 0 along true",
+                "h264 0 (2, 1) 1 along false"
+            ]
+        );
+        assert_eq!(plan.h264_outputs(), [2, 3]);
+        assert_eq!(
+            plan.sent(5)[2..],
+            [
+                (
+                    2,
+                    Sent::H264 {
+                        slot: 0,
+                        width: 24,
+                        height: 46
+                    }
+                ),
+                (
+                    3,
+                    Sent::H264 {
+                        slot: 1,
+                        width: 12,
+                        height: 46
+                    }
+                )
+            ]
+        );
+
+        let rgb: Vec<u8> = (0..24 * 46 * 3).map(|byte| (byte * 7) as u8).collect();
+        let mut images = vec![rgb.clone(), Vec::new(), Vec::new(), Vec::new()];
+        plan.convert_to_nv12(2, &mut images);
+        let mut halved = Vec::new();
+        Averager::default().average_blocks(&rgb, 24, (2, 1), 1, &mut halved);
+        let mut expected = vec![0; layouts[1].size];
+        nv12::convert(&halved, &layouts[1], 1, &mut expected);
+        assert!(images[3] == expected);
+        assert!(images[2].is_empty(), "the processor makes output 2");
+    }
+
+    #[test]
+    fn only_the_outputs_sent_are_written() {
         let unsent = OutputSpec {
             send: false,
             ..spec(Source::Cpu(Output::Half), (12, 23), Format::Rgb)
         };
         let outputs = [unsent, spec(Source::From(0), (6, 23), Format::Rgb)];
-        let plan = Plan::new(&outputs, SensorModel::Imx477);
-        let headers = plan.headers(5);
-        assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0], (1, output_frame_header(1, 6, 23, 5)));
+        let plan = Plan::new(&outputs, SensorModel::Imx477, &[]);
+        assert_eq!(
+            plan.sent(5),
+            [(1, Sent::Image(output_frame_header(1, 6, 23, 5)))]
+        );
         assert_eq!(plan.default_threads(), 1);
     }
 }

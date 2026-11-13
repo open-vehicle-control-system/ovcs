@@ -21,7 +21,10 @@ defmodule VisionCore.Exporter do
       `name` captured, a `:camera` component (`VisionCore.Camera.Unit`),
       of its default output;
     * `{:camera_frame, name, output}` — a frame of the camera `name`'s
-      output `output` (`VisionCore.Camera.Output`);
+      image output `output` (`VisionCore.Camera.Output`);
+    * `{:camera_video, name, output}` — a frame of the camera `name`'s
+      H.264 output `output`, carrying one frame of the stream
+      (`VisionCore.Camera.Frame`);
     * `{:detections, name}` — `{pair, detections}`, the result for
       `pair` of the detection pipeline named `name`, `:detection` for
       the one a detector without a `:name` starts
@@ -37,7 +40,7 @@ defmodule VisionCore.Exporter do
 
   An entry is an output, or `{output, options}` whose one option is
   `:max_hz`, the most values of the output handed over a second
-  (`output_specs/2`):
+  (`output_specs/2`), which a video does not take:
 
       [{:camera_frame, :left}, {{:detections, :road}, max_hz: 2}, stereo_pair: [max_hz: 5]]
 
@@ -48,7 +51,10 @@ defmodule VisionCore.Exporter do
   one without a camera named `:hq`. The exporter is handed the
   newest value of each output only: values that came while it was busy
   are dropped, and under `:max_hz` the latest one is held until the
-  output's next slot opens.
+  output's next slot opens. A video is the exception: a decoder needs
+  every frame from a key frame on, so the exporter is handed every frame
+  of it in order, from a key frame, those that come while it is busy
+  queued (`VisionCore.Camera.VideoQueue`).
 
   An output's messages are `{output, value}`, but a camera's, which are
   `{:camera_frame, frame}`, the frame carrying the camera's side, or
@@ -186,6 +192,7 @@ defmodule VisionCore.Exporter do
           | {:segmentation, atom()}
           | {:camera_frame, atom()}
           | {:camera_frame, atom(), atom()}
+          | {:camera_video, atom(), atom()}
 
   @typedoc "An entry of `c:outputs/1`: an output, with its options or without."
   @type output_spec :: output() | {output(), [{:max_hz, number()}]}
@@ -305,7 +312,8 @@ defmodule VisionCore.Exporter do
   `{:detections, name}` and `{:segmentation, name}` for a valid pipeline
   name (`VisionCore.Pipelines.name?/1`),
   `{:camera_frame, name}` for a stereo side or a valid camera name, and
-  `{:camera_frame, name, output}` for a valid camera name and an atom.
+  `{:camera_frame, name, output}` and `{:camera_video, name, output}` for
+  a valid camera name and an atom.
   """
   @spec output?(term()) :: boolean()
   def output?({:detections, name}), do: VisionCore.Pipelines.name?(name)
@@ -313,7 +321,7 @@ defmodule VisionCore.Exporter do
   def output?({:camera_frame, side}) when side in [:left, :right], do: true
   def output?({:camera_frame, name}), do: VisionCore.Pipelines.name?(name)
 
-  def output?({:camera_frame, name, output}),
+  def output?({kind, name, output}) when kind in [:camera_frame, :camera_video],
     do: name not in [:left, :right] and VisionCore.Pipelines.name?(name) and is_atom(output)
 
   def output?(term), do: is_map_key(@outputs, term)
@@ -330,8 +338,9 @@ defmodule VisionCore.Exporter do
   The outputs `exporter` reads with `options`, in its `c:outputs/1`
   order, each with the most values it is handed a second, `nil` when
   unbounded. `{:error, {:invalid_output, entry}}` for the first entry
-  that names no output, names one a second time, or has options other
-  than a positive `:max_hz`; `{:error, {:outputs_raised, message}}` when
+  that names no output, names one a second time, has options other
+  than a positive `:max_hz`, or a `:max_hz` on a video;
+  `{:error, {:outputs_raised, message}}` when
   `c:outputs/1` raises.
   """
   @spec output_specs(module(), keyword()) ::
@@ -355,6 +364,8 @@ defmodule VisionCore.Exporter do
   rescue
     exception -> {:error, {:outputs_raised, Exception.message(exception)}}
   end
+
+  defp output_spec({{:camera_video, _name, _output}, [_option | _others]}), do: nil
 
   defp output_spec({output, options}) when is_list(options) do
     with true <- output?(output),
@@ -413,7 +424,8 @@ defmodule VisionCore.Exporter do
   the `outputs/1` of the unit that produces it
   (`VisionCore.Stereo.Supervisor`, `VisionCore.Detection.Supervisor`,
   `VisionCore.Segmentation.Supervisor`, `VisionCore.Camera.Unit`), and for
-  a camera's named output from `VisionCore.Camera.Unit.output_key/3`.
+  a camera's named output from `VisionCore.Camera.Unit.output_key/3`, or
+  `VisionCore.Camera.Unit.video_key/3` for a video.
   `nil` when nothing in `config` produces `output`; raises
   `ArgumentError` for a term that is no output (`output?/1`).
   """
@@ -429,6 +441,9 @@ defmodule VisionCore.Exporter do
 
   defp key({:camera_frame, name, output}, config),
     do: VisionCore.Camera.Unit.output_key(config, name, output)
+
+  defp key({:camera_video, name, output}, config),
+    do: VisionCore.Camera.Unit.video_key(config, name, output)
 
   defp key(output, config) do
     case List.keyfind(producer(output).outputs(config), output, 0) do

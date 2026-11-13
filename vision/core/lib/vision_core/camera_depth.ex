@@ -138,6 +138,14 @@ defmodule VisionCore.CameraDepth do
             "which it does not send (send: false)"
         )
 
+    if Unit.video_output?(config, name, output),
+      do:
+        raise(
+          ArgumentError,
+          "its source names the output #{inspect(output)} of the camera #{inspect(name)}, " <>
+            "an H.264 video, not an image"
+        )
+
     key =
       Unit.output_key(config, name, output) ||
         raise ArgumentError,

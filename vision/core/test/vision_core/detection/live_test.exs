@@ -54,14 +54,14 @@ defmodule VisionCore.Detection.LiveTest do
       {{:detections, :detection}, {pair(), positioned}}
     )
 
-    assert_receive {:vision_detections, [%{label: "person", distance_m: 1.8}]}
+    assert_receive {:vision_detections, %{detections: [%{label: "person", distance_m: 1.8}]}}
   end
 
   test "sends each result to subscribers: label, score, distance and outline as fractions of the frame" do
     :ok = Live.subscribe()
     cast_detections([person(240, 108, 720, 432, 1.8)])
 
-    assert_receive {:vision_detections, [detection]}
+    assert_receive {:vision_detections, %{detections: [detection]}}
 
     assert %{label: "person", score: 0.62, distance_m: 1.8} = detection
     assert detection.outline == [[0.25, 0.2], [0.75, 0.2], [0.75, 0.8], [0.25, 0.8]]
@@ -76,17 +76,29 @@ defmodule VisionCore.Detection.LiveTest do
       {{:detections, :hq_people}, {frame, [person(0, 0, 507, 380, nil)]}}
     )
 
-    assert_receive {:vision_detections, [%{distance_m: nil, outline: outline}]}
+    assert_receive {:vision_detections, %{detections: [%{distance_m: nil, outline: outline}]}}
     assert outline == [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
+  end
+
+  test "sends each result with the capture time of the frame its objects were found on" do
+    :ok = Live.subscribe()
+    frame = %Frame{label: "hq", width: 1014, height: 760, capture_ns: 123_456_789, rgb: <<>>}
+
+    GenServer.cast(
+      VisionCore.Pipelines.server(Live, :detection),
+      {{:detections, :hq_people}, {frame, []}}
+    )
+
+    assert_receive {:vision_detections, %{capture_ns: 123_456_789, detections: []}}
   end
 
   test "sends an empty result, so boxes from the last one go away" do
     :ok = Live.subscribe()
     cast_detections([person(240, 108, 720, 432, 1.8)])
-    assert_receive {:vision_detections, [_detection]}
+    assert_receive {:vision_detections, %{detections: [_detection]}}
 
     cast_detections([])
-    assert_receive {:vision_detections, []}
+    assert_receive {:vision_detections, %{detections: []}}
   end
 
   test "sends at most :max_hz results a second, then the latest one held meanwhile" do
@@ -98,9 +110,9 @@ defmodule VisionCore.Detection.LiveTest do
     cast_detections([person(240, 108, 720, 432, 2.5)])
     cast_detections([])
 
-    assert_receive {:vision_detections, [_detection]}
+    assert_receive {:vision_detections, %{detections: [_detection]}}
     refute_receive {:vision_detections, _}, 150
-    assert_receive {:vision_detections, []}, 300
+    assert_receive {:vision_detections, %{detections: []}}, 300
     refute_receive {:vision_detections, _}, 300
   end
 
@@ -144,7 +156,7 @@ defmodule VisionCore.Detection.LiveTest do
         :ok = Live.subscribe(:road)
         send(road_subscriber, :subscribed)
 
-        receive do: ({:vision_detections, detections} ->
+        receive do: ({:vision_detections, %{detections: detections}} ->
                        send(road_subscriber, {:road, detections}))
       end)
 
@@ -164,7 +176,7 @@ defmodule VisionCore.Detection.LiveTest do
         {{:detections, :detection}, {pair(), [person(240, 108, 720, 432, 1.8)]}}
       )
 
-      assert_receive {:vision_detections, [%{distance_m: 1.8}]}
+      assert_receive {:vision_detections, %{detections: [%{distance_m: 1.8}]}}
       refute_receive {:road, _detections}, 100
     end
   end

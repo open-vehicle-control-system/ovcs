@@ -11,12 +11,12 @@ The pipeline takes a camera source only, `{:camera, name}` or `{:camera, name, o
 
 The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. It runs its model as the detection Port does ([On the VENTUNO Q's NPU](./detection.md#on-the-ventuno-qs-npu)). The board generates its context binary on first boot, into `/data/vision/qnn/<name>`, and the Port holds a power vote set by `performance:` and `rpc_polling_us:`.
 
-With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference` output, it reads as below; it works the same with your camera:
+With the OVCS1 reference vehicle's colour camera, `:center`, and its `:half` output, it reads as below; it works the same with your camera:
 
 ```elixir
 {:qnn_segmenter,
  name: :scene,
- source: {:camera, :center, :inference},
+ source: {:camera, :center, :half},
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/ffnet_122ns_lowres.dlc")}
 ```
 

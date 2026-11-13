@@ -63,32 +63,39 @@ How the four cores were shared at 480 × 360, with the dashboard open:
 
 ## Measured on an Arduino VENTUNO Q
 
-The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623. Its Raspberry Pi HQ Camera (IMX477), `:center`, runs in the 2028 × 1520 sensor mode, with three outputs:
+The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shutter Cameras (IMX296) 20 cm apart. It matches at 728 × 544 over 128 disparities on the Adreno 623. Its Raspberry Pi HQ Camera (IMX477), `:center`, runs in the 2028 × 1520 sensor mode, with four outputs:
 
-- `view`, the full image, kept on the unit (`send: false`);
-- `view_jpeg`, that image as a JPEG;
-- `inference`, that image averaged 2 × 2, for the models.
+- `full`, the full image, kept on the unit (`send: false`);
+- `full_h264`, that image as H.264 at 8000 kbps, on the Iris video encoder;
+- `half`, that image averaged 2 × 2, for the models;
+- `half_jpeg`, the half image as a JPEG.
 
-YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile, with `rpc_polling_us: 9999`. These are measurements on one unit, not guarantees.
+YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `half`, on the Hexagon NPU at the `burst` performance profile, with `rpc_polling_us: 9999`. These are measurements on one unit, not guarantees.
 
 | Figure | Measured |
 |---|---|
 | One stereo pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 ms |
-| Stereo cameras, depth, `:center`'s outputs, `:objects`, `:scene` | 30 a second each |
+| Stereo cameras, depth, `:objects`, `:scene` | 30 a second each |
+| `:center`'s outputs, over 6 minutes | 30 a second |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
-| `:center`'s conversion, the 2 × 2 average taken in it, 3 threads | 21.9 ms a frame |
-| `:center`'s JPEG encode, 2028 × 1520 at quality 80, its own thread | 18.2 ms a frame |
-| `:center`'s write to the Port, `view_jpeg` and `inference` | 6.5 ms a frame |
+| `:center`'s conversion, the 2 × 2 average and the NV12 for H.264 taken in it, 3 threads | 21.1 to 21.5 ms a frame |
+| `:center`'s H.264 encode, 2028 × 1520, from the frame queued to the encoder to its stream dequeued | 5.3 ms a frame |
+| `:center`'s H.264 stream at 30 frames a second, a key frame every 30 frames | 8.0 Mbit/s, key frames about 86 KB |
+| `:center`'s JPEG encode, 1014 × 760 at quality 80, its own thread | 5 to 6 ms a frame |
+| `:center`'s write to the Port, `full_h264`, `half` and `half_jpeg` | 8 to 10 ms a frame |
+| `v4l2_capture` for `:center`, all its threads, on the four Cortex-A78 | about 1.9 cores |
 | YOLOX on the NPU (`npu.pipelines.objects.inferenceMs`) | 2.1 ms |
 | FFNet-122NS-LowRes on the NPU | 5.6 ms |
 | The NPU's load, both models on every frame (`npu.loadPercent`) | about 23% |
 | One detection request in `qnn_detect`: read, letterbox on 3 threads, `graphExecute` | about 1.4, 4.6 and 4.3 ms |
 | One band in `qnn_segment`: read, resize on 3 threads, `graphExecute`, argmax | about 1.1, 5.4, 7.0 and 1.1 ms |
-| CPU, all cores, a dashboard open with previews at 30 Hz | about 65% |
+| CPU, all cores, no dashboard open | about 55% |
 
 The QNN Ports' performance profile makes the largest difference. With no power vote and the context binaries built at QNN's default optimisation level, YOLOX took 8.7 ms on the NPU and FFNet 26.9 ms. That is too much for both models on every frame at 30 Hz. Qualcomm AI Hub's figures for the same models on this board, 2.3 and 6.0 ms, are close to the `burst` ones.
 
 On the `:center` camera, sending its 9.2 MB full image to the core at every frame took the writer 24 ms a frame. It slowed the conversion to 34.5 ms, past the 33.3 ms of a frame, and the camera fell to about 27 frames a second.
+
+Before `v4l2_capture` kept a camera's threads off the Cortex-A55 cores, the kernel placed some of each frame's conversion bands on them. With the H.264 output, `:center` held 30 frames a second for 20 to 60 s, then its bands ran on the A55s 40 to 55% of the time instead of about 5%. Its conversion took 33 to 37 ms, and the camera settled at 25 to 28 frames a second, using 2.3 to 2.4 cores.
 
 Averaging the half-size image in a second pass after the conversion cost 4.9 ms more than taking it during the conversion. Above 3 conversion threads, the conversion slows down on this unit.
 

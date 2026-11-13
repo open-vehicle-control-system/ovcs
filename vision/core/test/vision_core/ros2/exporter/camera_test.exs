@@ -1,6 +1,8 @@
 defmodule VisionCore.Ros2.Exporter.CameraTest do
   use ExUnit.Case, async: true
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.FoxgloveMsgs.Msg.CompressedVideo
   alias Ros2Zenoh.GeometryMsgs.Msg.TransformStamped
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage}
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
@@ -68,6 +70,36 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
     assert camera.image_topic == "front/hq/image_raw/compressed"
     assert camera.camera_info_topic == "front/hq/camera_info"
     assert camera.service_name == "front/hq/set_camera_info"
+    assert camera.video_topic == "front/hq/video"
+  end
+
+  describe "video_message/2" do
+    test "is a frame of the H.264 stream, stamped, in the frame id it carries or the camera's" do
+      frame = %Frame{
+        label: "hq",
+        frame_id: "hq_optical",
+        width: 2028,
+        height: 1520,
+        capture_ns: 0,
+        h264: <<0, 0, 0, 1, 0x65>>,
+        keyframe?: true
+      }
+
+      assert {"front/hq/video", CompressedVideo, video} = Camera.video_message(frame, camera())
+
+      assert %CompressedVideo{
+               timestamp: %Time{},
+               frame_id: "hq_optical",
+               data: <<0, 0, 0, 1, 0x65>>,
+               format: "h264"
+             } = video
+
+      assert {_topic, CompressedVideo, %CompressedVideo{frame_id: "camera_optical"}} =
+               Camera.video_message(
+                 %{frame | frame_id: nil},
+                 camera(%{frame_id: "camera_optical"})
+               )
+    end
   end
 
   describe "frame_messages/4" do

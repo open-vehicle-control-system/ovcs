@@ -25,11 +25,13 @@ const CITYSCAPES_ORDER = Object.values(CITYSCAPES)
 const CLASS_ALPHA = Math.round(0.4 * 255)
 const ROAD_ALPHA = Math.round(0.6 * 255)
 
-const HEADER_BYTES = 16
+const HEADER_BYTES = 24
+const CAPTURE_OFFSET = 16
 
 /**
  * A `segmentation` event's binary payload: the camera frame's size, the band of it the grid covers, in its pixels,
- * the grid's size, its class ids row by row, and the ids present, in order. Throws on a payload shorter than its grid.
+ * the grid's size, the frame's capture time in microseconds, its class ids row by row, and the ids present, in order.
+ * Throws on a payload shorter than its grid.
  */
 export function decodeSegmentation(buffer) {
   const view = new DataView(buffer)
@@ -44,6 +46,7 @@ export function decodeSegmentation(buffer) {
     frame: { width: frameWidth, height: frameHeight },
     band: { x, y, width, height },
     grid: { width: gridWidth, height: gridHeight },
+    captureUs: Number(view.getBigInt64(CAPTURE_OFFSET, true)),
     data,
     present: Array.from(inGrid.keys()).filter((id) => inGrid[id] === 1)
   }

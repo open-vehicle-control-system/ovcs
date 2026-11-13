@@ -59,12 +59,12 @@ The load is `null` until a Port has reported a time. A pipeline's time is `null`
 
 A detector with `source: {:camera, name}` detects on the camera of its own `name` ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera.
 
-`source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference` output, it reads as below; it works the same with your camera and backend:
+`source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. With the OVCS1 reference vehicle's colour camera, `:center`, and its `:half` output, it reads as below; it works the same with your camera and backend:
 
 ```elixir
 {:qnn_detector,
  name: :objects,
- source: {:camera, :center, :inference},
+ source: {:camera, :center, :half},
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox_w8a8.dlc")}
 ```
 

@@ -5,7 +5,8 @@ use std::ops::Range;
 use std::panic;
 
 use crate::arguments::Output;
-use crate::bayer::{CellRows, Image, RawFrame};
+use crate::bayer::{Along, CellRows, Image, Nv12Band, RawFrame};
+use crate::nv12::Nv12Layout;
 
 /// How a frame is converted: at which size, which way up, and what is
 /// measured of it besides its image.
@@ -90,11 +91,19 @@ impl Sums {
     }
 }
 
-/// What a frame is converted into: `rgb`, and with `averaged` each 2x2 block
-/// of it averaged, as `scale::Averager` does.
+/// What a frame is converted into: `rgb`, with `averaged` each 2x2 block of
+/// it averaged, as `scale::Averager` does, and with `nv12` it as NV12, as
+/// `nv12::convert` makes it.
 pub struct Images<'a> {
     pub rgb: &'a mut Vec<u8>,
     pub averaged: Option<&'a mut Vec<u8>>,
+    pub nv12: Option<Nv12Target<'a>>,
+}
+
+/// An image the size of the one converted, as NV12 laid out as `layout`.
+pub struct Nv12Target<'a> {
+    pub image: &'a mut Vec<u8>,
+    pub layout: Nv12Layout,
 }
 
 /// Converts an image of rows of `width` pixels into `images`, turned by 180
@@ -102,12 +111,16 @@ pub struct Images<'a> {
 /// `threads` bands of groups (`split`): `convert(cell_rows, image,
 /// scratch)` writes the rows of the groups `cell_rows` into `image`, which
 /// holds those rows of `images`, through a `scratch` of the band's own, and
-/// returns what it measured of them. With an averaged image, each band
-/// starts on an even row and the image's width and height are even. Each
-/// band but the last runs on a thread of its own, the last on the calling
-/// one. Returns the sums measured, added up.
+/// returns what it measured of them. With an averaged or NV12 image, each
+/// band starts on an even row and the image's width and height are even.
+/// Each band but the last runs on a thread of its own, the last on the
+/// calling one. Returns the sums measured, added up.
 pub fn convert<S: Default + Send>(
-    Images { rgb, averaged }: Images,
+    Images {
+        rgb,
+        averaged,
+        nv12,
+    }: Images,
     width: usize,
     cell: usize,
     rotate_180: bool,
@@ -118,11 +131,8 @@ pub fn convert<S: Default + Send>(
     let rgb = &mut rgb[..];
     let height = rgb.len() / (width * 3).max(1);
     // Groups of cells whose rows are a whole number of 2x2 blocks' rows.
-    let group = if averaged.is_some() && cell % 2 == 1 {
-        2
-    } else {
-        1
-    };
+    let in_pairs = averaged.is_some() || nv12.is_some();
+    let group = if in_pairs && cell % 2 == 1 { 2 } else { 1 };
     let bands: Vec<Range<usize>> = (split(height / cell / group, threads).into_iter())
         .map(|groups| group * groups.start..group * groups.end)
         .collect();
@@ -134,17 +144,33 @@ pub fn convert<S: Default + Send>(
         averaged.resize(averaged_row_bytes * (height / 2), 0);
         &mut averaged[..]
     });
-    let image = |part, averaged, cells: &Range<usize>| {
+    let nv12 = nv12.map(|Nv12Target { image, layout }| {
+        assert_eq!((layout.width, layout.height), (width, height));
+        image.resize(layout.size, 0);
+        let (luma, chroma) = image.split_at_mut(layout.stride * layout.luma_rows);
+        let luma = &mut luma[..layout.stride * height];
+        let chroma = &mut chroma[..layout.stride * height / 2];
+        (luma, chroma, layout.stride)
+    });
+    let image = |part, along, cells: &Range<usize>| {
         Image::band(
             part,
-            averaged,
+            along,
             width,
             cell * cells.start..cell * cells.end,
             rotate_180,
         )
     };
     if let [cells] = &bands[..] {
-        return convert(cells.clone(), image(rgb, averaged, cells), &mut scratch[0]);
+        let along = Along {
+            averaged,
+            nv12: nv12.map(|(luma, chroma, stride)| Nv12Band {
+                luma,
+                chroma,
+                stride,
+            }),
+        };
+        return convert(cells.clone(), image(rgb, along, cells), &mut scratch[0]);
     }
     let rows = |band: &Range<usize>| band.len() * cell;
     let rgb_parts = parts(
@@ -152,30 +178,45 @@ pub fn convert<S: Default + Send>(
         bands.iter().map(|band| rows(band) * width * 3),
         rotate_180,
     );
-    let averaged_parts: Vec<Option<&mut [u8]>> = match averaged {
-        Some(averaged) => {
-            let lengths = bands.iter().map(|band| rows(band) / 2 * averaged_row_bytes);
-            (parts(averaged, lengths, rotate_180).into_iter())
-                .map(Some)
-                .collect()
-        }
-        None => bands.iter().map(|_| None).collect(),
-    };
+    let mut averaged_parts = averaged.map(|averaged| {
+        let lengths = bands.iter().map(|band| rows(band) / 2 * averaged_row_bytes);
+        parts(averaged, lengths, rotate_180).into_iter()
+    });
+    let mut nv12_parts = nv12.map(|(luma, chroma, stride)| {
+        let luma_lengths = bands.iter().map(|band| rows(band) * stride);
+        let chroma_lengths = bands.iter().map(|band| rows(band) / 2 * stride);
+        let luma_parts = parts(luma, luma_lengths, rotate_180).into_iter();
+        let chroma_parts = parts(chroma, chroma_lengths, rotate_180).into_iter();
+        (luma_parts.zip(chroma_parts), stride)
+    });
+    let alongs: Vec<Along> = (bands.iter())
+        .map(|_| Along {
+            averaged: averaged_parts.as_mut().and_then(Iterator::next),
+            nv12: nv12_parts.as_mut().and_then(|(parts, stride)| {
+                let (luma, chroma) = parts.next()?;
+                Some(Nv12Band {
+                    luma,
+                    chroma,
+                    stride: *stride,
+                })
+            }),
+        })
+        .collect();
     let convert = &convert;
     std::thread::scope(|scope| {
         let mut jobs = (bands.iter())
-            .zip(rgb_parts.into_iter().zip(averaged_parts))
+            .zip(rgb_parts.into_iter().zip(alongs))
             .zip(scratch.iter_mut());
-        let ((last_cells, (last_part, last_averaged)), last_scratch) =
+        let ((last_cells, (last_part, last_along)), last_scratch) =
             jobs.next_back().expect("a band");
         let running: Vec<_> = jobs
-            .map(|((cells, (part, averaged)), scratch)| {
-                scope.spawn(move || convert(cells.clone(), image(part, averaged, cells), scratch))
+            .map(|((cells, (part, along)), scratch)| {
+                scope.spawn(move || convert(cells.clone(), image(part, along, cells), scratch))
             })
             .collect();
         let last = convert(
             last_cells.clone(),
-            image(last_part, last_averaged, last_cells),
+            image(last_part, last_along, last_cells),
             last_scratch,
         );
         running.into_iter().fold(last, |sums, band| {
@@ -288,6 +329,7 @@ mod tests {
         let images = Images {
             rgb: &mut rgb,
             averaged: None,
+            nv12: None,
         };
         let sums = convert(
             images,

@@ -156,6 +156,50 @@ defmodule VisionCore.Camera.UnitTest do
     end
   end
 
+  describe "a camera with an H.264 output" do
+    @video_outputs [
+      view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+      view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30],
+      view_jpeg: [from: :view, format: :jpeg]
+    ]
+
+    setup do
+      config =
+        config([{:camera, name: :hq, driver: V4L2Single, csiphy: 2, outputs: @video_outputs}])
+
+      %{config: config, server: V4L2Single.name_for("hq")}
+    end
+
+    test "gives it a video key, not an image key, and its first image output is its default", %{
+      config: config,
+      server: server
+    } do
+      assert Unit.video_key(config, :hq, :view_h264) == {:camera_frame, server, :view_h264}
+      assert Unit.output_key(config, :hq, :view_h264) == nil
+      assert Unit.output_key(config, :hq, nil) == {:camera_frame, server, :view_jpeg}
+      assert Unit.outputs(config) == [{{:camera_frame, :hq}, {:camera_frame, server, :view_jpeg}}]
+    end
+
+    test "has no video key for an image output, nor for a camera it does not have", %{
+      config: config
+    } do
+      assert Unit.video_key(config, :hq, :view_jpeg) == nil
+      assert Unit.video_key(config, :hq, :view) == nil
+      assert Unit.video_key(config, :front, :view_h264) == nil
+    end
+
+    test "tells a video apart from an output it does not have", %{config: config} do
+      assert Unit.video_output?(config, :hq, :view_h264)
+      refute Unit.video_output?(config, :hq, :view_jpeg)
+      refute Unit.video_output?(config, :hq, :preview)
+      refute Unit.video_output?(config, :front, :view_h264)
+    end
+
+    test "lists its image outputs to its consumers", %{config: config} do
+      assert [%{outputs: [%Output{name: :view_jpeg}]}] = Unit.settings(config)
+    end
+  end
+
   describe "a camera whose outputs cannot be made" do
     @refused [
       name: :hq,

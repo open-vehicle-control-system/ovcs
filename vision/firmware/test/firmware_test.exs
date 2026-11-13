@@ -20,7 +20,29 @@ defmodule VisionFirmwareTest do
     end
   end
 
+  describe "the API on a board" do
+    test "serves HTTPS on port 443 with a certificate kept on the application partition" do
+      https = target_config(:arduino_ventuno_q)[:vision_api][VisionApiWeb.Endpoint][:https]
+
+      assert https[:port] == 443
+      assert Path.dirname(https[:certfile]) == "/data/vision_api"
+      assert Path.dirname(https[:keyfile]) == "/data/vision_api"
+    end
+
+    test "redirects plain HTTP from port 80 and from port 4100, where it served plain HTTP before" do
+      vision_api = target_config(:arduino_ventuno_q)[:vision_api]
+
+      assert vision_api[VisionApiWeb.Endpoint][:http] == nil
+      assert vision_api[:https_redirect_ports] == [80, 4100]
+    end
+  end
+
   defp erlinit_env(target) do
+    erlinit = get_in(target_config(target), [:nerves, :erlinit]) || []
+    Keyword.get_values(erlinit, :env)
+  end
+
+  defp target_config(target) do
     env = %{"VEHICLE" => "Ovcs1", "CI" => "true", "SECRET_KEY_BASE" => "test"}
     saved = Map.new(env, fn {name, _value} -> {name, System.get_env(name)} end)
     System.put_env(env)
@@ -28,11 +50,11 @@ defmodule VisionFirmwareTest do
     try do
       ExUnit.CaptureIO.capture_io(:stderr, fn ->
         config = Config.Reader.read!("config/target.exs", env: :test, target: target)
-        send(self(), {:erlinit, get_in(config, [:nerves, :erlinit]) || []})
+        send(self(), {:config, config})
       end)
 
-      assert_received {:erlinit, erlinit}
-      Keyword.get_values(erlinit, :env)
+      assert_received {:config, config}
+      config
     after
       Enum.each(saved, fn
         {name, nil} -> System.delete_env(name)

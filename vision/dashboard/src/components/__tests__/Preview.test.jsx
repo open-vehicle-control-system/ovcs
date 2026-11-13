@@ -161,4 +161,114 @@ describe('Preview', () => {
 
     expect(socket.fakeChannel.leave).toHaveBeenCalled()
   })
+
+  describe('a video', () => {
+    let animationFrames
+    let decoders
+    let supported
+
+    // A key frame of a 2028 × 1520 stream as the video channel pushes it, captured at `captureUs`.
+    const keyFrame = (captureUs) => {
+      const units = [0, 0, 0, 1, 0x67, 0x64, 0x00, 0x28, 0xac, 0, 0, 0, 1, 0x68, 0xeb, 0, 0, 0, 1, 0x65, 1]
+      const bytes = new Uint8Array(13 + units.length)
+      const view = new DataView(bytes.buffer)
+      view.setUint8(0, 1)
+      view.setBigInt64(1, BigInt(captureUs), true)
+      view.setUint16(9, 2028, true)
+      view.setUint16(11, 1520, true)
+      bytes.set(units, 13)
+      return bytes
+    }
+    const configured = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)))
+
+    beforeEach(() => {
+      animationFrames = []
+      decoders = []
+      supported = true
+      globalThis.VideoDecoder = class {
+        static isConfigSupported = async (config) => ({ supported, config })
+        state = 'unconfigured'
+        decodeQueueSize = 0
+        constructor({ output }) {
+          this.output = output
+          decoders.push(this)
+        }
+        configure() {
+          this.state = 'configured'
+        }
+        decode() {}
+        close() {
+          this.state = 'closed'
+        }
+      }
+      globalThis.EncodedVideoChunk = class {}
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => animationFrames.push(callback))
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({ drawImage: vi.fn() }))
+    })
+
+    afterEach(() => {
+      delete globalThis.VideoDecoder
+      delete globalThis.EncodedVideoChunk
+      delete globalThis.isSecureContext
+      vi.restoreAllMocks()
+    })
+
+    it("decodes the camera's video channel on a canvas, not its JPEG preview, where the browser has WebCodecs", () => {
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+
+      expect(socket.channel).toHaveBeenCalledWith('video:center', {})
+      expect(socket.channel).not.toHaveBeenCalledWith('preview:center', {})
+      expect(screen.getByLabelText('center video').tagName).toBe('CANVAS')
+    })
+
+    it('draws the overlays of the capture time of the frame drawn, and its size', async () => {
+      const socket = fakeSocket()
+      const overlay = vi.fn(() => <span>boxes</span>)
+      render(<Preview stream="center" socket={socket} video overlay={overlay} />)
+      sendFrame(socket, keyFrame(-5_000_000))
+      await configured()
+
+      act(() => decoders[0].output({ timestamp: -5_000_000, displayWidth: 2028, displayHeight: 1520, close: vi.fn() }))
+      act(() => animationFrames.splice(0).forEach((callback) => callback()))
+
+      expect(screen.getByText('boxes')).toBeTruthy()
+      expect(overlay).toHaveBeenLastCalledWith(-5_000_000)
+      expect(screen.getByText('2028 × 1520')).toBeTruthy()
+    })
+
+    it('says the page is served over plain HTTP where the browser offers no WebCodecs for that, and joins nothing', () => {
+      delete globalThis.VideoDecoder
+      globalThis.isSecureContext = false
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+
+      expect(socket.channel).not.toHaveBeenCalled()
+      expect(screen.getByText(/served over plain HTTP/)).toBeTruthy()
+    })
+
+    it('says the browser cannot decode the stream where WebCodecs has no decoder for it', async () => {
+      supported = false
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+      sendFrame(socket, keyFrame(0))
+      await configured()
+
+      expect(screen.getByText(/cannot decode the camera's H.264 video/)).toBeTruthy()
+      expect(decoders).toEqual([])
+    })
+  })
+
+  it('draws an overlay given as a function with the newest frame, a JPEG preview\'s capture time unknown', () => {
+    const socket = fakeSocket()
+    const overlay = vi.fn(() => <span>boxes</span>)
+    render(<Preview stream="hq" socket={socket} overlay={overlay} />)
+    sendFrame(socket, [1])
+    const image = screen.getByRole('img')
+    Object.defineProperties(image, { naturalWidth: { value: 4 }, naturalHeight: { value: 2 } })
+    fireEvent.load(image)
+
+    expect(screen.getByText('boxes')).toBeTruthy()
+    expect(overlay).toHaveBeenLastCalledWith(null)
+  })
 })

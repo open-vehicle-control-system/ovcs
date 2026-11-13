@@ -41,7 +41,7 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert [detector] = Keyword.get_values(components, :qnn_detector)
     assert detector[:name] == :objects
-    assert detector[:source] == {:camera, :center, :inference}
+    assert detector[:source] == {:camera, :center, :half}
     assert detector[:score_threshold] == 0.4
     assert String.ends_with?(detector[:dlc_path], "priv/models/yolox_w8a8.dlc")
     assert "priv/models/yolox_w8a8.dlc" in Ovcs1.Vision.Composer.required_files()
@@ -52,13 +52,13 @@ defmodule Ovcs1.VisionComposerTest do
 
     assert [segmenter] = Keyword.get_values(components, :qnn_segmenter)
     assert segmenter[:name] == :scene
-    assert segmenter[:source] == {:camera, :center, :inference}
+    assert segmenter[:source] == {:camera, :center, :half}
     assert segmenter[:segment_every_n] == 1
     assert String.ends_with?(segmenter[:dlc_path], "priv/models/ffnet_122ns_lowres.dlc")
     assert "priv/models/ffnet_122ns_lowres.dlc" in Ovcs1.Vision.Composer.required_files()
   end
 
-  test "the center camera runs on Camera 2 at 30 fps in full-resolution colour, sent as a JPEG, and at half for the models" do
+  test "the center camera runs on Camera 2 at 30 fps in full-resolution colour, sent as H.264, and at half for the models and as a JPEG" do
     %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
     camera = Keyword.fetch!(components, :camera)
 
@@ -69,47 +69,55 @@ defmodule Ovcs1.VisionComposerTest do
     refute camera[:output]
 
     assert camera[:outputs] == [
-             view: [resolution: {2028, 1520}, processor: :cpu, send: false],
-             view_jpeg: [from: :view, format: :jpeg, quality: 80],
-             inference: [resolution: {1014, 760}, from: :view]
+             full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+             half: [resolution: {1014, 760}, from: :full],
+             half_jpeg: [from: :half, format: :jpeg, quality: 80],
+             full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
            ]
 
     config = Ovcs1.Vision.Composer.config(:target)
 
-    assert {:ok, [view, view_jpeg, inference]} =
+    assert {:ok, [full, half, half_jpeg, full_h264]} =
              VisionCore.Camera.Unit.camera_outputs(config, :center)
 
-    assert {view.name, view.index, view.width, view.height, view.send} ==
-             {:view, 0, 2028, 1520, false}
+    assert {full.name, full.index, full.width, full.height, full.send} ==
+             {:full, 0, 2028, 1520, false}
 
-    assert {view_jpeg.index, view_jpeg.width, view_jpeg.height, view_jpeg.format} ==
-             {1, 2028, 1520, :jpeg}
+    assert {half.index, half.width, half.height, half.from} ==
+             {1, 1014, 760, :full}
 
-    assert {inference.name, inference.index, inference.from} == {:inference, 2, :view}
+    assert {full_h264.index, full_h264.width, full_h264.height, full_h264.format} ==
+             {2, 2028, 1520, :h264}
 
-    # The raw view is made only for the JPEG and the models' input: it never crosses the Port.
-    assert [%{outputs: [^view_jpeg, ^inference]}] = VisionCore.Camera.Unit.settings(config)
+    assert {half_jpeg.index, half_jpeg.width, half_jpeg.height, half_jpeg.format} ==
+             {3, 1014, 760, :jpeg}
+
+    # The full image is made only for the video and the half image: it never crosses the Port.
+    assert [%{outputs: [^half, ^half_jpeg]}] = VisionCore.Camera.Unit.settings(config)
     server = VisionCore.Camera.V4L2Single.name_for("center")
-    assert VisionCore.Camera.Unit.output_key(config, :center, :view) == nil
+    assert VisionCore.Camera.Unit.output_key(config, :center, :full) == nil
 
     assert VisionCore.Camera.Unit.output_key(config, :center, nil) ==
-             {:camera_frame, server, :view_jpeg}
+             {:camera_frame, server, :half}
 
-    assert VisionCore.Camera.Unit.output_key(config, :center, :inference) ==
-             {:camera_frame, server, :inference}
+    assert VisionCore.Camera.Unit.video_key(config, :center, :full_h264) ==
+             {:camera_frame, server, :full_h264}
 
     assert camera[:max_exposure_us] == 25_000
     assert camera[:frame_id] == "center_optical"
   end
 
-  test "the preview and ROS 2 show the center camera's full image as the JPEG the camera encodes" do
+  test "the dashboard and ROS 2 show the center camera's video, ROS 2 its half image as a JPEG" do
     config = Ovcs1.Vision.Composer.config(:target)
     exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
 
-    assert config.preview[:outputs] == [center: :view_jpeg]
+    assert config.preview[:videos] == [center: :full_h264]
+    assert config.preview[:outputs] == [center: :half_jpeg]
     assert config.preview[:max_hz] == 30
+    assert VisionCore.Camera.Unit.video_output?(config, :center, :full_h264)
     assert VisionCore.Camera.Unit.output_key(config, :center, config.preview[:outputs][:center])
-    assert exporter[:cameras][:outputs] == [center: :view_jpeg]
+    assert exporter[:cameras][:outputs] == [center: :half_jpeg]
+    assert exporter[:cameras][:videos] == [center: :full_h264]
   end
 
   test "the center camera's calibration and pose sit beside the stereo pair's" do
@@ -176,8 +184,11 @@ defmodule Ovcs1.VisionComposerTest do
     assert options[:cameras][:names] == [:center]
     assert options[:segmentation][:pipelines] == [:scene]
 
-    assert VisionCore.Exporter.output_key({:camera_frame, :center, :view_jpeg}, config) ==
-             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :view_jpeg}
+    assert VisionCore.Exporter.output_key({:camera_frame, :center, :half_jpeg}, config) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :half_jpeg}
+
+    assert VisionCore.Exporter.output_key({:camera_video, :center, :full_h264}, config) ==
+             {:camera_frame, VisionCore.Camera.V4L2Single.name_for("center"), :full_h264}
   end
 
   test "the ROS 2 exporter's outputs are all produced by the configuration" do
