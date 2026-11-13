@@ -1,9 +1,11 @@
 ---
 id: TASK-135
 title: Serve exporter status and CPU load from one place in the vision API
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loic'
 created_date: '2026-11-13T16:28:00Z'
+updated_date: '2026-11-13T16:43:00Z'
 labels: []
 dependencies:
   - TASK-133
@@ -22,9 +24,9 @@ Options considered: dropping the channel's exporter statuses and polling GET /ap
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 GET /api/exporters lists no status
-- [ ] #2 The status channel reports the API's own exporter entry
-- [ ] #3 The status channel's payload has no cpuPercent
-- [ ] #4 The dashboard shows each exporter's status from the status channel alone
-- [ ] #5 The docs and vision/api/README.md match
+- [x] #1 GET /api/exporters lists no status
+- [x] #2 The status channel reports the API's own exporter entry
+- [x] #3 The status channel's payload has no cpuPercent
+- [x] #4 The dashboard shows each exporter's status from the status channel alone
+- [x] #5 The docs and vision/api/README.md match
 <!-- AC:END -->

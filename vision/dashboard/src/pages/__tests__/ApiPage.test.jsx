@@ -53,7 +53,7 @@ describe('ApiPage', () => {
   it('lists the exporters, and says nothing of the unit but how to reach it', () => {
     render(<ApiPage />)
 
-    expect(screen.getByRole('row', { name: /\/api\/exporters/ }).textContent).toContain('status')
+    expect(screen.getByRole('row', { name: /\/api\/exporters/ }).textContent).toContain('outputs')
     expect(screen.queryByText(/besides ROS 2/)).toBeNull()
   })
 })

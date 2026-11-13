@@ -34,7 +34,7 @@ export async function setDepthRange(metres) {
   return document.data.attributes.colourRangeM
 }
 
-/** What takes the outputs out of the unit: each exporter's `id`, `name`, `module`, `status` and `outputs`, the API last. */
+/** What takes the outputs out of the unit: each exporter's `id`, `name`, `module`, `outputs` and `actions`, the API last. */
 export async function fetchExporters() {
   const document = await request('exporters')
   return document.data.map((resource) => ({ id: resource.id, ...resource.attributes }))

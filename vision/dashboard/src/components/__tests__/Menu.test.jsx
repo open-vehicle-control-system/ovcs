@@ -12,7 +12,8 @@ const group = (id, name, position, pipeline, role = 'step') => ({
   id, name, summary: '', pipeline, role, position, status: null, parameterIds: []
 })
 
-const exporter = (id, name, level, detail) => ({ id, name, module: name, status: { level, detail }, outputs: [] })
+const exporter = (id, name) => ({ id, name, module: name, outputs: [] })
+const reported = (id, name, level, detail) => ({ id, name, status: { level, detail } })
 
 describe('Menu', () => {
   beforeEach(() => {
@@ -23,7 +24,7 @@ describe('Menu', () => {
     })
     useNavigation.setState({ page: 'overview', exporterId: null })
     useExporters.setState({
-      exporters: [exporter('ros2', 'ROS 2', 'warning', 'Disconnected'), exporter('api', 'API', 'ok', 'Answering')]
+      exporters: [exporter('ros2', 'ROS 2'), exporter('api', 'API')]
     })
     useStatus.setState({ snapshot: null })
   })
@@ -42,15 +43,11 @@ describe('Menu', () => {
     expect(within(exporters).getAllByRole('button').map((button) => button.textContent)).toEqual(['ROS 2', 'API'])
   })
 
-  it('marks each exporter with its status, the live one of the status first, and opens its page', () => {
-    useExporters.setState({
-      exporters: [
-        exporter('ros2', 'ROS 2', 'warning', 'Disconnected'),
-        exporter('recorder', 'Recorder', 'off', 'Not running'),
-        exporter('api', 'API', 'ok', 'Answering')
-      ]
+  it('marks each exporter with the status the unit status reports for it, and opens its page', () => {
+    useExporters.setState({ exporters: [exporter('ros2', 'ROS 2'), exporter('recorder', 'Recorder'), exporter('api', 'API')] })
+    useStatus.setState({
+      snapshot: { exporters: [reported('ros2', 'ROS 2', 'ok', 'Connected'), reported('recorder', 'Recorder', 'off', 'Not running')] }
     })
-    useStatus.setState({ snapshot: { exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'ok', detail: 'Connected' } }] } })
     render(<Menu />)
 
     const exporters = screen.getByRole('region', { name: 'Exporters' })
@@ -66,6 +63,7 @@ describe('Menu', () => {
   })
 
   it('marks an exporter whose status is a warning in red', () => {
+    useStatus.setState({ snapshot: { exporters: [reported('ros2', 'ROS 2', 'warning', 'Disconnected')] } })
     render(<Menu />)
 
     const ros2 = within(screen.getByRole('region', { name: 'Exporters' })).getByRole('button', { name: 'ROS 2, warning: Disconnected' })

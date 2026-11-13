@@ -77,7 +77,7 @@ An export changes nothing on the unit, and the status of the exporter reads "Exp
 | 409 | Another export is running. | Wait for it, then ask again. |
 | 504 | The burst did not end within `deadline_ms`, or the API's 60 s ran out. For the burst, the `detail` names how many pairs arrived. | Look for a pipeline or cameras that stopped, a unit too slow for the burst, or parameters still changing: each change restarts the settle wait. |
 | 500 | The export failed. The `detail` holds the message. | Read it. It names, for example, a last pair without images, disparity or depth, on a unit whose stages do not provide them. |
-| 503 | The exporter does not run. | Read its status in `GET /api/exporters`. |
+| 503 | The exporter does not run. | Read its status on the `status` channel, or on the dashboard's Exporters menu. |
 | 404 | No `debug` exporter. | Add it to your composer and upload the firmware. |
 | 400 | The request has no JSON:API document. | Send the document as in the example above. |
 

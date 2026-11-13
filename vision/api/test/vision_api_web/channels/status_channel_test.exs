@@ -16,7 +16,7 @@ defmodule VisionApiWeb.StatusChannelTest do
   test "status channel pushes a snapshot on join" do
     {:ok, _reply, _socket} = join()
 
-    assert_push "status", %{exporters: [], npu: nil, depthHz: +0.0}
+    assert_push "status", %{exporters: [%{id: "api"}], npu: nil, depthHz: +0.0}
   end
 
   test "the channel stops when the status server restarts" do

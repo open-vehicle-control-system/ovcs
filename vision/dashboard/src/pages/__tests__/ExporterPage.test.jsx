@@ -44,6 +44,7 @@ describe('ExporterPage', () => {
   })
 
   it('shows an exporter without a page of its own: its status, module and the outputs it reads', () => {
+    useStatus.setState({ snapshot: { exporters: [{ id: 'recorder', name: 'Recorder', status: { level: 'warning', detail: 'Disk full' } }] } })
     render(<ExporterPage id="recorder" />)
 
     expect(screen.getByRole('heading', { name: 'Recorder' })).toBeTruthy()

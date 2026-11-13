@@ -286,7 +286,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 }
 ```
 
-`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter, then the API itself. Each entry has its status, the outputs it reads and the actions you can run on it. `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
+`GET /api/exporters` lists what takes the unit's outputs out of it: each exporter, then the API itself. Each entry has the outputs it reads and the actions you can run on it; its status comes with the unit's, on the [`status` channel](./channels.md). `maxHz` is the most values of an output the exporter takes a second, `null` when unbounded.
 
 ```json
 {
@@ -297,7 +297,6 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
       "attributes": {
         "name": "ROS 2",
         "module": "VisionCore.Ros2.Exporter",
-        "status": {"level": "ok", "detail": "Connected"},
         "outputs": [
           {"name": "stereo_pair", "maxHz": null},
           {"name": "camera_frame:left", "maxHz": null},
@@ -316,7 +315,6 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
       "attributes": {
         "name": "API",
         "module": "VisionApiWeb.Endpoint",
-        "status": {"level": "ok", "detail": "Answering"},
         "outputs": [
           {"name": "camera_frame:left", "maxHz": 10},
           {"name": "camera_frame:right", "maxHz": 10},
@@ -338,7 +336,7 @@ A unit lists each detection pipeline's output: `detections:<name>` for the pipel
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 
-A status `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
+Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporters).
 
 An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`. The action's parameters go in `attributes` when it takes any.
 

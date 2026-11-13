@@ -5,8 +5,11 @@ defmodule VisionApiWeb.StatusJSON do
   of its own, by name), states as strings, and
   `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
   without one. A camera's or the sync's fields that were not measured
-  are left out. Each exporter's status is a `level` and a `detail`, as
-  in `VisionApiWeb.ExporterJSON`. `pair` holds the `VisionCore.Stereo.PairCheck` checks, `timing`,
+  are left out. Each exporter's status is a `level`, `ok`, `warning` or
+  `off`, and a `detail`; the API's own comes last, as
+  `GET /api/exporters` lists it. The CPU's load is the board's
+  (`VisionApiWeb.BoardJSON`). `pair` holds the
+  `VisionCore.Stereo.PairCheck` checks, `timing`,
   `rows`, `focus` and `brightness`, and `depth` the
   `VisionCore.Stereo.DepthCheck` checks, `rate` and `range`, with
   camelCase keys; their levels, cameras, directions and issues are
@@ -42,14 +45,16 @@ defmodule VisionApiWeb.StatusJSON do
       depth: checks(snapshot.depth),
       npu: npu(snapshot.npu),
       depthHz: snapshot.depth_hz,
-      cpuPercent: snapshot.cpu_percent,
       stereoLoadPercent: snapshot.stereo_segment_percent,
       alignment: alignment(snapshot.alignment),
       sharpness: snapshot.sharpness,
       quality: quality(snapshot.quality),
-      exporters: Enum.map(snapshot.exporters, &exporter/1)
+      exporters: Enum.map(snapshot.exporters, &exporter/1) ++ [api()]
     }
   end
+
+  # The API pushes this status, so it is answering.
+  defp api, do: Map.put(ExporterJSON.api(), :status, %{level: "ok", detail: "Answering"})
 
   defp exporter(exporter),
     do: %{id: exporter.id, name: exporter.name, status: ExporterJSON.status(exporter.status)}
