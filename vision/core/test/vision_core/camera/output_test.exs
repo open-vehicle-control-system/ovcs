@@ -202,7 +202,7 @@ defmodule VisionCore.Camera.OutputTest do
             {[view: @view, view_jpeg: [from: :view, format: :jpeg]], [:rgb],
              "output view_jpeg: its format :jpeg is not one this driver makes (:rgb)"},
             {[view: @view, view_jpeg: [from: :view, format: :png]], [:rgb, :jpeg],
-             "output view_jpeg: its :format is :rgb or :jpeg, got :png"},
+             "output view_jpeg: its :format is :rgb, :jpeg or :h264, got :png"},
             {[view: Keyword.put(@view, :format, :jpeg)], [:rgb, :jpeg],
              "output view: a JPEG is made :from another output, not by a :processor"},
             {[view: @view, small: [resolution: {1014, 760}, from: :view, quality: 80]],
@@ -221,6 +221,99 @@ defmodule VisionCore.Camera.OutputTest do
              "output small: its :from, :view_jpeg, is a JPEG, which no output is made from"},
             {[view: @view, view_jpeg: [resolution: {1000, 760}, from: :view, format: :jpeg]],
              [:rgb, :jpeg], "output view_jpeg: 1000x760 is no whole fraction of view's 2028x1520"}
+          ] do
+        assert Output.resolve(outputs, @processors, formats: formats) == {:error, message},
+               inspect(outputs)
+      end
+    end
+  end
+
+  describe "an H.264 output" do
+    @h264 [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+    @all_formats [formats: [:rgb, :jpeg, :h264]]
+
+    test "is made from another output at its bitrate and key frame interval" do
+      assert {:ok, [_view, view_h264, small_h264]} =
+               Output.resolve(
+                 [
+                   view: Keyword.put(@view, :send, false),
+                   view_h264: @h264,
+                   small_h264:
+                     Keyword.merge(@h264,
+                       resolution: {1014, 760},
+                       bitrate_kbps: 1,
+                       keyframe_interval: 1
+                     )
+                 ],
+                 @processors,
+                 @all_formats
+               )
+
+      assert %Output{
+               index: 1,
+               width: 2028,
+               height: 1520,
+               from: :view,
+               format: :h264,
+               quality: nil,
+               bitrate_kbps: 8_000,
+               keyframe_interval: 30
+             } = view_h264
+
+      assert %Output{width: 1014, height: 760, bitrate_kbps: 1, keyframe_interval: 1} =
+               small_h264
+    end
+
+    test "is a video, not an image" do
+      {:ok, outputs} =
+        Output.resolve(
+          [view: @view, view_h264: @h264, view_jpeg: [from: :view, format: :jpeg]],
+          @processors,
+          @all_formats
+        )
+
+      assert Enum.map(Output.images(outputs), & &1.name) == [:view, :view_jpeg]
+      assert Enum.map(Output.videos(outputs), & &1.name) == [:view_h264]
+    end
+
+    test "refuses one the encoder cannot make" do
+      for {outputs, formats, message} <- [
+            {[view: @view, view_h264: @h264], [:rgb, :jpeg],
+             "output view_h264: its format :h264 is not one this driver makes (:rgb, :jpeg)"},
+            {[view: Keyword.merge(@view, Keyword.drop(@h264, [:from]))], [:rgb, :h264],
+             "output view: an H.264 stream is made :from another output, not by a :processor"},
+            {[view: @view, view_h264: Keyword.delete(@h264, :bitrate_kbps)], [:rgb, :h264],
+             "output view_h264: its :bitrate_kbps is an integer from 1 to 2000000, got nil"},
+            {[view: @view, view_h264: Keyword.put(@h264, :bitrate_kbps, 0)], [:rgb, :h264],
+             "output view_h264: its :bitrate_kbps is an integer from 1 to 2000000, got 0"},
+            {[view: @view, view_h264: Keyword.put(@h264, :bitrate_kbps, 2_000_001)],
+             [:rgb, :h264],
+             "output view_h264: its :bitrate_kbps is an integer from 1 to 2000000, got 2000001"},
+            {[view: @view, view_h264: Keyword.put(@h264, :bitrate_kbps, 8000.0)], [:rgb, :h264],
+             "output view_h264: its :bitrate_kbps is an integer from 1 to 2000000, got 8000.0"},
+            {[view: @view, view_h264: Keyword.delete(@h264, :keyframe_interval)], [:rgb, :h264],
+             "output view_h264: its :keyframe_interval is a whole number of frames from 1, got nil"},
+            {[view: @view, view_h264: Keyword.put(@h264, :keyframe_interval, 0)], [:rgb, :h264],
+             "output view_h264: its :keyframe_interval is a whole number of frames from 1, got 0"},
+            {[view: @view, view_h264: Keyword.put(@h264, :quality, 80)], [:rgb, :h264],
+             "output view_h264: its :quality is a JPEG's: give it format: :jpeg"},
+            {[view: @view, small: [resolution: {1014, 760}, from: :view, bitrate_kbps: 100]],
+             [:rgb, :h264],
+             "output small: its :bitrate_kbps is an H.264's: give it format: :h264"},
+            {[view: @view, small: [from: :view, format: :jpeg, keyframe_interval: 30]],
+             [:rgb, :jpeg, :h264],
+             "output small: its :keyframe_interval is an H.264's: give it format: :h264"},
+            {[view: @view, view_h264: @h264, small: [resolution: {1014, 760}, from: :view_h264]],
+             [:rgb, :h264],
+             "output small: its :from, :view_h264, is an H.264 stream, which no output is made from"},
+            {[view: @view, view_h264: Keyword.put(@h264, :send, false)], [:rgb, :h264],
+             "output view_h264: it is not sent (send: false), and no output is made from it"},
+            {[
+               view: [resolution: {1014, 760}, processor: :cpu],
+               small: [resolution: {507, 380}, from: :view],
+               small_h264: Keyword.put(@h264, :from, :small)
+             ], [:rgb, :h264],
+             "output small_h264: H.264 takes an even width and height, not 507x380"}
           ] do
         assert Output.resolve(outputs, @processors, formats: formats) == {:error, message},
                inspect(outputs)

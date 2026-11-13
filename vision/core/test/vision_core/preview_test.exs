@@ -259,6 +259,34 @@ defmodule VisionCore.PreviewTest do
                  "its stream shows its default output"
     end
 
+    test "its stream shows its camera's default output, not an H.264 video" do
+      camera = [
+        name: :hq,
+        driver: VisionCore.Camera.V4L2Single,
+        outputs: [
+          view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+          view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30],
+          view_jpeg: [from: :view, format: :jpeg]
+        ]
+      ]
+
+      config = %VisionCore.Config{components: [{:camera, camera}]}
+      server = VisionCore.Camera.V4L2Single.name_for("hq")
+
+      log =
+        capture_log(fn ->
+          preview =
+            start_supervised!({Preview, config: config, max_hz: 50, outputs: [hq: :view_h264]})
+
+          assert preview in Outputs.subscribers({:camera_frame, server, :view_jpeg})
+          refute preview in Outputs.subscribers({:camera_frame, server, :view_h264})
+        end)
+
+      assert log =~
+               "camera hq's output :view_h264 is an H.264 video, not an image; " <>
+                 "its stream shows its default output"
+    end
+
     test "a camera's JPEG output is previewed as the camera sent it, without an encode" do
       camera = [
         name: :hq,

@@ -24,8 +24,13 @@ defmodule VisionCore.Camera.Frame do
     * `:jpeg` — the JPEG-compressed image bytes, or
     * `:grey` — `width * height` bytes of 8-bit grey, row-major, or
     * `:rgb` — `width * height * 3` bytes of 8-bit red, green and blue,
-      row-major. One of the three is set, except on a frame published
-      with a pipeline's results, which has none.
+      row-major, or
+    * `:h264` — one frame of an H.264 stream, its NAL units in Annex B
+      form, from a camera's H.264 output, with `:keyframe?` set on a key
+      frame, which carries the stream's sequence and picture parameter
+      sets: a decoder takes the stream's frames in order from a key
+      frame. One of the four is set, except on a frame published with a
+      pipeline's results, which has none.
   """
   @enforce_keys [:label, :width, :height, :capture_ns]
   defstruct [
@@ -37,7 +42,9 @@ defmodule VisionCore.Camera.Frame do
     output: nil,
     jpeg: nil,
     grey: nil,
-    rgb: nil
+    rgb: nil,
+    h264: nil,
+    keyframe?: false
   ]
 
   @type t :: %__MODULE__{
@@ -49,7 +56,9 @@ defmodule VisionCore.Camera.Frame do
           capture_ns: integer(),
           jpeg: binary() | nil,
           grey: binary() | nil,
-          rgb: binary() | nil
+          rgb: binary() | nil,
+          h264: binary() | nil,
+          keyframe?: boolean()
         }
 
   @doc """

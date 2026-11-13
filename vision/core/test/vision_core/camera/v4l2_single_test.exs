@@ -24,6 +24,11 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     <<8, output, 2028::little-16, 1520::little-16, capture_ns::little-signed-64, jpeg::binary>>
   end
 
+  defp h264_record(capture_ns, h264, output, flags) do
+    <<9, output, 2028::little-16, 1520::little-16, capture_ns::little-signed-64, flags,
+      h264::binary>>
+  end
+
   defp write_records(tmp_dir, records) do
     path = Path.join(tmp_dir, "records.bin")
 
@@ -198,6 +203,67 @@ defmodule VisionCore.Camera.V4L2SingleTest do
              "--output",
              "from:0:1014x760"
            ]
+  end
+
+  test "asks the program for an H.264 output at its bitrate and key frame interval",
+       %{tmp_dir: tmp_dir} do
+    {script, arguments, _commands} = listening_program(tmp_dir)
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30],
+        small_h264: [
+          resolution: {1014, 760},
+          from: :view,
+          format: :h264,
+          bitrate_kbps: 1_000,
+          keyframe_interval: 15
+        ]
+      ]
+    )
+
+    assert Enum.slice(arguments(arguments), 10, 6) == [
+             "--output",
+             "cpu:2028x1520:unsent",
+             "--output",
+             "from:0:2028x1520:h264:8000:30",
+             "--output",
+             "from:0:1014x760:h264:1000:15"
+           ]
+  end
+
+  test "publishes the frames of an H.264 output carrying each stream frame and its key frame flag",
+       %{tmp_dir: tmp_dir} do
+    key_frame = <<0, 0, 0, 1, 0x67, 1, 0, 0, 0, 1, 0x68, 2, 0, 0, 0, 1, 0x65, 3>>
+    delta_frame = <<0, 0, 0, 1, 0x41, 4>>
+
+    records =
+      write_records(tmp_dir, [
+        h264_record(5, key_frame, 1, 1),
+        h264_record(6, delta_frame, 1, 0)
+      ])
+
+    script = write_script(tmp_dir, "capture.sh", "sleep 0.3\ncat #{records}\ncat > /dev/null")
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq"), :view_h264})
+
+    start_camera(
+      executable: script,
+      outputs: [
+        view: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        view_h264: [from: :view, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+      ]
+    )
+
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :view_h264} = first}}, 2_000
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :view_h264} = second}}, 2_000
+
+    assert %Frame{label: "hq", width: 2028, height: 1520, h264: ^key_frame, keyframe?: true} =
+             first
+
+    assert %Frame{h264: ^delta_frame, keyframe?: false, rgb: nil, jpeg: nil} = second
+    assert_in_delta second.capture_ns, Timing.monotonic_from_kernel(6), 1_000_000
   end
 
   test "asks the program to make an output it does not send, for those made from it",
@@ -495,6 +561,8 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert V4L2Single.parse_record(rgb_record(5, <<1, 2, 3>>)) == {:error, :malformed_record}
     assert V4L2Single.parse_record(<<8, 1, 2::little-16>>) == {:error, :malformed_record}
     assert V4L2Single.parse_record(jpeg_record(5, <<>>, 1)) == {:error, :malformed_record}
+    assert V4L2Single.parse_record(h264_record(5, <<>>, 1, 1)) == {:error, :malformed_record}
+    assert V4L2Single.parse_record(<<9, 1, 2::little-16>>) == {:error, :malformed_record}
     assert V4L2Single.parse_record(<<4, 2::little-16>>) == {:error, :malformed_record}
   end
 

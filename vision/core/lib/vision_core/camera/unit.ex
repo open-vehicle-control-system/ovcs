@@ -20,12 +20,15 @@ defmodule VisionCore.Camera.Unit do
   at every frame (`VisionCore.Camera.Output`), and publishes each it sends
   under a key of its own (`output_key/3`); an output with `send: false`
   has none. A consumer takes the output it names, or the camera's first
-  sent one, its default: the pipelines on a camera source (`source:
-  {:camera, name, output}`), the exporters (`{:camera_frame, name,
-  output}`), the preview and the pose capture. Each refuses an output the
-  camera does not send (`unsent_output?/3`). Outputs the driver cannot
-  make, or `:outputs` given to a driver without named outputs, stop the
-  unit at start, saying why.
+  sent image output, its default: the pipelines on a camera source
+  (`source: {:camera, name, output}`), the exporters (`{:camera_frame,
+  name, output}`), the preview and the pose capture. Each refuses an
+  output the camera does not send (`unsent_output?/3`). An H.264 output
+  is a video, whose key only a consumer of videos takes
+  (`video_key/3`): the exporters (`{:camera_video, name, output}`) and
+  the dashboard's video relay (`VisionCore.Video`). Outputs the driver
+  cannot make, or `:outputs` given to a driver without named outputs,
+  stop the unit at start, saying why.
 
   Three options describe the camera to its consumers, such as
   `VisionCore.Ros2.Exporter`, and are not given to the driver
@@ -175,12 +178,13 @@ defmodule VisionCore.Camera.Unit do
   end
 
   @doc """
-  The `VisionCore.Outputs` key the frames of the camera `name`'s output
-  `output` are published under in `config`, its default output's, its
-  first sent one, with `output` `nil`: `{:camera_frame, server, output}`
-  for a driver with named outputs, `{:camera_frame, server}` for one
-  without, which has only its default. `nil` when `config` has no such
-  camera or output, or the camera does not send that output.
+  The `VisionCore.Outputs` key the frames of the camera `name`'s image
+  output `output` are published under in `config`, its default output's,
+  its first sent image output, with `output` `nil`: `{:camera_frame,
+  server, output}` for a driver with named outputs, `{:camera_frame,
+  server}` for one without, which has only its default. `nil` when
+  `config` has no such camera or output, the camera does not send that
+  output, or it is a video (`video_key/3`).
   """
   @spec output_key(VisionCore.Config.t(), atom(), atom() | nil) :: VisionCore.Outputs.key() | nil
   def output_key(config, name, output) do
@@ -189,12 +193,33 @@ defmodule VisionCore.Camera.Unit do
       case {outputs, output} do
         {nil, nil} -> {:camera_frame, server}
         {nil, _named} -> nil
-        {outputs, output} -> sent_output_key(server, Output.sent(outputs), output)
+        {outputs, output} -> sent_output_key(server, Output.images(outputs), output)
       end
     else
       _no_camera_or_outputs -> nil
     end
   end
+
+  @doc """
+  The `VisionCore.Outputs` key the frames of the camera `name`'s H.264
+  output `output` are published under in `config`, `{:camera_frame,
+  server, output}`; `nil` when `config` has no such camera or output, or
+  the output is an image.
+  """
+  @spec video_key(VisionCore.Config.t(), atom(), atom()) :: VisionCore.Outputs.key() | nil
+  def video_key(config, name, output) do
+    with {^name, _driver, server} <- List.keyfind(cameras(config), name, 0),
+         {:ok, outputs} when is_list(outputs) <- camera_outputs(config, name),
+         true <- Enum.any?(Output.videos(outputs), &(&1.name == output)) do
+      {:camera_frame, server, output}
+    else
+      _no_such_video -> nil
+    end
+  end
+
+  @doc "Whether `output` is an H.264 output of `config`'s camera `name`, a video, not an image."
+  @spec video_output?(VisionCore.Config.t(), atom(), atom() | nil) :: boolean()
+  def video_output?(config, name, output), do: video_key(config, name, output) != nil
 
   defp sent_output_key(server, [default | _others], nil),
     do: {:camera_frame, server, default.name}
@@ -245,9 +270,9 @@ defmodule VisionCore.Camera.Unit do
   registers under, its optical frame, its calibration path, the stored
   calibration first when there is one, the path a committed calibration
   is stored at (`nil` without a store), and its pose path. The store is
-  read at each call. `:outputs` are the named outputs it sends, in config
-  order, its default first, none for a driver without them or whose
-  outputs cannot be made.
+  read at each call. `:outputs` are the named image outputs it sends, in
+  config order, its default first, none for a driver without them or
+  whose outputs cannot be made.
   """
   @spec settings(VisionCore.Config.t()) :: [settings()]
   def settings(%VisionCore.Config{components: components} = config) do
@@ -259,7 +284,7 @@ defmodule VisionCore.Camera.Unit do
 
       outputs =
         case named_outputs(driver, opts) do
-          {:ok, outputs} when is_list(outputs) -> Output.sent(outputs)
+          {:ok, outputs} when is_list(outputs) -> Output.images(outputs)
           _none -> []
         end
 
