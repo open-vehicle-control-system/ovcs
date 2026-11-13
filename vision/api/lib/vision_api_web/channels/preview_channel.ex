@@ -8,14 +8,12 @@ defmodule VisionApiWeb.PreviewChannel do
 
   The client pushes `"ack"` once it has shown a frame, and only then is
   the next one sent, so a slow link gets the latest frame instead of a
-  backlog. On the depth stream it pushes `"depth_range"`, with `"metres"`
-  to set the depth video's colour range or without to read it; the reply
-  is the range in force, `%{metres: float}`. The range is the unit's,
-  shared by every dashboard: the depth stream pushes it as a
-  `"depth_range"` event, `%{metres: float}`, after every join and on
-  every change, whoever makes it. Stops when `VisionCore.Preview`
-  restarts, and refuses the join while it is not running; see
-  `VisionApiWeb.SourceMonitor`.
+  backlog. The depth video's colour range is the unit's, shared by every
+  dashboard and set with `VisionApiWeb.DepthPreviewController`: the depth
+  stream pushes it as a `"depth_range"` event, `%{metres: float}`, after
+  every join and on every change, whoever makes it. Stops when
+  `VisionCore.Preview` restarts, and refuses the join while it is not
+  running; see `VisionApiWeb.SourceMonitor`.
   """
   # The client acks every frame it shows: logged, the acks would push everything else out of the log.
   use VisionApiWeb, {:channel, log_handle_in: false}
@@ -63,22 +61,6 @@ defmodule VisionApiWeb.PreviewChannel do
     VisionCore.Preview.ack(socket.assigns.stream)
     {:noreply, socket}
   end
-
-  def handle_in("depth_range", payload, %{assigns: %{stream: :depth}} = socket) do
-    reply =
-      case Map.fetch(payload, "metres") do
-        {:ok, metres} -> VisionCore.Preview.set_options(depth_range_m: metres)
-        :error -> {:ok, VisionCore.Preview.options()}
-      end
-
-    case reply do
-      {:ok, options} -> {:reply, {:ok, PreviewJSON.depth_range(options)}, socket}
-      {:error, reason} -> {:reply, {:error, %{reason: reason}}, socket}
-    end
-  end
-
-  def handle_in("depth_range", _payload, socket),
-    do: {:reply, {:error, %{reason: "only the depth stream has a colour range"}}, socket}
 
   @impl Phoenix.Channel
   def handle_info({:vision_preview, _stream, jpeg}, socket) do

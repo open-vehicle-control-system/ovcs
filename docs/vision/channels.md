@@ -116,13 +116,12 @@ left.on('frame', (jpeg) => {
 left.join()
 ```
 
-On `preview:depth`, push `depth_range` with `metres` to set the distance the depth video colours blue, or without to read it. `0` colours blue only what is infinitely far. The reply is the range in force. The range is the unit's, shared by every client. The channel pushes it as a `depth_range` event after every join and on every change, whoever makes it.
+`preview:depth` pushes the distance the depth video colours blue as a `depth_range` event, `metres`, after every join and on every change, whoever makes it. `0` colours blue only what is infinitely far. The range is the unit's, shared by every client, and set with [`PATCH /api/depth-preview`](./api.md#the-depth-videos-colour-range).
 
 ```javascript
 const depth = socket.channel('preview:depth')
 depth.on('depth_range', ({ metres }) => console.log(`blue at ${metres} m`))
 depth.join()
-depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.log(metres))
 ```
 
 ## Video

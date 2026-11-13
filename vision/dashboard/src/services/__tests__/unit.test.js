@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { fetchBoard, fetchExporters, fetchFirmware, fetchRos2Node, runExporterAction } from '../unit.js'
+import { fetchBoard, fetchExporters, fetchFirmware, fetchRos2Node, runExporterAction, setDepthRange } from '../unit.js'
 
 const respond = (body) => ({ ok: true, status: 200, json: async () => body })
 
@@ -61,6 +61,16 @@ describe('unit service', () => {
 
     expect(await fetchBoard()).toEqual(attributes)
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/board$/)
+  })
+
+  it("sets the depth video's colour range and answers the one in force", async () => {
+    fetchMock.mockResolvedValue(respond({ data: { type: 'depth-previews', id: 'current', attributes: { colourRangeM: 12.5 } } }))
+
+    expect(await setDepthRange(12.5)).toBe(12.5)
+    const [url, options] = fetchMock.mock.calls[0]
+    expect(url).toMatch(/\/api\/depth-preview$/)
+    expect(options.method).toBe('PATCH')
+    expect(JSON.parse(options.body)).toEqual({ data: { type: 'depth-previews', id: 'current', attributes: { colourRangeM: 12.5 } } })
   })
 
   it('reads the exporters, each with its id', async () => {

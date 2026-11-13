@@ -175,6 +175,38 @@ A reset of the Disparity stage:
 
 The same parameters are reachable over ROS 2 under the same ids ([Vision unit](./README.md#dashboard-and-api)).
 
+## The depth video's colour range
+
+`GET /api/depth-preview` returns the distance the depth video colours blue, in metres. `0` colours blue only what is infinitely far.
+
+```json
+{
+  "data": {
+    "type": "depth-previews",
+    "id": "current",
+    "attributes": {"colourRangeM": 8.0}
+  }
+}
+```
+
+`PATCH /api/depth-preview` sets it, from 0 to 50:
+
+```sh
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/depth-preview \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "depth-previews", "id": "current", "attributes": {"colourRangeM": 12}}}'
+```
+
+The range is a view setting of the unit, shared by every client: it is not saved, and a restart puts back the one of the vehicle's configuration. The answers are:
+
+- a 200 with the resource;
+- a 422 for a range the unit refuses;
+- a 409 for another `type` or `id`;
+- a 400 for a document without `data.type`, `data.id` or `data.attributes.colourRangeM`;
+- a 503 while the previews do not run.
+
+The `preview:depth` channel pushes the range to its clients on every change; see [Live channels](./channels.md).
+
 ## The unit and its exports
 
 `GET /api/firmware` returns the firmware the unit runs:

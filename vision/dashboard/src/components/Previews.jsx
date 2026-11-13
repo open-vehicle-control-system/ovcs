@@ -8,6 +8,7 @@ import DetectionOverlay from './DetectionOverlay.jsx'
 import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
 import { useApiOutputs } from '../stores/exporters.js'
+import { setDepthRange } from '../services/unit.js'
 import {
   SEGMENTATION,
   resultAt,
@@ -250,13 +251,11 @@ function LeftPreview({ status, socket }) {
  * every join, a rejoin included, and on every change; the handler is bound before the join, so it misses none.
  */
 function DepthPreview({ status, socket, beside }) {
-  const [channel, setChannel] = useState(null)
   const [metres, setMetres] = useState(null)
 
-  const follow = useCallback((next) => {
-    if (next) next.on('depth_range', (range) => setMetres(range.metres))
+  const follow = useCallback((channel) => {
+    if (channel) channel.on('depth_range', (range) => setMetres(range.metres))
     else setMetres(null)
-    setChannel(next)
   }, [])
 
   return (
@@ -264,7 +263,7 @@ function DepthPreview({ status, socket, beside }) {
       stream="depth"
       socket={socket}
       onChannel={follow}
-      aside={<DepthRange channel={channel} metres={metres} onChange={setMetres} vertical={beside} />}
+      aside={<DepthRange set={setDepthRange} metres={metres} onChange={setMetres} vertical={beside} />}
       {...rowLayout(beside)}
       badge={badges(depthIssues(status))}
       alert={needsAction(depthIssues(status))}

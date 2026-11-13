@@ -25,6 +25,15 @@ export async function fetchBoard() {
   return document.data.attributes
 }
 
+/** Sets the depth video's colour range, in metres, 0 for infinitely far, and answers the one in force. */
+export async function setDepthRange(metres) {
+  const document = await request('depth-preview', {
+    method: 'PATCH',
+    body: { data: { type: 'depth-previews', id: 'current', attributes: { colourRangeM: metres } } }
+  })
+  return document.data.attributes.colourRangeM
+}
+
 /** What takes the outputs out of the unit: each exporter's `id`, `name`, `module`, `status` and `outputs`, the API last. */
 export async function fetchExporters() {
   const document = await request('exporters')

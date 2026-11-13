@@ -18,7 +18,7 @@ defmodule VisionCore.Preview do
 
   `:max_hz` and `:depth_range_m` are the vehicle's `VisionCore.Config`
   `:preview` options and change while running with `set_options/1`; the
-  dashboard sets the depth range through `VisionApiWeb.PreviewChannel`.
+  dashboard sets the depth range through `VisionApiWeb.DepthPreviewController`.
   The depth range is the unit's, shared by every dashboard: a change is
   sent to each depth subscriber as `{:vision_preview_options,
   %{depth_range_m: metres}}`.

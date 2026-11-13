@@ -22,6 +22,8 @@ defmodule VisionApiWeb.Router do
     post "/parameter-saves", ParameterActionController, :save
     post "/parameter-discards", ParameterActionController, :discard
     post "/parameter-resets", ParameterActionController, :reset
+    get "/depth-preview", DepthPreviewController, :show
+    patch "/depth-preview", DepthPreviewController, :update
     get "/configuration", ConfigurationController, :show
     get "/firmware", FirmwareController, :show
     get "/board", BoardController, :show

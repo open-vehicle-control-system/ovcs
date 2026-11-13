@@ -10,6 +10,8 @@ const resources = (parameterId) => [
   ['POST', 'parameter-saves', 'Saves every unsaved change, so it outlives a reboot'],
   ['POST', 'parameter-discards', 'Drops every unsaved change'],
   ['POST', 'parameter-resets', 'Sets a parameter, a stage or everything back to its built-in value'],
+  ['GET', 'depth-preview', "The depth video's colour range, the distance coloured blue"],
+  ['PATCH', 'depth-preview', "Sets the depth video's colour range, for every dashboard, until the next boot"],
   ['GET', 'configuration', 'The active composer configuration'],
   ['GET', 'firmware', 'The firmware: the commit it is built from, its target and its Nerves system'],
   ['GET', 'exporters', 'What takes the outputs out of the unit: each exporter with its status and the outputs it reads, this API last'],
@@ -20,7 +22,7 @@ const CHANNELS = [
   ['status', 'The unit status every second, as the top bar and the video captions show it'],
   ['preview:left, preview:right', "The stereo pair's frames as binary JPEG messages; the client acks each frame to get the next"],
   ['preview:<name>', "A camera of its own's frames, as the pair's; the exporter listing names each camera"],
-  ['preview:depth', 'The coloured depth map, as binary JPEG messages; push depth_range to read or set its colour range'],
+  ['preview:depth', 'The coloured depth map, as binary JPEG messages; the depth_range event carries its colour range'],
   ['detections:<name>', "A detection pipeline's objects, with their label, score, distance and outline on the image it reads; the exporter listing names each pipeline, detection for a detector without a name"],
   ['segmentation:<name>', "A segmentation pipeline's class grid over its camera's image, as binary messages the client acks, and its class names"]
 ]

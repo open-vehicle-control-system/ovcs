@@ -18,6 +18,30 @@ defmodule VisionApiWeb.JsonApi do
   def document(%Plug.Conn{body_params: document}), do: document
 
   @doc """
+  Checks that `data`, a write's resource object, is the resource of `type`
+  and `id` its route names: `:ok`, or the refusal `error/5` sends, a 409
+  for another `type` or `id` and a 400 for a missing one.
+  """
+  @spec check_identity(term(), String.t(), String.t()) ::
+          :ok | {:error, pos_integer(), String.t(), String.t(), String.t()}
+  def check_identity(%{"type" => type}, expected, _id) when type != expected,
+    do: {:error, 409, "Conflict", "type must be #{expected}", "/data/type"}
+
+  def check_identity(%{"id" => id}, _type, expected) when id != expected,
+    do: {:error, 409, "Conflict", "id must be #{expected}", "/data/id"}
+
+  def check_identity(%{"type" => _type, "id" => _id}, _expected_type, _expected_id), do: :ok
+
+  def check_identity(%{"type" => _type}, _expected_type, _expected_id),
+    do: {:error, 400, "Bad Request", "data.id is required", "/data/id"}
+
+  def check_identity(%{}, _expected_type, _expected_id),
+    do: {:error, 400, "Bad Request", "data.type is required", "/data/type"}
+
+  def check_identity(_data, _type, _id),
+    do: {:error, 400, "Bad Request", "data is required", "/data"}
+
+  @doc """
   The relationships the `include` query parameter of `params` names, each
   once; `:error` for one that is not among `supported`, and for an
   `include` that is not text.

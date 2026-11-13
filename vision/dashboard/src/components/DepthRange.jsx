@@ -15,18 +15,18 @@ const toSlider = (metres) => (metres === 0 ? INFINITY : metres)
 const fromSlider = (position) => (position > MAX ? 0 : position)
 
 /**
- * The depth video's colour range, `metres`, the distance coloured blue, set on the depth stream's `channel` as soon as
- * it is released; 0, the slider's last notch, is ∞. `onChange` gets the range to show: the one chosen, then the
- * unit's answer, or the previous one again when the unit refuses it. It is the unit's, shared by every dashboard, and
+ * The depth video's colour range, `metres`, the distance coloured blue, set on the unit with `set` as soon as it is
+ * released; 0, the slider's last notch, is ∞. `set` answers a promise of the range in force. `onChange` gets the range
+ * to show: the one chosen, then the unit's answer, or the previous one again when the unit refuses it. It is the unit's, shared by every dashboard, and
  * a view setting: nothing to save, back to the composer's at the next boot. It lies along a line, near to far from
  * left to right, or, `vertical`, stands as tall as the room it has: near at the bottom, far and the range at the top.
  * The colour map is the slider's track.
  */
-export default function DepthRange({ channel, metres, onChange, vertical = false }) {
+export default function DepthRange({ set, metres, onChange, vertical = false }) {
   const labelId = useId()
   const [draft, setDraft] = useState(null)
 
-  if (!channel || metres === null) return null
+  if (metres === null) return null
 
   const shown = draft ?? metres
   const finish = () => {
@@ -35,10 +35,7 @@ export default function DepthRange({ channel, metres, onChange, vertical = false
     setDraft(null)
     if (chosen === metres) return
     onChange(chosen)
-    channel
-      .push('depth_range', { metres: chosen })
-      .receive('ok', (reply) => onChange(reply.metres))
-      .receive('error', () => onChange(metres))
+    set(chosen).then(onChange, () => onChange(metres))
   }
 
   const label = (

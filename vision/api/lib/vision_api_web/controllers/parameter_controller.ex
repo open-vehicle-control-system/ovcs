@@ -25,7 +25,7 @@ defmodule VisionApiWeb.ParameterController do
   def update(conn, %{"id" => id}) do
     data = JsonApi.document(conn)["data"]
 
-    with :ok <- check_resource(data, "parameters", id),
+    with :ok <- JsonApi.check_identity(data, "parameters", id),
          {:ok, value} <- fetch_value(data) do
       case Parameters.set(id, value) do
         {:ok, parameter} ->
@@ -42,23 +42,6 @@ defmodule VisionApiWeb.ParameterController do
         JsonApi.error(conn, status, title, detail, pointer)
     end
   end
-
-  defp check_resource(%{"type" => type}, expected, _id) when type != expected,
-    do: {:error, 409, "Conflict", "type must be #{expected}", "/data/type"}
-
-  defp check_resource(%{"id" => id}, _type, expected) when id != expected,
-    do: {:error, 409, "Conflict", "id must be #{expected}", "/data/id"}
-
-  defp check_resource(%{"type" => _type, "id" => _id}, _expected_type, _expected_id), do: :ok
-
-  defp check_resource(%{"type" => _type}, _expected_type, _expected_id),
-    do: {:error, 400, "Bad Request", "data.id is required", "/data/id"}
-
-  defp check_resource(%{}, _expected_type, _expected_id),
-    do: {:error, 400, "Bad Request", "data.type is required", "/data/type"}
-
-  defp check_resource(_data, _type, _id),
-    do: {:error, 400, "Bad Request", "data is required", "/data"}
 
   defp fetch_value(%{"attributes" => %{"value" => value}}), do: {:ok, value}
 
