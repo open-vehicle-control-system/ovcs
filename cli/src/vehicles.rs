@@ -156,6 +156,19 @@ IO.write(if function_exported?(vehicle, :infotainment, 0), do: "yes", else: "no"
     Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(answer) if answer.trim() == "yes"))
 }
 
+/// Whether the vehicle declares its simulated hardware, `simulator/0`.
+pub fn declares_simulator(vehicle: &Vehicle) -> Result<bool> {
+    let snippet = format!(
+        r#"
+vehicle = {module}
+Code.ensure_loaded(vehicle)
+IO.write(if function_exported?(vehicle, :simulator, 0), do: "yes", else: "no")
+"#,
+        module = vehicle.module,
+    );
+    Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(answer) if answer.trim() == "yes"))
+}
+
 pub fn bridge_firmwares(vehicle: &Vehicle) -> Result<HashMap<String, BridgeFirmware>> {
     let snippet = format!(
         r##"
