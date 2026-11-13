@@ -14,7 +14,8 @@ export const hasVideoDecoder = (scope = globalThis) => typeof scope.VideoDecoder
  * where the browser has one for the stream. Of the frames decoded since the last animation frame, it draws the newest
  * and closes the others undrawn. Each frame pushed is acked once taken (`onAck`); `onDrawn` gets the capture time, in
  * microseconds, and size of each frame drawn, and `onUnsupported` the codec of a stream the browser cannot decode.
- * After a decoder error, or while the decoder is behind, it starts again at the next key frame.
+ * After a decoder error, a configuration that fails, which drops the frames taken meanwhile, or while the decoder is
+ * behind, it starts again at the next key frame.
  */
 export class LiveDecoder {
   constructor(canvas, { onAck = () => {}, onDrawn = () => {}, onUnsupported = () => {}, scope = globalThis } = {}) {
@@ -59,7 +60,13 @@ export class LiveDecoder {
 
   async open(codec, frame) {
     this.waiting = [frame]
-    const config = await this.supportedConfig(codec, frame)
+    let config
+    try {
+      config = await this.supportedConfig(codec, frame)
+    } catch {
+      this.waiting = null
+      return
+    }
     if (this.closed) return
     const waiting = this.waiting
     this.waiting = null
@@ -74,7 +81,11 @@ export class LiveDecoder {
         if (this.decoder === decoder) this.decoder = null
       }
     })
-    decoder.configure(config)
+    try {
+      decoder.configure(config)
+    } catch {
+      return decoder.close()
+    }
     this.decoder = decoder
     waiting.forEach((queued) => this.decode(queued))
   }

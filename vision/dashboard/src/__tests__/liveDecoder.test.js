@@ -193,6 +193,41 @@ describe('LiveDecoder', () => {
     expect(onAck).toHaveBeenCalledTimes(3)
   })
 
+  it('drops the frames taken while the configuration check fails, and starts again at the next key frame', async () => {
+    const { scope, live, onAck } = start()
+    scope.VideoDecoder.isConfigSupported.mockRejectedValueOnce(new TypeError('invalid codec'))
+
+    live.push(keyFrame(0))
+    live.push(deltaFrame(33_333))
+    await configured()
+    live.push(deltaFrame(66_666))
+    live.push(keyFrame(1_000_000))
+    await configured()
+
+    expect(scope.decoders).toHaveLength(1)
+    expect(scope.decoders[0].chunks.map(({ timestamp }) => timestamp)).toEqual([1_000_000])
+    expect(onAck).toHaveBeenCalledTimes(4)
+  })
+
+  it('closes a decoder whose configuration throws, and starts again at the next key frame', async () => {
+    const { scope, live } = start()
+    vi.spyOn(scope.VideoDecoder.prototype, 'configure').mockImplementationOnce(() => {
+      throw new TypeError('invalid configuration')
+    })
+
+    live.push(keyFrame(0))
+    live.push(deltaFrame(33_333))
+    await configured()
+    live.push(deltaFrame(66_666))
+    live.push(keyFrame(1_000_000))
+    await configured()
+
+    expect(scope.decoders).toHaveLength(2)
+    expect(scope.decoders[0].state).toBe('closed')
+    expect(scope.decoders[0].chunks).toEqual([])
+    expect(scope.decoders[1].chunks.map(({ timestamp }) => timestamp)).toEqual([1_000_000])
+  })
+
   it('skips to the next key frame while the decoder falls behind', async () => {
     const { scope, live } = start()
     live.push(keyFrame(0))
