@@ -200,13 +200,17 @@ impl<D: M2mDevice> M2mEncoder<D> {
         for (name, id, value) in optional {
             set_optional(&mut device, name, id, value, &mut skipped)?;
         }
-        // A key frame carries the parameter sets, through either control.
-        if device.has_control(CID_PREPEND_SPSPPS_TO_IDR) {
-            device.set_control(CID_PREPEND_SPSPPS_TO_IDR, 1)?;
-        } else {
-            let name = "parameter sets at each key frame";
-            set_optional(&mut device, name, CID_REPEAT_SEQ_HEADER, 1, &mut skipped)?;
-        }
+        // A viewer joining mid-stream decodes from the parameter sets of the next key frame.
+        let repeat_parameter_sets = [CID_PREPEND_SPSPPS_TO_IDR, CID_REPEAT_SEQ_HEADER]
+            .into_iter()
+            .find(|&id| device.has_control(id))
+            .ok_or_else(|| {
+                unsupported(
+                    "the encoder has no control to repeat the parameter sets at each key frame"
+                        .to_string(),
+                )
+            })?;
+        device.set_control(repeat_parameter_sets, 1)?;
         let raw_buffers = device.request_buffers(Stream::Raw, BUFFERS)?;
         let coded_buffers = device.request_buffers(Stream::Coded, BUFFERS)?;
         for index in 0..coded_buffers {
@@ -753,6 +757,18 @@ pub(crate) mod tests {
                  headers with the first frame: no control"
             ),
             "{encoder}"
+        );
+    }
+
+    #[test]
+    fn an_encoder_that_cannot_repeat_the_parameter_sets_at_each_key_frame_is_refused() {
+        let mut device = FakeDevice::new();
+        device.controls = vec![CID_BITRATE, CID_GOP_SIZE];
+        let refused = M2mEncoder::start(device, &SETTINGS).err().unwrap();
+        assert_eq!(refused.kind(), io::ErrorKind::Unsupported);
+        assert_eq!(
+            refused.to_string(),
+            "the encoder has no control to repeat the parameter sets at each key frame"
         );
     }
 
