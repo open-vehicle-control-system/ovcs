@@ -29,6 +29,7 @@ defmodule VisionApi.MixProject do
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.2"},
       {:cors_plug, "~> 3.0.3"},
+      {:x509, "~> 0.9"},
       {:vision_core, path: "../core"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}

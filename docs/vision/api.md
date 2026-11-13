@@ -1,13 +1,15 @@
 ---
 title: Vision API
-description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTP.
+description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTPS.
 ---
 
-The vision unit serves its API next to the dashboard, on port 4100 (see [Vision unit](./README.md#dashboard-and-api)):
+The vision unit serves its API next to the dashboard, over HTTPS:
 
 ```text
-http://<vehicle>-vision.local:4100
+https://<vehicle>-vision.local
 ```
+
+Its certificate is self-signed. The examples check it against a copy, `vision.pem`, as [Dashboard and API](./README.md#dashboard-and-api) shows.
 
 Everything the dashboard shows comes from it:
 
@@ -23,7 +25,7 @@ Every answer under `/api` is `application/vnd.api+json`. A write sends its docum
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 
 ```sh
-curl -X PATCH http://<vehicle>-vision.local:4100/api/parameters/stereo.disparity.p1 \
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/parameters/stereo.disparity.p1 \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameters", "id": "stereo.disparity.p1", "attributes": {"value": 500}}}'
 ```
@@ -127,7 +129,7 @@ A component, such as the cameras, has the role `source` and no `compute`. [Where
 A change is unsaved until you save it, as on the dashboard. Unsaved changes live on the unit, shared by every client, and a reboot drops them. Set a value with `PATCH`:
 
 ```sh
-curl -X PATCH http://<vehicle>-vision.local:4100/api/parameters/stereo.disparity.p1 \
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/parameters/stereo.disparity.p1 \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameters", "id": "stereo.disparity.p1", "attributes": {"value": 10}}}'
 ```
@@ -141,7 +143,7 @@ The answer is the parameter with `value` 10 and `state` `unsaved`. A live parame
 Then save, discard or reset. Each is a `POST` that answers a 201 with the ids of the parameters it touched:
 
 ```sh
-curl -X POST http://<vehicle>-vision.local:4100/api/parameter-saves \
+curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/parameter-saves \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "parameter-saves"}}'
 ```
@@ -311,7 +313,7 @@ An action is listed with its `name`, a `label` and a `description`. `POST /api/e
 This request runs the `export` action of an exporter whose id is `debug`, which answers a zip file ([Tune with exports](./tuning.md)), and saves it:
 
 ```sh
-curl --fail-with-body -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
+curl --cacert vision.pem --fail-with-body -X POST https://<vehicle>-vision.local/api/exporters/debug/actions/export \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "exporter-actions"}}' \
   -o export.zip

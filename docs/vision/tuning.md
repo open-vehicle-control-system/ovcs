@@ -53,7 +53,7 @@ The settle wait counts against `deadline_ms`. If you raise `burst_pairs` or `bur
 The exporter has one action, `export`, which answers a zip. From the API:
 
 ```sh
-curl --fail-with-body -X POST http://<vehicle>-vision.local:4100/api/exporters/debug/actions/export \
+curl --cacert vision.pem --fail-with-body -X POST https://<vehicle>-vision.local/api/exporters/debug/actions/export \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "exporter-actions"}}' \
   -o before.zip

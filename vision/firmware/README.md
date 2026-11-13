@@ -60,8 +60,10 @@ it only inside a firmware, so no repository carries it. On
 
 The image's hostname is `<vehicle>-vision`, every underscore of the
 vehicle's directory name turned into a dash. Its product name is
-`<Vehicle Name> - Vision`, and the dashboard and API listen on port
-4100.
+`<Vehicle Name> - Vision`, and the dashboard and API are served over
+HTTPS on port 443, with a self-signed certificate the unit generates
+in `/data/vision_api/` at its first start. Ports 80 and 4100 redirect
+plain HTTP there.
 
 ## Building
 

@@ -5,18 +5,20 @@ description: How a program follows the vision unit's status, previews, detection
 
 Follow the vision unit live from a program: its status, its camera and depth previews, and its pipelines' detections and label grids. You need the unit's address and a Phoenix channels client. [Vision API](./api.md) covers the HTTP resources.
 
-The unit serves a socket next to the dashboard, on port 4100, at `/sockets/dashboard`. It speaks the Phoenix channels protocol. With the [`phoenix`](https://www.npmjs.com/package/phoenix) JavaScript client, in a browser or in Node.js:
+The unit serves a socket next to the dashboard, over HTTPS, at `/sockets/dashboard`. It speaks the Phoenix channels protocol. With the [`phoenix`](https://www.npmjs.com/package/phoenix) JavaScript client, in a browser or in Node.js:
 
 ```javascript
 import { Socket } from 'phoenix'
 
-const socket = new Socket('ws://<vehicle>-vision.local:4100/sockets/dashboard')
+const socket = new Socket('wss://<vehicle>-vision.local/sockets/dashboard')
 socket.connect()
 
 const status = socket.channel('status')
 status.on('status', (snapshot) => console.log(snapshot.depthHz, snapshot.quality.matchedPercent))
 status.join()
 ```
+
+The unit's certificate is self-signed. In a browser, accept it on the dashboard first. Run Node.js with `NODE_EXTRA_CA_CERTS=vision.pem`, a copy of it ([Dashboard and API](./README.md#dashboard-and-api)).
 
 ## Status
 
