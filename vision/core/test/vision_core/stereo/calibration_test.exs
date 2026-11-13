@@ -183,27 +183,15 @@ defmodule VisionCore.Stereo.CalibrationTest do
       assert File.exists?(Path.join(store(tmp_dir), "#{prefix}_left.yaml"))
     end
 
-    test "commit_side/4 reloads from the store once both sides are stored",
-         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      left_store = Path.join(store(tmp_dir), "#{prefix}_left.yaml")
-      right_store = Path.join(store(tmp_dir), "#{prefix}_right.yaml")
-
-      assert :ok = Calibration.commit_side(config, :left, distorted().left, reloading(:ok))
-      assert File.read!(left_store) =~ "camera_name: #{prefix}_left"
-      refute_received {:reloaded, _paths}
-
-      assert :ok = Calibration.commit_side(config, :right, distorted().right, reloading(:ok))
-      assert File.read!(right_store) =~ "camera_name: #{prefix}_right"
-
-      assert_received {:reloaded,
-                       [left_calibration_path: ^left_store, right_calibration_path: ^right_store]}
-
-      assert_received {:"$gen_cast", {:stereo_calibration_changed, ^prefix}}
-    end
-
     test "a side stored alone can be reset to the built-in calibration",
          %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      :ok = Calibration.commit_side(config, :left, distorted().left, reloading(:ok))
+      stored = Path.join(store(tmp_dir), "#{prefix}_left.yaml")
+      File.mkdir_p!(store(tmp_dir))
+
+      File.write!(
+        stored,
+        VisionCore.Ros2.CameraCalibration.to_yaml(distorted().left, "#{prefix}_left")
+      )
 
       assert {:ok, %{source: :built_in, stored_at: nil, can_reset: true}} =
                Calibration.in_use(config)
@@ -211,36 +199,6 @@ defmodule VisionCore.Stereo.CalibrationTest do
       assert :ok = Calibration.reset(config, reloading(:ok))
       refute File.exists?(Path.join(store(tmp_dir), "#{prefix}_left.yaml"))
       assert {:ok, %{can_reset: false}} = Calibration.in_use(config)
-    end
-
-    test "commit_side/4 takes back the side the stereo unit refuses",
-         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      :ok = Calibration.commit_side(config, :left, distorted().left, reloading(:ok))
-      left_stored = File.read!(Path.join(store(tmp_dir), "#{prefix}_left.yaml"))
-      assert_received {:"$gen_cast", {:stereo_calibration_changed, ^prefix}}
-
-      assert {:error, message} =
-               Calibration.commit_side(
-                 config,
-                 :right,
-                 distorted().right,
-                 reloading({:error, :bad_calibration})
-               )
-
-      assert message =~ "bad_calibration"
-      refute File.exists?(Path.join(store(tmp_dir), "#{prefix}_right.yaml"))
-      assert File.read!(Path.join(store(tmp_dir), "#{prefix}_left.yaml")) == left_stored
-      refute_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
-    end
-
-    test "commit_side/4 commits nothing over a calibration it cannot read",
-         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      File.mkdir_p!(Path.join(store(tmp_dir), "#{prefix}_left.yaml"))
-
-      assert {:error, message} =
-               Calibration.commit_side(config, :left, distorted().left, reloading(:ok))
-
-      assert message =~ "cannot read the calibration it would replace"
     end
   end
 
@@ -268,17 +226,6 @@ defmodule VisionCore.Stereo.CalibrationTest do
 
       assert {:error, _message} = Calibration.reset(config, reloading(:ok))
       refute_received {:reloaded, _paths}
-    end
-
-    test "commit_side/4 reloads the calibration paths at each side",
-         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      left = Path.join(tmp_dir, "built_in/#{prefix}_left.yaml")
-      right = Path.join(tmp_dir, "built_in/#{prefix}_right.yaml")
-
-      assert :ok = Calibration.commit_side(config, :left, distorted().left, reloading(:ok))
-
-      assert File.read!(left) =~ "camera_name: #{prefix}_left"
-      assert_received {:reloaded, [left_calibration_path: ^left, right_calibration_path: ^right]}
     end
   end
 
@@ -375,56 +322,6 @@ defmodule VisionCore.Stereo.CalibrationTest do
       refute_received {:restarted, _left?}
     end
 
-    test "commit_side/4 without a store restarts the unit once the other side's file is there too",
-         %{prefix: prefix, config: config, left: left, right: right} do
-      opts = stopped(reload: reload(:ok), restart: restart(right, {:ok, self()}))
-
-      assert :ok = Calibration.commit_side(config, :left, distorted().left, opts)
-      assert File.read!(left) =~ "camera_name: #{prefix}_left"
-      refute_received {:restarted, _right?}
-      refute_received {:reloaded, _paths}
-
-      assert :ok = Calibration.commit_side(config, :right, distorted().right, opts)
-      assert_received {:restarted, true}
-      refute_received {:reloaded, _paths}
-      assert_received {:"$gen_cast", {:stereo_calibration_changed, ^prefix}}
-    end
-
-    test "commit_side/4 with a store restarts the unit once both sides are stored",
-         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
-      install_built_in(tmp_dir, prefix)
-      config = with_store(config, tmp_dir)
-      right_store = Path.join(store(tmp_dir), "#{prefix}_right.yaml")
-      opts = stopped(reload: reload(:ok), restart: restart(right_store, {:ok, self()}))
-
-      assert :ok = Calibration.commit_side(config, :left, distorted().left, opts)
-      refute_received {:restarted, _right?}
-      refute_received {:reloaded, _paths}
-
-      assert :ok = Calibration.commit_side(config, :right, distorted().right, opts)
-      assert_received {:restarted, true}
-      refute_received {:reloaded, _paths}
-    end
-
-    test "commit_side/4 takes back the side when the unit does not start, and starts it again",
-         %{config: config, left: left, right: right} do
-      File.mkdir_p!(Path.dirname(left))
-      File.write!(left, "the left calibration")
-
-      assert {:error, _message} =
-               Calibration.commit_side(
-                 config,
-                 :right,
-                 distorted().right,
-                 stopped(restart: restart(right, {:ok, :undefined}))
-               )
-
-      assert_received {:restarted, true}
-      assert_received {:restarted, false}
-      refute File.exists?(right)
-      assert File.read!(left) == "the left calibration"
-    end
-
     test "reset/2 restarts the unit on the built-in calibration",
          %{tmp_dir: tmp_dir, prefix: prefix, config: config, left: left} do
       install_built_in(tmp_dir, prefix)
@@ -468,31 +365,6 @@ defmodule VisionCore.Stereo.CalibrationTest do
     assert File.ls!(Path.dirname(left)) == ["stereo_left.yaml"]
     refute_received {:reloaded, _paths}
     refute_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
-  end
-
-  test "commit_side/4 for both sides at once reloads once, with both stored",
-       %{tmp_dir: tmp_dir, test: test} do
-    prefix = prefix(test)
-    install_built_in(tmp_dir, prefix)
-    config = tmp_dir |> config(prefix) |> with_store(tmp_dir)
-    test_process = self()
-
-    reload = fn paths ->
-      send(test_process, {:reloaded, paths})
-      :ok
-    end
-
-    [:left, :right]
-    |> Enum.map(fn side ->
-      Task.async(fn ->
-        Calibration.commit_side(config, side, distorted()[side], running(reload: reload))
-      end)
-    end)
-    |> Task.await_many()
-    |> Enum.each(&assert(&1 == :ok))
-
-    assert_received {:reloaded, _paths}
-    refute_received {:reloaded, _paths}
   end
 
   test "in_use/1 says :none without any calibration file", %{tmp_dir: tmp_dir, test: test} do

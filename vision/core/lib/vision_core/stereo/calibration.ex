@@ -1,7 +1,8 @@
 defmodule VisionCore.Stereo.Calibration do
   @moduledoc """
   Reads and writes the stereo unit's calibration files, for the
-  dashboard and for `VisionCore.Ros2.Services.SetCameraInfoServer`.
+  dashboard. `cameracalibrator`'s COMMIT writes them one side at a time,
+  through `VisionCore.Ros2.Services.SetCameraInfoServer`.
 
   The unit's options resolve where each side's calibration is
   (`VisionCore.Stereo.Supervisor.camera_options/1`): with a
@@ -23,8 +24,7 @@ defmodule VisionCore.Stereo.Calibration do
 
   A unit whose pipeline is not running, as an uncalibrated one that runs
   its cameras alone or one that gave up, is restarted instead, so that it
-  starts with its pipeline on the files written; a side commit restarts
-  it once the other side's file is there too. The saved
+  starts with its pipeline on the files written. The saved
   `right_row_offset` is forgotten first
   (`VisionCore.Stereo.Supervisor.forget_row_offset/1`). When the unit
   does not start, or the forget or the restart raises or exits, the
@@ -130,30 +130,6 @@ defmodule VisionCore.Stereo.Calibration do
           prefix,
           opts
         )
-      end)
-    end
-  end
-
-  @doc """
-  Writes one side's calibration, to the store when the unit has one,
-  else to its calibration path. With a store, the unit reloads once both
-  sides are stored; without one, at each side. Without its pipeline
-  running, the unit restarts once the other side's file is there too.
-  """
-  @spec commit_side(VisionCore.Config.t(), :left | :right, CameraCalibration.t(), keyword()) ::
-          :ok | {:error, String.t()}
-  def commit_side(config, side, calibration, opts \\ []) when side in @sides do
-    with {:ok, cameras} <- StereoSupervisor.camera_options(config),
-         {:ok, paths} <- writable_paths(cameras, [side]) do
-      prefix = cameras[:prefix]
-
-      locked(prefix, fn ->
-        take =
-          if pipeline_running?(opts),
-            do: reload_take(side_reload(cameras, side)),
-            else: side_restart(config, cameras, side)
-
-        replace([{paths[side], yaml(calibration, prefix, side)}], take, prefix, opts)
       end)
     end
   end
@@ -277,30 +253,10 @@ defmodule VisionCore.Stereo.Calibration do
   end
 
   # With a store, the unit reloads once the other side is stored too.
-  defp side_reload(cameras, side) do
-    case Enum.map(@sides, &cameras[&1][:calibration_store_path]) do
-      [nil, nil] ->
-        reload_paths(cameras[:left][:calibration_path], cameras[:right][:calibration_path])
-
-      [left_store, right_store] ->
-        other_store = if side == :left, do: right_store, else: left_store
-        if File.exists?(other_store), do: reload_paths(left_store, right_store)
-    end
-  end
-
   defp reload_paths(left, right), do: [left_calibration_path: left, right_calibration_path: right]
-
-  defp reload_take(nil), do: nil
-  defp reload_take(paths), do: {:reload, paths}
 
   defp unit_take(paths, config, opts),
     do: if(pipeline_running?(opts), do: {:reload, paths}, else: {:restart, config})
-
-  defp side_restart(config, cameras, side) do
-    [other] = @sides -- [side]
-    other_path = writable_path(cameras[other])
-    if other_path && File.exists?(other_path), do: {:restart, config}
-  end
 
   defp pipeline_running?(opts),
     do: Keyword.get(opts, :pipeline_running?, &default_pipeline_running?/0).()
