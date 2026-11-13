@@ -14,6 +14,7 @@ use framing::{log_record, metadata_record, output_h264_header, LogLevel, Writer}
 
 use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
+use crate::cpus;
 use crate::encoder::{Encoder, H264Settings, M2mEncoder};
 use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
@@ -36,6 +37,15 @@ pub fn run(
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.sensor_width, arguments.sensor_height);
+    // Before any thread starts, so that every thread inherits the CPUs.
+    match cpus::avoid_slowest() {
+        Ok(Some(cpus)) => log(LogLevel::Info, &format!("running on CPUs {cpus:?}")),
+        Ok(None) => {}
+        Err(error) => log(
+            LogLevel::Warning,
+            &format!("running on every CPU, the slowest kept: {error}"),
+        ),
+    }
     let model = SensorModel::for_sensor(&arguments.camera.sensor);
     let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;

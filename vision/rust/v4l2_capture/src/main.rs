@@ -10,6 +10,7 @@ mod arguments;
 mod bands;
 mod bayer;
 mod colour;
+mod cpus;
 mod encoder;
 mod exposure;
 mod h264;

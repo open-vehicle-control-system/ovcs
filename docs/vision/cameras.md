@@ -110,6 +110,8 @@ Auto exposure measures the green after lens shading and white balance, through t
 
 `threads`, 1 to 8, sets how many threads convert each frame and average its outputs. Each thread takes a band of rows, and the image is the same whatever their number. Without it, a camera with a full-size output made by `:cpu` takes 3 threads, and otherwise 1.
 
+On a processor whose cores differ in speed, such as the VENTUNO Q's Cortex-A78 and Cortex-A55, every thread of the camera's `v4l2_capture` runs on the cores faster than the slowest, from the kernel's `cpu_capacity`. A frame waits for its last band, so one band on a slow core holds the whole frame back.
+
 ## Worked example: the OVCS1 reference vehicle
 
 `Ovcs1.Vision.Composer` runs a Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`. It captures 2028 × 1520 in colour at 30 frames a second. That image, its `:full` output, is not sent. `v4l2_capture` makes three outputs from it:
