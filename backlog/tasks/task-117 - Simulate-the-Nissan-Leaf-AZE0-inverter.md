@@ -1,10 +1,11 @@
 ---
 id: TASK-117
 title: Simulate the Nissan Leaf AZE0 inverter
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 11:50'
+updated_date: '2026-11-13 22:03'
 labels:
   - simulator
   - ovcs1

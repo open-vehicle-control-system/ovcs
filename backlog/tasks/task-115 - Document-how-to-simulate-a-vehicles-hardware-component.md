@@ -1,10 +1,11 @@
 ---
 id: TASK-115
 title: Document how to simulate a vehicle's hardware component
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 10:30'
+updated_date: '2026-11-13 22:03'
 labels:
   - simulator
   - docs
