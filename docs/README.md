@@ -66,6 +66,11 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Command paths](./ros2/commands.md)
 - [ROS compute node](./ros2/compute_node.md)
 
+### Simulator
+
+- [Simulator](./simulator/README.md)
+- [Simulate a component](./simulator/simulate_a_component.md)
+
 ## Reference
 
 - [CLI reference](../cli/README.md)

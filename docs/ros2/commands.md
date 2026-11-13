@@ -44,9 +44,7 @@ The simulated hardware is framework; what it emulates is the vehicle's. Each pie
 - `SimulatedComponents.Traxxas.Steering`
 - `SimulatedComponents.OVCS.RadioControl`
 
-A vehicle with other hardware adds simulated components. `SimulatorCore.Vehicle`, the motion they act on, knows none of them.
-
-The OVCS Mini wires the simulated hardware into its `ros` bridge with `OVCS_SIM`, in `ros_bridge_simulation_config/0`. It declares its frames in `priv/can/bridges/ros_simulated_components.yml`, merged into the bridge's CAN topology on the host only.
+A vehicle with other hardware adds simulated components, as [Simulate a component](../simulator/simulate_a_component.md) describes. `SimulatorCore.Vehicle`, the motion they act on, knows none of them.
 
 A frame from the VMS only updates the command its simulated component holds. The work happens on a 20 ms wall-clock tick:
 

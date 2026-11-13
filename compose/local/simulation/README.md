@@ -177,12 +177,7 @@ The simulator reads three things from `vehicles/<vehicle>/`:
 | `description/simulation.yaml` | under `gazebo`: the sensor topics to bridge to ROS, the cameras, the spawn height. |
 | `nav2/` | `nav2.yaml` and the behaviour trees it references under `/opt/ovcs/config/`. |
 
-The ROS bridge needs two more things from the vehicle package:
-
-- a `:simulated_hardware` in its host `ros_bridge_config` against the simulator, listing a `SimulatorCore.SimulatedComponent` for each piece of hardware the VMS drives;
-- their frames in its host CAN topology, through a `%{host: _, target: _}` `can_config_path` (see `OvcsVehicle`).
-
-The OVCS Mini's `ros_bridge_simulation_config/0` and `priv/can/bridges/ros_simulated_components.yml` are the worked example. Hardware with no simulated component yet, such as the OVCS1 reference vehicle's inverter or brake booster, needs one written first.
+The `ros` bridge also needs a simulated component for each piece of hardware the VMS drives, wired into its host configuration and CAN topology. [Simulate a component](../../../docs/simulator/simulate_a_component.md) writes one and wires it in.
 
 The OVCS Mini reference vehicle's model is the worked example. [`vehicles/ovcs_mini/description/`](../../../vehicles/ovcs_mini/description/README.md) documents its dimensions and which of them are estimates. `inertial_macros.xacro` comes from the earlier [traxxas](https://github.com/open-vehicle-control-system/traxxas) model, which targeted Gazebo Classic. A centre of gravity at half the body height rolls a model over in its first corner. The Mini carries its chassis mass in a low tub for that reason.
 

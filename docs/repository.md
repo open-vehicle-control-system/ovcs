@@ -65,7 +65,7 @@ Each major system follows the Firmware → API → Core layering; see [Architect
 | The OVCS bus and its gateway | `libraries/ovcs_bus/`, `libraries/ovcs_bus_gateway/` | [The OVCS bus](./bus/README.md) |
 | Bridges | `bridges/`, `libraries/ovcs_bridge/` | [Bridges](./bridges/README.md) |
 | Generic controller | `controllers/generic_controller/` | [Generic controllers](./generic_controllers/README.md) |
-| Simulator | `simulator/core/`, `bridges/ros_bridge/lib/ros_bridge/simulator/` | [Simulation](../compose/local/simulation/README.md) |
+| Simulator | `simulator/core/`, `bridges/ros_bridge/lib/ros_bridge/simulator/` | [Simulator](./simulator/README.md), [Simulation](../compose/local/simulation/README.md) |
 | Compute node and local stacks | `compose/` | [ROS 2](./ros2/README.md), [ROS compute node](./ros2/compute_node.md) |
 | The `ovcs` CLI | `cli/` | [CLI reference](../cli/README.md) |
 
