@@ -299,7 +299,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
 
 The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:inference`.
 
-A unit with named detection pipelines lists each one's output too: `detections:<name>` for the pipeline `<name>`, next to `detections` for the default one. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
+A unit lists each detection pipeline's output: `detections:<name>` for the pipeline `<name>`, `detections:detection` for a detector without a name. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 

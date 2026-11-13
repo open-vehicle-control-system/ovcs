@@ -26,7 +26,7 @@ status.join()
 
 `npu` is the accelerator the detection and segmentation pipelines run on, `null` on a unit without one:
 
-- `kind`, and `state`: `running` or `failed`;
+- `kind`, and `state`: `starting` while a backend prepares its model, `running`, or `failed`;
 - `loadPercent`, the share of the last second its pipelines spent inferring, at most 100, `null` until a Port has reported a time;
 - each pipeline's mean `inferenceMs` over that second, `null` in a second without a frame.
 
@@ -125,7 +125,7 @@ depth.push('depth_range', { metres: 8 }).receive('ok', ({ metres }) => console.l
 
 ## Detections
 
-On a unit with detection, `detections` pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
+Each detection pipeline has its own channel, `detections:<name>`. It pushes each result, at most ten a second, as a `detections` event. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
@@ -135,9 +135,7 @@ On a unit with detection, `detections` pushes each result, at most ten a second,
 }
 ```
 
-On a unit without detection, the join is refused with `{"reason": "unavailable"}`.
-
-`detections` carries the default pipeline. A pipeline named in the vehicle's composer, `:vehicle_detection` for instance, has its own channel, `detections:vehicle_detection`, which pushes the same `detections` event with the same payload. `detections:detection` and a name no pipeline runs under are refused with `{"reason": "unavailable"}`. The names come from `GET /api/exporters` ([Vision API](./api.md#the-unit-and-its-exports)), whose API outputs list each `detections:<name>`.
+A pipeline named in the vehicle's composer, `:vehicle_detection` for instance, is on `detections:vehicle_detection`. A detector without a name is the pipeline `detection`, on `detections:detection`. A name no pipeline runs under is refused with `{"reason": "unavailable"}`. The names come from `GET /api/exporters` ([Vision API](./api.md#the-unit-and-its-exports)), whose API outputs list each `detections:<name>`.
 
 ## Segmentation
 

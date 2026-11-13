@@ -97,8 +97,7 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 | `<prefix>/depth/image_rect` | The depth as a 16UC1 image of millimetres, 0 where there is no measurement: the ROS depth-image convention, at half the bytes of 32-bit metres. |
 | `<prefix>/depth/camera_info` | The left camera's rectified intrinsics, next to the depth image so viewers can project it. |
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
-| `<prefix>/detections`, `<prefix>/detections/markers`, `<prefix>/left/detections` | Detected objects with their position in metres, markers for RViz or Foxglove, and the 2D overlay on the left image. |
-| `<prefix>/<pipeline>/detections`, `<prefix>/<pipeline>/detections/markers`, `<prefix>/<pipeline>/annotations` | The same for the named detection pipeline `<pipeline>`, with its markers in the namespace `<pipeline>`; its 2D overlay on the left image is `<prefix>/<pipeline>/annotations`. A pipeline on a camera of its own publishes those with a distance there, in the camera's frame, and its overlay over the camera's image. |
+| `<prefix>/<pipeline>/detections`, `<prefix>/<pipeline>/detections/markers`, `<prefix>/<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A detector without a name is the pipeline `detection`. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
 | `<prefix>/<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
 | `<prefix>/<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
 | `<prefix>/<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
@@ -168,7 +167,7 @@ A camera frame is encoded once for every preview and exporter that asks for it a
 
 A camera output sent as JPEG ([Outputs](./cameras.md#outputs)) costs the pool nothing: its frames carry the JPEG `v4l2_capture` encoded.
 
-Each pipeline's results reach the dashboard on a channel of their own: `detections` or `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision channels](./channels.md#segmentation)).
+Each pipeline's results reach the dashboard on a channel of their own: `detections:<name>` for a detection pipeline, `segmentation:<name>` for a segmentation pipeline. A segmentation channel sends a binary message holding the band and the grid, at most `max_hz` a second. As with a preview's frame, it sends one only once the previous one is acknowledged ([Vision channels](./channels.md#segmentation)).
 
 The depth preview is the depth image coloured by `jpeg_codec`, near red and far blue, scaled by 1/depth.
 

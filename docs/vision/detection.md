@@ -16,7 +16,7 @@ A stereo detection pipeline leaves out an object with no depth in its box's midd
 
 ### On the VENTUNO Q's NPU
 
-The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, at the HTP's graph optimisation level 3, into `/data/vision/qnn`. Later boots reuse it. A new DLC, a new QAIRT or new generator options make a new one (`VisionCore.Detection.QnnContext`).
+The `:qnn_detector` component runs YOLOX on the NPU through QNN, from Qualcomm's AI Runtime (QAIRT 2.50). YOLOX runs in the `qnn_detect` Port behind `VisionCore.Detection.Backend.Qnn`. It takes the model as a DLC, `dlc_path:`. On first boot the board generates the model's context binary from it with QAIRT's `qnn-context-binary-generator`, at the HTP's graph optimisation level 3, into `/data/vision/qnn/<name>`, the pipeline's name. Later boots reuse it. A new DLC, a new QAIRT or new generator options make a new one (`VisionCore.Inference.QnnContext`). While it is generated, the status's `npu` reads `starting`. A generation that fails is tried again; a missing DLC or QAIRT is not.
 
 Each QNN Port holds a power vote on the NPU for as long as it runs, with the performance profile its `performance:` names:
 
@@ -32,11 +32,11 @@ The board needs QAIRT in its image: [The Arduino VENTUNO Q](./README.md#the-ardu
 
 A composer may list several detector components (`:detector`, `:hailo_detector`, `:qnn_detector`), each with a `:name`. The name is a lowercase atom such as `:vehicle_detection`, `:detection` by default. Each named pipeline has its own supervisor, backend, model and parameter groups: `<name>.input`, `<name>.inference`, `<name>.filtering` and `<name>.placement`.
 
-Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, the stereo pipeline's name, or the Hailo-8 claim. `VisionCore.Detection` lists them. Two detectors with the same name are refused.
+Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, and the stereo pipeline's name. `VisionCore.Pipelines` lists them. Two detectors with the same name are refused.
 
-The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a named one's default `cache_dir` is `/data/vision/qnn/<name>`.
+The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
 
-Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The Debug exporter reads the default pipeline only.
+Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The Debug exporter reads the pipeline `detection` only, the one a detector without a name runs.
 
 ## Accelerator load
 
@@ -52,7 +52,7 @@ The load is `null` until a Port has reported a time. A pipeline's time is `null`
 
 ## Detect on a camera of its own
 
-A named detector with `source: {:camera, name}` detects on the camera of its own `name` ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera. The default pipeline, `:detection`, stays the stereo pair's.
+A detector with `source: {:camera, name}` detects on the camera of its own `name` ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera.
 
 `source: {:camera, name, output}` takes that camera's output `output`; the boxes, depth and bearings are then in that output's pixels. With the OVCS1 reference vehicle's colour camera, `:center`, and its `:inference` output, it reads as below; it works the same with your camera and backend:
 
