@@ -6,6 +6,7 @@
 #include <Can.h>
 #include <Configuration.h>
 #include <AbstractBoard.h>
+#include <ExpansionBoards.h>
 #include <Wire.h>
 #include <SerialTransfer.h>
 #include <ExternalPwm.h>
@@ -70,7 +71,7 @@ class Controller {
     void initializeSerial();
     void initializeSerialTransfer();
     void initializeI2C();
-    void initializeExpansionBoards();
+    bool initializeExpansionBoards();
     void resetExpansionBoards();
     void writeDigitalPins();
     void shutdownAllDigitalPins();
@@ -82,6 +83,7 @@ class Controller {
     uint16_t* readAnalogPins();
     bool isReady();
     void adoptConfiguration();
+    void becomeReadyIf(bool expansionBoardsBegan);
     void shutdown(ControllerStatus controllerStatus);
     void setStatus(ControllerStatus controllerStatus);
     void emitPinStatuses();
