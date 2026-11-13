@@ -28,7 +28,8 @@ defmodule VisionCore.Config do
           wall clock. **Simulation only**: see `VisionCore.Ros2.Clock`
           for what wall clock breaks against a simulator.
     * `:preview` — options of `VisionCore.Preview` (`:max_hz`,
-      `:depth_range_m`, `:outputs`).
+      `:depth_range_m`, `:outputs`), and `:videos`, the H.264 output of
+      each camera `VisionCore.Video` relays to the dashboard.
     * `:jpeg` — options of `VisionCore.Jpeg.Export`, the pool of
       `jpeg_codec` Ports the previews and exporters encode on:
         * `:ports` (`3`) — the most Ports encoding at once, a positive

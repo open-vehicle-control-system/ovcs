@@ -37,8 +37,8 @@ defmodule VisionCore.Application do
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then `VisionCore.Status`, which reports
-  their statuses, and `VisionCore.Preview`: a restart of the dashboard's
-  sources does not restart the exporters.
+  their statuses, `VisionCore.Preview` and `VisionCore.Video`: a restart
+  of the dashboard's sources does not restart the exporters.
 
   `VisionCore.Jpeg` runs twice: the pipeline decodes JPEG camera frames
   on `VisionCore.Jpeg`, one Port, while the exporters and
@@ -105,7 +105,9 @@ defmodule VisionCore.Application do
       {VisionCore.Jpeg, [name: @export_jpeg_codec] ++ config.jpeg},
       {VisionCore.Exporters, config: config, jpeg_codec: @export_jpeg_codec},
       {VisionCore.Status, config: config},
-      {VisionCore.Preview, [config: config, jpeg_codec: @export_jpeg_codec] ++ config.preview}
+      {VisionCore.Preview,
+       [config: config, jpeg_codec: @export_jpeg_codec] ++ Keyword.delete(config.preview, :videos)},
+      {VisionCore.Video, config: config, videos: Keyword.get(config.preview, :videos, [])}
     ]
 
     %{
