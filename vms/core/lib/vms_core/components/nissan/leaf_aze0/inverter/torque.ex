@@ -2,6 +2,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter.Torque do
   @moduledoc "The Leaf inverter's signed torque request for the selected gear and throttle."
   @moduledoc safety: :relevant
   alias Decimal, as: D
+  alias VmsCore.NormalisedRequest
 
   @zero D.new(0)
 
@@ -17,7 +18,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter.Torque do
     requested_throttle =
       case D.lt?(state.requested_throttle, state.effective_throttle_threshold) do
         true -> @zero
-        false -> state.requested_throttle
+        false -> NormalisedRequest.clamp(state.requested_throttle)
       end
 
     D.mult(requested_throttle, max_torque)

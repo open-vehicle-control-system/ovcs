@@ -6,7 +6,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   While the contact is on, a generic controller's relay powers the
   inverter and the VMS frames it expects are emitted. Each tick turns the
   selected source's throttle request into a torque request, signed by the
-  selected gear and zero outside `:drive` and `:reverse`. Publishes the
+  selected gear, bounded by its configured maximum, and zero outside
+  `:drive` and `:reverse`. Publishes the
   motor rpm (unsigned, and `nil` above the EM57's rated 10,500, where
   the reading is invalid), requested and effective torque, output
   voltage, the inverter and motor temperatures, and `:ready_to_drive`.
