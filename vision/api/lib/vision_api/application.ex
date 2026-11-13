@@ -14,6 +14,7 @@ defmodule VisionApi.Application do
   use Application
 
   alias VisionApi.SelfSignedCertificate
+  alias VisionApiWeb.HttpsRedirect
 
   @impl Application
   def start(_type, _args) do
@@ -25,7 +26,7 @@ defmodule VisionApi.Application do
         {Phoenix.PubSub, name: VisionApi.PubSub},
         VisionApiWeb.Endpoint
       ] ++
-        https_redirects(
+        HttpsRedirect.listeners(
           endpoint[:https],
           Application.get_env(:vision_api, :https_redirect_ports, [])
         )
@@ -37,18 +38,6 @@ defmodule VisionApi.Application do
   def config_change(changed, _new, removed) do
     VisionApiWeb.Endpoint.config_change(changed, removed)
     :ok
-  end
-
-  defp https_redirects(https, ports) do
-    for port <- ports do
-      Supervisor.child_spec(
-        {Bandit,
-         plug: {VisionApiWeb.HttpsRedirect, https_port: Keyword.fetch!(https, :port)},
-         scheme: :http,
-         port: port},
-        id: {:https_redirect, port}
-      )
-    end
   end
 
   # The names a browser reaches the unit by: its hostname, and that name over mDNS.

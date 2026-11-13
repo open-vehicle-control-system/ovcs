@@ -50,4 +50,18 @@ defmodule VisionApiWeb.HttpsRedirectTest do
 
     assert get_resp_header(conn, "strict-transport-security") == []
   end
+
+  describe "listeners/2" do
+    test "listens for plain HTTP on each port, redirecting to the endpoint's HTTPS port" do
+      assert [
+               %{id: {:https_redirect, 80}, start: {Bandit, :start_link, [port_80]}},
+               %{id: {:https_redirect, 4100}, start: {Bandit, :start_link, [port_4100]}}
+             ] = HttpsRedirect.listeners([port: 443], [80, 4100])
+
+      assert port_80[:port] == 80
+      assert port_4100[:port] == 4100
+      assert port_80[:scheme] == :http
+      assert port_80[:plug] == {HttpsRedirect, https_port: 443}
+    end
+  end
 end

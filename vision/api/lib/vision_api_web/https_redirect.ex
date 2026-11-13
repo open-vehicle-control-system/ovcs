@@ -11,6 +11,21 @@ defmodule VisionApiWeb.HttpsRedirect do
 
   import Plug.Conn
 
+  @doc """
+  The child specs of a Bandit listener on each of `ports` that redirects
+  to the endpoint's `https` options' port.
+  """
+  @spec listeners(keyword(), [:inet.port_number()]) :: [Supervisor.child_spec()]
+  def listeners(https, ports) do
+    for port <- ports do
+      Supervisor.child_spec(
+        {Bandit,
+         plug: {__MODULE__, https_port: Keyword.fetch!(https, :port)}, scheme: :http, port: port},
+        id: {:https_redirect, port}
+      )
+    end
+  end
+
   @impl Plug
   def init(options), do: Keyword.validate!(options, [:https_port])
 
