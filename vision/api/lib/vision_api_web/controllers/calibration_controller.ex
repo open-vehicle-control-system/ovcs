@@ -1,29 +1,36 @@
 defmodule VisionApiWeb.CalibrationController do
   @moduledoc """
-  The stereo calibration in use, a `calibrations` singleton identified by
-  the unit's prefix (`VisionCore.Stereo.Calibration.in_use/1`). A unit
-  without a `:stereo` component has none: 404.
+  The calibrations in use, read-only: one `calibrations` resource per
+  target the unit can calibrate (`VisionCore.Calibration`), its stereo
+  pair, identified by the stereo unit's prefix, and each camera of its
+  own, identified by its name.
   """
   use VisionApiWeb, :controller
 
   alias VisionApiWeb.{CalibrationUnit, JsonApi}
-  alias VisionCore.Stereo.Calibration
+  alias VisionCore.Calibration
 
-  def show(conn, _params) do
-    with {:ok, config, _prefix} <- CalibrationUnit.fetch(),
-         {:ok, in_use} <- Calibration.in_use(config) do
-      render(conn, :show, in_use: in_use)
-    else
-      :error ->
-        JsonApi.error(
-          conn,
-          404,
-          "Not Found",
-          "the unit has no stereo cameras: no :stereo component"
-        )
+  def index(conn, _params) do
+    config = CalibrationUnit.config()
+
+    calibrations =
+      for target <- CalibrationUnit.targets(),
+          {:ok, in_use} <- [Calibration.in_use(config, target.id)],
+          do: in_use
+
+    render(conn, :index, calibrations: calibrations)
+  end
+
+  def show(conn, %{"id" => id}) do
+    case Calibration.in_use(CalibrationUnit.config(), id) do
+      {:ok, in_use} ->
+        render(conn, :show, in_use: in_use)
+
+      {:error, :not_found} ->
+        JsonApi.error(conn, 404, "no calibration #{id}")
 
       {:error, reason} ->
-        JsonApi.error(conn, 503, "Calibration unavailable", reason)
+        JsonApi.error(conn, 503, reason, title: "Calibration unavailable")
     end
   end
 end

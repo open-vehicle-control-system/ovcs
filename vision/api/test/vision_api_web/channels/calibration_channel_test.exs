@@ -13,8 +13,16 @@ defmodule VisionApiWeb.CalibrationChannelTest do
   test "join pushes the session and the calibration in use" do
     {:ok, _reply, _socket} = join()
 
-    assert_push "session", %{phase: "idle", board: nil, samples: 0, goodEnough: false}
-    assert_push "in_use", %{source: "builtIn", prefix: "unit", left: %{fx: 900.0}}
+    assert_push "calibration", %{id: "unit", kind: "stereo", source: "builtIn", cameras: [_, _]}
+    assert_push "calibration", %{id: "hq", kind: "camera", cameras: [%{name: "hq", fx: 900.0}]}
+
+    assert_push "session", %{
+      phase: "idle",
+      calibration: nil,
+      board: nil,
+      samples: 0,
+      goodEnough: false
+    }
   end
 
   test "a session change is pushed" do
@@ -22,21 +30,43 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     assert_push "session", %{phase: "idle"}
 
     {:ok, board} = Board.new(8, 6, 0.025)
-    :ok = Session.start(board)
+    :ok = Session.start("hq", board)
 
-    assert_push "session", %{phase: "capturing", board: %{columns: 8, rows: 6, squareMm: 25.0}}
+    assert_push "session", %{
+      phase: "capturing",
+      calibration: "hq",
+      board: %{columns: 8, rows: 6, squareMm: 25.0}
+    }
   end
 
-  test "a change of the calibration in use is pushed" do
+  test "a change of a calibration in use is pushed, the pair's or a camera's" do
     {:ok, _reply, _socket} = join()
-    assert_push "in_use", %{}
+    assert_push "calibration", %{id: "unit"}
+    assert_push "calibration", %{id: "hq"}
 
     VisionCore.Outputs.publish(
       VisionCore.Stereo.Calibration.changed_key("unit"),
       {:stereo_calibration_changed, "unit"}
     )
 
-    assert_push "in_use", %{source: "builtIn"}
+    assert_push "calibration", %{id: "unit", source: "builtIn"}
+
+    VisionCore.Outputs.publish(
+      VisionCore.Camera.Calibration.changed_key(:hq),
+      {:camera_calibration_changed, :hq}
+    )
+
+    assert_push "calibration", %{id: "hq", source: "builtIn"}
+  end
+
+  test "the channel takes no push" do
+    Process.flag(:trap_exit, true)
+    {:ok, _reply, socket} = join()
+
+    Phoenix.ChannelTest.push(socket, "session", %{"phase" => "idle"})
+
+    assert_receive {:EXIT, _pid, _reason}, 500
+    assert %{phase: :idle} = Session.state()
   end
 
   test "the channel stops when the session restarts" do
@@ -60,10 +90,10 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     assert wait_until(fn -> :sys.get_state(Session).subscribers == %{} end)
   end
 
-  test "joining a unit without a :stereo component is refused without a retry reason" do
+  test "joining a unit with nothing to calibrate is refused without a retry reason" do
     VisionApiWeb.TestUnit.start(%VisionCore.Config{})
 
-    assert {:error, %{reason: "no stereo unit"}} = join()
+    assert {:error, %{reason: "nothing to calibrate"}} = join()
   end
 
   defp wait_until(check, attempts \\ 50) do

@@ -30,7 +30,8 @@ defmodule VisionApiWeb.Router do
     get "/exporters", ExporterController, :index
     post "/exporters/:id/actions/:name", ExporterActionController, :run
     get "/ros2-node", Ros2NodeController, :show
-    get "/calibration", CalibrationController, :show
+    get "/calibrations", CalibrationController, :index
+    get "/calibrations/:id", CalibrationController, :show
     post "/calibration-sessions", CalibrationActionController, :start
     post "/calibration-cancels", CalibrationActionController, :cancel
     post "/calibration-solves", CalibrationActionController, :solve
