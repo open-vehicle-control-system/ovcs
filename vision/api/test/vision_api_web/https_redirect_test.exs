@@ -63,5 +63,9 @@ defmodule VisionApiWeb.HttpsRedirectTest do
       assert port_80[:scheme] == :http
       assert port_80[:plug] == {HttpsRedirect, https_port: 443}
     end
+
+    test "listens on no port for an endpoint without HTTPS" do
+      assert HttpsRedirect.listeners(nil, [80, 4100]) == []
+    end
   end
 end

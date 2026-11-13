@@ -8,7 +8,8 @@ defmodule VisionApi.Application do
   key they name, generated first when missing
   (`VisionApi.SelfSignedCertificate`). With `:https_redirect_ports`, plain
   HTTP on each of those ports is redirected to it
-  (`VisionApiWeb.HttpsRedirect`).
+  (`VisionApiWeb.HttpsRedirect`); an endpoint without `https:` listens on
+  none of them.
   """
 
   use Application

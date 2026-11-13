@@ -13,9 +13,12 @@ defmodule VisionApiWeb.HttpsRedirect do
 
   @doc """
   The child specs of a Bandit listener on each of `ports` that redirects
-  to the endpoint's `https` options' port.
+  to the endpoint's `https` options' port; none for an endpoint without
+  `https`.
   """
-  @spec listeners(keyword(), [:inet.port_number()]) :: [Supervisor.child_spec()]
+  @spec listeners(keyword() | nil, [:inet.port_number()]) :: [Supervisor.child_spec()]
+  def listeners(nil, _ports), do: []
+
   def listeners(https, ports) do
     for port <- ports do
       Supervisor.child_spec(
