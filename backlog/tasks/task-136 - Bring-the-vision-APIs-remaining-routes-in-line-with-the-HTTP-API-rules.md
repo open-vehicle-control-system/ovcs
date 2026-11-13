@@ -1,9 +1,11 @@
 ---
 id: TASK-136
 title: Bring the vision API's remaining routes in line with the HTTP API rules
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - '@loic'
 created_date: '2026-11-13T16:28:00Z'
+updated_date: '2026-11-13T17:00:00Z'
 labels: []
 dependencies:
   - TASK-133
@@ -13,12 +15,19 @@ ordinal: 93000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Four deviations from CODE_STYLING.md's HTTP APIs section remain in vision/api: POST /api/exporters/:id/actions/:name names the operation in the path and answers 200; the save, discard and reset resources list the parameters they touched as attributes.parameters, not as a relationship; a POST carrying a client id is accepted and the id ignored, where JSON:API asks for a 403; a known route with an unsupported method answers 404, not 405 with Allow.
+Four deviations from CODE_STYLING.md's HTTP APIs section remained in vision/api.
 
-Design to agree before implementation: the exporter action's route and document shape (for example POST /api/exporter-actions with the exporter as a relationship and the action's name as an attribute), since it and the relationship change both change what the dashboard reads.
+Done here: a POST carrying a client id answers 403, where it was accepted and the id ignored; a known route sent another method answers 405 with Allow, where it answered 404.
+
+Still to design and agree, since both change what the dashboard reads:
+
+- POST /api/exporters/:id/actions/:name names the operation in the path and answers 200. Proposed: POST /api/exporter-actions, a document of type exporter-actions with the action's name and parameters in attributes and the exporter as its exporter relationship; 201 with the resource for a JSON result, 200 with the file for a file result.
+- The save, discard and reset resources list the parameters they touched as attributes.parameters. Proposed: a parameters to-many relationship.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Design agreed and recorded in this task
+- [x] #1 A POST whose document carries an id answers 403
+- [x] #2 A known route sent another method answers 405 with an allow header
+- [ ] #3 The exporter action route and the touched parameters follow the agreed design
 <!-- AC:END -->

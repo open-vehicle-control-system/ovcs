@@ -52,6 +52,9 @@ defmodule VisionApiWeb.ParameterActionController do
     end
   end
 
+  defp fetch_data(%{"data" => %{"type" => type, "id" => _id}}, type),
+    do: JsonApi.client_id_refusal()
+
   defp fetch_data(%{"data" => %{"type" => type} = data}, type), do: {:ok, data}
 
   defp fetch_data(%{"data" => %{"type" => _other}}, type),

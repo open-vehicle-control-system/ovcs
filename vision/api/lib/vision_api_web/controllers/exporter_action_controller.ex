@@ -52,6 +52,9 @@ defmodule VisionApiWeb.ExporterActionController do
   defp answer({:error, {:failed, message}}, conn, _id, _name),
     do: JsonApi.error(conn, 500, "Action failed", message)
 
+  defp fetch_attributes(%{"data" => %{"type" => @document_type, "id" => _id}}),
+    do: JsonApi.client_id_refusal()
+
   defp fetch_attributes(%{"data" => %{"type" => @document_type} = document}) do
     case Map.get(document, "attributes", %{}) do
       attributes when is_map(attributes) ->

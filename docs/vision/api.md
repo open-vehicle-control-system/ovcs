@@ -20,7 +20,7 @@ The examples come from units of several builds, shortened where a list is long. 
 
 ## Requests and errors
 
-Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400. A body that is not valid JSON is a 400 too, and a request whose `Accept` header takes no JSON a 406.
+Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400. A body that is not valid JSON is a 400 too, and a request whose `Accept` header takes no JSON a 406. A path sent a method it does not take answers a 405, with the methods it takes in the `allow` header. A `POST` creates a resource the unit names: a document carrying an `id` is a 403.
 
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 

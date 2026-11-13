@@ -41,6 +41,11 @@ defmodule VisionApiWeb.JsonApi do
   def check_identity(_data, _type, _id),
     do: {:error, 400, "Bad Request", "data is required", "/data"}
 
+  @doc "The refusal `error/5` sends for a created resource whose document carries an id of the client's."
+  @spec client_id_refusal() :: {:error, 403, String.t(), String.t(), String.t()}
+  def client_id_refusal,
+    do: {:error, 403, "Forbidden", "the unit names the resource: send no id", "/data/id"}
+
   @doc """
   The relationships the `include` query parameter of `params` names, each
   once; `:error` for one that is not among `supported`, and for an

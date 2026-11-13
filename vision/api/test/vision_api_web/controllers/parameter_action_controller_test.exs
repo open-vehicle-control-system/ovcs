@@ -200,4 +200,18 @@ defmodule VisionApiWeb.ParameterActionControllerTest do
 
     assert parameter(conn, "test.disparity.p1")["attributes"]["value"] == 12
   end
+
+  test "an action carrying an id of the client's answers 403, and does nothing", %{conn: conn} do
+    set("test.disparity.p1", 12)
+
+    for type <- ["parameter-saves", "parameter-discards", "parameter-resets"] do
+      conn = post_action(conn, "/api/" <> type, %{type: type, id: "mine"})
+
+      assert %{"errors" => [%{"status" => "403", "source" => %{"pointer" => "/data/id"}}]} =
+               json_response(conn, 403)
+    end
+
+    assert unsaved(conn) == 1
+    assert %{"attributes" => %{"value" => 12}} = parameter(conn, "test.disparity.p1")
+  end
 end
