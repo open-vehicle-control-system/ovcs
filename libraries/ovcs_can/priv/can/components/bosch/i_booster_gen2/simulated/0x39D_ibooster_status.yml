@@ -1,0 +1,73 @@
+---
+# ibooster_status as a simulator emits it: the bits of
+# ../0x39D_ibooster_status.yml in frame order, with the rod position's
+# three segments as three fields, since Cantastic emits signals only in
+# bit order.
+name: ibooster_status
+id: 0x39D
+# Not measured on the iBooster Gen2.
+frequency: 20
+signals:
+  - name: crc
+    kind: integer
+    value_start: 0
+    value_length: 8
+  - name: filler0
+    kind: static
+    value_start: 8
+    value_length: 1
+    value: 0
+  - name: status
+    kind: enum
+    value_start: 9
+    value_length: 3
+    mapping:
+      0x00: 'off'
+      0x01: init
+      0x02: failure
+      0x03: diagnostic
+      0x04: active_good_check
+      0x05: ready
+      0x06: actuation
+  - name: counter
+    kind: integer
+    value_start: 12
+    value_length: 4
+  - name: rod_position_low_bits
+    kind: integer
+    value_start: 16
+    value_length: 3
+  - name: internal_state
+    kind: enum
+    value_start: 19
+    value_length: 3
+    mapping:
+      0x00: no_mode_active
+      0x01: pre_drive_check
+      0x02: local_brake_request
+      0x03: external_brake_request
+      0x04: diagnostic
+      0x05: transition_to_iddle
+      0x06: post_drive_check
+  - name: driver_brake_apply
+    kind: enum
+    value_start: 22
+    value_length: 2
+    mapping:
+      0x00: not_init_or_off
+      0x01: brakes_not_applied
+      0x02: driver_applying_brake
+      0x03: fault
+  - name: rod_position_middle_bits
+    kind: integer
+    value_start: 24
+    value_length: 8
+  - name: filler1
+    kind: static
+    value_start: 32
+    value_length: 7
+    value: 0
+  - name: rod_position_high_bit
+    kind: integer
+    value_start: 39
+    value_length: 1
