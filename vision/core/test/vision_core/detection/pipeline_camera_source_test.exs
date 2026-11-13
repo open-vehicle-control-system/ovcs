@@ -31,6 +31,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     def available?(_server), do: true
     def npu_kind, do: nil
+    def options, do: []
     def inference_times(_server), do: nil
   end
 
@@ -50,6 +51,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     def available?(_server), do: true
     def npu_kind, do: nil
+    def options, do: []
     def inference_times(_server), do: nil
   end
 
@@ -65,6 +67,7 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
 
     def available?(_server), do: true
     def npu_kind, do: nil
+    def options, do: []
     def inference_times(_server), do: nil
   end
 
