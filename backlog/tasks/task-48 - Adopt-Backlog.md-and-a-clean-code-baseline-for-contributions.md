@@ -1,7 +1,7 @@
 ---
 id: TASK-48
 title: Adopt Backlog.md and a clean-code baseline for contributions
-status: In Progress
+status: Done
 assignee:
   - '@marc'
 created_date: '2026-11-08 10:44'
@@ -22,7 +22,7 @@ Track work in backlog/ with Backlog.md. Extend CODE_STYLING.md with design, func
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 backlog/ holds the milestones and one task per planned PR
-- [ ] #2 CODE_STYLING.md states the design, function, error, safety, test, refactoring and PR rules
-- [ ] #3 CLAUDE.md describes the development process and how tasks move through the backlog
+- [x] #1 backlog/ holds the milestones and one task per planned PR
+- [x] #2 CODE_STYLING.md states the design, function, error, safety, test, refactoring and PR rules
+- [x] #3 CLAUDE.md describes the development process and how tasks move through the backlog
 <!-- AC:END -->
