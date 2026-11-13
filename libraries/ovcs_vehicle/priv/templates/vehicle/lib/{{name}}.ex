@@ -14,6 +14,24 @@ defmodule <%= @module %> do
       @impl OvcsVehicle
       def geometry,
         do: %{wheelbase: 0.0, track: 0.0, wheel_radius: 0.0, steering_limit: 0.0}
+
+  ## Simulator
+
+  Declare `simulator/0` to run the vehicle headless against simulated
+  hardware, with `VEHICLE=<%= @module %> mix run --no-halt` in
+  `simulator/runner`. List a simulated component for each part the VMS
+  drives, and declare their frames in `priv/can/simulator.yml`, the
+  VMS's frames the other way round; see `t:OvcsVehicle.simulator/0`
+  and `vehicles/ovcs_mini/lib/ovcs_mini.ex`.
+
+      @impl OvcsVehicle
+      def simulator,
+        do: %{
+          vehicle: %{wheelbase_m: 0.0, wheel_radius_m: 0.0},
+          simulated_components: [],
+          can_config_path: "can/simulator.yml",
+          can_mapping: "ovcs:vcan0"
+        }
 <%= if @bridges do %>
   ## Bridge firmwares
 

@@ -57,6 +57,14 @@ defmodule SimulatorCore.HardwareTest do
     )
   end
 
+  defp start_headless(speed_m_s) do
+    start_supervised!(
+      {Hardware,
+       vehicle: %{wheelbase_m: 0.324, wheel_radius_m: 0.0522},
+       simulated_components: [{SpeedController, speed_m_s: speed_m_s, test: self()}]}
+    )
+  end
+
   test "drives the world at the commanded speed, measured as commanded before the world reports the wheels" do
     start_hardware(1.0)
 
@@ -83,6 +91,26 @@ defmodule SimulatorCore.HardwareTest do
     assert Hardware.wheel_turns_step(nil, nil) == nil
     assert Hardware.wheel_turns_step(4.25, nil) == 0.0
     assert Hardware.wheel_turns_step(4.25, 4.0) == 0.25
+  end
+
+  describe "without a world" do
+    test "the vehicle follows its own motion: the wheels turn as commanded" do
+      start_headless(0.3)
+
+      assert_receive {:report, %Vehicle{measured_speed_m_s: 0.3, wheel_turns_step: turns}},
+                     @tick_timeout_ms
+
+      assert turns > 0
+    end
+
+    test "ignores messages it has no world to read them for" do
+      hardware = start_headless(0.2)
+
+      send(hardware, :unrelated)
+
+      assert_receive {:report, %Vehicle{commanded_speed_m_s: 0.2}}, @tick_timeout_ms
+      assert Process.alive?(hardware)
+    end
   end
 
   test "ignores a message the world does not read" do

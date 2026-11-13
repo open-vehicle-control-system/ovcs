@@ -28,6 +28,9 @@ defmodule OvcsVehicle do
   run can declare frames the burned firmware never needs. Its
   `children`, child specs started after the bridges' children, take
   the same form: a list, or a `%{host: _, target: _}` map.
+
+  A vehicle that runs in simulation declares its simulated hardware in
+  `simulator/0`, which the simulator runner (`simulator/runner`) reads.
   """
 
   @type bridge_firmware_id :: String.t()
@@ -47,6 +50,27 @@ defmodule OvcsVehicle do
             host: String.t(),
             target: String.t()
           }
+        }
+
+  @typedoc """
+  The vehicle's simulated hardware, as the simulator runner runs it:
+
+    * `:vehicle` — `SimulatorCore.Vehicle.new/1`'s parameters, the
+      motion model the simulated components act on;
+    * `:simulated_components` — `{module, opts}` per simulated
+      component, each implementing `SimulatorCore.SimulatedComponent`;
+    * `:can_config_path` — the CAN topology of the frames they read
+      and emit, under the vehicle's `priv/`: the VMS's frames the other
+      way round. A list of paths is merged;
+    * `:can_mapping` — the networks' interfaces on the host, as
+      `"ovcs:vcan0,misc:vcan1"`, the ones the VMS's host mapping uses.
+      `CAN_NETWORK_MAPPINGS` overrides it.
+  """
+  @type simulator :: %{
+          required(:vehicle) => map(),
+          required(:simulated_components) => [{module(), keyword() | map()}],
+          required(:can_config_path) => can_config_path(),
+          required(:can_mapping) => String.t()
         }
 
   @typedoc """
@@ -101,13 +125,20 @@ defmodule OvcsVehicle do
   """
   @callback geometry() :: geometry()
 
+  @doc """
+  The vehicle's simulated hardware, see `t:simulator/0`. Optional: a
+  vehicle without simulated components cannot run in simulation.
+  """
+  @callback simulator() :: simulator()
+
   @optional_callbacks [
     infotainment: 0,
     infotainment_target: 0,
     vision: 0,
     vision_target: 0,
     bridge_firmwares: 0,
-    geometry: 0
+    geometry: 0,
+    simulator: 0
   ]
 
   @doc """

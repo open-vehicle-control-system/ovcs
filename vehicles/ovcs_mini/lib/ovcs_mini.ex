@@ -178,9 +178,26 @@ defmodule OvcsMini do
   def simulated_acceleration_per_ampere, do: @simulated_acceleration_per_ampere
 
   defp simulated_hardware do
-    drivetrain = OvcsMini.Vms.Composer.drivetrain()
+    simulator = simulator()
 
     [
+      vehicle: simulator.vehicle,
+      # Shaft-driven 4WD: the motor turns at the four wheels' mean.
+      wheel_joints: ~w(front_left_wheel_joint front_right_wheel_joint
+                       rear_left_wheel_joint rear_right_wheel_joint),
+      simulated_components: simulator.simulated_components
+    ]
+  end
+
+  # The simulator runner's frames are vms.yml's, the other way round,
+  # on the VMS's host interfaces.
+  @impl OvcsVehicle
+  def simulator do
+    drivetrain = OvcsMini.Vms.Composer.drivetrain()
+
+    %{
+      can_config_path: "can/simulator.yml",
+      can_mapping: OvcsMini.Vms.Composer.default_can_mapping(:host),
       vehicle: %{
         wheelbase_m: geometry().wheelbase,
         wheel_radius_m: geometry().wheel_radius,
@@ -188,9 +205,6 @@ defmodule OvcsMini do
         rolling_deceleration_m_s2:
           drivetrain.min_motor_current * @simulated_acceleration_per_ampere
       },
-      # Shaft-driven 4WD: the motor turns at the four wheels' mean.
-      wheel_joints: ~w(front_left_wheel_joint front_right_wheel_joint
-                       rear_left_wheel_joint rear_right_wheel_joint),
       simulated_components: [
         {SimulatorCore.SimulatedComponents.Vesc.MotorController,
          pole_pairs: drivetrain.pole_pairs,
@@ -211,7 +225,7 @@ defmodule OvcsMini do
          neutral: drivetrain.steering_trim},
         {SimulatorCore.SimulatedComponents.OVCS.RadioControl, radio_control_script()}
       ]
-    ]
+    }
   end
 
   # The PM12S-3's 1:21 divider read by the controller's 14-bit, 5 V ADC.
