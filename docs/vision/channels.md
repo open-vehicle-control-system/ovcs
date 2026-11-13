@@ -221,7 +221,7 @@ A name no segmentation pipeline of the unit runs under, a detection pipeline's i
 
 ## Calibration
 
-`calibration` follows what the [calibration routes](./api.md#calibration) change. On join, it pushes a `calibration` event for each calibration the unit has, then a `session` event; afterwards, a `calibration` event each time the unit takes another calibration, and a `session` event on each change of the session, a new detection at most four times a second.
+`calibration` follows what the [calibration routes](./api.md#calibration) change. On join, it pushes a `calibration` event for each calibration the unit has, then a `session` event; afterwards, a `calibration` event each time the unit takes another calibration, and a `session` event on each change of the session, a new detection at most 15 times a second.
 
 - A `calibration` event carries the calibration's `id` and its attributes, as `GET /api/calibrations/:id` gives them.
 - A `session` event carries the session's attributes, as the action routes answer them, and `calibration`, the id of the calibration it works on, `null` while idle.

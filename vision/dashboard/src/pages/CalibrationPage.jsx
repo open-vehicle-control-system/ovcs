@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
 import { OvcsPageFrame } from '@ovcs/ui/react'
 import InUse from '../components/calibration/InUse.jsx'
-import Targets from '../components/calibration/Targets.jsx'
 import { BoardForm, Capturing, Solving } from '../components/calibration/Capture.jsx'
 import { Applying, Solved } from '../components/calibration/Result.jsx'
 import { ActionError } from '../components/calibration/Errors.jsx'
-import { useCalibration } from '../stores/calibration.js'
+import { selectedCalibration, useCalibration } from '../stores/calibration.js'
+import { useNavigation } from '../stores/navigation.js'
+import { calibrationName } from '../services/calibration.js'
 import { useStatus } from '../stores/status.js'
 import { dashboardSocket } from '../services/socket.js'
 
@@ -27,19 +28,29 @@ function Step({ phase }) {
 }
 
 /**
- * The cameras' calibration: the one in use, and a new one from views of a chessboard. Joining the calibration channel
- * turns board detection on in the unit, so only this page joins it, while mounted.
+ * One calibration, the one the menu opened: a new one from views of a chessboard, over the one in use. Joining the
+ * calibration channel turns board detection on in the unit, so only this page joins it, while mounted.
  */
 export default function CalibrationPage() {
   const listen = useCalibration((state) => state.listen)
+  const select = useCalibration((state) => state.select)
   const unavailable = useCalibration((state) => state.unavailable)
   const phase = useCalibration((state) => state.session?.phase ?? null)
+  const title = useCalibration((state) => {
+    const calibration = selectedCalibration(state)
+    return calibration ? calibrationName(calibration) : 'Calibration'
+  })
+  const calibrationId = useNavigation((state) => state.calibrationId)
   const uncalibrated = useStatus((state) => state.snapshot?.calibrated === false)
 
   useEffect(() => listen(dashboardSocket), [listen])
 
+  useEffect(() => {
+    if (calibrationId != null) select(calibrationId)
+  }, [calibrationId, select])
+
   return (
-    <OvcsPageFrame title="Calibration" summary="The calibration the cameras use, and a new one from views of a chessboard.">
+    <OvcsPageFrame title={title}>
       {uncalibrated ? (
         <p className="ovcs-status ovcs-status--warn text-sm text-ovcs-warn-text">
           The unit is uncalibrated: depth starts once a calibration is applied.
@@ -50,9 +61,8 @@ export default function CalibrationPage() {
         <p className="text-sm text-ovcs-muted">This unit has no camera to calibrate.</p>
       ) : (
         <>
-          <Targets />
-          <InUse />
           <Step phase={phase} />
+          <InUse />
         </>
       )}
     </OvcsPageFrame>

@@ -4,6 +4,7 @@ import App from '../App.jsx'
 import { useParameters } from '../stores/parameters.js'
 import { exporterFromUrl, pageFromUrl, useNavigation } from '../stores/navigation.js'
 import { useExporters } from '../stores/exporters.js'
+import { useCalibration } from '../stores/calibration.js'
 import * as service from '../services/parameters.js'
 import { dashboardSocket } from '../services/socket.js'
 import { useStatus } from '../stores/status.js'
@@ -168,9 +169,10 @@ describe('App', () => {
     render(<App />)
     expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Calibration' }))
-    expect(window.location.search).toBe('?page=calibration')
-    expect(screen.getByRole('heading', { name: 'Calibration' })).toBeTruthy()
+    act(() => useCalibration.setState({ targets: [{ id: 'center', kind: 'camera' }] }))
+    fireEvent.click(screen.getByRole('button', { name: 'Center camera' }))
+    expect(window.location.search).toBe('?calibration=center')
+    expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'center' })
   })
 
   it("opens an exporter without a page of its own on the exporters' page: its status and outputs", () => {

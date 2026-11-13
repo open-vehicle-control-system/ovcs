@@ -13,6 +13,16 @@ const act = async (type, { attributes, calibration } = {}) => {
   return document.data.attributes
 }
 
+/** What the unit can calibrate: each calibration's `id` and `kind`, its stereo pair first. */
+export async function fetchCalibrations() {
+  const document = await request('calibrations')
+  return document.data.map((resource) => ({ id: resource.id, kind: resource.attributes.kind }))
+}
+
+/** The name a calibration goes by in the menu and on its page. */
+export const calibrationName = ({ id, kind }) =>
+  kind === 'stereo' ? 'Stereo cameras' : `${id.charAt(0).toUpperCase()}${id.slice(1)} camera`
+
 export const startSession = (calibration, board) => act('calibration-sessions', { attributes: { board }, calibration })
 export const cancelSession = () => act('calibration-cancels')
 export const solveSession = () => act('calibration-solves')

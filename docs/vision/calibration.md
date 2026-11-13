@@ -9,9 +9,9 @@ The examples use the OVCS Mini reference vehicle's vision unit; everything works
 
 ## Calibrate from the dashboard
 
-Open the dashboard (`http://<vehicle>-vision.local:4100`) and choose **Calibration** in the menu, or go to `?page=calibration`. The page shows the calibration in use, then the steps of a new one. You need nothing but the unit, a browser and the board.
+Open the dashboard (`https://<vehicle>-vision.local`) and choose **Stereo cameras** in the menu's **Calibration** section, or go to `?calibration=<id>`, the stereo unit's prefix. The page shows the steps of a new calibration, then the one in use. You need nothing but the unit, a browser and the board.
 
-The unit holds one calibration session, shared by every dashboard: a second browser on the page sees the same capture and can carry it on. The unit looks for the board only while a dashboard has the Calibration page open, four times a second at most, so calibrating costs nothing when no one is. Closing the page stops the detection and keeps the samples; opening it again shows the capture where it was.
+The unit holds one calibration session, shared by every dashboard: a second browser on the page sees the same capture and can carry it on. The unit looks for the board only while a dashboard has the Calibration page open, 15 times a second at most, so calibrating costs nothing when no one is. Closing the page stops the detection and keeps the samples; opening it again shows the capture where it was.
 
 ### The board
 
@@ -55,7 +55,7 @@ Next to them, the baseline and **focal length (rectified)**, the left camera's f
 
 ## A camera of its own
 
-A unit with a camera of its own, such as the OVCS1 reference vehicle's center camera, shows **Stereo pair** and **Camera** buttons above the calibration in use. Pick the camera, then follow the same steps: the page shows that camera alone, a view becomes a sample when the camera sees the board, and the result has one reprojection error and no baseline.
+A unit with a camera of its own, such as the OVCS1 reference vehicle's center camera, lists it in the menu's **Calibration** section, under **Stereo cameras**, as **Center camera** on the OVCS1. Open it, then follow the same steps: the page shows that camera alone, a view becomes a sample when the camera sees the board, and the result has one reprojection error and no baseline.
 
 The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once. The camera's detection and segmentation pipelines read the calibration when they start, so restart the unit for them to take it.
 

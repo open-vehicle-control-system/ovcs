@@ -25,6 +25,7 @@ import { fetchBoard, fetchFirmware } from './services/unit.js'
 import { dashboardSocket } from './services/socket.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
+import { useCalibration } from './stores/calibration.js'
 import { orderedGroups, useParameters } from './stores/parameters.js'
 import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 
@@ -32,6 +33,7 @@ import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 function useNavigationInUrl() {
   const page = useNavigation((state) => state.page)
   const exporterId = useNavigation((state) => state.exporterId)
+  const calibrationId = useNavigation((state) => state.calibrationId)
   const loaded = useParameters((state) => state.groups.length > 0)
   const selectedGroupId = useParameters((state) => state.selectedGroupId)
 
@@ -46,20 +48,25 @@ function useNavigationInUrl() {
 
   // Until a box is selected, the URL keeps the one it names.
   useEffect(() => {
-    if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId, exporterId)
-  }, [page, selectedGroupId, exporterId])
+    if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId, exporterId, calibrationId)
+  }, [page, selectedGroupId, exporterId, calibrationId])
 
   return { page, selectedGroupId, exporterId }
 }
 
-// The exporters are listed again whenever the unit comes back, as after a reboot with another configuration.
+// The exporters and what the unit can calibrate are listed again whenever the unit comes back, as after a reboot
+// with another configuration.
 function useExportersListed() {
   const joins = useStatus((state) => state.joins)
   const load = useExporters((state) => state.load)
+  const loadTargets = useCalibration((state) => state.loadTargets)
 
   useEffect(() => {
-    if (joins > 0) load()
-  }, [joins, load])
+    if (joins > 0) {
+      load()
+      loadTargets()
+    }
+  }, [joins, load, loadTargets])
 }
 
 // Keeps focused controls clear of the sticky bar when the browser scrolls them into view.

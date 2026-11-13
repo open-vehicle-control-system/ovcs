@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import CalibrationPage from '../CalibrationPage.jsx'
 import { useCalibration } from '../../stores/calibration.js'
 import { useStatus } from '../../stores/status.js'
+import { useNavigation } from '../../stores/navigation.js'
 import { downloadYaml } from '../../services/calibration.js'
 import { dashboardSocket } from '../../services/socket.js'
 
@@ -141,6 +142,7 @@ describe('CalibrationPage', () => {
       dismissError: vi.fn()
     }
     useStatus.setState({ ...initialStatus, snapshot: null })
+    useNavigation.setState({ page: 'calibration', calibrationId: null })
     useCalibration.setState({
       session: null,
       calibrations: {},
@@ -463,25 +465,15 @@ describe('CalibrationPage', () => {
 
   describe('with a camera of its own beside the stereo pair', () => {
     const both = { calibrations: { ovcs_mini: stored, center }, selected: 'ovcs_mini' }
-    const targets = () => screen.getByRole('group', { name: 'Calibrate' })
-
-    it('lets the user pick what to calibrate, the stereo pair first', () => {
+    it('works on the calibration the menu opened, and names the page after it', () => {
+      useNavigation.setState({ page: 'calibration', calibrationId: 'center' })
       show({ ...both, session: session() })
 
-      const pair = within(targets()).getByRole('button', { name: 'Stereo pair' })
-      const camera = within(targets()).getByRole('button', { name: 'Camera center' })
-      expect(pair.getAttribute('aria-pressed')).toBe('true')
-      expect(camera.getAttribute('aria-pressed')).toBe('false')
-
-      fireEvent.click(camera)
       expect(useCalibration.getState().selected).toBe('center')
-      expect(camera.getAttribute('aria-pressed')).toBe('true')
-    })
+      expect(screen.getByRole('heading', { name: 'Center camera' })).toBeTruthy()
 
-    it('offers no pick on a unit with one calibration', () => {
-      show({ inUse: stored, session: session() })
-
-      expect(screen.queryByRole('group', { name: 'Calibrate' })).toBeNull()
+      act(() => useNavigation.setState({ calibrationId: 'ovcs_mini' }))
+      expect(screen.getByRole('heading', { name: 'Stereo cameras' })).toBeTruthy()
     })
 
     it("shows a camera's one calibration, without a baseline, and downloads its YAML", () => {
@@ -495,12 +487,11 @@ describe('CalibrationPage', () => {
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center in use']])
     })
 
-    it('holds the pick to the calibration a running session works on', () => {
+    it('shows the calibration a running session works on, whatever the menu opened', () => {
+      useNavigation.setState({ page: 'calibration', calibrationId: 'ovcs_mini' })
       show({ ...both, session: capturing({ calibration: 'center' }) })
 
-      expect(within(targets()).getByRole('button', { name: 'Camera center' }).getAttribute('aria-pressed')).toBe('true')
-      expect(within(targets()).getByRole('button', { name: 'Stereo pair' }).disabled).toBe(true)
-      expect(screen.getByText(/in view of the camera/)).toBeTruthy()
+      expect(screen.getByRole('heading', { name: 'Center camera' })).toBeTruthy()
       expect(screen.getByText('center', { selector: 'figcaption span' })).toBeTruthy()
       expect(screen.queryByText('left', { selector: 'figcaption span' })).toBeNull()
     })

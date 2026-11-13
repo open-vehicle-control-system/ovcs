@@ -42,10 +42,6 @@ export function BoardForm() {
 
   return (
     <Section title="Calibrate">
-      <p className="text-sm text-ovcs-muted">
-        Count the inner corners, where four squares meet, not the squares: a board of 9 × 7 squares has 8 × 6 inner
-        corners.
-      </p>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
         {FIELDS.map(({ key, label, step }) => (
           <label key={key} htmlFor={`${id}-${key}`} className="flex flex-col gap-1 text-sm">
@@ -102,26 +98,23 @@ export function Capturing({ socket }) {
 
   return (
     <Section title="Calibrate">
-      <p className="text-sm text-ovcs-muted">
-        {cameras.length > 1 ? 'Hold the board in view of both cameras' : 'Hold the board in view of the camera'} and move
-        it: across the image, nearer and farther, tilted. A view becomes a sample when it differs enough from the ones
-        kept.
-      </p>
+      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+        <Coverage />
+        <div className="flex flex-wrap gap-2">
+          <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
+            Calibrate
+          </button>
+          <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
+            Cancel
+          </button>
+        </div>
+      </div>
       <BoardHint />
-      <div className={`grid gap-3 ${cameras.length > 1 ? 'md:grid-cols-2' : ''}`}>
+      <SessionError />
+      <div className={`grid min-w-0 gap-3 ${cameras.length > 1 ? 'md:grid-cols-2' : ''}`}>
         {cameras.map((camera) => (
           <Preview key={camera} stream={camera} socket={socket} overlay={<CornerOverlay camera={camera} />} />
         ))}
-      </div>
-      <Coverage />
-      <SessionError />
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
-          Calibrate
-        </button>
-        <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
-          Cancel
-        </button>
       </div>
     </Section>
   )

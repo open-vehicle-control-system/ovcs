@@ -23,6 +23,16 @@ export const useCalibration = create((set, get) => {
   }
 
   return {
+    // What the unit can calibrate, for the menu: listed over HTTP, so that only the page joins the channel.
+    targets: [],
+    async loadTargets() {
+      try {
+        set({ targets: await service.fetchCalibrations() })
+      } catch {
+        // The menu keeps what it listed before; the next join of the unit lists again.
+      }
+    },
+
     session: null,
     // The calibrations in use, by id, in the order the unit pushed them: its stereo pair, then its cameras.
     calibrations: {},

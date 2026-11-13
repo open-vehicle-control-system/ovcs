@@ -47,7 +47,7 @@ defmodule VisionCore.Calibration.Session do
   ## Options
 
     * `:config` (required) — the active `VisionCore.Config`.
-    * `:detect_hz` (4) — the most detections a second.
+    * `:detect_hz` (15) — the most detections a second.
     * `:pair_tolerance_ms` (the `:stereo` component's, else 33) — the
       largest capture time gap of a pair.
     * `:detect` (`VisionCore.Calibration.Chessboard.detect/2`),
@@ -66,7 +66,7 @@ defmodule VisionCore.Calibration.Session do
   alias VisionCore.Outputs
 
   @tasks VisionCore.Calibration.Tasks
-  @default_detect_hz 4
+  @default_detect_hz 15
   @default_pair_tolerance_ms 33
   @frames_kept 4
 
