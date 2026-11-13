@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::io::{BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use crate::ansi::{is_blank_after_ansi, strip_ansi};
 use crate::build_runner::{self, BuildLane, BuildStep};
@@ -17,17 +19,34 @@ use crate::ui::{step, sub, sub_ok, sub_warn};
 use crate::vehicles::{self, Vehicle};
 
 /// How long a child has to stop after SIGTERM before it gets SIGKILL.
-const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+const STOP_GRACE: Duration = Duration::from_secs(10);
 
-pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
+/// What the simulator runner prints on stdout once its simulated hardware answers.
+const SIMULATOR_READY_LINE: &str = "OVCS simulator ready";
+/// The runner is compiled before it starts, so this only covers its boot.
+const SIMULATOR_READY_TIMEOUT: Duration = Duration::from_secs(60);
+const SIMULATOR_ROLE: &str = "simulator";
+
+pub fn run(vehicle_arg: Option<String>, no_addons: bool, simulate: bool) -> Result<()> {
     let vehicle = resolve_vehicle(vehicle_arg)?;
     let root = repo_root()?;
 
+    if simulate && !vehicles::declares_simulator(&vehicle)? {
+        bail!(
+            "{} declares no simulator/0, so --simulate has no simulated hardware to run \
+             (see docs/simulator/README.md)",
+            vehicle.module
+        );
+    }
+
     ensure_host_can(&vehicle)?;
 
-    let roles = enumerate_roles(&root, &vehicle)?;
+    let mut roles = enumerate_roles(&root, &vehicle)?;
     if roles.is_empty() {
         anyhow::bail!("no roles to spawn for vehicle {}", vehicle.dir);
+    }
+    if simulate {
+        roles.insert(0, simulator_role(&root, &vehicle));
     }
 
     println!();
@@ -67,53 +86,28 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     let mut processes: Vec<ChildProcess> = Vec::new();
 
     for role in &roles {
-        let sname = vehicles::local_sname(&vehicle.dir, &role.label);
-        let mut command = Command::new("elixir");
-        command
-            .args([
-                "--sname",
-                &sname,
-                // The BEAM disables `IO.ANSI` on a piped stdout; keep Logger's colours.
-                // No scheduler busy-wait, as in the firmware's vm.args: on a
-                // many-core host the idle schedulers spin.
-                "--erl",
-                "-elixir ansi_enabled true +sbwt none +sbwtdcpu none +sbwtdio none",
-                "-S",
-                "mix",
-                "run",
-                "--no-halt",
-            ])
-            .current_dir(&role.cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        for (name, value) in &role.env {
-            command.env(name, value);
-        }
-        // An exported Nerves target would make these target-mode BEAMs.
-        command.env("MIX_TARGET", "host");
-        let mut child = match command.spawn() {
-            Ok(child) => child,
+        let watch = (role.label == SIMULATOR_ROLE).then_some(SIMULATOR_READY_LINE);
+        let (mut process, ready) = match spawn_beam(role, &vehicle, watch) {
+            Ok(spawned) => spawned,
             Err(error) => {
                 stop(&mut processes);
-                return Err(error)
-                    .with_context(|| format!("failed to spawn elixir for role {}", role.label));
+                return Err(error);
             }
         };
-
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let label_out = role.label.clone();
-        let label_err = role.label.clone();
-        thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
-        thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
-
-        processes.push(ChildProcess {
-            label: role.label.clone(),
-            child,
-            critical: true,
-            exit: None,
-        });
+        if let Some(ready_line) = watch {
+            sub(&format!(
+                "Waiting for `{ready_line}` before starting the vehicle"
+            ));
+            let waited =
+                wait_until_ready(&mut process, &ready, ready_line, SIMULATOR_READY_TIMEOUT);
+            if let Err(error) = waited {
+                processes.push(process);
+                stop(&mut processes);
+                return Err(error);
+            }
+            sub_ok("Simulated hardware ready");
+        }
+        processes.push(process);
     }
 
     // Add-ons are not critical: a crashed dev server must not stop the vehicle.
@@ -136,12 +130,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
                 continue;
             }
         };
-        let stdout = child.stdout.take().unwrap();
-        let stderr = child.stderr.take().unwrap();
-        let label_out = addon.label.clone();
-        let label_err = addon.label.clone();
-        thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout()));
-        thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr()));
+        forward_output(&mut child, &addon.label, None);
         match &addon.note {
             Some(note) => sub_ok(&format!("{} — {}", addon.label, note)),
             None => sub_ok(&format!("{} · {}", addon.label, addon.run.join(" "))),
@@ -165,6 +154,105 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
     }
 }
 
+/// Spawns `role`'s BEAM, its output forwarded line-prefixed. The receiver
+/// gets a message once the BEAM prints `ready_line`.
+fn spawn_beam(
+    role: &Role,
+    vehicle: &Vehicle,
+    ready_line: Option<&'static str>,
+) -> Result<(ChildProcess, Receiver<()>)> {
+    let sname = vehicles::local_sname(&vehicle.dir, &role.label);
+    let mut command = Command::new("elixir");
+    command
+        .args([
+            "--sname",
+            &sname,
+            // The BEAM disables `IO.ANSI` on a piped stdout; keep Logger's colours.
+            // No scheduler busy-wait, as in the firmware's vm.args: on a
+            // many-core host the idle schedulers spin.
+            "--erl",
+            "-elixir ansi_enabled true +sbwt none +sbwtdcpu none +sbwtdio none",
+            "-S",
+            "mix",
+            "run",
+            "--no-halt",
+        ])
+        .current_dir(&role.cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    for (name, value) in &role.env {
+        command.env(name, value);
+    }
+    // An exported Nerves target would make these target-mode BEAMs.
+    command.env("MIX_TARGET", "host");
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("failed to spawn elixir for role {}", role.label))?;
+    let ready = forward_output(&mut child, &role.label, ready_line);
+    let process = ChildProcess {
+        label: role.label.clone(),
+        child,
+        critical: true,
+        exit: None,
+    };
+    Ok((process, ready))
+}
+
+/// Forwards `child`'s stdout and stderr, each line prefixed with `label`.
+/// The receiver gets a message once stdout carries `ready_line`.
+fn forward_output(
+    child: &mut Child,
+    label: &str,
+    ready_line: Option<&'static str>,
+) -> Receiver<()> {
+    let (ready, ready_received) = mpsc::channel();
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let stderr = child.stderr.take().expect("stderr is piped");
+    let label_out = label.to_string();
+    let label_err = label.to_string();
+    let watch = ready_line.map(|line| (line, ready));
+    thread::spawn(move || prefix_stream(stdout, &label_out, std::io::stdout(), watch));
+    thread::spawn(move || prefix_stream(stderr, &label_err, std::io::stderr(), None));
+    ready_received
+}
+
+/// Waits until `ready` signals that the process printed `ready_line`,
+/// failing when it exits first or `timeout` passes.
+fn wait_until_ready(
+    process: &mut ChildProcess,
+    ready: &Receiver<()>,
+    ready_line: &str,
+    timeout: Duration,
+) -> Result<()> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match ready.recv_timeout(Duration::from_millis(200)) {
+            Ok(()) => return Ok(()),
+            // The stream ended: the process is exiting, which `try_wait` reports.
+            Err(RecvTimeoutError::Disconnected) => thread::sleep(Duration::from_millis(200)),
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+        if let Some(status) = process.child.try_wait()? {
+            process.exit = Some(status);
+            bail!(
+                "{} exited ({}) before printing `{}`",
+                process.label,
+                status,
+                ready_line
+            );
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "{} did not print `{}` within {} s",
+                process.label,
+                ready_line,
+                timeout.as_secs_f32()
+            );
+        }
+    }
+}
+
 /// Waits on the children. When the first BEAM exits, every other child gets
 /// SIGTERM, so a BEAM runs `init:stop/0` (SIGINT would leave it at its break
 /// prompt), then SIGKILL if it is still running after `STOP_GRACE`. A dev
@@ -172,7 +260,7 @@ pub fn run(vehicle_arg: Option<String>, no_addons: bool) -> Result<()> {
 /// first.
 fn supervise(processes: &mut [ChildProcess]) -> Option<(String, ExitStatus)> {
     let mut first_exit: Option<(String, ExitStatus)> = None;
-    let mut stop_sent_at: Option<std::time::Instant> = None;
+    let mut stop_sent_at: Option<Instant> = None;
     loop {
         for process in processes
             .iter_mut()
@@ -197,7 +285,7 @@ fn supervise(processes: &mut [ChildProcess]) -> Option<(String, ExitStatus)> {
             match stop_sent_at {
                 None => {
                     signal_running(processes, libc::SIGTERM);
-                    stop_sent_at = Some(std::time::Instant::now());
+                    stop_sent_at = Some(Instant::now());
                 }
                 Some(sent_at) if sent_at.elapsed() > STOP_GRACE => {
                     signal_running(processes, libc::SIGKILL);
@@ -205,7 +293,7 @@ fn supervise(processes: &mut [ChildProcess]) -> Option<(String, ExitStatus)> {
                 Some(_) => {}
             }
         }
-        thread::sleep(std::time::Duration::from_millis(200));
+        thread::sleep(Duration::from_millis(200));
     }
 }
 
@@ -358,13 +446,23 @@ fn tool_available(name: &str) -> bool {
 
 struct Role {
     /// Label used for the sname suffix and the log prefix (e.g. "vms",
-    /// "infotainment", "vision", "bridge-radio_control").
+    /// "infotainment", "vision", "bridge-radio_control", "simulator").
     label: String,
     /// Directory to `cd` into before spawning the BEAM.
     cwd: PathBuf,
     /// Env vars passed to the BEAM (VEHICLE + optional
     /// BRIDGE_FIRMWARE_ID + CAN_NETWORK_MAPPINGS).
     env: Vec<(String, String)>,
+}
+
+/// The simulator runner, `simulator/runner`, which reads the vehicle's
+/// `simulator/0` and its host CAN mapping itself.
+fn simulator_role(root: &std::path::Path, vehicle: &Vehicle) -> Role {
+    Role {
+        label: SIMULATOR_ROLE.to_string(),
+        cwd: root.join("simulator/runner"),
+        env: vec![("VEHICLE".to_string(), vehicle.module.clone())],
+    }
 }
 
 fn enumerate_roles(root: &std::path::Path, vehicle: &Vehicle) -> Result<Vec<Role>> {
@@ -510,8 +608,14 @@ end
     }
 }
 
-fn prefix_stream<R, W>(reader: R, label: &str, mut sink: W)
-where
+/// Copies `reader` to `sink` line by line, prefixed with `label`, and
+/// signals `watch`'s sender when the line it names goes by.
+fn prefix_stream<R, W>(
+    reader: R,
+    label: &str,
+    mut sink: W,
+    watch: Option<(&'static str, Sender<()>)>,
+) where
     R: std::io::Read + Send + 'static,
     W: Write + Send + 'static,
 {
@@ -522,6 +626,11 @@ where
         }
         if is_iex_prompt_echo(&line) {
             continue;
+        }
+        if let Some((ready_line, ready)) = &watch {
+            if strip_ansi(&line).trim() == *ready_line {
+                let _ = ready.send(());
+            }
         }
         let _ = writeln!(sink, "[{}] {}", label, line);
         let _ = sink.flush();
@@ -544,10 +653,14 @@ fn is_iex_prompt_echo(line: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_pane_label, is_iex_prompt_echo, supervise, BuildGroup, ChildProcess};
+    use super::{
+        build_pane_label, forward_output, is_iex_prompt_echo, stop, supervise, wait_until_ready,
+        BuildGroup, ChildProcess, SIMULATOR_READY_LINE,
+    };
     use std::path::PathBuf;
-    use std::process::Command;
-    use std::time::Instant;
+    use std::process::{Command, Stdio};
+    use std::sync::mpsc::Receiver;
+    use std::time::{Duration, Instant};
 
     fn spawn(label: &str, script: &str, critical: bool) -> ChildProcess {
         ChildProcess {
@@ -596,6 +709,66 @@ mod tests {
             "    (vms_core 0.1.0) lib/vms_core/application.ex:12: VmsCore.Application.start/2"
         ));
         assert!(!is_iex_prompt_echo("Compiling 3 files (.ex)"));
+    }
+
+    fn spawn_watched(label: &str, script: &str) -> (ChildProcess, Receiver<()>) {
+        let mut child = Command::new("sh")
+            .args(["-c", script])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let ready = forward_output(&mut child, label, Some(SIMULATOR_READY_LINE));
+        let process = ChildProcess {
+            label: label.to_string(),
+            child,
+            critical: true,
+            exit: None,
+        };
+        (process, ready)
+    }
+
+    #[test]
+    fn the_ready_line_ends_the_wait() {
+        let (mut process, ready) = spawn_watched(
+            "simulator",
+            "echo starting; echo 'OVCS simulator ready'; sleep 30",
+        );
+        let waited = wait_until_ready(
+            &mut process,
+            &ready,
+            SIMULATOR_READY_LINE,
+            Duration::from_secs(10),
+        );
+        stop(std::slice::from_mut(&mut process));
+        assert!(waited.is_ok(), "{waited:?}");
+    }
+
+    #[test]
+    fn exiting_before_the_ready_line_is_an_error() {
+        let (mut process, ready) = spawn_watched("simulator", "echo starting; exit 2");
+        let error = wait_until_ready(
+            &mut process,
+            &ready,
+            SIMULATOR_READY_LINE,
+            Duration::from_secs(10),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("simulator exited"), "{error}");
+    }
+
+    #[test]
+    fn no_ready_line_within_the_timeout_is_an_error() {
+        let (mut process, ready) = spawn_watched("simulator", "echo 'OVCS simulator'; sleep 30");
+        let error = wait_until_ready(
+            &mut process,
+            &ready,
+            SIMULATOR_READY_LINE,
+            Duration::from_millis(500),
+        )
+        .unwrap_err();
+        stop(std::slice::from_mut(&mut process));
+        assert!(error.to_string().contains("within"), "{error}");
     }
 
     fn build_group(cwd: &str, roles: &[&str]) -> BuildGroup {

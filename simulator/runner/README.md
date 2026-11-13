@@ -6,7 +6,7 @@ The vehicle declares its simulated hardware in `simulator/0`, typed `OvcsVehicle
 
 ## Run it
 
-Create the vehicle's vcan interfaces (`./ovcs can setup <vehicle>`), compile the vehicle (`mix compile` in `vehicles/<vehicle>/`), then:
+`./ovcs run <vehicle> --simulate` starts the runner, then the vehicle's BEAMs once it is ready. To run it on its own, create the vehicle's vcan interfaces (`./ovcs can setup <vehicle>`), compile the vehicle (`mix compile` in `vehicles/<vehicle>/`), then:
 
 ```sh
 VEHICLE=OvcsMini mix run --no-halt
