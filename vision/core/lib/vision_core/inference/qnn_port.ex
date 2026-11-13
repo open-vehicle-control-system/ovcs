@@ -3,7 +3,7 @@ defmodule VisionCore.Inference.QnnPort do
   What `VisionCore.Detection.Backend.Qnn` and
   `VisionCore.Segmentation.Backend.Qnn` share about their Port: the
   context binary it runs (`VisionCore.Inference.QnnContext`), the program
-  started with QNN's environment, and its performance profile.
+  started with QNN's environment, and its power vote.
 
   ## The board
 
@@ -26,6 +26,7 @@ defmodule VisionCore.Inference.QnnPort do
     dsp_architecture: "hexagon-v75"
   ]
   @performance_profiles [:burst, :sustained_high_performance, :balanced, :power_saver, :none]
+  @max_rpc_polling_us 9999
 
   @typedoc "Where QNN is on the board; see the module doc."
   @type runtime :: [
@@ -37,11 +38,11 @@ defmodule VisionCore.Inference.QnnPort do
   @doc """
   The options every QNN backend takes beside its Port's
   (`VisionCore.Inference.PortBackend`): the board's, `:cache_dir`,
-  `:executable` and `:performance`.
+  `:executable`, `:performance` and `:rpc_polling_us`.
   """
   @spec options() :: [atom()]
   def options do
-    Keyword.keys(@default_runtime) ++ [:cache_dir, :executable, :performance]
+    Keyword.keys(@default_runtime) ++ [:cache_dir, :executable, :performance, :rpc_polling_us]
   end
 
   @doc "The board's options among `opts`, each with its default (see the module doc)."
@@ -98,25 +99,52 @@ defmodule VisionCore.Inference.QnnPort do
   end
 
   @doc """
-  The Port's arguments for `opts`' `:performance`, the power vote it
-  holds on the HTP: none without it, the Port then voting `burst`;
-  `--performance` and the profile for one of `:burst`,
-  `:sustained_high_performance`, `:balanced`, `:power_saver` and `:none`
-  (no vote); raises `ArgumentError` on another value.
+  The Port's arguments for the power vote it holds on the HTP, from
+  `opts`:
+
+    * `:performance` — `--performance` and the profile for one of
+      `:burst`, `:sustained_high_performance`, `:balanced`,
+      `:power_saver` and `:none` (no vote); none without it, the Port
+      then voting `burst`.
+    * `:rpc_polling_us` — `--rpc-polling-us` and the time, an integer
+      from 0 to 9999, the thread waiting on an execution polls for its
+      end before it sleeps until the NPU signals it; none without it, the
+      Port then voting 0. It is part of the vote, so `performance: :none`
+      takes none.
+
+  Raises `ArgumentError` on another value.
   """
-  @spec performance_args!(keyword()) :: [String.t()]
-  def performance_args!(opts) do
-    case Keyword.fetch(opts, :performance) do
-      :error ->
-        []
+  @spec power_args!(keyword()) :: [String.t()]
+  def power_args!(opts) do
+    performance = Keyword.fetch(opts, :performance)
+    rpc_polling_us = Keyword.fetch(opts, :rpc_polling_us)
 
-      {:ok, profile} when profile in @performance_profiles ->
-        ["--performance", Atom.to_string(profile)]
+    if performance == {:ok, :none} and rpc_polling_us != :error,
+      do:
+        raise(
+          ArgumentError,
+          "its :rpc_polling_us is part of the power vote, which performance: :none does not make"
+        )
 
-      {:ok, profile} ->
-        refuse!(:performance, profile, "one of #{inspect(@performance_profiles)}")
-    end
+    performance_args!(performance) ++ rpc_polling_args!(rpc_polling_us)
   end
+
+  defp performance_args!(:error), do: []
+
+  defp performance_args!({:ok, profile}) when profile in @performance_profiles,
+    do: ["--performance", Atom.to_string(profile)]
+
+  defp performance_args!({:ok, profile}),
+    do: refuse!(:performance, profile, "one of #{inspect(@performance_profiles)}")
+
+  defp rpc_polling_args!(:error), do: []
+
+  defp rpc_polling_args!({:ok, micros})
+       when is_integer(micros) and micros in 0..@max_rpc_polling_us,
+       do: ["--rpc-polling-us", Integer.to_string(micros)]
+
+  defp rpc_polling_args!({:ok, micros}),
+    do: refuse!(:rpc_polling_us, micros, "an integer from 0 to #{@max_rpc_polling_us}")
 
   defp refuse!(key, value, expected),
     do: raise(ArgumentError, "its #{inspect(key)} is #{expected}, got #{inspect(value)}")

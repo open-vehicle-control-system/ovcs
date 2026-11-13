@@ -90,7 +90,8 @@ defmodule VisionCore.Segmentation.SupervisorTest do
       executable: "/qnn_segment",
       infer_timeout_ms: 100,
       reopen_delays_ms: [10],
-      performance: :balanced
+      performance: :balanced,
+      rpc_polling_us: 0
     ]
 
     {:ok, {_flags, [backend | _children]}} =

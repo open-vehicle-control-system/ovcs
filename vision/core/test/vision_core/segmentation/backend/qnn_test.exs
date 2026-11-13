@@ -59,13 +59,14 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert labels == %{width: 4, height: 2, data: <<0, 3, 3, 5, 1, 45, 3, 15>>}
   end
 
-  test "hands the Port the number of classes its pipeline names, the 19 Cityscapes ones by default, and its performance profile when one is given",
+  test "hands the Port the number of classes its pipeline names, the 19 Cityscapes ones by default, and its performance profile and RPC polling when given",
        %{tmp_dir: dir} do
     for {opts, classes} <- [
           {[], "19"},
           {[classes: 3], "3"},
           {[performance: :sustained_high_performance],
-           "19 --performance sustained_high_performance"}
+           "19 --performance sustained_high_performance"},
+          {[rpc_polling_us: 500], "19 --rpc-polling-us 500"}
         ] do
       start_backend(dir, "answer", opts)
       eventually(&Qnn.available?/0)
@@ -237,12 +238,13 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert Qnn.segment(1, @band) == {:error, :unavailable}
   end
 
-  test "refuses at start an :infer_timeout_ms, :reopen_delays_ms or :performance it cannot use",
+  test "refuses at start an :infer_timeout_ms, :reopen_delays_ms, :performance or :rpc_polling_us it cannot use",
        %{tmp_dir: dir} do
     profiles = "one of [:burst, :sustained_high_performance, :balanced, :power_saver, :none]"
 
     for {key, value, expected} <- [
           {:performance, :turbo, profiles},
+          {:rpc_polling_us, 10_000, "an integer from 0 to 9999"},
           {:infer_timeout_ms, 0, "a positive integer"},
           {:infer_timeout_ms, 1.5, "a positive integer"},
           {:reopen_delays_ms, [], "a non-empty list of non-negative integers"},

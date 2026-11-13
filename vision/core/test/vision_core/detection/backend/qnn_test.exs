@@ -218,11 +218,14 @@ defmodule VisionCore.Detection.Backend.QnnTest do
            ) == [qairt_dir: "/qairt", dsp_library_path: "/dsp", dsp_architecture: "hexagon-v79"]
   end
 
-  test "hands the Port its performance profile when one is given", %{tmp_dir: dir} do
+  test "hands the Port its performance profile and RPC polling when given", %{tmp_dir: dir} do
     for {opts, arguments} <- [
           {[], "0.4"},
           {[performance: :balanced], "0.4 --performance balanced"},
-          {[performance: :none], "0.4 --performance none"}
+          {[performance: :none], "0.4 --performance none"},
+          {[rpc_polling_us: 0], "0.4 --rpc-polling-us 0"},
+          {[performance: :balanced, rpc_polling_us: 9999],
+           "0.4 --performance balanced --rpc-polling-us 9999"}
         ] do
       start_backend(dir, "answer", opts)
       eventually(&Qnn.available?/0)
@@ -236,13 +239,18 @@ defmodule VisionCore.Detection.Backend.QnnTest do
     end
   end
 
-  test "refuses at start an :infer_timeout_ms, :reopen_delays_ms or :performance it cannot use",
+  test "refuses at start an :infer_timeout_ms, :reopen_delays_ms, :performance or :rpc_polling_us it cannot use",
        %{tmp_dir: dir} do
     profiles = "one of [:burst, :sustained_high_performance, :balanced, :power_saver, :none]"
+    polling = "an integer from 0 to 9999"
 
     for {key, value, expected} <- [
           {:performance, :turbo, profiles},
           {:performance, "burst", profiles},
+          {:rpc_polling_us, -1, polling},
+          {:rpc_polling_us, 10_000, polling},
+          {:rpc_polling_us, 1.5, polling},
+          {:rpc_polling_us, "0", polling},
           {:infer_timeout_ms, 0, "a positive integer"},
           {:infer_timeout_ms, 1.5, "a positive integer"},
           {:reopen_delays_ms, [], "a non-empty list of non-negative integers"},
@@ -257,6 +265,22 @@ defmodule VisionCore.Detection.Backend.QnnTest do
 
       assert message == "its #{inspect(key)} is #{expected}, got #{inspect(value)}"
     end
+  end
+
+  test "refuses at start an :rpc_polling_us without a power vote", %{tmp_dir: dir} do
+    assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+             start_supervised(
+               {Qnn,
+                [
+                  performance: :none,
+                  rpc_polling_us: 0,
+                  dlc_path: Path.join(dir, "model.dlc"),
+                  executable: @detector
+                ]}
+             )
+
+    assert message ==
+             "its :rpc_polling_us is part of the power vote, which performance: :none does not make"
   end
 
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",

@@ -69,7 +69,7 @@ The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shu
 - `view_jpeg`, that image as a JPEG;
 - `inference`, that image averaged 2 × 2, for the models.
 
-YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile. These are measurements on one unit, not guarantees.
+YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `inference`, on the Hexagon NPU at the `burst` performance profile, with `rpc_polling_us: 9999`. These are measurements on one unit, not guarantees.
 
 | Figure | Measured |
 |---|---|
@@ -133,6 +133,7 @@ Each setting trades rate against something else. The matching dominates, and its
 | `jpeg: [ports: n]` | `VisionCore.Config` | How many JPEG encodes for the previews and the exporters run at once, 3 by default. More keep a slow encode from holding the others back, each taking a core while it encodes. |
 | A camera's `outputs:` | the `:camera` component | Each output costs its conversion or average and its write to the Port at every frame. Give the models an output at their scale (`from:` an average), and the previews and ROS 2 a `format: :jpeg` output. Keep a large image that no consumer takes off the Port with `send: false`. |
 | `performance:` | each QNN backend | `burst`, the default, holds the NPU at its highest voltage corner: the models' fastest times, at more power and heat. `sustained_high_performance` and `balanced` trade time for both. |
+| `rpc_polling_us:` | each QNN backend | 0, the default, lets each Port's thread sleep until the NPU signals the end of an inference, up to about a millisecond late. Up to 9999 µs of polling wakes it sooner, but keeps a core busy for each Port through each inference. Keep 0 when the CPU limits the frame rate. |
 | Camera frame rate | `:fps` | Pairs the stages cannot take are dropped. On the Pi 5, 24 frames a second instead of 30 did not raise the depth rate. |
 
 The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute. On a busy board, single readings vary by about 15 %.

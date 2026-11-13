@@ -241,7 +241,8 @@ defmodule VisionCore.Detection.SupervisorTest do
       dsp_architecture: "hexagon-v79",
       cache_dir: "/data/qnn",
       score_threshold: 0.4,
-      performance: :sustained_high_performance
+      performance: :sustained_high_performance,
+      rpc_polling_us: 9999
     ]
 
     assert Supervisor.split_backend_options(

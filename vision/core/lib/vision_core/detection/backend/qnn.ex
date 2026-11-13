@@ -40,9 +40,11 @@ defmodule VisionCore.Detection.Backend.Qnn do
       `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`, the last
       repeated), a non-empty list of non-negative integers; another value
       fails the start (`VisionCore.Inference.PortBackend.timings!/1`).
-    * `:performance` (`qnn_detect`'s own, `:burst`) — the power vote the
-      Port holds on the HTP; an unknown profile fails the start
-      (`VisionCore.Inference.QnnPort.performance_args!/1`).
+    * `:performance` (`qnn_detect`'s own, `:burst`) — the performance
+      profile the Port votes on the HTP, and `:rpc_polling_us`
+      (`qnn_detect`'s own, 0) — how long its thread polls for an
+      execution's end before it sleeps until the NPU signals it; another
+      value fails the start (`VisionCore.Inference.QnnPort.power_args!/1`).
   """
   @behaviour VisionCore.Detection.Backend
   @behaviour VisionCore.Inference.PortBackend
@@ -106,7 +108,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
     %{
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
-      performance_args: QnnPort.performance_args!(opts),
+      power_args: QnnPort.power_args!(opts),
       score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
       runtime: QnnPort.runtime(opts),
       cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn/#{pipeline}"),
@@ -149,7 +151,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
 
   @impl PortBackend
   def open(settings, context_binary) do
-    args = [context_binary, to_string(settings.score_threshold) | settings.performance_args]
+    args = [context_binary, to_string(settings.score_threshold) | settings.power_args]
     QnnPort.open(settings.executable, args, settings.runtime)
   end
 

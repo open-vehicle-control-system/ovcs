@@ -24,7 +24,12 @@ Each QNN Port holds a power vote on the NPU for as long as it runs, with the per
 - `:sustained_high_performance`, `:balanced` or `:power_saver`;
 - `:none`, for the NPU's default power policy.
 
-The Port's log says the profile it applied, or why it could not.
+The vote also sets the RPC polling in µs, `rpc_polling_us:`, 0 by default. It is how long the Port's thread polls for the end of an inference before it sleeps until the NPU signals it:
+
+- 0, the default, frees the thread's core while the NPU runs, and wakes the thread up to about a millisecond after the inference ends;
+- up to 9999 µs wakes it sooner, but keeps a core busy for each Port through each inference.
+
+`performance: :none` makes no vote, so it takes no `rpc_polling_us:`. The Port's log says the vote it applied, or why it could not.
 
 The board needs QAIRT in its image: [The Arduino VENTUNO Q](./README.md#the-arduino-ventuno-q) lists the build steps.
 
