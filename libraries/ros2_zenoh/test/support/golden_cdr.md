@@ -3,8 +3,9 @@
 CDR bodies (no encapsulation header) for the message shapes exercised
 by `marker_test.exs`, `detection3d_test.exs`, `detection2d_test.exs`,
 `sensor_msgs/msg/camera_info_test.exs`,
-`stereo_msgs/disparity_image_test.exs` and
-`foxglove_msgs/image_annotations_test.exs`. They are this
+`stereo_msgs/disparity_image_test.exs`,
+`foxglove_msgs/image_annotations_test.exs` and
+`foxglove_msgs/compressed_video_test.exs`. They are this
 codebase's own encoder output, **validated against a real ROS 2
 runtime** by round-tripping through
 `rclpy.serialization.deserialize_message` and checking every field came
@@ -117,3 +118,14 @@ array re-aligns to 4 between elements, and `detection2d_array_two` has
 two elements of differing `class_id` and `id` lengths to pin it. All
 three are validated by deserialising them with `rclpy`, checking every
 field.
+
+## The video vectors
+
+`compressed_video_<n>` cover `foxglove_msgs/CompressedVideo`, one frame
+of a camera's H.264 stream, with `n` bytes of data. Its `format` string
+follows the `data` byte run, so the string's length prefix re-aligns to
+4: `n` of 5, 6, 7 and 8 take 3, 2, 1 and 0 bytes of padding, and 0 is an
+empty frame. The string ends the message without trailing padding,
+which makes each vector as long as rclpy's own serialisation of it. All
+five are validated by deserialising them with `foxglove_msgs` in
+`ovcs/ros2:lyrical`, checking every field.
