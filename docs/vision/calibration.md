@@ -85,7 +85,7 @@ Without a `:calibration_store_dir`, a commit writes the built-in files themselve
 
 The page's **Current calibration** part says which is in force: **Built into the firmware**, **Saved on the unit** with the time it was saved, or **No calibration**. It shows each camera's `fx`, `fy`, `cx`, `cy` and distortion, the baseline and the image size, and **Download** saves the two files in use.
 
-**Return to built-in**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
+**Go back to the firmware's calibration**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
 
 ## Install it in your vehicle package
 
@@ -108,7 +108,7 @@ The stored calibration belongs to one unit. To ship it in the firmware, so that 
    def required_files, do: ["priv/calibration/stereo_left.yaml", "priv/calibration/stereo_right.yaml"]
    ```
 
-4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Return to built-in**; then the page reads Built-in.
+4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Go back to the firmware's calibration**; then the page reads Built-in.
 
 A calibration holds for one sensor mode and one lens position. Changing the focus, or the image's aspect ratio, needs a new one; [Stereo vision basics](./basics.md#calibration) says why.
 
