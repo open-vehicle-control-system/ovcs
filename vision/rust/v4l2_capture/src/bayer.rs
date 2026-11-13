@@ -4,6 +4,7 @@ use std::ops::Range;
 
 use crate::arguments::Output;
 use crate::bands::{self, Conversion, Images, Measures, Sums};
+use crate::nv12;
 use crate::scale;
 use crate::white_balance::Gains;
 
@@ -334,30 +335,45 @@ fn half_band(
 
 /// Rows of an 8-bit red, green and blue image written a row at a time, top
 /// to bottom, turned by 180 degrees with `rotate_180` for a sensor mounted
-/// upside down, and with `averaged` each 2x2 block of it averaged.
+/// upside down, and what is made `along` from each pair of its rows.
 pub(crate) struct Image<'a> {
     rgb: &'a mut [u8],
-    averaged: Option<&'a mut [u8]>,
+    along: Along<'a>,
     row_bytes: usize,
     rows: Range<usize>,
     rotate_180: bool,
 }
 
+/// What a band of an image makes from each pair of its rows as they are
+/// written, while they are in cache rather than in a pass over the whole
+/// image: with `averaged` the rows of its 2x2 average (`scale`, the general
+/// path), with `nv12` the rows of its NV12 (`nv12::convert`).
+pub(crate) struct Along<'a> {
+    pub averaged: Option<&'a mut [u8]>,
+    pub nv12: Option<Nv12Band<'a>>,
+}
+
+/// The rows of a band's NV12: its luma rows and chroma rows, `stride` bytes apart.
+pub(crate) struct Nv12Band<'a> {
+    pub luma: &'a mut [u8],
+    pub chroma: &'a mut [u8],
+    pub stride: usize,
+}
+
 impl<'a> Image<'a> {
     /// Rows `rows` of an image of rows of `width` pixels, held in `rgb`
     /// where the image has them: in their order, or with `rotate_180` in
-    /// reverse; with `averaged`, the rows of its 2x2 average they make, the
-    /// band starting on an even row.
+    /// reverse; with something made `along`, the band starting on an even row.
     pub(crate) fn band(
         rgb: &'a mut [u8],
-        averaged: Option<&'a mut [u8]>,
+        along: Along<'a>,
         width: usize,
         rows: Range<usize>,
         rotate_180: bool,
     ) -> Image<'a> {
         Image {
             rgb,
-            averaged,
+            along,
             row_bytes: width * 3,
             rows,
             rotate_180,
@@ -382,15 +398,34 @@ impl<'a> Image<'a> {
                 pixel.swap(0, 2);
             }
         }
-        if let (Some(averaged), 1) = (&mut self.averaged, y % 2) {
-            // Averaged while the pair of rows is in cache rather than in a
-            // pass over the whole image (`scale`, the general path).
-            let pair = if self.rotate_180 { target } else { target - 1 };
+        let made_along = self.along.averaged.is_some() || self.along.nv12.is_some();
+        if y.is_multiple_of(2) || !made_along {
+            return;
+        }
+        let pair = if self.rotate_180 { target } else { target - 1 };
+        let rows = &self.rgb[pair * row_bytes..(pair + 2) * row_bytes];
+        let width = row_bytes / 3;
+        if let Some(averaged) = &mut self.along.averaged {
             let averaged_bytes = row_bytes / 2;
             scale::average_pairs(
-                &self.rgb[pair * row_bytes..(pair + 2) * row_bytes],
-                row_bytes / 3,
+                rows,
+                width,
                 &mut averaged[pair / 2 * averaged_bytes..(pair / 2 + 1) * averaged_bytes],
+            );
+        }
+        if let Some(Nv12Band {
+            luma,
+            chroma,
+            stride,
+        }) = &mut self.along.nv12
+        {
+            let stride = *stride;
+            nv12::convert_pair(
+                rows,
+                width,
+                stride,
+                &mut luma[pair * stride..(pair + 2) * stride],
+                &mut chroma[pair / 2 * stride..(pair / 2 + 1) * stride],
             );
         }
     }
@@ -776,6 +811,7 @@ pub(crate) mod tests {
             Images {
                 rgb: &mut rgb,
                 averaged: None,
+                nv12: None,
             },
             &mut Buffers::default(),
         );
@@ -793,6 +829,7 @@ pub(crate) mod tests {
             Images {
                 rgb: &mut rgb,
                 averaged: None,
+                nv12: None,
             },
             &mut Buffers::default(),
         );
@@ -814,6 +851,7 @@ pub(crate) mod tests {
             Images {
                 rgb: &mut Vec::new(),
                 averaged: None,
+                nv12: None,
             },
             &mut Buffers::default(),
         )
@@ -837,6 +875,7 @@ pub(crate) mod tests {
             Images {
                 rgb: &mut Vec::new(),
                 averaged: None,
+                nv12: None,
             },
             &mut Buffers::default(),
         )

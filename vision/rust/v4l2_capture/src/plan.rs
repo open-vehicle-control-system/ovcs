@@ -4,7 +4,7 @@
 use framing::{output_frame_header, output_jpeg_header};
 
 use crate::arguments::{Format, OutputSpec, Source};
-use crate::bands::{Images, Measures};
+use crate::bands::{Images, Measures, Nv12Target};
 use crate::bayer::RawFrame;
 use crate::jpeg::JpegOutput;
 use crate::nv12::{self, Nv12Layout};
@@ -15,10 +15,12 @@ use crate::sensor::SensorModel;
 /// What makes an output's image of a frame.
 enum Role {
     /// A processor converts the raw frame into it and, with `averaged_into`,
-    /// into the 2x2 average of it that this later output is.
+    /// into the 2x2 average of it that this later output is, with
+    /// `nv12_into`, into the NV12 that this later output is, laid out so.
     Processed {
         processor: Box<dyn Processor>,
         averaged_into: Option<usize>,
+        nv12_into: Option<(usize, Nv12Layout)>,
     },
     /// The processor of the output it is made from averages it as it converts,
     /// while the rows are in cache.
@@ -29,14 +31,16 @@ enum Role {
     /// Encoded from the earlier output `from` on the encoder thread, the
     /// `slot`th of a frame's JPEGs; it has no image.
     Jpeg { from: usize, slot: usize },
-    /// Converted to NV12 laid out as `layout` after the outputs scaled, from
-    /// the earlier output `from`, averaged first in blocks of `block` pixels,
-    /// and encoded by the `slot`th of a frame's video encoders.
+    /// Converted to NV12 laid out as `layout` from the earlier output
+    /// `from`, by its processor as it converts when `converted_along`, after
+    /// the outputs scaled otherwise, averaged first in blocks of `block`
+    /// pixels; encoded by the `slot`th of a frame's video encoders.
     H264 {
         from: usize,
         block: (usize, usize),
         slot: usize,
         layout: Nv12Layout,
+        converted_along: bool,
     },
 }
 
@@ -61,6 +65,15 @@ impl Plan {
     /// encoders, in the outputs' order.
     pub fn new(outputs: &[OutputSpec], model: SensorModel, layouts: &[Nv12Layout]) -> Plan {
         let mut roles: Vec<Option<Role>> = outputs.iter().map(|_| None).collect();
+        let mut videos = 0;
+        let video_slots: Vec<Option<usize>> = (outputs.iter())
+            .map(|spec| {
+                let slot = matches!(spec.format, Format::H264 { .. }).then_some(videos);
+                videos += usize::from(slot.is_some());
+                slot
+            })
+            .collect();
+        let mut converted_along = vec![false; outputs.len()];
         for (index, spec) in outputs.iter().enumerate() {
             let Source::Cpu(output) = spec.source else {
                 continue;
@@ -78,14 +91,28 @@ impl Plan {
             if let Some(averaged) = averaged_into {
                 roles[averaged] = Some(Role::AveragedAlong);
             }
+            let nv12_into = (processor.converts_to_nv12())
+                .then(|| {
+                    (outputs.iter().enumerate()).find_map(|(later, later_spec)| {
+                        let slot = video_slots[later]?;
+                        let same_size = later_spec.block(spec) == (1, 1);
+                        (later_spec.source == Source::From(index) && same_size)
+                            .then_some((later, layouts[slot]))
+                    })
+                })
+                .flatten();
+            if let Some((later, _)) = nv12_into {
+                converted_along[later] = true;
+            }
             roles[index] = Some(Role::Processed {
                 processor,
                 averaged_into,
+                nv12_into,
             });
         }
-        let (mut jpegs, mut videos) = (0, 0);
+        let mut jpegs = 0;
         let mut planned = Vec::with_capacity(outputs.len());
-        for (&spec, role) in outputs.iter().zip(roles) {
+        for (index, (&spec, role)) in outputs.iter().zip(roles).enumerate() {
             let role = match (role, spec.source, spec.format) {
                 (Some(role), _, _) => role,
                 (None, Source::From(from), Format::Rgb) => Role::ScaledAfter {
@@ -100,12 +127,13 @@ impl Plan {
                     }
                 }
                 (None, Source::From(from), Format::H264 { .. }) => {
-                    videos += 1;
+                    let slot = video_slots[index].expect("an H.264 output's slot");
                     Role::H264 {
                         from,
                         block: spec.block(&outputs[from]),
-                        slot: videos - 1,
-                        layout: layouts[videos - 1],
+                        slot,
+                        layout: layouts[slot],
+                        converted_along: converted_along[index],
                     }
                 }
                 (None, Source::Cpu(_), _) => unreachable!("a processor makes it"),
@@ -172,6 +200,7 @@ impl Plan {
             let Role::Processed {
                 processor,
                 averaged_into,
+                nv12_into,
             } = &mut output.role
             else {
                 continue;
@@ -185,9 +214,18 @@ impl Plan {
                 threads: development.threads,
             };
             let (made, later) = images.split_at_mut(index + 1);
+            let (mut averaged, mut nv12) = (None, None);
+            for (output, image) in (index + 1..).zip(later) {
+                if Some(output) == *averaged_into {
+                    averaged = Some(image);
+                } else if let Some((_, layout)) = nv12_into.filter(|(into, _)| *into == output) {
+                    nv12 = Some(Nv12Target { image, layout });
+                }
+            }
             let target = Images {
                 rgb: &mut made[index],
-                averaged: averaged_into.map(|output| &mut later[output - index - 1]),
+                averaged,
+                nv12,
             };
             let measures = processor.develop(raw, &development, target);
             measured.get_or_insert(measures);
@@ -221,14 +259,15 @@ impl Plan {
             .collect()
     }
 
-    /// Converts the source of each output sent as H.264 to its NV12 image
-    /// of `images`, on `threads` threads.
+    /// Converts the source of each output sent as H.264 that its processor
+    /// does not convert to its NV12 image of `images`, on `threads` threads.
     pub fn convert_to_nv12(&mut self, threads: usize, images: &mut [Vec<u8>]) {
         for (index, output) in self.outputs.iter().enumerate() {
             let Role::H264 {
                 from,
                 block,
                 layout,
+                converted_along: false,
                 ..
             } = output.role
             else {
@@ -309,13 +348,24 @@ mod tests {
         let plan = Plan::new(outputs, SensorModel::Imx477, layouts);
         (plan.outputs.iter())
             .map(|output| match output.role {
-                Role::Processed { averaged_into, .. } => format!("processed {averaged_into:?}"),
+                Role::Processed {
+                    averaged_into,
+                    nv12_into,
+                    ..
+                } => match nv12_into {
+                    Some((nv12, _)) => format!("processed {averaged_into:?} nv12 {nv12}"),
+                    None => format!("processed {averaged_into:?}"),
+                },
                 Role::AveragedAlong => "averaged along".to_string(),
                 Role::ScaledAfter { from, block } => format!("scaled {from} {block:?}"),
                 Role::Jpeg { from, slot } => format!("jpeg {from} {slot}"),
                 Role::H264 {
-                    from, block, slot, ..
-                } => format!("h264 {from} {block:?} {slot}"),
+                    from,
+                    block,
+                    slot,
+                    converted_along,
+                    ..
+                } => format!("h264 {from} {block:?} {slot} along {converted_along}"),
             })
             .collect()
     }
@@ -359,7 +409,8 @@ mod tests {
     }
 
     #[test]
-    fn each_h264_output_is_converted_to_the_nv12_layout_of_its_encoder() {
+    fn each_h264_output_is_converted_to_the_nv12_layout_of_its_encoder_by_the_processor_of_its_size(
+    ) {
         let h264 = Format::H264 {
             bitrate_kbps: 4_000,
             keyframe_interval: 30,
@@ -380,8 +431,13 @@ mod tests {
         let layouts = [layout(24, 46, 32, 64), layout(12, 46, 16, 64)];
         let mut plan = Plan::new(&outputs, SensorModel::Imx477, &layouts);
         assert_eq!(
-            roles(&outputs, &layouts)[2..],
-            ["h264 0 (1, 1) 0", "h264 0 (2, 1) 1"]
+            roles(&outputs, &layouts),
+            [
+                "processed Some(1) nv12 2",
+                "averaged along",
+                "h264 0 (1, 1) 0 along true",
+                "h264 0 (2, 1) 1 along false"
+            ]
         );
         assert_eq!(plan.h264_outputs(), [2, 3]);
         assert_eq!(
@@ -411,11 +467,10 @@ mod tests {
         plan.convert_to_nv12(2, &mut images);
         let mut halved = Vec::new();
         Averager::default().average_blocks(&rgb, 24, (2, 1), 1, &mut halved);
-        for (image, source, layout) in [(2, &rgb, layouts[0]), (3, &halved, layouts[1])] {
-            let mut expected = vec![0; layout.size];
-            nv12::convert(source, &layout, 1, &mut expected);
-            assert!(images[image] == expected, "output {image}");
-        }
+        let mut expected = vec![0; layouts[1].size];
+        nv12::convert(&halved, &layouts[1], 1, &mut expected);
+        assert!(images[3] == expected);
+        assert!(images[2].is_empty(), "the processor makes output 2");
     }
 
     #[test]

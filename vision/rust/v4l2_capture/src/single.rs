@@ -1349,6 +1349,7 @@ mod tests {
         let images = Images {
             rgb: &mut rgb,
             averaged: None,
+            nv12: None,
         };
         develop_along(
             Path::Denoised,

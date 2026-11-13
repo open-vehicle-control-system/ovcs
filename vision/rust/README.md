@@ -68,7 +68,7 @@ Given one capture node and sensor (`--video`, `--sensor`), `v4l2_capture` captur
 
 A JPEG or H.264 output is always sent, and no output is made from it.
 
-The H.264 encoder is a V4L2 memory-to-memory device behind an encoder trait: on the VENTUNO Q, Qualcomm's Iris (`qcom-iris-encoder`), which needs the firmware `qcom/vpu/vpu30_p4_s6.mbn`. Without it, the program stops at start. The output's image is converted to NV12 in BT.601 limited range (luma 16 to 235), each chroma sample the mean of a 2×2 block, into the encoder's padded layout, on the conversion threads after the averaging.
+The H.264 encoder is a V4L2 memory-to-memory device behind an encoder trait: on the VENTUNO Q, Qualcomm's Iris (`qcom-iris-encoder`), which needs the firmware `qcom/vpu/vpu30_p4_s6.mbn`. Without it, the program stops at start. The output's image is converted to NV12 in BT.601 limited range (luma 16 to 235), each chroma sample the mean of a 2×2 block, into the encoder's padded layout. For an output the size of a conversion output, the conversion makes it as each pair of rows is written; otherwise it is made after the averaging, on the same threads.
 
 The conversion sits behind a processor trait, so another processor, such as an ISP, slots in beside it.
 
@@ -91,7 +91,7 @@ Its statistics line, every minute, gives the time per frame of:
 - the averaging after it (`us per scaling`, 0 when the conversion makes every average);
 - the writes;
 - the JPEG encodes;
-- the conversion to NV12 (`us per NV12 conversion`);
+- the conversion to NV12 after it (`us per NV12 conversion`, 0 when the conversion makes every NV12);
 - the H.264 encodes, from the frame queued to the encoder to its stream dequeued;
 
 and the H.264 bytes per second.

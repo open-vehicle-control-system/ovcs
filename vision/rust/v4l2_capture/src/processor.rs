@@ -20,11 +20,16 @@ pub const MEASURED_ROW_STEP: usize = 4;
 pub trait Processor: Send {
     /// `frame` as `development` says, into `images`, with what it asks to
     /// measure. `images` holds an averaged image only when the processor
-    /// `averages_2x2`.
+    /// `averages_2x2`, and an NV12 one only when it `converts_to_nv12`.
     fn develop(&mut self, frame: &RawFrame, development: &Development, images: Images) -> Measures;
 
     /// Whether `develop` makes the 2x2 average of its image too.
     fn averages_2x2(&self) -> bool {
+        false
+    }
+
+    /// Whether `develop` makes the NV12 of its image too.
+    fn converts_to_nv12(&self) -> bool {
         false
     }
 }
@@ -112,6 +117,10 @@ impl Processor for Cpu {
     fn averages_2x2(&self) -> bool {
         true
     }
+
+    fn converts_to_nv12(&self) -> bool {
+        true
+    }
 }
 
 /// A sensor's tuning, the table of its contrast curve, and what it gives at the white
@@ -182,8 +191,10 @@ pub(crate) mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+    use crate::bands::Nv12Target;
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
+    use crate::nv12::{self, Nv12Layout};
     use crate::scale;
     use crate::tuning::imx477;
 
@@ -303,6 +314,7 @@ pub(crate) mod tests {
                         Images {
                             rgb: &mut rgb,
                             averaged: None,
+                            nv12: None,
                         },
                         &mut bayer::Buffers::default(),
                     ),
@@ -315,6 +327,7 @@ pub(crate) mod tests {
                         Images {
                             rgb: &mut rgb,
                             averaged: None,
+                            nv12: None,
                         },
                         &mut colour::Buffers::default(),
                     ),
@@ -354,6 +367,7 @@ pub(crate) mod tests {
             let images = Images {
                 rgb: &mut rgb,
                 averaged: None,
+                nv12: None,
             };
             let gains = Gains { red, blue };
             let mut buffers = colour::Buffers::default();
@@ -430,6 +444,7 @@ pub(crate) mod tests {
                                 Images {
                                     rgb: &mut rgb,
                                     averaged: None,
+                                    nv12: None,
                                 },
                                 &mut buffers,
                             );
@@ -442,6 +457,7 @@ pub(crate) mod tests {
                                 Images {
                                     rgb: &mut rgb,
                                     averaged: None,
+                                    nv12: None,
                                 },
                                 &mut fallback,
                             );
@@ -522,6 +538,7 @@ pub(crate) mod tests {
                             let images = Images {
                                 rgb: &mut alone,
                                 averaged: None,
+                                nv12: None,
                             };
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
@@ -529,6 +546,7 @@ pub(crate) mod tests {
                             let images = Images {
                                 rgb: &mut rgb,
                                 averaged: Some(&mut averaged),
+                                nv12: None,
                             };
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
@@ -546,6 +564,86 @@ pub(crate) mod tests {
                             );
                             assert!(outcome(&rgb, measures) == expected, "{case}");
                             assert!(averaged == after, "{case}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nv12_made_as_it_converts_is_the_nv12_of_the_image_converted() {
+        for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 8)] {
+            let stride = width * 3 / 2 + 6;
+            let raw = padded_packed12(&samples(width, height), width, stride);
+            let frame = RawFrame {
+                raw: &raw,
+                width,
+                height,
+                row_stride: stride,
+                layout: Layout::Packed12,
+            };
+            for output in [Output::Full, Output::Half] {
+                let (output_width, output_height) = output.size(width as u32, height as u32);
+                let (output_width, output_height) = (output_width as usize, output_height as usize);
+                if output_height % 2 != 0 || output_width % 2 != 0 {
+                    continue;
+                }
+                let layout = Nv12Layout {
+                    width: output_width,
+                    height: output_height,
+                    stride: output_width + 10,
+                    luma_rows: output_height + 4,
+                    size: (output_width + 10) * (output_height + 4) * 3 / 2,
+                };
+                for rotate_180 in [false, true] {
+                    for path in [Path::Denoised, Path::Undenoised, Path::Untuned] {
+                        let mut buffers = Default::default();
+                        let (mut alone, mut rgb, mut averaged) =
+                            (Vec::new(), vec![0xaa; 7], Vec::new());
+                        let mut nv12 = Vec::new();
+                        for (threads, averages) in [
+                            (1, false),
+                            (2, true),
+                            (3, false),
+                            (4, true),
+                            (3, true),
+                            (1, true),
+                        ] {
+                            let conversion = Conversion {
+                                output,
+                                rotate_180,
+                                channel_means: true,
+                                green_mean: true,
+                                row_step: MEASURED_ROW_STEP,
+                                threads,
+                            };
+                            let images = Images {
+                                rgb: &mut alone,
+                                averaged: None,
+                                nv12: None,
+                            };
+                            let measures =
+                                develop_along(path, &frame, &conversion, images, &mut buffers);
+                            let expected = outcome(&alone, measures);
+                            let mut expected_nv12 = vec![0; layout.size];
+                            nv12::convert(&alone, &layout, 1, &mut expected_nv12);
+                            let images = Images {
+                                rgb: &mut rgb,
+                                averaged: averages.then_some(&mut averaged),
+                                nv12: Some(Nv12Target {
+                                    image: &mut nv12,
+                                    layout,
+                                }),
+                            };
+                            let measures =
+                                develop_along(path, &frame, &conversion, images, &mut buffers);
+                            let case = format!(
+                                "{width}x{height} {output:?} rotated {rotate_180} {path:?} \
+                                 on {threads} threads, averaged {averages}"
+                            );
+                            assert!(outcome(&rgb, measures) == expected, "{case}");
+                            assert!(nv12 == expected_nv12, "{case}");
                         }
                     }
                 }
@@ -585,6 +683,7 @@ pub(crate) mod tests {
             let images = Images {
                 rgb: &mut rgb,
                 averaged: (way == 2).then_some(&mut averaged),
+                nv12: None,
             };
             develop_along(Path::Denoised, &frame, &conversion, images, &mut buffers);
             if way == 1 {
