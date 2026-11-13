@@ -1,5 +1,5 @@
 ---
-id: TASK-66
+id: TASK-113
 title: Take the stereo stages' settings from nx_stereo
 status: Done
 assignee:

@@ -1,7 +1,7 @@
 ---
-id: TASK-61
+id: TASK-112
 title: Move the simulator's loop to simulator/core behind a world boundary
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-11-10 18:41'
 updated_date: '2026-11-10 19:26'
