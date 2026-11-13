@@ -15,6 +15,9 @@ const TAG_PAIR: u8 = 4;
 const TAG_GREY_FRAME: u8 = 5;
 const TAG_OUTPUT_FRAME: u8 = 7;
 const TAG_OUTPUT_JPEG: u8 = 8;
+const TAG_OUTPUT_H264: u8 = 9;
+/// Bit of an OUTPUT_H264 record's flags set on a key frame.
+const KEY_FRAME_FLAG: u8 = 1;
 
 pub const METADATA_FIELDS: usize = 8;
 
@@ -280,6 +283,25 @@ pub fn output_jpeg_header(output: u8, width: u16, height: u16, capture_ns: i64) 
     header
 }
 
+/// The start of an OUTPUT_H264 record, a frame of a camera output's H.264
+/// stream: an OUTPUT_FRAME record's header under its own tag, then a byte of
+/// flags, bit 0 set on a key frame, which the frame's NAL units follow in
+/// Annex B form. A decoder takes the stream's frames in order from a key
+/// frame, which carries the sequence and picture parameter sets.
+pub fn output_h264_header(
+    output: u8,
+    width: u16,
+    height: u16,
+    capture_ns: i64,
+    key_frame: bool,
+) -> [u8; 15] {
+    let mut header = [0; 15];
+    header[..14].copy_from_slice(&output_frame_header(output, width, height, capture_ns));
+    header[0] = TAG_OUTPUT_H264;
+    header[14] = if key_frame { KEY_FRAME_FLAG } else { 0 };
+    header
+}
+
 pub fn log_record(level: LogLevel, message: &str) -> Vec<u8> {
     let mut record = Vec::with_capacity(2 + message.len());
     record.push(TAG_LOG);
@@ -498,6 +520,20 @@ mod tests {
             0xd9,
         ];
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn output_h264_record_layout() {
+        let got = [
+            &output_h264_header(3, 2, 1, -5, true)[..],
+            &[0, 0, 0, 1, 0x65],
+        ]
+        .concat();
+        let want = [
+            9, 3, 2, 0, 1, 0, 0xfb, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 1, 0, 0, 0, 1, 0x65,
+        ];
+        assert_eq!(got, want);
+        assert_eq!(output_h264_header(3, 2, 1, -5, false)[14], 0);
     }
 
     #[test]
