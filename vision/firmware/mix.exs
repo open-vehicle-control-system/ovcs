@@ -85,7 +85,7 @@ defmodule VisionFirmware.MixProject do
       # `nx_stereo` on Vulkan, and FastRPC for the NPU `qnn_detect` drives.
       {:nerves_system_arduino_ventuno_q,
        github: "Spin42/nerves_system_arduino_ventuno_q",
-       tag: "v0.1.0",
+       tag: "v0.1.1",
        runtime: false,
        targets: :arduino_ventuno_q,
        nerves: [compile: false]},
