@@ -14,7 +14,7 @@ use framing::{log_record, metadata_record, LogLevel, Writer};
 use crate::arguments::{OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::jpeg::{self, Encoded};
-use crate::plan::Plan;
+use crate::plan::{Plan, Sent};
 use crate::processor::Development;
 use crate::sensor::{self, SensorModel};
 use crate::settings::ColourSettings;
@@ -178,7 +178,6 @@ fn capture(
 ) -> io::Result<()> {
     let plan = Plan::new(&setup.outputs, setup.model);
     let jpeg_outputs = plan.jpeg_outputs();
-    let jpeg_slots = plan.jpeg_slots();
     std::thread::scope(|scope| {
         let (sender, queued) = mpsc::channel();
         let (written, images) = mpsc::channel();
@@ -188,8 +187,9 @@ fn capture(
             scope
                 .spawn(move || jpeg::encode_frames(&jpeg_outputs, frames_to_encode, encoded_sender))
         });
+        let encodes_jpegs = encoder.is_some();
         let writer =
-            scope.spawn(move || write_records(records, &jpeg_slots, queued, encoded, written));
+            scope.spawn(move || write_records(records, encodes_jpegs, queued, encoded, written));
         let queue = Queue {
             records: sender,
             to_encode: encoder.is_some().then_some(to_encode),
@@ -213,10 +213,10 @@ fn capture(
 type FrameImages = Arc<Vec<Vec<u8>>>;
 
 /// A record for the writer thread: a frame's images, one per output, with
-/// the header of each output sent and that output's index, or another
+/// what is written of each output sent and that output's index, or another
 /// record whole.
 enum Record {
-    Frame(Vec<(usize, [u8; 14])>, FrameImages),
+    Frame(Vec<(usize, Sent)>, FrameImages),
     Other(Vec<u8>),
 }
 
@@ -229,40 +229,34 @@ struct Written {
 }
 
 /// Writes each record of `queued` to `records`, a frame's sent outputs one
-/// record each, a JPEG one from `encoded`, then hands its images to `written`.
+/// record each, a JPEG one from `encoded` when the frame `encodes_jpegs`,
+/// then hands its images to `written`.
 fn write_records(
     records: &impl Records,
-    jpeg_slots: &[Option<usize>],
+    encodes_jpegs: bool,
     queued: mpsc::Receiver<Record>,
     encoded: mpsc::Receiver<Encoded>,
     written: mpsc::Sender<Written>,
 ) -> io::Result<()> {
     for record in queued {
         match record {
-            Record::Frame(headers, images) => {
+            Record::Frame(sent, images) => {
                 let mut jpegs = None;
-                let receive_jpegs = |jpegs: &mut Option<Encoded>| -> io::Result<()> {
-                    if jpegs.is_none() {
-                        *jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
-                    }
-                    Ok(())
-                };
                 let mut write = Duration::ZERO;
-                for &(index, ref header) in &headers {
-                    if jpeg_slots[index].is_some() {
-                        receive_jpegs(&mut jpegs)?;
-                    }
-                    let body = match (jpeg_slots[index], &jpegs) {
-                        (Some(slot), Some(encoded)) => &encoded.jpegs[slot],
-                        _ => &images[index],
+                for (index, sent) in &sent {
+                    let (header, body) = match sent {
+                        Sent::Image(header) => (header, &images[*index]),
+                        Sent::Jpeg { header, slot } => {
+                            (header, &received(&mut jpegs, &encoded)?.jpegs[*slot])
+                        }
                     };
                     let writing = Instant::now();
                     records.write(&[header, body])?;
                     write += writing.elapsed();
                 }
                 // The encoder holds the images until the frame's JPEGs are done.
-                if jpeg_slots.iter().any(Option::is_some) {
-                    receive_jpegs(&mut jpegs)?;
+                if encodes_jpegs {
+                    received(&mut jpegs, &encoded)?;
                 }
                 let encode = jpegs.map(|encoded| {
                     drop(encoded.images);
@@ -281,6 +275,17 @@ fn write_records(
     Ok(())
 }
 
+/// The frame's JPEGs in `jpegs`, received from `encoded` unless they already were.
+fn received<'a>(
+    jpegs: &'a mut Option<Encoded>,
+    encoded: &mpsc::Receiver<Encoded>,
+) -> io::Result<&'a Encoded> {
+    if jpegs.is_none() {
+        *jpegs = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+    }
+    Ok(jpegs.as_ref().expect("the frame's JPEGs"))
+}
+
 /// The records on their way to the writer thread, the frames on their way
 /// to the encoder thread when there is one, and the images the writer has
 /// written on their way back.
@@ -296,11 +301,11 @@ impl Queue {
     }
 
     /// Sends a frame's outputs to the writer, and its images to the encoder.
-    fn send_frame(&self, headers: Vec<(usize, [u8; 14])>, images: FrameImages) -> io::Result<()> {
+    fn send_frame(&self, sent: Vec<(usize, Sent)>, images: FrameImages) -> io::Result<()> {
         if let Some(to_encode) = &self.to_encode {
             (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
         }
-        self.send(Record::Frame(headers, images))
+        self.send(Record::Frame(sent, images))
     }
 
     /// The next frame's images written, waiting for their writes to end.
@@ -384,7 +389,7 @@ fn convert_frames(
     };
     let tuning = model.tuning();
     let default_threads = plan.default_threads();
-    let jpegs_per_frame = plan.jpeg_slots().into_iter().flatten().count() as u64;
+    let jpegs_per_frame = plan.jpeg_count() as u64;
     // Two sets of images alternate: one converts while the writer writes the other.
     let (mut images, mut spare) = (
         vec![Vec::new(); plan.output_count()],
@@ -496,8 +501,8 @@ fn convert_frames(
                     written.images
                 }
             };
-            let headers = plan.headers(start_ns);
-            queue.send_frame(headers, Arc::new(std::mem::replace(&mut images, free)))?;
+            let sent = plan.sent(start_ns);
+            queue.send_frame(sent, Arc::new(std::mem::replace(&mut images, free)))?;
         }
     }
 }

@@ -113,14 +113,11 @@ impl Plan {
             .unwrap_or(1)
     }
 
-    /// Each output's place among a frame's JPEGs, for those sent as one.
-    pub fn jpeg_slots(&self) -> Vec<Option<usize>> {
+    /// How many of a frame's outputs are sent as JPEGs.
+    pub fn jpeg_count(&self) -> usize {
         (self.outputs.iter())
-            .map(|output| match output.role {
-                Role::Jpeg { slot, .. } => Some(slot),
-                _ => None,
-            })
-            .collect()
+            .filter(|output| matches!(output.role, Role::Jpeg { .. }))
+            .count()
     }
 
     /// The outputs sent as JPEGs, in the order of their slots.
@@ -193,21 +190,33 @@ impl Plan {
         }
     }
 
-    /// The header of each output sent, with its index, for the frame started
-    /// at `start_ns`.
-    pub fn headers(&self, start_ns: i64) -> Vec<(usize, [u8; 14])> {
+    /// What the writer writes of each output sent, with its index, for the
+    /// frame started at `start_ns`.
+    pub fn sent(&self, start_ns: i64) -> Vec<(usize, Sent)> {
         (self.outputs.iter().enumerate())
             .filter(|(_, output)| output.spec.send)
             .map(|(index, output)| {
                 let (width, height) = (output.spec.width as u16, output.spec.height as u16);
-                let header = match output.spec.format {
-                    Format::Rgb => output_frame_header,
-                    Format::Jpeg { .. } => output_jpeg_header,
+                let sent = match output.role {
+                    Role::Jpeg { slot, .. } => Sent::Jpeg {
+                        header: output_jpeg_header(index as u8, width, height, start_ns),
+                        slot,
+                    },
+                    _ => Sent::Image(output_frame_header(index as u8, width, height, start_ns)),
                 };
-                (index, header(index as u8, width, height, start_ns))
+                (index, sent)
             })
             .collect()
     }
+}
+
+/// What the writer writes of an output sent, in a frame's records.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sent {
+    /// Its image, after this header.
+    Image([u8; 14]),
+    /// The `slot`th of the frame's JPEGs, after this header.
+    Jpeg { header: [u8; 14], slot: usize },
 }
 
 #[cfg(test)]
@@ -260,26 +269,34 @@ mod tests {
             ]
         );
         let plan = Plan::new(&outputs, SensorModel::Imx477);
-        assert_eq!(
-            plan.jpeg_slots(),
-            [None, Some(0), None, None, None, Some(1)]
-        );
+        let jpegs: Vec<(usize, usize)> = (plan.sent(5).into_iter())
+            .filter_map(|(index, sent)| match sent {
+                Sent::Jpeg { header, slot } => {
+                    assert_eq!(header[..2], [8, index as u8]);
+                    Some((index, slot))
+                }
+                Sent::Image(_) => None,
+            })
+            .collect();
+        assert_eq!(jpegs, [(1, 0), (5, 1)]);
+        assert_eq!(plan.jpeg_count(), 2);
         assert_eq!(plan.jpeg_outputs().len(), 2);
         assert!(plan.scales());
         assert_eq!(plan.default_threads(), 3);
     }
 
     #[test]
-    fn only_the_outputs_sent_have_a_header() {
+    fn only_the_outputs_sent_are_written() {
         let unsent = OutputSpec {
             send: false,
             ..spec(Source::Cpu(Output::Half), (12, 23), Format::Rgb)
         };
         let outputs = [unsent, spec(Source::From(0), (6, 23), Format::Rgb)];
         let plan = Plan::new(&outputs, SensorModel::Imx477);
-        let headers = plan.headers(5);
-        assert_eq!(headers.len(), 1);
-        assert_eq!(headers[0], (1, output_frame_header(1, 6, 23, 5)));
+        assert_eq!(
+            plan.sent(5),
+            [(1, Sent::Image(output_frame_header(1, 6, 23, 5)))]
+        );
         assert_eq!(plan.default_threads(), 1);
     }
 }
