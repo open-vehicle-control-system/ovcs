@@ -248,7 +248,11 @@ describe('Previews', () => {
       return last.hasAttribute('data-aside') ? last : null
     }
     const classes = (element) => element.className.split(' ')
-    const frameOf = (stream) => figure(stream).firstElementChild
+    const cellOf = (stream) => figure(stream).firstElementChild
+    const frameOf = (stream) => figure(stream).querySelector('[data-frame]')
+    const scale = () => document.querySelector('[data-colour-scale]')
+    const slider = () => screen.getByRole('slider', { name: 'colour scale' })
+    const legend = () => screen.getByRole('list', { name: 'road classes' })
     const captionOf = (stream) => figure(stream).querySelector('figcaption')
 
     function renderAll() {
@@ -256,6 +260,17 @@ describe('Previews', () => {
       const { socket, push } = liveSocket({ depthRange: 8 })
       render(<Previews status={snapshot} socket={socket} />)
       push('segmentation:road', 'classes', { labels: ['road', 'sky'], roadClasses: ['road'] })
+      return push
+    }
+
+    // A frame of `width` × `height` px, loaded in the preview of `stream`.
+    function loadFrame(push, stream, width, height) {
+      URL.createObjectURL = vi.fn(() => `blob:${stream}`)
+      URL.revokeObjectURL = vi.fn()
+      push(`preview:${stream}`, 'frame', new Uint8Array([1]).buffer)
+      const image = screen.getByRole('img', { name: `${stream} preview` })
+      Object.defineProperties(image, { naturalWidth: { value: width }, naturalHeight: { value: height } })
+      fireEvent.load(image)
     }
 
     it("puts the depth's colour scale in its aside, out of its figures", () => {
@@ -278,14 +293,18 @@ describe('Previews', () => {
 
     it('gives every preview an aside under its caption, empty with nothing to show, sized by the row it shares with its neighbours', () => {
       renderAll()
-      // The frame beside a 14rem aside would be 319 px wide and 320 px tall.
-      previewsSized(543, 400, 80)
+      // The frame beside a 9rem aside would be 319 px wide and 320 px tall.
+      previewsSized(463, 400, 80)
 
       const streams = ['left', 'right', 'depth', 'hq', 'usb']
       for (const stream of streams) expect(aside(stream)).not.toBeNull()
       for (const stream of streams) expect(aside(stream).className).toBe(aside('depth').className)
-      for (const stream of streams) expect(frameOf(stream).className).not.toContain('col-')
+      for (const stream of streams) expect(cellOf(stream).className).not.toContain('col-')
       for (const stream of ['left', 'right', 'usb']) expect(aside(stream).childElementCount).toBe(0)
+      // Under a caption, the scale lies along its line and the legend fills its width with columns.
+      expect(scale().dataset.orientation).toBe('horizontal')
+      expect(slider().hasAttribute('aria-orientation')).toBe(false)
+      expect(classes(legend())).toContain('grid-cols-[repeat(auto-fill,minmax(5rem,1fr))]')
 
       // Each preview spans its row's three tracks, frame, caption and aside, which size them across the row.
       const pair = screen.getByRole('list', { name: 'Camera pair' })
@@ -304,12 +323,12 @@ describe('Previews', () => {
 
     it("puts the asides of the depth's row beside their frames, from lg, once the frame left is as wide as tall", () => {
       renderAll()
-      previewsSized(544, 400, 80)
+      previewsSized(464, 400, 80)
 
       const row = document.querySelector('[data-cameras]')
       for (const stream of ['depth', 'hq', 'usb']) {
         expect(classes(figure(stream))).toEqual(
-          expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)_14rem]', 'lg:grid-rows-subgrid'])
+          expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)_9rem]', 'lg:grid-rows-subgrid'])
         )
         // The aside takes the frame's track, in a column as wide in every preview, empty or not; the caption spans both columns.
         expect(classes(aside(stream))).toEqual(expect.arrayContaining(['lg:col-start-2', 'lg:row-start-1']))
@@ -327,16 +346,91 @@ describe('Previews', () => {
         expect(aside(stream).className).not.toContain('col-start')
       }
 
-      previewsSized(544, 401, 80)
+      previewsSized(464, 401, 80)
       expect(aside('depth').className).toBe(aside('left').className)
       expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)]')
     })
 
+    it('stands the colour scale up and lists the classes in one column, in class order, beside their frames', () => {
+      renderAll()
+      previewsSized(464, 400, 80)
+
+      expect(scale().dataset.orientation).toBe('vertical')
+      expect(slider().getAttribute('aria-orientation')).toBe('vertical')
+      expect(classes(legend())).toContain('grid-cols-1')
+      expect(legend().className).not.toContain('auto-fill')
+      expect([...legend().querySelectorAll('li')].map((item) => item.dataset.class)).toEqual(['road', 'sky'])
+
+      previewsSized(464, 401, 80)
+      expect(scale().dataset.orientation).toBe('horizontal')
+      expect(classes(legend())).not.toContain('grid-cols-1')
+    })
+
+    it('keeps the asides under the captions below lg, whatever the previews measure', () => {
+      vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+      renderAll()
+      previewsSized(464, 400, 80)
+
+      expect(aside('depth').className).toBe(aside('left').className)
+      expect(scale().dataset.orientation).toBe('horizontal')
+      expect(classes(legend())).not.toContain('grid-cols-1')
+    })
+
+    it('places the asides again as the window crosses lg', () => {
+      const query = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
+      vi.stubGlobal('matchMedia', vi.fn(() => query))
+      renderAll()
+      previewsSized(464, 400, 80)
+      expect(window.matchMedia).toHaveBeenCalledWith('(min-width: 1024px)')
+      expect(scale().dataset.orientation).toBe('horizontal')
+
+      query.matches = true
+      act(() => query.addEventListener.mock.calls.find(([event]) => event === 'change')[1]())
+
+      expect(scale().dataset.orientation).toBe('vertical')
+    })
+
+    it("fits each frame of the depth's row to its image's shape in the frame's track, from lg, and keeps the pair's 16:9", () => {
+      const push = renderAll()
+      for (const stream of ['depth', 'hq']) loadFrame(push, stream, 640, 480)
+
+      for (const beside of [false, true]) {
+        previewsSized(beside ? 464 : 463, 400, 80)
+        for (const stream of ['depth', 'hq', 'usb']) {
+          // The cell takes the frame's track and measures it; the frame is the largest box of its shape in it.
+          expect(classes(cellOf(stream))).toEqual(
+            expect.arrayContaining(['lg:flex', 'lg:min-h-0', 'lg:items-start', 'lg:justify-center', 'lg:[container-type:size]'])
+          )
+          expect(cellOf(stream).className).toBe(cellOf('depth').className)
+          expect(frameOf(stream).parentElement).toBe(cellOf(stream))
+          expect(classes(frameOf(stream))).toEqual(
+            expect.arrayContaining([
+              'aspect-[var(--frame-width,16)/var(--frame-height,9)]',
+              'lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]',
+              'lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))]'
+            ])
+          )
+          expect(classes(frameOf(stream))).not.toContain('aspect-video')
+          expect(frameOf(stream).className).toBe(frameOf('depth').className)
+        }
+      }
+      for (const stream of ['depth', 'hq']) {
+        expect([frameOf(stream).style.getPropertyValue('--frame-width'), frameOf(stream).style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
+      }
+      // Without a frame yet, a preview keeps a 16:9 box.
+      expect(frameOf('usb').style.getPropertyValue('--frame-width')).toBe('')
+
+      for (const stream of ['left', 'right']) {
+        expect(classes(frameOf(stream))).toContain('aspect-video')
+        expect(cellOf(stream).className).toBe('')
+      }
+    })
+
     it('places the asides as the row mounts, before its observer reports', () => {
-      previewsSized(544, 400, 80)
+      previewsSized(464, 400, 80)
       renderAll()
 
-      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)_14rem]')
+      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)_9rem]')
     })
 
     it('keeps the asides under the captions without an observer to measure the previews', () => {

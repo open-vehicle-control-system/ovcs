@@ -69,18 +69,24 @@ const needsAction = ({ actions }) => actions.length > 0
 // depth's row, whose previews stack below it. Its column shrinks below its content's width, as the card does.
 const PAIR_TILE = 'row-span-3 grid grid-cols-[minmax(0,1fr)] grid-rows-subgrid'
 const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-rows-subgrid'
-const ROW_FRAME = 'lg:aspect-auto lg:min-h-0'
+// The frame has its image's shape, 16:9 before any: as wide as its preview, and from `lg` the largest that fits the
+// frame's track, which its cell measures, at the top and centre of it.
+const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:[container-type:size]'
+const ROW_FRAME =
+  'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
 // Beside the frame, the aside takes the frame's track in a column of its own, as wide in every preview of the row, and
-// scrolls what its track cannot hold. `ASIDE_REM` is the `14rem` of its track.
-const ASIDE_REM = 14
-const ROW_TILE_BESIDE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)_14rem] lg:grid-rows-subgrid'
+// scrolls what its track cannot hold. `ASIDE_REM` is the `9rem` of its track.
+const ASIDE_REM = 9
+const ROW_TILE_BESIDE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)_9rem] lg:grid-rows-subgrid'
 const ROW_ASIDE_BESIDE = 'lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pt-2'
+// Tailwind's `lg`, from which the classes above apply.
+const LG = '(min-width: 1024px)'
 
 /**
- * Whether the asides of the row `ref` holds go beside their frames: when the frame left beside an aside would be at
- * least as wide as tall. Its previews are as wide and as tall as each other, and their captions span them either way,
- * so the first one's size and caption decide; measured again as that preview or its caption resizes, and never
- * without `ResizeObserver`.
+ * Whether the asides of the row `ref` holds go beside their frames: from `lg`, when the frame left beside an aside
+ * would be at least as wide as tall. Its previews are as wide and as tall as each other, and their captions span them
+ * either way, so the first one's size and caption decide; measured again as that preview or its caption resizes or the
+ * window crosses `lg`, and never without `ResizeObserver`.
  */
 function useBeside(ref) {
   const [beside, setBeside] = useState(false)
@@ -90,13 +96,19 @@ function useBeside(ref) {
     const caption = preview?.querySelector('figcaption')
     if (!caption || typeof ResizeObserver === 'undefined') return undefined
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-    const measure = () => setBeside(preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
+    const lg = window.matchMedia?.(LG)
+    const measure = () =>
+      setBeside((lg?.matches ?? true) && preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
     // Measured before the first paint: the observer's first report can come after it.
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(preview)
     observer.observe(caption)
-    return () => observer.disconnect()
+    lg?.addEventListener('change', measure)
+    return () => {
+      observer.disconnect()
+      lg?.removeEventListener('change', measure)
+    }
   }, [ref])
 
   return beside
@@ -105,8 +117,8 @@ function useBeside(ref) {
 /** The classes of a preview of the depth's row, its aside beside its frame or under its caption. */
 const rowLayout = (beside) =>
   beside
-    ? { className: ROW_TILE_BESIDE, frameClassName: ROW_FRAME, asideClassName: ROW_ASIDE_BESIDE }
-    : { className: ROW_TILE, frameClassName: ROW_FRAME }
+    ? { className: ROW_TILE_BESIDE, cellClassName: ROW_CELL, frameClassName: ROW_FRAME, asideClassName: ROW_ASIDE_BESIDE }
+    : { className: ROW_TILE, cellClassName: ROW_CELL, frameClassName: ROW_FRAME }
 
 /** The latest results of the detection channels drawn on the preview of `source`: their overlays, and all their objects, `null` before any answers. */
 function useSourceDetections(socket, source) {
@@ -120,8 +132,8 @@ function useSourceDetections(socket, source) {
   }
 }
 
-/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends once their classes come. */
-function useSourceSegmentations(socket, source) {
+/** The segmentation pipelines on the camera `source`: their label grids drawn over its preview, and their legends, `vertical` or not, once their classes come. */
+function useSourceSegmentations(socket, source, vertical) {
   const outputs = useSegmentationOutputs(source)
   const latest = useSegmentations(socket, outputs)
   const topics = outputs.map(({ name }) => name)
@@ -138,6 +150,7 @@ function useSourceSegmentations(socket, source) {
         name={topic.slice(SEGMENTATION.length)}
         classes={latest[topic].classes}
         present={new Set(Object.keys(latest[topic].seen ?? {}).map(Number))}
+        vertical={vertical}
       />
     ))
   }
@@ -159,15 +172,16 @@ function useCameraNames() {
 
 /**
  * A camera of its own, titled by its name, with its rate, exposure and gain, its segmentation pipelines' label grids
- * drawn over it with a legend of their classes, and the objects its detection pipelines detect drawn over those and counted.
+ * drawn over it with a legend of their classes, a class a row beside the frame, and the objects its detection
+ * pipelines detect drawn over those and counted.
  */
-function CameraPreview({ name, status, socket, layout }) {
+function CameraPreview({ name, status, socket, beside }) {
   const { overlays: boxes, detections } = useSourceDetections(socket, name)
-  const { overlays: grids, legends } = useSourceSegmentations(socket, name)
+  const { overlays: grids, legends } = useSourceSegmentations(socket, name, beside)
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
 
   return (
-    <Preview stream={name} socket={socket} overlay={[...grids, ...boxes]} aside={legends} {...layout}>
+    <Preview stream={name} socket={socket} overlay={[...grids, ...boxes]} aside={legends} {...rowLayout(beside)}>
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
     </Preview>
   )
@@ -192,10 +206,10 @@ function LeftPreview({ status, socket }) {
 }
 
 /**
- * The depth with its rate, its checks and quality, badged with what to do about it, and its colour range, which the unit pushes after every join, a rejoin
- * included, and on every change; the handler is bound before the join, so it misses none.
+ * The depth with its rate, its checks and quality, badged with what to do about it, and its colour range, upright beside the frame, which the unit pushes after
+ * every join, a rejoin included, and on every change; the handler is bound before the join, so it misses none.
  */
-function DepthPreview({ status, socket, layout }) {
+function DepthPreview({ status, socket, beside }) {
   const [channel, setChannel] = useState(null)
   const [metres, setMetres] = useState(null)
 
@@ -210,8 +224,8 @@ function DepthPreview({ status, socket, layout }) {
       stream="depth"
       socket={socket}
       onChannel={follow}
-      aside={<DepthRange channel={channel} metres={metres} onChange={setMetres} />}
-      {...layout}
+      aside={<DepthRange channel={channel} metres={metres} onChange={setMetres} vertical={beside} />}
+      {...rowLayout(beside)}
       badge={badges(depthIssues(status))}
       alert={needsAction(depthIssues(status))}
     >
@@ -223,13 +237,14 @@ function DepthPreview({ status, socket, layout }) {
 /**
  * Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of
  * their own side by side, filling the height left. Each preview of a row spans the row's three tracks, frame, caption
- * and aside, so its frame starts and ends level with its neighbours' whatever their captions and asides hold; in the
- * depth's row, the asides go beside the frames where those keep a frame at least as wide as tall (`useBeside`).
+ * and aside, so its frame's track starts and ends level with its neighbours' whatever their captions and asides hold;
+ * in the depth's row, each frame has its image's shape, and the asides go beside the frames where those keep a frame
+ * at least as wide as tall (`useBeside`).
  */
 export default function Previews({ status, socket }) {
   const cameras = useCameraNames()
   const rowRef = useRef(null)
-  const layout = rowLayout(useBeside(rowRef))
+  const beside = useBeside(rowRef)
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
@@ -252,9 +267,9 @@ export default function Previews({ status, socket }) {
         data-cameras
         className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:gap-y-0"
       >
-        <DepthPreview status={status} socket={socket} layout={layout} />
+        <DepthPreview status={status} socket={socket} beside={beside} />
         {cameras.map((name) => (
-          <CameraPreview key={name} name={name} status={status} socket={socket} layout={layout} />
+          <CameraPreview key={name} name={name} status={status} socket={socket} beside={beside} />
         ))}
       </div>
     </section>

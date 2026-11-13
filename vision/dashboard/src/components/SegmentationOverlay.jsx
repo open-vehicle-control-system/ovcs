@@ -70,13 +70,15 @@ export default function SegmentationOverlay({ segmentation, classes }) {
 
 /**
  * Every class a segmentation pipeline names, in class order, each with its colour, the road's in bold and those not
- * `present` muted, their colour dimmed, in a grid whose rows depend on the number of classes and the width alone, two
- * columns in the aside beside a preview's frame. Assistive technology hears the present classes alone, the road's said
- * so, and a name cut by its column shows in full on hover.
+ * `present` muted, their colour dimmed, in a grid whose rows depend on the number of classes and the width alone, or,
+ * `vertical`, a class a row. Assistive technology hears the present classes alone, the road's said so, and a name cut
+ * by its column shows in full on hover.
  */
-export function SegmentationLegend({ name, classes, present }) {
+export function SegmentationLegend({ name, classes, present, vertical = false }) {
+  const columns = vertical ? 'grid-cols-1 leading-[0.875rem]' : 'grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-y-0.5'
+
   return (
-    <ul aria-label={`${name} classes`} className="grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-x-3 gap-y-0.5 text-xs">
+    <ul aria-label={`${name} classes`} className={`grid gap-x-3 text-xs ${columns}`}>
       {classes.labels.map((_, id) => {
         const item = classOf(id, classes)
         const isPresent = present.has(id)

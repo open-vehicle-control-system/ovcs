@@ -9,7 +9,9 @@ export const useFrameSize = () => use(FrameSize)
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `aside`
  * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
- * frames level; `asideClassName` can place it beside the frame, the caption spanning both. `onChannel` gets the
+ * frames level; `asideClassName` can place it beside the frame, the caption spanning both. The frame is 16:9 unless
+ * `frameClassName` shapes it, from the image's size it carries once known (`--frame-width`, `--frame-height`), in a
+ * cell of its own, `cellClassName`'s. `onChannel` gets the
  * stream's channel before it joins, to bind its own events, and `overlay`, elements or none, is drawn over the frame
  * once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring around it, frame or not.
  */
@@ -22,7 +24,8 @@ export default function Preview({
   aside,
   alert = false,
   className = '',
-  frameClassName = '',
+  cellClassName = '',
+  frameClassName = 'aspect-video',
   asideClassName = '',
   children
 }) {
@@ -59,27 +62,33 @@ export default function Preview({
 
   return (
     <OvcsCard as="figure" className={`overflow-hidden p-0 ${className}`}>
-      <div className={`relative flex aspect-video items-center justify-center bg-black ${frameClassName}`}>
-        {frame ? (
-          <img
-            src={frame}
-            alt={`${stream} preview`}
-            width={size?.width}
-            height={size?.height}
-            className="h-full w-full object-contain"
-            onLoad={(event) => {
-              const { naturalWidth: width, naturalHeight: height } = event.currentTarget
-              setSize((last) => (last?.width === width && last?.height === height ? last : { width, height }))
-              ack()
-            }}
-            onError={ack}
-          />
-        ) : (
-          <p className="text-sm text-ovcs-muted">No frame</p>
-        )}
-        {frame && size && Children.count(overlay) > 0 ? <FrameSize value={size}>{overlay}</FrameSize> : null}
-        {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
-        {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
+      <div className={cellClassName}>
+        <div
+          data-frame
+          style={size ? { '--frame-width': size.width, '--frame-height': size.height } : undefined}
+          className={`relative flex items-center justify-center bg-black ${frameClassName}`}
+        >
+          {frame ? (
+            <img
+              src={frame}
+              alt={`${stream} preview`}
+              width={size?.width}
+              height={size?.height}
+              className="h-full w-full object-contain"
+              onLoad={(event) => {
+                const { naturalWidth: width, naturalHeight: height } = event.currentTarget
+                setSize((last) => (last?.width === width && last?.height === height ? last : { width, height }))
+                ack()
+              }}
+              onError={ack}
+            />
+          ) : (
+            <p className="text-sm text-ovcs-muted">No frame</p>
+          )}
+          {frame && size && Children.count(overlay) > 0 ? <FrameSize value={size}>{overlay}</FrameSize> : null}
+          {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
+          {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
+        </div>
       </div>
       <figcaption className="col-span-full flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">
