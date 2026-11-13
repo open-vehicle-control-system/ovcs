@@ -50,21 +50,21 @@ function Figures() {
             <th className="pb-1 pr-4 font-medium">
               <span className="sr-only">figure</span>
             </th>
-            <th className="pb-1 pr-4 font-medium">{`new, ${solution.samples} samples`}</th>
-            <th className="pb-1 font-medium">in use</th>
+            <th className="pb-1 pr-4 font-medium">{`new, from ${solution.samples} views`}</th>
+            <th className="pb-1 font-medium">current</th>
           </tr>
         </thead>
         <tbody>
           {solution.cameras.map((camera) => (
-            <Row key={camera.name} label={`${capitalised(camera.name)} RMS`} solved={<RmsValue px={camera.rmsPx} />} />
+            <Row key={camera.name} label={`${capitalised(camera.name)} camera error`} solved={<RmsValue px={camera.rmsPx} />} />
           ))}
           {solution.stereoRmsPx == null ? null : (
             <>
-              <Row label="Stereo RMS" solved={<RmsValue px={solution.stereoRmsPx} />} />
-              <Row label="Baseline" solved={millimetres(solution.baselineM)} inUse={millimetres(inUse?.baselineM)} />
+              <Row label="Pair error" solved={<RmsValue px={solution.stereoRmsPx} />} />
+              <Row label="Distance between cameras" solved={millimetres(solution.baselineM)} inUse={millimetres(inUse?.baselineM)} />
             </>
           )}
-          <Row label="focal length (rectified)" solved={pixels(solution.fxPx)} inUse={pixels(inUse?.rectifiedFx)} />
+          <Row label="Focal length" solved={pixels(solution.fxPx)} inUse={pixels(inUse?.rectifiedFx)} />
         </tbody>
       </table>
     </div>
@@ -83,16 +83,16 @@ export function Solved() {
   }
 
   return (
-    <Section title="Result">
+    <Section title="New calibration">
       <Figures />
       <SessionError />
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={busy} onClick={apply} className={PRIMARY}>
-          Apply
+          Use this calibration
         </button>
         <button
           type="button"
-          aria-label="Download the solved calibration"
+          aria-label="Download the new calibration"
           disabled={!solution}
           onClick={download}
           className={BUTTON}
@@ -110,7 +110,7 @@ export function Solved() {
 /** The unit taking the solved calibration, which cannot be stopped. */
 export function Applying() {
   return (
-    <Section title="Result">
+    <Section title="New calibration">
       <Figures />
       <p role="status" className="text-sm">
         Applying… the unit is taking the calibration.

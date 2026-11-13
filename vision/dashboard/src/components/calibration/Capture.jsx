@@ -41,7 +41,7 @@ export function BoardForm() {
   }
 
   return (
-    <Section title="Calibrate">
+    <Section title="New calibration">
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
         {FIELDS.map(({ key, label, step }) => (
           <label key={key} htmlFor={`${id}-${key}`} className="flex flex-col gap-1 text-sm">
@@ -60,7 +60,7 @@ export function BoardForm() {
           </label>
         ))}
         <button type="submit" disabled={busy || !board} aria-describedby={board ? undefined : `${id}-rule`} className={PRIMARY}>
-          Start
+          Start capturing
         </button>
       </form>
       {board ? null : (
@@ -97,24 +97,26 @@ export function Capturing({ socket }) {
   const cancel = useCalibration((state) => state.cancel)
 
   return (
-    <Section title="Calibrate">
-      <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
-        <Coverage />
-        <div className="flex flex-wrap gap-2">
-          <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
-            Calibrate
-          </button>
-          <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
-            Cancel
-          </button>
-        </div>
-      </div>
+    <Section title="New calibration">
       <BoardHint />
       <SessionError />
-      <div className={`grid min-w-0 gap-3 ${cameras.length > 1 ? 'md:grid-cols-2' : ''}`}>
-        {cameras.map((camera) => (
-          <Preview key={camera} stream={camera} socket={socket} overlay={<CornerOverlay camera={camera} />} />
-        ))}
+      <div className="flex min-w-0 flex-col gap-4 lg:flex-row">
+        <div className={`grid min-w-0 flex-1 gap-3 ${cameras.length > 1 ? 'md:grid-cols-2' : ''}`}>
+          {cameras.map((camera) => (
+            <Preview key={camera} stream={camera} socket={socket} overlay={<CornerOverlay camera={camera} />} />
+          ))}
+        </div>
+        <div className="flex shrink-0 flex-col gap-4 lg:w-56">
+          <Coverage />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
+              Compute calibration
+            </button>
+            <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
+              Cancel
+            </button>
+          </div>
+        </div>
       </div>
     </Section>
   )
@@ -127,9 +129,9 @@ export function Solving() {
   const cancel = useCalibration((state) => state.cancel)
 
   return (
-    <Section title="Calibrate">
+    <Section title="New calibration">
       <p role="status" className="text-sm">
-        {`Calibrating from ${samples} samples…`}
+        {`Computing the calibration from ${samples} views…`}
       </p>
       <div>
         <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>

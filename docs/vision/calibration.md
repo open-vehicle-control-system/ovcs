@@ -19,7 +19,7 @@ Print a chessboard and glue it flat to something rigid; a board that bends gives
 
 Enter the board in **inner corners**, the points where four squares meet, not in squares: a board of 9 × 7 squares has 8 × 6 inner corners. The columns and rows must differ, as a board with as many of each looks the same turned a quarter, and both must be 2 or more. Then enter the side of one square in millimetres. The page starts with 8 × 6 inner corners and 25 mm, and your browser remembers what you enter.
 
-**Start** begins the capture.
+**Start capturing** begins the capture.
 
 ### Capture
 
@@ -31,11 +31,11 @@ A view counts only when both cameras see the whole board, with every corner at l
 - near, with the board filling much of the image, and far;
 - tilted left, right, up and down.
 
-Four bars follow the coverage: **X** and **Y** the spread of positions across and down, **Size** the spread from far to near, **Skew** the spread of tilts. A bar turns green once full. **Calibrate** is enabled once every bar is full, or at 40 samples. **Cancel** ends the session and drops the samples.
+Four gauges beside the previews follow the coverage: **Left to right** and **Top to bottom** the spread of positions across and down, **Near to far** the spread of apparent sizes, **Tilted** the spread of tilts. A gauge turns green once full. **Compute calibration** is enabled once every gauge is full, or at 40 views kept. **Cancel** ends the session and drops the views.
 
 ### Solve and read the errors
 
-**Calibrate** has the unit compute the calibration from the samples, with OpenCV, in the steps and with the defaults of `cameracalibrator`: each camera alone (`plumb_bob` distortion, with `k3` held at 0), then the right camera's position relative to the left one, the intrinsics held, then the rectification. A calibration from the page compares one to one with one from `cameracalibrator` on the same board and moves. **Cancel** stops it and ends the session. When it fails, the capture resumes with the error shown, so you can add samples and try again.
+**Compute calibration** has the unit compute the calibration from the samples, with OpenCV, in the steps and with the defaults of `cameracalibrator`: each camera alone (`plumb_bob` distortion, with `k3` held at 0), then the right camera's position relative to the left one, the intrinsics held, then the rectification. A calibration from the page compares one to one with one from `cameracalibrator` on the same board and moves. **Cancel** stops it and ends the session. When it fails, the capture resumes with the error shown, so you can add samples and try again.
 
 The result shows three reprojection errors, in pixels: how far, on average, the corners the calibration predicts land from the corners found, for each camera and for the pair.
 
@@ -45,11 +45,11 @@ The result shows three reprojection errors, in pixels: how far, on average, the 
 | 0.5 to 2 px | fair |
 | over 2 px | poor: capture again, with more samples and better coverage |
 
-Next to them, the baseline and **focal length (rectified)**, the left camera's focal length after rectification (the `fx` of its projection matrix), with the values of the calibration in use. It differs from the `fx` the In use part shows, the camera's own before rectification. The baseline should match the distance between the two lenses, measured with a ruler: a different one usually means a wrong square size, as the baseline scales with it.
+Next to them, the **Distance between cameras**, the baseline, and the **Focal length**, the left camera's after rectification (the `fx` of its projection matrix), with the values of the current calibration. It differs from the `fx` the Current calibration part shows, the camera's own before rectification. The baseline should match the distance between the two lenses, measured with a ruler: a different one usually means a wrong square size, as the baseline scales with it.
 
-### Apply
+### Use the calibration
 
-- **Apply** has the unit take the calibration. The session shows it applying, which cannot be cancelled, and the outcome follows: the calibration in use changes and the page goes back to the board, or the unit refuses it, its files go back as they were, and the result stays, with the reason. The depth uses the new calibration from one of the next pairs, the ROS 2 exporter's `camera_info` follows without a restart, and the automatic row correction (`right_row_offset`, see [Stereo stages](./stages.md#1-rectification)) starts again from 0.
+- **Use this calibration** has the unit take the calibration. The session shows it applying, which cannot be cancelled, and the outcome follows: the calibration in use changes and the page goes back to the board, or the unit refuses it, its files go back as they were, and the result stays, with the reason. The depth uses the new calibration from one of the next pairs, the ROS 2 exporter's `camera_info` follows without a restart, and the automatic row correction (`right_row_offset`, see [Stereo stages](./stages.md#1-rectification)) starts again from 0.
 - **Download** saves the two YAML files, `<prefix>_left.yaml` and `<prefix>_right.yaml`, where `<prefix>` is the `:stereo` component's `:prefix`, `stereo` by default (`stereo_left.yaml` and `stereo_right.yaml` on the OVCS Mini), to [install in your vehicle package](#install-it-in-your-vehicle-package).
 - **Discard** drops the result and the samples.
 
@@ -83,7 +83,7 @@ A commit, from the dashboard or from `cameracalibrator`, writes the store. Once 
 
 Without a `:calibration_store_dir`, a commit writes the built-in files themselves, and there is nothing to go back to. On a workstation, where Mix links your vehicle's `priv` into its build, those are the files in `vehicles/<vehicle>/priv/calibration/`: `git diff` shows the change.
 
-The page's **In use** part says which is in force: **Built-in**, **Stored on the unit** with the time it was stored, or **None**. It shows each camera's `fx`, `fy`, `cx`, `cy` and distortion, the baseline and the image size, and **Download** saves the two files in use.
+The page's **Current calibration** part says which is in force: **Built into the firmware**, **Saved on the unit** with the time it was saved, or **No calibration**. It shows each camera's `fx`, `fy`, `cx`, `cy` and distortion, the baseline and the image size, and **Download** saves the two files in use.
 
 **Return to built-in**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
 
@@ -114,7 +114,7 @@ A calibration holds for one sensor mode and one lens position. Changing the focu
 
 ## The ROS 2 path
 
-`cameracalibrator`, the ROS 2 calibration tool, runs on a workstation in the `calibrator` service of `compose/local/`, reads the unit's raw camera images over Zenoh and shows its own window, with the same coverage bars. Its **COMMIT** sends each camera's calibration to that camera's `set_camera_info` service on the unit, which writes it where the dashboard does: the store, or the calibration path without one, with a refused calibration taken back. With a store, the unit takes the calibration once both sides' files are stored, a side stored by an earlier commit included: a **COMMIT** on one side alone pairs it with whatever the other side holds, so finish it on both sides. The dashboard's In use part shows it once taken.
+`cameracalibrator`, the ROS 2 calibration tool, runs on a workstation in the `calibrator` service of `compose/local/`, reads the unit's raw camera images over Zenoh and shows its own window, with the same coverage bars. Its **COMMIT** sends each camera's calibration to that camera's `set_camera_info` service on the unit, which writes it where the dashboard does: the store, or the calibration path without one, with a refused calibration taken back. With a store, the unit takes the calibration once both sides' files are stored, a side stored by an earlier commit included: a **COMMIT** on one side alone pairs it with whatever the other side holds, so finish it on both sides. The dashboard's Current calibration part shows it once taken.
 
 It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on by default), a Zenoh router both sides reach, and an X display; the steps are in [`compose/local/calibration_output/README.md`](../../compose/local/calibration_output/README.md). Use it when you want `cameracalibrator`'s saved samples; otherwise the dashboard needs none of this.
 

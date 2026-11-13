@@ -169,7 +169,7 @@ describe('CalibrationPage', () => {
     return render(<CalibrationPage />)
   }
 
-  const inUseCard = () => screen.getByRole('region', { name: 'In use' })
+  const inUseCard = () => screen.getByRole('region', { name: 'Current calibration' })
   const button = (name) => screen.getByRole('button', { name })
   const query = (name) => screen.queryByRole('button', { name })
 
@@ -187,7 +187,7 @@ describe('CalibrationPage', () => {
       show({ inUse: builtIn, session: session() })
 
       const card = inUseCard()
-      expect(card.textContent).toContain('Built-in')
+      expect(card.textContent).toContain('Built into the firmware')
       expect(card.textContent).toContain('912.3')
       expect(card.textContent).toContain('60.1 mm')
       expect(card.textContent).toContain('1280 × 720')
@@ -197,21 +197,21 @@ describe('CalibrationPage', () => {
     it('names a calibration stored on the unit, with its date', () => {
       show({ inUse: stored, session: session() })
 
-      expect(inUseCard().textContent).toContain('Stored on the unit')
+      expect(inUseCard().textContent).toContain('Saved on the unit')
       expect(inUseCard().textContent).toContain('2026')
     })
 
     it('names a unit without a calibration, with nothing to download', () => {
       show({ inUse: none, session: session() })
 
-      expect(inUseCard().textContent).toContain('None')
-      expect(within(inUseCard()).queryByRole('button', { name: 'Download the calibration in use' })).toBeNull()
+      expect(inUseCard().textContent).toContain('No calibration')
+      expect(within(inUseCard()).queryByRole('button', { name: 'Download the current calibration' })).toBeNull()
     })
 
     it("downloads both cameras' YAMLs under the unit's prefix", () => {
       show({ inUse: stored, session: session() })
 
-      fireEvent.click(button('Download the calibration in use'))
+      fireEvent.click(button('Download the current calibration'))
 
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_left.yaml', 'left in use')
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_right.yaml', 'right in use')
@@ -220,29 +220,29 @@ describe('CalibrationPage', () => {
     it('returns to the built-in calibration only when it can, and once confirmed', () => {
       const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
       const { unmount } = show({ inUse: builtIn, session: session() })
-      expect(query('Return to built-in')).toBeNull()
+      expect(query("Go back to the firmware's calibration")).toBeNull()
       unmount()
 
       show({ inUse: stored, session: session() })
-      fireEvent.click(button('Return to built-in'))
+      fireEvent.click(button("Go back to the firmware's calibration"))
       expect(confirm).toHaveBeenCalledTimes(1)
       expect(actions.reset).not.toHaveBeenCalled()
 
-      fireEvent.click(button('Return to built-in'))
+      fireEvent.click(button("Go back to the firmware's calibration"))
       expect(actions.reset).toHaveBeenCalledTimes(1)
     })
 
     it('offers to return to built-in with a side stored alone, the built-in calibration in force', () => {
       show({ inUse: { ...builtIn, canReset: true }, session: session() })
 
-      expect(inUseCard().textContent).toContain('Built-in')
-      expect(button('Return to built-in')).toBeTruthy()
+      expect(inUseCard().textContent).toContain('Built into the firmware')
+      expect(button("Go back to the firmware's calibration")).toBeTruthy()
     })
 
     it('does not return to built-in while a calibration is being applied', () => {
       show({ inUse: stored, session: session({ phase: 'applying', board, result }) })
 
-      expect(button('Return to built-in').disabled).toBe(true)
+      expect(button("Go back to the firmware's calibration").disabled).toBe(true)
     })
   })
 
@@ -254,7 +254,7 @@ describe('CalibrationPage', () => {
       expect(screen.getByLabelText('Inner corners (rows)').value).toBe('6')
       expect(screen.getByLabelText('Square size (mm)').value).toBe('25')
 
-      fireEvent.click(button('Start'))
+      fireEvent.click(button('Start capturing'))
       expect(actions.start).toHaveBeenCalledWith({ columns: 8, rows: 6, squareMm: 25 })
     })
 
@@ -263,7 +263,7 @@ describe('CalibrationPage', () => {
 
       fireEvent.change(screen.getByLabelText('Inner corners (columns)'), { target: { value: '9' } })
       fireEvent.change(screen.getByLabelText('Square size (mm)'), { target: { value: '30.5' } })
-      fireEvent.click(button('Start'))
+      fireEvent.click(button('Start capturing'))
       expect(actions.start).toHaveBeenCalledWith({ columns: 9, rows: 6, squareMm: 30.5 })
       unmount()
 
@@ -286,16 +286,16 @@ describe('CalibrationPage', () => {
       expect(screen.queryByText(rule)).toBeNull()
 
       fireEvent.change(screen.getByLabelText(label), { target: { value: entered } })
-      expect(button('Start').disabled).toBe(true)
-      expect(button('Start').getAttribute('aria-describedby')).toBe(screen.getByText(rule).id)
+      expect(button('Start capturing').disabled).toBe(true)
+      expect(button('Start capturing').getAttribute('aria-describedby')).toBe(screen.getByText(rule).id)
 
-      fireEvent.click(button('Start'))
+      fireEvent.click(button('Start capturing'))
       expect(actions.start).not.toHaveBeenCalled()
     })
   })
 
   describe('capturing', () => {
-    const coverage = () => screen.getByRole('group', { name: 'Coverage' })
+    const coverage = () => screen.getByRole('group', { name: 'Board positions covered' })
 
     it('shows both previews, the four coverage bars and the sample count', () => {
       show({ inUse: stored, session: capturing() })
@@ -305,19 +305,19 @@ describe('CalibrationPage', () => {
       expect(topics).toContain('preview:right')
 
       const bars = within(coverage()).getAllByRole('progressbar')
-      expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual(['X', 'Y', 'Size', 'Skew'])
+      expect(bars.map((bar) => bar.getAttribute('aria-label'))).toEqual(['Left to right', 'Top to bottom', 'Near to far', 'Tilted'])
       expect(bars.map((bar) => bar.getAttribute('aria-valuenow'))).toEqual(['42', '80', '25', '100'])
       expect(coverage().textContent).toContain('42 %')
       expect(coverage().textContent).toContain('100 %')
-      expect(screen.getByText('Samples').parentElement.textContent).toContain('12')
+      expect(screen.getByText('Views kept').parentElement.textContent).toContain('12')
     })
 
     it('calibrates only once the samples are good enough, and cancels', () => {
       show({ inUse: stored, session: capturing() })
-      expect(button('Calibrate').disabled).toBe(true)
+      expect(button('Compute calibration').disabled).toBe(true)
 
       act(() => useCalibration.setState({ session: capturing({ goodEnough: true }) }))
-      fireEvent.click(button('Calibrate'))
+      fireEvent.click(button('Compute calibration'))
       expect(actions.solve).toHaveBeenCalledTimes(1)
 
       fireEvent.click(button('Cancel'))
@@ -371,53 +371,53 @@ describe('CalibrationPage', () => {
   it('shows a solve in progress, which can be cancelled', () => {
     show({ inUse: stored, session: session({ phase: 'solving', board, samples: 40 }) })
 
-    expect(screen.getByText(/Calibrating from 40 samples/)).toBeTruthy()
+    expect(screen.getByText(/Computing the calibration from 40 views/)).toBeTruthy()
     fireEvent.click(button('Cancel'))
     expect(actions.cancel).toHaveBeenCalledTimes(1)
   })
 
   describe('solved', () => {
-    const resultCard = () => screen.getByRole('region', { name: 'Result' })
+    const resultCard = () => screen.getByRole('region', { name: 'New calibration' })
     const rms = (label) => within(resultCard()).getByText(label).closest('tr')
 
     it('reads the reprojection errors in colour and words: good under 0.5 px, fair to 2 px, poor over', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result }) })
 
-      expect(rms('Left RMS').querySelector('.ovcs-status--ok').textContent).toContain('0.31 px, good')
-      expect(rms('Right RMS').querySelector('.ovcs-status--warn').textContent).toContain('0.87 px, fair')
-      expect(rms('Stereo RMS').querySelector('.ovcs-status--error').textContent).toContain('2.40 px, poor')
+      expect(rms('Left camera error').querySelector('.ovcs-status--ok').textContent).toContain('0.31 px, good')
+      expect(rms('Right camera error').querySelector('.ovcs-status--warn').textContent).toContain('0.87 px, fair')
+      expect(rms('Pair error').querySelector('.ovcs-status--error').textContent).toContain('2.40 px, poor')
     })
 
     it('reads 0.5 and 2 px as fair', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, result: { ...result, cameras: [{ ...result.cameras[0], rmsPx: 0.5 }, { ...result.cameras[1], rmsPx: 2 }] } }) })
 
-      expect(rms('Left RMS').textContent).toContain('fair')
-      expect(rms('Right RMS').textContent).toContain('fair')
+      expect(rms('Left camera error').textContent).toContain('fair')
+      expect(rms('Right camera error').textContent).toContain('fair')
     })
 
     it('shows a dash for a focal length and baseline in use the unit does not have', () => {
       show({ inUse: none, session: session({ phase: 'solved', board, result }) })
 
-      expect(rms('focal length (rectified)').querySelectorAll('td')[1].textContent).toBe('–')
-      expect(rms('Baseline').querySelectorAll('td')[1].textContent).toBe('–')
+      expect(rms('Focal length').querySelectorAll('td')[1].textContent).toBe('–')
+      expect(rms('Distance between cameras').querySelectorAll('td')[1].textContent).toBe('–')
     })
 
     it('shows the baseline and the rectified focal length next to the ones in use', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result }) })
 
-      expect(rms('Baseline').textContent).toContain('59.8 mm')
-      expect(rms('Baseline').textContent).toContain('60.1 mm')
-      expect(rms('focal length (rectified)').textContent).toContain('910.1')
-      expect(rms('focal length (rectified)').textContent).toContain('905.7')
+      expect(rms('Distance between cameras').textContent).toContain('59.8 mm')
+      expect(rms('Distance between cameras').textContent).toContain('60.1 mm')
+      expect(rms('Focal length').textContent).toContain('910.1')
+      expect(rms('Focal length').textContent).toContain('905.7')
     })
 
     it('applies, downloads both YAMLs and discards', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result }) })
 
-      fireEvent.click(button('Apply'))
+      fireEvent.click(button('Use this calibration'))
       expect(actions.apply).toHaveBeenCalledTimes(1)
 
-      fireEvent.click(button('Download the solved calibration'))
+      fireEvent.click(button('Download the new calibration'))
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_left.yaml', 'left solved')
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_right.yaml', 'right solved')
 
@@ -429,14 +429,14 @@ describe('CalibrationPage', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, result, error: 'the apply failed; the log says why' }) })
 
       expect(screen.getByRole('alert').textContent).toContain('the apply failed; the log says why')
-      expect(button('Apply')).toBeTruthy()
+      expect(button('Use this calibration')).toBeTruthy()
     })
 
     it('shows an apply in progress, with nothing to apply or discard', () => {
       show({ inUse: stored, session: session({ phase: 'applying', board, result }) })
 
       expect(within(resultCard()).getByText(/Applying/)).toBeTruthy()
-      expect(query('Apply')).toBeNull()
+      expect(query('Use this calibration')).toBeNull()
       expect(query('Discard')).toBeNull()
     })
   })
@@ -460,20 +460,21 @@ describe('CalibrationPage', () => {
     show({ unavailable: true })
 
     expect(screen.getByText(/no camera to calibrate/)).toBeTruthy()
-    expect(query('Start')).toBeNull()
+    expect(query('Start capturing')).toBeNull()
   })
 
   describe('with a camera of its own beside the stereo pair', () => {
     const both = { calibrations: { ovcs_mini: stored, center }, selected: 'ovcs_mini' }
-    it('works on the calibration the menu opened, and names the page after it', () => {
+    it('works on the calibration the menu opened, under no title of its own', () => {
       useNavigation.setState({ page: 'calibration', calibrationId: 'center' })
       show({ ...both, session: session() })
 
       expect(useCalibration.getState().selected).toBe('center')
-      expect(screen.getByRole('heading', { name: 'Center camera' })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('row', { name: /center/ })).toBeTruthy()
+      expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
 
       act(() => useNavigation.setState({ calibrationId: 'ovcs_mini' }))
-      expect(screen.getByRole('heading', { name: 'Stereo cameras' })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('row', { name: /left/ })).toBeTruthy()
     })
 
     it("shows a camera's one calibration, without a baseline, and downloads its YAML", () => {
@@ -483,7 +484,7 @@ describe('CalibrationPage', () => {
       expect(within(inUseCard()).getByRole('row', { name: /center/ }).textContent).toContain('880.5')
       expect(within(inUseCard()).queryByText('baseline')).toBeNull()
 
-      fireEvent.click(button('Download the calibration in use'))
+      fireEvent.click(button('Download the current calibration'))
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center in use']])
     })
 
@@ -491,7 +492,6 @@ describe('CalibrationPage', () => {
       useNavigation.setState({ page: 'calibration', calibrationId: 'ovcs_mini' })
       show({ ...both, session: capturing({ calibration: 'center' }) })
 
-      expect(screen.getByRole('heading', { name: 'Center camera' })).toBeTruthy()
       expect(screen.getByText('center', { selector: 'figcaption span' })).toBeTruthy()
       expect(screen.queryByText('left', { selector: 'figcaption span' })).toBeNull()
     })
@@ -506,13 +506,13 @@ describe('CalibrationPage', () => {
       }
       show({ ...both, session: session({ phase: 'solved', board, calibration: 'center', result: solved }) })
 
-      const figures = screen.getByRole('region', { name: 'Result' })
-      expect(within(figures).getByRole('row', { name: /Center RMS/ }).textContent).toContain('0.20 px, good')
-      expect(within(figures).queryByRole('row', { name: /Stereo RMS/ })).toBeNull()
-      expect(within(figures).queryByRole('row', { name: /Baseline/ })).toBeNull()
-      expect(within(figures).getByRole('row', { name: /focal length/ }).textContent).toContain('870.3 px')
+      const figures = screen.getByRole('region', { name: 'New calibration' })
+      expect(within(figures).getByRole('row', { name: /Center camera error/ }).textContent).toContain('0.20 px, good')
+      expect(within(figures).queryByRole('row', { name: /Pair error/ })).toBeNull()
+      expect(within(figures).queryByRole('row', { name: /Distance between cameras/ })).toBeNull()
+      expect(within(figures).getByRole('row', { name: /Focal length/ }).textContent).toContain('870.3 px')
 
-      fireEvent.click(button('Download the solved calibration'))
+      fireEvent.click(button('Download the new calibration'))
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center solved']])
     })
   })

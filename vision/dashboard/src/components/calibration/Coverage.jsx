@@ -2,10 +2,10 @@ import Gauge from '../Gauge.jsx'
 import { useCalibration } from '../../stores/calibration.js'
 
 const AXES = [
-  { axis: 'x', label: 'X' },
-  { axis: 'y', label: 'Y' },
-  { axis: 'size', label: 'Size' },
-  { axis: 'skew', label: 'Skew' }
+  { axis: 'x', label: 'Left to right' },
+  { axis: 'y', label: 'Top to bottom' },
+  { axis: 'size', label: 'Near to far' },
+  { axis: 'skew', label: 'Tilted' }
 ]
 
 // Each axis follows its own percentage, which changes far less often than the session.
@@ -36,16 +36,16 @@ function SampleCount() {
 
   return (
     <li className="flex flex-col gap-0.5 text-xs">
-      <span className="font-medium text-ovcs-muted">Samples</span>
+      <span className="font-medium text-ovcs-muted">Views kept</span>
       <span className="text-base font-semibold tabular-nums">{samples}</span>
     </li>
   )
 }
 
-/** How far the samples cover the board's position, size and skew, each from 0 to 100 %, and how many there are. */
+/** How far the views kept cover where the board can be: across, up and down, near and far, and tilted, each from 0 to 100 %, then how many views there are. */
 export default function Coverage() {
   return (
-    <ul role="group" aria-label="Coverage" className="grid min-w-0 flex-1 grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-5">
+    <ul role="group" aria-label="Board positions covered" className="flex min-w-0 flex-col gap-3">
       {AXES.map(({ axis, label }) => (
         <Axis key={axis} axis={axis} label={label} />
       ))}

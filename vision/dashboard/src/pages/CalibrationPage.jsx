@@ -1,12 +1,10 @@
 import { useEffect } from 'react'
-import { OvcsPageFrame } from '@ovcs/ui/react'
 import InUse from '../components/calibration/InUse.jsx'
 import { BoardForm, Capturing, Solving } from '../components/calibration/Capture.jsx'
 import { Applying, Solved } from '../components/calibration/Result.jsx'
 import { ActionError } from '../components/calibration/Errors.jsx'
-import { selectedCalibration, useCalibration } from '../stores/calibration.js'
+import { useCalibration } from '../stores/calibration.js'
 import { useNavigation } from '../stores/navigation.js'
-import { calibrationName } from '../services/calibration.js'
 import { useStatus } from '../stores/status.js'
 import { dashboardSocket } from '../services/socket.js'
 
@@ -28,7 +26,7 @@ function Step({ phase }) {
 }
 
 /**
- * One calibration, the one the menu opened: a new one from views of a chessboard, over the one in use. Joining the
+ * One calibration, the one the menu opened and names: a new one from views of a chessboard, over the current one. Joining the
  * calibration channel turns board detection on in the unit, so only this page joins it, while mounted.
  */
 export default function CalibrationPage() {
@@ -36,10 +34,6 @@ export default function CalibrationPage() {
   const select = useCalibration((state) => state.select)
   const unavailable = useCalibration((state) => state.unavailable)
   const phase = useCalibration((state) => state.session?.phase ?? null)
-  const title = useCalibration((state) => {
-    const calibration = selectedCalibration(state)
-    return calibration ? calibrationName(calibration) : 'Calibration'
-  })
   const calibrationId = useNavigation((state) => state.calibrationId)
   const uncalibrated = useStatus((state) => state.snapshot?.calibrated === false)
 
@@ -50,7 +44,7 @@ export default function CalibrationPage() {
   }, [calibrationId, select])
 
   return (
-    <OvcsPageFrame title={title}>
+    <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
       {uncalibrated ? (
         <p className="ovcs-status ovcs-status--warn text-sm text-ovcs-warn-text">
           The unit is uncalibrated: depth starts once a calibration is applied.
@@ -65,6 +59,6 @@ export default function CalibrationPage() {
           <InUse />
         </>
       )}
-    </OvcsPageFrame>
+    </div>
   )
 }

@@ -5,9 +5,9 @@ import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON } from '../../styles.js'
 
-const SOURCES = { builtIn: 'Built-in', stored: 'Stored on the unit', none: 'None' }
+const SOURCES = { builtIn: 'Built into the firmware', stored: 'Saved on the unit', none: 'No calibration' }
 
-const CONFIRM_RESET = 'Return to the built-in calibration? The calibration stored on the unit is deleted.'
+const CONFIRM_RESET = "Go back to the firmware's calibration? The calibration saved on the unit is deleted."
 
 const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
 
@@ -44,12 +44,12 @@ export default function InUse() {
   }
 
   return (
-    <Section title="In use">
+    <Section title="Current calibration">
       {inUse ? (
         <>
           <p className="flex flex-wrap items-center gap-2 text-sm">
             <OvcsBadge tone={inUse.source === 'none' ? 'warn' : 'neutral'}>{SOURCES[inUse.source]}</OvcsBadge>
-            {inUse.storedAt ? <span className="text-ovcs-muted">stored {stamp(inUse.storedAt)}</span> : null}
+            {inUse.storedAt ? <span className="text-ovcs-muted">saved {stamp(inUse.storedAt)}</span> : null}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm tabular-nums">
@@ -84,13 +84,13 @@ export default function InUse() {
           </dl>
           <div className="flex flex-wrap gap-2">
             {inUse.cameras.every((camera) => camera.yaml) ? (
-              <button type="button" aria-label="Download the calibration in use" onClick={download} className={BUTTON}>
+              <button type="button" aria-label="Download the current calibration" onClick={download} className={BUTTON}>
                 Download
               </button>
             ) : null}
             {inUse.canReset ? (
               <button type="button" disabled={busy || applying} onClick={returnToBuiltIn} className={BUTTON}>
-                Return to built-in
+                Go back to the firmware's calibration
               </button>
             ) : null}
           </div>
