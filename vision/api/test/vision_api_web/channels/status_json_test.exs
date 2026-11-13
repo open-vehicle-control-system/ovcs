@@ -167,10 +167,10 @@ defmodule VisionApiWeb.StatusJSONTest do
            } = StatusJSON.status(snapshot)
   end
 
-  test "the API guide lists every issue a pair or depth check can raise" do
-    guide = File.read!(Path.expand("../../../../../docs/vision/api.md", __DIR__))
+  test "the channels guide lists every issue a pair or depth check can raise" do
+    guide = File.read!(Path.expand("../../../../../docs/vision/channels.md", __DIR__))
 
     for issue <- VisionCore.Stereo.PairCheck.issues() ++ VisionCore.Stereo.DepthCheck.issues(),
-        do: assert(guide =~ "`#{issue}`", "docs/vision/api.md does not list #{issue}")
+        do: assert(guide =~ "`#{issue}`", "docs/vision/channels.md does not list #{issue}")
   end
 end
