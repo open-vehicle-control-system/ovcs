@@ -74,11 +74,15 @@ const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-row
 const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:[container-type:size]'
 const ROW_FRAME =
   'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
-// Beside the frame, the aside takes the frame's track in a column of its own, as wide in every preview of the row, and
-// scrolls what its track cannot hold. `ASIDE_REM` is the `9rem` of its track.
-const ASIDE_REM = 9
-const ROW_TILE_BESIDE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)_9rem] lg:grid-rows-subgrid'
-const ROW_ASIDE_BESIDE = 'lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-y-auto lg:pt-2'
+// Beside the frame, the aside sits next to it in its cell, the pair centred together, as tall as the frame and
+// scrolling what it cannot hold; the frame is the largest that leaves the aside's width. `ASIDE_REM` is that width
+// with the gap between them, the `9rem` and `0.75rem` below.
+const ASIDE_REM = 9.75
+const BESIDE_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:gap-3 lg:[container-type:size]'
+const BESIDE_FRAME =
+  'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
+const BESIDE_ASIDE =
+  'w-[9rem] shrink-0 overflow-y-auto py-2 lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))]'
 // Tailwind's `lg`, from which the classes above apply.
 const LG = '(min-width: 1024px)'
 
@@ -117,7 +121,7 @@ function useBeside(ref) {
 /** The classes of a preview of the depth's row, its aside beside its frame or under its caption. */
 const rowLayout = (beside) =>
   beside
-    ? { className: ROW_TILE_BESIDE, cellClassName: ROW_CELL, frameClassName: ROW_FRAME, asideClassName: ROW_ASIDE_BESIDE }
+    ? { className: ROW_TILE, cellClassName: BESIDE_CELL, frameClassName: BESIDE_FRAME, asideClassName: BESIDE_ASIDE, asideBeside: true }
     : { className: ROW_TILE, cellClassName: ROW_CELL, frameClassName: ROW_FRAME }
 
 /** The latest results of the detection channels drawn on the preview of `source`: their overlays, and all their objects, `null` before any answers. */
@@ -197,6 +201,8 @@ function LeftPreview({ status, socket }) {
       socket={socket}
       overlay={overlays}
       className={PAIR_TILE}
+      cellClassName={ROW_CELL}
+      frameClassName={ROW_FRAME}
       badge={badges(cameraIssues(status?.cameras?.left))}
       alert={needsAction(cameraIssues(status?.cameras?.left))}
     >
@@ -248,14 +254,16 @@ export default function Previews({ status, socket }) {
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
-      {/* The asides' track takes the height the pair's checks add, under the captions. */}
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0">
+      {/* The asides' track takes the height the pair's checks add, under the captions; from `lg` both rows share the height. */}
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)_auto_auto]">
         <LeftPreview status={status} socket={socket} />
         <PairStatus status={status} />
         <Preview
           stream="right"
           socket={socket}
           className={PAIR_TILE}
+          cellClassName={ROW_CELL}
+          frameClassName={ROW_FRAME}
           badge={badges(cameraIssues(status?.cameras?.right))}
           alert={needsAction(cameraIssues(status?.cameras?.right))}
         >

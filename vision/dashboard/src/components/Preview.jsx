@@ -9,7 +9,7 @@ export const useFrameSize = () => use(FrameSize)
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `aside`
  * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
- * frames level; `asideClassName` can place it beside the frame, the caption spanning both. The frame is 16:9 unless
+ * frames level, or, `asideBeside`, next to the frame in its cell, the two kept together. The frame is 16:9 unless
  * `frameClassName` shapes it, from the image's size it carries once known (`--frame-width`, `--frame-height`), in a
  * cell of its own, `cellClassName`'s. `onChannel` gets the
  * stream's channel before it joins, to bind its own events, and `overlay`, elements or none, is drawn over the frame
@@ -27,6 +27,7 @@ export default function Preview({
   cellClassName = '',
   frameClassName = 'aspect-video',
   asideClassName = '',
+  asideBeside = false,
   children
 }) {
   const [frame, setFrame] = useState(null)
@@ -62,12 +63,11 @@ export default function Preview({
 
   return (
     <OvcsCard as="figure" className={`overflow-hidden p-0 ${className}`}>
-      <div className={cellClassName}>
-        <div
-          data-frame
-          style={size ? { '--frame-width': size.width, '--frame-height': size.height } : undefined}
-          className={`relative flex items-center justify-center bg-black ${frameClassName}`}
-        >
+      <div
+        className={cellClassName}
+        style={size ? { '--frame-width': size.width, '--frame-height': size.height } : undefined}
+      >
+        <div data-frame className={`relative flex items-center justify-center bg-black ${frameClassName}`}>
           {frame ? (
             <img
               src={frame}
@@ -89,6 +89,11 @@ export default function Preview({
           {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
           {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
         </div>
+        {asideBeside ? (
+          <div data-aside data-beside className={`flex flex-col gap-1.5 text-sm ${asideClassName}`}>
+            {aside}
+          </div>
+        ) : null}
       </div>
       <figcaption className="col-span-full flex flex-col gap-1.5 px-3 py-2 text-sm">
         <div className="flex items-baseline gap-2">
@@ -101,9 +106,13 @@ export default function Preview({
         </div>
         {children}
       </figcaption>
-      <div data-aside className={`flex flex-col gap-1.5 px-3 pb-2 text-sm empty:p-0 ${asideClassName}`}>
-        {aside}
-      </div>
+      {asideBeside ? (
+        <div data-aside-track aria-hidden="true" />
+      ) : (
+        <div data-aside className={`flex flex-col gap-1.5 px-3 pb-2 text-sm empty:p-0 ${asideClassName}`}>
+          {aside}
+        </div>
+      )}
     </OvcsCard>
   )
 }

@@ -75,10 +75,13 @@ export default function SegmentationOverlay({ segmentation, classes }) {
  * by its column shows in full on hover.
  */
 export function SegmentationLegend({ name, classes, present, vertical = false }) {
-  const columns = vertical ? 'grid-cols-1 leading-[0.875rem]' : 'grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-y-0.5'
+  // Upright, the classes spread over the height they have, never closer than a line apart.
+  const layout = vertical
+    ? 'flex min-h-max flex-1 flex-col justify-between leading-4'
+    : 'grid grid-cols-[repeat(auto-fill,minmax(5rem,1fr))] gap-x-3 gap-y-0.5'
 
   return (
-    <ul aria-label={`${name} classes`} className={`grid gap-x-3 text-xs ${columns}`}>
+    <ul aria-label={`${name} classes`} className={`text-xs ${layout}`}>
       {classes.labels.map((_, id) => {
         const item = classOf(id, classes)
         const isPresent = present.has(id)

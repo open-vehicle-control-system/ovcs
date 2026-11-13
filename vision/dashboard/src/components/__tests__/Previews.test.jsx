@@ -242,11 +242,8 @@ describe('Previews', () => {
       act(() => observers.forEach((callback) => callback([])))
     }
 
-    // A preview's aside: its last part, after its frame and caption.
-    const aside = (stream) => {
-      const last = figure(stream).lastElementChild
-      return last.hasAttribute('data-aside') ? last : null
-    }
+    // A preview's aside: its last part, after its frame and caption, or beside its frame in its cell.
+    const aside = (stream) => figure(stream).querySelector('[data-aside]')
     const classes = (element) => element.className.split(' ')
     const cellOf = (stream) => figure(stream).firstElementChild
     const frameOf = (stream) => figure(stream).querySelector('[data-frame]')
@@ -293,8 +290,8 @@ describe('Previews', () => {
 
     it('gives every preview an aside under its caption, empty with nothing to show, sized by the row it shares with its neighbours', () => {
       renderAll()
-      // The frame beside a 9rem aside would be 319 px wide and 320 px tall.
-      previewsSized(463, 400, 80)
+      // The frame beside a 9rem aside and its 0.75rem gap would be 319 px wide and 320 px tall.
+      previewsSized(475, 400, 80)
 
       const streams = ['left', 'right', 'depth', 'hq', 'usb']
       for (const stream of streams) expect(aside(stream)).not.toBeNull()
@@ -321,19 +318,21 @@ describe('Previews', () => {
       }
     })
 
-    it("puts the asides of the depth's row beside their frames, from lg, once the frame left is as wide as tall", () => {
+    it("puts the asides of the depth's row next to their frames, from lg, once the frame left is as wide as tall", () => {
       renderAll()
-      previewsSized(464, 400, 80)
+      previewsSized(476, 400, 80)
 
       const row = document.querySelector('[data-cameras]')
       for (const stream of ['depth', 'hq', 'usb']) {
-        expect(classes(figure(stream))).toEqual(
-          expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)_9rem]', 'lg:grid-rows-subgrid'])
-        )
-        // The aside takes the frame's track, in a column as wide in every preview, empty or not; the caption spans both columns.
-        expect(classes(aside(stream))).toEqual(expect.arrayContaining(['lg:col-start-2', 'lg:row-start-1']))
+        // The aside sits after the frame in its cell, the two centred together, as wide in every preview, empty or not.
+        expect(aside(stream).parentElement).toBe(cellOf(stream))
+        expect(aside(stream).previousElementSibling).toBe(frameOf(stream))
+        expect(classes(aside(stream))).toEqual(expect.arrayContaining(['w-[9rem]', 'shrink-0', 'overflow-y-auto']))
         expect(aside(stream).className).toBe(aside('depth').className)
-        expect(classes(captionOf(stream))).toContain('col-span-full')
+        expect(classes(cellOf(stream))).toEqual(expect.arrayContaining(['lg:flex', 'lg:justify-center', 'lg:gap-3']))
+        // The row keeps its third track, empty, after the caption.
+        expect(figure(stream).lastElementChild.hasAttribute('data-aside-track')).toBe(true)
+        expect(classes(figure(stream))).toEqual(expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)]', 'lg:grid-rows-subgrid']))
         expect(figure(stream).parentElement).toBe(row)
       }
       expect(aside('depth').querySelector('[data-colour-scale]')).not.toBeNull()
@@ -341,46 +340,43 @@ describe('Previews', () => {
       expect(aside('usb').childElementCount).toBe(0)
 
       // The pair's row keeps its asides under the captions, where they take the height the pair's checks add.
-      for (const stream of ['left', 'right']) {
-        expect(classes(figure(stream))).toEqual(expect.arrayContaining(['grid-cols-[minmax(0,1fr)]']))
-        expect(aside(stream).className).not.toContain('col-start')
-      }
+      for (const stream of ['left', 'right']) expect(aside(stream).parentElement).toBe(figure(stream))
 
-      previewsSized(464, 401, 80)
+      previewsSized(476, 401, 80)
       expect(aside('depth').className).toBe(aside('left').className)
-      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)]')
+      expect(aside('depth').parentElement).toBe(figure('depth'))
     })
 
-    it('stands the colour scale up and lists the classes in one column, in class order, beside their frames', () => {
+    it('stands the colour scale up and spreads the classes in one column, in class order, beside their frames', () => {
       renderAll()
-      previewsSized(464, 400, 80)
+      previewsSized(476, 400, 80)
 
       expect(scale().dataset.orientation).toBe('vertical')
       expect(slider().getAttribute('aria-orientation')).toBe('vertical')
-      expect(classes(legend())).toContain('grid-cols-1')
+      expect(classes(legend())).toEqual(expect.arrayContaining(['flex-col', 'justify-between', 'min-h-max']))
       expect(legend().className).not.toContain('auto-fill')
       expect([...legend().querySelectorAll('li')].map((item) => item.dataset.class)).toEqual(['road', 'sky'])
 
-      previewsSized(464, 401, 80)
+      previewsSized(476, 401, 80)
       expect(scale().dataset.orientation).toBe('horizontal')
-      expect(classes(legend())).not.toContain('grid-cols-1')
+      expect(classes(legend())).not.toContain('flex-col')
     })
 
     it('keeps the asides under the captions below lg, whatever the previews measure', () => {
       vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
       renderAll()
-      previewsSized(464, 400, 80)
+      previewsSized(476, 400, 80)
 
       expect(aside('depth').className).toBe(aside('left').className)
       expect(scale().dataset.orientation).toBe('horizontal')
-      expect(classes(legend())).not.toContain('grid-cols-1')
+      expect(classes(legend())).not.toContain('flex-col')
     })
 
     it('places the asides again as the window crosses lg', () => {
       const query = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
       vi.stubGlobal('matchMedia', vi.fn(() => query))
       renderAll()
-      previewsSized(464, 400, 80)
+      previewsSized(476, 400, 80)
       expect(window.matchMedia).toHaveBeenCalledWith('(min-width: 1024px)')
       expect(scale().dataset.orientation).toBe('horizontal')
 
@@ -390,47 +386,49 @@ describe('Previews', () => {
       expect(scale().dataset.orientation).toBe('vertical')
     })
 
-    it("fits each frame of the depth's row to its image's shape in the frame's track, from lg, and keeps the pair's 16:9", () => {
+    it("fits every frame to its image's shape in the frame's track, from lg, in both rows", () => {
       const push = renderAll()
-      for (const stream of ['depth', 'hq']) loadFrame(push, stream, 640, 480)
+      for (const stream of ['depth', 'hq', 'left']) loadFrame(push, stream, 640, 480)
 
       for (const beside of [false, true]) {
-        previewsSized(beside ? 464 : 463, 400, 80)
-        for (const stream of ['depth', 'hq', 'usb']) {
+        previewsSized(beside ? 476 : 475, 400, 80)
+        for (const stream of ['left', 'right', 'depth', 'hq', 'usb']) {
           // The cell takes the frame's track and measures it; the frame is the largest box of its shape in it.
           expect(classes(cellOf(stream))).toEqual(
             expect.arrayContaining(['lg:flex', 'lg:min-h-0', 'lg:items-start', 'lg:justify-center', 'lg:[container-type:size]'])
           )
-          expect(cellOf(stream).className).toBe(cellOf('depth').className)
           expect(frameOf(stream).parentElement).toBe(cellOf(stream))
-          expect(classes(frameOf(stream))).toEqual(
-            expect.arrayContaining([
-              'aspect-[var(--frame-width,16)/var(--frame-height,9)]',
-              'lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]',
-              'lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))]'
-            ])
-          )
+          expect(classes(frameOf(stream))).toContain('aspect-[var(--frame-width,16)/var(--frame-height,9)]')
           expect(classes(frameOf(stream))).not.toContain('aspect-video')
+        }
+        for (const stream of ['hq', 'usb']) {
+          expect(cellOf(stream).className).toBe(cellOf('depth').className)
           expect(frameOf(stream).className).toBe(frameOf('depth').className)
         }
+        // Beside, the frame leaves its aside's width; under, it takes the whole track.
+        expect(classes(frameOf('depth'))).toContain(
+          beside
+            ? 'lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
+            : 'lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
+        )
       }
-      for (const stream of ['depth', 'hq']) {
-        expect([frameOf(stream).style.getPropertyValue('--frame-width'), frameOf(stream).style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
+      for (const stream of ['depth', 'hq', 'left']) {
+        expect([cellOf(stream).style.getPropertyValue('--frame-width'), cellOf(stream).style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
       }
       // Without a frame yet, a preview keeps a 16:9 box.
-      expect(frameOf('usb').style.getPropertyValue('--frame-width')).toBe('')
+      expect(cellOf('usb').style.getPropertyValue('--frame-width')).toBe('')
 
-      for (const stream of ['left', 'right']) {
-        expect(classes(frameOf(stream))).toContain('aspect-video')
-        expect(cellOf(stream).className).toBe('')
-      }
+      // Both rows share the height from lg.
+      const pairRow = screen.getByRole('list', { name: 'Camera pair' }).parentElement
+      expect(classes(pairRow)).toEqual(expect.arrayContaining(['lg:flex-1', 'lg:min-h-0', 'lg:grid-rows-[minmax(0,1fr)_auto_auto]']))
+      expect(classes(document.querySelector('[data-cameras]'))).toContain('lg:flex-1')
     })
 
     it('places the asides as the row mounts, before its observer reports', () => {
-      previewsSized(464, 400, 80)
+      previewsSized(476, 400, 80)
       renderAll()
 
-      expect(classes(figure('depth'))).toContain('lg:grid-cols-[minmax(0,1fr)_9rem]')
+      expect(aside('depth').parentElement).toBe(cellOf('depth'))
     })
 
     it('keeps the asides under the captions without an observer to measure the previews', () => {
