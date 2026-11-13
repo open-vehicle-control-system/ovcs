@@ -1,25 +1,29 @@
 defmodule VisionCore.Calibration.Session do
   @moduledoc """
-  The stereo unit's calibration session: one per unit, shared by every
-  dashboard.
+  The unit's calibration session: one per unit, shared by every
+  dashboard, on one of its targets at a time (`VisionCore.Calibration`),
+  its stereo pair or a camera of its own.
 
-  `start/1` begins capturing views of a `VisionCore.Calibration.Board`.
-  While at least one process is subscribed (`subscribe/0`), at most
-  `:detect_hz` times a second, the session takes the latest left frame
-  and the right frame closest to it in capture time, within
-  `:pair_tolerance_ms`, and looks for the board in both. Frames arriving
-  meanwhile replace each other. A pair where both sides see the board
-  becomes a sample when its left view is far enough from every sample
-  kept (`VisionCore.Calibration.Coverage.good_sample?/2`). Without a
-  subscriber nothing is detected, and the samples stay. A side whose
+  `start/2` begins capturing views of a `VisionCore.Calibration.Board`
+  with a target's cameras. While at least one process is subscribed
+  (`subscribe/0`), at most `:detect_hz` times a second, the session looks
+  for the board in the target's latest frames: for a stereo pair, the
+  latest left frame and the right frame closest to it in capture time,
+  within `:pair_tolerance_ms`; for a camera, its latest frame. Frames
+  arriving meanwhile replace each other. A detection where every camera
+  sees the board becomes a sample when its first camera's view is far
+  enough from every sample kept
+  (`VisionCore.Calibration.Coverage.good_sample?/2`). Without a
+  subscriber nothing is detected, and the samples stay. A camera whose
   detection answers an error, such as a frame that does not decode, is
   logged once, then again only after one of its detections has worked.
 
   `solve/0`, once the samples are `good_enough`, runs
   `VisionCore.Calibration.Solver` on them. `apply/0` commits the solved
-  pair (`VisionCore.Stereo.Calibration.commit/2`) and answers at once:
-  the outcome comes as the next state. A commit ends the session, a
-  refusal leaves it solved, with the error. `cancel/0` ends the session
+  calibration (`VisionCore.Stereo.Calibration.commit/2` for a pair,
+  `VisionCore.Camera.Calibration.commit/3` for a camera) and answers at
+  once: the outcome comes as the next state. A commit ends the session,
+  a refusal leaves it solved, with the error. `cancel/0` ends the session
   at any point but during an apply, killing a running solve.
 
   The phases: `:idle`, `:capturing`, `:solving`, `:solved`, `:applying`,
@@ -31,10 +35,10 @@ defmodule VisionCore.Calibration.Session do
   linked to the session: a commit, which may restart the stereo unit,
   outlives whoever asked for it.
 
-  The session takes both cameras' frames from `start/1` until it is idle
+  The session takes its target's frames from `start/2` until it is idle
   again, and none outside a session. `VisionCore.Outputs` holds the
-  subscriptions, keyed by camera name, across the cameras' restarts,
-  such as the one a first calibration's commit causes.
+  subscriptions across the cameras' restarts, such as the one a first
+  calibration's commit causes.
 
   Each subscriber receives `{:calibration_session, state}` on every
   change; a change of the last detection alone, at most `:detect_hz`
@@ -42,41 +46,47 @@ defmodule VisionCore.Calibration.Session do
 
   ## Options
 
-    * `:config` (required) — the active `VisionCore.Config`, with the
-      `:stereo` component.
+    * `:config` (required) — the active `VisionCore.Config`.
     * `:detect_hz` (4) — the most detections a second.
     * `:pair_tolerance_ms` (the `:stereo` component's, else 33) — the
       largest capture time gap of a pair.
     * `:detect` (`VisionCore.Calibration.Chessboard.detect/2`),
       `:solve` (`VisionCore.Calibration.Solver.solve/3`),
-      `:commit` (`VisionCore.Stereo.Calibration.commit/2`) — what the
-      tasks run.
+      `:commit` (`VisionCore.Stereo.Calibration.commit/2`),
+      `:solve_camera` (`VisionCore.Calibration.Solver.solve_camera/3`),
+      `:commit_camera` (`VisionCore.Camera.Calibration.commit/3`) — what
+      the tasks run.
   """
   use GenServer
   require Logger
 
+  alias VisionCore.Calibration
   alias VisionCore.Calibration.{Board, Chessboard, Coverage, Solver}
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @tasks VisionCore.Calibration.Tasks
   @default_detect_hz 4
   @default_pair_tolerance_ms 33
-  @right_frames_kept 4
-  @not_running "the stereo cameras are not running"
+  @frames_kept 4
 
   @type phase :: :idle | :capturing | :solving | :solved | :applying
   @type fractions :: [{float(), float()}]
+  @typedoc """
+  The session as its subscribers see it. `target` is the id and kind of
+  the target being calibrated, `detection` the board's corners in each
+  camera's last frame, by the frames' label, as fractions of the frame,
+  and `result` the solve's, a pair's or a camera's.
+  """
   @type state :: %{
           phase: phase(),
+          target: %{id: String.t(), kind: :stereo | :camera} | nil,
           board: Board.t() | nil,
           samples: non_neg_integer(),
           progress: Coverage.params(),
           good_enough: boolean(),
-          detection:
-            %{left: fractions() | nil, right: fractions() | nil, sample: boolean()} | nil,
-          result: Solver.result() | nil,
+          detection: %{views: %{String.t() => fractions() | nil}, sample: boolean()} | nil,
+          result: Solver.result() | Solver.camera_result() | nil,
           error: String.t() | nil
         }
 
@@ -92,9 +102,14 @@ defmodule VisionCore.Calibration.Session do
   @spec subscribe() :: {:ok, state()}
   def subscribe, do: GenServer.call(__MODULE__, :subscribe)
 
-  @doc "Starts capturing views of `board`. Refused while a session runs, or the cameras do not."
-  @spec start(Board.t()) :: :ok | {:error, String.t()}
-  def start(%Board{} = board), do: GenServer.call(__MODULE__, {:start, board})
+  @doc """
+  Starts capturing views of `board` with the cameras of the target `id`.
+  Refused while a session runs, or the cameras do not;
+  `{:error, :not_found}` for an id that is none of the unit's targets.
+  """
+  @spec start(String.t(), Board.t()) :: :ok | {:error, :not_found | String.t()}
+  def start(id, %Board{} = board) when is_binary(id),
+    do: GenServer.call(__MODULE__, {:start, id, board})
 
   @doc """
   Ends the session, killing a running solve. Refused during an apply:
@@ -130,22 +145,22 @@ defmodule VisionCore.Calibration.Session do
      Map.merge(
        %{
          config: config,
-         cameras: StereoSupervisor.cameras(config),
-         frame_keys:
-           for({{:camera_frame, _side}, key} <- StereoSupervisor.outputs(config), do: key),
+         targets: Calibration.targets(config),
          interval_ms: max(1, round(1_000 / detect_hz)),
          pair_tolerance_ns: tolerance_ms * 1_000_000,
          detect: Keyword.get(opts, :detect, &Chessboard.detect/2),
          solve: Keyword.get(opts, :solve, &Solver.solve/3),
          commit: Keyword.get(opts, :commit, &VisionCore.Stereo.Calibration.commit/2),
+         solve_camera: Keyword.get(opts, :solve_camera, &Solver.solve_camera/3),
+         commit_camera:
+           Keyword.get(opts, :commit_camera, &VisionCore.Camera.Calibration.commit/3),
          subscribers: %{},
          task: nil,
          tick: nil,
-         left: nil,
-         rights: [],
+         frames: %{},
          last_broadcast_ms: nil,
          pending_broadcast: nil,
-         failing_sides: MapSet.new()
+         failing: MapSet.new()
        },
        idle()
      )}
@@ -164,6 +179,7 @@ defmodule VisionCore.Calibration.Session do
   defp idle,
     do: %{
       phase: :idle,
+      target: nil,
       board: nil,
       samples: [],
       size: nil,
@@ -182,17 +198,23 @@ defmodule VisionCore.Calibration.Session do
     {:reply, {:ok, public(state)}, settle(state)}
   end
 
-  def handle_call({:start, board}, _from, %{phase: :idle} = state) do
-    if cameras_running?(state.cameras) do
-      for key <- state.frame_keys, do: :ok = Outputs.subscribe(key)
-      state = %{state | phase: :capturing, board: board}
-      {:reply, :ok, state |> broadcast() |> settle()}
-    else
-      {:reply, {:error, @not_running}, state}
+  def handle_call({:start, id, board}, _from, %{phase: :idle} = state) do
+    case Enum.find(state.targets, &(&1.id == id)) do
+      nil ->
+        {:reply, {:error, :not_found}, state}
+
+      target ->
+        if cameras_running?(target.servers) do
+          for key <- target.frame_keys, do: :ok = Outputs.subscribe(key)
+          state = %{state | phase: :capturing, target: target, board: board}
+          {:reply, :ok, state |> broadcast() |> settle()}
+        else
+          {:reply, {:error, not_running(target)}, state}
+        end
     end
   end
 
-  def handle_call({:start, _board}, _from, state),
+  def handle_call({:start, _id, _board}, _from, state),
     do: {:reply, {:error, "a calibration session is already running"}, state}
 
   def handle_call(:cancel, _from, %{phase: :applying} = state),
@@ -207,10 +229,9 @@ defmodule VisionCore.Calibration.Session do
 
   def handle_call(:solve, _from, %{phase: :capturing} = state) do
     if Coverage.good_enough?(sample_parameters(state)) do
-      %{solve: solve, board: board, size: size} = state
-      samples = for sample <- state.samples, do: Map.take(sample, [:left, :right])
+      solve = solver(state)
       state = stop_task(state)
-      task = Task.Supervisor.async_nolink(@tasks, fn -> solve.(board, size, samples) end)
+      task = Task.Supervisor.async_nolink(@tasks, solve)
       state = %{state | phase: :solving, task: {:solve, task}, detection: nil, error: nil}
       {:reply, :ok, state |> broadcast() |> settle()}
     else
@@ -222,9 +243,7 @@ defmodule VisionCore.Calibration.Session do
     do: {:reply, {:error, "the session is not capturing"}, state}
 
   def handle_call(:apply, _from, %{phase: :solved, result: result} = state) do
-    %{commit: commit, config: config} = state
-    calibrations = %{left: result.left, right: result.right}
-    task = Task.Supervisor.async_nolink(@tasks, fn -> commit.(config, calibrations) end)
+    task = Task.Supervisor.async_nolink(@tasks, committer(state, result))
     state = %{state | phase: :applying, task: {:commit, task}, error: nil}
     {:reply, :ok, broadcast(state)}
   end
@@ -267,73 +286,103 @@ defmodule VisionCore.Calibration.Session do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp end_session(state) do
-    for key <- state.frame_keys, do: :ok = Outputs.unsubscribe(key)
+    for key <- state.target.frame_keys, do: :ok = Outputs.unsubscribe(key)
     Map.merge(state, idle())
   end
 
   defp cameras_running?([]), do: false
+  defp cameras_running?(servers), do: Enum.all?(servers, &(GenServer.whereis(&1) != nil))
 
-  defp cameras_running?(cameras),
-    do: Enum.all?(cameras, fn {_driver, name} -> GenServer.whereis(name) != nil end)
+  defp not_running(%{kind: :stereo}), do: "the stereo cameras are not running"
+  defp not_running(%{kind: :camera}), do: "the camera is not running"
+
+  defp solver(%{target: %{kind: :stereo}, solve: solve, board: board, size: size} = state) do
+    samples =
+      for %{views: views} <- state.samples, do: %{left: views["left"], right: views["right"]}
+
+    fn -> solve.(board, size, samples) end
+  end
+
+  defp solver(%{target: %{kind: :camera, labels: [label]}, board: board, size: size} = state) do
+    %{solve_camera: solve} = state
+    views = for %{views: views} <- state.samples, do: views[label]
+    fn -> solve.(board, size, views) end
+  end
+
+  defp committer(%{target: %{kind: :stereo}, commit: commit, config: config}, result),
+    do: fn -> commit.(config, %{left: result.left, right: result.right}) end
+
+  defp committer(%{target: %{kind: :camera, name: name}, config: config} = state, result) do
+    %{commit_camera: commit} = state
+    fn -> commit.(config, name, result.camera) end
+  end
 
   defp detecting?(state), do: state.phase == :capturing and state.subscribers != %{}
 
-  defp keep_frame(state, %Frame{label: "left"} = frame), do: %{state | left: frame}
-
-  defp keep_frame(state, %Frame{label: "right"} = frame),
-    do: %{state | rights: Enum.take([frame | state.rights], @right_frames_kept)}
-
-  defp keep_frame(state, _frame), do: state
+  # The newest frames of each of the target's cameras, by label; a frame of another camera is dropped.
+  defp keep_frame(%{target: %{labels: labels}} = state, %Frame{label: label} = frame) do
+    if label in labels do
+      kept = Enum.take([frame | Map.get(state.frames, label, [])], @frames_kept)
+      %{state | frames: Map.put(state.frames, label, kept)}
+    else
+      state
+    end
+  end
 
   # One tick pending while detecting; the frames go once nothing is detected.
   defp settle(state) do
     cond do
-      not detecting?(state) -> %{state | left: nil, rights: []}
+      not detecting?(state) -> %{state | frames: %{}}
       state.tick == nil -> %{state | tick: Process.send_after(self(), :tick, state.interval_ms)}
       true -> state
     end
   end
 
-  defp detect(%{task: nil, left: %Frame{} = left} = state) do
-    case closest(left, state.rights, state.pair_tolerance_ns) do
-      nil ->
-        state
-
-      right ->
-        %{detect: detect, board: board} = state
-
-        task =
-          Task.Supervisor.async_nolink(@tasks, fn -> detect_pair(detect, board, left, right) end)
-
-        %{state | task: {:detect, task}, left: nil}
+  defp detect(%{task: nil, target: %{labels: [first | others]}} = state) do
+    with [%Frame{} = frame | _older] <- Map.get(state.frames, first),
+         partners when is_list(partners) <- partners(state, frame, others) do
+      %{detect: detect, board: board} = state
+      frames = [frame | partners]
+      task = Task.Supervisor.async_nolink(@tasks, fn -> detect_frames(detect, board, frames) end)
+      %{state | task: {:detect, task}, frames: Map.delete(state.frames, first)}
+    else
+      _no_frames -> state
     end
   end
 
   defp detect(state), do: state
 
-  defp closest(left, rights, tolerance_ns) do
-    rights
-    |> Enum.filter(&(abs(&1.capture_ns - left.capture_ns) <= tolerance_ns))
-    |> Enum.min_by(&abs(&1.capture_ns - left.capture_ns), fn -> nil end)
+  # The frame of each other camera closest in capture time to `frame`, `nil` when one has none close enough.
+  defp partners(state, frame, labels) do
+    Enum.reduce_while(labels, [], fn label, partners ->
+      case closest(frame, Map.get(state.frames, label, []), state.pair_tolerance_ns) do
+        nil -> {:halt, nil}
+        partner -> {:cont, partners ++ [partner]}
+      end
+    end)
   end
 
-  defp detect_pair(detect, board, left, right) do
-    left_found = detect.(left, board)
-    right_found = detect.(right, board)
-    left_corners = corners(left_found)
-    right_corners = corners(right_found)
-    size = {left.width, left.height}
+  defp closest(frame, others, tolerance_ns) do
+    others
+    |> Enum.filter(&(abs(&1.capture_ns - frame.capture_ns) <= tolerance_ns))
+    |> Enum.min_by(&abs(&1.capture_ns - frame.capture_ns), fn -> nil end)
+  end
+
+  defp detect_frames(detect, board, [first | _others] = frames) do
+    found = for frame <- frames, do: {frame.label, detect.(frame, board)}
+    views = Map.new(found, fn {label, answer} -> {label, corners(answer)} end)
+    sizes = Map.new(frames, &{&1.label, {&1.width, &1.height}})
 
     parameters =
-      if left_corners && right_corners, do: Coverage.parameters(left_corners, board, size)
+      if Enum.all?(Map.values(views)),
+        do: Coverage.parameters(views[first.label], board, sizes[first.label])
 
     %{
-      left: left_corners,
-      right: right_corners,
+      first: first.label,
+      views: views,
+      sizes: sizes,
       parameters: parameters,
-      left_size: size,
-      right_size: {right.width, right.height},
-      errors: [left: detect_error(left_found), right: detect_error(right_found)]
+      errors: for({label, answer} <- found, do: {label, detect_error(answer)})
     }
   end
 
@@ -351,18 +400,18 @@ defmodule VisionCore.Calibration.Session do
         Coverage.good_sample?(found.parameters, sample_parameters(state))
 
     detection = %{
-      left: fractions(found.left, found.left_size),
-      right: fractions(found.right, found.right_size),
+      views:
+        Map.new(found.views, fn {label, view} -> {label, fractions(view, found.sizes[label])} end),
       sample: sample?
     }
 
     if sample? do
-      sample = %{left: found.left, right: found.right, parameters: found.parameters}
+      sample = %{views: found.views, parameters: found.parameters}
 
       broadcast(%{
         state
         | samples: state.samples ++ [sample],
-          size: state.size || found.left_size,
+          size: state.size || found.sizes[found.first],
           detection: detection
       })
     else
@@ -382,19 +431,19 @@ defmodule VisionCore.Calibration.Session do
     do: broadcast(%{state | phase: :solved, error: message})
 
   defp log_detect_errors(state, errors) do
-    failing_sides =
-      Enum.reduce(errors, state.failing_sides, fn
-        {side, nil}, failing_sides ->
-          MapSet.delete(failing_sides, side)
+    failing =
+      Enum.reduce(errors, state.failing, fn
+        {label, nil}, failing ->
+          MapSet.delete(failing, label)
 
-        {side, reason}, failing_sides ->
-          if not MapSet.member?(failing_sides, side),
-            do: Logger.warning("#{__MODULE__} #{side} detection failed: #{inspect(reason)}")
+        {label, reason}, failing ->
+          if not MapSet.member?(failing, label),
+            do: Logger.warning("#{__MODULE__} #{label} detection failed: #{inspect(reason)}")
 
-          MapSet.put(failing_sides, side)
+          MapSet.put(failing, label)
       end)
 
-    %{state | failing_sides: failing_sides}
+    %{state | failing: failing}
   end
 
   defp crashed(state, :detect, reason) do
@@ -431,6 +480,7 @@ defmodule VisionCore.Calibration.Session do
 
     %{
       phase: state.phase,
+      target: state.target && Map.take(state.target, [:id, :kind]),
       board: state.board,
       samples: length(state.samples),
       progress: Coverage.progress(parameters),

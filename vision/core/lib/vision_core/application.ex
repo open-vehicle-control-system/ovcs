@@ -39,8 +39,9 @@ defmodule VisionCore.Application do
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
   After the components come `VisionCore.Exporters`, which runs the
-  configuration's exporters, then, with a `:stereo` component,
-  `VisionCore.Calibration.Session`, then `VisionCore.Status`, which
+  configuration's exporters, then, on a unit with something to calibrate
+  (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Session`,
+  then `VisionCore.Status`, which
   reports the exporters' statuses, `VisionCore.Preview` and
   `VisionCore.Video`: a restart
   of the dashboard's sources does not restart the exporters.
@@ -132,10 +133,11 @@ defmodule VisionCore.Application do
     }
   end
 
-  defp calibration_children(%VisionCore.Config{components: components} = config) do
-    if Enum.any?(components, &(&1 == :stereo or match?({:stereo, _opts}, &1))),
-      do: [{VisionCore.Calibration.Session, config: config}],
-      else: []
+  defp calibration_children(config) do
+    case VisionCore.Calibration.targets(config) do
+      [] -> []
+      _targets -> [{VisionCore.Calibration.Session, config: config}]
+    end
   end
 
   defp ros2_children(nil), do: []

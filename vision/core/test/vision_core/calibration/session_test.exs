@@ -85,7 +85,7 @@ defmodule VisionCore.Calibration.SessionTest do
   defp capture(board) do
     run_cameras()
     {:ok, %{phase: :idle}} = Session.subscribe()
-    :ok = Session.start(board)
+    :ok = Session.start("stereo", board)
     assert_receive {:calibration_session, %{phase: :capturing, samples: 0}}
   end
 
@@ -143,6 +143,7 @@ defmodule VisionCore.Calibration.SessionTest do
 
     assert Session.state() == %{
              phase: :idle,
+             target: nil,
              board: nil,
              samples: 0,
              progress: %{x: 0.0, y: 0.0, size: 0.0, skew: 0.0},
@@ -160,16 +161,16 @@ defmodule VisionCore.Calibration.SessionTest do
     publish_pair(0, top_left())
     assert_receive {:calibration_session, %{samples: 1, detection: detection} = state}
     assert detection.sample
-    assert [{x, y} | _] = detection.left
+    assert [{x, y} | _] = detection.views["left"]
     assert_in_delta x, 10 / @width, 1.0e-9
     assert_in_delta y, 10 / @height, 1.0e-9
-    assert length(detection.right) == 12
+    assert length(detection.views["right"]) == 12
     assert state.board == board
 
     publish_pair(100, top_left())
 
     assert_receive {:calibration_session,
-                    %{samples: 1, detection: %{sample: false, left: [_ | _]}}}
+                    %{samples: 1, detection: %{sample: false, views: %{"left" => [_ | _]}}}}
 
     publish_pair(200, bottom_right())
     assert_receive {:calibration_session, %{samples: 2, detection: %{sample: true}} = state}
@@ -186,7 +187,10 @@ defmodule VisionCore.Calibration.SessionTest do
     publish("right", 0, :not_found)
 
     assert_receive {:calibration_session,
-                    %{samples: 0, detection: %{left: [_ | _], right: nil, sample: false}}}
+                    %{
+                      samples: 0,
+                      detection: %{views: %{"left" => [_ | _], "right" => nil}, sample: false}
+                    }}
   end
 
   test "frames further apart than pair_tolerance_ms are not paired", %{board: board} do
@@ -260,15 +264,20 @@ defmodule VisionCore.Calibration.SessionTest do
         for capture_ms <- [0, 100] do
           publish("left", capture_ms, {:error, {:jpeg, "not a JPEG"}})
           publish("right", capture_ms, {:ok, top_left()})
-          assert_receive {:calibration_session, %{detection: %{left: nil, right: [_ | _]}}}
+
+          assert_receive {:calibration_session,
+                          %{detection: %{views: %{"left" => nil, "right" => [_ | _]}}}}
         end
 
         publish_pair(200, top_left())
-        assert_receive {:calibration_session, %{detection: %{left: [_ | _]}}}
+        assert_receive {:calibration_session, %{detection: %{views: %{"left" => [_ | _]}}}}
 
         publish("left", 300, {:error, {:jpeg, "not a JPEG"}})
         publish("right", 300, :not_found)
-        assert_receive {:calibration_session, %{detection: %{left: nil, right: nil}}}
+
+        assert_receive {:calibration_session,
+                        %{detection: %{views: %{"left" => nil, "right" => nil}}}}
+
         :sys.get_state(Session)
       end)
 
@@ -315,7 +324,7 @@ defmodule VisionCore.Calibration.SessionTest do
         end)
 
       assert_receive :subscribed
-      :ok = Session.start(board)
+      :ok = Session.start("stereo", board)
       publish_pair(0, top_left())
       assert eventually(fn -> Session.state().samples == 1 end)
 
@@ -525,17 +534,17 @@ defmodule VisionCore.Calibration.SessionTest do
 
     assert :ok = Session.cancel()
     assert_receive {:calibration_session, %{phase: :idle, board: nil}}
-    assert :ok = Session.start(board)
+    assert :ok = Session.start("stereo", board)
   end
 
   describe "start/1" do
     test "is refused while the stereo cameras are not running", %{board: board} do
       start_session()
 
-      assert Session.start(board) == {:error, "the stereo cameras are not running"}
+      assert Session.start("stereo", board) == {:error, "the stereo cameras are not running"}
 
       run_camera("left")
-      assert Session.start(board) == {:error, "the stereo cameras are not running"}
+      assert Session.start("stereo", board) == {:error, "the stereo cameras are not running"}
       assert %{phase: :idle} = Session.state()
     end
 
@@ -543,8 +552,91 @@ defmodule VisionCore.Calibration.SessionTest do
       start_session()
       capture(board)
 
-      assert {:error, _message} = Session.start(board)
+      assert {:error, _message} = Session.start("stereo", board)
       assert %{phase: :capturing} = Session.state()
+    end
+  end
+
+  describe "on a camera of its own" do
+    @camera_config %VisionCore.Config{
+      components: [
+        {:stereo, [driver: Camera, left: [], right: []]},
+        {:camera, [name: :hq, driver: Camera]}
+      ]
+    }
+    @camera_result %{camera: :solved_camera, rms_px: 0.1, fx_px: 900.0, samples: 3}
+
+    defp start_camera_session(options \\ []) do
+      test_pid = self()
+
+      start_session(
+        [
+          config: @camera_config,
+          solve_camera: fn board, size, views ->
+            send(test_pid, {:solve_camera, board, size, views})
+            {:ok, @camera_result}
+          end,
+          commit_camera: fn config, name, calibration ->
+            send(test_pid, {:commit_camera, config, name, calibration})
+            :ok
+          end,
+          solve: fn _board, _size, _samples -> flunk("solved a pair") end,
+          commit: fn _config, _calibrations -> flunk("committed a pair") end
+        ] ++ options
+      )
+    end
+
+    test "captures its views alone, solves it and commits its calibration", %{board: board} do
+      run_camera("hq")
+      start_camera_session()
+      {:ok, %{phase: :idle}} = Session.subscribe()
+
+      assert :ok = Session.start("hq", board)
+
+      assert_receive {:calibration_session,
+                      %{phase: :capturing, target: %{id: "hq", kind: :camera}}}
+
+      for {corners, index} <- Enum.with_index([top_left(), bottom_right(), large_skewed()], 1) do
+        publish("hq", index * 100, {:ok, corners})
+
+        assert_receive {:calibration_session,
+                        %{samples: ^index, detection: %{sample: true, views: views}}}
+
+        assert %{"hq" => [_ | _]} = views
+        assert map_size(views) == 1
+      end
+
+      assert :ok = Session.solve()
+      assert_receive {:solve_camera, ^board, {@width, @height}, views}
+      assert views == [top_left(), bottom_right(), large_skewed()]
+      assert_receive {:calibration_session, %{phase: :solved, result: @camera_result}}
+
+      assert :ok = Session.apply()
+      assert_receive {:commit_camera, @camera_config, :hq, :solved_camera}
+      assert_receive {:calibration_session, %{phase: :idle, target: nil}}
+    end
+
+    test "looks for the board in its frames only", %{board: board} do
+      run_camera("hq")
+      run_cameras()
+      start_camera_session()
+      {:ok, _state} = Session.subscribe()
+      :ok = Session.start("hq", board)
+
+      publish_pair(100, top_left())
+      refute_receive {:detect, _label, _capture_ms, _running}, 100
+
+      publish("hq", 200, {:ok, top_left()})
+      assert_receive {:detect, "hq", 200, _running}
+    end
+
+    test "is refused while the camera does not run, and for a target the unit has not",
+         %{board: board} do
+      start_camera_session()
+
+      assert Session.start("hq", board) == {:error, "the camera is not running"}
+      assert Session.start("usb", board) == {:error, :not_found}
+      assert %{phase: :idle} = Session.state()
     end
   end
 end
