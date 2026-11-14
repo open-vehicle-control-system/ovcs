@@ -13,7 +13,8 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   the relay.
 
   The PID gains and the filter's deadband and alpha are tunable live
-  from the dashboard through `trigger_action/2`.
+  from the dashboard through `trigger_action/2`. Invalid tuning is rejected
+  without changing the active settings.
 
   ## Options
 
@@ -34,12 +35,14 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     * `:input_deadband`, `:input_alpha` — the input filter's settings to
       start from, default 0 and 0.2.
   """
+  @moduledoc safety: :relevant
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias OvcsBus, as: Bus
   alias Decimal, as: D
   alias OvcsControl.{InputFilter, PID}
   alias VmsCore.Components.OVCS.GenericController
+  alias VmsCore.Components.OVCS.SteeringColumn.Tuning
 
   @zero D.new(0)
   @loop_period_ms 10
@@ -321,31 +324,36 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   # The stored gain seeds the next PID; a running PID takes it at once.
   def handle_call({:set_pid_parameter, parameter, raw_gain}, _from, state)
       when parameter in ["kp", "ki", "kd"] do
-    key = String.to_existing_atom(parameter)
-    gain = parse_decimal(raw_gain)
-    pid = if state.pid, do: Map.put(state.pid, key, gain), else: state.pid
+    case Tuning.parse(parameter, raw_gain) do
+      {:ok, gain} ->
+        key = String.to_existing_atom(parameter)
+        pid = if state.pid, do: Map.put(state.pid, key, gain), else: state.pid
+        {:reply, :ok, %{state | pid: pid} |> Map.put(key, gain)}
 
-    {:reply, :ok, %{state | pid: pid} |> Map.put(key, gain)}
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
   end
 
   # The stored setting seeds the next filter; a running filter takes it at once.
   def handle_call({:set_filter_parameter, parameter, raw_setting}, _from, state)
       when parameter in ["deadband", "alpha"] do
-    filter_key = String.to_existing_atom(parameter)
-    state_key = String.to_existing_atom("input_" <> parameter)
-    setting = parse_decimal(raw_setting)
+    case Tuning.parse(parameter, raw_setting) do
+      {:ok, setting} ->
+        filter_key = String.to_existing_atom(parameter)
+        state_key = String.to_existing_atom("input_" <> parameter)
 
-    input_filter =
-      if state.input_filter,
-        do: Map.put(state.input_filter, filter_key, setting),
-        else: state.input_filter
+        input_filter =
+          if state.input_filter,
+            do: Map.put(state.input_filter, filter_key, setting),
+            else: state.input_filter
 
-    {:reply, :ok, %{state | input_filter: input_filter} |> Map.put(state_key, setting)}
+        {:reply, :ok, %{state | input_filter: input_filter} |> Map.put(state_key, setting)}
+
+      {:error, _} = error ->
+        {:reply, error, state}
+    end
   end
-
-  defp parse_decimal(text) when is_binary(text), do: text |> String.trim() |> D.new()
-  defp parse_decimal(number) when is_integer(number), do: D.new(number)
-  defp parse_decimal(number) when is_float(number), do: D.from_float(number)
 
   defp emit_metrics(state) do
     Bus.broadcast("messages", %Bus.Message{name: :angle, value: state.angle, source: __MODULE__})
@@ -437,6 +445,10 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
       when parameter in ["deadband", "alpha"] do
     GenServer.call(__MODULE__, {:set_filter_parameter, parameter, raw_setting})
   end
+
+  def trigger_action(action, _parameters)
+      when action in ["set_pid_parameter", "set_filter_parameter"],
+      do: {:error, :invalid_tuning_parameter}
 
   defp send_lws_command(network, command) do
     :ok =
