@@ -227,7 +227,8 @@ defmodule VisionApi.SelfSignedCertificateTest do
   defp accept(listen_socket) do
     {:ok, socket} = :ssl.transport_accept(listen_socket, 5_000)
     {:ok, socket} = :ssl.handshake(socket, 5_000)
-    :ssl.close(socket)
+    # Open until the client closes: a close sooner can reach it before it reads the certificate.
+    assert_receive {:ssl_closed, ^socket}, 5_000
   end
 
   defp subject_alt_names(certificate) do
