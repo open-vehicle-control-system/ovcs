@@ -207,16 +207,51 @@ defmodule VmsCore.Managers.GearTest do
       )
     end
 
+    test "keeps parking selected while ignition is off despite a retained request" do
+      for requested <- [:drive, :reverse, :neutral] do
+        state = driving(%{contact: :off, selected_gear: :parking, requested_gear: requested})
+        assert Gear.next_gear(state) == nil
+      end
+    end
+
+    test "ignition off selects parking and keeps it on subsequent ticks" do
+      for gear <- [:drive, :reverse, :neutral] do
+        state = driving(%{contact: :off, selected_gear: gear, requested_gear: gear})
+        assert Gear.next_gear(state) == :parking
+        assert Gear.next_gear(%{state | selected_gear: :parking}) == nil
+      end
+    end
+
+    test "ignition on permits a retained request through the normal interlocks" do
+      state = driving(%{contact: :on, selected_gear: :parking})
+      assert Gear.next_gear(state) == :drive
+      assert Gear.next_gear(%{state | speed: Decimal.new(10)}) == nil
+    end
+
     test "engages the requested direction at standstill with the throttle released" do
       assert Gear.next_gear(driving(%{})) == :drive
     end
 
     test "drops to neutral when the opposite direction comes with the throttle held" do
-      assert Gear.next_gear(driving(%{requested_throttle: Decimal.new("0.4")})) == :neutral
+      for {selected, requested} <- [{:drive, :reverse}, {:reverse, :drive}] do
+        state =
+          driving(%{
+            selected_gear: selected,
+            requested_gear: requested,
+            requested_throttle: Decimal.new("0.4")
+          })
+
+        assert Gear.next_gear(state) == :neutral
+      end
     end
 
     test "drops to neutral when the opposite direction comes while moving" do
-      assert Gear.next_gear(driving(%{speed: Decimal.new("3")})) == :neutral
+      for {selected, requested} <- [{:drive, :reverse}, {:reverse, :drive}] do
+        state =
+          driving(%{selected_gear: selected, requested_gear: requested, speed: Decimal.new("3")})
+
+        assert Gear.next_gear(state) == :neutral
+      end
     end
 
     test "engages from neutral once the throttle is released at standstill" do
