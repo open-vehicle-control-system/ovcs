@@ -1,6 +1,7 @@
 defmodule VisionCore.Ros2.ZenohExporter.DetectionsTest do
   use ExUnit.Case, async: true
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.FoxgloveMsgs.Msg.ImageAnnotations
   alias Ros2Zenoh.VisionMsgs.Msg.{Detection2DArray, Detection3DArray}
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
@@ -152,6 +153,28 @@ defmodule VisionCore.Ros2.ZenohExporter.DetectionsTest do
 
     assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
     assert array.header.frame_id == "stereo_left"
+  end
+
+  # A stamp that tells which capture time it was given: that time, 1000 s later.
+  defp shifted_stamp(capture_ns),
+    do: %Time{
+      sec: 1_000 + div(capture_ns, 1_000_000_000),
+      nanosec: rem(capture_ns, 1_000_000_000)
+    }
+
+  test "stamps the messages of a pair or a camera's frame with the stamp function it is given" do
+    settings = Detections.new(stamp: &shifted_stamp/1)
+    pair = put_in(pair().left_frame.capture_ns, 11)
+    frame = %Frame{label: "hq", frame_id: "hq_optical", width: 8, height: 4, capture_ns: 13}
+
+    for {source, capture_ns, arrays} <- [{pair, 11, 1}, {frame, 13, 2}] do
+      headers =
+        for {_topic, _module, %{header: header}} <- Detections.messages([], source, settings, 0),
+            do: header
+
+      assert length(headers) == arrays
+      assert Enum.all?(headers, &(&1.stamp == shifted_stamp(capture_ns)))
+    end
   end
 
   describe "on a camera source" do

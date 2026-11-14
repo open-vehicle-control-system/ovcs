@@ -48,6 +48,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
       `VisionCore.Ros2.CameraCalibration`.
     * `:cloud_frame_id` (`"stereo_left"`) — the stereo left optical
       frame, for a pair that carries none.
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps the messages from the capture time of their frame or pair.
   """
 
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, Image, PointCloud2}
@@ -61,8 +63,9 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
   @type message :: {String.t(), module(), struct()}
 
   @typedoc """
-  The topics, the source camera and its calibration, and the frames of a
-  frame or pair that carries none, from `new/1`.
+  The topics, the source camera and its calibration, the frames of a
+  frame or pair that carries none and what stamps the messages, from
+  `new/1`.
   """
   @type t :: %{
           labels_topic: String.t(),
@@ -72,7 +75,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
           camera: atom() | nil,
           calibration: CameraCalibration.t() | nil,
           camera_frame_id: String.t(),
-          cloud_frame_id: String.t()
+          cloud_frame_id: String.t(),
+          stamp: Stamp.stamp_function()
         }
 
   @doc "The topics and frames of the segmentation `options`; see the module doc."
@@ -85,7 +89,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
         :camera_frame_id,
         :cloud_frame_id,
         :calibration,
-        :topic_prefix
+        :topic_prefix,
+        stamp: &Stamp.stamp_from_monotonic/1
       ])
 
     pipeline = Keyword.fetch!(options, :pipeline)
@@ -101,7 +106,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
       camera: options[:camera],
       calibration: options[:calibration],
       camera_frame_id: options[:camera_frame_id] || "#{options[:camera]}_optical",
-      cloud_frame_id: options[:cloud_frame_id] || @default_cloud_frame_id
+      cloud_frame_id: options[:cloud_frame_id] || @default_cloud_frame_id,
+      stamp: options[:stamp]
     }
   end
 
@@ -112,7 +118,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
   @spec messages(Frame.t(), map(), map() | nil, t()) :: [message()]
   def messages(%Frame{} = frame, labels, clouds, settings) do
     image_header = %Header{
-      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      stamp: settings.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || settings.camera_frame_id
     }
 
@@ -182,7 +188,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
 
   defp cloud_messages(clouds, settings) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(clouds.capture_ns),
+      stamp: settings.stamp.(clouds.capture_ns),
       frame_id: clouds.frame_id || settings.cloud_frame_id
     }
 

@@ -48,8 +48,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
 
   @typedoc """
   One camera's: its name, frame id, topics, service, calibration and
-  pose, the frames seen, the next image's slot and the frame size its
-  calibration was last logged as not fitting.
+  pose, what stamps its messages, the frames seen, the next image's slot
+  and the frame size its calibration was last logged as not fitting.
   """
   @type t :: %{
           name: atom(),
@@ -62,6 +62,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
           pose: Pose.t() | nil,
           raw_image_max_hz: number(),
           camera_info_interval_frames: pos_integer(),
+          stamp: Stamp.stamp_function(),
           frame_counter: non_neg_integer(),
           next_image_ms: number() | nil,
           misfit_size: {pos_integer(), pos_integer()} | nil
@@ -70,8 +71,10 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
   @doc """
   The camera of `settings` (`VisionCore.Camera.Unit.settings/1`) with
   its calibration and pose read, and `options`: `:topic_prefix` (none),
-  `:raw_image_max_hz` (10) and `:camera_info_interval_frames` (30). A
-  calibration or pose that cannot be read is left out, with a warning.
+  `:raw_image_max_hz` (10), `:camera_info_interval_frames` (30) and
+  `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`), what
+  stamps its images and video from their capture time. A calibration
+  or pose that cannot be read is left out, with a warning.
   """
   @spec new(VisionCore.Camera.Unit.settings(), keyword()) :: t()
   def new(settings, options) do
@@ -79,7 +82,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
       Keyword.validate!(options, [
         :topic_prefix,
         raw_image_max_hz: @default_raw_image_max_hz,
-        camera_info_interval_frames: @default_camera_info_interval_frames
+        camera_info_interval_frames: @default_camera_info_interval_frames,
+        stamp: &Stamp.stamp_from_monotonic/1
       ])
 
     topic_root = topic_root(options[:topic_prefix], settings.name)
@@ -95,6 +99,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
       pose: load_pose(settings.pose_path, settings.name),
       raw_image_max_hz: options[:raw_image_max_hz],
       camera_info_interval_frames: options[:camera_info_interval_frames],
+      stamp: options[:stamp],
       frame_counter: 0,
       next_image_ms: nil,
       misfit_size: nil
@@ -147,7 +152,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
           {[Stereo.message()], t()}
   def frame_messages(%Frame{} = frame, camera, now_ms, encode) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      stamp: camera.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || camera.frame_id
     }
 
@@ -191,7 +196,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
   @spec video_message(Frame.t(), t()) :: Stereo.message()
   def video_message(%Frame{h264: h264} = frame, camera) when is_binary(h264) do
     video = %CompressedVideo{
-      timestamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      timestamp: camera.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || camera.frame_id,
       data: h264,
       format: "h264"

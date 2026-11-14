@@ -33,6 +33,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
       whose `name_for/1` names each side and whose `live/1`, when it has
       one, reports what the camera applied.
     * `:topic_prefix` (`"stereo"`), `:fps` (30).
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps `/diagnostics` from the time it is sent.
     * `:left`, `:right` — each camera's `:sync` role, when it has one.
     * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
       message, as `VisionCore.Ros2.ZenohExporter`'s does.
@@ -90,6 +92,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
        servers: servers,
        roles: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
        publish: Keyword.get(opts, :publish, &Topics.publish/4),
+       stamp: Keyword.get(opts, :stamp, &Stamp.stamp_from_monotonic/1),
        sync: Sync.new(Keyword.get(opts, :fps, @default_fps)),
        offsets_ms: []
      }}
@@ -132,7 +135,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
         Sync.summary(state.sync, System.monotonic_time(:millisecond)),
         live_metadata(state),
         System.system_time(:millisecond),
-        Stamp.stamp_from_monotonic(System.monotonic_time(:nanosecond))
+        state.stamp.(System.monotonic_time(:nanosecond))
       )
 
     publish(state, {"/diagnostics", DiagnosticArray, message})

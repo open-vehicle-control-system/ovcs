@@ -137,6 +137,27 @@ defmodule VisionCore.Ros2.ZenohExporter.CameraTest do
     end
   end
 
+  # A stamp that tells which capture time it was given: that time, 1000 s later.
+  defp shifted_stamp(capture_ns),
+    do: %Time{
+      sec: 1_000 + div(capture_ns, 1_000_000_000),
+      nanosec: rem(capture_ns, 1_000_000_000)
+    }
+
+  test "stamps its video and its images with the stamp function it is given, at their capture time" do
+    camera = camera(%{}, stamp: &shifted_stamp/1)
+
+    video = %Frame{label: "hq", width: 2, height: 2, capture_ns: 5, h264: <<0>>, keyframe?: true}
+    assert {_topic, CompressedVideo, compressed_video} = Camera.video_message(video, camera)
+    assert compressed_video.timestamp == shifted_stamp(5)
+
+    {messages, _camera} = Camera.frame_messages(rgb_frame(96, 72, 9), camera, 0, &encode/1)
+    assert length(messages) == 2
+
+    for {_topic, _module, message} <- messages,
+        do: assert(message.header.stamp == shifted_stamp(9))
+  end
+
   describe "frame_messages/4" do
     test "publishes the image, encoded, and the camera info every Nth frame, in the frame's frame id" do
       camera = camera()

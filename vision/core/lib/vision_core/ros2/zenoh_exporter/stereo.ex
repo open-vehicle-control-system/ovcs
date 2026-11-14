@@ -10,7 +10,9 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     * **Raw images** on `<topic_prefix>/<side>/image_raw/compressed`,
       and **calibration** on `<topic_prefix>/<side>/camera_info` every
       Nth frame, so late subscribers see it without latched QoS, both
-      in the frame id the camera's frame carries.
+      in the frame id the camera's frame carries. With `:raw_images`,
+      each grey frame also goes out uncompressed on
+      `<topic_prefix>/<side>/image_raw`, under the same header.
     * **Stereo outputs**, all stamped with the left frame's capture time
       so consumers can pair them with the raw streams, in the frame id
       it carries (`VisionCore.Stereo.Pair.frame_id/1`):
@@ -56,6 +58,11 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     * `:width` (1280), `:height` (720) — the capture size, which the
       calibration is scaled to and an empty camera info carries.
     * `:camera_info_interval_frames` (30) — camera info every Nth frame.
+    * `:raw_images` (`false`) — each grey frame as a `mono8`
+      `sensor_msgs/Image` too, every frame, whatever
+      `:raw_image_max_hz` and `:publish_raw_images`: nothing is encoded.
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps every header from its capture time.
     * `:publish_raw_images` (`true`) — republish each camera frame. Off
       when the frames already come from those topics, as
       `VisionCore.Ros2.Camera`'s do against a simulator: republishing
@@ -142,8 +149,15 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
         {label, side(label, prefix, side_options, width, height, publish_raw_images)}
       end)
 
+    uncompressed_image_topics =
+      if Keyword.get(options, :raw_images, false),
+        do: Map.new(["left", "right"], &{&1, "#{prefix}/#{&1}/image_raw"}),
+        else: %{}
+
     %{
       sides: sides,
+      stamp: Keyword.get(options, :stamp, &Stamp.stamp_from_monotonic/1),
+      uncompressed_image_topics: uncompressed_image_topics,
       # The depth and disparity are anchored to the left camera's frame, per ROS convention.
       frame_id: sides["left"].frame_id,
       disparity_topic: "#{prefix}/disparity",
@@ -212,19 +226,21 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   The messages of a camera's `frame` on its `side` of `stereo` at
   `now_ms`, and the side after it: the frame as a raw image when its
   slot is open (`image_slot/4`), encoded by `encode` when it is grey,
-  then the side's camera info every Nth frame. A frame that does not
-  encode takes its slot all the same, so a failing codec is asked at
-  most `:raw_image_max_hz` times a second.
+  then, with `:raw_images`, a grey frame uncompressed, then the side's
+  camera info every Nth frame. A frame that does not encode takes its
+  slot all the same, so a failing codec is asked at most
+  `:raw_image_max_hz` times a second.
   """
   @spec frame_messages(Frame.t(), side(), t(), number(), (Frame.t() -> encoded())) ::
           {[message()], side()}
   def frame_messages(%Frame{} = frame, side, stereo, now_ms, encode) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      stamp: stereo.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || side.frame_id
     }
 
     {image, side} = raw_image(frame, side, header, now_ms, stereo.raw_image_max_hz, encode)
+    uncompressed = uncompressed_image(frame, stereo.uncompressed_image_topics[side.label], header)
 
     camera_info =
       if rem(side.frame_counter, stereo.camera_info_interval_frames) == 0,
@@ -233,8 +249,25 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
         ],
         else: []
 
-    {image ++ camera_info, %{side | frame_counter: side.frame_counter + 1}}
+    {image ++ uncompressed ++ camera_info, %{side | frame_counter: side.frame_counter + 1}}
   end
+
+  defp uncompressed_image(%Frame{grey: grey} = frame, topic, header)
+       when is_binary(topic) and is_binary(grey) do
+    image = %Image{
+      header: header,
+      height: frame.height,
+      width: frame.width,
+      encoding: "mono8",
+      is_bigendian: 0,
+      step: frame.width,
+      data: grey
+    }
+
+    [{topic, Image, image}]
+  end
+
+  defp uncompressed_image(_frame, _topic, _header), do: []
 
   defp raw_image(_frame, %{image_topic: false} = side, _header, _now_ms, _max_hz, _encode),
     do: {[], side}
@@ -311,7 +344,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   @spec pair_messages(Pair.t(), t(), (Nx.Tensor.t() -> encoded())) :: [message()]
   def pair_messages(%Pair{} = pair, stereo, encode) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
+      stamp: stereo.stamp.(Pair.capture_ns(pair)),
       frame_id: Pair.frame_id(pair) || stereo.frame_id
     }
 
