@@ -10,7 +10,7 @@ const snapshot = {
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
   npu: null,
   depthHz: 12.8,
-  exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'warning', detail: 'Disconnected' } }],
+  exporters: [{ id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', status: { level: 'warning', detail: 'Disconnected' } }],
   cpuPercent: 37.25,
   stereoLoadPercent: 81.5,
   alignment: { offsetRows: -1.43, bandOffsetRows: [-1.9, -1.6, -1.2, -1.0] },
@@ -105,7 +105,7 @@ describe('UnitStatus and the pair status', () => {
   })
 
   it('shows a connected ROS 2 exporter as healthy, and none without a ROS 2 exporter', () => {
-    show({ ...snapshot, exporters: [{ id: 'ros2', name: 'ROS 2', status: { level: 'ok', detail: 'Connected' } }] })
+    show({ ...snapshot, exporters: [{ id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', status: { level: 'ok', detail: 'Connected' } }] })
     expect(card('ros2').querySelector('.ovcs-status--ok')).not.toBeNull()
     cleanup()
 

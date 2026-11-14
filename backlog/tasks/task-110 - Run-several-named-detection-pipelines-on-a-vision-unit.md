@@ -31,7 +31,7 @@ Step 2 of TASK-108: pipelines named in the composer, each with its own superviso
 ## Implementation Plan
 
 <!-- SECTION:PLAN:BEGIN -->
-Spec: TASK-108 (Named pipelines, Backends, ROS 2, Status, Dashboard). Inventory of today's single-pipeline assumptions: every `__MODULE__` registration in `vision/core/lib/vision_core/detection/`, `Exporter`'s `@outputs` and `output_key/2`, `Exporter.Runner`'s `route/2` and `newest/2`, `Ros2.Exporter`'s `detections` state, `Ros2.Exporter.Detections`'s topics, `DetectionChannel` on the fixed topic `"detections"`, `ExporterController`'s `:detections`, the dashboard's `Pipelines.jsx` placeholder and `Previews.jsx`'s `useDetections`.
+Spec: TASK-108 (Named pipelines, Backends, ROS 2, Status, Dashboard). Inventory of today's single-pipeline assumptions: every `__MODULE__` registration in `vision/core/lib/vision_core/detection/`, `Exporter`'s `@outputs` and `output_key/2`, `Exporter.Runner`'s `route/2` and `newest/2`, `Ros2.ZenohExporter`'s `detections` state, `Ros2.ZenohExporter.Detections`'s topics, `DetectionChannel` on the fixed topic `"detections"`, `ExporterController`'s `:detections`, the dashboard's `Pipelines.jsx` placeholder and `Previews.jsx`'s `useDetections`.
 
 Global constraints:
 - A pipeline name is an atom matching `^[a-z][a-z0-9_]*$`, none of the reserved names (TASK-108, Pipeline names); the default is `:detection`. It is a ROS 2 parameter name segment, so no `.` or `-`.
@@ -57,10 +57,10 @@ Review focus, each pinned by a test in the owning task:
 #### Task 2: exporters.
 - `VisionCore.Exporter`'s output type gains `{:detections, atom()}`; `:detections` is the default pipeline's. `output_key/2` resolves `{:detections, name}` through `Detection.Supervisor.outputs/1`.
 - `Exporter.Runner` routes a 4-tuple `{:detections, pair, positioned, name}` to the output `{:detections, name}` and drains the mailbox per output in `newest/2`; the default's 3-tuple keeps routing to `:detections`. Its `handle_output` payload stays `{pair, detections}`.
-- `Ros2.Exporter`: the `detections:` options take `pipelines:` (default `[:detection]`); each listed pipeline gets its own `Ros2.Exporter.Detections` settings and drawn counter. The default publishes on today's topics; a named one on `<prefix>/<name>/detections`, `<prefix>/<name>/detections/markers` and `<prefix>/<name>/annotations`, with marker namespace `"<name>"`.
+- `Ros2.ZenohExporter`: the `detections:` options take `pipelines:` (default `[:detection]`); each listed pipeline gets its own `Ros2.ZenohExporter.Detections` settings and drawn counter. The default publishes on today's topics; a named one on `<prefix>/<name>/detections`, `<prefix>/<name>/detections/markers` and `<prefix>/<name>/annotations`, with marker namespace `"<name>"`.
 - `ExporterController` lists `detections` for the default and `detections:<name>` for each named pipeline, each with its `Live.max_hz/1`.
 - `Debug.Exporter` keeps reading the default pipeline only.
-- Tests: `exporter_test.exs`, `exporter/runner_test.exs` (two pipelines, each message reaching only its output), `ros2/exporter_test.exs`, `ros2/exporter/detections_test.exs`, `exporter_controller_test.exs`.
+- Tests: `exporter_test.exs`, `exporter/runner_test.exs` (two pipelines, each message reaching only its output), `ros2/zenoh_exporter_test.exs`, `ros2/zenoh_exporter/detections_test.exs`, `exporter_controller_test.exs`.
 
 #### Task 3: API channel and dashboard.
 - `DashboardSocket` adds `channel "detections:*"`; `DetectionChannel` joins `"detections:<name>"` through `Live` of that name, refusing an unknown name like an unavailable `Live`; `"detections"` stays the default's.

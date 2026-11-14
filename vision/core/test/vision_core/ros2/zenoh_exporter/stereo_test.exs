@@ -1,11 +1,11 @@
-defmodule VisionCore.Ros2.Exporter.StereoTest do
+defmodule VisionCore.Ros2.ZenohExporter.StereoTest do
   use ExUnit.Case, async: true
 
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2}
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Ros2.Exporter.Stereo
+  alias VisionCore.Ros2.ZenohExporter.Stereo
   alias VisionCore.Stereo.Pair
 
   @moduletag :capture_log

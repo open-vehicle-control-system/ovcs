@@ -1,11 +1,11 @@
-defmodule VisionCore.Ros2.Exporter.CameraLive do
+defmodule VisionCore.Ros2.ZenohExporter.CameraLive do
   @moduledoc """
   Plots what the cameras of their own apply: each camera's exposure and
-  gain (`VisionCore.Ros2.Exporter.Camera.live_messages/2`), five times a
-  second, as `VisionCore.Ros2.Exporter.Diagnostics` plots the stereo
+  gain (`VisionCore.Ros2.ZenohExporter.Camera.live_messages/2`), five times a
+  second, as `VisionCore.Ros2.ZenohExporter.Diagnostics` plots the stereo
   unit's.
 
-  `VisionCore.Ros2.Exporter` starts it as a helper under its own
+  `VisionCore.Ros2.ZenohExporter` starts it as a helper under its own
   supervisor for the cameras it publishes whose driver reports what it
   applied (`c:VisionCore.Camera.live/1`). It asks the drivers from its
   own process, so a camera that is slow to answer never holds up the
@@ -14,16 +14,16 @@ defmodule VisionCore.Ros2.Exporter.CameraLive do
   ## Options
 
     * `:cameras` (required) — each camera's topic root
-      (`VisionCore.Ros2.Exporter.Camera.topic_root/2`), driver and the
+      (`VisionCore.Ros2.ZenohExporter.Camera.topic_root/2`), driver and the
       name its driver registers it under.
     * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
-      message, as `VisionCore.Ros2.Exporter`'s does.
+      message, as `VisionCore.Ros2.ZenohExporter`'s does.
     * `:name` (this module) — the name it registers under.
   """
 
   use GenServer
 
-  alias VisionCore.Ros2.Exporter.Camera
+  alias VisionCore.Ros2.ZenohExporter.Camera
   alias VisionCore.Ros2.Topics
 
   @plot_period_ms 200

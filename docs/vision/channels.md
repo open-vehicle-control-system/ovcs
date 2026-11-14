@@ -108,7 +108,7 @@ A pipeline that does not answer is left out.
     "objects": {"camera": "center", "available": false, "reason": "no_pose"},
     "scene": {"camera": "center", "available": false, "reason": "no_pose"}
   },
-  "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}},
+  "exporters": [{"id": "ros2_zenoh", "name": "ROS 2 · Zenoh", "status": {"level": "warning", "detail": "Disconnected"}},
                 {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]
 }
 ```

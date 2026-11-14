@@ -210,7 +210,7 @@ The dashboard's Exporters menu lists what takes the unit's outputs out of it, fr
 `GET /api/ros2-node` describes what the unit exports over ROS 2:
 
 - its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open;
-- whether the board's clock is synchronized: nothing is published to ROS 2 before it is. The ROS 2 exporter's status is a warning meanwhile, and the dashboard's ROS 2 page says so;
+- whether the board's clock is synchronized: nothing is published to ROS 2 before it is. The ROS 2 exporter's status is a warning meanwhile, and the dashboard's ROS 2 · Zenoh page says so;
 - the topics it has published, each with its message type and rate over the last second, 0 while nothing is published;
 - the services it answers: the parameter services and each camera's `set_camera_info`.
 

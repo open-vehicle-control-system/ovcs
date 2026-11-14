@@ -5,7 +5,7 @@ import * as unit from '../../services/unit.js'
 vi.mock('../../services/unit.js')
 
 const initial = useExporters.getState()
-const ros2 = { id: 'ros2', name: 'ROS 2', module: 'VisionCore.Ros2.Exporter', status: { level: 'ok', detail: 'Connected' }, outputs: [] }
+const ros2 = { id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', module: 'VisionCore.Ros2.ZenohExporter', status: { level: 'ok', detail: 'Connected' }, outputs: [] }
 
 describe('exporters store', () => {
   beforeEach(() => {
@@ -74,11 +74,11 @@ describe('exporters store', () => {
   })
 
   it("takes an exporter's status from the unit status alone: none until it reports one", () => {
-    const listed = { id: 'ros2', name: 'ROS 2', status: { level: 'off', detail: 'Listed' } }
+    const listed = { id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', status: { level: 'off', detail: 'Listed' } }
     const live = { level: 'ok', detail: 'Connected' }
 
     expect(exporterStatus(listed, null)).toBeNull()
     expect(exporterStatus(listed, { exporters: [] })).toBeNull()
-    expect(exporterStatus(listed, { exporters: [{ id: 'ros2', status: live }] })).toEqual(live)
+    expect(exporterStatus(listed, { exporters: [{ id: 'ros2_zenoh', status: live }] })).toEqual(live)
   })
 })

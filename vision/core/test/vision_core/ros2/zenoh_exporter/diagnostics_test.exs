@@ -1,11 +1,11 @@
-defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
+defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
   use ExUnit.Case, async: true
 
   alias Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticArray
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
-  alias VisionCore.Ros2.Exporter.Diagnostics
+  alias VisionCore.Ros2.ZenohExporter.Diagnostics
 
   # Names the cameras, which need not be running: without live/1, nothing is asked of them.
   defmodule Camera do

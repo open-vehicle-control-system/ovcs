@@ -39,7 +39,7 @@ defmodule VisionCore.Segmentation.Supervisor do
 
   @default_backend Segmentation.Backend.Qnn
   @topic_prefix_hint "its :topic_prefix is the ROS 2 exporter's segmentation: option " <>
-                       "(VisionCore.Ros2.Exporter)"
+                       "(VisionCore.Ros2.ZenohExporter)"
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
   @max_restarts 10
   @max_seconds 60

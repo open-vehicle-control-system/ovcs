@@ -1,14 +1,14 @@
-defmodule VisionCore.Ros2.Exporter.Camera do
+defmodule VisionCore.Ros2.ZenohExporter.Camera do
   @moduledoc """
   The ROS 2 messages of a camera of its own (`VisionCore.Camera.Unit`),
-  which `VisionCore.Ros2.Exporter` publishes. These functions build the
+  which `VisionCore.Ros2.ZenohExporter` publishes. These functions build the
   messages; the exporter sends them, and hands them the function that
   encodes a frame to JPEG.
 
     * Its **image** as `sensor_msgs/CompressedImage` on
       `<root>/image_raw/compressed`: an RGB or grey frame,
       encoded to JPEG, at most `:raw_image_max_hz` a second, a JPEG
-      frame as it arrives (`VisionCore.Ros2.Exporter.Stereo.image_slot/4`);
+      frame as it arrives (`VisionCore.Ros2.ZenohExporter.Stereo.image_slot/4`);
       and its
       **calibration** as `sensor_msgs/CameraInfo` on
       `<root>/camera_info` every Nth frame, both in the
@@ -41,7 +41,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Pose}
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
-  alias VisionCore.Ros2.Exporter.Stereo
+  alias VisionCore.Ros2.ZenohExporter.Stereo
 
   @default_raw_image_max_hz 10
   @default_camera_info_interval_frames 30

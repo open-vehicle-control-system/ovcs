@@ -63,7 +63,7 @@ defmodule Ovcs1.Vision.Composer do
   def config(:host) do
     %VisionCore.Config{
       ros2: [zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")],
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
     }
   end
 
@@ -88,7 +88,7 @@ defmodule Ovcs1.Vision.Composer do
       ],
       preview: [max_hz: 30, outputs: [center: :half_jpeg], videos: [center: :full_h264]],
       exporters: [
-        {VisionCore.Ros2.Exporter,
+        {VisionCore.Ros2.ZenohExporter,
          heartbeat: [],
          stereo: [raw_image_max_hz: 30],
          detections: [pipelines: [:objects]],

@@ -9,10 +9,10 @@ defmodule VisionApiWeb.ExporterControllerTest do
 
     assert %{
              "type" => "exporters",
-             "id" => "ros2",
+             "id" => "ros2_zenoh",
              "attributes" => %{
-               "name" => "ROS 2",
-               "module" => "VisionCore.Ros2.Exporter",
+               "name" => "ROS 2 · Zenoh",
+               "module" => "VisionCore.Ros2.ZenohExporter",
                "outputs" => [],
                "actions" => []
              }

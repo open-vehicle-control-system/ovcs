@@ -8,7 +8,7 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
     def config(_arm) do
       %VisionCore.Config{
         ros2: [zenoh_endpoint_ip: "127.0.0.1", node_name: "vision_test"],
-        exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 5_000]}]
+        exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: [interval_ms: 5_000]}]
       }
     end
   end
@@ -42,7 +42,7 @@ defmodule VisionApiWeb.ConfigurationControllerTest do
                      "components" => [],
                      "exporters" => [
                        %{
-                         "module" => "VisionCore.Ros2.Exporter",
+                         "module" => "VisionCore.Ros2.ZenohExporter",
                          "options" => %{"heartbeat" => %{"interval_ms" => 5_000}}
                        }
                      ],

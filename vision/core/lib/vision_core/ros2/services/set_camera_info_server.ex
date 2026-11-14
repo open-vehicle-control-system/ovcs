@@ -10,7 +10,7 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServer do
   (`VisionCore.Ros2.CameraCalibration.check/1`, or an image without a
   size) and a commit that is refused, raises or exits are each answered
   `success: false` with the reason; none stops the server.
-  `VisionCore.Ros2.Exporter` starts one per side and camera it
+  `VisionCore.Ros2.ZenohExporter` starts one per side and camera it
   publishes, as a helper.
 
   ## Options

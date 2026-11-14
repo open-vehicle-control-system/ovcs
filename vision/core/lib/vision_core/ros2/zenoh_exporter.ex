@@ -1,32 +1,32 @@
-defmodule VisionCore.Ros2.Exporter do
+defmodule VisionCore.Ros2.ZenohExporter do
   @moduledoc """
   Publishes the vision unit on ROS 2, through
   `Ros2Zenoh.Client`: a `VisionCore.Exporter`, which
   `VisionCore.Exporters` runs under a supervisor and restart budget of
-  its own, and lists as `ros2`, "ROS 2".
+  its own, and lists as `ros2_zenoh`, "ROS 2 · Zenoh".
 
     * The stereo unit's raw images and camera info as its cameras
       deliver them, and the disparity, depth and point cloud of each
-      pair (`VisionCore.Ros2.Exporter.Stereo`).
+      pair (`VisionCore.Ros2.ZenohExporter.Stereo`).
     * What the stereo unit's cameras actually do, and their sync
-      (`VisionCore.Ros2.Exporter.Diagnostics`, a helper under the
+      (`VisionCore.Ros2.ZenohExporter.Diagnostics`, a helper under the
       exporter's supervisor).
     * Each detection pipeline's detections, as markers, `vision_msgs`
       and an overlay on the left raw image, or on a camera source the
       camera's, under the pipeline's name
-      (`VisionCore.Ros2.Exporter.Detections`).
+      (`VisionCore.Ros2.ZenohExporter.Detections`).
     * Each segmentation pipeline's label image, with the camera info that
       places it on its camera, and its road and off-road points, under
-      the pipeline's name (`VisionCore.Ros2.Exporter.Segmentation`).
+      the pipeline's name (`VisionCore.Ros2.ZenohExporter.Segmentation`).
       The camera info is read from the camera's calibration at each
       start of its runner, and
       again when a calibration is committed through the camera's
       `set_camera_info`.
     * Each camera of its own's image, camera info, video and pose
       relative to the stereo pair, under the camera's name
-      (`VisionCore.Ros2.Exporter.Camera`), and the exposure and gain it
+      (`VisionCore.Ros2.ZenohExporter.Camera`), and the exposure and gain it
       applies, when its driver reports them
-      (`VisionCore.Ros2.Exporter.CameraLive`, a helper under the
+      (`VisionCore.Ros2.ZenohExporter.CameraLive`, a helper under the
       exporter's supervisor).
     * A heartbeat, `std_msgs/String` on `<node_name>/heartbeat`, so
       consumers see the unit alive even when no other topic flows. Its
@@ -91,14 +91,14 @@ defmodule VisionCore.Ros2.Exporter do
 
   ## Options
 
-    * `:stereo` — publishes the stereo unit; `VisionCore.Ros2.Exporter.Stereo`
+    * `:stereo` — publishes the stereo unit; `VisionCore.Ros2.ZenohExporter.Stereo`
       documents its options: `:topic_prefix`, the stereo unit's
       `:prefix` by default, the `:publish_*` switches,
       `:raw_image_max_hz` and `:camera_info_interval_frames`.
     * `:detections` — publishes the detections of each pipeline its
       `:pipelines` list (`[:detection]`, a detector without a name), each on
       topics and in a marker namespace of its own, under the pipeline's
-      name; `VisionCore.Ros2.Exporter.Detections` documents the topics
+      name; `VisionCore.Ros2.ZenohExporter.Detections` documents the topics
       and its other options, among them `:topic_prefix`, none by
       default, a namespace to put the pipelines' topics under. A pair
       without a frame id is in the stereo unit's `"<prefix>_left"`.
@@ -109,14 +109,14 @@ defmodule VisionCore.Ros2.Exporter do
       for a camera as its video, every frame of it (`hq: :view_h264`):
       `:topic_prefix`, none by default, a namespace to put the cameras'
       topics under, each camera's being under its name
-      (`VisionCore.Ros2.Exporter.Camera.topic_root/2`);
+      (`VisionCore.Ros2.ZenohExporter.Camera.topic_root/2`);
       `:raw_image_max_hz` (10), the most images a second per
       camera for frames it encodes, JPEG frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
     * `:segmentation` — publishes the results of each segmentation
       pipeline its `:pipelines` lists, by default every one of the
       configuration on a camera (`VisionCore.Segmentation.Supervisor.cameras/1`),
-      on the topics `VisionCore.Ros2.Exporter.Segmentation`
+      on the topics `VisionCore.Ros2.ZenohExporter.Segmentation`
       documents, under each pipeline's name, and under `:topic_prefix`
       when given, none by default. Clouds whose pair carries no frame id
       are in the stereo unit's left `:frame_id`, else in its
@@ -142,8 +142,8 @@ defmodule VisionCore.Ros2.Exporter do
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Unit}
   alias VisionCore.{Detection, Outputs, Segmentation}
-  alias VisionCore.Ros2.Exporter.{Camera, CameraLive, Detections, Diagnostics, Stereo}
-  alias VisionCore.Ros2.Exporter.Segmentation, as: SegmentationMessages
+  alias VisionCore.Ros2.ZenohExporter.{Camera, CameraLive, Detections, Diagnostics, Stereo}
+  alias VisionCore.Ros2.ZenohExporter.Segmentation, as: SegmentationMessages
   alias VisionCore.Segmentation.Supervisor, as: SegmentationSupervisor
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Stamp, Topics}
@@ -170,7 +170,7 @@ defmodule VisionCore.Ros2.Exporter do
     do: %StringMessage{data: "#{node_name} heartbeat #{counter} @ #{system_time_ms}"}
 
   @impl VisionCore.Exporter
-  def describe(_options), do: %{id: :ros2, name: "ROS 2"}
+  def describe(_options), do: %{id: :ros2_zenoh, name: "ROS 2 · Zenoh"}
 
   @impl VisionCore.Exporter
   def check(options) do

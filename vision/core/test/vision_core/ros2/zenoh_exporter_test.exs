@@ -1,4 +1,4 @@
-defmodule VisionCore.Ros2.ExporterTest do
+defmodule VisionCore.Ros2.ZenohExporterTest do
   # Publishes pairs under the stereo pipeline's key, which other tests subscribe to.
   use ExUnit.Case, async: false
 
@@ -15,8 +15,8 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias VisionCore.Exporter.Runner
   alias VisionCore.Outputs
   alias VisionCore.Ros2.CameraCalibration
-  alias VisionCore.Ros2.Exporter
-  alias VisionCore.Ros2.Exporter.{CameraLive, Diagnostics}
+  alias VisionCore.Ros2.ZenohExporter
+  alias VisionCore.Ros2.ZenohExporter.{CameraLive, Diagnostics}
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias Ros2Zenoh.Client
   alias VisionCore.Stereo.Pair
@@ -129,7 +129,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   # The exporter's answer to the encode that finished, which it started from the test process.
   defp encoded(state) do
     assert_receive {reference, _answer} = reply when is_reference(reference)
-    Exporter.handle_info(reply, state)
+    ZenohExporter.handle_info(reply, state)
   end
 
   defp jpeg_frame(label, capture_ns),
@@ -144,7 +144,9 @@ defmodule VisionCore.Ros2.ExporterTest do
 
   # Started, and done with the exporter's init/1, so subscribed.
   defp start_runner(options, config) do
-    runner = start_supervised!({Runner, exporter: Exporter, options: options, config: config})
+    runner =
+      start_supervised!({Runner, exporter: ZenohExporter, options: options, config: config})
+
     :sys.get_state(runner)
     runner
   end
@@ -164,8 +166,8 @@ defmodule VisionCore.Ros2.ExporterTest do
         end)
       end
 
-      assert Exporter.check(with_detectors.(pipelines: [:detection])) == :ok
-      assert Exporter.check(with_detectors.(topic_prefix: "front")) == :ok
+      assert ZenohExporter.check(with_detectors.(pipelines: [:detection])) == :ok
+      assert ZenohExporter.check(with_detectors.(topic_prefix: "front")) == :ok
 
       for {detections, refusal} <- [
             {[pipelines: [:detection, :people]],
@@ -176,59 +178,62 @@ defmodule VisionCore.Ros2.ExporterTest do
             {[pipelines: :detection],
              "detections: pipelines: is not a list of detection pipeline names: :detection"}
           ] do
-        assert {:error, reason} = Exporter.check(with_detectors.(detections))
+        assert {:error, reason} = ZenohExporter.check(with_detectors.(detections))
         assert reason =~ refusal
       end
     end
 
     test "runs with the ROS 2 link, whatever it publishes" do
-      assert Exporter.check(options(Camera, stereo: [], detections: [], heartbeat: [])) == :ok
+      assert ZenohExporter.check(options(Camera, stereo: [], detections: [], heartbeat: [])) ==
+               :ok
 
-      assert Exporter.check(
+      assert ZenohExporter.check(
                heartbeat: [],
                config: %VisionCore.Config{ros2: [zenoh_endpoint_ip: "127.0.0.1"]}
              ) == :ok
     end
 
     test "refuses to run without the ROS 2 link" do
-      assert {:error, reason} = Exporter.check(heartbeat: [], config: %VisionCore.Config{})
+      assert {:error, reason} = ZenohExporter.check(heartbeat: [], config: %VisionCore.Config{})
       assert reason =~ "no ros2: section"
     end
 
     test "refuses to publish a stereo unit the configuration has none of, or one it cannot read" do
       no_unit = %VisionCore.Config{ros2: [zenoh_endpoint_ip: "127.0.0.1"]}
-      assert {:error, reason} = Exporter.check(stereo: [], config: no_unit)
+      assert {:error, reason} = ZenohExporter.check(stereo: [], config: no_unit)
       assert reason =~ "no :stereo component"
 
-      assert {:error, reason} = Exporter.check(stereo: [], config: config(nil))
+      assert {:error, reason} = ZenohExporter.check(stereo: [], config: config(nil))
       assert reason =~ ":driver"
 
-      assert {:error, reason} = Exporter.check(stereo: [], config: config(Camera, left: :front))
+      assert {:error, reason} =
+               ZenohExporter.check(stereo: [], config: config(Camera, left: :front))
+
       assert reason =~ ":left"
     end
   end
 
   test "is listed as ROS 2" do
-    assert Exporter.describe([]) == %{id: :ros2, name: "ROS 2"}
+    assert ZenohExporter.describe([]) == %{id: :ros2_zenoh, name: "ROS 2 · Zenoh"}
   end
 
   describe "outputs/1" do
     test "reads the stereo unit's pairs and frames, and the detections, each when it publishes them" do
-      assert Exporter.outputs(stereo: [], detections: []) == [
+      assert ZenohExporter.outputs(stereo: [], detections: []) == [
                :stereo_pair,
                {:camera_frame, :left},
                {:camera_frame, :right},
                {:detections, :detection}
              ]
 
-      assert Exporter.outputs(heartbeat: []) == []
+      assert ZenohExporter.outputs(heartbeat: []) == []
     end
 
     test "reads the detections of each pipeline its detection options list" do
-      assert Exporter.outputs(detections: [pipelines: [:detection, :road]]) ==
+      assert ZenohExporter.outputs(detections: [pipelines: [:detection, :road]]) ==
                [{:detections, :detection}, {:detections, :road}]
 
-      assert Exporter.outputs(detections: [pipelines: [:road, :signs]]) ==
+      assert ZenohExporter.outputs(detections: [pipelines: [:road, :signs]]) ==
                [{:detections, :road}, {:detections, :signs}]
     end
   end
@@ -238,7 +243,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       publish = publish_to(self())
 
       assert [{Diagnostics, diagnostics} | _set_camera_info] =
-               Exporter.children(stereo: [], config: config(Camera), publish: publish)
+               ZenohExporter.children(stereo: [], config: config(Camera), publish: publish)
 
       assert diagnostics[:driver] == Camera
       assert diagnostics[:fps] == 30
@@ -254,7 +259,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       calibration = CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
 
       assert [_diagnostics, left, right] =
-               Exporter.children(stereo: [topic_prefix: "front"], config: config)
+               ZenohExporter.children(stereo: [topic_prefix: "front"], config: config)
 
       assert %{
                id: {SetCameraInfoServer, :left},
@@ -271,7 +276,8 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     test "without a store, answers set_camera_info for each side with a calibration file" do
-      assert [_diagnostics, left, right] = Exporter.children(stereo: [], config: config(Camera))
+      assert [_diagnostics, left, right] =
+               ZenohExporter.children(stereo: [], config: config(Camera))
 
       for {side, child} <- [left: left, right: right] do
         assert %{id: {SetCameraInfoServer, ^side}} = child
@@ -281,13 +287,13 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     test "no helper without a stereo unit to publish" do
-      assert Exporter.children(heartbeat: [], config: config(Camera)) == []
+      assert ZenohExporter.children(heartbeat: [], config: config(Camera)) == []
     end
   end
 
   test "is connected while the ROS 2 link has a session, disconnected otherwise" do
-    {:ok, state} = Exporter.init(options(Camera, heartbeat: []))
-    assert Exporter.status(state) == {:warning, "Disconnected"}
+    {:ok, state} = ZenohExporter.init(options(Camera, heartbeat: []))
+    assert ZenohExporter.status(state) == {:warning, "Disconnected"}
 
     session = local_session()
 
@@ -299,14 +305,14 @@ defmodule VisionCore.Ros2.ExporterTest do
     )
 
     assert eventually(fn -> Client.link().connected end)
-    assert Exporter.status(state) == {:ok, "Connected"}
+    assert ZenohExporter.status(state) == {:ok, "Connected"}
   end
 
   # The clock's synchronization, as a test flips it.
   def clock_synchronized?(agent), do: Agent.get(agent, & &1)
 
   test "is waiting for the clock while the ROS 2 link has a session but publishes nothing" do
-    {:ok, state} = Exporter.init(options(Camera, heartbeat: []))
+    {:ok, state} = ZenohExporter.init(options(Camera, heartbeat: []))
     clock = start_supervised!({Agent, fn -> false end})
     session = local_session()
 
@@ -321,7 +327,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     assert eventually(fn -> Client.link().connected end)
 
-    assert Exporter.status(state) ==
+    assert ZenohExporter.status(state) ==
              {:warning, "Waiting for the clock: nothing is published until NTP sets it"}
 
     Agent.update(clock, fn _ -> true end)
@@ -329,7 +335,7 @@ defmodule VisionCore.Ros2.ExporterTest do
     send(client, :check_clock)
     :sys.get_state(client)
 
-    assert Exporter.status(state) == {:ok, "Connected"}
+    assert ZenohExporter.status(state) == {:ok, "Connected"}
   end
 
   # A Zenoh session that needs no router.
@@ -348,19 +354,19 @@ defmodule VisionCore.Ros2.ExporterTest do
   describe "heartbeat" do
     test "names the node and counts, every interval, on the node's heartbeat topic" do
       {:ok, state} =
-        Exporter.init(
+        ZenohExporter.init(
           heartbeat: [interval_ms: 10],
           node_name: "front_vision",
           publish: publish_to(self())
         )
 
       assert_receive :heartbeat, 1_000
-      {:ok, state} = Exporter.handle_info(:heartbeat, state)
+      {:ok, state} = ZenohExporter.handle_info(:heartbeat, state)
       assert_receive {:published, "front_vision/heartbeat", %StringMessage{data: first}}
       assert first =~ ~r/^front_vision heartbeat 1 @ \d+$/
 
       assert_receive :heartbeat, 1_000
-      {:ok, _state} = Exporter.handle_info(:heartbeat, state)
+      {:ok, _state} = ZenohExporter.handle_info(:heartbeat, state)
       assert_receive {:published, "front_vision/heartbeat", %StringMessage{data: second}}
       assert second =~ "heartbeat 2 @"
     end
@@ -371,17 +377,21 @@ defmodule VisionCore.Ros2.ExporterTest do
       }
 
       {:ok, state} =
-        Exporter.init(heartbeat: [interval_ms: 10], config: config, publish: publish_to(self()))
+        ZenohExporter.init(
+          heartbeat: [interval_ms: 10],
+          config: config,
+          publish: publish_to(self())
+        )
 
       assert_receive :heartbeat, 1_000
-      {:ok, _state} = Exporter.handle_info(:heartbeat, state)
+      {:ok, _state} = ZenohExporter.handle_info(:heartbeat, state)
 
       assert_receive {:published, "rear_vision/heartbeat",
                       %StringMessage{data: "rear_vision heartbeat 1" <> _time}}
     end
 
     test "publishes nothing without its options" do
-      {:ok, _state} = Exporter.init(publish: publish_to(self()))
+      {:ok, _state} = ZenohExporter.init(publish: publish_to(self()))
 
       refute_receive :heartbeat, 50
     end
@@ -459,7 +469,8 @@ defmodule VisionCore.Ros2.ExporterTest do
         |> Keyword.put(:config, config)
 
       start_supervised!(
-        {VisionCore.Exporter.Supervisor, exporter: Exporter, options: options, config: config}
+        {VisionCore.Exporter.Supervisor,
+         exporter: ZenohExporter, options: options, config: config}
       )
     end
 
@@ -564,9 +575,11 @@ defmodule VisionCore.Ros2.ExporterTest do
         :ok
     end
 
-    {:ok, state} = Exporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
+    {:ok, state} = ZenohExporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
 
-    assert {:ok, _state} = Exporter.handle_output(:stereo_pair, %Pair{pair() | depth: nil}, state)
+    assert {:ok, _state} =
+             ZenohExporter.handle_output(:stereo_pair, %Pair{pair() | depth: nil}, state)
+
     assert_received {:published, "stereo/disparity", %DisparityImage{}}
     assert_received {:published, "stereo/points", _cloud}
   end
@@ -584,10 +597,10 @@ defmodule VisionCore.Ros2.ExporterTest do
         :ok
     end
 
-    {:ok, state} = Exporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
+    {:ok, state} = ZenohExporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
     jpeg = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, jpeg: <<0xFF, 0xD8>>}
 
-    {:ok, state} = Exporter.handle_output({:camera_frame, :left}, jpeg, state)
+    {:ok, state} = ZenohExporter.handle_output({:camera_frame, :left}, jpeg, state)
 
     assert_received {:published, "stereo/left/image_raw/compressed"}
     assert [publish_ns] = state.telemetry.stages.pub_left
@@ -595,10 +608,10 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   test "publishes the detections in the frame of their pair, deleting the markers of those gone since the last result" do
-    {:ok, state} = Exporter.init(options(Camera, detections: []))
+    {:ok, state} = ZenohExporter.init(options(Camera, detections: []))
 
     {:ok, state} =
-      Exporter.handle_output(
+      ZenohExporter.handle_output(
         {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
@@ -611,7 +624,11 @@ defmodule VisionCore.Ros2.ExporterTest do
     assert_received {:published, "detection/annotations", %ImageAnnotations{}}
 
     {:ok, _state} =
-      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
+      ZenohExporter.handle_output(
+        {:detections, :detection},
+        {pair(), [detection("person")]},
+        state
+      )
 
     assert_received {:published, "detection/detections/markers", %MarkerArray{markers: markers}}
 
@@ -621,10 +638,16 @@ defmodule VisionCore.Ros2.ExporterTest do
 
   test "publishes a pipeline's detections under its name whatever the stereo unit's prefix, a pair without a frame id in its left frame" do
     options = options(Camera, detections: [])
-    {:ok, state} = Exporter.init(Keyword.put(options, :config, config(Camera, prefix: "front")))
+
+    {:ok, state} =
+      ZenohExporter.init(Keyword.put(options, :config, config(Camera, prefix: "front")))
 
     {:ok, _state} =
-      Exporter.handle_output({:detections, :detection}, {pair(nil), [detection("person")]}, state)
+      ZenohExporter.handle_output(
+        {:detections, :detection},
+        {pair(nil), [detection("person")]},
+        state
+      )
 
     assert_received {:published, "detection/detections/markers",
                      %MarkerArray{markers: [marker | _]}}
@@ -633,7 +656,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   test "publishes a camera source's detections in the camera's frame, deleting only the markers it drew" do
-    {:ok, state} = Exporter.init(options(Camera, detections: [pipelines: [:hq_people]]))
+    {:ok, state} = ZenohExporter.init(options(Camera, detections: [pipelines: [:hq_people]]))
     frame = %Frame{label: "hq", frame_id: "hq_optical", width: 40, height: 20, capture_ns: 1}
 
     unplaced =
@@ -643,7 +666,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       |> Map.put(:box, %{x0: 0.0, y0: 0.0, x1: 20.0, y1: 20.0})
 
     {:ok, state} =
-      Exporter.handle_output(
+      ZenohExporter.handle_output(
         {:detections, :hq_people},
         {frame, [detection("person"), unplaced]},
         state
@@ -657,7 +680,7 @@ defmodule VisionCore.Ros2.ExporterTest do
     assert_received {:published, "hq_people/detections_2d", %Detection2DArray{detections: [_car]}}
 
     {:ok, _state} =
-      Exporter.handle_output({:detections, :hq_people}, {frame, [unplaced]}, state)
+      ZenohExporter.handle_output({:detections, :hq_people}, {frame, [unplaced]}, state)
 
     assert_received {:published, "hq_people/detections/markers", %MarkerArray{markers: markers}}
 
@@ -672,10 +695,10 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "publish each its own detections on its own topics, each deleting only its own markers" do
       {:ok, state} =
-        Exporter.init(options(Camera, detections: [pipelines: [:detection, :road]]))
+        ZenohExporter.init(options(Camera, detections: [pipelines: [:detection, :road]]))
 
       two = [detection("person"), detection("car")]
-      {:ok, state} = Exporter.handle_output({:detections, :detection}, {pair(), two}, state)
+      {:ok, state} = ZenohExporter.handle_output({:detections, :detection}, {pair(), two}, state)
 
       assert markers_of("detection/detections/markers") ==
                List.duplicate({"detection", Marker.add()}, 4)
@@ -684,7 +707,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert_received {:published, "detection/annotations", %ImageAnnotations{}}
 
       {:ok, state} =
-        Exporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
+        ZenohExporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
 
       assert markers_of("road/detections/markers") ==
                List.duplicate({"road", Marker.add()}, 2)
@@ -694,7 +717,11 @@ defmodule VisionCore.Ros2.ExporterTest do
       refute_received {:published, _topic, _message}
 
       {:ok, _state} =
-        Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
+        ZenohExporter.handle_output(
+          {:detections, :detection},
+          {pair(), [detection("person")]},
+          state
+        )
 
       assert markers_of("detection/detections/markers") ==
                List.duplicate({"detection", Marker.add()}, 2) ++
@@ -741,10 +768,12 @@ defmodule VisionCore.Ros2.ExporterTest do
   test "has the client keep the marker array that deletes the markers of boxes gone" do
     test = self()
     publish = fn topic, _module, _message, options -> send(test, {:published, topic, options}) end
-    {:ok, state} = Exporter.init(Keyword.put(options(Camera, detections: []), :publish, publish))
 
     {:ok, state} =
-      Exporter.handle_output(
+      ZenohExporter.init(Keyword.put(options(Camera, detections: []), :publish, publish))
+
+    {:ok, state} =
+      ZenohExporter.handle_output(
         {:detections, :detection},
         {pair(), [detection("person"), detection("car")]},
         state
@@ -753,7 +782,11 @@ defmodule VisionCore.Ros2.ExporterTest do
     assert_received {:published, "detection/detections/markers", [keep: false]}
 
     {:ok, _state} =
-      Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
+      ZenohExporter.handle_output(
+        {:detections, :detection},
+        {pair(), [detection("person")]},
+        state
+      )
 
     assert_received {:published, "detection/detections/markers", [keep: true]}
   end
@@ -772,9 +805,13 @@ defmodule VisionCore.Ros2.ExporterTest do
       refute Process.whereis(VisionCore.Jpeg)
 
       {:ok, state} =
-        Exporter.init(options(Camera, stereo: [publish_rectified_image: true], jpeg_codec: codec))
+        ZenohExporter.init(
+          options(Camera, stereo: [publish_rectified_image: true], jpeg_codec: codec)
+        )
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
       {:ready, {:camera_frame, :left}, state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_raw/compressed",
@@ -782,7 +819,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       assert <<0xFF, 0xD8, _rest::binary>> = raw
 
-      {:busy, state} = Exporter.handle_output(:stereo_pair, pair(), state)
+      {:busy, state} = ZenohExporter.handle_output(:stereo_pair, pair(), state)
       {:ready, :stereo_pair, _state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_rect/compressed",
@@ -815,11 +852,13 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "is encoded apart: the output is busy, the pairs go out, and it is ready once published",
          %{codec: codec} do
-      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
       assert_receive {:encoding, encode}
-      {:ok, state} = Exporter.handle_output(:stereo_pair, pair(), state)
+      {:ok, state} = ZenohExporter.handle_output(:stereo_pair, pair(), state)
 
       assert_received {:published, "stereo/disparity", _disparity}
       refute_received {:published, "stereo/left/image_raw/compressed", _image}
@@ -837,9 +876,11 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "that does not encode leaves its output ready, its camera info published",
          %{codec: codec} do
-      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+
       assert_receive {:encoding, encode}
       GenServer.reply(encode, {:error, :timeout})
 
@@ -850,17 +891,20 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "whose codec is gone leaves its output ready" do
       gone = Module.concat(__MODULE__, GoneCodec)
-      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: gone))
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: gone))
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
 
       assert {:ready, {:camera_frame, :left}, _state} = encoded(state)
     end
 
     test "keeps the calibration read while it was encoded", %{codec: codec} do
-      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
       assert_receive {:encoding, encode}
       reloaded = put_in(state.stereo.sides["left"].camera_info, :read_since)
       GenServer.reply(encode, {:ok, "the jpeg"})
@@ -871,18 +915,20 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "a frame its rate leaves out, and a JPEG frame, are answered at once", %{codec: codec} do
       {:ok, state} =
-        Exporter.init(options(Camera, stereo: [raw_image_max_hz: 1], jpeg_codec: codec))
+        ZenohExporter.init(options(Camera, stereo: [raw_image_max_hz: 1], jpeg_codec: codec))
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
       assert_receive {:encoding, encode}
       GenServer.reply(encode, {:ok, "the jpeg"})
       {:ready, _output, state} = encoded(state)
 
       assert {:ok, state} =
-               Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+               ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
 
       assert {:ok, _state} =
-               Exporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 3), state)
+               ZenohExporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 3), state)
     end
 
     test "of a camera's named output is ready under the output it was handed as", %{codec: codec} do
@@ -893,10 +939,10 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
       options = options(Camera, cameras: [outputs: [hq: :small]], jpeg_codec: codec)
-      {:ok, state} = Exporter.init(Keyword.put(options, :config, config))
+      {:ok, state} = ZenohExporter.init(Keyword.put(options, :config, config))
       frame = %{grey_frame("hq") | output: :small}
 
-      {:busy, state} = Exporter.handle_output({:camera_frame, :hq, :small}, frame, state)
+      {:busy, state} = ZenohExporter.handle_output({:camera_frame, :hq, :small}, frame, state)
       assert_receive {:encoding, encode}
       GenServer.reply(encode, {:ok, "the jpeg"})
 
@@ -925,21 +971,23 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     test "check/1 refuses cameras: options it does not take, or names no camera has" do
-      assert Exporter.check(hq_options(Camera, [], cameras: [names: [:hq], raw_image_max_hz: 5])) ==
+      assert ZenohExporter.check(
+               hq_options(Camera, [], cameras: [names: [:hq], raw_image_max_hz: 5])
+             ) ==
                :ok
 
-      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [max_hz: 5]))
+      assert {:error, reason} = ZenohExporter.check(hq_options(Camera, [], cameras: [max_hz: 5]))
       assert reason =~ "cameras: has no option :max_hz"
 
       assert {:error, reason} =
-               Exporter.check(hq_options(Camera, [], cameras: [names: [:hq, :usb]]))
+               ZenohExporter.check(hq_options(Camera, [], cameras: [names: [:hq, :usb]]))
 
       assert reason =~ "cameras: names :usb, which is no camera of the configuration"
 
-      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: :hq))
+      assert {:error, reason} = ZenohExporter.check(hq_options(Camera, [], cameras: :hq))
       assert reason =~ "cameras: is not a keyword list"
 
-      assert {:error, reason} = Exporter.check(hq_options(Camera, [], cameras: [names: :hq]))
+      assert {:error, reason} = ZenohExporter.check(hq_options(Camera, [], cameras: [names: :hq]))
       assert reason =~ "cameras: names: is not a list of camera names: :hq"
     end
 
@@ -968,17 +1016,21 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     test "its frames are those of its default output, or of the output cameras: outputs names" do
-      assert Exporter.outputs(outputs_options(cameras: [])) == [{:camera_frame, :hq}]
+      assert ZenohExporter.outputs(outputs_options(cameras: [])) == [{:camera_frame, :hq}]
 
       options = outputs_options(cameras: [outputs: [hq: :inference]])
-      assert Exporter.check(options) == :ok
-      assert Exporter.outputs(options) == [{:camera_frame, :hq, :inference}]
+      assert ZenohExporter.check(options) == :ok
+      assert ZenohExporter.outputs(options) == [{:camera_frame, :hq, :inference}]
 
-      assert {:error, reason} = Exporter.check(outputs_options(cameras: [outputs: [hq: :small]]))
+      assert {:error, reason} =
+               ZenohExporter.check(outputs_options(cameras: [outputs: [hq: :small]]))
+
       assert reason =~ "cameras: outputs gives the camera :hq the output :small"
 
       assert {:error, reason} =
-               Exporter.check(outputs_options(cameras: [names: [], outputs: [hq: :inference]]))
+               ZenohExporter.check(
+                 outputs_options(cameras: [names: [], outputs: [hq: :inference]])
+               )
 
       assert reason =~ "cameras: outputs names the camera :hq, which it does not publish"
     end
@@ -993,10 +1045,10 @@ defmodule VisionCore.Ros2.ExporterTest do
       config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
       options = &Keyword.put(options(Camera, &1), :config, config)
 
-      assert Exporter.outputs(options.(cameras: [])) == [{:camera_frame, :hq}]
-      assert Exporter.check(options.(cameras: [outputs: [hq: :view_jpeg]])) == :ok
+      assert ZenohExporter.outputs(options.(cameras: [])) == [{:camera_frame, :hq}]
+      assert ZenohExporter.check(options.(cameras: [outputs: [hq: :view_jpeg]])) == :ok
 
-      assert Exporter.check(options.(cameras: [outputs: [hq: :view]])) ==
+      assert ZenohExporter.check(options.(cameras: [outputs: [hq: :view]])) ==
                {:error,
                 "its cameras: outputs gives the camera :hq the output :view, " <>
                   "which it does not send (send: false)"}
@@ -1017,13 +1069,13 @@ defmodule VisionCore.Ros2.ExporterTest do
           jpeg_codec: no_codec
         )
 
-      {:ok, state} = Exporter.init(Keyword.put(options, :config, config))
+      {:ok, state} = ZenohExporter.init(Keyword.put(options, :config, config))
 
       jpegs = for byte <- 1..3, do: <<0xFF, 0xD8, byte, 0xFF, 0xD9>>
 
       Enum.reduce(Enum.with_index(jpegs, 1), state, fn {jpeg, capture_ns}, state ->
         frame = %{jpeg_frame("hq", capture_ns) | output: :view_jpeg, jpeg: jpeg}
-        {:ok, state} = Exporter.handle_output({:camera_frame, :hq, :view_jpeg}, frame, state)
+        {:ok, state} = ZenohExporter.handle_output({:camera_frame, :hq, :view_jpeg}, frame, state)
         state
       end)
 
@@ -1047,27 +1099,27 @@ defmodule VisionCore.Ros2.ExporterTest do
     test "reads the H.264 output cameras: videos names, beside the camera's image" do
       options = video_options(cameras: [videos: [hq: :view_h264]])
 
-      assert Exporter.check(options) == :ok
+      assert ZenohExporter.check(options) == :ok
 
-      assert Exporter.outputs(options) == [
+      assert ZenohExporter.outputs(options) == [
                {:camera_frame, :hq},
                {:camera_video, :hq, :view_h264}
              ]
     end
 
     test "refuses a video that is no H.264 output, or one of a camera it does not publish" do
-      assert Exporter.check(video_options(cameras: [videos: [hq: :view_jpeg]])) ==
+      assert ZenohExporter.check(video_options(cameras: [videos: [hq: :view_jpeg]])) ==
                {:error,
                 "its cameras: videos gives the camera :hq the output :view_jpeg, " <>
                   "which is no H.264 output of it"}
 
-      assert Exporter.check(video_options(cameras: [names: [], videos: [hq: :view_h264]])) ==
+      assert ZenohExporter.check(video_options(cameras: [names: [], videos: [hq: :view_h264]])) ==
                {:error, "its cameras: videos names the camera :hq, which it does not publish"}
 
-      assert {:error, reason} = Exporter.check(video_options(cameras: [videos: :hq]))
+      assert {:error, reason} = ZenohExporter.check(video_options(cameras: [videos: :hq]))
       assert reason =~ "cameras: videos: is not a keyword list"
 
-      assert Exporter.check(video_options(cameras: [outputs: [hq: :view_h264]])) ==
+      assert ZenohExporter.check(video_options(cameras: [outputs: [hq: :view_h264]])) ==
                {:error,
                 "its cameras: outputs gives the camera :hq the output :view_h264, " <>
                   "an H.264 video: give it in videos:"}
@@ -1075,7 +1127,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "publishes each frame of a camera's video as foxglove_msgs/CompressedVideo" do
       options = video_options(cameras: [videos: [hq: :view_h264]])
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
 
       frames =
         for {h264, capture_ns} <- Enum.with_index([<<0, 0, 0, 1, 0x65>>, <<0, 0, 0, 1, 0x41>>]) do
@@ -1092,7 +1144,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         end
 
       Enum.reduce(frames, state, fn frame, state ->
-        {:ok, state} = Exporter.handle_output({:camera_video, :hq, :view_h264}, frame, state)
+        {:ok, state} = ZenohExporter.handle_output({:camera_video, :hq, :view_h264}, frame, state)
         state
       end)
 
@@ -1109,19 +1161,19 @@ defmodule VisionCore.Ros2.ExporterTest do
         options =
           [detections: [pipelines: [:objects]]] ++ if(cameras, do: [cameras: cameras], else: [])
 
-        {:ok, state} = Exporter.init(outputs_options(options))
+        {:ok, state} = ZenohExporter.init(outputs_options(options))
         assert state.detections[{:detections, :objects}].settings.image_size == nil
       end
     end
 
     test "draws a camera pipeline's 2D boxes on the camera output it publishes" do
       {:ok, state} =
-        Exporter.init(outputs_options(cameras: [], detections: [pipelines: [:objects]]))
+        ZenohExporter.init(outputs_options(cameras: [], detections: [pipelines: [:objects]]))
 
       assert state.detections[{:detections, :objects}].settings.image_size == {2028, 1520}
 
       {:ok, state} =
-        Exporter.init(
+        ZenohExporter.init(
           outputs_options(
             cameras: [outputs: [hq: :inference]],
             detections: [pipelines: [:objects]]
@@ -1131,7 +1183,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
 
       frame = %{jpeg_frame("hq", 1) | output: :inference}
-      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
+      {:ok, _state} = ZenohExporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
       assert_received {:published, "hq/image_raw/compressed", %CompressedImage{}}
     end
 
@@ -1160,19 +1212,19 @@ defmodule VisionCore.Ros2.ExporterTest do
         |> options(cameras: [], detections: [pipelines: [:objects]])
         |> Keyword.put(:config, config)
 
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
       assert state.detections[{:detections, :objects}].settings.image_size == {1014, 760}
     end
 
     test "its frames are read with cameras:, every camera by default, or those it names" do
       options = hq_options(Camera, [], cameras: [])
-      assert Exporter.outputs(options) == [{:camera_frame, :hq}]
+      assert ZenohExporter.outputs(options) == [{:camera_frame, :hq}]
 
-      assert Exporter.outputs(Keyword.put(options, :cameras, names: [:hq])) ==
+      assert ZenohExporter.outputs(Keyword.put(options, :cameras, names: [:hq])) ==
                [{:camera_frame, :hq}]
 
-      assert Exporter.outputs(Keyword.put(options, :cameras, names: [])) == []
-      assert Exporter.outputs(Keyword.delete(options, :cameras)) == []
+      assert ZenohExporter.outputs(Keyword.put(options, :cameras, names: [])) == []
+      assert ZenohExporter.outputs(Keyword.delete(options, :cameras)) == []
     end
 
     @tag :tmp_dir
@@ -1183,7 +1235,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       options =
         hq_options(Camera, [calibration: "hq.yaml", calibration_store_dir: tmp_dir], cameras: [])
 
-      assert [server] = Exporter.children(options)
+      assert [server] = ZenohExporter.children(options)
 
       assert %{id: {SetCameraInfoServer, :hq}, start: {SetCameraInfoServer, :start_link, [args]}} =
                server
@@ -1196,15 +1248,17 @@ defmodule VisionCore.Ros2.ExporterTest do
     test "without a store, answers set_camera_info with a calibration file, under :topic_prefix when given; with neither, no service" do
       options = hq_options(Camera, [calibration: "hq.yaml"], cameras: [topic_prefix: "front"])
 
-      assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] = Exporter.children(options)
+      assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] =
+               ZenohExporter.children(options)
+
       assert args[:service_name] == "front/hq/set_camera_info"
 
-      assert Exporter.children(hq_options(Camera, [], cameras: [])) == []
+      assert ZenohExporter.children(hq_options(Camera, [], cameras: [])) == []
     end
 
     test "plots the exposure and gain of each camera whose driver reports them, in a helper" do
       assert [{CameraLive, live_options}] =
-               Exporter.children(hq_options(LiveCamera, [], cameras: []))
+               ZenohExporter.children(hq_options(LiveCamera, [], cameras: []))
 
       assert live_options[:cameras] == [{"hq", LiveCamera, LiveCamera.name_for("hq")}]
       start_supervised!({CameraLive, live_options})
@@ -1213,7 +1267,9 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert_receive {:published, "hq/analogue_gain", %Float64{data: 2.5}}, 1_000
 
       assert [{CameraLive, front_options}] =
-               Exporter.children(hq_options(LiveCamera, [], cameras: [topic_prefix: "front"]))
+               ZenohExporter.children(
+                 hq_options(LiveCamera, [], cameras: [topic_prefix: "front"])
+               )
 
       assert [{"front/hq", _driver, _server}] = front_options[:cameras]
     end
@@ -1243,10 +1299,10 @@ defmodule VisionCore.Ros2.ExporterTest do
          %{tmp_dir: tmp_dir} do
       options = hq_options(Camera, [pose: pose_file(tmp_dir)], cameras: [])
 
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
       assert_received :publish_transforms
 
-      {:ok, _state} = Exporter.handle_info(:publish_transforms, state)
+      {:ok, _state} = ZenohExporter.handle_info(:publish_transforms, state)
 
       assert_received {:published, "/tf_static", %TFMessage{transforms: [transform]}}
       assert transform.header.frame_id == "stereo_left"
@@ -1259,7 +1315,7 @@ defmodule VisionCore.Ros2.ExporterTest do
     test "a pose committed from the dashboard is published as its transform, starting the transforms",
          %{tmp_dir: tmp_dir} do
       options = hq_options(Camera, [calibration_store_dir: tmp_dir], cameras: [])
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
       refute_received :publish_transforms
       assert self() in VisionCore.Outputs.subscribers(VisionCore.Camera.Pose.changed_key(:hq))
 
@@ -1268,11 +1324,11 @@ defmodule VisionCore.Ros2.ExporterTest do
         "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [-0.2, 0, 0]\n"
       )
 
-      {:ok, state} = Exporter.handle_info({:camera_pose_changed, :hq}, state)
-      assert {:ok, ^state} = Exporter.handle_info({:camera_pose_changed, :usb}, state)
+      {:ok, state} = ZenohExporter.handle_info({:camera_pose_changed, :hq}, state)
+      assert {:ok, ^state} = ZenohExporter.handle_info({:camera_pose_changed, :usb}, state)
       assert_received :publish_transforms
 
-      {:ok, _state} = Exporter.handle_info(:publish_transforms, state)
+      {:ok, _state} = ZenohExporter.handle_info(:publish_transforms, state)
 
       assert_received {:published, "/tf_static", %TFMessage{transforms: [transform]}}
       assert transform.transform.translation.x == 0.2
@@ -1285,9 +1341,9 @@ defmodule VisionCore.Ros2.ExporterTest do
         |> with_camera(Camera, pose: pose_file(tmp_dir))
 
       {:ok, _state} =
-        Exporter.init(Keyword.put(options(Camera, cameras: []), :config, no_stereo))
+        ZenohExporter.init(Keyword.put(options(Camera, cameras: []), :config, no_stereo))
 
-      {:ok, _state} = Exporter.init(hq_options(Camera, [], cameras: []))
+      {:ok, _state} = ZenohExporter.init(hq_options(Camera, [], cameras: []))
 
       refute_received :publish_transforms
     end
@@ -1307,14 +1363,14 @@ defmodule VisionCore.Ros2.ExporterTest do
           cameras: []
         )
 
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
       File.cp!(Path.join(@calibration, "identity_left.yaml"), stored)
 
-      {:ok, state} = Exporter.handle_info({:camera_calibration_changed, :hq}, state)
-      assert {:ok, ^state} = Exporter.handle_info({:camera_calibration_changed, :usb}, state)
+      {:ok, state} = ZenohExporter.handle_info({:camera_calibration_changed, :hq}, state)
+      assert {:ok, ^state} = ZenohExporter.handle_info({:camera_calibration_changed, :usb}, state)
 
       frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
-      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
+      {:ok, _state} = ZenohExporter.handle_output({:camera_frame, :hq}, frame, state)
 
       assert_received {:published, "hq/camera_info", %CameraInfo{} = camera_info}
       assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
@@ -1333,7 +1389,7 @@ defmodule VisionCore.Ros2.ExporterTest do
           cameras: []
         )
 
-      {:ok, _state} = Exporter.init(options)
+      {:ok, _state} = ZenohExporter.init(options)
 
       assert self() in VisionCore.Outputs.subscribers(
                VisionCore.Camera.Calibration.changed_key(:hq)
@@ -1356,7 +1412,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       supervisor =
         start_supervised!(
           {VisionCore.Exporter.Supervisor,
-           exporter: Exporter, options: options, config: options[:config]}
+           exporter: ZenohExporter, options: options, config: options[:config]}
         )
 
       runner(supervisor)
@@ -1443,10 +1499,12 @@ defmodule VisionCore.Ros2.ExporterTest do
       }
 
     test "check/1 refuses segmentation: options it does not take, or names no pipeline has" do
-      assert Exporter.check(segmentation_options(Camera, segmentation: [pipelines: [:road]])) ==
+      assert ZenohExporter.check(segmentation_options(Camera, segmentation: [pipelines: [:road]])) ==
                :ok
 
-      assert Exporter.check(segmentation_options(Camera, segmentation: [topic_prefix: "front"])) ==
+      assert ZenohExporter.check(
+               segmentation_options(Camera, segmentation: [topic_prefix: "front"])
+             ) ==
                :ok
 
       for {segmentation, refusal} <- [
@@ -1460,7 +1518,7 @@ defmodule VisionCore.Ros2.ExporterTest do
              "segmentation: pipelines: is not a list of segmentation pipeline names: :road"}
           ] do
         assert {:error, reason} =
-                 Exporter.check(segmentation_options(Camera, segmentation: segmentation))
+                 ZenohExporter.check(segmentation_options(Camera, segmentation: segmentation))
 
         assert reason =~ refusal
       end
@@ -1468,19 +1526,19 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "its results are read with segmentation:, every pipeline by default, or those it names" do
       options = segmentation_options(Camera, segmentation: [])
-      assert Exporter.outputs(options) == [{:segmentation, :road}, {:segmentation, :lanes}]
+      assert ZenohExporter.outputs(options) == [{:segmentation, :road}, {:segmentation, :lanes}]
 
-      assert Exporter.outputs(Keyword.put(options, :segmentation, pipelines: [:lanes])) ==
+      assert ZenohExporter.outputs(Keyword.put(options, :segmentation, pipelines: [:lanes])) ==
                [{:segmentation, :lanes}]
 
-      assert Exporter.outputs(Keyword.delete(options, :segmentation)) == []
+      assert ZenohExporter.outputs(Keyword.delete(options, :segmentation)) == []
     end
 
     test "publishes each pipeline's labels and clouds on its own topics" do
-      {:ok, state} = Exporter.init(segmentation_options(Camera, segmentation: []))
+      {:ok, state} = ZenohExporter.init(segmentation_options(Camera, segmentation: []))
 
       {:ok, state} =
-        Exporter.handle_output(
+        ZenohExporter.handle_output(
           {:segmentation, :road},
           {segmented_frame(), segmentation_labels(), segmentation_clouds()},
           state
@@ -1502,7 +1560,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       refute_received {:published, _topic, _message}
 
       {:ok, _state} =
-        Exporter.handle_output(
+        ZenohExporter.handle_output(
           {:segmentation, :lanes},
           {segmented_frame(), segmentation_labels(), nil},
           state
@@ -1533,7 +1591,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       frame = %{segmented_frame() | width: 192, height: 108}
 
       {:ok, state} =
-        Exporter.handle_output({:segmentation, :road}, {frame, grid_labels(), nil}, state)
+        ZenohExporter.handle_output({:segmentation, :road}, {frame, grid_labels(), nil}, state)
 
       assert_received {:published, "road/camera_info", %CameraInfo{k: k}}
       {k, state}
@@ -1548,7 +1606,9 @@ defmodule VisionCore.Ros2.ExporterTest do
       calibration = Path.join(@calibration, "identity_left.yaml")
 
       {:ok, state} =
-        Exporter.init(segmentation_options(Camera, [segmentation: []], calibration: calibration))
+        ZenohExporter.init(
+          segmentation_options(Camera, [segmentation: []], calibration: calibration)
+        )
 
       assert {k, _state} = published_k(state)
       assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
@@ -1563,7 +1623,7 @@ defmodule VisionCore.Ros2.ExporterTest do
           calibration_store_dir: tmp_dir
         )
 
-      {:ok, state} = Exporter.init(options)
+      {:ok, state} = ZenohExporter.init(options)
 
       # The 96 x 72 calibration does not fit the 192 x 108 frames: an empty camera info.
       {k, state} = published_k(state)
@@ -1574,7 +1634,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         Path.join(tmp_dir, "camera_hq.yaml")
       )
 
-      {:ok, state} = Exporter.handle_info({:camera_calibration_changed, :hq}, state)
+      {:ok, state} = ZenohExporter.handle_info({:camera_calibration_changed, :hq}, state)
 
       assert {k, _state} = published_k(state)
       assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))
@@ -1582,10 +1642,10 @@ defmodule VisionCore.Ros2.ExporterTest do
 
     test "a frame or pair without a frame id goes out in the camera's and the stereo left one's" do
       {:ok, state} =
-        Exporter.init(segmentation_options(Camera, segmentation: [topic_prefix: "front"]))
+        ZenohExporter.init(segmentation_options(Camera, segmentation: [topic_prefix: "front"]))
 
       {:ok, _state} =
-        Exporter.handle_output(
+        ZenohExporter.handle_output(
           {:segmentation, :road},
           {segmented_frame(nil), segmentation_labels(), segmentation_clouds(nil)},
           state
@@ -1608,11 +1668,11 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       for {segmentation, root} <- [{[], "road"}, {[topic_prefix: "front"], "front/road"}] do
         options = [config: config, publish: publish_to(self()), segmentation: segmentation]
-        assert Exporter.check(options) == :ok
-        {:ok, state} = Exporter.init(options)
+        assert ZenohExporter.check(options) == :ok
+        {:ok, state} = ZenohExporter.init(options)
 
         {:ok, _state} =
-          Exporter.handle_output(
+          ZenohExporter.handle_output(
             {:segmentation, :road},
             {segmented_frame(), segmentation_labels(), segmentation_clouds(nil)},
             state

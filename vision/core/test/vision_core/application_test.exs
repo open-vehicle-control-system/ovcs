@@ -80,7 +80,7 @@ defmodule VisionCore.ApplicationTest do
   test "with ros2:, the ROS 2 link starts, and the ROS 2 exporter publishes the heartbeat through it" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 50]}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: [interval_ms: 50]}]
     })
 
     ids = child_ids(VisionCore.Supervisor)
@@ -129,20 +129,20 @@ defmodule VisionCore.ApplicationTest do
     log =
       capture_log(fn ->
         start_pipeline(%VisionCore.Config{
-          exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+          exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
         })
       end)
 
-    assert log =~ "VisionCore.Ros2.Exporter not started"
+    assert log =~ "VisionCore.Ros2.ZenohExporter not started"
     assert log =~ "ros2:"
-    assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+    assert [%{id: "ros2_zenoh", status: {:off, _detail}}] = VisionCore.Exporters.list()
     assert Process.alive?(Process.whereis(VisionCore.Status))
   end
 
   test "the exporters start after the components and their codec, before Status and the previews" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
     })
 
     assert Enum.take(child_ids(VisionCore.Supervisor), 2) == [
@@ -161,13 +161,13 @@ defmodule VisionCore.ApplicationTest do
     assert for(
              {id, _pid, :supervisor, _} <- Supervisor.which_children(VisionCore.Exporters),
              do: id
-           ) == [:ros2]
+           ) == [:ros2_zenoh]
   end
 
   test "a restart of Status or the previews leaves the exporters running" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
     })
 
     exporters = Process.whereis(VisionCore.Exporters)
@@ -364,7 +364,7 @@ defmodule VisionCore.ApplicationTest do
   test "settings are the config the pipeline started with" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [interval_ms: 500]}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: [interval_ms: 500]}]
     })
 
     Application.put_env(:vision_core, :test_config, %VisionCore.Config{
@@ -375,7 +375,7 @@ defmodule VisionCore.ApplicationTest do
              "ros2" => %{"zenoh_endpoint_ip" => "127.0.0.1"},
              "exporters" => [
                %{
-                 "module" => "VisionCore.Ros2.Exporter",
+                 "module" => "VisionCore.Ros2.ZenohExporter",
                  "options" => %{"heartbeat" => %{"interval_ms" => 500}}
                }
              ]
@@ -517,7 +517,7 @@ defmodule VisionCore.ApplicationTest do
   test "the pipeline keeps running with no Zenoh router" do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
     })
 
     Process.sleep(2_000)
@@ -734,7 +734,7 @@ defmodule VisionCore.ApplicationTest do
     start_failing_cameras(tmp_dir, "exit 3")
     core = Process.whereis(VisionCore.Supervisor)
     processes = stereo_processes()
-    exporter = child_pid(VisionCore.Exporters, :ros2)
+    exporter = child_pid(VisionCore.Exporters, :ros2_zenoh)
     assert is_pid(exporter)
 
     assert eventually(fn ->
@@ -747,7 +747,7 @@ defmodule VisionCore.ApplicationTest do
     assert VisionCore.Status.snapshot().sync == %{present: false}
     assert Process.whereis(VisionCore.Supervisor) == core
     assert stereo_processes() == processes
-    assert child_pid(VisionCore.Exporters, :ros2) == exporter
+    assert child_pid(VisionCore.Exporters, :ros2_zenoh) == exporter
   end
 
   defp start_failing_cameras(tmp_dir, script) do
@@ -756,7 +756,7 @@ defmodule VisionCore.ApplicationTest do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
       components: [stereo_component(failing, failing)],
-      exporters: [{VisionCore.Ros2.Exporter, stereo: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, stereo: []}]
     })
   end
 
@@ -767,7 +767,7 @@ defmodule VisionCore.ApplicationTest do
     start_pipeline(%VisionCore.Config{
       ros2: @ros2,
       components: [stereo_component(idle, idle, startup_timeout_ms: 60_000)],
-      exporters: [{VisionCore.Ros2.Exporter, heartbeat: [], stereo: []}]
+      exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: [], stereo: []}]
     })
 
     stereo_processes()
@@ -914,12 +914,12 @@ defmodule VisionCore.ApplicationTest do
     exporters = Process.whereis(VisionCore.Exporters)
     status = Process.whereis(VisionCore.Status)
 
-    crash_loop(:ros2, VisionCore.Exporter.Runner)
+    crash_loop(:ros2_zenoh, VisionCore.Exporter.Runner)
 
     assert stereo_processes() == stereo
     assert Process.whereis(VisionCore.Exporters) == exporters
     assert Process.whereis(VisionCore.Status) == status
-    assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+    assert [%{id: "ros2_zenoh", status: {:off, _detail}}] = VisionCore.Exporters.list()
   end
 
   test "a diagnostics helper that keeps crashing stops the ROS 2 exporter alone: the stereo unit runs on as it was",
@@ -927,7 +927,7 @@ defmodule VisionCore.ApplicationTest do
     stereo = start_idle_unit(tmp_dir)
     exporters = Process.whereis(VisionCore.Exporters)
 
-    crash_loop(:ros2, VisionCore.Ros2.Exporter.Diagnostics)
+    crash_loop(:ros2_zenoh, VisionCore.Ros2.ZenohExporter.Diagnostics)
 
     assert stereo_processes() == stereo
     assert Process.whereis(VisionCore.Exporters) == exporters
@@ -975,13 +975,13 @@ defmodule VisionCore.ApplicationTest do
           start_pipeline(%VisionCore.Config{
             ros2: @ros2,
             components: [{:stereo, Keyword.merge(stereo_options, unquote(options))}],
-            exporters: [{VisionCore.Ros2.Exporter, stereo: []}]
+            exporters: [{VisionCore.Ros2.ZenohExporter, stereo: []}]
           })
         end)
 
-      assert log =~ "VisionCore.Ros2.Exporter not started: "
+      assert log =~ "VisionCore.Ros2.ZenohExporter not started: "
       assert Process.whereis(VisionCore.Stereo.Supervisor) == nil
-      assert [%{id: "ros2", status: {:off, _detail}}] = VisionCore.Exporters.list()
+      assert [%{id: "ros2_zenoh", status: {:off, _detail}}] = VisionCore.Exporters.list()
       assert Process.alive?(Process.whereis(VisionCore.Status))
       assert Process.alive?(Process.whereis(VisionCore.Preview))
     end

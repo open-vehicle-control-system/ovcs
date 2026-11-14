@@ -180,7 +180,7 @@ The camera's `camera_info`, a segmentation pipeline's label `camera_info`, a det
 
 ## On ROS 2
 
-The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists. `<camera>` is the camera's name, the namespace of its topics; `topic_prefix:` in `cameras:` puts them under `<topic_prefix>/<camera>/` instead. On the OVCS1 reference vehicle, the camera `center` publishes `/center/image_raw/compressed`. [What leaves the unit](./data_flow.md#what-leaves-the-unit) lists every topic of the unit.
+The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.ZenohExporter`): every one by default, or those its `names:` lists. `<camera>` is the camera's name, the namespace of its topics; `topic_prefix:` in `cameras:` puts them under `<topic_prefix>/<camera>/` instead. On the OVCS1 reference vehicle, the camera `center` publishes `/center/image_raw/compressed`. [What leaves the unit](./data_flow.md#what-leaves-the-unit) lists every topic of the unit.
 
 | Topic or service | Type | What |
 |---|---|---|

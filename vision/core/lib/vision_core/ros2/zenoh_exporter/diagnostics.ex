@@ -1,4 +1,4 @@
-defmodule VisionCore.Ros2.Exporter.Diagnostics do
+defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
   @moduledoc """
   What a stereo unit's cameras actually do, next to the settings asked
   for in its parameters (`VisionCore.Stereo.Parameters`):
@@ -21,7 +21,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   up. The diagnostic summarises the recent pairs, none once no pair
   formed for two seconds (`VisionCore.Stereo.Sync.summary/2`).
 
-  `VisionCore.Ros2.Exporter` starts it as a helper under its own
+  `VisionCore.Ros2.ZenohExporter` starts it as a helper under its own
   supervisor when it publishes a stereo unit. It subscribes to the
   cameras' frames itself: the exporter is handed the newest frame of
   each camera only, and the sync is measured on every one. A camera that
@@ -35,7 +35,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     * `:topic_prefix` (`"stereo"`), `:fps` (30).
     * `:left`, `:right` — each camera's `:sync` role, when it has one.
     * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
-      message, as `VisionCore.Ros2.Exporter`'s does.
+      message, as `VisionCore.Ros2.ZenohExporter`'s does.
     * `:name` (this module) — the name it registers under.
   """
 
@@ -46,7 +46,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
   alias VisionCore.Ros2.{Stamp, Topics}
-  alias VisionCore.Ros2.Exporter.Camera
+  alias VisionCore.Ros2.ZenohExporter.Camera
   alias VisionCore.Stereo.Sync
 
   @default_topic_prefix "stereo"

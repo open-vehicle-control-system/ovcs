@@ -1,7 +1,7 @@
-defmodule VisionCore.Ros2.Exporter.Segmentation do
+defmodule VisionCore.Ros2.ZenohExporter.Segmentation do
   @moduledoc """
   The ROS 2 messages of one segmentation pipeline's results
-  (`VisionCore.Segmentation.Pipeline`), which `VisionCore.Ros2.Exporter`
+  (`VisionCore.Segmentation.Pipeline`), which `VisionCore.Ros2.ZenohExporter`
   publishes:
 
     * `<name>/labels` — the label image, a `mono8`
@@ -16,7 +16,7 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
       `sensor_msgs/PointCloud2` of `x`, `y`, `z` in the stereo pair's
       left optical frame, the frame of its depth, stamped with the pair's
       capture time, as the stereo unit's points are
-      (`VisionCore.Ros2.Exporter.Stereo`). The labels and the
+      (`VisionCore.Ros2.ZenohExporter.Stereo`). The labels and the
       clouds of one result therefore carry different stamps: a consumer
       syncing them needs an approximate-time policy. A result without
       clouds, as without a matched stereo pair, publishes none; one whose
@@ -24,7 +24,7 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
 
   ## The label image's camera info
 
-  It is the camera's, as `VisionCore.Ros2.Exporter.Camera` publishes it
+  It is the camera's, as `VisionCore.Ros2.ZenohExporter.Camera` publishes it
   for the frame's size, mapped onto the label grid: a camera pixel `u`
   of the band `{x, y, w, h}` is the label pixel
   `u' = (u − x + ½) · W / w − ½`, which puts each cell's centre on its
@@ -34,7 +34,7 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   that affine map, `D`, `R` and the distortion model unchanged, the size
   `W × H`, no `roi` or binning. Without a calibration, or with one of
   another aspect ratio than the frame's, the camera info is empty but
-  for its size, as `VisionCore.Ros2.Exporter.Camera`'s is.
+  for its size, as `VisionCore.Ros2.ZenohExporter.Camera`'s is.
 
   ## Options
 

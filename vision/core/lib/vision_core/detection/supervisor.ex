@@ -4,7 +4,7 @@ defmodule VisionCore.Detection.Supervisor do
   backend, the `VisionCore.Detection.Pipeline` that places its boxes in
   3D with the stereo depth, on the stereo pair or a camera of its own
   (its `:source`), and `VisionCore.Detection.Live`, which hands
-  them to the dashboard. `VisionCore.Ros2.Exporter` publishes them on
+  them to the dashboard. `VisionCore.Ros2.ZenohExporter` publishes them on
   ROS 2, outside the unit.
 
   `:name` (`:detection`) names the pipeline (`VisionCore.Detection`): the
@@ -41,7 +41,7 @@ defmodule VisionCore.Detection.Supervisor do
   to the backend, the pipeline's to the pipeline and `:max_hz` to
   `Live`; see their docs. How the detections
   are published is the exporters' business: the ROS 2 exporter's are its
-  `detections:` options (`VisionCore.Ros2.Exporter`), and their frame
+  `detections:` options (`VisionCore.Ros2.ZenohExporter`), and their frame
   is the one their pair carries, the stereo unit's left `:frame_id`, or
   on a camera source the camera's.
 
@@ -169,7 +169,7 @@ defmodule VisionCore.Detection.Supervisor do
       Map.new(@exporter_options, fn option ->
         {option,
          "its #{inspect(option)} is the ROS 2 exporter's detections: option " <>
-           "(VisionCore.Ros2.Exporter)"}
+           "(VisionCore.Ros2.ZenohExporter)"}
       end)
 
     Map.put(
