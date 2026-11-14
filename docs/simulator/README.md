@@ -43,10 +43,10 @@ Start your vehicle with its simulated hardware. On the OVCS Mini reference vehic
 ./ovcs run ovcs_mini --simulate
 ```
 
-`run` starts the simulator runner first, then waits for its ready line:
+`run` starts the simulator runner first, then asks it over Erlang RPC until its simulated hardware is ready:
 
 ```text
-[simulator] OVCS simulator ready
+Waiting for ovcs-mini-simulator@<host> to be ready before starting the vehicle
 ```
 
 Only then does it start the VMS and the other BEAMs, so the VMS boots against hardware that already answers, as on the vehicle. A VMS that boots first finds its parts silent and can latch `FAILURE`.
@@ -54,7 +54,7 @@ Only then does it start the VMS and the other BEAMs, so the VMS boots against ha
 > [!WARNING]
 > Don't set your vehicle's `ros` bridge switch with `--simulate`, such as `OVCS_SIM=1` on the OVCS Mini. Both would then answer the VMS's frames.
 
-`run` stops with an error if the runner exits or prints no ready line within 60 seconds. It refuses a vehicle with no `simulator/0`.
+`run` stops with an error if the runner exits or is not ready within 60 seconds. It refuses a vehicle with no `simulator/0`.
 
 In another terminal, attach to it:
 

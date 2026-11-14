@@ -10,10 +10,18 @@ defmodule SimulatorRunner do
   `SimulatorCore.Hardware` with no world: the motion is
   `SimulatorCore.Vehicle`'s own.
 
-  Once the simulated components run and their frames are emitted, the
-  runner prints exactly this line on standard output, for whatever
-  starts the VMS after it to wait on:
-
-      OVCS simulator ready
+  Whatever starts the VMS after it polls `ready?/0` over Erlang RPC.
   """
+
+  @doc """
+  Whether the vehicle's simulated hardware runs: every simulated
+  component has started and its frames are emitted.
+  """
+  @spec ready?() :: boolean()
+  def ready? do
+    case Process.whereis(SimulatorRunner.Supervisor) do
+      nil -> false
+      supervisor -> match?(%{specs: count, active: count}, Supervisor.count_children(supervisor))
+    end
+  end
 end

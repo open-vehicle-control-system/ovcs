@@ -92,9 +92,9 @@ When the add-on's `node_modules` is missing, `run` installs it first. A missing 
 
 1. `run` compiles `simulator/runner/` with the firmware projects.
 2. It spawns the runner first, as `<vehicle>-simulator`, prefixed `[simulator] …`.
-3. It waits for the runner's `OVCS simulator ready` line, then spawns the other BEAMs.
+3. It polls the runner over Erlang RPC until `SimulatorRunner.ready?/0` returns true, then spawns the other BEAMs.
 
-The runner exiting, or printing no ready line within 60 seconds, stops `run` with an error. A vehicle without `simulator/0` is refused before anything is built. [Simulator](../docs/simulator/README.md#run-your-vehicle-in-simulation) describes the simulated hardware.
+The runner exiting, or not being ready within 60 seconds, stops `run` with an error. A vehicle without `simulator/0` is refused before anything is built. [Simulator](../docs/simulator/README.md#run-your-vehicle-in-simulation) describes the simulated hardware.
 
 The Flutter infotainment dashboard isn't an add-on: its hot reload reads keypresses on stdin, which a multiplexed `run` can't forward. Start it in its own terminal alongside `run`; it talks to the infotainment API on `:4001`:
 

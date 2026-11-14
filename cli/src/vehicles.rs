@@ -130,6 +130,18 @@ pub fn local_sname(vehicle_dir: &str, role: &str) -> String {
     node_prefix(vehicle_dir, role)
 }
 
+/// The host part of a host-run BEAM's node name, `hostname -s` as
+/// `--sname` takes it; `localhost` when it cannot be read.
+pub fn local_hostname() -> String {
+    Command::new("hostname")
+        .arg("-s")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .unwrap_or_else(|| "localhost".to_string())
+}
+
 /// Hyphenated prefix of every local sname belonging to `vehicle_dir`,
 /// e.g. `ovcs-mini-`.
 pub fn local_sname_prefix(vehicle_dir: &str) -> String {

@@ -14,13 +14,7 @@ VEHICLE=OvcsMini mix run --no-halt
 
 `CAN_NETWORK_MAPPINGS` overrides the vehicle's host mapping, as for the other firmwares.
 
-Once the simulated components run and emit their frames, the runner prints exactly this line on standard output:
-
-```
-OVCS simulator ready
-```
-
-Start the VMS after it.
+Once the simulated components run and emit their frames, `SimulatorRunner.ready?/0` returns true. Start the VMS after it, as `./ovcs run <vehicle> --simulate` does by polling it over Erlang RPC.
 
 ## Testing
 
