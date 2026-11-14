@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import ParameterPanel from '../ParameterPanel.jsx'
 import { useParameters } from '../../stores/parameters.js'
+import { useExplanations } from '../../stores/explanations.js'
 
 vi.mock('../../services/parameters.js')
 
@@ -45,6 +46,7 @@ describe('ParameterPanel', () => {
   beforeEach(() => {
     stubs = actions()
     useParameters.setState({ groups, parameters, ...stubs })
+    useExplanations.setState({ open: {} })
   })
 
   it("shows the group's name, summary and a control per parameter", () => {
@@ -76,12 +78,25 @@ describe('ParameterPanel', () => {
     expect(explanation.hidden).toBe(true)
   })
 
-  it('keeps the explanation open from one step to the next', () => {
+  it("opens one step's explanation alone, leaving the other steps' as they were", () => {
     const { rerender } = render(<ParameterPanel groupId="stereo.match" />)
     fireEvent.click(screen.getByRole('button', { name: 'How it works' }))
 
     rerender(<ParameterPanel groupId="stereo.depth" />)
-    expect(screen.getByText('Far points are the least precise.').hidden).toBe(false)
+    expect(screen.getByText('Far points are the least precise.').hidden).toBe(true)
+    expect(screen.getByRole('button', { name: 'How it works' }).getAttribute('aria-expanded')).toBe('false')
+
+    rerender(<ParameterPanel groupId="stereo.match" />)
+    expect(screen.getByText('The shift between the two images is the disparity. Watch Matched pixels.').hidden).toBe(false)
+  })
+
+  it("shows a step's explanation as it was left when its panel comes back", () => {
+    const { unmount } = render(<ParameterPanel groupId="stereo.match" />)
+    fireEvent.click(screen.getByRole('button', { name: 'How it works' }))
+    unmount()
+
+    render(<ParameterPanel groupId="stereo.match" />)
+    expect(screen.getByText('The shift between the two images is the disparity. Watch Matched pixels.').hidden).toBe(false)
   })
 
   it('shows the summary alone for a group without an explanation', () => {

@@ -87,13 +87,17 @@ The page says which is in force: **Using the calibration shipped with the firmwa
 
 ### The calibrations kept
 
-The unit keeps every calibration it was given, in its database, beside the parameters you save: each one applied from the page, with its board, its count of views and its errors, and each one it finds in its store that it does not know, as one committed by `cameracalibrator`, which it notes as found on the unit. A calibration found there is kept when the unit starts.
+The unit keeps every calibration it was given, in its database, beside the parameters you save:
 
-The page's second part, **Calibrations kept on the unit**, lists those of the calibration shown, the one the unit kept last first, with the time each was made, its reprojection errors and a pair's distance between cameras, and marks the one **In use**:
+- **Made on this page**: each one applied from the dashboard, with its board, its count of views and its errors.
+- **Made outside this page**: each one it finds in its store that it does not know, as one committed by `cameracalibrator` or stored before the unit kept its calibrations. It is kept when the unit finds it, at the latest when the unit starts.
+
+The page's second part, **Calibrations kept on the unit**, lists those of the calibration shown, the one the unit kept last first, with the time each was made, where, its reprojection errors and a pair's distance between cameras, and marks the one **In use**:
 
 - **Use** puts a calibration back in force: the unit writes its files to the store and takes them, as for a new one. It is refused while a calibration session runs.
 - **Rename** names one, in 1 to 80 characters; a calibration starts with the time it was kept as its name.
-- **Delete** removes one after asking. The calibration in use has no Delete.
+- **Download** saves its YAML files, named as those of the calibration in use.
+- **Delete** removes one after asking. Deleting the calibration in use first takes the unit back to the calibration shipped with the firmware, as **Use** on that row does; it is refused without one, and while a calibration session runs.
 - **Shipped with the firmware**, the last row while a built-in calibration exists, takes the unit back to it. Nothing kept is removed: the calibration that was in use stays in the list.
 
 A firmware upload keeps the data partition, and with it the store and the calibrations kept; wiping the partition loses them.
@@ -102,7 +106,7 @@ A firmware upload keeps the data partition, and with it the store and the calibr
 
 The stored calibration belongs to one unit. To ship it in the firmware, so that a new board, or one whose data partition was wiped, starts calibrated:
 
-1. Get the two files: **Download** on the result before applying it, or on the calibration in use after, or copy them off the unit:
+1. Get the two files: **Download** on the result before applying it, on the calibration in use after, or on a calibration kept, or copy them off the unit:
 
    ```sh
    sftp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml  vehicles/<vehicle>/priv/calibration/

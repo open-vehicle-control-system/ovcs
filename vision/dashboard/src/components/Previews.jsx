@@ -22,8 +22,10 @@ import {
   cameraIssues,
   depthFigures,
   depthIssues,
+  distanceGaps,
   objectFigures
 } from '../status.js'
+import { HINTS } from '../hints.js'
 
 // Each figure is a small label over its value; the one with a tone carries the stream's health dot.
 function Figures({ id, figures }) {
@@ -214,18 +216,32 @@ function useVideoCameras() {
 /**
  * A camera of its own, titled by its name, its video where the API relays one, else its JPEG preview, with its rate,
  * exposure and gain, its segmentation pipelines' label grids drawn over it with a legend of their classes, a class a
- * row beside the frame, and the objects its detection pipelines detect drawn over those and counted. Over a video,
- * each pipeline's result is drawn on the frame it was found on.
+ * row beside the frame, and the objects its detection pipelines detect drawn over those and counted, then why those
+ * pipelines have no distance when the status says so. Over a video, each pipeline's result is drawn on the frame it
+ * was found on.
  */
 function CameraPreview({ name, status, socket, beside, video }) {
   const { overlays: boxes, detections } = useSourceDetections(socket, name)
   const { overlays: grids, legends } = useSourceSegmentations(socket, name, beside)
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
   const overlay = (captureUs) => [...grids(captureUs), ...boxes(captureUs)]
+  const gaps = distanceGaps(status, name)
 
   return (
     <Preview stream={name} socket={socket} video={video} overlay={overlay} aside={legends} {...rowLayout(beside)}>
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
+      {gaps.length > 0 ? (
+        <div className="flex items-start gap-1">
+          <div className="flex flex-col">
+            {gaps.map((gap) => (
+              <p key={gap} data-distances className="text-xs text-ovcs-muted">
+                {gap}
+              </p>
+            ))}
+          </div>
+          <Hint hint={HINTS.distances} />
+        </div>
+      ) : null}
     </Preview>
   )
 }

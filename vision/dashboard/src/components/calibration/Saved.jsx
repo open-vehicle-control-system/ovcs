@@ -1,17 +1,26 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
+import { OvcsBadge, focusClass as FOCUS, useOvcsConfirm } from '@ovcs/ui/react'
 import Section from './Section.jsx'
+import Hint from '../Hint.jsx'
 import { selectedCalibration, selectedId, useCalibration } from '../../stores/calibration.js'
+import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON } from '../../styles.js'
 
-const ORIGINS = { dashboard: 'Made on this page', imported: 'Found on the unit' }
+const ORIGINS = { dashboard: 'Made on this page', imported: 'Made outside this page' }
+
+const ORIGIN_HINT = {
+  title: 'Where it was made',
+  text:
+    'Made on this page: calibrated from this dashboard, with its board, views and errors. Made outside this page: ' +
+    "committed by ROS 2's cameracalibrator, or stored on the unit before it kept its calibrations."
+}
 
 const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
 
 const NONE = []
 
-// The reprojection errors of the solve that made a calibration, each camera's then the pair's; none for one found on the unit.
+// The reprojection errors of the solve that made a calibration, each camera's then the pair's; none for one made outside this page.
 function errors({ cameras, stereoRmsPx }) {
   const each = cameras.filter((camera) => camera.rmsPx != null).map((camera) => `${camera.name} ${formatNumber(camera.rmsPx, 2)} px`)
   if (stereoRmsPx != null) each.push(`pair ${formatNumber(stereoRmsPx, 2)} px`)
@@ -118,12 +127,29 @@ function Name({ kept, busy }) {
   )
 }
 
-function Row({ kept, pair, busy }) {
+// Removing the calibration in use first takes the unit back to the firmware's.
+const deleteQuestion = ({ name, inForce }) => ({
+  title: `Delete the calibration "${name}"?`,
+  message: inForce ? 'The unit uses it: it goes back to the calibration shipped with the firmware first.' : null,
+  confirmLabel: 'Delete',
+  danger: true
+})
+
+const NO_FIRMWARE = 'The unit has no calibration shipped with the firmware to go back to'
+
+/** A kept calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. */
+function Row({ kept, pair, busy, firmware }) {
+  const noWayBack = kept.inForce && !firmware
   const use = useCalibration((state) => state.useSaved)
   const remove = useCalibration((state) => state.deleteSaved)
+  const [confirm, confirmation] = useOvcsConfirm()
 
-  const confirmRemove = () => {
-    if (window.confirm(`Delete the calibration "${kept.name}"?`)) remove(kept.id)
+  const confirmRemove = async () => {
+    if (await confirm(deleteQuestion(kept))) remove(kept.id)
+  }
+
+  const download = () => {
+    for (const camera of kept.cameras) downloadYaml(camera.file, camera.yaml)
   }
 
   return (
@@ -142,15 +168,26 @@ function Row({ kept, pair, busy }) {
           {kept.inForce ? (
             <InUse />
           ) : (
-            <>
-              <button type="button" disabled={busy} aria-label={`Use ${kept.name}`} onClick={() => use(kept.id)} className={BUTTON}>
-                Use
-              </button>
-              <button type="button" disabled={busy} aria-label={`Delete ${kept.name}`} onClick={confirmRemove} className={BUTTON}>
-                Delete
-              </button>
-            </>
+            <button type="button" disabled={busy} aria-label={`Use ${kept.name}`} onClick={() => use(kept.id)} className={BUTTON}>
+              Use
+            </button>
           )}
+          {kept.cameras.every((camera) => camera.yaml) ? (
+            <button type="button" aria-label={`Download ${kept.name}`} onClick={download} className={BUTTON}>
+              Download
+            </button>
+          ) : null}
+          <button
+            type="button"
+            disabled={busy || noWayBack}
+            title={noWayBack ? NO_FIRMWARE : undefined}
+            aria-label={`Delete ${kept.name}`}
+            onClick={confirmRemove}
+            className={BUTTON}
+          >
+            Delete
+          </button>
+          {confirmation}
         </div>
       </td>
     </tr>
@@ -159,7 +196,7 @@ function Row({ kept, pair, busy }) {
 
 /**
  * Every calibration the unit keeps for the one shown, the newest first, and the firmware's: each can be put back in
- * use, a kept one renamed, and one that is not in use deleted. Nothing changes while a calibration session runs.
+ * use, and a kept one renamed, downloaded and deleted. Nothing changes while a calibration session runs.
  */
 export default function Saved() {
   const calibration = useCalibration(selectedCalibration)
@@ -182,7 +219,12 @@ export default function Saved() {
             <thead className="text-xs text-ovcs-muted">
               <tr>
                 <th className="pb-1 pr-4 font-medium">Name</th>
-                <th className="pb-1 pr-4 font-medium">Made</th>
+                <th className="pb-1 pr-4 font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    Made
+                    <Hint hint={ORIGIN_HINT} />
+                  </span>
+                </th>
                 <th className="pb-1 pr-4 font-medium">Errors (reprojection RMS)</th>
                 <th className="pb-1 pr-4 font-medium">{pair ? 'Distance between cameras (baseline)' : ''}</th>
                 <th className="pb-1 font-medium">
@@ -192,7 +234,7 @@ export default function Saved() {
             </thead>
             <tbody>
               {kept.map((one) => (
-                <Row key={one.id} kept={one} pair={pair} busy={busy} />
+                <Row key={one.id} kept={one} pair={pair} busy={busy} firmware={firmware} />
               ))}
               {firmware ? <FirmwareRow inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
             </tbody>

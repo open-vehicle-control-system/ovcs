@@ -6,7 +6,8 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   `board`, the `samples` and the `stereoRmsPx` of the session that solved
   it, `null` for one the unit did not solve, a pair's `baselineM`, and
   its `cameras`, each with its `name`, image size, intrinsics, distortion
-  coefficients and `rmsPx`. Its `calibration` relationship names the
+  coefficients, `rmsPx`, and the `file` name to save its `yaml` under,
+  as the calibration in use's. Its `calibration` relationship names the
   target it calibrates, one of the `calibrations`.
   """
   alias VisionApiWeb.JsonApi
@@ -21,7 +22,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   @spec show(%{kept: VisionCore.Calibration.kept()}) :: map()
   def show(%{kept: kept}), do: %{data: data(kept)}
 
-  defp data(%{saved: saved, in_force: in_force}) do
+  defp data(%{saved: saved, in_force: in_force, files: files}) do
     JsonApi.resource(
       "saved-calibrations",
       Integer.to_string(saved.id),
@@ -34,7 +35,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
         samples: saved.samples,
         stereoRmsPx: saved.stereo_rms_px,
         baselineM: saved.baseline_m,
-        cameras: Enum.map(saved.cameras, &camera/1)
+        cameras: Enum.zip_with(saved.cameras, files, &camera/2)
       },
       %{calibration: JsonApi.to_one("calibrations", saved.target)}
     )
@@ -49,7 +50,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
       squareMm: Float.round(saved.board_square_m * 1000, 3)
     }
 
-  defp camera(camera),
+  defp camera(camera, file),
     do: %{
       name: camera.name,
       imageWidth: camera.image_width,
@@ -59,6 +60,8 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
       cx: camera.cx,
       cy: camera.cy,
       distortion: Enum.map(@distortion, &Map.fetch!(camera, &1)),
-      rmsPx: camera.rms_px
+      rmsPx: camera.rms_px,
+      file: file.file,
+      yaml: file.yaml
     }
 end

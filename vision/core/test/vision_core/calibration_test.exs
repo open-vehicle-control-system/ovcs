@@ -181,7 +181,7 @@ defmodule VisionCore.CalibrationTest do
       assert Calibration.fetch_saved(config, foreign.id) == {:error, :not_found}
     end
 
-    test "rename_saved/3 and delete_saved/2 publish the change of the target's library", %{
+    test "rename_saved/3 and delete_saved/3 publish the change of the target's library", %{
       config: config
     } do
       commit(config, 580.8)
@@ -199,12 +199,71 @@ defmodule VisionCore.CalibrationTest do
       assert {:ok, [%{in_force: true}]} = Calibration.saved(config, "hq")
     end
 
-    test "delete_saved/2 keeps the calibration in force", %{config: config} do
+    test "delete_saved/3 returns the target to its built-in calibration, then removes the one in force",
+         %{config: config} do
       commit(config, 580.8)
       {:ok, [%{saved: saved}]} = Calibration.saved(config, "hq")
+      Outputs.subscribe(Recorder.changed_key("hq"))
+
+      assert Calibration.delete_saved(config, saved.id) == :ok
+
+      assert {:ok, %{source: :built_in}} = Calibration.in_use(config, "hq")
+      assert Library.fetch(saved.id) == {:error, :not_found}
+      assert Library.selected("hq") == nil
+      assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
+      assert Calibration.rename_saved(config, -1, "x") == {:error, :not_found}
+    end
+
+    test "delete_saved/3 keeps the calibration in force of a target with no built-in one to return to",
+         %{tmp_dir: tmp_dir} do
+      config = config(tmp_dir)
+      :ok = OwnCalibration.commit(config, :hq, calibration(580.8))
+      :sys.get_state(Recorder)
+      {:ok, [%{saved: saved, in_force: true}]} = Calibration.saved(config, "hq")
 
       assert Calibration.delete_saved(config, saved.id) == {:error, :in_force}
-      assert Calibration.rename_saved(config, -1, "x") == {:error, :not_found}
+
+      assert {:ok, %{source: :stored}} = Calibration.in_use(config, "hq")
+      assert {:ok, _saved} = Library.fetch(saved.id)
+    end
+
+    test "delete_saved/3 keeps the calibration in force when the return to the built-in one fails",
+         %{config: config, tmp_dir: tmp_dir} do
+      commit(config, 580.8)
+      {:ok, [%{saved: saved}]} = Calibration.saved(config, "hq")
+      store = Path.join(tmp_dir, "store")
+      File.chmod!(store, 0o500)
+      on_exit(fn -> File.chmod(store, 0o700) end)
+
+      assert {:error, {:reset, "cannot remove " <> _reason}} =
+               Calibration.delete_saved(config, saved.id)
+
+      assert {:ok, %{source: :stored}} = Calibration.in_use(config, "hq")
+      assert Library.selected("hq").id == saved.id
+    end
+
+    test "saved/2 gives each camera's YAML with the file to save it under, as the calibration in use",
+         %{config: config} do
+      left = calibration(580.8)
+      right = calibration(590.0)
+
+      {:ok, _pair} =
+        Library.record("front", [{"left", left}, {"right", right}], origin: "dashboard")
+
+      commit(config, 600.5)
+
+      assert {:ok,
+              [%{files: [%{name: "left", file: "front_left.yaml", yaml: left_yaml}, right_file]}]} =
+               Calibration.saved(config, "front")
+
+      assert %{name: "right", file: "front_right.yaml", yaml: right_yaml} = right_file
+      assert left_yaml == CameraCalibration.to_yaml(left, "front_left")
+      assert {:ok, %{camera_matrix: [590.0 | _rest]}} = CameraCalibration.parse(right_yaml)
+
+      assert {:ok, [%{files: [%{name: "hq", file: "hq.yaml", yaml: hq_yaml}]}]} =
+               Calibration.saved(config, "hq")
+
+      assert hq_yaml == CameraCalibration.to_yaml(calibration(600.5), "hq")
     end
   end
 end

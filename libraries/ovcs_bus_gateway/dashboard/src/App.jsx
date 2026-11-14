@@ -3,6 +3,7 @@ import {
   OvcsBottomBarItem,
   OvcsConnectionStatus,
   OvcsMain,
+  OvcsRegion,
   OvcsShell,
   OvcsShellBody,
   OvcsTopBar,
@@ -67,44 +68,52 @@ export default function App() {
 
   return (
     <OvcsShell product="Bus Gateway">
-      <OvcsTopBar firmware={firmware}>
-        <FilterInput ref={filterInput} filter={filter} onFilterChange={setFilter} />
-      </OvcsTopBar>
+      <OvcsRegion name="The top bar">
+        <OvcsTopBar firmware={firmware}>
+          <FilterInput ref={filterInput} filter={filter} onFilterChange={setFilter} />
+        </OvcsTopBar>
+      </OvcsRegion>
 
       <OvcsShellBody>
-        <BusMenu
-          bus={bus}
-          count={count}
-          adapters={adapters}
-          selection={selection}
-          onSelectNode={select}
-          onOpenAdapter={openAdapter}
-        />
+        <OvcsRegion name="The menu">
+          <BusMenu
+            bus={bus}
+            count={count}
+            adapters={adapters}
+            selection={selection}
+            onSelectNode={select}
+            onOpenAdapter={openAdapter}
+          />
+        </OvcsRegion>
         <OvcsMain>
-          {selection.adapter ? (
-            <AdapterPage id={selection.adapter} adapters={adapters} />
-          ) : (
-            <BusPage
-              status={status}
-              bus={bus}
-              tree={tree}
-              filter={deferredFilter}
-              selection={selection}
-              select={select}
-              now={now}
-            />
-          )}
+          <OvcsRegion name="This page" resetOn={selection.adapter ?? ''}>
+            {selection.adapter ? (
+              <AdapterPage id={selection.adapter} adapters={adapters} />
+            ) : (
+              <BusPage
+                status={status}
+                bus={bus}
+                tree={tree}
+                filter={deferredFilter}
+                selection={selection}
+                select={select}
+                now={now}
+              />
+            )}
+          </OvcsRegion>
         </OvcsMain>
       </OvcsShellBody>
 
-      <OvcsBottomBar>
-        <OvcsConnectionStatus state={CONNECTION[status]} />
-        {status === 'live' ? (
-          <OvcsBottomBarItem label="Signals">
-            <span className="font-medium tabular-nums text-ovcs-text">{count}</span>
-          </OvcsBottomBarItem>
-        ) : null}
-      </OvcsBottomBar>
+      <OvcsRegion name="The status bar">
+        <OvcsBottomBar>
+          <OvcsConnectionStatus state={CONNECTION[status]} />
+          {status === 'live' ? (
+            <OvcsBottomBarItem label="Signals">
+              <span className="font-medium tabular-nums text-ovcs-text">{count}</span>
+            </OvcsBottomBarItem>
+          ) : null}
+        </OvcsBottomBar>
+      </OvcsRegion>
     </OvcsShell>
   )
 }

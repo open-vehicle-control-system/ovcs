@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectedCalibration, selectedId, useCalibration } from '../calibration.js'
-import { TAKE_TIMEOUT_MS, loadBoard, resetCalibration, saveBoard, selectSaved } from '../../services/calibration.js'
+import { TAKE_TIMEOUT_MS, deleteSaved, loadBoard, resetCalibration, saveBoard, selectSaved } from '../../services/calibration.js'
 
 function fakeChannel() {
   const handlers = {}
@@ -288,7 +288,7 @@ describe('calibration store', () => {
     })
   })
 
-  it('gives the unit TAKE_TIMEOUT_MS to take a calibration, which it answers only once taken', async () => {
+  it('gives the unit TAKE_TIMEOUT_MS to take a calibration, or to return to the firmware\'s before a deletion, which it answers once done', async () => {
     vi.useFakeTimers()
     try {
       const signals = []
@@ -296,13 +296,13 @@ describe('calibration store', () => {
         signals.push(signal)
         return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
       }))
-      const refusals = [selectSaved('7'), resetCalibration('stereo')].map((taking) => taking.catch((error) => error.message))
+      const refusals = [selectSaved('7'), resetCalibration('stereo'), deleteSaved('7')].map((taking) => taking.catch((error) => error.message))
 
       await vi.advanceTimersByTimeAsync(TAKE_TIMEOUT_MS - 1)
-      expect(signals.map((signal) => signal.aborted)).toEqual([false, false])
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false, false])
       await vi.advanceTimersByTimeAsync(1)
 
-      expect(await Promise.all(refusals)).toEqual(['The vision unit did not answer in time', 'The vision unit did not answer in time'])
+      expect(await Promise.all(refusals)).toEqual(Array(3).fill('The vision unit did not answer in time'))
     } finally {
       vi.useRealTimers()
     }

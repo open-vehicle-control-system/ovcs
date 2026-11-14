@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
-import Region from '../Region.jsx'
-import { reloadPage } from '../../services/page.js'
+import Region from './OvcsRegion.jsx'
+import { reloadPage } from './page.js'
 
-vi.mock('../../services/page.js', () => ({ reloadPage: vi.fn() }))
+vi.mock('./page.js', () => ({ reloadPage: vi.fn() }))
 
 function Broken() {
   throw new Error('no such field')
 }
 
-describe('Region', () => {
+describe('OvcsRegion', () => {
   // React logs each error a boundary catches.
   beforeEach(() => vi.spyOn(console, 'error').mockImplementation(() => {}))
   afterEach(() => vi.restoreAllMocks())

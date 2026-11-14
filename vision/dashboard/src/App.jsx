@@ -4,7 +4,6 @@ import Hint from './components/Hint.jsx'
 import { HINTS } from './hints.js'
 import LivePreviews from './components/LivePreviews.jsx'
 import Menu from './components/Menu.jsx'
-import Region from './components/Region.jsx'
 import CalibrationPage from './pages/CalibrationPage.jsx'
 import ExporterPage from './pages/ExporterPage.jsx'
 import ParameterPanel from './components/ParameterPanel.jsx'
@@ -15,6 +14,7 @@ import {
   OvcsMain,
   OvcsSaveBar,
   OvcsShell,
+  OvcsRegion,
   OvcsShellBody,
   OvcsTopBar,
   focusClass as FOCUS,
@@ -24,7 +24,6 @@ import {
 } from '@ovcs/ui/react'
 import { fetchBoard, fetchFirmware } from './services/unit.js'
 import { dashboardSocket } from './services/socket.js'
-import { reloadPage } from './services/page.js'
 import { BUTTON } from './styles.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
@@ -117,31 +116,6 @@ function ParameterError({ connection }) {
   )
 }
 
-/**
- * Whether the unit runs another firmware than the first it answered, as after an upload under the open page: the
- * page is then the previous firmware's.
- */
-function useFirmwareChanged(firmware) {
-  const revision = firmware?.revision
-  const [first, setFirst] = useState(null)
-
-  useEffect(() => {
-    if (revision) setFirst((known) => known ?? revision)
-  }, [revision])
-
-  return first != null && revision != null && revision !== first
-}
-
-function ReloadPrompt() {
-  return (
-    <div role="status" className="flex min-w-0 items-center gap-2 rounded border border-ovcs-border px-2 py-1 text-sm">
-      <p className="ovcs-status ovcs-status--warn min-w-0 text-ovcs-warn-text">The unit runs another firmware than this page: reload it.</p>
-      <button type="button" onClick={reloadPage} className={`shrink-0 ${BUTTON}`}>
-        Reload
-      </button>
-    </div>
-  )
-}
 
 function ParameterSaveBar() {
   const barRef = useRef(null)
@@ -222,24 +196,22 @@ export default function App() {
   const connection = useOvcsConnection(dashboardSocket)
   const board = useOvcsBoard(fetchBoard, connection === 'connected')
   const { page, selectedGroupId, exporterId } = useNavigationInUrl()
-  const firmwareChanged = useFirmwareChanged(firmware)
   const Page = PAGES[page]
 
   return (
     <OvcsShell product="Vision">
-      <Region name="The top bar">
+      <OvcsRegion name="The top bar">
         <OvcsTopBar firmware={firmware} board={board}>
-          {firmwareChanged ? <ReloadPrompt /> : null}
           <ParameterError connection={connection} />
         </OvcsTopBar>
-      </Region>
+      </OvcsRegion>
 
       <OvcsShellBody>
-        <Region name="The menu">
+        <OvcsRegion name="The menu">
           <Menu />
-        </Region>
+        </OvcsRegion>
         <OvcsMain>
-          <Region name="This page" resetOn={`${page}/${exporterId}/${selectedGroupId}`}>
+          <OvcsRegion name="This page" resetOn={`${page}/${exporterId}/${selectedGroupId}`}>
             {page === 'exporter' ? (
               <ExporterPage id={exporterId} />
             ) : Page ? (
@@ -247,16 +219,16 @@ export default function App() {
             ) : (
               <PreviewsPage page={page} groupId={selectedGroupId} />
             )}
-          </Region>
+          </OvcsRegion>
         </OvcsMain>
       </OvcsShellBody>
 
-      <Region name="The status bar">
+      <OvcsRegion name="The status bar">
         <OvcsBottomBar>
           <OvcsConnectionStatus state={connection} hint={<Hint hint={HINTS.connection} />} />
           <UnitStatusBar connection={connection} />
         </OvcsBottomBar>
-      </Region>
+      </OvcsRegion>
     </OvcsShell>
   )
 }

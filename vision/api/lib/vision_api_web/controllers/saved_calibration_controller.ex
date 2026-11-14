@@ -3,7 +3,10 @@ defmodule VisionApiWeb.SavedCalibrationController do
   The calibrations the unit keeps (`VisionCore.Calibration.saved/2`), as
   `saved-calibrations` resources: listed, for every target or for the one
   `filter[calibration]` names, read, renamed and removed. A rename is
-  read from the JSON body only. The calibration in force is not removed.
+  read from the JSON body only. Removing the calibration in force first
+  returns its target to the built-in calibration; it is refused while a
+  calibration session runs, or without a built-in calibration to return
+  to.
 
   Putting one back in force is a `calibration-selections` action
   (`VisionApiWeb.CalibrationSelectionController`).
@@ -63,15 +66,39 @@ defmodule VisionApiWeb.SavedCalibrationController do
   end
 
   def delete(conn, %{"id" => id}) do
+    config = CalibrationUnit.config()
+
     with {:ok, saved_id} <- parse(id),
-         :ok <- Calibration.delete_saved(CalibrationUnit.config(), saved_id) do
+         {:ok, kept} <- Calibration.fetch_saved(config, saved_id),
+         :ok <- check_leavable(kept),
+         :ok <- delete_task(config, saved_id) do
       send_resp(conn, :no_content, "")
     else
       {:error, :in_force} ->
-        JsonApi.error(conn, 409, "the unit runs on this calibration", title: "In force")
+        JsonApi.error(
+          conn,
+          409,
+          "the unit runs on this calibration and has no built-in calibration to return to",
+          title: "In force"
+        )
+
+      {:error, {:reset, reason}} ->
+        JsonApi.error(conn, 500, reason)
 
       refusal ->
         refuse(conn, id, refusal)
+    end
+  end
+
+  # A session's apply would replace the built-in calibration the removal returns to.
+  defp check_leavable(%{in_force: true}), do: CalibrationUnit.check_idle("Not deleted")
+  defp check_leavable(_kept), do: :ok
+
+  # Outlives the request: removing the calibration in force may wait for the stereo unit to restart.
+  defp delete_task(config, saved_id) do
+    case CalibrationUnit.run("the removal", fn -> Calibration.delete_saved(config, saved_id) end) do
+      {:ok, outcome} -> outcome
+      :failed -> {:error, {:reset, "the removal failed; the log says why"}}
     end
   end
 

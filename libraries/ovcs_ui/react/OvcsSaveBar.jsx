@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import OvcsButton from './OvcsButton.jsx'
+import { useOvcsConfirm } from './OvcsConfirm.jsx'
 
 const RUNNING = { save: 'Saving…', discard: 'Discarding…', reset: 'Resetting…' }
 
@@ -19,7 +20,7 @@ function Alert({ text, dismissLabel, onDismiss }) {
 }
 
 /**
- * The unsaved count with Save and Discard, Reset all and the errors.
+ * The unsaved count with Save and Discard, Reset all and the errors. Discard and Reset all ask first.
  *
  * The callbacks may return promises; the actions stay disabled until they settle. `className` and
  * `ref` go to the bar itself.
@@ -35,6 +36,7 @@ export default function OvcsSaveBar({
   ref
 }) {
   const [running, setRunning] = useState(null)
+  const [confirm, confirmation] = useOvcsConfirm()
 
   const run = async (name, action) => {
     setRunning(name)
@@ -47,16 +49,15 @@ export default function OvcsSaveBar({
     }
   }
 
-  const discard = () => {
-    if (window.confirm(`Discard ${changes(unsaved, 'unsaved ')}?`)) run('discard', onDiscard)
+  const discard = async () => {
+    const title = `Discard ${changes(unsaved, 'unsaved ')}?`
+    if (await confirm({ title, confirmLabel: 'Discard', danger: true })) run('discard', onDiscard)
   }
 
-  const resetAll = () => {
-    const question =
-      unsaved > 0
-        ? `Reset every parameter to its default? This also drops ${changes(unsaved, 'unsaved ')}.`
-        : 'Reset every parameter to its default?'
-    if (window.confirm(question)) run('reset', onResetAll)
+  const resetAll = async () => {
+    const message = unsaved > 0 ? `This also drops ${changes(unsaved, 'unsaved ')}.` : null
+    const question = { title: 'Reset every parameter to its default?', message, confirmLabel: 'Reset all', danger: true }
+    if (await confirm(question)) run('reset', onResetAll)
   }
 
   const label = (name, idle) => (running === name ? RUNNING[name] : idle)
@@ -83,6 +84,7 @@ export default function OvcsSaveBar({
         </OvcsButton>
       </div>
       {error ? <Alert text={error} dismissLabel="Dismiss error" onDismiss={onDismissError} /> : null}
+      {confirmation}
     </div>
   )
 }
