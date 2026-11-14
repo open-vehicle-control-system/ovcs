@@ -3,8 +3,15 @@ import * as service from '../services/calibration.js'
 
 const message = (error) => (error instanceof Error ? error.message : String(error))
 
-/** The id of the calibration the page works on: the session's while one runs, else the one picked. */
-export const selectedId = (state) => state.session?.calibration ?? state.selected
+/**
+ * The id of the calibration the page works on: the session's while one runs, else the one picked, or the first one
+ * the unit pushed when it has none by that id.
+ */
+export const selectedId = (state) => {
+  const id = state.session?.calibration ?? state.selected
+  const [first] = Object.keys(state.calibrations)
+  return id in state.calibrations || first === undefined ? id : first
+}
 
 /** The calibration in use the page works on, `null` until the unit pushed it. */
 export const selectedCalibration = (state) => state.calibrations[selectedId(state)] ?? null
@@ -51,6 +58,8 @@ export const useCalibration = create((set, get) => {
           selected: state.selected ?? calibration.id
         }))
       )
+      // A session the channel no longer follows is not shown: its phase would open the dialog on a capture long over.
+      channel.onError(() => set({ session: null }))
       channel
         .join()
         .receive('ok', () => set({ unavailable: false }))
@@ -61,7 +70,10 @@ export const useCalibration = create((set, get) => {
             channel.leave()
           }
         })
-      return () => channel.leave()
+      return () => {
+        channel.leave()
+        set({ session: null })
+      }
     },
 
     select: (id) => set({ selected: id }),

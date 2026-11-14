@@ -91,8 +91,12 @@ function Parameters({ cameras }) {
   )
 }
 
-/** The calibration the unit uses: where it comes from in plain words, the figures to check, and beside them each camera's parameters; `onCalibrate`, when given, opens the steps that make a new one. */
-export default function InUse({ onCalibrate }) {
+/**
+ * The calibration the unit uses: where it comes from in plain words, the figures to check, and beside them each
+ * camera's parameters; why a file gives no calibration, when one does not. `onCalibrate`, when given, opens the steps
+ * that make a new one, from the button `calibrateRef` then holds.
+ */
+export default function InUse({ onCalibrate, calibrateRef }) {
   const inUse = useCalibration(selectedCalibration)
   const busy = useCalibration((state) => state.busy)
   const applying = useCalibration((state) => state.session?.phase === 'applying')
@@ -128,7 +132,7 @@ export default function InUse({ onCalibrate }) {
         </button>
       ) : null}
       {onCalibrate ? (
-        <button type="button" onClick={onCalibrate} className={PRIMARY}>
+        <button ref={calibrateRef} type="button" onClick={onCalibrate} className={PRIMARY}>
           {inUse.source === 'none' ? 'Calibrate' : 'Calibrate again'}
         </button>
       ) : null}
@@ -138,6 +142,11 @@ export default function InUse({ onCalibrate }) {
   return (
     <Section title={title} tone={inUse.source === 'none' ? 'warn' : undefined} actions={actions}>
       <p className="text-sm text-ovcs-muted">{detail}</p>
+      {inUse.error ? (
+        <p role="alert" className="ovcs-status ovcs-status--error break-words text-sm text-ovcs-error-text">
+          {inUse.error}
+        </p>
+      ) : null}
       <div className="flex min-h-[6.5rem] flex-wrap items-start gap-x-8 gap-y-3">
         <dl className="grid grid-cols-[9rem_15rem] gap-x-8 gap-y-2 tabular-nums">
           {facts(inUse).map(({ label, value }) => (

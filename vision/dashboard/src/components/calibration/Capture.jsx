@@ -10,15 +10,22 @@ import { selectedCalibration, useCalibration } from '../../stores/calibration.js
 import { loadBoard, saveBoard } from '../../services/calibration.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
 
+// The bounds the unit holds a board to: OpenCV looks for no side of fewer than 3 inner corners.
+const MIN_CORNERS = 3
+const MAX_CORNERS = 50
+const MAX_SQUARE_MM = 1000
+
+const corners = (count) => Number.isInteger(count) && count >= MIN_CORNERS && count <= MAX_CORNERS
+
 const FIELDS = [
-  { key: 'columns', label: 'Inner corners (columns)', step: 1, valid: (count) => Number.isInteger(count) && count >= 2 },
-  { key: 'rows', label: 'Inner corners (rows)', step: 1, valid: (count) => Number.isInteger(count) && count >= 2 },
-  { key: 'squareMm', label: 'Square size (mm)', step: 'any', valid: (millimetres) => millimetres > 0 }
+  { key: 'columns', label: 'Inner corners (columns)', step: 1, valid: corners },
+  { key: 'rows', label: 'Inner corners (rows)', step: 1, valid: corners },
+  { key: 'squareMm', label: 'Square size (mm)', step: 'any', valid: (millimetres) => millimetres > 0 && millimetres <= MAX_SQUARE_MM }
 ]
 
 const asFields = (board) => Object.fromEntries(FIELDS.map(({ key }) => [key, String(board[key])]))
 
-const BOARD_RULE = 'Columns and rows must be different whole numbers of 2 or more; the square size must be above 0.'
+const BOARD_RULE = `Columns and rows must be different whole numbers from ${MIN_CORNERS} to ${MAX_CORNERS}; the square size must be above 0, up to ${MAX_SQUARE_MM} mm.`
 
 // The board the fields describe, or null while the unit cannot detect it; equal counts make its orientation ambiguous.
 function boardOf(fields) {
@@ -66,7 +73,8 @@ function Field({ id, field, value, onChange }) {
       aria-label={field.label}
       type="number"
       inputMode={field.step === 1 ? 'numeric' : 'decimal'}
-      min={field.step === 1 ? 2 : 0}
+      min={field.step === 1 ? MIN_CORNERS : 0}
+      max={field.step === 1 ? MAX_CORNERS : MAX_SQUARE_MM}
       step={field.step}
       required
       autoComplete="off"

@@ -110,6 +110,8 @@ const detection = (views, sample = false) => ({
 })
 
 const result = {
+  imageWidth: 1280,
+  imageHeight: 720,
   cameras: [
     { name: 'left', file: 'ovcs_mini_left.yaml', rmsPx: 0.31, yaml: 'left solved' },
     { name: 'right', file: 'ovcs_mini_right.yaml', rmsPx: 0.87, yaml: 'right solved' }
@@ -285,6 +287,63 @@ describe('CalibrationPage', () => {
       expect(screen.queryByRole('dialog')).toBeNull()
     })
 
+    it('keeps Tab inside the dialog, and closes it with Escape from any of its fields', () => {
+      show({ inUse: stored, closed: true, session: session() })
+      fireEvent.click(button('Calibrate again'))
+      const dialog = screen.getByRole('dialog')
+      expect(document.activeElement).toBe(dialog)
+
+      const first = button('Close')
+      const last = button('Start capturing')
+
+      last.focus()
+      fireEvent.keyDown(last, { key: 'Tab' })
+      expect(document.activeElement).toBe(first)
+
+      fireEvent.keyDown(first, { key: 'Tab', shiftKey: true })
+      expect(document.activeElement).toBe(last)
+
+      // Focus that left the dialog comes back into it.
+      button('Download the calibration the unit uses').focus()
+      fireEvent.keyDown(document.activeElement, { key: 'Tab' })
+      expect(document.activeElement).toBe(first)
+
+      screen.getByLabelText('Square size (mm)').focus()
+      fireEvent.keyDown(document.activeElement, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
+
+    it('gives the focus back to the button that opened the dialog when it closes', () => {
+      show({ inUse: stored, closed: true, session: session() })
+      fireEvent.click(button('Calibrate again'))
+      fireEvent.click(button('Close'))
+      expect(document.activeElement).toBe(button('Calibrate again'))
+
+      fireEvent.click(button('Calibrate again'))
+      act(() => useCalibration.setState({ session: capturing() }))
+      expect(screen.getByRole('dialog').contains(document.activeElement)).toBe(true)
+
+      act(() => useCalibration.setState({ session: session() }))
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(document.activeElement).toBe(button('Calibrate again'))
+    })
+
+    it('refuses a board of fewer than 3 inner corners a side, or out of bounds, and says the rule', () => {
+      show({ inUse: stored, session: session() })
+
+      for (const [label, value] of [
+        ['Inner corners (columns)', '2'],
+        ['Inner corners (columns)', '51'],
+        ['Square size (mm)', '1001']
+      ]) {
+        fireEvent.change(screen.getByLabelText(label), { target: { value } })
+        expect(button('Start capturing').disabled).toBe(true)
+        expect(screen.getByText(/whole numbers from 3 to 50.*above 0, up to 1000 mm/)).toBeTruthy()
+        fireEvent.change(screen.getByLabelText(label), { target: { value: label.startsWith('Square') ? '25' : '8' } })
+        expect(button('Start capturing').disabled).toBe(false)
+      }
+    })
+
     it('keeps the dialog open while a session runs, without Close, and closes it when the session ends', () => {
       show({ inUse: stored, closed: true, session: capturing() })
       expect(screen.getByRole('dialog')).toBeTruthy()
@@ -334,7 +393,7 @@ describe('CalibrationPage', () => {
       expect(screen.getByLabelText('Inner corners (columns)').value).toBe('9')
     })
 
-    const rule = 'Columns and rows must be different whole numbers of 2 or more; the square size must be above 0.'
+    const rule = 'Columns and rows must be different whole numbers from 3 to 50; the square size must be above 0, up to 1000 mm.'
 
     it.each([
       ['an empty count', 'Inner corners (rows)', ''],
@@ -509,6 +568,15 @@ describe('CalibrationPage', () => {
       expect(rms('Focal length').textContent).toContain('905.7')
     })
 
+    it('sets the focal length in use beside the new one only when both are for the same image size', () => {
+      const half = { ...result, imageWidth: 640, imageHeight: 360, fxPx: 455.06 }
+      show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result: half }) })
+
+      expect(rms('Focal length').textContent).toContain('455.1')
+      expect(rms('Focal length').textContent).not.toContain('905.7')
+      expect(rms('Distance between cameras').textContent).toContain('60.1 mm')
+    })
+
     it('applies, downloads both YAMLs and discards', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result }) })
 
@@ -537,6 +605,22 @@ describe('CalibrationPage', () => {
       expect(query('Use this calibration')).toBeNull()
       expect(query('Discard')).toBeNull()
     })
+  })
+
+  it('says why a calibration file gives no calibration, and still offers to calibrate and to go back', () => {
+    const unreadable = { ...none, canReset: true, error: 'cannot read /data/vision/calibration/stereo_left.yaml: permission denied' }
+    show({ inUse: unreadable, closed: true, session: session() })
+
+    expect(within(inUseCard()).getByRole('alert').textContent).toContain('permission denied')
+    expect(button('Calibrate')).toBeTruthy()
+    expect(button("Go back to the firmware's calibration")).toBeTruthy()
+  })
+
+  it('does not call a unit without a stereo pair uncalibrated', () => {
+    useStatus.setState({ snapshot: { calibrated: null } })
+    show({ inUse: center, session: session() })
+
+    expect(screen.queryByText(/The unit is uncalibrated/)).toBeNull()
   })
 
   it('shows a refused action until dismissed', () => {

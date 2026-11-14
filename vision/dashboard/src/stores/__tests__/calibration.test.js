@@ -14,6 +14,7 @@ function fakeChannel() {
   const channel = {
     on: vi.fn((event, callback) => (handlers[event] = callback)),
     join: vi.fn(() => join),
+    onError: vi.fn((callback) => (handlers.error = callback)),
     leave: vi.fn()
   }
   return { channel, handlers, receivers }
@@ -60,6 +61,31 @@ describe('calibration store', () => {
 
     useCalibration.setState({ session: { phase: 'capturing', calibration: 'stereo' } })
     expect(selectedCalibration(useCalibration.getState())).toEqual({ id: 'stereo' })
+  })
+
+  it('forgets the session when it leaves the channel or the channel fails, so that a stale one opens nothing', () => {
+    const { channel, handlers } = fakeChannel()
+    const unlisten = useCalibration.getState().listen({ channel: () => channel })
+
+    handlers.session({ phase: 'capturing', calibration: 'stereo' })
+    handlers.error()
+    expect(useCalibration.getState().session).toBeNull()
+
+    handlers.session({ phase: 'solved', calibration: 'stereo' })
+    unlisten()
+    expect(useCalibration.getState().session).toBeNull()
+  })
+
+  it('falls back to the first calibration pushed when the one picked is none of the unit\'s', () => {
+    useCalibration.setState({ selected: 'bogus' })
+    expect(selectedCalibration(useCalibration.getState())).toBeNull()
+
+    useCalibration.setState({ calibrations: { stereo: { id: 'stereo' }, center: { id: 'center' } } })
+    expect(selectedId(useCalibration.getState())).toBe('stereo')
+    expect(selectedCalibration(useCalibration.getState())).toEqual({ id: 'stereo' })
+
+    useCalibration.getState().select('center')
+    expect(selectedId(useCalibration.getState())).toBe('center')
   })
 
   it('stops rejoining when the unit has nothing to calibrate, and keeps rejoining otherwise', () => {

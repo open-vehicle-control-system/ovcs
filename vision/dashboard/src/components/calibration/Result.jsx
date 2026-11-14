@@ -44,6 +44,9 @@ function Figures() {
 
   // Only a calibrated pair has figures to set beside the new ones.
   const used = (value) => (inUse?.kind === 'stereo' && inUse.source !== 'none' ? value : undefined)
+  // A focal length is in pixels of its image: the one in use compares only at the solve's image size.
+  const [camera] = inUse?.cameras ?? []
+  const sameSize = solution != null && camera?.imageWidth === solution.imageWidth && camera?.imageHeight === solution.imageHeight
 
   return solution ? (
     <div className="overflow-x-auto">
@@ -67,7 +70,7 @@ function Figures() {
               <Row label="Distance between cameras (baseline)" solved={millimetres(solution.baselineM)} inUse={used(millimetres(inUse?.baselineM))} />
             </>
           )}
-          <Row label="Focal length (fx)" solved={pixels(solution.fxPx)} inUse={used(pixels(inUse?.rectifiedFx))} />
+          <Row label="Focal length (fx)" solved={pixels(solution.fxPx)} inUse={used(sameSize ? pixels(inUse?.rectifiedFx) : null)} />
         </tbody>
       </table>
     </div>

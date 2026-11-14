@@ -26,19 +26,45 @@ function Step({ phase }) {
   )
 }
 
-/** The steps in a dialog over the page; Escape closes it where `onClose` is given. */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * The steps in a dialog over the page, which keeps the focus: Tab goes round its controls, and the focus comes back
+ * to it when the control that had it goes with a step. Escape closes it where `onClose` is given.
+ */
 function Dialog({ onClose, children }) {
   const dialog = useRef(null)
 
-  useEffect(() => dialog.current?.focus(), [])
+  // After each render: a step that ended took the focused control with it.
+  useEffect(() => {
+    if (!dialog.current.contains(document.activeElement)) dialog.current.focus()
+  })
 
-  const onKeyDown = (event) => {
-    if (event.key === 'Escape' && onClose) onClose()
-  }
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && onClose) {
+        onClose()
+      } else if (event.key === 'Tab') {
+        const controls = [...dialog.current.querySelectorAll(FOCUSABLE)]
+        const first = controls[0] ?? dialog.current
+        const last = controls.at(-1) ?? dialog.current
+        const active = document.activeElement
+        const outside = !dialog.current.contains(active)
+
+        if (event.shiftKey ? outside || active === first || active === dialog.current : outside || active === last) {
+          event.preventDefault()
+          ;(event.shiftKey ? last : first).focus()
+        }
+      }
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   return (
     <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/60 p-4 [overscroll-behavior:contain] lg:p-8">
-      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Calibrate" tabIndex={-1} onKeyDown={onKeyDown} className="w-full max-w-7xl outline-none">
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Calibrate" tabIndex={-1} className="w-full max-w-7xl outline-none">
         <FlowClose value={onClose}>{children}</FlowClose>
       </div>
     </div>
@@ -60,6 +86,9 @@ export default function CalibrationPage() {
   const uncalibrated = useStatus((state) => state.snapshot?.calibrated === false)
   const [opened, setOpened] = useState(false)
   const running = phase != null && phase !== 'idle'
+  const shown = !unavailable && (opened || running)
+  const calibrate = useRef(null)
+  const wasShown = useRef(false)
 
   useEffect(() => listen(dashboardSocket), [listen])
 
@@ -72,6 +101,12 @@ export default function CalibrationPage() {
     if (running) setOpened(false)
   }, [running])
 
+  // The dialog that closed gives the focus back to the button that opens it.
+  useEffect(() => {
+    if (wasShown.current && !shown) calibrate.current?.focus()
+    wasShown.current = shown
+  }, [shown])
+
   return (
     <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
       {uncalibrated ? (
@@ -83,8 +118,8 @@ export default function CalibrationPage() {
         <p className="text-sm text-ovcs-muted">This unit has no camera to calibrate.</p>
       ) : (
         <>
-          <InUse onCalibrate={phase === 'idle' ? () => setOpened(true) : undefined} />
-          {opened || running ? (
+          <InUse onCalibrate={phase === 'idle' ? () => setOpened(true) : undefined} calibrateRef={calibrate} />
+          {shown ? (
             <Dialog onClose={running ? null : () => setOpened(false)}>
               <ActionError />
               <Step phase={phase} />
@@ -92,7 +127,7 @@ export default function CalibrationPage() {
           ) : null}
         </>
       )}
-      {opened || running ? null : <ActionError />}
+      {shown ? null : <ActionError />}
     </div>
   )
 }
