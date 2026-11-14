@@ -86,7 +86,7 @@ A pipeline that does not answer is left out.
   },
   "depth": {
     "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.2, "droppedPercent": 1.0,
-             "depthHz": 29.7, "cameraHz": 30.0, "loadPercent": 94.8},
+             "cappedPercent": 0.0, "depthHz": 29.7, "cameraHz": 30.0, "loadPercent": 94.8},
     "range": {"level": "warning", "camera": null, "issues": ["too_near"], "gauge": 1.5, "nearPercent": 22.5, "nearestM": 1.39}
   },
   "alignment": {"offsetRows": 0.09, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14]},
@@ -140,7 +140,7 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 | Check | Figures | Issue | Raised when |
 |---|---|---|---|
-| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that did not become depth, at `depthHz`, all three over the last 10 s; `loadPercent`, the last second's `stereoLoadPercent` | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
+| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that did not become depth, at `depthHz`, of those the stereo unit's `max_hz` lets through; `cappedPercent`, the share `max_hz` drops, 0 without it; all four over the last 10 s; `loadPercent`, the last second's `stereoLoadPercent` | `pairs_dropped` | more than 5% of the pairs `max_hz` lets through are dropped: lower the cameras' frame rate, `max_hz` or the stereo work |
 | `range` | `nearPercent`, the share of the last pair's matched pixels in the nearest 15% of the disparity range; `nearestM`, the nearest depth that range measures | `too_near` | more than 15% of the matches are in that band: the scene is nearer than the unit measures, so widen the range or move back |
 
 The `rate` check is `off` until the unit has counted pairs for 10 s. Over 10 s, a frame counted in one second rather than the next moves `droppedPercent` by a pair in 300, not one in 30. `VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
