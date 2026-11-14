@@ -23,13 +23,15 @@ defmodule VisionCore.Ros2.Node do
   @doc """
   The node and its link to the router (`Ros2Zenoh.Client.link/0`). When the
   client is not running, the node is the configured one, down, with no
-  endpoint and no service.
+  endpoint, no service and no synchronized clock.
   """
   @spec link() :: %{
           node_name: String.t(),
           domain_id: non_neg_integer(),
           connected: boolean(),
           endpoint: String.t() | nil,
+          clock_synchronized: boolean(),
+          drops_before_clock_synchronized: non_neg_integer(),
           services: [%{name: String.t(), type: String.t()}]
         }
   def link do
@@ -42,6 +44,8 @@ defmodule VisionCore.Ros2.Node do
       domain_id: configured_domain_id(config),
       connected: false,
       endpoint: nil,
+      clock_synchronized: false,
+      drops_before_clock_synchronized: 0,
       services: []
     }
   end

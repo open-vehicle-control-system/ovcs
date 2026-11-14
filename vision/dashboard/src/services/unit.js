@@ -7,7 +7,7 @@ const related = (document, name) => {
     .filter(Boolean)
 }
 
-/** The unit's ROS 2 node: `name`, `zenohEndpoint`, `connected`, its `topics` and its `services`. */
+/** The unit's ROS 2 node: `name`, `zenohEndpoint`, `connected`, `clockSynchronized`, `dropsBeforeClockSynchronized`, its `topics` and its `services`. */
 export async function fetchRos2Node() {
   const document = await request('ros2-node?include=topics,services')
   return { ...document.data.attributes, topics: related(document, 'topics'), services: related(document, 'services') }

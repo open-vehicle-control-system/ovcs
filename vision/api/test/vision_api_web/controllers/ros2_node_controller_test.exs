@@ -25,7 +25,9 @@ defmodule VisionApiWeb.Ros2NodeControllerTest do
                "attributes" => %{
                  "name" => "vision_test",
                  "zenohEndpoint" => "tcp/127.0.0.1:7447",
-                 "connected" => connected
+                 "connected" => connected,
+                 "clockSynchronized" => true,
+                 "dropsBeforeClockSynchronized" => 0
                },
                "relationships" => %{
                  "topics" => %{
