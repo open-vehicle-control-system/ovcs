@@ -72,6 +72,9 @@ export function depthFigures(status) {
   ]
 }
 
+// The stereo load reaches 100 % when a pair stays at the device for a whole frame period.
+const STEREO_LOAD_WARNING_PERCENT = 97
+
 function loadStatus(id, title, percent) {
   return {
     id,
@@ -79,7 +82,7 @@ function loadStatus(id, title, percent) {
     value: percent == null ? '–' : `${formatNumber(percent, 0)} %`,
     widest: '100 %',
     align: 'end',
-    healthy: percent != null && percent < 90
+    healthy: percent != null && percent < STEREO_LOAD_WARNING_PERCENT
   }
 }
 
@@ -194,4 +197,24 @@ export function unitStatus(status) {
     },
     { ...loadStatus('segment', 'Stereo load', status.stereoLoadPercent), hint: HINTS.stereoLoad }
   ]
+}
+
+// Why the stereo depth gives a camera's pipelines no distance, by the reason the unit names.
+const NO_DISTANCES = {
+  no_calibration: (camera) => `the ${camera} camera has no calibration`,
+  unreadable_calibration: (camera) => `the ${camera} camera's calibration file cannot be read`,
+  unusable_calibration: (camera) => `the ${camera} camera's lens model cannot be projected with`,
+  no_pose: (camera) => `the ${camera} camera's position relative to the stereo pair is unknown`,
+  unreadable_pose: (camera) => `the ${camera} camera's pose file cannot be read`
+}
+
+/**
+ * Why the pipelines on `camera` have no distance, one line per reason the status gives, each with its `reason` and its
+ * `text`; none while they have.
+ */
+export function distanceGaps(status, camera) {
+  const reasons = Object.values(status?.distances ?? {})
+    .filter((pipeline) => pipeline.camera === camera && !pipeline.available)
+    .map((pipeline) => pipeline.reason)
+  return [...new Set(reasons)].map((reason) => ({ reason, text: `No distances: ${NO_DISTANCES[reason]?.(camera) ?? reason}` }))
 }

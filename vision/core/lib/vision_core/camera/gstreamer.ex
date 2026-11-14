@@ -26,13 +26,20 @@ defmodule VisionCore.Camera.GStreamer do
   The stream is split into JPEG frames by `VisionCore.Camera.MjpegStream`;
   see that module's doc for details. Each frame carries the `:frame_id`
   the driver was given, `nil` without one.
+
+  ## A pipeline that exits
+
+  When `gst-launch-1.0` exits, as when the camera is unplugged, the
+  driver stays up and starts it again after a wait that grows with each
+  failure in a row (`VisionCore.Camera.Reopen`, `:reopen_delays_ms`).
+  `:executable` names another program to run in its place.
   """
   @behaviour VisionCore.Camera
 
   use GenServer
   require Logger
 
-  alias VisionCore.Camera.{Frame, MjpegStream}
+  alias VisionCore.Camera.{Frame, MjpegStream, Reopen}
   alias VisionCore.Outputs
 
   def start_link(opts) do
@@ -45,6 +52,10 @@ defmodule VisionCore.Camera.GStreamer do
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
+  @doc "Whether the capture program runs: `false` while the driver waits to start it again."
+  @spec running?(GenServer.server()) :: boolean()
+  defdelegate running?(server), to: VisionCore.Camera.Reopen
+
   @impl GenServer
   def init(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -54,37 +65,38 @@ defmodule VisionCore.Camera.GStreamer do
     fps = Keyword.get(opts, :fps, 30)
 
     gst_launch =
-      System.find_executable("gst-launch-1.0") ||
+      Keyword.get(opts, :executable) || System.find_executable("gst-launch-1.0") ||
         raise "#{__MODULE__}[#{label}]: gst-launch-1.0 not found on PATH"
 
-    pipeline_arguments = pipeline_arguments(device, width, height, fps)
-
-    # Stderr stays apart from stdout, where gst-launch's error lines would
-    # corrupt the JPEG stream; inherited from the BEAM, it reaches its tty.
-    port =
-      Port.open({:spawn_executable, gst_launch}, [
-        :binary,
-        :exit_status,
-        args: pipeline_arguments
-      ])
-
     Logger.info(
-      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via gst-launch-1.0 port #{inspect(port)}"
+      "#{__MODULE__}[#{label}] streaming #{device} at #{width}×#{height}@#{fps} via gst-launch-1.0"
     )
 
     {:ok,
-     %{
+     open_port(%{
        label: label,
        frame_id: Keyword.get(opts, :frame_id),
        width: width,
        height: height,
        fps: fps,
        device: device,
-       port: port,
+       program: {gst_launch, pipeline_arguments(device, width, height, fps)},
+       port: nil,
+       failures: 0,
+       reopen_delays_ms: Reopen.delays!(opts),
        buffer: <<>>,
        output: {:camera_frame, name_for(label)}
-     }}
+     })}
   end
+
+  # Stderr stays apart from stdout, where gst-launch's error lines would corrupt the JPEG stream.
+  defp open_port(%{program: {gst_launch, arguments}} = state) do
+    port = Port.open({:spawn_executable, gst_launch}, [:binary, :exit_status, args: arguments])
+    %{state | port: port, buffer: <<>>}
+  end
+
+  @impl GenServer
+  def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
 
   @impl GenServer
   def handle_info({port, {:data, bytes}}, %{port: port} = state) do
@@ -103,16 +115,21 @@ defmodule VisionCore.Camera.GStreamer do
       Outputs.publish(state.output, {:camera_frame, frame})
     end)
 
+    state = if frames == [], do: state, else: Reopen.delivered(state)
     {:noreply, %{state | buffer: leftover}}
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
     Logger.error(
-      "#{__MODULE__}[#{state.label}] gst-launch-1.0 exited with status #{status}; terminating driver"
+      "#{__MODULE__}[#{state.label}] gst-launch-1.0 exited with status #{status}; " <>
+        "starting it again in #{Reopen.delay_ms(state)} ms"
     )
 
-    {:stop, {:gst_launch_exit, status}, state}
+    {:noreply, Reopen.closed(state)}
   end
+
+  def handle_info(:reopen, %{port: nil} = state), do: {:noreply, open_port(state)}
+  def handle_info(_message, state), do: {:noreply, state}
 
   # `-q` keeps routine progress off the inherited stderr; errors still print.
   defp pipeline_arguments(device, width, height, fps) do

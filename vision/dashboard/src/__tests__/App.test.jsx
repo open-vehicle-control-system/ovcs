@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import App from '../App.jsx'
 import { useParameters } from '../stores/parameters.js'
-import { exporterFromUrl, pageFromUrl, useNavigation } from '../stores/navigation.js'
+import { calibrationFromUrl, exporterFromUrl, pageFromUrl, useNavigation } from '../stores/navigation.js'
 import { useExporters } from '../stores/exporters.js'
 import { useCalibration } from '../stores/calibration.js'
 import * as service from '../services/parameters.js'
@@ -53,13 +53,15 @@ describe('App', () => {
     dashboardSocket.isConnected.mockReturnValue(true)
     useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
     useExporters.setState({ exporters })
+    useStatus.setState({ snapshot: null, joins: 0 })
+    useCalibration.setState({ targets: [], session: null, calibrations: {}, saved: {}, selected: null })
     visit('/')
   })
 
   // Opens the dashboard at `path`, as a reload would.
   const visit = (path) => {
     window.history.replaceState(null, '', path)
-    useNavigation.setState({ page: pageFromUrl(), exporterId: exporterFromUrl() })
+    useNavigation.setState({ page: pageFromUrl(), exporterId: exporterFromUrl(), calibrationId: calibrationFromUrl() })
   }
 
   it('polls the parameters while mounted', () => {
@@ -204,7 +206,88 @@ describe('App', () => {
     expect(channels().filter((channel) => channel.leave.mock.calls.length > 0)).toEqual([])
   })
 
-  it("lets the previews fill the main's height from lg, on the overview and beside a stage", () => {
+  describe("a camera's calibration and position", () => {
+    const targets = [
+      { id: 'stereo', kind: 'stereo' },
+      { id: 'center', kind: 'camera' },
+      { id: 'center-pose', kind: 'pose' }
+    ]
+    const camera = (name) => within(screen.getByRole('list', { name }))
+    const previews = () => screen.getByRole('region', { name: 'Previews' })
+    // The channels of the previews' frames, by topic, each with whether it was left.
+    const frameChannels = () =>
+      dashboardSocket.channel.mock.calls
+        .map(([topic], index) => ({ topic, left: dashboardSocket.channel.mock.results[index].value.leave.mock.calls.length > 0 }))
+        .filter(({ topic }) => /^(preview|video):/.test(topic))
+
+    beforeEach(() => {
+      useParameters.setState({ groups })
+      useCalibration.setState({ targets })
+    })
+
+    it('shows the page in a card beside the previews', () => {
+      visit('/?calibration=center-pose')
+      render(<App />)
+
+      const panel = screen.getByText('Waiting for the vision unit…').closest('[data-scroll="panel"]')
+      expect(panel).not.toBeNull()
+      expect(panel.parentElement.className.split(' ')).toContain('ovcs-card')
+      expect(panel.parentElement.nextElementSibling.contains(previews())).toBe(true)
+    })
+
+    it("keeps the videos playing from a camera's settings to its calibration, its position and the overview", () => {
+      render(<App />)
+      const shown = previews()
+      const opened = frameChannels().length
+
+      fireEvent.click(camera('Stereo cameras').getByRole('button', { name: 'Settings' }))
+      expect(window.location.search).toBe('?box=cameras')
+      fireEvent.click(camera('Stereo cameras').getByRole('button', { name: 'Calibration' }))
+      expect(window.location.search).toBe('?calibration=stereo')
+      expect(previews()).toBe(shown)
+      fireEvent.click(camera('Center camera').getByRole('button', { name: /^Position/ }))
+      expect(window.location.search).toBe('?calibration=center-pose')
+      expect(previews()).toBe(shown)
+      fireEvent.click(screen.getByRole('button', { name: 'Overview' }))
+
+      expect(previews()).toBe(shown)
+      expect(frameChannels()).toHaveLength(opened)
+      expect(frameChannels().filter((channel) => channel.left)).toEqual([])
+    })
+
+    it("stops the previews while a capture shows the cameras, which join their frames' channels", () => {
+      const stereo = {
+        id: 'stereo',
+        kind: 'stereo',
+        source: 'none',
+        cameras: ['left', 'right'].map((name) => ({ name, file: `${name}.yaml`, fx: null, fy: null, cx: null, cy: null, distortion: null, yaml: null }))
+      }
+      const capture = {
+        phase: 'capturing',
+        calibration: 'stereo',
+        board: { columns: 8, rows: 6, squareMm: 25 },
+        samples: 0,
+        progress: { x: 0, y: 0, size: 0, skew: 0 },
+        goodEnough: false,
+        detection: null,
+        result: null,
+        error: null
+      }
+      visit('/?calibration=stereo')
+      render(<App />)
+      act(() => useCalibration.setState({ calibrations: { stereo }, session: capture }))
+
+      const open = frameChannels().filter((channel) => !channel.left)
+      expect(open.length).toBeGreaterThan(0)
+      expect(new Set(open.map((channel) => channel.topic)).size).toBe(open.length)
+      expect(screen.queryByRole('region', { name: 'Previews' })).toBeNull()
+
+      act(() => useCalibration.setState({ session: { ...capture, phase: 'idle' } }))
+      expect(previews()).toBeTruthy()
+    })
+  })
+
+  it("lets the previews fill the main's height from lg, on the overview, beside a stage and beside a calibration", () => {
     useParameters.setState({ groups })
     render(<App />)
     // Each box between the main and the previews grows into the main's height, as the previews do in it.
@@ -216,6 +299,8 @@ describe('App', () => {
 
     expect(growing().every(Boolean)).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Match' }))
+    expect(growing().every(Boolean)).toBe(true)
+    act(() => useNavigation.getState().openCalibration('center'))
     expect(growing().every(Boolean)).toBe(true)
   })
 
@@ -230,5 +315,61 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^API/ }))
     expect(window.location.search).toBe('?exporter=api')
     expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('keeps the menu and the bars, and says the page cannot be shown, when a status it cannot read comes', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+
+    // A rows check without its bands, as a firmware newer than this page could push.
+    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+
+    expect(within(screen.getByRole('main')).getByRole('alert').textContent).toContain('This page cannot be shown')
+    expect(screen.getByRole('navigation', { name: 'Vision unit' })).toBeTruthy()
+    expect(within(screen.getByRole('contentinfo')).getByText('Connected')).toBeTruthy()
+    expect(screen.getByRole('banner')).toBeTruthy()
+    vi.restoreAllMocks()
+  })
+
+  it('shows the page again once another page is opened after one that could not be shown', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+
+    fireEvent.click(screen.getByRole('button', { name: /^API/ }))
+
+    expect(within(screen.getByRole('main')).queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()
+    vi.restoreAllMocks()
+  })
+
+  describe('with a firmware uploaded under the open page', () => {
+    const firmware = (revision) => service.request.mockImplementation(async (path) => {
+        if (path !== 'firmware') throw new Error('Cannot reach the vision unit')
+        return { data: { attributes: { revision } } }
+      })
+    const join = (joins) => act(async () => useStatus.setState({ joins }))
+
+    it('offers to reload once the unit answers another revision than at first', async () => {
+      firmware('1e13961')
+      render(<App />)
+      await join(1)
+      expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+      firmware('26e78c0')
+      await join(2)
+
+      expect(within(screen.getByRole('banner')).getByRole('status').textContent).toContain('another firmware')
+      expect(screen.getByRole('button', { name: 'Reload' })).toBeTruthy()
+    })
+
+    it('offers nothing while the unit comes back with the same revision', async () => {
+      firmware('1e13961')
+      render(<App />)
+      await join(1)
+      await join(2)
+
+      expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+    })
   })
 })

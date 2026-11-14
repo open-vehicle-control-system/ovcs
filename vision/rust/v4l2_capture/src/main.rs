@@ -256,6 +256,11 @@ fn run(
                             Ok(applied)
                         })?;
                         auto_exposure = auto_exposure_from(&settings, frame_us, resume_from);
+                        if let Some((exposure_us, gain)) = capped_now(&settings, &mut auto_exposure)
+                        {
+                            let applied = set_exposure(exposure_us, gain)?;
+                            report_exposure(applied, last_left_ns.unwrap_or(0))?;
+                        }
                         set_focus(settings.focus);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
@@ -374,6 +379,16 @@ fn auto_exposure_from(
     }
 }
 
+/// The exposure and gain auto exposure, while on, applies at once to stay
+/// within caps a settings change lowered.
+fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<(f64, f64)> {
+    if settings.auto_exposure {
+        auto_exposure.capped()
+    } else {
+        None
+    }
+}
+
 fn pollfd(fd: i32) -> libc::pollfd {
     libc::pollfd {
         fd,
@@ -404,5 +419,20 @@ mod tests {
         })
         .unwrap();
         assert_eq!(resume_from, (5_000.0, 1.5));
+    }
+
+    #[test]
+    fn lowered_caps_apply_at_once_to_auto_exposure_and_never_to_manual_values() {
+        let mut settings = Settings::default();
+        settings.apply(b"auto_exposure=false").unwrap();
+        settings.apply(b"max_exposure_us=1000").unwrap();
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, (8_000.0, 2.0));
+        assert_eq!(capped_now(&settings, &mut auto_exposure), None);
+
+        settings.apply(b"auto_exposure=true").unwrap();
+        assert_eq!(
+            capped_now(&settings, &mut auto_exposure),
+            Some((1_000.0, 16.0))
+        );
     }
 }

@@ -20,6 +20,10 @@ defmodule VisionFirmwareTest do
     end
   end
 
+  test "a board restarts its applications when one exits" do
+    assert target_config(:rpi5)[:shoehorn][:handler] == VisionFirmware.ShoehornHandler
+  end
+
   describe "the API on a board" do
     test "serves HTTPS on port 443 with a certificate kept on the application partition" do
       https = target_config(:arduino_ventuno_q)[:vision_api][VisionApiWeb.Endpoint][:https]
@@ -27,6 +31,12 @@ defmodule VisionFirmwareTest do
       assert https[:port] == 443
       assert Path.dirname(https[:certfile]) == "/data/vision_api"
       assert Path.dirname(https[:keyfile]) == "/data/vision_api"
+    end
+
+    test "takes socket connections only from the pages it served itself" do
+      endpoint = target_config(:arduino_ventuno_q)[:vision_api][VisionApiWeb.Endpoint]
+
+      assert endpoint[:check_origin] == :conn
     end
 
     test "redirects plain HTTP from port 80 and from port 4100, where it served plain HTTP before" do

@@ -171,6 +171,35 @@ defmodule Ros2Zenoh.ClientClockTest do
     assert_receive %Zenohex.Sample{}, 1_000
   end
 
+  test "says whether the clock is synchronized, and how many publishes it dropped meanwhile" do
+    {agent, check} = clock(false)
+    client = start_client(check)
+
+    publish()
+    publish()
+
+    refute Client.clock_synchronized?()
+    assert %{clock_synchronized: false, drops_before_clock_synchronized: 2} = Client.link()
+
+    Agent.update(agent, fn _ -> true end)
+    send(client, :check_clock)
+    :sys.get_state(Client)
+
+    assert Client.clock_synchronized?()
+    assert %{clock_synchronized: true, drops_before_clock_synchronized: 0} = Client.link()
+  end
+
+  test "says the clock is synchronized from the start without a clock check" do
+    start_client(nil)
+
+    assert Client.clock_synchronized?()
+    assert %{clock_synchronized: true, drops_before_clock_synchronized: 0} = Client.link()
+  end
+
+  test "says the clock is not synchronized while no client runs" do
+    refute Client.clock_synchronized?()
+  end
+
   test "checks the clock again while it is not synchronized" do
     {_agent, check} = clock(false)
     client = start_client(check)

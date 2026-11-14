@@ -2,6 +2,7 @@ import { OvcsStatus } from '@ovcs/ui/react'
 import { HealthValue } from '../UnitStatus.jsx'
 import Flow from './Flow.jsx'
 import { SessionError } from './Errors.jsx'
+import { poseFacts } from './pose.js'
 import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
@@ -28,6 +29,8 @@ function Row({ label, solved, inUse }) {
 }
 
 function RmsValue({ px }) {
+  // An error the solve did not give is not judged.
+  if (px == null) return '–'
   const { tone, word } = rmsVerdict(px)
 
   return (
@@ -37,10 +40,40 @@ function RmsValue({ px }) {
   )
 }
 
+/** A solved position's reprojection error, then where it puts the camera, beside the position in use. */
+function PoseFigures({ solution, inUse }) {
+  const used = inUse?.kind === 'pose' && inUse.pose != null
+  const inForce = poseFacts(inUse?.pose)
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-left text-sm tabular-nums">
+        <thead className="text-xs text-ovcs-muted">
+          <tr>
+            <th className="pb-1 pr-4 font-medium">
+              <span className="sr-only">figure</span>
+            </th>
+            <th className="pb-1 pr-6 font-medium">{`New, from ${solution.samples} views`}</th>
+            {used ? <th className="pb-1 font-medium">Used now</th> : null}
+          </tr>
+        </thead>
+        <tbody>
+          <Row label="Error (reprojection RMS)" solved={<RmsValue px={solution.pose.rmsPx} />} inUse={used ? null : undefined} />
+          {poseFacts(solution.pose).map(({ label, value }, index) => (
+            <Row key={label} label={label} solved={value} inUse={used ? inForce[index].value : undefined} />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 /** The solved calibration's reprojection errors, then a pair's baseline and the focal length beside the ones in use. */
 function Figures() {
   const solution = useCalibration((state) => state.session?.result)
   const inUse = useCalibration(selectedCalibration)
+
+  if (solution?.pose) return <PoseFigures solution={solution} inUse={inUse} />
 
   // Only a calibrated pair has figures to set beside the new ones.
   const used = (value) => (inUse?.kind === 'stereo' && inUse.source !== 'none' ? value : undefined)
@@ -85,13 +118,16 @@ export function Solved() {
   const cancel = useCalibration((state) => state.cancel)
 
   const download = () => {
-    for (const camera of solution.cameras) downloadYaml(camera.file, camera.yaml)
+    if (solution.pose) downloadYaml(solution.pose.file, solution.pose.yaml)
+    else for (const camera of solution.cameras) downloadYaml(camera.file, camera.yaml)
   }
 
   return (
     <Flow step={2}>
       <p className="max-w-prose text-sm text-ovcs-muted">
-        The errors say how well the calibration fits the views kept: under 0.5 px is good, over 2 px needs more views or more varied ones.
+        {solution?.pose
+          ? 'The error says how well the position fits the views kept: under 0.5 px is good, over 2 px needs more views or more varied ones. Check the position against a ruler.'
+          : 'The errors say how well the calibration fits the views kept: under 0.5 px is good, over 2 px needs more views or more varied ones.'}
       </p>
       <Figures />
       <SessionError />

@@ -44,7 +44,23 @@ defmodule VisionCore.CameraPipeline do
   without one (`c:finish/5`), and published through `VisionCore.Outputs`
   under `c:output_key/1`.
 
-  The camera's calibration and pose are read at start.
+  The camera's calibration and pose are read at start, and again at
+  each change of the camera's calibration
+  (`VisionCore.Camera.Calibration.changed_key/1`) or pose
+  (`VisionCore.Camera.Pose.changed_key/1`), so a calibration or a pose
+  committed while the pipeline runs is taken from the next frame on.
+  `distances/1` says why the depth cannot be projected into the camera.
+
+  ## The steps' times
+
+  The pipeline times what it does for each frame inferred on, under the
+  names `c:stage/1` gives its steps: preparing the frame and handing it
+  to the backend (`:prepare`), the inference, from the frame handed over
+  to its reply, as `:inference`, making the result of the reply
+  (`:result`) and finishing it with its pair (`:finish`). The wait for
+  the pair is in none of them, and a frame the backend could not infer
+  on has no inference time. `stage_times/1` hands the times over and
+  starts them again.
 
   ## Options
 
@@ -53,13 +69,13 @@ defmodule VisionCore.CameraPipeline do
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera is read from.
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
-      waits for a pair are measured with, a function of no argument.
+      steps and the waits for a pair are measured with, a function of no
+      argument.
   """
   use GenServer
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.CameraDepth
-  alias VisionCore.Outputs
+  alias VisionCore.{CameraDepth, Outputs, StageTimes}
   alias VisionCore.Stereo.Pair
 
   @typedoc """
@@ -87,8 +103,20 @@ defmodule VisionCore.CameraPipeline do
   """
   @callback depth_wording(settings()) :: {owner :: String.t(), CameraDepth.wording()}
 
-  @doc "The steps the pipeline declares in `VisionCore.Parameters`."
+  @doc """
+  The steps the pipeline declares in `VisionCore.Parameters`, once it
+  runs: their live parameters read `c:setting_values/1` and set
+  `c:with_setting/3` through its process (`:live_settings` and
+  `{:put_setting, key, value}` calls).
+  """
   @callback groups(settings()) :: [VisionCore.Parameters.group_declaration()]
+
+  @doc "The settings that change while the pipeline runs, among `settings`, by their names."
+  @callback setting_values(settings()) :: %{String.t() => term()}
+
+  @doc "`settings` with the setting `key` at `value`, or why it is refused."
+  @callback with_setting(settings(), key :: atom(), value :: term()) ::
+              {:ok, settings()} | {:error, String.t()}
 
   @doc "The `VisionCore.Outputs` key the pipeline publishes under."
   @callback output_key(settings()) :: Outputs.key()
@@ -126,6 +154,33 @@ defmodule VisionCore.CameraPipeline do
   @callback finish(Frame.t(), result :: term(), Pair.t() | nil, CameraDepth.t(), settings()) ::
               {message :: term(), CameraDepth.t()}
 
+  @doc """
+  The step of the pipeline, as its parameter group names it
+  (`<name>.<step>`), that what the pipeline does in `phase` is timed as;
+  `nil` for a phase that is none of its steps.
+  """
+  @callback stage(phase :: :prepare | :result | :finish) :: atom() | nil
+
+  @phases [:prepare, :result, :finish]
+
+  @doc """
+  Each step's time over the frames inferred on since the last call,
+  which this starts again.
+  """
+  @spec stage_times(GenServer.server()) :: StageTimes.t()
+  def stage_times(server), do: GenServer.call(server, :stage_times)
+
+  @doc """
+  The pipeline's camera, and why the stereo depth cannot be projected
+  into it, which leaves its results without distances
+  (`VisionCore.CameraDepth.unprojectable_reason/1`): `nil` when it can.
+  """
+  @spec distances(GenServer.server()) :: %{
+          camera: atom(),
+          reason: CameraDepth.unprojectable_reason() | nil
+        }
+  def distances(server), do: GenServer.call(server, :distances)
+
   @doc "Starts the pipeline `module`; `start_options` are `GenServer.start_link/3`'s."
   @spec start_link(module(), keyword(), keyword()) :: GenServer.on_start()
   def start_link(module, opts, start_options),
@@ -135,12 +190,17 @@ defmodule VisionCore.CameraPipeline do
   def init({module, opts}) do
     settings = module.init(opts)
 
+    config =
+      Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
+        %VisionCore.Config{}
+
     state = %{
       module: module,
       settings: settings,
       reply_tag: module.reply_tag(),
       output_key: module.output_key(settings),
-      camera: camera_depth(module, settings, opts),
+      config: config,
+      camera: camera_depth(module, settings, config),
       # The sequence of the last submission, accepted or not.
       sequence: 0,
       frame_count: 0,
@@ -150,30 +210,62 @@ defmodule VisionCore.CameraPipeline do
       held: nil,
       # Frames' results waiting for the pair captured closest to each.
       waiting: CameraDepth.Queue.new(settings.pair_wait_ms),
-      clock: Keyword.get(opts, :clock, &monotonic_ns/0)
+      clock: Keyword.get(opts, :clock, &monotonic_ns/0),
+      times:
+        StageTimes.new([:inference | Enum.reject(Enum.map(@phases, &module.stage/1), &is_nil/1)])
     }
-
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(module.groups(settings))
 
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
     :ok = Outputs.subscribe(state.camera.key)
-    {:ok, state}
+    :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(state.camera.name))
+    :ok = Outputs.subscribe(VisionCore.Camera.Pose.changed_key(state.camera.name))
+    {:ok, state, {:continue, :declare}}
+  end
+
+  # After `init/1`: the registry reads the settings it is declared from the running pipeline.
+  @impl GenServer
+  def handle_continue(:declare, state) do
+    if Process.whereis(VisionCore.Parameters),
+      do: :ok = VisionCore.Parameters.declare(state.module.groups(state.settings))
+
+    {:noreply, state}
   end
 
   defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
-  defp camera_depth(module, %{source: {:camera, camera, output}} = settings, opts) do
-    config =
-      Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
-        %VisionCore.Config{}
-
+  defp camera_depth(module, %{source: {:camera, camera, output}} = settings, config) do
     {owner, wording} = module.depth_wording(settings)
 
     CameraDepth.new(camera, config, owner, wording,
       pair_wait_ms: settings.pair_wait_ms,
       output: output
     )
+  end
+
+  @impl GenServer
+  def handle_call(:stage_times, _from, state),
+    do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
+
+  def handle_call(:distances, _from, %{camera: camera} = state),
+    do: {:reply, %{camera: camera.name, reason: CameraDepth.unprojectable_reason(camera)}, state}
+
+  def handle_call(:live_settings, _from, state),
+    do: {:reply, state.module.setting_values(state.settings), state}
+
+  def handle_call({:put_setting, key, value}, _from, state) do
+    case state.module.with_setting(state.settings, key, value) do
+      {:ok, settings} -> {:reply, :ok, with_pair_wait(%{state | settings: settings})}
+      {:error, _reason} = refusal -> {:reply, refusal, state}
+    end
+  end
+
+  # The results put from now on wait, and the pairs are kept, as long as the setting says.
+  defp with_pair_wait(%{settings: %{pair_wait_ms: pair_wait_ms}} = state) do
+    %{
+      state
+      | waiting: CameraDepth.Queue.put_pair_wait_ms(state.waiting, pair_wait_ms),
+        camera: CameraDepth.put_pair_wait_ms(state.camera, pair_wait_ms)
+    }
   end
 
   @impl GenServer
@@ -189,6 +281,13 @@ defmodule VisionCore.CameraPipeline do
       {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
     end
   end
+
+  # The results still waiting are finished with the calibration or pose committed.
+  def handle_cast({:camera_calibration_changed, name}, %{camera: %{name: name}} = state),
+    do: {:noreply, %{state | camera: CameraDepth.reload(state.camera, state.config)}}
+
+  def handle_cast({:camera_pose_changed, name}, %{camera: %{name: name}} = state),
+    do: {:noreply, %{state | camera: CameraDepth.reload(state.camera, state.config)}}
 
   def handle_cast(_message, state), do: {:noreply, state}
 
@@ -220,23 +319,27 @@ defmodule VisionCore.CameraPipeline do
   end
 
   defp submit(frame, state) do
+    started_ns = state.clock.()
+
     case state.module.prepare(frame, state.settings) do
       {:submit, request, kept, settings} ->
-        submit(request, frame, kept, %{state | settings: settings})
+        submit(request, frame, kept, started_ns, %{state | settings: settings})
 
       {:skip, settings} ->
         %{state | settings: settings}
     end
   end
 
-  defp submit(request, frame, kept, state) do
+  defp submit(request, frame, kept, started_ns, state) do
     sequence = state.sequence + 1
     state = %{state | sequence: sequence}
 
     case state.module.submit(request, sequence, state.settings) do
       :ok ->
+        submitted_ns = state.clock.()
         frame = %{frame | jpeg: nil, grey: nil, rgb: nil}
-        %{state | pending: %{sequence: sequence, frame: frame, kept: kept}}
+        pending = %{sequence: sequence, frame: frame, kept: kept, submitted_ns: submitted_ns}
+        time_phase(%{state | pending: pending}, :prepare, started_ns, submitted_ns)
 
       # Busy or unavailable: the backend logs the unavailable case once.
       {:error, _reason} ->
@@ -263,9 +366,16 @@ defmodule VisionCore.CameraPipeline do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp wait_for_pair(state, %{frame: frame, kept: kept}, reply) do
+  defp wait_for_pair(state, %{frame: frame, kept: kept, submitted_ns: submitted_ns}, reply) do
+    replied_ns = state.clock.()
     {result, needs_depth?} = state.module.result(reply, kept, state.settings)
     now_ns = state.clock.()
+
+    state =
+      state
+      |> time_stage(:inference, submitted_ns, replied_ns)
+      |> time_phase(:result, replied_ns, now_ns)
+
     {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =
@@ -286,9 +396,19 @@ defmodule VisionCore.CameraPipeline do
     state = %{state | waiting: CameraDepth.Queue.schedule(waiting, state.camera, now_ns)}
 
     Enum.reduce(settled, state, fn {{frame, result}, pair}, state ->
+      started_ns = state.clock.()
       {message, camera} = state.module.finish(frame, result, pair, state.camera, state.settings)
+      finished_ns = state.clock.()
       Outputs.publish(state.output_key, message)
-      %{state | camera: camera}
+      time_phase(%{state | camera: camera}, :finish, started_ns, finished_ns)
     end)
   end
+
+  defp time_phase(state, phase, from_ns, to_ns),
+    do: time_stage(state, state.module.stage(phase), from_ns, to_ns)
+
+  defp time_stage(state, nil, _from_ns, _to_ns), do: state
+
+  defp time_stage(state, stage, from_ns, to_ns),
+    do: %{state | times: StageTimes.add(state.times, stage, (to_ns - from_ns) / 1_000_000)}
 end

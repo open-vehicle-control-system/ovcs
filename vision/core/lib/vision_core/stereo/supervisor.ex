@@ -16,8 +16,9 @@ defmodule VisionCore.Stereo.Supervisor do
        parameter groups in `VisionCore.Parameters`.
 
   A unit with neither side's calibration file (`calibrated?/1`) is
-  uncalibrated: it starts the two drivers alone, so that the cameras can
-  be calibrated, and logs so. `VisionCore.Stereo.Calibration` restarts it
+  uncalibrated: it starts the two drivers and the parameters of the
+  cameras alone, so that the cameras can be set and calibrated, and logs
+  so. `VisionCore.Stereo.Calibration` restarts it
   once both files are written. With one side's file alone, the pipeline
   refuses to start, and so does the unit.
 
@@ -32,18 +33,19 @@ defmodule VisionCore.Stereo.Supervisor do
   `:rest_for_one` because the children after a driver or the pipeline
   hold state about it: the pairer waits for the pipeline's
   `:stereo_pipeline_ready`, and `VisionCore.Stereo.Parameters` applies
-  the parameters' values when it declares its groups, at start. Drivers
-  stop deliberately when their subprocess exits, so restarts are a
-  designed path.
+  the parameters' values when it declares its groups, at start. A
+  driver whose capture program exits or stalls stays up and starts it
+  again (`VisionCore.Camera.Reopen`), so a camera that drops out costs
+  the unit no restart; `VisionCore.Status` reports it absent meanwhile.
 
   The unit has its own restart budget, and `VisionCore.Components`
-  starts it as a `:transient` child: a camera that keeps failing
-  exhausts this budget, the unit shuts down and stays down, and the
-  rest of the vision core keeps running, with `VisionCore.Status`
-  reporting the cameras absent. A unit that fails to start, such as
-  one whose camera exits while the children after it start, or one
-  given an option it does not take, is left down the same way, with
-  the reason logged. The refusal of an option the ROS 2 exporter takes
+  starts it as a `:transient` child: children that keep crashing
+  exhaust this budget and the unit shuts down, while the rest of the
+  vision core keeps running, with `VisionCore.Status` reporting the
+  cameras absent. A unit that fails to start, such as one given an
+  option it does not take, is left down the same way, with the reason
+  logged. `VisionCore.Reviver` starts a unit that is down again, once a
+  minute. The refusal of an option the ROS 2 exporter takes
   names where it belongs: its `stereo:` publishes the images
   (`VisionCore.Ros2.Exporter`).
 
@@ -65,7 +67,7 @@ defmodule VisionCore.Stereo.Supervisor do
   ## Optional opts (sensible defaults)
 
     * `:width` (1280), `:height` (720), `:fps` (30) — applied to
-      both camera drivers.
+      both camera drivers; `:fps` is an integer from 1 on.
     * the pair options of a driver that captures both cameras together
       (`c:VisionCore.Camera.pair_options/0`), given once for both.
     * `:match_width`, `:match_height` (`:width`, `:height`) — the size
@@ -146,21 +148,8 @@ defmodule VisionCore.Stereo.Supervisor do
   Starts the stereo unit; see the module doc for `opts`. `:ignore` when
   it fails to start, so the vision core starts without it.
   """
-  def start_link(opts) do
-    case Supervisor.start_link(__MODULE__, opts, name: __MODULE__) do
-      {:error, reason} ->
-        Logger.error("#{__MODULE__} failed to start, cameras down: #{failure_text(reason)}")
-        :ignore
-
-      started ->
-        started
-    end
-  end
-
-  defp failure_text({%{__exception__: true} = exception, _stacktrace}),
-    do: Exception.message(exception)
-
-  defp failure_text(reason), do: inspect(reason)
+  def start_link(opts),
+    do: VisionCore.Unit.start_contained(__MODULE__, opts, [name: __MODULE__], "cameras")
 
   @impl Supervisor
   def init(opts) do
@@ -297,7 +286,8 @@ defmodule VisionCore.Stereo.Supervisor do
          :ok <- check_driver(driver),
          :ok <- check_keyword(Keyword.get(opts, :left), "its :left options"),
          :ok <- check_keyword(Keyword.get(opts, :right), "its :right options"),
-         :ok <- check_sides(driver, Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right)) do
+         :ok <- check_sides(driver, Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right)),
+         :ok <- check_fps(Keyword.get(opts, :fps, @default_fps)) do
       prefix = Keyword.get(opts, :prefix, @default_prefix)
 
       {left, right} =
@@ -315,6 +305,9 @@ defmodule VisionCore.Stereo.Supervisor do
        ]}
     end
   end
+
+  defp check_fps(fps) when is_integer(fps) and fps > 0, do: :ok
+  defp check_fps(fps), do: {:error, "its :fps is an integer from 1 on, got #{inspect(fps)}"}
 
   defp check_keyword(options, what) do
     if is_list(options) and Keyword.keyword?(options),
@@ -542,9 +535,14 @@ defmodule VisionCore.Stereo.Supervisor do
   defp stage_module(module) when is_atom(module), do: [module]
   defp stage_module(_stage), do: []
 
+  # An offset the store keeps is applied at the next start, on a calibration it was not measured for.
   defp forget_row_offset(prefix, stage) do
-    if Process.whereis(VisionCore.Parameters),
-      do: VisionCore.Parameters.forget("#{prefix}.#{stage}.right_row_offset")
+    id = "#{prefix}.#{stage}.right_row_offset"
+
+    with pid when is_pid(pid) <- Process.whereis(VisionCore.Parameters),
+         {:error, reason} <- VisionCore.Parameters.forget(id) do
+      Logger.error("#{__MODULE__} could not forget the saved #{id}: #{reason}")
+    end
   end
 
   defp default_calibration_path(nil, _prefix, _side), do: nil
@@ -555,7 +553,10 @@ defmodule VisionCore.Stereo.Supervisor do
 
   defp child_specs(config) do
     drivers = [camera_driver_spec(config, :left), camera_driver_spec(config, :right)]
-    if uncalibrated?(config), do: drivers, else: drivers ++ pipeline_specs(config)
+
+    if uncalibrated?(config),
+      do: drivers ++ [parameters_spec(config, pipeline: nil)],
+      else: drivers ++ pipeline_specs(config)
   end
 
   defp pipeline_specs(config) do
@@ -568,20 +569,28 @@ defmodule VisionCore.Stereo.Supervisor do
     ] ++
       alignment_correction_specs(config) ++
       [
-        Supervisor.child_spec(
-          {Parameters,
-           prefix: config.prefix,
-           driver: config.driver,
-           left: config.left,
-           right: config.right,
-           width: config.width,
-           height: config.height,
-           fps: config.fps,
-           match_width: config.match_width,
-           match_height: config.match_height},
-          id: {:stereo, :parameters}
+        parameters_spec(config,
+          match_width: config.match_width,
+          match_height: config.match_height
         )
       ]
+  end
+
+  # `pipeline: nil` among `options` declares the cameras alone.
+  defp parameters_spec(config, options) do
+    Supervisor.child_spec(
+      {Parameters,
+       [
+         prefix: config.prefix,
+         driver: config.driver,
+         left: config.left,
+         right: config.right,
+         width: config.width,
+         height: config.height,
+         fps: config.fps
+       ] ++ options},
+      id: {:stereo, :parameters}
+    )
   end
 
   # Before the parameters, which declare its switch.

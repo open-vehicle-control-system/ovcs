@@ -4,7 +4,11 @@ defmodule VisionApiWeb.CalibrationChannel do
   of `VisionCore.Calibration.Session`, with the id of the `calibration` it
   works on, and each calibration in use as `"calibration"`, with its `id`,
   on join and each time the unit takes another one; both shaped by
-  `VisionApiWeb.CalibrationJSON`. Joining subscribes to the session, which
+  `VisionApiWeb.CalibrationJSON`; a camera's pose as its own calibration,
+  at each change of the pose. Each change of the calibrations kept
+  for one of them, as one kept, renamed, removed or put in force, is
+  pushed as `"saved"` with the id of that `calibration`: the client
+  reads the `saved-calibrations` again. Joining subscribes to the session, which
   turns detection on in the core until the last subscriber leaves. The
   channel takes no push.
 
@@ -17,7 +21,7 @@ defmodule VisionApiWeb.CalibrationChannel do
 
   alias VisionApiWeb.{CalibrationJSON, CalibrationUnit, SourceMonitor}
   alias VisionCore.Calibration
-  alias VisionCore.Calibration.Session
+  alias VisionCore.Calibration.{Recorder, Session}
   alias VisionCore.Outputs
 
   @impl Phoenix.Channel
@@ -33,6 +37,9 @@ defmodule VisionApiWeb.CalibrationChannel do
   end
 
   @impl Phoenix.Channel
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
+  @impl Phoenix.Channel
   def handle_cast({:stereo_calibration_changed, prefix}, socket) do
     push_calibration(socket, prefix)
     {:noreply, socket}
@@ -43,10 +50,23 @@ defmodule VisionApiWeb.CalibrationChannel do
     {:noreply, socket}
   end
 
+  def handle_cast({:camera_pose_changed, name}, socket) do
+    for %{kind: :pose, name: ^name, id: id} <- socket.assigns.targets,
+        do: push_calibration(socket, id)
+
+    {:noreply, socket}
+  end
+
+  def handle_cast({:saved_calibrations_changed, id}, socket) do
+    push(socket, "saved", %{calibration: id})
+    {:noreply, socket}
+  end
+
   @impl Phoenix.Channel
   def handle_info(:after_join, socket) do
     for target <- socket.assigns.targets do
       :ok = Outputs.subscribe(Calibration.changed_key(target))
+      :ok = Outputs.subscribe(Recorder.changed_key(target.id))
       push_calibration(socket, target.id)
     end
 

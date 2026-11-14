@@ -7,16 +7,15 @@ defmodule RosBridge.Publishers.Heartbeat do
   @moduledoc """
   Periodic ROS 2 publisher that ticks a caller-supplied message
   builder into `Ros2Zenoh.Client.publish/4`. Used by the bridge
-  to advertise its presence (`std_msgs/String` on `ovcs_heartbeat`)
-  so consumers can see that the BEAM is alive even when no other
-  topic is flowing. The builder gets the tick's counter and the
-  bridge's node name, read from `Ros2Zenoh.Client` once at start,
-  so bridges sharing the topic tell themselves apart.
+  to advertise its presence (`std_msgs/String` on
+  `<node_name>/heartbeat`, `topic/1`) so consumers can see that the
+  BEAM is alive even when no other topic is flowing. The node name is
+  read from `Ros2Zenoh.Client` once at start, and the builder gets it
+  with the tick's counter.
 
   Configured at start time:
 
       {RosBridge.Publishers.Heartbeat,
-       topic: "ovcs_heartbeat",
        message_module: Ros2Zenoh.StdMsgs.Msg.String,
        interval_ms: 5_000,
        build: fn counter, node_name ->
@@ -33,14 +32,20 @@ defmodule RosBridge.Publishers.Heartbeat do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
+  @doc "The heartbeat topic of the node `node_name`."
+  @spec topic(String.t()) :: String.t()
+  def topic(node_name), do: "#{node_name}/heartbeat"
+
   @impl GenServer
   def init(opts) do
+    node_name = Ros2Zenoh.Client.node_name()
+
     state = %State{
-      topic: Keyword.fetch!(opts, :topic),
+      topic: topic(node_name),
       message_module: Keyword.fetch!(opts, :message_module),
       interval_ms: Keyword.fetch!(opts, :interval_ms),
       build: Keyword.fetch!(opts, :build),
-      node_name: Ros2Zenoh.Client.node_name()
+      node_name: node_name
     }
 
     Logger.info(

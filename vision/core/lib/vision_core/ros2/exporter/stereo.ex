@@ -277,6 +277,24 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
 
   def image_slot(_next_ms, %Frame{}, _now_ms, _max_hz), do: :skip
 
+  @doc """
+  Whether publishing `frame` as a raw image at `now_ms` encodes it: it is
+  no JPEG frame and its slot is open (`image_slot/4`).
+  """
+  @spec encodes_image?(Frame.t(), number() | nil, number(), number()) :: boolean()
+  def encodes_image?(%Frame{jpeg: jpeg}, _next_ms, _now_ms, _max_hz) when is_binary(jpeg),
+    do: false
+
+  def encodes_image?(%Frame{} = frame, next_ms, now_ms, max_hz),
+    do: image_slot(next_ms, frame, now_ms, max_hz) != :skip
+
+  @doc "Whether the messages of `pair` hold an image to encode: a rectified image `stereo` publishes."
+  @spec encodes_pair?(Pair.t(), t()) :: boolean()
+  def encodes_pair?(%Pair{left: left, right: right}, stereo) do
+    (is_binary(stereo.rectified_image_topic) and match?(%Nx.Tensor{}, left)) or
+      (is_binary(stereo.right_rectified_image_topic) and match?(%Nx.Tensor{}, right))
+  end
+
   # `camera_info` is scaled to the configured capture size; the frame's own size is what it describes.
   defp raw_camera_info(%CameraInfo{} = camera_info, header, %Frame{width: width, height: height}) do
     if camera_info.width == width and camera_info.height == height,

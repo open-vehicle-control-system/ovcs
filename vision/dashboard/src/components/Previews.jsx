@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import Preview from './Preview.jsx'
-import { OvcsStatus } from '@ovcs/ui/react'
+import { OvcsStatus, focusClass as FOCUS } from '@ovcs/ui/react'
 import { HealthValue } from './UnitStatus.jsx'
 import PairStatus from './PairStatus.jsx'
 import DepthRange from './DepthRange.jsx'
@@ -8,6 +8,9 @@ import DetectionOverlay from './DetectionOverlay.jsx'
 import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
 import { useApiOutputs } from '../stores/exporters.js'
+import { useCalibration } from '../stores/calibration.js'
+import { useNavigation } from '../stores/navigation.js'
+import { poseId } from '../services/calibration.js'
 import { setDepthRange } from '../services/unit.js'
 import {
   SEGMENTATION,
@@ -22,8 +25,10 @@ import {
   cameraIssues,
   depthFigures,
   depthIssues,
+  distanceGaps,
   objectFigures
 } from '../status.js'
+import { HINTS } from '../hints.js'
 
 // Each figure is a small label over its value; the one with a tone carries the stream's health dot.
 function Figures({ id, figures }) {
@@ -72,17 +77,18 @@ const needsAction = ({ actions }) => actions.length > 0
 const PAIR_TILE = 'row-span-3 grid grid-cols-[minmax(0,1fr)] grid-rows-subgrid'
 const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-rows-subgrid'
 // The frame has its image's shape, 16:9 before any: as wide as its preview, and from `lg` the largest that fits the
-// frame's track, which its cell measures, at the top and centre of it.
-const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:[container-type:size]'
+// frame's track, which its cell measures, at the top and centre of it, inset from the card's edge.
+const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center px-2 pt-2 lg:[container-type:size]'
 const ROW_FRAME =
   'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
-// Beside the frame, the aside sits next to it in its cell, the pair centred together, as tall as the frame and
+// Beside the frame, the aside sits at the cell's far edge, the frame centred in the room left, as tall as the frame and
 // scrolling what it cannot hold; the frame is the largest that leaves the aside's width. `ASIDE_REM` is that width
-// with the gap between them, the `9rem` and `0.75rem` below.
+// with the gap between them, the `9rem` and `0.75rem` below; `INSET_REM` is the cell's `px-2` and `pt-2`.
 const ASIDE_REM = 9.75
-const BESIDE_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:gap-3 lg:[container-type:size]'
+const INSET_REM = { width: 1, height: 0.5 }
+const BESIDE_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:gap-3 px-2 pt-2 lg:[container-type:size]'
 const BESIDE_FRAME =
-  'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
+  'lg:mx-auto aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
 const BESIDE_ASIDE =
   'w-[9rem] shrink-0 overflow-y-auto py-2 lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))]'
 // Tailwind's `lg`, from which the classes above apply.
@@ -104,7 +110,10 @@ function useBeside(ref) {
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
     const lg = window.matchMedia?.(LG)
     const measure = () =>
-      setBeside((lg?.matches ?? true) && preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
+      setBeside(
+        (lg?.matches ?? true) &&
+          preview.offsetWidth - (ASIDE_REM + INSET_REM.width) * rem >= preview.offsetHeight - caption.offsetHeight - INSET_REM.height * rem
+      )
     // Measured before the first paint: the observer's first report can come after it.
     measure()
     const observer = new ResizeObserver(measure)
@@ -210,18 +219,47 @@ function useVideoCameras() {
 /**
  * A camera of its own, titled by its name, its video where the API relays one, else its JPEG preview, with its rate,
  * exposure and gain, its segmentation pipelines' label grids drawn over it with a legend of their classes, a class a
- * row beside the frame, and the objects its detection pipelines detect drawn over those and counted. Over a video,
- * each pipeline's result is drawn on the frame it was found on.
+ * row beside the frame, and the objects its detection pipelines detect drawn over those and counted, then why those
+ * pipelines have no distance when the status says so. Over a video, each pipeline's result is drawn on the frame it
+ * was found on.
  */
 function CameraPreview({ name, status, socket, beside, video }) {
   const { overlays: boxes, detections } = useSourceDetections(socket, name)
   const { overlays: grids, legends } = useSourceSegmentations(socket, name, beside)
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
   const overlay = (captureUs) => [...grids(captureUs), ...boxes(captureUs)]
+  const gaps = distanceGaps(status, name)
+  const measurable = useCalibration((state) => state.targets.some((target) => target.id === poseId(name)))
+  const openCalibration = useNavigation((state) => state.openCalibration)
 
   return (
     <Preview stream={name} socket={socket} video={video} overlay={overlay} aside={legends} {...rowLayout(beside)}>
       {figures.length > 0 ? <Figures id={name} figures={figures} /> : null}
+      {gaps.length > 0 ? (
+        <div className="flex items-start gap-1">
+          <div className="flex flex-col">
+            {gaps.map(({ reason, text }) => (
+              <p key={reason} data-distances className="text-xs text-ovcs-muted">
+                {text}
+                {reason === 'no_pose' && measurable ? (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      aria-label={`Measure the ${name} camera's position`}
+                      onClick={() => openCalibration(poseId(name))}
+                      className={`rounded underline hover:text-ovcs-text ${FOCUS}`}
+                    >
+                      Measure it
+                    </button>
+                  </>
+                ) : null}
+              </p>
+            ))}
+          </div>
+          <Hint hint={HINTS.distances} />
+        </div>
+      ) : null}
     </Preview>
   )
 }

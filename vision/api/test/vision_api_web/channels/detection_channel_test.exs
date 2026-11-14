@@ -30,6 +30,16 @@ defmodule VisionApiWeb.DetectionChannelTest do
       })
     end
 
+    @tag :capture_log
+    test "an event the channel does not take is refused, and the channel stays" do
+      {:ok, _reply, socket} = join()
+
+      reference = push(socket, "nope", %{})
+
+      assert_reply reference, :error, %{reason: "unknown event"}
+      assert Process.alive?(socket.channel_pid)
+    end
+
     test "pushes each detection result, with its objects' outlines on the left image" do
       {:ok, _reply, _socket} = join()
 

@@ -5,11 +5,15 @@ defmodule VisionCore.Stereo.DepthCheckTest do
 
   @running %{left: %{present: true, fps: 35.0}, right: %{present: true, fps: 34.8}}
 
+  # `seconds` one-second status windows, newest first, each with these frame and depth counts.
+  defp counts(left, right, depth, seconds \\ 10),
+    do: List.duplicate(%{elapsed_ms: 1_000, left: left, right: right, depth: depth}, seconds)
+
   defp window(overrides) do
     Map.merge(
       %{
         cameras: @running,
-        depth_hz: 34.6,
+        counts: counts(35, 35, 35),
         load_percent: 97.0,
         near: %{near_percent: 2.0, nearest_m: 1.4}
       },
@@ -36,13 +40,50 @@ defmodule VisionCore.Stereo.DepthCheckTest do
   end
 
   test "rate counts the pairs the slower camera delivers that do not become depth, warning past 5%" do
-    rate = DepthCheck.check(window(depth_hz: 30.0)).rate
+    rate = DepthCheck.check(window(counts: counts(35, 34, 30))).rate
 
-    assert %{level: :warning, issues: [:pairs_dropped], camera_hz: 34.8, depth_hz: 30.0} = rate
-    assert_in_delta rate.dropped_percent, 100 * (1 - 30.0 / 34.8), 1.0e-9
+    assert %{level: :warning, issues: [:pairs_dropped], camera_hz: 34.0, depth_hz: 30.0} = rate
+    assert_in_delta rate.dropped_percent, 100 * (1 - 30.0 / 34.0), 1.0e-9
     assert_in_delta rate.gauge, rate.dropped_percent / 5, 1.0e-9
 
-    assert %{level: :ok, dropped_percent: +0.0} = DepthCheck.check(window(depth_hz: 36.0)).rate
+    assert %{level: :ok, dropped_percent: +0.0} =
+             DepthCheck.check(window(counts: counts(35, 35, 36))).rate
+  end
+
+  test "rate judges the drops over the last 10 s, so one second's do not warn" do
+    one_bad_second = [
+      %{elapsed_ms: 1_000, left: 30, right: 30, depth: 27} | counts(30, 30, 30, 9)
+    ]
+
+    assert %{level: :ok, dropped_percent: dropped} =
+             DepthCheck.check(window(counts: one_bad_second)).rate
+
+    assert_in_delta dropped, 1.0, 1.0e-9
+  end
+
+  test "rate has nothing to judge until the windows cover 10 s" do
+    assert DepthCheck.check(window(counts: counts(30, 30, 10, 9))).rate ==
+             %{level: :off, camera: nil, issues: []}
+  end
+
+  describe "record_counts/2" do
+    test "keeps the newest windows covering the last 10 s" do
+      second = %{elapsed_ms: 1_000, left: 30, right: 30, depth: 30}
+
+      recent =
+        Enum.reduce(1..12, [], fn _second, recent -> DepthCheck.record_counts(recent, second) end)
+
+      assert recent == List.duplicate(second, 10)
+    end
+
+    test "keeps a window that covers the start of the 10 s" do
+      short = %{elapsed_ms: 999, left: 30, right: 30, depth: 30}
+
+      recent =
+        Enum.reduce(1..12, [], fn _window, recent -> DepthCheck.record_counts(recent, short) end)
+
+      assert length(recent) == 11
+    end
   end
 
   test "range warns past 15% of the matches in the nearest band" do

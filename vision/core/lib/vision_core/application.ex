@@ -34,14 +34,17 @@ defmodule VisionCore.Application do
   them, and so does one with two such segmenters
   (`VisionCore.Segmentation`), or a detector and a segmenter of one name. So does one with two cameras of one name
   (`VisionCore.Camera.Unit`), or a camera named as a detection or a
-  segmentation pipeline, both publishing under `<prefix>/<name>/`. So
+  segmentation pipeline, both publishing under `<name>/`. So
   does a detector or a segmenter whose `:name` is not a valid pipeline
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
-  After the components come `VisionCore.Exporters`, which runs the
+  After the components comes `VisionCore.Consumers`, a supervisor with
+  its own restart budget, so that what reads the outputs cannot take the
+  cameras and pipelines down by crashing. It starts, in order,
+  `VisionCore.Jpeg.Export`, `VisionCore.Exporters`, which runs the
   configuration's exporters, then, on a unit with something to calibrate
-  (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Session`,
-  then `VisionCore.Status`, which
+  (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Recorder`
+  and `VisionCore.Calibration.Session`, then `VisionCore.Status`, which
   reports the exporters' statuses, `VisionCore.Preview` and
   `VisionCore.Video`: a restart
   of the dashboard's sources does not restart the exporters.
@@ -52,9 +55,13 @@ defmodule VisionCore.Application do
   Ports sized by the configuration's `jpeg:` options, apart from those
   decodes; `jpeg:` options other than a positive number of `:ports`
   fail the start. The
-  second starts after the components, before the exporters, so that its
-  restart reaches only what starts after it, its users among them, not
+  second starts first among the consumers, so that its
+  restart reaches only its users, not
   the cameras and pipelines.
+
+  `VisionCore.Reviver` comes last. It starts again the components and
+  the consumers that are down, having exhausted their restart budget or
+  failed to start.
   """
   use Application
 
@@ -74,11 +81,16 @@ defmodule VisionCore.Application do
 
         composer ->
           config = composer.config(VisionCore.arm())
+          children = cluster_child() ++ [pipeline_child(config)]
           :persistent_term.put(@active_config, config)
-          cluster_child() ++ [pipeline_child(config)]
+          children
       end
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: VisionCore.AppSupervisor)
+    with {:error, _reason} = error <-
+           Supervisor.start_link(children, strategy: :one_for_one, name: VisionCore.AppSupervisor) do
+      :persistent_term.erase(@active_config)
+      error
+    end
   end
 
   @impl Application
@@ -127,7 +139,14 @@ defmodule VisionCore.Application do
       start:
         {Supervisor, :start_link,
          [
-           core_children ++ component_children ++ consumer_children,
+           core_children ++
+             component_children ++
+             [
+               {VisionCore.Consumers, consumer_children},
+               {VisionCore.Reviver,
+                supervisor: VisionCore.Supervisor,
+                units: Enum.map(component_children, & &1.id) ++ [VisionCore.Consumers]}
+             ],
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}
     }
@@ -135,8 +154,14 @@ defmodule VisionCore.Application do
 
   defp calibration_children(config) do
     case VisionCore.Calibration.targets(config) do
-      [] -> []
-      _targets -> [{VisionCore.Calibration.Session, config: config}]
+      [] ->
+        []
+
+      _targets ->
+        [
+          {VisionCore.Calibration.Recorder, config: config},
+          {VisionCore.Calibration.Session, config: config}
+        ]
     end
   end
 

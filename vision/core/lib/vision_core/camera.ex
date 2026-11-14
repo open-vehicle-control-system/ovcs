@@ -49,6 +49,15 @@ defmodule VisionCore.Camera do
   """
   @callback control_specs() :: [map()]
 
+  @doc """
+  The controls of `control_specs/0` the instance registered as `server`
+  has, on the sensors it found: a driver whose sensors may lack one of
+  them publishes `{:camera_controls_changed, server}` under
+  `controls_changed_key/1` when they change. Optional: a driver without
+  it has every control of `control_specs/0`.
+  """
+  @callback control_specs(GenServer.server()) :: [map()]
+
   @doc "What the camera applied to a recent frame, as it reports it; `nil` before a report."
   @callback live(GenServer.server()) :: map() | nil
 
@@ -60,6 +69,16 @@ defmodule VisionCore.Camera do
   output, unnamed.
   """
   @callback outputs(keyword()) :: {:ok, [VisionCore.Camera.Output.t()]} | {:error, String.t()}
+
+  @doc """
+  The settings of a camera given `opts`, the options it is started with,
+  that are fixed at start, by name, each an integer, a float, a boolean,
+  a string, an atom or a `{width, height}` size: a camera of its own
+  lists them among its parameters, read-only
+  (`VisionCore.Camera.Parameters`). Optional: a driver without it lists
+  none.
+  """
+  @callback fixed_settings(keyword()) :: keyword()
 
   @doc """
   For a driver that captures both cameras of a stereo pair together:
@@ -74,10 +93,19 @@ defmodule VisionCore.Camera do
   @callback pair_options() :: %{pair: [atom()], side: [atom()]}
 
   @optional_callbacks pair_options: 0,
+                      control_specs: 1,
+                      fixed_settings: 1,
                       set_controls: 2,
                       controls: 1,
                       shared_controls?: 0,
                       control_specs: 0,
                       live: 1,
                       outputs: 1
+
+  @doc """
+  The `VisionCore.Outputs` key a change of the controls of the instance
+  registered as `name` is published under (`c:control_specs/1`).
+  """
+  @spec controls_changed_key(atom()) :: {:camera_controls, atom()}
+  def controls_changed_key(name), do: {:camera_controls, name}
 end

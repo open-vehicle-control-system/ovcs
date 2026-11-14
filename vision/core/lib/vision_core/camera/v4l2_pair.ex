@@ -9,8 +9,11 @@ defmodule VisionCore.Camera.V4L2Pair do
   The `"left"` instance opens the Port and publishes left frames. It
   hands each right frame to the `"right"` instance, which opens nothing
   and publishes what it receives. When the program exits or stops
-  delivering, the left instance stops; the stereo unit's `:rest_for_one`
-  supervision then restarts the right one after it.
+  delivering, the left instance stays up and starts it again after a
+  wait that grows with each failure in a row
+  (`VisionCore.Camera.Reopen`, `:reopen_delays_ms`), with the settings in
+  force; a program that stalled is closed first, and killed if it does
+  not exit. Both instances keep answering meanwhile.
 
   Frames are 8-bit grey (`%Frame{grey: ...}`): the program averages each
   2x2 Bayer cell, so the output is half the sensor mode in each axis.
@@ -33,11 +36,11 @@ defmodule VisionCore.Camera.V4L2Pair do
       uint8   level               # 0 info, 1 warning, 2 error
       bytes   message
 
-  or the exposure and gain the program just applied, in
-  `VisionCore.Camera.LibCamera`'s metadata record (tag 3): the present
-  bits are 0 and 1, `values[0]` is the exposure in microseconds,
-  `values[1]` the analogue gain, and the time is the left frame's start
-  (0 before the first frame). `live/1` returns the latest.
+  or the exposure and gain the program just applied, in the metadata
+  record `VisionCore.Camera.V4L2Capture.parse_record/1` reads: the
+  present bits are 0 and 1, `values[0]` is the exposure in
+  microseconds, `values[1]` the analogue gain, and the time is the left
+  frame's start (0 before the first frame). `live/1` returns the latest.
 
   Records the other way, on the program's stdin, change a setting each:
   `name=value`, as `control_commands/1` builds them. Closing stdin stops
@@ -52,7 +55,16 @@ defmodule VisionCore.Camera.V4L2Pair do
   `set_controls/2` on either camera, so they are also the stereo unit's
   `<prefix>.cameras` parameters. `control_specs/0` lists them with their
   defaults. No autofocus runs: the program holds both lenses at the
-  `focus` setting.
+  `focus` setting. Sensors without a lens actuator, the IMX296 and the
+  IMX477, have no `focus`: once the left camera knows its sensors, from
+  `:sensor` or from routing them, `control_specs/1` leaves it out and
+  `set_controls/2` refuses it. It publishes the change
+  (`VisionCore.Camera.controls_changed_key/1`), so that the stereo
+  unit's parameters list the controls the pair has.
+
+  Auto exposure keeps the exposure and gain within `max_exposure_us`
+  and `max_gain` at every step, and brings them within lowered caps as
+  they are set.
 
   ## Opts
 
@@ -69,10 +81,12 @@ defmodule VisionCore.Camera.V4L2Pair do
       * `:csiphy` — on a CAMSS board such as the Arduino VENTUNO Q, the
         CSI PHY the side's sensor is wired to: `VisionCore.Camera.Camss`
         routes it, at twice `:width` × `:height`, and names its nodes, in
-        place of `:video` and `:sensor`. Startup waits up to 30 s for the
-        media device and the sensor on each PHY, which register some
-        seconds after boot; a PHY still without a sensor then stops the
-        camera with an error naming it.
+        place of `:video` and `:sensor`. The media device and the sensors
+        register some seconds after boot: while a PHY has no sensor, the
+        cameras start without the program and route again on the waits
+        of `:reopen_delays_ms`, each failure logged.
+    * `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`) — the wait
+      before the program is started again, the last one repeated.
     * any setting of `control_specs/0`, by its key.
     * `:media_runner` — runs `media-ctl` for the routing, as
       `VisionCore.Camera.Camss.route/2`'s `:runner` (tests).
@@ -83,15 +97,15 @@ defmodule VisionCore.Camera.V4L2Pair do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Camss, Frame}
+  alias VisionCore.Camera.{Camss, Frame, Reopen}
   alias VisionCore.Camera.V4L2Capture
   alias VisionCore.{Outputs, Timing}
 
   @pair_tag 4
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
-  # How long CAMSS and the sensors may take to register after the VM starts.
-  @media_timeout_ms 30_000
+  # As `v4l2_capture` tells the sensors apart: any other has a lens actuator.
+  @sensors_without_lens ["imx296", "imx477"]
   # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
   @default_nodes [
     left: [video: "54080000.vi-output-0", sensor: "imx708 5-001a"],
@@ -105,6 +119,10 @@ defmodule VisionCore.Camera.V4L2Pair do
   @doc "The registered name of the driver for `label`."
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
+
+  @doc "Whether the capture program runs: `false` while the driver waits to start it again."
+  @spec running?(GenServer.server()) :: boolean()
+  defdelegate running?(server), to: VisionCore.Camera.Reopen
 
   @settings [
     %{
@@ -187,14 +205,22 @@ defmodule VisionCore.Camera.V4L2Pair do
   def control_specs, do: @settings
 
   @doc """
+  The settings of `control_specs/0` the pair has: all of them but
+  `focus` once its sensors are known and neither has a lens actuator.
+  The right camera asks the left.
+  """
+  @impl VisionCore.Camera
+  def control_specs(server), do: GenServer.call(server, :control_specs)
+
+  @doc """
   The `:stereo` component's options for the pair, the settings of
-  `control_specs/0` and `:executable`, and for each side, its nodes or
-  CSI PHY.
+  `control_specs/0`, `:executable` and `:reopen_delays_ms`, and for each
+  side, its nodes or CSI PHY.
   """
   @impl VisionCore.Camera
   def pair_options,
     do: %{
-      pair: [:executable | Enum.map(@settings, & &1.key)],
+      pair: [:executable, :reopen_delays_ms | Enum.map(@settings, & &1.key)],
       side: [:csiphy, :video, :sensor]
     }
 
@@ -208,7 +234,7 @@ defmodule VisionCore.Camera.V4L2Pair do
       [
         width: 2 * Keyword.fetch!(opts, :width),
         height: 2 * Keyword.fetch!(opts, :height),
-        await: @media_timeout_ms
+        await: 0
       ] ++
         if runner = opts[:media_runner], do: [runner: runner], else: []
 
@@ -239,12 +265,15 @@ defmodule VisionCore.Camera.V4L2Pair do
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
 
     nodes =
-      for {side, defaults} <- @default_nodes, {key, default} <- defaults do
-        ["--#{side}-#{key}", opts |> Keyword.get(side, []) |> Keyword.get(key, default)]
+      for {side, defaults} <- @default_nodes, {key, _default} <- defaults do
+        ["--#{side}-#{key}", side_node(opts, side, key)]
       end
 
     List.flatten(size ++ nodes) ++ V4L2Capture.arguments(@settings, opts)
   end
+
+  defp side_node(opts, side, key),
+    do: opts |> Keyword.get(side, []) |> Keyword.get(key, @default_nodes[side][key])
 
   @doc """
   The `name=value` commands that set `controls` on the capture program,
@@ -308,48 +337,59 @@ defmodule VisionCore.Camera.V4L2Pair do
       output: {:camera_frame, name_for(label)},
       port: nil,
       controls: controls,
+      lens: nil,
       applied: nil
     }
 
     if label == "left" do
-      case routed(opts) do
-        {:ok, opts} ->
-          {:ok, open_port(state, opts)}
-
-        {:error, message} ->
-          Logger.error("#{__MODULE__}: #{message}")
-          {:stop, message}
-      end
+      timeouts = [stall_timeout_ms: @stall_timeout_ms, startup_timeout_ms: @startup_timeout_ms]
+      state = Map.merge(state, V4L2Capture.closed(opts, timeouts, "#{__MODULE__}"))
+      {:ok, Map.put(state, :opts, opts), {:continue, :open}}
     else
       {:ok, state}
     end
   end
 
-  defp open_port(state, opts) do
-    timeouts = [stall_timeout_ms: @stall_timeout_ms, startup_timeout_ms: @startup_timeout_ms]
-    Map.merge(state, V4L2Capture.open(opts, port_arguments(opts), timeouts, "#{__MODULE__}"))
+  @impl GenServer
+  def handle_continue(:open, state), do: {:noreply, open(state)}
+
+  # Starts the program with the settings in force; a PHY without its sensor is tried again later.
+  defp open(state) do
+    case routed(Keyword.merge(state.opts, Map.to_list(state.controls))) do
+      {:ok, opts} ->
+        state
+        |> put_lens(Enum.any?([:left, :right], &lens?(side_node(opts, &1, :sensor))))
+        |> V4L2Capture.open(port_arguments(opts))
+
+      {:error, message} ->
+        Logger.error("#{__MODULE__}: #{message}; trying again in #{Reopen.delay_ms(state)} ms")
+        Reopen.closed(state)
+    end
   end
 
   @impl GenServer
-  def handle_call(request, _from, %{port: nil} = state) do
+  def handle_call(request, _from, %{label: "right"} = state) do
     # The settings live with the left camera, which runs the program.
     {:reply, GenServer.call(name_for("left"), request), state}
   end
 
-  def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
+  def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
+
+  def handle_call(:controls, _from, state),
+    do: {:reply, listed_controls(state.controls, state), state}
+
+  def handle_call(:control_specs, _from, state), do: {:reply, listed_specs(state), state}
   def handle_call(:live, _from, state), do: {:reply, state.applied, state}
 
   def handle_call({:set_controls, controls}, _from, state) do
-    case control_commands(controls) do
-      {:ok, commands} ->
-        Enum.each(commands, &Port.command(state.port, &1))
+    with :ok <- check_lens(controls, state),
+         {:ok, commands} <- control_commands(controls) do
+      V4L2Capture.command(state, commands)
+      updated = V4L2Capture.update(@settings, state.controls, controls)
 
-        updated = V4L2Capture.update(@settings, state.controls, controls)
-
-        {:reply, {:ok, updated}, %{state | controls: updated}}
-
-      {:error, _reason} = error ->
-        {:reply, error, state}
+      {:reply, {:ok, listed_controls(updated, state)}, %{state | controls: updated}}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
@@ -366,12 +406,10 @@ defmodule VisionCore.Camera.V4L2Pair do
         publish_frame(state, left)
         GenServer.cast(name_for("right"), {:pair_frame, right})
 
-        {:noreply,
-         %{state | last_frame_at: V4L2Capture.now_ms(), applied: refreshed(state.applied)}}
+        {:noreply, V4L2Capture.delivered(%{state | applied: refreshed(state.applied)})}
 
       {:metadata, metadata} ->
-        applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
-        {:noreply, %{state | applied: applied}}
+        {:noreply, %{state | applied: V4L2Capture.applied(state.applied, metadata)}}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__} v4l2_capture: #{message}")
@@ -384,13 +422,46 @@ defmodule VisionCore.Camera.V4L2Pair do
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error("#{__MODULE__} v4l2_capture exited with status #{status}")
-    {:stop, {:v4l2_capture_exit, status}, state}
+    {:noreply, V4L2Capture.exited(%{state | applied: nil}, status, "#{__MODULE__}")}
   end
 
-  def handle_info(:watchdog, state), do: V4L2Capture.watchdog(state, "#{__MODULE__}")
+  def handle_info(:reopen, %{label: "left", port: nil} = state), do: {:noreply, open(state)}
+
+  def handle_info(:watchdog, state),
+    do: {:noreply, V4L2Capture.watchdog(state, "#{__MODULE__}")}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp lens?(sensor), do: not String.starts_with?(sensor, @sensors_without_lens)
+
+  # Publishes the change when it adds or removes `focus`.
+  defp put_lens(state, lens) do
+    if focus?(state.lens) != focus?(lens),
+      do:
+        Outputs.publish(
+          VisionCore.Camera.controls_changed_key(name_for("left")),
+          {:camera_controls_changed, name_for("left")}
+        )
+
+    %{state | lens: lens}
+  end
+
+  # Unknown sensors keep `focus`, so that its saved value holds until they are known.
+  defp focus?(lens), do: lens != false
+
+  defp listed_specs(%{lens: false}), do: Enum.reject(@settings, &(&1.key == :focus))
+  defp listed_specs(_state), do: @settings
+
+  defp listed_controls(controls, state),
+    do: Map.take(controls, Enum.map(listed_specs(state), & &1.key))
+
+  defp check_lens(controls, %{lens: false}) do
+    if Keyword.has_key?(controls, :focus),
+      do: {:error, "focus: the sensors have no lens actuator"},
+      else: :ok
+  end
+
+  defp check_lens(_controls, _state), do: :ok
 
   # The program reports only when the exposure changes; frames keep it fresh.
   defp refreshed(nil), do: nil

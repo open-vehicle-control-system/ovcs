@@ -18,7 +18,11 @@ status.on('status', (snapshot) => console.log(snapshot.depthHz, snapshot.quality
 status.join()
 ```
 
+The socket takes connections from the unit's own pages only: a browser page of another origin is refused with a 403. A program that sends no `Origin` header connects.
+
 The unit's certificate is self-signed. In a browser, accept it on the dashboard first. Run Node.js with `NODE_EXTRA_CA_CERTS=vision.pem`, a copy of it ([Dashboard and API](./README.md#dashboard-and-api)).
+
+A channel answers an event it does not take with an error reply, `{"reason": "unknown event"}`, and stays joined.
 
 ## Status
 
@@ -33,6 +37,35 @@ The unit's certificate is self-signed. In a browser, accept it on the dashboard 
 - each pipeline's mean `inferenceMs` over that second, `null` in a second without a frame.
 
 [Accelerator load](./detection.md#accelerator-load) says what they measure on each accelerator.
+
+`stereoLoadPercent` is the share of the last second the stereo pairs spent at the stereo pipeline's device, at most 100. A pair's time runs from its hand-over to the device's reply: on a GPU, the upload of its frames, the submission and the GPU's work. The download of its outputs is left out, as it runs during the next pair's device work. The device takes one pair at a time, so at 100 % the pipeline drops the cameras' pairs that come faster. [Stereo load](./performance.md#stereo-load) says how it compares with the GPU's own busy share.
+
+`pipelines` holds the time of each pipeline, by its name, `stereo` for the stereo pipeline:
+
+- `stages`, the mean time of each step over the last second's pairs or frames, in milliseconds, by the step's name. The name is the last segment of the stage's id in `GET /api/stages`: `stereo.speckle_filter` is `speckle_filter`.
+- `segments`, the runs of steps computed as one, each with its `stages` in order and its one time, `ms`. Those steps have no entry in `stages`.
+- `totalMs`, the sum of the steps' and segments' times: the work one pair or frame takes, without the time it waits. A stereo segment's download that runs during the next pair's device work counts once.
+
+A step that did not run in the second is `null`, and so is the `totalMs` of a pipeline none of whose steps ran. [Step times](./performance.md#step-times) says what each time covers.
+
+`latencies` holds, under `stereo` on a unit with stereo cameras, two waits over the last second, in milliseconds. They are no step's work, so no `totalMs` counts them:
+
+- `cameras`, from a frame's capture to its arrival in the unit, the mean over both cameras' frames;
+- `pairing`, from the arrival of a pair's earlier frame to the pair going to the stereo pipeline, the mean over the pairs.
+
+Each is `null` in a second without a frame or a pair. [Latencies](./performance.md#latencies) says what each one covers.
+
+`distances` holds each detection and segmentation pipeline on a camera of its own, by its name: its `camera`, and `available`, whether that camera has the calibration and the pose the stereo depth is projected into it with. Without them, the pipeline's detections have no distance and its segmentation no points. With them, a result can still lack a distance, as one whose frame no stereo pair matched. `reason` says what is missing, `null` when available:
+
+| `reason` | The camera | To do |
+|---|---|---|
+| `no_calibration` | has no `calibration:` file | [calibrate it](./calibration.md#a-camera-of-its-own) |
+| `unreadable_calibration` | has a calibration file that cannot be read | calibrate it again, or fix the file |
+| `unusable_calibration` | has a calibration whose lens model the unit cannot project with | calibrate it with the `plumb_bob` or `equidistant` model |
+| `no_pose` | has no pose: where it sits relative to the stereo pair is unknown | [measure its pose](./cameras.md#measure-the-pose) |
+| `unreadable_pose` | has a pose file that cannot be read | fix the file |
+
+A pipeline that does not answer is left out.
 
 ```json
 {
@@ -52,17 +85,29 @@ The unit's certificate is self-signed. In a browser, accept it on the dashboard 
                    "differencePercent": 4, "left": 96.1, "right": 99.9}
   },
   "depth": {
-    "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.24, "droppedPercent": 1.2,
-             "depthHz": 34.4, "cameraHz": 34.8, "loadPercent": 98.0},
+    "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.2, "droppedPercent": 1.0,
+             "depthHz": 29.7, "cameraHz": 30.0, "loadPercent": 94.8},
     "range": {"level": "warning", "camera": null, "issues": ["too_near"], "gauge": 1.5, "nearPercent": 22.5, "nearestM": 1.39}
   },
   "alignment": {"offsetRows": 0.09, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14]},
   "sharpness": {"left": 0.0048, "right": 0.0056},
   "quality": {"matchedPercent": 64.7, "jitterPx": 0.087, "meanDisparityPx": 11.9, "spreadPx": 7.7},
-  "depthHz": 26.0,
-  "stereoLoadPercent": 98.0,
+  "depthHz": 30.0,
+  "stereoLoadPercent": 94.8,
   "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 23.1,
           "pipelines": {"objects": {"inferenceMs": 2.1}, "scene": {"inferenceMs": 5.6}}},
+  "pipelines": {
+    "stereo": {"totalMs": 31.6, "stages": {},
+               "segments": [{"stages": ["rectification", "sharpness", "disparity", "speckle_filter", "row_alignment",
+                                        "temporal_filter", "depth", "point_cloud", "quality"], "ms": 31.6}]},
+    "objects": {"totalMs": 11.9, "stages": {"input": 0.8, "inference": 10.3, "filtering": 0.1, "placement": 0.7}, "segments": []},
+    "scene": {"totalMs": 21.4, "stages": {"input": 0.3, "inference": 14.6, "classes": 6.5}, "segments": []}
+  },
+  "latencies": {"stereo": {"cameras": 4.2, "pairing": 1.1}},
+  "distances": {
+    "objects": {"camera": "center", "available": false, "reason": "no_pose"},
+    "scene": {"camera": "center", "available": false, "reason": "no_pose"}
+  },
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}},
                 {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]
 }
@@ -95,10 +140,10 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 | Check | Figures | Issue | Raised when |
 |---|---|---|---|
-| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that do not become depth, at `depthHz`; `loadPercent`, the stereo segment's busy share | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
+| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that did not become depth, at `depthHz`, all three over the last 10 s; `loadPercent`, the last second's `stereoLoadPercent` | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
 | `range` | `nearPercent`, the share of the last pair's matched pixels in the nearest 15% of the disparity range; `nearestM`, the nearest depth that range measures | `too_near` | more than 15% of the matches are in that band: the scene is nearer than the unit measures, so widen the range or move back |
 
-`VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
+The `rate` check is `off` until the unit has counted pairs for 10 s. Over 10 s, a frame counted in one second rather than the next moves `droppedPercent` by a pair in 300, not one in 30. `VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
 
 [Vision unit](./README.md#dashboard-and-api) and [Vision performance](./performance.md) give what each figure measures and the values to aim for.
 
@@ -128,7 +173,7 @@ depth.join()
 
 ## Video
 
-A camera with an H.264 output that the vehicle names in `preview: [videos: [center: :full_h264]]` ([A camera of its own](./cameras.md#outputs)) has a channel `video:<name>`. `GET /api/exporters` lists it among the API's outputs as `camera_video:<name>:<output>`. A camera whose video the unit does not relay is refused with `unknown video`.
+A camera with an H.264 output that the vehicle names in `preview: [videos: [center: :full_h264]]` ([A camera of its own](./cameras.md#outputs)) has a channel `video:<name>`. `GET /api/exporters` lists it among the API's outputs as `camera_video:<name>:<output>`. A camera whose video the unit does not relay is refused with `unknown video`, and any camera with `{"reason": "unavailable"}` while the relay does not run.
 
 The channel pushes every frame of the stream in order, from the next key frame, as a `frame` event whose payload is binary:
 
@@ -172,7 +217,7 @@ Each decoded frame's `timestamp` is its capture time.
 
 ## Detections
 
-Each detection pipeline has its own channel, `detections:<name>`. It pushes each result, at most ten a second, as a `detections` event. `captureUs` is the capture time of the frame they were found on, as the video's frames carry it, so a client draws them on that frame. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
+Each detection pipeline has its own channel, `detections:<name>`. It pushes each result as a `detections` event, at most the pipeline's `maxHz` a second (10 by default). `captureUs` is the capture time of the frame they were found on, as the video's frames carry it, so a client draws them on that frame. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
@@ -225,6 +270,7 @@ A name no segmentation pipeline of the unit runs under, a detection pipeline's i
 
 - A `calibration` event carries the calibration's `id` and its attributes, as `GET /api/calibrations/:id` gives them.
 - A `session` event carries the session's attributes, as the action routes answer them, and `calibration`, the id of the calibration it works on, `null` while idle.
+- A `saved` event carries `calibration`, the id of a calibration whose [kept calibrations](./api.md#the-calibrations-kept) changed: one was kept, renamed, removed or put in force. Read `GET /api/saved-calibrations?filter[calibration]=<id>` again.
 
 ```javascript
 const calibration = socket.channel('calibration')
@@ -233,4 +279,4 @@ calibration.on('session', ({ phase, samples, progress }) => console.log(phase, s
 calibration.join()
 ```
 
-Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.
+Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes, and a pushed event gets an error reply. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.

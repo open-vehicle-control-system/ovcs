@@ -35,6 +35,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     def name_for(label), do: label
     def shared_controls?, do: true
     def control_specs, do: VisionCore.Camera.V4L2Pair.control_specs()
+    def control_specs("left"), do: Agent.get(__MODULE__, &Map.get(&1, :specs, control_specs()))
     def controls("left"), do: Agent.get(__MODULE__, & &1.controls)
     def live("left"), do: Agent.get(__MODULE__, & &1.live)
 
@@ -602,6 +603,69 @@ defmodule VisionCore.Stereo.ParametersTest do
     assert alignment.status.() == nil
   end
 
+  test "the stage the correction moves carries the correction's settings after its own, live" do
+    start_supervised!({AlignmentCorrection, subscribe: false})
+    rectification = group("stereo.rectification")
+
+    assert Enum.map(rectification.parameters, & &1.name) == [
+             "auto_row_offset",
+             "right_row_offset",
+             "auto_row_offset_window",
+             "auto_row_offset_threshold_rows",
+             "auto_row_offset_gain",
+             "auto_row_offset_max_rows",
+             "match_width",
+             "match_height"
+           ]
+
+    gain = parameter(rectification, "auto_row_offset_gain")
+    assert %{type: :double, constraint: %{kind: :range, min: 0.1, max: 3}, default: 1.5} = gain
+    assert gain.get.() == 1.5
+    assert gain.set.(2.0) == :ok
+    assert AlignmentCorrection.settings()["gain"] == 2.0
+  end
+
+  test "without the correction, its stage has none of the correction's settings" do
+    names = Enum.map(group("stereo.rectification").parameters, & &1.name)
+
+    refute Enum.any?(names, &String.starts_with?(&1, "auto_row_offset"))
+  end
+
+  describe "the pairing" do
+    # Answers `VisionCore.Stereo.Pairer`'s tolerance calls from the value it holds.
+    defmodule Pairer do
+      use GenServer
+
+      def start_link(tolerance_ms),
+        do: GenServer.start_link(__MODULE__, tolerance_ms, name: VisionCore.Stereo.Pairer)
+
+      def init(tolerance_ms), do: {:ok, tolerance_ms}
+      def handle_call(:pair_tolerance_ms, _from, ms), do: {:reply, ms, ms}
+      def handle_call({:put_pair_tolerance_ms, ms}, _from, _ms), do: {:reply, :ok, ms}
+    end
+
+    test "is a component of the stereo pipeline after the cameras, its tolerance live" do
+      start_supervised!({Pairer, 5})
+
+      assert ["stereo.cameras", "stereo.pairing" | _stages] = Enum.map(groups(), & &1.id)
+      pairing = group("stereo.pairing")
+      assert %{kind: :component, pipeline: :stereo, position: 0, name: "Pairing"} = pairing
+
+      assert [%{name: "pair_tolerance_ms", type: :integer} = tolerance] = pairing.parameters
+      assert tolerance.constraint == %{kind: :range, min: 0, max: 1000, step: nil}
+      assert tolerance.get.() == 5
+      assert tolerance.set.(8) == :ok
+      assert tolerance.get.() == 8
+    end
+
+    test "is not declared without a pairer, nor without a pipeline" do
+      refute group("stereo.pairing")
+
+      start_supervised!({Pairer, 5})
+      refute Enum.any?(groups(pipeline: nil), &(&1.id == "stereo.pairing"))
+    end
+  end
+
   test "the stage of any name that declares right_row_offset carries the correction's switch" do
     use_stages([
       stage(:vehicle_rectification, VehicleRectification, summary: "Rectifies") | tl(stages())
@@ -640,6 +704,65 @@ defmodule VisionCore.Stereo.ParametersTest do
     ids = Enum.map(VisionCore.Parameters.groups(), & &1.id)
     assert "stereo.cameras" in ids
     assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.disparity.p1")
+  end
+
+  test "lists the controls the cameras have, and lists them again once the driver publishes a change" do
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    assert {:ok, _focus} = VisionCore.Parameters.get("stereo.cameras.focus")
+
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+
+    VisionCore.Outputs.publish(
+      VisionCore.Camera.controls_changed_key("left"),
+      {:camera_controls_changed, "left"}
+    )
+
+    :sys.get_state(Parameters)
+    assert {:error, :not_found} = VisionCore.Parameters.get("stereo.cameras.focus")
+    assert {:ok, _gamma} = VisionCore.Parameters.get("stereo.cameras.gamma")
+    assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.disparity.p1")
+  end
+
+  test "a saved focus is dropped once the cameras turn out to have none" do
+    start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    :sys.get_state(VisionCore.Parameters)
+    assert MemoryStore.rows() == %{"stereo.cameras.focus" => 500}
+
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+
+    VisionCore.Outputs.publish(
+      VisionCore.Camera.controls_changed_key("left"),
+      {:camera_controls_changed, "left"}
+    )
+
+    :sys.get_state(Parameters)
+    :sys.get_state(VisionCore.Parameters)
+    assert MemoryStore.rows() == %{}
+  end
+
+  test "a saved focus is dropped when the cameras have none from the start" do
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+    start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    :sys.get_state(VisionCore.Parameters)
+
+    assert MemoryStore.rows() == %{}
+  end
+
+  test "without a pipeline, declares the cameras alone and gives them their saved values" do
+    start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: nil})
+
+    assert Enum.map(VisionCore.Parameters.groups(), & &1.id) == ["stereo.cameras"]
+    assert Driver.controls("left").focus == 500
   end
 
   test "exposure and gain default to their manual settings while auto exposure runs" do

@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 import { useExporters } from '../../stores/exporters.js'
+import { useCalibration } from '../../stores/calibration.js'
+import { useNavigation } from '../../stores/navigation.js'
 
-const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: {
@@ -226,6 +228,66 @@ describe('Previews', () => {
       expect(card('usb')).toBeNull()
     })
 
+    it("says under a camera's preview why its pipelines have no distance, once for the same reason, with how to give them one", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
+      const distances = {
+        objects: { camera: 'hq', available: false, reason: 'no_pose' },
+        scene: { camera: 'hq', available: false, reason: 'no_pose' },
+        signs: { camera: 'usb', available: true, reason: null }
+      }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      const lines = [...figure('hq').querySelectorAll('[data-distances]')]
+      expect(lines.map((line) => line.textContent)).toEqual(["No distances: the hq camera's position relative to the stereo pair is unknown"])
+      expect(lines[0].className).toContain('text-ovcs-muted')
+
+      fireEvent.focus(screen.getByRole('button', { name: 'About No distances' }))
+      expect(screen.getByRole('tooltip').textContent).toContain('Cameras section')
+      expect(figure('usb').querySelector('[data-distances]')).toBeNull()
+    })
+
+    it("opens the page that measures a camera's position from the line that says it is unknown", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }, { id: 'hq-pose', kind: 'pose' }] })
+      useNavigation.setState({ page: 'overview', calibrationId: null })
+      const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      fireEvent.click(within(figure('hq')).getByRole('button', { name: "Measure the hq camera's position" }))
+
+      expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'hq-pose' })
+    })
+
+    it('offers no such page for a camera whose position the unit cannot measure', () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }] })
+      const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      expect(within(figure('hq')).queryByRole('button', { name: /Measure/ })).toBeNull()
+    })
+
+    it("names each reason the camera's pipelines give, and nothing without a status", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      const distances = {
+        objects: { camera: 'hq', available: false, reason: 'no_calibration' },
+        scene: { camera: 'hq', available: false, reason: 'unreadable_pose' }
+      }
+      const { socket } = liveSocket()
+      const { rerender } = render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      expect([...figure('hq').querySelectorAll('[data-distances]')].map((line) => line.textContent)).toEqual([
+        'No distances: the hq camera has no calibration',
+        "No distances: the hq camera's pose file cannot be read"
+      ])
+
+      rerender(<Previews status={null} socket={socket} />)
+      expect(figure('hq').querySelector('[data-distances]')).toBeNull()
+    })
+
     it('shows none without a camera of its own, the depth alone filling the row below the pair', () => {
       listed('camera_frame:left', 'camera_frame:right', 'stereo_pair')
       const { socket } = liveSocket()
@@ -321,7 +383,7 @@ describe('Previews', () => {
     it('gives every preview an aside under its caption, empty with nothing to show, sized by the row it shares with its neighbours', () => {
       renderAll()
       // The frame beside a 9rem aside and its 0.75rem gap would be 319 px wide and 320 px tall.
-      previewsSized(475, 400, 80)
+      previewsSized(483, 400, 80)
 
       const streams = ['left', 'right', 'depth', 'hq', 'usb']
       for (const stream of streams) expect(aside(stream)).not.toBeNull()
@@ -350,7 +412,7 @@ describe('Previews', () => {
 
     it("puts the asides of the depth's row next to their frames, from lg, once the frame left is as wide as tall", () => {
       renderAll()
-      previewsSized(476, 400, 80)
+      previewsSized(484, 400, 80)
 
       const row = document.querySelector('[data-cameras]')
       for (const stream of ['depth', 'hq', 'usb']) {
@@ -372,14 +434,14 @@ describe('Previews', () => {
       // The pair's row keeps its asides under the captions, where they take the height the pair's checks add.
       for (const stream of ['left', 'right']) expect(aside(stream).parentElement).toBe(figure(stream))
 
-      previewsSized(476, 401, 80)
+      previewsSized(484, 401, 80)
       expect(aside('depth').className).toBe(aside('left').className)
       expect(aside('depth').parentElement).toBe(figure('depth'))
     })
 
     it('stands the colour scale up and spreads the classes in one column, in class order, beside their frames', () => {
       renderAll()
-      previewsSized(476, 400, 80)
+      previewsSized(484, 400, 80)
 
       expect(scale().dataset.orientation).toBe('vertical')
       expect(slider().getAttribute('aria-orientation')).toBe('vertical')
@@ -387,7 +449,7 @@ describe('Previews', () => {
       expect(legend().className).not.toContain('auto-fill')
       expect([...legend().querySelectorAll('li')].map((item) => item.dataset.class)).toEqual(['road', 'sky'])
 
-      previewsSized(476, 401, 80)
+      previewsSized(484, 401, 80)
       expect(scale().dataset.orientation).toBe('horizontal')
       expect(classes(legend())).not.toContain('flex-col')
     })
@@ -395,7 +457,7 @@ describe('Previews', () => {
     it('keeps the asides under the captions below lg, whatever the previews measure', () => {
       vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })))
       renderAll()
-      previewsSized(476, 400, 80)
+      previewsSized(484, 400, 80)
 
       expect(aside('depth').className).toBe(aside('left').className)
       expect(scale().dataset.orientation).toBe('horizontal')
@@ -406,7 +468,7 @@ describe('Previews', () => {
       const query = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() }
       vi.stubGlobal('matchMedia', vi.fn(() => query))
       renderAll()
-      previewsSized(476, 400, 80)
+      previewsSized(484, 400, 80)
       expect(window.matchMedia).toHaveBeenCalledWith('(min-width: 1024px)')
       expect(scale().dataset.orientation).toBe('horizontal')
 
@@ -421,11 +483,11 @@ describe('Previews', () => {
       for (const stream of ['depth', 'hq', 'left']) loadFrame(push, stream, 640, 480)
 
       for (const beside of [false, true]) {
-        previewsSized(beside ? 476 : 475, 400, 80)
+        previewsSized(beside ? 484 : 483, 400, 80)
         for (const stream of ['left', 'right', 'depth', 'hq', 'usb']) {
           // The cell takes the frame's track and measures it; the frame is the largest box of its shape in it.
           expect(classes(cellOf(stream))).toEqual(
-            expect.arrayContaining(['lg:flex', 'lg:min-h-0', 'lg:items-start', 'lg:justify-center', 'lg:[container-type:size]'])
+            expect.arrayContaining(['lg:flex', 'lg:min-h-0', 'lg:items-start', 'lg:justify-center', 'lg:[container-type:size]', 'px-2', 'pt-2'])
           )
           expect(frameOf(stream).parentElement).toBe(cellOf(stream))
           expect(classes(frameOf(stream))).toContain('aspect-[var(--frame-width,16)/var(--frame-height,9)]')
@@ -441,6 +503,8 @@ describe('Previews', () => {
             ? 'lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
             : 'lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
         )
+        // Beside, the frame takes the room its width leaves, which pins the aside to the card's edge.
+        expect(classes(frameOf('depth')).includes('lg:mx-auto')).toBe(beside)
       }
       for (const stream of ['depth', 'hq', 'left']) {
         expect([cellOf(stream).style.getPropertyValue('--frame-width'), cellOf(stream).style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
@@ -455,7 +519,7 @@ describe('Previews', () => {
     })
 
     it('places the asides as the row mounts, before its observer reports', () => {
-      previewsSized(476, 400, 80)
+      previewsSized(484, 400, 80)
       renderAll()
 
       expect(aside('depth').parentElement).toBe(cellOf('depth'))

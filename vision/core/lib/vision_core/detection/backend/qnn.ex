@@ -53,13 +53,14 @@ defmodule VisionCore.Detection.Backend.Qnn do
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Inference.QnnPort
   alias VisionCore.Inference.PortBackend
+  alias VisionCore.Options
   alias VisionCore.Stereo.Parameters
 
   @default_score_threshold 0.4
   @explanation "Runs object detection on the Hexagon NPU. It finds people, vehicles, " <>
                  "animals and everyday objects, the 80 COCO classes, each as a box with a score. " <>
-                 "The model and score_threshold, the lowest score the NPU reports, are fixed in " <>
-                 "the build. When the NPU is not ready, inference waits and starts again, and " <>
+                 "The model, score_threshold, the lowest score the NPU reports, and the NPU's " <>
+                 "power vote are fixed in the build. When the NPU is not ready, inference waits and starts again, and " <>
                  "the depth carries on without it."
 
   @doc false
@@ -109,7 +110,8 @@ defmodule VisionCore.Detection.Backend.Qnn do
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
       power_args: QnnPort.power_args!(opts),
-      score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
+      power_parameters: QnnPort.power_parameters(opts),
+      score_threshold: Options.number!(opts, :score_threshold, @default_score_threshold) * 1.0,
       runtime: QnnPort.runtime(opts),
       cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn/#{pipeline}"),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0)
@@ -142,6 +144,7 @@ defmodule VisionCore.Detection.Backend.Qnn do
           {:score_threshold, settings.score_threshold},
           "Lowest score the NPU reports"
         )
+        | settings.power_parameters
       ]
     })
   end

@@ -47,7 +47,7 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
     :sys.get_state(diagnostics)
     send(diagnostics, :plot)
 
-    assert_receive {:published, "stereo/live/sync_offset_ms", %Float64{data: offset_ms}}, 1_000
+    assert_receive {:published, "stereo/sync_offset_ms", %Float64{data: offset_ms}}, 1_000
     assert_in_delta offset_ms, 0.2, 1.0e-9
   end
 
@@ -76,9 +76,9 @@ defmodule VisionCore.Ros2.Exporter.DiagnosticsTest do
     }
 
     assert [
-             {"stereo/live/sync_offset_ms", Float64, %{data: 0.2}},
-             {"stereo/live/left/exposure_time_us", Float64, %{data: 1000.0}},
-             {"stereo/live/left/analogue_gain", Float64, %{data: 2.0}}
+             {"stereo/sync_offset_ms", Float64, %{data: 0.2}},
+             {"stereo/left/exposure_us", Float64, %{data: 1000.0}},
+             {"stereo/left/analogue_gain", Float64, %{data: 2.0}}
            ] = Diagnostics.plot_messages("stereo", [0.2, 0.1, 0.3], live)
 
     assert Diagnostics.plot_messages("stereo", [], %{left: nil, right: nil}) == []

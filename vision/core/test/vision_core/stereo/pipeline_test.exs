@@ -228,7 +228,7 @@ defmodule VisionCore.Stereo.PipelineTest do
     def put_member_state(segment, index, state),
       do: %{segment | members: List.update_at(segment.members, index, &%{&1 | state: state})}
 
-    defp steps(pair, segment) do
+    def steps(pair, segment) do
       tensors = Map.new(Segment.entry_fields(segment.members), &{&1, Map.fetch!(pair, &1)})
 
       Enum.reduce(segment.members, tensors, fn member, tensors ->
@@ -238,6 +238,43 @@ defmodule VisionCore.Stereo.PipelineTest do
     end
 
     defp now, do: System.monotonic_time(:nanosecond)
+  end
+
+  # EagerSegment's device answering `:device_ms` after a pair is sent, its download taking
+  # `:collect_ms`.
+  defmodule TimedSegment do
+    @behaviour VisionCore.Stereo.Segment
+
+    def build(members, context, opts),
+      do: EagerSegment.build(members, context, []) |> put_timings(opts)
+
+    def accepts?(module, segment, compute), do: EagerSegment.accepts?(module, segment, compute)
+
+    def send_request(pair, segment) do
+      ref = make_ref()
+      done_ns = System.monotonic_time(:nanosecond) + segment.device_ms * 1_000_000
+      reply = {:ok, EagerSegment.steps(pair, segment), segment, done_ns}
+      Process.send_after(self(), {ref, reply}, segment.device_ms)
+      {:ok, ref}
+    end
+
+    defdelegate response(message, ref, segment), to: EagerSegment
+    defdelegate await(ref, segment, timeout), to: EagerSegment
+
+    def collect(pair, outputs, segment, timeout) do
+      Process.sleep(segment.collect_ms)
+      EagerSegment.collect(pair, outputs, segment, timeout)
+    end
+
+    defdelegate depth, to: EagerSegment
+    defdelegate merge_carry(current, replied), to: EagerSegment
+    defdelegate member_times(segment), to: EagerSegment
+    defdelegate compute(segment), to: EagerSegment
+    defdelegate reload(segment, members, context), to: EagerSegment
+    defdelegate put_member_state(segment, index, state), to: EagerSegment
+
+    defp put_timings({:ok, segment}, opts),
+      do: {:ok, Map.merge(segment, Map.new(Keyword.take(opts, [:device_ms, :collect_ms])))}
   end
 
   defp start(stages, opts \\ []) do
@@ -316,6 +353,33 @@ defmodule VisionCore.Stereo.PipelineTest do
 
     assert_timed_as_recorded(pipeline, pair)
     assert Map.has_key?(pair.stage_ms, :frame_tag)
+  end
+
+  test "a pair's device time runs from its send to the device's reply, without its download" do
+    backends = [{TimedSegment, device_ms: 30, collect_ms: 40}]
+    {:ok, pipeline} = start([FrameTag, FillAll], backends: backends, flush_after_ms: 0)
+    subscribe_to_pairs()
+    [left, right] = textured_pair(3)
+
+    Pipeline.submit(pipeline, left, right)
+    assert_receive {:"$gen_cast", {:stereo_pair, %Pair{} = pair}}, 5_000
+
+    assert_in_delta pair.device_ms, 30.0, 5.0
+  end
+
+  test "a segment's time counts once the download the next pair's device work overlaps" do
+    backends = [{TimedSegment, device_ms: 40, collect_ms: 20}]
+    {:ok, pipeline} = start([FrameTag, FillAll], backends: backends)
+    subscribe_to_pairs()
+
+    [first | overlapped] = submit_when_ready(pipeline, Enum.map(1..5, &textured_pair/1))
+
+    assert_in_delta first.stage_ms.frame_tag, 60.0, 8.0
+
+    for pair <- overlapped do
+      assert_in_delta pair.stage_ms.frame_tag, 40.0, 8.0
+      assert_in_delta pair.device_ms, 40.0, 8.0
+    end
   end
 
   test "refuses a stage whose inputs no stage before it provides" do

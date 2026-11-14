@@ -17,6 +17,60 @@ defmodule VisionCore.Camera.UnitTest do
 
   defp config(components), do: %VisionCore.Config{components: components}
 
+  defp child_ids(unit), do: unit |> Supervisor.which_children() |> Enum.map(&elem(&1, 0))
+
+  # Exits at once `failures` times, then sends a 2x1 grey frame every 20 ms until its stdin ends.
+  defp glitching_capture_program(tmp_dir, failures) do
+    executable = Path.join(tmp_dir, "camera_capture")
+
+    File.write!(executable, """
+    #!/bin/sh
+    dir=$(dirname "$0")
+    printf x >> "$dir/runs"
+    [ "$(wc -c < "$dir/runs")" -le #{failures} ] && exit 2
+    (while printf '\\000\\000\\000\\017\\005\\002\\000\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\007\\010' 2> /dev/null; do
+      sleep 0.02
+    done) &
+    cat > /dev/null
+    """)
+
+    File.chmod!(executable, 0o755)
+    executable
+  end
+
+  @tag :tmp_dir
+  @tag :capture_log
+  test "a camera whose program exits more times in a row than the unit's restart budget comes back, the unit never restarted",
+       %{tmp_dir: tmp_dir} do
+    driver = VisionCore.Camera.LibCamera
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, driver.name_for("glitchy")})
+
+    unit =
+      start_supervised!(
+        {Unit,
+         name: :glitchy,
+         driver: driver,
+         camera_id: 0,
+         executable: glitching_capture_program(tmp_dir, 15),
+         reopen_delays_ms: [5]}
+      )
+
+    camera = Process.whereis(driver.name_for("glitchy"))
+
+    assert_receive {:"$gen_cast", {:camera_frame, %VisionCore.Camera.Frame{label: "glitchy"}}},
+                   10_000
+
+    assert File.read!(Path.join(tmp_dir, "runs")) == String.duplicate("x", 16)
+    assert Process.alive?(unit)
+    assert Process.whereis(driver.name_for("glitchy")) == camera
+  end
+
+  test "a driver without runtime controls is started alone" do
+    unit = start_supervised!({Unit, name: :usb, driver: Driver, test: self()})
+
+    assert child_ids(unit) == [Driver]
+  end
+
   test "starts its driver with the camera's options and its name's text as the label" do
     start_supervised!({Unit, name: :usb, driver: Driver, device: "/dev/video0", test: self()})
 
@@ -298,6 +352,8 @@ defmodule VisionCore.Camera.UnitTest do
                  built_in_calibration_path: "hq.yaml",
                  calibration_store_path: nil,
                  pose_path: "hq_pose.yaml",
+                 built_in_pose_path: "hq_pose.yaml",
+                 pose_store_path: nil,
                  outputs: [
                    %Output{name: :half, index: 0, width: 1014, height: 760, processor: :cpu}
                  ]
@@ -310,6 +366,8 @@ defmodule VisionCore.Camera.UnitTest do
                  built_in_calibration_path: nil,
                  calibration_store_path: nil,
                  pose_path: nil,
+                 built_in_pose_path: nil,
+                 pose_store_path: nil,
                  outputs: []
                }
              ]
@@ -333,6 +391,31 @@ defmodule VisionCore.Camera.UnitTest do
 
       assert [%{calibration_path: ^stored, calibration_store_path: ^stored}] =
                Unit.settings(config)
+    end
+
+    @tag :tmp_dir
+    test "a pose stored as camera_<name>_pose.yaml takes precedence over :pose",
+         %{tmp_dir: tmp_dir} do
+      config =
+        config([
+          {:camera,
+           name: :hq, driver: V4L2Single, pose: "hq_pose.yaml", calibration_store_dir: tmp_dir}
+        ])
+
+      stored = Path.join(tmp_dir, "camera_hq_pose.yaml")
+
+      assert [
+               %{
+                 pose_path: "hq_pose.yaml",
+                 built_in_pose_path: "hq_pose.yaml",
+                 pose_store_path: ^stored
+               }
+             ] =
+               Unit.settings(config)
+
+      File.write!(stored, "rotation: []\n")
+
+      assert [%{pose_path: ^stored, pose_store_path: ^stored}] = Unit.settings(config)
     end
   end
 end

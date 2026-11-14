@@ -1,12 +1,12 @@
 defmodule VisionApiWeb.CalibrationControllerTest do
   use VisionApiWeb.CalibrationCase
 
-  test "GET /api/calibrations lists the stereo pair's calibration, then each camera's",
+  test "GET /api/calibrations lists the stereo pair's calibration, then each camera's, then its pose",
        %{conn: conn} do
     conn = get(conn, "/api/calibrations")
     assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
 
-    assert %{"data" => [stereo, camera]} = json_response(conn, 200)
+    assert %{"data" => [stereo, camera, pose]} = json_response(conn, 200)
 
     assert %{
              "type" => "calibrations",
@@ -22,9 +22,62 @@ defmodule VisionApiWeb.CalibrationControllerTest do
                "source" => "builtIn",
                "baselineM" => nil,
                "rectifiedFx" => nil,
-               "cameras" => [%{"name" => "hq", "file" => "hq.yaml", "fx" => 900.0}]
+               "cameras" => [%{"name" => "hq", "file" => "hq.yaml", "fx" => 900.0}],
+               "pose" => nil
              }
            } = camera
+
+    assert %{
+             "type" => "calibrations",
+             "id" => "hq-pose",
+             "attributes" => %{
+               "kind" => "pose",
+               "source" => "none",
+               "storedAt" => nil,
+               "canReset" => false,
+               "error" => nil,
+               "pose" => nil,
+               "cameras" => [
+                 %{"name" => "left", "file" => "unit_left.yaml", "fx" => 900.0},
+                 %{"name" => "hq", "file" => "hq.yaml", "fx" => 900.0}
+               ]
+             }
+           } = pose
+
+    assert stereo["attributes"]["pose"] == nil
+  end
+
+  test "GET /api/calibrations/:id renders a camera's pose in use, its translation in metres and the distance between the cameras in millimetres",
+       %{conn: conn, config: config} do
+    :ok = VisionCore.Camera.Pose.commit(config, :hq, VisionApiWeb.CalibrationCase.pose())
+
+    conn = get(conn, "/api/calibrations/hq-pose")
+    assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+
+    assert %{
+             "data" => %{
+               "type" => "calibrations",
+               "id" => "hq-pose",
+               "attributes" => %{
+                 "kind" => "pose",
+                 "source" => "stored",
+                 "storedAt" => stored_at,
+                 "canReset" => false,
+                 "pose" => %{
+                   "rotation" => rotation,
+                   "translation" => translation,
+                   "distanceMm" => distance_mm,
+                   "file" => "hq_pose.yaml",
+                   "yaml" => "# From the rectified left optical frame" <> _
+                 }
+               }
+             }
+           } = json_response(conn, 200)
+
+    assert is_binary(stored_at)
+    assert rotation == VisionApiWeb.CalibrationCase.pose().rotation
+    assert translation == VisionApiWeb.CalibrationCase.pose().translation
+    assert_in_delta distance_mm, 60.53, 0.01
   end
 
   test "GET /api/calibrations is empty on a unit with nothing to calibrate", %{conn: conn} do
@@ -106,8 +159,13 @@ defmodule VisionApiWeb.CalibrationControllerTest do
     assert attributes["baselineM"] == nil
     assert attributes["rectifiedFx"] == nil
 
-    assert %{"data" => [%{"id" => "unit", "attributes" => %{"error" => error}}, %{"id" => "hq"}]} =
-             conn |> get("/api/calibrations") |> json_response(200)
+    assert %{
+             "data" => [
+               %{"id" => "unit", "attributes" => %{"error" => error}},
+               %{"id" => "hq"},
+               %{"id" => "hq-pose"}
+             ]
+           } = conn |> get("/api/calibrations") |> json_response(200)
 
     assert error =~ "cannot read"
   end

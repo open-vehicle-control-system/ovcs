@@ -66,6 +66,40 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
       assert %{target: %{id: "hq", kind: :camera}} = Session.state()
     end
 
+    test "starts a session on a camera's pose", %{conn: conn} do
+      assert %{
+               "data" => %{
+                 "attributes" => %{"phase" => "capturing"},
+                 "relationships" => %{"calibration" => %{"data" => %{"id" => "hq-pose"}}}
+               }
+             } =
+               conn
+               |> post_action("/api/calibration-sessions", session("hq-pose"))
+               |> json_response(201)
+
+      assert %{target: %{id: "hq-pose", kind: :pose}} = Session.state()
+    end
+
+    test "answers 422, naming it, for a pose whose camera has no calibration",
+         %{conn: conn, tmp_dir: tmp_dir} do
+      File.rm!(Path.join(tmp_dir, "hq.yaml"))
+
+      conn = post_action(conn, "/api/calibration-sessions", session("hq-pose"))
+      assert get_resp_header(conn, "content-type") == [@media_type]
+
+      assert %{
+               "errors" => [
+                 %{
+                   "status" => "422",
+                   "title" => "Not started",
+                   "detail" => "the hq camera has no calibration: calibrate it first"
+                 }
+               ]
+             } = json_response(conn, 422)
+
+      assert %{phase: :idle} = Session.state()
+    end
+
     test "answers 400 without a calibration to work on, pointing at it", %{conn: conn} do
       for relationships <- [nil, %{}, %{calibration: %{data: %{type: "stages", id: "unit"}}}] do
         data = session() |> Map.delete(:relationships)
@@ -317,8 +351,77 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
     assert_receive {:commit_camera, :hq}
   end
 
+  test "a pose's solve gives the pose, and its apply commits it", %{conn: conn} do
+    conn |> post_action("/api/calibration-sessions", session("hq-pose")) |> json_response(201)
+    solved(solved_pose_result())
+
+    assert %{
+             result: %{
+               cameras: [],
+               stereoRmsPx: nil,
+               baselineM: nil,
+               fxPx: nil,
+               samples: 40,
+               pose: %{
+                 rotation: [0.999 | _],
+                 translation: translation,
+                 distanceMm: distance_mm,
+                 rmsPx: 0.4,
+                 file: "hq_pose.yaml",
+                 yaml: yaml
+               }
+             }
+           } = VisionApiWeb.CalibrationJSON.session(Session.state())
+
+    assert translation == VisionApiWeb.CalibrationCase.pose().translation
+    assert_in_delta distance_mm, 60.53, 0.01
+    assert VisionCore.Camera.Pose.parse(yaml) == {:ok, VisionApiWeb.CalibrationCase.pose()}
+
+    conn
+    |> post_action("/api/calibration-applies", %{type: "calibration-applies"})
+    |> json_response(202)
+
+    assert_receive {:commit_pose, :hq}
+  end
+
   describe "POST /api/calibration-resets" do
     defp reset(id), do: %{type: "calibration-resets", relationships: target(id)}
+
+    test "returns a camera's pose to its built-in one", %{
+      conn: conn,
+      config: config,
+      tmp_dir: tmp_dir
+    } do
+      alias VisionCore.Camera.Pose
+
+      built_in = VisionApiWeb.CalibrationCase.pose()
+      File.write!(Path.join(tmp_dir, "hq_pose.yaml"), Pose.to_yaml(built_in))
+      :ok = Pose.commit(config, :hq, %{built_in | translation: [-0.07, 0.0, 0.0]})
+
+      assert %{"data" => %{"attributes" => %{"source" => "stored", "canReset" => true}}} =
+               conn |> get("/api/calibrations/hq-pose") |> json_response(200)
+
+      conn |> post_action("/api/calibration-resets", reset("hq-pose")) |> json_response(201)
+
+      assert %{"data" => %{"attributes" => %{"source" => "builtIn", "pose" => pose}}} =
+               conn |> get("/api/calibrations/hq-pose") |> json_response(200)
+
+      assert pose["translation"] == [-0.06, 0.008, 0.0]
+    end
+
+    test "answers 422 for a stored pose without a built-in one to return to",
+         %{conn: conn, config: config} do
+      :ok = VisionCore.Camera.Pose.commit(config, :hq, VisionApiWeb.CalibrationCase.pose())
+
+      assert %{
+               "errors" => [
+                 %{"status" => "422", "detail" => "there is no built-in pose to return to"}
+               ]
+             } =
+               conn
+               |> post_action("/api/calibration-resets", reset("hq-pose"))
+               |> json_response(422)
+    end
 
     test "returns the stereo pair to its built-in calibration",
          %{conn: conn, config: config, tmp_dir: tmp_dir} do
@@ -379,6 +482,32 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
       conn |> post_action("/api/calibration-resets", reset("hq")) |> json_response(201)
 
       assert %{"data" => %{"attributes" => %{"source" => "builtIn"}}} =
+               conn |> get("/api/calibrations/hq") |> json_response(200)
+    end
+
+    test "answers 409 while a calibration session runs, and resets nothing",
+         %{conn: conn, config: config} do
+      :ok =
+        VisionCore.Camera.Calibration.commit(
+          config,
+          :hq,
+          %{VisionApiWeb.CalibrationCase.calibration() | width: 640}
+        )
+
+      {:ok, board} = VisionCore.Calibration.Board.new(8, 6, 0.025)
+      :ok = VisionCore.Calibration.Session.start("unit", board)
+
+      assert %{
+               "errors" => [
+                 %{
+                   "status" => "409",
+                   "title" => "Not reset",
+                   "detail" => "a calibration session is running"
+                 }
+               ]
+             } = conn |> post_action("/api/calibration-resets", reset("hq")) |> json_response(409)
+
+      assert %{"data" => %{"attributes" => %{"source" => "stored"}}} =
                conn |> get("/api/calibrations/hq") |> json_response(200)
     end
 

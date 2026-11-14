@@ -42,6 +42,12 @@ defmodule VisionCore.Detection.CameraPipeline do
   defdelegate groups(settings), to: Pipeline
 
   @impl VisionCore.CameraPipeline
+  defdelegate setting_values(settings), to: Pipeline
+
+  @impl VisionCore.CameraPipeline
+  defdelegate with_setting(settings, key, value), to: Pipeline
+
+  @impl VisionCore.CameraPipeline
   defdelegate output_key(settings), to: Pipeline
 
   @impl VisionCore.CameraPipeline
@@ -72,6 +78,11 @@ defmodule VisionCore.Detection.CameraPipeline do
 
   @impl VisionCore.CameraPipeline
   def reply_tag, do: :inference_detections
+
+  @impl VisionCore.CameraPipeline
+  def stage(:prepare), do: :input
+  def stage(:result), do: :filtering
+  def stage(:finish), do: :placement
 
   @impl VisionCore.CameraPipeline
   def result(detections, _kept, settings) do

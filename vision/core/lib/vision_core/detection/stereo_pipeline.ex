@@ -5,12 +5,12 @@ defmodule VisionCore.Detection.StereoPipeline do
   backend, one in flight at a time, and places the boxes it returns
   with that pair's depth, which lines up with the image pixel for pixel
   (`VisionCore.Detection.Fusion`). See `VisionCore.Detection.Pipeline`
-  for what it publishes and its options.
+  for what it publishes, its options and its steps' times.
   """
   use GenServer
 
   alias VisionCore.Detection.{Fusion, Pipeline}
-  alias VisionCore.Outputs
+  alias VisionCore.{Outputs, StageTimes}
   alias VisionCore.Stereo.Pair
 
   @doc "Starts the pipeline; `start_options` are `GenServer.start_link/3`'s."
@@ -26,16 +26,38 @@ defmodule VisionCore.Detection.StereoPipeline do
         # The sequence of the last submission, accepted or not.
         sequence: 0,
         pair_count: 0,
-        # `{sequence, pair}`: the pair submitted with the in-flight inference, to which its boxes belong.
-        pending: nil
+        # `{sequence, pair, submitted_ns}`: the pair of the in-flight inference, to which its boxes belong.
+        pending: nil,
+        clock: Keyword.get(opts, :clock, &monotonic_ns/0),
+        times: StageTimes.new(Pipeline.stages())
       })
 
+    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
+    {:ok, state, {:continue, {:declare, settings}}}
+  end
+
+  # After `init/1`: the registry reads the settings it is declared from the running pipeline.
+  @impl GenServer
+  def handle_continue({:declare, settings}, state) do
     if Process.whereis(VisionCore.Parameters),
       do: :ok = VisionCore.Parameters.declare(Pipeline.groups(settings))
 
-    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    {:ok, state}
+    {:noreply, state}
   end
+
+  @impl GenServer
+  def handle_call(:live_settings, _from, state),
+    do: {:reply, Pipeline.setting_values(state), state}
+
+  def handle_call({:put_setting, key, value}, _from, state) do
+    case Pipeline.with_setting(state, key, value) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, _reason} = refusal -> {:reply, refusal, state}
+    end
+  end
+
+  def handle_call(:stage_times, _from, state),
+    do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
@@ -55,30 +77,49 @@ defmodule VisionCore.Detection.StereoPipeline do
   defp submit(pair, state) do
     sequence = state.sequence + 1
     state = %{state | sequence: sequence}
+    started_ns = state.clock.()
 
     case state.backend.detect(state.backend_server, sequence, pair.left) do
-      :ok -> %{state | pending: {sequence, pair}}
+      :ok ->
+        submitted_ns = state.clock.()
+        time(%{state | pending: {sequence, pair, submitted_ns}}, :input, started_ns, submitted_ns)
+
       # Busy or unavailable: the backend logs the unavailable case once.
-      {:error, _reason} -> state
+      {:error, _reason} ->
+        state
     end
   end
 
   @impl GenServer
-  def handle_info({:inference_detections, sequence, nil}, %{pending: {sequence, _pair}} = state),
-    do: {:noreply, %{state | pending: nil}}
+  def handle_info(
+        {:inference_detections, sequence, nil},
+        %{pending: {sequence, _pair, _submitted_ns}} = state
+      ),
+      do: {:noreply, %{state | pending: nil}}
 
   def handle_info(
         {:inference_detections, sequence, detections},
-        %{pending: {sequence, pair}} = state
+        %{pending: {sequence, pair, submitted_ns}} = state
       ) do
+    replied_ns = state.clock.()
+    selected = Pipeline.select(detections, state)
+    selected_ns = state.clock.()
+
     positioned =
-      detections
-      |> Pipeline.select(state)
+      selected
       |> Enum.map(&position(&1, pair, state))
       |> Enum.reject(&is_nil/1)
       |> outline(pair, state.outline_segments)
 
+    placed_ns = state.clock.()
     Pipeline.publish(state, pair, positioned)
+
+    state =
+      state
+      |> time(:inference, submitted_ns, replied_ns)
+      |> time(:filtering, replied_ns, selected_ns)
+      |> time(:placement, selected_ns, placed_ns)
+
     {:noreply, %{state | pending: nil}}
   end
 
@@ -86,6 +127,9 @@ defmodule VisionCore.Detection.StereoPipeline do
   def handle_info({:inference_detections, _stale, _detections}, state), do: {:noreply, state}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp time(state, stage, from_ns, to_ns),
+    do: %{state | times: StageTimes.add(state.times, stage, (to_ns - from_ns) / 1_000_000)}
 
   defp outline(positioned, pair, segments) do
     outlines = positioned |> Enum.map(& &1.box) |> Fusion.outlines(segments, pair)
@@ -120,4 +164,6 @@ defmodule VisionCore.Detection.StereoPipeline do
         })
     end
   end
+
+  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 end

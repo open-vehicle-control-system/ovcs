@@ -3,7 +3,7 @@ import { render, screen, cleanup } from '@testing-library/react'
 import UnitStatus from '../UnitStatus.jsx'
 import Previews from '../Previews.jsx'
 
-const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), leave: vi.fn() })) }
+const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
   cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
@@ -121,6 +121,15 @@ describe('UnitStatus and the pair status', () => {
     expect(card('segment').textContent).not.toContain('GPU')
     expect(card('segment').textContent).toContain('82 %')
     expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About Stereo load')
+  })
+
+  it('warns of the stereo load from 97 %, where a pair takes nearly a frame', () => {
+    show({ ...snapshot, stereoLoadPercent: 96.9 })
+    expect(card('segment').querySelector('[data-warning]')).toBeNull()
+    cleanup()
+
+    show({ ...snapshot, stereoLoadPercent: 97 })
+    expect(card('segment').querySelector('[data-warning]')).not.toBeNull()
   })
 
   it("shows each check's value and short detail, its figures and issues on hover", () => {

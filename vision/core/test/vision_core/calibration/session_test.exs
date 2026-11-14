@@ -474,6 +474,43 @@ defmodule VisionCore.Calibration.SessionTest do
       assert unsubscribed?(Process.whereis(Session))
     end
 
+    test "tells the recorder what the commit stores and carries, and takes it back once it answered",
+         %{board: board} do
+      test_pid = self()
+      expectation = make_ref()
+
+      start_session(
+        solve: fn _board, _size, _samples -> {:ok, result()} end,
+        commit: fn _config, _calibrations ->
+          send(test_pid, :commit)
+          {:error, "the unit refused it"}
+        end,
+        expect: fn target, cameras, expected ->
+          send(test_pid, {:expect, target, cameras, expected})
+          expectation
+        end,
+        forget: fn reference -> send(test_pid, {:forget, reference}) end
+      )
+
+      capture_enough(board)
+      :ok = Session.solve()
+      assert_receive {:calibration_session, %{phase: :solved}}
+      assert :ok = Session.apply()
+
+      assert_receive {:expect, "stereo", cameras, {:record, kept}}
+      assert_receive :commit
+      assert_receive {:forget, ^expectation}
+
+      assert cameras == [{"left", result().left}, {"right", result().right}]
+
+      assert kept[:origin] == "dashboard"
+      assert kept[:board] == %{columns: board.columns, rows: board.rows, square_m: board.square_m}
+      assert kept[:samples] == 3
+      assert kept[:stereo_rms_px] == 0.4
+      assert kept[:baseline_m] == 0.06
+      assert kept[:rms_px] == %{"left" => 0.2, "right" => 0.3}
+    end
+
     test "that is refused stays solved, with the refusal", %{board: board} do
       solved(board, fn _config, _calibrations -> {:error, "the unit refused it"} end)
 
@@ -675,6 +712,199 @@ defmodule VisionCore.Calibration.SessionTest do
       assert Session.start("hq", board) == {:error, "the camera is not running"}
       assert Session.start("usb", board) == {:error, :not_found}
       assert %{phase: :idle} = Session.state()
+    end
+  end
+
+  describe "on a camera's pose" do
+    # At 20 pairs a second, the stereo left frame paired with a camera's is within 25 ms of it.
+    @pose_config %VisionCore.Config{
+      components: [
+        {:stereo, [driver: Camera, fps: 20, left: [], right: []]},
+        {:camera, [name: :hq, driver: Camera]}
+      ]
+    }
+    @left_size {640, 480}
+    @pose_result %{pose: :solved_pose, rms_px: 0.3, distance_m: 0.12, samples: 3}
+
+    defp start_pose_session(options \\ []) do
+      test_pid = self()
+
+      start_session(
+        [
+          config: @pose_config,
+          pose_calibrations: fn config, id ->
+            send(test_pid, {:pose_calibrations, config, id})
+            {:ok, %{left: :left_calibration, camera: :camera_calibration}}
+          end,
+          solve_pose: fn board, cameras, samples ->
+            send(test_pid, {:solve_pose, board, cameras, samples})
+            {:ok, @pose_result}
+          end,
+          commit_pose: fn config, name, pose ->
+            send(test_pid, {:commit_pose, config, name, pose})
+            :ok
+          end,
+          expect: fn target, figures, kept ->
+            send(test_pid, {:expect, target, figures, kept})
+            make_ref()
+          end,
+          solve: fn _board, _size, _samples -> flunk("solved a pair") end,
+          solve_camera: fn _board, _size, _views -> flunk("solved a camera") end
+        ]
+        |> Keyword.merge(options)
+      )
+    end
+
+    defp publish_left(capture_ms, answer) do
+      {width, height} = @left_size
+
+      frame = %Frame{
+        label: "left",
+        width: width,
+        height: height,
+        capture_ns: capture_ms * 1_000_000,
+        grey: :erlang.term_to_binary(answer)
+      }
+
+      Outputs.publish({:camera_frame, Camera.name_for("left")}, {:camera_frame, frame})
+    end
+
+    defp capture_pose(board) do
+      run_camera("hq")
+      run_cameras()
+      {:ok, %{phase: :idle}} = Session.subscribe()
+      :ok = Session.start("hq-pose", board)
+
+      assert_receive {:calibration_session,
+                      %{phase: :capturing, target: %{id: "hq-pose", kind: :pose}}}
+    end
+
+    test "keeps views both cameras see, measured in the camera's image, and solves the pose with both calibrations",
+         %{board: board} do
+      start_pose_session()
+      capture_pose(board)
+
+      for {corners, index} <- Enum.with_index([top_left(), bottom_right(), large_skewed()], 1) do
+        publish("hq", index * 100, {:ok, corners})
+        publish_left(index * 100 + 10, {:ok, top_left()})
+
+        assert_receive {:calibration_session,
+                        %{samples: ^index, detection: %{sample: true, views: views}}}
+
+        assert Map.keys(views) == ["hq", "left"]
+      end
+
+      assert %{good_enough: true} = Session.state()
+      assert :ok = Session.solve()
+
+      assert_receive {:solve_pose, ^board, cameras, samples}
+
+      assert cameras == %{
+               left: %{calibration: :left_calibration, size: @left_size},
+               camera: %{calibration: :camera_calibration, size: {@width, @height}}
+             }
+
+      assert samples == [
+               %{left: top_left(), camera: top_left()},
+               %{left: top_left(), camera: bottom_right()},
+               %{left: top_left(), camera: large_skewed()}
+             ]
+
+      assert_receive {:calibration_session, %{phase: :solved, result: @pose_result}}
+    end
+
+    test "commits the solved pose, announced to the recorder with its error", %{board: board} do
+      start_pose_session()
+      capture_pose(board)
+
+      for {corners, index} <- Enum.with_index([top_left(), bottom_right(), large_skewed()], 1) do
+        publish("hq", index * 100, {:ok, corners})
+        publish_left(index * 100, {:ok, corners})
+        assert_receive {:calibration_session, %{samples: ^index}}
+      end
+
+      :ok = Session.solve()
+      assert_receive {:calibration_session, %{phase: :solved}}
+
+      assert :ok = Session.apply()
+
+      assert_receive {:expect, "hq-pose", :solved_pose, {:record, kept}}
+      assert kept[:rms_px] == 0.3
+      assert kept[:samples] == 3
+      assert kept[:origin] == "dashboard"
+      assert_receive {:commit_pose, @pose_config, :hq, :solved_pose}
+      assert_receive {:calibration_session, %{phase: :idle, target: nil}}
+    end
+
+    test "pairs the camera's frame with the stereo left frame within half a stereo pair period",
+         %{board: board} do
+      start_pose_session(pair_tolerance_ms: 5)
+      capture_pose(board)
+
+      publish("hq", 1_000, {:ok, top_left()})
+      publish_left(1_030, {:ok, top_left()})
+      refute_receive {:detect, _label, _capture_ms, _running}, 100
+
+      publish_left(1_020, {:ok, top_left()})
+      assert_receive {:detect, "hq", 1_000, _running}
+      assert_receive {:detect, "left", 1_020, _running}
+    end
+
+    test "is refused, naming it, while a calibration the solve needs is missing", %{board: board} do
+      run_camera("hq")
+      run_cameras()
+
+      start_pose_session(
+        pose_calibrations: fn _config, _id ->
+          {:error, "the hq camera has no calibration: calibrate it first"}
+        end
+      )
+
+      assert Session.start("hq-pose", board) ==
+               {:error, "the hq camera has no calibration: calibrate it first"}
+
+      assert %{phase: :idle} = Session.state()
+    end
+
+    test "a solve whose calibration has gone goes back to capturing with the reason",
+         %{board: board} do
+      reads = :counters.new(1, [])
+
+      start_pose_session(
+        pose_calibrations: fn _config, _id ->
+          :counters.add(reads, 1, 1)
+
+          if :counters.get(reads, 1) == 1,
+            do: {:ok, %{left: :left_calibration, camera: :camera_calibration}},
+            else: {:error, "the stereo cameras have no calibration: calibrate them first"}
+        end
+      )
+
+      capture_pose(board)
+
+      for {corners, index} <- Enum.with_index([top_left(), bottom_right(), large_skewed()], 1) do
+        publish("hq", index * 100, {:ok, corners})
+        publish_left(index * 100, {:ok, corners})
+        assert_receive {:calibration_session, %{samples: ^index}}
+      end
+
+      :ok = Session.solve()
+
+      assert_receive {:calibration_session,
+                      %{
+                        phase: :capturing,
+                        error: "the stereo cameras have no calibration: calibrate them first"
+                      }}
+
+      refute_received {:solve_pose, _board, _cameras, _samples}
+    end
+
+    test "is refused while the camera or the stereo cameras do not run", %{board: board} do
+      run_camera("hq")
+      start_pose_session()
+
+      assert Session.start("hq-pose", board) ==
+               {:error, "the camera or the stereo cameras are not running"}
     end
   end
 end

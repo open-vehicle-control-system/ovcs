@@ -14,7 +14,7 @@ Stereo depth and detection are the [vision unit](../../vision/core/README.md)'s,
 lib/
   ros_bridge.ex              # OvcsBridge behaviour + child list (host / target)
   ros_bridge/
-    heartbeat.ex             # Periodic publisher (std_msgs/String on /ovcs_heartbeat) via Ros2Zenoh.Client.publish/4
+    heartbeat.ex             # Periodic publisher (std_msgs/String on /<node_name>/heartbeat) via Ros2Zenoh.Client.publish/4
     imu_publisher.ex         # OvcsDrivers.Imu consumer → sensor_msgs/Imu over Zenoh
     consumers/joy.ex         # ROS 2 /joy/<profile> → Cantastic emitter (steering, throttle, direction)
     consumers/joy/profile.ex # joy profile files: a controller's axes, pedals and gears
@@ -41,7 +41,7 @@ explains both, including when two bridge firmwares need distinct node names.
 
 Periodic publisher built on top of `Ros2Zenoh.Client.publish/4`. The
 default `:heartbeat` component ticks a `std_msgs/String` onto
-`/ovcs_heartbeat` every 1 s so consumers can see the bridge is
+`/<node_name>/heartbeat` every 1 s so consumers can see the bridge is
 alive; the same module works for any other periodic publish (just
 pass a different `:message_module` + `:build` function in a child
 spec).

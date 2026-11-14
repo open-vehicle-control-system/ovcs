@@ -25,6 +25,9 @@ defmodule VisionApiWeb.DetectionChannel do
   end
 
   @impl Phoenix.Channel
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
+  @impl Phoenix.Channel
   def handle_info({:vision_detections, detections}, socket) do
     push(socket, "detections", DetectionJSON.detections(detections))
     {:noreply, socket}

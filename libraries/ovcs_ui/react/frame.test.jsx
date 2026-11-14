@@ -1,6 +1,10 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 
+import { reloadPage } from './page.js'
+
+vi.mock('./page.js', () => ({ reloadPage: vi.fn() }))
+
 import {
   OvcsBottomBar,
   OvcsBottomBarItem,
@@ -47,7 +51,9 @@ describe('the page frame', () => {
 describe('OvcsTopBar', () => {
   const board = { revision: 'ce99e251', target: 'rpi5', nervesSystem: 'nerves_system_rpi5', nervesSystemVersion: '2.0.1', vehicle: 'OVCS Mini' }
 
-  test("names the product and its firmware, then its children, then the theme switch", () => {
+  const details = () => screen.getByRole('button', { name: 'Board and firmware details' })
+
+  test('names the product, then its children, the vehicle, the details button and the theme switch', () => {
     render(
       <OvcsShell product="Vision">
         <OvcsTopBar firmware={board}>
@@ -58,12 +64,39 @@ describe('OvcsTopBar', () => {
 
     const banner = screen.getByRole('banner')
     expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('OVCS Vision')
-    const facts = banner.querySelector('dl')
-    expect(facts.getAttribute('aria-label')).toBe('Firmware')
-    expect(within(facts).getByText('ce99e251').previousSibling.textContent).toBe('Version')
-    expect(facts.textContent).toBe('Versionce99e251Systemnerves_system_rpi5 2.0.1VehicleOVCS Mini')
+    expect(screen.getByLabelText('Summary').textContent).toBe('VehicleOVCS Mini')
     expect(banner.textContent).toContain('alert')
+    expect(banner.textContent).not.toContain('ce99e251')
+    expect(details().getAttribute('aria-expanded')).toBe('false')
     expect(within(banner).getByRole('switch', { name: 'Dark mode' })).toBeTruthy()
+  })
+
+  test('opens the firmware version and system from the details button, and closes them on Escape or a click outside', () => {
+    render(
+      <OvcsShell product="Vision">
+        <OvcsTopBar firmware={board} />
+      </OvcsShell>
+    )
+
+    fireEvent.click(details())
+    expect(details().getAttribute('aria-expanded')).toBe('true')
+    const facts = screen.getByLabelText('Firmware')
+    expect(within(facts).getByText('ce99e251').previousSibling.textContent).toBe('Version')
+    expect(facts.textContent).toBe('Versionce99e251Systemnerves_system_rpi5 2.0.1')
+    expect(details().getAttribute('aria-controls')).toBe(facts.closest('[id]').id)
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByLabelText('Firmware')).toBeNull()
+
+    fireEvent.click(details())
+    fireEvent.pointerDown(screen.getByLabelText('Firmware'))
+    expect(screen.getByLabelText('Firmware')).toBeTruthy()
+    fireEvent.pointerDown(document.body)
+    expect(screen.queryByLabelText('Firmware')).toBeNull()
+
+    fireEvent.click(details())
+    fireEvent.blur(details(), { relatedTarget: screen.getByRole('switch', { name: 'Dark mode' }) })
+    expect(screen.queryByLabelText('Firmware')).toBeNull()
   })
 
   test('shows no firmware line before the firmware is known', () => {
@@ -73,6 +106,7 @@ describe('OvcsTopBar', () => {
       </OvcsShell>
     )
     expect(screen.getByRole('banner').querySelector('dl')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Board and firmware details' })).toBeNull()
     expect(document.title).toBe('OVCS VMS')
   })
 
@@ -83,6 +117,47 @@ describe('OvcsTopBar', () => {
       </OvcsShell>
     )
     expect(document.title).toBe('OVCS Bus Gateway · OVCS Mini')
+  })
+})
+
+describe('OvcsTopBar when the firmware changes', () => {
+  test('offers to reload the page once the unit answers another revision than at first', () => {
+    const { rerender } = render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '1e13961' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '1e13961' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '26e78c0' }} />
+      </OvcsShell>
+    )
+    expect(within(screen.getByRole('banner')).getByRole('status').textContent).toContain('another firmware')
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(reloadPage).toHaveBeenCalledTimes(1)
+  })
+
+  test('offers nothing before the firmware is known', () => {
+    const { rerender } = render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar />
+      </OvcsShell>
+    )
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '26e78c0' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
   })
 })
 
@@ -149,12 +224,12 @@ describe('boardInterfaces', () => {
 
 describe('boardLoad', () => {
   test("rounds the CPU's busy share, a warning from 90 %, and lists the load averages as uptime does", () => {
-    expect(boardLoad({ cpuPercent: 23.4, loadAverage: [0.52, 0.48, 0.4] })).toEqual({ cpu: '23 %', tone: 'ok', load: '0.52, 0.48, 0.40' })
-    expect(boardLoad({ cpuPercent: 94.6, loadAverage: [3.1, 2, 1.25] })).toEqual({ cpu: '95 %', tone: 'warn', load: '3.10, 2.00, 1.25' })
+    expect(boardLoad({ cpuPercent: 23.4, loadAverage: [0.52, 0.48, 0.4], memoryPercent: 62.5 })).toEqual({ cpu: '23 %', tone: 'ok', load: '0.52, 0.48, 0.40', memory: '63 %', memoryTone: 'ok' })
+    expect(boardLoad({ cpuPercent: 94.6, loadAverage: [3.1, 2, 1.25], memoryPercent: 91 })).toEqual({ cpu: '95 %', tone: 'warn', load: '3.10, 2.00, 1.25', memory: '91 %', memoryTone: 'warn' })
   })
 
   test('leaves out what the board does not report', () => {
-    expect(boardLoad({ cpuPercent: null, loadAverage: null })).toEqual({ cpu: null, tone: null, load: null })
+    expect(boardLoad({ cpuPercent: null, loadAverage: null })).toEqual({ cpu: null, tone: null, load: null, memory: null, memoryTone: null })
     expect(boardLoad(null)).toBeNull()
   })
 })
@@ -183,36 +258,73 @@ describe('boardClock', () => {
 })
 
 describe('OvcsTopBar with a board', () => {
-  test("lists the board's interfaces, its load and its clock, an unsynchronized one as a warning", () => {
-    const board = {
-      interfaces: [{ name: 'eth0', addresses: ['192.168.10.232'] }],
-      cpuPercent: 23.4,
-      loadAverage: [0.52, 0.48, 0.4],
-      offsetMs: Date.parse('1970-01-01T00:03:05Z') - Date.now(),
-      clockSynchronized: false
-    }
+  const board = {
+    interfaces: [{ name: 'eth0', addresses: ['192.168.10.232'] }],
+    cpuPercent: 23.4,
+    loadAverage: [0.52, 0.48, 0.4],
+    memoryPercent: 62.5,
+    offsetMs: Date.parse('1970-01-01T00:03:05Z') - Date.now(),
+    clockSynchronized: false
+  }
+
+  test("shows the board's CPU, its memory and its clock, an unsynchronized one as a warning, after the vehicle", () => {
     render(
       <OvcsShell product="Vision">
-        <OvcsTopBar board={board} />
+        <OvcsTopBar board={board} firmware={{ revision: 'ce99e251', vehicle: 'OVCS1' }} />
       </OvcsShell>
     )
 
-    const facts = screen.getByLabelText('Board')
-    expect(within(facts).getByText('192.168.10.232').previousSibling.textContent).toBe('eth0')
-    expect(within(facts).getByText(/^1970-01-01 00:03:0\d UTC$/)).toBeTruthy()
-    expect(within(facts).getByText('not synchronized').classList).toContain('ovcs-status--warn')
-    expect(within(facts).getByText('23 %').closest('div').firstChild.textContent).toBe('CPU')
-    expect(within(facts).getByText('0.52, 0.48, 0.40').closest('div').firstChild.textContent).toBe('Load')
+    const summary = screen.getByLabelText('Summary')
+    expect([...summary.querySelectorAll('dt')].map((label) => label.textContent)).toEqual(['Vehicle', 'CPU', 'Memory', 'Clock'])
+    expect(within(summary).getByText(/^1970-01-01 00:03:0\d UTC$/)).toBeTruthy()
+    expect(within(summary).getByText('not synchronized').classList).toContain('ovcs-status--warn')
+    expect(within(summary).getByText('23 %')).toBeTruthy()
+    expect(within(summary).getByText('63 %')).toBeTruthy()
+    expect(screen.queryByText('192.168.10.232')).toBeNull()
   })
 
-  test('sets the board apart from the firmware', () => {
-    const board = { interfaces: [], cpuPercent: 10, loadAverage: [0.1, 0.1, 0.1], offsetMs: 0, clockSynchronized: true }
+  test("lists the board's interfaces and its load averages in the details, over the firmware", () => {
     render(
       <OvcsShell product="VMS">
         <OvcsTopBar board={board} firmware={{ revision: 'ce99e251', target: 'host' }} />
       </OvcsShell>
     )
-    expect(screen.getByLabelText('Firmware').classList).toContain('border-l')
+    fireEvent.click(screen.getByRole('button', { name: 'Board and firmware details' }))
+
+    const facts = screen.getByLabelText('Board')
+    expect(within(facts).getByText('192.168.10.232').previousSibling.textContent).toBe('eth0')
+    expect(within(facts).getByText('0.52, 0.48, 0.40').closest('div').firstChild.textContent).toBe('Load')
+    expect(facts.compareDocumentPosition(screen.getByLabelText('Firmware')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+})
+
+describe('useOvcsFirmware after a failed read', () => {
+  test('reads again, later each time, until the firmware answers, and no more once told to read anew', async () => {
+    vi.useFakeTimers()
+    try {
+      const offline = new Error('offline')
+      const fetchFirmware = vi.fn().mockRejectedValueOnce(offline).mockRejectedValueOnce(offline).mockResolvedValue({ revision: '7ee101da' })
+      const { result, rerender } = renderHook(({ joins }) => useOvcsFirmware(fetchFirmware, joins), { initialProps: { joins: 1 } })
+
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(fetchFirmware).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(result.current).toEqual({ revision: '7ee101da' })
+
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(3)
+
+      fetchFirmware.mockRejectedValue(offline)
+      rerender({ joins: 2 })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      rerender({ joins: 0 })
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -249,6 +361,28 @@ describe('useOvcsBoard', () => {
       rerender({ connected: false })
       await act(() => vi.advanceTimersByTimeAsync(5_000))
       expect(fetchBoard).toHaveBeenCalledTimes(3)
+      // A board that cannot be reached has no clock to show ticking.
+      expect(result.current).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('reads again an interval after the last read ended, never two at once', async () => {
+    vi.useFakeTimers()
+    try {
+      const answers = []
+      const fetchBoard = vi.fn(() => new Promise((resolve) => answers.push(resolve)))
+      renderHook(() => useOvcsBoard(fetchBoard, true, 1_000))
+
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+      answers[0]({ interfaces: [], time: new Date().toISOString() })
+      await act(() => vi.advanceTimersByTimeAsync(999))
+      expect(fetchBoard).toHaveBeenCalledTimes(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(fetchBoard).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
@@ -320,6 +454,14 @@ describe('the connection', () => {
 
     rerender(connection('connecting'))
     expect(screen.getByText('Connecting…')).toBeTruthy()
+  })
+
+  test('says its state in a status region, so a change is announced', () => {
+    const { rerender } = render(<OvcsConnectionStatus state="connected" />)
+    expect(screen.getByRole('status').textContent).toBe('Connected')
+
+    rerender(<OvcsConnectionStatus state="disconnected" />)
+    expect(screen.getByRole('status').textContent).toBe('Disconnected')
   })
 })
 

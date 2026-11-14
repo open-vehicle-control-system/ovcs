@@ -361,6 +361,20 @@ defmodule VisionCore.Stereo.SupervisorTest do
     assert log =~ "failed to start, cameras down: its :topic_prefix is now :prefix"
   end
 
+  test "is left down, saying why, with an :fps that is no integer from 1 on" do
+    Process.flag(:trap_exit, true)
+
+    for fps <- [0, 29.97] do
+      log =
+        capture_log(fn ->
+          assert StereoSupervisor.start_link(Keyword.merge(@stereo, fps: fps)) == :ignore
+        end)
+
+      assert log =~ "VisionCore.Stereo.Supervisor failed to start, cameras down: its :fps is"
+      refute log =~ "Elixir.VisionCore.Stereo.Supervisor failed"
+    end
+  end
+
   test "gives each camera driver its side's frame id, and starts no ROS 2 service" do
     {:ok, {_flags, children}} =
       StereoSupervisor.init(
@@ -429,14 +443,14 @@ defmodule VisionCore.Stereo.SupervisorTest do
       StereoSupervisor.start_link(Keyword.put(in_dir(tmp_dir), :driver, IdleCamera))
     end
 
-    test "with neither calibration file, starts the two cameras alone and says so",
+    test "with neither calibration file, starts the two cameras and their parameters, and says so",
          %{tmp_dir: tmp_dir} do
       log =
         capture_log(fn ->
           assert {:ok, unit} = start_unit(tmp_dir)
 
           assert unit |> Supervisor.which_children() |> Enum.map(&elem(&1, 0)) |> Enum.sort() ==
-                   [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
+                   [{:stereo, :parameters}, {:stereo, :driver, :left}, {:stereo, :driver, :right}]
 
           Supervisor.stop(unit)
         end)
@@ -445,12 +459,13 @@ defmodule VisionCore.Stereo.SupervisorTest do
       assert log =~ Path.join(tmp_dir, "stereo_left.yaml")
     end
 
-    test "without calibration paths, starts the two cameras alone" do
+    test "without calibration paths, starts the two cameras and their parameters" do
       log =
         capture_log(fn ->
           assert child_ids(Keyword.merge(@stereo, left: [], right: [])) == [
                    {:stereo, :driver, :left},
-                   {:stereo, :driver, :right}
+                   {:stereo, :driver, :right},
+                   {:stereo, :parameters}
                  ]
         end)
 

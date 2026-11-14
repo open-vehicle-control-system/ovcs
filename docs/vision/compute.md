@@ -33,7 +33,7 @@ To see where each stage of a running unit is computed, select it on the dashboar
 | `NxStereo.Rectify` | Undistortion, rectification and shrinking in one sampling pass |
 | `NxStereo.Depth` | Disparity to depth in millimetres and metres |
 
-The Pipeline joins consecutive Nx stages into one `VisionCore.Stereo.NxSegment`, compiled once when the pipeline starts. A pair then goes to the device once, every stage of the segment runs there, and the outputs come back once. A value that changes while running, such as a calibration or a live setting like `p1`, is an input of the compiled function. A build setting such as `num_disparities` is compiled in.
+The Pipeline joins consecutive Nx stages into one `VisionCore.Stereo.NxSegment`, compiled once when the pipeline starts. A pair then goes to the device once, every stage of the segment runs there, and the outputs come back once. The segment is therefore timed as a whole: timing a stage alone would need the device to finish and report after each one ([Step times](./performance.md#step-times)). A value that changes while running, such as a calibration or a live setting like `p1`, is an input of the compiled function. A build setting such as `num_disparities` is compiled in.
 
 The compiler comes from the `:defn_options` of the `:stereo` component. They go to `VisionCore.Stereo.NxSegment`, the second of the component's default backends, after `VisionCore.Stereo.NativeSegment`. A component can list its own `:backends` instead, each `{module, opts}`, with `defn_options:` among NxSegment's options:
 
@@ -86,7 +86,7 @@ The Jetson Nano module of the C100 has 4 Cortex-A57 cores and a 128-core Maxwell
 3. Every stage runs as Vulkan compute shaders, with libSGM's algorithm for the matching. The temporal filter's previous disparity stays on the GPU from one pair to the next.
 4. The outputs are copied back once, and the stages after the segment run on the BEAM.
 
-While one pair's outputs are collected, the next pair's GPU work already runs. The CPU's part is capture, the copies and publishing; the GPU does the arithmetic. The dashboard's Stereo load is the share of each second the segment takes, waits for the GPU included.
+While one pair's outputs are collected, the next pair's GPU work already runs. The CPU's part is capture, the copies and publishing; the GPU does the arithmetic. The dashboard's Stereo load is the share of each second a pair spends at the GPU, from its upload to the GPU's reply ([Reading the figures](./performance.md#reading-the-figures)).
 
 ## On the VENTUNO Q's GPU
 

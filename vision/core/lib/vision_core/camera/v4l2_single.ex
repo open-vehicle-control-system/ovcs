@@ -41,7 +41,10 @@ defmodule VisionCore.Camera.V4L2Single do
   same header under tag 9, OUTPUT_H264, then a byte of flags, bit 0 set
   on a key frame, then the frame's NAL units in Annex B form; one record
   per sent output per frame, in the order of their indices, or the log
-  and metadata records `VisionCore.Camera.V4L2Pair` reads. Records
+  and metadata records `VisionCore.Camera.V4L2Capture.parse_record/1`
+  reads: the exposure and gain as the pair's, and, while `awb` is on,
+  the white balance gains each time they change, the present bits 2 and
+  3, `values[2]` the red gain and `values[3]` the blue gain. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
 
@@ -52,7 +55,8 @@ defmodule VisionCore.Camera.V4L2Single do
   shares apply as they do to the pair, but `black_level`, a 12-bit
   sample, and the auto exposure, which steers the mean green. `awb`
   balances the white on each frame from the previous one; `red_gain` and
-  `blue_gain` apply while it is off. On a sensor with a tuning, the
+  `blue_gain` apply while it is off. `live/1` carries the gains it
+  applies, which switching it off keeps (`VisionCore.Camera.Parameters`). On a sensor with a tuning, the
   IMX477, auto exposure measures the green after lens shading and white
   balance, through the tuning's contrast curve, before the colour matrix
   and the denoise; `ccm` and `denoise` switch its colour correction
@@ -70,9 +74,9 @@ defmodule VisionCore.Camera.V4L2Single do
     * `:csiphy` (required; `ArgumentError` without) — the CSI PHY the
       sensor is wired to, which `VisionCore.Camera.Camss` routes at the
       sensor size with `:code`.
-      Startup waits up to 30 s for the media device and the sensor, which
-      register some seconds after boot; a PHY still without a sensor then
-      stops the camera with an error naming it.
+      The media device and the sensor register some seconds after boot:
+      while the PHY has no sensor, the camera starts without its program
+      and routes again on the waits below, each failure logged.
     * `:sensor_width` (2028), `:sensor_height` (1520) — the sensor mode.
     * `:code` (`"SRGGB12_1X12"`) — the sensor mode's media bus code.
     * `:fps` (15) — the frame rate.
@@ -97,8 +101,13 @@ defmodule VisionCore.Camera.V4L2Single do
       (`VisionCore.Camera.Unit` gives `"<name>_optical"` by default).
     * any setting of `control_specs/0`, by its key.
     * `:stall_timeout_ms` (2000), `:startup_timeout_ms` (15000) — how
-      long without a frame, after the last one or after the start, stops
-      the camera.
+      long without a frame, after the last one or after the start, has
+      the program closed and started again.
+    * `:reopen_delays_ms` (`[1000, 2000, 5000, 10000, 30000]`) — the wait
+      before the program is started again after it exits, stalls or
+      cannot be routed, growing with each failure in a row
+      (`VisionCore.Camera.Reopen`). The camera keeps its settings
+      meanwhile, and the program starts with them.
     * `:media_runner` — runs `media-ctl` for the routing, as
       `VisionCore.Camera.Camss.route/2`'s `:runner` (tests).
     * `:executable` — the capture program (default `priv/v4l2_capture`).
@@ -108,7 +117,7 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Camss, Frame, Output}
+  alias VisionCore.Camera.{Camss, Frame, Output, Reopen}
   alias VisionCore.Camera.V4L2Capture
   alias VisionCore.{Outputs, Timing}
 
@@ -118,8 +127,6 @@ defmodule VisionCore.Camera.V4L2Single do
   @key_frame_flag 1
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
-  # How long CAMSS and the sensor may take to register after the VM starts.
-  @media_timeout_ms 30_000
   @default_sensor_width 2028
   @default_sensor_height 1520
   @default_code "SRGGB12_1X12"
@@ -198,6 +205,10 @@ defmodule VisionCore.Camera.V4L2Single do
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
 
+  @doc "Whether the capture program runs: `false` while the driver waits to start it again."
+  @spec running?(GenServer.server()) :: boolean()
+  defdelegate running?(server), to: VisionCore.Camera.Reopen
+
   @doc """
   The capture settings: `%{key:, type:, range:, default:, description:}`.
   """
@@ -214,8 +225,9 @@ defmodule VisionCore.Camera.V4L2Single do
   def controls(server), do: GenServer.call(server, :controls)
 
   @doc """
-  The exposure and gain the capture program applies, as
-  `VisionCore.Camera.V4L2Pair.live/1` reports them; `nil` before the first
+  What the capture program applies: the exposure and gain, as
+  `VisionCore.Camera.V4L2Pair.live/1` reports them, and, once the white
+  balance has run, `:red_gain` and `:blue_gain`; `nil` before the first
   report.
   """
   @spec live(GenServer.server()) :: map() | nil
@@ -292,28 +304,47 @@ defmodule VisionCore.Camera.V4L2Single do
       applied: nil
     }
 
-    with {:ok, outputs} <- outputs(opts),
-         opts = Keyword.put_new(opts, :threads, default_threads(outputs, opts)),
-         {:ok, nodes} <- route(opts) do
-      timeouts = [
-        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @stall_timeout_ms),
-        startup_timeout_ms: Keyword.get(opts, :startup_timeout_ms, @startup_timeout_ms)
-      ]
+    case outputs(opts) do
+      {:ok, outputs} ->
+        opts = Keyword.put_new(opts, :threads, default_threads(outputs, opts))
 
-      arguments = port_arguments(nodes, outputs, opts)
+        timeouts = [
+          stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @stall_timeout_ms),
+          startup_timeout_ms: Keyword.get(opts, :startup_timeout_ms, @startup_timeout_ms)
+        ]
 
-      state =
-        Map.merge(state, %{
-          controls: V4L2Capture.controls(@settings, opts),
-          outputs:
-            Map.new(Output.sent(outputs), &{&1.index, {output_key(label, &1.name), &1.name}})
-        })
+        state =
+          Map.merge(state, %{
+            opts: opts,
+            resolved_outputs: outputs,
+            controls: V4L2Capture.controls(@settings, opts),
+            outputs:
+              Map.new(Output.sent(outputs), &{&1.index, {output_key(label, &1.name), &1.name}})
+          })
 
-      {:ok, Map.merge(state, V4L2Capture.open(opts, arguments, timeouts, who))}
-    else
+        {:ok, Map.merge(state, V4L2Capture.closed(opts, timeouts, who)), {:continue, :open}}
+
       {:error, message} ->
         Logger.error("#{who}: #{message}")
         {:stop, message}
+    end
+  end
+
+  @impl GenServer
+  def handle_continue(:open, state), do: {:noreply, open(state)}
+
+  # Starts the program with the settings in force; a PHY without its sensor is tried again later.
+  defp open(state) do
+    opts = Keyword.merge(state.opts, Map.to_list(state.controls))
+
+    case route(opts) do
+      {:ok, nodes} ->
+        V4L2Capture.open(state, port_arguments(nodes, state.resolved_outputs, opts))
+
+      {:error, message} ->
+        Logger.error("#{state.who}: #{message}; trying again in #{Reopen.delay_ms(state)} ms")
+
+        Reopen.closed(state)
     end
   end
 
@@ -342,6 +373,37 @@ defmodule VisionCore.Camera.V4L2Single do
         {:error, ":output is :full or :half, got #{inspect(other)}"}
     end
   end
+
+  @doc """
+  The camera's settings fixed at start, from `opts`: its `:fps`, its
+  sensor mode and each of its outputs as `output_<name>`, with its size,
+  its format and what its format takes. None of the outputs when they
+  cannot be made.
+  """
+  @impl VisionCore.Camera
+  def fixed_settings(opts) do
+    outputs =
+      case outputs(opts) do
+        {:ok, outputs} -> outputs
+        {:error, _message} -> []
+      end
+
+    [fps: Keyword.get(opts, :fps, @default_fps), sensor_mode: shorthand_size(:full, opts)] ++
+      for output <- Output.port_order(outputs), do: {:"output_#{output.name}", describe(output)}
+  end
+
+  defp describe(%Output{} = output) do
+    ["#{output.width}x#{output.height} #{output.format}" | format_settings(output)]
+    |> Kernel.++(if output.send, do: [], else: ["not sent"])
+    |> Enum.join(", ")
+  end
+
+  defp format_settings(%Output{format: :jpeg, quality: quality}), do: ["quality #{quality}"]
+
+  defp format_settings(%Output{format: :h264} = output),
+    do: ["#{output.bitrate_kbps} kbps", "a key frame every #{output.keyframe_interval}"]
+
+  defp format_settings(%Output{}), do: []
 
   defp processors(opts), do: %{cpu: [shorthand_size(:full, opts), shorthand_size(:half, opts)]}
 
@@ -372,7 +434,7 @@ defmodule VisionCore.Camera.V4L2Single do
         width: Keyword.get(opts, :sensor_width, @default_sensor_width),
         height: Keyword.get(opts, :sensor_height, @default_sensor_height),
         code: Keyword.get(opts, :code, @default_code),
-        await: @media_timeout_ms
+        await: 0
       ] ++ if runner = opts[:media_runner], do: [runner: runner], else: []
 
     with {:ok, route} <- Camss.route(csiphy, route_opts),
@@ -417,13 +479,14 @@ defmodule VisionCore.Camera.V4L2Single do
     do: "from:#{indices[from]}:#{output.width}x#{output.height}"
 
   @impl GenServer
+  def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
   def handle_call(:live, _from, state), do: {:reply, state.applied, state}
 
   def handle_call({:set_controls, controls}, _from, state) do
     case V4L2Capture.commands(@settings, controls) do
       {:ok, commands} ->
-        Enum.each(commands, &Port.command(state.port, &1))
+        V4L2Capture.command(state, commands)
         updated = V4L2Capture.update(@settings, state.controls, controls)
         {:reply, {:ok, updated}, %{state | controls: updated}}
 
@@ -443,12 +506,10 @@ defmodule VisionCore.Camera.V4L2Single do
           {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id, output: output}}
         )
 
-        {:noreply,
-         %{state | last_frame_at: V4L2Capture.now_ms(), applied: refreshed(state.applied)}}
+        {:noreply, V4L2Capture.delivered(%{state | applied: refreshed(state.applied)})}
 
       {:metadata, metadata} ->
-        applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
-        {:noreply, %{state | applied: applied}}
+        {:noreply, %{state | applied: V4L2Capture.applied(state.applied, metadata)}}
 
       {:log, level, message} ->
         Logger.log(level, "#{state.who} v4l2_capture: #{message}")
@@ -461,11 +522,11 @@ defmodule VisionCore.Camera.V4L2Single do
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error("#{state.who} v4l2_capture exited with status #{status}")
-    {:stop, {:v4l2_capture_exit, status}, state}
+    {:noreply, V4L2Capture.exited(%{state | applied: nil}, status, state.who)}
   end
 
-  def handle_info(:watchdog, state), do: V4L2Capture.watchdog(state, state.who)
+  def handle_info(:reopen, %{port: nil} = state), do: {:noreply, open(state)}
+  def handle_info(:watchdog, state), do: {:noreply, V4L2Capture.watchdog(state, state.who)}
   def handle_info(_message, state), do: {:noreply, state}
 
   # The program reports only when the exposure changes; frames keep it fresh.

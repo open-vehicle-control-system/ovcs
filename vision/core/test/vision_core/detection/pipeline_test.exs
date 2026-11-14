@@ -170,6 +170,53 @@ defmodule VisionCore.Detection.PipelineTest do
       assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
     end
 
+    test "times each step of a pair, its inference from the image handed over to the reply" do
+      script = start_supervised!({Agent, fn -> [] end})
+      clock = start_supervised!(%{id: :clock, start: {Agent, :start_link, [fn -> 0 end]}})
+
+      start_supervised!(
+        {Pipeline,
+         backend: Scripted,
+         backend_server: {self(), script},
+         clock: fn -> Agent.get(clock, & &1) end}
+      )
+
+      :ok = Outputs.subscribe({:detections, :detection})
+      pipeline = VisionCore.Pipelines.server(Pipeline, :detection)
+
+      publish_pair()
+      assert_receive {:submitted, in_flight}
+      _handed_over = :sys.get_state(pipeline)
+      Agent.update(clock, fn _now_ns -> 7_000_000 end)
+      send(GenServer.whereis(pipeline), {:inference_detections, in_flight, []})
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
+
+      assert Pipeline.stage_times(pipeline) == %{
+               input: {0.0, 1},
+               inference: {7.0, 1},
+               filtering: {0.0, 1},
+               placement: {0.0, 1}
+             }
+    end
+
+    test "starts its steps' times over once they are taken, and times no pair the backend refused" do
+      script = start_supervised!({Agent, fn -> [{:error, :unavailable}] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      pipeline = VisionCore.Pipelines.server(Pipeline, :detection)
+      none = VisionCore.StageTimes.new([:input, :inference, :filtering, :placement])
+
+      publish_pair()
+      assert_receive {:submitted, _refused}
+      assert Pipeline.stage_times(pipeline) == none
+
+      publish_pair()
+      assert_receive {:submitted, taken}
+      send(GenServer.whereis(pipeline), {:inference_detections, taken, []})
+
+      assert %{inference: {_sum_ms, 1}} = Pipeline.stage_times(pipeline)
+      assert Pipeline.stage_times(pipeline) == none
+    end
+
     test "ignores a stray :pair_wait on the stereo source" do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
       publish_pair()
@@ -255,17 +302,17 @@ defmodule VisionCore.Detection.PipelineTest do
     end
   end
 
-  test "declares the steps around the inference, in the detection pipeline, their settings fixed at start" do
-    state = %{
-      name: :detection,
-      source: :stereo,
-      detect_every_n: 2,
-      min_score: 0.5,
-      max_detections: 10,
-      depth_sample_fraction: 0.25
-    }
-
-    groups = Pipeline.groups(state)
+  test "declares the steps around the inference, in the detection pipeline, with the stereo source's settings, live" do
+    groups =
+      Pipeline.groups(
+        Pipeline.settings(
+          detect_every_n: 2,
+          min_score: 0.5,
+          max_detections: 10,
+          depth_sample_fraction: 0.25,
+          outline_segments: 6
+        )
+      )
 
     assert Enum.map(groups, &{&1.id, &1.name, &1.position}) == [
              {"detection.input", "Input", 101},
@@ -280,14 +327,137 @@ defmodule VisionCore.Detection.PipelineTest do
 
     parameters = Enum.flat_map(groups, & &1.parameters)
 
-    assert Enum.map(parameters, &{&1.name, &1.type, &1.applies, &1.get.()}) == [
-             {"detect_every_n", :integer, :build, 2},
-             {"min_score", :double, :build, 0.5},
-             {"max_detections", :integer, :build, 10},
-             {"depth_sample_fraction", :double, :build, 0.25}
+    assert Enum.map(parameters, &{&1.name, &1.type, &1.constraint, &1.default}) == [
+             {"detect_every_n", :integer, range(1, 1000), 2},
+             {"min_score", :double, range(0, 1), 0.5},
+             {"max_detections", :integer, range(0, 1000), 10},
+             {"depth_sample_fraction", :double, range(0.05, 1), 0.25},
+             {"outline_segments", :integer, range(1, 32), 6}
            ]
 
-    refute Enum.any?(parameters, &(&1.description == "Fixed at start"))
+    refute Enum.any?(parameters, &Map.has_key?(&1, :applies))
+  end
+
+  test "a camera source's placement has the reprojection stride and the wait for the pair, not the outline" do
+    placement =
+      [source: {:camera, :hq}]
+      |> Pipeline.settings()
+      |> Pipeline.groups()
+      |> List.last()
+
+    assert Enum.map(placement.parameters, &{&1.name, &1.type, &1.constraint, &1.default}) == [
+             {"depth_sample_fraction", :double, range(0.05, 1), 0.5},
+             {"reprojection_stride", :integer, range(1, 32), 3},
+             {"pair_wait_ms", :integer, range(0, 60_000), 500}
+           ]
+  end
+
+  test "its groups read and set the process that declares them, not the one of its name" do
+    [input | _steps] = Pipeline.groups(Pipeline.settings(name: :road))
+    [detect_every_n] = input.parameters
+
+    task = Task.async(fn -> {detect_every_n.set.(3), input.values.()} end)
+
+    assert_receive {:"$gen_call", from, {:put_setting, :detect_every_n, 3}}
+    GenServer.reply(from, :ok)
+    assert_receive {:"$gen_call", from, :live_settings}
+    GenServer.reply(from, %{"detect_every_n" => 3})
+
+    assert Task.await(task) == {:ok, %{"detect_every_n" => 3}}
+  end
+
+  test "a setting's type is its spec's, whatever the composer's spelling of its value" do
+    settings = Pipeline.settings(min_score: 1, depth_sample_fraction: 1)
+
+    assert settings.min_score === 1.0
+    assert settings.depth_sample_fraction === 1.0
+  end
+
+  defp range(min, max), do: %{kind: :range, min: min, max: max, step: nil}
+
+  describe "with the parameters registry" do
+    alias VisionCore.Detection.Backend.Stub
+    alias VisionCore.Parameters.MemoryStore
+
+    @describetag :capture_log
+
+    # One box scoring 0.99 on the left half, where `pair_with_depth/0` has depth.
+    @box {0, 0.99, {0.1, 0.1, 0.4, 0.9}}
+
+    defp start_with_registry(saved, opts \\ []) do
+      start_supervised!({MemoryStore, saved})
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+      start_supervised!({Stub, boxes: [@box]})
+      pipeline = start_supervised!({Pipeline, [backend: Stub] ++ opts})
+      :ok = Outputs.subscribe({:detections, :detection})
+      # The pipeline declares once it runs; the registry then applies the saved values.
+      :sys.get_state(pipeline)
+      :sys.get_state(VisionCore.Parameters)
+      pipeline
+    end
+
+    defp detections_of(pipeline) do
+      GenServer.cast(pipeline, {:stereo_pair, pair_with_depth()})
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {_pair, detections}}}, 1_000
+      detections
+    end
+
+    test "lists each setting with the value the pipeline runs with" do
+      start_with_registry(%{}, min_score: 0.5)
+
+      assert {:ok, %{value: 0.5, default: 0.5, applies: :live, state: :builtin}} =
+               VisionCore.Parameters.get("detection.filtering.min_score")
+
+      assert {:ok, %{value: 4, applies: :live}} =
+               VisionCore.Parameters.get("detection.placement.outline_segments")
+    end
+
+    test "a setting changed through its parameter applies from the next pair" do
+      pipeline = start_with_registry(%{})
+      assert [%{label: "person"}] = detections_of(pipeline)
+
+      assert {:ok, %{value: 1.0, state: :unsaved}} =
+               VisionCore.Parameters.set("detection.filtering.min_score", 1.0)
+
+      assert detections_of(pipeline) == []
+    end
+
+    test "a saved setting reaches a pipeline as it starts" do
+      pipeline = start_with_registry(%{"detection.filtering.max_detections" => 0})
+
+      assert {:ok, %{value: 0, default: 20, state: :saved}} =
+               VisionCore.Parameters.get("detection.filtering.max_detections")
+
+      assert detections_of(pipeline) == []
+    end
+
+    test "detect_every_n and the outline's segments change while it runs" do
+      pipeline = start_with_registry(%{})
+      assert [%{outline: outline}] = detections_of(pipeline)
+      assert length(outline) == 16
+
+      assert {:ok, _} = VisionCore.Parameters.set("detection.placement.outline_segments", 2)
+      assert [%{outline: outline}] = detections_of(pipeline)
+      assert length(outline) == 8
+
+      assert {:ok, _} = VisionCore.Parameters.set("detection.input.detect_every_n", 2)
+      # Pairs 1 and 2 were detected on: the third is skipped, the fourth detected on.
+      GenServer.cast(pipeline, {:stereo_pair, pair_with_depth()})
+      refute_receive {:"$gen_cast", {{:detections, :detection}, _result}}, 100
+      assert [%{label: "person"}] = detections_of(pipeline)
+    end
+
+    test "a value outside a setting's range is refused, and the pipeline keeps its value" do
+      start_with_registry(%{})
+
+      assert {:error, "must be from 1 to 1000, got 0"} =
+               VisionCore.Parameters.set("detection.input.detect_every_n", 0)
+
+      assert Pipeline.put_setting(:detection, :min_score, 3) ==
+               {:error, "min_score must be from 0 to 1, got 3"}
+
+      assert Pipeline.live_settings(:detection)["min_score"] == 0.4
+    end
   end
 
   test "the inference step, which its backend declares, sits between the input and the filtering" do
@@ -302,14 +472,7 @@ defmodule VisionCore.Detection.PipelineTest do
   end
 
   test "a named pipeline's steps carry its name, at the same positions" do
-    state = %{
-      name: :road,
-      source: :stereo,
-      detect_every_n: 1,
-      min_score: 0.5,
-      max_detections: 10,
-      depth_sample_fraction: 0.5
-    }
+    state = Pipeline.settings(name: :road)
 
     groups = Pipeline.groups(state) ++ [Pipeline.inference_group(:road, %{parameters: []})]
 
@@ -325,12 +488,15 @@ defmodule VisionCore.Detection.PipelineTest do
     Process.flag(:trap_exit, true)
 
     for {option, refused} <- [
-          {{:detect_every_n, 0}, "its :detect_every_n is an integer from 1 on, got 0"},
-          {{:detect_every_n, 1.5}, "its :detect_every_n is an integer from 1 on, got 1.5"},
-          {{:max_detections, -1}, "its :max_detections is an integer from 0 on, got -1"},
-          {{:reprojection_stride, 0}, "its :reprojection_stride is an integer from 1 on, got 0"},
-          {{:pair_wait_ms, -1}, "its :pair_wait_ms is an integer from 0 on, got -1"},
-          {{:min_score, "0.4"}, "its :min_score is a number, got \"0.4\""}
+          {{:detect_every_n, 0}, "its :detect_every_n must be from 1 to 1000, got 0"},
+          {{:detect_every_n, 1.5}, "its :detect_every_n must be an integer, got 1.5"},
+          {{:max_detections, -1}, "its :max_detections must be from 0 to 1000, got -1"},
+          {{:reprojection_stride, 0}, "its :reprojection_stride must be from 1 to 32, got 0"},
+          {{:pair_wait_ms, -1}, "its :pair_wait_ms must be from 0 to 60000, got -1"},
+          {{:min_score, "0.4"}, "its :min_score must be a number, got \"0.4\""},
+          {{:depth_sample_fraction, 0},
+           "its :depth_sample_fraction must be from 0.05 to 1, got 0"},
+          {{:outline_segments, 0}, "its :outline_segments must be from 1 to 32, got 0"}
         ] do
       assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
                Pipeline.start_link([option, backend: VisionCore.Detection.Backend.Stub])

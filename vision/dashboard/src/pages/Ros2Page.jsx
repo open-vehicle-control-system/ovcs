@@ -5,7 +5,14 @@ import { formatNumber } from '../status.js'
 
 const POLL_MS = 1000
 
-/** The ROS 2 node, its Zenoh link, every topic it published with its live rate, and the services it answers. */
+// Whether the unit puts what it publishes on the Zenoh link: nothing goes out before the board's clock is synchronized.
+const publishing = (node) => {
+  if (!node.connected) return { tone: 'error', word: 'no' }
+  if (!node.clockSynchronized) return { tone: 'warn', word: 'waiting for the clock' }
+  return { tone: 'ok', word: 'yes' }
+}
+
+/** The ROS 2 node, its Zenoh link, whether it publishes, every topic it published with its live rate, and the services it answers. */
 export default function Ros2Page() {
   const [node, setNode] = useState(null)
   const [error, setError] = useState(null)
@@ -33,6 +40,8 @@ export default function Ros2Page() {
     }
   }, [])
 
+  const status = node ? publishing(node) : null
+
   return (
     <OvcsPageFrame title="ROS 2" summary="What this unit publishes to ROS 2, through Zenoh.">
       {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
@@ -50,10 +59,21 @@ export default function Ros2Page() {
               </OvcsStatus>
             </div>
             <div className="flex flex-col">
+              <span className="text-xs text-ovcs-muted">publishing</span>
+              <OvcsStatus tone={status.tone} className="font-semibold">
+                {status.word}
+              </OvcsStatus>
+            </div>
+            <div className="flex flex-col">
               <span className="text-xs text-ovcs-muted">router</span>
               <code className="font-semibold">{node.zenohEndpoint ?? '–'}</code>
             </div>
           </OvcsCard>
+          {node.connected && !node.clockSynchronized ? (
+            <p className="text-sm text-ovcs-warn-text">
+              The board&apos;s clock is not synchronized yet: ROS 2 needs true times, so nothing is published until NTP sets it.
+            </p>
+          ) : null}
           <OvcsCard className="flex flex-col gap-3">
             <h3 className="font-semibold">Topics</h3>
             {node.topics.length === 0 ? (
@@ -72,7 +92,7 @@ export default function Ros2Page() {
                     <tr key={topic.name} data-topic={topic.name}>
                       <td className="py-2 pr-3 font-mono text-xs">{topic.name}</td>
                       <td className="py-2 pr-3 font-mono text-xs text-ovcs-muted">{topic.messageType}</td>
-                      <td className="py-2 text-right font-semibold tabular-nums">{formatNumber(topic.rateHz)} Hz</td>
+                      <td className="py-2 text-right font-semibold tabular-nums">{status.tone === 'ok' ? `${formatNumber(topic.rateHz)} Hz` : '–'}</td>
                     </tr>
                   ))}
                 </tbody>

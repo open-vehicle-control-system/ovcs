@@ -4,7 +4,17 @@ defmodule VisionApiWeb.StatusJSON do
   same fields with camelCase keys (`cameras` holds the sides and each camera
   of its own, by name), states as strings, and
   `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
-  without one. A camera's or the sync's fields that were not measured
+  without one. `pipelines` holds each pipeline's times by its name
+  (`VisionCore.StageTimes`): `totalMs`, each of its `stages`' time by
+  the stage's name, and its `segments`, each with its `stages`' names
+  and its `ms`. `latencies` holds, under `stereo` on a unit with stereo
+  cameras, the pairer's `cameras` and `pairing` latencies in
+  milliseconds (`VisionCore.Stereo.Pairer.latencies/1`), which no
+  pipeline's `totalMs` counts. `distances` holds, by its name, each pipeline on a
+  camera of its own: its `camera`, whether the stereo depth gives its
+  results distances (`available`) and, when it does not, the `reason`
+  as a string (`VisionCore.CameraDepth.unprojectable_reason/1`). A
+  camera's or the sync's fields that were not measured
   are left out. Each exporter's status is a `level`, `ok`, `warning` or
   `off`, and a `detail`; the API's own comes last, as
   `GET /api/exporters` lists it. The CPU's load is the board's
@@ -44,6 +54,9 @@ defmodule VisionApiWeb.StatusJSON do
       pair: checks(snapshot.pair),
       depth: checks(snapshot.depth),
       npu: npu(snapshot.npu),
+      pipelines: Map.new(snapshot.pipelines, fn {name, times} -> {name, times(times)} end),
+      latencies: snapshot.latencies,
+      distances: Map.new(snapshot.distances, fn {name, why} -> {name, distances(why)} end),
       calibrated: snapshot.calibrated,
       depthHz: snapshot.depth_hz,
       stereoLoadPercent: snapshot.stereo_segment_percent,
@@ -85,6 +98,15 @@ defmodule VisionApiWeb.StatusJSON do
         Map.new(npu.pipelines, fn {name, %{inference_ms: ms}} -> {name, %{inferenceMs: ms}} end)
     }
   end
+
+  defp times(times),
+    do: %{totalMs: times.total_ms, stages: times.stages, segments: times.segments}
+
+  defp distances(%{camera: camera, reason: nil}),
+    do: %{camera: camera, available: true, reason: nil}
+
+  defp distances(%{camera: camera, reason: reason}),
+    do: %{camera: camera, available: false, reason: Atom.to_string(reason)}
 
   defp alignment(nil), do: nil
 

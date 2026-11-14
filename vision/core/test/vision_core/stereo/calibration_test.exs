@@ -172,7 +172,13 @@ defmodule VisionCore.Stereo.CalibrationTest do
          %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
       :ok = Calibration.commit(config, distorted(), reloading(:ok))
       left_store = Path.join(store(tmp_dir), "#{prefix}_left.yaml")
-      File.write!(left_store, "projection_matrix:\n  data: []\n")
+
+      emptied =
+        left_store
+        |> File.read!()
+        |> String.replace(~r/projection_matrix:.*\]/s, "projection_matrix:\n  data: []")
+
+      File.write!(left_store, emptied)
 
       assert {:ok, in_use} = Calibration.in_use(config)
 
@@ -242,6 +248,116 @@ defmodule VisionCore.Stereo.CalibrationTest do
       refute File.exists?(Path.join(store(tmp_dir), "#{prefix}_left.yaml"))
       assert {:ok, %{can_reset: false}} = Calibration.in_use(config)
     end
+  end
+
+  describe "commit_side/4 with a store" do
+    setup %{tmp_dir: tmp_dir, test: test} do
+      prefix = prefix(test)
+      install_built_in(tmp_dir, prefix)
+      subscribe(prefix)
+
+      %{
+        prefix: prefix,
+        config: tmp_dir |> config(prefix) |> with_store(tmp_dir),
+        left_store: Path.join(store(tmp_dir), "#{prefix}_left.yaml"),
+        right_store: Path.join(store(tmp_dir), "#{prefix}_right.yaml")
+      }
+    end
+
+    test "stores a first side without having the unit take it, and tells the change", context do
+      assert :ok =
+               Calibration.commit_side(context.config, :left, distorted().left, reloading(:ok))
+
+      assert File.read!(context.left_store) =~ "camera_name: #{context.prefix}_left"
+      refute File.exists?(context.right_store)
+      refute_received {:reloaded, _paths}
+      assert_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
+      assert {:ok, %{source: :built_in}} = Calibration.in_use(context.config)
+    end
+
+    test "has the unit reload from the store once the other side is stored", context do
+      %{left_store: left_store, right_store: right_store} = context
+      :ok = Calibration.commit_side(context.config, :left, distorted().left, reloading(:ok))
+
+      assert :ok =
+               Calibration.commit_side(context.config, :right, distorted().right, reloading(:ok))
+
+      assert_received {:reloaded,
+                       [left_calibration_path: ^left_store, right_calibration_path: ^right_store]}
+
+      assert {:ok, %{source: :stored}} = Calibration.in_use(context.config)
+    end
+
+    test "puts back what the side held when the unit refuses, the other side kept", context do
+      :ok = Calibration.commit(context.config, distorted(), reloading(:ok))
+      stored = {File.read!(context.left_store), File.read!(context.right_store)}
+      built_in = CameraCalibration.load!(Path.join(@fixtures, "stereo_right.yaml"))
+
+      assert {:error, message} =
+               Calibration.commit_side(
+                 context.config,
+                 :right,
+                 built_in,
+                 reloading({:error, :bad_calibration})
+               )
+
+      assert message =~ "bad_calibration"
+      assert {File.read!(context.left_store), File.read!(context.right_store)} == stored
+    end
+
+    test "leaves the file as it was when the new one cannot be written", context do
+      File.mkdir_p!(store(context.tmp_dir))
+      File.write!(context.left_store, "stored left")
+      File.mkdir_p!(context.left_store <> ".tmp")
+
+      assert {:error, message} =
+               Calibration.commit_side(context.config, :left, distorted().left, reloading(:ok))
+
+      assert message =~ "write failed"
+      assert File.read!(context.left_store) == "stored left"
+      refute_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
+    end
+
+    test "restarts a unit whose pipeline is not running once both sides are stored", context do
+      test = self()
+
+      restart = fn ->
+        send(test, :restarted)
+        {:ok, self()}
+      end
+
+      :ok = Calibration.commit_side(context.config, :left, distorted().left, stopped([]))
+      refute_received :restarted
+
+      assert :ok =
+               Calibration.commit_side(
+                 context.config,
+                 :right,
+                 distorted().right,
+                 stopped(restart: restart)
+               )
+
+      assert_received :restarted
+    end
+  end
+
+  test "commit_side/4 without a store writes the side's calibration path and reloads both",
+       %{tmp_dir: tmp_dir, test: test} do
+    prefix = prefix(test)
+    install_built_in(tmp_dir, prefix)
+    left = Path.join(tmp_dir, "built_in/#{prefix}_left.yaml")
+    right = Path.join(tmp_dir, "built_in/#{prefix}_right.yaml")
+
+    assert :ok =
+             Calibration.commit_side(
+               config(tmp_dir, prefix),
+               :left,
+               distorted().left,
+               reloading(:ok)
+             )
+
+    assert File.read!(left) =~ "camera_name: #{prefix}_left"
+    assert_received {:reloaded, [left_calibration_path: ^left, right_calibration_path: ^right]}
   end
 
   describe "without a store" do

@@ -147,7 +147,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 | Figure | In | Meaning |
 |---|---|---|
 | `intervalMs` | pairs | Time since the burst's previous pair, in milliseconds, longer where a pair is missing. The depth rate is 1000 divided by its mean. The burst's first pair has none. |
-| `deviceMs` | pairs | The time the pair kept the pipeline's compiled or native segments busy, in milliseconds. |
+| `deviceMs` | pairs | The time the pair spent at the stereo device, from its hand-over to the device's reply, in milliseconds. The download of its outputs is left out. |
 | `sharpnessLeft`, `sharpnessRight` | pairs | Each rectified image's sharpness. The scene sets the absolute value; see [Stereo stages](./stages.md#2-sharpness). |
 | `alignmentOffsetRows` | pairs | How far the right image's rows sit from the left one's, in rows. Within half a row, the calibration fits. `null` when it cannot be measured. |
 | `alignmentBandOffsetRows` | pairs | The same per vertical band, as a list. It has no summary. |
@@ -156,7 +156,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 | `jitterPx` | pairs | How much a pixel's disparity changes from one pair to the next, in pixels: the matcher's noise on a still scene. |
 | `alignRows` | pairs | The RowAlignment stage's offset over the whole image, the same value as `alignmentOffsetRows`. |
 | `depthHz` | snapshots | Depth images computed in the last second. |
-| `stereoLoadPercent`, `cpuPercent` | snapshots | The share of the second the stereo stages took, and the processors' busy share. |
+| `stereoLoadPercent`, `cpuPercent` | snapshots | The share of the second the pairs spent at the stereo device ([Reading the figures](./performance.md#reading-the-figures)), and the processors' busy share. |
 | `leftCameraFps`, `rightCameraFps` | snapshots | Frames each camera delivered in the last second. |
 | `leftCameraExposureTimeUs`, `leftCameraAnalogueGain`, `leftCameraColourTemperature`, and the `rightCamera` ones | snapshots | What each camera reports, when it reports it. |
 | `syncPairs`, `syncOffsetMedianMs`, `syncOffsetMaxMs` | snapshots | The cameras' synchronisation, as on the dashboard. |
@@ -177,7 +177,7 @@ One entry for each stage, with `median`, `p95` and `max` in milliseconds over th
 
 ### detections.json
 
-A list with one entry for each publication during the burst: the pair's `captureNs` and its `detections`. Each detection has `label`, `score`, `distanceM` and `outline`. The outline is the `[x, y]` vertices as fractions of the left image's width and height, as in the API's [detections event](./channels.md#detections).
+A list with one entry for each publication during the burst: the `captureNs` of the pair, or of the camera's frame for a detector on a camera of its own, and its `detections`. Each detection has `label`, `score`, `distanceM` and `outline`. The outline is the `[x, y]` vertices as fractions of the width and height of the image the detections were found on, the left image for the stereo pair, as in the API's [detections event](./channels.md#detections).
 
 ## Compare two exports
 
@@ -328,7 +328,7 @@ The task does not read the configuration, the calibration, the frames or the det
   The parameter ids depend on the camera driver. Read `GET /api/parameters` for the ids your unit has: the camera controls are the ids that start with `stereo.cameras.` (with the default prefix).
 
   - With `VisionCore.Camera.LibCamera`, the switches are `stereo.cameras.auto_exposure` and `stereo.cameras.auto_gain`, and the settings `stereo.cameras.exposure_time_us` and `stereo.cameras.analogue_gain`.
-  - With `VisionCore.Camera.V4L2Pair`, the one switch is `stereo.cameras.auto_exposure`, which covers the gain too: there is no `auto_gain`. The settings are `stereo.cameras.exposure_us` and `stereo.cameras.analogue_gain`.
+  - With `VisionCore.Camera.V4L2Pair`, the one switch is `stereo.cameras.auto_exposure`, which covers the gain too: there is no `auto_gain`. The settings are `stereo.cameras.exposure_us` and `stereo.cameras.analogue_gain`, which auto exposure keeps within `stereo.cameras.max_exposure_us` and `stereo.cameras.max_gain`.
 - **Light.** Daylight, a cloud, a lamp that you switch: any of them changes the images, and the matched pixels with them. Keep the light steady, and use the noise floor ([The loop](#the-loop)) to see what one setup does by itself.
 - **An open dashboard.** The unit encodes the previews only while a dashboard is showing them, and the encoding takes processor time. A dashboard open for one export and closed for the other moves the depth rate and the load figures. Take both exports with the same pages open, or with none: use the API.
 - **What else runs.** The other exporters, the detection and the dashboard load the unit too: keep them the same for both exports.

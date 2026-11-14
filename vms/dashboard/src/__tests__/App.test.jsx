@@ -74,7 +74,9 @@ describe('App', () => {
     act(() => useConnection.setState({ state: 'connected' }))
     const topBar = screen.getByRole('heading', { level: 1 }).closest('header')
     expect(await within(topBar).findByText('OVCS Mini')).toBeTruthy()
-    expect(await within(topBar).findByText('192.168.1.20')).toBeTruthy()
+    // The interfaces are behind the details button, which only a board read shows.
+    fireEvent.click(await within(topBar).findByRole('button', { name: 'Board and firmware details' }))
+    expect(within(topBar).getByText('192.168.1.20')).toBeTruthy()
     // The title is set in an effect, which can run after the text shows.
     await waitFor(() => expect(document.title).toBe('OVCS VMS · OVCS Mini'))
   })

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
-  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters
+  fetchGroups, setParameter, saveParameters, discardParameters, resetParameters, request
 } from '../parameters.js'
 
 const respond = (status, body) => ({ ok: status < 400, status, json: async () => body })
@@ -140,5 +140,42 @@ describe('parameters service', () => {
 
     await resetParameters(null)
     expect(lastRequest().body).toEqual({ data: { type: 'parameter-resets' } })
+  })
+
+  describe('a unit that does not answer', () => {
+    // As fetch: pending until its signal aborts it, then rejected with the signal's AbortError.
+    const hanging = (_url, { signal }) =>
+      new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => vi.useRealTimers())
+
+    it('gives up the request after its time, saying the unit did not answer', async () => {
+      fetchMock.mockImplementation(hanging)
+      const failure = request('stages', { timeoutMs: 5000 }).catch((error) => error)
+
+      await vi.advanceTimersByTimeAsync(4999)
+      expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect((await failure).message).toBe('The vision unit did not answer in time')
+    })
+
+    it('gives up an answer whose body never ends', async () => {
+      fetchMock.mockImplementation(async (_url, { signal }) => ({ ok: true, status: 200, json: () => hanging(null, { signal }) }))
+      const failure = request('stages', { timeoutMs: 5000 }).catch((error) => error)
+
+      await vi.advanceTimersByTimeAsync(5000)
+
+      expect((await failure).message).toBe('The vision unit did not answer in time')
+    })
+
+    it('waits for nothing once the unit answered', async () => {
+      fetchMock.mockResolvedValue(respond(200, document_))
+
+      await request('stages')
+
+      expect(vi.getTimerCount()).toBe(0)
+    })
   })
 })

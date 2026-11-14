@@ -98,7 +98,7 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths. Depth keeps up with the cameras' 30 pairs a second. The pair computes depth only.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"`, along 3 paths at both sizes (`paths: 3`, `coarse_paths: 3`). Depth keeps up with the cameras' 30 pairs a second. The pair computes depth only.
 
 Detection and road segmentation run on `:center`, a Raspberry Pi HQ Camera (IMX477) on Camera 2 ([A camera of its own](./cameras.md#worked-example-the-ovcs1-reference-vehicle)).
 
@@ -151,7 +151,7 @@ The dashboard and the API are served from the board over HTTPS:
 https://<vehicle>-vision.local
 ```
 
-The certificate is self-signed: the unit makes it at its first start and keeps it in `/data/vision_api/`, so it stays the same across reboots and firmware updates. Accept it in your browser the first time. The dashboard needs HTTPS to decode a camera's H.264 video. Plain HTTP on port 80 and on port 4100, `http://<vehicle>-vision.local:4100`, redirects to the same page over HTTPS.
+The certificate is self-signed: the unit makes it at its first start and keeps it in `/data/vision_api/`, so it stays the same across reboots and firmware updates. The unit makes another when the stored one cannot be read or names another hostname. Accept it in your browser the first time. The dashboard needs HTTPS to decode a camera's H.264 video. Plain HTTP on port 80 and on port 4100, `http://<vehicle>-vision.local:4100`, redirects to the same page over HTTPS.
 
 A program checks the certificate against a copy of it:
 
@@ -170,15 +170,16 @@ The Calibration page shows the calibration the cameras use and where it comes fr
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
 
-On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
+On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Cameras without one, such as the IMX296, have no `focus` setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
 
 The vision parameters are the unit's own settings, grouped by component and pipeline stage:
 
-- the cameras' controls;
-- each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness`;
-- on a unit with detection, the detection's settings.
+- the stereo cameras' controls, also on a unit not calibrated yet, so exposure, gain and focus can be set before the calibration;
+- the pairing's tolerance and each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness` ([Stereo stages](./stages.md));
+- the controls of each camera of its own, as `<name>.camera` ([Parameters](./cameras.md#parameters));
+- each detection pipeline's settings ([Settings](./detection.md#settings)) and each segmentation pipeline's ([Settings](./segmentation.md#settings)).
 
-Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
+Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size, a model or the options of an accelerator's program. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
 
 The dashboard keeps the selected step in the URL (`?box=stereo.disparity`), so a link opens it again.
 
@@ -209,12 +210,13 @@ The dashboard's Exporters menu lists what takes the unit's outputs out of it, fr
 `GET /api/ros2-node` describes what the unit exports over ROS 2:
 
 - its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open;
-- the topics it has published, each with its message type and rate over the last second;
+- whether the board's clock is synchronized: nothing is published to ROS 2 before it is. The ROS 2 exporter's status is a warning meanwhile, and the dashboard's ROS 2 page says so;
+- the topics it has published, each with its message type and rate over the last second, 0 while nothing is published;
 - the services it answers: the parameter services and each camera's `set_camera_info`.
 
 Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. A unit without the ROS 2 link has no node: `GET /api/ros2-node` answers 404.
 
-The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
+The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message the Zenoh client drops, for want of a session or a synchronized clock, lists its topic without adding to its rate. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 

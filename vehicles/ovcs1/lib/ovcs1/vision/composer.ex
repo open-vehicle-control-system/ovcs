@@ -24,12 +24,15 @@ defmodule Ovcs1.Vision.Composer do
   `priv/firmware/vision/rootfs_overlay/boot/cameras.cfg` names the sensor on
   each of the board's connectors. The stereo cameras deliver 728x544, half
   the sensor in each axis, and the pipeline matches at that size over 128
-  disparities, coarse to fine.
+  disparities, coarse to fine, along 3 paths in both the half-size and
+  the full-size match.
 
   `priv/calibration` holds the rig's calibration, from `cameracalibrator`,
   and the center camera's nominal one, `center.yaml`, for its 3.6 mm lens,
-  until it is calibrated. Without `center_pose.yaml`, its pose relative
-  to the stereo pair, its pipelines run without distances. The stereo
+  until it is calibrated. Its pose relative to the stereo pair is
+  measured on the dashboard's Calibration page and stored on the unit;
+  `center_pose.yaml`, not shipped yet, would be the built-in one. Without
+  a pose, its pipelines run without distances. The stereo
   cameras deliver grey frames, which the ROS 2 exporter encodes to JPEG;
   it publishes every pair (`raw_image_max_hz` at the capture rate), so a
   consumer pairing left and right images gets frames of the same capture.
@@ -146,9 +149,10 @@ defmodule Ovcs1.Vision.Composer do
        pair_tolerance_ms: 5,
        calibration_dir: Application.app_dir(:ovcs1, "priv/calibration"),
        calibration_store_dir: @calibration_store_dir,
+       # 3 fine paths, not 8, leave the GPU headroom within a frame for the same matched share.
        stages:
          Pipeline.default_stages(
-           disparity: [num_disparities: 128, search: "coarse_to_fine", coarse_paths: 3]
+           disparity: [num_disparities: 128, search: "coarse_to_fine", paths: 3, coarse_paths: 3]
          ),
        defn_options: NxSegment.ventuno_q_defn_options({:ovcs1, "priv/nx_iree_cache"}),
        left: [frame_id: "stereo_left_optical", csiphy: 0],

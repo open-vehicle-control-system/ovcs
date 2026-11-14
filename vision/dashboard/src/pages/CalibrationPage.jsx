@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
+import { OvcsDialog } from '@ovcs/ui/react'
 import InUse from '../components/calibration/InUse.jsx'
+import Saved from '../components/calibration/Saved.jsx'
 import { BoardForm, Capturing, Solving } from '../components/calibration/Capture.jsx'
 import { Applying, Solved } from '../components/calibration/Result.jsx'
 import { ActionError } from '../components/calibration/Errors.jsx'
@@ -26,56 +28,11 @@ function Step({ phase }) {
   )
 }
 
-const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-/**
- * The steps in a dialog over the page, which keeps the focus: Tab goes round its controls, and the focus comes back
- * to it when the control that had it goes with a step. Escape closes it where `onClose` is given.
- */
-function Dialog({ onClose, children }) {
-  const dialog = useRef(null)
-
-  // After each render: a step that ended took the focused control with it.
-  useEffect(() => {
-    if (!dialog.current.contains(document.activeElement)) dialog.current.focus()
-  })
-
-  useEffect(() => {
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape' && onClose) {
-        onClose()
-      } else if (event.key === 'Tab') {
-        const controls = [...dialog.current.querySelectorAll(FOCUSABLE)]
-        const first = controls[0] ?? dialog.current
-        const last = controls.at(-1) ?? dialog.current
-        const active = document.activeElement
-        const outside = !dialog.current.contains(active)
-
-        if (event.shiftKey ? outside || active === first || active === dialog.current : outside || active === last) {
-          event.preventDefault()
-          ;(event.shiftKey ? last : first).focus()
-        }
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [onClose])
-
-  return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-black/60 p-4 [overscroll-behavior:contain] lg:p-8">
-      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Calibrate" tabIndex={-1} className="w-full max-w-7xl outline-none">
-        <FlowClose value={onClose}>{children}</FlowClose>
-      </div>
-    </div>
-  )
-}
-
 /**
  * One calibration, the one the menu opened and names: the one the unit uses, and in a dialog the steps that make a new
  * one from views of a chessboard. The dialog opens from the page's button and stays while a session runs, which only
- * its own buttons end. Joining the calibration channel turns board detection on in the unit, so only this page joins
- * it, while mounted.
+ * its own buttons end; once closed, the focus goes back to that button. Joining the calibration channel turns board
+ * detection on in the unit, so only this page joins it, while mounted.
  */
 export default function CalibrationPage() {
   const listen = useCalibration((state) => state.listen)
@@ -88,7 +45,7 @@ export default function CalibrationPage() {
   const running = phase != null && phase !== 'idle'
   const shown = !unavailable && (opened || running)
   const calibrate = useRef(null)
-  const wasShown = useRef(false)
+  const close = running ? null : () => setOpened(false)
 
   useEffect(() => listen(dashboardSocket), [listen])
 
@@ -101,14 +58,8 @@ export default function CalibrationPage() {
     if (running) setOpened(false)
   }, [running])
 
-  // The dialog that closed gives the focus back to the button that opens it.
-  useEffect(() => {
-    if (wasShown.current && !shown) calibrate.current?.focus()
-    wasShown.current = shown
-  }, [shown])
-
   return (
-    <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
+    <div className="flex min-w-0 flex-col gap-4">
       {uncalibrated ? (
         <p className="ovcs-status ovcs-status--warn text-sm text-ovcs-warn-text">
           The unit is uncalibrated: depth starts once a calibration is applied.
@@ -119,11 +70,19 @@ export default function CalibrationPage() {
       ) : (
         <>
           <InUse onCalibrate={phase === 'idle' ? () => setOpened(true) : undefined} calibrateRef={calibrate} />
+          <Saved />
           {shown ? (
-            <Dialog onClose={running ? null : () => setOpened(false)}>
-              <ActionError />
-              <Step phase={phase} />
-            </Dialog>
+            <OvcsDialog
+              aria-label="Calibrate"
+              onClose={close}
+              returnFocus={calibrate}
+              className="max-w-7xl"
+            >
+              <FlowClose value={close}>
+                <ActionError />
+                <Step phase={phase} />
+              </FlowClose>
+            </OvcsDialog>
           ) : null}
         </>
       )}

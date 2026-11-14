@@ -33,6 +33,10 @@ defmodule VisionCore.Inference.PortBackend do
   A failure its callbacks call final (`c:final?/1`), such as a missing
   model, is not tried again: `:failed`.
 
+  A Port closed for an unanswered request has its program killed if it
+  does not exit (`VisionCore.PortProcess`), so a program wedged on its
+  accelerator does not keep it from the next one.
+
   ## The inference time
 
   A reply may carry the accelerator's time for it. `inference_times/1`
@@ -52,6 +56,8 @@ defmodule VisionCore.Inference.PortBackend do
   use GenServer
 
   require Logger
+
+  alias VisionCore.PortProcess
 
   # Port protocol tag of a log line, the same in every program.
   @log_tag 2
@@ -211,6 +217,8 @@ defmodule VisionCore.Inference.PortBackend do
       infer_timeout_ms: infer_timeout_ms,
       reopen_delays_ms: reopen_delays_ms,
       port: nil,
+      # The program behind `port`, killed when the Port dies without it.
+      os_pid: nil,
       # The task preparing what the Port opens on, until it is done.
       opening: nil,
       failures: 0,
@@ -220,9 +228,22 @@ defmodule VisionCore.Inference.PortBackend do
     }
 
     if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare([backend.inference_group(settings)])
+      do:
+        :ok =
+          VisionCore.Parameters.declare([inference_group(backend, settings, infer_timeout_ms)])
 
     {:ok, start_opening(state)}
+  end
+
+  # The backend's step, with the timeout every Port has, fixed at start.
+  defp inference_group(backend, settings, infer_timeout_ms) do
+    timeout =
+      VisionCore.Stereo.Parameters.build_parameter(
+        {:infer_timeout_ms, infer_timeout_ms},
+        "Longest wait for an inference before the Port is restarted, in ms"
+      )
+
+    Map.update!(backend.inference_group(settings), :parameters, &(&1 ++ [timeout]))
   end
 
   defp start_opening(%{backend: backend, settings: settings} = state) do
@@ -235,7 +256,7 @@ defmodule VisionCore.Inference.PortBackend do
     with {:ok, prepared} <- prepared,
          {:ok, port} <- state.backend.open(state.settings, prepared) do
       Logger.info("#{state.wording.label} #{state.wording.loaded}")
-      %{state | port: port}
+      %{state | port: port, os_pid: PortProcess.os_pid(port)}
     else
       {:error, reason} -> unavailable(state, reason)
     end
@@ -269,7 +290,7 @@ defmodule VisionCore.Inference.PortBackend do
   defp port_down(state) do
     state = answer_inflight(state, nil)
     Process.send_after(self(), :reopen, reopen_delay_ms(state))
-    %{state | port: nil, times: nil, failures: state.failures + 1}
+    %{state | port: nil, os_pid: nil, times: nil, failures: state.failures + 1}
   end
 
   defp answer_inflight(%{inflight: nil} = state, _result), do: state
@@ -299,9 +320,23 @@ defmodule VisionCore.Inference.PortBackend do
       do: {:reply, {:error, :busy}, state}
 
   def handle_call({:submit, sequence, input, reply_to}, _from, state) do
-    Port.command(state.port, state.backend.request(sequence, input))
-    timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
-    {:reply, :ok, %{state | inflight: %{sequence: sequence, reply_to: reply_to, timer: timer}}}
+    case command(state.port, state.backend.request(sequence, input)) do
+      :ok ->
+        timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
+        inflight = %{sequence: sequence, reply_to: reply_to, timer: timer}
+        {:reply, :ok, %{state | inflight: inflight}}
+
+      :closed ->
+        {:reply, {:error, :unavailable}, port_down(state)}
+    end
+  end
+
+  # `:closed` for a Port whose program exited, its exit status not handled yet.
+  defp command(port, request) do
+    Port.command(port, request)
+    :ok
+  rescue
+    ArgumentError -> :closed
   end
 
   @impl GenServer
@@ -342,7 +377,7 @@ defmodule VisionCore.Inference.PortBackend do
         "#{state.infer_timeout_ms} ms; restarting #{wording.program}"
     )
 
-    Port.close(state.port)
+    PortProcess.close(state.port)
     {:noreply, port_down(state)}
   end
 
@@ -355,6 +390,7 @@ defmodule VisionCore.Inference.PortBackend do
 
   def handle_info({:EXIT, port, reason}, %{port: port} = state) do
     Logger.error("#{state.wording.label} Port died: #{inspect(reason)}")
+    PortProcess.kill_after(state.os_pid)
     {:noreply, port_down(state)}
   end
 

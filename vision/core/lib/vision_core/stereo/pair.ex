@@ -46,10 +46,13 @@ defmodule VisionCore.Stereo.Pair do
       it is measured.
     * `:metrics` — `{name, value, unit}` samples a stage reports for the
       pipeline's log line.
-    * `:device_ms` — the time the pair spent in compiled Nx segments, on
-      the GPU where they run there, and in native segments, in the
-      `stereo_match` Port, less what overlaps the previous pair's, so
-      successive pairs' times add up to the time the segments were busy.
+    * `:device_ms` — the time the pair spent at its segments' devices:
+      from its send to the first segment to the device's reply, its
+      upload included, less what overlaps the previous pair's, so
+      successive pairs' times add up to the time a pair was at the
+      device; plus each later segment's whole run. The download of the
+      first segment's outputs, which runs during the next pair's device
+      work, is left out.
     * `:stage_ms` — `%{stage => milliseconds}`, the time each stage or
       segment took for this pair, under the names the pipeline times
       them by, the members of a native segment among them, and `:total`,

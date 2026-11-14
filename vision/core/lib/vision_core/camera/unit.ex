@@ -8,7 +8,7 @@ defmodule VisionCore.Camera.Unit do
   pipeline's name (`VisionCore.Pipelines.name?/1`), whose reserved names
   include `:left` and `:right`, so no camera takes a stereo side's name;
   and no camera shares a detection pipeline's name, since both publish
-  under `<prefix>/<name>/` (`VisionCore.Application` refuses both, and
+  under `<name>/` (`VisionCore.Application` refuses both, and
   two cameras of one name). `:driver` is the driver's module. The driver
   is started with the other options, `:label`, the name's text, which
   its frames carry, and `:frame_id`, `"<name>_optical"` unless the camera
@@ -22,13 +22,20 @@ defmodule VisionCore.Camera.Unit do
   has none. A consumer takes the output it names, or the camera's first
   sent image output, its default: the pipelines on a camera source
   (`source: {:camera, name, output}`), the exporters (`{:camera_frame,
-  name, output}`), the preview and the pose capture. Each refuses an
+  name, output}`) and the preview. Each refuses an
   output the camera does not send (`unsent_output?/3`). An H.264 output
   is a video, whose key only a consumer of videos takes
   (`video_key/3`): the exporters (`{:camera_video, name, output}`) and
   the dashboard's video relay (`VisionCore.Video`). Outputs the driver
   cannot make, or `:outputs` given to a driver without named outputs,
   stop the unit at start, saying why.
+
+  A driver with runtime controls (`c:VisionCore.Camera.control_specs/0`)
+  has them as the camera's vision parameters, the group `<name>.camera`
+  (`VisionCore.Camera.Parameters`), with the settings it fixes at start
+  (`c:VisionCore.Camera.fixed_settings/1`) listed after them. They are
+  declared after the driver starts, at each of its starts, so its saved
+  values are applied again.
 
   Three options describe the camera to its consumers, such as
   `VisionCore.Ros2.Exporter`, and are not given to the driver
@@ -41,20 +48,25 @@ defmodule VisionCore.Camera.Unit do
       apart from the stereo unit's `<prefix>_<side>.yaml` in a directory
       they share. Once stored there it takes precedence over
       `:calibration`, as the stereo unit's (`VisionCore.Stereo.Supervisor`).
-    * `:pose` — its pose relative to the stereo pair, a YAML
-      `VisionCore.Camera.Pose` reads.
+    * `:pose` — its built-in pose relative to the stereo pair, a YAML
+      `VisionCore.Camera.Pose` reads. A pose committed from the dashboard
+      is stored in `:calibration_store_dir` as `camera_<name>_pose.yaml`
+      and takes precedence over it.
 
   Exists to contain failure, as `VisionCore.Detection.Supervisor` does:
   a driver that keeps crashing is restarted within this supervisor's own
-  budget, then the unit stops and, a `:transient` child, stays down,
-  while the stereo unit and the rest of the vision core run on. A
+  budget, then the unit stops, a `:transient` child, until
+  `VisionCore.Reviver` starts it again, while the stereo unit and the
+  rest of the vision core run on. A driver whose capture program exits
+  does not crash: it starts the program again itself
+  (`VisionCore.Camera.Reopen`). A
   component whose `:name` or `:driver` is invalid raises `ArgumentError`
   as it starts. A unit that fails to start, such as one whose driver
   cannot, is left down with the reason logged.
   """
   use Supervisor
 
-  alias VisionCore.Camera.Output
+  alias VisionCore.Camera.{Output, Parameters}
   alias VisionCore.Pipelines
 
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
@@ -72,6 +84,8 @@ defmodule VisionCore.Camera.Unit do
           built_in_calibration_path: Path.t() | nil,
           calibration_store_path: Path.t() | nil,
           pose_path: Path.t() | nil,
+          built_in_pose_path: Path.t() | nil,
+          pose_store_path: Path.t() | nil,
           outputs: [Output.t()]
         }
 
@@ -123,11 +137,24 @@ defmodule VisionCore.Camera.Unit do
       |> Keyword.put_new(:frame_id, default_frame_id(name))
       |> Keyword.put(:label, Atom.to_string(name))
 
-    Supervisor.init([{driver, driver_opts}],
-      strategy: :one_for_one,
+    Supervisor.init([{driver, driver_opts} | parameters(name, driver, driver_opts)],
+      strategy: :rest_for_one,
       max_restarts: @max_restarts,
       max_seconds: @max_seconds
     )
+  end
+
+  # After the driver, whose controls it declares and gives their saved values at each start.
+  defp parameters(name, driver, driver_opts) do
+    if function_exported?(driver, :control_specs, 0),
+      do: [{Parameters, name: name, driver: driver, fixed: fixed_settings(driver, driver_opts)}],
+      else: []
+  end
+
+  defp fixed_settings(driver, driver_opts) do
+    if function_exported?(driver, :fixed_settings, 1),
+      do: driver.fixed_settings(driver_opts),
+      else: []
   end
 
   @doc """
@@ -271,8 +298,9 @@ defmodule VisionCore.Camera.Unit do
   registers under, its optical frame, its calibration path, the stored
   calibration first when there is one, its built-in calibration path,
   the path a committed calibration is stored at (`nil` without a store),
-  and its pose path. The store is
-  read at each call. `:outputs` are the named image outputs it sends, in
+  and its pose path, the stored pose first when there is one, its
+  built-in pose path and the path a committed pose is stored at. The
+  store is read at each call. `:outputs` are the named image outputs it sends, in
   config order, its default first, none for a driver without them or
   whose outputs cannot be made.
   """
@@ -282,7 +310,8 @@ defmodule VisionCore.Camera.Unit do
 
     for {name, driver, server} <- cameras(config) do
       opts = Map.fetch!(options, name)
-      store_path = calibration_store_path(opts[:calibration_store_dir], name)
+      store_path = store_path(opts[:calibration_store_dir], "camera_#{name}.yaml")
+      pose_store_path = store_path(opts[:calibration_store_dir], "camera_#{name}_pose.yaml")
 
       outputs =
         case named_outputs(driver, opts) do
@@ -294,22 +323,24 @@ defmodule VisionCore.Camera.Unit do
         name: name,
         server: server,
         frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
-        calibration_path: calibration_path(opts[:calibration], store_path),
+        calibration_path: in_force_path(opts[:calibration], store_path),
         built_in_calibration_path: opts[:calibration],
         calibration_store_path: store_path,
-        pose_path: opts[:pose],
+        pose_path: in_force_path(opts[:pose], pose_store_path),
+        built_in_pose_path: opts[:pose],
+        pose_store_path: pose_store_path,
         outputs: outputs
       }
     end
   end
 
-  defp calibration_store_path(nil, _name), do: nil
-  defp calibration_store_path(directory, name), do: Path.join(directory, "camera_#{name}.yaml")
+  defp store_path(nil, _file), do: nil
+  defp store_path(directory, file), do: Path.join(directory, file)
 
-  defp calibration_path(calibration, nil), do: calibration
+  defp in_force_path(built_in, nil), do: built_in
 
-  defp calibration_path(calibration, store_path),
-    do: if(File.exists?(store_path), do: store_path, else: calibration)
+  defp in_force_path(built_in, store_path),
+    do: if(File.exists?(store_path), do: store_path, else: built_in)
 
   defp default_frame_id(name), do: "#{name}_optical"
 

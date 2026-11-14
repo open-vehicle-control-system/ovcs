@@ -11,6 +11,12 @@ defmodule VisionCore.Parameters do
   parameters without a `get`. A parameter with `applies: {:auto, controller}` is set by that
   controller's automatic mode while the controller is `true`.
 
+  A listing (`groups/1`) gives each read `:listing_timeout_ms`, in a
+  process of its own. An owner that does not answer in time is listed
+  without its values and statuses and is not asked again in that
+  listing, so one owner that hangs holds a listing back once, not once
+  per group.
+
   Saved values are applied when their group is declared. One that no longer
   fits the parameter's type, constraint or relation, or of a parameter its
   group no longer declares or now fixes in the build, is dropped from the
@@ -22,6 +28,9 @@ defmodule VisionCore.Parameters do
 
   A parameter's default is the `default` it is first declared with, or else
   the first value its `get` returns; either is kept while the registry runs.
+  A value read after one was set through the registry, a saved one
+  included, is never a default: a parameter that could not be read before
+  then has none, and neither `reset/2` nor `discard/1` sets it back.
 
   ROS 2 and the API are adapters reading and setting parameters here.
   """
@@ -63,6 +72,8 @@ defmodule VisionCore.Parameters do
           required(:parameters) => [declaration()]
         }
 
+  @default_listing_timeout_ms 1_000
+
   @parameter_fields [:id, :group, :name, :type, :constraint, :applies, :greater_than] ++
                       [:description]
 
@@ -91,7 +102,10 @@ defmodule VisionCore.Parameters do
 
   @doc """
   Starts the registry. Options: `:store`, the module holding saved values
-  (`VisionCore.Parameters.Store`), and `:name` (`VisionCore.Parameters`).
+  (`VisionCore.Parameters.Store`), `:name` (`VisionCore.Parameters`), and
+  `:listing_timeout_ms` (`1000`), how long `groups/1` waits for an
+  owner's values: one that does not answer in time is listed without its
+  values and its statuses, and is not asked again in that listing.
   """
   def start_link(opts \\ []) do
     {name, opts} = Keyword.pop(opts, :name, __MODULE__)
@@ -156,8 +170,12 @@ defmodule VisionCore.Parameters do
           {:ok, [id()]} | {:error, :not_found | String.t()}
   def reset(server \\ __MODULE__, scope), do: GenServer.call(server, {:reset, scope})
 
-  @doc "Deletes the saved value of `id` now and forgets its unsaved change."
-  @spec forget(GenServer.server(), id()) :: :ok
+  @doc """
+  Deletes the saved value of `id` now and forgets its unsaved change. A
+  saved value the store could not delete stays saved, and the store's
+  error is answered.
+  """
+  @spec forget(GenServer.server(), id()) :: :ok | {:error, String.t()}
   def forget(server \\ __MODULE__, id), do: GenServer.call(server, {:forget, id})
 
   @doc """
@@ -175,6 +193,8 @@ defmodule VisionCore.Parameters do
 
     {:ok,
      %{
+       listing_timeout_ms:
+         VisionCore.Options.integer!(opts, :listing_timeout_ms, @default_listing_timeout_ms, 1),
        store: store,
        saved: store.load(),
        groups: %{},
@@ -183,6 +203,8 @@ defmodule VisionCore.Parameters do
        changed: %{},
        # Ids of saved values their owner failed to set.
        unapplied_saved: MapSet.new(),
+       # Ids set through the registry: a value read from then on is no default.
+       set_ids: MapSet.new(),
        last_change_ms: nil
      }}
   end
@@ -190,7 +212,7 @@ defmodule VisionCore.Parameters do
   @impl GenServer
   def handle_call({:declare, groups}, {owner, _tag}, state) do
     state = drop_owner(state, owner)
-    groups = Enum.map(groups, &normalize_group/1)
+    groups = Enum.map(groups, &normalize_group(&1, owner))
 
     declared_defaults =
       for group <- groups, %{default: default} = parameter <- group.parameters, into: %{} do
@@ -208,12 +230,13 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call(:groups, _from, state) do
-    {values, state} = read_values(state, Enum.map(all_parameters(state), & &1.id))
+    ids = Enum.map(all_parameters(state), & &1.id)
+    {values, late, state} = read_all(state, ids, MapSet.new())
 
-    groups =
+    {groups, _late} =
       state
       |> sorted_groups()
-      |> Enum.map(&to_group(&1, values, state))
+      |> Enum.map_reduce(late, &to_group(&1, values, state, &2))
 
     {:reply, groups, state}
   end
@@ -270,8 +293,10 @@ defmodule VisionCore.Parameters do
 
   def handle_call(:discard, _from, state) do
     reference = fn declared, values ->
-      if parameter_state(declared, values, state) == :unsaved,
-        do: {:ok, Map.get(state.saved, declared.id, state.defaults[declared.id])}
+      with :unsaved <- parameter_state(declared, values, state),
+           value when not is_nil(value) <-
+             Map.get(state.saved, declared.id, state.defaults[declared.id]),
+           do: {:ok, value}
     end
 
     {set_ids, applied, refused} =
@@ -310,8 +335,8 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call({:forget, id}, _from, state) do
-    state = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
-    {:reply, :ok, %{state | changed: Map.delete(state.changed, id)} |> mark_applied([id])}
+    {deleted, state} = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
+    {:reply, deleted, %{state | changed: Map.delete(state.changed, id)} |> mark_applied([id])}
   end
 
   @impl GenServer
@@ -382,7 +407,14 @@ defmodule VisionCore.Parameters do
     do: Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
 
   defp touch(state, applied) when applied == %{}, do: state
-  defp touch(state, _applied), do: %{state | last_change_ms: System.monotonic_time(:millisecond)}
+
+  defp touch(state, applied) do
+    %{
+      state
+      | last_change_ms: System.monotonic_time(:millisecond),
+        set_ids: MapSet.union(state.set_ids, MapSet.new(Map.keys(applied)))
+    }
+  end
 
   # A parameter set again no longer waits for its saved value.
   defp mark_applied(state, ids),
@@ -493,16 +525,29 @@ defmodule VisionCore.Parameters do
 
   defp group_id(id), do: id |> String.split(".") |> Enum.drop(-1) |> Enum.join(".")
 
+  # A value the store could not delete stays saved, and is dropped again at the next declaration.
   defp drop_saved(state, refused) do
     log_refused(refused, "dropped")
-    delete_saved(state, for({declared, _value, _reason} <- refused, do: declared.id))
+    ids = for {declared, _value, _reason} <- refused, do: declared.id
+
+    case delete_saved(state, ids) do
+      {:ok, state} ->
+        state
+
+      {{:error, reason}, state} ->
+        for id <- ids, do: Logger.warning("vision parameter #{id} still saved: #{reason}")
+        state
+    end
   end
 
-  defp delete_saved(state, []), do: state
+  # The saved values of `ids` deleted from the store, then from the registry: neither on a failed write.
+  defp delete_saved(state, []), do: {:ok, state}
 
   defp delete_saved(state, ids) do
-    write_changes(state.store, Map.new(ids, &{&1, :delete}))
-    %{state | saved: Map.drop(state.saved, ids)}
+    case write_changes(state.store, Map.new(ids, &{&1, :delete})) do
+      :ok -> {:ok, %{state | saved: Map.drop(state.saved, ids)}}
+      {:error, reason} -> {{:error, reason}, state}
+    end
   end
 
   # Stores the values of `parameters`; a failed write keeps the unsaved changes.
@@ -612,7 +657,7 @@ defmodule VisionCore.Parameters do
   defp release_controlled(_state, _declared, _value, _values), do: {:ok, %{}}
 
   defp release_one(controlled, {:ok, released}) do
-    {value, _group_values} = read(controlled, %{})
+    {value, _group_values, nil} = read(controlled, %{}, nil, nil)
 
     case value do
       nil ->
@@ -648,13 +693,48 @@ defmodule VisionCore.Parameters do
     _kind, reason -> {:error, "not applied: #{inspect(reason)}"}
   end
 
-  defp read(nil, group_values), do: {nil, group_values}
+  # `late` holds the owners that did not answer in this listing; `nil` outside a listing.
+  defp read(nil, group_values, _timeout_ms, late), do: {nil, group_values, late}
 
-  defp read(%{get: get}, group_values), do: {guarded(get), group_values}
+  defp read(%{get: get} = declared, group_values, timeout_ms, late) do
+    {value, late} = ask(get, declared.owner, timeout_ms, late)
+    {value, group_values, late}
+  end
 
-  defp read(%{group: group, values: values} = declared, group_values) do
-    group_values = Map.put_new_lazy(group_values, group, fn -> guarded(values) || %{} end)
-    {Map.get(group_values[group], declared.name), group_values}
+  defp read(%{group: group, values: values} = declared, group_values, timeout_ms, late) do
+    case group_values do
+      %{^group => read} ->
+        {Map.get(read, declared.name), group_values, late}
+
+      _unread ->
+        {read, late} = ask(values, declared.owner, timeout_ms, late)
+        read = read || %{}
+        {Map.get(read, declared.name), Map.put(group_values, group, read), late}
+    end
+  end
+
+  # Outside a listing a read is bounded by its own calls.
+  defp ask(read, _owner, _timeout_ms, nil), do: {guarded(read), nil}
+
+  defp ask(read, owner, timeout_ms, late) do
+    if MapSet.member?(late, owner) do
+      {nil, late}
+    else
+      case answered(read, timeout_ms) do
+        {:ok, value} -> {value, late}
+        :late -> {nil, MapSet.put(late, owner)}
+      end
+    end
+  end
+
+  # `read`'s value when it comes within `timeout_ms`, in a process of its own, killed past it.
+  defp answered(read, timeout_ms) do
+    task = Task.async(fn -> guarded(read) end)
+
+    case Task.yield(task, timeout_ms) || Task.shutdown(task, :brutal_kill) do
+      {:ok, value} -> {:ok, value}
+      _late_or_killed -> :late
+    end
   end
 
   defp guarded(read) do
@@ -665,31 +745,35 @@ defmodule VisionCore.Parameters do
     _kind, _reason -> nil
   end
 
-  defp read_status(%{status: status}) when is_function(status, 0) do
-    status.()
-  rescue
-    _error -> nil
-  catch
-    _kind, _reason -> nil
+  defp read_status(%{status: status} = group, timeout_ms, late) when is_function(status, 0),
+    do: ask(status, group.owner, timeout_ms, late)
+
+  defp read_status(_group, _timeout_ms, late), do: {nil, late}
+
+  defp read_values(state, ids) do
+    {values, nil, state} = read_all(state, ids, nil)
+    {values, state}
   end
 
-  defp read_status(_group), do: nil
+  # Values by id; the first value read of each parameter, unless set by then, is its default.
+  defp read_all(state, ids, late) do
+    {values, _group_values, late, state} =
+      Enum.reduce(Enum.uniq(ids), {%{}, %{}, late, state}, fn id, acc ->
+        {values, group_values, late, state} = acc
 
-  # Values by id; the first value read of each parameter is its default.
-  defp read_values(state, ids) do
-    {values, _group_values, state} =
-      Enum.reduce(Enum.uniq(ids), {%{}, %{}, state}, fn id, {values, group_values, state} ->
-        {value, group_values} = read(find(state, id), group_values)
+        {value, group_values, late} =
+          read(find(state, id), group_values, state.listing_timeout_ms, late)
 
         state =
-          if is_nil(value) or Map.has_key?(state.defaults, id),
-            do: state,
-            else: put_in(state.defaults[id], value)
+          if is_nil(value) or Map.has_key?(state.defaults, id) or
+               MapSet.member?(state.set_ids, id),
+             do: state,
+             else: put_in(state.defaults[id], value)
 
-        {Map.put(values, id, value), group_values, state}
+        {Map.put(values, id, value), group_values, late, state}
       end)
 
-    {values, state}
+    {values, late, state}
   end
 
   defp read_parameter(state, declared) do
@@ -707,8 +791,10 @@ defmodule VisionCore.Parameters do
     |> Enum.reject(&is_nil/1)
   end
 
-  defp to_group(group, values, state) do
-    %Group{
+  defp to_group(group, values, state, late) do
+    {status, late} = read_status(group, state.listing_timeout_ms, late)
+
+    group = %Group{
       id: group.id,
       name: group.name,
       summary: group.summary,
@@ -716,10 +802,12 @@ defmodule VisionCore.Parameters do
       kind: group.kind,
       pipeline: group.pipeline,
       position: group.position,
-      status: read_status(group),
+      status: status,
       compute: Map.get(group, :compute),
       parameters: Enum.map(group.parameters, &to_parameter(&1, values, state))
     }
+
+    {group, late}
   end
 
   defp to_parameter(declared, values, state) do
@@ -769,11 +857,17 @@ defmodule VisionCore.Parameters do
   defp controller(%{applies: {:auto, controller}}), do: controller
   defp controller(_declared), do: nil
 
-  defp normalize_group(group) do
+  defp normalize_group(group, owner) do
     group
+    |> Map.put(:owner, owner)
     |> Map.put_new(:status, nil)
     |> Map.update!(:parameters, fn parameters ->
-      Enum.map(parameters, &(&1 |> normalize_parameter(group.id) |> put_group_values(group)))
+      Enum.map(parameters, fn parameter ->
+        parameter
+        |> normalize_parameter(group.id)
+        |> put_group_values(group)
+        |> Map.put(:owner, owner)
+      end)
     end)
   end
 

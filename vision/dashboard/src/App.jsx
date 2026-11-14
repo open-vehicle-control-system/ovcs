@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import UnitStatus from './components/UnitStatus.jsx'
 import Hint from './components/Hint.jsx'
 import { HINTS } from './hints.js'
@@ -14,6 +14,7 @@ import {
   OvcsMain,
   OvcsSaveBar,
   OvcsShell,
+  OvcsRegion,
   OvcsShellBody,
   OvcsTopBar,
   focusClass as FOCUS,
@@ -23,13 +24,14 @@ import {
 } from '@ovcs/ui/react'
 import { fetchBoard, fetchFirmware } from './services/unit.js'
 import { dashboardSocket } from './services/socket.js'
+import { BUTTON } from './styles.js'
 import { useStatus } from './stores/status.js'
 import { useExporters } from './stores/exporters.js'
 import { useCalibration } from './stores/calibration.js'
 import { orderedGroups, useParameters } from './stores/parameters.js'
 import { boxFromUrl, useNavigation, writeUrl } from './stores/navigation.js'
 
-// Keeps the page, its box or exporter, in the URL; on the pipeline, selects the URL's box once known, else the first box.
+// Keeps the page, its box, exporter or calibration, in the URL; on the pipeline, selects the URL's box once known, else the first box.
 function useNavigationInUrl() {
   const page = useNavigation((state) => state.page)
   const exporterId = useNavigation((state) => state.exporterId)
@@ -51,7 +53,7 @@ function useNavigationInUrl() {
     if (page !== 'pipeline' || selectedGroupId != null) writeUrl(page, selectedGroupId, exporterId, calibrationId)
   }, [page, selectedGroupId, exporterId, calibrationId])
 
-  return { page, selectedGroupId, exporterId }
+  return { page, selectedGroupId, exporterId, calibrationId }
 }
 
 // The exporters and what the unit can calibrate are listed again whenever the unit comes back, as after a reboot
@@ -114,6 +116,7 @@ function ParameterError({ connection }) {
   )
 }
 
+
 function ParameterSaveBar() {
   const barRef = useRef(null)
   const unsaved = useParameters((state) => state.unsaved)
@@ -143,35 +146,33 @@ function UnitStatusBar({ connection }) {
 }
 
 /**
- * The videos and their figures: at the full width on the overview, beside the selected stage's panel on the pipeline,
- * filling the main's height from lg.
- * Both pages render them at the same place, so going from one to the other keeps the videos playing.
+ * The videos and their figures: at the full width on the overview, beside the `panel` of a stage or a calibration,
+ * in a card with its `footer`, filling the main's height from lg. Every such page renders them at the same place, so
+ * going from one to another keeps the videos playing. `paused` leaves them out.
  */
-function PreviewsPage({ page, groupId }) {
-  const pipeline = page === 'pipeline'
-  const layout = pipeline
+function PreviewsPage({ panel, footer, paused }) {
+  const layout = panel
     ? 'grid min-w-0 gap-4 lg:min-h-0 lg:flex-1 lg:grid-cols-[minmax(24rem,30rem)_minmax(0,1fr)] lg:grid-rows-1'
     : 'flex min-w-0 flex-col lg:min-h-0 lg:flex-1'
 
   return (
     <div className={layout}>
-      {pipeline ? (
+      {panel ? (
         <OvcsCard className="flex min-w-0 flex-col gap-4 lg:min-h-0">
           <div data-scroll="panel" className="lg:-mx-4 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:px-4">
-            <ParameterPanel groupId={groupId} />
+            {panel}
           </div>
-          <ParameterSaveBar />
+          {footer}
         </OvcsCard>
       ) : null}
 
-      <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
-        <LivePreviews />
-      </div>
+      <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">{paused ? null : <LivePreviews />}</div>
     </div>
   )
 }
 
-const PAGES = { calibration: CalibrationPage }
+// A capture's previews join the channels of the same frames, which the socket holds once per topic.
+const capturing = (state) => state.session?.phase === 'capturing'
 
 export default function App() {
   const listen = useStatus((state) => state.listen)
@@ -192,32 +193,40 @@ export default function App() {
   const firmware = useOvcsFirmware(fetchFirmware, joins)
   const connection = useOvcsConnection(dashboardSocket)
   const board = useOvcsBoard(fetchBoard, connection === 'connected')
-  const { page, selectedGroupId, exporterId } = useNavigationInUrl()
-  const Page = PAGES[page]
+  const { page, selectedGroupId, exporterId, calibrationId } = useNavigationInUrl()
+  const paused = useCalibration(capturing)
+  const panel =
+    page === 'pipeline' ? <ParameterPanel groupId={selectedGroupId} /> : page === 'calibration' ? <CalibrationPage /> : null
 
   return (
     <OvcsShell product="Vision">
-      <OvcsTopBar firmware={firmware} board={board}>
-        <ParameterError connection={connection} />
-      </OvcsTopBar>
+      <OvcsRegion name="The top bar">
+        <OvcsTopBar firmware={firmware} board={board}>
+          <ParameterError connection={connection} />
+        </OvcsTopBar>
+      </OvcsRegion>
 
       <OvcsShellBody>
-        <Menu />
+        <OvcsRegion name="The menu">
+          <Menu />
+        </OvcsRegion>
         <OvcsMain>
-          {page === 'exporter' ? (
-            <ExporterPage id={exporterId} />
-          ) : Page ? (
-            <Page />
-          ) : (
-            <PreviewsPage page={page} groupId={selectedGroupId} />
-          )}
+          <OvcsRegion name="This page" resetOn={`${page}/${exporterId}/${selectedGroupId}/${calibrationId}`}>
+            {page === 'exporter' ? (
+              <ExporterPage id={exporterId} />
+            ) : (
+              <PreviewsPage panel={panel} footer={page === 'pipeline' ? <ParameterSaveBar /> : null} paused={paused} />
+            )}
+          </OvcsRegion>
         </OvcsMain>
       </OvcsShellBody>
 
-      <OvcsBottomBar>
-        <OvcsConnectionStatus state={connection} hint={<Hint hint={HINTS.connection} />} />
-        <UnitStatusBar connection={connection} />
-      </OvcsBottomBar>
+      <OvcsRegion name="The status bar">
+        <OvcsBottomBar>
+          <OvcsConnectionStatus state={connection} hint={<Hint hint={HINTS.connection} />} />
+          <UnitStatusBar connection={connection} />
+        </OvcsBottomBar>
+      </OvcsRegion>
     </OvcsShell>
   )
 }

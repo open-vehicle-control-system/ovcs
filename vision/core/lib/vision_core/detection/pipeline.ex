@@ -75,10 +75,10 @@ defmodule VisionCore.Detection.Pipeline do
   boxes of a frame whose size the calibration cannot be projected at,
   such as one of another aspect ratio, wait for no pair.
 
-  The calibration and the pose are read at start. A calibration
-  committed through the camera's `set_camera_info` reaches the ROS 2
-  exporter's `camera_info` at once, but the boxes are placed with the
-  start-time calibration until the unit restarts.
+  The calibration and the pose are read at start, and again when a
+  calibration of the camera is committed (`VisionCore.CameraPipeline`):
+  the boxes are placed with it from the next frame on, as the ROS 2
+  exporter's `camera_info` follows it.
 
   A box with no distance is kept: its position and size are `nil`, and
   its `:bearing` says where it is seen. Each detection is in the
@@ -135,16 +135,34 @@ defmodule VisionCore.Detection.Pipeline do
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera of a camera source is read from.
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
-      waits of a camera source are measured with, a function of no
-      argument.
+      steps and the waits of a camera source are measured with, a
+      function of no argument.
 
-  `:detect_every_n` and `:reprojection_stride` are integers from 1 on,
-  `:max_detections` and `:pair_wait_ms` from 0 on, and `:min_score` is a
-  number: another value fails the start (`VisionCore.Options`).
+  ## The steps' times
+
+  The pipeline times each of its steps (`stages/0`) for every pair or
+  frame it detects on: `:input`, preparing the image and handing it to
+  the backend; `:inference`, from the image handed over to the
+  backend's reply; `:filtering`, keeping the detections to pass on; and
+  `:placement`, placing and outlining them. The wait for a camera
+  frame's stereo pair is in none of them, and an image the backend
+  refused or could not detect on has no inference time.
+  `stage_times/1` hands the times over and starts them again.
+
+  ## Settings
+
+  `:detect_every_n`, `:min_score`, `:max_detections`,
+  `:depth_sample_fraction`, `:outline_segments`, `:reprojection_stride`
+  and `:pair_wait_ms` are the pipeline's settings (`setting_specs/0`,
+  with the values each takes): a composer's value outside them fails the
+  start, and each of those its source uses is a live vision parameter
+  (`groups/1`), which changes while the pipeline runs, from the next
+  pair or frame on (`put_setting/3`). A new `:pair_wait_ms` applies to
+  the boxes that come back from then on.
   """
   alias VisionCore.{Detection, Pipelines}
   alias VisionCore.Detection.{CameraPipeline, StereoPipeline}
-  alias VisionCore.{Options, Parameters}
+  alias VisionCore.{Parameters, Settings}
 
   @coco_labels ~w(person bicycle car motorcycle airplane bus train truck boat
                   traffic_light fire_hydrant stop_sign parking_meter bench bird cat
@@ -157,17 +175,54 @@ defmodule VisionCore.Detection.Pipeline do
                   keyboard cell_phone microwave oven toaster sink refrigerator book
                   clock vase scissors teddy_bear hair_drier toothbrush)
 
-  @default_min_score 0.4
-  @default_max_detections 20
-  @default_depth_sample_fraction 0.5
-  @default_detect_every_n 1
-  @default_outline_segments 4
-  @default_reprojection_stride 3
-  @default_pair_wait_ms 500
+  @setting_specs [
+    detect_every_n: %{
+      type: :integer,
+      range: {1, 1000},
+      default: 1,
+      description: "Pairs or images per detection; 1 detects on every one"
+    },
+    min_score: %{
+      type: :double,
+      range: {0, 1},
+      default: 0.4,
+      description: "Lowest score of a detection passed on"
+    },
+    max_detections: %{
+      type: :integer,
+      range: {0, 1000},
+      default: 20,
+      description: "Most detections passed on per image"
+    },
+    depth_sample_fraction: %{
+      type: :double,
+      range: {0.05, 1},
+      default: 0.5,
+      description: "Share of the box's width and height whose depths are sampled"
+    },
+    outline_segments: %{
+      type: :integer,
+      range: {1, 32},
+      default: 4,
+      description: "Pieces each edge of an outline is cut into, to follow the lens"
+    },
+    reprojection_stride: %{
+      type: :integer,
+      range: {1, 32},
+      default: 3,
+      description: "Every how many pixels and rows of the depth are projected"
+    },
+    pair_wait_ms: %{
+      type: :integer,
+      range: {0, 60_000},
+      default: 500,
+      description: "Longest wait for the matching pair, in ms"
+    }
+  ]
 
   @input_explanation "Takes the rectified left image of the stereo pairs, which the depth " <>
                        "lines up with pixel for pixel, and hands it to the detector. " <>
-                       "detect_every_n, fixed in the build, runs detection on one pair out of " <>
+                       "detect_every_n runs detection on one pair out of " <>
                        "n: a higher value leaves the accelerator and the processor more time, " <>
                        "and updates the boxes less often. A pair that arrives while the " <>
                        "detector is still busy is skipped."
@@ -175,23 +230,24 @@ defmodule VisionCore.Detection.Pipeline do
                            "min_score, at most max_detections per image, best first. Raise " <>
                            "min_score to drop doubtful boxes, at the risk of missing real " <>
                            "objects; lower it to see more of them, down to the inference " <>
-                           "step's own threshold. Both are fixed in the build."
+                           "step's own threshold."
   @placement_explanation "Places each box in 3D with the depth, which lines up with the image " <>
                            "pixel for pixel. It takes the median depth in the middle of the " <>
                            "box, so the background showing at its corners does not pull the " <>
                            "distance away, then turns the box's centre and size into metres " <>
-                           "in the left camera's frame. depth_sample_fraction, fixed in the " <>
-                           "build, is the share of the box's width and height it samples. A " <>
-                           "box with no depth in its middle is dropped rather than given a " <>
-                           "guessed distance. Watch the outlines and distances on the left " <>
-                           "video."
+                           "in the left camera's frame. depth_sample_fraction is the share " <>
+                           "of the box's width and height it samples. A box with no depth " <>
+                           "in its middle is dropped rather than given a guessed distance. " <>
+                           "outline_segments is how many pieces each edge of a box's " <>
+                           "outline is cut into, to follow the lens on the camera's image. " <>
+                           "Watch the outlines and distances on the left video."
   @camera_placement_explanation "Places each box in 3D with the depth of the stereo pair " <>
                                   "captured closest to the image, projected into the " <>
                                   "camera's image through its calibration and its pose " <>
                                   "relative to the stereo pair. It takes the median depth " <>
                                   "projected in the middle of the box, then turns the box's " <>
-                                  "centre and size into metres in the camera's frame. Fixed " <>
-                                  "in the build: depth_sample_fraction, the share of the " <>
+                                  "centre and size into metres in the camera's frame. " <>
+                                  "depth_sample_fraction is the share of the " <>
                                   "box's width and height it samples; reprojection_stride, " <>
                                   "every how many pixels and rows of the depth it projects, " <>
                                   "a higher value placing faster and less finely; and " <>
@@ -221,34 +277,63 @@ defmodule VisionCore.Detection.Pipeline do
   @doc "The COCO class names, indexed by class id."
   def labels, do: @coco_labels
 
+  @stages [:input, :inference, :filtering, :placement]
+
+  @doc "The pipeline's steps, as its parameter groups name them (`<name>.<step>`), in order."
+  @spec stages() :: [atom()]
+  def stages, do: @stages
+
+  @doc """
+  The time of each of the pipeline's steps (`stages/0`) over the pairs
+  or frames detected on since the last call, which this starts again.
+  """
+  @spec stage_times(GenServer.server()) :: VisionCore.StageTimes.t()
+  def stage_times(server), do: GenServer.call(server, :stage_times)
+
   @doc """
   What a detection pipeline keeps of `opts`, on either source: its
   `:name`, its `:source`, a camera's with its output, `nil` for the
-  camera's default, its backend and the options of the module doc, each
-  with its default. Raises `ArgumentError` on a value it cannot run
-  with.
+  camera's default, its backend, its labels and its settings
+  (`setting_specs/0`), each with its default. Raises `ArgumentError` on
+  a value it cannot run with.
   """
+
   @spec settings(keyword()) :: map()
   def settings(opts) do
     backend = Keyword.get(opts, :backend, VisionCore.Detection.Backend.Hailo)
 
-    %{
+    Map.merge(Settings.init!(@setting_specs, opts), %{
       name: Detection.pipeline_name(opts),
       source: source!(Keyword.get(opts, :source, :stereo)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
-      detect_every_n: Options.integer!(opts, :detect_every_n, @default_detect_every_n, 1),
-      labels: Keyword.get(opts, :labels, @coco_labels),
-      min_score: Options.number!(opts, :min_score, @default_min_score),
-      max_detections: Options.integer!(opts, :max_detections, @default_max_detections, 0),
-      depth_sample_fraction:
-        Keyword.get(opts, :depth_sample_fraction, @default_depth_sample_fraction),
-      outline_segments: Keyword.get(opts, :outline_segments, @default_outline_segments),
-      reprojection_stride:
-        Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
-      pair_wait_ms: Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0)
-    }
+      labels: Keyword.get(opts, :labels, @coco_labels)
+    })
   end
+
+  @doc "The pipeline's settings: each with its type, the values it takes and its default."
+  @spec setting_specs() :: Settings.specs()
+  def setting_specs, do: @setting_specs
+
+  @doc """
+  Changes the setting `key` of the pipeline `name` to `value`, from the
+  next pair or frame on, or says why its spec refuses it.
+  """
+  @spec put_setting(atom(), atom(), term()) :: :ok | {:error, String.t()}
+  def put_setting(name, key, value),
+    do: GenServer.call(Pipelines.server(__MODULE__, name), {:put_setting, key, value})
+
+  @doc "The settings of the pipeline `name` as it runs, by their names."
+  @spec live_settings(atom()) :: %{String.t() => term()}
+  def live_settings(name), do: GenServer.call(Pipelines.server(__MODULE__, name), :live_settings)
+
+  @doc "`settings` with the setting `key` at `value`, or why its spec refuses it."
+  @spec with_setting(map(), atom(), term()) :: {:ok, map()} | {:error, String.t()}
+  def with_setting(settings, key, value), do: Settings.put(@setting_specs, settings, key, value)
+
+  @doc "The settings among what a pipeline keeps, `settings`, by their names."
+  @spec setting_values(map()) :: %{String.t() => term()}
+  def setting_values(settings), do: Settings.values(@setting_specs, settings)
 
   defp source!(:stereo), do: :stereo
   defp source!({:camera, camera}), do: source!({:camera, camera, nil})
@@ -265,40 +350,60 @@ defmodule VisionCore.Detection.Pipeline do
       )
 
   @doc """
-  The detection pipeline's steps around the inference, for its
-  settings (`settings/1`): their parameter groups, `<name>.input`, `<name>.filtering` and
-  `<name>.placement` in the pipeline `name`, with their settings fixed at
-  start. The backend declares the inference step itself
-  (`inference_group/2`).
+  The detection pipeline's steps around the inference, for what it keeps
+  of its options (`settings/1`): their parameter groups, `<name>.input`,
+  `<name>.filtering` and `<name>.placement` in the pipeline `name`, with
+  the settings its source uses, live, their defaults the values it
+  starts with. They are read from the calling process and set on it, as
+  `live_settings/1` and `put_setting/3` do by name: the pipeline calls
+  this itself, once it runs, so a pipeline started again under the same
+  name is never called for the groups of the one before. The backend
+  declares the inference step itself (`inference_group/2`).
   """
   @spec groups(map()) :: [Parameters.group_declaration()]
-  def groups(state) do
-    source = state.source
+  def groups(%{name: name, source: source} = settings) do
+    pipeline = self()
+    set = fn key, value -> GenServer.call(pipeline, {:put_setting, key, value}) end
+
+    step = fn id, title, position, fields, keys ->
+      Parameters.step(
+        name,
+        id,
+        title,
+        position,
+        Map.merge(fields, %{
+          compute: Parameters.on_the_beam(),
+          values: fn -> GenServer.call(pipeline, :live_settings) end,
+          parameters: Settings.parameters(@setting_specs, keys, settings, set)
+        })
+      )
+    end
 
     [
-      Parameters.step(state.name, "input", "Input", 101, %{
-        summary: input_summary(source),
-        explanation: input_explanation(source),
-        compute: Parameters.on_the_beam(),
-        parameters: [
-          build_parameter(state, :detect_every_n, detect_every_n_description(source))
-        ]
-      }),
-      Parameters.step(state.name, "filtering", "Filtering", 103, %{
-        summary: "Keeps the most confident detections.",
-        explanation: @filtering_explanation,
-        compute: Parameters.on_the_beam(),
-        parameters: [
-          build_parameter(state, :min_score, "Lowest score of a detection passed on"),
-          build_parameter(state, :max_detections, "Most detections passed on per image")
-        ]
-      }),
-      Parameters.step(state.name, "placement", "Placement", 104, %{
-        summary: "Places each box in 3D with the median depth in its middle.",
-        explanation: placement_explanation(source),
-        compute: Parameters.on_the_beam(),
-        parameters: placement_parameters(source, state)
-      })
+      step.(
+        "input",
+        "Input",
+        101,
+        %{summary: input_summary(source), explanation: input_explanation(source)},
+        [:detect_every_n]
+      ),
+      step.(
+        "filtering",
+        "Filtering",
+        103,
+        %{summary: "Keeps the most confident detections.", explanation: @filtering_explanation},
+        [:min_score, :max_detections]
+      ),
+      step.(
+        "placement",
+        "Placement",
+        104,
+        %{
+          summary: "Places each box in 3D with the median depth in its middle.",
+          explanation: placement_explanation(source)
+        },
+        placement_settings(source)
+      )
     ]
   end
 
@@ -308,17 +413,12 @@ defmodule VisionCore.Detection.Pipeline do
   defp input_summary({:camera, camera, output}),
     do: "Hands every nth image of #{camera_text(camera, output)} to the detector."
 
-  defp detect_every_n_description(:stereo), do: "Pairs per detection; 1 detects on every pair"
-
-  defp detect_every_n_description({:camera, _camera, _output}),
-    do: "Images per detection; 1 detects on every image"
-
   defp input_explanation(:stereo), do: @input_explanation
 
   defp input_explanation({:camera, camera, output}),
     do:
       "Takes the images of #{camera_text(camera, output)} and hands them to the detector, which " <>
-        "shrinks each whole to its model's input. detect_every_n, fixed in the build, runs " <>
+        "shrinks each whole to its model's input. detect_every_n runs " <>
         "detection on one image out of n: a higher value leaves the accelerator and the " <>
         "processor more time, and updates the boxes less often. An image to detect on that " <>
         "arrives while the detector is still busy waits, the newest one only, and goes to the " <>
@@ -330,29 +430,10 @@ defmodule VisionCore.Detection.Pipeline do
   defp camera_text(camera, nil), do: "the camera #{camera}"
   defp camera_text(camera, output), do: "the camera #{camera}'s output #{output}"
 
-  defp placement_parameters(source, state) do
-    [
-      build_parameter(
-        state,
-        :depth_sample_fraction,
-        "Share of the box's width and height whose depths are sampled"
-      )
-    ] ++
-      case source do
-        :stereo ->
-          []
+  defp placement_settings(:stereo), do: [:depth_sample_fraction, :outline_segments]
 
-        {:camera, _camera, _output} ->
-          [
-            build_parameter(
-              state,
-              :reprojection_stride,
-              "Every how many pixels and rows of the depth are projected"
-            ),
-            build_parameter(state, :pair_wait_ms, "Longest wait for the matching pair, in ms")
-          ]
-      end
-  end
+  defp placement_settings({:camera, _camera, _output}),
+    do: [:depth_sample_fraction, :reprojection_stride, :pair_wait_ms]
 
   @doc """
   The inference step of the detection pipeline `pipeline`,
@@ -363,9 +444,6 @@ defmodule VisionCore.Detection.Pipeline do
   @spec inference_group(atom(), map()) :: Parameters.group_declaration()
   def inference_group(pipeline, fields),
     do: Parameters.step(pipeline, "inference", "Inference", 102, fields)
-
-  defp build_parameter(state, key, description),
-    do: VisionCore.Stereo.Parameters.build_parameter({key, Map.fetch!(state, key)}, description)
 
   @doc """
   The `detections` worth passing on: those scoring at least the

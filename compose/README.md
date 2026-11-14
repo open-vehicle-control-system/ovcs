@@ -135,18 +135,20 @@ docker compose -f base.yml exec ros2 bash   # shell with ROS env pre-sourced
 ```
 
 Smoke-test against the bridge's heartbeat (published by
-`RosBridge.Publishers.Heartbeat` on `/ovcs_heartbeat`):
+`RosBridge.Publishers.Heartbeat` on `/<node_name>/heartbeat`:
+`/ovcs_bridge/heartbeat` under the default node name,
+`/ovcs_bridge_ros/heartbeat` on the OVCS Mini):
 
 ```sh
 docker compose -f base.yml exec ros2 bash -lc '
-  ros2 topic list                              # should include /ovcs_heartbeat
-  ros2 topic echo /ovcs_heartbeat std_msgs/msg/String
+  ros2 topic list | grep heartbeat             # each node's /<node_name>/heartbeat
+  ros2 topic echo /<node_name>/heartbeat std_msgs/msg/String
 '
 ```
 
 The actual Zenoh keyexpr is namespaced by `rmw_zenoh`
-(`0/ovcs_heartbeat/std_msgs::msg::dds_::String_/RIHS01_…`), so a bare
-`z_sub -k ovcs_heartbeat` will not match. Use the ROS 2 CLI (above) or
+(`0/ovcs_bridge/heartbeat/std_msgs::msg::dds_::String_/RIHS01_…`), so a bare
+`z_sub -k ovcs_bridge/heartbeat` will not match. Use the ROS 2 CLI (above) or
 Foxglove against `ws://<compute-node-ip>:8765`.
 
 **Operator machine, no vehicle:**

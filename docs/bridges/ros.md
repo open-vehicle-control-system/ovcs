@@ -35,7 +35,7 @@ Apart from the Zenoh session, every feature is a component your vehicle opts int
 
 | Component | What it does |
 |---|---|
-| `:heartbeat` | `std_msgs/String` on `/ovcs_heartbeat`, every second by default, so consumers see the bridge is alive |
+| `:heartbeat` | `std_msgs/String` on `/<node_name>/heartbeat`, `/ovcs_bridge/heartbeat` under the default node name, every second by default, so consumers see the bridge is alive |
 | `:joy_interpreter` | a gamepad's `/joy/<profile>` onto `0x2B0`, through the framework's joystick profiles in `priv/joy` plus your vehicle's own |
 | `:velocity_interpreter` | a velocity command (`cmd_vel` by default) onto `0x2B1` |
 | `:vehicle_status_publisher` | the VMS's status, gear and control level on `/vehicle/*`, from `0x1A0`, `0x600` and `0x60C` |
@@ -124,7 +124,7 @@ Driver options include `report_interval_us`, `poll_interval_ms`, `max_packets_pe
 
 ## Check it end to end
 
-With `./ovcs run <vehicle>` going and the local ROS 2 stack up, the bridge's `/ovcs_heartbeat` appears in `ros2 topic list` and in Foxglove. [Verifying end to end](../ros2/README.md#verifying-end-to-end) has the commands.
+With `./ovcs run <vehicle>` going and the local ROS 2 stack up, the bridge's `/<node_name>/heartbeat` appears in `ros2 topic list` and in Foxglove. [Verifying end to end](../ros2/README.md#verifying-end-to-end) has the commands.
 
 ## Where next
 

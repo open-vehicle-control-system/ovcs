@@ -24,6 +24,15 @@ defmodule OvcsVehicle.SystemLoadTest do
     assert busy <= total
   end
 
+  test "the share of the memory in use, from /proc/meminfo: what is not available" do
+    meminfo =
+      "MemTotal:        8000000 kB\nMemFree:          500000 kB\nMemAvailable:    6000000 kB\n"
+
+    assert SystemLoad.parse_meminfo(meminfo) == 25.0
+    assert SystemLoad.parse_meminfo("MemTotal: 8000000 kB\n") == nil
+    assert SystemLoad.parse_meminfo("") == nil
+  end
+
   test "the 1, 5 and 15 minute load averages of /proc/loadavg" do
     assert SystemLoad.parse_loadavg("0.52 0.48 0.40 1/123 4567\n") == [0.52, 0.48, 0.4]
     assert SystemLoad.parse_loadavg("") == nil

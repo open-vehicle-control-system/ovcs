@@ -53,6 +53,61 @@ defmodule VisionCore.Stereo.PairerTest do
                      {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
   end
 
+  test "its tolerance changes while it runs, from the next pair on" do
+    pairer =
+      start_supervised!(
+        {Pairer,
+         cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), pair_tolerance_ms: 5}
+      )
+
+    publish = fn label, capture_ms ->
+      Outputs.publish(
+        {:camera_frame, Camera.name_for(label)},
+        {:camera_frame, frame(label, capture_ms)}
+      )
+    end
+
+    assert Pairer.pair_tolerance_ms(pairer) == 5
+    publish.("left", 100)
+    publish.("right", 120)
+    Pairer.sync(pairer)
+    refute_received {:"$gen_cast", {:submit, _left, _right, _pairer}}
+
+    assert Pairer.put_pair_tolerance_ms(pairer, 25) == :ok
+    publish.("right", 121)
+    Pairer.sync(pairer)
+
+    assert_received {:"$gen_cast", {:submit, %Frame{label: "left"}, %Frame{}, _pairer}}
+    assert Pairer.pair_tolerance_ms(pairer) == 25
+  end
+
+  test "refuses a tolerance that is no integer from 0 to 1000 ms, at start and while it runs" do
+    Process.flag(:trap_exit, true)
+    cameras = [{Camera, "left"}, {Camera, "right"}]
+
+    assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+             Pairer.start_link(cameras: cameras, pipeline: self(), pair_tolerance_ms: -1)
+
+    assert message == "its :pair_tolerance_ms must be from 0 to 1000, got -1"
+
+    pairer = start_supervised!({Pairer, cameras: cameras, pipeline: self()})
+
+    assert Pairer.put_pair_tolerance_ms(pairer, 1.5) ==
+             {:error, "pair_tolerance_ms must be an integer, got 1.5"}
+  end
+
+  test "refuses at start an :fps that is no integer from 1 on" do
+    for fps <- [0, 29.97, nil] do
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {Pairer,
+                  cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: fps}
+               )
+
+      assert message =~ ":fps"
+    end
+  end
+
   test "measures the sync of the frames its cameras publish" do
     pairer =
       start_supervised!(
@@ -70,6 +125,62 @@ defmodule VisionCore.Stereo.PairerTest do
 
     assert %{pairs: 1, offset_median_ms: offset_ms} = Pairer.sync(pairer)
     assert_in_delta offset_ms, 0.2, 1.0e-9
+  end
+
+  describe "latencies/1" do
+    # A clock the test sets, read by the pairer in place of the monotonic one.
+    defp start_clock(now_ms) do
+      clock = start_supervised!({Agent, fn -> now_ms * 1_000_000 end})
+      {clock, fn -> Agent.get(clock, & &1) end}
+    end
+
+    defp set_clock(clock, now_ms), do: Agent.update(clock, fn _now_ns -> now_ms * 1_000_000 end)
+
+    defp start_timed_pairer(now_ns) do
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
+      )
+    end
+
+    defp publish(label, capture_time_ms),
+      do:
+        Outputs.publish(
+          {:camera_frame, Camera.name_for(label)},
+          {:camera_frame, frame(label, capture_time_ms)}
+        )
+
+    test "measures each frame from its capture to its arrival, and each pair's wait to be submitted" do
+      {clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      publish("left", 996)
+      Pairer.sync(pairer)
+      set_clock(clock, 1_002)
+      publish("right", 996)
+      Pairer.sync(pairer)
+
+      assert_received {:"$gen_cast", {:submit, %Frame{}, %Frame{}, _pairer}}
+      assert Pairer.latencies(pairer) == %{cameras: 5.0, pairing: 2.0}
+    end
+
+    test "starts over once asked" do
+      {_clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      for label <- ["left", "right"], do: publish(label, 990)
+      assert %{cameras: 10.0, pairing: +0.0} = Pairer.latencies(pairer)
+
+      assert Pairer.latencies(pairer) == %{cameras: nil, pairing: nil}
+    end
+
+    test "has no pairing wait while no pair is submitted" do
+      {_clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      publish("left", 997)
+
+      assert Pairer.latencies(pairer) == %{cameras: 3.0, pairing: nil}
+    end
   end
 
   test "nothing to pair until both sides have a frame" do

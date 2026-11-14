@@ -9,7 +9,7 @@ defmodule VisionCore.Stereo.Parameters do
       and then read what the sensors apply; their defaults are the manual
       settings. For a driver whose one set of controls drives both cameras
       (`c:VisionCore.Camera.shared_controls?/0`), they are that driver's
-      controls. For a driver with controls per camera, each setting is
+      controls (`VisionCore.Camera.Parameters.controls/3`). For a driver with controls per camera, each setting is
       applied to both cameras and read from the left one; auto exposure and
       auto gain are switches of their own, and the defaults are the
       composer's settings for the left camera.
@@ -18,25 +18,32 @@ defmodule VisionCore.Stereo.Parameters do
       images, `:left` and `:right`, also carries the matching size; the
       stage that provides the pair's `:alignment` has as its status the
       row offset `VisionCore.Status` measures.
+    * `<prefix>.pairing` — while `VisionCore.Stereo.Pairer` runs, the
+      largest capture time gap of a pair, `pair_tolerance_ms`.
     * `<prefix>.<stage>.auto_row_offset`, before the `right_row_offset`
       of the stage that declares it — switches
       `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
       a stage provides `:alignment`; on, it sets `right_row_offset` from
-      that stage's measure.
+      that stage's measure. The correction's settings follow that stage's
+      own, as `auto_row_offset_<setting>`.
 
   Stages are found by what they declare, not by name: with the default
   stages, Rectification carries the matching size and
   `<prefix>.rectification.auto_row_offset`, and RowAlignment the row
   offset.
 
+  The groups are declared again when the left camera publishes a change
+  of the controls it has (`c:VisionCore.Camera.control_specs/1`).
+
   Declares nothing when the registry is not running.
   """
   use GenServer
 
+  alias VisionCore.Camera
   alias VisionCore.Parameters.Check
-  alias VisionCore.Stereo.{AlignmentCorrection, Pipeline}
+  alias VisionCore.Stereo.{AlignmentCorrection, Pairer, Pipeline}
 
-  @side_keys [:device, :camera_id, :sync, :sensor_mode, :format]
+  @side_keys [:device, :camera_id, :sync, :sensor_mode, :format, :rotation]
   @half_row 0.5
   @manual_keys [:exposure_time_us, :analogue_gain]
   @auto_switch_of %{exposure_time_us: :auto_exposure, analogue_gain: :auto_gain}
@@ -55,26 +62,51 @@ defmodule VisionCore.Stereo.Parameters do
                          "Watch the frame rate, exposure and gain under each video, and the " <>
                          "synchronisation between them."
 
+  @pairing_explanation "Each camera delivers its frames on its own. The pairing takes the " <>
+                         "two frames captured closest together, and hands the pipeline that " <>
+                         "pair when their capture times are within pair_tolerance_ms of each " <>
+                         "other. Lower it for cameras that capture together, so a pair never " <>
+                         "mixes two instants; raise it for cameras that capture a steady " <>
+                         "offset apart. Watch the synchronisation between the videos, and " <>
+                         "the pairs dropped in the log."
+
   @doc """
   Declares the unit's groups. Options: `:prefix`, `:driver`,
-  `:pipeline` (`VisionCore.Stereo.Pipeline`), `:left`, `:right`, `:width`,
+  `:pipeline` (`VisionCore.Stereo.Pipeline`), `nil` for a unit without
+  one, which has the cameras' group alone, `:left`, `:right`, `:width`,
   `:height`, `:fps`, `:match_width` and `:match_height`.
   """
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
   @impl GenServer
   def init(opts) do
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(groups(opts))
+    if Process.whereis(VisionCore.Parameters) do
+      driver = Keyword.fetch!(opts, :driver)
+      :ok = VisionCore.Outputs.subscribe(Camera.controls_changed_key(driver.name_for("left")))
+      :ok = VisionCore.Parameters.declare(groups(opts))
+    end
 
-    {:ok, nil}
+    {:ok, opts}
+  end
+
+  @impl GenServer
+  def handle_cast({:camera_controls_changed, _name}, opts) do
+    :ok = VisionCore.Parameters.declare(groups(opts))
+    {:noreply, opts}
   end
 
   @doc "The unit's group declarations for `opts`; see `start_link/1`."
   @spec groups(keyword()) :: [VisionCore.Parameters.group_declaration()]
   def groups(opts) do
     prefix = Keyword.fetch!(opts, :prefix)
-    pipeline = Keyword.get(opts, :pipeline, Pipeline)
+
+    camera_groups(prefix, opts) ++
+      stage_groups(prefix, Keyword.get(opts, :pipeline, Pipeline), opts)
+  end
+
+  defp stage_groups(_prefix, nil, _opts), do: []
+
+  defp stage_groups(prefix, pipeline, opts) do
     stage_options = Pipeline.stage_options(pipeline)
     offset = AlignmentCorrection.offset_stage(stage_options)
     alignment = AlignmentCorrection.alignment_stage(stage_options)
@@ -88,14 +120,41 @@ defmodule VisionCore.Stereo.Parameters do
       images: images && images.stage
     }
 
-    stages =
-      stage_options
-      |> Enum.with_index(1)
-      |> Enum.map(fn {stage, position} ->
-        stage_group(prefix, pipeline, stage, position, opts, roles)
-      end)
+    pairing_groups(prefix) ++
+      (stage_options
+       |> Enum.with_index(1)
+       |> Enum.map(fn {stage, position} ->
+         stage_group(prefix, pipeline, stage, position, opts, roles)
+       end))
+  end
 
-    camera_groups(prefix, opts) ++ stages
+  # The pairer runs with the pipeline it feeds.
+  defp pairing_groups(prefix) do
+    if Process.whereis(Pairer), do: [pairing_group(prefix)], else: []
+  end
+
+  defp pairing_group(prefix) do
+    [{key, spec}] = Pairer.setting_specs()
+
+    %{
+      id: "#{prefix}.pairing",
+      name: "Pairing",
+      summary: "Pairs the two cameras' frames by capture time.",
+      explanation: @pairing_explanation,
+      kind: :component,
+      pipeline: :stereo,
+      position: 0,
+      parameters: [
+        %{
+          name: Atom.to_string(key),
+          type: spec.type,
+          get: fn -> Pairer.pair_tolerance_ms() end,
+          set: &Pairer.put_pair_tolerance_ms/1,
+          constraint: Check.constraint(spec),
+          description: spec.description
+        }
+      ]
+    }
   end
 
   # The images at the matching size, which the first stage to provide them makes from the frames.
@@ -119,8 +178,6 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp shared_cameras_group(prefix, driver, opts) do
     id = "#{prefix}.cameras"
-    server = driver.name_for("left")
-    controls = driver.controls(server)
 
     %{
       id: id,
@@ -131,7 +188,7 @@ defmodule VisionCore.Stereo.Parameters do
       pipeline: :stereo,
       position: 0,
       parameters:
-        Enum.map(driver.control_specs(), &control(&1, driver, server, id, controls)) ++
+        Camera.Parameters.controls(driver, driver.name_for("left"), id) ++
           camera_build_parameters(opts, [:left, :right])
     }
   end
@@ -248,49 +305,9 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp put_configured_default(declaration, _key, _value), do: declaration
 
-  defp control(spec, driver, server, group_id, controls) do
-    %{
-      name: Atom.to_string(spec.key),
-      type: spec.type,
-      get: control_get(spec.key, driver, server),
-      set: &set_result(driver.set_controls(server, [{spec.key, &1}])),
-      constraint: control_constraint(spec),
-      applies: control_applies(spec.key, group_id),
-      description: spec.description
-    }
-    |> put_manual_default(spec.key, controls)
-  end
-
-  # Auto exposure's first values are not the built-in ones: the manual settings are.
-  defp put_manual_default(declaration, key, controls) when key in [:exposure_us, :analogue_gain],
-    do: put_present(declaration, :default, controls[key])
-
-  defp put_manual_default(declaration, _key, _controls), do: declaration
-
-  defp control_get(key, driver, server) when key in [:exposure_us, :analogue_gain] do
-    fn ->
-      controls = driver.controls(server)
-      applied = controls.auto_exposure && live(driver, server)
-      if applied, do: applied[live_key(key)] || controls[key], else: controls[key]
-    end
-  end
-
-  defp control_get(key, driver, server), do: fn -> driver.controls(server)[key] end
-
   defp live(driver, server) do
     if function_exported?(driver, :live, 1), do: driver.live(server)
   end
-
-  defp live_key(:exposure_us), do: :exposure_time_us
-  defp live_key(:analogue_gain), do: :analogue_gain
-
-  defp control_constraint(%{key: :rotation}), do: %{kind: :choices, values: [0, 180]}
-  defp control_constraint(spec), do: Check.constraint(spec)
-
-  defp control_applies(key, group_id) when key in [:exposure_us, :analogue_gain],
-    do: {:auto, "#{group_id}.auto_exposure"}
-
-  defp control_applies(_key, _group_id), do: :live
 
   defp camera_build_parameters(opts, sides) do
     general =
@@ -373,13 +390,36 @@ defmodule VisionCore.Stereo.Parameters do
 
   defp leading_parameters(_stage, _roles), do: []
 
-  defp extra_parameters(stage, %{images: stage}, opts) do
+  defp extra_parameters(stage, roles, opts),
+    do: correction_parameters(stage, roles) ++ image_parameters(stage, roles, opts)
+
+  defp correction_parameters(stage, %{switch: stage}) do
+    settings = AlignmentCorrection.settings()
+
+    for {key, spec} <- AlignmentCorrection.setting_specs() do
+      name = Atom.to_string(key)
+
+      %{
+        name: "auto_row_offset_#{name}",
+        type: spec.type,
+        get: fn -> AlignmentCorrection.settings()[name] end,
+        set: &AlignmentCorrection.put_setting(key, &1),
+        constraint: Check.constraint(spec),
+        default: Map.fetch!(settings, name),
+        description: spec.description
+      }
+    end
+  end
+
+  defp correction_parameters(_stage, _roles), do: []
+
+  defp image_parameters(stage, %{images: stage}, opts) do
     for key <- [:match_width, :match_height], Keyword.has_key?(opts, key) do
       build_parameter({key, opts[key]})
     end
   end
 
-  defp extra_parameters(_stage, _roles, _opts), do: []
+  defp image_parameters(_stage, _roles, _opts), do: []
 
   defp extra_group_fields(stage, %{alignment: stage}), do: %{status: &alignment_status/0}
   defp extra_group_fields(_stage, _roles), do: %{}

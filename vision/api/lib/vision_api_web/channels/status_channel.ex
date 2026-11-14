@@ -14,6 +14,9 @@ defmodule VisionApiWeb.StatusChannel do
     do: SourceMonitor.join(socket, VisionCore.Status, &VisionCore.Status.subscribe/0)
 
   @impl Phoenix.Channel
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
+  @impl Phoenix.Channel
   def handle_info({:vision_status, snapshot}, socket) do
     push(socket, "status", StatusJSON.status(snapshot))
     {:noreply, socket}

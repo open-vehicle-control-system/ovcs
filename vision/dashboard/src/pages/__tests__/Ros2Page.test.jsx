@@ -21,7 +21,7 @@ const node = {
   data: {
     type: 'ros2-nodes',
     id: 'vision',
-    attributes: { name: 'vision', connected: true, zenohEndpoint: 'tcp/192.168.10.1:7447' },
+    attributes: { name: 'vision', connected: true, clockSynchronized: true, dropsBeforeClockSynchronized: 0, zenohEndpoint: 'tcp/192.168.10.1:7447' },
     relationships: { topics: linkage(topics), services: linkage(services) }
   },
   included: [...topics, ...services]
@@ -52,12 +52,40 @@ describe('Ros2Page', () => {
 
     expect(screen.getByText('vision')).toBeTruthy()
     expect(screen.getByText('connected')).toBeTruthy()
+    expect(screen.getByText('yes')).toBeTruthy()
     expect(screen.getByText('tcp/192.168.10.1:7447')).toBeTruthy()
     const depth = document.querySelector('[data-topic="/stereo/depth/image_rect"]')
     expect(depth.textContent).toContain('sensor_msgs/msg/Image')
     expect(depth.textContent).toContain('28.0 Hz')
     const cameraInfo = document.querySelector('[data-service="/stereo/left/set_camera_info"]')
     expect(cameraInfo.textContent).toContain('sensor_msgs/srv/SetCameraInfo')
+  })
+
+  it('says nothing is published while the clock is not synchronized, and shows no topic rate', async () => {
+    const waiting = { ...node, data: { ...node.data, attributes: { ...node.data.attributes, clockSynchronized: false, dropsBeforeClockSynchronized: 120 } } }
+    fetchMock.mockResolvedValue(answer(waiting))
+    render(<Ros2Page />)
+    await flush()
+
+    expect(screen.getByText('waiting for the clock')).toBeTruthy()
+    expect(
+      screen.getByText("The board's clock is not synchronized yet: ROS 2 needs true times, so nothing is published until NTP sets it.")
+    ).toBeTruthy()
+    const depth = document.querySelector('[data-topic="/stereo/depth/image_rect"]')
+    expect(depth.textContent).not.toContain('Hz')
+    expect(depth.textContent).toContain('–')
+  })
+
+  it('says nothing is published while the Zenoh link is down', async () => {
+    const down = { ...node, data: { ...node.data, attributes: { ...node.data.attributes, connected: false } } }
+    fetchMock.mockResolvedValue(answer(down))
+    render(<Ros2Page />)
+    await flush()
+
+    expect(screen.getByText('disconnected')).toBeTruthy()
+    expect(screen.getByText('no')).toBeTruthy()
+    expect(screen.queryByText(/clock is not synchronized/)).toBeNull()
+    expect(document.querySelector('[data-topic="/stereo/depth/image_rect"]').textContent).not.toContain('Hz')
   })
 
   it('asks again a second after each answer, and says so when the unit cannot be reached', async () => {

@@ -5,6 +5,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
   alias Ros2Zenoh.FoxgloveMsgs.Msg.CompressedVideo
   alias Ros2Zenoh.GeometryMsgs.Msg.TransformStamped
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage}
+  alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Pose}
   alias VisionCore.Ros2.Exporter.Camera
@@ -31,7 +32,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
       Camera.new(
         settings(overrides),
         Keyword.merge(
-          [topic_prefix: "front", raw_image_max_hz: 10, camera_info_interval_frames: 2],
+          [raw_image_max_hz: 10, camera_info_interval_frames: 2],
           options
         )
       )
@@ -64,13 +65,47 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
     path
   end
 
-  test "its topics and service are under <prefix>/<name>/" do
+  test "its topics and service are under its name" do
     camera = camera()
+
+    assert camera.image_topic == "hq/image_raw/compressed"
+    assert camera.camera_info_topic == "hq/camera_info"
+    assert camera.service_name == "hq/set_camera_info"
+    assert camera.video_topic == "hq/image_raw/h264"
+  end
+
+  test "its topics and service are under <prefix>/<name>/ with a :topic_prefix" do
+    camera = camera(%{}, topic_prefix: "front")
 
     assert camera.image_topic == "front/hq/image_raw/compressed"
     assert camera.camera_info_topic == "front/hq/camera_info"
     assert camera.service_name == "front/hq/set_camera_info"
-    assert camera.video_topic == "front/hq/video"
+    assert camera.video_topic == "front/hq/image_raw/h264"
+    assert Camera.service_name("front", :hq) == "front/hq/set_camera_info"
+    assert Camera.service_name(nil, :hq) == "hq/set_camera_info"
+    assert Camera.topic_root("front", :hq) == "front/hq"
+    assert Camera.topic_root(nil, :hq) == "hq"
+  end
+
+  describe "live_messages/2" do
+    test "are the exposure and gain the camera applied, under its topic root" do
+      assert [
+               {"hq/exposure_us", Float64, %Float64{data: 8000.0}},
+               {"hq/analogue_gain", Float64, %Float64{data: 2.5}}
+             ] =
+               Camera.live_messages("hq", %{
+                 exposure_time_us: 8_000,
+                 analogue_gain: 2.5,
+                 received_ms: 0
+               })
+    end
+
+    test "leave out a figure the camera did not report, and are none before a report" do
+      assert [{"hq/analogue_gain", Float64, _gain}] =
+               Camera.live_messages("hq", %{exposure_time_us: nil, analogue_gain: 1.0})
+
+      assert Camera.live_messages("hq", nil) == []
+    end
   end
 
   describe "video_message/2" do
@@ -85,7 +120,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
         keyframe?: true
       }
 
-      assert {"front/hq/video", CompressedVideo, video} = Camera.video_message(frame, camera())
+      assert {"hq/image_raw/h264", CompressedVideo, video} = Camera.video_message(frame, camera())
 
       assert %CompressedVideo{
                timestamp: %Time{},
@@ -109,8 +144,8 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
       {messages, camera} = Camera.frame_messages(rgb_frame(96, 72), camera, 0, &encode/1)
 
       assert [
-               {"front/hq/image_raw/compressed", CompressedImage, image},
-               {"front/hq/camera_info", CameraInfo, camera_info}
+               {"hq/image_raw/compressed", CompressedImage, image},
+               {"hq/camera_info", CameraInfo, camera_info}
              ] = messages
 
       assert image.data == "jpeg 96"
@@ -119,7 +154,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
       assert camera_info.header == image.header
 
       {messages, _camera} = Camera.frame_messages(rgb_frame(96, 72), camera, 1_000, &encode/1)
-      assert [{"front/hq/image_raw/compressed", CompressedImage, _image}] = messages
+      assert [{"hq/image_raw/compressed", CompressedImage, _image}] = messages
     end
 
     test "publishes at most raw_image_max_hz images a second" do
@@ -206,7 +241,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
       {messages, _camera} =
         Camera.frame_messages(rgb_frame(96, 72), camera(), 0, fn _frame -> {:error, :codec} end)
 
-      assert [{"front/hq/camera_info", CameraInfo, _camera_info}] = messages
+      assert [{"hq/camera_info", CameraInfo, _camera_info}] = messages
     end
   end
 
@@ -222,6 +257,14 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
 
     assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
     assert camera_info.d == [0.0, 0.0, 0.0, 0.0, 0.0]
+  end
+
+  @tag :tmp_dir
+  test "reload_pose/2 reads the pose again, from the path given", %{tmp_dir: tmp_dir} do
+    pose_path = write_pose(tmp_dir, [1, 0, 0, 0, 1, 0, 0, 0, 1], [-0.2, 0.0, 0.0])
+
+    assert Camera.reload_pose(camera(), pose_path).pose.translation == [-0.2, 0.0, 0.0]
+    assert Camera.reload_pose(camera(%{pose_path: pose_path}), nil).pose == nil
   end
 
   describe "the static transform" do

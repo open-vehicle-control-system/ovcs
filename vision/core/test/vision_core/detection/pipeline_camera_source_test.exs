@@ -598,6 +598,32 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_no_distance(person)
   end
 
+  test "takes a calibration of its camera committed while it runs, from the next frame on",
+       %{tmp_dir: dir} do
+    start_pipeline(dir)
+    publish_frame(100)
+    assert [person] = detections()
+    assert_bearing(person)
+
+    committed = %{
+      calibration()
+      | camera_matrix: [200.0, 0.0, 40.5, 0.0, 200.0, 20.5, 0.0, 0.0, 1.0],
+        projection_matrix: [200.0, 0.0, 40.5, 0.0, 0.0, 200.0, 20.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    }
+
+    File.write!(Path.join(dir, "hq.yaml"), CameraCalibration.to_yaml(committed, "hq"))
+
+    Outputs.publish(
+      VisionCore.Camera.Calibration.changed_key(:hq),
+      {:camera_calibration_changed, :hq}
+    )
+
+    publish_frame(200)
+    assert [person] = detections()
+    {azimuth, _elevation} = person.bearing
+    assert_in_delta azimuth, :math.atan(-0.1), 1.0e-6
+  end
+
   test "a camera without a pose places nothing, saying so once", %{tmp_dir: dir} do
     log =
       capture_log(fn ->
@@ -615,6 +641,57 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       end)
 
     assert [_once] = Regex.scan(~r/has no pose/, log)
+  end
+
+  test "says why the stereo depth gives its detections no distance", %{tmp_dir: dir} do
+    start_pipeline(dir, files: [:calibration])
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    assert VisionCore.CameraPipeline.distances(pipeline) == %{camera: :hq, reason: :no_pose}
+  end
+
+  test "says so again once its camera's files are read again", %{tmp_dir: dir} do
+    %{components: [{:camera, camera}]} = config(dir, [:calibration])
+    pose = Path.join(dir, "hq_pose.yaml")
+    config = %VisionCore.Config{components: [{:camera, camera ++ [pose: pose]}]}
+    start_pipeline(dir, config: config)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == :no_pose
+
+    File.write!(pose, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [0, 0, 0]\n")
+    GenServer.cast(pipeline, {:camera_calibration_changed, :hq})
+
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == nil
+  end
+
+  test "takes a pose of its camera committed while it runs, from the store", %{tmp_dir: dir} do
+    %{components: [{:camera, camera}]} = config(dir, [:calibration])
+    store_dir = Path.join(dir, "store")
+
+    config = %VisionCore.Config{
+      components: [{:camera, camera ++ [calibration_store_dir: store_dir]}]
+    }
+
+    start_pipeline(dir, config: config)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == :no_pose
+
+    pose = %VisionCore.Camera.Pose{
+      rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      translation: [0.0, 0.0, 0.0]
+    }
+
+    :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
+
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == nil
+  end
+
+  test "says nothing stops the distances of a camera with a calibration and a pose",
+       %{tmp_dir: dir} do
+    start_pipeline(dir)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    assert VisionCore.CameraPipeline.distances(pipeline) == %{camera: :hq, reason: nil}
   end
 
   test "a camera without a calibration gives no bearing either", %{tmp_dir: dir} do
@@ -691,6 +768,45 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_published(100)
     reply(held, [@reply_person])
     assert_published(200)
+  end
+
+  test "times each step of a frame, the wait for its pair left out", %{tmp_dir: dir} do
+    start_held(dir, files: [:calibration, :pose], pair_wait_ms: 500)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    publish_frame(1_400)
+    assert_receive {:submitted, in_flight}
+    _handed_over = :sys.get_state(pipeline)
+    set_clock(10)
+    reply(in_flight, [@reply_person])
+    await_boxes()
+    set_clock(300)
+    publish_pair(1_500)
+    assert_published(1_400)
+
+    assert Pipeline.stage_times(pipeline) == %{
+             input: {0.0, 1},
+             inference: {10.0, 1},
+             filtering: {0.0, 1},
+             placement: {0.0, 1}
+           }
+
+    assert Pipeline.stage_times(pipeline) ==
+             VisionCore.StageTimes.new([:input, :inference, :filtering, :placement])
+  end
+
+  test "times no inference the backend could not answer", %{tmp_dir: dir} do
+    start_held(dir)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    reply(in_flight, nil)
+
+    assert %{input: {_sum_ms, 1}, inference: {+0.0, 0}, placement: {+0.0, 0}} =
+             Pipeline.stage_times(pipeline)
   end
 
   defp next_message do
@@ -817,35 +933,76 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_receive {:submitted, _next}
   end
 
-  test "declares its placement's projection settings, fixed at start" do
-    state = %{
-      name: :hq_people,
-      source: {:camera, :hq, nil},
-      detect_every_n: 1,
-      min_score: 0.5,
-      max_detections: 10,
-      depth_sample_fraction: 0.5,
-      reprojection_stride: 3,
-      pair_wait_ms: 500
-    }
-
-    [input, _filtering, placement] = Pipeline.groups(state)
+  test "declares its input on the camera, and its placement's projection settings" do
+    settings = Pipeline.settings(name: :hq_people, source: {:camera, :hq})
+    [input, _filtering, placement] = Pipeline.groups(settings)
 
     assert input.summary =~ "camera hq"
+    assert [%{name: "detect_every_n", default: 1}] = input.parameters
 
-    assert [
-             %{
-               name: "detect_every_n",
-               description: "Images per detection; 1 detects on every image"
-             }
-           ] =
-             input.parameters
-
-    assert Enum.map(placement.parameters, &{&1.name, &1.get.()}) == [
+    assert Enum.map(placement.parameters, &{&1.name, &1.default}) == [
              {"depth_sample_fraction", 0.5},
              {"reprojection_stride", 3},
              {"pair_wait_ms", 500}
            ]
+  end
+
+  describe "with the parameters registry" do
+    alias VisionCore.Parameters.MemoryStore
+
+    defp start_registry(saved) do
+      start_supervised!({MemoryStore, saved})
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    end
+
+    # The pipeline declares once it runs; the registry then applies the saved values.
+    defp await_declared do
+      :sys.get_state(VisionCore.Pipelines.server(Pipeline, :hq_people))
+      :sys.get_state(VisionCore.Parameters)
+    end
+
+    test "a setting changed through its parameter applies from the next frame", %{tmp_dir: dir} do
+      start_registry(%{})
+      start_pipeline(dir)
+      await_declared()
+      publish_pair(0)
+      publish_pair(100)
+      publish_frame(100)
+      assert [%{label: "person"}] = detections()
+
+      assert {:ok, %{value: 1.0}} =
+               VisionCore.Parameters.set("hq_people.filtering.min_score", 1.0)
+
+      publish_frame(200)
+
+      assert detections() == []
+    end
+
+    test "a saved setting reaches a pipeline as it starts", %{tmp_dir: dir} do
+      start_registry(%{"hq_people.filtering.max_detections" => 0})
+      start_pipeline(dir)
+      await_declared()
+      publish_pair(0)
+      publish_pair(100)
+      publish_frame(100)
+
+      assert detections() == []
+    end
+
+    test "a shorter wait for the pair applies to the boxes that come back from then on",
+         %{tmp_dir: dir} do
+      start_registry(%{})
+      start_pipeline(dir, pair_wait_ms: 60_000)
+      await_declared()
+      publish_pair(0)
+      publish_pair(1_000)
+
+      assert {:ok, %{value: 0}} = VisionCore.Parameters.set("hq_people.placement.pair_wait_ms", 0)
+      publish_frame(1_400)
+
+      # With the 60 s it started with, the boxes wait for the pair captured after the frame.
+      assert [%{label: "person"}] = detections()
+    end
   end
 
   test "a camera source names a camera of the configuration", %{tmp_dir: dir} do

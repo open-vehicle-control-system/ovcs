@@ -75,11 +75,13 @@ defmodule OvcsVehicle.BoardStatusTest do
           if :counters.get(samples, 1) == 1, do: {100, 1_000}, else: {150, 1_200}
         end,
         sleep: fn _ms -> :ok end,
-        loadavg: fn -> "0.52 0.48 0.40 1/123 4567\n" end
+        loadavg: fn -> "0.52 0.48 0.40 1/123 4567\n" end,
+        meminfo: fn -> "MemTotal: 8000000 kB\nMemAvailable: 3000000 kB\n" end
       )
 
     assert status.cpu_percent == 25.0
     assert status.load_average == [0.52, 0.48, 0.4]
+    assert status.memory_percent == 62.5
   end
 
   test "reports neither where /proc cannot be read" do
@@ -88,10 +90,11 @@ defmodule OvcsVehicle.BoardStatusTest do
         getifaddrs: fn -> {:ok, []} end,
         cpu_times: fn -> nil end,
         sleep: fn _ms -> :ok end,
-        loadavg: fn -> nil end
+        loadavg: fn -> nil end,
+        meminfo: fn -> nil end
       )
 
-    assert {status.cpu_percent, status.load_average} == {nil, nil}
+    assert {status.cpu_percent, status.load_average, status.memory_percent} == {nil, nil, nil}
   end
 
   test "reports no synchronization where NervesTime is missing, as on a host" do

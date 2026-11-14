@@ -53,6 +53,14 @@ defmodule VisionCore.Camera.LibCamera do
   The Port supervises the binary: closing stdin (which happens
   when this GenServer dies) tells the binary to exit cleanly.
 
+  ## A capture program that exits
+
+  When the binary exits, the driver stays up without it and starts it
+  again after a wait that grows with each failure in a row
+  (`VisionCore.Camera.Reopen`, `:reopen_delays_ms`), with the controls in
+  force applied again on its first frame. Meanwhile `controls/1` and
+  `set_controls/2` answer as before, and `live/1` answers `nil`.
+
   ## Output format
 
   `:format` picks what each frame carries. `:jpeg` (the default): the
@@ -147,17 +155,17 @@ defmodule VisionCore.Camera.LibCamera do
   of silence is a stall; before the first frame, `:startup_timeout_ms`
   (default 15000 ms, libcamera's pipeline set-up on a Pi 5 can take a
   few seconds) is the most a camera gets to produce one. Either way the
-  driver logs the reason and stops, and the stereo supervisor's
-  `:rest_for_one` restarts it together with everything downstream. The
-  binary is relaunched by the restart, and with it libcamera's pipeline.
+  driver logs the reason, closes the binary's Port, killing a binary
+  that does not exit (`VisionCore.PortProcess`), and starts it again as
+  after an exit, and with it libcamera's pipeline.
   """
   @behaviour VisionCore.Camera
 
   use GenServer
   require Logger
 
-  alias VisionCore.Camera.Frame
-  alias VisionCore.Outputs
+  alias VisionCore.Camera.{Frame, Reopen}
+  alias VisionCore.{Outputs, PortProcess}
 
   @frame_tag 1
   @log_tag 2
@@ -189,6 +197,10 @@ defmodule VisionCore.Camera.LibCamera do
   @doc "The registered name of the driver for `label`."
   @impl VisionCore.Camera
   def name_for(label), do: Module.concat([__MODULE__, "L_#{label}"])
+
+  @doc "Whether the capture program runs: `false` while the driver waits to start it again."
+  @spec running?(GenServer.server()) :: boolean()
+  defdelegate running?(server), to: VisionCore.Camera.Reopen
 
   @doc false
   def sync_arguments(nil), do: []
@@ -296,14 +308,6 @@ defmodule VisionCore.Camera.LibCamera do
         lens_position_arguments(lens_position) ++
         sensor_mode_arguments(sensor_mode) ++ format_arguments(format)
 
-    port =
-      Port.open({:spawn_executable, executable}, [
-        :binary,
-        :exit_status,
-        {:packet, 4},
-        args: capture_arguments
-      ])
-
     Logger.info(
       "#{__MODULE__}[#{label}] camera #{camera_id} @ #{width}×#{height}/#{fps}fps, #{format} frames, via #{executable}"
     )
@@ -312,11 +316,14 @@ defmodule VisionCore.Camera.LibCamera do
     start_controls = accepted_start_controls(opts, label)
 
     {:ok,
-     %{
+     open_port(%{
        label: label,
        frame_id: Keyword.get(opts, :frame_id),
        camera_id: camera_id,
-       port: port,
+       program: {executable, capture_arguments},
+       port: nil,
+       failures: 0,
+       reopen_delays_ms: Reopen.delays!(opts),
        output: {:camera_frame, name_for(label)},
        controls: Map.merge(initial_controls(), Map.new(start_controls, &normalise_control/1)),
        applied_metadata: nil,
@@ -325,7 +332,30 @@ defmodule VisionCore.Camera.LibCamera do
        last_frame_at: nil,
        stall_timeout_ms: Keyword.get(opts, :stall_timeout_ms, @default_stall_timeout_ms),
        startup_timeout_ms: Keyword.get(opts, :startup_timeout_ms, @default_startup_timeout_ms)
-     }}
+     })}
+  end
+
+  defp open_port(%{program: {executable, arguments}} = state) do
+    port =
+      Port.open({:spawn_executable, executable}, [
+        :binary,
+        :exit_status,
+        {:packet, 4},
+        args: arguments
+      ])
+
+    %{state | port: port, started_at: now_ms(), last_frame_at: nil}
+  end
+
+  defp port_down(state), do: Reopen.closed(%{state | applied_metadata: nil})
+
+  # The controls in force are applied again on the first frame, as the start's are.
+  defp reopen_port(state),
+    do: open_port(%{state | start_controls: changed_controls(state.controls)})
+
+  defp changed_controls(controls) do
+    initial = initial_controls()
+    Enum.reject(controls, fn {key, value} -> is_nil(value) or initial[key] == value end)
   end
 
   @impl GenServer
@@ -334,7 +364,8 @@ defmodule VisionCore.Camera.LibCamera do
       {:ok, %Frame{} = frame} ->
         frame = %{frame | label: state.label, frame_id: state.frame_id}
         Outputs.publish(state.output, {:camera_frame, frame})
-        {:noreply, apply_start_controls(%{state | last_frame_at: now_ms()})}
+        state = Reopen.delivered(%{state | last_frame_at: now_ms()})
+        {:noreply, apply_start_controls(state)}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
@@ -354,15 +385,26 @@ defmodule VisionCore.Camera.LibCamera do
   end
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
-    Logger.error("#{__MODULE__}[#{state.label}] camera_capture exited with status #{status}")
+    Logger.error(
+      "#{__MODULE__}[#{state.label}] camera_capture exited with status #{status}; " <>
+        "starting it again in #{Reopen.delay_ms(state)} ms"
+    )
 
-    {:stop, {:camera_capture_exit, status}, state}
+    {:noreply, port_down(state)}
+  end
+
+  def handle_info(:reopen, %{port: nil} = state), do: {:noreply, reopen_port(state)}
+
+  def handle_info(:watchdog, %{port: nil} = state) do
+    Process.send_after(self(), :watchdog, @watchdog_interval_ms)
+    {:noreply, state}
   end
 
   def handle_info(:watchdog, state) do
+    Process.send_after(self(), :watchdog, @watchdog_interval_ms)
+
     case stall_verdict(state, now_ms()) do
       :ok ->
-        Process.send_after(self(), :watchdog, @watchdog_interval_ms)
         {:noreply, state}
 
       {:stalled, silent_ms} ->
@@ -370,15 +412,22 @@ defmodule VisionCore.Camera.LibCamera do
           "#{__MODULE__}[#{state.label}] no frame for #{silent_ms} ms; restarting camera_capture"
         )
 
-        {:stop, {:camera_stall, silent_ms}, state}
+        {:noreply, stalled(state)}
 
       {:no_first_frame, waited_ms} ->
         Logger.error(
           "#{__MODULE__}[#{state.label}] no frame #{waited_ms} ms after start; restarting camera_capture"
         )
 
-        {:stop, {:camera_stall, :no_first_frame}, state}
+        {:noreply, stalled(state)}
     end
+  end
+
+  def handle_info(_message, state), do: {:noreply, state}
+
+  defp stalled(state) do
+    PortProcess.close(state.port)
+    port_down(state)
   end
 
   @impl VisionCore.Camera
@@ -399,10 +448,12 @@ defmodule VisionCore.Camera.LibCamera do
   def live(server), do: GenServer.call(server, :live)
 
   @impl GenServer
+  def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
+
   def handle_call({:set_controls, controls}, _from, state) do
     case control_commands(controls) do
       {:ok, commands} ->
-        Enum.each(commands, &Port.command(state.port, &1))
+        send_commands(state.port, commands)
         start_controls = Keyword.drop(state.start_controls, Keyword.keys(controls))
         controls = Map.merge(state.controls, Map.new(controls, &normalise_control/1))
         {:reply, {:ok, controls}, %{state | controls: controls, start_controls: start_controls}}
@@ -414,6 +465,16 @@ defmodule VisionCore.Camera.LibCamera do
 
   def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
   def handle_call(:live, _from, state), do: {:reply, state.applied_metadata, state}
+
+  # Without a Port the controls are kept, and applied once it is open again.
+  defp send_commands(nil, _commands), do: :ok
+
+  defp send_commands(port, commands) do
+    Enum.each(commands, &Port.command(port, &1))
+  rescue
+    # The program exited, its exit status not handled yet.
+    ArgumentError -> :ok
+  end
 
   defp apply_start_controls(%{start_controls: []} = state), do: state
 

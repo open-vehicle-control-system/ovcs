@@ -17,7 +17,7 @@ defmodule VisionCore.Camera.Calibration do
   """
   require Logger
 
-  alias VisionCore.Camera.Unit
+  alias VisionCore.Camera.{StoredFile, Unit}
   alias VisionCore.Outputs
   alias VisionCore.Ros2.CameraCalibration
 
@@ -59,7 +59,7 @@ defmodule VisionCore.Camera.Calibration do
       {:ok,
        %{
          source: source(camera, stored?),
-         stored_at: if(stored?, do: written_at(settings.calibration_store_path)),
+         stored_at: if(stored?, do: StoredFile.written_at(settings.calibration_store_path)),
          can_reset: stored? and built_in?(settings),
          camera: camera,
          error: error
@@ -79,7 +79,7 @@ defmodule VisionCore.Camera.Calibration do
       yaml = CameraCalibration.to_yaml(calibration, Atom.to_string(name))
 
       locked(name, fn ->
-        with :ok <- write(path, yaml), do: changed(name)
+        with :ok <- StoredFile.write(path, yaml, __MODULE__), do: changed(name)
       end)
     end
   end
@@ -90,7 +90,7 @@ defmodule VisionCore.Camera.Calibration do
     with {:ok, settings} <- settings(config, name) do
       locked(name, fn ->
         with :ok <- check_resettable(settings),
-             :ok <- remove(settings.calibration_store_path),
+             :ok <- StoredFile.remove(settings.calibration_store_path, __MODULE__),
              do: changed(name)
       end)
     end
@@ -118,21 +118,16 @@ defmodule VisionCore.Camera.Calibration do
         {%{path: path, calibration: nil, yaml: nil}, nil}
 
       {:error, reason} ->
-        {%{path: path, calibration: nil, yaml: nil}, "cannot read #{path}: #{file_error(reason)}"}
+        {%{path: path, calibration: nil, yaml: nil},
+         "cannot read #{path}: #{StoredFile.file_error(reason)}"}
     end
   end
 
   defp parse(path, yaml) do
-    calibration = CameraCalibration.parse(yaml)
-
-    case CameraCalibration.check_matrices(calibration) do
-      :ok -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
+    case CameraCalibration.parse(yaml) do
+      {:ok, calibration} -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
       {:error, message} -> {%{path: path, calibration: nil, yaml: yaml}, "#{path}: #{message}"}
     end
-  rescue
-    exception ->
-      {%{path: path, calibration: nil, yaml: yaml},
-       "cannot parse #{path}: #{Exception.message(exception)}"}
   end
 
   defp source(%{calibration: nil}, _stored?), do: :none
@@ -144,13 +139,6 @@ defmodule VisionCore.Camera.Calibration do
 
   defp built_in?(%{built_in_calibration_path: nil}), do: false
   defp built_in?(%{built_in_calibration_path: path}), do: File.exists?(path)
-
-  defp written_at(path) do
-    case File.stat(path, time: :posix) do
-      {:ok, stat} -> DateTime.from_unix!(stat.mtime)
-      {:error, _reason} -> nil
-    end
-  end
 
   defp writable_path(settings) do
     case settings.calibration_store_path || settings.built_in_calibration_path do
@@ -170,28 +158,5 @@ defmodule VisionCore.Camera.Calibration do
     end
   end
 
-  defp write(path, yaml) do
-    temporary = path <> ".tmp"
-
-    with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(temporary, yaml, [:sync]),
-         :ok <- File.rename(temporary, path) do
-      Logger.info("#{__MODULE__} wrote #{byte_size(yaml)} B → #{path}")
-    else
-      {:error, reason} ->
-        File.rm(temporary)
-        {:error, "cannot write #{path}: #{file_error(reason)}"}
-    end
-  end
-
-  defp remove(path) do
-    case File.rm(path) do
-      :ok -> Logger.info("#{__MODULE__} removed #{path}")
-      {:error, reason} -> {:error, "cannot remove #{path}: #{file_error(reason)}"}
-    end
-  end
-
   defp changed(name), do: Outputs.publish(changed_key(name), {:camera_calibration_changed, name})
-
-  defp file_error(reason), do: reason |> :file.format_error() |> List.to_string()
 end

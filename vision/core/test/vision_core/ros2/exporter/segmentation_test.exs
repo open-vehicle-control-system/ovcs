@@ -55,15 +55,22 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
   defp by_topic(messages),
     do: Map.new(messages, fn {topic, _module, message} -> {topic, message} end)
 
-  test "publishes on <prefix>/<name>/labels, camera_info, road/points and off_road/points" do
+  test "publishes on <name>/labels, camera_info, road/points and off_road/points" do
+    settings = settings()
+
+    assert settings.labels_topic == "road/labels"
+    assert settings.camera_info_topic == "road/camera_info"
+    assert settings.road_topic == "road/road/points"
+    assert settings.off_road_topic == "road/off_road/points"
+  end
+
+  test "publishes under <prefix>/<name>/ with a :topic_prefix" do
     settings = settings(topic_prefix: "front")
 
     assert settings.labels_topic == "front/road/labels"
     assert settings.camera_info_topic == "front/road/camera_info"
     assert settings.road_topic == "front/road/road/points"
     assert settings.off_road_topic == "front/road/off_road/points"
-
-    assert Segmentation.new(pipeline: :lanes).labels_topic == "stereo/lanes/labels"
   end
 
   test "refuses an option it does not take" do
@@ -73,7 +80,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
   end
 
   test "the label image is a mono8 image of the grid's class ids, in the camera's frame at its capture time" do
-    assert [{"stereo/road/labels", Image, image} | _others] =
+    assert [{"road/labels", Image, image} | _others] =
              Segmentation.messages(frame(), labels(), clouds(), settings())
 
     assert image == %Image{
@@ -94,8 +101,8 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
     assert [
              _labels,
              _camera_info,
-             {"stereo/road/road/points", PointCloud2, road},
-             {"stereo/road/off_road/points", PointCloud2, off_road}
+             {"road/road/points", PointCloud2, road},
+             {"road/off_road/points", PointCloud2, off_road}
            ] = Segmentation.messages(frame(), labels(), clouds(), settings())
 
     header = %Header{
@@ -120,7 +127,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
   end
 
   test "a result without clouds publishes its label image and its camera info alone" do
-    assert [{"stereo/road/labels", Image, _image}, {"stereo/road/camera_info", CameraInfo, _info}] =
+    assert [{"road/labels", Image, _image}, {"road/camera_info", CameraInfo, _info}] =
              Segmentation.messages(frame(), labels(), nil, settings())
   end
 
@@ -129,27 +136,27 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
     messages = by_topic(Segmentation.messages(frame(), labels(), empty, settings()))
 
     assert %PointCloud2{width: 0, row_step: 0, data: <<>>} =
-             road = messages["stereo/road/road/points"]
+             road = messages["road/road/points"]
 
-    assert %PointCloud2{width: 0} = messages["stereo/road/off_road/points"]
+    assert %PointCloud2{width: 0} = messages["road/off_road/points"]
     assert is_binary(PointCloud2.encode(road))
   end
 
   test "a frame or a pair without a frame id takes the camera's and the stereo left one's" do
     messages = by_topic(Segmentation.messages(frame(nil), labels(), clouds(nil), settings()))
 
-    assert messages["stereo/road/labels"].header.frame_id == "hq_frame"
-    assert messages["stereo/road/camera_info"].header.frame_id == "hq_frame"
-    assert messages["stereo/road/road/points"].header.frame_id == "front_left"
-    assert messages["stereo/road/off_road/points"].header.frame_id == "front_left"
+    assert messages["road/labels"].header.frame_id == "hq_frame"
+    assert messages["road/camera_info"].header.frame_id == "hq_frame"
+    assert messages["road/road/points"].header.frame_id == "front_left"
+    assert messages["road/off_road/points"].header.frame_id == "front_left"
   end
 
-  test "frame ids default to the camera's optical frame and the prefix's left one" do
+  test "frame ids default to the camera's optical frame and the default stereo unit's left one" do
     settings = Segmentation.new(pipeline: :road, camera: :hq, topic_prefix: "front")
     messages = by_topic(Segmentation.messages(frame(nil), labels(), clouds(nil), settings))
 
     assert messages["front/road/labels"].header.frame_id == "hq_optical"
-    assert messages["front/road/road/points"].header.frame_id == "front_left"
+    assert messages["front/road/road/points"].header.frame_id == "stereo_left"
   end
 
   describe "the label image's camera info" do
@@ -157,7 +164,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
       calibration =
         calibration("plumb_bob", {8.0, 8.0, 3.5, 2.5}, [0.0, 0.0, 0.0, 0.0, 0.0], {8, 6})
 
-      assert [{_labels, Image, image}, {"stereo/road/camera_info", CameraInfo, info}] =
+      assert [{_labels, Image, image}, {"road/camera_info", CameraInfo, info}] =
                Segmentation.messages(frame(), labels(), nil, settings(calibration: calibration))
 
       assert info.header == image.header
@@ -185,7 +192,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         calibration("plumb_bob", {500.0, 480.0, 499.5, 199.5}, [0.0], {1000, 400}, 2.0)
 
       frame = %Frame{frame() | width: 2000, height: 800}
-      band = Pipeline.band(2000, 800, nil)
+      band = Pipeline.band(2000, 800, 1.0)
       assert band == {0, 0, 2000, 800}
       labels = %{width: 256, height: 128, data: :binary.copy(<<0>>, 256 * 128), band: band}
 
@@ -218,7 +225,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         calibration("plumb_bob", {1161.3, 1161.3, 1013.5, 759.5}, [0.0], {2028, 1520})
 
       frame = %Frame{frame() | width: 1014, height: 760}
-      {x, y, w, h} = band = Pipeline.band(1014, 760, nil)
+      {x, y, w, h} = band = Pipeline.band(1014, 760, 1.0)
       assert band == {0, 253, 1014, 507}
       labels = %{width: 256, height: 128, data: :binary.copy(<<0>>, 256 * 128), band: band}
 
@@ -256,7 +263,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
 
         # Twice the calibration's size: the camera info starts from it resampled to the frame.
         frame = %Frame{frame() | width: 1280, height: 960}
-        {x, y, w, h} = band = Pipeline.band(1280, 960, nil)
+        {x, y, w, h} = band = Pipeline.band(1280, 960, 1.0)
         {grid_w, grid_h} = {256, 128}
         labels = %{width: grid_w, height: grid_h, data: <<>>, band: band}
 

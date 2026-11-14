@@ -13,7 +13,7 @@ defmodule RosBridge.Components do
   ## Components
 
     * `:heartbeat` — `RosBridge.Publishers.Heartbeat` publishing a 1 Hz
-      `std_msgs/String` on `/ovcs_heartbeat`. Opts:
+      `std_msgs/String` on `/<node_name>/heartbeat`. Opts:
         * `:interval_ms` (default `1_000`)
     * `:joy_interpreter` — `RosBridge.Consumers.Joy` subscribing to
       the framework's joystick profiles (`priv/joy`) and forwarding
@@ -108,7 +108,6 @@ defmodule RosBridge.Components do
   def start(:heartbeat, opts) do
     [
       {RosBridge.Publishers.Heartbeat,
-       topic: "ovcs_heartbeat",
        message_module: Ros2Zenoh.StdMsgs.Msg.String,
        interval_ms: Keyword.get(opts, :interval_ms, 1_000),
        build: &heartbeat_message/2}

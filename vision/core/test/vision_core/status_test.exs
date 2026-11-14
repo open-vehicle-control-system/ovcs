@@ -2,7 +2,7 @@ defmodule VisionCore.StatusTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.{Outputs, Status}
+  alias VisionCore.{Outputs, StageTimes, Status}
   alias VisionCore.Stereo.Pair
 
   # Names a stereo unit's cameras, which need not be running.
@@ -84,6 +84,8 @@ defmodule VisionCore.StatusTest do
     assert snapshot.sync == %{present: false}
     assert snapshot.npu == nil
     assert snapshot.depth_hz == 0.0
+    assert snapshot.pipelines == %{stereo: StageTimes.none()}
+    assert snapshot.distances == %{}
   end
 
   @tag :tmp_dir
@@ -165,6 +167,97 @@ defmodule VisionCore.StatusTest do
 
       assert Status.snapshot().sync == %{present: false}
     end
+  end
+
+  describe "the stereo latencies" do
+    alias VisionCore.Stereo.Pairer
+
+    defp stereo_unit, do: config([{:stereo, driver: Camera, left: [], right: []}])
+
+    # A pairer on a clock at 1 s that received a pair captured 5 ms before.
+    defp pair_frames_captured_5_ms_ago do
+      now_ns = fn -> 1_000_000_000 end
+
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
+      )
+
+      for label <- ["left", "right"] do
+        frame = %Frame{label: label, width: 1, height: 1, capture_ns: 995_000_000, grey: <<0>>}
+        Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
+      end
+
+      Pairer.sync()
+    end
+
+    test "each tick reports the pairer's, beside the stereo pipeline's times and not in them" do
+      pair_frames_captured_5_ms_ago()
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 100})
+      :ok = Status.subscribe()
+
+      assert_receive {:vision_status, %{latencies: %{stereo: %{cameras: nil, pairing: nil}}}}
+
+      assert_receive {:vision_status, %{latencies: latencies, pipelines: pipelines}}, 600
+      assert latencies == %{stereo: %{cameras: 5.0, pairing: +0.0}}
+      assert pipelines.stereo == StageTimes.none()
+    end
+
+    test "a snapshot asked between ticks does not take them" do
+      pair_frames_captured_5_ms_ago()
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 60_000})
+
+      assert Status.snapshot().latencies == %{stereo: %{cameras: nil, pairing: nil}}
+      assert Pairer.latencies() == %{cameras: 5.0, pairing: +0.0}
+    end
+
+    test "a tick without a pairer has none" do
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 100})
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      assert_receive {:vision_status, %{latencies: latencies}}, 600
+      assert latencies == %{stereo: %{cameras: nil, pairing: nil}}
+    end
+
+    test "a unit without a stereo component has none" do
+      start_supervised!({Status, config: config([])})
+
+      assert Status.snapshot().latencies == %{}
+    end
+  end
+
+  # A driver that says whether its capture program runs, as it is started with.
+  defmodule ReopeningCamera do
+    use GenServer
+
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def running?(server), do: GenServer.call(server, :running?)
+    def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: opts[:name])
+
+    @impl GenServer
+    def init(opts), do: {:ok, Keyword.fetch!(opts, :running?)}
+
+    @impl GenServer
+    def handle_call(:running?, _from, running?), do: {:reply, running?, running?}
+  end
+
+  test "a camera whose driver waits to start its capture program again is absent" do
+    for {label, running?} <- [{"left", true}, {"right", false}, {"hq", false}] do
+      start_supervised!(
+        {ReopeningCamera, name: ReopeningCamera.name_for(label), running?: running?},
+        id: label
+      )
+    end
+
+    components = [
+      {:stereo, driver: ReopeningCamera, left: [], right: []},
+      {:camera, name: :hq, driver: ReopeningCamera}
+    ]
+
+    start_supervised!({Status, config: config(components)})
+
+    assert %{left: %{present: true}, right: %{present: false}, hq: %{present: false}} =
+             Status.snapshot().cameras
   end
 
   test "a configured Hailo detector that is not running is reported as a failed Hailo-8" do
@@ -809,5 +902,239 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{cpu_percent: cpu, stereo_segment_percent: segment}}, 500
     assert cpu >= 0.0 and cpu <= 100.0
     assert_in_delta segment, 50.0, 15.0
+  end
+
+  describe "the pipelines' times" do
+    defp next_pipelines(name, timeout \\ 1_000) do
+      assert_receive {:vision_status, %{pipelines: pipelines}}, timeout
+
+      if pipelines[name].total_ms == nil,
+        do: next_pipelines(name, timeout),
+        else: pipelines
+    end
+
+    # A pipeline that tells `test` of each call for its steps' times, and answers `times`.
+    defp register_pipeline(name, times, test) do
+      pipeline = spawn(fn -> answer_stage_times(times, test) end)
+      VisionCore.TestProcesses.register(pipeline, name)
+      on_exit(fn -> Process.exit(pipeline, :kill) end)
+    end
+
+    defp answer_stage_times(times, test) do
+      receive do
+        {:"$gen_call", from, :stage_times} ->
+          send(test, :stage_times_taken)
+          GenServer.reply(from, times)
+      end
+
+      answer_stage_times(times, test)
+    end
+
+    test "each tick reports the stereo stages' mean times, a run timed as one as a segment" do
+      start_supervised!({Status, config: config([]), tick_ms: 200})
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, %{pipelines: %{stereo: stereo}}}
+      assert stereo == StageTimes.none()
+
+      for run_ms <- [20.0, 30.0] do
+        stage_ms = %{"rectification+disparity": run_ms, frame_tag: 1.0, total: 99.0}
+        GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: stage_ms}})
+      end
+
+      assert next_pipelines(:stereo).stereo == %{
+               total_ms: 26.0,
+               stages: %{frame_tag: 1.0},
+               segments: [%{stages: [:rectification, :disparity], ms: 25.0}]
+             }
+    end
+
+    test "a run whose stages are timed too counts once in the stereo total" do
+      start_supervised!({Status, config: config([]), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      stage_ms = %{
+        "rectification+disparity": 12.0,
+        rectification: 4.0,
+        disparity: 7.0,
+        total: 40.0
+      }
+
+      GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: stage_ms}})
+
+      assert next_pipelines(:stereo).stereo == %{
+               total_ms: 12.0,
+               stages: %{rectification: 4.0, disparity: 7.0},
+               segments: []
+             }
+    end
+
+    test "a tick without a pair reports no stereo time" do
+      start_supervised!({Status, config: config([]), tick_ms: 100})
+      :ok = Status.subscribe()
+      GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: %{frame_tag: 1.0}}})
+      next_pipelines(:stereo)
+
+      assert_receive {:vision_status, %{pipelines: %{stereo: stereo}}}, 500
+      assert stereo == StageTimes.none()
+    end
+
+    test "each tick reports a detection pipeline's steps' mean times and their sum" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{input: {3.0, 2}, inference: {20.0, 2}, filtering: {0.0, 0}, placement: {1.0, 2}},
+        self()
+      )
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 200}
+      )
+
+      :ok = Status.subscribe()
+
+      assert next_pipelines(:detection).detection == %{
+               total_ms: 12.0,
+               stages: %{input: 1.5, inference: 10.0, filtering: nil, placement: 0.5},
+               segments: []
+             }
+    end
+
+    test "each tick reports a segmentation pipeline's steps' mean times" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road),
+        %{input: {2.0, 2}, inference: {16.0, 2}, classes: {6.0, 2}},
+        self()
+      )
+
+      start_supervised!({Status, config: config([@road_segmenter]), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      assert %{total_ms: 12.0, stages: %{input: 1.0, inference: 8.0, classes: 3.0}} =
+               next_pipelines(:road).road
+    end
+
+    test "a snapshot asked between ticks does not take the pipelines' times" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{input: {3.0, 2}},
+        self()
+      )
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]),
+         tick_ms: 60_000}
+      )
+
+      assert Status.snapshot().pipelines.detection == StageTimes.none()
+      refute_received :stage_times_taken
+    end
+
+    test "a pipeline that does not answer has no time, without stalling the ticks" do
+      silent = spawn(fn -> Process.sleep(:infinity) end)
+
+      VisionCore.TestProcesses.register(
+        silent,
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)
+      )
+
+      on_exit(fn -> Process.exit(silent, :kill) end)
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 100}
+      )
+
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      for _tick <- 1..2 do
+        assert_receive {:vision_status, %{pipelines: %{detection: detection}}}, 600
+        assert detection == StageTimes.none()
+      end
+    end
+
+    test "a pipeline that is not running has no time" do
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 100}
+      )
+
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      assert_receive {:vision_status, %{pipelines: %{detection: detection}}}, 600
+      assert detection == StageTimes.none()
+    end
+  end
+
+  describe "the distances of the pipelines on a camera of their own" do
+    alias VisionCore.Pipelines
+
+    @people_detector {:detector,
+                      name: :people,
+                      backend: VisionCore.Detection.Backend.Stub,
+                      source: {:camera, :hq}}
+
+    # A pipeline that answers `distances` and tells `test` each call it gets.
+    defp register_answering(name, distances, test) do
+      pipeline = spawn(fn -> answer_calls(distances, test) end)
+      VisionCore.TestProcesses.register(pipeline, name)
+      on_exit(fn -> Process.exit(pipeline, :kill) end)
+    end
+
+    defp answer_calls(distances, test) do
+      receive do
+        {:"$gen_call", from, request} ->
+          send(test, {:called, request})
+          if request == :distances, do: GenServer.reply(from, distances)
+      end
+
+      answer_calls(distances, test)
+    end
+
+    test "reports, by each one's name, its camera and why the stereo depth gives it no distance" do
+      register_answering(
+        Pipelines.server(VisionCore.Detection.Pipeline, :people),
+        %{camera: :hq, reason: :no_pose},
+        self()
+      )
+
+      register_answering(
+        Pipelines.server(VisionCore.Segmentation.Pipeline, :road),
+        %{camera: :hq, reason: nil},
+        self()
+      )
+
+      start_supervised!({Status, config: config([@people_detector, @road_segmenter])})
+
+      assert Status.snapshot().distances == %{
+               people: %{camera: :hq, reason: :no_pose},
+               road: %{camera: :hq, reason: nil}
+             }
+    end
+
+    test "asks no pipeline on the stereo pairs, and leaves out one that does not answer" do
+      register_answering(
+        Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{camera: :left, reason: nil},
+        self()
+      )
+
+      silent = spawn(fn -> Process.sleep(:infinity) end)
+
+      VisionCore.TestProcesses.register(
+        silent,
+        Pipelines.server(VisionCore.Detection.Pipeline, :people)
+      )
+
+      on_exit(fn -> Process.exit(silent, :kill) end)
+
+      detectors = [{:detector, backend: VisionCore.Detection.Backend.Stub}, @people_detector]
+      start_supervised!({Status, config: config(detectors), tick_ms: 60_000})
+
+      assert Status.snapshot().distances == %{}
+      refute_received {:called, :distances}
+    end
   end
 end

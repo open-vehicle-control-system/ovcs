@@ -3,8 +3,11 @@ defmodule VisionCore.Exporters do
   Runs the vision unit's exporters (`VisionCore.Exporter`), the
   `:exporters` of its `VisionCore.Config`, each under a
   `VisionCore.Exporter.Supervisor` with a restart budget of its own,
-  `:one_for_one`: an exporter that keeps crashing stops alone, for good,
-  and is logged as stopped. Its child stays in the list, without a
+  `:one_for_one`: an exporter that keeps crashing stops alone, and is
+  logged as stopped. It is started again after `:first_restart_ms`, and
+  when it stops again, after twice the delay before, up to
+  `:max_restart_ms`; one that ran for `:max_restart_ms` starts over from
+  the first delay. Its child stays in the list while stopped, without a
   process, as does an exporter that was not started.
 
   `VisionCore.Application` starts it after the components and before
@@ -18,9 +21,9 @@ defmodule VisionCore.Exporters do
   neither `{module, options}` nor a module, which runs as
   `{module, []}`. The last child, a worker, watches the exporters'
   supervisors to log those that stop because they kept failing, not
-  those stopped on purpose. Why an exporter does not run, refused or
-  failed at start or stopped for failing, is kept for `list/1` while
-  this supervisor runs.
+  those stopped on purpose, and starts them again. Why an exporter does
+  not run, refused or failed at start or stopped for failing, is kept
+  for `list/1` while this supervisor runs.
 
   ## Options
 
@@ -34,6 +37,9 @@ defmodule VisionCore.Exporters do
       the exporters encode on, put in each one's options as
       `:jpeg_codec` unless it has its own. `VisionCore.Application`
       gives `VisionCore.Jpeg.Export`, apart from the pipeline's.
+    * `:first_restart_ms` (`30_000`) and `:max_restart_ms` (`600_000`)
+      — the delay before an exporter that kept failing is started
+      again, the first time and at most.
   """
   use Supervisor
   require Logger
@@ -43,6 +49,8 @@ defmodule VisionCore.Exporters do
   alias VisionCore.Exporters.Watch
 
   @default_status_timeout_ms 200
+  @default_first_restart_ms 30_000
+  @default_max_restart_ms 600_000
   # Why each exporter that does not run stopped; it goes with this supervisor.
   @stops VisionCore.Exporters.Stops
 
@@ -148,6 +156,15 @@ defmodule VisionCore.Exporters do
   @spec stopped(term(), String.t()) :: :ok
   def stopped(id, why) do
     :ets.insert(@stops, {id, why})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  @doc false
+  @spec started(term()) :: :ok
+  def started(id) do
+    :ets.delete(@stops, id)
     :ok
   rescue
     ArgumentError -> :ok
@@ -273,7 +290,13 @@ defmodule VisionCore.Exporters do
       |> elem(0)
       |> Enum.reverse()
 
-    Supervisor.init(exporters ++ [{Watch, self()}], strategy: :one_for_one)
+    watch =
+      {Watch,
+       exporters: self(),
+       first_restart_ms: Keyword.get(opts, :first_restart_ms, @default_first_restart_ms),
+       max_restart_ms: Keyword.get(opts, :max_restart_ms, @default_max_restart_ms)}
+
+    Supervisor.init(exporters ++ [watch], strategy: :one_for_one)
   end
 
   defp exporter_entry({exporter, options}) when is_atom(exporter) and is_list(options) do
@@ -317,11 +340,21 @@ defmodule VisionCore.Exporters.Watch do
   use GenServer
   require Logger
 
-  def start_link(exporters), do: GenServer.start_link(__MODULE__, exporters)
+  def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
 
   @impl GenServer
-  def init(exporters),
-    do: {:ok, %{exporters: exporters, watched: %{}, failing: %{}}, {:continue, :watch}}
+  def init(opts) do
+    state = %{
+      exporters: Keyword.fetch!(opts, :exporters),
+      first_restart_ms: Keyword.fetch!(opts, :first_restart_ms),
+      max_restart_ms: Keyword.fetch!(opts, :max_restart_ms),
+      watched: %{},
+      failing: %{},
+      restarts: %{}
+    }
+
+    {:ok, state, {:continue, :watch}}
+  end
 
   @impl GenServer
   def handle_continue(:watch, state), do: {:noreply, watch(state)}
@@ -332,10 +365,27 @@ defmodule VisionCore.Exporters.Watch do
     {:noreply, state |> stopped(watched, reason) |> watch()}
   end
 
+  def handle_info({:restart, id}, state) do
+    case Supervisor.restart_child(state.exporters, id) do
+      {:ok, pid} when is_pid(pid) ->
+        VisionCore.Exporters.started(id)
+        Logger.info("#{inspect(id)} started again")
+        state = put_in(state.restarts[id].started_ms, System.monotonic_time(:millisecond))
+        {:noreply, watch(state)}
+
+      {:ok, :undefined} ->
+        {_delay_ms, state} = schedule_restart(state, id)
+        {:noreply, state}
+
+      {:error, _running_or_gone} ->
+        {:noreply, state}
+    end
+  end
+
   def handle_info(_message, state), do: {:noreply, state}
 
   defp stopped(state, {id, :exporter, _pid}, reason) do
-    if reason == :shutdown and failing?(state, id), do: gave_up(id)
+    state = if reason == :shutdown and failing?(state, id), do: gave_up(state, id), else: state
     %{state | failing: Map.delete(state.failing, id)}
   end
 
@@ -350,9 +400,34 @@ defmodule VisionCore.Exporters.Watch do
   defp crash?({:shutdown, _reason}), do: false
   defp crash?(reason), do: reason not in [:normal, :shutdown, :noproc]
 
-  defp gave_up(id) do
-    Logger.error("#{inspect(id)} stopped: it kept failing; the vision unit runs on without it")
-    VisionCore.Exporters.stopped(id, "Stopped: it kept failing")
+  defp gave_up(state, id) do
+    {delay_ms, state} = schedule_restart(state, id)
+    seconds = ceil(delay_ms / 1_000)
+
+    Logger.error(
+      "#{inspect(id)} stopped: it kept failing; the vision unit runs on without it, " <>
+        "and starts it again in #{seconds} s"
+    )
+
+    VisionCore.Exporters.stopped(id, "Stopped: it kept failing; it starts again in #{seconds} s")
+    state
+  end
+
+  # Twice the delay before, unless the exporter ran for the longest delay since.
+  defp schedule_restart(state, id) do
+    delay_ms = restart_delay_ms(state, state.restarts[id])
+    Process.send_after(self(), {:restart, id}, delay_ms)
+    {delay_ms, put_in(state.restarts[id], %{delay_ms: delay_ms, started_ms: nil})}
+  end
+
+  defp restart_delay_ms(state, nil), do: state.first_restart_ms
+
+  defp restart_delay_ms(state, %{delay_ms: delay_ms, started_ms: started_ms}) do
+    ran_ms = started_ms && System.monotonic_time(:millisecond) - started_ms
+
+    if ran_ms && ran_ms >= state.max_restart_ms,
+      do: state.first_restart_ms,
+      else: min(delay_ms * 2, state.max_restart_ms)
   end
 
   # Monitors each exporter supervisor and child not yet watched; a child seen running is not failing.

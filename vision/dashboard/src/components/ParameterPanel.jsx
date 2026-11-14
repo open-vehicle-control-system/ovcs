@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 import { computeTags } from '../compute.js'
+import { useExplanations } from '../stores/explanations.js'
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.valueType === 'integer' ? 1 : rangeStep(parameter))
@@ -48,23 +49,24 @@ function useChangedValues(groupId, members) {
   return { changed, commit: (id, value) => committed.current.set(id, value) }
 }
 
-/** The group's summary, with its explanation behind a toggle that stays as set from one group to the next. */
-function Summary({ summary, explanation }) {
+/** The group's summary, with its explanation behind a toggle on a line of its own, under it, open or not for that group alone. */
+function Summary({ groupId, summary, explanation }) {
   const explanationId = useId()
-  const [open, setOpen] = useState(false)
+  const open = useExplanations((state) => state.open[groupId] ?? false)
+  const toggle = useExplanations((state) => state.toggle)
   if (!summary && !explanation) return null
 
   return (
     <>
-      <p className="mt-3 text-sm text-ovcs-text">
-        {summary}
-        {explanation ? (
+      <p className="mt-3 text-sm text-ovcs-text">{summary}</p>
+      {explanation ? (
+        <div className="mt-1 flex text-sm">
           <button
             type="button"
             aria-expanded={open}
             aria-controls={explanationId}
-            onClick={() => setOpen((shown) => !shown)}
-            className={`ml-2 inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
+            onClick={() => toggle(groupId)}
+            className={`inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
           >
             How it works
             <svg
@@ -76,8 +78,8 @@ function Summary({ summary, explanation }) {
               <path d="M6 3.5 10.5 8 6 12.5Z" />
             </svg>
           </button>
-        ) : null}
-      </p>
+        </div>
+      ) : null}
       {explanation ? (
         <p id={explanationId} data-explanation hidden={!open} className="mt-1.5 text-sm leading-relaxed text-ovcs-muted">
           {explanation}
@@ -141,7 +143,7 @@ export default function ParameterPanel({ groupId }) {
           Reset <span translate="no">{group.name}</span>
         </button>
       </div>
-      <Summary summary={group.summary} explanation={group.explanation} />
+      <Summary groupId={group.id} summary={group.summary} explanation={group.explanation} />
       <p aria-live="polite" className="sr-only">
         {changed}
       </p>

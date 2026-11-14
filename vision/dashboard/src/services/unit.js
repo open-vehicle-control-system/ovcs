@@ -7,7 +7,7 @@ const related = (document, name) => {
     .filter(Boolean)
 }
 
-/** The unit's ROS 2 node: `name`, `zenohEndpoint`, `connected`, its `topics` and its `services`. */
+/** The unit's ROS 2 node: `name`, `zenohEndpoint`, `connected`, `clockSynchronized`, `dropsBeforeClockSynchronized`, its `topics` and its `services`. */
 export async function fetchRos2Node() {
   const document = await request('ros2-node?include=topics,services')
   return { ...document.data.attributes, topics: related(document, 'topics'), services: related(document, 'services') }
@@ -40,6 +40,9 @@ export async function fetchExporters() {
   return document.data.map((resource) => ({ id: resource.id, ...resource.attributes }))
 }
 
+// An action may gather a file before it answers.
+const ACTION_TIMEOUT_MS = 60000
+
 const FILENAME = /filename="([^"]*)"/
 const JSON_ANSWER = /^application\/(vnd\.api\+)?json\b/
 
@@ -62,6 +65,7 @@ export function runExporterAction(id, name) {
   return request(`exporters/${encodeURIComponent(id)}/actions/${encodeURIComponent(name)}`, {
     method: 'POST',
     body: { data: { type: 'exporter-actions' } },
-    answer: answerAction
+    answer: answerAction,
+    timeoutMs: ACTION_TIMEOUT_MS
   })
 }

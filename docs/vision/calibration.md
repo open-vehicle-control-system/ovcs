@@ -9,7 +9,7 @@ The examples use the OVCS Mini reference vehicle's vision unit; everything works
 
 ## Calibrate from the dashboard
 
-Open the dashboard (`https://<vehicle>-vision.local`) and choose **Stereo cameras** in the menu's **Calibration** section, or go to `?calibration=<id>`, the stereo unit's prefix. The page shows the calibration in use; **Calibrate again**, or **Calibrate** on a unit without one, opens the steps of a new one in a dialog. You need nothing but the unit, a browser and the board.
+Open the dashboard (`https://<vehicle>-vision.local`) and choose **Calibration** under **Stereo cameras** in the menu's **Cameras** section, or go to `?calibration=<id>`, the stereo unit's prefix. The page shows the calibration in use; **Calibrate again**, or **Calibrate** on a unit without one, opens the steps of a new one in a dialog. You need nothing but the unit, a browser and the board.
 
 The unit holds one calibration session, shared by every dashboard: a second browser on the page sees the same capture and can carry it on. The unit looks for the board only while a dashboard has the Calibration page open, 15 times a second at most, so calibrating costs nothing when no one is. Closing the page stops the detection and keeps the samples; opening it again shows the capture where it was.
 
@@ -55,11 +55,11 @@ Next to them, the **Distance between cameras (baseline)** and the **Focal length
 
 ## A camera of its own
 
-A unit with a camera of its own, such as the OVCS1 reference vehicle's center camera, lists it in the menu's **Calibration** section, under **Stereo cameras**, as **Center camera** on the OVCS1. Open it, then follow the same steps: the page shows that camera alone, a view becomes a sample when the camera sees the board, and the result has one reprojection error and no baseline.
+A unit with a camera of its own, such as the OVCS1 reference vehicle's center camera, lists it in the menu's **Cameras** section after **Stereo cameras**, as **Center camera** on the OVCS1. Open **Calibration** under it, then follow the same steps: the page shows that camera alone, a view becomes a sample when the camera sees the board, and the result has one reprojection error and no baseline.
 
-The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once. The camera's detection and segmentation pipelines read the calibration when they start, so restart the unit for them to take it.
+The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once, and the camera's detection and segmentation pipelines take it from their next image on, without a restart.
 
-The camera's pose relative to the stereo pair is a separate file, its `pose:`, which the page does not write.
+The camera's pose relative to the stereo pair is a calibration of its own, listed under the camera as **Center camera position** on the OVCS1. [Measure the pose](./cameras.md#measure-the-pose) has its steps.
 
 ## Where the calibration lives
 
@@ -79,19 +79,34 @@ The `:stereo` component of your vehicle's vision composer names two places, docu
  right: [...]}
 ```
 
-A commit, from the dashboard or from `cameracalibrator`, writes the store. Once both sides are stored, the stored calibration is the one in force, at every boot, over the built-in one; with one side stored alone, the built-in one stays in force. A commit from the dashboard writes each file whole or not at all, and those commits run one at a time; `cameracalibrator`'s writes each file in place and does not wait for them, so commit from one of the two at a time.
+A commit, from the dashboard or from `cameracalibrator`, writes the store. Once both sides are stored, the stored calibration is the one in force, at every boot, over the built-in one; with one side stored alone, the built-in one stays in force. A commit writes each file whole or not at all, and the commits to one unit run one at a time, from the dashboard and from `cameracalibrator` alike.
 
 Without a `:calibration_store_dir`, a commit writes the built-in files themselves, and there is nothing to go back to. On a workstation, where Mix links your vehicle's `priv` into its build, those are the files in `vehicles/<vehicle>/priv/calibration/`: `git diff` shows the change.
 
-The page says which is in force: **Using the calibration shipped with the firmware**, **Calibrated on this unit** with the time, or **Not calibrated**. Under it, the image size, the focal length, whether the lens distortion is corrected, which a calibration with every distortion coefficient at 0 does not, and for a pair the distance between the cameras; a unit without a calibration shows a dash for each. When a calibration file cannot be read, or its matrices are malformed, the page says why under them and shows that camera without figures; calibrate again, or go back to the firmware's calibration, to replace the file. Beside them, the camera parameters: each camera's `fx`, `fy`, `cx`, `cy` and distortion coefficients, in pixels; **Download** saves the two files in use. **Calibrate again**, or **Calibrate** on a unit without a calibration, opens a dialog that makes a new one in three steps: the board, the capture, the result. The dialog stays open while a session runs, in every browser on the page, until its own buttons end it.
+The page says which is in force: **Using the calibration shipped with the firmware**, **Calibrated on this unit**, or **Not calibrated**. A calibration made on the unit is named under it, with the time it was made. Then come the image size, whether the lens distortion is corrected, which a calibration with every distortion coefficient at 0 does not, and for a pair the distance between the cameras; a unit without a calibration shows a dash for each. When a calibration file cannot be read, or its matrices are malformed, the page says why under them and shows that camera without figures; calibrate again, or go back to the firmware's calibration, to replace the file. The page also lists the camera parameters: each camera's `fx`, `fy`, `cx`, `cy` and distortion coefficients, in pixels. **Download** saves the files in use: on the calibration kept in use, or beside the page's title when none is. **Calibrate again**, or **Calibrate** on a unit without a calibration, opens a dialog that makes a new one in three steps: the board, the capture, the result. The dialog stays open while a session runs, in every browser on the page, until its own buttons end it.
 
-**Go back to the firmware's calibration**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
+### The calibrations kept
+
+The unit keeps every calibration it was given, in its database, beside the parameters you save:
+
+- **Made on this page**: each one applied from the dashboard, with its board, its count of views and its errors.
+- **Made outside this page**: each one it finds in its store that it does not know, as one committed by `cameracalibrator` or stored before the unit kept its calibrations. It is kept when the unit finds it, at the latest when the unit starts.
+
+The page's second part, **Calibrations kept on the unit**, lists those of the calibration shown, the one the unit kept last first, with the time each was made, where, its reprojection errors and a pair's distance between cameras, and marks the one **In use**:
+
+- **Use** puts a calibration back in force: the unit writes its files to the store and takes them, as for a new one. It is refused while a calibration session runs.
+- **Rename** names one, in 1 to 80 characters; a calibration starts with the time it was kept as its name.
+- **Download** saves its YAML files, named as those of the calibration in use.
+- **Delete** removes one after asking. Deleting the calibration in use first takes the unit back to the calibration shipped with the firmware, as its **Use** does; it is refused without one, and while a calibration session runs.
+- **Shipped with the firmware**, the last row while a built-in calibration exists, takes the unit back to it. Nothing kept is removed: the calibration that was in use stays in the list.
+
+A firmware upload keeps the data partition, and with it the store and the calibrations kept; wiping the partition loses them.
 
 ## Install it in your vehicle package
 
 The stored calibration belongs to one unit. To ship it in the firmware, so that a new board, or one whose data partition was wiped, starts calibrated:
 
-1. Get the two files: **Download** on the result before applying it, or on the calibration in use after, or copy them off the unit:
+1. Get the two files: **Download** on the result before applying it, on the calibration in use after, or on a calibration kept, or copy them off the unit:
 
    ```sh
    sftp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml  vehicles/<vehicle>/priv/calibration/
@@ -108,21 +123,21 @@ The stored calibration belongs to one unit. To ship it in the firmware, so that 
    def required_files, do: ["priv/calibration/stereo_left.yaml", "priv/calibration/stereo_right.yaml"]
    ```
 
-4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Go back to the firmware's calibration**; then the page reads Using the calibration shipped with the firmware.
+4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Use** the one **Shipped with the firmware**; then the page reads Using the calibration shipped with the firmware.
 
 A calibration holds for one sensor mode and one lens position. Changing the focus, or the image's aspect ratio, needs a new one; [Stereo vision basics](./basics.md#calibration) says why.
 
 ## The ROS 2 path
 
-`cameracalibrator`, the ROS 2 calibration tool, runs on a workstation in the `calibrator` service of `compose/local/`, reads the unit's raw camera images over Zenoh and shows its own window, with the same coverage bars. Its **COMMIT** sends each camera's calibration to that camera's `set_camera_info` service on the unit, which writes it where the dashboard does, the store, or the calibration path without one, in place rather than through a temporary file, with a refused calibration taken back. With a store, the unit takes the calibration once both sides' files are stored, a side stored by an earlier commit included: a **COMMIT** on one side alone pairs it with whatever the other side holds, so finish it on both sides. The dashboard's Calibration page shows it once taken.
+`cameracalibrator`, the ROS 2 calibration tool, runs on a workstation in the `calibrator` service of `compose/local/`, reads the unit's raw camera images over Zenoh and shows its own window, with the same coverage bars. Its **COMMIT** sends each camera's calibration to that camera's `set_camera_info` service on the unit, which writes it as the dashboard does, to the store, or to the calibration path without one, with a refused calibration taken back. A camera info that is no calibration, as one with a matrix missing a value or without an image size, is refused before anything is written. With a store, the unit takes the calibration once both sides' files are stored, a side stored by an earlier commit included: a **COMMIT** on one side alone pairs it with whatever the other side holds, so finish it on both sides. The dashboard's Calibration page shows it once taken.
 
-It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on by default), a Zenoh router both sides reach, and an X display; the steps are in [`compose/local/calibration_output/README.md`](../../compose/local/calibration_output/README.md). Use it when you want `cameracalibrator`'s saved samples; otherwise the dashboard needs none of this.
+It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on by default), a Zenoh router both sides reach, and an X display; the steps are in [`compose/local/calibration_output/README.md`](../../compose/local/calibration_output/README.md). A camera of its own is calibrated the same way, in monocular mode: give its name to [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) with `--camera`. Use it when you want `cameracalibrator`'s saved samples; otherwise the dashboard needs none of this.
 
 ## A unit without a calibration
 
-A unit with no calibration file for either camera, such as one for a new vehicle, starts its cameras alone and logs that it is uncalibrated. It computes no depth, and the camera settings are not offered on the dashboard: the cameras run with your composer's options. The dashboard's top bar reads **uncalibrated**, and the Calibration page says that depth starts once a calibration is applied.
+A unit with no calibration file for either camera, such as one for a new vehicle, starts its cameras without the depth pipeline and logs that it is uncalibrated. It computes no depth. The cameras' controls are vision parameters all the same, so set the exposure, the gain and the focus before you calibrate. The dashboard's top bar reads **uncalibrated**, and the Calibration page says that depth starts once a calibration is applied.
 
-Calibrate it from the page. When the unit takes the first calibration, it restarts with its pipeline, as it does on any apply from the page while its pipeline has stopped. A commit from `cameracalibrator` has the running pipeline reload the files, so it is refused on a unit whose pipeline does not run: calibrate such a unit from the page.
+Calibrate it from the page. When the unit takes the first calibration, it restarts with its pipeline, as it does on any apply from the page while its pipeline has stopped. A commit from `cameracalibrator` restarts it the same way, once both sides are committed.
 
 For a new vehicle, leave the calibration files out of `required_files/0` until you have them, or the build fails without them. A unit with only one side's file does not start its cameras at all: add the other side's file or remove the one there.
 

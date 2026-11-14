@@ -23,6 +23,13 @@ defmodule VisionApiWeb do
       use Phoenix.Controller, formats: [json: "JSON", jsonapi: "JSON"]
 
       import Plug.Conn
+
+      @doc false
+      def action(conn, _options) do
+        VisionApiWeb.Core.answer(conn, fn ->
+          apply(__MODULE__, action_name(conn), [conn, conn.params])
+        end)
+      end
     end
   end
 

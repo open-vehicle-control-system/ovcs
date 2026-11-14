@@ -95,7 +95,7 @@ defmodule VisionCore.Components do
         opts |> Detection.pipeline_name() |> Pipelines.name!()
       )
 
-    # Its own budget, and not restarted once it gives up, so a crashing detector cannot exhaust the vision core's.
+    # Its own budget, and restarted by VisionCore.Reviver alone once it gives up, so a crashing detector cannot exhaust the vision core's.
     [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]
   end
 
@@ -106,7 +106,7 @@ defmodule VisionCore.Components do
   def start(:segmenter, opts) do
     id = Pipelines.server(VisionCore.Segmentation.Supervisor, VisionCore.Segmentation.name!(opts))
 
-    # Its own budget, and not restarted once it gives up, as a detector.
+    # Its own budget, and restarted by VisionCore.Reviver alone once it gives up, as a detector.
     [
       Supervisor.child_spec({VisionCore.Segmentation.Supervisor, opts},
         id: id,
@@ -127,7 +127,7 @@ defmodule VisionCore.Components do
   end
 
   def start(:stereo, opts) do
-    # Not restarted once it gives up, so a dead camera cannot exhaust the vision core's budget.
+    # Restarted by VisionCore.Reviver alone once it gives up, so a crashing unit cannot exhaust the vision core's budget.
     [Supervisor.child_spec({VisionCore.Stereo.Supervisor, opts}, restart: :transient)]
   end
 end

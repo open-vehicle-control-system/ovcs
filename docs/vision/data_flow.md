@@ -43,16 +43,16 @@ A Port's row below names the process that owns it.
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
-| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
-| Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Supervisor`, on a unit with a stereo pair or a camera of its own to calibrate |
+| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the stereo cameras do and their sync, [`VisionCore.Ros2.Exporter.CameraLive`](../../vision/core/lib/vision_core/ros2/exporter/camera_live.ex) plotting what the cameras of their own apply, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
+| Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Consumers`, on a unit with a stereo pair or a camera of its own to calibrate |
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
 | Segmentation pipeline, one per segmenter | [`VisionCore.Segmentation.Pipeline`](../../vision/core/lib/vision_core/segmentation/pipeline.ex), with [`VisionCore.Segmentation.Live`](../../vision/core/lib/vision_core/segmentation/live.ex) passing its label grids to the dashboard | `VisionCore.Segmentation.Supervisor`, one per pipeline |
 | `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |
-| Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
-| Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
-| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` |
+| Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Consumers` |
+| Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Consumers` |
+| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` for the first, `VisionCore.Consumers` for the pool |
 
 The drivers, the Pipeline and the detection and segmentation pipelines publish their frames, pairs, detections and label grids through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
 
@@ -61,7 +61,9 @@ The drivers, the Pipeline and the detection and segmentation pipelines publish t
 - The Pairer waits on the Pipeline.
 - The process that declares the unit's parameters applies their values to the drivers and the Pipeline when it starts.
 
-The unit has its own restart budget. A camera that keeps failing stops the unit and leaves the rest of the vision core running.
+A camera's capture program that exits or stops delivering does not restart the unit. Its driver stays up, starts the program again after 1 s, then 2, 5, 10 and 30 s while it keeps failing, and the status reports the camera absent meanwhile. The processes reading its frames keep their subscriptions.
+
+The unit has its own restart budget. Children that keep crashing stop the unit and leave the rest of the vision core running. [`VisionCore.Reviver`](../../vision/core/lib/vision_core/reviver.ex) starts a unit that is down again, once a minute, so a unit comes back without a reboot once what made it fail is gone.
 
 ## One pair, step by step
 
@@ -88,7 +90,13 @@ With a compiled segment first, as on the C100, the Pipeline overlaps differently
 
 ## What leaves the unit
 
-The exporters take the unit's outputs out of it; see [Exporters](#exporters). The ROS 2 exporter publishes them over Zenoh as ROS 2 messages, under its `:topic_prefix`. By default that is the stereo unit's `:prefix`, `stereo`:
+The exporters take the unit's outputs out of it; see [Exporters](#exporters). The ROS 2 exporter publishes them over Zenoh as ROS 2 messages, each part when its option is given:
+
+- The stereo unit's topics are under its `:prefix`, `stereo` by default: `<prefix>` below.
+- A camera of its own's topics are under its name: `<camera>`.
+- A detection or segmentation pipeline's topics are under its name, whatever camera it reads: `<pipeline>`. A detector without a name is the pipeline `detection`.
+
+A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`.
 
 | Topic | Content |
 |---|---|
@@ -98,13 +106,23 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 | `<prefix>/depth/image_rect` | The depth as a 16UC1 image of millimetres, 0 where there is no measurement: the ROS depth-image convention, at half the bytes of 32-bit metres. |
 | `<prefix>/depth/camera_info` | The left camera's rectified intrinsics, next to the depth image so viewers can project it. |
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
-| `<prefix>/<pipeline>/detections`, `<prefix>/<pipeline>/detections/markers`, `<prefix>/<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A detector without a name is the pipeline `detection`. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
-| `<prefix>/<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
-| `<prefix>/<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
-| `<prefix>/<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
-| `<prefix>/<pipeline>/road/points`, `<prefix>/<pipeline>/off_road/points` | The segmentation pipeline `<pipeline>`'s stereo points in a road cell and in any other cell, as `sensor_msgs/PointCloud2` in the stereo left optical frame. They are stamped with their stereo pair's capture time, as `<prefix>/points` is, so syncing them with the label image takes an approximate-time policy. None is published for a frame without a matched stereo pair. None is published either when the camera's calibration or pose is missing, or its calibration cannot be projected at the frame's size. |
+| `<prefix>/<side>/exposure_us`, `<prefix>/<side>/analogue_gain` | `std_msgs/Float64`, five times a second: the exposure in microseconds and the analogue gain each camera applied, for plotting. |
+| `<prefix>/sync_offset_ms` | `std_msgs/Float64`, five times a second: the median time between the two cameras' frames since the last one, right minus left. |
+| `/diagnostics` | `diagnostic_msgs/DiagnosticArray`, every second: what each stereo camera applied, and the pair's sync. |
+| `<camera>/image_raw/compressed`, `<camera>/camera_info` | A camera of its own's image and calibration; [On ROS 2](./cameras.md#on-ros-2) describes them. |
+| `<camera>/image_raw/h264` | With `videos:`, each frame of a camera's H.264 output, as `foxglove_msgs/CompressedVideo`. |
+| `<camera>/exposure_us`, `<camera>/analogue_gain` | As the stereo cameras', for a camera whose driver reports them, such as `VisionCore.Camera.V4L2Single`. |
+| `/tf_static` | Each camera of its own's pose, from the stereo left camera's frame. |
+| `<pipeline>/detections`, `<pipeline>/detections/markers`, `<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
+| `<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
+| `<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
+| `<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
+| `<pipeline>/road/points`, `<pipeline>/off_road/points` | The segmentation pipeline `<pipeline>`'s stereo points in a road cell and in any other cell, as `sensor_msgs/PointCloud2` in the stereo left optical frame. They are stamped with their stereo pair's capture time, as `<prefix>/points` is, so syncing them with the label image takes an approximate-time policy. None is published for a frame without a matched stereo pair. None is published either when the camera's calibration or pose is missing, or its calibration cannot be projected at the frame's size. |
+| `<node_name>/heartbeat` | `std_msgs/String`, every second by default: the node's name and a count, so a consumer sees the unit alive when nothing else flows. `/ovcs_vision/heartbeat` under the default node name. |
 
-A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline). Segmentation pipelines are published only with the exporter's `segmentation:` option: those its `pipelines:` lists, or without `pipelines:` every one on a camera. Clouds whose pair carries no frame id, the stereo unit's left camera having been given none, are in `<prefix>_left`.
+The unit answers `sensor_msgs/srv/SetCameraInfo` on `<prefix>/<side>/set_camera_info` for each stereo side and on `<camera>/set_camera_info` for each camera of its own ([A new calibration](#a-new-calibration)). Its parameter services are under its node name, as `/ovcs_vision/list_parameters`.
+
+A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline). Segmentation pipelines are published only with the exporter's `segmentation:` option: those its `pipelines:` lists, or without `pipelines:` every one on a camera. Clouds and detections whose pair carries no frame id, the stereo unit's left camera having been given none, are in `<prefix>_left`.
 
 `VisionCore.Ros2.Exporter.Stereo`'s documentation lists the topics that are off unless you turn them on, such as the rectified images. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./README.md#dashboard-and-api)).
 
@@ -141,14 +159,17 @@ An exporter can also declare **actions**: things people ask of it, rather than o
 
 An action answers a JSON result, an error or a file to download. It may answer later than it was asked, as an export that spans many pairs does. [`VisionCore.Debug.Exporter`](../../vision/core/lib/vision_core/debug/exporter.ex) is the one that ships with the core. Its `export` action returns a zip of a burst of pairs and the unit's state, for [tuning the unit's parameters](./tuning.md).
 
-[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components in `VisionCore.Supervisor`. It starts before the Preview and before the Status, which reports the exporters' statuses. It runs each exporter under a supervisor with its own restart budget:
+[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components, under [`VisionCore.Consumers`](../../vision/core/lib/vision_core/consumers.ex). That supervisor holds what reads the outputs: the exporters and their JPEG codec, the calibration session, the Status, the Preview and the videos. It has its own restart budget, so consumers that keep crashing stop together and leave the cameras and pipelines running, until the Reviver starts them again.
+
+The exporters start before the Preview and before the Status, which reports the exporters' statuses. Each exporter runs under a supervisor with its own restart budget:
 
 - An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts. It does not delay the rest of the unit.
-- An exporter that keeps crashing stops alone, permanently, with an error logged. The cameras, the pipelines and the other exporters keep running.
+- An exporter that fails on a value, by raising or exiting, keeps running: the value is not exported, the failure is logged once while it lasts, and the exporter's status is a warning until a value of that output is exported again.
+- An exporter whose processes keep crashing stops alone, with an error logged, and is started again after 30 seconds, then after twice the delay before each time it stops again, up to 10 minutes. The cameras, the pipelines and the other exporters keep running.
 
 The ROS 2 link stays in the unit's core, before the components: the simulator clock holds every stamp back until the first `/clock`, and a `VisionCore.Ros2.Camera` reads its frames through the Zenoh session. The Zenoh client opens its session in the background. A router that does not answer therefore delays neither the unit's start nor the processes that register with the client.
 
-The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), publishes the topics above, the cameras' diagnostics and a heartbeat, each part when its option is given. It also answers `cameracalibrator`'s commit. A calibration the stereo unit refuses is taken back: the file holds what it held before, and the commit is answered as failed.
+The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), publishes the topics above, the cameras' diagnostics and a heartbeat, each part when its option is given. It also answers `cameracalibrator`'s commit, through the path of [A new calibration](#a-new-calibration). A request that does not decode, a camera info that is no calibration and a calibration the stereo unit refuses are each answered as failed, the files as they were.
 
 Each time it starts, it reads the stereo unit's cameras in the configuration, the calibration a commit stored first. The camera info it publishes is therefore the calibration the stereo unit uses.
 
@@ -156,14 +177,16 @@ Each time it starts, it reads the stereo unit's cameras in the configuration, th
 
 ## A new calibration
 
-A new calibration from the dashboard's Calibration page, and the return to the built-in one, go through [`VisionCore.Stereo.Calibration`](../../vision/core/lib/vision_core/stereo/calibration.ex):
+A new calibration, from the dashboard's Calibration page or from `cameracalibrator`'s commit, and the return to the built-in one, go through [`VisionCore.Stereo.Calibration`](../../vision/core/lib/vision_core/stereo/calibration.ex):
 
-1. **Write.** Each camera's YAML goes to the stereo unit's calibration store, or to its calibration path without one, through a temporary file renamed over it, so a file is never half written; both temporary files are written before the first rename. Commits to one unit run one at a time.
+1. **Write.** Each camera's YAML goes to the stereo unit's calibration store, or to its calibration path without one, through a temporary file renamed over it, so a file is never half written; both temporary files are written before the first rename. Commits to one unit run one at a time, whichever of the two they come from.
 2. **Take.** The Pipeline reloads the files and rectifies the next pairs with them. A unit whose Pipeline is not running, because it has no calibration or has given up, is restarted instead and starts with its Pipeline.
 3. **Take back.** When the unit refuses the calibration, each file goes back to what it held, or is removed when there was none, and the commit answers the error. When the reload fails without an answer, as one that takes more than 30 seconds, the files go back too, and the Pipeline reloads the calibration then in force.
 4. **Tell.** A calibration the unit takes is published through `VisionCore.Outputs` as `{:stereo_calibration_changed, prefix}`, under the key `{:stereo_calibration, prefix}` (`VisionCore.Stereo.Calibration.changed_key/1`). The ROS 2 exporter then reads its camera info again, and the dashboard's calibration channel pushes the calibration in use.
 
-`cameracalibrator`'s commit takes another path, [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex), one camera at a time: it writes that camera's file in place, to the same store or calibration path, has the Pipeline reload it, and puts the file back when the Pipeline refuses it. With a store, the unit takes the calibration once both cameras' files are stored, a side stored by an earlier commit included, so a COMMIT is best finished on both sides. It does not wait for a commit from the dashboard to end, so use one path at a time. The ROS 2 exporter publishes the same change once the unit took it.
+`cameracalibrator` commits one camera at a time, to its `set_camera_info` service, [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex). The service checks that the camera info is a calibration: matrices with all their values, positive focal lengths, an image size, and as many distortion coefficients as its model takes. It then writes that side as above. With a store, the unit takes the calibration once both cameras' files are stored, a side stored by an earlier commit included, so a COMMIT is best finished on both sides. A side stored alone is written and told, and the unit runs on as it was.
+
+A camera of its own takes the same steps through [`VisionCore.Camera.Calibration`](../../vision/core/lib/vision_core/camera/calibration.ex), from the page or from its `set_camera_info` service. Its change is published as `{:camera_calibration_changed, name}`. Its pose, measured on the page, goes through [`VisionCore.Camera.Pose`](../../vision/core/lib/vision_core/camera/pose.ex) the same way, published as `{:camera_pose_changed, name}`; the pipelines on the camera and the ROS 2 exporter read it again.
 
 The calibration session finds the board in the cameras' frames, which it reads from `VisionCore.Outputs` like any subscriber, from a session's start to its end, so it works on a unit without a calibration, whose cameras run without the Pipeline. It looks only while a dashboard has the Calibration page open. [Calibrate the cameras](./calibration.md) covers the steps.
 
@@ -173,7 +196,7 @@ The dashboard opens one channel per preview: `preview:left`, `preview:right` and
 
 Each preview encodes apart from the others, one frame at a time. A slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one.
 
-The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports. Set its size with `jpeg: [ports: n]` in your vehicle's `VisionCore.Config`, 3 by default.
+The previews and the exporters, the ROS 2 exporter's images among them, share a pool of `jpeg_codec` Ports. The ROS 2 exporter encodes each image apart from its other outputs: while a raw image waits for its JPEG, the depth, the point cloud and the detections keep going out, and that camera's next frames wait, the newest replacing the others. Set its size with `jpeg: [ports: n]` in your vehicle's `VisionCore.Config`, 3 by default.
 
 Each encode runs on a free Port. Once every Port is busy, the encodes wait their turn in the order they came, so neither the previews nor the exporters starve the other. More Ports encode more at once, each taking a CPU core while it encodes.
 

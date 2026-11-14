@@ -15,6 +15,43 @@ defmodule VisionApiWeb.JsonApi do
   @spec put_media_type(Plug.Conn.t(), term()) :: Plug.Conn.t()
   def put_media_type(conn, _opts), do: put_resp_content_type(conn, @media_type, nil)
 
+  @doc """
+  Plug answering a 400 to a request whose path parameters are not all
+  valid UTF-8: such a text cannot be looked up, nor put in a JSON answer.
+  """
+  @spec check_path(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  def check_path(conn, _opts) do
+    if Enum.all?(conn.path_params, fn {_name, value} -> valid_text?(value) end),
+      do: conn,
+      else: conn |> error(400, "the path is not valid UTF-8") |> halt()
+  end
+
+  @doc """
+  Plug answering a 400 to a query parameter of JSON:API the route does
+  not support: `sort`, and `include` on a route without
+  `private: %{jsonapi_include: true}`.
+  """
+  @spec check_query(Plug.Conn.t(), term()) :: Plug.Conn.t()
+  def check_query(conn, _opts) do
+    conn = fetch_query_params(conn)
+    supported = if conn.private[:jsonapi_include], do: ["include"], else: []
+
+    case Enum.find(["include", "sort"] -- supported, &is_map_key(conn.query_params, &1)) do
+      nil ->
+        conn
+
+      parameter ->
+        conn
+        |> error(400, "#{parameter} is not supported on this route",
+          source: %{parameter: parameter}
+        )
+        |> halt()
+    end
+  end
+
+  defp valid_text?(value) when is_binary(value), do: String.valid?(value)
+  defp valid_text?(values) when is_list(values), do: Enum.all?(values, &valid_text?/1)
+
   @doc "The request's document: its JSON body, `%{}` for a body that is not JSON."
   @spec document(Plug.Conn.t()) :: map()
   def document(%Plug.Conn{body_params: %Plug.Conn.Unfetched{}}), do: %{}
@@ -42,6 +79,35 @@ defmodule VisionApiWeb.JsonApi do
 
   def check_identity(_data, _type, _id),
     do: {:error, 400, "data is required", [source: "/data"]}
+
+  @doc """
+  The resource object of `document`, a write creating a resource of
+  `type` that the unit names: `{:ok, data}`, or the refusal `refuse/2`
+  sends, a 403 for an id of the client's, a 409 for another `type` and a
+  400 without one.
+  """
+  @spec fetch_created(term(), String.t()) :: {:ok, map()} | refusal()
+  def fetch_created(%{"data" => %{"type" => type, "id" => _id}}, type), do: client_id_refusal()
+  def fetch_created(%{"data" => %{"type" => type} = data}, type), do: {:ok, data}
+
+  def fetch_created(%{"data" => %{"type" => _other}}, type),
+    do: {:error, 409, "type must be #{type}", [source: "/data/type"]}
+
+  def fetch_created(_document, _type),
+    do: {:error, 400, "data with a type is required", [source: "/data"]}
+
+  @doc "The attribute `name` of `data`, a write's resource object, or the 400 `refuse/2` sends without it."
+  @spec fetch_attribute(term(), String.t()) :: {:ok, term()} | refusal()
+  def fetch_attribute(%{"attributes" => %{} = attributes}, name)
+      when is_map_key(attributes, name),
+      do: {:ok, Map.fetch!(attributes, name)}
+
+  def fetch_attribute(_data, name),
+    do: {:error, 400, "data.attributes.#{name} is required", [source: "/data/attributes/#{name}"]}
+
+  @doc "The id of a resource the unit creates for an action: unique while it runs."
+  @spec action_id() :: String.t()
+  def action_id, do: Integer.to_string(System.unique_integer([:positive, :monotonic]))
 
   @doc "The refusal `error/4` sends for a created resource whose document carries an id of the client's."
   @spec client_id_refusal() :: refusal()
@@ -82,6 +148,10 @@ defmodule VisionApiWeb.JsonApi do
     |> put_media_type([])
     |> send_resp(status, Jason.encode!(%{errors: [error]}))
   end
+
+  @doc "Sends the error object of `refusal`, as `error/4` does."
+  @spec refuse(Plug.Conn.t(), refusal()) :: Plug.Conn.t()
+  def refuse(conn, {:error, status, detail, options}), do: error(conn, status, detail, options)
 
   defp source(pointer) when is_binary(pointer), do: %{pointer: pointer}
   defp source(source) when is_map(source), do: source

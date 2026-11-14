@@ -11,14 +11,52 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 |---|---|---|
 | Dashboard, depth caption | depth rate | Depth images computed in the last second. |
 | Dashboard, camera captions | fps | Frames each camera delivered in the last second. |
-| Dashboard, top bar | CPU, Load | Busy share of all processor cores over half a second at each read, and the 1, 5 and 15 minute load averages. |
-| Dashboard, bottom bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
+| Dashboard, top bar | CPU, Memory | Busy share of all processor cores over half a second at each read, and the share of the memory in use. The 1, 5 and 15 minute load averages are behind the bar's details button. |
+| Dashboard, bottom bar | Stereo load | Share of each second the pairs spent at the stereo device, from a pair's hand-over to the device's reply. Near 100 %, the stages are the bottleneck. See [Stereo load](#stereo-load). |
+| Dashboard, Cameras and Pipelines menus | each step's time, each pipeline's total, the stereo cameras' and Pairing's latencies | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: they share one time, which the total counts. The latencies are waits, which the total leaves out. See [Step times](#step-times) and [Latencies](#latencies). |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
 | Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
 
 The log goes to the unit's `RingLogger`; read it over SSH with `RingLogger.next`.
 
 When the depth rate is well below the cameras' rate and Stereo load is near 100 %, the stages are the limit. When the depth rate follows the cameras' rate, the cameras are the limit. In a dark room, auto exposure lengthens each frame, and the frame rate drops with it.
+
+## Stereo load
+
+The `status` channel's `stereoLoadPercent` is the share of the last second the pairs spent at the stereo pipeline's device ([Status](./channels.md#status)). A pair's time runs from its hand-over to the device's reply. On a GPU, it includes the upload of the frames and the submission of the work. The download of the pair's outputs is left out: it runs during the next pair's device work.
+
+A compiled segment takes one pair at a time. At 100 %, a pair takes a whole frame period, and the cameras' pairs that come faster are dropped. The dashboard warns from 97 %: at 30 frames a second, that leaves about one pair's time a second.
+
+The stereo load is above the GPU's own busy share, by the upload and the submission of each pair. `mix vision_core.board_bench` gives the GPU's own time per pair ([Measuring a change on the board](#measuring-a-change-on-the-board)).
+
+## Step times
+
+The `status` channel's `pipelines` gives each pipeline's times, averaged over the last second ([Status](./channels.md#status)). They are the work one pair or frame takes: no time spent waiting is counted.
+
+| Pipeline | Step | What its time covers |
+|---|---|---|
+| Stereo | a stage on the BEAM | Its `run` on the pair. |
+| Stereo | the stages of a native segment | Each stage's time in `stereo_match`. The pipeline's total counts the segment once, with its transfer through the pipes. |
+| Stereo | the stages of a compiled segment | One time for the whole run: from the pair's hand-over to the device's reply, plus the download of its outputs. The next pair's time leaves out the device work that ran beside that download, so each download counts once. |
+| Detection, segmentation | `input` | Preparing the image and handing it to the backend. |
+| Detection, segmentation | `inference` | From the image handed over to the backend's reply: the Port's read of the image, its resize, the model and the decoding. |
+| Detection | `filtering`, `placement` | Keeping the detections to pass on, then placing and outlining them. |
+| Segmentation | `classes` | Sorting the stereo points into road and off-road. |
+
+A compiled segment runs its stages as one function on the device, so they cannot be timed apart ([Nx: the stages as tensor programs](./compute.md#nx-the-stages-as-tensor-programs)): its time counts in the pipeline's total, and no stage of it has one of its own. The Pipelines menu shows that time once for all its stages, with where they run. `npu.pipelines.<name>.inferenceMs` is the accelerator's share of the `inference` step ([Accelerator load](./detection.md#accelerator-load)).
+
+A pipeline on a camera of its own waits for the stereo pair captured closest to its frame. That wait is in no step's time. The stereo total leaves out the time a pair waits for the device, and the decoding of its frames before a segment. A pair's latency, `total` in the log's `[pipeline]` line, counts them.
+
+## Latencies
+
+The stereo cameras' capture and the Pairing step do no work on a pair, so they have no step time. The `status` channel's `latencies.stereo` gives what they add to a pair's latency instead, averaged over the last second ([Status](./channels.md#status)). The stereo pipeline's total leaves them out: it stays the work one pair takes.
+
+| Part | Latency | What it covers |
+|---|---|---|
+| Stereo cameras | `cameras` | From the capture time a frame's driver stamps (`Frame.capture_ns`) to the frame's arrival in the pairer, the mean over both cameras' frames: the readout, the driver and its hand-over to the unit. |
+| Pairing | `pairing` | From the arrival of a pair's earlier frame to the pair going to the stereo pipeline, the mean over the pairs: the wait for the other camera's frame, and for the pipeline to finish the previous pair. |
+
+A high `cameras` latency points at the camera or its driver. A `pairing` latency near a frame period means the cameras capture out of step ([Status](./channels.md#status), `sync`).
 
 ## Measured on a Raspberry Pi 5
 
@@ -72,9 +110,15 @@ The unit is the OVCS1 reference vehicle's, at 30 frames a second: two Global Shu
 
 YOLOX detection (`:objects`) and FFNet-122NS-LowRes road segmentation (`:scene`) run on every frame of `half`, on the Hexagon NPU at the `burst` performance profile, with `rpc_polling_us: 9999`. These are measurements on one unit, not guarantees.
 
+With `paths: 8`, the upload and the submission added about 4.3 ms to each pair's 26.7 ms on the GPU, which left almost no room in a frame period. On 20 of the unit's pairs, `paths: 3` matched the same share of pixels with the same jitter, and the nearest distance measured did not change.
+
 | Figure | Measured |
 |---|---|
-| One stereo pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` (OVCS1's setting) | 28 ms |
+| One stereo pair, `search: "coarse_to_fine"`, `paths: 8`, `coarse_paths: 3` | 28 ms |
+| The GPU's busy time for one pair at 877 MHz, `paths: 8` (`gpu_ms`) | 26.7 ms, about 23 ms of it Disparity |
+| The same with `paths: 3`, OVCS1's setting | 21.5 ms |
+| Live, `paths: 8`: a pair's hand-over to the GPU's reply | 31.5 to 32 ms of the 33.37 ms frame period |
+| Live, `paths: 8`: the GPU's busy share, the pairs dropped | 82 to 84 %, about 2 % |
 | Stereo cameras, depth, `:objects`, `:scene` | 30 a second each |
 | `:center`'s outputs, over 6 minutes | 30 a second |
 | Gap between the left and right frames' starts | within 0.7 ms, median 0.09 ms |
@@ -103,23 +147,36 @@ Averaging the half-size image in a second pass after the conversion cost 4.9 ms 
 
 ### Measuring a change on the board
 
-`mix vision_core.board_bench` measures the default stages on a vision board without its cameras. Run it in `vision/core` on your workstation, with the board on your network:
+`mix vision_core.board_bench` measures your vehicle's stereo stages on a vision board without its cameras. Run it in your vehicle's project on your workstation, with the board on your network. The OVCS1 reference vehicle is the example; use your vehicle's directory and composer:
 
 ```shell
-mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --search coarse_to_fine --paths 8 --coarse-paths 3
+cd vehicles/ovcs1
+mix vision_core.board_bench --host 192.168.1.50 --key ~/.ssh/id_ed25519 --composer Ovcs1.Vision.Composer
 ```
 
 The task:
 
-1. compiles the stages for the board;
+1. compiles the composer's stereo stages, with their options and at its sizes, for the board;
 2. copies them there with a textured pair of frames;
 3. stops the live stereo unit;
-4. prints how each output differs from EXLA's, and the time of each pair.
+4. prints how each output differs from EXLA's, the time of each pair in µs, and a `BENCH` line of medians.
+
+The `BENCH` line gives, in milliseconds:
+
+- `total_ms`, a pair's hand-over, wait and download;
+- `dispatch_ms`, from its hand-over to the GPU's reply;
+- `collect_ms`, the download of its outputs;
+- `gpu_ms`, the GPU's busy time per pair, from the DRM driver's `drm-engine-gpu` counter, or `n/a` where the driver does not report it.
 
 Options:
 
+- `--paths`, `--coarse-paths`, `--search` and `--disparities` change the Disparity options.
+- `--set stage.setting=value` changes any setting of a stage, by the names `GET /api/stages` lists: `--set disparity.p2=79`.
+- `--drop speckle_filter,quality` leaves those stages out.
 - `--hot` also loads your `nx_stereo` build on the board, so a shader change is measured without building a firmware. Reboot the board afterwards.
 - `--compute native --search full` times the stages in `stereo_match` on the board's CPU instead.
+
+Without `--composer`, in `vision/core`, the task times the default stages at 728 × 544, Disparity over 128 disparities, coarse to fine, along 8 paths.
 
 Each stage's time on your workstation's GPU comes from `mix run bench/pipeline.exs` in `nx_stereo`.
 
@@ -131,7 +188,7 @@ Each setting trades rate against something else. The matching dominates, and its
 |---|---|---|
 | Working size | `:width`, `:height`, or `:match_width`, `:match_height` on the `:stereo` component | The strongest lever: half the pixels, about half the matching time. Smaller images measure far points less precisely: the focal length in pixels shrinks with the width. Keep the sensor's aspect ratio, or the image is squeezed and the calibration no longer fits. On a GPU without 8-bit storage, such as the Arduino VENTUNO Q's, the width must be a multiple of 4. |
 | `num_disparities` | Disparity, build | 128 measures nearer than 64 (the nearest distance is `f × B / num_disparities`) and costs about twice the matching time. |
-| `paths` | Disparity, build | 3 is much faster than 8 on a CPU, and leaves more holes on dark or textureless surfaces. |
+| `paths` | Disparity, build | 3 is much faster than 8 on a CPU, and leaves more holes on dark or textureless surfaces. On the VENTUNO Q's GPU, coarse to fine at 728 × 544, 3 took 21.5 ms of GPU time a pair instead of 26.7. |
 | `coarse_paths` | Disparity, build | With `search: "coarse_to_fine"`, the half-size match's paths, `paths` by default. It only places each pixel's band, so 3 costs little: on the 2006 Middlebury pairs about one point more of pixels off by over a pixel. |
 | `search: "coarse_to_fine"` | Disparity, build | Matches the pair shrunk 2x over 64 disparities, then each pixel within 16 disparities of that match at full size. That is a fraction of the full search's cost at the same range and size. It needs 128 disparities and an even working size, and runs on a GPU or Nx, not natively. On the 2006 Middlebury pairs at half size it agreed with the full search within a pixel on 96 to 99.8% of the pixels both matched. A structure too thin for the half-size pair, such as a cable, can take the background's disparity. |
 | `format: :grey` | each camera | Avoids encoding every frame to JPEG and decoding it again. Always use it on the Pi 5. |

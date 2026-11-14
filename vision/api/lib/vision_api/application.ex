@@ -5,7 +5,8 @@ defmodule VisionApi.Application do
   `vision_core`.
 
   An endpoint with `https:` options serves HTTPS with the certificate and
-  key they name, generated first when missing
+  key they name, generated first when they hold no pair for the unit's
+  names, and with a pair held in memory when they cannot be written
   (`VisionApi.SelfSignedCertificate`). With `:https_redirect_ports`, plain
   HTTP on each of those ports is redirected to it
   (`VisionApiWeb.HttpsRedirect`); an endpoint without `https:` listens on
@@ -20,7 +21,15 @@ defmodule VisionApi.Application do
   @impl Application
   def start(_type, _args) do
     endpoint = Application.get_env(:vision_api, VisionApiWeb.Endpoint, [])
-    SelfSignedCertificate.ensure!(endpoint[:https], hostnames())
+    https = SelfSignedCertificate.https_options(endpoint[:https], hostnames())
+
+    if https != endpoint[:https],
+      do:
+        Application.put_env(
+          :vision_api,
+          VisionApiWeb.Endpoint,
+          Keyword.put(endpoint, :https, https)
+        )
 
     children =
       [
@@ -28,7 +37,7 @@ defmodule VisionApi.Application do
         VisionApiWeb.Endpoint
       ] ++
         HttpsRedirect.listeners(
-          endpoint[:https],
+          https,
           Application.get_env(:vision_api, :https_redirect_ports, [])
         )
 

@@ -49,6 +49,16 @@ defmodule VisionApiWeb.VideoChannelTest do
     )
   end
 
+  @tag :capture_log
+  test "an event the channel does not take is refused, and the channel stays" do
+    {:ok, _reply, socket} = join("video:hq")
+
+    reference = push(socket, "nope", %{})
+
+    assert_reply reference, :error, %{reason: "unknown event"}
+    assert Process.alive?(socket.channel_pid)
+  end
+
   test "video:<camera> pushes each frame as its flags, capture time and size, then its H.264" do
     {:ok, _reply, socket} = join("video:hq")
 

@@ -614,6 +614,32 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert_published(200)
   end
 
+  test "times each step of a frame, the wait for its pair left out", %{tmp_dir: dir} do
+    start_scripted(dir, [], files: [:calibration, :pose], pair_wait_ms: 500)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :road)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    publish_frame(1_400)
+    assert_receive {:submitted, in_flight}
+    _handed_over = :sys.get_state(pipeline)
+    set_clock(10)
+    reply(in_flight, @label_image)
+    await_labels()
+    set_clock(300)
+    publish_pair(1_500)
+    assert_published(1_400)
+
+    assert Pipeline.stage_times(pipeline) == %{
+             input: {0.0, 1},
+             inference: {10.0, 1},
+             classes: {0.0, 1}
+           }
+
+    assert Pipeline.stage_times(pipeline) ==
+             VisionCore.StageTimes.new([:input, :inference, :classes])
+  end
+
   defp next_message do
     receive do
       message -> message
@@ -825,9 +851,58 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert {_labels, nil} = segmentation()
   end
 
-  test "declares its input and classes steps, fixed at start, in its pipeline", %{tmp_dir: dir} do
+  # The pipeline declares once it runs; the registry then applies the saved values.
+  defp await_declared do
+    :sys.get_state(VisionCore.Pipelines.server(Pipeline, :road))
+    :sys.get_state(VisionCore.Parameters)
+  end
+
+  test "the band's top changed through its parameter moves the band from the next image",
+       %{tmp_dir: dir} do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_pipeline(dir, files: [])
+    await_declared()
+
+    assert {:ok, %{type: :double, value: 1.0, default: 1.0, applies: :live}} =
+             VisionCore.Parameters.get("road.input.band_top")
+
+    publish_frame(100)
+    assert {%{band: {0, 20, 40, 20}}, nil} = segmentation()
+
+    assert {:ok, %{value: 0.25}} = VisionCore.Parameters.set("road.input.band_top", 0.25)
+    publish_frame(200)
+
+    assert {%{band: {0, 10, 40, 20}}, nil} = segmentation()
+  end
+
+  test "a saved setting reaches a pipeline as it starts", %{tmp_dir: dir} do
+    start_supervised!({VisionCore.Parameters.MemoryStore, %{"road.input.segment_every_n" => 2}})
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_pipeline(dir, files: [])
+    await_declared()
+
+    publish_frame(100)
+    refute_receive {:"$gen_cast", {{:segmentation, _name}, {_frame, _labels, _clouds}}}, 100
+    publish_frame(200)
+
+    assert {_labels, nil} = segmentation()
+  end
+
+  test "a value outside a setting's range is refused, and the pipeline keeps its value",
+       %{tmp_dir: dir} do
+    start_pipeline(dir, files: [])
+
+    assert Pipeline.put_setting(:road, :reprojection_stride, 0) ==
+             {:error, "reprojection_stride must be from 1 to 32, got 0"}
+
+    assert Pipeline.live_settings(:road)["reprojection_stride"] == 3
+  end
+
+  test "declares its input and classes steps in its pipeline, its settings live and its road classes fixed",
+       %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
     start_pipeline(dir, files: [], band_top: 0.25, road_classes: ["road", "sidewalk"])
+    await_declared()
 
     groups = Enum.filter(VisionCore.Parameters.groups(), &(&1.pipeline == :road))
 
@@ -847,6 +922,17 @@ defmodule VisionCore.Segmentation.PipelineTest do
              "reprojection_stride" => 3,
              "pair_wait_ms" => 500
            } = values
+
+    applies =
+      for group <- groups, parameter <- group.parameters, do: {parameter.name, parameter.applies}
+
+    assert Enum.sort(applies) == [
+             {"band_top", :live},
+             {"pair_wait_ms", :live},
+             {"reprojection_stride", :live},
+             {"road_classes", :build},
+             {"segment_every_n", :live}
+           ]
   end
 
   test "on a camera's output, takes that output's frames" do

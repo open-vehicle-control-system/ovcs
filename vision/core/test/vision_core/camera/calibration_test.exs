@@ -91,7 +91,7 @@ defmodule VisionCore.Camera.CalibrationTest do
       assert :ok = Calibration.commit(config, :hq, @calibration)
 
       assert_receive {:"$gen_cast", {:camera_calibration_changed, :hq}}
-      assert context.stored |> File.read!() |> CameraCalibration.parse() == @calibration
+      assert context.stored |> File.read!() |> CameraCalibration.parse() == {:ok, @calibration}
       refute File.exists?(context.stored <> ".tmp")
 
       assert {:ok, in_use} = Calibration.in_use(config, :hq)
@@ -105,7 +105,7 @@ defmodule VisionCore.Camera.CalibrationTest do
       config = config(calibration: context.built_in)
 
       assert :ok = Calibration.commit(config, :hq, @calibration)
-      assert context.built_in |> File.read!() |> CameraCalibration.parse() == @calibration
+      assert context.built_in |> File.read!() |> CameraCalibration.parse() == {:ok, @calibration}
     end
 
     test "waits for a commit or a reset of the same camera to end", context do

@@ -2,7 +2,7 @@ defmodule VisionCore.CameraDepth do
   @moduledoc """
   The stereo depth a pipeline on a camera of its own
   (`source: {:camera, name}`) takes: the camera's calibration and pose,
-  read once at start, its lens for each frame size, and the stereo pairs
+  read at start and when its owner reloads them (`reload/2`), its lens for each frame size, and the stereo pairs
   matched with its frames. `VisionCore.Detection.CameraSource` places a
   detection pipeline's boxes with it, and `VisionCore.Segmentation.Pipeline`
   classes a segmentation pipeline's points with it.
@@ -61,9 +61,24 @@ defmodule VisionCore.CameraDepth do
     :wording,
     :keep_ns,
     :received_ns,
+    unread: %{calibration: nil, pose: nil},
     lenses: %{},
     pairs: []
   ]
+
+  @typedoc """
+  Why a file gives the camera nothing: it has none, it cannot be read,
+  or, for a calibration, it cannot be projected with.
+  """
+  @type unread :: :missing | :unreadable | :unusable
+
+  @typedoc "Why the depth cannot be projected into the camera, as `unprojectable_reason/1` gives it."
+  @type unprojectable_reason ::
+          :no_calibration
+          | :unreadable_calibration
+          | :unusable_calibration
+          | :no_pose
+          | :unreadable_pose
 
   @typedoc """
   What the owner's warnings say is lost: without a calibration, without a
@@ -81,8 +96,8 @@ defmodule VisionCore.CameraDepth do
   @typedoc """
   The camera `name`, the output taken, `nil` for its default, the
   `VisionCore.Outputs` key its frames come under, its calibration
-  and pose, `nil` without, the owner its warnings name and their wording,
-  its lens by frame size, `nil` for a size its calibration cannot be
+  and pose, `nil` without, why each of them is `nil`, the owner its
+  warnings name and their wording, its lens by frame size, `nil` for a size its calibration cannot be
   projected at, how far before the newest pair's capture pairs are kept,
   when the newest pair arrived and the pairs kept, newest first.
   """
@@ -96,6 +111,7 @@ defmodule VisionCore.CameraDepth do
           wording: wording(),
           keep_ns: non_neg_integer(),
           received_ns: integer() | nil,
+          unread: %{calibration: unread() | nil, pose: unread() | nil},
           lenses: %{{pos_integer(), pos_integer()} => Reprojection.lens() | nil},
           pairs: [Pair.t()]
         }
@@ -161,38 +177,73 @@ defmodule VisionCore.CameraDepth do
       keep_ns: Keyword.fetch!(opts, :pair_wait_ms) * @ns_per_ms
     }
 
+    read_files(depth, settings)
+  end
+
+  @doc """
+  `depth` with its camera's calibration and pose read again from
+  `config`, as `new/5` reads them, the stored ones first, and the lenses
+  made from the previous calibration dropped: what a calibration or a
+  pose committed while the owner runs takes. The pairs kept stay.
+  """
+  @spec reload(t(), VisionCore.Config.t()) :: t()
+  def reload(depth, config) do
+    case Enum.find(Unit.settings(config), &(&1.name == depth.name)) do
+      nil ->
+        depth
+
+      settings ->
+        read_files(%{depth | lenses: %{}}, settings)
+    end
+  end
+
+  defp read_files(depth, settings) do
+    {calibration, calibration_unread} = read(depth, :calibration, settings.calibration_path)
+    {pose, pose_unread} = read(depth, :pose, settings.pose_path)
+
     %{
       depth
-      | calibration: read(depth, :calibration, settings.calibration_path),
-        pose: read(depth, :pose, settings.pose_path)
+      | calibration: calibration,
+        pose: pose,
+        unread: %{calibration: calibration_unread, pose: pose_unread}
     }
   end
+
+  @doc "`depth`, keeping the pairs captured up to `pair_wait_ms` before the newest one."
+  @spec put_pair_wait_ms(t(), non_neg_integer()) :: t()
+  def put_pair_wait_ms(%__MODULE__{} = depth, pair_wait_ms),
+    do: %{depth | keep_ns: pair_wait_ms * @ns_per_ms}
 
   defp outputs_text([]), do: "which has no named outputs"
 
   defp outputs_text(outputs),
     do: "whose outputs are #{Enum.map_join(outputs, ", ", &inspect(&1.name))}"
 
+  # The file's value, or `nil` and why.
   defp read(depth, kind, nil) do
     Logger.warning(
       "#{depth.owner}: camera #{depth.name} has no #{kind}, so #{Map.fetch!(depth.wording, kind)}"
     )
 
-    nil
+    {nil, :missing}
   end
 
   defp read(depth, kind, path) do
     with {:ok, value} <- load(kind, path),
          :ok <- check(kind, value) do
-      value
+      {value, nil}
     else
+      # A composer names the file whether or not its vehicle ships one.
+      {:error, :enoent} ->
+        read(depth, kind, nil)
+
       {:error, reason} ->
         Logger.warning(
           "#{depth.owner}: camera #{depth.name} has no #{kind}, #{path} " <>
             "unreadable (#{inspect(reason)}), so #{depth.wording.unreadable}"
         )
 
-        nil
+        {nil, :unreadable}
 
       {:refused, message} ->
         Logger.warning(
@@ -200,7 +251,7 @@ defmodule VisionCore.CameraDepth do
             "#{message}, so #{depth.wording.calibration}"
         )
 
-        nil
+        {nil, :unusable}
     end
   end
 
@@ -216,6 +267,27 @@ defmodule VisionCore.CameraDepth do
   @doc "Whether the depth can be projected into the camera: it has a calibration and a pose."
   @spec projectable?(t()) :: boolean()
   def projectable?(depth), do: not is_nil(depth.calibration) and not is_nil(depth.pose)
+
+  @doc """
+  Why the depth cannot be projected into the camera, the calibration's
+  file first, then the pose's: `:no_calibration` or `:no_pose` without
+  one, `:unreadable_calibration` or `:unreadable_pose` for one that
+  cannot be read, `:unusable_calibration` for a calibration that cannot
+  be projected with. `nil` when it can be (`projectable?/1`).
+  """
+  @spec unprojectable_reason(t()) :: unprojectable_reason() | nil
+  def unprojectable_reason(%{unread: %{calibration: nil, pose: nil}}), do: nil
+
+  def unprojectable_reason(%{unread: %{calibration: nil, pose: unread}}),
+    do: reason(:pose, unread)
+
+  def unprojectable_reason(%{unread: %{calibration: unread}}), do: reason(:calibration, unread)
+
+  defp reason(:calibration, :missing), do: :no_calibration
+  defp reason(:calibration, :unreadable), do: :unreadable_calibration
+  defp reason(:calibration, :unusable), do: :unusable_calibration
+  defp reason(:pose, :missing), do: :no_pose
+  defp reason(:pose, :unreadable), do: :unreadable_pose
 
   @doc """
   Keeps `pair`, arrived at `now_ns`, when it has a depth map and the

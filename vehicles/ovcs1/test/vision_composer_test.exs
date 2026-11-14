@@ -32,8 +32,24 @@ defmodule Ovcs1.VisionComposerTest do
     disparity = stereo[:stages][VisionCore.Stereo.Stage.Disparity]
     assert disparity[:num_disparities] == 128
     assert disparity[:search] == "coarse_to_fine"
+    assert disparity[:paths] == 3
     assert disparity[:coarse_paths] == 3
-    refute disparity[:paths]
+  end
+
+  test "the pipelines' settings are values their vision parameters take" do
+    %VisionCore.Config{components: components} = Ovcs1.Vision.Composer.config(:target)
+
+    assert %{detect_every_n: 1} =
+             VisionCore.Detection.Pipeline.settings(Keyword.fetch!(components, :qnn_detector))
+
+    assert %{segment_every_n: 1, band_top: 1.0} =
+             VisionCore.Segmentation.Pipeline.init(Keyword.fetch!(components, :qnn_segmenter))
+
+    assert %{pair_tolerance_ms: 5} =
+             VisionCore.Settings.init!(
+               VisionCore.Stereo.Pairer.setting_specs(),
+               Keyword.fetch!(components, :stereo)
+             )
   end
 
   test "detection runs on the NPU on the center camera, not on the stereo pair" do
@@ -163,7 +179,7 @@ defmodule Ovcs1.VisionComposerTest do
     refute depth.pose
     refute CameraDepth.projectable?(depth)
     assert log =~ "camera center has no pose"
-    assert log =~ "center_pose.yaml unreadable (:enoent)"
+    refute log =~ "unreadable"
   end
 
   test "every vision unit takes its options as the vision core starts it" do

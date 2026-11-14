@@ -23,7 +23,7 @@ defmodule VisionApiWeb.DepthPreviewController do
     data = JsonApi.document(conn)["data"]
 
     with :ok <- JsonApi.check_identity(data, "depth-previews", "current"),
-         {:ok, range} <- fetch_range(data) do
+         {:ok, range} <- JsonApi.fetch_attribute(data, "colourRangeM") do
       case preview(fn -> Preview.set_options(depth_range_m: range) end) do
         {:ok, {:ok, options}} ->
           render(conn, :show, options: options)
@@ -35,15 +35,9 @@ defmodule VisionApiWeb.DepthPreviewController do
           not_running(conn)
       end
     else
-      {:error, status, detail, options} ->
-        JsonApi.error(conn, status, detail, options)
+      refusal -> JsonApi.refuse(conn, refusal)
     end
   end
-
-  defp fetch_range(%{"attributes" => %{"colourRangeM" => range}}), do: {:ok, range}
-
-  defp fetch_range(_data),
-    do: {:error, 400, "data.attributes.colourRangeM is required", [source: @range_pointer]}
 
   defp preview(call) do
     {:ok, call.()}
