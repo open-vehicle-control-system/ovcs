@@ -14,7 +14,7 @@ defmodule VisionApiWeb.ExporterJSON do
   name, and `actions`, each with a `name`, a `label` and a
   `description`.
   """
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{ExporterOutput, JsonApi}
 
   @doc "The `exporters`, as `VisionCore.Exporters.describe/0` describes them."
   @spec index(%{exporters: [VisionCore.Exporters.description()]}) :: map()
@@ -43,13 +43,7 @@ defmodule VisionApiWeb.ExporterJSON do
   defp output(%{output: output, max_hz: max_hz} = entry),
     do:
       Map.merge(
-        %{name: output_name(output), maxHz: max_hz},
+        %{name: ExporterOutput.name(output), maxHz: max_hz},
         Map.take(entry, [:source])
       )
-
-  @doc "An output's name: `stereo_pair`, `detections:<name>`, `camera_frame:<name>:<output>`."
-  @spec output_name(VisionCore.Exporter.output()) :: String.t()
-  def output_name({output, name}), do: "#{output}:#{name}"
-  def output_name({output, name, camera_output}), do: "#{output}:#{name}:#{camera_output}"
-  def output_name(output), do: Atom.to_string(output)
 end

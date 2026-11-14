@@ -27,7 +27,7 @@ defmodule VisionApiWeb.StatusJSON do
   strings, as each camera's `issues`.
   """
 
-  alias VisionApiWeb.ExporterJSON
+  alias VisionApiWeb.{ExporterJSON, ExporterOutput}
 
   @camera_keys %{
     present: :present,
@@ -80,7 +80,7 @@ defmodule VisionApiWeb.StatusJSON do
       status: ExporterJSON.status(exporter.status),
       dropped:
         Map.new(exporter.dropped, fn {output, count} ->
-          {ExporterJSON.output_name(output), count}
+          {ExporterOutput.name(output), count}
         end)
     }
 
