@@ -83,6 +83,41 @@ describe('Pipelines', () => {
     expect(time.getAttribute('aria-hidden')).toBe('true')
   })
 
+  it("shows the cameras' and the pairing's latencies on their rows, and leaves them out of the total", () => {
+    const pairing = group('stereo.pairing', 'Pairing', 1.5, { compute: { runsOn: 'cpu', implementation: 'elixir', backend: null } })
+    useParameters.setState({ groups: [...groups, pairing] })
+    useStatus.setState({
+      snapshot: {
+        npu: null,
+        latencies: { stereo: { cameras: 4.21, pairing: 1.06 } },
+        pipelines: { stereo: { totalMs: 9.87, stages: { match: 7.26, alignment: 2.61 }, segments: [] } }
+      }
+    })
+    render(<Pipelines />)
+
+    const cameras = box('Stereo', /^Cameras/)
+    expect(cameras.querySelector('[data-latency]').textContent).toBe('4.2 ms')
+    expect(cameras.querySelector('[data-latency]').className).toContain('ml-auto')
+    expect(cameras.querySelector('[data-latency-note]').textContent).toBe('latency')
+    expect(cameras.getAttribute('aria-label')).toBe('Cameras, capture to unit 4.2 ms, not in the total')
+    expect(figure('Stereo', /^Cameras/)).toBeNull()
+
+    const pairingBox = box('Stereo', /^Pairing/)
+    expect(pairingBox.querySelector('[data-latency]').textContent).toBe('1.1 ms')
+    expect(pairingBox.getAttribute('aria-label')).toBe('Pairing, on CPU, Elixir, wait to pair 1.1 ms, not in the total')
+
+    expect(screen.getByRole('heading', { name: 'Stereo 9.9 ms' })).toBeTruthy()
+    expect(box('Stereo', /^Match/).querySelector('[data-latency]')).toBeNull()
+  })
+
+  it('shows no latency the unit has not measured', () => {
+    useStatus.setState({ snapshot: { npu: null, latencies: { stereo: { cameras: null, pairing: null } } } })
+    render(<Pipelines />)
+
+    expect(document.querySelectorAll('[data-latency], [data-latency-note]')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
+  })
+
   it('shows no time on a source, which has no work to time', () => {
     useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 1, stages: { cameras: 1 }, segments: [] } } } })
     render(<Pipelines />)
@@ -218,7 +253,7 @@ describe('Pipelines', () => {
     render(<Pipelines />)
 
     expect(document.body.textContent).not.toContain('ms')
-    expect(document.querySelectorAll('[data-total], [data-time], [data-accelerator], [data-run]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-total], [data-time], [data-accelerator], [data-run], [data-latency]')).toHaveLength(0)
   })
 
   it('shows the detection pipeline as one greyed line on a unit without a detector', () => {

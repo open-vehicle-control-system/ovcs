@@ -23,8 +23,11 @@ const milliseconds = (ms) => `${formatNumber(ms)} ms`
 // A time at the end of a step's line or a pipeline's heading.
 const FIGURE = 'ml-auto font-normal tabular-nums text-ovcs-muted'
 
-// Ends a pipeline's total where its steps' times end: before a box's border and the place of its unsaved count.
-const TOTAL_INSET = 'mr-[calc(1.5rem+1px)]'
+// Ends a pipeline's total where its steps' times end, inside a box's border.
+const TOTAL_INSET = 'mr-px'
+
+// What each latency the unit status reports runs from and to, by the step it is shown on.
+const LATENCY_NAMES = { cameras: 'capture to unit', pairing: 'wait to pair' }
 
 // A step's name in its pipeline's times: the last segment of its id.
 const stageName = (group) => group.id.slice(group.id.lastIndexOf('.') + 1)
@@ -61,6 +64,14 @@ function acceleratorTime(snapshot, group) {
   return ms == null ? null : `NPU ${milliseconds(ms)}`
 }
 
+/** The latency the unit status reports on `group`: no step's work, so its pipeline's total leaves it out. */
+function latencyTime(snapshot, group) {
+  const ms = snapshot?.latencies?.[group.pipeline]?.[stageName(group)]
+  return ms == null ? null : milliseconds(ms)
+}
+
+const latencyFigure = (group, latency) => `${LATENCY_NAMES[stageName(group)] ?? 'latency'} ${latency}, not in the total`
+
 const NO_SEGMENTS = []
 
 /** The runs of `steps` timed as one that cover two steps or more and have a time, each as the bracket that draws it. */
@@ -86,12 +97,12 @@ function RunBracket({ first, last, time, place }) {
       data-first-step={first}
       data-last-step={last}
       style={{ gridRow: `${first} / ${last + 1}` }}
-      className="pointer-events-none z-10 col-start-1 -mr-1.5 flex items-center justify-self-end py-1.5"
+      className="pointer-events-none relative z-10 col-start-1 -mr-1 flex items-center justify-self-end py-1.5 pr-1"
     >
-      <span translate="no" className="pr-0.5 text-[10px] leading-none tabular-nums text-ovcs-muted [writing-mode:vertical-rl]">
+      <span translate="no" className="text-[11px] font-medium leading-none tabular-nums text-ovcs-text opacity-80 [writing-mode:vertical-rl]">
         {place ? `${time} · ${place}` : time}
       </span>
-      <span className="h-full w-1 border-y border-r border-ovcs-border" />
+      <span className="absolute inset-y-1.5 right-0 w-2 rounded-r-sm border-y-2 border-r-2 border-ovcs-muted opacity-70" />
     </span>
   )
 }
@@ -107,10 +118,12 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
   const tags = computeTags(group.compute)
   const time = useStatus((state) => stageTime(state.snapshot, group, steps))
   const accelerator = useStatus((state) => acceleratorTime(state.snapshot, group))
+  const latency = useStatus((state) => latencyTime(state.snapshot, group))
+  const figures = [time, accelerator, latency && latencyFigure(group, latency)].filter(Boolean)
   return (
     <OvcsMenuItem
       selected={selected}
-      aria-label={accessibleName(group, unsaved, [time, accelerator].filter(Boolean))}
+      aria-label={accessibleName(group, unsaved, figures)}
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
@@ -124,8 +137,13 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
               {time}
             </span>
           ) : null}
+          {latency ? (
+            <span aria-hidden="true" data-latency className={`text-[10px] ${FIGURE}`}>
+              {latency}
+            </span>
+          ) : null}
         </span>
-        {tags.length > 0 || accelerator ? (
+        {tags.length > 0 || accelerator || latency ? (
           <span aria-hidden="true" className="flex flex-wrap items-baseline gap-x-2">
             {tags.length > 0 ? (
               <span className="flex flex-wrap gap-1">
@@ -141,13 +159,20 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
                 {accelerator}
               </span>
             ) : null}
+            {latency ? (
+              <span data-latency-note title="Not in the pipeline's total" className={`text-[9px] leading-none ${FIGURE}`}>
+                latency
+              </span>
+            ) : null}
           </span>
         ) : null}
       </span>
       {group.status && style.dot ? <span aria-hidden="true" className={`ml-auto ${style.dot}`} /> : null}
-      <OvcsBadge tone="warn" aria-hidden="true" className={`min-w-4 text-center tabular-nums ${unsaved > 0 ? '' : 'invisible'} ${group.status && style.dot ? '' : 'ml-auto'}`}>
-        {unsaved}
-      </OvcsBadge>
+      {unsaved > 0 ? (
+        <OvcsBadge tone="warn" aria-hidden="true" className={`min-w-4 text-center tabular-nums ${group.status && style.dot ? '' : 'ml-auto'}`}>
+          {unsaved}
+        </OvcsBadge>
+      ) : null}
     </OvcsMenuItem>
   )
 }
