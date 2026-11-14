@@ -23,4 +23,5 @@ Gazebo shows the pose the runner computes instead of moving the car and measurin
 <!-- AC:BEGIN -->
 - [ ] #1 The OVCS Mini drives in Gazebo through the runner, with its lidar and cameras
 - [ ] #2 The ros bridge no longer hosts simulated hardware, and its docs say so
+- [ ] #3 `SimulatorCore.World` and the loop's wheel-turn feedback are removed, having no world left to serve
 <!-- AC:END -->
