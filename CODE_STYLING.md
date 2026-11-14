@@ -157,6 +157,11 @@ first, evidence before a claim, small reviewed PRs) is in
   creates, `PATCH` changes the members it sends, `DELETE` removes. An
   operation that is not a change to one resource is a resource of its own,
   created with `POST` (`POST /api/parameter-saves`).
+- **One controller per resource**, named after it in the singular
+  (`ParameterResetController` for `/api/parameter-resets`), with
+  Phoenix's action names: `index`, `show`, `create`, `update`, `delete`.
+  Code several controllers share is a plug, a view or a module they
+  call, not a controller serving several resources.
 - **The status code is the outcome.** 200, 201 or 204 on success, 202
   when the work goes on after the answer; 400 for
   a document that cannot be read, 404 for an unknown resource, 409 for a

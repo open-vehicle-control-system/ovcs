@@ -21,7 +21,17 @@ defmodule VisionApiWeb.CalibrationCase do
       @moduletag :tmp_dir
 
       import VisionApiWeb.CalibrationCase,
-        only: [good_samples: 0, solved_result: 0, solved_camera_result: 0, solved_pose_result: 0]
+        only: [
+          good_samples: 0,
+          solved_result: 0,
+          solved_camera_result: 0,
+          solved_pose_result: 0,
+          target: 1,
+          session: 0,
+          session: 1,
+          session: 2,
+          capturing: 1
+        ]
     end
   end
 
@@ -153,5 +163,21 @@ defmodule VisionApiWeb.CalibrationCase do
       },
       40
     )
+  end
+
+  @doc "The `calibration` relationship naming the target `id`."
+  def target(id), do: %{calibration: %{data: %{type: "calibrations", id: id}}}
+
+  @doc "A `calibration-sessions` resource object on the target `id`, with `board`."
+  def session(id \\ "unit", board \\ %{columns: 8, rows: 6, squareMm: 25}),
+    do: %{type: "calibration-sessions", attributes: %{board: board}, relationships: target(id)}
+
+  @doc "Setup starting a session on the stereo pair."
+  def capturing(%{conn: conn}) do
+    conn
+    |> VisionApiWeb.ConnCase.post_document("/api/calibration-sessions", session())
+    |> Phoenix.ConnTest.json_response(201)
+
+    :ok
   end
 end

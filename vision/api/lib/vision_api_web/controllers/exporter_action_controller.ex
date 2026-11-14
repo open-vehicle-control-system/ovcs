@@ -1,12 +1,7 @@
 defmodule VisionApiWeb.ExporterActionController do
   @moduledoc """
-  Runs an exporter's action (`VisionCore.Exporters.action/4`) and answers
-  its result: the file for a file result, an `exporter-actions` resource
-  for a JSON one, and for an error the JSON:API error whose `detail`
-  says why. The action's parameters are the document's `attributes`.
-  The document is read from the JSON body only: a form or a query
-  string, which another site's page can send without asking, is
-  refused.
+  Serves `exporter-actions`: creating one runs an exporter's action with the
+  document's `attributes` (`VisionCore.Exporters.action/4`).
   """
   use VisionApiWeb, :controller
 
@@ -16,7 +11,7 @@ defmodule VisionApiWeb.ExporterActionController do
   @document_type "exporter-actions"
   @timeout_ms 60_000
 
-  def run(conn, %{"id" => id, "name" => name}) do
+  def create(conn, %{"id" => id, "name" => name}) do
     case fetch_attributes(JsonApi.document(conn)) do
       {:ok, attributes} ->
         id |> Exporters.action(name, attributes, @timeout_ms) |> answer(conn, id, name)

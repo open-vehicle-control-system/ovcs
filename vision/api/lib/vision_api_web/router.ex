@@ -21,24 +21,24 @@ defmodule VisionApiWeb.Router do
     get "/parameters", ParameterController, :index
     get "/parameters/:id", ParameterController, :show
     patch "/parameters/:id", ParameterController, :update
-    post "/parameter-saves", ParameterActionController, :save
-    post "/parameter-discards", ParameterActionController, :discard
-    post "/parameter-resets", ParameterActionController, :reset
+    post "/parameter-saves", ParameterSaveController, :create
+    post "/parameter-discards", ParameterDiscardController, :create
+    post "/parameter-resets", ParameterResetController, :create
     get "/depth-preview", DepthPreviewController, :show
     patch "/depth-preview", DepthPreviewController, :update
     get "/configuration", ConfigurationController, :show
     get "/firmware", FirmwareController, :show
     get "/board", BoardController, :show
     get "/exporters", ExporterController, :index
-    post "/exporters/:id/actions/:name", ExporterActionController, :run
+    post "/exporters/:id/actions/:name", ExporterActionController, :create
     get "/ros2-node", Ros2NodeController, :show, private: %{jsonapi_include: true}
     get "/calibrations", CalibrationController, :index
     get "/calibrations/:id", CalibrationController, :show
-    post "/calibration-sessions", CalibrationActionController, :start
-    post "/calibration-cancels", CalibrationActionController, :cancel
-    post "/calibration-solves", CalibrationActionController, :solve
-    post "/calibration-applies", CalibrationActionController, :apply
-    post "/calibration-resets", CalibrationActionController, :reset
+    post "/calibration-sessions", CalibrationSessionController, :create
+    post "/calibration-cancels", CalibrationCancelController, :create
+    post "/calibration-solves", CalibrationSolveController, :create
+    post "/calibration-applies", CalibrationApplyController, :create
+    post "/calibration-resets", CalibrationResetController, :create
     get "/saved-calibrations", SavedCalibrationController, :index
     get "/saved-calibrations/:id", SavedCalibrationController, :show
     patch "/saved-calibrations/:id", SavedCalibrationController, :update
