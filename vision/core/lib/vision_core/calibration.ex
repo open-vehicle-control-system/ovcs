@@ -12,16 +12,17 @@ defmodule VisionCore.Calibration do
   camera's `VisionCore.Camera.Calibration`'s, a pose's
   `VisionCore.Camera.Pose`'s.
 
-  The unit keeps every calibration a target was given
+  The unit saves every calibration a target was given
   (`VisionCore.Calibration.Library`): `saved/2` lists them, `use_saved/3`
-  puts one back in force, `rename_saved/3` names one and `delete_saved/3`
-  removes one, the one in force once its target is back on its built-in
+  puts one back in use, `rename_saved/3` names one and `delete_saved/3`
+  removes one, the one in use once its target is back on its built-in
   calibration.
   """
 
-  alias VisionCore.Calibration.{Library, Recorder, Saved, SavedCamera, SavedPose, Solver}
+  alias VisionCore.Calibration.{Library, Recorder, Solver}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
   alias VisionCore.Camera.{Pose, Unit}
+  alias VisionCore.Models
   alias VisionCore.Outputs
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Calibration, as: StereoCalibration
@@ -118,12 +119,21 @@ defmodule VisionCore.Calibration do
   end
 
   @doc """
-  Returns the target `id` of `config` to its built-in calibration. `opts`
+  Returns the target `id` of `config` to its built-in calibration, with
+  none of its saved calibrations in use by the time it answers. `opts`
   are `VisionCore.Stereo.Calibration.reset/2`'s, for a stereo pair.
   """
   @spec reset(VisionCore.Config.t(), String.t(), keyword()) ::
           :ok | {:error, :not_found | String.t()}
   def reset(config, id, opts \\ []) do
+    with :ok <- reset_files(config, id, opts) do
+      # A library out of reach logs it; the target runs on its built-in calibration all the same.
+      Library.put_in_use(id, nil)
+      :ok
+    end
+  end
+
+  defp reset_files(config, id, opts) do
     case fetch(config, id) do
       {:ok, %{kind: :stereo}} -> StereoCalibration.reset(config, opts)
       {:ok, %{kind: :camera, name: name}} -> OwnCalibration.reset(config, name)
@@ -134,7 +144,7 @@ defmodule VisionCore.Calibration do
 
   @doc """
   The calibrations a pose, the target `id` of `config`, is solved with:
-  the stereo left camera's and the camera's, in force. `{:error,
+  the stereo left camera's and the camera's, in use. `{:error,
   message}` naming the one that is missing, or that the solve does not
   take (`VisionCore.Calibration.Solver.check_pose_calibration/2`);
   `{:error, :not_found}` for an id that is no pose of `config`.
@@ -165,76 +175,76 @@ defmodule VisionCore.Calibration do
   defp check_calibrated(_camera, _message), do: :ok
 
   @typedoc """
-  A file of a calibration kept: its camera's `name`, the `file` name to
+  A file of a saved calibration: its camera's `name`, the `file` name to
   save its `yaml` under, as for the calibration in use.
   """
   @type saved_file :: %{name: String.t(), file: String.t(), yaml: String.t()}
 
   @typedoc """
-  A calibration kept, whether it is the one its target runs on, and its
+  A saved calibration, whether it is the one its target runs on, and its
   cameras' files, in the order of its cameras; a pose's file, for a pose.
   """
-  @type kept :: %{saved: Saved.t(), in_force: boolean(), files: [saved_file()]}
+  @type saved :: %{saved: Library.saved(), in_use: boolean(), files: [saved_file()]}
 
-  @doc "The calibrations kept for the target `id` of `config`, the one kept last first."
-  @spec saved(VisionCore.Config.t(), String.t()) :: {:ok, [kept()]} | {:error, :not_found}
+  @doc "The saved calibrations of the target `id` of `config`, the one saved last first."
+  @spec saved(VisionCore.Config.t(), String.t()) :: {:ok, [saved()]} | {:error, :not_found}
   def saved(config, id) do
-    with {:ok, target} <- fetch(config, id) do
-      selected = Library.selected(id)
-      {:ok, Enum.map(Library.list(id), &kept(&1, target, selected))}
-    end
+    with {:ok, target} <- fetch(config, id),
+         do: {:ok, Enum.map(Library.list(id), &with_files(&1, target))}
   end
 
-  @doc "The calibration `saved_id`, kept for a target of `config`."
-  @spec fetch_saved(VisionCore.Config.t(), integer()) ::
-          {:ok, kept()} | {:error, :not_found | String.t()}
+  @doc "The calibration `saved_id`, saved for a target of `config`."
+  @spec fetch_saved(VisionCore.Config.t(), String.t()) ::
+          {:ok, saved()} | {:error, :not_found | String.t()}
   def fetch_saved(config, saved_id) do
     with {:ok, saved, target} <- saved_target(config, saved_id),
-         do: {:ok, kept(saved, target, Library.selected(saved.target))}
+         do: {:ok, with_files(saved, target)}
   end
 
   @doc """
-  Puts the calibration `saved_id` back in force: its figures are
-  committed as its target's calibration. `opts` are
+  Puts the calibration `saved_id` back in use: its figures are
+  committed as its target's calibration, and the library has it in use
+  by the time it answers. `opts` are
   `VisionCore.Stereo.Calibration.commit/3`'s, for a stereo pair.
   """
-  @spec use_saved(VisionCore.Config.t(), integer(), keyword()) ::
+  @spec use_saved(VisionCore.Config.t(), String.t(), keyword()) ::
           :ok | {:error, :not_found | String.t()}
   def use_saved(config, saved_id, opts \\ []) do
     with {:ok, saved, target} <- saved_target(config, saved_id) do
       figures = saved_figures(target, saved)
-      expectation = Recorder.expect(target.id, figures, {:select, saved.id})
+      expectation = Recorder.expect(target.id, figures, {:use, saved.id})
       answer = commit_figures(config, target, figures, opts)
       Recorder.forget(expectation)
-      answer
+
+      with :ok <- answer, do: Library.put_in_use(target.id, saved.id)
     end
   end
 
-  defp saved_figures(%{kind: :pose}, saved), do: SavedPose.to_pose(saved.pose)
+  defp saved_figures(%{kind: :pose}, saved), do: Models.CameraPose.to_pose(saved)
 
   defp saved_figures(_target, saved),
-    do: for(camera <- saved.cameras, do: {camera.name, SavedCamera.to_calibration(camera)})
+    do: for({name, lens} <- Library.lenses(saved), do: {name, Models.Lens.to_calibration(lens)})
 
   @doc "Names the calibration `saved_id`."
-  @spec rename_saved(VisionCore.Config.t(), integer(), String.t()) ::
-          {:ok, kept()} | {:error, :not_found | String.t()}
+  @spec rename_saved(VisionCore.Config.t(), String.t(), String.t()) ::
+          {:ok, saved()} | {:error, :not_found | String.t()}
   def rename_saved(config, saved_id, name) do
     with {:ok, saved, target} <- saved_target(config, saved_id),
          {:ok, renamed} <- Library.rename(saved.id, name) do
       Recorder.changed(saved.target)
-      {:ok, kept(renamed, target, Library.selected(saved.target))}
+      {:ok, with_files(renamed, target)}
     end
   end
 
   @doc """
   Removes the calibration `saved_id`. When its target runs on it, the
   target first returns to its built-in calibration (`reset/3`, with
-  `opts`): `{:error, :in_force}` when it has none to return to, and
-  `{:error, {:reset, reason}}`, the calibration kept, when the return
+  `opts`): `{:error, :in_use}` when it has none to return to, and
+  `{:error, {:reset, reason}}`, the calibration left saved, when the return
   fails.
   """
-  @spec delete_saved(VisionCore.Config.t(), integer(), keyword()) ::
-          :ok | {:error, :not_found | :in_force | {:reset, String.t()} | String.t()}
+  @spec delete_saved(VisionCore.Config.t(), String.t(), keyword()) ::
+          :ok | {:error, :not_found | :in_use | {:reset, String.t()} | String.t()}
   def delete_saved(config, saved_id, opts \\ []) do
     with {:ok, saved, target} <- saved_target(config, saved_id),
          :ok <- leave(config, saved, target, opts),
@@ -243,11 +253,11 @@ defmodule VisionCore.Calibration do
     end
   end
 
-  # A target running on `saved` goes back to its built-in calibration, which has no selection.
+  # A target running on `saved` goes back to its built-in calibration, which has none in use.
   defp leave(config, saved, target, opts) do
     cond do
-      not in_force?(saved, Library.selected(target.id)) -> :ok
-      not resettable?(config, target) -> {:error, :in_force}
+      not saved.in_use -> :ok
+      not resettable?(config, target) -> {:error, :in_use}
       true -> reset_to_built_in(config, target, opts)
     end
   end
@@ -257,29 +267,27 @@ defmodule VisionCore.Calibration do
 
   defp reset_to_built_in(config, target, opts) do
     case reset(config, target.id, opts) do
-      :ok -> Library.select(target.id, nil)
+      :ok -> :ok
       {:error, reason} -> {:error, {:reset, reason}}
     end
   end
 
-  defp kept(saved, target, selected),
-    do: %{saved: saved, in_force: in_force?(saved, selected), files: files(saved, target)}
+  defp with_files(saved, target),
+    do: %{saved: saved, in_use: saved.in_use, files: files(saved, target)}
 
-  defp in_force?(saved, selected), do: selected != nil and selected.id == saved.id
-
-  defp files(%{pose: %SavedPose{} = pose}, %{kind: :pose, name: name}) do
-    yaml = pose |> SavedPose.to_pose() |> Pose.to_yaml()
+  defp files(%Models.CameraPose{} = pose, %{kind: :pose, name: name}) do
+    yaml = pose |> Models.CameraPose.to_pose() |> Pose.to_yaml()
     [%{name: Atom.to_string(name), file: pose_file(name), yaml: yaml}]
   end
 
   defp files(saved, target) do
-    for camera <- saved.cameras do
-      stem = file_stem(target, camera.name)
+    for {name, lens} <- Library.lenses(saved) do
+      stem = file_stem(target, name)
 
       %{
-        name: camera.name,
+        name: name,
         file: "#{stem}.yaml",
-        yaml: CameraCalibration.to_yaml(SavedCamera.to_calibration(camera), stem)
+        yaml: CameraCalibration.to_yaml(Models.Lens.to_calibration(lens), stem)
       }
     end
   end
@@ -288,7 +296,7 @@ defmodule VisionCore.Calibration do
   defp file_stem(%{kind: :stereo, id: prefix}, side), do: "#{prefix}_#{side}"
   defp file_stem(%{kind: :camera, id: id}, _name), do: id
 
-  # A calibration kept for a target the unit no longer has is not found.
+  # A calibration saved for a target the unit no longer has is not found.
   defp saved_target(config, saved_id) do
     with {:ok, saved} <- Library.fetch(saved_id),
          {:ok, target} <- fetch(config, saved.target) do

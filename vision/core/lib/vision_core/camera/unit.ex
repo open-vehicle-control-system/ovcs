@@ -323,10 +323,10 @@ defmodule VisionCore.Camera.Unit do
         name: name,
         server: server,
         frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
-        calibration_path: in_force_path(opts[:calibration], store_path),
+        calibration_path: in_use_path(opts[:calibration], store_path),
         built_in_calibration_path: opts[:calibration],
         calibration_store_path: store_path,
-        pose_path: in_force_path(opts[:pose], pose_store_path),
+        pose_path: in_use_path(opts[:pose], pose_store_path),
         built_in_pose_path: opts[:pose],
         pose_store_path: pose_store_path,
         outputs: outputs
@@ -337,9 +337,9 @@ defmodule VisionCore.Camera.Unit do
   defp store_path(nil, _file), do: nil
   defp store_path(directory, file), do: Path.join(directory, file)
 
-  defp in_force_path(built_in, nil), do: built_in
+  defp in_use_path(built_in, nil), do: built_in
 
-  defp in_force_path(built_in, store_path),
+  defp in_use_path(built_in, store_path),
     do: if(File.exists?(store_path), do: store_path, else: built_in)
 
   defp default_frame_id(name), do: "#{name}_optical"

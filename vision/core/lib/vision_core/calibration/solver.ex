@@ -44,7 +44,7 @@ defmodule VisionCore.Calibration.Solver do
           samples: pos_integer()
         }
 
-  @typedoc "A camera's calibration in force and the size, in pixels, of the frames its corners were found in."
+  @typedoc "A camera's calibration in use and the size, in pixels, of the frames its corners were found in."
   @type pose_camera :: %{calibration: CameraCalibration.t(), size: {pos_integer(), pos_integer()}}
 
   @type pose_samples :: [%{left: [{float(), float()}], camera: [{float(), float()}]}]
@@ -60,7 +60,7 @@ defmodule VisionCore.Calibration.Solver do
   Solves for the pose of a camera relative to the stereo pair from
   `samples`, the corners found in each pair of frames of the stereo left
   camera and the camera, as `VisionCore.Calibration.Chessboard.detect/2`
-  returns them. `cameras` holds each one's calibration in force and the
+  returns them. `cameras` holds each one's calibration in use and the
   size of its frames: each calibration is resampled to that size, pixel
   centres onto pixel centres (`VisionCore.Ros2.CameraCalibration.resample_to/3`).
 

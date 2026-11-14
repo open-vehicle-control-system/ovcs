@@ -19,7 +19,7 @@ export const selectedCalibration = (state) => state.calibrations[selectedId(stat
 const FIRST_RETRY_MS = 1000
 const MAX_RETRY_MS = 30000
 
-// Count the reads started, of the targets and of each calibration's kept list: of reads that overlap, only the last started is applied.
+// Count the reads started, of the targets and of each calibration's saved list: of reads that overlap, only the last started is applied.
 let targetLoads = 0
 const savedLoads = new Map()
 
@@ -103,14 +103,14 @@ export const useCalibration = create((set, get) => {
       }
     },
 
-    // The calibrations the unit keeps, by calibration id, read over HTTP at each join and at each change the channel announces.
+    // The calibrations the unit saved, by calibration id, read over HTTP at each join and at each change the channel announces.
     saved: {},
     async loadSaved(id) {
       const started = (savedLoads.get(id) ?? 0) + 1
       savedLoads.set(id, started)
       try {
-        const kept = await service.fetchSaved(id)
-        if (savedLoads.get(id) === started) set((state) => ({ saved: { ...state.saved, [id]: kept } }))
+        const list = await service.fetchSaved(id)
+        if (savedLoads.get(id) === started) set((state) => ({ saved: { ...state.saved, [id]: list } }))
       } catch {
         // The list keeps what it showed; the next change reads it again.
       }
@@ -120,7 +120,7 @@ export const useCalibration = create((set, get) => {
       set({ selected: id })
       get().loadSaved(id)
     },
-    useSaved: (id) => perform(() => service.selectSaved(id)),
+    useSaved: (id) => perform(() => service.putSavedInUse(id)),
     renameSaved: (id, name) => perform(() => service.renameSaved(id, name)),
     deleteSaved: (id) => perform(() => service.deleteSaved(id)),
     start: (board) => perform(() => service.startSession(selectedId(get()), board)),

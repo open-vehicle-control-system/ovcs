@@ -37,7 +37,7 @@ defmodule VisionCore.Outputs do
       (`c:VisionCore.Camera.control_specs/1`).
     * `{:saved_calibrations, target}` — `{:saved_calibrations_changed, target}`
       from `VisionCore.Calibration.Recorder`, after each change of the
-      calibrations kept for the calibration target `target`.
+      saved calibrations of the calibration target `target`.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. One that takes messages out of its mailbox itself matches

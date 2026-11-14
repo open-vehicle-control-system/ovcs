@@ -5,21 +5,21 @@ defmodule VisionCore.Calibration.Recorder do
 
   At start, and at each change a target's calibration publishes
   (`VisionCore.Calibration.changed_key/1`), it reads the calibration in
-  use. A stored one is selected in the library, where it is kept first
-  when no calibration there holds its figures; a target back on the
-  firmware's calibration, or on none, has no selection, as has one whose
-  stored calibration the library cannot keep. A calibration found in the
+  use. A stored one is put in use in the library, where it is saved
+  first when no calibration there holds its figures; a target back on the
+  firmware's calibration, or on none, has none in use, as has one whose
+  stored calibration the library cannot save. A calibration found in the
   store that the library does not know, as one committed by
-  `cameracalibrator` or stored before the library existed, is kept as
+  `cameracalibrator` or stored before the library existed, is saved as
   `imported`.
 
   A commit that knows more tells the recorder beforehand, with
   `expect/3`: the calibrations, or the pose, it is about to store, and
   `{:record, options}`, the `VisionCore.Calibration.Library.record/3`
-  options to keep them with, or `{:select, id}`, the calibration to
-  select among those holding the same figures. What is expected is used
+  options to save them with, or `{:use, id}`, the calibration to
+  put in use among those holding the same figures. What is expected is used
   by the change of the target that stores those calibrations, so that
-  commits in flight each keep their own, and dropped by `forget/1`, or
+  commits in flight each save their own, and dropped by `forget/1`, or
   when the process that expected it ends.
 
   Each change of a target's library is published as
@@ -39,7 +39,7 @@ defmodule VisionCore.Calibration.Recorder do
   alias VisionCore.Camera.Pose
   alias VisionCore.Outputs
 
-  @type expected :: {:record, keyword()} | {:select, integer()}
+  @type expected :: {:record, keyword()} | {:use, String.t()}
 
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts),
@@ -57,7 +57,7 @@ defmodule VisionCore.Calibration.Recorder do
   @doc """
   Announces that the calling process is about to commit `figures`, each
   camera's name and calibration, or a camera's pose, as `target`'s, and
-  how to keep them. Answers the reference `forget/1` takes, also without
+  how to save them. Answers the reference `forget/1` takes, also without
   a recorder running.
   """
   @spec expect(String.t(), Library.figures(), expected()) :: reference()
@@ -123,9 +123,9 @@ defmodule VisionCore.Calibration.Recorder do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp drop_expectations(state, dropped?) do
-    {dropped, kept} = Enum.split_with(state.expectations, dropped?)
+    {dropped, remaining} = Enum.split_with(state.expectations, dropped?)
     for %{monitor: monitor} <- dropped, do: Process.demonitor(monitor, [:flush])
-    %{state | expectations: kept}
+    %{state | expectations: remaining}
   end
 
   defp target_of(state, kind, name),
@@ -137,10 +137,10 @@ defmodule VisionCore.Calibration.Recorder do
     state =
       case Calibration.in_use(state.config, target) do
         {:ok, %{source: :stored} = in_use} ->
-          select_stored(state, target, in_use)
+          use_stored(state, target, in_use)
 
         {:ok, _in_use} ->
-          report(target, Library.select(target, nil))
+          report(target, Library.put_in_use(target, nil))
           state
 
         {:error, reason} ->
@@ -152,15 +152,15 @@ defmodule VisionCore.Calibration.Recorder do
     state
   end
 
-  defp select_stored(state, target, in_use) do
+  defp use_stored(state, target, in_use) do
     case stored_figures(in_use) do
       {:ok, figures} ->
         {expected, state} = pop_expected(state, target, figures)
-        keep_stored(target, figures, in_use, expected)
+        save_stored(target, figures, in_use, expected)
         state
 
       :error ->
-        select_none(target, "a stored file gives no calibration")
+        use_none(target, "a stored file gives no calibration")
         state
     end
   end
@@ -194,20 +194,20 @@ defmodule VisionCore.Calibration.Recorder do
     end
   end
 
-  defp keep_stored(target, figures, in_use, expected) do
-    case kept(target, figures, in_use, expected) do
-      {:ok, saved} -> report(target, Library.select(target, saved.id))
-      {:error, reason} -> select_none(target, reason)
+  defp save_stored(target, figures, in_use, expected) do
+    case saved(target, figures, in_use, expected) do
+      {:ok, saved} -> report(target, Library.put_in_use(target, saved.id))
+      {:error, reason} -> use_none(target, reason)
     end
   end
 
-  # The target runs on a calibration the library does not hold: none of those it holds is selected.
-  defp select_none(target, reason) do
+  # The target runs on a calibration the library does not hold: none of those it holds is in use.
+  defp use_none(target, reason) do
     report(target, {:error, reason})
-    report(target, Library.select(target, nil))
+    report(target, Library.put_in_use(target, nil))
   end
 
-  defp kept(target, figures, in_use, expected) do
+  defp saved(target, figures, in_use, expected) do
     case {held(target, figures, expected), expected} do
       {nil, {:record, options}} -> Library.record(target, figures, with_baseline(options, in_use))
       {nil, _none} -> Library.record(target, figures, with_baseline(imported(in_use), in_use))
@@ -215,8 +215,8 @@ defmodule VisionCore.Calibration.Recorder do
     end
   end
 
-  # The calibration to select among those of the target that hold the stored figures.
-  defp held(target, figures, {:select, id}) do
+  # The calibration to put in use among those of the target that hold the stored figures.
+  defp held(target, figures, {:use, id}) do
     with {:ok, %{target: ^target} = saved} <- Library.fetch(id),
          true <- Library.holds?(saved, figures) do
       saved
@@ -237,5 +237,5 @@ defmodule VisionCore.Calibration.Recorder do
   defp report(_target, :ok), do: :ok
 
   defp report(target, {:error, reason}),
-    do: Logger.warning("#{__MODULE__} could not keep the calibration of #{target}: #{reason}")
+    do: Logger.warning("#{__MODULE__} could not save the calibration of #{target}: #{reason}")
 end

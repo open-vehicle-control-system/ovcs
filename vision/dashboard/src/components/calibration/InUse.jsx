@@ -45,10 +45,10 @@ function statement({ source, kind }) {
   }
 }
 
-// Which stored calibration is in use: the one kept by its name and when it was made, else when it was stored.
-function storedName({ source, storedAt }, inForce) {
+// Which stored calibration is in use: the saved one by its name and when it was made, else when it was stored.
+function storedName({ source, storedAt }, saved) {
   if (source !== 'stored') return null
-  if (inForce) return `${inForce.name} · made ${stamp(inForce.createdAt)}`
+  if (saved) return `${saved.name} · made ${stamp(saved.createdAt)}`
   return storedAt ? stamp(storedAt) : null
 }
 
@@ -181,12 +181,12 @@ function Parameters({ cameras }) {
 /**
  * The calibration the unit uses: where it comes from in plain words, which one it is, the figures to check, and under
  * them each camera's parameters, or for a measured position its rotation and translation; why a file gives no
- * calibration, when one does not. Its files download from the calibration kept in use, or from here when none is.
+ * calibration, when one does not. Its files download from the saved calibration in use, or from here when none is.
  * `onCalibrate`, when given, opens the steps that make a new one, from the button `calibrateRef` then holds.
  */
 export default function InUse({ onCalibrate, calibrateRef }) {
   const inUse = useCalibration(selectedCalibration)
-  const inForce = useCalibration((state) => state.saved[selectedId(state)]?.find((kept) => kept.inForce) ?? null)
+  const savedInUse = useCalibration((state) => state.saved[selectedId(state)]?.find((saved) => saved.inUse) ?? null)
 
   if (!inUse)
     return (
@@ -198,11 +198,11 @@ export default function InUse({ onCalibrate, calibrateRef }) {
   const { title, detail } = statement(inUse)
   const pose = inUse.kind === 'pose'
   const files = yamlFiles(inUse, pose)
-  const downloadedFromKept = inForce != null && yamlFiles(inForce, inForce.pose != null).length > 0
+  const downloadedFromSaved = savedInUse != null && yamlFiles(savedInUse, savedInUse.pose != null).length > 0
 
   const actions = (
     <div className="flex flex-wrap gap-2">
-      {files.length > 0 && !downloadedFromKept ? (
+      {files.length > 0 && !downloadedFromSaved ? (
         <button
           type="button"
           aria-label={pose ? 'Download the position the unit uses' : 'Download the calibration the unit uses'}
@@ -224,7 +224,7 @@ export default function InUse({ onCalibrate, calibrateRef }) {
     <Section
       title={title}
       tone={inUse.source === 'none' ? 'warn' : undefined}
-      subtitle={storedName(inUse, inForce)}
+      subtitle={storedName(inUse, savedInUse)}
       actions={actions}
     >
       <p className="text-sm text-ovcs-muted">{detail}</p>

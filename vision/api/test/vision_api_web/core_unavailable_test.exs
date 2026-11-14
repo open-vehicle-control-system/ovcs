@@ -10,12 +10,6 @@ defmodule VisionApiWeb.CoreUnavailableTest do
 
   defp document(type, extra \\ %{}), do: Jason.encode!(%{data: Map.merge(%{type: type}, extra)})
 
-  defp selection do
-    document("calibration-selections", %{
-      relationships: %{savedCalibration: %{data: %{type: "saved-calibrations", id: "1"}}}
-    })
-  end
-
   defp parameter,
     do: document("parameters", %{id: "stereo.disparity.p1", attributes: %{value: 1}})
 
@@ -26,8 +20,7 @@ defmodule VisionApiWeb.CoreUnavailableTest do
         {:patch, "/api/parameters/stereo.disparity.p1", :parameter},
         {:post, "/api/parameter-saves", "parameter-saves"},
         {:post, "/api/parameter-discards", "parameter-discards"},
-        {:post, "/api/parameter-resets", "parameter-resets"},
-        {:post, "/api/calibration-selections", :selection}
+        {:post, "/api/parameter-resets", "parameter-resets"}
       ] do
     test "#{method |> to_string() |> String.upcase()} #{path} answers a JSON:API 503 while the vision core does not run",
          %{conn: conn} do
@@ -35,7 +28,6 @@ defmodule VisionApiWeb.CoreUnavailableTest do
         case unquote(body) do
           nil -> nil
           :parameter -> parameter()
-          :selection -> selection()
           type -> document(type)
         end
 
@@ -56,5 +48,18 @@ defmodule VisionApiWeb.CoreUnavailableTest do
                ]
              }
     end
+  end
+
+  test "PATCH /api/saved-calibrations/:id with inUse answers a 503 while the vision core does not run",
+       %{conn: conn} do
+    id = "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+    body = document("saved-calibrations", %{id: id, attributes: %{inUse: true}})
+
+    conn =
+      conn
+      |> put_req_header("content-type", @media_type)
+      |> patch("/api/saved-calibrations/#{id}", body)
+
+    assert %{"errors" => [%{"status" => "503"}]} = json_response(conn, 503)
   end
 end

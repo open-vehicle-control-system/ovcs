@@ -43,7 +43,7 @@ function RmsValue({ px }) {
 /** A solved position's reprojection error, then where it puts the camera, beside the position in use. */
 function PoseFigures({ solution, inUse }) {
   const used = inUse?.kind === 'pose' && inUse.pose != null
-  const inForce = poseFacts(inUse?.pose)
+  const usedFacts = poseFacts(inUse?.pose)
 
   return (
     <div className="overflow-x-auto">
@@ -60,7 +60,7 @@ function PoseFigures({ solution, inUse }) {
         <tbody>
           <Row label="Error (reprojection RMS)" solved={<RmsValue px={solution.pose.rmsPx} />} inUse={used ? null : undefined} />
           {poseFacts(solution.pose).map(({ label, value }, index) => (
-            <Row key={label} label={label} solved={value} inUse={used ? inForce[index].value : undefined} />
+            <Row key={label} label={label} solved={value} inUse={used ? usedFacts[index].value : undefined} />
           ))}
         </tbody>
       </table>

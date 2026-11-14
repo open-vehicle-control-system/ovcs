@@ -5,8 +5,8 @@ defmodule VisionApiWeb.CalibrationChannel do
   works on, and each calibration in use as `"calibration"`, with its `id`,
   on join and each time the unit takes another one; both shaped by
   `VisionApiWeb.CalibrationJSON`; a camera's pose as its own calibration,
-  at each change of the pose. Each change of the calibrations kept
-  for one of them, as one kept, renamed, removed or put in force, is
+  at each change of the pose. Each change of the saved calibrations
+  of one of them, as one saved, renamed, removed or put in use, is
   pushed as `"saved"` with the id of that `calibration`: the client
   reads the `saved-calibrations` again. Joining subscribes to the session, which
   turns detection on in the core until the last subscriber leaves. The

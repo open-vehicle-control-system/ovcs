@@ -12,7 +12,7 @@ defmodule VisionApiWeb.CalibrationActionController do
   channel.
 
   A reset the target refuses, as one with nothing stored, is a 422; one
-  the unit fails, its stored calibration kept, a 500.
+  the unit fails, its stored calibration left in place, a 500.
   """
   use VisionApiWeb, :controller
 

@@ -60,7 +60,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
   runner: their driver and rate for the diagnostics, their capture size,
   and each side's calibration for the camera info, the calibration a
   commit stored first, as the stereo unit reads it. A restart publishes
-  the calibration in force.
+  the calibration in use.
 
   It answers `cameracalibrator`'s COMMIT for each side with a
   calibration path: a `VisionCore.Ros2.Services.SetCameraInfoServer`, a

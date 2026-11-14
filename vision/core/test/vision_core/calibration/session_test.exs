@@ -497,18 +497,24 @@ defmodule VisionCore.Calibration.SessionTest do
       assert_receive {:calibration_session, %{phase: :solved}}
       assert :ok = Session.apply()
 
-      assert_receive {:expect, "stereo", cameras, {:record, kept}}
+      assert_receive {:expect, "stereo", cameras, {:record, options}}
       assert_receive :commit
       assert_receive {:forget, ^expectation}
 
       assert cameras == [{"left", result().left}, {"right", result().right}]
 
-      assert kept[:origin] == "dashboard"
-      assert kept[:board] == %{columns: board.columns, rows: board.rows, square_m: board.square_m}
-      assert kept[:samples] == 3
-      assert kept[:stereo_rms_px] == 0.4
-      assert kept[:baseline_m] == 0.06
-      assert kept[:rms_px] == %{"left" => 0.2, "right" => 0.3}
+      assert options[:origin] == "dashboard"
+
+      assert options[:board] == %{
+               columns: board.columns,
+               rows: board.rows,
+               square_m: board.square_m
+             }
+
+      assert options[:samples] == 3
+      assert options[:stereo_rms_px] == 0.4
+      assert options[:baseline_m] == 0.06
+      assert options[:rms_px] == %{"left" => 0.2, "right" => 0.3}
     end
 
     test "that is refused stays solved, with the refusal", %{board: board} do
@@ -744,8 +750,8 @@ defmodule VisionCore.Calibration.SessionTest do
             send(test_pid, {:commit_pose, config, name, pose})
             :ok
           end,
-          expect: fn target, figures, kept ->
-            send(test_pid, {:expect, target, figures, kept})
+          expect: fn target, figures, options ->
+            send(test_pid, {:expect, target, figures, options})
             make_ref()
           end,
           solve: fn _board, _size, _samples -> flunk("solved a pair") end,
@@ -828,10 +834,10 @@ defmodule VisionCore.Calibration.SessionTest do
 
       assert :ok = Session.apply()
 
-      assert_receive {:expect, "hq-pose", :solved_pose, {:record, kept}}
-      assert kept[:rms_px] == 0.3
-      assert kept[:samples] == 3
-      assert kept[:origin] == "dashboard"
+      assert_receive {:expect, "hq-pose", :solved_pose, {:record, options}}
+      assert options[:rms_px] == 0.3
+      assert options[:samples] == 3
+      assert options[:origin] == "dashboard"
       assert_receive {:commit_pose, @pose_config, :hq, :solved_pose}
       assert_receive {:calibration_session, %{phase: :idle, target: nil}}
     end

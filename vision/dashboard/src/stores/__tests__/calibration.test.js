@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectedCalibration, selectedId, useCalibration } from '../calibration.js'
-import { TAKE_TIMEOUT_MS, deleteSaved, loadBoard, resetCalibration, saveBoard, selectSaved } from '../../services/calibration.js'
+import { TAKE_TIMEOUT_MS, deleteSaved, loadBoard, putSavedInUse, resetCalibration, saveBoard } from '../../services/calibration.js'
 
 function fakeChannel() {
   const handlers = {}
@@ -161,18 +161,18 @@ describe('calibration store', () => {
     expect(useCalibration.getState()).toMatchObject({ error: 'cannot cancel while applying', busy: false })
   })
 
-  describe('the calibrations kept', () => {
+  describe('the saved calibrations', () => {
     const resource = (id, attributes) => ({ type: 'saved-calibrations', id, attributes })
     const answer = (status, document) => ({ ok: status < 400, status, json: async () => document, text: async () => JSON.stringify(document ?? '') })
 
     it('reads the list of the calibration picked, of the first one pushed, and again at each change the channel announces', async () => {
-      const fetch = vi.fn(async () => answer(200, { data: [resource('7', { name: 'Bench', inForce: true })] }))
+      const fetch = vi.fn(async () => answer(200, { data: [resource('7', { name: 'Bench', inUse: true })] }))
       vi.stubGlobal('fetch', fetch)
       const { channel, handlers } = fakeChannel()
       useCalibration.getState().listen({ channel: vi.fn(() => channel) })
 
       handlers.calibration({ id: 'stereo', kind: 'stereo', source: 'stored' })
-      await vi.waitFor(() => expect(useCalibration.getState().saved.stereo).toEqual([{ id: '7', name: 'Bench', inForce: true }]))
+      await vi.waitFor(() => expect(useCalibration.getState().saved.stereo).toEqual([{ id: '7', name: 'Bench', inUse: true }]))
       expect(fetch.mock.calls[0][0]).toMatch(/\/api\/saved-calibrations\?filter\[calibration\]=stereo$/)
 
       // Another push of a calibration whose list is known reads nothing; a change of its list does.
@@ -194,16 +194,14 @@ describe('calibration store', () => {
       expect(useCalibration.getState().error).toBeNull()
     })
 
-    it('selects, renames and deletes over the API, and shows a refusal', async () => {
+    it('puts in use, renames and deletes over the API, and shows a refusal', async () => {
       const fetch = vi.fn(async (_url, { method }) => (method === 'DELETE' ? answer(409, { errors: [{ detail: 'the unit runs on this calibration' }] }) : answer(200, { data: resource('7', { name: 'Workshop' }) })))
       vi.stubGlobal('fetch', fetch)
 
       await useCalibration.getState().useSaved('7')
-      const [selectUrl, select] = fetch.mock.calls[0]
-      expect(selectUrl).toMatch(/\/api\/calibration-selections$/)
-      expect(JSON.parse(select.body)).toEqual({
-        data: { type: 'calibration-selections', relationships: { savedCalibration: { data: { type: 'saved-calibrations', id: '7' } } } }
-      })
+      const [useUrl, use] = fetch.mock.calls[0]
+      expect([useUrl.endsWith('/api/saved-calibrations/7'), use.method]).toEqual([true, 'PATCH'])
+      expect(JSON.parse(use.body)).toEqual({ data: { type: 'saved-calibrations', id: '7', attributes: { inUse: true } } })
 
       await useCalibration.getState().renameSaved('7', 'Workshop')
       const [renameUrl, rename] = fetch.mock.calls[1]
@@ -296,7 +294,7 @@ describe('calibration store', () => {
         signals.push(signal)
         return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
       }))
-      const refusals = [selectSaved('7'), resetCalibration('stereo'), deleteSaved('7')].map((taking) => taking.catch((error) => error.message))
+      const refusals = [putSavedInUse('7'), resetCalibration('stereo'), deleteSaved('7')].map((taking) => taking.catch((error) => error.message))
 
       await vi.advanceTimersByTimeAsync(TAKE_TIMEOUT_MS - 1)
       expect(signals.map((signal) => signal.aborted)).toEqual([false, false, false])

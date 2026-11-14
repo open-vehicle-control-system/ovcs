@@ -11,6 +11,7 @@ defmodule VisionCore.CalibrationTest do
   end
 
   @fixtures Path.expand("../support/calibration", __DIR__)
+  @unknown "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
 
   defp config(tmp_dir, camera_options \\ []) do
     %VisionCore.Config{
@@ -214,9 +215,10 @@ defmodule VisionCore.CalibrationTest do
     assert {:ok, %{source: :built_in}} = Calibration.in_use(config, "hq")
   end
 
-  describe "the calibrations kept" do
-    alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+  describe "the saved calibrations" do
+    alias VisionCore.Calibration.{Library, Recorder}
     alias VisionCore.Camera.Calibration, as: OwnCalibration
+    alias VisionCore.Models
     alias VisionCore.Outputs
     alias VisionCore.Repo
     alias VisionCore.Ros2.CameraCalibration
@@ -224,8 +226,9 @@ defmodule VisionCore.CalibrationTest do
     @built_in Path.join(@fixtures, "identity_left.yaml")
 
     setup %{tmp_dir: tmp_dir} do
-      Repo.delete_all(Selection)
-      Repo.delete_all(Saved)
+      for model <- [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose],
+          do: Repo.delete_all(model)
+
       config = config(tmp_dir, calibration: @built_in)
       start_supervised!({Recorder, config: config})
       %{config: config}
@@ -249,20 +252,20 @@ defmodule VisionCore.CalibrationTest do
       fx
     end
 
-    test "saved/2 lists a target's calibrations, the newest first, the one in force marked", %{
+    test "saved/2 lists a target's calibrations, the newest first, the one in use marked", %{
       config: config
     } do
       commit(config, 580.8)
       commit(config, 590.0)
 
-      assert {:ok, [%{saved: %{cameras: [%{fx: 590.0}]}, in_force: true}, %{in_force: false}]} =
+      assert {:ok, [%{saved: %{lens: %{fx: 590.0}}, in_use: true}, %{in_use: false}]} =
                Calibration.saved(config, "hq")
 
       assert Calibration.saved(config, "front") == {:ok, []}
       assert Calibration.saved(config, "rear") == {:error, :not_found}
     end
 
-    test "use_saved/2 puts a kept calibration back in force", %{config: config} do
+    test "use_saved/2 puts a saved calibration back in use", %{config: config} do
       commit(config, 580.8)
       commit(config, 590.0)
       {:ok, [_second, %{saved: first}]} = Calibration.saved(config, "hq")
@@ -274,14 +277,14 @@ defmodule VisionCore.CalibrationTest do
 
       assert fx_in_use(config) == 580.8
 
-      assert {:ok, %{saved: %{id: id}, in_force: true}} =
+      assert {:ok, %{saved: %{id: id}, in_use: true}} =
                Calibration.fetch_saved(config, first.id)
 
       assert id == first.id
-      assert {:ok, [%{in_force: false}, %{in_force: true}]} = Calibration.saved(config, "hq")
+      assert {:ok, [%{in_use: false}, %{in_use: true}]} = Calibration.saved(config, "hq")
     end
 
-    test "use_saved/2 selects the calibration asked for among those holding the same figures",
+    test "use_saved/2 puts in use the calibration asked for among those holding the same figures",
          %{config: config} do
       {:ok, older} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
       {:ok, _newer} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
@@ -289,14 +292,32 @@ defmodule VisionCore.CalibrationTest do
       assert Calibration.use_saved(config, older.id) == :ok
       :sys.get_state(Recorder)
 
-      assert Library.selected("hq").id == older.id
+      assert Library.in_use("hq").id == older.id
     end
 
-    test "use_saved/2 refuses a calibration that is not kept, or kept for a target the unit has not",
+    test "reset/3 answers once the library has no calibration in use, recorder or not",
+         %{config: config} do
+      commit(config, 580.8)
+      stop_supervised!(Recorder)
+
+      assert Calibration.reset(config, "hq") == :ok
+      assert Library.in_use("hq") == nil
+    end
+
+    test "use_saved/2 answers once the library has the calibration in use, recorder or not",
+         %{config: config} do
+      {:ok, saved} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
+      stop_supervised!(Recorder)
+
+      assert Calibration.use_saved(config, saved.id) == :ok
+      assert Library.in_use("hq").id == saved.id
+    end
+
+    test "use_saved/2 refuses a calibration that is not saved, or saved for a target the unit has not",
          %{config: config} do
       {:ok, foreign} = Library.record("rear", [{"rear", calibration(600.0)}], origin: "imported")
 
-      assert Calibration.use_saved(config, -1) == {:error, :not_found}
+      assert Calibration.use_saved(config, @unknown) == {:error, :not_found}
       assert Calibration.use_saved(config, foreign.id) == {:error, :not_found}
       assert Calibration.fetch_saved(config, foreign.id) == {:error, :not_found}
     end
@@ -309,17 +330,17 @@ defmodule VisionCore.CalibrationTest do
       {:ok, [_second, %{saved: first}]} = Calibration.saved(config, "hq")
       Outputs.subscribe(Recorder.changed_key("hq"))
 
-      assert {:ok, %{saved: %{name: "Bench"}, in_force: false}} =
+      assert {:ok, %{saved: %{name: "Bench"}, in_use: false}} =
                Calibration.rename_saved(config, first.id, "Bench")
 
       assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
 
       assert Calibration.delete_saved(config, first.id) == :ok
       assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
-      assert {:ok, [%{in_force: true}]} = Calibration.saved(config, "hq")
+      assert {:ok, [%{in_use: true}]} = Calibration.saved(config, "hq")
     end
 
-    test "delete_saved/3 returns the target to its built-in calibration, then removes the one in force",
+    test "delete_saved/3 returns the target to its built-in calibration, then removes the one in use",
          %{config: config} do
       commit(config, 580.8)
       {:ok, [%{saved: saved}]} = Calibration.saved(config, "hq")
@@ -329,25 +350,25 @@ defmodule VisionCore.CalibrationTest do
 
       assert {:ok, %{source: :built_in}} = Calibration.in_use(config, "hq")
       assert Library.fetch(saved.id) == {:error, :not_found}
-      assert Library.selected("hq") == nil
+      assert Library.in_use("hq") == nil
       assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
-      assert Calibration.rename_saved(config, -1, "x") == {:error, :not_found}
+      assert Calibration.rename_saved(config, @unknown, "x") == {:error, :not_found}
     end
 
-    test "delete_saved/3 keeps the calibration in force of a target with no built-in one to return to",
+    test "delete_saved/3 leaves the calibration in use of a target with no built-in one to return to",
          %{tmp_dir: tmp_dir} do
       config = config(tmp_dir)
       :ok = OwnCalibration.commit(config, :hq, calibration(580.8))
       :sys.get_state(Recorder)
-      {:ok, [%{saved: saved, in_force: true}]} = Calibration.saved(config, "hq")
+      {:ok, [%{saved: saved, in_use: true}]} = Calibration.saved(config, "hq")
 
-      assert Calibration.delete_saved(config, saved.id) == {:error, :in_force}
+      assert Calibration.delete_saved(config, saved.id) == {:error, :in_use}
 
       assert {:ok, %{source: :stored}} = Calibration.in_use(config, "hq")
       assert {:ok, _saved} = Library.fetch(saved.id)
     end
 
-    test "delete_saved/3 keeps the calibration in force when the return to the built-in one fails",
+    test "delete_saved/3 leaves the calibration in use when the return to the built-in one fails",
          %{config: config, tmp_dir: tmp_dir} do
       commit(config, 580.8)
       {:ok, [%{saved: saved}]} = Calibration.saved(config, "hq")
@@ -359,10 +380,10 @@ defmodule VisionCore.CalibrationTest do
                Calibration.delete_saved(config, saved.id)
 
       assert {:ok, %{source: :stored}} = Calibration.in_use(config, "hq")
-      assert Library.selected("hq").id == saved.id
+      assert Library.in_use("hq").id == saved.id
     end
 
-    test "a pose is kept, put back in force and deleted as a calibration is", %{tmp_dir: tmp_dir} do
+    test "a pose is saved, put back in use and deleted as a calibration is", %{tmp_dir: tmp_dir} do
       alias VisionCore.Camera.Pose
 
       built_in = Path.join(tmp_dir, "hq_pose.yaml")
@@ -381,27 +402,27 @@ defmodule VisionCore.CalibrationTest do
       :ok = Pose.commit(config, :hq, second)
       :sys.get_state(Recorder)
 
-      assert {:ok, [%{saved: kept, in_force: true, files: [file]}]} =
+      assert {:ok, [%{saved: saved_pose, in_use: true, files: [file]}]} =
                Calibration.saved(config, "hq-pose")
 
-      assert kept.cameras == []
+      assert %Models.CameraPose{camera: "hq"} = saved_pose
       assert %{name: "hq", file: "hq_pose.yaml", yaml: yaml} = file
       assert Pose.parse(yaml) == {:ok, second}
-      assert Library.selected("hq-pose").id == kept.id
+      assert Library.in_use("hq-pose").id == saved_pose.id
 
       :ok = Calibration.reset(config, "hq-pose")
       :sys.get_state(Recorder)
-      assert {:ok, [%{in_force: false}]} = Calibration.saved(config, "hq-pose")
+      assert {:ok, [%{in_use: false}]} = Calibration.saved(config, "hq-pose")
 
-      assert Calibration.use_saved(config, kept.id) == :ok
+      assert Calibration.use_saved(config, saved_pose.id) == :ok
       :sys.get_state(Recorder)
 
       assert {:ok, %{source: :stored, pose: %{pose: ^second}}} =
                Calibration.in_use(config, "hq-pose")
 
-      assert {:ok, [%{in_force: true}]} = Calibration.saved(config, "hq-pose")
+      assert {:ok, [%{in_use: true}]} = Calibration.saved(config, "hq-pose")
 
-      assert Calibration.delete_saved(config, kept.id) == :ok
+      assert Calibration.delete_saved(config, saved_pose.id) == :ok
 
       assert {:ok, %{source: :built_in, pose: %{pose: ^first}}} =
                Calibration.in_use(config, "hq-pose")

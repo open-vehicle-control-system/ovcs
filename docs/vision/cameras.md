@@ -209,7 +209,7 @@ The steps use the OVCS1 reference vehicle's camera `center`; they work the same 
 
 The pipelines on the camera and the ROS 2 exporter take the new pose at once, without a restart. A detection pipeline on the camera then places its boxes with the stereo depth ([Detect on a camera of its own](./detection.md#detect-on-a-camera-of-its-own)), and Foxglove's 3D panel places the camera's frame beside the stereo pair's.
 
-The unit keeps every pose it was given, as it keeps calibrations ([The calibrations kept](./calibration.md#the-calibrations-kept)). To ship one in your vehicle package, **Download** it as `<camera>_pose.yaml`, put it in `vehicles/<vehicle>/priv/calibration/` and point the `:camera` component's `pose:` at it.
+The unit saves every pose it was given, as it saves calibrations ([The saved calibrations](./calibration.md#the-saved-calibrations)). To ship one in your vehicle package, **Download** it as `<camera>_pose.yaml`, put it in `vehicles/<vehicle>/priv/calibration/` and point the `:camera` component's `pose:` at it.
 
 ## See also
 

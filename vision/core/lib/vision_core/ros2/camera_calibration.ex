@@ -4,7 +4,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
   `camera_calibration_parsers` YAML — the same format
   `cameracalibrator` writes (`left.yaml` / `right.yaml`).
 
-  Each matrix is kept as the YAML's flat row-major list; converting to Nx
+  Each matrix is held as the YAML's flat row-major list; converting to Nx
   tensors is the consumer's responsibility. Two consumers:
 
     * `VisionCore.Ros2.ZenohExporter.Stereo` — populates the outgoing

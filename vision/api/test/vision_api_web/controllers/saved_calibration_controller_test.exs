@@ -1,14 +1,18 @@
 defmodule VisionApiWeb.SavedCalibrationControllerTest do
   use VisionApiWeb.CalibrationCase
 
-  alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+  alias VisionCore.Calibration.{Library, Recorder}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
+  alias VisionCore.Models
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
 
+  @unknown "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
+
   setup %{config: config} do
-    Repo.delete_all(Selection)
-    Repo.delete_all(Saved)
+    for model <- [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose],
+        do: Repo.delete_all(model)
+
     start_supervised!({Recorder, config: config})
     :ok
   end
@@ -19,9 +23,9 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     %{built_in | camera_matrix: [fx | rest]}
   end
 
-  # Commits a calibration of the camera `hq`, which the recorder keeps and selects.
-  defp keep(config, fx, kept \\ nil) do
-    if kept, do: Recorder.expect("hq", [{"hq", calibration(fx)}], {:record, kept})
+  # Commits a calibration of the camera `hq`, which the recorder saves and puts in use.
+  defp save(config, fx, options \\ nil) do
+    if options, do: Recorder.expect("hq", [{"hq", calibration(fx)}], {:record, options})
     :ok = OwnCalibration.commit(config, :hq, calibration(fx))
     :sys.get_state(Recorder)
     hd(Library.list("hq"))
@@ -33,24 +37,31 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   defp rename(conn, id, document),
     do: conn |> jsonapi() |> patch("/api/saved-calibrations/#{id}", Jason.encode!(document))
 
-  defp select(conn, document),
-    do: conn |> jsonapi() |> post("/api/calibration-selections", Jason.encode!(document))
+  defp patch_saved(conn, id, attributes) do
+    document = %{data: %{type: "saved-calibrations", id: id, attributes: attributes}}
+    conn |> jsonapi() |> patch("/api/saved-calibrations/#{id}", Jason.encode!(document))
+  end
 
-  defp selection(id),
-    do: %{
+  defp put_in_use(conn, id), do: patch_saved(conn, id, %{inUse: true})
+
+  defp reset(conn, target) do
+    document = %{
       data: %{
-        type: "calibration-selections",
-        relationships: %{savedCalibration: %{data: %{type: "saved-calibrations", id: id}}}
+        type: "calibration-resets",
+        relationships: %{calibration: %{data: %{type: "calibrations", id: target}}}
       }
     }
 
+    conn |> jsonapi() |> post("/api/calibration-resets", Jason.encode!(document))
+  end
+
   describe "GET /api/saved-calibrations" do
-    test "lists the calibrations kept for every target, the newest first, with the one in force",
+    test "lists the saved calibrations of every target, the newest first, with the one in use",
          %{conn: conn, config: config} do
-      first = keep(config, 580.8)
+      first = save(config, 580.8)
 
       second =
-        keep(config, 590.0,
+        save(config, 590.0,
           origin: "dashboard",
           board: %{columns: 8, rows: 6, square_m: 0.03},
           samples: 41,
@@ -68,7 +79,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                  "name" => name,
                  "origin" => "dashboard",
                  "createdAt" => created_at,
-                 "inForce" => true,
+                 "inUse" => true,
                  "board" => %{"columns" => 8, "rows" => 6, "squareMm" => 30.0},
                  "samples" => 41,
                  "stereoRmsPx" => nil,
@@ -94,7 +105,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                }
              } = newest
 
-      assert id == Integer.to_string(second.id)
+      assert id == second.id
       assert name == second.name
       assert distortion == [0.1, -0.2, 0.0, 0.0, 0.0]
       assert yaml == CameraCalibration.to_yaml(calibration(590.0), "hq")
@@ -102,11 +113,11 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
       assert %{
                "id" => oldest_id,
-               "attributes" => %{"origin" => "imported", "inForce" => false, "board" => nil}
+               "attributes" => %{"origin" => "imported", "inUse" => false, "board" => nil}
              } =
                oldest
 
-      assert oldest_id == Integer.to_string(first.id)
+      assert oldest_id == first.id
     end
 
     test "gives a pair's cameras the files of the calibration in use, under the stereo unit's prefix",
@@ -143,7 +154,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                    "type" => "saved-calibrations",
                    "attributes" => %{
                      "origin" => "dashboard",
-                     "inForce" => true,
+                     "inUse" => true,
                      "samples" => 30,
                      "cameras" => [],
                      "pose" => %{
@@ -164,7 +175,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert_in_delta distance_mm, 60.53, 0.01
       assert VisionCore.Camera.Pose.parse(yaml) == {:ok, pose}
 
-      keep(config, 580.8)
+      save(config, 580.8)
 
       assert %{"data" => [%{"attributes" => %{"pose" => nil}}]} =
                conn |> get("/api/saved-calibrations?filter[calibration]=hq") |> json_response(200)
@@ -172,7 +183,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
     test "lists one target's with filter[calibration], and none for a target without any",
          %{conn: conn, config: config} do
-      keep(config, 580.8)
+      save(config, 580.8)
 
       assert %{"data" => [_one]} =
                conn |> get("/api/saved-calibrations?filter[calibration]=hq") |> json_response(200)
@@ -199,17 +210,18 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   end
 
   describe "GET /api/saved-calibrations/:id" do
-    test "renders one calibration kept", %{conn: conn, config: config} do
-      saved = keep(config, 580.8)
+    test "renders one saved calibration", %{conn: conn, config: config} do
+      saved = save(config, 580.8)
 
-      assert %{"data" => %{"id" => id, "attributes" => %{"inForce" => true}}} =
+      assert %{"data" => %{"id" => id, "attributes" => %{"inUse" => true}}} =
                conn |> get("/api/saved-calibrations/#{saved.id}") |> json_response(200)
 
-      assert id == Integer.to_string(saved.id)
+      assert id == saved.id
+      assert Ecto.UUID.cast(id) == {:ok, id}
     end
 
-    test "answers 404 for one the unit does not keep, or an id that is no number", %{conn: conn} do
-      for id <- ["999999", "abc", "1x"] do
+    test "answers 404 for one the unit has not saved, or an id that names none", %{conn: conn} do
+      for id <- [@unknown, "999999", "abc", "camera-1"] do
         assert %{"errors" => [%{"status" => "404", "detail" => detail}]} =
                  conn |> get("/api/saved-calibrations/#{id}") |> json_response(404)
 
@@ -219,16 +231,16 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
     test "answers 404 for an id written another way than the unit writes it",
          %{conn: conn, config: config} do
-      id = keep(config, 580.8).id
+      id = save(config, 580.8).id
 
-      for other <- ["0#{id}", "+#{id}", "-#{id}", "0", "99999999999999999999999999"] do
+      for other <- [String.upcase(id), String.replace(id, "-", ""), "{#{id}}", "#{id}0"] do
         assert conn |> get("/api/saved-calibrations/#{other}") |> json_response(404)
         assert conn |> delete("/api/saved-calibrations/#{other}") |> json_response(404)
 
         document = %{data: %{type: "saved-calibrations", id: other, attributes: %{name: "x"}}}
         assert conn |> rename(other, document) |> json_response(404)
 
-        assert conn |> select(selection(other)) |> json_response(404)
+        assert conn |> put_in_use(other) |> json_response(404)
       end
 
       assert {:ok, _saved} = Library.fetch(id)
@@ -237,8 +249,8 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
   describe "PATCH /api/saved-calibrations/:id" do
     test "names a calibration", %{conn: conn, config: config} do
-      saved = keep(config, 580.8)
-      id = Integer.to_string(saved.id)
+      saved = save(config, 580.8)
+      id = saved.id
 
       document = %{data: %{type: "saved-calibrations", id: id, attributes: %{name: " Workshop "}}}
 
@@ -249,7 +261,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     end
 
     test "answers 422 for a name that is empty or too long", %{conn: conn, config: config} do
-      id = Integer.to_string(keep(config, 580.8).id)
+      id = save(config, 580.8).id
 
       for name <- ["   ", String.duplicate("a", 81)] do
         document = %{data: %{type: "saved-calibrations", id: id, attributes: %{name: name}}}
@@ -266,9 +278,9 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       end
     end
 
-    test "answers 400 without a name, 409 for another type or id, 404 for one not kept",
+    test "answers 400 without a name, 409 for another type or id, 404 for one not saved",
          %{conn: conn, config: config} do
-      id = Integer.to_string(keep(config, 580.8).id)
+      id = save(config, 580.8).id
 
       assert conn
              |> rename(id, %{data: %{type: "saved-calibrations", id: id, attributes: %{name: 3}}})
@@ -285,14 +297,14 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
              |> json_response(409)
 
       assert conn
-             |> rename("999999", %{
-               data: %{type: "saved-calibrations", id: "999999", attributes: %{name: "x"}}
+             |> rename(@unknown, %{
+               data: %{type: "saved-calibrations", id: @unknown, attributes: %{name: "x"}}
              })
              |> json_response(404)
     end
 
     test "answers 400 for a form body", %{conn: conn, config: config} do
-      id = keep(config, 580.8).id
+      id = save(config, 580.8).id
 
       conn =
         conn
@@ -304,18 +316,18 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   end
 
   describe "DELETE /api/saved-calibrations/:id" do
-    test "removes a calibration that is not in force", %{conn: conn, config: config} do
-      first = keep(config, 580.8)
-      keep(config, 590.0)
+    test "removes a calibration that is not in use", %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      save(config, 590.0)
 
       conn = delete(conn, "/api/saved-calibrations/#{first.id}")
       assert response(conn, 204) == ""
       assert Library.fetch(first.id) == {:error, :not_found}
     end
 
-    test "returns the unit to its built-in calibration, then removes the calibration in force",
+    test "returns the unit to its built-in calibration, then removes the calibration in use",
          %{conn: conn, config: config} do
-      saved = keep(config, 580.8)
+      saved = save(config, 580.8)
 
       conn = delete(conn, "/api/saved-calibrations/#{saved.id}")
 
@@ -324,21 +336,21 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert {:ok, %{source: :built_in}} = VisionCore.Calibration.in_use(config, "hq")
     end
 
-    test "answers 409 for the calibration in force without a built-in calibration to return to",
+    test "answers 409 for the calibration in use without a built-in calibration to return to",
          %{conn: conn, config: config, tmp_dir: tmp_dir} do
-      saved = keep(config, 580.8)
+      saved = save(config, 580.8)
       File.rm!(Path.join(tmp_dir, "hq.yaml"))
 
-      assert %{"errors" => [%{"status" => "409", "title" => "In force", "detail" => detail}]} =
+      assert %{"errors" => [%{"status" => "409", "title" => "In use", "detail" => detail}]} =
                conn |> delete("/api/saved-calibrations/#{saved.id}") |> json_response(409)
 
       assert detail =~ "no built-in calibration to return to"
       assert {:ok, _saved} = Library.fetch(saved.id)
     end
 
-    test "answers 409 for the calibration in force while a calibration session runs",
+    test "answers 409 for the calibration in use while a calibration session runs",
          %{conn: conn, config: config} do
-      saved = keep(config, 580.8)
+      saved = save(config, 580.8)
       {:ok, board} = VisionCore.Calibration.Board.new(8, 6, 0.025)
       :ok = VisionCore.Calibration.Session.start("hq", board)
 
@@ -348,9 +360,9 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert {:ok, _saved} = Library.fetch(saved.id)
     end
 
-    test "answers 500 when the unit cannot return to its built-in calibration, keeping the one in force",
+    test "answers 500 when the unit cannot return to its built-in calibration, the one in use left",
          %{conn: conn, config: config, tmp_dir: tmp_dir} do
-      saved = keep(config, 580.8)
+      saved = save(config, 580.8)
       store = Path.join(tmp_dir, "camera_store")
       File.chmod!(store, 0o500)
       on_exit(fn -> File.chmod(store, 0o700) end)
@@ -362,93 +374,171 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert {:ok, %{source: :stored}} = VisionCore.Calibration.in_use(config, "hq")
     end
 
-    test "answers 404 for one not kept", %{conn: conn} do
-      assert conn |> delete("/api/saved-calibrations/999999") |> json_response(404)
+    test "answers 404 for one not saved", %{conn: conn} do
+      assert conn |> delete("/api/saved-calibrations/#{@unknown}") |> json_response(404)
     end
   end
 
-  describe "POST /api/calibration-selections" do
-    test "puts a calibration kept back in force", %{conn: conn, config: config} do
-      first = keep(config, 580.8)
-      keep(config, 590.0)
-      id = Integer.to_string(first.id)
+  describe "PATCH /api/saved-calibrations/:id with inUse" do
+    test "puts a saved calibration in use, answering once the unit has taken it",
+         %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      save(config, 590.0)
+      id = first.id
 
-      conn = select(conn, selection(id))
+      assert %{"data" => %{"id" => ^id, "attributes" => %{"inUse" => true}}} =
+               conn |> put_in_use(id) |> json_response(200)
 
-      assert %{
-               "data" => %{
-                 "type" => "calibration-selections",
-                 "id" => action_id,
-                 "relationships" => %{
-                   "savedCalibration" => %{
-                     "data" => %{"type" => "saved-calibrations", "id" => ^id}
-                   }
-                 }
-               }
-             } = json_response(conn, 201)
-
-      assert is_binary(action_id)
-      :sys.get_state(Recorder)
-      assert Library.selected("hq").id == first.id
+      assert Library.in_use("hq").id == first.id
 
       assert {:ok, %{cameras: [%{calibration: %{camera_matrix: [580.8 | _rest]}}]}} =
                VisionCore.Calibration.in_use(config, "hq")
     end
 
-    test "puts a pose kept back in force", %{conn: conn, config: config} do
+    test "puts a saved pose in use", %{conn: conn, config: config} do
       pose = VisionApiWeb.CalibrationCase.pose()
       :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
       :ok = VisionCore.Camera.Pose.commit(config, :hq, %{pose | translation: [-0.07, 0.0, 0.0]})
       :sys.get_state(Recorder)
       [_newest, first] = Library.list("hq-pose")
 
-      assert %{"data" => %{"type" => "calibration-selections"}} =
-               conn |> select(selection(Integer.to_string(first.id))) |> json_response(201)
+      assert %{"data" => %{"attributes" => %{"inUse" => true}}} =
+               conn |> put_in_use(first.id) |> json_response(200)
 
-      :sys.get_state(Recorder)
-      assert Library.selected("hq-pose").id == first.id
+      assert Library.in_use("hq-pose").id == first.id
       assert {:ok, %{pose: %{pose: ^pose}}} = VisionCore.Calibration.in_use(config, "hq-pose")
     end
 
-    test "answers 404 for a calibration the unit does not keep", %{conn: conn} do
-      for id <- ["999999", "abc"] do
-        assert %{
-                 "errors" => [
-                   %{
-                     "status" => "404",
-                     "source" => %{"pointer" => "/data/relationships/savedCalibration"}
-                   }
-                 ]
-               } = conn |> select(selection(id)) |> json_response(404)
+    test "names and puts in use in one change", %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      save(config, 590.0)
+
+      assert %{"data" => %{"attributes" => %{"name" => "Workshop", "inUse" => true}}} =
+               conn
+               |> patch_saved(first.id, %{name: " Workshop ", inUse: true})
+               |> json_response(200)
+
+      assert %{name: "Workshop", in_use: true} = Library.in_use("hq")
+    end
+
+    test "changes nothing for a name refused with inUse", %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      second = save(config, 590.0)
+
+      assert %{"errors" => [%{"status" => "422", "title" => "Invalid name"}]} =
+               conn |> patch_saved(first.id, %{name: "  ", inUse: true}) |> json_response(422)
+
+      assert Library.in_use("hq").id == second.id
+      assert {:ok, %{name: name}} = Library.fetch(first.id)
+      assert name == first.name
+    end
+
+    test "answers the calibration as it is for the inUse it already has",
+         %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      second = save(config, 590.0)
+
+      assert %{"data" => %{"attributes" => %{"inUse" => true}}} =
+               conn |> patch_saved(second.id, %{inUse: true}) |> json_response(200)
+
+      assert %{"data" => %{"attributes" => %{"inUse" => false}}} =
+               conn |> patch_saved(first.id, %{inUse: false}) |> json_response(200)
+
+      assert Library.in_use("hq").id == second.id
+    end
+
+    test "answers 422 for inUse false on the calibration in use, which a reset or another one ends",
+         %{conn: conn, config: config} do
+      saved = save(config, 580.8)
+
+      assert %{
+               "errors" => [
+                 %{
+                   "status" => "422",
+                   "title" => "Still in use",
+                   "source" => %{"pointer" => "/data/attributes/inUse"}
+                 }
+               ]
+             } = conn |> patch_saved(saved.id, %{inUse: false}) |> json_response(422)
+
+      assert Library.in_use("hq").id == saved.id
+    end
+
+    test "answers 400 for an inUse that is not a boolean, or without a name or inUse",
+         %{conn: conn, config: config} do
+      id = save(config, 580.8).id
+
+      assert %{"errors" => [%{"source" => %{"pointer" => "/data/attributes/inUse"}}]} =
+               conn |> patch_saved(id, %{inUse: "yes"}) |> json_response(400)
+
+      assert %{"errors" => [%{"source" => %{"pointer" => "/data/attributes"}}]} =
+               conn |> patch_saved(id, %{}) |> json_response(400)
+    end
+
+    test "answers 422 when the unit cannot take the files, changing nothing",
+         %{conn: conn, config: config, tmp_dir: tmp_dir} do
+      first = save(config, 580.8)
+      second = save(config, 590.0)
+      store = Path.join(tmp_dir, "camera_store")
+      File.chmod!(store, 0o500)
+      on_exit(fn -> File.chmod(store, 0o700) end)
+
+      assert %{"errors" => [%{"status" => "422", "title" => "Not put in use"}]} =
+               conn
+               |> patch_saved(first.id, %{name: "Workshop", inUse: true})
+               |> json_response(422)
+
+      assert Library.in_use("hq").id == second.id
+      assert {:ok, %{name: name}} = Library.fetch(first.id)
+      assert name == first.name
+    end
+
+    test "answers 404 for a calibration not saved", %{conn: conn} do
+      for id <- [@unknown, "abc"] do
+        assert %{"errors" => [%{"status" => "404"}]} =
+                 conn |> put_in_use(id) |> json_response(404)
       end
     end
 
-    test "answers 409 while a calibration session runs", %{conn: conn, config: config} do
-      saved = keep(config, 580.8)
+    test "answers 409 while a calibration session runs, and still takes a name",
+         %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      save(config, 590.0)
       {:ok, board} = VisionCore.Calibration.Board.new(8, 6, 0.025)
       :ok = VisionCore.Calibration.Session.start("hq", board)
 
-      assert %{"errors" => [%{"status" => "409", "title" => "Not selected"}]} =
-               conn |> select(selection(Integer.to_string(saved.id))) |> json_response(409)
-    end
+      assert %{"errors" => [%{"status" => "409", "title" => "Not put in use"}]} =
+               conn
+               |> patch_saved(first.id, %{name: "Workshop", inUse: true})
+               |> json_response(409)
 
-    test "answers 400 without the relationship, 409 for another type, 403 for a client id",
-         %{conn: conn} do
-      assert conn |> select(%{data: %{type: "calibration-selections"}}) |> json_response(400)
-      assert conn |> select(%{data: %{type: "calibrations"}}) |> json_response(409)
-      assert conn |> select(%{}) |> json_response(400)
+      assert {:ok, %{name: name, in_use: false}} = Library.fetch(first.id)
+      assert name == first.name
 
-      document = put_in(selection("1"), [:data, :id], "7")
-      assert conn |> select(document) |> json_response(403)
+      assert %{"data" => %{"attributes" => %{"name" => "Workshop"}}} =
+               conn |> patch_saved(first.id, %{name: "Workshop"}) |> json_response(200)
     end
+  end
+
+  test "a reset leaves no saved calibration in use", %{conn: conn, config: config} do
+    save(config, 580.8)
+
+    assert conn |> reset("hq") |> json_response(201)
+
+    assert %{"data" => [%{"attributes" => %{"inUse" => false}}]} =
+             conn |> get("/api/saved-calibrations") |> json_response(200)
   end
 
   describe "while the saved calibrations cannot be read" do
     setup %{config: config} do
-      saved = keep(config, 580.8)
-      Repo.query!("ALTER TABLE calibrations RENAME TO calibrations_away")
-      on_exit(fn -> Repo.query!("ALTER TABLE calibrations_away RENAME TO calibrations") end)
-      %{id: Integer.to_string(saved.id)}
+      saved = save(config, 580.8)
+      Repo.query!("ALTER TABLE camera_calibrations RENAME TO camera_calibrations_away")
+
+      on_exit(fn ->
+        Repo.query!("ALTER TABLE camera_calibrations_away RENAME TO camera_calibrations")
+      end)
+
+      %{id: saved.id}
     end
 
     defp assert_unavailable(conn) do
@@ -474,8 +564,8 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       conn |> rename(id, document) |> assert_unavailable()
     end
 
-    test "POST /api/calibration-selections answers 503", %{conn: conn, id: id} do
-      conn |> select(selection(id)) |> assert_unavailable()
+    test "PATCH /api/saved-calibrations/:id with inUse answers 503", %{conn: conn, id: id} do
+      conn |> put_in_use(id) |> assert_unavailable()
     end
   end
 

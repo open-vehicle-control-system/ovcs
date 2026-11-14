@@ -1,6 +1,6 @@
 defmodule VisionCore.Camera.StoredFile do
   @moduledoc """
-  The file a camera of its own keeps at runtime, its calibration
+  The file a camera of its own stores at runtime, its calibration
   (`VisionCore.Camera.Calibration`) or its pose (`VisionCore.Camera.Pose`):
   written whole or not at all, through a temporary file synced then
   renamed over it, removed, and dated. Each change is logged under the

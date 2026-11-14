@@ -15,7 +15,7 @@ const ORIGIN_HINT = {
   title: 'Where it was made',
   text:
     'Made on this page: calibrated from this dashboard, with its board, views and errors. Made outside this page: ' +
-    "committed by ROS 2's cameracalibrator, or stored on the unit before it kept its calibrations."
+    "committed by ROS 2's cameracalibrator, or stored on the unit before it saved its calibrations."
 }
 
 const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
@@ -33,13 +33,13 @@ function errors({ cameras, stereoRmsPx, pose }) {
   return each
 }
 
-// The figures a calibration kept has: its reprojection errors, then a pair's baseline or a position's distance.
-function figures(kept, kind) {
-  const solved = errors(kept)
+// The figures a saved calibration has: its reprojection errors, then a pair's baseline or a position's distance.
+function figures(saved, kind) {
+  const solved = errors(saved)
   return [
     ...(solved.length > 0 ? [{ label: 'Reprojection error', value: solved }] : []),
-    ...(kind === 'stereo' && kept.baselineM != null ? [{ label: BASELINE, value: millimetres(kept.baselineM) }] : []),
-    ...(kind === 'pose' && kept.pose?.distanceMm != null ? [{ label: 'Distance to the left camera', value: distanceText(kept.pose) }] : [])
+    ...(kind === 'stereo' && saved.baselineM != null ? [{ label: BASELINE, value: millimetres(saved.baselineM) }] : []),
+    ...(kind === 'pose' && saved.pose?.distanceMm != null ? [{ label: 'Distance to the left camera', value: distanceText(saved.pose) }] : [])
   ]
 }
 
@@ -51,7 +51,7 @@ function InUseBadge() {
   return <OvcsBadge tone="ok">In use</OvcsBadge>
 }
 
-/** The firmware's calibration or position, which the unit goes back to: nothing kept is removed. */
+/** The firmware's calibration or position, which the unit goes back to: nothing saved is removed. */
 function FirmwareItem({ kind, inUse, busy, onUse }) {
   return (
     <li aria-label="Shipped with the firmware" className={ITEM}>
@@ -73,11 +73,11 @@ function FirmwareItem({ kind, inUse, busy, onUse }) {
   )
 }
 
-/** A field that renames a kept calibration, focused and selected when it opens; `onClose` ends it. */
-function NameEditor({ kept, onClose }) {
+/** A field that renames a saved calibration, focused and selected when it opens; `onClose` ends it. */
+function NameEditor({ saved, onClose }) {
   const inputId = useId()
   const rename = useCalibration((state) => state.renameSaved)
-  const [draft, setDraft] = useState(kept.name)
+  const [draft, setDraft] = useState(saved.name)
   const input = useRef(null)
 
   useEffect(() => {
@@ -89,13 +89,13 @@ function NameEditor({ kept, onClose }) {
     event.preventDefault()
     const name = draft.trim()
     if (name === '') return
-    if (name !== kept.name) rename(kept.id, name)
+    if (name !== saved.name) rename(saved.id, name)
     onClose()
   }
 
   return (
     <form onSubmit={submit} className="flex items-center gap-1.5">
-      <label htmlFor={inputId} className="sr-only">{`Name of ${kept.name}`}</label>
+      <label htmlFor={inputId} className="sr-only">{`Name of ${saved.name}`}</label>
       <input
         ref={input}
         id={inputId}
@@ -120,9 +120,9 @@ function NameEditor({ kept, onClose }) {
 }
 
 // Removing the calibration in use first takes the unit back to the firmware's.
-const deleteQuestion = ({ name, inForce }) => ({
+const deleteQuestion = ({ name, inUse }) => ({
   title: `Delete the calibration "${name}"?`,
-  message: inForce ? 'The unit uses it: it goes back to the calibration shipped with the firmware first.' : null,
+  message: inUse ? 'The unit uses it: it goes back to the calibration shipped with the firmware first.' : null,
   confirmLabel: 'Delete',
   danger: true
 })
@@ -130,12 +130,12 @@ const deleteQuestion = ({ name, inForce }) => ({
 const NO_FIRMWARE = 'The unit has no calibration shipped with the firmware to go back to'
 
 /**
- * A kept calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. Its name
+ * A saved calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. Its name
  * gives way to a field while it is renamed; once renamed, the focus goes back to Rename, or to the name while the
  * rename disables that button.
  */
-function Item({ kept, kind, busy, firmware }) {
-  const noWayBack = kept.inForce && !firmware
+function Item({ saved, kind, busy, firmware }) {
+  const noWayBack = saved.inUse && !firmware
   const use = useCalibration((state) => state.useSaved)
   const remove = useCalibration((state) => state.deleteSaved)
   const [confirm, confirmation] = useOvcsConfirm()
@@ -153,35 +153,35 @@ function Item({ kept, kind, busy, firmware }) {
   }, [renaming])
 
   const confirmRemove = async () => {
-    if (await confirm(deleteQuestion(kept))) remove(kept.id)
+    if (await confirm(deleteQuestion(saved))) remove(saved.id)
   }
 
-  const files = yamlFiles(kept, kept.pose != null)
-  const shown = figures(kept, kind)
+  const files = yamlFiles(saved, saved.pose != null)
+  const shown = figures(saved, kind)
 
   return (
-    <li aria-label={kept.name} className={ITEM}>
+    <li aria-label={saved.name} className={ITEM}>
       {renaming ? (
-        <NameEditor kept={kept} onClose={() => setRenaming(false)} />
+        <NameEditor saved={saved} onClose={() => setRenaming(false)} />
       ) : (
         <div className={TITLE}>
           <span ref={name} tabIndex={-1} className={`min-w-0 break-words rounded font-medium ${FOCUS}`}>
-            {kept.name}
+            {saved.name}
           </span>
-          {kept.inForce ? <InUseBadge /> : null}
+          {saved.inUse ? <InUseBadge /> : null}
         </div>
       )}
-      <p className="text-xs text-ovcs-muted">{`Made ${stamp(kept.createdAt)} · ${ORIGINS[kept.origin] ?? kept.origin}`}</p>
+      <p className="text-xs text-ovcs-muted">{`Made ${stamp(saved.createdAt)} · ${ORIGINS[saved.origin] ?? saved.origin}`}</p>
       {shown.length > 0 ? <Figures figures={shown} /> : null}
       {renaming ? null : (
         <div className={ACTIONS}>
-          {kept.inForce ? null : (
-            <button type="button" disabled={busy} aria-label={`Use ${kept.name}`} onClick={() => use(kept.id)} className={SMALL_BUTTON}>
+          {saved.inUse ? null : (
+            <button type="button" disabled={busy} aria-label={`Use ${saved.name}`} onClick={() => use(saved.id)} className={SMALL_BUTTON}>
               Use
             </button>
           )}
           {files.length > 0 ? (
-            <button type="button" aria-label={`Download ${kept.name}`} onClick={() => downloadFiles(files)} className={SMALL_BUTTON}>
+            <button type="button" aria-label={`Download ${saved.name}`} onClick={() => downloadFiles(files)} className={SMALL_BUTTON}>
               Download
             </button>
           ) : null}
@@ -189,7 +189,7 @@ function Item({ kept, kind, busy, firmware }) {
             ref={renameButton}
             type="button"
             disabled={busy}
-            aria-label={`Rename ${kept.name}`}
+            aria-label={`Rename ${saved.name}`}
             onClick={() => setRenaming(true)}
             className={SMALL_BUTTON}
           >
@@ -199,7 +199,7 @@ function Item({ kept, kind, busy, firmware }) {
             type="button"
             disabled={busy || noWayBack}
             title={noWayBack ? NO_FIRMWARE : undefined}
-            aria-label={`Delete ${kept.name}`}
+            aria-label={`Delete ${saved.name}`}
             onClick={confirmRemove}
             className={SMALL_BUTTON}
           >
@@ -213,12 +213,12 @@ function Item({ kept, kind, busy, firmware }) {
 }
 
 /**
- * Every calibration the unit keeps for the one shown, the newest first, and the firmware's: each can be put back in
- * use, and a kept one renamed, downloaded and deleted. Nothing changes while a calibration session runs.
+ * Every calibration the unit saved for the one shown, the newest first, and the firmware's: each can be put back in
+ * use, and a saved one renamed, downloaded and deleted. Nothing changes while a calibration session runs.
  */
 export default function Saved() {
   const calibration = useCalibration(selectedCalibration)
-  const kept = useCalibration((state) => state.saved[selectedId(state)] ?? NONE)
+  const list = useCalibration((state) => state.saved[selectedId(state)] ?? NONE)
   const busy = useCalibration((state) => state.busy || (state.session?.phase ?? 'idle') !== 'idle')
   const reset = useCalibration((state) => state.reset)
 
@@ -227,13 +227,13 @@ export default function Saved() {
   const firmware = calibration.source === 'builtIn' || calibration.canReset
 
   return (
-    <Section title="Calibrations kept on the unit" hint={<Hint hint={ORIGIN_HINT} />} className="border-t border-ovcs-border pt-4">
-      {kept.length === 0 && !firmware ? (
-        <p className="text-sm text-ovcs-muted">None yet: each calibration made is kept here, to name and to use again.</p>
+    <Section title="Calibrations saved on the unit" hint={<Hint hint={ORIGIN_HINT} />} className="border-t border-ovcs-border pt-4">
+      {list.length === 0 && !firmware ? (
+        <p className="text-sm text-ovcs-muted">None yet: each calibration made is saved here, to name and to use again.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-ovcs-border text-sm">
-          {kept.map((one) => (
-            <Item key={one.id} kept={one} kind={calibration.kind} busy={busy} firmware={firmware} />
+          {list.map((one) => (
+            <Item key={one.id} saved={one} kind={calibration.kind} busy={busy} firmware={firmware} />
           ))}
           {firmware ? <FirmwareItem kind={calibration.kind} inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
         </ul>

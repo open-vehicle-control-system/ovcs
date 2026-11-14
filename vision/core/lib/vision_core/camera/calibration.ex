@@ -4,7 +4,7 @@ defmodule VisionCore.Camera.Calibration do
   (`VisionCore.Camera.Unit`), for the dashboard.
 
   With a `:calibration_store_dir`, a calibration committed goes to the
-  store and is the one in force; the camera's `:calibration` holds the
+  store and is the one in use; the camera's `:calibration` holds the
   built-in one, which `reset/2` goes back to. Without a store, a commit
   writes the `:calibration` path itself. The file is written whole or
   not at all, through a temporary file synced then renamed over it.
@@ -40,7 +40,7 @@ defmodule VisionCore.Camera.Calibration do
   def changed_key(name), do: {:camera_calibration, name}
 
   @doc """
-  The calibration in force for the camera `name` of `config`, the active
+  The calibration in use for the camera `name` of `config`, the active
   `VisionCore.Config`: its path, parsed calibration and YAML (`nil`
   without a file), and its source. `stored_at` is the time the stored
   file was written, and `can_reset` whether one is stored with a built-in
@@ -84,7 +84,7 @@ defmodule VisionCore.Camera.Calibration do
     end
   end
 
-  @doc "Removes the camera `name`'s stored calibration, so that its built-in one is in force again."
+  @doc "Removes the camera `name`'s stored calibration, so that its built-in one is in use again."
   @spec reset(VisionCore.Config.t(), atom()) :: :ok | {:error, :not_found | String.t()}
   def reset(config, name) do
     with {:ok, settings} <- settings(config, name) do
