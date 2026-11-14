@@ -563,13 +563,13 @@ The unit keeps every calibration it was given, poses included, as `saved-calibra
 | `DELETE /api/saved-calibrations/:id` | Removes it. The calibration in force is removed once the unit has returned to its built-in calibration, as a reset does. | 204 | 409 for the calibration in force while a calibration session runs, or without a built-in calibration to return to, 404, 500 when the unit does not return to the built-in calibration, the one in force kept |
 | `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 for another `data.type` or while a calibration session runs, 422 when the unit refuses its files, 500 when the selection fails |
 
-An id is the number the unit gave, written as the unit writes it: `007` or `+7` is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
+An id is the calibration's kind, `stereo`, `camera` or `pose`, then the number the unit gave it, written as the unit writes it: `stereo-7`; `stereo-007`, `stereo-+7` or `7` is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
 
 ```json
 {
   "data": {
     "type": "saved-calibrations",
-    "id": "7",
+    "id": "stereo-7",
     "attributes": {
       "name": "2026-11-14 00:28",
       "origin": "dashboard",
@@ -609,7 +609,7 @@ An id is the number the unit gave, written as the unit writes it: `007` or `+7` 
   "data": {
     "type": "calibration-selections",
     "relationships": {
-      "savedCalibration": {"data": {"type": "saved-calibrations", "id": "7"}}
+      "savedCalibration": {"data": {"type": "saved-calibrations", "id": "stereo-7"}}
     }
   }
 }

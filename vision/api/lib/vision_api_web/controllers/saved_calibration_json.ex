@@ -1,7 +1,8 @@
 defmodule VisionApiWeb.SavedCalibrationJSON do
   @moduledoc """
-  A calibration the unit keeps (`VisionCore.Calibration.Saved`) as a
-  `saved-calibrations` JSON:API resource: its `name`, its `origin`
+  A calibration the unit keeps (`VisionCore.Calibration.Library.kept/0`)
+  as a `saved-calibrations` JSON:API resource, under its id
+  (`VisionCore.Models.KeptCalibrationId`): its `name`, its `origin`
   (`dashboard` or `imported`), `createdAt`, whether it is `inForce`, the
   `board`, the `samples` and the `stereoRmsPx` of the session that solved
   it, `null` for one the unit did not solve, a pair's `baselineM`, and
@@ -14,7 +15,8 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   the `calibrations`.
   """
   alias VisionApiWeb.{CalibrationJSON, JsonApi}
-  alias VisionCore.Calibration.SavedPose
+  alias VisionCore.Calibration.Library
+  alias VisionCore.Models
 
   @distortion [:k1, :k2, :p1, :p2, :k3]
 
@@ -29,7 +31,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   defp data(%{saved: saved, in_force: in_force, files: files}) do
     JsonApi.resource(
       "saved-calibrations",
-      Integer.to_string(saved.id),
+      saved.id,
       %{
         name: saved.name,
         origin: saved.origin,
@@ -37,23 +39,29 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
         inForce: in_force,
         board: board(saved),
         samples: saved.samples,
-        stereoRmsPx: saved.stereo_rms_px,
-        baselineM: saved.baseline_m,
-        cameras: Enum.zip_with(saved.cameras, files, &camera/2),
-        pose: pose(saved.pose, files)
+        stereoRmsPx: stereo_rms_px(saved),
+        baselineM: baseline_m(saved),
+        cameras: Enum.zip_with(Library.lenses(saved), files, &camera/2),
+        pose: pose(saved, files)
       },
       %{calibration: JsonApi.to_one("calibrations", saved.target)}
     )
   end
 
-  defp pose(%SavedPose{} = saved_pose, [%{file: file, yaml: yaml}]) do
+  defp stereo_rms_px(%Models.StereoCameraCalibration{stereo_rms_px: rms_px}), do: rms_px
+  defp stereo_rms_px(_saved), do: nil
+
+  defp baseline_m(%Models.StereoCameraCalibration{baseline_m: baseline_m}), do: baseline_m
+  defp baseline_m(_saved), do: nil
+
+  defp pose(%Models.CameraPose{} = saved_pose, [%{file: file, yaml: yaml}]) do
     saved_pose
-    |> SavedPose.to_pose()
+    |> Models.CameraPose.to_pose()
     |> CalibrationJSON.pose(file, yaml)
     |> Map.put(:rmsPx, saved_pose.rms_px)
   end
 
-  defp pose(nil, _files), do: nil
+  defp pose(_saved, _files), do: nil
 
   defp board(%{board_columns: nil}), do: nil
 
@@ -64,17 +72,17 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
       squareMm: Float.round(saved.board_square_m * 1000, 3)
     }
 
-  defp camera(camera, file),
+  defp camera({name, lens}, file),
     do: %{
-      name: camera.name,
-      imageWidth: camera.image_width,
-      imageHeight: camera.image_height,
-      fx: camera.fx,
-      fy: camera.fy,
-      cx: camera.cx,
-      cy: camera.cy,
-      distortion: Enum.map(@distortion, &Map.fetch!(camera, &1)),
-      rmsPx: camera.rms_px,
+      name: name,
+      imageWidth: lens.image_width,
+      imageHeight: lens.image_height,
+      fx: lens.fx,
+      fy: lens.fy,
+      cx: lens.cx,
+      cy: lens.cy,
+      distortion: Enum.map(@distortion, &Map.fetch!(lens, &1)),
+      rmsPx: lens.rms_px,
       file: file.file,
       yaml: file.yaml
     }

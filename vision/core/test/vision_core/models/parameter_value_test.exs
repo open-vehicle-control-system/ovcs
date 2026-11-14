@@ -1,17 +1,19 @@
-defmodule VisionCore.Parameters.SavedValueTest do
+defmodule VisionCore.Models.ParameterValueTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Models.ParameterValue
 
   test "takes a parameter's id and its value as JSON" do
-    changeset = SavedValue.changeset(%SavedValue{}, %{parameter_id: "a.b.c", value: "10"})
+    changeset =
+      ParameterValue.changeset(%ParameterValue{}, %{parameter_id: "a.b.c", value: "10"})
 
     assert changeset.valid?
     assert changeset.changes == %{parameter_id: "a.b.c", value: "10"}
   end
 
   test "refuses a value without its parameter's id or its JSON" do
-    changeset = SavedValue.changeset(%SavedValue{}, %{parameter_id: nil, value: nil})
+    changeset =
+      ParameterValue.changeset(%ParameterValue{}, %{parameter_id: nil, value: nil})
 
     refute changeset.valid?
     assert {_message, [validation: :required]} = changeset.errors[:parameter_id]

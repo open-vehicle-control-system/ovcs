@@ -8,7 +8,7 @@ defmodule VisionCore.Parameters.Store do
   import Ecto.Query
   require Logger
 
-  alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Models.ParameterValue
   alias VisionCore.Repo
 
   @unavailable "saved parameters unavailable"
@@ -18,7 +18,7 @@ defmodule VisionCore.Parameters.Store do
   """
   @spec load() :: %{String.t() => term()}
   def load do
-    SavedValue
+    ParameterValue
     |> Repo.all()
     |> Enum.reduce(%{}, &decode_into/2)
   rescue
@@ -42,7 +42,7 @@ defmodule VisionCore.Parameters.Store do
     :exit, reason -> failed(reason)
   end
 
-  defp decode_into(%SavedValue{parameter_id: id, value: encoded}, values) do
+  defp decode_into(%ParameterValue{parameter_id: id, value: encoded}, values) do
     case Jason.decode(encoded) do
       {:ok, value} ->
         Map.put(values, id, value)
@@ -54,12 +54,12 @@ defmodule VisionCore.Parameters.Store do
   end
 
   defp write_one({id, :delete}) do
-    Repo.delete_all(from(saved_value in SavedValue, where: saved_value.parameter_id == ^id))
+    Repo.delete_all(from(saved_value in ParameterValue, where: saved_value.parameter_id == ^id))
   end
 
   defp write_one({id, value}) do
-    %SavedValue{}
-    |> SavedValue.changeset(%{parameter_id: id, value: Jason.encode!(value)})
+    %ParameterValue{}
+    |> ParameterValue.changeset(%{parameter_id: id, value: Jason.encode!(value)})
     |> Repo.insert!(
       on_conflict: {:replace, [:value, :updated_at]},
       conflict_target: :parameter_id

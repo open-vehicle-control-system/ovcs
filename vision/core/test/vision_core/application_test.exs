@@ -4,7 +4,7 @@ defmodule VisionCore.ApplicationTest do
   import ExUnit.CaptureLog
 
   alias VisionCore.Camera.{Frame, GStreamer, LibCamera, V4L2Single}
-  alias VisionCore.Parameters.SavedValue
+  alias VisionCore.Models.ParameterValue
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Calibration
   alias VisionCore.Repo
@@ -24,7 +24,7 @@ defmodule VisionCore.ApplicationTest do
   # its own VisionCore.Outputs; test_helper's are back after.
   setup do
     Application.stop(:vision_core)
-    Repo.delete_all(SavedValue)
+    Repo.delete_all(ParameterValue)
     :ok = Supervisor.stop(Repo)
     :ok = Supervisor.stop(VisionCore.Outputs)
     :ok = Supervisor.stop(VisionCore.Processes)

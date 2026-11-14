@@ -54,6 +54,11 @@ first, evidence before a claim, small reviewed PRs) is in
   `import!:@ovcs_can:can/components/...`; per-vehicle imports stay relative.
 - New behaviour callbacks that aren't universal go under
   `@optional_callbacks [...]`.
+- An app's Ecto schemas live in `<App>.Models`
+  (`VmsCore.Models.ThrottleCalibration`), each with its `changeset/2`.
+  Only the module that owns the data, a context such as
+  `VisionCore.Calibration.Library`, calls the Repo, with those
+  changesets or queries.
 
 ## Names, docs and comments
 

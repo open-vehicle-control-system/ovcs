@@ -5,9 +5,9 @@ defmodule VisionCore.Calibration.Recorder do
 
   At start, and at each change a target's calibration publishes
   (`VisionCore.Calibration.changed_key/1`), it reads the calibration in
-  use. A stored one is selected in the library, where it is kept first
-  when no calibration there holds its figures; a target back on the
-  firmware's calibration, or on none, has no selection, as has one whose
+  use. A stored one is put in force in the library, where it is kept
+  first when no calibration there holds its figures; a target back on the
+  firmware's calibration, or on none, has none in force, as has one whose
   stored calibration the library cannot keep. A calibration found in the
   store that the library does not know, as one committed by
   `cameracalibrator` or stored before the library existed, is kept as

@@ -4,8 +4,9 @@ defmodule VisionCore.Calibration.RecorderTest do
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.SensorMsgs.Msg.CameraInfo
   alias Ros2Zenoh.StdMsgs.Msg.Header
-  alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+  alias VisionCore.Calibration.{Library, Recorder}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
+  alias VisionCore.Models
   alias VisionCore.Outputs
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
@@ -20,8 +21,8 @@ defmodule VisionCore.Calibration.RecorderTest do
   @built_in Path.expand("../../support/calibration/identity_left.yaml", __DIR__)
 
   setup %{tmp_dir: tmp_dir} do
-    Repo.delete_all(Selection)
-    Repo.delete_all(Saved)
+    for model <- [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose],
+        do: Repo.delete_all(model)
 
     config = %VisionCore.Config{
       components: [
@@ -69,7 +70,7 @@ defmodule VisionCore.Calibration.RecorderTest do
 
     start(config)
 
-    assert [%{origin: "imported", cameras: [%{name: "hq", fx: 901.5}]} = saved] =
+    assert [%{origin: "imported", camera: "hq", lens: %{fx: 901.5}} = saved] =
              Library.list("hq")
 
     assert Library.selected("hq").id == saved.id
@@ -113,7 +114,7 @@ defmodule VisionCore.Calibration.RecorderTest do
                origin: "dashboard",
                samples: 41,
                board_columns: 8,
-               cameras: [%{fx: 580.8, rms_px: 0.2}]
+               lens: %{fx: 580.8, rms_px: 0.2}
              } = saved
            ] =
              Library.list("hq")
@@ -144,8 +145,8 @@ defmodule VisionCore.Calibration.RecorderTest do
     commit(config, 600.0)
 
     assert [
-             %{origin: "dashboard", samples: 11, cameras: [%{fx: 600.0}]},
-             %{origin: "dashboard", samples: 22, cameras: [%{fx: 700.0}]}
+             %{origin: "dashboard", samples: 11, lens: %{fx: 600.0}},
+             %{origin: "dashboard", samples: 22, lens: %{fx: 700.0}}
            ] = Library.list("hq")
   end
 
@@ -166,7 +167,7 @@ defmodule VisionCore.Calibration.RecorderTest do
 
     commit(config, 650.0)
 
-    assert [%{origin: "imported", cameras: [%{fx: 650.0}]}] = Library.list("hq")
+    assert [%{origin: "imported", lens: %{fx: 650.0}}] = Library.list("hq")
   end
 
   test "drops what a process announced once it is gone without committing", %{config: config} do
@@ -246,7 +247,7 @@ defmodule VisionCore.Calibration.RecorderTest do
 
     assert Library.selected("hq") == nil
     assert log =~ "could not keep the calibration of hq"
-    assert [%{cameras: [%{fx: 580.8}]}] = Library.list("hq")
+    assert [%{lens: %{fx: 580.8}}] = Library.list("hq")
   end
 
   test "selects nothing once the target is back on the firmware's calibration, and keeps the calibrations",
@@ -258,7 +259,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     settled()
 
     assert Library.selected("hq") == nil
-    assert [%{cameras: [%{fx: 580.8}]}] = Library.list("hq")
+    assert [%{lens: %{fx: 580.8}}] = Library.list("hq")
   end
 
   for {flaw, left} <- [
@@ -340,7 +341,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     :sys.get_state(server)
     settled()
 
-    assert %{origin: "imported", cameras: [%{fx: 733.25}]} = Library.selected("hq")
+    assert %{origin: "imported", lens: %{fx: 733.25}} = Library.selected("hq")
     assert_received {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
   end
 
