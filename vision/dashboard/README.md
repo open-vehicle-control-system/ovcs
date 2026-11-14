@@ -20,6 +20,15 @@ The page is laid out for a laptop screen:
 
 A step's page is kept in the URL as `?box=<group id>` (`?box=stereo.disparity`), an exporter's as `?exporter=<id>` (`?exporter=ros2`; `?page=ros2` and `?page=api` open those exporters' pages too), any other page but the Overview as `?page=<page>` (`?page=calibration`). The parameters are polled every second, so values set by an automatic mode stay current.
 
+Nothing shown outlives the link to the unit:
+
+- the status is dropped when its channel fails, as when the socket closes, and after 3 s without one (`src/stores/status.js`), so the figures, badges and gauges read from it go with it;
+- a preview drops its frame when its channel fails and says why it shows none: no frame yet, a stream the unit refuses, a video the browser cannot decode;
+- the socket's heartbeat is 5 s (`src/services/socket.js`), so a link gone without closing is noticed within 10 s;
+- a request the unit does not answer is aborted, after 5 s for a read and 15 s for an action (`request` in `src/services/parameters.js`), 60 s for an exporter's action and for a calibration put in force, which the unit answers once taken.
+
+Each part of the page (top bar, menu, page, status bar) is a `Region` (`src/components/Region.jsx`): when it throws while rendering, it says so with a Reload button and the other parts stay. When the unit answers another firmware revision than the first, as after an upload under the open page, the top bar offers to reload.
+
 `src/stores/calibration.js` holds the calibration session and the calibration in use, from the `calibration` channel. `src/stores/parameters.js` holds the groups and parameters; the controls and the save bar are `OvcsParameterControl` and `OvcsSaveBar` from `@ovcs/ui/react`.
 
 `vision/firmware/build.sh` runs the build before `mix firmware`. See [Vision unit](../../docs/vision/README.md).

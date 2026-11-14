@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { LiveDecoder, MAX_DECODE_QUEUE, hasVideoDecoder } from '../liveDecoder.js'
+import { LiveDecoder, MAX_DECODE_QUEUE, MAX_FAILURES, hasVideoDecoder } from '../liveDecoder.js'
 
 const SPS = [0x67, 0x64, 0x00, 0x28, 0xac]
 const PPS = [0x68, 0xeb]
@@ -257,5 +257,96 @@ describe('LiveDecoder', () => {
     expect(decoder.state).toBe('closed')
     expect(waiting.close).toHaveBeenCalled()
     expect(canvas.context.drawImage).not.toHaveBeenCalled()
+  })
+
+  it('acks a frame it cannot read, and drops it', () => {
+    const { live, onAck } = start()
+
+    expect(() => live.push(new Uint8Array(5).buffer)).not.toThrow()
+
+    expect(onAck).toHaveBeenCalledTimes(1)
+  })
+
+  it('acks a frame the decoder refuses, closes that decoder and starts again at the next key frame', async () => {
+    const { scope, live, onAck } = start()
+    live.push(keyFrame(0))
+    await configured()
+    vi.spyOn(scope.decoders[0], 'decode').mockImplementation(() => {
+      throw new DOMException('a key frame is required', 'DataError')
+    })
+
+    expect(() => live.push(deltaFrame(33_333))).not.toThrow()
+    live.push(keyFrame(1_000_000))
+    await configured()
+
+    expect(onAck).toHaveBeenCalledTimes(3)
+    expect(scope.decoders[0].state).toBe('closed')
+    expect(scope.decoders[1].chunks.map(({ timestamp }) => timestamp)).toEqual([1_000_000])
+  })
+
+  it('closes a decoder that refuses the frames taken while it was configured, and starts again at the next key frame', async () => {
+    const { scope, live } = start()
+    vi.spyOn(scope.VideoDecoder.prototype, 'decode').mockImplementationOnce(() => {
+      throw new DOMException('a key frame is required', 'DataError')
+    })
+
+    live.push(keyFrame(0))
+    await configured()
+    live.push(deltaFrame(33_333))
+    live.push(keyFrame(1_000_000))
+    await configured()
+
+    expect(scope.decoders).toHaveLength(2)
+    expect(scope.decoders[0].state).toBe('closed')
+    expect(scope.decoders[1].chunks.map(({ timestamp }) => timestamp)).toEqual([1_000_000])
+  })
+
+  it('decodes without preferring hardware once a decoder failed, though frames are decoded since', async () => {
+    const { scope, live } = start()
+    live.push(keyFrame(0))
+    await configured()
+    expect(scope.decoders[0].config.hardwareAcceleration).toBe('prefer-hardware')
+
+    scope.decoders[0].fail()
+    live.push(keyFrame(1_000_000))
+    await configured()
+    expect(scope.decoders[1].config.hardwareAcceleration).toBe('no-preference')
+
+    scope.decoders[1].emit(1_000_000)
+    scope.decoders[1].decodeQueueSize = MAX_DECODE_QUEUE + 1
+    live.push(deltaFrame(1_033_333))
+    live.push(keyFrame(2_000_000))
+    await configured()
+    expect(scope.decoders[2].config.hardwareAcceleration).toBe('no-preference')
+  })
+
+  it('keeps preferring hardware after a frame it could not read and after falling behind', async () => {
+    const { scope, live } = start()
+    live.push(keyFrame(0))
+    await configured()
+    live.push(new Uint8Array(5).buffer)
+    scope.decoders[0].decodeQueueSize = MAX_DECODE_QUEUE + 1
+    live.push(deltaFrame(33_333))
+    live.push(keyFrame(1_000_000))
+    await configured()
+
+    expect(scope.decoders.map((decoder) => decoder.config.hardwareAcceleration)).toEqual(['prefer-hardware', 'prefer-hardware'])
+  })
+
+  it('says the stream cannot be decoded once MAX_FAILURES decoders in a row failed before a frame, and decodes no more', async () => {
+    const { scope, live, onUnsupported, onAck } = start()
+
+    for (let attempt = 0; attempt < MAX_FAILURES; attempt++) {
+      expect(onUnsupported).not.toHaveBeenCalled()
+      live.push(keyFrame(attempt * 1_000_000))
+      await configured()
+      scope.decoders[attempt].fail()
+    }
+    live.push(keyFrame(9_000_000))
+    await configured()
+
+    expect(onUnsupported).toHaveBeenCalledWith('avc1.640028')
+    expect(scope.decoders).toHaveLength(MAX_FAILURES)
+    expect(onAck).toHaveBeenCalledTimes(MAX_FAILURES + 1)
   })
 })

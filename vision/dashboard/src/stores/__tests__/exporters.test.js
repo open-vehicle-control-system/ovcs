@@ -59,6 +59,20 @@ describe('exporters store', () => {
     expect(unit.fetchExporters).toHaveBeenCalledTimes(3)
   })
 
+  it('keeps the answer of the last load started when an earlier one answers after it', async () => {
+    const answers = []
+    vi.mocked(unit.fetchExporters).mockImplementation(() => new Promise((resolve) => answers.push(resolve)))
+
+    const earlier = useExporters.getState().load()
+    const later = useExporters.getState().load()
+    answers[1]([ros2])
+    await later
+    answers[0]([])
+    await earlier
+
+    expect(useExporters.getState().exporters).toEqual([ros2])
+  })
+
   it("takes an exporter's status from the unit status alone: none until it reports one", () => {
     const listed = { id: 'ros2', name: 'ROS 2', status: { level: 'off', detail: 'Listed' } }
     const live = { level: 'ok', detail: 'Connected' }

@@ -5,6 +5,9 @@ export const MAX_DECODE_QUEUE = 8
 
 const HARDWARE_PREFERENCES = ['prefer-hardware', 'no-preference']
 
+// Decoders failing in a row, with no frame decoded between them, past this, the stream is one the browser cannot decode.
+export const MAX_FAILURES = 3
+
 /** Whether this browser offers WebCodecs' `VideoDecoder`, which it does only in a secure context. */
 export const hasVideoDecoder = (scope = globalThis) => typeof scope.VideoDecoder === 'function'
 
@@ -12,10 +15,12 @@ export const hasVideoDecoder = (scope = globalThis) => typeof scope.VideoDecoder
  * Decodes a camera's H.264 frames, as the `video:<camera>` channel pushes them, with WebCodecs and draws them on
  * `canvas`. It starts at the first key frame, configured from its sequence parameter set, on the hardware decoder
  * where the browser has one for the stream. Of the frames decoded since the last animation frame, it draws the newest
- * and closes the others undrawn. Each frame pushed is acked once taken (`onAck`); `onDrawn` gets the capture time, in
- * microseconds, and size of each frame drawn, and `onUnsupported` the codec of a stream the browser cannot decode.
- * After a decoder error, a configuration that fails, which drops the frames taken meanwhile, or while the decoder is
- * behind, it starts again at the next key frame.
+ * and closes the others undrawn. Each frame pushed is acked once taken (`onAck`), one it cannot read or decode
+ * included, which it drops; `onDrawn` gets the capture time, in microseconds, and size of each frame drawn, and
+ * `onUnsupported` the codec of a stream the browser cannot decode. After a decoder error, a frame the decoder
+ * refuses, a configuration that fails, which drops the frames taken meanwhile, or while the decoder is behind, it
+ * starts again at the next key frame. Once a decoder failed, the next ones do not prefer hardware; `MAX_FAILURES` of
+ * them failing in a row, with no frame decoded between them, the stream is one the browser cannot decode.
  */
 export class LiveDecoder {
   constructor(canvas, { onAck = () => {}, onDrawn = () => {}, onUnsupported = () => {}, scope = globalThis } = {}) {
@@ -29,6 +34,10 @@ export class LiveDecoder {
     // The frames taken while the decoder is configured, decoded once it is.
     this.waiting = null
     this.unsupported = false
+    // The decoders that failed since the last frame decoded.
+    this.failures = 0
+    // Whether a decoder failed: the next ones leave the choice of hardware to the browser.
+    this.hardwareFailed = false
     this.closed = false
     this.undrawn = null
     this.animationFrame = null
@@ -36,9 +45,16 @@ export class LiveDecoder {
 
   /** Takes one pushed frame: decoded, queued while the decoder is configured, or dropped until a key frame. */
   push(payload) {
-    const frame = readVideoFrame(payload)
-    this.take(frame)
-    this.onAck()
+    let frame = null
+    try {
+      frame = readVideoFrame(payload)
+      this.take(frame)
+    } catch {
+      // A frame that cannot be read is dropped; one the decoder refuses fails that decoder.
+      if (frame) this.failed(this.decoder)
+    } finally {
+      this.onAck()
+    }
   }
 
   close() {
@@ -60,39 +76,45 @@ export class LiveDecoder {
 
   async open(codec, frame) {
     this.waiting = [frame]
-    let config
+    let decoder = null
     try {
-      config = await this.supportedConfig(codec, frame)
+      const config = await this.supportedConfig(codec, frame)
+      if (this.closed) return
+      const waiting = this.waiting
+      this.waiting = null
+      if (!config) return this.giveUp(codec)
+      // A decoder that fails is closed: the next key frame opens another.
+      decoder = new this.scope.VideoDecoder({
+        output: (decoded) => this.decoded(decoded),
+        error: () => this.failed(decoder, codec)
+      })
+      decoder.configure(config)
+      this.decoder = decoder
+      waiting.forEach((queued) => this.decode(queued))
     } catch {
       this.waiting = null
-      return
+      if (decoder) this.failed(decoder, codec)
     }
-    if (this.closed) return
-    const waiting = this.waiting
-    this.waiting = null
-    if (!config) {
-      this.unsupported = true
-      return this.onUnsupported(codec)
-    }
-    // A decoder that fails is closed: the next key frame opens another.
-    const decoder = new this.scope.VideoDecoder({
-      output: (decoded) => this.decoded(decoded),
-      error: () => {
-        if (this.decoder === decoder) this.decoder = null
-      }
-    })
-    try {
-      decoder.configure(config)
-    } catch {
-      return decoder.close()
-    }
-    this.decoder = decoder
-    waiting.forEach((queued) => this.decode(queued))
+  }
+
+  // `decoder` failed: closed, and the stream given up once too many did in a row.
+  failed(decoder, codec) {
+    if (!decoder) return
+    if (decoder.state !== 'closed') decoder.close()
+    if (this.decoder === decoder) this.decoder = null
+    this.failures += 1
+    this.hardwareFailed = true
+    if (codec && this.failures >= MAX_FAILURES) this.giveUp(codec)
+  }
+
+  giveUp(codec) {
+    this.unsupported = true
+    this.onUnsupported(codec)
   }
 
   // Without a `description`, the decoder takes the stream as Annex B, its parameter sets in band.
   async supportedConfig(codec, { width, height }) {
-    for (const hardwareAcceleration of HARDWARE_PREFERENCES) {
+    for (const hardwareAcceleration of HARDWARE_PREFERENCES.slice(this.hardwareFailed ? 1 : 0)) {
       const config = { codec, codedWidth: width, codedHeight: height, hardwareAcceleration, optimizeForLatency: true }
       const { supported } = await this.scope.VideoDecoder.isConfigSupported(config)
       if (supported) return config
@@ -116,6 +138,7 @@ export class LiveDecoder {
 
   decoded(videoFrame) {
     if (this.closed) return videoFrame.close()
+    this.failures = 0
     this.undrawn?.close()
     this.undrawn = videoFrame
     if (this.animationFrame === null) this.animationFrame = this.scope.requestAnimationFrame(() => this.draw())

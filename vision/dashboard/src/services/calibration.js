@@ -4,12 +4,15 @@ import { downloadFile } from './download.js'
 export const DEFAULT_BOARD = { columns: 8, rows: 6, squareMm: 25 }
 const BOARD_KEY = 'vision.calibration.board'
 
+// The unit answers a calibration put in force only once it has taken it, which restarts what reads it.
+export const TAKE_TIMEOUT_MS = 60000
+
 // `calibration` is the id of the calibration the action works on, for those that name one.
-const act = async (type, { attributes, calibration } = {}) => {
+const act = async (type, { attributes, calibration, timeoutMs } = {}) => {
   const data = { type }
   if (attributes) data.attributes = attributes
   if (calibration) data.relationships = { calibration: { data: { type: 'calibrations', id: calibration } } }
-  const document = await request(type, { method: 'POST', body: { data } })
+  const document = await request(type, { method: 'POST', body: { data }, timeoutMs })
   return document.data.attributes
 }
 
@@ -27,7 +30,7 @@ export const startSession = (calibration, board) => act('calibration-sessions', 
 export const cancelSession = () => act('calibration-cancels')
 export const solveSession = () => act('calibration-solves')
 export const applySession = () => act('calibration-applies')
-export const resetCalibration = (calibration) => act('calibration-resets', { calibration })
+export const resetCalibration = (calibration) => act('calibration-resets', { calibration, timeoutMs: TAKE_TIMEOUT_MS })
 
 const toSaved = (resource) => ({ id: resource.id, ...resource.attributes })
 
@@ -50,6 +53,7 @@ export const deleteSaved = (id) => request(`saved-calibrations/${id}`, { method:
 export const selectSaved = (id) =>
   request('calibration-selections', {
     method: 'POST',
+    timeoutMs: TAKE_TIMEOUT_MS,
     body: {
       data: {
         type: 'calibration-selections',

@@ -8,8 +8,10 @@ import { useCalibration } from '../stores/calibration.js'
 import * as service from '../services/parameters.js'
 import { dashboardSocket } from '../services/socket.js'
 import { useStatus } from '../stores/status.js'
+import { reloadPage } from '../services/page.js'
 
 vi.mock('../services/parameters.js')
+vi.mock('../services/page.js', () => ({ reloadPage: vi.fn() }))
 vi.mock('../services/socket.js', () => ({
   dashboardSocket: {
     isConnected: vi.fn(() => true),
@@ -53,6 +55,7 @@ describe('App', () => {
     dashboardSocket.isConnected.mockReturnValue(true)
     useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
     useExporters.setState({ exporters })
+    useStatus.setState({ snapshot: null, joins: 0 })
     visit('/')
   })
 
@@ -230,5 +233,62 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: /^API/ }))
     expect(window.location.search).toBe('?exporter=api')
     expect(screen.getByRole('button', { name: 'Match' }).getAttribute('aria-current')).toBeNull()
+  })
+
+  it('keeps the menu and the bars, and says the page cannot be shown, when a status it cannot read comes', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+
+    // A rows check without its bands, as a firmware newer than this page could push.
+    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+
+    expect(within(screen.getByRole('main')).getByRole('alert').textContent).toContain('This page cannot be shown')
+    expect(screen.getByRole('navigation', { name: 'Vision unit' })).toBeTruthy()
+    expect(within(screen.getByRole('contentinfo')).getByText('Connected')).toBeTruthy()
+    expect(screen.getByRole('banner')).toBeTruthy()
+    vi.restoreAllMocks()
+  })
+
+  it('shows the page again once another page is opened after one that could not be shown', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    render(<App />)
+    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+
+    fireEvent.click(screen.getByRole('button', { name: /^API/ }))
+
+    expect(within(screen.getByRole('main')).queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()
+    vi.restoreAllMocks()
+  })
+
+  describe('with a firmware uploaded under the open page', () => {
+    const firmware = (revision) => service.request.mockImplementation(async (path) => {
+        if (path !== 'firmware') throw new Error('Cannot reach the vision unit')
+        return { data: { attributes: { revision } } }
+      })
+    const join = (joins) => act(async () => useStatus.setState({ joins }))
+
+    it('offers to reload once the unit answers another revision than at first, and reloads from the button', async () => {
+      firmware('1e13961')
+      render(<App />)
+      await join(1)
+      expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+      firmware('26e78c0')
+      await join(2)
+
+      expect(within(screen.getByRole('banner')).getByRole('status').textContent).toContain('another firmware')
+      fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+      expect(reloadPage).toHaveBeenCalledTimes(1)
+    })
+
+    it('offers nothing while the unit comes back with the same revision', async () => {
+      firmware('1e13961')
+      render(<App />)
+      await join(1)
+      await join(2)
+
+      expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+    })
   })
 })

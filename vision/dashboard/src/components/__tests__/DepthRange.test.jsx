@@ -36,6 +36,7 @@ describe('DepthRange', () => {
     render(<Owned set={set} initial={8} />)
     const slider = screen.getByRole('slider', { name: 'colour scale' })
 
+    fireEvent.pointerDown(slider)
     fireEvent.change(slider, { target: { value: '10' } })
     fireEvent.change(slider, { target: { value: '12.5' } })
     expect(set).not.toHaveBeenCalled()
@@ -43,6 +44,52 @@ describe('DepthRange', () => {
 
     fireEvent.pointerUp(slider)
     await flush()
+    expect(set).toHaveBeenCalledExactlyOnceWith(12.5)
+    expect(screen.getByText('12.5 m')).toBeTruthy()
+  })
+
+  it('sets the range once when the pointer is released outside the slider, or its touch is taken away', async () => {
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
+    const slider = screen.getByRole('slider', { name: 'colour scale' })
+
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '12.5' } })
+    fireEvent.lostPointerCapture(slider)
+    fireEvent.blur(slider)
+    await flush()
+    expect(set).toHaveBeenCalledExactlyOnceWith(12.5)
+
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '20' } })
+    fireEvent.pointerCancel(slider)
+    await flush()
+    expect(set).toHaveBeenCalledTimes(2)
+    expect(set).toHaveBeenLastCalledWith(20)
+  })
+
+  it('sets the range held with a key once the key is released', async () => {
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
+    const slider = screen.getByRole('slider', { name: 'colour scale' })
+
+    fireEvent.keyDown(slider, { key: 'ArrowRight' })
+    fireEvent.change(slider, { target: { value: '8.5' } })
+    fireEvent.change(slider, { target: { value: '9' } })
+    expect(set).not.toHaveBeenCalled()
+    fireEvent.keyUp(slider, { key: 'ArrowRight' })
+    await flush()
+
+    expect(set).toHaveBeenCalledExactlyOnceWith(9)
+  })
+
+  it('sets at once a range that changes outside a drag or a key press', async () => {
+    const set = fakeSet()
+    render(<Owned set={set} initial={8} />)
+
+    fireEvent.change(screen.getByRole('slider', { name: 'colour scale' }), { target: { value: '12.5' } })
+    await flush()
+
     expect(set).toHaveBeenCalledExactlyOnceWith(12.5)
     expect(screen.getByText('12.5 m')).toBeTruthy()
   })

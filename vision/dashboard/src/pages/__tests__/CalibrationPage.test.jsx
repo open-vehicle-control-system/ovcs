@@ -18,6 +18,9 @@ vi.mock('../../services/socket.js', () => ({
       join: () => ({ receive() { return this } }),
       push: () => ({ receive() { return this } }),
       off: () => {},
+      onError: (handler) => {
+        handlers[`${topic}/error`] = handler
+      },
       leave: () => {}
     }))
   }
@@ -328,6 +331,33 @@ describe('CalibrationPage', () => {
       expect(actions.renameSaved).toHaveBeenCalledTimes(1)
     })
 
+    it('puts the focus in the name when renaming, and back on Rename once left', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+
+      fireEvent.click(button('Rename Bench'))
+      expect(document.activeElement).toBe(screen.getByLabelText('Name of Bench'))
+
+      fireEvent.keyDown(screen.getByLabelText('Name of Bench'), { key: 'Escape' })
+      expect(document.activeElement).toBe(button('Rename Bench'))
+
+      fireEvent.click(button('Rename Bench'))
+      fireEvent.click(button('Cancel'))
+      expect(document.activeElement).toBe(button('Rename Bench'))
+    })
+
+    it('keeps the focus on the name while the rename it saved disables Rename', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+      actions.renameSaved.mockImplementation(() => useCalibration.setState({ busy: true }))
+
+      fireEvent.click(button('Rename Bench'))
+      fireEvent.change(screen.getByLabelText('Name of Bench'), { target: { value: 'Workshop' } })
+      fireEvent.click(button('Save'))
+
+      expect(button('Rename Bench').disabled).toBe(true)
+      expect(document.activeElement.textContent).toContain('Bench')
+      expect(row(/Bench/).contains(document.activeElement)).toBe(true)
+    })
+
     it("offers the firmware's calibration while another one is in use, and marks it when the unit runs on it", () => {
       const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
       fireEvent.click(button('Use the calibration shipped with the firmware'))
@@ -621,6 +651,15 @@ describe('CalibrationPage', () => {
   describe('solved', () => {
     const resultCard = () => screen.getByRole('region', { name: /^Calibrate( again)?$/ })
     const rms = (label) => within(resultCard()).getByRole('row', { name: new RegExp(`^${label}`) })
+
+    it('judges no error it was not given', () => {
+      show({ inUse: stored, session: session({ phase: 'solved', board, result: { ...result, cameras: [{ ...result.cameras[0], rmsPx: null }, result.cameras[1]] } }) })
+
+      const left = screen.getByRole('row', { name: /Left camera error/ })
+      expect(left.textContent).not.toMatch(/good|fair|poor/)
+      expect(left.querySelector('.ovcs-status--ok')).toBeNull()
+      expect(left.textContent).toContain('–')
+    })
 
     it('reads the reprojection errors in colour and words: good under 0.5 px, fair to 2 px, poor over', () => {
       show({ inUse: stored, session: session({ phase: 'solved', board, samples: 40, result }) })

@@ -8,6 +8,12 @@ const FrameSize = createContext(null)
 export const useFrameSize = () => use(FrameSize)
 
 const NO_H264 = "This browser cannot decode the camera's H.264 video."
+const NO_FRAME = 'No frame'
+const NO_VIDEO = 'Waiting for video'
+
+/** Follows a channel's join for `onNote`: why the unit refuses it, and nothing once it accepts it. */
+const noteRefusal = (join, onNote) =>
+  join.receive('ok', () => onNote(null)).receive('error', (reply) => onNote(`The unit refuses this stream: ${reply?.reason ?? 'no reason given'}`))
 
 /** Why the browser has no video decoder: WebCodecs exists only in a secure context, HTTPS or `localhost`. */
 const noVideoDecoder = () =>
@@ -20,9 +26,10 @@ const sized = (width, height) => (last) => (last?.width === width && last?.heigh
 
 /**
  * The stream's latest JPEG on `preview:<stream>`, each shown through an object URL released once replaced, and acked
- * once shown: the server sends the next frame only then. `onChannel` gets the channel before it joins.
+ * once shown: the server sends the next frame only then. `onChannel` gets the channel before it joins. A channel
+ * that fails, as when the socket closes, has no frame until its next one.
  */
-function JpegFrame({ stream, socket, onChannel, size, onSize, onShown, alt }) {
+function JpegFrame({ stream, socket, onChannel, size, onSize, onShown, onNote, alt }) {
   const [frame, setFrame] = useState(null)
   const frameRef = useRef(null)
   const channelRef = useRef(null)
@@ -37,8 +44,9 @@ function JpegFrame({ stream, socket, onChannel, size, onSize, onShown, alt }) {
       setFrame(source)
     }
     channel.on('frame', (jpeg) => show(URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }))))
+    channel.onError(() => show(null))
     onChannel?.(channel)
-    channel.join()
+    noteRefusal(channel.join(), onNote)
     return () => {
       channelRef.current = null
       onChannel?.(null)
@@ -47,10 +55,15 @@ function JpegFrame({ stream, socket, onChannel, size, onSize, onShown, alt }) {
       channel.leave()
       if (frameRef.current) URL.revokeObjectURL(frameRef.current)
       frameRef.current = null
+      onNote(null)
+      onSize(null)
     }
-  }, [stream, socket, onChannel])
+  }, [stream, socket, onChannel, onNote, onSize])
 
-  useEffect(() => onShown(frame !== null), [frame, onShown])
+  useEffect(() => {
+    onShown(frame !== null)
+    return () => onShown(false)
+  }, [frame, onShown])
 
   return frame ? (
     <img
@@ -70,40 +83,65 @@ function JpegFrame({ stream, socket, onChannel, size, onSize, onShown, alt }) {
 }
 
 /**
- * The camera's video on `video:<stream>`, decoded with WebCodecs and drawn on a canvas (`LiveDecoder`), or a message
- * where the browser cannot decode it. `onDrawn` gets the capture time, in microseconds, of each frame drawn.
+ * The camera's video on `video:<stream>`, decoded with WebCodecs and drawn on a canvas (`LiveDecoder`). `onDrawn`
+ * gets the capture time, in microseconds, of each frame drawn, and `onNote` why none is, where the browser cannot
+ * decode the stream. The canvas is hidden until a frame is drawn, and again once the channel fails, as when the
+ * socket closes.
  */
-function VideoFrame({ stream, socket, onSize, onShown, onDrawn }) {
+function VideoFrame({ stream, socket, onSize, onShown, onDrawn, onNote }) {
   const canvasRef = useRef(null)
-  const [unsupported, setUnsupported] = useState(false)
+  const [drawn, setDrawn] = useState(false)
 
   useEffect(() => {
     const channel = socket.channel(`video:${stream}`, {})
+    let left = false
+    const leave = () => {
+      if (left) return
+      left = true
+      channel.off('frame')
+      channel.leave()
+    }
+    // Whether the channel failed and pushed nothing since: a frame decoded before is drawn after, and stays hidden.
+    let failed = false
     const live = new LiveDecoder(canvasRef.current, {
       onAck: () => channel.push('ack', {}),
       onDrawn: (captureUs, { width, height }) => {
+        if (failed) return
         onSize(sized(width, height))
+        setDrawn(true)
         onShown(true)
         onDrawn(captureUs)
       },
-      onUnsupported: () => setUnsupported(true)
+      // Nothing takes the frames of a stream the browser cannot decode: the unit sends them no more.
+      onUnsupported: () => {
+        onNote(NO_H264)
+        leave()
+      }
     })
-    channel.on('frame', (payload) => live.push(payload))
-    channel.join()
-    return () => {
-      channel.off('frame')
-      channel.leave()
-      live.close()
+    const hide = () => {
+      setDrawn(false)
       onShown(false)
       onDrawn(null)
     }
-  }, [stream, socket, onSize, onShown, onDrawn])
+    channel.on('frame', (payload) => {
+      failed = false
+      live.push(payload)
+    })
+    channel.onError(() => {
+      failed = true
+      hide()
+    })
+    noteRefusal(channel.join(), onNote)
+    return () => {
+      leave()
+      live.close()
+      hide()
+      onNote(null)
+      onSize(null)
+    }
+  }, [stream, socket, onSize, onShown, onDrawn, onNote])
 
-  return unsupported ? (
-    <p className="px-4 text-center text-sm text-ovcs-muted">{NO_H264}</p>
-  ) : (
-    <canvas ref={canvasRef} aria-label={`${stream} video`} className="h-full w-full object-contain" />
-  )
+  return <canvas ref={canvasRef} aria-label={`${stream} video`} className={`h-full w-full object-contain ${drawn ? '' : 'invisible'}`} />
 }
 
 const EXPAND = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5'
@@ -146,9 +184,10 @@ function FullScreenButton({ stream, full, toggle }) {
  * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
  * frames level, or, `asideBeside`, next to the frame in its cell, the two kept together. The frame is 16:9 unless
  * `frameClassName` shapes it, from the image's size it carries once known (`--frame-width`, `--frame-height`), in a
- * cell of its own, `cellClassName`'s. With `video`, the stream is the camera's H.264 video, decoded with WebCodecs,
- * or a message where the browser cannot; otherwise its JPEG preview, whose channel `onChannel`
- * gets before it joins, to bind its own events. `overlay`, elements, none, or a function of the capture time in
+ * cell of its own, `cellClassName`'s. With `video`, the stream is the camera's H.264 video, decoded with WebCodecs;
+ * otherwise its JPEG preview, whose channel `onChannel` gets before it joins, to bind its own events. A frame that
+ * shows nothing says why: none came yet, or since its channel failed, the unit refuses the stream, or the browser
+ * cannot decode the video. `overlay`, elements, none, or a function of the capture time in
  * microseconds of the frame shown (`null` for a JPEG preview, which shows the newest) that gives them, is drawn over
  * the frame once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring
  * around it, frame or not. A button in the frame's other corner shows it full screen, overlays included.
@@ -172,15 +211,17 @@ export default function Preview({
   const [size, setSize] = useState(null)
   const [shown, setShown] = useState(false)
   const [drawnUs, setDrawnUs] = useState(null)
+  // Why the frame shows nothing, where it is not only that none came yet.
+  const [note, setNote] = useState(null)
   const frameRef = useRef(null)
   const fullScreen = useFullScreen(frameRef)
   const decodable = !video || hasVideoDecoder()
   const overlays = typeof overlay === 'function' ? overlay(video ? drawnUs : null) : overlay
 
   const frame = video ? (
-    <VideoFrame stream={stream} socket={socket} onSize={setSize} onShown={setShown} onDrawn={setDrawnUs} />
+    <VideoFrame stream={stream} socket={socket} onSize={setSize} onShown={setShown} onDrawn={setDrawnUs} onNote={setNote} />
   ) : (
-    <JpegFrame stream={stream} socket={socket} onChannel={onChannel} size={size} onSize={setSize} onShown={setShown} alt={`${stream} preview`} />
+    <JpegFrame stream={stream} socket={socket} onChannel={onChannel} size={size} onSize={setSize} onShown={setShown} onNote={setNote} alt={`${stream} preview`} />
   )
 
   return (
@@ -191,7 +232,9 @@ export default function Preview({
       >
         <div ref={frameRef} data-frame className={`relative flex items-center justify-center bg-black ${frameClassName}`}>
           {decodable ? frame : <p className="px-4 text-center text-sm text-ovcs-muted">{noVideoDecoder()}</p>}
-          {decodable && !shown && !video ? <p className="text-sm text-ovcs-muted">No frame</p> : null}
+          {decodable && !shown ? (
+            <p className={`px-4 text-center text-sm text-ovcs-muted ${video ? 'absolute' : ''}`}>{note ?? (video ? NO_VIDEO : NO_FRAME)}</p>
+          ) : null}
           {shown && size && Children.count(overlays) > 0 ? <FrameSize value={size}>{overlays}</FrameSize> : null}
           {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
           {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}

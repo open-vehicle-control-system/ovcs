@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { OvcsBadge, focusClass as FOCUS } from '@ovcs/ui/react'
 import Section from './Section.jsx'
 import { selectedCalibration, selectedId, useCalibration } from '../../stores/calibration.js'
@@ -49,16 +49,36 @@ function FirmwareRow({ inUse, busy, onUse }) {
   )
 }
 
+/**
+ * A kept calibration's name, renamed in place: the focus goes to the name's field when it opens, and once it closes
+ * back to Rename, or to the name itself while the rename disables that button.
+ */
 function Name({ kept, busy }) {
   const inputId = useId()
   const rename = useCalibration((state) => state.renameSaved)
   const [draft, setDraft] = useState(null)
+  const editing = draft !== null
+  const wasEditing = useRef(false)
+  const input = useRef(null)
+  const name = useRef(null)
+  const renameButton = useRef(null)
 
-  if (draft === null)
+  useEffect(() => {
+    if (editing) {
+      input.current?.focus()
+      input.current?.select()
+    } else if (wasEditing.current) {
+      const back = renameButton.current?.disabled ? name.current : renameButton.current
+      back?.focus()
+    }
+    wasEditing.current = editing
+  }, [editing])
+
+  if (!editing)
     return (
-      <span className="flex flex-wrap items-center gap-2">
+      <span ref={name} tabIndex={-1} className={`flex flex-wrap items-center gap-2 rounded ${FOCUS}`}>
         {kept.name}
-        <button type="button" disabled={busy} aria-label={`Rename ${kept.name}`} onClick={() => setDraft(kept.name)} className={`rounded text-xs text-ovcs-muted underline hover:text-ovcs-text ${FOCUS}`}>
+        <button ref={renameButton} type="button" disabled={busy} aria-label={`Rename ${kept.name}`} onClick={() => setDraft(kept.name)} className={`rounded text-xs text-ovcs-muted underline hover:text-ovcs-text ${FOCUS}`}>
           Rename
         </button>
       </span>
@@ -76,6 +96,7 @@ function Name({ kept, busy }) {
     <form onSubmit={submit} className="flex flex-wrap items-center gap-2">
       <label htmlFor={inputId} className="sr-only">{`Name of ${kept.name}`}</label>
       <input
+        ref={input}
         id={inputId}
         value={draft}
         maxLength={80}
