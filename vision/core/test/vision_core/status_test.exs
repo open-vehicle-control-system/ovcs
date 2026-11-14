@@ -85,6 +85,7 @@ defmodule VisionCore.StatusTest do
     assert snapshot.npu == nil
     assert snapshot.depth_hz == 0.0
     assert snapshot.pipelines == %{stereo: StageTimes.none()}
+    assert snapshot.distances == %{}
   end
 
   @tag :tmp_dir
@@ -1007,6 +1008,76 @@ defmodule VisionCore.StatusTest do
 
       assert_receive {:vision_status, %{pipelines: %{detection: detection}}}, 600
       assert detection == StageTimes.none()
+    end
+  end
+
+  describe "the distances of the pipelines on a camera of their own" do
+    alias VisionCore.Pipelines
+
+    @people_detector {:detector,
+                      name: :people,
+                      backend: VisionCore.Detection.Backend.Stub,
+                      source: {:camera, :hq}}
+
+    # A pipeline that answers `distances` and tells `test` each call it gets.
+    defp register_answering(name, distances, test) do
+      pipeline = spawn(fn -> answer_calls(distances, test) end)
+      VisionCore.TestProcesses.register(pipeline, name)
+      on_exit(fn -> Process.exit(pipeline, :kill) end)
+    end
+
+    defp answer_calls(distances, test) do
+      receive do
+        {:"$gen_call", from, request} ->
+          send(test, {:called, request})
+          if request == :distances, do: GenServer.reply(from, distances)
+      end
+
+      answer_calls(distances, test)
+    end
+
+    test "reports, by each one's name, its camera and why the stereo depth gives it no distance" do
+      register_answering(
+        Pipelines.server(VisionCore.Detection.Pipeline, :people),
+        %{camera: :hq, reason: :no_pose},
+        self()
+      )
+
+      register_answering(
+        Pipelines.server(VisionCore.Segmentation.Pipeline, :road),
+        %{camera: :hq, reason: nil},
+        self()
+      )
+
+      start_supervised!({Status, config: config([@people_detector, @road_segmenter])})
+
+      assert Status.snapshot().distances == %{
+               people: %{camera: :hq, reason: :no_pose},
+               road: %{camera: :hq, reason: nil}
+             }
+    end
+
+    test "asks no pipeline on the stereo pairs, and leaves out one that does not answer" do
+      register_answering(
+        Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{camera: :left, reason: nil},
+        self()
+      )
+
+      silent = spawn(fn -> Process.sleep(:infinity) end)
+
+      VisionCore.TestProcesses.register(
+        silent,
+        Pipelines.server(VisionCore.Detection.Pipeline, :people)
+      )
+
+      on_exit(fn -> Process.exit(silent, :kill) end)
+
+      detectors = [{:detector, backend: VisionCore.Detection.Backend.Stub}, @people_detector]
+      start_supervised!({Status, config: config(detectors), tick_ms: 60_000})
+
+      assert Status.snapshot().distances == %{}
+      refute_received {:called, :distances}
     end
   end
 end

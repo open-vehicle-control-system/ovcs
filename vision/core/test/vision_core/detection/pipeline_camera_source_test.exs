@@ -643,6 +643,35 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert [_once] = Regex.scan(~r/has no pose/, log)
   end
 
+  test "says why the stereo depth gives its detections no distance", %{tmp_dir: dir} do
+    start_pipeline(dir, files: [:calibration])
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    assert VisionCore.CameraPipeline.distances(pipeline) == %{camera: :hq, reason: :no_pose}
+  end
+
+  test "says so again once its camera's files are read again", %{tmp_dir: dir} do
+    %{components: [{:camera, camera}]} = config(dir, [:calibration])
+    pose = Path.join(dir, "hq_pose.yaml")
+    config = %VisionCore.Config{components: [{:camera, camera ++ [pose: pose]}]}
+    start_pipeline(dir, config: config)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == :no_pose
+
+    File.write!(pose, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [0, 0, 0]\n")
+    GenServer.cast(pipeline, {:camera_calibration_changed, :hq})
+
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == nil
+  end
+
+  test "says nothing stops the distances of a camera with a calibration and a pose",
+       %{tmp_dir: dir} do
+    start_pipeline(dir)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    assert VisionCore.CameraPipeline.distances(pipeline) == %{camera: :hq, reason: nil}
+  end
+
   test "a camera without a calibration gives no bearing either", %{tmp_dir: dir} do
     start_pipeline(dir, files: [:pose], pair_wait_ms: 20)
     publish_frame(100)

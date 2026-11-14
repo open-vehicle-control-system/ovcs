@@ -126,5 +126,12 @@ export const HINTS = {
     text:
       'Share of each second spent computing the stereo stages, wherever they run: on the GPU, or on the processor ' +
       'cores in native code. Near 100 %, the pipeline cannot go faster and the depth rate drops below the cameras’.'
+  },
+  distances: {
+    title: 'No distances',
+    text:
+      'The detections and segmentation on this camera take their distances from the stereo depth, which needs the ' +
+      'camera’s calibration and its pose: where it sits relative to the stereo pair. Calibrate it from its ' +
+      'Calibration page, and measure its pose as docs/vision/cameras.md says, under Measure the pose.'
   }
 }

@@ -226,6 +226,43 @@ describe('Previews', () => {
       expect(card('usb')).toBeNull()
     })
 
+    it("says under a camera's preview why its pipelines have no distance, once for the same reason, with how to give them one", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
+      const distances = {
+        objects: { camera: 'hq', available: false, reason: 'no_pose' },
+        scene: { camera: 'hq', available: false, reason: 'no_pose' },
+        signs: { camera: 'usb', available: true, reason: null }
+      }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      const lines = [...figure('hq').querySelectorAll('[data-distances]')]
+      expect(lines.map((line) => line.textContent)).toEqual(["No distances: the hq camera's position relative to the stereo pair is unknown"])
+      expect(lines[0].className).toContain('text-ovcs-muted')
+
+      fireEvent.focus(screen.getByRole('button', { name: 'About No distances' }))
+      expect(screen.getByRole('tooltip').textContent).toContain('docs/vision/cameras.md')
+      expect(figure('usb').querySelector('[data-distances]')).toBeNull()
+    })
+
+    it("names each reason the camera's pipelines give, and nothing without a status", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      const distances = {
+        objects: { camera: 'hq', available: false, reason: 'no_calibration' },
+        scene: { camera: 'hq', available: false, reason: 'unreadable_pose' }
+      }
+      const { socket } = liveSocket()
+      const { rerender } = render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      expect([...figure('hq').querySelectorAll('[data-distances]')].map((line) => line.textContent)).toEqual([
+        'No distances: the hq camera has no calibration',
+        "No distances: the hq camera's pose file cannot be read"
+      ])
+
+      rerender(<Previews status={null} socket={socket} />)
+      expect(figure('hq').querySelector('[data-distances]')).toBeNull()
+    })
+
     it('shows none without a camera of its own, the depth alone filling the row below the pair', () => {
       listed('camera_frame:left', 'camera_frame:right', 'stereo_pair')
       const { socket } = liveSocket()

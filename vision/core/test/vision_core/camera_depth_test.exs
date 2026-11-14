@@ -127,6 +127,78 @@ defmodule VisionCore.CameraDepthTest do
     end
   end
 
+  describe "unprojectable_reason/1" do
+    test "is nil for a camera with a calibration and a pose" do
+      assert CameraDepth.unprojectable_reason(depth()) == nil
+    end
+
+    test "names the file the camera has not, the calibration first" do
+      assert CameraDepth.unprojectable_reason(depth(500, [:calibration])) == :no_pose
+      assert CameraDepth.unprojectable_reason(depth(500, [:pose])) == :no_calibration
+      assert CameraDepth.unprojectable_reason(depth(500, [])) == :no_calibration
+    end
+
+    @tag :tmp_dir
+    test "names a file that cannot be read, and a calibration that cannot be projected with",
+         %{tmp_dir: dir} do
+      garbage = Path.join(dir, "garbage.yaml")
+      File.write!(garbage, "rotation: [1, 2\n")
+      calibration = Path.join(@calibration, "equidistant_hq.yaml")
+
+      reason = fn files ->
+        camera = [name: :hq, driver: VisionCore.Camera.GStreamer] ++ files
+        config = %VisionCore.Config{components: [{:camera, camera}]}
+
+        :hq
+        |> CameraDepth.new(config, "test pipeline", @wording, pair_wait_ms: 500)
+        |> CameraDepth.unprojectable_reason()
+      end
+
+      assert reason.(calibration: calibration, pose: garbage) == :unreadable_pose
+      # A vehicle names its pose file whether or not it ships one.
+      assert reason.(calibration: calibration, pose: Path.join(dir, "absent_pose.yaml")) ==
+               :no_pose
+
+      assert reason.(calibration: garbage, pose: garbage) == :unreadable_calibration
+      assert reason.(calibration: rational_polynomial(dir)) == :unusable_calibration
+    end
+
+    test "follows the files read again by reload/2" do
+      depth = depth(500, [:calibration])
+
+      config = %VisionCore.Config{
+        components: [
+          {:camera,
+           [
+             name: :hq,
+             driver: VisionCore.Camera.GStreamer,
+             calibration: Path.join(@calibration, "equidistant_hq.yaml"),
+             pose: Path.join(@calibration, "camera_pose_hq.yaml")
+           ]}
+        ]
+      }
+
+      assert CameraDepth.unprojectable_reason(CameraDepth.reload(depth, config)) == nil
+    end
+  end
+
+  # A calibration whose lens model cannot be projected with, written in `dir`.
+  defp rational_polynomial(dir) do
+    calibration = %VisionCore.Ros2.CameraCalibration{
+      width: 40,
+      height: 20,
+      distortion_model: "rational_polynomial",
+      distortion_coefficients: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+      camera_matrix: [50.0, 0.0, 20.0, 0.0, 50.0, 10.0, 0.0, 0.0, 1.0],
+      rectification_matrix: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      projection_matrix: [50.0, 0.0, 20.0, 0.0, 0.0, 50.0, 10.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    }
+
+    path = Path.join(dir, "rational.yaml")
+    File.write!(path, VisionCore.Ros2.CameraCalibration.to_yaml(calibration, "hq"))
+    path
+  end
+
   describe "new/5" do
     @tag :tmp_dir
     test "refuses a calibration it cannot project with at start, saying so once", %{tmp_dir: dir} do

@@ -46,6 +46,18 @@ A channel answers an event it does not take with an error reply, `{"reason": "un
 
 A step that did not run in the second is `null`, and so is the `totalMs` of a pipeline none of whose steps ran. [Step times](./performance.md#step-times) says what each time covers.
 
+`distances` holds each detection and segmentation pipeline on a camera of its own, by its name: its `camera`, and `available`, whether that camera has the calibration and the pose the stereo depth is projected into it with. Without them, the pipeline's detections have no distance and its segmentation no points. With them, a result can still lack a distance, as one whose frame no stereo pair matched. `reason` says what is missing, `null` when available:
+
+| `reason` | The camera | To do |
+|---|---|---|
+| `no_calibration` | has no `calibration:` file | [calibrate it](./calibration.md#a-camera-of-its-own) |
+| `unreadable_calibration` | has a calibration file that cannot be read | calibrate it again, or fix the file |
+| `unusable_calibration` | has a calibration whose lens model the unit cannot project with | calibrate it with the `plumb_bob` or `equidistant` model |
+| `no_pose` | has no `pose:` file: where it sits relative to the stereo pair is unknown | [measure its pose](./cameras.md#measure-the-pose) |
+| `unreadable_pose` | has a pose file that cannot be read | fix the file |
+
+A pipeline that does not answer is left out.
+
 ```json
 {
   "cameras": {
@@ -81,6 +93,10 @@ A step that did not run in the second is `null`, and so is the `totalMs` of a pi
                                         "temporal_filter", "depth", "point_cloud", "quality"], "ms": 37.7}]},
     "objects": {"totalMs": 11.9, "stages": {"input": 0.8, "inference": 10.3, "filtering": 0.1, "placement": 0.7}, "segments": []},
     "scene": {"totalMs": 21.4, "stages": {"input": 0.3, "inference": 14.6, "classes": 6.5}, "segments": []}
+  },
+  "distances": {
+    "objects": {"camera": "center", "available": false, "reason": "no_pose"},
+    "scene": {"camera": "center", "available": false, "reason": "no_pose"}
   },
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}},
                 {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]

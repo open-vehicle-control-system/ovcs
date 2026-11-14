@@ -7,7 +7,11 @@ defmodule VisionApiWeb.StatusJSON do
   without one. `pipelines` holds each pipeline's times by its name
   (`VisionCore.StageTimes`): `totalMs`, each of its `stages`' time by
   the stage's name, and its `segments`, each with its `stages`' names
-  and its `ms`. A camera's or the sync's fields that were not measured
+  and its `ms`. `distances` holds, by its name, each pipeline on a
+  camera of its own: its `camera`, whether the stereo depth gives its
+  results distances (`available`) and, when it does not, the `reason`
+  as a string (`VisionCore.CameraDepth.unprojectable_reason/1`). A
+  camera's or the sync's fields that were not measured
   are left out. Each exporter's status is a `level`, `ok`, `warning` or
   `off`, and a `detail`; the API's own comes last, as
   `GET /api/exporters` lists it. The CPU's load is the board's
@@ -48,6 +52,7 @@ defmodule VisionApiWeb.StatusJSON do
       depth: checks(snapshot.depth),
       npu: npu(snapshot.npu),
       pipelines: Map.new(snapshot.pipelines, fn {name, times} -> {name, times(times)} end),
+      distances: Map.new(snapshot.distances, fn {name, why} -> {name, distances(why)} end),
       calibrated: snapshot.calibrated,
       depthHz: snapshot.depth_hz,
       stereoLoadPercent: snapshot.stereo_segment_percent,
@@ -92,6 +97,12 @@ defmodule VisionApiWeb.StatusJSON do
 
   defp times(times),
     do: %{totalMs: times.total_ms, stages: times.stages, segments: times.segments}
+
+  defp distances(%{camera: camera, reason: nil}),
+    do: %{camera: camera, available: true, reason: nil}
+
+  defp distances(%{camera: camera, reason: reason}),
+    do: %{camera: camera, available: false, reason: Atom.to_string(reason)}
 
   defp alignment(nil), do: nil
 

@@ -179,7 +179,7 @@ defmodule Ovcs1.VisionComposerTest do
     refute depth.pose
     refute CameraDepth.projectable?(depth)
     assert log =~ "camera center has no pose"
-    assert log =~ "center_pose.yaml unreadable (:enoent)"
+    refute log =~ "unreadable"
   end
 
   test "every vision unit takes its options as the vision core starts it" do

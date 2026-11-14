@@ -48,6 +48,7 @@ defmodule VisionCore.CameraPipeline do
   each change of the camera's calibration
   (`VisionCore.Camera.Calibration.changed_key/1`), so a calibration
   committed while the pipeline runs is taken from the next frame on.
+  `distances/1` says why the depth cannot be projected into the camera.
 
   ## The steps' times
 
@@ -168,6 +169,17 @@ defmodule VisionCore.CameraPipeline do
   @spec stage_times(GenServer.server()) :: StageTimes.t()
   def stage_times(server), do: GenServer.call(server, :stage_times)
 
+  @doc """
+  The pipeline's camera, and why the stereo depth cannot be projected
+  into it, which leaves its results without distances
+  (`VisionCore.CameraDepth.unprojectable_reason/1`): `nil` when it can.
+  """
+  @spec distances(GenServer.server()) :: %{
+          camera: atom(),
+          reason: CameraDepth.unprojectable_reason() | nil
+        }
+  def distances(server), do: GenServer.call(server, :distances)
+
   @doc "Starts the pipeline `module`; `start_options` are `GenServer.start_link/3`'s."
   @spec start_link(module(), keyword(), keyword()) :: GenServer.on_start()
   def start_link(module, opts, start_options),
@@ -231,6 +243,9 @@ defmodule VisionCore.CameraPipeline do
   @impl GenServer
   def handle_call(:stage_times, _from, state),
     do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
+
+  def handle_call(:distances, _from, %{camera: camera} = state),
+    do: {:reply, %{camera: camera.name, reason: CameraDepth.unprojectable_reason(camera)}, state}
 
   def handle_call(:live_settings, _from, state),
     do: {:reply, state.module.setting_values(state.settings), state}
