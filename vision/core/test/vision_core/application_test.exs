@@ -577,6 +577,8 @@ defmodule VisionCore.ApplicationTest do
 
       assert message =~ "a camera's name is an atom matching"
       assert message =~ "got #{inspect(name)}"
+      # A start that failed leaves no configuration for the next one to read.
+      assert VisionCore.Application.active_config() == nil
     end
   end
 

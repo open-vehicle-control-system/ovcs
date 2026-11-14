@@ -74,11 +74,16 @@ defmodule VisionCore.Application do
 
         composer ->
           config = composer.config(VisionCore.arm())
+          children = cluster_child() ++ [pipeline_child(config)]
           :persistent_term.put(@active_config, config)
-          cluster_child() ++ [pipeline_child(config)]
+          children
       end
 
-    Supervisor.start_link(children, strategy: :one_for_one, name: VisionCore.AppSupervisor)
+    with {:error, _reason} = error <-
+           Supervisor.start_link(children, strategy: :one_for_one, name: VisionCore.AppSupervisor) do
+      :persistent_term.erase(@active_config)
+      error
+    end
   end
 
   @impl Application
