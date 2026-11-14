@@ -123,16 +123,10 @@ defmodule VisionCore.Camera.Calibration do
   end
 
   defp parse(path, yaml) do
-    calibration = CameraCalibration.parse(yaml)
-
-    case CameraCalibration.check_matrices(calibration) do
-      :ok -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
+    case CameraCalibration.parse(yaml) do
+      {:ok, calibration} -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
       {:error, message} -> {%{path: path, calibration: nil, yaml: yaml}, "#{path}: #{message}"}
     end
-  rescue
-    exception ->
-      {%{path: path, calibration: nil, yaml: yaml},
-       "cannot parse #{path}: #{Exception.message(exception)}"}
   end
 
   defp source(%{calibration: nil}, _stored?), do: :none

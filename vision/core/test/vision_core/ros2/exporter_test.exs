@@ -117,6 +117,15 @@ defmodule VisionCore.Ros2.ExporterTest do
     }
   end
 
+  defp grey_frame(label),
+    do: %Frame{label: label, width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+
+  # The exporter's answer to the encode that finished, which it started from the test process.
+  defp encoded(state) do
+    assert_receive {reference, _answer} = reply when is_reference(reference)
+    Exporter.handle_info(reply, state)
+  end
+
   defp jpeg_frame(label, capture_ns),
     do: %Frame{
       label: label,
@@ -233,9 +242,10 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     @tag :tmp_dir
-    test "answers set_camera_info for each side, writing the calibration to the store when there is one",
+    test "answers set_camera_info for each side, committing the calibration to the store when there is one",
          %{tmp_dir: tmp_dir} do
       config = config(Camera, calibration_store_dir: tmp_dir)
+      calibration = CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
 
       assert [_diagnostics, left, right] =
                Exporter.children(stereo: [topic_prefix: "front"], config: config)
@@ -246,31 +256,22 @@ defmodule VisionCore.Ros2.ExporterTest do
              } = left
 
       assert left_options[:service_name] == "front/left/set_camera_info"
-      assert left_options[:calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
-      assert left_options[:camera_name] == "stereo_left"
-
-      assert left_options[:reload] ==
-               {VisionCore.Stereo.Supervisor, :reload_stored_calibration,
-                [
-                  VisionCore.Stereo.Pipeline,
-                  "stereo",
-                  Path.join(tmp_dir, "stereo_left.yaml"),
-                  Path.join(tmp_dir, "stereo_right.yaml")
-                ]}
+      assert left_options[:commit].(calibration) == :ok
+      assert File.read!(Path.join(tmp_dir, "stereo_left.yaml")) =~ "camera_name: stereo_left"
+      refute File.exists?(Path.join(tmp_dir, "stereo_right.yaml"))
 
       assert %{start: {SetCameraInfoServer, :start_link, [right_options]}} = right
       assert right_options[:service_name] == "front/right/set_camera_info"
     end
 
-    test "without a store, set_camera_info writes the calibration file the stereo unit reads" do
-      assert [_diagnostics, left, _right] = Exporter.children(stereo: [], config: config(Camera))
-      %{start: {SetCameraInfoServer, :start_link, [left_options]}} = left
+    test "without a store, answers set_camera_info for each side with a calibration file" do
+      assert [_diagnostics, left, right] = Exporter.children(stereo: [], config: config(Camera))
 
-      assert left_options[:calibration_path] == Path.join(@calibration, "stereo_left.yaml")
-
-      assert left_options[:reload] ==
-               {VisionCore.Stereo.Supervisor, :reload_calibration,
-                [VisionCore.Stereo.Pipeline, "stereo"]}
+      for {side, child} <- [left: left, right: right] do
+        assert %{id: {SetCameraInfoServer, ^side}} = child
+        %{start: {SetCameraInfoServer, :start_link, [options]}} = child
+        assert is_function(options[:commit], 1)
+      end
     end
 
     test "no helper without a stereo unit to publish" do
@@ -727,20 +728,135 @@ defmodule VisionCore.Ros2.ExporterTest do
       {:ok, state} =
         Exporter.init(options(Camera, stereo: [publish_rectified_image: true], jpeg_codec: codec))
 
-      grey = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
-      {:ok, state} = Exporter.handle_output({:camera_frame, :left}, grey, state)
+      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      {:ready, {:camera_frame, :left}, state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_raw/compressed",
                        %CompressedImage{data: raw}}
 
       assert <<0xFF, 0xD8, _rest::binary>> = raw
 
-      {:ok, _state} = Exporter.handle_output(:stereo_pair, pair(), state)
+      {:busy, state} = Exporter.handle_output(:stereo_pair, pair(), state)
+      {:ready, :stereo_pair, _state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_rect/compressed",
                        %CompressedImage{data: rectified}}
 
       assert <<0xFF, 0xD8, _rest::binary>> = rectified
+    end
+  end
+
+  describe "an image to encode" do
+    # Holds each encode until the test answers it, as a codec that is slow would.
+    defmodule HeldCodec do
+      use GenServer
+
+      def start_link(test), do: GenServer.start_link(__MODULE__, test)
+
+      @impl GenServer
+      def init(test), do: {:ok, test}
+
+      @impl GenServer
+      def handle_call({:request, _request, _shared_frame}, from, test) do
+        send(test, {:encoding, from})
+        {:noreply, test}
+      end
+    end
+
+    setup do
+      %{codec: start_supervised!({HeldCodec, self()})}
+    end
+
+    test "is encoded apart: the output is busy, the pairs go out, and it is ready once published",
+         %{codec: codec} do
+      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      assert_receive {:encoding, encode}
+      {:ok, state} = Exporter.handle_output(:stereo_pair, pair(), state)
+
+      assert_received {:published, "stereo/disparity", _disparity}
+      refute_received {:published, "stereo/left/image_raw/compressed", _image}
+
+      GenServer.reply(encode, {:ok, "the jpeg"})
+
+      assert {:ready, {:camera_frame, :left}, state} = encoded(state)
+
+      assert_received {:published, "stereo/left/image_raw/compressed",
+                       %CompressedImage{data: "the jpeg"}}
+
+      assert_received {:published, "stereo/left/camera_info", %CameraInfo{}}
+      assert [_publish_ns] = state.telemetry.stages.pub_left
+    end
+
+    test "that does not encode leaves its output ready, its camera info published",
+         %{codec: codec} do
+      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+      assert_receive {:encoding, encode}
+      GenServer.reply(encode, {:error, :timeout})
+
+      assert {:ready, {:camera_frame, :right}, _state} = encoded(state)
+      refute_received {:published, "stereo/right/image_raw/compressed", _image}
+      assert_received {:published, "stereo/right/camera_info", %CameraInfo{}}
+    end
+
+    test "whose codec is gone leaves its output ready" do
+      gone = Module.concat(__MODULE__, GoneCodec)
+      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: gone))
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
+      assert {:ready, {:camera_frame, :left}, _state} = encoded(state)
+    end
+
+    test "keeps the calibration read while it was encoded", %{codec: codec} do
+      {:ok, state} = Exporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      assert_receive {:encoding, encode}
+      reloaded = put_in(state.stereo.sides["left"].camera_info, :read_since)
+      GenServer.reply(encode, {:ok, "the jpeg"})
+
+      assert {:ready, _output, state} = encoded(reloaded)
+      assert %{camera_info: :read_since, frame_counter: 1} = state.stereo.sides["left"]
+    end
+
+    test "a frame its rate leaves out, and a JPEG frame, are answered at once", %{codec: codec} do
+      {:ok, state} =
+        Exporter.init(options(Camera, stereo: [raw_image_max_hz: 1], jpeg_codec: codec))
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+      assert_receive {:encoding, encode}
+      GenServer.reply(encode, {:ok, "the jpeg"})
+      {:ready, _output, state} = encoded(state)
+
+      assert {:ok, state} =
+               Exporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
+      assert {:ok, _state} =
+               Exporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 3), state)
+    end
+
+    test "of a camera's named output is ready under the output it was handed as", %{codec: codec} do
+      outputs = [
+        view: [resolution: {2028, 1520}, processor: :cpu],
+        small: [from: :view, resolution: {1014, 760}]
+      ]
+
+      config = Camera |> config() |> with_camera(VisionCore.Camera.V4L2Single, outputs: outputs)
+      options = options(Camera, cameras: [outputs: [hq: :small]], jpeg_codec: codec)
+      {:ok, state} = Exporter.init(Keyword.put(options, :config, config))
+      frame = %{grey_frame("hq") | output: :small}
+
+      {:busy, state} = Exporter.handle_output({:camera_frame, :hq, :small}, frame, state)
+      assert_receive {:encoding, encode}
+      GenServer.reply(encode, {:ok, "the jpeg"})
+
+      assert {:ready, {:camera_frame, :hq, :small}, state} = encoded(state)
+      assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+      assert state.cameras.hq.frame_counter == 1
     end
   end
 
@@ -1015,8 +1131,10 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     @tag :tmp_dir
-    test "answers set_camera_info on <prefix>/<name>/set_camera_info, writing to its store",
+    test "answers set_camera_info on <prefix>/<name>/set_camera_info, committing to its store",
          %{tmp_dir: tmp_dir} do
+      calibration = CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
+
       options =
         hq_options(Camera, [calibration: "hq.yaml", calibration_store_dir: tmp_dir], cameras: [])
 
@@ -1026,17 +1144,15 @@ defmodule VisionCore.Ros2.ExporterTest do
                server
 
       assert args[:service_name] == "stereo/hq/set_camera_info"
-      assert args[:calibration_path] == Path.join(tmp_dir, "camera_hq.yaml")
-      assert args[:camera_name] == "hq"
-      assert args[:reload] == nil
+      assert args[:commit].(calibration) == :ok
+      assert File.read!(Path.join(tmp_dir, "camera_hq.yaml")) =~ "camera_name: hq"
     end
 
-    test "without a store, set_camera_info writes its calibration file; with neither, no service" do
+    test "without a store, answers set_camera_info with a calibration file; with neither, no service" do
       options = hq_options(Camera, [calibration: "hq.yaml"], cameras: [topic_prefix: "front"])
 
       assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] = Exporter.children(options)
       assert args[:service_name] == "front/hq/set_camera_info"
-      assert args[:calibration_path] == "hq.yaml"
 
       assert Exporter.children(hq_options(Camera, [], cameras: [])) == []
     end
@@ -1090,44 +1206,6 @@ defmodule VisionCore.Ros2.ExporterTest do
       {:ok, _state} = Exporter.init(hq_options(Camera, [], cameras: []))
 
       refute_received :publish_transforms
-    end
-
-    @tag :tmp_dir
-    test "a committed calibration is published as its camera info", %{tmp_dir: tmp_dir} do
-      stored = Path.join(tmp_dir, "camera_hq.yaml")
-
-      options =
-        hq_options(
-          Camera,
-          [
-            calibration: Path.join(@calibration, "distorted_left.yaml"),
-            calibration_store_dir: tmp_dir
-          ],
-          cameras: []
-        )
-
-      {:ok, state} = Exporter.init(options)
-      File.cp!(Path.join(@calibration, "identity_left.yaml"), stored)
-
-      {:ok, state} =
-        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
-
-      assert_received {:"$gen_cast", {:camera_calibration_changed, :hq}}
-
-      frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
-      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
-
-      assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
-      assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
-    end
-
-    test "a stereo calibration committed through set_camera_info is told as a change" do
-      {:ok, state} = Exporter.init(options(Camera, stereo: []))
-
-      {:ok, _state} =
-        Exporter.handle_info({:calibration_committed, "stereo/left/set_camera_info"}, state)
-
-      assert_received {:"$gen_cast", {:stereo_calibration_changed, "stereo"}}
     end
 
     @tag :tmp_dir
@@ -1393,7 +1471,7 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     @tag :tmp_dir
-    test "a calibration committed through the camera's service reaches its label images' camera info",
+    test "a change of the camera's calibration reaches its label images' camera info",
          %{tmp_dir: tmp_dir} do
       options =
         segmentation_options(Camera, [segmentation: [], cameras: []],
@@ -1412,8 +1490,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         Path.join(tmp_dir, "camera_hq.yaml")
       )
 
-      {:ok, state} =
-        Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
+      {:ok, state} = Exporter.handle_info({:camera_calibration_changed, :hq}, state)
 
       assert {k, _state} = published_k(state)
       assert_k(k, grid_k(200.0, 200.0, 96.0, 54.0))

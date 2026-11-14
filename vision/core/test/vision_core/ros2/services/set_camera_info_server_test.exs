@@ -6,42 +6,40 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServerTest do
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Ros2.Services.SetCameraInfoServer
+  alias VisionCore.Stereo.Calibration
 
   @moduletag :tmp_dir
   @moduletag :capture_log
   @calibration Path.expand("../../../support/calibration", __DIR__)
 
-  # The stereo unit's reload, as the server calls it: it tells the test, then answers as it is told.
-  defmodule Reload do
-    def answer(test, :raise) do
-      send(test, :reloaded)
-      raise "the calibration does not fit the frames"
-    end
+  # Names the cameras, which need not be running.
+  defmodule Camera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+  end
 
-    def answer(test, answer) do
-      send(test, :reloaded)
-      answer
+  # A commit that tells the test what it was given, then answers as it is told.
+  defp commit_answering(answer) do
+    test = self()
+
+    fn calibration ->
+      send(test, {:committed, calibration})
+      if answer == :raise, do: raise("the unit is gone"), else: answer
     end
   end
 
-  defp start_server(tmp_dir, service_name, reload) do
+  defp start_server(service_name, commit) do
     test = self()
 
-    server =
-      start_supervised!(
-        {SetCameraInfoServer,
-         service_name: service_name,
-         calibration_path: Path.join(tmp_dir, "stereo_left.yaml"),
-         reload: reload,
-         register_service: fn _name, _module, _handler -> :ok end,
-         respond: fn name, _query, payload ->
-           send(test, {:responded, name, response(payload)})
-         end},
-        id: service_name
-      )
-
-    :ok = SetCameraInfoServer.notify(server, self())
-    server
+    start_supervised!(
+      {SetCameraInfoServer,
+       service_name: service_name,
+       commit: commit,
+       register_service: fn _name, _module, _handler -> :ok end,
+       respond: fn name, _query, payload ->
+         send(test, {:responded, name, response(payload)})
+       end},
+      id: service_name
+    )
   end
 
   # The success and status message of a sensor_msgs/SetCameraInfo response, CDR-encoded.
@@ -51,11 +49,10 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServerTest do
        ),
        do: {success == 1, message}
 
-  # A sensor_msgs/SetCameraInfo request as the client hands it to the service: the CDR body.
-  defp commit(server) do
+  defp camera_info do
     saved = CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
 
-    camera_info = %CameraInfo{
+    %CameraInfo{
       header: %Header{stamp: %Time{}, frame_id: "stereo_left"},
       width: saved.width,
       height: saved.height,
@@ -65,95 +62,138 @@ defmodule VisionCore.Ros2.Services.SetCameraInfoServerTest do
       r: saved.rectification_matrix,
       p: saved.projection_matrix
     }
+  end
 
-    send(
-      server,
-      {:service_request,
-       %{query: %Zenohex.Query{}, request_payload: CameraInfo.encode(camera_info)}}
-    )
+  defp commit(server, camera_info \\ camera_info()),
+    do: request(server, CameraInfo.encode(camera_info))
 
+  # A sensor_msgs/SetCameraInfo request as the client hands it to the service: the CDR body.
+  defp request(server, payload) do
+    send(server, {:service_request, %{query: %Zenohex.Query{}, request_payload: payload}})
     :sys.get_state(server)
   end
 
-  test "tells the process notified once the stereo unit has taken the calibration it wrote",
-       %{tmp_dir: tmp_dir} do
-    server = start_server(tmp_dir, "ok/set_camera_info", {Reload, :answer, [self(), :ok]})
+  test "commits the calibration of the camera info it is sent, and answers ok" do
+    server = start_server("ok/set_camera_info", commit_answering(:ok))
 
     commit(server)
 
-    assert File.exists?(Path.join(tmp_dir, "stereo_left.yaml"))
-    assert_received :reloaded
-    assert_received {:calibration_committed, "ok/set_camera_info"}
+    assert_received {:committed, calibration}
+    assert calibration == CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
     assert_received {:responded, "ok/set_camera_info", {true, "ok"}}
   end
 
-  test "tells the process notified of a calibration written with no reload to make",
-       %{tmp_dir: tmp_dir} do
-    server = start_server(tmp_dir, "none/set_camera_info", nil)
-
-    commit(server)
-
-    assert_received {:calibration_committed, "none/set_camera_info"}
-  end
-
-  test "tells no one of a calibration the stereo unit refused", %{tmp_dir: tmp_dir} do
-    for {service_name, answer} <- [
-          {"refused/set_camera_info", {:error, :bad_calibration}},
-          {"raised/set_camera_info", :raise}
+  test "answers why a commit is refused, or fails" do
+    for {service_name, answer, reason} <- [
+          {"refused/set_camera_info", {:error, "the stereo unit refused the calibration"},
+           "the stereo unit refused the calibration"},
+          {"missing/set_camera_info", {:error, :not_found}, ":not_found"},
+          {"raised/set_camera_info", :raise, "the unit is gone"}
         ] do
-      server = start_server(tmp_dir, service_name, {Reload, :answer, [self(), answer]})
+      server = start_server(service_name, commit_answering(answer))
 
       commit(server)
 
-      assert_received :reloaded
-      refute_received {:calibration_committed, _service_name}
+      assert_received {:responded, ^service_name, {false, message}}
+      assert message =~ reason
+      assert Process.alive?(server)
     end
   end
 
-  test "puts back the calibration it replaced when the stereo unit refuses the new one, and answers why",
+  test "writes a stereo side through the stereo unit's calibration, one file renamed over the other",
        %{tmp_dir: tmp_dir} do
-    path = Path.join(tmp_dir, "stereo_left.yaml")
-    File.write!(path, "the calibration in use")
+    prefix = "service_#{System.unique_integer([:positive])}"
 
-    server =
-      start_server(
-        tmp_dir,
-        "replaced/set_camera_info",
-        {Reload, :answer, [self(), {:error, :bad_calibration}]}
-      )
+    config = %VisionCore.Config{
+      components: [
+        stereo: [
+          driver: Camera,
+          prefix: prefix,
+          calibration_store_dir: tmp_dir,
+          left: [],
+          right: []
+        ]
+      ]
+    }
+
+    path = Path.join(tmp_dir, "#{prefix}_left.yaml")
+    File.write!(path, "the calibration stored")
+    File.mkdir_p!(path <> ".tmp")
+    server = start_server("side/set_camera_info", &Calibration.commit_side(config, :left, &1))
 
     commit(server)
 
-    assert File.read!(path) == "the calibration in use"
-    assert_received {:responded, "replaced/set_camera_info", {false, message}}
-    assert message =~ "bad_calibration"
-  end
+    assert_received {:responded, "side/set_camera_info", {false, message}}
+    assert message =~ "write failed"
+    assert File.read!(path) == "the calibration stored"
 
-  test "commits nothing over a calibration it cannot read, and answers why", %{tmp_dir: tmp_dir} do
-    File.mkdir_p!(Path.join(tmp_dir, "stereo_left.yaml"))
-
-    server =
-      start_server(tmp_dir, "unreadable/set_camera_info", {Reload, :answer, [self(), :ok]})
-
+    File.rmdir!(path <> ".tmp")
     commit(server)
 
-    refute_received :reloaded
-    assert_received {:responded, "unreadable/set_camera_info", {false, message}}
-    assert message =~ "cannot read the calibration it would replace"
+    assert_received {:responded, "side/set_camera_info", {true, "ok"}}
+    assert File.read!(path) =~ "camera_name: #{prefix}_left"
+    refute File.exists?(path <> ".tmp")
   end
 
-  test "removes the calibration it wrote when the stereo unit refuses it and none was there",
-       %{tmp_dir: tmp_dir} do
-    for {service_name, answer} <- [
-          {"refused/set_camera_info", {:error, :bad_calibration}},
-          {"raised/set_camera_info", :raise}
+  test "answers a request it cannot decode as failed, and keeps running" do
+    server = start_server("malformed/set_camera_info", commit_answering(:ok))
+    whole = CameraInfo.encode(camera_info())
+
+    for payload <- [nil, <<>>, <<1, 2, 3>>, binary_part(whole, 0, div(byte_size(whole), 2))] do
+      request(server, payload)
+
+      assert_received {:responded, "malformed/set_camera_info",
+                       {false, "could not decode the request"}}
+    end
+
+    refute_received {:committed, _calibration}
+    assert Process.alive?(server)
+  end
+
+  test "refuses a camera info that is no calibration, and commits nothing" do
+    server = start_server("junk/set_camera_info", commit_answering(:ok))
+    good = camera_info()
+
+    for {junk, reason} <- [
+          {%CameraInfo{header: good.header}, "its image has no size"},
+          {%{good | width: 0}, "its image has no size"},
+          {%{good | height: 0}, "its image has no size"},
+          {%{good | d: [0.1]}, "it has 1 distortion coefficients, not the 5 of plumb_bob"},
+          {%{good | k: List.replace_at(good.k, 0, 0.0)}, "its focal lengths are not positive"}
         ] do
-      server = start_server(tmp_dir, service_name, {Reload, :answer, [self(), answer]})
+      commit(server, junk)
 
-      commit(server)
-
-      refute File.exists?(Path.join(tmp_dir, "stereo_left.yaml"))
-      assert_received {:responded, ^service_name, {false, _message}}
+      assert_received {:responded, "junk/set_camera_info", {false, message}}
+      assert message == "not a calibration: " <> reason
     end
+
+    refute_received {:committed, _calibration}
+  end
+
+  test "refuses a camera info whose matrix lost a value on the wire" do
+    server = start_server("nan/set_camera_info", commit_answering(:ok))
+    not_a_number = <<0, 0, 0, 0, 0, 0, 0xF8, 0x7F>>
+    good = camera_info()
+    whole = CameraInfo.encode(good)
+    first_focal = <<hd(good.k)::little-float-64>>
+    {offset, 8} = :binary.match(whole, first_focal)
+
+    request(
+      server,
+      binary_part(whole, 0, offset) <>
+        not_a_number <> binary_part(whole, offset + 8, byte_size(whole) - offset - 8)
+    )
+
+    assert_received {:responded, "nan/set_camera_info", {false, message}}
+    assert message == "not a calibration: its camera matrix has 8 values, not 9"
+    refute_received {:committed, _calibration}
+  end
+
+  test "ignores a message that is no request" do
+    server = start_server("stray/set_camera_info", commit_answering(:ok))
+
+    send(server, :stray)
+
+    assert :sys.get_state(server)
   end
 end
