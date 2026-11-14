@@ -79,11 +79,8 @@ defmodule InfotainmentCore.TimeSettings do
         settings
 
       [] ->
-        %TimeSetting{
-          timezone: @defaults.timezone,
-          time_format: @defaults.time_format,
-          date_format: @defaults.date_format
-        }
+        %TimeSetting{}
+        |> TimeSetting.changeset(@defaults)
         |> Repo.insert!()
     end
   end
@@ -92,19 +89,12 @@ defmodule InfotainmentCore.TimeSettings do
     case Repo.all(TimeSetting) do
       [settings | _] ->
         settings
-        |> Ecto.Changeset.change(%{
-          timezone: state.timezone,
-          time_format: state.time_format,
-          date_format: state.date_format
-        })
+        |> TimeSetting.changeset(state)
         |> Repo.update!()
 
       [] ->
-        %TimeSetting{
-          timezone: state.timezone,
-          time_format: state.time_format,
-          date_format: state.date_format
-        }
+        %TimeSetting{}
+        |> TimeSetting.changeset(state)
         |> Repo.insert!()
     end
   end
