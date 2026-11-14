@@ -19,7 +19,8 @@ defmodule VisionCore.Stereo.Parameters do
       stage that provides the pair's `:alignment` has as its status the
       row offset `VisionCore.Status` measures.
     * `<prefix>.pairing` — while `VisionCore.Stereo.Pairer` runs, the
-      largest capture time gap of a pair, `pair_tolerance_ms`.
+      largest capture time gap of a pair, `pair_tolerance_ms`, and the
+      most pairs matched a second, `max_hz`.
     * `<prefix>.<stage>.auto_row_offset`, before the `right_row_offset`
       of the stage that declares it — switches
       `VisionCore.Stereo.AlignmentCorrection` on or off while it runs and
@@ -68,7 +69,10 @@ defmodule VisionCore.Stereo.Parameters do
                          "other. Lower it for cameras that capture together, so a pair never " <>
                          "mixes two instants; raise it for cameras that capture a steady " <>
                          "offset apart. Watch the synchronisation between the videos, and " <>
-                         "the pairs dropped in the log."
+                         "the pairs dropped in the log. max_hz drops the pairs captured " <>
+                         "sooner than 1 / max_hz s after the last one matched, before " <>
+                         "matching, so that depth and detection take less of the processor; " <>
+                         "0 matches every pair the pipeline can take."
 
   @doc """
   Declares the unit's groups. Options: `:prefix`, `:driver`,
@@ -134,8 +138,6 @@ defmodule VisionCore.Stereo.Parameters do
   end
 
   defp pairing_group(prefix) do
-    [{key, spec}] = Pairer.setting_specs()
-
     %{
       id: "#{prefix}.pairing",
       name: "Pairing",
@@ -145,15 +147,26 @@ defmodule VisionCore.Stereo.Parameters do
       pipeline: :stereo,
       position: 0,
       parameters: [
-        %{
-          name: Atom.to_string(key),
-          type: spec.type,
-          get: fn -> Pairer.pair_tolerance_ms() end,
-          set: &Pairer.put_pair_tolerance_ms/1,
-          constraint: Check.constraint(spec),
-          description: spec.description
-        }
+        pairing_parameter(
+          :pair_tolerance_ms,
+          &Pairer.pair_tolerance_ms/0,
+          &Pairer.put_pair_tolerance_ms/1
+        ),
+        pairing_parameter(:max_hz, &Pairer.max_hz/0, &Pairer.put_max_hz/1)
       ]
+    }
+  end
+
+  defp pairing_parameter(key, get, set) do
+    spec = Keyword.fetch!(Pairer.setting_specs(), key)
+
+    %{
+      name: Atom.to_string(key),
+      type: spec.type,
+      get: get,
+      set: set,
+      constraint: Check.constraint(spec),
+      description: spec.description
     }
   end
 

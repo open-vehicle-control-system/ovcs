@@ -3,7 +3,7 @@ defmodule VisionCore.StatusTest do
 
   alias VisionCore.Camera.Frame
   alias VisionCore.{Outputs, StageTimes, Status}
-  alias VisionCore.Stereo.Pair
+  alias VisionCore.Stereo.{Pair, Pairer}
 
   # Names a stereo unit's cameras, which need not be running.
   defmodule Camera do
@@ -708,6 +708,25 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{depth_hz: depth_hz, cameras: %{left: %{fps: fps}}}}
                    when depth_hz > 0.0 and fps > 0.0,
                    500
+  end
+
+  test "counts, in each window, the pairs its stereo unit drops for its :max_hz" do
+    stereo = {:stereo, driver: Camera, left: [], right: []}
+    status = start_supervised!({Status, config: config([stereo]), tick_ms: 50})
+    :ok = Status.subscribe()
+
+    for capture_ns <- [0, 33_000_000, 66_000_000],
+        do: Outputs.publish(Pairer.capped_key(), {:stereo_pair_capped, capture_ns})
+
+    # The second snapshot comes after the window holding the three.
+    for _snapshot <- 1..2, do: assert_receive({:vision_status, _snapshot}, 500)
+
+    assert status
+           |> :sys.get_state()
+           |> Map.fetch!(:recent_counts)
+           |> Enum.map(& &1.capped)
+           |> Enum.sum() ==
+             3
   end
 
   # A camera of its own: registered under its name, answering `live/1` with the figures of its capture.

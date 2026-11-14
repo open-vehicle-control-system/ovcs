@@ -33,7 +33,9 @@ defmodule VisionCore.Status do
   camera's `:issues` are those of the checks pointing at it. `:depth`
   judges how well the unit turns pairs into depth
   (`VisionCore.Stereo.DepthCheck`): the pairs it dropped over the last
-  10 s of ticks and how much of the last pair is nearer than it measures.
+  10 s of ticks, apart from those its pairer drops for its `:max_hz`
+  (`VisionCore.Stereo.Pairer.capped_key/0`), which are counted on their
+  own, and how much of the last pair is nearer than it measures.
 
   Started after the components and the exporters in `VisionCore.Supervisor`.
   A listing of the exporters that misses its deadline reports those
@@ -201,6 +203,8 @@ defmodule VisionCore.Status do
     for {_output, key} <- StereoSupervisor.outputs(config) ++ Unit.outputs(config),
         do: :ok = Outputs.subscribe(key)
 
+    if cameras != [], do: :ok = Outputs.subscribe(Pairer.capped_key())
+
     own_names = Enum.map(own_cameras, fn {name, _driver, _server} -> name end)
     Process.send_after(self(), :tick, tick_ms)
 
@@ -287,6 +291,9 @@ defmodule VisionCore.Status do
     end
   end
 
+  def handle_cast({:stereo_pair_capped, _capture_ns}, state),
+    do: {:noreply, count(state, :capped)}
+
   def handle_cast(_message, state), do: {:noreply, state}
 
   @impl GenServer
@@ -303,7 +310,7 @@ defmodule VisionCore.Status do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp zero_counts(own_names),
-    do: Map.new([:left, :right, :depth | own_names], &{&1, 0})
+    do: Map.new([:left, :right, :depth, :capped | own_names], &{&1, 0})
 
   defp count(state, key), do: %{state | counts: Map.update!(state.counts, key, &(&1 + 1))}
 
@@ -341,7 +348,10 @@ defmodule VisionCore.Status do
   end
 
   defp depth_counts(state, elapsed_ms),
-    do: state.counts |> Map.take([:left, :right, :depth]) |> Map.put(:elapsed_ms, elapsed_ms)
+    do:
+      state.counts
+      |> Map.take([:left, :right, :depth, :capped])
+      |> Map.put(:elapsed_ms, elapsed_ms)
 
   # A pair's `:total` counts its waits, which are no stage's work.
   defp add_stage_ms(times, stage_ms) do

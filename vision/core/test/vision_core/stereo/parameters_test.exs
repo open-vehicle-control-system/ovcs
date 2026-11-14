@@ -632,30 +632,42 @@ defmodule VisionCore.Stereo.ParametersTest do
   end
 
   describe "the pairing" do
-    # Answers `VisionCore.Stereo.Pairer`'s tolerance calls from the value it holds.
+    # Answers `VisionCore.Stereo.Pairer`'s setting calls from the values it holds.
     defmodule Pairer do
       use GenServer
 
       def start_link(tolerance_ms),
         do: GenServer.start_link(__MODULE__, tolerance_ms, name: VisionCore.Stereo.Pairer)
 
-      def init(tolerance_ms), do: {:ok, tolerance_ms}
-      def handle_call(:pair_tolerance_ms, _from, ms), do: {:reply, ms, ms}
-      def handle_call({:put_pair_tolerance_ms, ms}, _from, _ms), do: {:reply, :ok, ms}
+      def init(tolerance_ms), do: {:ok, %{pair_tolerance_ms: tolerance_ms, max_hz: 0.0}}
+      def handle_call(key, _from, values) when is_atom(key), do: {:reply, values[key], values}
+
+      def handle_call({:put_pair_tolerance_ms, ms}, _from, values),
+        do: {:reply, :ok, %{values | pair_tolerance_ms: ms}}
+
+      def handle_call({:put_max_hz, hz}, _from, values), do: {:reply, :ok, %{values | max_hz: hz}}
     end
 
-    test "is a component of the stereo pipeline after the cameras, its tolerance live" do
+    test "is a component of the stereo pipeline after the cameras, its settings live" do
       start_supervised!({Pairer, 5})
 
       assert ["stereo.cameras", "stereo.pairing" | _stages] = Enum.map(groups(), & &1.id)
       pairing = group("stereo.pairing")
       assert %{kind: :component, pipeline: :stereo, position: 0, name: "Pairing"} = pairing
 
-      assert [%{name: "pair_tolerance_ms", type: :integer} = tolerance] = pairing.parameters
+      assert [%{name: "pair_tolerance_ms", type: :integer} = tolerance, max_hz] =
+               pairing.parameters
+
       assert tolerance.constraint == %{kind: :range, min: 0, max: 1000, step: nil}
       assert tolerance.get.() == 5
       assert tolerance.set.(8) == :ok
       assert tolerance.get.() == 8
+
+      assert %{name: "max_hz", type: :double} = max_hz
+      assert max_hz.constraint == %{kind: :range, min: 0, max: 1000, step: nil}
+      assert max_hz.get.() == 0.0
+      assert max_hz.set.(15.0) == :ok
+      assert max_hz.get.() == 15.0
     end
 
     test "is not declared without a pairer, nor without a pipeline" do

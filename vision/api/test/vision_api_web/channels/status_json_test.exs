@@ -44,6 +44,7 @@ defmodule VisionApiWeb.StatusJSONTest do
           camera: nil,
           issues: [:pairs_dropped],
           dropped_percent: 12.0,
+          capped_percent: 0.0,
           depth_hz: 30.8,
           camera_hz: 35.0
         },
@@ -120,6 +121,7 @@ defmodule VisionApiWeb.StatusJSONTest do
                  camera: nil,
                  issues: [:pairs_dropped],
                  droppedPercent: 12.0,
+                 cappedPercent: 0.0,
                  depthHz: 30.8,
                  cameraHz: 35.0
                },
