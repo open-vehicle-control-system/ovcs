@@ -381,6 +381,77 @@ defmodule VisionCore.Camera.LibCameraTest do
     end
   end
 
+  describe "a capture program that exits" do
+    @describetag :tmp_dir
+
+    @tag :capture_log
+    test "is opened again by the same driver, whose frames come back", %{tmp_dir: tmp_dir} do
+      executable = glitching_capture_program(tmp_dir, 3)
+      :ok = Outputs.subscribe({:camera_frame, LibCamera.name_for("glitch")})
+
+      camera =
+        start_supervised!(
+          {LibCamera,
+           label: "glitch", camera_id: 0, executable: executable, reopen_delays_ms: [10]}
+        )
+
+      assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "glitch", grey: <<7, 8>>}}},
+                     5_000
+
+      assert File.read!(Path.join(tmp_dir, "runs")) == "xxxx"
+      assert Process.whereis(LibCamera.name_for("glitch")) == camera
+      assert VisionCore.Camera.Reopen.running?(camera)
+    end
+
+    @tag :capture_log
+    test "leaves the driver answering, not running, with the controls set meanwhile kept",
+         %{tmp_dir: tmp_dir} do
+      executable = glitching_capture_program(tmp_dir, 1)
+      :ok = Outputs.subscribe({:camera_frame, LibCamera.name_for("down")})
+
+      camera =
+        start_supervised!(
+          {LibCamera,
+           label: "down", camera_id: 0, executable: executable, reopen_delays_ms: [60_000]}
+        )
+
+      wait_for(fn -> not VisionCore.Camera.Reopen.running?(camera) end)
+      assert {:ok, %{brightness: 0.3}} = LibCamera.set_controls(camera, brightness: 0.3)
+      assert {:error, _reason} = LibCamera.set_controls(camera, brightness: 9.0)
+
+      send(camera, :reopen)
+      assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "down"}}}, 5_000
+      wait_for(fn -> File.read!(Path.join(tmp_dir, "commands")) =~ "Brightness=0.3" end)
+    end
+
+    defp wait_for(check, attempts \\ 300) do
+      cond do
+        check.() -> :ok
+        attempts == 0 -> flunk("timed out")
+        true -> Process.sleep(10) && wait_for(check, attempts - 1)
+      end
+    end
+
+    # Exits at once `failures` times, then sends a 2x1 grey frame every 20 ms and records its commands.
+    defp glitching_capture_program(tmp_dir, failures) do
+      executable = Path.join(tmp_dir, "camera_capture")
+
+      File.write!(executable, """
+      #!/bin/sh
+      dir=$(dirname "$0")
+      printf x >> "$dir/runs"
+      [ "$(wc -c < "$dir/runs")" -le #{failures} ] && exit 2
+      (while printf '\\000\\000\\000\\017\\005\\002\\000\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\007\\010' 2> /dev/null; do
+        sleep 0.02
+      done) &
+      cat > "$dir/commands"
+      """)
+
+      File.chmod!(executable, 0o755)
+      executable
+    end
+  end
+
   # A driver on a capture program that records its arguments, reads its commands and sends nothing.
   defp start_camera(tmp_dir, label, opts) do
     executable = fake_capture_program(tmp_dir)

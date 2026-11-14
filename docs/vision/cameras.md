@@ -14,7 +14,7 @@ The `:camera` component runs one camera outside the stereo pair: `{:camera, name
 - Each frame carries the optical frame `"<name>_optical"` unless you set `:frame_id`.
 - A camera whose driver has named outputs makes each at every frame. `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` is its first sent image output, the default.
 
-A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit starts, so a mistyped one fails the boot. A unit that fails later, such as one whose sensor never registers, stays down with the reason logged. The stereo unit and the rest of the vision core run on.
+A `:driver` that is not a `VisionCore.Camera` raises `ArgumentError` as the unit starts, so a mistyped one fails the boot. A camera whose sensor has not registered yet, or whose capture program exits, keeps its unit running: the driver tries again after 1 s, then 2, 5, 10 and 30 s, each failure logged, and the status reports the camera absent meanwhile. A unit that fails to start, or whose processes keep crashing, is down with the reason logged, and is started again once a minute. The stereo unit and the rest of the vision core run on.
 
 ## Outputs
 
@@ -171,7 +171,7 @@ Frames of another aspect ratio, from a sensor mode that crops, see another part 
 
 **`calibration_store_dir:`** is a writable directory. A calibration committed through `set_camera_info` is stored there as `camera_<name>.yaml` and takes precedence over `calibration:`, as for the stereo unit. It can be the stereo unit's directory, whose files are `<prefix>_left.yaml` and `<prefix>_right.yaml`.
 
-The camera's `camera_info` and a segmentation pipeline's label `camera_info` take a committed calibration at once. A detection pipeline's boxes and a segmentation pipeline's clouds keep the calibration read at start until their unit restarts.
+The camera's `camera_info`, a segmentation pipeline's label `camera_info`, a detection pipeline's boxes and a segmentation pipeline's clouds take a committed calibration at once, without a restart.
 
 **`pose:`** is the camera's pose relative to the stereo pair. It is the transform from the rectified left optical frame, the frame of the depth, to the camera's optical frame. The transform is `p_camera = rotation × p_left + translation`, in metres (`VisionCore.Camera.Pose`). It holds while neither camera moves and the stereo pair keeps its calibration. A new stereo calibration changes the rectified frame, so measure the pose again.
 
@@ -205,7 +205,7 @@ The commands below use the camera `center` and a 9 × 6 board of 25 mm squares. 
    [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) runs ROS 2's `cameracalibrator` in monocular mode, in the `calibrator` compose service. It reads `<prefix>/center/image_raw/compressed` (`CALIBRATION_TOPIC_PREFIX`, `stereo` by default), which the service decompresses. It passes the calibrator no camera-model option: the unit takes a `plumb_bob` or an `equidistant` calibration, whichever model it was made with.
 2. Move the board until the calibrator's coverage bars fill.
 3. Press CALIBRATE.
-4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. The camera's pipelines take it once the unit restarts ([Calibration and pose](#calibration-and-pose)).
+4. Press COMMIT. The camera's `set_camera_info` stores the calibration as `/data/vision/calibration/camera_center.yaml`. The camera's pipelines take it from their next image on ([Calibration and pose](#calibration-and-pose)).
 5. Open the unit's IEx shell:
 
    ```sh

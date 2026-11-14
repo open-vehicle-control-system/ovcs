@@ -19,6 +19,52 @@ defmodule VisionCore.Camera.UnitTest do
 
   defp child_ids(unit), do: unit |> Supervisor.which_children() |> Enum.map(&elem(&1, 0))
 
+  # Exits at once `failures` times, then sends a 2x1 grey frame every 20 ms until its stdin ends.
+  defp glitching_capture_program(tmp_dir, failures) do
+    executable = Path.join(tmp_dir, "camera_capture")
+
+    File.write!(executable, """
+    #!/bin/sh
+    dir=$(dirname "$0")
+    printf x >> "$dir/runs"
+    [ "$(wc -c < "$dir/runs")" -le #{failures} ] && exit 2
+    (while printf '\\000\\000\\000\\017\\005\\002\\000\\001\\000\\000\\000\\000\\000\\000\\000\\000\\000\\007\\010' 2> /dev/null; do
+      sleep 0.02
+    done) &
+    cat > /dev/null
+    """)
+
+    File.chmod!(executable, 0o755)
+    executable
+  end
+
+  @tag :tmp_dir
+  @tag :capture_log
+  test "a camera whose program exits more times in a row than the unit's restart budget comes back, the unit never restarted",
+       %{tmp_dir: tmp_dir} do
+    driver = VisionCore.Camera.LibCamera
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, driver.name_for("glitchy")})
+
+    unit =
+      start_supervised!(
+        {Unit,
+         name: :glitchy,
+         driver: driver,
+         camera_id: 0,
+         executable: glitching_capture_program(tmp_dir, 15),
+         reopen_delays_ms: [5]}
+      )
+
+    camera = Process.whereis(driver.name_for("glitchy"))
+
+    assert_receive {:"$gen_cast", {:camera_frame, %VisionCore.Camera.Frame{label: "glitchy"}}},
+                   10_000
+
+    assert File.read!(Path.join(tmp_dir, "runs")) == String.duplicate("x", 16)
+    assert Process.alive?(unit)
+    assert Process.whereis(driver.name_for("glitchy")) == camera
+  end
+
   test "a driver without runtime controls is started alone" do
     unit = start_supervised!({Unit, name: :usb, driver: Driver, test: self()})
 
