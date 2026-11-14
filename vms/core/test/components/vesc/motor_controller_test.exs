@@ -534,4 +534,16 @@ defmodule VmsCore.Components.Vesc.MotorControllerTest do
     assert %{start: {MotorController, :start_link, [%{process_name: Vms.FrontVesc}]}} =
              hd(specs)
   end
+
+  @tag skip: "not met: TASK-103 unwraps the signed 32-bit tachometer counter"
+  test "a forward tachometer rollover remains a small positive rotation" do
+    {rotation, _samples} =
+      VmsCore.Components.Vesc.MotorController.tachometer_rotation(
+        [{0, 2_147_483_646}],
+        {100, -2_147_483_646},
+        2
+      )
+
+    assert Decimal.equal?(rotation, Decimal.new(200))
+  end
 end
