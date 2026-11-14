@@ -73,8 +73,8 @@ export const HINTS = {
   dropped: {
     title: 'Dropped',
     text:
-      'The share of the pairs the cameras deliver that never become depth, because the stereo work takes longer ' +
-      'than a frame. The unit warns past 5 %: lower the cameras’ frame rate or the stereo work.'
+      'The share of the pairs the cameras delivered over the last 10 s that never became depth, because the stereo ' +
+      'work took longer than a frame. The unit warns past 5 %: lower the cameras’ frame rate or the stereo work.'
   },
   tooNear: {
     title: 'Too near',
@@ -124,8 +124,9 @@ export const HINTS = {
   stereoLoad: {
     title: 'Stereo load',
     text:
-      'Share of each second spent computing the stereo stages, wherever they run: on the GPU, or on the processor ' +
-      'cores in native code. Near 100 %, the pipeline cannot go faster and the depth rate drops below the cameras’.'
+      'Share of each second the pairs spent at the device computing the stereo stages, from handing a pair over to ' +
+      'its result: on the GPU, the upload of its images included, or on the processor cores in native code. At ' +
+      '100 % a pair takes a whole frame and the depth rate drops below the cameras’. A warning shows from 97 %.'
   },
   distances: {
     title: 'No distances',

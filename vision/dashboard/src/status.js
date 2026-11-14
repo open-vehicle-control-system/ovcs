@@ -72,6 +72,9 @@ export function depthFigures(status) {
   ]
 }
 
+// The stereo load reaches 100 % when a pair stays at the device for a whole frame period.
+const STEREO_LOAD_WARNING_PERCENT = 97
+
 function loadStatus(id, title, percent) {
   return {
     id,
@@ -79,7 +82,7 @@ function loadStatus(id, title, percent) {
     value: percent == null ? '–' : `${formatNumber(percent, 0)} %`,
     widest: '100 %',
     align: 'end',
-    healthy: percent != null && percent < 90
+    healthy: percent != null && percent < STEREO_LOAD_WARNING_PERCENT
   }
 }
 

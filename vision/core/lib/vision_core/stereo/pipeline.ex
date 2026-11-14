@@ -545,13 +545,8 @@ defmodule VisionCore.Stereo.Pipeline do
          collect_ns
        ) do
     collected_ns = System.monotonic_time(:nanosecond)
-    segment_ns = replied.device_ns + collect_ns
-
-    # The previous pair is collected while this one's device work runs: that time counts once.
-    device_start_ns = max(replied.done_ns - replied.device_ns, state.collected_ns || 0)
-    busy_ns = max(replied.done_ns - device_start_ns, 0) + collect_ns
-    pair = %{pair | device_ms: busy_ns / 1_000_000}
-
+    pair = %{pair | device_ms: replied.device_ns / 1_000_000}
+    segment_ns = segment_ns(replied, collect_ns, state.collected_ns)
     timings = [{first.name, segment_ns} | module.member_times(replied.segment)]
     pair = put_stage_ms(pair, timings)
     timer = record_timings(state.timer, timings)
@@ -563,6 +558,14 @@ defmodule VisionCore.Stereo.Pipeline do
       outcome,
       replied.start_ns
     )
+  end
+
+  # The previous pair's download runs during this pair's device work: that time counts once.
+  defp segment_ns(replied, collect_ns, nil), do: replied.device_ns + collect_ns
+
+  defp segment_ns(replied, collect_ns, previous_collected_ns) do
+    device_start_ns = max(replied.done_ns - replied.device_ns, previous_collected_ns)
+    max(replied.done_ns - device_start_ns, 0) + collect_ns
   end
 
   defp finish_pair(state, outcome, start_ns) do

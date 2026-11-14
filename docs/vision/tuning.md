@@ -147,7 +147,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 | Figure | In | Meaning |
 |---|---|---|
 | `intervalMs` | pairs | Time since the burst's previous pair, in milliseconds, longer where a pair is missing. The depth rate is 1000 divided by its mean. The burst's first pair has none. |
-| `deviceMs` | pairs | The time the pair kept the pipeline's compiled or native segments busy, in milliseconds. |
+| `deviceMs` | pairs | The time the pair spent at the stereo device, from its hand-over to the device's reply, in milliseconds. The download of its outputs is left out. |
 | `sharpnessLeft`, `sharpnessRight` | pairs | Each rectified image's sharpness. The scene sets the absolute value; see [Stereo stages](./stages.md#2-sharpness). |
 | `alignmentOffsetRows` | pairs | How far the right image's rows sit from the left one's, in rows. Within half a row, the calibration fits. `null` when it cannot be measured. |
 | `alignmentBandOffsetRows` | pairs | The same per vertical band, as a list. It has no summary. |
@@ -156,7 +156,7 @@ The zip has one top directory with the same name, `vision-export-<hostname>-<UTC
 | `jitterPx` | pairs | How much a pixel's disparity changes from one pair to the next, in pixels: the matcher's noise on a still scene. |
 | `alignRows` | pairs | The RowAlignment stage's offset over the whole image, the same value as `alignmentOffsetRows`. |
 | `depthHz` | snapshots | Depth images computed in the last second. |
-| `stereoLoadPercent`, `cpuPercent` | snapshots | The share of the second the stereo stages took, and the processors' busy share. |
+| `stereoLoadPercent`, `cpuPercent` | snapshots | The share of the second the pairs spent at the stereo device ([Reading the figures](./performance.md#reading-the-figures)), and the processors' busy share. |
 | `leftCameraFps`, `rightCameraFps` | snapshots | Frames each camera delivered in the last second. |
 | `leftCameraExposureTimeUs`, `leftCameraAnalogueGain`, `leftCameraColourTemperature`, and the `rightCamera` ones | snapshots | What each camera reports, when it reports it. |
 | `syncPairs`, `syncOffsetMedianMs`, `syncOffsetMaxMs` | snapshots | The cameras' synchronisation, as on the dashboard. |

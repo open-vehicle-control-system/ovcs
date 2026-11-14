@@ -1,15 +1,30 @@
 defmodule Mix.Tasks.VisionCore.BoardBench do
-  @shortdoc "Times the default stereo stages on a vision board against EXLA"
+  @shortdoc "Times the stereo stages on a vision board against EXLA"
   @moduledoc """
-  Compiles the default stereo stages for a vision board on this machine,
-  copies them to the board with a textured pair of frames and EXLA's
-  outputs for it, and runs them there with `VisionCore.Stereo.Bench`:
-  prints how each output differs from EXLA's and the time of each pair.
+  Compiles the stereo stages for a vision board on this machine, copies
+  them to the board with a textured pair of frames and EXLA's outputs
+  for it, and runs them there with `VisionCore.Stereo.Bench`: prints how
+  each output differs from EXLA's, the time of each pair, and a `BENCH`
+  line of medians, the GPU's busy time per pair among them.
 
       mix vision_core.board_bench --host 192.168.1.50 [--key ~/.ssh/id_ed25519]
-        [--board ventuno_q] [--size 728x544] [--frame 728x544]
+        [--composer <Vehicle>.Vision.Composer] [--board ventuno_q]
+        [--size 728x544] [--frame 728x544]
         [--disparities 128] [--search coarse_to_fine] [--paths 8] [--coarse-paths 3]
+        [--set stage.setting=value ...] [--drop stage,stage]
         [--pairs 10] [--compute nx|native] [--hot] [--ssh-option OPTION ...]
+
+  `--composer` times the stages of the composer's `:stereo` component,
+  with their options, at its working and frame sizes: what the unit
+  runs. Run it in the vehicle's project, as `mix vision_core.nx_cache`.
+  Without it, the default stages run at 728x544, Disparity over 128
+  disparities, coarse to fine, along 8 paths. `--disparities`,
+  `--search`, `--paths` and `--coarse-paths` change those Disparity
+  options; `--size` and `--frame` the sizes.
+
+  Each `--set stage.setting=value` changes a setting of a stage, by the
+  stage's name (`disparity`, `speckle_filter`) and the setting's, as
+  `GET /api/stages` lists them. `--drop` leaves out the stages it names.
 
   The board runs the vision firmware and accepts SSH with `--key`; each
   `--ssh-option` is passed to `ssh` and `sftp` as `-o`. The
@@ -29,12 +44,15 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
 
   use Mix.Task
 
-  alias VisionCore.Stereo.Bench
+  alias VisionCore.Stereo.{Bench, Pipeline, Supervisor}
 
   @remote_dir "/data/bench"
+  @default_size "728x544"
+  @default_disparity [num_disparities: 128, search: "coarse_to_fine", paths: 8]
   @switches [
     host: :string,
     key: :string,
+    composer: :string,
     board: :string,
     size: :string,
     frame: :string,
@@ -42,6 +60,8 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
     search: :string,
     paths: :integer,
     coarse_paths: :integer,
+    set: :keep,
+    drop: :string,
     pairs: :integer,
     hot: :boolean,
     compute: :string,
@@ -57,17 +77,7 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
 
     dir = Path.join(System.tmp_dir!(), "vision_core_board_bench")
     File.rm_rf!(dir)
-    size = dimensions(opts[:size] || "728x544")
-
-    :ok =
-      Bench.prepare(dir,
-        board: opts[:board] || "ventuno_q",
-        size: size,
-        frame_size: if(opts[:frame], do: dimensions(opts[:frame]), else: size),
-        disparity: disparity(opts),
-        pairs: opts[:pairs] || 10,
-        compute: compute(opts[:compute])
-      )
+    :ok = Bench.prepare(dir, bench_options(opts))
 
     beams = Path.join(dir, "beams")
     File.mkdir_p!(beams)
@@ -75,6 +85,81 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
     copy(dir, host, opts)
     Mix.shell().info(remote(host, opts, expression(opts[:hot])))
   end
+
+  defp bench_options(opts) do
+    unit = unit(opts[:composer])
+    size = if opts[:size], do: dimensions(opts[:size]), else: unit.size
+    frame_size = if opts[:frame], do: dimensions(opts[:frame]), else: unit.frame_size || size
+
+    [
+      board: opts[:board] || "ventuno_q",
+      size: size,
+      frame_size: frame_size,
+      stages: unit.stages,
+      disparity: Keyword.merge(unit.disparity, disparity_flags(opts)),
+      overrides: ok!(Bench.parse_overrides(Keyword.get_values(opts, :set), unit.stages)),
+      drop: ok!(Bench.parse_stage_names(stage_names(opts[:drop]), unit.stages)),
+      pairs: opts[:pairs] || 10,
+      compute: compute(opts[:compute])
+    ]
+  end
+
+  # The stages, their Disparity defaults and the sizes, the composer's or the default ones.
+  defp unit(nil) do
+    %{
+      stages: Pipeline.default_stages(),
+      disparity: @default_disparity,
+      size: dimensions(@default_size),
+      frame_size: nil
+    }
+  end
+
+  defp unit(composer_name) do
+    pipeline = composer_name |> composer!() |> stereo_options!() |> Supervisor.pipeline_options()
+
+    %{
+      stages: Keyword.fetch!(pipeline, :stages),
+      disparity: [],
+      size: {Keyword.fetch!(pipeline, :width), Keyword.fetch!(pipeline, :height)},
+      frame_size:
+        {Keyword.fetch!(pipeline, :frame_width), Keyword.fetch!(pipeline, :frame_height)}
+    }
+  end
+
+  defp composer!(name) do
+    composer = Module.concat([name])
+
+    Code.ensure_loaded?(composer) ||
+      Mix.raise("no module #{name}: run the task in the vehicle's project")
+
+    composer
+  end
+
+  defp stereo_options!(composer) do
+    %VisionCore.Config{components: components} = composer.config(:target)
+
+    Enum.find_value(components, fn
+      {:stereo, options} -> options
+      _component -> nil
+    end) || Mix.raise("#{inspect(composer)} has no :stereo component")
+  end
+
+  defp disparity_flags(opts) do
+    for {flag, setting} <- [
+          disparities: :num_disparities,
+          search: :search,
+          paths: :paths,
+          coarse_paths: :coarse_paths
+        ],
+        Keyword.has_key?(opts, flag),
+        do: {setting, Keyword.fetch!(opts, flag)}
+  end
+
+  defp stage_names(nil), do: []
+  defp stage_names(names), do: String.split(names, ",")
+
+  defp ok!({:ok, parsed}), do: parsed
+  defp ok!({:error, reason}), do: Mix.raise(reason)
 
   defp compute(nil), do: :nx
   defp compute("nx"), do: :nx
@@ -84,14 +169,6 @@ defmodule Mix.Tasks.VisionCore.BoardBench do
   defp dimensions(text) do
     [width, height] = text |> String.split("x") |> Enum.map(&String.to_integer/1)
     {width, height}
-  end
-
-  defp disparity(opts) do
-    [
-      num_disparities: opts[:disparities] || 128,
-      search: opts[:search] || "coarse_to_fine",
-      paths: opts[:paths] || 8
-    ] ++ if(opts[:coarse_paths], do: [coarse_paths: opts[:coarse_paths]], else: [])
   end
 
   # The benchmark's module, and with --hot nx_stereo's.

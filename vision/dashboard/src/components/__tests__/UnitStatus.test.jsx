@@ -123,6 +123,15 @@ describe('UnitStatus and the pair status', () => {
     expect(card('segment').querySelector('button').getAttribute('aria-label')).toBe('About Stereo load')
   })
 
+  it('warns of the stereo load from 97 %, where a pair takes nearly a frame', () => {
+    show({ ...snapshot, stereoLoadPercent: 96.9 })
+    expect(card('segment').querySelector('[data-warning]')).toBeNull()
+    cleanup()
+
+    show({ ...snapshot, stereoLoadPercent: 97 })
+    expect(card('segment').querySelector('[data-warning]')).not.toBeNull()
+  })
+
   it("shows each check's value and short detail, its figures and issues on hover", () => {
     show(snapshot)
 

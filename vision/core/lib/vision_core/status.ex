@@ -8,11 +8,15 @@ defmodule VisionCore.Status do
   `:load_percent` and each pipeline's
   `:inference_ms`), the depth rate, each exporter's
   status (`VisionCore.Exporters.list/1`), the CPU's busy share
-  (`OvcsVehicle.SystemLoad`) and the share of time the stereo pipeline
-  spent in its compiled Nx or native segments (`Pair` `:device_ms`).
-  Where they run on the GPU, that time
-  includes uploading the frames and waiting for the results, so it is
-  not the GPU's busy share. `:alignment` is the rectified images' row
+  (`OvcsVehicle.SystemLoad`) and the stereo load,
+  `:stereo_segment_percent`: the share of the tick a pair was at the
+  stereo pipeline's segment devices, from its send to the device's reply
+  (`Pair` `:device_ms`). A compiled segment takes one pair at a time, so
+  at 100 % the pipeline cannot take the cameras' pairs any faster. On a
+  GPU that time also counts the upload of the frames and the submission
+  of the work, so it is above the GPU's own busy share; the download of
+  a pair's outputs, which runs during the next pair's device work, is
+  left out. `:alignment` is the rectified images' row
   offset (`Pair` `:alignment`) and `:sharpness` each camera's sharpness
   (`Pair` `:sharpness`), and `:quality` the depth's quality
   (`VisionCore.Stereo.Stage.Quality`'s metrics: the share of matched
@@ -28,8 +32,8 @@ defmodule VisionCore.Status do
   `right_row_offset` applies, their focus and their brightness; each
   camera's `:issues` are those of the checks pointing at it. `:depth`
   judges how well the unit turns pairs into depth
-  (`VisionCore.Stereo.DepthCheck`): the pairs it drops and how much of
-  the last pair is nearer than it measures.
+  (`VisionCore.Stereo.DepthCheck`): the pairs it dropped over the last
+  10 s of ticks and how much of the last pair is nearer than it measures.
 
   Started after the components and the exporters in `VisionCore.Supervisor`.
   A listing of the exporters that misses its deadline reports those
@@ -217,6 +221,7 @@ defmodule VisionCore.Status do
        exporters: [],
        subscribers: %{},
        counts: zero_counts(own_names),
+       recent_counts: [],
        device_ms: 0.0,
        cpu_times: SystemLoad.cpu_times(),
        cpu_percent: nil,
@@ -312,6 +317,8 @@ defmodule VisionCore.Status do
       state
       | rates_hz: rates_hz,
         counts: Map.new(state.counts, fn {key, _count} -> {key, 0} end),
+        recent_counts:
+          DepthCheck.record_counts(state.recent_counts, depth_counts(state, elapsed_ms)),
         window_start_ms: now,
         window_ms: elapsed_ms,
         cpu_percent: SystemLoad.cpu_percent(state.cpu_times, cpu_times),
@@ -332,6 +339,9 @@ defmodule VisionCore.Status do
         stereo_times: StageTimes.new()
     }
   end
+
+  defp depth_counts(state, elapsed_ms),
+    do: state.counts |> Map.take([:left, :right, :depth]) |> Map.put(:elapsed_ms, elapsed_ms)
 
   # A pair's `:total` counts its waits, which are no stage's work.
   defp add_stage_ms(times, stage_ms) do
@@ -413,7 +423,7 @@ defmodule VisionCore.Status do
       DepthCheck.check(
         %{
           cameras: cameras,
-          depth_hz: state.rates_hz.depth,
+          counts: state.recent_counts,
           load_percent: state.stereo_segment_percent,
           near: state.near
         },

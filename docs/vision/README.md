@@ -98,7 +98,7 @@ The `nx_cache` step compiles the GPU modules on your workstation, as for the C10
 
 ### Worked example: the OVCS1 reference vehicle
 
-`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"` and 3 coarse paths. Depth keeps up with the cameras' 30 pairs a second. The pair computes depth only.
+`Ovcs1.Vision.Composer` runs two Raspberry Pi Global Shutter Cameras (IMX296) with 6 mm lenses, 20 cm apart, on Camera 0 (left) and Camera 1 (right). They capture 728 × 544 at 30 frames a second. The pairs are matched at that size over 128 disparities with `search: "coarse_to_fine"`, along 3 paths at both sizes (`paths: 3`, `coarse_paths: 3`). Depth keeps up with the cameras' 30 pairs a second. The pair computes depth only.
 
 Detection and road segmentation run on `:center`, a Raspberry Pi HQ Camera (IMX477) on Camera 2 ([A camera of its own](./cameras.md#worked-example-the-ovcs1-reference-vehicle)).
 
