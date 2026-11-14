@@ -6,6 +6,8 @@ export { default as OvcsBottomBar, OvcsBottomBarItem } from './OvcsBottomBar.jsx
 export { default as OvcsButton } from './OvcsButton.jsx'
 export { default as OvcsCard } from './OvcsCard.jsx'
 export { default as OvcsConnectionStatus, useOvcsConnection } from './OvcsConnectionStatus.jsx'
+export { useOvcsConfirm } from './OvcsConfirm.jsx'
+export { default as OvcsDialog } from './OvcsDialog.jsx'
 export { default as OvcsDot } from './OvcsDot.jsx'
 export { default as OvcsHeader } from './OvcsHeader.jsx'
 export { default as OvcsMenu, OvcsMenuItem, OvcsMenuList, OvcsMenuSection } from './OvcsMenu.jsx'

@@ -24,12 +24,14 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsHeader` | |
   | `OvcsStatus` | `tone`: `ok`, `warn`, `error`, `muted` (default) |
   | `OvcsBadge` | `tone`: `neutral` (default), `warn`, `error` |
-  | `OvcsButton` | `variant`: `default` or `primary` (the action a view leads to); an outlined button that never submits a form |
+  | `OvcsButton` | `variant`: `default`, `primary` (the action a view leads to) or `danger` (an action that destroys something, in the error colour); an outlined button that never submits a form |
+  | `OvcsDialog` | `onClose`, `returnFocus`, `align`, `role`, and `aria-labelledby` (its heading's id) or `aria-label`: a modal dialog over the page that keeps the focus (Tab goes round its controls), closes on Escape when `onClose` is given, stops the page behind from scrolling, and once closed gives the focus back to `returnFocus`'s element, by default the one focused when it opened; `align` is `start` (default) or `center` |
   | `OvcsSwitch` | `checked`, `label`, `onClick`: an on/off switch whose position is `checked` alone |
   | `OvcsDot` | `on` |
   | `OvcsRow` | `live`, `as` (element, default `div`) |
   | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |
-  | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard and Reset all |
+  | `useOvcsConfirm()` | a hook that asks before an action in an `OvcsDialog`, in place of the browser's `window.confirm`: it returns `[confirm, confirmation]`; render `confirmation` in the component and `await confirm({ title, message, confirmLabel, danger })`, which shows `title`, `message` under it, Cancel (focused) and `confirmLabel` (`danger` for a destructive action), and resolves to `true` once confirmed, `false` when cancelled, on Escape, or when the component goes |
+  | `OvcsSaveBar` | `unsaved`, `error`, `onSave`, `onDiscard`, `onResetAll`, `onDismissError`, `className`, `ref`: the unsaved count with Save, Discard and Reset all, the last two confirmed with `useOvcsConfirm` |
   | `OvcsThemeSwitch` | the light / dark switch; the browser keeps the choice under `ovcs-theme` |
 
   The page frame the OVCS dashboards share: on a laptop the page is the screen and only the main content scrolls; on a narrow screen the menu stacks above it.

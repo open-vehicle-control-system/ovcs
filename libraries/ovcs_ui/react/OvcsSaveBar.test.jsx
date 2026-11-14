@@ -1,7 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createRef } from 'react'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, within } from '@testing-library/react'
 import { OvcsSaveBar as SaveBar } from './index.js'
+
+// The question the bar asks, as its title and message, answered with its button named `choice`.
+async function answer(choice) {
+  const dialog = screen.getByRole('alertdialog')
+  const question = [dialog.getAttribute('aria-labelledby'), dialog.getAttribute('aria-describedby')]
+    .filter(Boolean)
+    .map((id) => document.getElementById(id).textContent)
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: choice })))
+  return question
+}
 
 const callbacks = () => ({
   onSave: vi.fn(),
@@ -20,10 +30,8 @@ it('gives its ref the bar itself, as a plain prop', () => {
 
 describe('SaveBar', () => {
   let props
-  let confirm
   beforeEach(() => {
     props = callbacks()
-    confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
   afterEach(() => {
     vi.restoreAllMocks()
@@ -52,32 +60,45 @@ describe('SaveBar', () => {
 
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Save 2 changes' })))
     expect(props.onSave).toHaveBeenCalledTimes(1)
-    expect(confirm).not.toHaveBeenCalled()
+    expect(screen.queryByRole('alertdialog')).toBeNull()
 
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Discard 2 changes' })))
-    expect(confirm).toHaveBeenLastCalledWith('Discard 2 unsaved changes?')
+    fireEvent.click(screen.getByRole('button', { name: 'Discard 2 changes' }))
+    expect(props.onDiscard).not.toHaveBeenCalled()
+    expect(await answer('Discard')).toEqual(['Discard 2 unsaved changes?'])
     expect(props.onDiscard).toHaveBeenCalledTimes(1)
 
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Reset all' })))
-    expect(confirm).toHaveBeenLastCalledWith('Reset every parameter to its default? This also drops 2 unsaved changes.')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset all' }))
+    expect(await answer('Reset all')).toEqual(['Reset every parameter to its default?', 'This also drops 2 unsaved changes.'])
     expect(props.onResetAll).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole('alertdialog')).toBeNull()
   })
 
   it('asks a plain question for Reset all without unsaved changes', async () => {
     render(<SaveBar unsaved={0} error={null} {...props} />)
 
-    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Reset all' })))
-    expect(confirm).toHaveBeenLastCalledWith('Reset every parameter to its default?')
+    fireEvent.click(screen.getByRole('button', { name: 'Reset all' }))
+    expect(await answer('Reset all')).toEqual(['Reset every parameter to its default?'])
   })
 
-  it('does nothing when Discard or Reset all is not confirmed', () => {
-    confirm.mockReturnValue(false)
+  it('asks in its own dialog, its actions in the error colour, not in the browser', () => {
+    const confirm = vi.spyOn(window, 'confirm')
     render(<SaveBar unsaved={1} error={null} {...props} />)
 
     fireEvent.click(screen.getByRole('button', { name: 'Discard 1 change' }))
-    expect(confirm).toHaveBeenLastCalledWith('Discard 1 unsaved change?')
-    fireEvent.click(screen.getByRole('button', { name: 'Reset all' }))
 
+    expect(confirm).not.toHaveBeenCalled()
+    expect(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Discard' }).className).toContain('text-ovcs-error-text')
+  })
+
+  it('does nothing when Discard or Reset all is cancelled', async () => {
+    render(<SaveBar unsaved={1} error={null} {...props} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard 1 change' }))
+    expect(await answer('Cancel')).toEqual(['Discard 1 unsaved change?'])
+    fireEvent.click(screen.getByRole('button', { name: 'Reset all' }))
+    await act(async () => fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' }))
+
+    expect(screen.queryByRole('alertdialog')).toBeNull()
     expect(props.onDiscard).not.toHaveBeenCalled()
     expect(props.onResetAll).not.toHaveBeenCalled()
   })
