@@ -170,7 +170,7 @@ The Calibration page shows the calibration the cameras use and where it comes fr
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
 
-On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
+On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Cameras without one, such as the IMX296, have no `focus` setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
 
 The vision parameters are the unit's own settings, grouped by component and pipeline stage:
 

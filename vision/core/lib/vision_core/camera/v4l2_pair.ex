@@ -55,7 +55,12 @@ defmodule VisionCore.Camera.V4L2Pair do
   `set_controls/2` on either camera, so they are also the stereo unit's
   `<prefix>.cameras` parameters. `control_specs/0` lists them with their
   defaults. No autofocus runs: the program holds both lenses at the
-  `focus` setting.
+  `focus` setting. Sensors without a lens actuator, the IMX296 and the
+  IMX477, have no `focus`: once the left camera knows its sensors, from
+  `:sensor` or from routing them, `control_specs/1` leaves it out and
+  `set_controls/2` refuses it. It publishes the change
+  (`VisionCore.Camera.controls_changed_key/1`), so that the stereo
+  unit's parameters list the controls the pair has.
 
   Auto exposure keeps the exposure and gain within `max_exposure_us`
   and `max_gain` at every step, and brings them within lowered caps as
@@ -99,6 +104,8 @@ defmodule VisionCore.Camera.V4L2Pair do
   @pair_tag 4
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
+  # As `v4l2_capture` tells the sensors apart: any other has a lens actuator.
+  @sensors_without_lens ["imx296", "imx477"]
   # The OKdo Nano C100's two CSI ports, a Camera Module 3 on each.
   @default_nodes [
     left: [video: "54080000.vi-output-0", sensor: "imx708 5-001a"],
@@ -198,6 +205,14 @@ defmodule VisionCore.Camera.V4L2Pair do
   def control_specs, do: @settings
 
   @doc """
+  The settings of `control_specs/0` the pair has: all of them but
+  `focus` once its sensors are known and neither has a lens actuator.
+  The right camera asks the left.
+  """
+  @impl VisionCore.Camera
+  def control_specs(server), do: GenServer.call(server, :control_specs)
+
+  @doc """
   The `:stereo` component's options for the pair, the settings of
   `control_specs/0`, `:executable` and `:reopen_delays_ms`, and for each
   side, its nodes or CSI PHY.
@@ -250,12 +265,15 @@ defmodule VisionCore.Camera.V4L2Pair do
           do: ["--#{key}", Integer.to_string(Keyword.fetch!(opts, key))]
 
     nodes =
-      for {side, defaults} <- @default_nodes, {key, default} <- defaults do
-        ["--#{side}-#{key}", opts |> Keyword.get(side, []) |> Keyword.get(key, default)]
+      for {side, defaults} <- @default_nodes, {key, _default} <- defaults do
+        ["--#{side}-#{key}", side_node(opts, side, key)]
       end
 
     List.flatten(size ++ nodes) ++ V4L2Capture.arguments(@settings, opts)
   end
+
+  defp side_node(opts, side, key),
+    do: opts |> Keyword.get(side, []) |> Keyword.get(key, @default_nodes[side][key])
 
   @doc """
   The `name=value` commands that set `controls` on the capture program,
@@ -319,6 +337,7 @@ defmodule VisionCore.Camera.V4L2Pair do
       output: {:camera_frame, name_for(label)},
       port: nil,
       controls: controls,
+      lens: nil,
       applied: nil
     }
 
@@ -338,7 +357,9 @@ defmodule VisionCore.Camera.V4L2Pair do
   defp open(state) do
     case routed(Keyword.merge(state.opts, Map.to_list(state.controls))) do
       {:ok, opts} ->
-        V4L2Capture.open(state, port_arguments(opts))
+        state
+        |> put_lens(Enum.any?([:left, :right], &lens?(side_node(opts, &1, :sensor))))
+        |> V4L2Capture.open(port_arguments(opts))
 
       {:error, message} ->
         Logger.error("#{__MODULE__}: #{message}; trying again in #{Reopen.delay_ms(state)} ms")
@@ -353,19 +374,22 @@ defmodule VisionCore.Camera.V4L2Pair do
   end
 
   def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
-  def handle_call(:controls, _from, state), do: {:reply, state.controls, state}
+
+  def handle_call(:controls, _from, state),
+    do: {:reply, listed_controls(state.controls, state), state}
+
+  def handle_call(:control_specs, _from, state), do: {:reply, listed_specs(state), state}
   def handle_call(:live, _from, state), do: {:reply, state.applied, state}
 
   def handle_call({:set_controls, controls}, _from, state) do
-    case control_commands(controls) do
-      {:ok, commands} ->
-        V4L2Capture.command(state, commands)
-        updated = V4L2Capture.update(@settings, state.controls, controls)
+    with :ok <- check_lens(controls, state),
+         {:ok, commands} <- control_commands(controls) do
+      V4L2Capture.command(state, commands)
+      updated = V4L2Capture.update(@settings, state.controls, controls)
 
-        {:reply, {:ok, updated}, %{state | controls: updated}}
-
-      {:error, _reason} = error ->
-        {:reply, error, state}
+      {:reply, {:ok, listed_controls(updated, state)}, %{state | controls: updated}}
+    else
+      {:error, _reason} = error -> {:reply, error, state}
     end
   end
 
@@ -407,6 +431,37 @@ defmodule VisionCore.Camera.V4L2Pair do
     do: {:noreply, V4L2Capture.watchdog(state, "#{__MODULE__}")}
 
   def handle_info(_message, state), do: {:noreply, state}
+
+  defp lens?(sensor), do: not String.starts_with?(sensor, @sensors_without_lens)
+
+  # Publishes the change when it adds or removes `focus`.
+  defp put_lens(state, lens) do
+    if focus?(state.lens) != focus?(lens),
+      do:
+        Outputs.publish(
+          VisionCore.Camera.controls_changed_key(name_for("left")),
+          {:camera_controls_changed, name_for("left")}
+        )
+
+    %{state | lens: lens}
+  end
+
+  # Unknown sensors keep `focus`, so that its saved value holds until they are known.
+  defp focus?(lens), do: lens != false
+
+  defp listed_specs(%{lens: false}), do: Enum.reject(@settings, &(&1.key == :focus))
+  defp listed_specs(_state), do: @settings
+
+  defp listed_controls(controls, state),
+    do: Map.take(controls, Enum.map(listed_specs(state), & &1.key))
+
+  defp check_lens(controls, %{lens: false}) do
+    if Keyword.has_key?(controls, :focus),
+      do: {:error, "focus: the sensors have no lens actuator"},
+      else: :ok
+  end
+
+  defp check_lens(_controls, _state), do: :ok
 
   # The program reports only when the exposure changes; frames keep it fresh.
   defp refreshed(nil), do: nil

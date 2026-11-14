@@ -49,6 +49,15 @@ defmodule VisionCore.Camera do
   """
   @callback control_specs() :: [map()]
 
+  @doc """
+  The controls of `control_specs/0` the instance registered as `server`
+  has, on the sensors it found: a driver whose sensors may lack one of
+  them publishes `{:camera_controls_changed, server}` under
+  `controls_changed_key/1` when they change. Optional: a driver without
+  it has every control of `control_specs/0`.
+  """
+  @callback control_specs(GenServer.server()) :: [map()]
+
   @doc "What the camera applied to a recent frame, as it reports it; `nil` before a report."
   @callback live(GenServer.server()) :: map() | nil
 
@@ -84,6 +93,7 @@ defmodule VisionCore.Camera do
   @callback pair_options() :: %{pair: [atom()], side: [atom()]}
 
   @optional_callbacks pair_options: 0,
+                      control_specs: 1,
                       fixed_settings: 1,
                       set_controls: 2,
                       controls: 1,
@@ -91,4 +101,11 @@ defmodule VisionCore.Camera do
                       control_specs: 0,
                       live: 1,
                       outputs: 1
+
+  @doc """
+  The `VisionCore.Outputs` key a change of the controls of the instance
+  registered as `name` is published under (`c:control_specs/1`).
+  """
+  @spec controls_changed_key(atom()) :: {:camera_controls, atom()}
+  def controls_changed_key(name), do: {:camera_controls, name}
 end

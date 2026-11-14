@@ -2,7 +2,8 @@ defmodule VisionCore.Camera.Parameters do
   @moduledoc """
   The runtime controls of a camera driver as vision parameters
   (`VisionCore.Parameters`): each control of its
-  `c:VisionCore.Camera.control_specs/0`, set through
+  `c:VisionCore.Camera.control_specs/0`, or of
+  `c:VisionCore.Camera.control_specs/1` where it has it, set through
   `c:VisionCore.Camera.set_controls/2` and read from
   `c:VisionCore.Camera.controls/1`.
 
@@ -84,7 +85,7 @@ defmodule VisionCore.Camera.Parameters do
   @spec controls(module(), GenServer.server(), String.t()) ::
           [VisionCore.Parameters.declaration()]
   def controls(driver, server, group_id) do
-    specs = driver.control_specs()
+    specs = control_specs(driver, server)
     keys = Enum.map(specs, & &1.key)
     manual = driver.controls(server)
 
@@ -102,6 +103,12 @@ defmodule VisionCore.Camera.Parameters do
       }
       |> put_manual_default(mode, manual[spec.key])
     end)
+  end
+
+  defp control_specs(driver, server) do
+    if function_exported?(driver, :control_specs, 1),
+      do: driver.control_specs(server),
+      else: driver.control_specs()
   end
 
   defp automatic_mode(key, keys) do
