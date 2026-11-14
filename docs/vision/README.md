@@ -210,12 +210,13 @@ The dashboard's Exporters menu lists what takes the unit's outputs out of it, fr
 `GET /api/ros2-node` describes what the unit exports over ROS 2:
 
 - its node, named after the node name, with the Zenoh router endpoint and whether the session to it is open;
-- the topics it has published, each with its message type and rate over the last second;
+- whether the board's clock is synchronized: nothing is published to ROS 2 before it is. The ROS 2 exporter's status is a warning meanwhile, and the dashboard's ROS 2 page says so;
+- the topics it has published, each with its message type and rate over the last second, 0 while nothing is published;
 - the services it answers: the parameter services and each camera's `set_camera_info`.
 
 Add `?include=topics,services`, or either alone, to get the topics and services themselves rather than their ids. A unit without the ROS 2 link has no node: `GET /api/ros2-node` answers 404.
 
-The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
+The topic counts come from `VisionCore.Ros2.Topics`, which counts every message sent through `VisionCore.Ros2.Topics.publish/4`, so a new publisher appears without changes. A message the Zenoh client drops, for want of a session or a synchronized clock, lists its topic without adding to its rate. A message that cannot be encoded is not sent. It is logged once per topic and message type and counted in `VisionCore.Ros2.Topics.topics/0` as `encode_failures`.
 
 On the host, `./ovcs run <vehicle>` starts a BEAM for the role and the dashboard's Vite dev server as an add-on, like the VMS dashboard, on `http://localhost:5174`.
 

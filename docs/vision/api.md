@@ -245,7 +245,7 @@ The `preview:depth` channel pushes the range to its clients on every change; see
 - **Load.** The CPU's busy share over half a second, the 1, 5 and 15 minute load averages, and the share of the memory in use.
 - **Clock.** The board's UTC time and whether NTP has synchronized it. On a host, `clockSynchronized` is `null`.
 
-A board whose clock is not synchronized publishes nothing to ROS 2. The dashboard's top bar reads `GET /api/board` every 10 s while connected.
+A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ros2-node`'s `clockSynchronized` says whether publishing has begun. The dashboard's top bar reads `GET /api/board` every 10 s while connected.
 
 ```json
 {
@@ -374,7 +374,9 @@ The error's `detail` says why.
 
 - its Zenoh router;
 - whether the session is open;
-- the topics it has published, with their rate over the last second;
+- `clockSynchronized`, whether the board's clock is synchronized, `true` on a host. Nothing is published before it is;
+- `dropsBeforeClockSynchronized`, the messages dropped while waiting for the clock, 0 once it is synchronized;
+- the topics it has published, with their rate over the last second, 0 while nothing is published;
 - the services it answers.
 
 A unit without the ROS 2 link answers a 404. An `include` other than `topics` and `services` is a 400. The example is shortened to one topic and one service:
@@ -384,7 +386,13 @@ A unit without the ROS 2 link answers a 404. An `include` other than `topics` an
   "data": {
     "type": "ros2-nodes",
     "id": "ovcs_vision",
-    "attributes": {"name": "ovcs_vision", "zenohEndpoint": "tcp/192.168.1.20:7447", "connected": true},
+    "attributes": {
+      "name": "ovcs_vision",
+      "zenohEndpoint": "tcp/192.168.1.20:7447",
+      "connected": true,
+      "clockSynchronized": true,
+      "dropsBeforeClockSynchronized": 0
+    },
     "relationships": {
       "topics": {"data": [{"type": "ros2-topics", "id": "/stereo/depth/image_rect"}]},
       "services": {"data": [{"type": "ros2-services", "id": "/stereo/left/set_camera_info"}]}

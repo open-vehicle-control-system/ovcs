@@ -28,7 +28,13 @@ defmodule VisionApiWeb.Ros2NodeJSON do
     JsonApi.resource(
       "ros2-nodes",
       link.node_name,
-      %{name: link.node_name, zenohEndpoint: link.endpoint, connected: link.connected},
+      %{
+        name: link.node_name,
+        zenohEndpoint: link.endpoint,
+        connected: link.connected,
+        clockSynchronized: link.clock_synchronized,
+        dropsBeforeClockSynchronized: link.drops_before_clock_synchronized
+      },
       %{
         topics: JsonApi.to_many("ros2-topics", Enum.map(topics, & &1.name)),
         services: JsonApi.to_many("ros2-services", Enum.map(link.services, & &1.name))

@@ -7,9 +7,13 @@ defmodule VisionCore.Ros2.Topics do
   `count_encode_failure/2` for a message that could not be encoded, from
   the publishing process: one `:ets.update_counter/4` on a public table this
   process owns, so a publisher never waits on a server. Once a second the
-  counts since the previous tick become each topic's rate. Names are full
-  ROS names, with a leading `/`; types are the ROS type names
-  (`sensor_msgs/msg/Image`) derived from the message module's `dds_type/0`.
+  counts since the previous tick become each topic's rate. The rate counts
+  only what the client puts: while it has no session, or before the board's
+  clock is synchronized, it drops every publish and the rate is 0.
+
+  Names are full ROS names, with a leading `/`; types are the ROS type
+  names (`sensor_msgs/msg/Image`) derived from the message module's
+  `dds_type/0`.
   """
   use GenServer
 
@@ -27,8 +31,9 @@ defmodule VisionCore.Ros2.Topics do
 
   @doc """
   Publishes `message` on `topic` with `Ros2Zenoh.Client.publish/4` and
-  counts it: as a publish when the client took it, dropped for want of a
-  session included, as an encode failure when it could not be encoded.
+  counts it: as a publish when the client has a session and a synchronized
+  clock, so puts it; as an encode failure when it could not be encoded.
+  A message the client drops lists its topic without adding to its rate.
   Answers what the client answered.
   """
   @spec publish(String.t(), module(), struct(), keyword()) ::
@@ -36,7 +41,9 @@ defmodule VisionCore.Ros2.Topics do
   def publish(topic, message_module, message, opts \\ []) do
     case Ros2Zenoh.Client.publish(topic, message_module, message, opts) do
       :ok ->
-        count(topic, message_module)
+        if Ros2Zenoh.Client.session_open?() and Ros2Zenoh.Client.clock_synchronized?(),
+          do: count(topic, message_module),
+          else: list_without_counting(topic, message_module)
 
       {:error, {:encode_raised, _reason}} = error ->
         count_encode_failure(topic, message_module)
@@ -63,6 +70,14 @@ defmodule VisionCore.Ros2.Topics do
   def count_encode_failure(topic, message_module) do
     name = full_name(topic)
     :ets.update_counter(@table, name, {4, 1}, {name, 0, message_module, 0})
+    :ok
+  rescue
+    ArgumentError -> :ok
+  end
+
+  defp list_without_counting(topic, message_module) do
+    name = full_name(topic)
+    :ets.update_counter(@table, name, {2, 0}, {name, 0, message_module, 0})
     :ok
   rescue
     ArgumentError -> :ok

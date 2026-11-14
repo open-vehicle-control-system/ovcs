@@ -43,7 +43,9 @@ defmodule VisionCore.Ros2.Exporter do
   cannot read, nor with a `cameras:` or `segmentation:` option it does
   not take or a name no camera or segmentation pipeline of the
   configuration has. Its status is the link's:
-  connected while the Zenoh session is open.
+  connected while the Zenoh session is open and the board's clock is
+  synchronized, a warning while either is not, since nothing is published
+  before the clock is (`Ros2Zenoh.Client`'s "The clock").
 
   ## The stereo unit
 
@@ -674,7 +676,16 @@ defmodule VisionCore.Ros2.Exporter do
 
   @impl VisionCore.Exporter
   def status(_state) do
-    if Ros2Zenoh.Client.session_open?(), do: {:ok, "Connected"}, else: {:warning, "Disconnected"}
+    cond do
+      not Ros2Zenoh.Client.session_open?() ->
+        {:warning, "Disconnected"}
+
+      not Ros2Zenoh.Client.clock_synchronized?() ->
+        {:warning, "Waiting for the clock: nothing is published until NTP sets it"}
+
+      true ->
+        {:ok, "Connected"}
+    end
   end
 
   @impl VisionCore.Exporter

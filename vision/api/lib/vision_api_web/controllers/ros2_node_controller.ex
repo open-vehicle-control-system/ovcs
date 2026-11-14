@@ -1,13 +1,14 @@
 defmodule VisionApiWeb.Ros2NodeController do
   @moduledoc """
   The unit's ROS 2 node, a `ros2-nodes` singleton identified by its node
-  name: its Zenoh endpoint and whether the session is open
-  (`VisionCore.Ros2.Node.link/0`), with its `topics`, every
-  `ros2-topics` it has published with its type and rate
-  (`VisionCore.Ros2.Topics`), and its `services`, the `ros2-services` it
-  answers. `include=topics,services`, or either alone, puts them in
-  `included`. A unit whose configuration has no `ros2:` section, the
-  ROS 2 link, has no node: 404.
+  name: its Zenoh endpoint, whether the session is open, whether the
+  board's clock is synchronized, before which nothing is published, and the
+  publishes dropped while waiting for it (`VisionCore.Ros2.Node.link/0`),
+  with its `topics`, every `ros2-topics` it has published with its type
+  and rate (`VisionCore.Ros2.Topics`), and its `services`, the
+  `ros2-services` it answers. `include=topics,services`, or either alone,
+  puts them in `included`. A unit whose configuration has no `ros2:`
+  section, the ROS 2 link, has no node: 404.
   """
   use VisionApiWeb, :controller
 

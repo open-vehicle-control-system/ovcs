@@ -296,6 +296,36 @@ defmodule VisionCore.Ros2.ExporterTest do
     assert Exporter.status(state) == {:ok, "Connected"}
   end
 
+  # The clock's synchronization, as a test flips it.
+  def clock_synchronized?(agent), do: Agent.get(agent, & &1)
+
+  test "is waiting for the clock while the ROS 2 link has a session but publishes nothing" do
+    {:ok, state} = Exporter.init(options(Camera, heartbeat: []))
+    clock = start_supervised!({Agent, fn -> false end})
+    session = local_session()
+
+    client =
+      start_supervised!(
+        {Client,
+         endpoint_ip: "127.0.0.1",
+         node_name: "vision_test",
+         open_session: fn _endpoint -> {:ok, session} end,
+         clock_synchronized?: {__MODULE__, :clock_synchronized?, [clock]}}
+      )
+
+    assert eventually(fn -> Client.link().connected end)
+
+    assert Exporter.status(state) ==
+             {:warning, "Waiting for the clock: nothing is published until NTP sets it"}
+
+    Agent.update(clock, fn _ -> true end)
+    # What the client's clock timer sends.
+    send(client, :check_clock)
+    :sys.get_state(client)
+
+    assert Exporter.status(state) == {:ok, "Connected"}
+  end
+
   # A Zenoh session that needs no router.
   defp local_session do
     config =

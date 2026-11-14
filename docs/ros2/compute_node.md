@@ -331,6 +331,8 @@ It checks once a second, with no timeout. The BEAM adopts a step of the OS clock
 
 Subscriptions and services work from the start, so commands still reach the vehicle. A board that never reaches an NTP server publishes nothing, which is why the compute node serves time on the vehicle network.
 
+On a vision unit, the dashboard's ROS 2 page says whether it publishes yet, and the ROS 2 exporter's status is a warning until it does. `GET /api/ros2-node` answers the same with `clockSynchronized` ([Vision API](../vision/api.md)).
+
 The compute node needs the equivalent: NTP once the network is up, and the Pi 5's RTC battery fitted. With the battery, the window before NTP isn't spent publishing timestamps from an arbitrary epoch.
 
 ## Two update paths
