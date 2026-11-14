@@ -10,6 +10,24 @@ defmodule Ros2Zenoh.BuiltinInterfaces.Msg.Time do
 
   defstruct sec: 0, nanosec: 0
 
+  def msg_definition do
+    """
+    # This message communicates ROS Time defined here:
+    # https://design.ros2.org/articles/clock_and_time.html
+
+    # The seconds component, valid over all int32 values.
+    int32 sec
+
+    # The nanoseconds component, valid in the range [0, 1e9), to be added to the seconds component.\s
+    # e.g.
+    # The time -1.7 seconds is represented as {sec: -2, nanosec: 3e8}
+    # The time 1.7 seconds is represented as {sec: 1, nanosec: 7e8}
+    uint32 nanosec
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{sec: sec, nanosec: nanosec}) do
     encode_int32(sec) <> encode_uint32(nanosec)
   end

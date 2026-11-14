@@ -11,6 +11,17 @@ defmodule Ros2Zenoh.StdMsgs.Msg.ColorRGBA do
 
   defstruct r: 0.0, g: 0.0, b: 0.0, a: 1.0
 
+  def msg_definition do
+    """
+    float32 r
+    float32 g
+    float32 b
+    float32 a
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{r: r, g: g, b: b, a: a}) do
     encode_float32(r) <> encode_float32(g) <> encode_float32(b) <> encode_float32(a)
   end

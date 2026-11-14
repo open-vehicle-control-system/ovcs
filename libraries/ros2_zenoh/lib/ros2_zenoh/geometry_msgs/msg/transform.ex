@@ -10,6 +10,18 @@ defmodule Ros2Zenoh.GeometryMsgs.Msg.Transform do
 
   defstruct translation: %Vector3{}, rotation: %Quaternion{w: 1.0}
 
+  def msg_definition do
+    """
+    # This represents the transform between two coordinate frames in free space.
+
+    Vector3 translation
+    Quaternion rotation
+    """
+  end
+
+  def dependencies,
+    do: [Vector3, Quaternion]
+
   def encode(%__MODULE__{translation: translation, rotation: rotation}) do
     Vector3.encode(translation) <> Quaternion.encode(rotation)
   end

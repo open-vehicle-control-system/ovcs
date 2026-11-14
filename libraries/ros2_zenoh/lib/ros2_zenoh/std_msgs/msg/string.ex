@@ -8,6 +8,19 @@ defmodule Ros2Zenoh.StdMsgs.Msg.String do
 
   defstruct data: ""
 
+  def msg_definition do
+    """
+    # This was originally provided as an example message.
+    # It is deprecated as of Foxy
+    # It is recommended to create your own semantically meaningful message.
+    # However if you would like to continue using this please use the equivalent in example_msgs.
+
+    string data
+    """
+  end
+
+  def dependencies, do: []
+
   # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "std_msgs::msg::dds_::String_"
   @type_hash "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18"

@@ -14,6 +14,25 @@ defmodule Ros2Zenoh.VisionMsgs.Msg.ObjectHypothesis do
 
   defstruct class_id: "", score: 0.0
 
+  def msg_definition do
+    """
+    # An object hypothesis that contains no pose information.
+    # If you would like to define an array of ObjectHypothesis messages,
+    #   please see the Classification message type.
+
+    # The unique ID of the object class. To get additional information about
+    #   this ID, such as its human-readable class name, listeners should perform a
+    #   lookup in a metadata database. See vision_msgs/VisionInfo.msg for more detail.
+    string class_id
+
+    # The probability or confidence value of the detected object. By convention,
+    #   this value should lie in the range [0-1].
+    float64 score
+    """
+  end
+
+  def dependencies, do: []
+
   @spec append_to(binary(), %__MODULE__{}) :: binary()
   def append_to(buffer, %__MODULE__{class_id: class_id, score: score})
       when is_binary(buffer) do
