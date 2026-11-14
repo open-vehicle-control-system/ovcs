@@ -141,6 +141,10 @@ describe('CalibrationPage', () => {
       solve: vi.fn(),
       apply: vi.fn(),
       reset: vi.fn(),
+      useSaved: vi.fn(),
+      renameSaved: vi.fn(),
+      deleteSaved: vi.fn(),
+      loadSaved: vi.fn(),
       dismissError: vi.fn()
     }
     useStatus.setState({ ...initialStatus, snapshot: null })
@@ -148,6 +152,7 @@ describe('CalibrationPage', () => {
     useCalibration.setState({
       session: null,
       calibrations: {},
+      saved: {},
       selected: null,
       error: null,
       busy: false,
@@ -241,33 +246,122 @@ describe('CalibrationPage', () => {
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_left.yaml', 'left in use')
       expect(downloadYaml).toHaveBeenCalledWith('ovcs_mini_right.yaml', 'right in use')
     })
+  })
 
-    it('returns to the built-in calibration only when it can, and once confirmed', () => {
+  describe('the calibrations kept', () => {
+    const keptCard = () => screen.getByRole('region', { name: 'Calibrations kept on the unit' })
+    const row = (name) => within(keptCard()).getByRole('row', { name })
+
+    const kept = (attributes) => ({
+      id: '7',
+      name: '2026-11-14 00:28',
+      origin: 'dashboard',
+      createdAt: '2026-11-14T00:28:11Z',
+      inForce: false,
+      board: { columns: 8, rows: 6, squareMm: 30 },
+      samples: 62,
+      stereoRmsPx: 0.34,
+      baselineM: 0.198,
+      cameras: [
+        { name: 'left', rmsPx: 0.21 },
+        { name: 'right', rmsPx: 0.3 }
+      ],
+      ...attributes
+    })
+
+    const found = kept({ id: '3', name: 'Bench', origin: 'imported', stereoRmsPx: null, cameras: [{ name: 'left', rmsPx: null }, { name: 'right', rmsPx: null }] })
+
+    it('reads the list of the calibration shown', () => {
+      show({ inUse: stored, session: session() })
+      expect(actions.loadSaved).not.toHaveBeenCalled()
+
+      act(() => useNavigation.setState({ calibrationId: 'ovcs_mini' }))
+      expect(useCalibration.getState().selected).toBe('ovcs_mini')
+    })
+
+    it('lists each calibration with its date, where it comes from, its errors and its baseline, the one in use marked', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      const first = row(/2026-11-14 00:28/)
+      expect(first.textContent).toContain('Made on this page')
+      expect(first.textContent).toContain('left 0.21 px, right 0.30 px, pair 0.34 px')
+      expect(first.textContent).toContain('198.0 mm')
+      expect(within(first).getByText('In use')).toBeTruthy()
+      expect(within(first).queryByRole('button', { name: /^(Use|Delete) / })).toBeNull()
+
+      const second = row(/Bench/)
+      expect(second.textContent).toContain('Found on the unit')
+      expect(second.textContent).toContain('–')
+      expect(within(second).queryByText('In use')).toBeNull()
+    })
+
+    it('puts another calibration in use, and deletes one once confirmed', () => {
       const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
-      const { unmount } = show({ inUse: builtIn, session: session() })
-      expect(query("Go back to the firmware's calibration")).toBeNull()
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      fireEvent.click(button('Use Bench'))
+      expect(actions.useSaved).toHaveBeenCalledWith('3')
+
+      fireEvent.click(button('Delete Bench'))
+      expect(actions.deleteSaved).not.toHaveBeenCalled()
+      fireEvent.click(button('Delete Bench'))
+      expect(confirm).toHaveBeenCalledTimes(2)
+      expect(actions.deleteSaved).toHaveBeenCalledWith('3')
+    })
+
+    it('renames a calibration in place, and leaves it on Escape or an unchanged name', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+
+      fireEvent.click(button('Rename Bench'))
+      const input = screen.getByLabelText('Name of Bench')
+      fireEvent.change(input, { target: { value: ' Workshop ' } })
+      fireEvent.click(button('Save'))
+      expect(actions.renameSaved).toHaveBeenCalledWith('3', 'Workshop')
+      expect(screen.queryByLabelText('Name of Bench')).toBeNull()
+
+      fireEvent.click(button('Rename Bench'))
+      fireEvent.keyDown(screen.getByLabelText('Name of Bench'), { key: 'Escape' })
+      expect(screen.queryByLabelText('Name of Bench')).toBeNull()
+
+      fireEvent.click(button('Rename Bench'))
+      fireEvent.click(button('Save'))
+      expect(actions.renameSaved).toHaveBeenCalledTimes(1)
+    })
+
+    it("offers the firmware's calibration while another one is in use, and marks it when the unit runs on it", () => {
+      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+      fireEvent.click(button('Use the calibration shipped with the firmware'))
+      expect(actions.reset).toHaveBeenCalledTimes(1)
       unmount()
 
-      show({ inUse: stored, session: session() })
-      fireEvent.click(button("Go back to the firmware's calibration"))
-      expect(confirm).toHaveBeenCalledTimes(1)
-      expect(actions.reset).not.toHaveBeenCalled()
-
-      fireEvent.click(button("Go back to the firmware's calibration"))
-      expect(actions.reset).toHaveBeenCalledTimes(1)
+      show({ inUse: builtIn, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+      expect(within(row(/Shipped with the firmware/)).getByText('In use')).toBeTruthy()
+      expect(query('Use the calibration shipped with the firmware')).toBeNull()
     })
 
-    it('offers to return to built-in with a side stored alone, the built-in calibration in force', () => {
-      show({ inUse: { ...builtIn, canReset: true }, session: session() })
+    it('has no firmware row on a unit with no built-in calibration to go back to, and says so when nothing is kept', () => {
+      const { unmount } = show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+      expect(within(keptCard()).queryByRole('row', { name: /Shipped with the firmware/ })).toBeNull()
+      unmount()
 
-      expect(inUseCard().textContent).toContain('shipped with the firmware')
-      expect(button("Go back to the firmware's calibration")).toBeTruthy()
+      show({ inUse: none, closed: true, saved: {}, session: session() })
+      expect(keptCard().textContent).toContain('None yet')
     })
 
-    it('does not return to built-in while a calibration is being applied', () => {
-      show({ inUse: stored, session: session({ phase: 'applying', board, result }) })
+    it('changes nothing while a calibration session runs', () => {
+      show({ inUse: stored, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session({ phase: 'applying', board, result }) })
 
-      expect(button("Go back to the firmware's calibration").disabled).toBe(true)
+      expect(button('Use Bench').disabled).toBe(true)
+      expect(button('Delete Bench').disabled).toBe(true)
+      expect(button('Rename Bench').disabled).toBe(true)
+      expect(button('Use the calibration shipped with the firmware').disabled).toBe(true)
+    })
+
+    it('shows no baseline for a camera of its own', () => {
+      show({ inUse: center, closed: true, saved: { center: [kept({ baselineM: null, stereoRmsPx: null, cameras: [{ name: 'center', rmsPx: 0.2 }] })] }, session: session() })
+
+      expect(keptCard().textContent).not.toContain('baseline')
+      expect(row(/2026-11-14 00:28/).textContent).toContain('center 0.20 px')
     })
   })
 
@@ -613,7 +707,7 @@ describe('CalibrationPage', () => {
 
     expect(within(inUseCard()).getByRole('alert').textContent).toContain('permission denied')
     expect(button('Calibrate')).toBeTruthy()
-    expect(button("Go back to the firmware's calibration")).toBeTruthy()
+    expect(button('Use the calibration shipped with the firmware')).toBeTruthy()
   })
 
   it('does not call a unit without a stereo pair uncalibrated', () => {

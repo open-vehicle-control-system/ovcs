@@ -29,6 +29,35 @@ export const solveSession = () => act('calibration-solves')
 export const applySession = () => act('calibration-applies')
 export const resetCalibration = (calibration) => act('calibration-resets', { calibration })
 
+const toSaved = (resource) => ({ id: resource.id, ...resource.attributes })
+
+/** The calibrations the unit keeps for the calibration `id`, the newest first. */
+export async function fetchSaved(calibration) {
+  const document = await request(`saved-calibrations?filter[calibration]=${encodeURIComponent(calibration)}`)
+  return document.data.map(toSaved)
+}
+
+/** Names the saved calibration `id`. */
+export async function renameSaved(id, name) {
+  const body = { data: { type: 'saved-calibrations', id, attributes: { name } } }
+  return toSaved((await request(`saved-calibrations/${id}`, { method: 'PATCH', body })).data)
+}
+
+/** Removes the saved calibration `id`, which the unit refuses for the one in force. */
+export const deleteSaved = (id) => request(`saved-calibrations/${id}`, { method: 'DELETE', answer: () => null })
+
+/** Puts the saved calibration `id` back in force. */
+export const selectSaved = (id) =>
+  request('calibration-selections', {
+    method: 'POST',
+    body: {
+      data: {
+        type: 'calibration-selections',
+        relationships: { savedCalibration: { data: { type: 'saved-calibrations', id } } }
+      }
+    }
+  })
+
 export function loadBoard() {
   try {
     const board = JSON.parse(localStorage.getItem(BOARD_KEY))

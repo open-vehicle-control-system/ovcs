@@ -52,12 +52,15 @@ export const useCalibration = create((set, get) => {
     listen(socket) {
       const channel = socket.channel('calibration', {})
       channel.on('session', (session) => set({ session }))
-      channel.on('calibration', (calibration) =>
+      channel.on('saved', ({ calibration }) => get().loadSaved(calibration))
+      channel.on('calibration', (calibration) => {
         set((state) => ({
           calibrations: { ...state.calibrations, [calibration.id]: calibration },
           selected: state.selected ?? calibration.id
         }))
-      )
+        // The list of the calibration shown is read once that calibration is known, then at each change.
+        if (get().saved[calibration.id] === undefined && selectedId(get()) === calibration.id) get().loadSaved(calibration.id)
+      })
       // A session the channel no longer follows is not shown: its phase would open the dialog on a capture long over.
       channel.onError(() => set({ session: null }))
       channel
@@ -76,7 +79,24 @@ export const useCalibration = create((set, get) => {
       }
     },
 
-    select: (id) => set({ selected: id }),
+    // The calibrations the unit keeps, by calibration id, read over HTTP at each change the channel announces.
+    saved: {},
+    async loadSaved(id) {
+      try {
+        const kept = await service.fetchSaved(id)
+        set((state) => ({ saved: { ...state.saved, [id]: kept } }))
+      } catch {
+        // The list keeps what it showed; the next change reads it again.
+      }
+    },
+
+    select(id) {
+      set({ selected: id })
+      get().loadSaved(id)
+    },
+    useSaved: (id) => perform(() => service.selectSaved(id)),
+    renameSaved: (id, name) => perform(() => service.renameSaved(id, name)),
+    deleteSaved: (id) => perform(() => service.deleteSaved(id)),
     start: (board) => perform(() => service.startSession(selectedId(get()), board)),
     cancel: () => perform(service.cancelSession),
     solve: () => perform(service.solveSession),

@@ -4,8 +4,6 @@ import { downloadYaml } from '../../services/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
 
-const CONFIRM_RESET = "Go back to the firmware's calibration? The calibration made on this unit is deleted."
-
 const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
 
 // What the unit uses, as the card's title, then what that means.
@@ -98,9 +96,6 @@ function Parameters({ cameras }) {
  */
 export default function InUse({ onCalibrate, calibrateRef }) {
   const inUse = useCalibration(selectedCalibration)
-  const busy = useCalibration((state) => state.busy)
-  const applying = useCalibration((state) => state.session?.phase === 'applying')
-  const reset = useCalibration((state) => state.reset)
 
   if (!inUse)
     return (
@@ -115,20 +110,11 @@ export default function InUse({ onCalibrate, calibrateRef }) {
     for (const camera of inUse.cameras) downloadYaml(camera.file, camera.yaml)
   }
 
-  const returnToBuiltIn = () => {
-    if (window.confirm(CONFIRM_RESET)) reset()
-  }
-
   const actions = (
     <div className="flex flex-wrap gap-2">
       {inUse.cameras.every((camera) => camera.yaml) ? (
         <button type="button" aria-label="Download the calibration the unit uses" onClick={download} className={BUTTON}>
           Download
-        </button>
-      ) : null}
-      {inUse.canReset ? (
-        <button type="button" disabled={busy || applying} onClick={returnToBuiltIn} className={BUTTON}>
-          Go back to the firmware's calibration
         </button>
       ) : null}
       {onCalibrate ? (

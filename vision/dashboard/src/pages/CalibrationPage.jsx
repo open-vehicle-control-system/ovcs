@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import InUse from '../components/calibration/InUse.jsx'
+import Saved from '../components/calibration/Saved.jsx'
 import { BoardForm, Capturing, Solving } from '../components/calibration/Capture.jsx'
 import { Applying, Solved } from '../components/calibration/Result.jsx'
 import { ActionError } from '../components/calibration/Errors.jsx'
@@ -119,6 +120,7 @@ export default function CalibrationPage() {
       ) : (
         <>
           <InUse onCalibrate={phase === 'idle' ? () => setOpened(true) : undefined} calibrateRef={calibrate} />
+          <Saved />
           {shown ? (
             <Dialog onClose={running ? null : () => setOpened(false)}>
               <ActionError />
