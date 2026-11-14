@@ -35,9 +35,11 @@ defmodule VmsCore.Managers.ControlLevel do
         ros: %{teleop: OVCS.RosActuatorCommand.Throttle, autonomous: OVCS.RosVelocityCommand}
       }
 
-  `requested_braking_sources`, optional, names whose negative
-  `:requested_throttle` a brake actuator follows; without it nothing
-  brakes automatically.
+  `requested_braking_sources`, optional, names whose
+  `:requested_braking` a brake actuator follows; without it nothing
+  brakes automatically. `OVCS.RadioControl.Throttle` and
+  `OVCS.RosActuatorCommand.Throttle` publish one; a source that does
+  not brakes nothing.
 
   A missing key resolves to `nil`, which means nothing commands that
   actuator. That is the safe direction: a vehicle with no planner wires

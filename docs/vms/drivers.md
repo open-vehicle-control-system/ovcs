@@ -39,7 +39,7 @@ The moduledoc of each driver is the reference for its options. The composers of 
 
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
-| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level manager (braking source), contact source; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, `:manual_braking`, `:status` |
+| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level manager (braking source), contact source; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, the `:requested_braking` it applies, `:manual_braking`, `:status` |
 | `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level manager (steering source); `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id`, `max_steering_angle_deg`; PID gains, input filter | angle, angular speed, calibration, PID gains |
 | `Traxxas.Steering` (no reference vehicle) | none, through a controller | `controller`, `external_pwm_id`, control level source | nothing |
 | `Volkswagen.Polo9N.PowerSteeringPump` | `network:` (`misc` in OVCS1) | gear source | nothing |
@@ -63,8 +63,8 @@ A commander is a component that requests throttle, steering or direction; [contr
 |---|---|---|---|
 | `OVCS.ThrottlePedal` | none, through a controller | `controller`, `throttle_a_pin`, `throttle_b_pin`, `cross_check_tolerance`, `cross_check_hold_ms` | `:requested_throttle` (zero while `:cross_check_fault`), `:cross_check_gap`, calibration |
 | `OVCS.InputCurve` | none, bus only | throttle source, `deadzone`, `expo` | shaped `:requested_throttle` |
-| `OVCS.RadioControl.Steering`, `.Throttle`, `.Direction`, `.RequestedControlLevel`, `.RequestedRosCommander` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel |
-| `OVCS.RosActuatorCommand.Steering`, `.Throttle`, `.Direction`, and `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction` |
+| `OVCS.RadioControl.Steering`, `.Throttle`, `.Direction`, `.RequestedControlLevel`, `.RequestedRosCommander` | `ovcs` | `radio_control_channel` | the `requested_*` value of its channel; `.Throttle` also `:requested_braking` and `:radio_braking` |
+| `OVCS.RosActuatorCommand.Steering`, `.Throttle`, `.Direction`, and `OVCS.RosVelocityCommand` | `ovcs` | none; `wheelbase_m`, `steering_limit_rad`, `max_speed_m_s` | `:requested_throttle`, `:requested_steering`, `:requested_direction`; `.Throttle` also `:requested_braking` |
 | `OVCS.Infotainment` | `ovcs` | none | `:requested_gear` |
 
 The ROS commands carry a sequence number per ROS sample. When it stops changing, the command is zeroed, whether the bridge died or its input did.

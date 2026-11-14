@@ -1,15 +1,14 @@
 defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
   @moduledoc """
-  Every consumer of `:requested_throttle` stops acting on it when
+  Every consumer of a routed request stops acting on it when
   `Managers.ControlLevel` names no source for it: the inverter's
-  throttle source, the brake booster's braking source.
+  `:requested_throttle`, the brake booster's `:requested_braking`.
 
-  The handler for `:requested_throttle` gates on the source, so with a
-  nil source no message matches and the last request would be held.
-  Held in the inverter it is applied as torque every tick; held in the
-  brake booster a negative request keeps the automatic braking on. Each
-  consumer therefore zeroes the request on the way to a level that
-  commands nothing.
+  The request's handler gates on the source, so with a nil source no
+  message matches and the last request would be held. Held in the
+  inverter it is applied as torque every tick; held in the brake
+  booster it keeps the automatic braking on. Each consumer therefore
+  zeroes the request on the way to a level that commands nothing.
 
   Driven through `handle_info/2` against a stub state, the way
   `VmsCore.Managers.GearTest` does: the transition is the subject, not
@@ -29,11 +28,16 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
     IBoosterGen2 => :requested_braking_source
   }
 
+  @request_keys %{
+    Inverter => :requested_throttle,
+    IBoosterGen2 => :requested_braking
+  }
+
   defp state(module) do
     %{
       :selected_control_level_source => @manager,
       @source_keys[module] => @commander,
-      :requested_throttle => D.new("0.6")
+      @request_keys[module] => D.new("0.6")
     }
   end
 
@@ -42,7 +46,7 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
 
   for {module, source_key} <- @source_keys do
     describe "#{inspect(module)} on a level that commands nothing" do
-      test "zeroes the throttle rather than holding it" do
+      test "zeroes the request rather than holding it" do
         module = unquote(module)
 
         {:noreply, state} =
@@ -50,8 +54,8 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
 
         assert state[unquote(source_key)] == nil
 
-        assert D.eq?(state.requested_throttle, D.new(0)),
-               "the last throttle survived a switch to a level with no commander"
+        assert D.eq?(state[@request_keys[module]], D.new(0)),
+               "the last request survived a switch to a level with no commander"
       end
 
       test "keeps the request across a switch between commanders" do
@@ -61,7 +65,7 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
           module.handle_info(source_message(module, AnotherCommander, @manager), state(module))
 
         assert state[unquote(source_key)] == AnotherCommander
-        assert D.eq?(state.requested_throttle, D.new("0.6"))
+        assert D.eq?(state[@request_keys[module]], D.new("0.6"))
       end
 
       test "ignores a source named by anything but the manager" do
@@ -77,26 +81,53 @@ defmodule VmsCore.Components.ThrottleSourceSwitchingTest do
   end
 
   describe "IBoosterGen2's braking request" do
-    test "comes from the braking source, not the throttle source" do
-      booster = %{
+    defp booster do
+      %{
         selected_control_level_source: @manager,
         requested_braking_source: @commander,
-        requested_throttle: D.new(0)
+        requested_braking: D.new(0)
       }
+    end
 
+    defp braking_from(booster, value, source) do
+      {:noreply, booster} =
+        IBoosterGen2.handle_info(
+          %Message{name: :requested_braking, value: D.new(value), source: source},
+          booster
+        )
+
+      booster.requested_braking
+    end
+
+    test "comes from the braking source, not the throttle source" do
       {:noreply, booster} =
         IBoosterGen2.handle_info(
           %Message{name: :requested_throttle_source, value: Pedal, source: @manager},
-          booster
+          booster()
         )
 
-      {:noreply, booster} =
+      assert D.eq?(braking_from(booster, "0.4", @commander), D.new("0.4"))
+    end
+
+    test "ignores the braking another component requests, its own included" do
+      for source <- [AnotherCommander, IBoosterGen2] do
+        assert D.eq?(braking_from(booster(), "0.9", source), 0)
+      end
+    end
+
+    test "ignores its braking source's throttle" do
+      {:noreply, after_throttle} =
         IBoosterGen2.handle_info(
-          %Message{name: :requested_throttle, value: D.new("-0.4"), source: @commander},
-          booster
+          %Message{name: :requested_throttle, value: D.new("-0.7"), source: @commander},
+          booster()
         )
 
-      assert D.eq?(booster.requested_throttle, D.new("-0.4"))
+      assert after_throttle == booster()
+    end
+
+    test "holds a request outside [0, 1] to that range" do
+      assert D.eq?(braking_from(booster(), "5", @commander), 1)
+      assert D.eq?(braking_from(booster(), "-0.3", @commander), 0)
     end
   end
 end

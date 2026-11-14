@@ -6,10 +6,10 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   The pedal acts on the booster mechanically at all times. While the
   contact is on, a generic controller's relay powers the booster and its
   keep-alive frames are emitted. While `Managers.ControlLevel` names a
-  braking source, that source's negative `:requested_throttle` becomes
-  a rod position target, which a PID loop reaches by commanding the
-  booster's flow rate: the vehicle's `requested_braking_sources` decide
-  which control levels brake.
+  braking source, that source's `:requested_braking`, held to [0, 1],
+  becomes a rod position target, which a PID loop reaches by commanding
+  the booster's flow rate: the vehicle's `requested_braking_sources`
+  decide which control levels brake.
 
   Publishes the booster's status, rod position and target, flow rate,
   `:manual_braking` (the driver is braking or the booster cannot) and
@@ -35,6 +35,7 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
   alias VmsCore.Components.OVCS.GenericController
 
   @zero D.new(0)
+  @one D.new(1)
 
   # The booster accepts flow rates from 0x6A00 to 0x9200 around this zero point.
   @zero_point_flow_rate 0x7E00
@@ -109,7 +110,6 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
        enabled: false,
        selected_control_level_source: selected_control_level_source,
        requested_braking_source: nil,
-       requested_throttle: @zero,
        contact_source: contact_source,
        contact: :off,
        ready_to_drive: false,
@@ -133,7 +133,6 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       |> toggle_ibooster()
       |> check_ready_to_drive()
       |> toggle_automatic_mode()
-      |> set_requested_braking()
       |> set_rod_position_target()
       |> actuate()
       |> emit_metrics()
@@ -172,23 +171,23 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
       when source == state.selected_control_level_source do
     # Zero on the way to a level that commands nothing: with no source
     # no request message matches, and the last request would be held.
-    requested_throttle =
-      if is_nil(requested_braking_source), do: @zero, else: state.requested_throttle
+    requested_braking =
+      if is_nil(requested_braking_source), do: @zero, else: state.requested_braking
 
     {:noreply,
      %{
        state
        | requested_braking_source: requested_braking_source,
-         requested_throttle: requested_throttle
+         requested_braking: requested_braking
      }}
   end
 
   def handle_info(
-        %Bus.Message{name: :requested_throttle, value: requested_throttle, source: source},
+        %Bus.Message{name: :requested_braking, value: requested_braking, source: source},
         state
       )
       when source == state.requested_braking_source do
-    {:noreply, %{state | requested_throttle: requested_throttle}}
+    {:noreply, %{state | requested_braking: requested_braking |> D.max(@zero) |> D.min(@one)}}
   end
 
   def handle_info(%Bus.Message{name: :contact, value: contact, source: source}, state)
@@ -247,18 +246,6 @@ defmodule VmsCore.Components.Bosch.IBoosterGen2 do
         state
     end
   end
-
-  defp set_requested_braking(state) when state.automatic_mode_enabled == true do
-    requested_braking =
-      case state.requested_throttle |> D.gt?(@zero) do
-        true -> @zero
-        false -> state.requested_throttle |> D.abs()
-      end
-
-    %{state | requested_braking: requested_braking}
-  end
-
-  defp set_requested_braking(state), do: state
 
   defp set_rod_position_target(state) when state.automatic_mode_enabled == true do
     rod_position_target = state.requested_braking |> D.mult(@rod_position_range_mm)
