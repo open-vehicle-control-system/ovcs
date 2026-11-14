@@ -125,6 +125,42 @@ const result = {
   samples: 40
 }
 
+const kept = (attributes) => ({
+  id: '7',
+  name: '2026-11-14 00:28',
+  origin: 'dashboard',
+  createdAt: '2026-11-14T00:28:11Z',
+  inForce: false,
+  board: { columns: 8, rows: 6, squareMm: 30 },
+  samples: 62,
+  stereoRmsPx: 0.34,
+  baselineM: 0.198,
+  cameras: [
+    { name: 'left', rmsPx: 0.21, file: 'ovcs_mini_left.yaml', yaml: 'left kept' },
+    { name: 'right', rmsPx: 0.3, file: 'ovcs_mini_right.yaml', yaml: 'right kept' }
+  ],
+  ...attributes
+})
+
+const found = kept({
+  id: '3',
+  name: 'Bench',
+  origin: 'imported',
+  stereoRmsPx: null,
+  cameras: [
+    { name: 'left', rmsPx: null, file: 'ovcs_mini_left.yaml', yaml: 'left found' },
+    { name: 'right', rmsPx: null, file: 'ovcs_mini_right.yaml', yaml: 'right found' }
+  ]
+})
+
+// As the page writes a time.
+const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
+
+const BASELINE = 'Baseline (distance between the cameras)'
+
+// A figure's value, line by line.
+const lines = (value) => (value.children.length > 0 ? [...value.children].map((line) => line.textContent) : [value.textContent])
+
 const initialStatus = useStatus.getState()
 
 describe('CalibrationPage', () => {
@@ -197,54 +233,90 @@ describe('CalibrationPage', () => {
   })
 
   describe('in use', () => {
-    const LABELS = ['Image size', 'Focal length (fx)', 'Lens distortion', 'Distance between cameras (baseline)']
     const labels = () => [...inUseCard().querySelectorAll('dt')].map((label) => label.textContent)
+    const values = () => [...inUseCard().querySelectorAll('dd')].map((value) => value.textContent)
+    const table = () => within(inUseCard()).getByRole('table', { name: 'Camera parameters, in pixels' })
+    const row = (name) => within(table()).getByRole('row', { name })
+    const PARAMETERS = ['Focal x (fx)', 'Focal y (fy)', 'Centre x (cx)', 'Centre y (cy)', 'Distortion', 'k1', 'k2', 'p1', 'p2', 'k3']
 
-    it('keeps the figures in the same places for a pair and for a camera, which has no baseline', () => {
+    it('sums up the image size and the lens distortion, then for a pair its baseline, and no focal length', () => {
       const { unmount } = show({ inUse: stored, session: session() })
-      expect(labels()).toEqual(LABELS)
+      expect(labels()).toEqual(['Image size', 'Lens distortion', BASELINE])
       unmount()
 
       show({ inUse: center, session: session() })
-      expect(labels()).toEqual(LABELS.slice(0, 3))
+      expect(labels()).toEqual(['Image size', 'Lens distortion'])
     })
 
-    it('names a built-in calibration, and shows fx and the baseline in mm', () => {
+    it('names a built-in calibration, with the baseline in mm', () => {
       show({ inUse: builtIn, session: session() })
 
       const card = inUseCard()
       expect(within(card).getByRole('heading').textContent).toBe('Using the calibration shipped with the firmware')
       expect(card.textContent).toContain('No calibration was made on this unit.')
-      expect(card.textContent).toContain('905.7 px')
-      expect(card.textContent).toContain('Lens distortion')
-      expect(card.textContent).toContain('912.3')
-      expect(card.textContent).toContain('60.1 mm')
-      expect(card.textContent).toContain('1280 × 720')
+      expect(values()).toEqual(['1280 × 720 px', 'Corrected', '60.1 mm'])
+      expect(card.textContent).not.toContain('Focal length')
     })
 
-    it("lists each camera's parameters in a column of its own, one distortion coefficient a line", () => {
+    it("lists a pair's parameters under Left and Right, one distortion coefficient a row, in the font of every figure", () => {
       show({ inUse: builtIn, session: session() })
 
-      const card = inUseCard()
-      expect(within(card).getByRole('table', { name: 'Camera parameters, in pixels' })).toBeTruthy()
-      expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Camera', 'left', 'right'])
-      expect(within(card).getAllByRole('rowheader').map((header) => header.textContent)).toEqual([
-        'Focal x (fx)',
-        'Focal y (fy)',
-        'Centre x (cx)',
-        'Centre y (cy)',
-        'Distortion (k1, k2, p1, p2, k3)'
-      ])
-      expect(within(card).getByRole('row', { name: /^Focal x/ }).textContent).toBe('Focal x (fx)912.3915.5')
-      const [left] = within(within(card).getByRole('row', { name: /^Distortion/ })).getAllByRole('cell')
-      expect([...left.children].map((line) => line.textContent)).toEqual(['-0.1234', '0.0567', '0.0001', '-0.0002', '0.0000'])
+      expect(within(table()).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Left', 'Right'])
+      expect(within(table()).getAllByRole('rowheader').map((header) => header.textContent)).toEqual(PARAMETERS)
+      expect(row(/^Focal x/).textContent).toBe('Focal x (fx)912.3915.5')
+      expect(row(/^k1/).textContent).toBe('k1-0.1234-0.1234')
+      expect(row(/^p2/).textContent).toBe('p2-0.0002-0.0002')
+      expect(row(/^k3/).textContent).toBe('k30.00000.0000')
+      expect(inUseCard().querySelector('.font-mono')).toBeNull()
     })
 
-    it('names a calibration stored on the unit, with its date', () => {
-      show({ inUse: stored, session: session() })
+    it("lists a camera's parameters in a single column, under no header", () => {
+      show({ inUse: center, session: session() })
 
-      expect(within(inUseCard()).getByRole('heading').textContent).toMatch(/^Calibrated on this unit, /)
-      expect(inUseCard().textContent).toContain('2026')
+      expect(within(table()).queryAllByRole('columnheader')).toEqual([])
+      expect(within(table()).getAllByRole('rowheader').map((header) => header.textContent)).toEqual(PARAMETERS)
+      expect(row(/^Focal x/).textContent).toBe('Focal x (fx)880.5')
+      expect(row(/^k2/).textContent).toBe('k20.0567')
+    })
+
+    it('names a calibration stored on the unit without a date, then the one kept it uses, by name and when it was made', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      expect(within(inUseCard()).getByRole('heading').textContent).toBe('Calibrated on this unit')
+      expect(inUseCard().textContent).toContain(`2026-11-14 00:28 · made ${stamp('2026-11-14T00:28:11Z')}`)
+      expect(inUseCard().textContent).not.toContain(stamp(stored.storedAt))
+    })
+
+    it('dates a stored calibration by its file while no calibration kept is in use', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+
+      expect(within(inUseCard()).getByRole('heading').textContent).toBe('Calibrated on this unit')
+      expect(inUseCard().textContent).toContain(stamp(stored.storedAt))
+    })
+
+    it("names no calibration kept while the firmware's is in use", () => {
+      show({ inUse: builtIn, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+
+      expect(inUseCard().textContent).not.toContain('2026-11-14 00:28')
+      expect(inUseCard().textContent).not.toContain(stamp('2026-11-14T00:28:11Z'))
+    })
+
+    it('offers Download once: on the calibration kept in use, beside the heading otherwise', () => {
+      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+      expect(query('Download the calibration the unit uses')).toBeNull()
+      expect(button('Download 2026-11-14 00:28')).toBeTruthy()
+      unmount()
+
+      show({ inUse: builtIn, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+      expect(button('Download the calibration the unit uses')).toBeTruthy()
+    })
+
+    it('offers Download beside the heading when the calibration kept in use has no files', () => {
+      const fileless = kept({ inForce: true, cameras: [{ name: 'left', rmsPx: 0.2 }, { name: 'right', rmsPx: 0.3 }] })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [fileless] }, session: session() })
+
+      expect(query('Download 2026-11-14 00:28')).toBeNull()
+      expect(button('Download the calibration the unit uses')).toBeTruthy()
     })
 
     it('names a unit without a calibration, with nothing to download', () => {
@@ -252,10 +324,10 @@ describe('CalibrationPage', () => {
 
       expect(within(inUseCard()).getByRole('heading').textContent).toBe('Not calibrated')
       expect(inUseCard().textContent).toContain('Depth stays off until a calibration is made.')
-      expect(labels()).toEqual(LABELS)
-      expect([...inUseCard().querySelectorAll('dd')].map((value) => value.textContent)).toEqual(['–', '–', '–', '–'])
-      expect(within(inUseCard()).getByRole('row', { name: /^Focal x/ }).textContent).toBe('Focal x (fx)––')
-      expect(within(inUseCard()).getByRole('row', { name: /^Distortion/ }).textContent).toBe('Distortion (k1, k2, p1, p2, k3)––')
+      expect(labels()).toEqual(['Image size', 'Lens distortion', BASELINE])
+      expect(values()).toEqual(['–', '–', '–'])
+      expect(row(/^Focal x/).textContent).toBe('Focal x (fx)––')
+      expect(row(/^k1/).textContent).toBe('k1––')
       expect(within(inUseCard()).queryByRole('button', { name: 'Download the calibration the unit uses' })).toBeNull()
     })
 
@@ -273,34 +345,6 @@ describe('CalibrationPage', () => {
     const keptCard = () => screen.getByRole('region', { name: 'Calibrations kept on the unit' })
     const row = (name) => within(keptCard()).getByRole('listitem', { name })
 
-    const kept = (attributes) => ({
-      id: '7',
-      name: '2026-11-14 00:28',
-      origin: 'dashboard',
-      createdAt: '2026-11-14T00:28:11Z',
-      inForce: false,
-      board: { columns: 8, rows: 6, squareMm: 30 },
-      samples: 62,
-      stereoRmsPx: 0.34,
-      baselineM: 0.198,
-      cameras: [
-        { name: 'left', rmsPx: 0.21, file: 'ovcs_mini_left.yaml', yaml: 'left kept' },
-        { name: 'right', rmsPx: 0.3, file: 'ovcs_mini_right.yaml', yaml: 'right kept' }
-      ],
-      ...attributes
-    })
-
-    const found = kept({
-      id: '3',
-      name: 'Bench',
-      origin: 'imported',
-      stereoRmsPx: null,
-      cameras: [
-        { name: 'left', rmsPx: null, file: 'ovcs_mini_left.yaml', yaml: 'left found' },
-        { name: 'right', rmsPx: null, file: 'ovcs_mini_right.yaml', yaml: 'right found' }
-      ]
-    })
-
     it('reads the list of the calibration shown', () => {
       show({ inUse: stored, session: session() })
       expect(actions.loadSaved).not.toHaveBeenCalled()
@@ -309,26 +353,41 @@ describe('CalibrationPage', () => {
       expect(useCalibration.getState().selected).toBe('ovcs_mini')
     })
 
-    it('lists each calibration with its date, where it comes from, its errors and its baseline, the one in use marked', () => {
+    it('lists each calibration with when and where it was made, its errors and its baseline, the one in use marked', () => {
       show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
 
       const first = row(/2026-11-14 00:28/)
-      expect([...first.querySelectorAll('dt')].map((label) => label.textContent)).toEqual([
-        'Made',
-        'Errors (reprojection RMS)',
-        'Distance between cameras (baseline)'
-      ])
-      expect(first.textContent).toContain('Made on this page')
-      expect(first.textContent).toContain('left 0.21 px, right 0.30 px, pair 0.34 px')
+      expect([...first.querySelectorAll('dt')].map((label) => label.textContent)).toEqual(['Reprojection error', BASELINE])
+      expect(first.textContent).toContain(`Made ${stamp('2026-11-14T00:28:11Z')} · on this page`)
+      expect(lines(first.querySelector('dd'))).toEqual(['left 0.21 px', 'right 0.30 px', 'pair 0.34 px'])
       expect(first.textContent).toContain('198.0 mm')
       expect(within(first).getByText('In use')).toBeTruthy()
       expect(within(first).queryByRole('button', { name: /^Use / })).toBeNull()
 
       const second = row(/Bench/)
-      expect(second.textContent).toContain('Made outside this page')
+      expect(second.textContent).toContain('· outside this page')
       expect(second.textContent).not.toContain('Found on the unit')
-      expect(second.textContent).toContain('–')
+      expect([...second.querySelectorAll('dt')].map((label) => label.textContent)).toEqual([BASELINE])
+      expect(second.textContent).not.toContain('–')
       expect(within(second).queryByText('In use')).toBeNull()
+    })
+
+    it('gives each calibration kept its actions in small buttons, Rename among them', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      const actions = within(row(/Bench/)).getAllByRole('button')
+      expect(actions.map((action) => action.getAttribute('aria-label'))).toEqual(['Use Bench', 'Download Bench', 'Rename Bench', 'Delete Bench'])
+      expect(actions.map((action) => action.textContent)).toEqual(['Use', 'Download', 'Rename', 'Delete'])
+      for (const action of actions) expect(action.className).toContain('text-xs')
+      expect(within(row(/2026-11-14 00:28/)).getAllByRole('button').map((action) => action.textContent)).toEqual(['Download', 'Rename', 'Delete'])
+    })
+
+    it("says what the firmware's entry is, with a small Use button", () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+
+      const firmware = row(/Shipped with the firmware/)
+      expect(firmware.textContent).toContain('The calibration the firmware was built with')
+      expect(button('Use the calibration shipped with the firmware').className).toContain('text-xs')
     })
 
     // Answers the question the page asks with its button `choice`, and gives what it asked.
@@ -483,8 +542,9 @@ describe('CalibrationPage', () => {
     it('shows no baseline for a camera of its own', () => {
       show({ inUse: center, closed: true, saved: { center: [kept({ baselineM: null, stereoRmsPx: null, cameras: [{ name: 'center', rmsPx: 0.2 }] })] }, session: session() })
 
-      expect(keptCard().textContent).not.toContain('baseline')
-      expect(row(/2026-11-14 00:28/).textContent).toContain('center 0.20 px')
+      expect(keptCard().textContent).not.toMatch(/baseline/i)
+      expect(row(/2026-11-14 00:28/).textContent).toContain('0.20 px')
+      expect(row(/2026-11-14 00:28/).textContent).not.toContain('center 0.20 px')
     })
   })
 
@@ -878,19 +938,19 @@ describe('CalibrationPage', () => {
       show({ ...both, session: session() })
 
       expect(useCalibration.getState().selected).toBe('center')
-      expect(within(inUseCard()).getByRole('columnheader', { name: 'center' })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('row', { name: /^Focal x/ }).textContent).toBe('Focal x (fx)880.5')
       expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
 
       act(() => useNavigation.setState({ calibrationId: 'ovcs_mini' }))
-      expect(within(inUseCard()).getByRole('columnheader', { name: 'left' })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('columnheader', { name: 'Left' })).toBeTruthy()
     })
 
     it("shows a camera's one calibration, without a baseline, and downloads its YAML", () => {
       show({ ...both, selected: 'center', session: session() })
 
-      expect(within(inUseCard()).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Camera', 'center'])
+      expect(within(inUseCard()).queryAllByRole('columnheader')).toEqual([])
       expect(within(inUseCard()).getByRole('row', { name: /^Focal x/ }).textContent).toContain('880.5')
-      expect(within(inUseCard()).queryByText(/baseline/)).toBeNull()
+      expect(inUseCard().textContent).not.toMatch(/baseline/i)
 
       fireEvent.click(button('Download the calibration the unit uses'))
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center in use']])
@@ -956,16 +1016,17 @@ describe('CalibrationPage', () => {
     const unmeasured = { ...measured, source: 'none', storedAt: null, pose: null }
     const poseCard = () => screen.getByRole('region', { name: /Measured on this unit|shipped with the firmware|Not measured/ })
     const facts = () =>
-      Object.fromEntries([...poseCard().querySelectorAll('dt')].map((label) => [label.textContent, label.nextElementSibling.textContent]))
+      Object.fromEntries([...poseCard().querySelectorAll('dt')].map((label) => [label.textContent, lines(label.nextElementSibling)]))
 
     it('shows where the camera sits from the left camera, how far and how it is turned, then its rotation and translation', () => {
       show({ inUse: measured, closed: true, session: session() })
 
-      expect(within(poseCard()).getByRole('heading').textContent).toMatch(/^Measured on this unit, /)
+      expect(within(poseCard()).getByRole('heading').textContent).toBe('Measured on this unit')
+      expect(poseCard().textContent).toContain(stamp(measured.storedAt))
       expect(facts()).toEqual({
-        'Position from the left camera': '100.0 mm right, 8.0 mm down, 0.0 mm forward',
-        'Distance to the left camera': '100.3 mm',
-        'Turned (yaw, pitch, roll)': '10.0° right, 0.0° up, 0.0° clockwise'
+        'Position from the left camera': ['100.0 mm right', '8.0 mm down', '0.0 mm forward'],
+        'Distance to the left camera': ['100.3 mm'],
+        'Turned (yaw, pitch, roll)': ['10.0° right', '0.0° up', '0.0° clockwise']
       })
       const matrix = within(poseCard()).getByRole('table', { name: /Rotation/ })
       expect(within(matrix).getAllByRole('row').map((row) => row.textContent)).toEqual([
@@ -973,19 +1034,22 @@ describe('CalibrationPage', () => {
         '0.00001.00000.0000',
         '0.17360.00000.9848'
       ])
-      expect(within(poseCard()).getByRole('table', { name: /Translation/ }).textContent).toContain('-98.5')
+      const translation = within(poseCard()).getByRole('table', { name: /Translation/ })
+      expect(within(translation).getAllByRole('row').map((row) => row.textContent)).toEqual(['x-98.5', 'y-8.0', 'z-17.4'])
+      expect(poseCard().querySelector('.font-mono')).toBeNull()
       expect(within(poseCard()).queryByText(/Focal length/)).toBeNull()
 
       fireEvent.click(button('Download the position the unit uses'))
       expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose in use']])
     })
 
-    it('says a position not measured, with a dash for each figure and nothing to download', () => {
+    it('says a position not measured, with a dash for each figure, no rotation or translation and nothing to download', () => {
       show({ inUse: unmeasured, closed: true, session: session() })
 
       expect(within(poseCard()).getByRole('heading').textContent).toBe('Not measured')
       expect(poseCard().textContent).toContain('no distance')
-      expect(Object.values(facts())).toEqual(['–', '–', '–'])
+      expect(Object.values(facts())).toEqual([['–'], ['–'], ['–']])
+      expect(within(poseCard()).queryByRole('table')).toBeNull()
       expect(query('Download the position the unit uses')).toBeNull()
       expect(button('Calibrate')).toBeTruthy()
     })
@@ -1053,12 +1117,22 @@ describe('CalibrationPage', () => {
 
       const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
       const row = within(card).getByRole('listitem', { name: /Bench/ })
-      expect(within(row).getByText('Distance to the left camera', { selector: 'dt' })).toBeTruthy()
+      expect([...row.querySelectorAll('dt')].map((label) => label.textContent)).toEqual(['Reprojection error', 'Distance to the left camera'])
       expect(row.textContent).toContain('0.41 px')
       expect(row.textContent).toContain('100.3 mm')
+      expect(within(poseCard()).getByRole('heading').textContent).toBe('Measured on this unit')
+      expect(poseCard().textContent).toContain(`Bench · made ${stamp(kept.createdAt)}`)
+      expect(query('Download the position the unit uses')).toBeNull()
 
       fireEvent.click(within(row).getByRole('button', { name: 'Download Bench' }))
       expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose kept']])
+    })
+
+    it("says what the firmware's entry is for a position", () => {
+      show({ inUse: { ...measured, canReset: true }, closed: true, session: session() })
+
+      const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
+      expect(within(card).getByRole('listitem', { name: /Shipped with the firmware/ }).textContent).toContain('The position the firmware was built with')
     })
   })
 })
