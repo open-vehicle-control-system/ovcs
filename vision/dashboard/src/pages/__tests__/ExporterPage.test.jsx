@@ -70,9 +70,9 @@ describe('ExporterPage', () => {
     expect(screen.getByText('Recording').closest('.ovcs-status--ok')).not.toBeNull()
   })
 
-  it('opens the pages of the ROS 2 exporter and the API', () => {
-    render(<ExporterPage id="ros2" />)
-    expect(screen.getByRole('heading', { name: 'ROS 2' })).toBeTruthy()
+  it('opens the pages of the ROS 2 · Zenoh exporter and the API', () => {
+    render(<ExporterPage id="ros2_zenoh" />)
+    expect(screen.getByRole('heading', { name: 'ROS 2 · Zenoh' })).toBeTruthy()
 
     render(<ExporterPage id="api" />)
     expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()

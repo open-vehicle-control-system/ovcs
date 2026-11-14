@@ -26,7 +26,7 @@ defmodule VisionApiWeb.ParametersCase do
     def config(_arm) do
       %VisionCore.Config{
         ros2: [zenoh_endpoint_ip: "127.0.0.1", node_name: "vision_test"],
-        exporters: [{VisionCore.Ros2.Exporter, detections: []}]
+        exporters: [{VisionCore.Ros2.ZenohExporter, detections: []}]
       }
     end
   end

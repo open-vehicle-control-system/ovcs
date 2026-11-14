@@ -7,7 +7,7 @@ defmodule VisionCore.Stereo.Sync do
 
   `VisionCore.Stereo.Pairer` measures it on every frame its cameras
   deliver, for `VisionCore.Status`; the ROS 2 exporter's diagnostics
-  (`VisionCore.Ros2.Exporter.Diagnostics`) keep a measurement of their
+  (`VisionCore.Ros2.ZenohExporter.Diagnostics`) keep a measurement of their
   own.
   """
 

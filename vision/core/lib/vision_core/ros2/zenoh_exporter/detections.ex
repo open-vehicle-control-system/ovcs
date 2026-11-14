@@ -1,7 +1,7 @@
-defmodule VisionCore.Ros2.Exporter.Detections do
+defmodule VisionCore.Ros2.ZenohExporter.Detections do
   @moduledoc """
   The ROS 2 messages of the detections of one detection pipeline
-  (`VisionCore.Detection.Pipeline`), which `VisionCore.Ros2.Exporter`
+  (`VisionCore.Detection.Pipeline`), which `VisionCore.Ros2.ZenohExporter`
   publishes: a `visualization_msgs/MarkerArray` (what Foxglove's 3D
   panel renders), a `vision_msgs/Detection3DArray` (what nav2 will
   consume), and a 2D overlay on the left raw image.

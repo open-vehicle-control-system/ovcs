@@ -8,7 +8,7 @@ import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useStatus } from '../stores/status.js'
 import { BUTTON } from '../styles.js'
 
-const OWN_PAGES = { ros2: Ros2Page, api: ApiPage }
+const OWN_PAGES = { ros2_zenoh: Ros2Page, api: ApiPage }
 
 const TONES = { ok: 'ok', warning: 'error', off: 'error' }
 
@@ -139,7 +139,7 @@ function GenericExporterPage({ id }) {
   )
 }
 
-/** The page of the exporter `id`: its own for ROS 2 and the API, the generic one for the others. */
+/** The page of the exporter `id`: its own for ROS 2 · Zenoh and the API, the generic one for the others. */
 export default function ExporterPage({ id }) {
   const Page = OWN_PAGES[id]
   return Page ? <Page /> : <GenericExporterPage key={id} id={id} />

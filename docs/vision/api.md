@@ -283,7 +283,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ro
           }
         ],
         "exporters": [
-          {"module": "VisionCore.Ros2.Exporter", "options": {"stereo": [], "detections": [], "heartbeat": []}}
+          {"module": "VisionCore.Ros2.ZenohExporter", "options": {"stereo": [], "detections": [], "heartbeat": []}}
         ],
         "preview": [],
         "jpeg": [],
@@ -301,10 +301,10 @@ A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ro
   "data": [
     {
       "type": "exporters",
-      "id": "ros2",
+      "id": "ros2_zenoh",
       "attributes": {
-        "name": "ROS 2",
-        "module": "VisionCore.Ros2.Exporter",
+        "name": "ROS 2 · Zenoh",
+        "module": "VisionCore.Ros2.ZenohExporter",
         "outputs": [
           {"name": "stereo_pair", "maxHz": null},
           {"name": "camera_frame:left", "maxHz": null},

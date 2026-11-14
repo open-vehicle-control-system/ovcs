@@ -32,7 +32,7 @@ const groups = [
 ]
 
 const exporters = [
-  { id: 'ros2', name: 'ROS 2', module: 'VisionCore.Ros2.Exporter', status: { level: 'ok', detail: 'Connected' }, outputs: [] },
+  { id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', module: 'VisionCore.Ros2.ZenohExporter', status: { level: 'ok', detail: 'Connected' }, outputs: [] },
   {
     id: 'recorder',
     name: 'Recorder',

@@ -8,7 +8,7 @@ defmodule VisionCore.Components do
   implicit defaults.
 
   The components produce the unit's outputs; what takes them out of the
-  unit, such as `VisionCore.Ros2.Exporter`, is an exporter
+  unit, such as `VisionCore.Ros2.ZenohExporter`, is an exporter
   (`VisionCore.Config`'s `:exporters`).
 
   ## Components

@@ -38,7 +38,7 @@ defmodule VisionCore.Camera.Unit do
   values are applied again.
 
   Three options describe the camera to its consumers, such as
-  `VisionCore.Ros2.Exporter`, and are not given to the driver
+  `VisionCore.Ros2.ZenohExporter`, and are not given to the driver
   (`settings/1`):
 
     * `:calibration` — its `camera_info` YAML

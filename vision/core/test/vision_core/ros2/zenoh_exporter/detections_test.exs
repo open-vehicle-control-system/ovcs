@@ -1,11 +1,11 @@
-defmodule VisionCore.Ros2.Exporter.DetectionsTest do
+defmodule VisionCore.Ros2.ZenohExporter.DetectionsTest do
   use ExUnit.Case, async: true
 
   alias Ros2Zenoh.FoxgloveMsgs.Msg.ImageAnnotations
   alias Ros2Zenoh.VisionMsgs.Msg.{Detection2DArray, Detection3DArray}
   alias Ros2Zenoh.VisualizationMsgs.Msg.{Marker, MarkerArray}
   alias VisionCore.Camera.Frame
-  alias VisionCore.Ros2.Exporter.Detections
+  alias VisionCore.Ros2.ZenohExporter.Detections
   alias VisionCore.Stereo.Pair
 
   defp pair do
