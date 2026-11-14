@@ -1,11 +1,13 @@
 defmodule VisionApiWeb.CalibrationCase do
   @moduledoc """
   Test case with a stereo unit, the target `unit`, a camera of its own,
-  the target `hq`, and their `VisionCore.Calibration.Session` running on
-  `:vision_core` without cameras: the built-in calibrations in a
-  temporary directory, the cameras' names registered, and solves and
-  commits that answer at once, a pair's commit after `{:commit, pid}` is
-  answered `:go`, a camera's telling `{:commit_camera, name}`.
+  the target `hq`, its pose, the target `hq-pose`, and their
+  `VisionCore.Calibration.Session` running on `:vision_core` without
+  cameras: the built-in calibrations in a temporary directory, no
+  built-in pose, the cameras' names registered, and solves and commits
+  that answer at once, a pair's commit after `{:commit, pid}` is answered
+  `:go`, a camera's telling `{:commit_camera, name}`, a pose's
+  `{:commit_pose, name}`.
   """
   use ExUnit.CaseTemplate
 
@@ -19,7 +21,7 @@ defmodule VisionApiWeb.CalibrationCase do
       @moduletag :tmp_dir
 
       import VisionApiWeb.CalibrationCase,
-        only: [good_samples: 0, solved_result: 0, solved_camera_result: 0]
+        only: [good_samples: 0, solved_result: 0, solved_camera_result: 0, solved_pose_result: 0]
     end
   end
 
@@ -52,7 +54,8 @@ defmodule VisionApiWeb.CalibrationCase do
           name: :hq,
           driver: Camera,
           calibration: Path.join(tmp_dir, "hq.yaml"),
-          calibration_store_dir: Path.join(tmp_dir, "camera_store")
+          calibration_store_dir: Path.join(tmp_dir, "camera_store"),
+          pose: Path.join(tmp_dir, "hq_pose.yaml")
         ]
       ]
     }
@@ -74,6 +77,11 @@ defmodule VisionApiWeb.CalibrationCase do
        solve_camera: fn _board, _size, _views -> {:ok, solved_camera_result()} end,
        commit_camera: fn _config, name, _calibration ->
          send(test_pid, {:commit_camera, name})
+         :ok
+       end,
+       solve_pose: fn _board, _cameras, _samples -> {:ok, solved_pose_result()} end,
+       commit_pose: fn _config, name, _pose ->
+         send(test_pid, {:commit_pose, name})
          :ok
        end,
        commit: fn _config, _calibrations ->
@@ -119,7 +127,24 @@ defmodule VisionApiWeb.CalibrationCase do
   def solved_camera_result,
     do: %{camera: calibration(), rms_px: 0.2, fx_px: 880.0, samples: 40}
 
-  @doc "Samples that cover enough views of the board, as either target keeps them."
+  @doc "A pose: the camera 6 cm right of the stereo left camera, 8 mm down, turned a little."
+  def pose do
+    %VisionCore.Camera.Pose{
+      rotation: [0.999, -0.02, 0.04, 0.02, 0.9998, 0.0, -0.04, 0.0, 0.9992],
+      translation: [-0.06, 0.008, 0.0]
+    }
+  end
+
+  @doc "What `VisionCore.Calibration.Solver.solve_pose/3` answers."
+  def solved_pose_result,
+    do: %{
+      pose: pose(),
+      rms_px: 0.4,
+      distance_m: VisionCore.Camera.Pose.distance_m(pose()),
+      samples: 40
+    }
+
+  @doc "Samples that cover enough views of the board, as any target keeps them."
   def good_samples do
     List.duplicate(
       %{

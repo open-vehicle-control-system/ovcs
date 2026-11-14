@@ -7,10 +7,14 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   it, `null` for one the unit did not solve, a pair's `baselineM`, and
   its `cameras`, each with its `name`, image size, intrinsics, distortion
   coefficients, `rmsPx`, and the `file` name to save its `yaml` under,
-  as the calibration in use's. Its `calibration` relationship names the
-  target it calibrates, one of the `calibrations`.
+  as the calibration in use's. A camera's pose has no camera and its
+  `pose`, as `VisionApiWeb.CalibrationJSON` renders one, with the
+  `rmsPx` of the solve that made it; `null` for any other calibration.
+  Its `calibration` relationship names the target it calibrates, one of
+  the `calibrations`.
   """
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{CalibrationJSON, JsonApi}
+  alias VisionCore.Calibration.SavedPose
 
   @distortion [:k1, :k2, :p1, :p2, :k3]
 
@@ -35,11 +39,21 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
         samples: saved.samples,
         stereoRmsPx: saved.stereo_rms_px,
         baselineM: saved.baseline_m,
-        cameras: Enum.zip_with(saved.cameras, files, &camera/2)
+        cameras: Enum.zip_with(saved.cameras, files, &camera/2),
+        pose: pose(saved.pose, files)
       },
       %{calibration: JsonApi.to_one("calibrations", saved.target)}
     )
   end
+
+  defp pose(%SavedPose{} = saved_pose, [%{file: file, yaml: yaml}]) do
+    saved_pose
+    |> SavedPose.to_pose()
+    |> CalibrationJSON.pose(file, yaml)
+    |> Map.put(:rmsPx, saved_pose.rms_px)
+  end
+
+  defp pose(nil, _files), do: nil
 
   defp board(%{board_columns: nil}), do: nil
 
