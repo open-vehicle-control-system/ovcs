@@ -28,34 +28,29 @@ function errors({ cameras, stereoRmsPx, pose }) {
   return each.length > 0 ? each.join(', ') : '–'
 }
 
-const CELL = 'border-t border-ovcs-border py-1.5 pr-4 align-middle'
+const ITEM = 'flex flex-col gap-2 py-3 first:pt-0 last:pb-0'
+const ACTIONS = 'flex flex-wrap items-center gap-2'
 
 function InUse() {
   return <OvcsBadge tone="ok">In use</OvcsBadge>
 }
 
 /** The firmware's calibration, which the unit goes back to: nothing kept is removed. */
-function FirmwareRow({ inUse, busy, onUse }) {
+function FirmwareItem({ inUse, busy, onUse }) {
   return (
-    <tr>
-      <th scope="row" className={`${CELL} font-medium`}>
-        Shipped with the firmware
-      </th>
-      <td className={CELL} />
-      <td className={CELL} />
-      <td className={CELL} />
-      <td className={`${CELL} pr-0`}>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {inUse ? (
-            <InUse />
-          ) : (
-            <button type="button" disabled={busy} aria-label="Use the calibration shipped with the firmware" onClick={onUse} className={BUTTON}>
-              Use
-            </button>
-          )}
+    <li aria-label="Shipped with the firmware" className={ITEM}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="font-medium">Shipped with the firmware</span>
+        {inUse ? <InUse /> : null}
+      </div>
+      {inUse ? null : (
+        <div className={ACTIONS}>
+          <button type="button" disabled={busy} aria-label="Use the calibration shipped with the firmware" onClick={onUse} className={BUTTON}>
+            Use
+          </button>
         </div>
-      </td>
-    </tr>
+      )}
+    </li>
   )
 }
 
@@ -86,7 +81,7 @@ function Name({ kept, busy }) {
 
   if (!editing)
     return (
-      <span ref={name} tabIndex={-1} className={`flex flex-wrap items-center gap-2 rounded ${FOCUS}`}>
+      <span ref={name} tabIndex={-1} className={`flex min-w-0 flex-wrap items-center gap-x-2 break-words rounded font-medium ${FOCUS}`}>
         {kept.name}
         <button ref={renameButton} type="button" disabled={busy} aria-label={`Rename ${kept.name}`} onClick={() => setDraft(kept.name)} className={`rounded text-xs text-ovcs-muted underline hover:text-ovcs-text ${FOCUS}`}>
           Rename
@@ -116,7 +111,7 @@ function Name({ kept, busy }) {
         onKeyDown={(event) => {
           if (event.key === 'Escape') setDraft(null)
         }}
-        className={`min-h-8 w-56 rounded border border-ovcs-border bg-ovcs-bg px-2 font-normal ${FOCUS}`}
+        className={`min-h-8 w-56 min-w-0 max-w-full rounded border border-ovcs-border bg-ovcs-bg px-2 font-normal ${FOCUS}`}
       />
       <button type="submit" className={BUTTON}>
         Save
@@ -144,8 +139,18 @@ function distance(kept, pair) {
   return kept.pose ? `${formatNumber(kept.pose.distanceMm)} mm` : ''
 }
 
+// A figure of a kept calibration, its label beside its value.
+function Fact({ label, children }) {
+  return (
+    <>
+      <dt className="text-xs text-ovcs-muted">{label}</dt>
+      <dd className="min-w-0 break-words tabular-nums">{children}</dd>
+    </>
+  )
+}
+
 /** A kept calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. */
-function Row({ kept, pair, busy, firmware }) {
+function Item({ kept, distanceLabel, pair, busy, firmware }) {
   const noWayBack = kept.inForce && !firmware
   const use = useCalibration((state) => state.useSaved)
   const remove = useCalibration((state) => state.deleteSaved)
@@ -163,44 +168,43 @@ function Row({ kept, pair, busy, firmware }) {
   const downloadable = kept.pose ? kept.pose.yaml : kept.cameras.every((camera) => camera.yaml)
 
   return (
-    <tr>
-      <th scope="row" className={`${CELL} font-medium`}>
+    <li aria-label={kept.name} className={ITEM}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <Name kept={kept} busy={busy} />
-      </th>
-      <td className={`${CELL} text-ovcs-muted`}>
-        {stamp(kept.createdAt)}
-        <span className="block text-xs">{ORIGINS[kept.origin] ?? kept.origin}</span>
-      </td>
-      <td className={`${CELL} tabular-nums`}>{errors(kept)}</td>
-      <td className={`${CELL} tabular-nums`}>{distance(kept, pair)}</td>
-      <td className={`${CELL} pr-0`}>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {kept.inForce ? (
-            <InUse />
-          ) : (
-            <button type="button" disabled={busy} aria-label={`Use ${kept.name}`} onClick={() => use(kept.id)} className={BUTTON}>
-              Use
-            </button>
-          )}
-          {downloadable ? (
-            <button type="button" aria-label={`Download ${kept.name}`} onClick={download} className={BUTTON}>
-              Download
-            </button>
-          ) : null}
-          <button
-            type="button"
-            disabled={busy || noWayBack}
-            title={noWayBack ? NO_FIRMWARE : undefined}
-            aria-label={`Delete ${kept.name}`}
-            onClick={confirmRemove}
-            className={BUTTON}
-          >
-            Delete
+        {kept.inForce ? <InUse /> : null}
+      </div>
+      <dl className="grid grid-cols-[minmax(0,8rem)_minmax(0,1fr)] items-baseline gap-x-4 gap-y-1 text-sm">
+        <Fact label="Made">
+          {stamp(kept.createdAt)}
+          <span className="block text-xs text-ovcs-muted">{ORIGINS[kept.origin] ?? kept.origin}</span>
+        </Fact>
+        <Fact label="Errors (reprojection RMS)">{errors(kept)}</Fact>
+        {distanceLabel ? <Fact label={distanceLabel}>{distance(kept, pair)}</Fact> : null}
+      </dl>
+      <div className={ACTIONS}>
+        {kept.inForce ? null : (
+          <button type="button" disabled={busy} aria-label={`Use ${kept.name}`} onClick={() => use(kept.id)} className={BUTTON}>
+            Use
           </button>
-          {confirmation}
-        </div>
-      </td>
-    </tr>
+        )}
+        {downloadable ? (
+          <button type="button" aria-label={`Download ${kept.name}`} onClick={download} className={BUTTON}>
+            Download
+          </button>
+        ) : null}
+        <button
+          type="button"
+          disabled={busy || noWayBack}
+          title={noWayBack ? NO_FIRMWARE : undefined}
+          aria-label={`Delete ${kept.name}`}
+          onClick={confirmRemove}
+          className={BUTTON}
+        >
+          Delete
+        </button>
+        {confirmation}
+      </div>
+    </li>
   )
 }
 
@@ -217,40 +221,20 @@ export default function Saved() {
   if (!calibration) return null
 
   const pair = calibration.kind === 'stereo'
-  const distanceHeading = pair ? 'Distance between cameras (baseline)' : calibration.kind === 'pose' ? 'Distance to the left camera' : ''
+  const distanceLabel = pair ? 'Distance between cameras (baseline)' : calibration.kind === 'pose' ? 'Distance to the left camera' : null
   const firmware = calibration.source === 'builtIn' || calibration.canReset
 
   return (
-    <Section title="Calibrations kept on the unit">
+    <Section title="Calibrations kept on the unit" hint={<Hint hint={ORIGIN_HINT} />} className="border-t border-ovcs-border pt-4">
       {kept.length === 0 && !firmware ? (
         <p className="text-sm text-ovcs-muted">None yet: each calibration made is kept here, to name and to use again.</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="text-xs text-ovcs-muted">
-              <tr>
-                <th className="pb-1 pr-4 font-medium">Name</th>
-                <th className="pb-1 pr-4 font-medium">
-                  <span className="inline-flex items-center gap-1">
-                    Made
-                    <Hint hint={ORIGIN_HINT} />
-                  </span>
-                </th>
-                <th className="pb-1 pr-4 font-medium">Errors (reprojection RMS)</th>
-                <th className="pb-1 pr-4 font-medium">{distanceHeading}</th>
-                <th className="pb-1 font-medium">
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {kept.map((one) => (
-                <Row key={one.id} kept={one} pair={pair} busy={busy} firmware={firmware} />
-              ))}
-              {firmware ? <FirmwareRow inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
-            </tbody>
-          </table>
-        </div>
+        <ul className="flex flex-col divide-y divide-ovcs-border text-sm">
+          {kept.map((one) => (
+            <Item key={one.id} kept={one} distanceLabel={distanceLabel} pair={pair} busy={busy} firmware={firmware} />
+          ))}
+          {firmware ? <FirmwareItem inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
+        </ul>
       )}
     </Section>
   )

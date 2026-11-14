@@ -59,7 +59,7 @@ export default function CalibrationPage() {
   }, [running])
 
   return (
-    <div className="flex min-w-0 flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
+    <div className="flex min-w-0 flex-col gap-4">
       {uncalibrated ? (
         <p className="ovcs-status ovcs-status--warn text-sm text-ovcs-warn-text">
           The unit is uncalibrated: depth starts once a calibration is applied.

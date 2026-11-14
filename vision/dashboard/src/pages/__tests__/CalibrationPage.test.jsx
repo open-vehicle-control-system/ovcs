@@ -220,7 +220,24 @@ describe('CalibrationPage', () => {
       expect(card.textContent).toContain('912.3')
       expect(card.textContent).toContain('60.1 mm')
       expect(card.textContent).toContain('1280 × 720')
-      expect(within(card).getAllByRole('row')).toHaveLength(3)
+    })
+
+    it("lists each camera's parameters in a column of its own, one distortion coefficient a line", () => {
+      show({ inUse: builtIn, session: session() })
+
+      const card = inUseCard()
+      expect(within(card).getByRole('table', { name: 'Camera parameters, in pixels' })).toBeTruthy()
+      expect(within(card).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Camera', 'left', 'right'])
+      expect(within(card).getAllByRole('rowheader').map((header) => header.textContent)).toEqual([
+        'Focal x (fx)',
+        'Focal y (fy)',
+        'Centre x (cx)',
+        'Centre y (cy)',
+        'Distortion (k1, k2, p1, p2, k3)'
+      ])
+      expect(within(card).getByRole('row', { name: /^Focal x/ }).textContent).toBe('Focal x (fx)912.3915.5')
+      const [left] = within(within(card).getByRole('row', { name: /^Distortion/ })).getAllByRole('cell')
+      expect([...left.children].map((line) => line.textContent)).toEqual(['-0.1234', '0.0567', '0.0001', '-0.0002', '0.0000'])
     })
 
     it('names a calibration stored on the unit, with its date', () => {
@@ -237,7 +254,8 @@ describe('CalibrationPage', () => {
       expect(inUseCard().textContent).toContain('Depth stays off until a calibration is made.')
       expect(labels()).toEqual(LABELS)
       expect([...inUseCard().querySelectorAll('dd')].map((value) => value.textContent)).toEqual(['–', '–', '–', '–'])
-      expect(within(inUseCard()).getByRole('row', { name: /left/ }).textContent).toBe('left–––––')
+      expect(within(inUseCard()).getByRole('row', { name: /^Focal x/ }).textContent).toBe('Focal x (fx)––')
+      expect(within(inUseCard()).getByRole('row', { name: /^Distortion/ }).textContent).toBe('Distortion (k1, k2, p1, p2, k3)––')
       expect(within(inUseCard()).queryByRole('button', { name: 'Download the calibration the unit uses' })).toBeNull()
     })
 
@@ -253,7 +271,7 @@ describe('CalibrationPage', () => {
 
   describe('the calibrations kept', () => {
     const keptCard = () => screen.getByRole('region', { name: 'Calibrations kept on the unit' })
-    const row = (name) => within(keptCard()).getByRole('row', { name })
+    const row = (name) => within(keptCard()).getByRole('listitem', { name })
 
     const kept = (attributes) => ({
       id: '7',
@@ -295,6 +313,11 @@ describe('CalibrationPage', () => {
       show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
 
       const first = row(/2026-11-14 00:28/)
+      expect([...first.querySelectorAll('dt')].map((label) => label.textContent)).toEqual([
+        'Made',
+        'Errors (reprojection RMS)',
+        'Distance between cameras (baseline)'
+      ])
       expect(first.textContent).toContain('Made on this page')
       expect(first.textContent).toContain('left 0.21 px, right 0.30 px, pair 0.34 px')
       expect(first.textContent).toContain('198.0 mm')
@@ -334,11 +357,12 @@ describe('CalibrationPage', () => {
       expect(confirm).not.toHaveBeenCalled()
     })
 
-    it('explains where a calibration was made beside the column that says it', () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+    it("explains where a calibration was made once, beside the list's heading", () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept(), found] }, session: session() })
 
-      const header = within(keptCard()).getByRole('columnheader', { name: /^Made/ })
-      fireEvent.focus(within(header).getByRole('button', { name: 'About Where it was made' }))
+      const about = within(keptCard()).getByRole('button', { name: 'About Where it was made' })
+      expect(within(keptCard()).getByRole('heading').parentElement.contains(about)).toBe(true)
+      fireEvent.focus(about)
 
       const card = screen.getByRole('tooltip')
       expect(card.textContent).toContain('Made on this page')
@@ -440,7 +464,7 @@ describe('CalibrationPage', () => {
 
     it('has no firmware row on a unit with no built-in calibration to go back to, and says so when nothing is kept', () => {
       const { unmount } = show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
-      expect(within(keptCard()).queryByRole('row', { name: /Shipped with the firmware/ })).toBeNull()
+      expect(within(keptCard()).queryByRole('listitem', { name: /Shipped with the firmware/ })).toBeNull()
       unmount()
 
       show({ inUse: none, closed: true, saved: {}, session: session() })
@@ -854,18 +878,18 @@ describe('CalibrationPage', () => {
       show({ ...both, session: session() })
 
       expect(useCalibration.getState().selected).toBe('center')
-      expect(within(inUseCard()).getByRole('row', { name: /center/ })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('columnheader', { name: 'center' })).toBeTruthy()
       expect(screen.queryByRole('heading', { level: 2 })).toBeNull()
 
       act(() => useNavigation.setState({ calibrationId: 'ovcs_mini' }))
-      expect(within(inUseCard()).getByRole('row', { name: /left/ })).toBeTruthy()
+      expect(within(inUseCard()).getByRole('columnheader', { name: 'left' })).toBeTruthy()
     })
 
     it("shows a camera's one calibration, without a baseline, and downloads its YAML", () => {
       show({ ...both, selected: 'center', session: session() })
 
-      expect(within(inUseCard()).getAllByRole('row')).toHaveLength(2)
-      expect(within(inUseCard()).getByRole('row', { name: /center/ }).textContent).toContain('880.5')
+      expect(within(inUseCard()).getAllByRole('columnheader').map((header) => header.textContent)).toEqual(['Camera', 'center'])
+      expect(within(inUseCard()).getByRole('row', { name: /^Focal x/ }).textContent).toContain('880.5')
       expect(within(inUseCard()).queryByText(/baseline/)).toBeNull()
 
       fireEvent.click(button('Download the calibration the unit uses'))
@@ -1028,8 +1052,8 @@ describe('CalibrationPage', () => {
       show({ inUse: measured, closed: true, saved: { 'center-pose': [kept] }, session: session() })
 
       const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
-      expect(within(card).getByRole('columnheader', { name: 'Distance to the left camera' })).toBeTruthy()
-      const row = within(card).getByRole('row', { name: /Bench/ })
+      const row = within(card).getByRole('listitem', { name: /Bench/ })
+      expect(within(row).getByText('Distance to the left camera', { selector: 'dt' })).toBeTruthy()
       expect(row.textContent).toContain('0.41 px')
       expect(row.textContent).toContain('100.3 mm')
 
