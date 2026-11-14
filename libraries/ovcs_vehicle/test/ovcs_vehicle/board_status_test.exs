@@ -104,4 +104,79 @@ defmodule OvcsVehicle.BoardStatusTest do
   test "lists no interface when they cannot be read" do
     assert BoardStatus.current(getifaddrs: fn -> {:error, :enotsup} end).interfaces == []
   end
+
+  describe "document/1" do
+    test "answers the board as the boards current resource" do
+      board = %BoardStatus{
+        interfaces: [%{name: "eth0", addresses: ["192.168.10.232", "2001:db8::7"]}],
+        cpu_percent: 23.4,
+        load_average: [0.52, 0.48, 0.4],
+        memory_percent: 62.5,
+        time: ~U[2026-11-11 14:53:12Z],
+        synchronized: false
+      }
+
+      assert BoardStatus.document(board) == %{
+               data: %{
+                 type: "boards",
+                 id: "current",
+                 attributes: %{
+                   interfaces: [%{name: "eth0", addresses: ["192.168.10.232", "2001:db8::7"]}],
+                   cpuPercent: 23.4,
+                   loadAverage: [0.52, 0.48, 0.4],
+                   memoryPercent: 62.5,
+                   time: "2026-11-11T14:53:12Z",
+                   clockSynchronized: false
+                 }
+               }
+             }
+    end
+
+    test "keeps each figure the board does not report, as null" do
+      board = %BoardStatus{
+        interfaces: [],
+        cpu_percent: nil,
+        load_average: nil,
+        memory_percent: nil,
+        time: ~U[1970-01-01 00:03:05Z],
+        synchronized: nil
+      }
+
+      assert BoardStatus.document(board).data.attributes == %{
+               interfaces: [],
+               cpuPercent: nil,
+               loadAverage: nil,
+               memoryPercent: nil,
+               time: "1970-01-01T00:03:05Z",
+               clockSynchronized: nil
+             }
+    end
+
+    test "writes the time in UTC whatever the zone it is given in" do
+      brussels = %DateTime{
+        year: 2026,
+        month: 11,
+        day: 11,
+        hour: 15,
+        minute: 53,
+        second: 12,
+        microsecond: {0, 0},
+        time_zone: "Europe/Brussels",
+        zone_abbr: "CET",
+        utc_offset: 3600,
+        std_offset: 0
+      }
+
+      board = %BoardStatus{
+        interfaces: [],
+        cpu_percent: nil,
+        load_average: nil,
+        memory_percent: nil,
+        time: brussels,
+        synchronized: true
+      }
+
+      assert BoardStatus.document(board).data.attributes.time == "2026-11-11T14:53:12Z"
+    end
+  end
 end

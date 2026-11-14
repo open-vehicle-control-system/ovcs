@@ -330,16 +330,35 @@ describe('useOvcsFirmware after a failed read', () => {
 
 describe('useOvcsBoard', () => {
   const flush = () => act(() => Promise.resolve())
+  const boardDocument = (attributes) => ({ data: { type: 'boards', id: 'current', attributes } })
+
+  test("reads the board from the GET /api/board document, every attribute with its clock's offset", async () => {
+    vi.useFakeTimers({ now: Date.parse('2026-11-11T15:00:00Z') })
+    try {
+      const attributes = {
+        interfaces: [{ name: 'eth0', addresses: ['192.168.10.232'] }],
+        cpuPercent: 23.4,
+        loadAverage: [0.52, 0.48, 0.4],
+        memoryPercent: 62.5,
+        time: '2026-11-11T14:59:50Z',
+        clockSynchronized: null
+      }
+      const fetchBoard = async () => boardDocument(attributes)
+      const { result } = renderHook(() => useOvcsBoard(fetchBoard, true, 1_000))
+      await flush()
+      expect(result.current).toEqual({ ...attributes, offsetMs: -10_000 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
   test('reads the board while connected, every interval, with the offset of its clock', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-11-11T15:00:00Z') })
     try {
       // The board's clock runs 10 s behind this browser's.
-      const fetchBoard = vi.fn(async () => ({
-        interfaces: [],
-        time: new Date(Date.now() - 10_000).toISOString(),
-        clockSynchronized: true
-      }))
+      const fetchBoard = vi.fn(async () =>
+        boardDocument({ interfaces: [], time: new Date(Date.now() - 10_000).toISOString(), clockSynchronized: true })
+      )
       const { result, rerender } = renderHook(({ connected }) => useOvcsBoard(fetchBoard, connected, 1_000), {
         initialProps: { connected: false }
       })
@@ -378,7 +397,7 @@ describe('useOvcsBoard', () => {
       await act(() => vi.advanceTimersByTimeAsync(5_000))
       expect(fetchBoard).toHaveBeenCalledTimes(1)
 
-      answers[0]({ interfaces: [], time: new Date().toISOString() })
+      answers[0](boardDocument({ interfaces: [], time: new Date().toISOString() }))
       await act(() => vi.advanceTimersByTimeAsync(999))
       expect(fetchBoard).toHaveBeenCalledTimes(1)
       await act(() => vi.advanceTimersByTimeAsync(1))

@@ -239,7 +239,7 @@ The `preview:depth` channel pushes the range to its clients on every change; see
 }
 ```
 
-`GET /api/board` returns the board the unit runs on:
+`GET /api/board` returns the board the unit runs on, in the same document as the VMS's `GET /api/board` (`OvcsVehicle.BoardStatus.document/1`):
 
 - **Interfaces.** Each network interface that is up, with a device and an address, with its addresses. Loopback, container bridges and IPv6 link-local addresses are left out.
 - **Load.** The CPU's busy share over half a second, the 1, 5 and 15 minute load averages, and the share of the memory in use.

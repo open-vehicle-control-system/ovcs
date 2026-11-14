@@ -43,7 +43,13 @@ const visit = (path) => {
   useNavigation.setState({ path })
 }
 
-const board = { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true }
+const board = {
+  data: {
+    type: 'boards',
+    id: 'current',
+    attributes: { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true }
+  }
+}
 
 describe('App', () => {
   beforeEach(() => {

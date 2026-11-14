@@ -80,6 +80,14 @@ under `:ovcs_vehicle, :firmware`, the Nerves system the board's
 `/usr/lib/os-release` names, and the vehicle's `name/0`. The VMS, the
 vision unit and the bus gateway serve it at `GET /api/firmware`.
 
+### `OvcsVehicle.BoardStatus`
+
+The board a firmware runs on, for the dashboards' top bar: `current/1`
+answers its network interfaces with their addresses, its CPU and memory
+load and its clock, and `document/1` renders it as the one JSON:API
+document, the `boards` resource `current`, that the VMS and the vision
+unit serve at `GET /api/board`.
+
 Cross-firmware messaging uses `OvcsBus.Cluster` (in `ovcs_bus`) —
 each firmware's `Application` supervises one at boot and the BEAMs
 form a distributed Erlang mesh. No per-vehicle wiring is needed in

@@ -19,10 +19,9 @@ export async function fetchFirmware() {
   return document.data.attributes
 }
 
-/** The board the unit runs on: its `interfaces`, each a `name` with its `addresses`, its clock's `time` and `clockSynchronized`. */
-export async function fetchBoard() {
-  const document = await request('board')
-  return document.data.attributes
+/** The board the unit runs on, as the `GET /api/board` document every API serves, which `useOvcsBoard` reads. */
+export function fetchBoard() {
+  return request('board')
 }
 
 /** Sets the depth video's colour range, in metres, 0 for infinitely far, and answers the one in force. */

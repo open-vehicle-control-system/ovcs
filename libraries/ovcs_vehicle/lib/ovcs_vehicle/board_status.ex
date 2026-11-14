@@ -13,6 +13,8 @@ defmodule OvcsVehicle.BoardStatus do
   An interface without a device in `/sys/class/net`, such as loopback, a
   container bridge or a tunnel, is left out.
 
+  `document/1` is the one JSON document every API serves at `GET /api/board`.
+
   Options, for tests: `:getifaddrs`, `:cpu_times`, `:loadavg`, `:meminfo`, `:now` and
   `:synchronized?`, functions of no argument, `:device?`, a function of an
   interface's name, and `:sleep`, of the sample's milliseconds.
@@ -58,6 +60,30 @@ defmodule OvcsVehicle.BoardStatus do
       memory_percent: memory_percent(meminfo.()),
       time: DateTime.truncate(now.(), :second),
       synchronized: synchronized?.()
+    }
+  end
+
+  @doc """
+  The board as the JSON:API document every API answers to `GET /api/board`:
+  the `boards` resource `current`, with `interfaces`, `cpuPercent`,
+  `loadAverage`, `memoryPercent`, `time` in ISO 8601 UTC and
+  `clockSynchronized`, `nil` where the board does not report them.
+  """
+  @spec document(t()) :: map()
+  def document(%__MODULE__{} = board) do
+    %{
+      data: %{
+        type: "boards",
+        id: "current",
+        attributes: %{
+          interfaces: board.interfaces,
+          cpuPercent: board.cpu_percent,
+          loadAverage: board.load_average,
+          memoryPercent: board.memory_percent,
+          time: board.time |> DateTime.shift_zone!("Etc/UTC") |> DateTime.to_iso8601(),
+          clockSynchronized: board.synchronized
+        }
+      }
     }
   end
 
