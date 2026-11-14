@@ -66,6 +66,11 @@ first, evidence before a claim, small reviewed PRs) is in
   a variable's what it holds, with its unit when it has one
   (`min_speed_m_s`, `timeout_ms`). When code needs a comment to be
   understood, first rename, or extract a function whose name says it.
+- **A module is named in the singular** for the one thing it is or
+  handles (`VisionCore.Camera`, `VisionCore.Mcap.Record`). A plural
+  name is for a module that holds or runs a set of things: a registry,
+  a supervisor, a store (`VisionCore.Outputs`, `VisionCore.Exporters`,
+  `VisionCore.Parameters`).
 - **No vague names.** No single-letter variables outside a short
   anonymous function (`&(&1 * 2)`, `fn x -> x * 2 end`), and no names
   that fit anything: `data`, `value`, `result`, `res`, `tmp`, `info`,
