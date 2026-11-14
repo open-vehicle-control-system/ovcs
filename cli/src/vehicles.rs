@@ -130,6 +130,18 @@ pub fn local_sname(vehicle_dir: &str, role: &str) -> String {
     node_prefix(vehicle_dir, role)
 }
 
+/// The host part of a host-run BEAM's node name, `hostname -s` as
+/// `--sname` takes it; `localhost` when it cannot be read.
+pub fn local_hostname() -> String {
+    Command::new("hostname")
+        .arg("-s")
+        .output()
+        .ok()
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|name| name.trim().to_string())
+        .unwrap_or_else(|| "localhost".to_string())
+}
+
 /// Hyphenated prefix of every local sname belonging to `vehicle_dir`,
 /// e.g. `ovcs-mini-`.
 pub fn local_sname_prefix(vehicle_dir: &str) -> String {
@@ -150,6 +162,19 @@ pub fn has_infotainment(vehicle: &Vehicle) -> Result<bool> {
 vehicle = {module}
 Code.ensure_loaded(vehicle)
 IO.write(if function_exported?(vehicle, :infotainment, 0), do: "yes", else: "no")
+"#,
+        module = vehicle.module,
+    );
+    Ok(matches!(run_snippet(&vehicle.path, &snippet)?, Some(answer) if answer.trim() == "yes"))
+}
+
+/// Whether the vehicle declares its simulated hardware, `simulator/0`.
+pub fn declares_simulator(vehicle: &Vehicle) -> Result<bool> {
+    let snippet = format!(
+        r#"
+vehicle = {module}
+Code.ensure_loaded(vehicle)
+IO.write(if function_exported?(vehicle, :simulator, 0), do: "yes", else: "no")
 "#,
         module = vehicle.module,
     );

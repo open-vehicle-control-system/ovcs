@@ -212,13 +212,7 @@ fn find_local_beams(vehicle_dir: &str) -> Vec<(String, String)> {
     };
     let stdout = String::from_utf8_lossy(&epmd.stdout);
 
-    let hostname = Command::new("hostname")
-        .arg("-s")
-        .output()
-        .ok()
-        .and_then(|output| String::from_utf8(output.stdout).ok())
-        .map(|name| name.trim().to_string())
-        .unwrap_or_else(|| "localhost".to_string());
+    let hostname = vehicles::local_hostname();
 
     local_beams_for(vehicle_dir, &epmd_snames(&stdout))
         .into_iter()

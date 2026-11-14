@@ -128,6 +128,9 @@ another terminal for logs + IEx.")]
         /// Don't auto-start firmware dev add-ons (dashboards, …); boot only the BEAMs.
         #[arg(long)]
         no_addons: bool,
+        /// Start the vehicle's simulated hardware (`simulator/0`) first and boot the vehicle once it answers.
+        #[arg(long)]
+        simulate: bool,
     },
     /// Attach a split TUI to a running vehicle
     #[command(long_about = "\
@@ -312,7 +315,11 @@ fn main() -> Result<()> {
                 force,
             } => commands::vehicle_host_keys::import(vehicle, from, force),
         },
-        Commands::Run { vehicle, no_addons } => commands::run::run(vehicle, no_addons),
+        Commands::Run {
+            vehicle,
+            no_addons,
+            simulate,
+        } => commands::run::run(vehicle, no_addons, simulate),
         Commands::Attach { vehicle } => commands::attach::run(vehicle),
         Commands::Connect {
             host,

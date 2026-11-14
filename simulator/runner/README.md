@@ -6,7 +6,7 @@ The vehicle declares its simulated hardware in `simulator/0`, typed `OvcsVehicle
 
 ## Run it
 
-Create the vehicle's vcan interfaces (`./ovcs can setup <vehicle>`), compile the vehicle (`mix compile` in `vehicles/<vehicle>/`), then:
+`./ovcs run <vehicle> --simulate` starts the runner, then the vehicle's BEAMs once it is ready. To run it on its own, create the vehicle's vcan interfaces (`./ovcs can setup <vehicle>`), compile the vehicle (`mix compile` in `vehicles/<vehicle>/`), then:
 
 ```sh
 VEHICLE=OvcsMini mix run --no-halt
@@ -14,13 +14,7 @@ VEHICLE=OvcsMini mix run --no-halt
 
 `CAN_NETWORK_MAPPINGS` overrides the vehicle's host mapping, as for the other firmwares.
 
-Once the simulated components run and emit their frames, the runner prints exactly this line on standard output:
-
-```
-OVCS simulator ready
-```
-
-Start the VMS after it.
+Once the simulated components run and emit their frames, `SimulatorRunner.ready?/0` returns true. Start the VMS after it, as `./ovcs run <vehicle> --simulate` does by polling it over Erlang RPC.
 
 ## Testing
 
