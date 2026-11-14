@@ -74,7 +74,6 @@ defmodule VisionCore.Calibration.Solver do
     case Evision.getOptimalNewCameraMatrix(k, d, size, 0) do
       {:error, _} = error -> error
       {matrix, _region} -> {:ok, with_zero_column(flatten(matrix))}
-      matrix -> {:ok, with_zero_column(flatten(matrix))}
     end
   end
 
@@ -143,8 +142,13 @@ defmodule VisionCore.Calibration.Solver do
            flags: Evision.Constant.cv_CALIB_FIX_INTRINSIC(),
            criteria: {Evision.Constant.cv_EPS() + Evision.Constant.cv_MAX_ITER(), 1, 1.0e-5}
          ) do
-      {rms, k1, d1, k2, d2, r, t, _e, _f, _errors} -> {:ok, {rms, k1, d1, k2, d2, r, t}}
-      {:error, _} = error -> error
+      {:error, _} = error ->
+        error
+
+      # The essential and fundamental matrices follow, then the per-view errors where OpenCV gives them.
+      solved when tuple_size(solved) >= 7 ->
+        [rms, k1, d1, k2, d2, r, t | _rest] = Tuple.to_list(solved)
+        {:ok, {rms, k1, d1, k2, d2, r, t}}
     end
   end
 

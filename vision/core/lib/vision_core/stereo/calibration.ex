@@ -434,8 +434,6 @@ defmodule VisionCore.Stereo.Calibration do
     end
   end
 
-  defp take(nil, _prefix, _opts, _previous), do: :ok
-
   defp take({:reload, paths, config}, prefix, opts, previous) do
     reload = Keyword.get(opts, :reload, &default_reload(prefix, &1))
 
