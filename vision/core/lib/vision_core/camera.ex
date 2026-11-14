@@ -62,6 +62,16 @@ defmodule VisionCore.Camera do
   @callback outputs(keyword()) :: {:ok, [VisionCore.Camera.Output.t()]} | {:error, String.t()}
 
   @doc """
+  The settings of a camera given `opts`, the options it is started with,
+  that are fixed at start, by name, each an integer, a float, a boolean,
+  a string, an atom or a `{width, height}` size: a camera of its own
+  lists them among its parameters, read-only
+  (`VisionCore.Camera.Parameters`). Optional: a driver without it lists
+  none.
+  """
+  @callback fixed_settings(keyword()) :: keyword()
+
+  @doc """
   For a driver that captures both cameras of a stereo pair together:
   `:pair`, the `:stereo` component's options it takes once for both
   cameras, beside `:width`, `:height` and `:fps`, and `:side`, those each
@@ -74,6 +84,7 @@ defmodule VisionCore.Camera do
   @callback pair_options() :: %{pair: [atom()], side: [atom()]}
 
   @optional_callbacks pair_options: 0,
+                      fixed_settings: 1,
                       set_controls: 2,
                       controls: 1,
                       shared_controls?: 0,

@@ -171,6 +171,19 @@ describe('Pipelines', () => {
     expect(screen.queryByText('No detector on this unit')).toBeNull()
   })
 
+  it('lists a camera of its own as a pipeline of one box, and still the greyed detection line without a detector', () => {
+    useParameters.setState({
+      groups: [
+        group('cameras', 'Cameras', 1, { role: 'source' }),
+        group('center.camera', 'Camera', 50, { pipeline: 'center', role: 'source' })
+      ]
+    })
+    render(<Pipelines />)
+
+    expect(within(screen.getByRole('list', { name: 'Center' })).getAllByRole('button')).toHaveLength(1)
+    expect(screen.getByText('No detector on this unit')).toBeTruthy()
+  })
+
   it('shows no pipeline before the stages have loaded', () => {
     useParameters.setState({ groups: [] })
     render(<Pipelines />)

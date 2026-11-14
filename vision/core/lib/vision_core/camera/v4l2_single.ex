@@ -343,6 +343,37 @@ defmodule VisionCore.Camera.V4L2Single do
     end
   end
 
+  @doc """
+  The camera's settings fixed at start, from `opts`: its `:fps`, its
+  sensor mode and each of its outputs as `output_<name>`, with its size,
+  its format and what its format takes. None of the outputs when they
+  cannot be made.
+  """
+  @impl VisionCore.Camera
+  def fixed_settings(opts) do
+    outputs =
+      case outputs(opts) do
+        {:ok, outputs} -> outputs
+        {:error, _message} -> []
+      end
+
+    [fps: Keyword.get(opts, :fps, @default_fps), sensor_mode: shorthand_size(:full, opts)] ++
+      for output <- Output.port_order(outputs), do: {:"output_#{output.name}", describe(output)}
+  end
+
+  defp describe(%Output{} = output) do
+    ["#{output.width}x#{output.height} #{output.format}" | format_settings(output)]
+    |> Kernel.++(if output.send, do: [], else: ["not sent"])
+    |> Enum.join(", ")
+  end
+
+  defp format_settings(%Output{format: :jpeg, quality: quality}), do: ["quality #{quality}"]
+
+  defp format_settings(%Output{format: :h264} = output),
+    do: ["#{output.bitrate_kbps} kbps", "a key frame every #{output.keyframe_interval}"]
+
+  defp format_settings(%Output{}), do: []
+
   defp processors(opts), do: %{cpu: [shorthand_size(:full, opts), shorthand_size(:half, opts)]}
 
   defp shorthand_size(output, opts) do

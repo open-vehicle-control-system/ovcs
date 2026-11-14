@@ -17,6 +17,14 @@ defmodule VisionCore.Camera.UnitTest do
 
   defp config(components), do: %VisionCore.Config{components: components}
 
+  defp child_ids(unit), do: unit |> Supervisor.which_children() |> Enum.map(&elem(&1, 0))
+
+  test "a driver without runtime controls is started alone" do
+    unit = start_supervised!({Unit, name: :usb, driver: Driver, test: self()})
+
+    assert child_ids(unit) == [Driver]
+  end
+
   test "starts its driver with the camera's options and its name's text as the label" do
     start_supervised!({Unit, name: :usb, driver: Driver, device: "/dev/video0", test: self()})
 
