@@ -57,7 +57,7 @@ Next to them, the **Distance between cameras (baseline)** and the **Focal length
 
 A unit with a camera of its own, such as the OVCS1 reference vehicle's center camera, lists it in the menu's **Calibration** section, under **Stereo cameras**, as **Center camera** on the OVCS1. Open it, then follow the same steps: the page shows that camera alone, a view becomes a sample when the camera sees the board, and the result has one reprojection error and no baseline.
 
-The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once. The camera's detection and segmentation pipelines read the calibration when they start, so restart the unit for them to take it.
+The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once, and the camera's detection and segmentation pipelines take it from their next image on, without a restart.
 
 The camera's pose relative to the stereo pair is a separate file, its `pose:`, which the page does not write.
 

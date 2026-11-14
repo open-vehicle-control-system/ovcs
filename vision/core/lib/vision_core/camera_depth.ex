@@ -2,7 +2,7 @@ defmodule VisionCore.CameraDepth do
   @moduledoc """
   The stereo depth a pipeline on a camera of its own
   (`source: {:camera, name}`) takes: the camera's calibration and pose,
-  read once at start, its lens for each frame size, and the stereo pairs
+  read at start and when its owner reloads them (`reload/2`), its lens for each frame size, and the stereo pairs
   matched with its frames. `VisionCore.Detection.CameraSource` places a
   detection pipeline's boxes with it, and `VisionCore.Segmentation.Pipeline`
   classes a segmentation pipeline's points with it.
@@ -166,6 +166,28 @@ defmodule VisionCore.CameraDepth do
       | calibration: read(depth, :calibration, settings.calibration_path),
         pose: read(depth, :pose, settings.pose_path)
     }
+  end
+
+  @doc """
+  `depth` with its camera's calibration and pose read again from
+  `config`, as `new/5` reads them, and the lenses made from the previous
+  calibration dropped: what a calibration committed while the owner runs
+  takes. The pairs kept stay.
+  """
+  @spec reload(t(), VisionCore.Config.t()) :: t()
+  def reload(depth, config) do
+    case Enum.find(Unit.settings(config), &(&1.name == depth.name)) do
+      nil ->
+        depth
+
+      settings ->
+        %{
+          depth
+          | calibration: read(depth, :calibration, settings.calibration_path),
+            pose: read(depth, :pose, settings.pose_path),
+            lenses: %{}
+        }
+    end
   end
 
   @doc "`depth`, keeping the pairs captured up to `pair_wait_ms` before the newest one."
