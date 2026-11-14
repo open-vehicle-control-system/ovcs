@@ -1,17 +1,18 @@
 import Section from './Section.jsx'
+import { BASELINE, CAPTION, Figures, INDENTED_LABEL, LABEL, RULE, VALUE } from './Figures.jsx'
+import { downloadFiles, yamlFiles } from './files.js'
 import { poseFacts } from './pose.js'
-import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
-import { downloadYaml } from '../../services/calibration.js'
+import { selectedCalibration, selectedId, useCalibration } from '../../stores/calibration.js'
 import { formatNumber, millimetres } from '../../status.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
 
 const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso))
 
 // Where the position the unit uses comes from, as the card's title, then what that means.
-function poseStatement({ source, storedAt }) {
+function poseStatement({ source }) {
   if (source === 'stored')
     return {
-      title: storedAt ? `Measured on this unit, ${stamp(storedAt)}` : 'Measured on this unit',
+      title: 'Measured on this unit',
       detail: 'The unit uses the position measured on it, in place of the one shipped with the firmware.'
     }
   if (source === 'builtIn')
@@ -26,11 +27,11 @@ function poseStatement({ source, storedAt }) {
 }
 
 // What the unit uses, as the card's title, then what that means.
-function statement({ source, storedAt, kind }) {
-  if (kind === 'pose') return poseStatement({ source, storedAt })
+function statement({ source, kind }) {
+  if (kind === 'pose') return poseStatement({ source })
   if (source === 'stored')
     return {
-      title: storedAt ? `Calibrated on this unit, ${stamp(storedAt)}` : 'Calibrated on this unit',
+      title: 'Calibrated on this unit',
       detail: 'The unit uses the calibration made on it, in place of the one shipped with the firmware.'
     }
   if (source === 'builtIn')
@@ -44,60 +45,59 @@ function statement({ source, storedAt, kind }) {
   }
 }
 
+// Which stored calibration is in use: the one kept by its name and when it was made, else when it was stored.
+function storedName({ source, storedAt }, inForce) {
+  if (source !== 'stored') return null
+  if (inForce) return `${inForce.name} · made ${stamp(inForce.createdAt)}`
+  return storedAt ? stamp(storedAt) : null
+}
+
 const corrected = (cameras) => cameras.some((camera) => camera.distortion?.some((coefficient) => coefficient !== 0))
 
 const sized = (camera) => (camera?.imageWidth == null ? '–' : `${camera.imageWidth} × ${camera.imageHeight} px`)
 
 const distortion = (cameras) => (cameras[0]?.distortion == null ? '–' : corrected(cameras) ? 'Corrected' : 'Not corrected')
 
-// The figures a person can check against the hardware, in the same places for every calibration: the baseline, which
-// only a pair has, comes last.
+// The figures a person can check against the hardware; the baseline, which only a pair has, comes last.
 function facts(inUse) {
   const [first] = inUse.cameras
-  const focal = inUse.rectifiedFx ?? first?.fx
   return [
     { label: 'Image size', value: sized(first) },
-    { label: 'Focal length (fx)', value: focal == null ? '–' : `${formatNumber(focal)} px` },
     { label: 'Lens distortion', value: distortion(inUse.cameras) },
-    ...(inUse.kind === 'stereo' ? [{ label: 'Distance between cameras (baseline)', value: millimetres(inUse.baselineM) }] : [])
+    ...(inUse.kind === 'stereo' ? [{ label: BASELINE, value: millimetres(inUse.baselineM) }] : [])
   ]
 }
 
-const COLUMNS = ['Focal x (fx)', 'Focal y (fy)', 'Centre x (cx)', 'Centre y (cy)']
+const poseFigures = (pose) => poseFacts(pose).map(({ label, value, parts }) => ({ label, value: parts ?? value }))
 
-function CameraRow({ camera }) {
-  return (
-    <tr className="border-t border-ovcs-border">
-      <th scope="row" className="py-1 pr-4 font-medium capitalize">
-        {camera.name}
-      </th>
-      {[camera.fx, camera.fy, camera.cx, camera.cy].map((value, index) => (
-        <td key={COLUMNS[index]} className="py-1 pr-4 text-right">
-          {formatNumber(value)}
-        </td>
-      ))}
-      <td className="py-1 font-mono text-xs">
-        {camera.distortion ? camera.distortion.map((coefficient) => formatNumber(coefficient, 4)).join(', ') : '–'}
-      </td>
-    </tr>
-  )
-}
+const PARAMETERS = [
+  { label: 'Focal x (fx)', of: (camera) => camera.fx },
+  { label: 'Focal y (fy)', of: (camera) => camera.fy },
+  { label: 'Centre x (cx)', of: (camera) => camera.cx },
+  { label: 'Centre y (cy)', of: (camera) => camera.cy }
+]
+
+const COEFFICIENTS = ['k1', 'k2', 'p1', 'p2', 'k3']
+
+const FIRST_RULED = `${RULE} first:border-t-0`
 
 const fourDecimals = (value) => formatNumber(value, 4)
 
+const capitalised = (name) => name.charAt(0).toUpperCase() + name.slice(1)
+
 // The rotation, row by row, and the translation, from the left camera's rectified frame to the camera's.
 function PoseParameters({ pose }) {
-  const rows = pose ? [0, 1, 2].map((row) => pose.rotation.slice(row * 3, row * 3 + 3)) : []
+  const rows = [0, 1, 2].map((row) => pose.rotation.slice(row * 3, row * 3 + 3))
 
   return (
-    <div className="flex min-w-0 flex-wrap gap-x-8 gap-y-3 overflow-x-auto lg:border-l lg:border-ovcs-border lg:pl-8">
-      <table className="text-right font-mono text-sm tabular-nums">
-        <caption className="whitespace-nowrap pb-1 text-left font-sans text-xs text-ovcs-muted">Rotation, from the left camera to this one</caption>
+    <div className="flex flex-col gap-4">
+      <table className="w-full table-fixed text-sm tabular-nums">
+        <caption className={CAPTION}>Rotation, from the left camera to this one</caption>
         <tbody>
           {rows.map((values, row) => (
-            <tr key={row}>
+            <tr key={row} className={FIRST_RULED}>
               {values.map((value, column) => (
-                <td key={column} className="py-0.5 pr-4">
+                <td key={column} className={VALUE}>
                   {fourDecimals(value)}
                 </td>
               ))}
@@ -105,50 +105,16 @@ function PoseParameters({ pose }) {
           ))}
         </tbody>
       </table>
-      <table className="text-right text-sm tabular-nums">
-        <caption className="whitespace-nowrap pb-1 text-left text-xs text-ovcs-muted">Translation, in mm</caption>
-        <thead className="text-xs text-ovcs-muted">
-          <tr>
-            {['x', 'y', 'z'].map((axis) => (
-              <th key={axis} className="pb-1 pr-4 font-medium">
+      <table className="w-full text-sm tabular-nums">
+        <caption className={CAPTION}>Translation, in mm</caption>
+        <tbody>
+          {['x', 'y', 'z'].map((axis, index) => (
+            <tr key={axis} className={FIRST_RULED}>
+              <th scope="row" className={`${LABEL} w-full`}>
                 {axis}
               </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            {(pose?.translation ?? [null, null, null]).map((metres, axis) => (
-              <td key={axis} className="py-0.5 pr-4">
-                {metres == null ? '–' : formatNumber(metres * 1000)}
-              </td>
-            ))}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  )
-}
-
-function Parameters({ cameras }) {
-  return (
-    <div className="min-w-0 overflow-x-auto lg:border-l lg:border-ovcs-border lg:pl-8">
-      <table className="text-left text-sm tabular-nums">
-        <caption className="pb-1 text-left text-xs text-ovcs-muted">Camera parameters, in pixels</caption>
-        <thead className="text-xs text-ovcs-muted">
-          <tr>
-            <th className="pb-1 pr-4 font-medium">Camera</th>
-            {COLUMNS.map((column) => (
-              <th key={column} className="pb-1 pr-4 text-right font-medium">
-                {column}
-              </th>
-            ))}
-            <th className="pb-1 font-medium">Distortion (k1, k2, p1, p2, k3)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {cameras.map((camera) => (
-            <CameraRow key={camera.name} camera={camera} />
+              <td className={VALUE}>{formatNumber(pose.translation[index] * 1000)}</td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -156,14 +122,71 @@ function Parameters({ cameras }) {
   )
 }
 
+// A row per parameter, a column per camera headed by its name for a pair; the distortion a coefficient a row.
+function Parameters({ cameras }) {
+  const pair = cameras.length > 1
+
+  return (
+    <table className="w-full text-sm tabular-nums">
+      <caption className={CAPTION}>Camera parameters, in pixels</caption>
+      {pair ? (
+        <thead>
+          <tr>
+            <td />
+            {cameras.map((camera) => (
+              <th key={camera.name} scope="col" className="pb-1 pl-4 pr-0 text-right text-xs font-medium text-ovcs-muted">
+                {capitalised(camera.name)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+      ) : null}
+      <tbody>
+        {PARAMETERS.map(({ label, of }) => (
+          <tr key={label} className={FIRST_RULED}>
+            <th scope="row" className={`${LABEL} w-full`}>
+              {label}
+            </th>
+            {cameras.map((camera) => (
+              <td key={camera.name} className={VALUE}>
+                {formatNumber(of(camera))}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+      <tbody>
+        <tr className={RULE}>
+          <th scope="rowgroup" colSpan={cameras.length + 1} className="px-0 pb-0.5 pt-2 text-left text-xs font-medium">
+            Distortion
+          </th>
+        </tr>
+        {COEFFICIENTS.map((label, index) => (
+          <tr key={label} className={RULE}>
+            <th scope="row" className={INDENTED_LABEL}>
+              {label}
+            </th>
+            {cameras.map((camera) => (
+              <td key={camera.name} className={VALUE}>
+                {camera.distortion ? fourDecimals(camera.distortion[index]) : '–'}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 /**
- * The calibration the unit uses: where it comes from in plain words, the figures to check, and beside them each
- * camera's parameters, or for a camera's position its rotation and translation; why a file gives no calibration, when
- * one does not. `onCalibrate`, when given, opens the steps that make a new one, from the button `calibrateRef` then
- * holds.
+ * The calibration the unit uses: where it comes from in plain words, which one it is, the figures to check, and under
+ * them each camera's parameters, or for a measured position its rotation and translation; why a file gives no
+ * calibration, when one does not. Its files download from the calibration kept in use, or from here when none is.
+ * `onCalibrate`, when given, opens the steps that make a new one, from the button `calibrateRef` then holds.
  */
 export default function InUse({ onCalibrate, calibrateRef }) {
   const inUse = useCalibration(selectedCalibration)
+  const inForce = useCalibration((state) => state.saved[selectedId(state)]?.find((kept) => kept.inForce) ?? null)
 
   if (!inUse)
     return (
@@ -174,21 +197,16 @@ export default function InUse({ onCalibrate, calibrateRef }) {
 
   const { title, detail } = statement(inUse)
   const pose = inUse.kind === 'pose'
-
-  const download = () => {
-    if (pose) downloadYaml(inUse.pose.file, inUse.pose.yaml)
-    else for (const camera of inUse.cameras) downloadYaml(camera.file, camera.yaml)
-  }
-
-  const downloadable = pose ? inUse.pose?.yaml : inUse.cameras.every((camera) => camera.yaml)
+  const files = yamlFiles(inUse, pose)
+  const downloadedFromKept = inForce != null && yamlFiles(inForce, inForce.pose != null).length > 0
 
   const actions = (
     <div className="flex flex-wrap gap-2">
-      {downloadable ? (
+      {files.length > 0 && !downloadedFromKept ? (
         <button
           type="button"
           aria-label={pose ? 'Download the position the unit uses' : 'Download the calibration the unit uses'}
-          onClick={download}
+          onClick={() => downloadFiles(files)}
           className={BUTTON}
         >
           Download
@@ -203,23 +221,21 @@ export default function InUse({ onCalibrate, calibrateRef }) {
   )
 
   return (
-    <Section title={title} tone={inUse.source === 'none' ? 'warn' : undefined} actions={actions}>
+    <Section
+      title={title}
+      tone={inUse.source === 'none' ? 'warn' : undefined}
+      subtitle={storedName(inUse, inForce)}
+      actions={actions}
+    >
       <p className="text-sm text-ovcs-muted">{detail}</p>
       {inUse.error ? (
         <p role="alert" className="ovcs-status ovcs-status--error break-words text-sm text-ovcs-error-text">
           {inUse.error}
         </p>
       ) : null}
-      <div className="flex min-h-[6.5rem] flex-wrap items-start gap-x-8 gap-y-3">
-        <dl className={`grid gap-x-8 gap-y-2 tabular-nums ${pose ? 'grid-cols-[minmax(0,22rem)]' : 'grid-cols-[9rem_15rem]'}`}>
-          {(pose ? poseFacts(inUse.pose) : facts(inUse)).map(({ label, value }) => (
-            <div key={label} className="flex flex-col">
-              <dt className="text-xs text-ovcs-muted">{label}</dt>
-              <dd className="font-semibold">{value}</dd>
-            </div>
-          ))}
-        </dl>
-        {pose ? <PoseParameters pose={inUse.pose} /> : <Parameters cameras={inUse.cameras} />}
+      <div className="flex flex-col gap-4">
+        <Figures figures={pose ? poseFigures(inUse.pose) : facts(inUse)} />
+        {pose ? inUse.pose && <PoseParameters pose={inUse.pose} /> : <Parameters cameras={inUse.cameras} />}
       </div>
     </Section>
   )

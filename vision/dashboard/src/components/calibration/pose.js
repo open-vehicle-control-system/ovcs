@@ -35,26 +35,30 @@ export function cameraTurn({ rotation }) {
   }
 }
 
-/** The camera's position from the left camera in words, in millimetres; a dash without a pose. */
-export function positionText(pose) {
-  if (!pose) return '–'
+// The camera's position from the left camera in words, in millimetres, an axis a part.
+function positionParts(pose) {
   const [right, down, forward] = cameraPosition(pose).map((metres) => metres * 1000)
-  return [signed(right, 'right', 'left', ' mm'), signed(down, 'down', 'up', ' mm'), signed(forward, 'forward', 'back', ' mm')].join(', ')
+  return [signed(right, 'right', 'left', ' mm'), signed(down, 'down', 'up', ' mm'), signed(forward, 'forward', 'back', ' mm')]
 }
 
-/** How the camera is turned from the left camera in words; a dash without a pose. */
-export function turnText(pose) {
-  if (!pose) return '–'
+// How the camera is turned from the left camera in words, an angle a part.
+function turnParts(pose) {
   const { yaw, pitch, roll } = cameraTurn(pose)
-  return [signed(yaw, 'right', 'left', '°'), signed(pitch, 'up', 'down', '°'), signed(roll, 'clockwise', 'anticlockwise', '°')].join(', ')
+  return [signed(yaw, 'right', 'left', '°'), signed(pitch, 'up', 'down', '°'), signed(roll, 'clockwise', 'anticlockwise', '°')]
 }
+
+/** The camera's position from the left camera in words, in millimetres; a dash without a pose. */
+export const positionText = (pose) => (pose ? positionParts(pose).join(', ') : '–')
+
+/** How the camera is turned from the left camera in words; a dash without a pose. */
+export const turnText = (pose) => (pose ? turnParts(pose).join(', ') : '–')
 
 /** The distance between the camera and the left camera; a dash without a pose. */
 export const distanceText = (pose) => (pose ? `${formatNumber(pose.distanceMm)} mm` : '–')
 
-/** The figures a person checks against the hardware, with a ruler and by eye. */
+/** The figures a person checks against the hardware, with a ruler and by eye; `parts` splits a value by axis. */
 export const poseFacts = (pose) => [
-  { label: 'Position from the left camera', value: positionText(pose) },
-  { label: 'Distance to the left camera', value: distanceText(pose) },
-  { label: 'Turned (yaw, pitch, roll)', value: turnText(pose) }
+  { label: 'Position from the left camera', value: positionText(pose), parts: pose ? positionParts(pose) : null },
+  { label: 'Distance to the left camera', value: distanceText(pose), parts: null },
+  { label: 'Turned (yaw, pitch, roll)', value: turnText(pose), parts: pose ? turnParts(pose) : null }
 ]
