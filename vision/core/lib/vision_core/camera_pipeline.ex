@@ -46,6 +46,17 @@ defmodule VisionCore.CameraPipeline do
 
   The camera's calibration and pose are read at start.
 
+  ## The steps' times
+
+  The pipeline times what it does for each frame inferred on, under the
+  names `c:stage/1` gives its steps: preparing the frame and handing it
+  to the backend (`:prepare`), the inference, from the frame handed over
+  to its reply, as `:inference`, making the result of the reply
+  (`:result`) and finishing it with its pair (`:finish`). The wait for
+  the pair is in none of them, and a frame the backend could not infer
+  on has no inference time. `stage_times/1` hands the times over and
+  starts them again.
+
   ## Options
 
   The pipeline's own, which `c:init/1` reads, and:
@@ -53,13 +64,13 @@ defmodule VisionCore.CameraPipeline do
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera is read from.
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
-      waits for a pair are measured with, a function of no argument.
+      steps and the waits for a pair are measured with, a function of no
+      argument.
   """
   use GenServer
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.CameraDepth
-  alias VisionCore.Outputs
+  alias VisionCore.{CameraDepth, Outputs, StageTimes}
   alias VisionCore.Stereo.Pair
 
   @typedoc """
@@ -126,6 +137,22 @@ defmodule VisionCore.CameraPipeline do
   @callback finish(Frame.t(), result :: term(), Pair.t() | nil, CameraDepth.t(), settings()) ::
               {message :: term(), CameraDepth.t()}
 
+  @doc """
+  The step of the pipeline, as its parameter group names it
+  (`<name>.<step>`), that what the pipeline does in `phase` is timed as;
+  `nil` for a phase that is none of its steps.
+  """
+  @callback stage(phase :: :prepare | :result | :finish) :: atom() | nil
+
+  @phases [:prepare, :result, :finish]
+
+  @doc """
+  Each step's time over the frames inferred on since the last call,
+  which this starts again.
+  """
+  @spec stage_times(GenServer.server()) :: StageTimes.t()
+  def stage_times(server), do: GenServer.call(server, :stage_times)
+
   @doc "Starts the pipeline `module`; `start_options` are `GenServer.start_link/3`'s."
   @spec start_link(module(), keyword(), keyword()) :: GenServer.on_start()
   def start_link(module, opts, start_options),
@@ -150,7 +177,9 @@ defmodule VisionCore.CameraPipeline do
       held: nil,
       # Frames' results waiting for the pair captured closest to each.
       waiting: CameraDepth.Queue.new(settings.pair_wait_ms),
-      clock: Keyword.get(opts, :clock, &monotonic_ns/0)
+      clock: Keyword.get(opts, :clock, &monotonic_ns/0),
+      times:
+        StageTimes.new([:inference | Enum.reject(Enum.map(@phases, &module.stage/1), &is_nil/1)])
     }
 
     if Process.whereis(VisionCore.Parameters),
@@ -175,6 +204,10 @@ defmodule VisionCore.CameraPipeline do
       output: output
     )
   end
+
+  @impl GenServer
+  def handle_call(:stage_times, _from, state),
+    do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
@@ -220,23 +253,27 @@ defmodule VisionCore.CameraPipeline do
   end
 
   defp submit(frame, state) do
+    started_ns = state.clock.()
+
     case state.module.prepare(frame, state.settings) do
       {:submit, request, kept, settings} ->
-        submit(request, frame, kept, %{state | settings: settings})
+        submit(request, frame, kept, started_ns, %{state | settings: settings})
 
       {:skip, settings} ->
         %{state | settings: settings}
     end
   end
 
-  defp submit(request, frame, kept, state) do
+  defp submit(request, frame, kept, started_ns, state) do
     sequence = state.sequence + 1
     state = %{state | sequence: sequence}
 
     case state.module.submit(request, sequence, state.settings) do
       :ok ->
+        submitted_ns = state.clock.()
         frame = %{frame | jpeg: nil, grey: nil, rgb: nil}
-        %{state | pending: %{sequence: sequence, frame: frame, kept: kept}}
+        pending = %{sequence: sequence, frame: frame, kept: kept, submitted_ns: submitted_ns}
+        time_phase(%{state | pending: pending}, :prepare, started_ns, submitted_ns)
 
       # Busy or unavailable: the backend logs the unavailable case once.
       {:error, _reason} ->
@@ -263,9 +300,16 @@ defmodule VisionCore.CameraPipeline do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp wait_for_pair(state, %{frame: frame, kept: kept}, reply) do
+  defp wait_for_pair(state, %{frame: frame, kept: kept, submitted_ns: submitted_ns}, reply) do
+    replied_ns = state.clock.()
     {result, needs_depth?} = state.module.result(reply, kept, state.settings)
     now_ns = state.clock.()
+
+    state =
+      state
+      |> time_stage(:inference, submitted_ns, replied_ns)
+      |> time_phase(:result, replied_ns, now_ns)
+
     {lens, camera} = CameraDepth.lens(state.camera, {frame.width, frame.height})
 
     waiting =
@@ -286,9 +330,19 @@ defmodule VisionCore.CameraPipeline do
     state = %{state | waiting: CameraDepth.Queue.schedule(waiting, state.camera, now_ns)}
 
     Enum.reduce(settled, state, fn {{frame, result}, pair}, state ->
+      started_ns = state.clock.()
       {message, camera} = state.module.finish(frame, result, pair, state.camera, state.settings)
+      finished_ns = state.clock.()
       Outputs.publish(state.output_key, message)
-      %{state | camera: camera}
+      time_phase(%{state | camera: camera}, :finish, started_ns, finished_ns)
     end)
   end
+
+  defp time_phase(state, phase, from_ns, to_ns),
+    do: time_stage(state, state.module.stage(phase), from_ns, to_ns)
+
+  defp time_stage(state, nil, _from_ns, _to_ns), do: state
+
+  defp time_stage(state, stage, from_ns, to_ns),
+    do: %{state | times: StageTimes.add(state.times, stage, (to_ns - from_ns) / 1_000_000)}
 end

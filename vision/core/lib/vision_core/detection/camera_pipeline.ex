@@ -74,6 +74,11 @@ defmodule VisionCore.Detection.CameraPipeline do
   def reply_tag, do: :inference_detections
 
   @impl VisionCore.CameraPipeline
+  def stage(:prepare), do: :input
+  def stage(:result), do: :filtering
+  def stage(:finish), do: :placement
+
+  @impl VisionCore.CameraPipeline
   def result(detections, _kept, settings) do
     labelled = detections |> Pipeline.select(settings) |> Enum.map(&labelled(&1, settings))
     {labelled, labelled != []}

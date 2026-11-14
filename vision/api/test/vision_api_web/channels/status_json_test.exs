@@ -55,6 +55,19 @@ defmodule VisionApiWeb.StatusJSONTest do
         load_percent: 64.5,
         pipelines: %{detection: %{inference_ms: 21.5}, road: %{inference_ms: nil}}
       },
+      pipelines: %{
+        stereo: %{
+          total_ms: 29.2,
+          stages: %{frame_tag: 1.2},
+          segments: [%{stages: [:rectification, :speckle_filter], ms: 28.0}]
+        },
+        detection: %{
+          total_ms: 12.5,
+          stages: %{input: 1.5, inference: 10.3, filtering: nil, placement: 0.7},
+          segments: []
+        },
+        road: %{total_ms: nil, stages: %{}, segments: []}
+      },
       calibrated: true,
       depth_hz: 29.9,
       cpu_percent: 61.0,
@@ -116,6 +129,19 @@ defmodule VisionApiWeb.StatusJSONTest do
                loadPercent: 64.5,
                pipelines: %{detection: %{inferenceMs: 21.5}, road: %{inferenceMs: nil}}
              },
+             pipelines: %{
+               stereo: %{
+                 totalMs: 29.2,
+                 stages: %{frame_tag: 1.2},
+                 segments: [%{stages: [:rectification, :speckle_filter], ms: 28.0}]
+               },
+               detection: %{
+                 totalMs: 12.5,
+                 stages: %{input: 1.5, inference: 10.3, filtering: nil, placement: 0.7},
+                 segments: []
+               },
+               road: %{totalMs: nil, stages: %{}, segments: []}
+             },
              calibrated: true,
              depthHz: 29.9,
              stereoLoadPercent: 96.5,
@@ -149,6 +175,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         range: %{level: :off, camera: nil, issues: []}
       },
       npu: nil,
+      pipelines: %{stereo: %{total_ms: nil, stages: %{}, segments: []}},
       calibrated: false,
       depth_hz: 0.0,
       cpu_percent: nil,
@@ -165,6 +192,7 @@ defmodule VisionApiWeb.StatusJSONTest do
              sharpness: nil,
              quality: nil,
              npu: nil,
+             pipelines: %{stereo: %{totalMs: nil, stages: %{}, segments: []}},
              calibrated: false,
              exporters: [%{id: "api"}]
            } = payload = StatusJSON.status(snapshot)

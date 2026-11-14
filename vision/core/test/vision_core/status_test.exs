@@ -2,7 +2,7 @@ defmodule VisionCore.StatusTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.{Outputs, Status}
+  alias VisionCore.{Outputs, StageTimes, Status}
   alias VisionCore.Stereo.Pair
 
   # Names a stereo unit's cameras, which need not be running.
@@ -84,6 +84,7 @@ defmodule VisionCore.StatusTest do
     assert snapshot.sync == %{present: false}
     assert snapshot.npu == nil
     assert snapshot.depth_hz == 0.0
+    assert snapshot.pipelines == %{stereo: StageTimes.none()}
   end
 
   @tag :tmp_dir
@@ -809,5 +810,169 @@ defmodule VisionCore.StatusTest do
     assert_receive {:vision_status, %{cpu_percent: cpu, stereo_segment_percent: segment}}, 500
     assert cpu >= 0.0 and cpu <= 100.0
     assert_in_delta segment, 50.0, 15.0
+  end
+
+  describe "the pipelines' times" do
+    defp next_pipelines(name, timeout \\ 1_000) do
+      assert_receive {:vision_status, %{pipelines: pipelines}}, timeout
+
+      if pipelines[name].total_ms == nil,
+        do: next_pipelines(name, timeout),
+        else: pipelines
+    end
+
+    # A pipeline that tells `test` of each call for its steps' times, and answers `times`.
+    defp register_pipeline(name, times, test) do
+      pipeline = spawn(fn -> answer_stage_times(times, test) end)
+      VisionCore.TestProcesses.register(pipeline, name)
+      on_exit(fn -> Process.exit(pipeline, :kill) end)
+    end
+
+    defp answer_stage_times(times, test) do
+      receive do
+        {:"$gen_call", from, :stage_times} ->
+          send(test, :stage_times_taken)
+          GenServer.reply(from, times)
+      end
+
+      answer_stage_times(times, test)
+    end
+
+    test "each tick reports the stereo stages' mean times, a run timed as one as a segment" do
+      start_supervised!({Status, config: config([]), tick_ms: 200})
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, %{pipelines: %{stereo: stereo}}}
+      assert stereo == StageTimes.none()
+
+      for run_ms <- [20.0, 30.0] do
+        stage_ms = %{"rectification+disparity": run_ms, frame_tag: 1.0, total: 99.0}
+        GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: stage_ms}})
+      end
+
+      assert next_pipelines(:stereo).stereo == %{
+               total_ms: 26.0,
+               stages: %{frame_tag: 1.0},
+               segments: [%{stages: [:rectification, :disparity], ms: 25.0}]
+             }
+    end
+
+    test "a run whose stages are timed too counts once in the stereo total" do
+      start_supervised!({Status, config: config([]), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      stage_ms = %{
+        "rectification+disparity": 12.0,
+        rectification: 4.0,
+        disparity: 7.0,
+        total: 40.0
+      }
+
+      GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: stage_ms}})
+
+      assert next_pipelines(:stereo).stereo == %{
+               total_ms: 12.0,
+               stages: %{rectification: 4.0, disparity: 7.0},
+               segments: []
+             }
+    end
+
+    test "a tick without a pair reports no stereo time" do
+      start_supervised!({Status, config: config([]), tick_ms: 100})
+      :ok = Status.subscribe()
+      GenServer.cast(Status, {:stereo_pair, %{pair() | stage_ms: %{frame_tag: 1.0}}})
+      next_pipelines(:stereo)
+
+      assert_receive {:vision_status, %{pipelines: %{stereo: stereo}}}, 500
+      assert stereo == StageTimes.none()
+    end
+
+    test "each tick reports a detection pipeline's steps' mean times and their sum" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{input: {3.0, 2}, inference: {20.0, 2}, filtering: {0.0, 0}, placement: {1.0, 2}},
+        self()
+      )
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 200}
+      )
+
+      :ok = Status.subscribe()
+
+      assert next_pipelines(:detection).detection == %{
+               total_ms: 12.0,
+               stages: %{input: 1.5, inference: 10.0, filtering: nil, placement: 0.5},
+               segments: []
+             }
+    end
+
+    test "each tick reports a segmentation pipeline's steps' mean times" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Segmentation.Pipeline, :road),
+        %{input: {2.0, 2}, inference: {16.0, 2}, classes: {6.0, 2}},
+        self()
+      )
+
+      start_supervised!({Status, config: config([@road_segmenter]), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      assert %{total_ms: 12.0, stages: %{input: 1.0, inference: 8.0, classes: 3.0}} =
+               next_pipelines(:road).road
+    end
+
+    test "a snapshot asked between ticks does not take the pipelines' times" do
+      register_pipeline(
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection),
+        %{input: {3.0, 2}},
+        self()
+      )
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]),
+         tick_ms: 60_000}
+      )
+
+      assert Status.snapshot().pipelines.detection == StageTimes.none()
+      refute_received :stage_times_taken
+    end
+
+    test "a pipeline that does not answer has no time, without stalling the ticks" do
+      silent = spawn(fn -> Process.sleep(:infinity) end)
+
+      VisionCore.TestProcesses.register(
+        silent,
+        VisionCore.Pipelines.server(VisionCore.Detection.Pipeline, :detection)
+      )
+
+      on_exit(fn -> Process.exit(silent, :kill) end)
+
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 100}
+      )
+
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      for _tick <- 1..2 do
+        assert_receive {:vision_status, %{pipelines: %{detection: detection}}}, 600
+        assert detection == StageTimes.none()
+      end
+    end
+
+    test "a pipeline that is not running has no time" do
+      start_supervised!(
+        {Status,
+         config: config([{:detector, backend: VisionCore.Detection.Backend.Stub}]), tick_ms: 100}
+      )
+
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      assert_receive {:vision_status, %{pipelines: %{detection: detection}}}, 600
+      assert detection == StageTimes.none()
+    end
   end
 end

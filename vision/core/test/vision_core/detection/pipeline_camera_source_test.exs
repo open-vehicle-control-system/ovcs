@@ -693,6 +693,45 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_published(200)
   end
 
+  test "times each step of a frame, the wait for its pair left out", %{tmp_dir: dir} do
+    start_held(dir, files: [:calibration, :pose], pair_wait_ms: 500)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    publish_frame(1_400)
+    assert_receive {:submitted, in_flight}
+    _handed_over = :sys.get_state(pipeline)
+    set_clock(10)
+    reply(in_flight, [@reply_person])
+    await_boxes()
+    set_clock(300)
+    publish_pair(1_500)
+    assert_published(1_400)
+
+    assert Pipeline.stage_times(pipeline) == %{
+             input: {0.0, 1},
+             inference: {10.0, 1},
+             filtering: {0.0, 1},
+             placement: {0.0, 1}
+           }
+
+    assert Pipeline.stage_times(pipeline) ==
+             VisionCore.StageTimes.new([:input, :inference, :filtering, :placement])
+  end
+
+  test "times no inference the backend could not answer", %{tmp_dir: dir} do
+    start_held(dir)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+
+    publish_frame(100)
+    assert_receive {:submitted, in_flight}
+    reply(in_flight, nil)
+
+    assert %{input: {_sum_ms, 1}, inference: {+0.0, 0}, placement: {+0.0, 0}} =
+             Pipeline.stage_times(pipeline)
+  end
+
   defp next_message do
     receive do
       message -> message

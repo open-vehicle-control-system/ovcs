@@ -33,7 +33,7 @@ A write reads its document from a JSON body only: sent as a form or in the query
 
 Channels:
 
-- `status`: a `VisionCore.Status` snapshot on join, then one a second, with each exporter's status (`level`: `ok`, `warning` or `off`, and `detail`, which for one that does not run says why), the API's own last. It carries no CPU load: that is the board's, in `GET /api/board`.
+- `status`: a `VisionCore.Status` snapshot on join, then one a second, with each exporter's status (`level`: `ok`, `warning` or `off`, and `detail`, which for one that does not run says why), the API's own last, and each pipeline's times in `pipelines`: its `totalMs`, its `stages`' mean times and the `segments` computed as one. It carries no CPU load: that is the board's, in `GET /api/board`.
 - `preview:left`, `preview:right` and `preview:depth`: JPEG frames as binary WebSocket messages, one at a time, sent when the client acknowledges the previous one with `ack`. The depth video's colour range is the unit's: `preview:depth` pushes it as a `depth_range` event, `{"metres": …}`, after every join and on every change, whichever client makes it with `PATCH /api/depth-preview`.
 - `detections`: each detection result, at most ten a second, as `detections` events: every object's label, score, distance in metres and outline on the left camera's image, as fractions of its width and height. Refused on a unit without detection.
 - `detections:<name>`: the same for the named detection pipeline `<name>`, as `detections` events; the API exporter's outputs list each one. A pipeline on a camera of its own outlines its objects on that camera's image, and an object it cannot place has a `null` distance. Refused when no pipeline of that name runs.

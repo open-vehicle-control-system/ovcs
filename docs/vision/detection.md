@@ -55,6 +55,8 @@ The status's `npu` gives the accelerator's kind and load, and each detection or 
 
 The load is `null` until a Port has reported a time. A pipeline's time is `null` in a second without a frame, never 0.
 
+The inference step takes longer than the accelerator's time: its Port also reads the image, resizes it and decodes the model's output. The status's `pipelines` gives that step's whole time, and each other step's ([Step times](./performance.md#step-times)).
+
 ## Detect on a camera of its own
 
 A detector with `source: {:camera, name}` detects on the camera of its own `name` ([A camera of its own](./cameras.md)). It places its boxes in 3D with the stereo depth seen from that camera.

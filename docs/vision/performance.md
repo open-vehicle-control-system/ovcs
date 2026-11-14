@@ -13,12 +13,31 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 | Dashboard, camera captions | fps | Frames each camera delivered in the last second. |
 | Dashboard, top bar | CPU, Memory | Busy share of all processor cores over half a second at each read, and the share of the memory in use. The 1, 5 and 15 minute load averages are behind the bar's details button. |
 | Dashboard, bottom bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
+| Dashboard, Pipelines menu | each step's time, each pipeline's total | Mean time of each step over the last second's pairs or frames, and their sum. See [Step times](#step-times). |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
 | Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
 
 The log goes to the unit's `RingLogger`; read it over SSH with `RingLogger.next`.
 
 When the depth rate is well below the cameras' rate and Stereo load is near 100 %, the stages are the limit. When the depth rate follows the cameras' rate, the cameras are the limit. In a dark room, auto exposure lengthens each frame, and the frame rate drops with it.
+
+## Step times
+
+The `status` channel's `pipelines` gives each pipeline's times, averaged over the last second ([Status](./channels.md#status)). They are the work one pair or frame takes: no time spent waiting is counted.
+
+| Pipeline | Step | What its time covers |
+|---|---|---|
+| Stereo | a stage on the BEAM | Its `run` on the pair. |
+| Stereo | the stages of a native segment | Each stage's time in `stereo_match`. The pipeline's total counts the segment once, with its transfer through the pipes. |
+| Stereo | the stages of a compiled segment | One time for the whole run, the upload and the download of its outputs included. |
+| Detection, segmentation | `input` | Preparing the image and handing it to the backend. |
+| Detection, segmentation | `inference` | From the image handed over to the backend's reply: the Port's read of the image, its resize, the model and the decoding. |
+| Detection | `filtering`, `placement` | Keeping the detections to pass on, then placing and outlining them. |
+| Segmentation | `classes` | Sorting the stereo points into road and off-road. |
+
+A compiled segment runs its stages as one function on the device, so they cannot be timed apart ([Nx: the stages as tensor programs](./compute.md#nx-the-stages-as-tensor-programs)). `npu.pipelines.<name>.inferenceMs` is the accelerator's share of the `inference` step ([Accelerator load](./detection.md#accelerator-load)).
+
+A pipeline on a camera of its own waits for the stereo pair captured closest to its frame. That wait is in no step's time. The stereo total leaves out the time a pair waits for the device, and the decoding of its frames before a segment. A pair's latency, `total` in the log's `[pipeline]` line, counts them.
 
 ## Measured on a Raspberry Pi 5
 

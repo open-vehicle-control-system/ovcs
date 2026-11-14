@@ -54,26 +54,99 @@ describe('Pipelines', () => {
     expect(stereo.compareDocumentPosition(detection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it("shows each detection pipeline's inference time in its Inference box, once the unit reports one", () => {
-    const road = group('road.inference', 'Inference', 102, { pipeline: 'road' })
-    useParameters.setState({ groups: [...groups, road] })
+  const figure = (pipeline, name) =>
+    within(screen.getByRole('list', { name: pipeline })).getByRole('button', { name }).querySelector('[data-figure]')?.textContent ?? null
+
+  it("shows each step's time in its box, and says it in the box name", () => {
     useStatus.setState({
-      snapshot: { npu: { kind: 'Hexagon', state: 'running', loadPercent: 40, pipelines: { detection: { inferenceMs: 21.54 }, road: { inferenceMs: null } } } }
+      snapshot: {
+        npu: null,
+        pipelines: {
+          stereo: { totalMs: 9.87, stages: { match: 7.26, alignment: 2.61, temporal: null }, segments: [] },
+          detection: { totalMs: 11.85, stages: { input: 1.52, inference: 10.33 }, segments: [] }
+        }
+      }
     })
     render(<Pipelines />)
 
-    const inference = (pipeline) => within(screen.getByRole('list', { name: pipeline })).getByRole('button', { name: /^Inference/ })
-    expect(inference('Detection').textContent).toContain('21.5 ms')
-    expect(inference('Detection').getAttribute('aria-label')).toContain('21.5 ms')
-    expect(inference('Road').textContent).not.toContain('ms')
-    expect(screen.getByRole('button', { name: /^Match/ }).textContent).not.toContain('ms')
+    expect(figure('Stereo', /^Match/)).toBe('7.3 ms')
+    expect(figure('Stereo', /^Alignment/)).toBe('2.6 ms')
+    expect(figure('Stereo', /^Temporal/)).toBeNull()
+    expect(figure('Detection', /^Input/)).toBe('1.5 ms')
+    expect(figure('Detection', /^Inference/)).toBe('10.3 ms')
+    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan, 7.3 ms')
   })
 
-  it('shows no inference time without an NPU status', () => {
+  it('shows no time on a source, which has no work to time', () => {
+    useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 1, stages: { cameras: 1 }, segments: [] } } } })
+    render(<Pipelines />)
+
+    expect(figure('Stereo', /^Cameras/)).toBeNull()
+  })
+
+  it('shows the one time of steps computed together once, on the first of them, with the steps it covers', () => {
+    useStatus.setState({
+      snapshot: {
+        npu: null,
+        pipelines: { stereo: { totalMs: 28.04, stages: {}, segments: [{ stages: ['match', 'alignment', 'temporal'], ms: 28.04 }] } }
+      }
+    })
+    render(<Pipelines />)
+
+    expect(figure('Stereo', /^Match/)).toBe('28.0 ms for steps 2 to 4')
+    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toContain('28.0 ms for steps 2 to 4')
+    expect(figure('Stereo', /^Alignment/)).toBeNull()
+    expect(figure('Stereo', /^Temporal/)).toBeNull()
+  })
+
+  it("shows the accelerator's own time beside an Inference step's time", () => {
+    const road = group('road.inference', 'Inference', 102, { pipeline: 'road' })
+    useParameters.setState({ groups: [...groups, road] })
+    useStatus.setState({
+      snapshot: {
+        npu: { kind: 'Hexagon', state: 'running', loadPercent: 40, pipelines: { detection: { inferenceMs: 2.14 }, road: { inferenceMs: null } } },
+        pipelines: {
+          detection: { totalMs: 10.3, stages: { inference: 10.33 }, segments: [] },
+          road: { totalMs: null, stages: { inference: null }, segments: [] }
+        }
+      }
+    })
+    render(<Pipelines />)
+
+    expect(figure('Detection', /^Inference/)).toBe('10.3 ms, NPU 2.1 ms')
+    expect(screen.getByRole('button', { name: /^Inference.*NPU 2\.1 ms/ })).toBeTruthy()
+    expect(figure('Road', /^Inference/)).toBeNull()
+  })
+
+  it("shows the accelerator's time alone while the step has none", () => {
+    useStatus.setState({
+      snapshot: { npu: { kind: 'Hexagon', state: 'running', loadPercent: 40, pipelines: { detection: { inferenceMs: 21.54 } } } }
+    })
+    render(<Pipelines />)
+
+    expect(figure('Detection', /^Inference/)).toBe('NPU 21.5 ms')
+    expect(figure('Stereo', /^Match/)).toBeNull()
+  })
+
+  it("shows each pipeline's total beside its name, once the unit reports one", () => {
+    useStatus.setState({
+      snapshot: {
+        npu: null,
+        pipelines: { stereo: { totalMs: 28.44, stages: {}, segments: [] }, detection: { totalMs: null, stages: {}, segments: [] } }
+      }
+    })
+    render(<Pipelines />)
+
+    expect(screen.getByRole('heading', { name: 'Stereo 28.4 ms' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'Detection' })).toBeTruthy()
+    expect(screen.getByRole('list', { name: 'Stereo' })).toBeTruthy()
+  })
+
+  it('shows no time without a status', () => {
     useStatus.setState({ snapshot: null })
     render(<Pipelines />)
 
-    expect(screen.getByRole('list', { name: 'Detection' }).textContent).not.toContain('ms')
+    expect(document.body.textContent).not.toContain('ms')
   })
 
   it('shows the detection pipeline as one greyed line on a unit without a detector', () => {

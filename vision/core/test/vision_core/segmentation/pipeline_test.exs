@@ -614,6 +614,32 @@ defmodule VisionCore.Segmentation.PipelineTest do
     assert_published(200)
   end
 
+  test "times each step of a frame, the wait for its pair left out", %{tmp_dir: dir} do
+    start_scripted(dir, [], files: [:calibration, :pose], pair_wait_ms: 500)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :road)
+    publish_pair(0)
+    publish_pair(1_000)
+
+    publish_frame(1_400)
+    assert_receive {:submitted, in_flight}
+    _handed_over = :sys.get_state(pipeline)
+    set_clock(10)
+    reply(in_flight, @label_image)
+    await_labels()
+    set_clock(300)
+    publish_pair(1_500)
+    assert_published(1_400)
+
+    assert Pipeline.stage_times(pipeline) == %{
+             input: {0.0, 1},
+             inference: {10.0, 1},
+             classes: {0.0, 1}
+           }
+
+    assert Pipeline.stage_times(pipeline) ==
+             VisionCore.StageTimes.new([:input, :inference, :classes])
+  end
+
   defp next_message do
     receive do
       message -> message

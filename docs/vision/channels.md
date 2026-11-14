@@ -34,6 +34,14 @@ The unit's certificate is self-signed. In a browser, accept it on the dashboard 
 
 [Accelerator load](./detection.md#accelerator-load) says what they measure on each accelerator.
 
+`pipelines` holds the time of each pipeline, by its name, `stereo` for the stereo pipeline:
+
+- `stages`, the mean time of each step over the last second's pairs or frames, in milliseconds, by the step's name. The name is the last segment of the stage's id in `GET /api/stages`: `stereo.speckle_filter` is `speckle_filter`.
+- `segments`, the runs of steps computed as one, each with its `stages` in order and its one time, `ms`. Those steps have no entry in `stages`.
+- `totalMs`, the sum of the steps' and segments' times: the work one pair or frame takes, without the time it waits.
+
+A step that did not run in the second is `null`, and so is the `totalMs` of a pipeline none of whose steps ran. [Step times](./performance.md#step-times) says what each time covers.
+
 ```json
 {
   "cameras": {
@@ -63,6 +71,13 @@ The unit's certificate is self-signed. In a browser, accept it on the dashboard 
   "stereoLoadPercent": 98.0,
   "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 23.1,
           "pipelines": {"objects": {"inferenceMs": 2.1}, "scene": {"inferenceMs": 5.6}}},
+  "pipelines": {
+    "stereo": {"totalMs": 37.7, "stages": {},
+               "segments": [{"stages": ["rectification", "sharpness", "disparity", "speckle_filter", "row_alignment",
+                                        "temporal_filter", "depth", "point_cloud", "quality"], "ms": 37.7}]},
+    "objects": {"totalMs": 11.9, "stages": {"input": 0.8, "inference": 10.3, "filtering": 0.1, "placement": 0.7}, "segments": []},
+    "scene": {"totalMs": 21.4, "stages": {"input": 0.3, "inference": 14.6, "classes": 6.5}, "segments": []}
+  },
   "exporters": [{"id": "ros2", "name": "ROS 2", "status": {"level": "warning", "detail": "Disconnected"}},
                 {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]
 }
