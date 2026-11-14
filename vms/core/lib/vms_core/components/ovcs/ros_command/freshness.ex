@@ -21,6 +21,8 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   consumer that never receives a fresh frame says so once.
   """
 
+  @moduledoc safety: :relevant
+
   @enforce_keys [:timeout_ms, :created_at_ms]
   defstruct [:timeout_ms, :created_at_ms, :sequence, :fresh_at_ms, stale: true, reported: false]
 
@@ -46,7 +48,8 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   @doc """
   Record a frame. `:new` when its sequence differs from the last one
   seen, `:repeat` for a retransmission of the same sample, which the
-  caller should not apply as if it were fresh input.
+  caller should not apply as if it were fresh input. Each new sample
+  rearms expiry reporting, even if it expires before the next check.
   """
   @spec observe(t(), non_neg_integer(), integer()) :: {:new | :repeat, t()}
   def observe(%__MODULE__{sequence: sequence} = freshness, sequence, _now_ms) do
@@ -54,7 +57,7 @@ defmodule VmsCore.Components.OVCS.RosCommand.Freshness do
   end
 
   def observe(%__MODULE__{} = freshness, sequence, now_ms) do
-    {:new, %{freshness | sequence: sequence, fresh_at_ms: now_ms}}
+    {:new, %{freshness | sequence: sequence, fresh_at_ms: now_ms, reported: false}}
   end
 
   @doc """

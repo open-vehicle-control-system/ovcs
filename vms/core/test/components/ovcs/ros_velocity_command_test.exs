@@ -201,6 +201,21 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommandTest do
     end
   end
 
+  test "zeroes a recovery velocity that expires before the next loop" do
+    now_ms = System.monotonic_time(:millisecond)
+    {:stale, freshness} = Freshness.check(expired_freshness(), now_ms)
+
+    {:noreply, recovered} =
+      Velocity.handle_info(frame(2.0, 0.5, 1), stub_state(%{freshness: freshness}))
+
+    freshness = %{recovered.freshness | fresh_at_ms: now_ms - 10_000}
+
+    {steering, throttle} = commanded(%{recovered | freshness: freshness})
+
+    assert throttle == 0.0
+    assert steering == 0.0
+  end
+
   describe "throttle/3 with a minimum speed" do
     alias VmsCore.Components.OVCS.RosVelocityCommand
 

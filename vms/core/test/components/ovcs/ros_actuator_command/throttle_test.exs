@@ -82,6 +82,17 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
     end
   end
 
+  test "zeroes a recovery sample that expires before the next loop" do
+    now_ms = System.monotonic_time(:millisecond)
+    {_, expired} = emitted(stub_state())
+    {:noreply, recovered} = Throttle.handle_info(frame("0.75", 2), expired)
+    freshness = %{recovered.freshness | fresh_at_ms: now_ms - 10_000}
+
+    {throttle, _state} = emitted(%{recovered | freshness: freshness})
+
+    assert D.eq?(throttle, 0)
+  end
+
   describe "normal operation" do
     test "a new sample is applied as is, in [-1, 1]" do
       {:noreply, state} = Throttle.handle_info(frame("0.25", 2), stub_state())
