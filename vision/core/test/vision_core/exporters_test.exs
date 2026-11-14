@@ -53,6 +53,23 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
+  # Takes every pair, queued while it is busy with one, which it is until sent `:sent`.
+  defmodule Queuing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def delivery(_options), do: {:queue, 1}
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, nil}
+
+    @impl VisionCore.Exporter
+    def handle_output(:stereo_pair, _pair, state), do: {:busy, state}
+  end
+
   # Its runner is killed by each pair while the process `options[:while_alive]` lives, or always.
   defmodule Crashing do
     @behaviour VisionCore.Exporter
@@ -386,6 +403,7 @@ defmodule VisionCore.ExportersTest do
                  name: "Described",
                  module: Described,
                  status: {:ok, "Connected"},
+                 dropped: %{},
                  outputs: [
                    %{output: {:camera_frame, :left}, max_hz: nil},
                    %{output: :stereo_pair, max_hz: 5}
@@ -397,10 +415,21 @@ defmodule VisionCore.ExportersTest do
                  name: "VisionCore.ExportersTest.Steady",
                  module: Steady,
                  status: {:ok, "Running"},
+                 dropped: %{},
                  outputs: [%{output: :stereo_pair, max_hz: nil}],
                  actions: []
                }
              ]
+    end
+
+    test "lists the values each exporter's runner dropped from its queue, by output" do
+      start_supervised!({Exporters, config: config(), exporters: [{Queuing, []}]})
+      runner = await_runner(Queuing)
+
+      for pair <- 1..4, do: Outputs.publish(@pairs, {:stereo_pair, pair})
+      :sys.get_state(runner)
+
+      assert [%{status: {:ok, "Running"}, dropped: %{stereo_pair: 2}}] = Exporters.list()
     end
 
     test "lists the actions each exporter declares" do
@@ -476,7 +505,7 @@ defmodule VisionCore.ExportersTest do
 
       assert [%{id: "first", module: Stuck}, %{id: "described", name: "Described"}] = described
       refute Enum.any?(described, &Map.has_key?(&1, :status))
-      assert described == Enum.map(Exporters.list(100), &Map.delete(&1, :status))
+      assert described == Enum.map(Exporters.list(100), &Map.drop(&1, [:status, :dropped]))
       assert elapsed_us < 50_000
     end
 

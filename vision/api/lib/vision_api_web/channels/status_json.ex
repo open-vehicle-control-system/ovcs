@@ -16,8 +16,9 @@ defmodule VisionApiWeb.StatusJSON do
   as a string (`VisionCore.CameraDepth.unprojectable_reason/1`). A
   camera's or the sync's fields that were not measured
   are left out. Each exporter's status is a `level`, `ok`, `warning` or
-  `off`, and a `detail`; the API's own comes last, as
-  `GET /api/exporters` lists it. The CPU's load is the board's
+  `off`, and a `detail`, and its `dropped` the values its runner dropped
+  from each output's queue, by the output's name as `GET /api/exporters`
+  lists it; the API's own comes last, as `GET /api/exporters` lists it. The CPU's load is the board's
   (`OvcsVehicle.BoardStatus`). `pair` holds the
   `VisionCore.Stereo.PairCheck` checks, `timing`,
   `rows`, `rotation`, `focus` and `brightness`, and `depth` the
@@ -68,10 +69,20 @@ defmodule VisionApiWeb.StatusJSON do
   end
 
   # The API pushes this status, so it is answering.
-  defp api, do: Map.put(ExporterJSON.api(), :status, %{level: "ok", detail: "Answering"})
+  defp api,
+    do:
+      Map.merge(ExporterJSON.api(), %{status: %{level: "ok", detail: "Answering"}, dropped: %{}})
 
   defp exporter(exporter),
-    do: %{id: exporter.id, name: exporter.name, status: ExporterJSON.status(exporter.status)}
+    do: %{
+      id: exporter.id,
+      name: exporter.name,
+      status: ExporterJSON.status(exporter.status),
+      dropped:
+        Map.new(exporter.dropped, fn {output, count} ->
+          {ExporterJSON.output_name(output), count}
+        end)
+    }
 
   defp rename(fields, keys) do
     for {key, value} <- fields, Map.has_key?(keys, key), into: %{}, do: {keys[key], value}

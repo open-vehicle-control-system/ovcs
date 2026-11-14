@@ -1,26 +1,31 @@
 defmodule VisionCore.Exporter.Runner do
   @moduledoc """
   Runs a `VisionCore.Exporter`: starts it, subscribes to the outputs it
-  names through `VisionCore.Outputs`, hands it the newest value of each,
-  at most each output's `:max_hz` times a second and only while it is
-  not busy with that output, answers its status by a deadline
-  (`status/2`), and runs its actions (`action/4`). It passes the
+  names through `VisionCore.Outputs`, hands it the values of each, at
+  most each output's `:max_hz` times a second and only while it is not
+  busy with that output, answers its status and the values it dropped
+  by a deadline (`report/2`, `status/2`), and runs its actions
+  (`action/4`). It passes the
   exporter's `c:VisionCore.Exporter.handle_info/2` the messages sent to
   the runner with `send/2` and the casts that are not outputs, such as
   those of the keys the exporter subscribed to from its
-  `c:VisionCore.Exporter.init/1`. Calls other than `status/2`'s and
-  `action/4`'s are answered `{:error, :unknown_call}`.
+  `c:VisionCore.Exporter.init/1`. Calls other than `report/2`'s,
+  `status/2`'s and `action/4`'s are answered `{:error, :unknown_call}`.
 
-  When the runner takes a value from its mailbox, the newest value of
+  With the exporter's delivery `:latest` (`c:VisionCore.Exporter.delivery/1`),
+  when the runner takes a value from its mailbox, the newest value of
   the same output waiting there replaces it, so a slow exporter skips
-  values instead of falling behind. A camera's video is the exception:
-  each of its frames is handed over in order, from a key frame, with no
-  `:max_hz`, those that come while the exporter is busy with it queued,
-  up to a bound past which it skips to the next key frame
-  (`VisionCore.Camera.VideoQueue`). A value that comes before its
+  values instead of falling behind. A value that comes before its
   output's next slot opens, or while the exporter is busy with the
   output, is held, replaced by any newer one, and handed over once the
-  slot is open and the exporter ready. The camera outputs tell their
+  slot is open and the exporter ready. With `{:queue, max}`, each value
+  is queued instead, in order, up to `max` per output, the oldest
+  dropped and counted past it (`VisionCore.Exporter.ValueQueue`), and
+  the values are handed over in turn as slots open and the exporter is
+  ready. A camera's video is queued either way: each of its frames is
+  handed over in order, from a key frame, with no `:max_hz`, up to a
+  bound past which it skips to the next key frame
+  (`VisionCore.Camera.VideoQueue`), uncounted. The camera outputs tell their
   frames apart by `:label`, `"left"`, `"right"` or a camera's name, and
   by `:output`, the camera output a frame is of. Every other message is
   `{output, value}`, `output` being the output it is of: a detection
@@ -81,6 +86,7 @@ defmodule VisionCore.Exporter.Runner do
 
   alias VisionCore.Camera.{Frame, Unit, VideoQueue}
   alias VisionCore.Exporter
+  alias VisionCore.Exporter.ValueQueue
 
   @default_status_timeout_ms 200
   @first_retry_ms 500
@@ -104,11 +110,25 @@ defmodule VisionCore.Exporter.Runner do
   running.
   """
   @spec status(GenServer.server(), timeout()) :: Exporter.status()
-  def status(runner, timeout_ms \\ @default_status_timeout_ms) do
-    GenServer.call(runner, :status, timeout_ms)
+  def status(runner, timeout_ms \\ @default_status_timeout_ms),
+    do: report(runner, timeout_ms).status
+
+  @doc """
+  The exporter's `status`, as `status/2` answers it, and the values
+  `dropped` from each output's queue since the runner started, by
+  output: each output an exporter with `{:queue, max}` delivery reads,
+  none with `:latest` (`c:VisionCore.Exporter.delivery/1`), and none
+  when the runner does not answer.
+  """
+  @spec report(GenServer.server(), timeout()) :: %{
+          status: Exporter.status(),
+          dropped: %{Exporter.output() => non_neg_integer()}
+        }
+  def report(runner, timeout_ms \\ @default_status_timeout_ms) do
+    GenServer.call(runner, :report, timeout_ms)
   catch
-    :exit, {:timeout, _call} -> {:warning, "Not answering"}
-    :exit, _reason -> {:off, "Not running"}
+    :exit, {:timeout, _call} -> %{status: {:warning, "Not answering"}, dropped: %{}}
+    :exit, _reason -> %{status: {:off, "Not running"}, dropped: %{}}
   end
 
   @doc """
@@ -135,6 +155,7 @@ defmodule VisionCore.Exporter.Runner do
     config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
 
     with {:ok, specs} <- Exporter.output_specs(exporter, options),
+         {:ok, delivery} <- Exporter.delivery(exporter, options),
          :ok <- check_sent(specs, config),
          :ok <- check_keys_apart(specs, config) do
       if function_exported?(exporter, :terminate, 2), do: Process.flag(:trap_exit, true)
@@ -144,7 +165,7 @@ defmodule VisionCore.Exporter.Runner do
          exporter: exporter,
          options: options,
          config: config,
-         outputs: slots(specs),
+         outputs: slots(specs, delivery),
          slots: %{},
          started: false,
          exporter_state: nil,
@@ -201,9 +222,9 @@ defmodule VisionCore.Exporter.Runner do
   def handle_continue(:start_exporter, state), do: {:noreply, start_exporter(state)}
 
   @impl GenServer
-  def handle_call(:status, _from, state) do
+  def handle_call(:report, _from, state) do
     {status, state} = status_of(state)
-    {:reply, status, state}
+    {:reply, %{status: status, dropped: dropped(state.slots)}, state}
   end
 
   def handle_call({:action, _name, _params}, _from, %{started: false} = state),
@@ -222,8 +243,7 @@ defmodule VisionCore.Exporter.Runner do
   def handle_cast(message, state) do
     case route(message, state.slots) do
       nil -> handle_message(message, state)
-      {:camera_video, _name, _output} = video -> {:noreply, queue(state, video, payload(message))}
-      output -> {:noreply, offer(state, output, newest(output, payload(message)))}
+      output -> {:noreply, take(state, output, state.slots[output], payload(message))}
     end
   end
 
@@ -379,8 +399,8 @@ defmodule VisionCore.Exporter.Runner do
     end
   end
 
-  # Per output: :max_hz interval, last hand-over, held value, timer, busy, failure, video queue.
-  defp slots(specs) do
+  # Per output: :max_hz interval, last hand-over, held value, timer, busy, failure, queue.
+  defp slots(specs, delivery) do
     Map.new(specs, fn {output, max_hz} ->
       {output,
        %{
@@ -390,13 +410,22 @@ defmodule VisionCore.Exporter.Runner do
          timer: nil,
          busy: false,
          failed: nil,
-         queue: video_queue(output)
+         queue: new_queue(output, delivery)
        }}
     end)
   end
 
-  defp video_queue({:camera_video, _name, _output}), do: VideoQueue.new(@video_backlog_frames)
-  defp video_queue(_output), do: nil
+  defp new_queue({:camera_video, _name, _output}, _delivery),
+    do: VideoQueue.new(@video_backlog_frames)
+
+  defp new_queue(_output, {:queue, max}), do: ValueQueue.new(max)
+  defp new_queue(_output, :latest), do: nil
+
+  defp dropped(slots) do
+    for {output, %{queue: %ValueQueue{} = queue}} <- slots,
+        into: %{},
+        do: {output, ValueQueue.dropped(queue)}
+  end
 
   defp subscribe(outputs, config) do
     outputs
@@ -459,11 +488,20 @@ defmodule VisionCore.Exporter.Runner do
     end
   end
 
+  defp take(state, output, %{queue: nil}, value), do: offer(state, output, newest(output, value))
+  defp take(state, output, _queued, value), do: queue(state, output, value)
+
   defp offer(state, output, value),
     do: state |> put_in([:slots, output, :held], value) |> release(output)
 
-  defp queue(state, video, frame),
-    do: state |> update_in([:slots, video, :queue], &VideoQueue.push(&1, frame)) |> release(video)
+  # A `VisionCore.Camera.VideoQueue` or a `VisionCore.Exporter.ValueQueue`, which push and pop alike.
+  defp queue(state, output, value) do
+    state
+    |> update_in([:slots, output, :queue], fn %queue_module{} = queue ->
+      queue_module.push(queue, value)
+    end)
+    |> release(output)
+  end
 
   defp ready(state, outputs) do
     outputs
@@ -473,42 +511,45 @@ defmodule VisionCore.Exporter.Runner do
     end)
   end
 
-  # A video's queued frames, in order, while the exporter is not busy with it.
-  defp release(state, {:camera_video, _name, _output} = video) do
-    slot = state.slots[video]
-
-    with false <- slot.busy,
-         {:ok, frame, queue} <- VideoQueue.pop(slot.queue) do
-      state
-      |> put_in([:slots, video, :queue], queue)
-      |> hand_over(video, frame, now_ms())
-      |> release(video)
-    else
-      _busy_or_empty -> state
-    end
-  end
+  defp release(state, output), do: release(state, output, state.slots[output])
 
   # Hands the held value over when the slot is open and the exporter not busy, or awaits the slot.
-  defp release(state, output) do
-    slot = state.slots[output]
+  defp release(state, output, %{queue: nil} = slot) do
     now_ms = now_ms()
 
     cond do
-      is_nil(slot.held) or slot.busy ->
-        state
-
-      open?(slot, now_ms) ->
-        hand_over(state, output, newest(output, slot.held), now_ms)
-
-      slot.timer != nil ->
-        state
-
-      true ->
-        timer = make_ref()
-        opens_in_ms = slot.handed_ms + slot.interval_ms - now_ms
-        Process.send_after(self(), {__MODULE__, :slot_open, output, timer}, opens_in_ms)
-        put_in(state, [:slots, output, :timer], timer)
+      is_nil(slot.held) or slot.busy -> state
+      open?(slot, now_ms) -> hand_over(state, output, newest(output, slot.held), now_ms)
+      true -> await_slot(state, output, slot, now_ms)
     end
+  end
+
+  # Hands the head of the queue over, and the values after it in turn, while slot and exporter allow.
+  defp release(state, output, %{queue: %queue_module{} = queue} = slot) do
+    now_ms = now_ms()
+
+    case !slot.busy && queue_module.pop(queue) do
+      {:ok, value, rest} ->
+        if open?(slot, now_ms),
+          do:
+            state
+            |> put_in([:slots, output, :queue], rest)
+            |> hand_over(output, value, now_ms)
+            |> release(output),
+          else: await_slot(state, output, slot, now_ms)
+
+      _busy_or_empty ->
+        state
+    end
+  end
+
+  defp await_slot(state, _output, %{timer: timer}, _now_ms) when timer != nil, do: state
+
+  defp await_slot(state, output, slot, now_ms) do
+    timer = make_ref()
+    opens_in_ms = slot.handed_ms + slot.interval_ms - now_ms
+    Process.send_after(self(), {__MODULE__, :slot_open, output, timer}, opens_in_ms)
+    put_in(state, [:slots, output, :timer], timer)
   end
 
   defp open?(%{interval_ms: nil}, _now_ms), do: true

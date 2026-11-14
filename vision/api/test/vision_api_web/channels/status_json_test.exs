@@ -86,7 +86,14 @@ defmodule VisionApiWeb.StatusJSONTest do
       alignment: %{offset_rows: -0.02, band_offset_rows: [0.1, -0.1]},
       sharpness: %{left: 0.01, right: 0.012},
       quality: %{matched_percent: 60.4, mean_disparity_px: 24.2, spread_px: 15.6, jitter_px: 0.13},
-      exporters: [%{id: "ros2_zenoh", name: "ROS 2 · Zenoh", status: {:ok, "Connected"}}]
+      exporters: [
+        %{
+          id: "ros2_zenoh",
+          name: "ROS 2 · Zenoh",
+          status: {:ok, "Connected"},
+          dropped: %{:stereo_pair => 2, {:detections, :road} => 0}
+        }
+      ]
     }
 
     assert StatusJSON.status(snapshot) == %{
@@ -182,9 +189,15 @@ defmodule VisionApiWeb.StatusJSONTest do
                %{
                  id: "ros2_zenoh",
                  name: "ROS 2 · Zenoh",
-                 status: %{level: "ok", detail: "Connected"}
+                 status: %{level: "ok", detail: "Connected"},
+                 dropped: %{"stereo_pair" => 2, "detections:road" => 0}
                },
-               %{id: "api", name: "API", status: %{level: "ok", detail: "Answering"}}
+               %{
+                 id: "api",
+                 name: "API",
+                 status: %{level: "ok", detail: "Answering"},
+                 dropped: %{}
+               }
              ]
            }
   end

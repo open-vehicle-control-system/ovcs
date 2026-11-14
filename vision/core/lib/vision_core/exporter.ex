@@ -48,13 +48,26 @@ defmodule VisionCore.Exporter do
   under the key `output_key/2` resolves in the configuration, and leaves
   out an output nothing in the configuration produces, such as
   `{:detections, :road}` on a unit without a detector named `:road`, or `{:camera_frame, :hq}` on
-  one without a camera named `:hq`. The exporter is handed the
-  newest value of each output only: values that came while it was busy
-  are dropped, and under `:max_hz` the latest one is held until the
-  output's next slot opens. A video is the exception: a decoder needs
-  every frame from a key frame on, so the exporter is handed every frame
-  of it in order, from a key frame, those that come while it is busy
-  queued (`VisionCore.Camera.VideoQueue`).
+  one without a camera named `:hq`.
+
+  ## Delivery
+
+  `c:delivery/1` says which values of each output the exporter is
+  handed:
+
+    * `:latest`, without it: the newest value of each output only.
+      Values that came while it was busy are dropped, uncounted, and
+      under `:max_hz` the latest one is held until the output's next
+      slot opens.
+    * `{:queue, max}`: every value, in order. Those that come while it
+      is busy with the output, or before the output's next slot opens,
+      are queued, at most `max` of them per output; one more drops the
+      oldest, which the runner counts by output
+      (`VisionCore.Exporter.Runner.report/2`).
+
+  A video is handed every frame of it in order either way, from a key
+  frame, since a decoder needs every frame from a key frame on, those
+  that come while it is busy queued (`VisionCore.Camera.VideoQueue`).
 
   An output's messages are `{output, value}`, but a camera's, which are
   `{:camera_frame, frame}`, the frame carrying the camera's side, or
@@ -83,7 +96,8 @@ defmodule VisionCore.Exporter do
       leaves the exporter down.
     * `c:handle_output/3` does not wait on a slow transport: it returns
       `{:busy, state}`, and the runner hands it nothing more of that
-      output, holding the newest value, until `c:handle_info/2` returns
+      output, holding the newest value or queuing them (see "Delivery"),
+      until `c:handle_info/2` returns
       `{:ready, output, state}`, typically on the transport's
       acknowledgement. `{:error, reason, state}` counts a value not
       exported, which the default status shows.
@@ -205,6 +219,9 @@ defmodule VisionCore.Exporter do
           | {Pair.t() | Frame.t(), [map()]}
           | {Frame.t(), map(), map() | nil}
 
+  @typedoc "Which values of its outputs an exporter is handed; see the module doc."
+  @type delivery :: :latest | {:queue, max :: pos_integer()}
+
   @typedoc "How the exporter is doing, with a sentence saying why."
   @type status :: {:ok | :warning | :off, String.t()}
 
@@ -237,7 +254,8 @@ defmodule VisionCore.Exporter do
   @callback init(options :: keyword()) :: {:ok, state()} | {:error, term()}
 
   @doc """
-  Takes `value`, the newest of `output`, out of the unit, without
+  Takes `value`, of `output`, the newest or the next queued (see
+  "Delivery" in the module doc), out of the unit, without
   waiting: `{:busy, state}` until `c:handle_info/2` says the output is
   ready again, `{:error, reason, state}` for a value not exported.
   """
@@ -287,6 +305,13 @@ defmodule VisionCore.Exporter do
   @callback describe(options :: keyword()) :: %{id: atom(), name: String.t()}
 
   @doc """
+  Which values of its outputs the exporter is handed, given its
+  options; see "Delivery" in the module doc. Without it, `:latest`. It
+  answers at once: the runner's start waits for it.
+  """
+  @callback delivery(options :: keyword()) :: delivery()
+
+  @doc """
   The actions people can run on the exporter, given its options.
   Without it, none. It answers at once: each listing waits for it.
   """
@@ -308,7 +333,8 @@ defmodule VisionCore.Exporter do
                       check: 1,
                       describe: 1,
                       actions: 1,
-                      handle_action: 4
+                      handle_action: 4,
+                      delivery: 1
 
   @doc """
   Whether `term` is one of the outputs an exporter can name:
@@ -398,6 +424,26 @@ defmodule VisionCore.Exporter do
     Map.put(described, :id, Keyword.get(options, :id, described.id))
   rescue
     _exception -> %{id: Keyword.get(options, :id, exporter), name: inspect(exporter)}
+  end
+
+  @doc """
+  Which values of its outputs `exporter` is handed with `options`, its
+  `c:delivery/1`, `:latest` without it; `{:error, {:invalid_delivery,
+  answer}}` for an answer that is no `t:delivery/0`.
+  """
+  @spec delivery(module(), keyword()) ::
+          {:ok, delivery()} | {:error, {:invalid_delivery, term()}}
+  def delivery(exporter, options) do
+    answer =
+      if Code.ensure_loaded?(exporter) and function_exported?(exporter, :delivery, 1),
+        do: exporter.delivery(options),
+        else: :latest
+
+    case answer do
+      :latest -> {:ok, :latest}
+      {:queue, max} when is_integer(max) and max > 0 -> {:ok, answer}
+      _invalid -> {:error, {:invalid_delivery, answer}}
+    end
   end
 
   @doc """

@@ -24,6 +24,9 @@ defmodule VisionCore.Exporter.RunnerTest do
     def outputs(options), do: Keyword.fetch!(options, :outputs)
 
     @impl VisionCore.Exporter
+    def delivery(options), do: Keyword.get(options, :delivery, :latest)
+
+    @impl VisionCore.Exporter
     def init(options), do: {:ok, Map.new(options)}
 
     @impl VisionCore.Exporter
@@ -112,6 +115,29 @@ defmodule VisionCore.Exporter.RunnerTest do
     def handle_info(:sent, test), do: {:ready, :stereo_pair, test}
   end
 
+  # Takes every value its `:delivery` option queues, busy with each until told it is sent.
+  defmodule Queuing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair, {:detections, :detection}]
+
+    @impl VisionCore.Exporter
+    def delivery(options), do: Keyword.fetch!(options, :delivery)
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :test)}
+
+    @impl VisionCore.Exporter
+    def handle_output(output, value, test) do
+      send(test, {:exported, output, value})
+      {:busy, test}
+    end
+
+    @impl VisionCore.Exporter
+    def handle_info({:sent, output}, test), do: {:ready, output, test}
+  end
+
   # Busy with each output until told both are sent; the slot of its pairs opens five times a second.
   defmodule SlowPair do
     @behaviour VisionCore.Exporter
@@ -138,6 +164,9 @@ defmodule VisionCore.Exporter.RunnerTest do
 
     @impl VisionCore.Exporter
     def outputs(_options), do: [{:camera_video, :hq, :view_h264}]
+
+    @impl VisionCore.Exporter
+    def delivery(options), do: Keyword.get(options, :delivery, :latest)
 
     @impl VisionCore.Exporter
     def init(options), do: {:ok, Keyword.fetch!(options, :test)}
@@ -783,6 +812,95 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  describe "queued delivery" do
+    defp exported_pairs(pairs \\ []) do
+      receive do
+        {:exported, :stereo_pair, pair} -> exported_pairs([pair | pairs])
+      after
+        100 -> Enum.reverse(pairs)
+      end
+    end
+
+    defp send_all(runner, output, count),
+      do: for(_value <- 1..count, do: send(runner, {:sent, output}))
+
+    test "a busy exporter is handed every value that came meanwhile, in order, once ready" do
+      runner = start_runner(Queuing, delivery: {:queue, 3})
+      publish_pair(0)
+      assert_receive {:exported, :stereo_pair, 0}
+
+      for pair <- 1..3, do: publish_pair(pair)
+      :sys.get_state(runner)
+      refute_received {:exported, :stereo_pair, _pair}
+
+      send_all(runner, :stereo_pair, 3)
+      assert exported_pairs() == [1, 2, 3]
+      assert Runner.report(runner).dropped == %{:stereo_pair => 0, {:detections, :detection} => 0}
+    end
+
+    test "past its bound, drops the oldest value and counts it, for that output alone" do
+      runner = start_runner(Queuing, delivery: {:queue, 3})
+      publish_pair(0)
+      assert_receive {:exported, :stereo_pair, 0}
+
+      for pair <- 1..4, do: publish_pair(pair)
+      :sys.get_state(runner)
+
+      send_all(runner, :stereo_pair, 3)
+      assert exported_pairs() == [2, 3, 4]
+
+      assert Runner.report(runner) == %{
+               status: {:ok, "Running"},
+               dropped: %{:stereo_pair => 1, {:detections, :detection} => 0}
+             }
+    end
+
+    test "hands over every value that piled up while the exporter worked on one, none collapsed" do
+      runner =
+        start_forwarder(outputs: [:stereo_pair], block_on: 0, delivery: {:queue, 10})
+
+      publish_pair(0)
+      assert_receive {:exported, :stereo_pair, 0, _at}
+      for pair <- 1..3, do: publish_pair(pair)
+
+      send(runner, :release)
+
+      for pair <- 1..3, do: assert_receive({:exported, :stereo_pair, ^pair, _at})
+      assert Runner.report(runner).dropped == %{stereo_pair: 0}
+    end
+
+    test "hands a queued output's values at most :max_hz a second, each in turn" do
+      start_forwarder(outputs: [stereo_pair: [max_hz: 5]], delivery: {:queue, 10})
+
+      publish_pair(1)
+      publish_pair(2)
+
+      assert_receive {:exported, :stereo_pair, 1, first_ms}
+      assert_receive {:exported, :stereo_pair, 2, second_ms}, 1_000
+
+      # Whole milliseconds, each read just after the runner's own reading: a tick may fall between.
+      assert second_ms - first_ms >= 200 - 1
+    end
+
+    test "with the newest value only, counts no drops" do
+      runner = start_runner(Slow, [])
+
+      assert Runner.report(runner).dropped == %{}
+    end
+
+    test "refuses to start on a delivery it does not know" do
+      for delivery <- [:all, {:queue, 0}, {:queue, :many}] do
+        assert {:error, {{:invalid_delivery, ^delivery}, _child}} =
+                 start_supervised(
+                   {Runner,
+                    exporter: Queuing,
+                    options: [test: self(), delivery: delivery],
+                    config: config()}
+                 )
+      end
+    end
+  end
+
   describe "a camera's video" do
     @video_config %VisionCore.Config{
       components: [
@@ -872,6 +990,21 @@ defmodule VisionCore.Exporter.RunnerTest do
 
       for _frame <- 1..3, do: send(runner, :sent)
       assert exported_video() == [101, 102]
+    end
+
+    test "skips to the next key frame past its backlog under queued delivery too, uncounted" do
+      runner = start_runner(SlowVideo, [delivery: {:queue, 5}], Runner, @video_config)
+      publish_video(0, true)
+      assert_receive {:exported, @video, 0}
+
+      for capture_ns <- 1..100, do: publish_video(capture_ns)
+      publish_video(101, true)
+      publish_video(102)
+      :sys.get_state(runner)
+
+      for _frame <- 1..3, do: send(runner, :sent)
+      assert exported_video() == [101, 102]
+      assert Runner.report(runner).dropped == %{}
     end
 
     test "is handed apart from the camera's images" do

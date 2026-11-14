@@ -110,12 +110,12 @@ A pipeline that does not answer is left out.
     "objects": {"camera": "center", "available": false, "reason": "no_pose"},
     "scene": {"camera": "center", "available": false, "reason": "no_pose"}
   },
-  "exporters": [{"id": "ros2_zenoh", "name": "ROS 2 · Zenoh", "status": {"level": "warning", "detail": "Disconnected"}},
-                {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}}]
+  "exporters": [{"id": "ros2_zenoh", "name": "ROS 2 · Zenoh", "status": {"level": "warning", "detail": "Disconnected"}, "dropped": {}},
+                {"id": "api", "name": "API", "status": {"level": "ok", "detail": "Answering"}, "dropped": {}}]
 }
 ```
 
-`exporters` holds the status of each exporter `GET /api/exporters` lists, the API's own last. A `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. The processors' load is the board's, in `GET /api/board`.
+`exporters` holds the status of each exporter `GET /api/exporters` lists, the API's own last. A `level` is `ok`, `warning` or `off`; for an exporter that does not run, `detail` says why. `dropped` counts, by output name, the values an exporter that queues its outputs dropped since it started ([Exporters](./data_flow.md#exporters)); it is empty for the others. The processors' load is the board's, in `GET /api/board`.
 
 `pair` judges the two cameras together, so a reader computes nothing. Each check has:
 

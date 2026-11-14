@@ -117,7 +117,12 @@ defmodule VisionCore.Status do
 
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
   @type latencies :: %{cameras: float() | nil, pairing: float() | nil}
-  @type exporter :: %{id: String.t(), name: String.t(), status: Exporter.status()}
+  @type exporter :: %{
+          id: String.t(),
+          name: String.t(),
+          status: Exporter.status(),
+          dropped: %{Exporter.output() => non_neg_integer()}
+        }
   @type snapshot :: %{
           cameras: %{required(atom()) => camera()},
           sync: map(),
@@ -597,7 +602,7 @@ defmodule VisionCore.Status do
   # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
   defp exporters do
     for exporter <- Exporters.list(div(@call_timeout_ms, 2)),
-        do: Map.take(exporter, [:id, :name, :status])
+        do: Map.take(exporter, [:id, :name, :status, :dropped])
   end
 
   defp own_calls(%{own_cameras: own_cameras}) do

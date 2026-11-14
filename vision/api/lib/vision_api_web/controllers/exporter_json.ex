@@ -47,7 +47,9 @@ defmodule VisionApiWeb.ExporterJSON do
         Map.take(entry, [:source])
       )
 
-  defp output_name({output, name}), do: "#{output}:#{name}"
-  defp output_name({output, name, camera_output}), do: "#{output}:#{name}:#{camera_output}"
-  defp output_name(output), do: Atom.to_string(output)
+  @doc "An output's name: `stereo_pair`, `detections:<name>`, `camera_frame:<name>:<output>`."
+  @spec output_name(VisionCore.Exporter.output()) :: String.t()
+  def output_name({output, name}), do: "#{output}:#{name}"
+  def output_name({output, name, camera_output}), do: "#{output}:#{name}:#{camera_output}"
+  def output_name(output), do: Atom.to_string(output)
 end

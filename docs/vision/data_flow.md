@@ -141,6 +141,8 @@ An exporter takes the unit's outputs out of it, to a network or to storage. It i
 
 [`VisionCore.Exporter.Runner`](../../vision/core/lib/vision_core/exporter/runner.ex) subscribes to those outputs and hands the exporter the newest value of each, at most the output's `:max_hz` times a second. A value that arrives while the exporter is busy replaces the one before it, so a slow exporter skips values instead of falling behind. An exporter whose transport answers later says it is busy with an output. It is handed that output's newest value once it says it is ready.
 
+An exporter that needs every value, such as a recorder, answers `{:queue, max}` from the optional `delivery/1` callback. The runner then queues each output's values while the exporter is busy and hands them over in order. Past `max` values, it drops the oldest and counts it. The counts per output are in the exporter's `dropped` on the [`status` channel](./channels.md). A camera's video is queued in order either way.
+
 Your vehicle's composer lists the exporters in its `VisionCore.Config`, next to the components that produce the outputs. Each entry is `{module, options}`, or a module alone. The ROS 2 exporter needs the ROS 2 link, the `ros2:` section:
 
 ```elixir
