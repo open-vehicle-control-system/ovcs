@@ -37,6 +37,11 @@ defmodule VisionApiWeb.Router do
     post "/calibration-solves", CalibrationActionController, :solve
     post "/calibration-applies", CalibrationActionController, :apply
     post "/calibration-resets", CalibrationActionController, :reset
+    get "/saved-calibrations", SavedCalibrationController, :index
+    get "/saved-calibrations/:id", SavedCalibrationController, :show
+    patch "/saved-calibrations/:id", SavedCalibrationController, :update
+    delete "/saved-calibrations/:id", SavedCalibrationController, :delete
+    post "/calibration-selections", CalibrationSelectionController, :create
   end
 
   scope "/api", VisionApiWeb do

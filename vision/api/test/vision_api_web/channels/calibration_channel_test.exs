@@ -69,6 +69,14 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     assert_push "calibration", %{id: "hq", source: "builtIn"}
   end
 
+  test "a change of the calibrations kept for a target is pushed with its calibration's id" do
+    {:ok, _reply, _socket} = join()
+    assert_push "session", %{phase: "idle"}
+
+    VisionCore.Calibration.Recorder.changed("hq")
+    assert_push "saved", %{calibration: "hq"}
+  end
+
   test "the channel takes no push" do
     Process.flag(:trap_exit, true)
     {:ok, _reply, socket} = join()

@@ -465,7 +465,7 @@ A new calibration is made by a session, one per unit and shared by every client,
 | `POST /api/calibration-solves` | Computes the calibration from the samples. | 202 | 422 before they are good enough |
 | `POST /api/calibration-applies` | Has the unit take the solved calibration. | 202 | 422 before a solve |
 | `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 201 | 409 while a calibration is being applied |
-| `POST /api/calibration-resets` | Deletes the stored calibration of the `calibration` it names and returns to the built-in one. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 500 when the unit does not take the built-in calibration, the stored one kept |
+| `POST /api/calibration-resets` | Removes the stored files of the `calibration` it names and returns to the built-in one; the calibrations kept stay. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 500 when the unit does not take the built-in calibration, the stored one kept |
 
 Each also answers a 404 on a unit with nothing to calibrate, a 503 while the unit's calibration session does not run, a 409 for another `data.type`, a 403 for a document carrying an `id`, and a 400 for a document sent as a form or in the query string, or without `data.type`. Start a session on the stereo pair for a board of 8 × 6 inner corners and 25 mm squares:
 
@@ -506,6 +506,66 @@ curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/calibration-
 - `error` is why the last solve or apply failed.
 
 The unit looks for the board only while a client is joined to the [calibration channel](./channels.md#calibration): a session started over HTTP alone captures nothing. A solve answers at once, a 202 with the phase `solving`, and its outcome comes on the channel: `solved` with the `result`, or `capturing` with `error` set. An apply answers at once too, a 202 with the phase `applying`, and its outcome comes on the channel: the phase `idle` and the new calibration in use when the unit takes it, or `solved` with `error` set when it refuses it. A reset answers once the unit has taken the built-in calibration.
+
+### The calibrations kept
+
+The unit keeps every calibration it was given, as `saved-calibrations`, each with its `calibration` relationship, the one of the `calibrations` it belongs to.
+
+| Request | Does | Answers | Refuses with |
+|---|---|---|---|
+| `GET /api/saved-calibrations` | Lists them, the newest first within each calibration; `filter[calibration]=<id>` keeps one calibration's. | 200 | 400 for a `filter` that names no calibration |
+| `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit does not keep |
+| `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed. | 200 | 400 without a name, 409 for another type or id, 422 for a name out of bounds, 404 |
+| `DELETE /api/saved-calibrations/:id` | Removes it. | 204 | 409 for the calibration in force, 404 |
+| `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 while a calibration session runs, 422 when the unit refuses its files |
+
+```json
+{
+  "data": {
+    "type": "saved-calibrations",
+    "id": "7",
+    "attributes": {
+      "name": "2026-11-14 00:28",
+      "origin": "dashboard",
+      "createdAt": "2026-11-14T00:28:11Z",
+      "inForce": true,
+      "board": {"columns": 8, "rows": 6, "squareMm": 30.0},
+      "samples": 62,
+      "stereoRmsPx": 0.34,
+      "baselineM": 0.198,
+      "cameras": [
+        {
+          "name": "left",
+          "imageWidth": 728,
+          "imageHeight": 544,
+          "fx": 886.3,
+          "fy": 883.9,
+          "cx": 364.6,
+          "cy": 298.6,
+          "distortion": [-0.4783, 0.2121, -0.0003, 0.0013, 0.0],
+          "rmsPx": 0.21
+        }
+      ]
+    },
+    "relationships": {
+      "calibration": {"data": {"type": "calibrations", "id": "stereo"}}
+    }
+  }
+}
+```
+
+`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A selection is created with:
+
+```json
+{
+  "data": {
+    "type": "calibration-selections",
+    "relationships": {
+      "savedCalibration": {"data": {"type": "saved-calibrations", "id": "7"}}
+    }
+  }
+}
+```
 
 ## Live channels
 
