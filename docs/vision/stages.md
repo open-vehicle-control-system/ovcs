@@ -51,6 +51,12 @@ The defaults and accepted values of each setting are in its stage's module, link
 - a value outside what the stage accepts;
 - a `default_stages/1` override that names no stage.
 
+Before the stages, the pairing hands the pipeline the two frames captured closest together. Its one setting is live, as `<prefix>.pairing.pair_tolerance_ms`:
+
+| Setting | Kind | Meaning |
+|---|---|---|
+| `pair_tolerance_ms` | live | Largest capture time gap between the two frames of a pair, in ms: 0 to 1000, 33 by default (`:pair_tolerance_ms` on the `:stereo` component). |
+
 Each cost below is the median time of the stage in the `stereo_match` Port. It was measured on a Raspberry Pi 5 matching 480 × 270 with 64 disparities over 3 paths, while both cameras captured at 30 frames a second. [Vision performance](./performance.md) has the full measurements.
 
 ### 1. Rectification
@@ -64,6 +70,15 @@ Undistorts and rectifies both camera frames with each camera's calibration, so a
 `VisionCore.Stereo.AlignmentCorrection` sets `right_row_offset` for you. It is on by default (`:align_correction` on the `:stereo` component). When RowAlignment keeps reading an offset beyond a tenth of a row, it moves the right image, up to six rows. It corrects rows only: a camera that moved sideways needs a new calibration.
 
 Its switch, `auto_row_offset`, sits next to `right_row_offset` in the Rectification settings. Switch it off to keep the offset it reached, or one you set by hand.
+
+The correction's own settings follow, all live. A change starts it over from fresh readings:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `auto_row_offset_window` | 5 | Row offset readings it takes the median of, one per second: 1 to 30. |
+| `auto_row_offset_threshold_rows` | 0.1 | Median offset, in rows, it leaves alone: 0.01 to 2. |
+| `auto_row_offset_gain` | 1.5 | How far it moves for a row read, since readings fall short: 0.1 to 3. |
+| `auto_row_offset_max_rows` | 6 | Furthest it moves the right image, in rows, either way: 0 to 8. |
 
 The calibrations are inputs, not compiled in, so a new calibration needs no rebuild. Cost on the Pi 5: about 6 ms.
 

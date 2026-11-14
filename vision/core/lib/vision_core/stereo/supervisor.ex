@@ -16,8 +16,9 @@ defmodule VisionCore.Stereo.Supervisor do
        parameter groups in `VisionCore.Parameters`.
 
   A unit with neither side's calibration file (`calibrated?/1`) is
-  uncalibrated: it starts the two drivers alone, so that the cameras can
-  be calibrated, and logs so. `VisionCore.Stereo.Calibration` restarts it
+  uncalibrated: it starts the two drivers and the parameters of the
+  cameras alone, so that the cameras can be set and calibrated, and logs
+  so. `VisionCore.Stereo.Calibration` restarts it
   once both files are written. With one side's file alone, the pipeline
   refuses to start, and so does the unit.
 
@@ -555,7 +556,10 @@ defmodule VisionCore.Stereo.Supervisor do
 
   defp child_specs(config) do
     drivers = [camera_driver_spec(config, :left), camera_driver_spec(config, :right)]
-    if uncalibrated?(config), do: drivers, else: drivers ++ pipeline_specs(config)
+
+    if uncalibrated?(config),
+      do: drivers ++ [parameters_spec(config, pipeline: nil)],
+      else: drivers ++ pipeline_specs(config)
   end
 
   defp pipeline_specs(config) do
@@ -568,20 +572,28 @@ defmodule VisionCore.Stereo.Supervisor do
     ] ++
       alignment_correction_specs(config) ++
       [
-        Supervisor.child_spec(
-          {Parameters,
-           prefix: config.prefix,
-           driver: config.driver,
-           left: config.left,
-           right: config.right,
-           width: config.width,
-           height: config.height,
-           fps: config.fps,
-           match_width: config.match_width,
-           match_height: config.match_height},
-          id: {:stereo, :parameters}
+        parameters_spec(config,
+          match_width: config.match_width,
+          match_height: config.match_height
         )
       ]
+  end
+
+  # `pipeline: nil` among `options` declares the cameras alone.
+  defp parameters_spec(config, options) do
+    Supervisor.child_spec(
+      {Parameters,
+       [
+         prefix: config.prefix,
+         driver: config.driver,
+         left: config.left,
+         right: config.right,
+         width: config.width,
+         height: config.height,
+         fps: config.fps
+       ] ++ options},
+      id: {:stereo, :parameters}
+    )
   end
 
   # Before the parameters, which declare its switch.

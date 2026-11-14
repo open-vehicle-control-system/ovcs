@@ -23,8 +23,10 @@ defmodule VisionCore.Stereo.Pairer do
     * `:cameras` (required) — `[{driver_module, "left"}, {driver_module, "right"}]`.
     * `:pipeline` (`VisionCore.Stereo.Pipeline`) — the pipeline server.
     * `:pair_tolerance_ms` (33) — the largest capture time gap of a
-      pair; wide enough for unsynchronised USB cameras with a stable
-      phase offset.
+      pair, an integer from 0 to 1000; wide enough for unsynchronised
+      USB cameras with a stable phase offset. It changes while the
+      pairer runs (`put_pair_tolerance_ms/2`), as the vision parameter
+      `<prefix>.pairing.pair_tolerance_ms`.
     * `:fps` (30) — the cameras' frame rate: frames half a period apart
       or more are not measured as a pair of the sync.
   """
@@ -32,10 +34,18 @@ defmodule VisionCore.Stereo.Pairer do
   require Logger
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Outputs
+  alias VisionCore.{Outputs, Settings}
   alias VisionCore.Stereo.{Pipeline, StageTimer, Sync}
 
-  @default_pair_tolerance_ms 33
+  @setting_specs [
+    pair_tolerance_ms: %{
+      type: :integer,
+      range: {0, 1000},
+      default: 33,
+      description: "Largest capture time gap between the two frames of a pair, in ms"
+    }
+  ]
+  @ns_per_ms 1_000_000
   @default_fps 30
   # A few frame periods: enough to find the closest pair.
   @frames_kept_per_side 4
@@ -51,11 +61,27 @@ defmodule VisionCore.Stereo.Pairer do
   @spec sync(GenServer.server()) :: Sync.summary()
   def sync(server \\ __MODULE__), do: GenServer.call(server, :sync)
 
+  @doc "The pairer's setting, `:pair_tolerance_ms`: its type, the values it takes and its default."
+  @spec setting_specs() :: Settings.specs()
+  def setting_specs, do: @setting_specs
+
+  @doc "The largest capture time gap of a pair, in ms."
+  @spec pair_tolerance_ms(GenServer.server()) :: non_neg_integer()
+  def pair_tolerance_ms(server \\ __MODULE__), do: GenServer.call(server, :pair_tolerance_ms)
+
+  @doc """
+  Changes the largest capture time gap of a pair to `tolerance_ms`, from
+  the next pair on, or says why it is refused.
+  """
+  @spec put_pair_tolerance_ms(GenServer.server(), term()) :: :ok | {:error, String.t()}
+  def put_pair_tolerance_ms(server \\ __MODULE__, tolerance_ms),
+    do: GenServer.call(server, {:put_pair_tolerance_ms, tolerance_ms})
+
   @impl GenServer
   def init(opts) do
     cameras = Keyword.fetch!(opts, :cameras)
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
-    tolerance_ms = Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms)
+    %{pair_tolerance_ms: tolerance_ms} = Settings.init!(@setting_specs, opts)
 
     for side <- ["left", "right"] do
       {driver, ^side} = List.keyfind(cameras, side, 1) || raise "no #{side} camera in :cameras"
@@ -67,7 +93,7 @@ defmodule VisionCore.Stereo.Pairer do
     {:ok,
      %{
        pipeline: pipeline,
-       pair_tolerance_ns: tolerance_ms * 1_000_000,
+       pair_tolerance_ns: tolerance_ms * @ns_per_ms,
        left_frames: [],
        right_frames: [],
        awaiting_pair: false,
@@ -80,6 +106,19 @@ defmodule VisionCore.Stereo.Pairer do
   @impl GenServer
   def handle_call(:sync, _from, state),
     do: {:reply, Sync.summary(state.sync, System.monotonic_time(:millisecond)), state}
+
+  def handle_call(:pair_tolerance_ms, _from, state),
+    do: {:reply, div(state.pair_tolerance_ns, @ns_per_ms), state}
+
+  def handle_call({:put_pair_tolerance_ms, tolerance_ms}, _from, state) do
+    case Settings.put(@setting_specs, %{pair_tolerance_ms: nil}, :pair_tolerance_ms, tolerance_ms) do
+      {:ok, %{pair_tolerance_ms: tolerance_ms}} ->
+        {:reply, :ok, %{state | pair_tolerance_ns: tolerance_ms * @ns_per_ms}}
+
+      {:error, _reason} = refusal ->
+        {:reply, refusal, state}
+    end
+  end
 
   @impl GenServer
   def handle_cast({:camera_frame, %Frame{} = frame}, state),

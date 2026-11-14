@@ -53,6 +53,49 @@ defmodule VisionCore.Stereo.PairerTest do
                      {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
   end
 
+  test "its tolerance changes while it runs, from the next pair on" do
+    pairer =
+      start_supervised!(
+        {Pairer,
+         cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), pair_tolerance_ms: 5}
+      )
+
+    publish = fn label, capture_ms ->
+      Outputs.publish(
+        {:camera_frame, Camera.name_for(label)},
+        {:camera_frame, frame(label, capture_ms)}
+      )
+    end
+
+    assert Pairer.pair_tolerance_ms(pairer) == 5
+    publish.("left", 100)
+    publish.("right", 120)
+    Pairer.sync(pairer)
+    refute_received {:"$gen_cast", {:submit, _left, _right, _pairer}}
+
+    assert Pairer.put_pair_tolerance_ms(pairer, 25) == :ok
+    publish.("right", 121)
+    Pairer.sync(pairer)
+
+    assert_received {:"$gen_cast", {:submit, %Frame{label: "left"}, %Frame{}, _pairer}}
+    assert Pairer.pair_tolerance_ms(pairer) == 25
+  end
+
+  test "refuses a tolerance that is no integer from 0 to 1000 ms, at start and while it runs" do
+    Process.flag(:trap_exit, true)
+    cameras = [{Camera, "left"}, {Camera, "right"}]
+
+    assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
+             Pairer.start_link(cameras: cameras, pipeline: self(), pair_tolerance_ms: -1)
+
+    assert message == "its :pair_tolerance_ms must be from 0 to 1000, got -1"
+
+    pairer = start_supervised!({Pairer, cameras: cameras, pipeline: self()})
+
+    assert Pairer.put_pair_tolerance_ms(pairer, 1.5) ==
+             {:error, "pair_tolerance_ms must be an integer, got 1.5"}
+  end
+
   test "measures the sync of the frames its cameras publish" do
     pairer =
       start_supervised!(

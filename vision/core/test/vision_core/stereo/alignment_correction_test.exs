@@ -127,6 +127,52 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
     refute AlignmentCorrection.enabled?(start(0.0, enabled: false))
   end
 
+  test "its settings change while it runs: how many readings, how large, how far it moves" do
+    pid = start()
+
+    assert AlignmentCorrection.settings(pid) ==
+             %{"window" => 5, "threshold_rows" => 0.1, "gain" => 1.5, "max_rows" => 6.0}
+
+    assert AlignmentCorrection.put_setting(pid, :window, 2) == :ok
+    assert AlignmentCorrection.put_setting(pid, :gain, 1.0) == :ok
+    for _ <- 1..2, do: tick(pid, 1.0)
+    assert_receive {:set, rows}
+    assert_in_delta rows, 1.0, 1.0e-6
+
+    assert AlignmentCorrection.put_setting(pid, :threshold_rows, 2) == :ok
+    for _ <- 1..2, do: tick(pid, 1.0)
+    refute_receive {:set, _rows}, 50
+
+    assert AlignmentCorrection.put_setting(pid, :max_rows, 1.5) == :ok
+    for _ <- 1..2, do: tick(pid, 3.0)
+    assert_receive {:set, rows}
+    assert_in_delta rows, 1.5, 1.0e-6
+  end
+
+  test "a changed setting starts it over from fresh readings, and one out of range is refused" do
+    pid = start()
+    for _ <- 1..4, do: tick(pid, 1.0)
+
+    assert AlignmentCorrection.put_setting(pid, :gain, 2.0) == :ok
+    tick(pid, 1.0)
+    refute_receive {:set, _rows}, 50
+
+    assert AlignmentCorrection.put_setting(pid, :window, 0) ==
+             {:error, "window must be from 1 to 30, got 0"}
+  end
+
+  test "takes its settings from its options, refusing one out of range" do
+    pid = start(0.0, window: 1, gain: 1.0)
+    tick(pid, 1.0)
+    assert_receive {:set, rows}
+    assert_in_delta rows, 1.0, 1.0e-6
+
+    Process.flag(:trap_exit, true)
+
+    assert {:error, {%ArgumentError{message: "its :gain must be from 0.1 to 3, got 0"}, _}} =
+             AlignmentCorrection.start_link(name: nil, subscribe: false, gain: 0)
+  end
+
   test "waits for fresh measurements after a correction" do
     pid = start()
     for _ <- 1..5, do: tick(pid, 1.0)
