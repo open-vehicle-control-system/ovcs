@@ -1,0 +1,17 @@
+---
+# key_status as a simulator emits it: ../0x570_key_status.yml with a
+# frequency, and one value per key state.
+name: key_status
+id: 0x570
+# Not measured on the Polo 9N.
+frequency: 10
+signals:
+  - name: key_state
+    kind: enum
+    value_start: 0
+    value_length: 8
+    mapping:
+      0x00: contact_off
+      0x01: key_engaged
+      0x87: contact_on
+      0x8B: start_engine

@@ -4,6 +4,7 @@ title: Run OVCS1 headless
 status: To Do
 assignee: []
 created_date: '2026-11-13 14:00'
+updated_date: '2026-11-13 22:55'
 labels:
   - simulator
   - ovcs1
@@ -11,6 +12,7 @@ dependencies:
   - TASK-122
   - TASK-124
   - TASK-131
+  - TASK-140
 ordinal: 87000
 ---
 
