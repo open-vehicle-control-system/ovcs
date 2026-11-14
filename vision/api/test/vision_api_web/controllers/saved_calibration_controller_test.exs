@@ -1,14 +1,16 @@
 defmodule VisionApiWeb.SavedCalibrationControllerTest do
   use VisionApiWeb.CalibrationCase
 
-  alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+  alias VisionCore.Calibration.{Library, Recorder}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
+  alias VisionCore.Models
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
 
   setup %{config: config} do
-    Repo.delete_all(Selection)
-    Repo.delete_all(Saved)
+    for model <- [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose],
+        do: Repo.delete_all(model)
+
     start_supervised!({Recorder, config: config})
     :ok
   end
@@ -94,7 +96,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                }
              } = newest
 
-      assert id == Integer.to_string(second.id)
+      assert id == second.id
       assert name == second.name
       assert distortion == [0.1, -0.2, 0.0, 0.0, 0.0]
       assert yaml == CameraCalibration.to_yaml(calibration(590.0), "hq")
@@ -106,7 +108,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
              } =
                oldest
 
-      assert oldest_id == Integer.to_string(first.id)
+      assert oldest_id == first.id
     end
 
     test "gives a pair's cameras the files of the calibration in use, under the stereo unit's prefix",
@@ -205,11 +207,11 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert %{"data" => %{"id" => id, "attributes" => %{"inForce" => true}}} =
                conn |> get("/api/saved-calibrations/#{saved.id}") |> json_response(200)
 
-      assert id == Integer.to_string(saved.id)
+      assert id == saved.id
     end
 
-    test "answers 404 for one the unit does not keep, or an id that is no number", %{conn: conn} do
-      for id <- ["999999", "abc", "1x"] do
+    test "answers 404 for one the unit does not keep, or an id that names none", %{conn: conn} do
+      for id <- ["camera-999999", "999999", "abc", "camera-1x"] do
         assert %{"errors" => [%{"status" => "404", "detail" => detail}]} =
                  conn |> get("/api/saved-calibrations/#{id}") |> json_response(404)
 
@@ -220,8 +222,17 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     test "answers 404 for an id written another way than the unit writes it",
          %{conn: conn, config: config} do
       id = keep(config, 580.8).id
+      {:ok, "camera", row} = Models.KeptCalibrationId.parse(id)
 
-      for other <- ["0#{id}", "+#{id}", "-#{id}", "0", "99999999999999999999999999"] do
+      for other <- [
+            "#{row}",
+            "camera-0#{row}",
+            "camera-+#{row}",
+            "camera--#{row}",
+            "Camera-#{row}",
+            "camera-0",
+            "camera-99999999999999999999999999"
+          ] do
         assert conn |> get("/api/saved-calibrations/#{other}") |> json_response(404)
         assert conn |> delete("/api/saved-calibrations/#{other}") |> json_response(404)
 
@@ -238,7 +249,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   describe "PATCH /api/saved-calibrations/:id" do
     test "names a calibration", %{conn: conn, config: config} do
       saved = keep(config, 580.8)
-      id = Integer.to_string(saved.id)
+      id = saved.id
 
       document = %{data: %{type: "saved-calibrations", id: id, attributes: %{name: " Workshop "}}}
 
@@ -249,7 +260,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     end
 
     test "answers 422 for a name that is empty or too long", %{conn: conn, config: config} do
-      id = Integer.to_string(keep(config, 580.8).id)
+      id = keep(config, 580.8).id
 
       for name <- ["   ", String.duplicate("a", 81)] do
         document = %{data: %{type: "saved-calibrations", id: id, attributes: %{name: name}}}
@@ -268,7 +279,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
     test "answers 400 without a name, 409 for another type or id, 404 for one not kept",
          %{conn: conn, config: config} do
-      id = Integer.to_string(keep(config, 580.8).id)
+      id = keep(config, 580.8).id
 
       assert conn
              |> rename(id, %{data: %{type: "saved-calibrations", id: id, attributes: %{name: 3}}})
@@ -285,8 +296,8 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
              |> json_response(409)
 
       assert conn
-             |> rename("999999", %{
-               data: %{type: "saved-calibrations", id: "999999", attributes: %{name: "x"}}
+             |> rename("camera-999999", %{
+               data: %{type: "saved-calibrations", id: "camera-999999", attributes: %{name: "x"}}
              })
              |> json_response(404)
     end
@@ -363,7 +374,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     end
 
     test "answers 404 for one not kept", %{conn: conn} do
-      assert conn |> delete("/api/saved-calibrations/999999") |> json_response(404)
+      assert conn |> delete("/api/saved-calibrations/camera-999999") |> json_response(404)
     end
   end
 
@@ -371,7 +382,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     test "puts a calibration kept back in force", %{conn: conn, config: config} do
       first = keep(config, 580.8)
       keep(config, 590.0)
-      id = Integer.to_string(first.id)
+      id = first.id
 
       conn = select(conn, selection(id))
 
@@ -403,7 +414,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       [_newest, first] = Library.list("hq-pose")
 
       assert %{"data" => %{"type" => "calibration-selections"}} =
-               conn |> select(selection(Integer.to_string(first.id))) |> json_response(201)
+               conn |> select(selection(first.id)) |> json_response(201)
 
       :sys.get_state(Recorder)
       assert Library.selected("hq-pose").id == first.id
@@ -411,7 +422,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
     end
 
     test "answers 404 for a calibration the unit does not keep", %{conn: conn} do
-      for id <- ["999999", "abc"] do
+      for id <- ["camera-999999", "abc"] do
         assert %{
                  "errors" => [
                    %{
@@ -429,7 +440,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       :ok = VisionCore.Calibration.Session.start("hq", board)
 
       assert %{"errors" => [%{"status" => "409", "title" => "Not selected"}]} =
-               conn |> select(selection(Integer.to_string(saved.id))) |> json_response(409)
+               conn |> select(selection(saved.id)) |> json_response(409)
     end
 
     test "answers 400 without the relationship, 409 for another type, 403 for a client id",
@@ -446,9 +457,13 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   describe "while the saved calibrations cannot be read" do
     setup %{config: config} do
       saved = keep(config, 580.8)
-      Repo.query!("ALTER TABLE calibrations RENAME TO calibrations_away")
-      on_exit(fn -> Repo.query!("ALTER TABLE calibrations_away RENAME TO calibrations") end)
-      %{id: Integer.to_string(saved.id)}
+      Repo.query!("ALTER TABLE camera_calibrations RENAME TO camera_calibrations_away")
+
+      on_exit(fn ->
+        Repo.query!("ALTER TABLE camera_calibrations_away RENAME TO camera_calibrations")
+      end)
+
+      %{id: saved.id}
     end
 
     defp assert_unavailable(conn) do

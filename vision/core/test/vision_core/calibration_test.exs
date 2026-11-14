@@ -215,8 +215,9 @@ defmodule VisionCore.CalibrationTest do
   end
 
   describe "the calibrations kept" do
-    alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+    alias VisionCore.Calibration.{Library, Recorder}
     alias VisionCore.Camera.Calibration, as: OwnCalibration
+    alias VisionCore.Models
     alias VisionCore.Outputs
     alias VisionCore.Repo
     alias VisionCore.Ros2.CameraCalibration
@@ -224,8 +225,9 @@ defmodule VisionCore.CalibrationTest do
     @built_in Path.join(@fixtures, "identity_left.yaml")
 
     setup %{tmp_dir: tmp_dir} do
-      Repo.delete_all(Selection)
-      Repo.delete_all(Saved)
+      for model <- [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose],
+          do: Repo.delete_all(model)
+
       config = config(tmp_dir, calibration: @built_in)
       start_supervised!({Recorder, config: config})
       %{config: config}
@@ -255,7 +257,7 @@ defmodule VisionCore.CalibrationTest do
       commit(config, 580.8)
       commit(config, 590.0)
 
-      assert {:ok, [%{saved: %{cameras: [%{fx: 590.0}]}, in_force: true}, %{in_force: false}]} =
+      assert {:ok, [%{saved: %{lens: %{fx: 590.0}}, in_force: true}, %{in_force: false}]} =
                Calibration.saved(config, "hq")
 
       assert Calibration.saved(config, "front") == {:ok, []}
@@ -296,7 +298,7 @@ defmodule VisionCore.CalibrationTest do
          %{config: config} do
       {:ok, foreign} = Library.record("rear", [{"rear", calibration(600.0)}], origin: "imported")
 
-      assert Calibration.use_saved(config, -1) == {:error, :not_found}
+      assert Calibration.use_saved(config, "camera-999999") == {:error, :not_found}
       assert Calibration.use_saved(config, foreign.id) == {:error, :not_found}
       assert Calibration.fetch_saved(config, foreign.id) == {:error, :not_found}
     end
@@ -331,7 +333,7 @@ defmodule VisionCore.CalibrationTest do
       assert Library.fetch(saved.id) == {:error, :not_found}
       assert Library.selected("hq") == nil
       assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
-      assert Calibration.rename_saved(config, -1, "x") == {:error, :not_found}
+      assert Calibration.rename_saved(config, "camera-999999", "x") == {:error, :not_found}
     end
 
     test "delete_saved/3 keeps the calibration in force of a target with no built-in one to return to",
@@ -384,7 +386,7 @@ defmodule VisionCore.CalibrationTest do
       assert {:ok, [%{saved: kept, in_force: true, files: [file]}]} =
                Calibration.saved(config, "hq-pose")
 
-      assert kept.cameras == []
+      assert %Models.CameraPose{camera: "hq"} = kept
       assert %{name: "hq", file: "hq_pose.yaml", yaml: yaml} = file
       assert Pose.parse(yaml) == {:ok, second}
       assert Library.selected("hq-pose").id == kept.id

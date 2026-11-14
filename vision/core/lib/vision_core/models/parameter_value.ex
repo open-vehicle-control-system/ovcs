@@ -1,4 +1,4 @@
-defmodule VisionCore.Parameters.SavedValue do
+defmodule VisionCore.Models.ParameterValue do
   @moduledoc """
   A saved parameter value: the parameter's id and its value encoded as JSON.
   """
