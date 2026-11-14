@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
 import { OvcsBadge, OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 import { computeTags } from '../compute.js'
+import { useExplanations } from '../stores/explanations.js'
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.valueType === 'integer' ? 1 : rangeStep(parameter))
@@ -48,10 +49,11 @@ function useChangedValues(groupId, members) {
   return { changed, commit: (id, value) => committed.current.set(id, value) }
 }
 
-/** The group's summary, with its explanation behind a toggle on a line of its own, under it, that stays as set from one group to the next. */
-function Summary({ summary, explanation }) {
+/** The group's summary, with its explanation behind a toggle on a line of its own, under it, open or not for that group alone. */
+function Summary({ groupId, summary, explanation }) {
   const explanationId = useId()
-  const [open, setOpen] = useState(false)
+  const open = useExplanations((state) => state.open[groupId] ?? false)
+  const toggle = useExplanations((state) => state.toggle)
   if (!summary && !explanation) return null
 
   return (
@@ -63,7 +65,7 @@ function Summary({ summary, explanation }) {
             type="button"
             aria-expanded={open}
             aria-controls={explanationId}
-            onClick={() => setOpen((shown) => !shown)}
+            onClick={() => toggle(groupId)}
             className={`inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
           >
             How it works
@@ -141,7 +143,7 @@ export default function ParameterPanel({ groupId }) {
           Reset <span translate="no">{group.name}</span>
         </button>
       </div>
-      <Summary summary={group.summary} explanation={group.explanation} />
+      <Summary groupId={group.id} summary={group.summary} explanation={group.explanation} />
       <p aria-live="polite" className="sr-only">
         {changed}
       </p>
