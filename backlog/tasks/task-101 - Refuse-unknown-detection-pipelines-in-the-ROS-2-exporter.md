@@ -13,7 +13,7 @@ ordinal: 80000
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-`VisionCore.Ros2.Exporter`'s `check/1` refuses a `segmentation: pipelines:` or `cameras: names:` entry the configuration does not have, but drops an unknown `detections: pipelines:` name silently, so a typo in a vehicle's exporter options publishes nothing without a word.
+`VisionCore.Ros2.ZenohExporter`'s `check/1` refuses a `segmentation: pipelines:` or `cameras: names:` entry the configuration does not have, but drops an unknown `detections: pipelines:` name silently, so a typo in a vehicle's exporter options publishes nothing without a word.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

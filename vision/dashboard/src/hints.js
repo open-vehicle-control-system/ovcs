@@ -93,7 +93,7 @@ export const HINTS = {
   ros2: {
     title: 'ROS 2',
     text:
-      "The ROS 2 exporter's link to the Zenoh router that carries its topics. Disconnected, nothing reaches ROS 2. " +
+      "The ROS 2 · Zenoh exporter's link to the Zenoh router that carries its topics. Disconnected, nothing reaches ROS 2. " +
       'Its page, under Exporters, lists the topics and their rates.'
   },
   calibration: {

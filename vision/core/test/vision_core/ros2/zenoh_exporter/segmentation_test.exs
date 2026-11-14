@@ -1,11 +1,11 @@
-defmodule VisionCore.Ros2.Exporter.SegmentationTest do
+defmodule VisionCore.Ros2.ZenohExporter.SegmentationTest do
   use ExUnit.Case, async: true
 
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, Image, PointCloud2}
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
-  alias VisionCore.Ros2.Exporter.Segmentation
+  alias VisionCore.Ros2.ZenohExporter.Segmentation
   alias VisionCore.Segmentation.Pipeline
 
   @capture_ns 1_234_567_890

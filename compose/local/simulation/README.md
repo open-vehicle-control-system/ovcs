@@ -132,7 +132,7 @@ The vision unit (`vision/core`) runs unchanged against the simulator. `./ovcs ru
 
 ```text
 Gazebo cameras ─► image_bridge ─/stereo/{left,right}/image_raw/compressed─► VisionCore.Ros2.Camera
-  ─► VisionCore.Stereo.Supervisor ─► stereo stages ─► VisionCore.Ros2.Exporter ─► fabric
+  ─► VisionCore.Stereo.Supervisor ─► stereo stages ─► VisionCore.Ros2.ZenohExporter ─► fabric
 ```
 
 `VisionCore.Ros2.Camera` subscribes to a `CompressedImage` topic and hands its frames on as a physical driver does. Swapping it in for `VisionCore.Camera.LibCamera` is the entire difference between the car and the simulated car. In the OVCS Mini, `OVCS_SIM=1` (or `true`) selects it, with the simulator's clock (`OvcsMini.Vision.Composer`). No detector runs there: the vision unit detects on a Hailo-8, which a workstation does not have.

@@ -69,7 +69,7 @@ defmodule VisionCore.Camera.LibCamera do
   all the stereo pipeline uses. It spares the capture program the
   encoding and the pipeline the decoding; raw images and dashboard
   previews then encode the frames they send, as for any driver that
-  delivers grey frames (see `VisionCore.Ros2.Exporter.Stereo`'s
+  delivers grey frames (see `VisionCore.Ros2.ZenohExporter.Stereo`'s
   `:raw_image_max_hz` and `VisionCore.Preview`). Rotation, sensor mode,
   sync and the controls apply to both.
 

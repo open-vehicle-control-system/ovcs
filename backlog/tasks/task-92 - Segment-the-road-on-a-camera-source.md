@@ -62,7 +62,7 @@ Review focus, each pinned by a test in the owning task:
 
 #### Task 3: exporters.
 - `VisionCore.Exporter` output `{:segmentation, name}`; the runner routes it as named detections.
-- `Ros2.Exporter` `segmentation: [pipelines: [...]]`: `<prefix>/<name>/labels` (`sensor_msgs/Image`, `mono8`, the band's label image, `frame_id` the camera's), `<prefix>/<name>/road/points` and `<prefix>/<name>/off_road/points` (`PointCloud2`, the stereo left `frame_id`).
+- `Ros2.ZenohExporter` `segmentation: [pipelines: [...]]`: `<prefix>/<name>/labels` (`sensor_msgs/Image`, `mono8`, the band's label image, `frame_id` the camera's), `<prefix>/<name>/road/points` and `<prefix>/<name>/off_road/points` (`PointCloud2`, the stereo left `frame_id`).
 - `ExporterController` lists `segmentation:<name>`.
 - Tests: runner routing, ROS 2 messages, controller.
 

@@ -5,7 +5,7 @@ Stereo depth, object detection and road segmentation for a vehicle. Its exporter
 `vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming:
 
 - the components to run: `:stereo`, `:camera`, `:detector`, `:hailo_detector`, `:qnn_detector`, `:segmenter` and `:qnn_segmenter` (`VisionCore.Components`);
-- the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.Exporter`);
+- the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.ZenohExporter`);
 - for ROS 2, the Zenoh router and the node name.
 
 The detectors may be listed several times, each under its own `:name`, to run named detection pipelines (`VisionCore.Detection`). Each segmenter is named and segments the road on a camera of its own (`VisionCore.Segmentation`). `:camera` runs a camera of its own, previewed as `preview:<name>` (`VisionCore.Camera.Unit`).

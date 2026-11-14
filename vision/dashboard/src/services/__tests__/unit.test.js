@@ -75,14 +75,14 @@ describe('unit service', () => {
 
   it('reads the exporters, each with its id', async () => {
     const attributes = {
-      name: 'ROS 2',
-      module: 'VisionCore.Ros2.Exporter',
+      name: 'ROS 2 · Zenoh',
+      module: 'VisionCore.Ros2.ZenohExporter',
       status: { level: 'ok', detail: 'Connected' },
       outputs: [{ name: 'stereo_pair', maxHz: null }]
     }
-    fetchMock.mockResolvedValue(respond({ data: [{ type: 'exporters', id: 'ros2', attributes }] }))
+    fetchMock.mockResolvedValue(respond({ data: [{ type: 'exporters', id: 'ros2_zenoh', attributes }] }))
 
-    expect(await fetchExporters()).toEqual([{ id: 'ros2', ...attributes }])
+    expect(await fetchExporters()).toEqual([{ id: 'ros2_zenoh', ...attributes }])
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/exporters$/)
   })
 

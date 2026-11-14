@@ -43,7 +43,7 @@ export default function Ros2Page() {
   const status = node ? publishing(node) : null
 
   return (
-    <OvcsPageFrame title="ROS 2" summary="What this unit publishes to ROS 2, through Zenoh.">
+    <OvcsPageFrame title="ROS 2 · Zenoh" summary="What this unit publishes to ROS 2, through Zenoh.">
       {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
       {node ? (
         <>

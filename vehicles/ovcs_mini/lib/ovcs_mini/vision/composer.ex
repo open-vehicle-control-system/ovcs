@@ -30,7 +30,7 @@ defmodule OvcsMini.Vision.Composer do
       do: simulation_config(),
       else: %VisionCore.Config{
         ros2: [zenoh_endpoint_ip: System.get_env("ZENOH_ENDPOINT_IP", "127.0.0.1")],
-        exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
+        exporters: [{VisionCore.Ros2.ZenohExporter, heartbeat: []}]
       }
   end
 
@@ -41,7 +41,7 @@ defmodule OvcsMini.Vision.Composer do
       ],
       components: [stereo_component(), hailo_detector()],
       exporters: [
-        {VisionCore.Ros2.Exporter,
+        {VisionCore.Ros2.ZenohExporter,
          heartbeat: [], stereo: [publish_rectified_image: true], detections: []},
         {VisionCore.Debug.Exporter, []}
       ]
@@ -72,7 +72,7 @@ defmodule OvcsMini.Vision.Composer do
          right: [frame_id: "stereo_right_optical", topic: "/stereo/right/image_raw/compressed"]}
       ],
       exporters: [
-        {VisionCore.Ros2.Exporter,
+        {VisionCore.Ros2.ZenohExporter,
          heartbeat: [], stereo: [publish_raw_images: false, publish_rectified_image: true]}
       ]
     }

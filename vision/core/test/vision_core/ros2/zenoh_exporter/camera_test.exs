@@ -1,4 +1,4 @@
-defmodule VisionCore.Ros2.Exporter.CameraTest do
+defmodule VisionCore.Ros2.ZenohExporter.CameraTest do
   use ExUnit.Case, async: true
 
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
@@ -8,7 +8,7 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Pose}
-  alias VisionCore.Ros2.Exporter.Camera
+  alias VisionCore.Ros2.ZenohExporter.Camera
 
   @moduletag :capture_log
   @calibration Path.expand("../../../support/calibration", __DIR__)

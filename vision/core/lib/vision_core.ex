@@ -10,7 +10,7 @@ defmodule VisionCore.Config do
     * `:exporters` — what takes the outputs out of the unit, each
       `{module, options}`, or a module alone for `{module, []}`, `module`
       implementing `VisionCore.Exporter`, such as
-      `VisionCore.Ros2.Exporter`; see `VisionCore.Exporters`.
+      `VisionCore.Ros2.ZenohExporter`; see `VisionCore.Exporters`.
     * `:ros2` — the ROS 2 link, on top of the always-on
       `VisionCore.Parameters`: the Zenoh session the ROS 2 exporter
       publishes through and a `VisionCore.Ros2.Camera` reads from, the

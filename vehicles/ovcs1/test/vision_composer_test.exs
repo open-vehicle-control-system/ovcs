@@ -125,7 +125,7 @@ defmodule Ovcs1.VisionComposerTest do
 
   test "the dashboard and ROS 2 show the center camera's video, ROS 2 its half image as a JPEG" do
     config = Ovcs1.Vision.Composer.config(:target)
-    exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
+    exporter = Keyword.fetch!(config.exporters, VisionCore.Ros2.ZenohExporter)
 
     assert config.preview[:videos] == [center: :full_h264]
     assert config.preview[:outputs] == [center: :half_jpeg]
@@ -194,7 +194,7 @@ defmodule Ovcs1.VisionComposerTest do
 
   test "the ROS 2 exporter publishes the center camera, its detections and its scene" do
     config = Ovcs1.Vision.Composer.config(:target)
-    options = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter)
+    options = Keyword.fetch!(config.exporters, VisionCore.Ros2.ZenohExporter)
 
     assert options[:detections][:pipelines] == [:objects]
     assert options[:cameras][:names] == [:center]
@@ -209,10 +209,10 @@ defmodule Ovcs1.VisionComposerTest do
 
   test "the ROS 2 exporter's outputs are all produced by the configuration" do
     config = Ovcs1.Vision.Composer.config(:target)
-    options = Keyword.fetch!(config.exporters, VisionCore.Ros2.Exporter) ++ [config: config]
+    options = Keyword.fetch!(config.exporters, VisionCore.Ros2.ZenohExporter) ++ [config: config]
 
-    assert VisionCore.Ros2.Exporter.check(options) == :ok
-    assert {:ok, specs} = VisionCore.Exporter.output_specs(VisionCore.Ros2.Exporter, options)
+    assert VisionCore.Ros2.ZenohExporter.check(options) == :ok
+    assert {:ok, specs} = VisionCore.Exporter.output_specs(VisionCore.Ros2.ZenohExporter, options)
 
     for {output, _max_hz} <- specs,
         do: assert(VisionCore.Exporter.output_key(output, config), inspect(output))

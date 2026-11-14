@@ -47,7 +47,7 @@ defmodule VisionCore.Stereo.Supervisor do
   logged. `VisionCore.Reviver` starts a unit that is down again, once a
   minute. The refusal of an option the ROS 2 exporter takes
   names where it belongs: its `stereo:` publishes the images
-  (`VisionCore.Ros2.Exporter`).
+  (`VisionCore.Ros2.ZenohExporter`).
 
   ## Required opts
 
@@ -361,7 +361,8 @@ defmodule VisionCore.Stereo.Supervisor do
   defp refused_option(:topic_prefix), do: "its :topic_prefix is now :prefix"
 
   defp refused_option(option) when option in @exporter_options,
-    do: "its #{inspect(option)} is the ROS 2 exporter's stereo: option (VisionCore.Ros2.Exporter)"
+    do:
+      "its #{inspect(option)} is the ROS 2 exporter's stereo: option (VisionCore.Ros2.ZenohExporter)"
 
   defp refused_option(option), do: "it has no option #{inspect(option)}"
 

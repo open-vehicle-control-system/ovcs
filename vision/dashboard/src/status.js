@@ -150,9 +150,9 @@ export const cameraIssues = (camera) => actionsFor(camera?.issues ?? [])
 export const depthIssues = (status) =>
   actionsFor(Object.values(status?.depth ?? {}).flatMap((check) => check.issues ?? []))
 
-// The ROS 2 exporter's status, lower-cased like the other values; none on a unit without a ROS 2 exporter.
+// The ROS 2 · Zenoh exporter's status, lower-cased like the other values; none on a unit without one.
 function ros2Status(exporters) {
-  const ros2 = (exporters ?? []).find((exporter) => exporter.id === 'ros2')
+  const ros2 = (exporters ?? []).find((exporter) => exporter.id === 'ros2_zenoh')
   if (!ros2) return []
   const { level, detail } = ros2.status
   return [

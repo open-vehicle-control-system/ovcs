@@ -12,7 +12,11 @@ const EXPORTER_PARAMETER = 'exporter'
 const CALIBRATION_PARAMETER = 'calibration'
 
 // The `page` values that open an exporter's page: the exporter's id.
-const EXPORTER_PAGES = ['ros2', 'api']
+const EXPORTER_PAGES = ['ros2_zenoh', 'api']
+
+// Exporter ids that saved links may name, with the exporter each opens.
+const RENAMED_EXPORTERS = new Map([['ros2', 'ros2_zenoh']])
+const currentExporterId = (id) => RENAMED_EXPORTERS.get(id) ?? id
 
 /**
  * The page the URL names: a `box` is the pipeline, an `exporter`, or a `page` naming one, that exporter's page, an
@@ -30,11 +34,11 @@ export function pageFromUrl(search = window.location.search) {
 /** The box the URL names, if any. */
 export const boxFromUrl = (search = window.location.search) => new URLSearchParams(search).get(BOX_PARAMETER)
 
-/** The exporter the URL names, if any: its `exporter`, or a `page` naming one. */
+/** The exporter the URL names, if any: its `exporter`, or a `page` naming one, under its current id. */
 export function exporterFromUrl(search = window.location.search) {
   const params = new URLSearchParams(search)
-  const page = params.get(PAGE_PARAMETER)
-  return params.get(EXPORTER_PARAMETER) ?? (EXPORTER_PAGES.includes(page) ? page : null)
+  const page = currentExporterId(params.get(PAGE_PARAMETER))
+  return currentExporterId(params.get(EXPORTER_PARAMETER)) ?? (EXPORTER_PAGES.includes(page) ? page : null)
 }
 
 /** The calibration the URL names, if any. */

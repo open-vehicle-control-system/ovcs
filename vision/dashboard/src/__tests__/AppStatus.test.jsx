@@ -23,7 +23,7 @@ describe('App and the status', () => {
     render(<App />)
     const before = menuRenders.count
 
-    const ros2 = { id: 'ros2', name: 'ROS 2', status: { level: 'ok', detail: 'Connected' } }
+    const ros2 = { id: 'ros2_zenoh', name: 'ROS 2 · Zenoh', status: { level: 'ok', detail: 'Connected' } }
     act(() => useStatus.setState({ snapshot: { exporters: [ros2], npu: { kind: 'Hexagon', state: 'running' }, cpuPercent: 40, stereoLoadPercent: 50, cameras: {} } }))
 
     expect(within(screen.getByRole('contentinfo')).getByText('connected')).toBeTruthy()

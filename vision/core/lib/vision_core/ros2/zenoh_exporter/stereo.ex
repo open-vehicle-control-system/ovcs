@@ -1,6 +1,6 @@
-defmodule VisionCore.Ros2.Exporter.Stereo do
+defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   @moduledoc """
-  The ROS 2 messages of a stereo unit, which `VisionCore.Ros2.Exporter`
+  The ROS 2 messages of a stereo unit, which `VisionCore.Ros2.ZenohExporter`
   publishes: each side's raw image and intrinsics as the camera drivers
   deliver them, and the disparity, depth and point cloud of each
   `VisionCore.Stereo.Pair` the pipeline finishes. These functions build
@@ -41,7 +41,7 @@ defmodule VisionCore.Ros2.Exporter.Stereo do
 
   ## Options
 
-  `VisionCore.Ros2.Exporter` takes `:left`, `:right`, `:width` and
+  `VisionCore.Ros2.ZenohExporter` takes `:left`, `:right`, `:width` and
   `:height` from the stereo unit's cameras
   (`VisionCore.Stereo.Supervisor.camera_options/1`); the others are its
   own `stereo:` options.

@@ -31,7 +31,7 @@ describe('Menu', () => {
     useNavigation.setState({ page: 'overview', exporterId: null, calibrationId: null })
     useCalibration.setState({ targets: [], calibrations: {} })
     useExporters.setState({
-      exporters: [exporter('ros2', 'ROS 2'), exporter('api', 'API')]
+      exporters: [exporter('ros2_zenoh', 'ROS 2 · Zenoh'), exporter('api', 'API')]
     })
     useStatus.setState({ snapshot: null })
   })
@@ -47,7 +47,7 @@ describe('Menu', () => {
     expect(within(within(pipelines).getByRole('list', { name: 'Detection' })).getByRole('button', { name: /^Input/ })).toBeTruthy()
 
     const exporters = screen.getByRole('region', { name: 'Exporters' })
-    expect(within(exporters).getAllByRole('button').map((button) => button.textContent)).toEqual(['ROS 2', 'API'])
+    expect(within(exporters).getAllByRole('button').map((button) => button.textContent)).toEqual(['ROS 2 · Zenoh', 'API'])
 
     const sections = screen.getAllByRole('region').map((region) => region.getAttribute('aria-labelledby'))
     expect(sections.map((id) => document.getElementById(id).textContent)).toEqual(['Main', 'Cameras', 'Pipelines', 'Exporters'])
@@ -257,14 +257,14 @@ describe('Menu', () => {
   })
 
   it('marks each exporter with the status the unit status reports for it, and opens its page', () => {
-    useExporters.setState({ exporters: [exporter('ros2', 'ROS 2'), exporter('recorder', 'Recorder'), exporter('api', 'API')] })
+    useExporters.setState({ exporters: [exporter('ros2_zenoh', 'ROS 2 · Zenoh'), exporter('recorder', 'Recorder'), exporter('api', 'API')] })
     useStatus.setState({
-      snapshot: { exporters: [reported('ros2', 'ROS 2', 'ok', 'Connected'), reported('recorder', 'Recorder', 'off', 'Not running')] }
+      snapshot: { exporters: [reported('ros2_zenoh', 'ROS 2 · Zenoh', 'ok', 'Connected'), reported('recorder', 'Recorder', 'off', 'Not running')] }
     })
     render(<Menu />)
 
     const exporters = screen.getByRole('region', { name: 'Exporters' })
-    const ros2 = within(exporters).getByRole('button', { name: 'ROS 2, ok: Connected' })
+    const ros2 = within(exporters).getByRole('button', { name: 'ROS 2 · Zenoh, ok: Connected' })
     expect(ros2.querySelector('.ovcs-status')).toBeNull()
     const recorder = within(exporters).getByRole('button', { name: 'Recorder, off: Not running' })
     expect(recorder.querySelector('.ovcs-status')).not.toBeNull()
@@ -276,10 +276,10 @@ describe('Menu', () => {
   })
 
   it('marks an exporter whose status is a warning in red', () => {
-    useStatus.setState({ snapshot: { exporters: [reported('ros2', 'ROS 2', 'warning', 'Disconnected')] } })
+    useStatus.setState({ snapshot: { exporters: [reported('ros2_zenoh', 'ROS 2 · Zenoh', 'warning', 'Disconnected')] } })
     render(<Menu />)
 
-    const ros2 = within(screen.getByRole('region', { name: 'Exporters' })).getByRole('button', { name: 'ROS 2, warning: Disconnected' })
+    const ros2 = within(screen.getByRole('region', { name: 'Exporters' })).getByRole('button', { name: 'ROS 2 · Zenoh, warning: Disconnected' })
     expect(ros2.querySelector('.ovcs-status--error')).not.toBeNull()
   })
 
