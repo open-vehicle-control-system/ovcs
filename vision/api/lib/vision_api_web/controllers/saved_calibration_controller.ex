@@ -24,8 +24,13 @@ defmodule VisionApiWeb.SavedCalibrationController do
         kept = Enum.flat_map(ids, &kept(config, &1))
         render(conn, :index, kept: kept)
 
-      {:error, detail} ->
-        JsonApi.error(conn, 400, detail, source: %{parameter: "filter[calibration]"})
+      {:error, parameter} ->
+        JsonApi.error(
+          conn,
+          400,
+          "the calibrations kept are filtered by filter[calibration], one id",
+          source: %{parameter: parameter}
+        )
     end
   end
 
@@ -47,8 +52,10 @@ defmodule VisionApiWeb.SavedCalibrationController do
          {:ok, kept} <- Calibration.rename_saved(CalibrationUnit.config(), saved_id, name) do
       render(conn, :show, kept: kept)
     else
-      {:error, reason} when is_binary(reason) ->
-        JsonApi.error(conn, 422, reason, source: @name_pointer, title: "Invalid name")
+      {:error, reason} = refusal when is_binary(reason) ->
+        if CalibrationUnit.saved_unavailable?(reason),
+          do: refuse(conn, id, refusal),
+          else: JsonApi.error(conn, 422, reason, source: @name_pointer, title: "Invalid name")
 
       refusal ->
         refuse(conn, id, refusal)
@@ -68,10 +75,19 @@ defmodule VisionApiWeb.SavedCalibrationController do
     end
   end
 
-  defp targets(%{"filter" => %{"calibration" => id}}) when is_binary(id), do: {:ok, [id]}
+  # The ids of the targets to list, or the query parameter that is no filter of the route.
+  defp targets(%{"filter" => %{"calibration" => id} = filter})
+       when is_binary(id) and map_size(filter) == 1,
+       do: {:ok, [id]}
 
-  defp targets(%{"filter" => _other}),
-    do: {:error, "filter[calibration] names one of the calibrations"}
+  defp targets(%{"filter" => %{} = filter}) do
+    case Map.keys(filter) -- ["calibration"] do
+      [key | _others] -> {:error, "filter[#{key}]"}
+      [] -> {:error, "filter[calibration]"}
+    end
+  end
+
+  defp targets(%{"filter" => _text}), do: {:error, "filter"}
 
   defp targets(_params), do: {:ok, Enum.map(CalibrationUnit.targets(), & &1.id)}
 
@@ -83,9 +99,9 @@ defmodule VisionApiWeb.SavedCalibrationController do
   end
 
   defp parse(id) do
-    case Integer.parse(id) do
-      {saved_id, ""} -> {:ok, saved_id}
-      _other -> {:error, :not_found}
+    case CalibrationUnit.saved_id(id) do
+      {:ok, saved_id} -> {:ok, saved_id}
+      :error -> {:error, :not_found}
     end
   end
 
@@ -97,9 +113,9 @@ defmodule VisionApiWeb.SavedCalibrationController do
   defp refuse(conn, id, {:error, :not_found}),
     do: JsonApi.error(conn, 404, "no saved calibration #{id}")
 
-  defp refuse(conn, _id, {:error, status, detail, options}),
-    do: JsonApi.error(conn, status, detail, options)
+  defp refuse(conn, _id, {:error, _status, _detail, _options} = refusal),
+    do: JsonApi.refuse(conn, refusal)
 
-  defp refuse(conn, _id, {:error, reason}) when is_binary(reason),
-    do: JsonApi.error(conn, 503, reason, title: "Saved calibrations unavailable")
+  defp refuse(conn, id, {:error, _reason}),
+    do: refuse(conn, id, CalibrationUnit.saved_unavailable())
 end

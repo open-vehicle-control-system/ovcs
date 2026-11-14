@@ -11,44 +11,30 @@ defmodule VisionApiWeb.CalibrationSelectionController do
   selection.
   """
   use VisionApiWeb, :controller
-  require Logger
 
   alias VisionApiWeb.{CalibrationUnit, JsonApi}
   alias VisionCore.Calibration
-  alias VisionCore.Calibration.Session
 
   @type_name "calibration-selections"
   @saved_pointer "/data/relationships/savedCalibration"
 
   def create(conn, _params) do
-    with {:ok, data} <- fetch_data(JsonApi.document(conn)),
+    with {:ok, data} <- JsonApi.fetch_created(JsonApi.document(conn), @type_name),
          {:ok, id, saved_id} <- saved(data),
-         :ok <- check_idle(),
+         :ok <- CalibrationUnit.check_idle("Not selected"),
          :ok <- select(id, saved_id) do
-      action_id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
-
       conn
       |> put_status(:created)
       |> json(%{
         data:
-          JsonApi.resource(@type_name, action_id, %{}, %{
+          JsonApi.resource(@type_name, JsonApi.action_id(), %{}, %{
             savedCalibration: JsonApi.to_one("saved-calibrations", id)
           })
       })
     else
-      {:error, status, detail, options} -> JsonApi.error(conn, status, detail, options)
+      refusal -> JsonApi.refuse(conn, refusal)
     end
   end
-
-  defp fetch_data(%{"data" => %{"type" => @type_name, "id" => _id}}),
-    do: JsonApi.client_id_refusal()
-
-  defp fetch_data(%{"data" => %{"type" => @type_name} = data}), do: {:ok, data}
-
-  defp fetch_data(%{"data" => %{"type" => _other}}),
-    do: {:error, 409, "type must be #{@type_name}", [source: "/data/type"]}
-
-  defp fetch_data(_document), do: {:error, 400, "data with a type is required", [source: "/data"]}
 
   defp saved(%{
          "relationships" => %{
@@ -56,9 +42,9 @@ defmodule VisionApiWeb.CalibrationSelectionController do
          }
        })
        when is_binary(id) do
-    case Integer.parse(id) do
-      {saved_id, ""} -> {:ok, id, saved_id}
-      _other -> not_found(id)
+    case CalibrationUnit.saved_id(id) do
+      {:ok, saved_id} -> {:ok, id, saved_id}
+      :error -> not_found(id)
     end
   end
 
@@ -67,23 +53,11 @@ defmodule VisionApiWeb.CalibrationSelectionController do
       {:error, 400, "savedCalibration must name one of the saved-calibrations",
        [source: @saved_pointer]}
 
-  defp check_idle do
-    case GenServer.whereis(Session) && Session.state().phase do
-      phase when phase in [nil, :idle] -> :ok
-      _running -> {:error, 409, "a calibration session is running", [title: "Not selected"]}
-    end
-  end
-
   # Outlives the request: a stereo pair's commit may wait for its unit to restart.
   defp select(id, saved_id) do
     config = CalibrationUnit.config()
 
-    task =
-      Task.Supervisor.async_nolink(Calibration.Tasks, fn ->
-        Calibration.use_saved(config, saved_id)
-      end)
-
-    case Task.yield(task, :infinity) do
+    case CalibrationUnit.run("the selection", fn -> Calibration.use_saved(config, saved_id) end) do
       {:ok, :ok} ->
         :ok
 
@@ -91,10 +65,11 @@ defmodule VisionApiWeb.CalibrationSelectionController do
         not_found(id)
 
       {:ok, {:error, reason}} ->
-        {:error, 422, reason, [title: "Not selected"]}
+        if CalibrationUnit.saved_unavailable?(reason),
+          do: CalibrationUnit.saved_unavailable(),
+          else: {:error, 422, reason, [title: "Not selected"]}
 
-      {:exit, reason} ->
-        Logger.error("#{__MODULE__} selection failed: #{Exception.format_exit(reason)}")
+      :failed ->
         {:error, 500, "the selection failed; the log says why", []}
     end
   end

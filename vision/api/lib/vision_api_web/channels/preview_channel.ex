@@ -62,6 +62,8 @@ defmodule VisionApiWeb.PreviewChannel do
     {:noreply, socket}
   end
 
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
   @impl Phoenix.Channel
   def handle_info({:vision_preview, _stream, jpeg}, socket) do
     push(socket, "frame", {:binary, jpeg})

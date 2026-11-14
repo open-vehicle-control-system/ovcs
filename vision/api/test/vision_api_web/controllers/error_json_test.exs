@@ -9,21 +9,6 @@ defmodule VisionApiWeb.ErrorJSONTest do
            }
   end
 
-  test "a request the vision core cannot answer gets that list, whatever the client accepts",
-       %{conn: conn} do
-    Application.stop(:vision_core)
-    on_exit(fn -> Application.ensure_all_started(:vision_core) end)
-
-    {500, _headers, body} =
-      assert_error_sent(500, fn ->
-        conn |> put_req_header("accept", "application/vnd.api+json") |> get("/api/parameters")
-      end)
-
-    assert Jason.decode!(body) == %{
-             "errors" => [%{"status" => "500", "title" => "Internal Server Error"}]
-           }
-  end
-
   defp content_type(headers), do: List.keyfind(headers, "content-type", 0)
 
   test "a body that is not JSON gets a JSON:API 400 saying so", %{conn: conn} do

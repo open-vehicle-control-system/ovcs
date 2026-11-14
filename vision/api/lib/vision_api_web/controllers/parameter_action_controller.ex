@@ -39,29 +39,15 @@ defmodule VisionApiWeb.ParameterActionController do
   end
 
   defp act(conn, type, run) do
-    with {:ok, data} <- fetch_data(JsonApi.document(conn), type),
+    with {:ok, data} <- JsonApi.fetch_created(JsonApi.document(conn), type),
          {:ok, ids} <- run.(data) do
-      id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
-
       conn
       |> put_status(:created)
-      |> render(:show, type: type, id: id, parameters: ids)
+      |> render(:show, type: type, id: JsonApi.action_id(), parameters: ids)
     else
-      {:error, status, detail, options} ->
-        JsonApi.error(conn, status, detail, options)
+      refusal -> JsonApi.refuse(conn, refusal)
     end
   end
-
-  defp fetch_data(%{"data" => %{"type" => type, "id" => _id}}, type),
-    do: JsonApi.client_id_refusal()
-
-  defp fetch_data(%{"data" => %{"type" => type} = data}, type), do: {:ok, data}
-
-  defp fetch_data(%{"data" => %{"type" => _other}}, type),
-    do: {:error, 409, "type must be #{type}", [source: "/data/type"]}
-
-  defp fetch_data(_params, _type),
-    do: {:error, 400, "data with a type is required", [source: "/data"]}
 
   defp scope(%{"relationships" => relationships}), do: target(relationships)
   defp scope(_data), do: {:ok, :all}

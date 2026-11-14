@@ -26,7 +26,7 @@ defmodule VisionApiWeb.ParameterController do
     data = JsonApi.document(conn)["data"]
 
     with :ok <- JsonApi.check_identity(data, "parameters", id),
-         {:ok, value} <- fetch_value(data) do
+         {:ok, value} <- JsonApi.fetch_attribute(data, "value") do
       case Parameters.set(id, value) do
         {:ok, parameter} ->
           render(conn, :show, parameter: parameter)
@@ -38,13 +38,7 @@ defmodule VisionApiWeb.ParameterController do
           JsonApi.error(conn, 422, reason, source: @value_pointer, title: "Invalid value")
       end
     else
-      {:error, status, detail, options} ->
-        JsonApi.error(conn, status, detail, options)
+      refusal -> JsonApi.refuse(conn, refusal)
     end
   end
-
-  defp fetch_value(%{"attributes" => %{"value" => value}}), do: {:ok, value}
-
-  defp fetch_value(_data),
-    do: {:error, 400, "data.attributes.value is required", [source: @value_pointer]}
 end

@@ -36,6 +36,9 @@ defmodule VisionApiWeb.CalibrationChannel do
   end
 
   @impl Phoenix.Channel
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
+  @impl Phoenix.Channel
   def handle_cast({:stereo_calibration_changed, prefix}, socket) do
     push_calibration(socket, prefix)
     {:noreply, socket}

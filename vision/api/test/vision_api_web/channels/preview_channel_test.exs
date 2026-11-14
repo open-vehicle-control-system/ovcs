@@ -20,6 +20,16 @@ defmodule VisionApiWeb.PreviewChannelTest do
     GenServer.cast(VisionCore.Preview, {:camera_frame, frame})
   end
 
+  @tag :capture_log
+  test "an event the channel does not take is refused, and the channel stays" do
+    {:ok, _reply, socket} = join("preview:left")
+
+    reference = push(socket, "nope", %{})
+
+    assert_reply reference, :error, %{reason: "unknown event"}
+    assert Process.alive?(socket.channel_pid)
+  end
+
   test "preview:left pushes each frame as its JPEG bytes" do
     {:ok, _reply, _socket} = join("preview:left")
     jpeg = <<0xFF, 0xD8, 1, 2, 3>>

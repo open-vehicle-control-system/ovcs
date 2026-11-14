@@ -13,6 +13,16 @@ defmodule VisionApiWeb.StatusChannelTest do
     |> subscribe_and_join(VisionApiWeb.StatusChannel, "status")
   end
 
+  @tag :capture_log
+  test "an event the channel does not take is refused, and the channel stays" do
+    {:ok, _reply, socket} = join()
+
+    reference = push(socket, "nope", %{})
+
+    assert_reply reference, :error, %{reason: "unknown event"}
+    assert Process.alive?(socket.channel_pid)
+  end
+
   test "status channel pushes a snapshot on join" do
     {:ok, _reply, _socket} = join()
 

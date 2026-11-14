@@ -18,7 +18,11 @@ status.on('status', (snapshot) => console.log(snapshot.depthHz, snapshot.quality
 status.join()
 ```
 
+The socket takes connections from the unit's own pages only: a browser page of another origin is refused with a 403. A program that sends no `Origin` header connects.
+
 The unit's certificate is self-signed. In a browser, accept it on the dashboard first. Run Node.js with `NODE_EXTRA_CA_CERTS=vision.pem`, a copy of it ([Dashboard and API](./README.md#dashboard-and-api)).
+
+A channel answers an event it does not take with an error reply, `{"reason": "unknown event"}`, and stays joined.
 
 ## Status
 
@@ -143,7 +147,7 @@ depth.join()
 
 ## Video
 
-A camera with an H.264 output that the vehicle names in `preview: [videos: [center: :full_h264]]` ([A camera of its own](./cameras.md#outputs)) has a channel `video:<name>`. `GET /api/exporters` lists it among the API's outputs as `camera_video:<name>:<output>`. A camera whose video the unit does not relay is refused with `unknown video`.
+A camera with an H.264 output that the vehicle names in `preview: [videos: [center: :full_h264]]` ([A camera of its own](./cameras.md#outputs)) has a channel `video:<name>`. `GET /api/exporters` lists it among the API's outputs as `camera_video:<name>:<output>`. A camera whose video the unit does not relay is refused with `unknown video`, and any camera with `{"reason": "unavailable"}` while the relay does not run.
 
 The channel pushes every frame of the stream in order, from the next key frame, as a `frame` event whose payload is binary:
 
@@ -187,7 +191,7 @@ Each decoded frame's `timestamp` is its capture time.
 
 ## Detections
 
-Each detection pipeline has its own channel, `detections:<name>`. It pushes each result, at most ten a second, as a `detections` event. `captureUs` is the capture time of the frame they were found on, as the video's frames carry it, so a client draws them on that frame. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
+Each detection pipeline has its own channel, `detections:<name>`. It pushes each result as a `detections` event, at most the pipeline's `maxHz` a second (10 by default). `captureUs` is the capture time of the frame they were found on, as the video's frames carry it, so a client draws them on that frame. Each object has a label, a score, a distance in metres and an outline. The outline's vertices are `[x, y]` fractions of the left image's width and height. A pipeline on a camera of its own outlines its objects on that camera's image. An object it cannot place has a `distanceM` of `null`.
 
 ```json
 {
@@ -249,4 +253,4 @@ calibration.on('session', ({ phase, samples, progress }) => console.log(phase, s
 calibration.join()
 ```
 
-Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.
+Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes, and a pushed event gets an error reply. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.

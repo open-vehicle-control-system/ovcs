@@ -1,7 +1,7 @@
 defmodule VisionApiWeb.Router do
   use VisionApiWeb, :router
 
-  import VisionApiWeb.JsonApi, only: [put_media_type: 2]
+  import VisionApiWeb.JsonApi, only: [check_path: 2, check_query: 2, put_media_type: 2]
 
   pipeline :jsonapi_media_type do
     plug :put_media_type
@@ -9,13 +9,15 @@ defmodule VisionApiWeb.Router do
 
   # After `:jsonapi_media_type`, a pipeline of its own: an error raised here, a refused `Accept` or a body that is not JSON, is rendered on the conn this pipeline was given.
   pipeline :jsonapi do
+    plug :check_path
+    plug :check_query
     plug :accepts, ["jsonapi", "json"]
     plug Plug.Parsers, parsers: [:json], pass: ["*/*"], json_decoder: Phoenix.json_library()
   end
 
   scope "/api", VisionApiWeb do
     pipe_through [:jsonapi_media_type, :jsonapi]
-    get "/stages", StageController, :index
+    get "/stages", StageController, :index, private: %{jsonapi_include: true}
     get "/parameters", ParameterController, :index
     get "/parameters/:id", ParameterController, :show
     patch "/parameters/:id", ParameterController, :update
@@ -29,7 +31,7 @@ defmodule VisionApiWeb.Router do
     get "/board", BoardController, :show
     get "/exporters", ExporterController, :index
     post "/exporters/:id/actions/:name", ExporterActionController, :run
-    get "/ros2-node", Ros2NodeController, :show
+    get "/ros2-node", Ros2NodeController, :show, private: %{jsonapi_include: true}
     get "/calibrations", CalibrationController, :index
     get "/calibrations/:id", CalibrationController, :show
     post "/calibration-sessions", CalibrationActionController, :start

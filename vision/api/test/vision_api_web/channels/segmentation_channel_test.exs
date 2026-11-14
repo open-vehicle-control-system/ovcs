@@ -60,6 +60,17 @@ defmodule VisionApiWeb.SegmentationChannelTest do
 
   defp grid(<<_header::binary-24, data::binary>>), do: data
 
+  @tag :capture_log
+  test "an event the channel does not take is refused, and the channel stays" do
+    start_unit()
+    {:ok, _reply, socket} = join("segmentation:road")
+
+    reference = push(socket, "nope", %{})
+
+    assert_reply reference, :error, %{reason: "unknown event"}
+    assert Process.alive?(socket.channel_pid)
+  end
+
   test "pushes each result as its frame's size, its band, its capture time and its label grid, little-endian" do
     start_unit()
     {:ok, _reply, _socket} = join("segmentation:road")
