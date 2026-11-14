@@ -168,15 +168,6 @@ defmodule OvcsMini do
     }
   end
 
-  # Not measured: plausible figures for a 1/10 truck on a 2S pack.
-  @simulated_battery_voltage 7.4
-  @simulated_acceleration_per_ampere 0.5
-  # The Mini's VESC Tool setting, see docs/vms/drivers.md.
-  @vesc_minimum_erpm 300
-
-  @doc false
-  def simulated_acceleration_per_ampere, do: @simulated_acceleration_per_ampere
-
   defp simulated_hardware do
     simulator = simulator()
 
@@ -189,59 +180,8 @@ defmodule OvcsMini do
     ]
   end
 
-  # The simulator runner's frames are vms.yml's, the other way round,
-  # on the VMS's host interfaces.
   @impl OvcsVehicle
-  def simulator do
-    drivetrain = OvcsMini.Vms.Composer.drivetrain()
-
-    %{
-      can_config_path: "can/simulator.yml",
-      can_mapping: OvcsMini.Vms.Composer.default_can_mapping(:host),
-      vehicle: %{
-        wheelbase_m: geometry().wheelbase,
-        wheel_radius_m: geometry().wheel_radius,
-        # Friction is the motor current the Mini needs to start rolling.
-        rolling_deceleration_m_s2:
-          drivetrain.min_motor_current * @simulated_acceleration_per_ampere
-      },
-      simulated_components: [
-        {SimulatorCore.SimulatedComponents.Vesc.MotorController,
-         pole_pairs: drivetrain.pole_pairs,
-         motor_to_wheel_ratio: drivetrain.motor_to_wheel_ratio,
-         min_erpm: @vesc_minimum_erpm,
-         acceleration_per_ampere: @simulated_acceleration_per_ampere,
-         input_voltage: @simulated_battery_voltage},
-        {SimulatorCore.SimulatedComponents.OVCS.GenericController,
-         analog_pins: %{1 => pm12s3_reading(@simulated_battery_voltage)},
-         pulse: %{
-           shaft_turns_per_wheel_turn:
-             drivetrain.motor_to_wheel_ratio * drivetrain.pinion_teeth / drivetrain.spur_teeth,
-           pulses_per_revolution: drivetrain.pulses_per_revolution
-         }},
-        {SimulatorCore.SimulatedComponents.Traxxas.Steering,
-         steering_limit_rad: geometry().steering_limit,
-         steering_sign: drivetrain.steering_sign,
-         neutral: drivetrain.steering_trim},
-        {SimulatorCore.SimulatedComponents.OVCS.RadioControl, radio_control_script()}
-      ]
-    }
-  end
-
-  # The PM12S-3's 1:21 divider read by the controller's 14-bit, 5 V ADC.
-  defp pm12s3_reading(voltage), do: round(voltage / 21 / 5 * 16_383)
-
-  # Sticks centred, then channel 6 through :radio to :ros, and channel 5
-  # to the commander `OVCS_SIMULATOR_COMMANDER` names (`teleop`, or
-  # `autonomous` by default), each a second apart.
-  defp radio_control_script do
-    commander = if System.get_env("OVCS_SIMULATOR_COMMANDER") == "teleop", do: 1000, else: 2000
-
-    [
-      channels: %{1 => 1500, 2 => 1500, 5 => 1000, 6 => 1000},
-      steps: [{3_000, %{6 => 1500}}, {4_000, %{6 => 2000}}, {5_000, %{5 => commander}}]
-    ]
-  end
+  defdelegate simulator, to: OvcsMini.Simulator
 
   defp ros_bridge_target_config,
     do: %RosBridge.Config{

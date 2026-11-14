@@ -25,13 +25,19 @@ defmodule OvcsMini.MixProject do
   # the composer modules access to `VmsCore.Vehicle`, `VisionCore`,
   # `OvcsBus.Message`, and Cantastic — all pulled in transitively — and
   # makes `./ovcs run ovcs_mini` self-contained against this vehicle's
-  # `_build` tree.
+  # `_build` tree. `simulator_core` holds the simulated components
+  # `OvcsMini.Simulator` names, on the targets the `ros` bridge builds
+  # it for; the simulator runner runs them, not the vehicle.
   defp deps do
     [
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},
       {:vms_firmware, path: "../../vms/firmware"},
       {:vision_firmware, path: "../../vision/firmware"},
       {:bridge_firmware, path: "../../bridges/firmware"},
+      {:simulator_core,
+       path: "../../simulator/core",
+       targets: [:host, :ovcs_base_can_system_rpi4, :rpi5],
+       runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false}
     ]

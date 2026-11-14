@@ -62,7 +62,7 @@ defmodule OvcsMini.GeometryTest do
 
     test "the acceleration per ampere is the simulated hardware's" do
       assert xacro_property("simulated_acceleration_per_ampere") ==
-               OvcsMini.simulated_acceleration_per_ampere()
+               OvcsMini.Simulator.acceleration_per_ampere()
     end
   end
 
