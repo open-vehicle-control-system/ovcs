@@ -30,6 +30,8 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.SteeringColumn do
 
   import SimulatorCore.SimulatedComponent, only: [decimal: 2, float: 2]
 
+  alias SimulatorCore.SimulatedComponents.OVCS.GenericController.DigitalPinRequest
+
   # The most lws_status's 8-bit angular speed holds, at 4 °/s per bit.
   @max_reported_angular_speed_deg_s 1_020
 
@@ -41,10 +43,10 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.SteeringColumn do
     state = %{
       network: Map.fetch!(opts, :network),
       controller_network: Map.get(opts, :controller_network, :ovcs),
-      power_request: "#{Map.fetch!(opts, :power_relay_controller)}_digital_pin_request",
-      power_pin: "digital_pin#{Map.fetch!(opts, :power_relay_pin)}_enabled",
-      direction_request: "#{actuation_controller}_digital_pin_request",
-      direction_pin: "digital_pin#{Map.fetch!(opts, :direction_pin)}_enabled",
+      power_request: DigitalPinRequest.frame_name(Map.fetch!(opts, :power_relay_controller)),
+      power_pin: Map.fetch!(opts, :power_relay_pin),
+      direction_request: DigitalPinRequest.frame_name(actuation_controller),
+      direction_pin: Map.fetch!(opts, :direction_pin),
       pwm_request:
         "#{actuation_controller}_external_pwm#{Map.fetch!(opts, :external_pwm_id)}_request",
       steps_per_column_degree: Map.fetch!(opts, :steps_per_column_degree),
@@ -90,12 +92,12 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.SteeringColumn do
   end
 
   defp read_power(%{power_request: name, power_pin: pin} = state, name, signals),
-    do: %{state | powered: match?(%{^pin => %{value: true}}, signals)}
+    do: %{state | powered: DigitalPinRequest.enabled?(signals, pin)}
 
   defp read_power(state, _name, _signals), do: state
 
   defp read_direction(%{direction_request: name, direction_pin: pin} = state, name, signals),
-    do: %{state | clockwise: match?(%{^pin => %{value: true}}, signals)}
+    do: %{state | clockwise: DigitalPinRequest.enabled?(signals, pin)}
 
   defp read_direction(state, _name, _signals), do: state
 
