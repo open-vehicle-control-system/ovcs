@@ -1,13 +1,13 @@
 defmodule VisionCore.Calibration.Library do
   @moduledoc """
-  The calibrations the unit keeps, in `VisionCore.Repo`: every one it
-  was given stays, under a name, and any of them can be put back in
-  force. A target's calibration in force is the one its store files hold.
+  The calibrations the unit saves, in `VisionCore.Repo`: every one it
+  was given stays, under a name, and any of them can be put back in use.
+  A target's calibration in use is the one its store files hold.
 
-  A pair's calibration is kept as a `VisionCore.Models.StereoCameraCalibration`,
+  A pair's calibration is saved as a `VisionCore.Models.StereoCameraCalibration`,
   a camera's as a `VisionCore.Models.CameraCalibration`, a camera's pose
-  as a `VisionCore.Models.CameraPose`; an id
-  (`VisionCore.Models.KeptCalibrationId`) names one of any kind.
+  as a `VisionCore.Models.CameraPose`; its id, a UUID, names one of any
+  kind.
 
   The files stay what the pipelines read; `VisionCore.Calibration.Recorder`
   keeps the library and them in step.
@@ -18,17 +18,14 @@ defmodule VisionCore.Calibration.Library do
   import Ecto.Query
   require Logger
 
+  alias VisionCore.Calibration.CommonFields
   alias VisionCore.Camera.Pose
   alias VisionCore.Models
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
 
   @unavailable "saved calibrations unavailable"
-  @models %{
-    "stereo" => Models.StereoCameraCalibration,
-    "camera" => Models.CameraCalibration,
-    "pose" => Models.CameraPose
-  }
+  @models [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose]
   @pose_suffix "-pose"
 
   @type cameras :: [{String.t(), CameraCalibration.t()}]
@@ -36,14 +33,14 @@ defmodule VisionCore.Calibration.Library do
   @typedoc "What a calibration holds: each camera's name with its calibration, or a camera's pose."
   @type figures :: cameras() | Pose.t()
 
-  @typedoc "A calibration kept, of any kind."
-  @type kept ::
+  @typedoc "A saved calibration, of any kind."
+  @type saved ::
           Models.StereoCameraCalibration.t()
           | Models.CameraCalibration.t()
           | Models.CameraPose.t()
 
   @doc """
-  Keeps `figures` as a calibration of `target`: a pair's for the cameras
+  Saves `figures` as a calibration of `target`: a pair's for the cameras
   `left` and `right`, a camera's for one camera, or a camera's pose.
 
   ## Options
@@ -56,7 +53,7 @@ defmodule VisionCore.Calibration.Library do
     * `:rms_px` — each camera's reprojection error, by camera name; a
       pose's, a number.
   """
-  @spec record(String.t(), figures(), keyword()) :: {:ok, kept()} | {:error, String.t()}
+  @spec record(String.t(), figures(), keyword()) :: {:ok, saved()} | {:error, String.t()}
   def record(target, %Pose{} = pose, opts) do
     figures =
       pose
@@ -98,7 +95,7 @@ defmodule VisionCore.Calibration.Library do
   defp lens(name, calibration, rms_px) do
     case Models.Lens.attributes(calibration) do
       {:ok, lens} -> {:ok, Map.put(lens, :rms_px, rms_px[name])}
-      {:error, reason} -> {:error, "the #{name} camera cannot be kept: #{reason}"}
+      {:error, reason} -> {:error, "the #{name} camera cannot be saved: #{reason}"}
     end
   end
 
@@ -125,13 +122,16 @@ defmodule VisionCore.Calibration.Library do
   end
 
   @doc """
-  The calibrations of `target`, the one kept last first: in the order the
+  The calibrations of `target`, the one saved last first: in the order the
   unit was given them, whatever its clock read.
   """
-  @spec list(String.t()) :: [kept()]
+  @spec list(String.t()) :: [saved()]
   def list(target) do
-    Enum.flat_map(Map.values(@models), fn model ->
-      Repo.all(from(kept in model, where: kept.target == ^target, order_by: [desc: kept.id]))
+    # SQLite's rowid follows the order rows were inserted in; a UUID carries none.
+    Enum.flat_map(@models, fn model ->
+      Repo.all(
+        from(saved in model, where: saved.target == ^target, order_by: [desc: fragment("rowid")])
+      )
     end)
   rescue
     error -> unavailable(error, [])
@@ -140,49 +140,57 @@ defmodule VisionCore.Calibration.Library do
   end
 
   @doc "The calibration `id`."
-  @spec fetch(String.t()) :: {:ok, kept()} | {:error, :not_found | String.t()}
+  @spec fetch(String.t()) :: {:ok, saved()} | {:error, :not_found | String.t()}
   def fetch(id) do
-    with {:ok, model} <- model(id) do
+    with {:ok, id} <- uuid(id) do
       guarded(fn ->
-        case Repo.get(model, id) do
+        case Enum.find_value(@models, &Repo.get(&1, id)) do
           nil -> {:error, :not_found}
-          kept -> {:ok, kept}
+          saved -> {:ok, saved}
         end
       end)
     end
   end
 
   @doc "Names the calibration `id`; a name has 1 to 80 characters once trimmed."
-  @spec rename(String.t(), String.t()) :: {:ok, kept()} | {:error, :not_found | String.t()}
+  @spec rename(String.t(), String.t()) :: {:ok, saved()} | {:error, :not_found | String.t()}
   def rename(id, name) when is_binary(name) do
-    with :ok <- Models.KeptCalibration.check_name(name),
-         {:ok, %model{} = kept} <- fetch(id) do
-      guarded(fn -> kept |> model.changeset(%{name: name}) |> Repo.update() |> written() end)
+    with :ok <- CommonFields.check_name(name),
+         {:ok, %model{} = saved} <- fetch(id) do
+      guarded(fn -> saved |> model.changeset(%{name: name}) |> Repo.update() |> written() end)
     end
   end
 
-  @doc "Removes the calibration `id`, unless it is in force."
-  @spec delete(String.t()) :: :ok | {:error, :not_found | :in_force | String.t()}
+  @doc "Removes the calibration `id`, unless it is in use."
+  @spec delete(String.t()) :: :ok | {:error, :not_found | :in_use | String.t()}
   def delete(id) do
-    with {:ok, model} <- model(id) do
-      # One statement: a selection made meanwhile cannot fall between the check and the removal.
-      not_in_force = from(kept in model, where: kept.id == ^id and not kept.in_force)
-
+    with {:ok, id} <- uuid(id) do
       guarded(fn ->
         cond do
-          match?({1, _}, Repo.delete_all(not_in_force)) -> :ok
-          Repo.exists?(from(kept in model, where: kept.id == ^id)) -> {:error, :in_force}
-          true -> {:error, :not_found}
+          Enum.any?(@models, &delete_not_in_use(&1, id)) ->
+            :ok
+
+          Enum.any?(@models, &Repo.exists?(from(saved in &1, where: saved.id == ^id))) ->
+            {:error, :in_use}
+
+          true ->
+            {:error, :not_found}
         end
       end)
     end
   end
 
-  @doc "The calibration in force for `target`, or `nil` for the firmware's or none."
-  @spec selected(String.t()) :: kept() | nil
-  def selected(target) do
-    Enum.find_value(Map.values(@models), fn model ->
-      Repo.one(from(kept in model, where: kept.target == ^target and kept.in_force))
+  # One statement: a calibration put in use meanwhile cannot fall between the check and the removal.
+  defp delete_not_in_use(model, id) do
+    not_in_use = from(saved in model, where: saved.id == ^id and not saved.in_use)
+    match?({1, _}, Repo.delete_all(not_in_use))
+  end
+
+  @doc "The calibration in use for `target`, or `nil` for the firmware's or none."
+  @spec in_use(String.t()) :: saved() | nil
+  def in_use(target) do
+    Enum.find_value(@models, fn model ->
+      Repo.one(from(saved in model, where: saved.target == ^target and saved.in_use))
     end)
   rescue
     error -> unavailable(error, nil)
@@ -191,70 +199,72 @@ defmodule VisionCore.Calibration.Library do
   end
 
   @doc """
-  Puts the calibration `id` in force for `target`, and none of its others;
+  Puts the calibration `id` in use for `target`, and none of its others;
   none with `nil`, for the firmware's.
   """
-  @spec select(String.t(), String.t() | nil) :: :ok | {:error, String.t()}
-  def select(target, nil) do
+  @spec put_in_use(String.t(), String.t() | nil) :: :ok | {:error, String.t()}
+  def put_in_use(target, nil) do
     guarded(fn ->
       {:ok, :ok} = Repo.transaction(fn -> clear(target) end)
       :ok
     end)
   end
 
-  def select(target, id) do
-    case model(id) do
-      {:ok, model} -> guarded(fn -> put_in_force(model, target, id) end)
-      {:error, :not_found} -> {:error, not_kept(target, id)}
+  def put_in_use(target, id) do
+    case uuid(id) do
+      {:ok, id} -> guarded(fn -> mark_in_use(target, id) end)
+      {:error, :not_found} -> {:error, not_saved(target, id)}
     end
   end
 
-  # The target's others first: the database takes one in force per target at most.
-  defp put_in_force(model, target, id) do
-    chosen = from(kept in model, where: kept.id == ^id and kept.target == ^target)
-
-    selection =
+  # The target's others first: the database takes one in use per target at most.
+  defp mark_in_use(target, id) do
+    marked =
       Repo.transaction(fn ->
         clear(target)
 
-        case Repo.update_all(chosen, set: [in_force: true]) do
-          {1, _} -> :ok
-          {0, _} -> Repo.rollback(not_kept(target, id))
-        end
+        chosen =
+          Enum.sum_by(@models, fn model ->
+            from(saved in model, where: saved.id == ^id and saved.target == ^target)
+            |> Repo.update_all(set: [in_use: true])
+            |> elem(0)
+          end)
+
+        if chosen == 0, do: Repo.rollback(not_saved(target, id)), else: :ok
       end)
 
-    case selection do
+    case marked do
       {:ok, :ok} -> :ok
       {:error, reason} -> {:error, reason}
     end
   end
 
   defp clear(target) do
-    for model <- Map.values(@models) do
-      Repo.update_all(from(kept in model, where: kept.target == ^target and kept.in_force),
-        set: [in_force: false]
+    for model <- @models do
+      Repo.update_all(from(saved in model, where: saved.target == ^target and saved.in_use),
+        set: [in_use: false]
       )
     end
 
     :ok
   end
 
-  defp not_kept(target, id), do: "no calibration #{inspect(id)} is kept for #{target}"
+  defp not_saved(target, id), do: "no calibration #{inspect(id)} is saved for #{target}"
 
   @doc "The newest calibration of `target` that holds `figures`, element for element."
-  @spec holding(String.t(), figures()) :: kept() | nil
+  @spec holding(String.t(), figures()) :: saved() | nil
   def holding(target, figures), do: Enum.find(list(target), &holds?(&1, figures))
 
-  @doc "Whether `kept` holds `figures`, its cameras' lenses or its pose, element for element."
-  @spec holds?(kept(), figures()) :: boolean()
-  def holds?(%Models.CameraPose{} = kept, %Pose{} = pose),
-    do: Models.CameraPose.holds?(kept, pose)
+  @doc "Whether `saved` holds `figures`, its cameras' lenses or its pose, element for element."
+  @spec holds?(saved(), figures()) :: boolean()
+  def holds?(%Models.CameraPose{} = saved, %Pose{} = pose),
+    do: Models.CameraPose.holds?(saved, pose)
 
-  def holds?(_kept, %Pose{}), do: false
+  def holds?(_saved, %Pose{}), do: false
   def holds?(%Models.CameraPose{}, _cameras), do: false
 
-  def holds?(kept, cameras) do
-    lenses = lenses(kept)
+  def holds?(saved, cameras) do
+    lenses = lenses(saved)
 
     length(lenses) == length(cameras) and
       Enum.all?(cameras, fn {name, calibration} ->
@@ -264,23 +274,24 @@ defmodule VisionCore.Calibration.Library do
       end)
   end
 
-  @doc "The cameras of `kept`, each name with its lens: a pair's left then right, a camera's; none for a pose."
-  @spec lenses(kept()) :: [{String.t(), Models.Lens.t()}]
+  @doc "The cameras of `saved`, each name with its lens: a pair's left then right, a camera's; none for a pose."
+  @spec lenses(saved()) :: [{String.t(), Models.Lens.t()}]
   def lenses(%Models.StereoCameraCalibration{left: left, right: right}),
     do: [{"left", left}, {"right", right}]
 
   def lenses(%Models.CameraCalibration{camera: camera, lens: lens}), do: [{camera, lens}]
   def lenses(%Models.CameraPose{}), do: []
 
-  defp model(id) do
-    case Models.KeptCalibrationId.parse(id) do
-      {:ok, kind, _row_id} -> {:ok, Map.fetch!(@models, kind)}
-      :error -> {:error, :not_found}
+  # An id is a UUID as the unit writes it: lower case, with its hyphens.
+  defp uuid(id) do
+    case Ecto.UUID.cast(id) do
+      {:ok, ^id} -> {:ok, id}
+      _other -> {:error, :not_found}
     end
   end
 
   # A refused name answers its rule, any other refusal as a write that failed.
-  defp written({:ok, kept}), do: {:ok, kept}
+  defp written({:ok, saved}), do: {:ok, saved}
 
   defp written({:error, %Ecto.Changeset{} = changeset}) do
     case changeset.errors[:name] do

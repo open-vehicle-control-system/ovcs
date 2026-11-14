@@ -8,7 +8,7 @@ defmodule VisionCore.Stereo.Calibration do
   The unit's options resolve where each side's calibration is
   (`VisionCore.Stereo.Supervisor.camera_options/1`): with a
   `:calibration_store_dir`, a calibration committed goes to the store
-  and, once both sides are stored, is the one in force; the
+  and, once both sides are stored, is the one in use; the
   `:calibration_dir` or the side's `:calibration_path` holds the built-in
   one, which `reset/2` goes back to. Without a store, a commit writes the
   calibration paths themselves.
@@ -21,7 +21,7 @@ defmodule VisionCore.Stereo.Calibration do
   and the answer is `{:error, reason}`. When the reload raises or exits,
   as one that does not answer in time, the unit may have taken them all
   the same: the files go back, and the unit reloads the calibration then
-  in force.
+  in use.
   Each commit or reset the unit takes is published as
   `{:stereo_calibration_changed, prefix}` under `changed_key/1`, a side
   stored alone included. The commits and resets of one unit run one at a
@@ -81,7 +81,7 @@ defmodule VisionCore.Stereo.Calibration do
   def changed_key(prefix), do: {:stereo_calibration, prefix}
 
   @doc """
-  The calibration in force for the stereo unit of `config`, the active
+  The calibration in use for the stereo unit of `config`, the active
   `VisionCore.Config`: per side its path, parsed calibration and YAML
   (`nil` without a file), and its source. `stored_at` is the time the
   later of the stored files was written, and `can_reset` whether
@@ -484,7 +484,7 @@ defmodule VisionCore.Stereo.Calibration do
 
       {:failed, reason} ->
         put_back(previous)
-        reload_in_force(reload, config, prefix)
+        reload_in_use(reload, config, prefix)
         {:error, "the stereo unit did not take the calibration: #{reason}"}
     end
   end
@@ -508,7 +508,7 @@ defmodule VisionCore.Stereo.Calibration do
   defp take(:leave, _prefix, _opts, _previous), do: :ok
 
   # A reload that raised or exited may have reached the unit: it reloads the files put back.
-  defp reload_in_force(reload, config, prefix) do
+  defp reload_in_use(reload, config, prefix) do
     with {:ok, cameras} <- StereoSupervisor.camera_options(config),
          paths =
            reload_paths(cameras[:left][:calibration_path], cameras[:right][:calibration_path]),
@@ -518,7 +518,7 @@ defmodule VisionCore.Stereo.Calibration do
       {_refused_or_failed, reason} ->
         Logger.error(
           "#{__MODULE__}[#{prefix}] cannot have the stereo unit reload the calibration " <>
-            "in force: #{reason}"
+            "in use: #{reason}"
         )
     end
   end

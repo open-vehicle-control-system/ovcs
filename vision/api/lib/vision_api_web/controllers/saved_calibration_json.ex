@@ -1,18 +1,17 @@
 defmodule VisionApiWeb.SavedCalibrationJSON do
   @moduledoc """
-  A calibration the unit keeps (`VisionCore.Calibration.Library.kept/0`)
-  as a `saved-calibrations` JSON:API resource, under its id
-  (`VisionCore.Models.KeptCalibrationId`): its `name`, its `origin`
-  (`dashboard` or `imported`), `createdAt`, whether it is `inForce`, the
-  `board`, the `samples` and the `stereoRmsPx` of the session that solved
-  it, `null` for one the unit did not solve, a pair's `baselineM`, and
-  its `cameras`, each with its `name`, image size, intrinsics, distortion
-  coefficients, `rmsPx`, and the `file` name to save its `yaml` under,
-  as the calibration in use's. A camera's pose has no camera and its
-  `pose`, as `VisionApiWeb.CalibrationJSON` renders one, with the
-  `rmsPx` of the solve that made it; `null` for any other calibration.
-  Its `calibration` relationship names the target it calibrates, one of
-  the `calibrations`.
+  A calibration the unit saves (`VisionCore.Calibration.saved/0`)
+  as a `saved-calibrations` JSON:API resource, under its id, a UUID: its
+  `name`, its `origin` (`dashboard` or `imported`), `createdAt`, whether
+  it is `inUse`, the `board`, the `samples` and the `stereoRmsPx` of
+  the session that solved it, `null` for one the unit did not solve, a
+  pair's `baselineM`, and its `cameras`, each with its `name`, image
+  size, intrinsics, distortion coefficients, `rmsPx`, and the `file`
+  name to save its `yaml` under, as the calibration in use's. A camera's
+  pose has no camera and its `pose`, as `VisionApiWeb.CalibrationJSON`
+  renders one, with the `rmsPx` of the solve that made it; `null` for
+  any other calibration. Its `calibration` relationship names the target
+  it calibrates, one of the `calibrations`.
   """
   alias VisionApiWeb.{CalibrationJSON, JsonApi}
   alias VisionCore.Calibration.Library
@@ -20,15 +19,15 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
 
   @distortion [:k1, :k2, :p1, :p2, :k3]
 
-  @doc "The `saved-calibrations` resources of `kept`, each from `VisionCore.Calibration.saved/2`."
-  @spec index(%{kept: [VisionCore.Calibration.kept()]}) :: map()
-  def index(%{kept: kept}), do: %{data: Enum.map(kept, &data/1)}
+  @doc "The `saved-calibrations` resources of `saved`, each from `VisionCore.Calibration.saved/2`."
+  @spec index(%{saved: [VisionCore.Calibration.saved()]}) :: map()
+  def index(%{saved: saved}), do: %{data: Enum.map(saved, &data/1)}
 
-  @doc "The `saved-calibrations` resource of `kept`."
-  @spec show(%{kept: VisionCore.Calibration.kept()}) :: map()
-  def show(%{kept: kept}), do: %{data: data(kept)}
+  @doc "The `saved-calibrations` resource of `saved`."
+  @spec show(%{saved: VisionCore.Calibration.saved()}) :: map()
+  def show(%{saved: saved}), do: %{data: data(saved)}
 
-  defp data(%{saved: saved, in_force: in_force, files: files}) do
+  defp data(%{saved: saved, in_use: in_use, files: files}) do
     JsonApi.resource(
       "saved-calibrations",
       saved.id,
@@ -36,7 +35,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
         name: saved.name,
         origin: saved.origin,
         createdAt: DateTime.to_iso8601(saved.inserted_at),
-        inForce: in_force,
+        inUse: in_use,
         board: board(saved),
         samples: saved.samples,
         stereoRmsPx: stereo_rms_px(saved),

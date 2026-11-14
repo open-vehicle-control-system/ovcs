@@ -98,7 +98,7 @@ defmodule VisionCore.RepoMigrationsTest do
     List.flatten(rows)
   end
 
-  test "marks UTC on the names kept before they said it, and only on those", %{repo: repo} do
+  test "marks UTC on the names saved before they said it, and only on those", %{repo: repo} do
     migrate(repo, to: 20_261_114_120_000)
 
     dated =
@@ -123,7 +123,7 @@ defmodule VisionCore.RepoMigrationsTest do
     assert names.(chosen) == [["2026-11-12 10:00"]]
   end
 
-  test "moves each calibration kept to its kind's table, its cameras into lenses and its selection into in_force",
+  test "moves each saved calibration to its kind's table, its cameras into lenses and its target's selection into in_use",
        %{repo: repo} do
     migrate(repo, to: 20_261_114_180_000)
 
@@ -165,13 +165,13 @@ defmodule VisionCore.RepoMigrationsTest do
 
     migrate(repo, all: true)
 
-    assert {:ok, %Models.StereoCameraCalibration{} = kept_pair} = Library.fetch("stereo-#{pair}")
+    assert [%Models.StereoCameraCalibration{} = saved_pair] = Library.list("hq")
 
     assert %{
              target: "hq",
              name: "Workshop",
              origin: "dashboard",
-             in_force: true,
+             in_use: true,
              board_columns: 8,
              board_rows: 6,
              board_square_m: 0.03,
@@ -179,7 +179,7 @@ defmodule VisionCore.RepoMigrationsTest do
              stereo_rms_px: 0.34,
              baseline_m: 0.198,
              inserted_at: ~U[2026-11-13 09:00:00Z]
-           } = kept_pair
+           } = saved_pair
 
     assert %Models.Lens{
              image_width: 728,
@@ -194,27 +194,31 @@ defmodule VisionCore.RepoMigrationsTest do
              p2: 0.0013,
              k3: +0.0,
              rms_px: 0.21
-           } = kept_pair.left
+           } = saved_pair.left
 
-    assert kept_pair.left.rectification == [@third | List.duplicate(0.0, 8)]
-    assert kept_pair.left.projection == List.duplicate(0.0, 11) ++ [-171.2]
-    assert kept_pair.right.fx == 894.3
+    assert saved_pair.left.rectification == [@third | List.duplicate(0.0, 8)]
+    assert saved_pair.left.projection == List.duplicate(0.0, 11) ++ [-171.2]
+    assert saved_pair.right.fx == 894.3
 
-    assert [%{id: newer_id, in_force: true}, %{id: older_id, in_force: false, origin: "imported"}] =
+    assert [%{id: newer_id, in_use: true}, %{id: older_id, in_use: false, origin: "imported"}] =
              Library.list("center")
-
-    assert {newer_id, older_id} == {"camera-#{newer}", "camera-#{older}"}
 
     assert {:ok, %Models.CameraCalibration{camera: "center", lens: %{fx: 580.8}}} =
              Library.fetch(older_id)
 
-    assert {:ok, %Models.CameraPose{} = kept_pose} = Library.fetch("pose-#{pose}")
+    assert [%Models.CameraPose{} = saved_pose] = Library.list("center-pose")
 
-    assert %{target: "center-pose", camera: "center", in_force: true, samples: 24, rms_px: 0.41} =
-             kept_pose
+    assert %{target: "center-pose", camera: "center", in_use: true, samples: 24, rms_px: 0.41} =
+             saved_pose
 
-    assert kept_pose.rotation == Enum.map(0..8, &(&1 / 9))
-    assert kept_pose.translation_m == [-0.1, @tenths, @third]
+    assert saved_pose.rotation == Enum.map(0..8, &(&1 / 9))
+    assert saved_pose.translation_m == [-0.1, @tenths, @third]
+
+    ids = [saved_pair.id, newer_id, older_id, saved_pose.id]
+    assert Enum.all?(ids, &(Ecto.UUID.cast(&1) == {:ok, &1}))
+    assert length(Enum.uniq(ids)) == 4
+    assert {:ok, saved_pair} == Library.fetch(saved_pair.id)
+    assert {:ok, saved_pose} == Library.fetch(saved_pose.id)
 
     for old <- [
           "calibrations",
@@ -225,14 +229,14 @@ defmodule VisionCore.RepoMigrationsTest do
         do: refute(old in table_names())
 
     assert {:ok, %{id: next}} =
-             Library.record("center", [{"center", Models.Lens.to_calibration(kept_pair.left)}],
+             Library.record("center", [{"center", Models.Lens.to_calibration(saved_pair.left)}],
                origin: "dashboard"
              )
 
     refute next in [newer_id, older_id]
   end
 
-  test "drops a calibration of no kind kept, saying which", %{repo: repo} do
+  test "drops a calibration of no kind saved, saying which", %{repo: repo} do
     migrate(repo, to: 20_261_114_180_000)
     without_camera = calibration("center", %{})
     unknown_pair = calibration("hq", %{})
@@ -241,8 +245,8 @@ defmodule VisionCore.RepoMigrationsTest do
 
     log = capture_log(fn -> migrate(repo, all: true) end)
 
-    assert log =~ "calibration #{without_camera} of center is no kind kept: dropped"
-    assert log =~ "calibration #{unknown_pair} of hq is no kind kept: dropped"
+    assert log =~ "calibration #{without_camera} of center is no kind saved: dropped"
+    assert log =~ "calibration #{unknown_pair} of hq is no kind saved: dropped"
     assert Library.list("center") == []
     assert Library.list("hq") == []
   end

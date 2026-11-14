@@ -1,4 +1,4 @@
-defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
+defmodule VisionCore.Repo.Migrations.SplitSavedCalibrationsByKind do
   use Ecto.Migration
 
   require Logger
@@ -8,7 +8,6 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
   @projection for row <- 0..2, column <- 0..3, do: "p#{row}#{column}"
   @rotation for row <- 0..2, column <- 0..2, do: "r#{row}#{column}"
   @shared [
-    "id",
     "target",
     "name",
     "origin",
@@ -41,7 +40,7 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
     end)
 
     flush()
-    Enum.each(kept(), &copy/1)
+    Enum.each(saved(), &copy/1)
 
     drop(table(:calibration_selections))
     drop(table(:calibration_poses))
@@ -50,11 +49,12 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
   end
 
   defp create_table(name, own_columns) do
-    create table(name) do
+    create table(name, primary_key: false) do
+      add(:id, :binary_id, primary_key: true)
       add(:target, :string, null: false)
       add(:name, :string, null: false)
       add(:origin, :string, null: false)
-      add(:in_force, :boolean, null: false, default: false)
+      add(:in_use, :boolean, null: false, default: false)
       add(:board_columns, :integer)
       add(:board_rows, :integer)
       add(:board_square_m, :float)
@@ -64,14 +64,14 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
     end
 
     create(index(name, [:target]))
-    create(unique_index(name, [:target], where: "in_force", name: :"#{name}_in_force_index"))
+    create(unique_index(name, [:target], where: "in_use", name: :"#{name}_in_use_index"))
   end
 
-  # Each calibration kept with its cameras, its pose, and whether its target's selection names it.
-  defp kept do
+  # Each saved calibration with its cameras, its pose, and whether its target uses it.
+  defp saved do
     calibrations =
       rows("""
-      SELECT c.*, s.id IS NOT NULL AS in_force FROM calibrations c
+      SELECT c.*, s.id IS NOT NULL AS in_use FROM calibrations c
       LEFT JOIN calibration_selections s ON s.calibration_id = c.id AND s.target = c.target
       ORDER BY c.id
       """)
@@ -92,38 +92,38 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
     Enum.map(rows, &Map.new(Enum.zip(columns, &1)))
   end
 
-  defp copy(%{"pose" => %{} = pose} = kept) do
-    insert("camera_poses", kept, %{
-      "camera" => String.replace_suffix(kept["target"], "-pose", ""),
+  defp copy(%{"pose" => %{} = pose} = saved) do
+    insert("camera_poses", saved, %{
+      "camera" => String.replace_suffix(saved["target"], "-pose", ""),
       "rotation" => Jason.encode!(Enum.map(@rotation, &pose[&1])),
       "translation_m" => Jason.encode!([pose["tx"], pose["ty"], pose["tz"]]),
       "rms_px" => pose["rms_px"]
     })
   end
 
-  defp copy(%{"cameras" => [camera]} = kept),
-    do: insert("camera_calibrations", kept, %{"camera" => camera["name"], "lens" => lens(camera)})
+  defp copy(%{"cameras" => [camera]} = saved),
+    do: insert("camera_calibrations", saved, %{"camera" => camera["name"], "lens" => lens(camera)})
 
-  defp copy(%{"cameras" => [_, _] = cameras} = kept) do
+  defp copy(%{"cameras" => [_, _] = cameras} = saved) do
     case Enum.sort_by(cameras, & &1["name"]) do
       [%{"name" => "left"} = left, %{"name" => "right"} = right] ->
-        insert("stereo_camera_calibrations", kept, %{
-          "stereo_rms_px" => kept["stereo_rms_px"],
-          "baseline_m" => kept["baseline_m"],
+        insert("stereo_camera_calibrations", saved, %{
+          "stereo_rms_px" => saved["stereo_rms_px"],
+          "baseline_m" => saved["baseline_m"],
           "left" => lens(left),
           "right" => lens(right)
         })
 
       _other ->
-        drop_unknown(kept)
+        drop_unknown(saved)
     end
   end
 
-  defp copy(kept), do: drop_unknown(kept)
+  defp copy(saved), do: drop_unknown(saved)
 
-  # The library never kept such a calibration: no table takes it.
-  defp drop_unknown(kept),
-    do: Logger.warning("calibration #{kept["id"]} of #{kept["target"]} is no kind kept: dropped")
+  # The library never saved such a calibration: no table takes it.
+  defp drop_unknown(saved),
+    do: Logger.warning("calibration #{saved["id"]} of #{saved["target"]} is no kind saved: dropped")
 
   # The JSON Ecto stores a VisionCore.Models.Lens as.
   defp lens(camera) do
@@ -138,8 +138,13 @@ defmodule VisionCore.Repo.Migrations.KeepCalibrationsByKind do
     Jason.encode!(fields)
   end
 
-  defp insert(table, kept, own) do
-    row = kept |> Map.take(@shared) |> Map.put("in_force", kept["in_force"]) |> Map.merge(own)
+  defp insert(table, saved, own) do
+    row =
+      saved
+      |> Map.take(@shared)
+      |> Map.merge(%{"id" => Ecto.UUID.generate(), "in_use" => saved["in_use"]})
+      |> Map.merge(own)
+
     columns = Map.keys(row)
     placeholders = Enum.map_join(columns, ", ", fn _column -> "?" end)
 

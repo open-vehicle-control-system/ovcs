@@ -32,9 +32,9 @@ defmodule VisionCore.Models.CameraCalibrationTest do
     changeset = Models.CameraCalibration.changeset(%Models.CameraCalibration{}, attributes(%{}))
 
     assert changeset.valid?
-    kept = Ecto.Changeset.apply_changes(changeset)
+    saved = Ecto.Changeset.apply_changes(changeset)
 
-    assert {kept.camera, kept.lens.fx, kept.lens.rms_px, kept.in_force} ==
+    assert {saved.camera, saved.lens.fx, saved.lens.rms_px, saved.in_use} ==
              {"center", 580.8, 0.2, false}
   end
 
@@ -50,7 +50,7 @@ defmodule VisionCore.Models.CameraCalibrationTest do
     assert {_message, [validation: :required]} = changeset.errors[:lens]
   end
 
-  test "names a camera's calibration as any calibration kept" do
+  test "names a camera's calibration as any saved calibration" do
     changeset =
       Models.CameraCalibration.changeset(
         %Models.CameraCalibration{},

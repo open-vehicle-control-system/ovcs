@@ -24,7 +24,7 @@ defmodule VisionCore.Calibration.Session do
 
   `solve/0`, once the samples are `good_enough`, runs
   `VisionCore.Calibration.Solver` on them; a pose's, with the two
-  calibrations in force then. `apply/0` commits the solved calibration
+  calibrations in use then. `apply/0` commits the solved calibration
   (`VisionCore.Stereo.Calibration.commit/2` for a pair,
   `VisionCore.Camera.Calibration.commit/3` for a camera,
   `VisionCore.Camera.Pose.commit/3` for a pose) and answers at once: the
@@ -383,10 +383,10 @@ defmodule VisionCore.Calibration.Session do
   defp committer(%{target: %{id: id}, expect: expect, forget: forget} = state, result) do
     commit = commit(state, result)
     figures = committed_figures(state.target, result)
-    kept = {:record, kept(state, result)}
+    expected = {:record, record_options(state, result)}
 
     fn ->
-      expectation = expect.(id, figures, kept)
+      expectation = expect.(id, figures, expected)
       answer = commit.()
       forget.(expectation)
       answer
@@ -413,7 +413,7 @@ defmodule VisionCore.Calibration.Session do
     fn -> commit.(config, name, result.pose) end
   end
 
-  defp kept(%{target: target, board: board}, result) do
+  defp record_options(%{target: target, board: board}, result) do
     [
       origin: "dashboard",
       board: %{columns: board.columns, rows: board.rows, square_m: board.square_m},

@@ -45,7 +45,7 @@ defmodule VisionCore.Models.StereoCameraCalibrationTest do
     pair = Ecto.Changeset.apply_changes(changeset)
     assert {pair.samples, pair.stereo_rms_px, pair.baseline_m} == {62, 0.34, 0.198}
     assert pair.inserted_at == ~U[2026-11-14 10:00:00Z]
-    assert {pair.left.fx, pair.right.fx, pair.in_force} == {886.3, 894.3, false}
+    assert {pair.left.fx, pair.right.fx, pair.in_use} == {886.3, 894.3, false}
   end
 
   test "refuses a calibration without a target, an origin or both lenses" do
@@ -98,13 +98,13 @@ defmodule VisionCore.Models.StereoCameraCalibrationTest do
              ).valid?
     end
 
-    test "is refused on a kept calibration as on a new one" do
-      kept = %StereoCameraCalibration{target: "stereo", name: "Bench", origin: "dashboard"}
+    test "is refused on a saved calibration as on a new one" do
+      saved = %StereoCameraCalibration{target: "stereo", name: "Bench", origin: "dashboard"}
 
       assert {@name_rule, _validation} =
-               StereoCameraCalibration.changeset(kept, %{name: "   "}).errors[:name]
+               StereoCameraCalibration.changeset(saved, %{name: "   "}).errors[:name]
 
-      assert StereoCameraCalibration.changeset(kept, %{name: " Workshop "}).changes == %{
+      assert StereoCameraCalibration.changeset(saved, %{name: " Workshop "}).changes == %{
                name: "Workshop"
              }
     end

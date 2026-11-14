@@ -114,7 +114,7 @@ The rates measured on this unit are in [Vision performance](./performance.md#mea
 The stereo stages turn each pair of camera frames into a disparity, then a depth image and a point cloud. The disparity is the horizontal shift of each point between the two images. Where the stages run depends on the board. On the C100 and the VENTUNO Q, they run on the GPU, compiled from Nx. On the Raspberry Pi 5, they run on the CPU cores, in native code. The guides of this section explain them:
 
 - [Stereo vision basics](./basics.md): lens, baseline, rectification, disparity, depth and point cloud, with diagrams and a worked example.
-- [Calibrate the cameras](./calibration.md): from the dashboard or with ROS 2's `cameracalibrator`, where the unit keeps the calibration, and how to ship it in your vehicle package.
+- [Calibrate the cameras](./calibration.md): from the dashboard or with ROS 2's `cameracalibrator`, where the unit stores the calibration, and how to ship it in your vehicle package.
 - [How a pair flows](./data_flow.md): the processes a pair goes through, from the cameras to the ROS 2 topics and the dashboard.
 - [Stereo stages](./stages.md): what each stage does, what it reads and fills, and its settings.
 - [Where depth is computed](./compute.md): Nx, `nx_iree`, the `stereo_match` Port, and how each uses the GPU, the CPU cores and memory.

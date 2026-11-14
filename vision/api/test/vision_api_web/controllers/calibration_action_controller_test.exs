@@ -535,7 +535,7 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
     end
 
     @tag :capture_log
-    test "answers 500 when the unit does not take the built-in calibration, the stored one kept",
+    test "answers 500 when the unit does not take the built-in calibration, the stored one left in place",
          %{conn: conn, config: config, tmp_dir: tmp_dir} do
       store = Path.join(tmp_dir, "store")
       File.mkdir_p!(store)

@@ -23,11 +23,11 @@ defmodule VisionCore.Models.CameraPoseTest do
     changeset = CameraPose.changeset(%CameraPose{}, attributes(%{rms_px: 0.41}))
 
     assert changeset.valid?
-    kept = Ecto.Changeset.apply_changes(changeset)
-    assert {kept.camera, kept.rms_px, kept.in_force} == {"center", 0.41, false}
-    assert CameraPose.to_pose(kept) == @pose
-    assert CameraPose.holds?(kept, @pose)
-    refute CameraPose.holds?(kept, %{@pose | translation: [-0.1, 0.005, 0.003]})
+    saved = Ecto.Changeset.apply_changes(changeset)
+    assert {saved.camera, saved.rms_px, saved.in_use} == {"center", 0.41, false}
+    assert CameraPose.to_pose(saved) == @pose
+    assert CameraPose.holds?(saved, @pose)
+    refute CameraPose.holds?(saved, %{@pose | translation: [-0.1, 0.005, 0.003]})
   end
 
   test "refuses a pose without its camera, or a rotation or translation of another size" do
@@ -43,7 +43,7 @@ defmodule VisionCore.Models.CameraPoseTest do
     assert {_message, [count: 3, validation: :length] ++ _} = changeset.errors[:translation_m]
   end
 
-  test "names a pose as any calibration kept" do
+  test "names a pose as any saved calibration" do
     changeset = CameraPose.changeset(%CameraPose{}, attributes(%{name: "   "}))
 
     assert {"a name has 1 to 80 characters", _validation} = changeset.errors[:name]

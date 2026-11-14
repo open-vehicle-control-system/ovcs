@@ -509,7 +509,7 @@ A new calibration is made by a session, one per unit and shared by every client,
 | `POST /api/calibration-solves` | Computes the calibration from the samples. | 202 | 422 before they are good enough |
 | `POST /api/calibration-applies` | Has the unit take the solved calibration. | 202 | 422 before a solve |
 | `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 201 | 409 while a calibration is being applied |
-| `POST /api/calibration-resets` | Removes the stored files of the `calibration` it names and returns to the built-in one; the calibrations kept stay. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 409 while a session runs, 500 when the unit does not take the built-in calibration, the stored one kept |
+| `POST /api/calibration-resets` | Removes the stored files of the `calibration` it names and returns to the built-in one, which leaves no saved calibration in use; the saved calibrations stay. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 409 while a session runs, 500 when the unit does not take the built-in calibration, the stored one left in place |
 
 Each also answers a 404 on a unit with nothing to calibrate, a 503 while the unit's calibration session does not run, a 409 for another `data.type`, a 403 for a document carrying an `id`, and a 400 for a document sent as a form or in the query string, or without `data.type`. Start a session on the stereo pair for a board of 8 × 6 inner corners and 25 mm squares:
 
@@ -551,30 +551,29 @@ curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/calibration-
 
 The unit looks for the board only while a client is joined to the [calibration channel](./channels.md#calibration): a session started over HTTP alone captures nothing. A solve answers at once, a 202 with the phase `solving`, and its outcome comes on the channel: `solved` with the `result`, or `capturing` with `error` set. An apply answers at once too, a 202 with the phase `applying`, and its outcome comes on the channel: the phase `idle` and the new calibration in use when the unit takes it, or `solved` with `error` set when it refuses it. A reset answers once the unit has taken the built-in calibration.
 
-### The calibrations kept
+### The saved calibrations
 
-The unit keeps every calibration it was given, poses included, as `saved-calibrations`, each with its `calibration` relationship, the one of the `calibrations` it belongs to.
+The unit saves every calibration it was given, poses included, as `saved-calibrations`, each with its `calibration` relationship, the one of the `calibrations` it belongs to.
 
 | Request | Does | Answers | Refuses with |
 |---|---|---|---|
-| `GET /api/saved-calibrations` | Lists them, the one kept last first within each calibration; `filter[calibration]=<id>` keeps one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
-| `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit does not keep |
-| `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed. | 200 | 400 without a name, 409 for another type or id, 422 for a name out of bounds, 404 |
-| `DELETE /api/saved-calibrations/:id` | Removes it. The calibration in force is removed once the unit has returned to its built-in calibration, as a reset does. | 204 | 409 for the calibration in force while a calibration session runs, or without a built-in calibration to return to, 404, 500 when the unit does not return to the built-in calibration, the one in force kept |
-| `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 for another `data.type` or while a calibration session runs, 422 when the unit refuses its files, 500 when the selection fails |
+| `GET /api/saved-calibrations` | Lists them, the one saved last first within each calibration; `filter[calibration]=<id>` lists one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
+| `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit has not saved |
+| `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed; puts it back in use with `data.attributes.inUse` `true`, answering once the unit has taken it; or both, the name checked first. `inUse` equal to the calibration's changes nothing. | 200 | 400 without a string `name` or a boolean `inUse`, 409 for another type or id, or for putting it in use while a calibration session runs, 422 for a name out of bounds, for `inUse` `false` on the calibration in use, or when the unit refuses its files, 404, 500 when putting it in use fails |
+| `DELETE /api/saved-calibrations/:id` | Removes it. The calibration in use is removed once the unit has returned to its built-in calibration, as a reset does. | 204 | 409 for the calibration in use while a calibration session runs, or without a built-in calibration to return to, 404, 500 when the unit does not return to the built-in calibration, the one in use left in place |
 
-An id is the calibration's kind, `stereo`, `camera` or `pose`, then the number the unit gave it, written as the unit writes it: `stereo-7`; `stereo-007`, `stereo-+7` or `7` is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
+An id is a UUID the unit gave the calibration, opaque, written as the unit writes it: in lower case with its hyphens; any other spelling is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
 
 ```json
 {
   "data": {
     "type": "saved-calibrations",
-    "id": "stereo-7",
+    "id": "0b7e5f3a-9c2d-4f1e-8a6b-3d4c5e6f7a8b",
     "attributes": {
       "name": "2026-11-14 00:28",
       "origin": "dashboard",
       "createdAt": "2026-11-14T00:28:11Z",
-      "inForce": true,
+      "inUse": true,
       "board": {"columns": 8, "rows": 6, "squareMm": 30.0},
       "samples": 62,
       "stereoRmsPx": 0.34,
@@ -602,15 +601,16 @@ An id is the calibration's kind, `stereo`, `camera` or `pose`, then the number t
 }
 ```
 
-`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. Each camera has the `file` name to save its `yaml` under, named as the calibration in use's. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A pose kept has no camera and its `pose`, as the calibration in use's, with the `rmsPx` of the solve that made it, `null` for an imported one; `pose` is `null` for the others. A selection is created with:
+`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. Each camera has the `file` name to save its `yaml` under, named as the calibration in use's. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A saved pose has no camera and its `pose`, as the calibration in use's, with the `rmsPx` of the solve that made it, `null` for an imported one; `pose` is `null` for the others.
+
+A calibration leaves use when another one of its calibration is put in use, or when that calibration is reset (`POST /api/calibration-resets`): `inUse` `false` on the one in use is a 422. Put one back in use with:
 
 ```json
 {
   "data": {
-    "type": "calibration-selections",
-    "relationships": {
-      "savedCalibration": {"data": {"type": "saved-calibrations", "id": "stereo-7"}}
-    }
+    "type": "saved-calibrations",
+    "id": "0b7e5f3a-9c2d-4f1e-8a6b-3d4c5e6f7a8b",
+    "attributes": {"inUse": true}
   }
 }
 ```

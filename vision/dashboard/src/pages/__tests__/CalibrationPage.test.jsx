@@ -125,24 +125,24 @@ const result = {
   samples: 40
 }
 
-const kept = (attributes) => ({
+const savedCalibration = (attributes) => ({
   id: '7',
   name: '2026-11-14 00:28',
   origin: 'dashboard',
   createdAt: '2026-11-14T00:28:11Z',
-  inForce: false,
+  inUse: false,
   board: { columns: 8, rows: 6, squareMm: 30 },
   samples: 62,
   stereoRmsPx: 0.34,
   baselineM: 0.198,
   cameras: [
-    { name: 'left', rmsPx: 0.21, file: 'ovcs_mini_left.yaml', yaml: 'left kept' },
-    { name: 'right', rmsPx: 0.3, file: 'ovcs_mini_right.yaml', yaml: 'right kept' }
+    { name: 'left', rmsPx: 0.21, file: 'ovcs_mini_left.yaml', yaml: 'left saved' },
+    { name: 'right', rmsPx: 0.3, file: 'ovcs_mini_right.yaml', yaml: 'right saved' }
   ],
   ...attributes
 })
 
-const found = kept({
+const found = savedCalibration({
   id: '3',
   name: 'Bench',
   origin: 'imported',
@@ -279,30 +279,30 @@ describe('CalibrationPage', () => {
       expect(row(/^k2/).textContent).toBe('k20.0567')
     })
 
-    it('names a calibration stored on the unit without a date, then the one kept it uses, by name and when it was made', () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+    it('names a calibration stored on the unit without a date, then the saved one it uses, by name and when it was made', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       expect(within(inUseCard()).getByRole('heading').textContent).toBe('Calibrated on this unit')
       expect(inUseCard().textContent).toContain(`2026-11-14 00:28 · made ${stamp('2026-11-14T00:28:11Z')}`)
       expect(inUseCard().textContent).not.toContain(stamp(stored.storedAt))
     })
 
-    it('dates a stored calibration by its file while no calibration kept is in use', () => {
+    it('dates a stored calibration by its file while no saved calibration is in use', () => {
       show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
 
       expect(within(inUseCard()).getByRole('heading').textContent).toBe('Calibrated on this unit')
       expect(inUseCard().textContent).toContain(stamp(stored.storedAt))
     })
 
-    it("names no calibration kept while the firmware's is in use", () => {
-      show({ inUse: builtIn, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+    it("names no saved calibration while the firmware's is in use", () => {
+      show({ inUse: builtIn, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true })] }, session: session() })
 
       expect(inUseCard().textContent).not.toContain('2026-11-14 00:28')
       expect(inUseCard().textContent).not.toContain(stamp('2026-11-14T00:28:11Z'))
     })
 
-    it('offers Download once: on the calibration kept in use, beside the heading otherwise', () => {
-      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+    it('offers Download once: on the saved calibration in use, beside the heading otherwise', () => {
+      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
       expect(query('Download the calibration the unit uses')).toBeNull()
       expect(button('Download 2026-11-14 00:28')).toBeTruthy()
       unmount()
@@ -311,8 +311,8 @@ describe('CalibrationPage', () => {
       expect(button('Download the calibration the unit uses')).toBeTruthy()
     })
 
-    it('offers Download beside the heading when the calibration kept in use has no files', () => {
-      const fileless = kept({ inForce: true, cameras: [{ name: 'left', rmsPx: 0.2 }, { name: 'right', rmsPx: 0.3 }] })
+    it('offers Download beside the heading when the saved calibration in use has no files', () => {
+      const fileless = savedCalibration({ inUse: true, cameras: [{ name: 'left', rmsPx: 0.2 }, { name: 'right', rmsPx: 0.3 }] })
       show({ inUse: stored, closed: true, saved: { ovcs_mini: [fileless] }, session: session() })
 
       expect(query('Download 2026-11-14 00:28')).toBeNull()
@@ -341,9 +341,9 @@ describe('CalibrationPage', () => {
     })
   })
 
-  describe('the calibrations kept', () => {
-    const keptCard = () => screen.getByRole('region', { name: 'Calibrations kept on the unit' })
-    const row = (name) => within(keptCard()).getByRole('listitem', { name })
+  describe('the saved calibrations', () => {
+    const savedCard = () => screen.getByRole('region', { name: 'Calibrations saved on the unit' })
+    const row = (name) => within(savedCard()).getByRole('listitem', { name })
 
     it('reads the list of the calibration shown', () => {
       show({ inUse: stored, session: session() })
@@ -354,7 +354,7 @@ describe('CalibrationPage', () => {
     })
 
     it('lists each calibration with when and where it was made, its errors and its baseline, the one in use marked', () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       const first = row(/2026-11-14 00:28/)
       expect([...first.querySelectorAll('dt')].map((label) => label.textContent)).toEqual(['Reprojection error', BASELINE])
@@ -372,8 +372,8 @@ describe('CalibrationPage', () => {
       expect(within(second).queryByText('In use')).toBeNull()
     })
 
-    it('gives each calibration kept its actions in small buttons, Rename among them', () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+    it('gives each saved calibration its actions in small buttons, Rename among them', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       const actions = within(row(/Bench/)).getAllByRole('button')
       expect(actions.map((action) => action.getAttribute('aria-label'))).toEqual(['Use Bench', 'Download Bench', 'Rename Bench', 'Delete Bench'])
@@ -383,7 +383,7 @@ describe('CalibrationPage', () => {
     })
 
     it("says what the firmware's entry is, with a small Use button", () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true })] }, session: session() })
 
       const firmware = row(/Shipped with the firmware/)
       expect(firmware.textContent).toContain('The calibration the firmware was built with')
@@ -400,7 +400,7 @@ describe('CalibrationPage', () => {
 
     it('puts another calibration in use, and deletes one once confirmed in its own dialog', async () => {
       const confirm = vi.spyOn(window, 'confirm')
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       fireEvent.click(button('Use Bench'))
       expect(actions.useSaved).toHaveBeenCalledWith('3')
@@ -417,10 +417,10 @@ describe('CalibrationPage', () => {
     })
 
     it("explains where a calibration was made once, beside the list's heading", () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept(), found] }, session: session() })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration(), found] }, session: session() })
 
-      const about = within(keptCard()).getByRole('button', { name: 'About Where it was made' })
-      expect(within(keptCard()).getByRole('heading').parentElement.contains(about)).toBe(true)
+      const about = within(savedCard()).getByRole('button', { name: 'About Where it was made' })
+      expect(within(savedCard()).getByRole('heading').parentElement.contains(about)).toBe(true)
       fireEvent.focus(about)
 
       const card = screen.getByRole('tooltip')
@@ -428,13 +428,13 @@ describe('CalibrationPage', () => {
       expect(card.textContent).toContain('cameracalibrator')
     })
 
-    it('downloads the YAML files of every calibration kept, the one in use included', () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+    it('downloads the YAML files of every saved calibration, the one in use included', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       fireEvent.click(button('Download 2026-11-14 00:28'))
       expect(downloadYaml.mock.calls).toEqual([
-        ['ovcs_mini_left.yaml', 'left kept'],
-        ['ovcs_mini_right.yaml', 'right kept']
+        ['ovcs_mini_left.yaml', 'left saved'],
+        ['ovcs_mini_right.yaml', 'right saved']
       ])
 
       downloadYaml.mockClear()
@@ -447,7 +447,7 @@ describe('CalibrationPage', () => {
     })
 
     it("deletes the calibration in use once confirmed, saying the unit goes back to the firmware's calibration", async () => {
-      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       fireEvent.click(button('Delete 2026-11-14 00:28'))
 
@@ -456,7 +456,7 @@ describe('CalibrationPage', () => {
     })
 
     it('keeps Delete off the calibration in use on a unit with no firmware calibration to go back to, saying why', () => {
-      show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+      show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session() })
 
       const remove = button('Delete 2026-11-14 00:28')
       expect(remove.disabled).toBe(true)
@@ -511,7 +511,7 @@ describe('CalibrationPage', () => {
     })
 
     it("offers the firmware's calibration while another one is in use, and marks it when the unit runs on it", () => {
-      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
+      const { unmount } = show({ inUse: stored, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true })] }, session: session() })
       fireEvent.click(button('Use the calibration shipped with the firmware'))
       expect(actions.reset).toHaveBeenCalledTimes(1)
       unmount()
@@ -521,17 +521,17 @@ describe('CalibrationPage', () => {
       expect(query('Use the calibration shipped with the firmware')).toBeNull()
     })
 
-    it('has no firmware row on a unit with no built-in calibration to go back to, and says so when nothing is kept', () => {
-      const { unmount } = show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [kept({ inForce: true })] }, session: session() })
-      expect(within(keptCard()).queryByRole('listitem', { name: /Shipped with the firmware/ })).toBeNull()
+    it('has no firmware row on a unit with no built-in calibration to go back to, and says so when nothing is saved', () => {
+      const { unmount } = show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [savedCalibration({ inUse: true })] }, session: session() })
+      expect(within(savedCard()).queryByRole('listitem', { name: /Shipped with the firmware/ })).toBeNull()
       unmount()
 
       show({ inUse: none, closed: true, saved: {}, session: session() })
-      expect(keptCard().textContent).toContain('None yet')
+      expect(savedCard().textContent).toContain('None yet')
     })
 
     it('changes nothing while a calibration session runs', () => {
-      show({ inUse: stored, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session({ phase: 'applying', board, result }) })
+      show({ inUse: stored, saved: { ovcs_mini: [savedCalibration({ inUse: true }), found] }, session: session({ phase: 'applying', board, result }) })
 
       expect(button('Use Bench').disabled).toBe(true)
       expect(button('Delete Bench').disabled).toBe(true)
@@ -540,9 +540,9 @@ describe('CalibrationPage', () => {
     })
 
     it('shows no baseline for a camera of its own', () => {
-      show({ inUse: center, closed: true, saved: { center: [kept({ baselineM: null, stereoRmsPx: null, cameras: [{ name: 'center', rmsPx: 0.2 }] })] }, session: session() })
+      show({ inUse: center, closed: true, saved: { center: [savedCalibration({ baselineM: null, stereoRmsPx: null, cameras: [{ name: 'center', rmsPx: 0.2 }] })] }, session: session() })
 
-      expect(keptCard().textContent).not.toMatch(/baseline/i)
+      expect(savedCard().textContent).not.toMatch(/baseline/i)
       expect(row(/2026-11-14 00:28/).textContent).toContain('0.20 px')
       expect(row(/2026-11-14 00:28/).textContent).not.toContain('center 0.20 px')
     })
@@ -1099,39 +1099,39 @@ describe('CalibrationPage', () => {
       expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose solved']])
     })
 
-    it('lists each position kept with its error and distance, and downloads its YAML', () => {
-      const kept = {
+    it('lists each saved position with its error and distance, and downloads its YAML', () => {
+      const savedPose = {
         id: '9',
         name: 'Bench',
         origin: 'dashboard',
         createdAt: '2026-11-14T10:00:00Z',
-        inForce: true,
+        inUse: true,
         board: { columns: 9, rows: 6, squareMm: 30 },
         samples: 24,
         stereoRmsPx: null,
         baselineM: null,
         cameras: [],
-        pose: pose({ rmsPx: 0.41, yaml: 'pose kept' })
+        pose: pose({ rmsPx: 0.41, yaml: 'pose saved' })
       }
-      show({ inUse: measured, closed: true, saved: { 'center-pose': [kept] }, session: session() })
+      show({ inUse: measured, closed: true, saved: { 'center-pose': [savedPose] }, session: session() })
 
-      const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
+      const card = screen.getByRole('region', { name: 'Calibrations saved on the unit' })
       const row = within(card).getByRole('listitem', { name: /Bench/ })
       expect([...row.querySelectorAll('dt')].map((label) => label.textContent)).toEqual(['Reprojection error', 'Distance to the left camera'])
       expect(row.textContent).toContain('0.41 px')
       expect(row.textContent).toContain('100.3 mm')
       expect(within(poseCard()).getByRole('heading').textContent).toBe('Measured on this unit')
-      expect(poseCard().textContent).toContain(`Bench · made ${stamp(kept.createdAt)}`)
+      expect(poseCard().textContent).toContain(`Bench · made ${stamp(savedPose.createdAt)}`)
       expect(query('Download the position the unit uses')).toBeNull()
 
       fireEvent.click(within(row).getByRole('button', { name: 'Download Bench' }))
-      expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose kept']])
+      expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose saved']])
     })
 
     it("says what the firmware's entry is for a position", () => {
       show({ inUse: { ...measured, canReset: true }, closed: true, session: session() })
 
-      const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
+      const card = screen.getByRole('region', { name: 'Calibrations saved on the unit' })
       expect(within(card).getByRole('listitem', { name: /Shipped with the firmware/ }).textContent).toContain('The position the firmware was built with')
     })
   })

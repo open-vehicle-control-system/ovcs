@@ -4,7 +4,7 @@ import { downloadFile } from './download.js'
 export const DEFAULT_BOARD = { columns: 8, rows: 6, squareMm: 25 }
 const BOARD_KEY = 'vision.calibration.board'
 
-// The unit answers a calibration put in force only once it has taken it, which restarts what reads it.
+// The unit answers a calibration put in use only once it has taken it, which restarts what reads it.
 export const TAKE_TIMEOUT_MS = 60000
 
 // `calibration` is the id of the calibration the action works on, for those that name one.
@@ -36,7 +36,7 @@ export const resetCalibration = (calibration) => act('calibration-resets', { cal
 
 const toSaved = (resource) => ({ id: resource.id, ...resource.attributes })
 
-/** The calibrations the unit keeps for the calibration `id`, the newest first. */
+/** The calibrations the unit saved for the calibration `id`, the newest first. */
 export async function fetchSaved(calibration) {
   const document = await request(`saved-calibrations?filter[calibration]=${encodeURIComponent(calibration)}`)
   return document.data.map(toSaved)
@@ -48,21 +48,16 @@ export async function renameSaved(id, name) {
   return toSaved((await request(`saved-calibrations/${id}`, { method: 'PATCH', body })).data)
 }
 
-/** Removes the saved calibration `id`; the one in force once the unit has returned to the firmware's calibration. */
+/** Removes the saved calibration `id`; the one in use once the unit has returned to the firmware's calibration. */
 export const deleteSaved = (id) =>
   request(`saved-calibrations/${id}`, { method: 'DELETE', timeoutMs: TAKE_TIMEOUT_MS, answer: () => null })
 
-/** Puts the saved calibration `id` back in force. */
-export const selectSaved = (id) =>
-  request('calibration-selections', {
-    method: 'POST',
+/** Puts the saved calibration `id` back in use, answering once the unit has taken it. */
+export const putSavedInUse = (id) =>
+  request(`saved-calibrations/${id}`, {
+    method: 'PATCH',
     timeoutMs: TAKE_TIMEOUT_MS,
-    body: {
-      data: {
-        type: 'calibration-selections',
-        relationships: { savedCalibration: { data: { type: 'saved-calibrations', id } } }
-      }
-    }
+    body: { data: { type: 'saved-calibrations', id, attributes: { inUse: true } } }
   })
 
 export function loadBoard() {

@@ -59,13 +59,13 @@ defmodule VisionCore.Calibration.RecorderTest do
     settled()
   end
 
-  test "selects nothing for a target on the firmware's calibration", %{config: config} do
+  test "puts nothing in use for a target on the firmware's calibration", %{config: config} do
     start(config)
     assert Library.list("hq") == []
-    assert Library.selected("hq") == nil
+    assert Library.in_use("hq") == nil
   end
 
-  test "keeps a calibration found in the store at start as imported, once", %{config: config} do
+  test "saves a calibration found in the store at start as imported, once", %{config: config} do
     :ok = OwnCalibration.commit(config, :hq, calibration(901.5))
 
     start(config)
@@ -73,7 +73,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{origin: "imported", camera: "hq", lens: %{fx: 901.5}} = saved] =
              Library.list("hq")
 
-    assert Library.selected("hq").id == saved.id
+    assert Library.in_use("hq").id == saved.id
 
     stop_supervised!(Recorder)
     start(config)
@@ -92,9 +92,10 @@ defmodule VisionCore.Calibration.RecorderTest do
              Library.list("hq")
   end
 
-  test "keeps a committed calibration with the figures it was told to expect, and selects it", %{
-    config: config
-  } do
+  test "saves a committed calibration with the figures it was told to expect, and puts it in use",
+       %{
+         config: config
+       } do
     start(config)
 
     Recorder.expect(
@@ -119,7 +120,7 @@ defmodule VisionCore.Calibration.RecorderTest do
            ] =
              Library.list("hq")
 
-    assert Library.selected("hq").id == saved.id
+    assert Library.in_use("hq").id == saved.id
 
     # What was expected is used once.
     commit(config, 590.0)
@@ -135,7 +136,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{origin: "imported", samples: nil}] = Library.list("hq")
   end
 
-  test "keeps each of two commits announced with its own figures, whichever is committed first",
+  test "saves each of two commits announced with its own figures, whichever is committed first",
        %{config: config} do
     start(config)
     Recorder.expect("hq", figures(600.0), dashboard(11))
@@ -161,7 +162,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{origin: "dashboard", samples: 22}] = Library.list("hq")
   end
 
-  test "keeps a change that is not the one announced as imported", %{config: config} do
+  test "saves a change that is not the one announced as imported", %{config: config} do
     start(config)
     Recorder.expect("hq", figures(600.0), dashboard(11))
 
@@ -183,7 +184,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{origin: "imported", samples: nil}] = Library.list("hq")
   end
 
-  test "keeps a commit with what its process announced when the process ends right after", %{
+  test "saves a commit with what its process announced when the process ends right after", %{
     config: config
   } do
     start(config)
@@ -200,38 +201,39 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{origin: "dashboard", samples: 11}] = Library.list("hq")
   end
 
-  test "selects a calibration it already keeps instead of keeping it again", %{config: config} do
+  test "puts in use a calibration it already saved instead of saving it again", %{config: config} do
     start(config)
     commit(config, 580.8)
     commit(config, 590.0)
     [second, first] = Library.list("hq")
-    assert Library.selected("hq").id == second.id
+    assert Library.in_use("hq").id == second.id
 
     commit(config, 580.8)
     assert length(Library.list("hq")) == 2
-    assert Library.selected("hq").id == first.id
+    assert Library.in_use("hq").id == first.id
   end
 
-  test "selects the calibration it was told to, among several holding the same figures", %{
+  test "puts in use the calibration it was told to, among several holding the same figures", %{
     config: config
   } do
     start(config)
     {:ok, older} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
     {:ok, _newer} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
 
-    Recorder.expect("hq", figures(580.8), {:select, older.id})
+    Recorder.expect("hq", figures(580.8), {:use, older.id})
     commit(config, 580.8)
 
-    assert Library.selected("hq").id == older.id
+    assert Library.in_use("hq").id == older.id
     assert length(Library.list("hq")) == 2
   end
 
-  test "selects nothing for a stored calibration the library cannot keep, not the one before", %{
-    config: config
-  } do
+  test "puts nothing in use for a stored calibration the library cannot save, not the one before",
+       %{
+         config: config
+       } do
     start(config)
     commit(config, 580.8)
-    assert Library.selected("hq") != nil
+    assert Library.in_use("hq") != nil
     skewed = calibration(590.0)
 
     log =
@@ -245,12 +247,12 @@ defmodule VisionCore.Calibration.RecorderTest do
         settled()
       end)
 
-    assert Library.selected("hq") == nil
-    assert log =~ "could not keep the calibration of hq"
+    assert Library.in_use("hq") == nil
+    assert log =~ "could not save the calibration of hq"
     assert [%{lens: %{fx: 580.8}}] = Library.list("hq")
   end
 
-  test "selects nothing once the target is back on the firmware's calibration, and keeps the calibrations",
+  test "puts nothing in use once the target is back on the firmware's calibration, and leaves the calibrations saved",
        %{config: config} do
     start(config)
     commit(config, 580.8)
@@ -258,7 +260,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     :ok = OwnCalibration.reset(config, :hq)
     settled()
 
-    assert Library.selected("hq") == nil
+    assert Library.in_use("hq") == nil
     assert [%{lens: %{fx: 580.8}}] = Library.list("hq")
   end
 
@@ -269,14 +271,14 @@ defmodule VisionCore.Calibration.RecorderTest do
         {"a value that is no number", "camera_matrix:\n  data: [.nan, 0, 0, 0, 1, 0, 0, 0, 1]\n"},
         {"nothing", ""}
       ] do
-    test "starts and selects nothing for a pair whose stored left file holds #{flaw}", %{
+    test "starts and puts nothing in use for a pair whose stored left file holds #{flaw}", %{
       tmp_dir: tmp_dir
     } do
-      assert_nothing_selected(tmp_dir, unquote(left))
+      assert_nothing_in_use(tmp_dir, unquote(left))
     end
   end
 
-  defp assert_nothing_selected(tmp_dir, left) do
+  defp assert_nothing_in_use(tmp_dir, left) do
     fixtures = Path.expand("../../support/calibration", __DIR__)
     store = Path.join(tmp_dir, "pair_store")
     File.mkdir_p!(store)
@@ -303,10 +305,10 @@ defmodule VisionCore.Calibration.RecorderTest do
 
     ExUnit.CaptureLog.capture_log(fn -> start(config) end)
     assert Library.list("front") == []
-    assert Library.selected("front") == nil
+    assert Library.in_use("front") == nil
   end
 
-  test "keeps a calibration committed through the camera's set_camera_info service, and tells it",
+  test "saves a calibration committed through the camera's set_camera_info service, and tells it",
        %{config: config} do
     start(config)
     :ok = Outputs.subscribe(Recorder.changed_key("hq"))
@@ -341,7 +343,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     :sys.get_state(server)
     settled()
 
-    assert %{origin: "imported", lens: %{fx: 733.25}} = Library.selected("hq")
+    assert %{origin: "imported", lens: %{fx: 733.25}} = Library.in_use("hq")
     assert_received {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
   end
 
@@ -357,7 +359,8 @@ defmodule VisionCore.Calibration.RecorderTest do
   end
 
   test "answers without a recorder running" do
-    expectation = Recorder.expect("hq", figures(580.8), {:select, 1})
+    expectation =
+      Recorder.expect("hq", figures(580.8), {:use, "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"})
 
     assert is_reference(expectation)
     assert Recorder.forget(expectation) == :ok

@@ -79,7 +79,7 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     assert_push "calibration", %{id: "hq-pose", source: "stored", pose: %{distanceMm: _distance}}
   end
 
-  test "a change of the calibrations kept for a target is pushed with its calibration's id" do
+  test "a change of the saved calibrations of a target is pushed with its calibration's id" do
     {:ok, _reply, _socket} = join()
     assert_push "session", %{phase: "idle"}
 

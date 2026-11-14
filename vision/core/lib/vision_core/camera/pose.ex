@@ -36,7 +36,7 @@ defmodule VisionCore.Camera.Pose do
   @type t :: %__MODULE__{rotation: [float()], translation: [float()]}
 
   @typedoc """
-  The pose in force of a camera: where it comes from, when a stored one
+  The pose in use of a camera: where it comes from, when a stored one
   was written, whether it can go back to a built-in one, its path, the
   pose and its YAML, `nil` without a file, and why a file gives no pose.
   """
@@ -98,7 +98,7 @@ defmodule VisionCore.Camera.Pose do
     do: :math.sqrt(Enum.sum(Enum.map(translation, &(&1 * &1))))
 
   @doc """
-  The pose in force for the camera `name` of `config`, the active
+  The pose in use for the camera `name` of `config`, the active
   `VisionCore.Config`. `stored_at` is the time the stored file was
   written, and `can_reset` whether one is stored with a built-in pose to
   go back to. A file that cannot be read or parsed gives no pose, and
@@ -134,7 +134,7 @@ defmodule VisionCore.Camera.Pose do
     end
   end
 
-  @doc "Removes the camera `name`'s stored pose, so that its built-in one is in force again."
+  @doc "Removes the camera `name`'s stored pose, so that its built-in one is in use again."
   @spec reset(VisionCore.Config.t(), atom()) :: :ok | {:error, :not_found | String.t()}
   def reset(config, name) do
     with {:ok, settings} <- settings(config, name) do

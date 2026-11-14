@@ -1,6 +1,6 @@
 defmodule VisionCore.Models.Lens do
   @moduledoc """
-  A camera's lens as a calibration kept holds it, embedded in its
+  A camera's lens as a saved calibration holds it, embedded in its
   `VisionCore.Models.StereoCameraCalibration` or
   `VisionCore.Models.CameraCalibration` and stored as JSON there: the
   image size, the intrinsics `fx`, `fy`, `cx`, `cy`, the `plumb_bob`
@@ -109,7 +109,7 @@ defmodule VisionCore.Models.Lens do
 
   defp same?(held, given), do: Enum.all?(Enum.zip_with(held, given, &close?/2))
 
-  # A value read back from its file differs from the one kept by the text's rounding at most.
+  # A value read back from its file differs from the one saved by the text's rounding at most.
   defp close?(left, right), do: abs(left - right) <= 1.0e-9 * max(1.0, abs(left))
 
   defp check_model(@distortion_model), do: :ok

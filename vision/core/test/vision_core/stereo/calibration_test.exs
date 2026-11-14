@@ -288,7 +288,8 @@ defmodule VisionCore.Stereo.CalibrationTest do
       assert {:ok, %{source: :stored}} = Calibration.in_use(context.config)
     end
 
-    test "puts back what the side held when the unit refuses, the other side kept", context do
+    test "puts back what the side held when the unit refuses, the other side left in place",
+         context do
       :ok = Calibration.commit(context.config, distorted(), reloading(:ok))
       stored = {File.read!(context.left_store), File.read!(context.right_store)}
       built_in = CameraCalibration.load!(Path.join(@fixtures, "stereo_right.yaml"))

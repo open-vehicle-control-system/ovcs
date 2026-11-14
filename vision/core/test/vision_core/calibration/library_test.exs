@@ -9,6 +9,7 @@ defmodule VisionCore.Calibration.LibraryTest do
   alias VisionCore.Ros2.CameraCalibration
 
   @models [Models.StereoCameraCalibration, Models.CameraCalibration, Models.CameraPose]
+  @unknown "6f1c2a7e-3b4d-4e5f-8a9b-0c1d2e3f4a5b"
 
   setup do
     Enum.each(@models, &Repo.delete_all/1)
@@ -29,11 +30,11 @@ defmodule VisionCore.Calibration.LibraryTest do
 
   defp pair(fx), do: [{"left", calibration(fx)}, {"right", calibration(fx + 8)}]
 
-  defp in_force_count(model),
-    do: Repo.aggregate(from(kept in model, where: kept.in_force), :count)
+  defp in_use_count(model),
+    do: Repo.aggregate(from(saved in model, where: saved.in_use), :count)
 
   describe "record/3" do
-    test "keeps a pair's calibration with its lenses and the session's figures" do
+    test "saves a pair's calibration with its lenses and the session's figures" do
       {:ok, saved} =
         Library.record("stereo", pair(886.3),
           origin: "dashboard",
@@ -50,7 +51,7 @@ defmodule VisionCore.Calibration.LibraryTest do
                samples: 62,
                stereo_rms_px: 0.34,
                baseline_m: 0.198,
-               in_force: false,
+               in_use: false,
                left: %Models.Lens{fx: 886.3, k1: -0.478, rms_px: 0.21} = left,
                right: right
              } = saved
@@ -59,19 +60,19 @@ defmodule VisionCore.Calibration.LibraryTest do
       assert {right.fx, right.rms_px} == {894.3, 0.3}
       assert Enum.at(left.projection, 3) == -171.2
 
-      {:ok, kept} = Library.fetch(saved.id)
-      assert Models.Lens.to_calibration(kept.left) == calibration(886.3)
-      assert Models.Lens.to_calibration(kept.right) == calibration(894.3)
+      {:ok, fetched} = Library.fetch(saved.id)
+      assert Models.Lens.to_calibration(fetched.left) == calibration(886.3)
+      assert Models.Lens.to_calibration(fetched.right) == calibration(894.3)
     end
 
-    test "keeps a pair's cameras whatever their order" do
+    test "saves a pair's cameras whatever their order" do
       {:ok, saved} = Library.record("stereo", Enum.reverse(pair(886.3)), origin: "dashboard")
 
       assert {saved.left.fx, saved.right.fx} == {886.3, 894.3}
       assert Library.lenses(saved) == [{"left", saved.left}, {"right", saved.right}]
     end
 
-    test "keeps one camera's calibration with its lens" do
+    test "saves one camera's calibration with its lens" do
       {:ok, saved} =
         Library.record("center", [{"center", calibration(580.8)}],
           origin: "dashboard",
@@ -85,11 +86,11 @@ defmodule VisionCore.Calibration.LibraryTest do
              } = saved
 
       assert Library.lenses(saved) == [{"center", lens}]
-      {:ok, kept} = Library.fetch(saved.id)
-      assert Models.Lens.to_calibration(kept.lens) == calibration(580.8)
+      {:ok, fetched} = Library.fetch(saved.id)
+      assert Models.Lens.to_calibration(fetched.lens) == calibration(580.8)
     end
 
-    test "keeps a camera's pose and its error" do
+    test "saves a camera's pose and its error" do
       pose = %VisionCore.Camera.Pose{
         rotation: [0.999, -0.02, 0.04, 0.02, 0.9998, 0.001, -0.04, 0.0, 0.9992],
         translation: [-0.1, 0.005, 0.002]
@@ -98,19 +99,19 @@ defmodule VisionCore.Calibration.LibraryTest do
       {:ok, saved} =
         Library.record("center-pose", pose, origin: "dashboard", samples: 24, rms_px: 0.41)
 
-      {:ok, kept} = Library.fetch(saved.id)
+      {:ok, fetched} = Library.fetch(saved.id)
 
-      assert %Models.CameraPose{camera: "center", samples: 24, rms_px: 0.41, in_force: false} =
-               kept
+      assert %Models.CameraPose{camera: "center", samples: 24, rms_px: 0.41, in_use: false} =
+               fetched
 
-      assert Models.CameraPose.to_pose(kept) == pose
-      assert Library.lenses(kept) == []
-      assert Library.holds?(kept, pose)
-      refute Library.holds?(kept, %{pose | translation: [-0.1, 0.005, 0.003]})
+      assert Models.CameraPose.to_pose(fetched) == pose
+      assert Library.lenses(fetched) == []
+      assert Library.holds?(fetched, pose)
+      refute Library.holds?(fetched, %{pose | translation: [-0.1, 0.005, 0.003]})
       assert Library.holding("center-pose", pose).id == saved.id
     end
 
-    test "names a calibration after the time it was kept, unless a name is given" do
+    test "names a calibration after the time it was saved, unless a name is given" do
       {:ok, dated} =
         Library.record("stereo", pair(886.3), origin: "dashboard", at: ~U[2026-11-13 23:37:12Z])
 
@@ -120,16 +121,16 @@ defmodule VisionCore.Calibration.LibraryTest do
       assert named.name == "Bench"
     end
 
-    test "keeps the time a calibration was made" do
+    test "saves the time a calibration was made" do
       {:ok, saved} =
         Library.record("stereo", pair(886.3), origin: "dashboard", at: ~U[2026-11-13 09:00:00Z])
 
-      {:ok, kept} = Library.fetch(saved.id)
-      assert kept.inserted_at == ~U[2026-11-13 09:00:00Z]
-      assert kept.name == "2026-11-13 09:00 UTC"
+      {:ok, fetched} = Library.fetch(saved.id)
+      assert fetched.inserted_at == ~U[2026-11-13 09:00:00Z]
+      assert fetched.name == "2026-11-13 09:00 UTC"
     end
 
-    test "refuses a name of more than 80 characters, and keeps nothing" do
+    test "refuses a name of more than 80 characters, and saves nothing" do
       assert Library.record("stereo", pair(886.3),
                origin: "imported",
                name: String.duplicate("a", 81)
@@ -139,7 +140,7 @@ defmodule VisionCore.Calibration.LibraryTest do
       assert Library.list("stereo") == []
     end
 
-    test "refuses a calibration with no columns to go to, and keeps nothing" do
+    test "refuses a calibration with no columns to go to, and saves nothing" do
       rational = %{calibration(886.3) | distortion_model: "rational_polynomial"}
 
       assert {:error, reason} = Library.record("stereo", [{"left", rational}], origin: "imported")
@@ -148,14 +149,17 @@ defmodule VisionCore.Calibration.LibraryTest do
     end
   end
 
-  test "lists the calibration kept last first, whatever the dates they carry" do
+  test "lists the calibration saved last first, whatever the dates they carry" do
     {:ok, first} =
       Library.record("stereo", pair(880.0), origin: "dashboard", at: ~U[2026-11-14 10:00:00Z])
 
     {:ok, second} =
       Library.record("stereo", pair(890.0), origin: "imported", at: ~U[2026-11-13 09:00:00Z])
 
-    assert Enum.map(Library.list("stereo"), & &1.id) == [second.id, first.id]
+    {:ok, third} =
+      Library.record("stereo", pair(900.0), origin: "imported", at: ~U[2026-11-13 09:00:00Z])
+
+    assert Enum.map(Library.list("stereo"), & &1.id) == [third.id, second.id, first.id]
   end
 
   test "lists a target's calibrations, the newest first, and no other target's" do
@@ -172,8 +176,9 @@ defmodule VisionCore.Calibration.LibraryTest do
 
     assert {:ok, %{id: id}} = Library.fetch(first.id)
     assert id == first.id
-    assert Library.fetch("stereo-999999") == {:error, :not_found}
+    assert Library.fetch(@unknown) == {:error, :not_found}
     assert Library.fetch("abc") == {:error, :not_found}
+    assert Library.fetch(String.upcase(first.id)) == {:error, :not_found}
   end
 
   test "renames a calibration with a name of 1 to 80 characters, trimmed" do
@@ -187,7 +192,7 @@ defmodule VisionCore.Calibration.LibraryTest do
     assert {:error, "a name has 1 to 80 characters"} =
              Library.rename(saved.id, String.duplicate("a", 81))
 
-    assert Library.rename("stereo-999999", "x") == {:error, :not_found}
+    assert Library.rename(@unknown, "x") == {:error, :not_found}
     assert {:ok, %{name: "Workshop, 30 mm board"}} = Library.fetch(saved.id)
   end
 
@@ -195,31 +200,32 @@ defmodule VisionCore.Calibration.LibraryTest do
     assert Library.rename("abc", "   ") == {:error, "a name has 1 to 80 characters"}
   end
 
-  describe "the selection" do
-    test "is the calibration in force for a target, one at a time, or none" do
+  describe "the calibration in use" do
+    test "is one calibration of a target at a time, or none" do
       {:ok, first} = Library.record("stereo", pair(880.0), origin: "dashboard")
       {:ok, second} = Library.record("stereo", pair(890.0), origin: "dashboard")
-      assert Library.selected("stereo") == nil
+      assert Library.in_use("stereo") == nil
 
-      :ok = Library.select("stereo", first.id)
-      :ok = Library.select("stereo", second.id)
-      assert Library.selected("stereo").id == second.id
-      assert in_force_count(Models.StereoCameraCalibration) == 1
+      :ok = Library.put_in_use("stereo", first.id)
+      :ok = Library.put_in_use("stereo", second.id)
+      assert Library.in_use("stereo").id == second.id
+      assert in_use_count(Models.StereoCameraCalibration) == 1
 
-      :ok = Library.select("stereo", nil)
-      assert Library.selected("stereo") == nil
+      :ok = Library.put_in_use("stereo", nil)
+      assert Library.in_use("stereo") == nil
     end
 
-    test "keeps a calibration in force from being deleted; another one goes" do
-      {:ok, kept} = Library.record("stereo", pair(880.0), origin: "dashboard")
+    test "keeps the calibration in use from being deleted; another one goes" do
+      {:ok, used} = Library.record("stereo", pair(880.0), origin: "dashboard")
       {:ok, other} = Library.record("stereo", pair(890.0), origin: "dashboard")
-      :ok = Library.select("stereo", kept.id)
+      :ok = Library.put_in_use("stereo", used.id)
 
-      assert Library.delete(kept.id) == {:error, :in_force}
+      assert Library.delete(used.id) == {:error, :in_use}
       assert Library.delete(other.id) == :ok
       assert Library.delete(other.id) == {:error, :not_found}
-      assert Enum.map(Library.list("stereo"), & &1.id) == [kept.id]
+      assert Enum.map(Library.list("stereo"), & &1.id) == [used.id]
       assert Library.delete("abc") == {:error, :not_found}
+      assert Library.delete(@unknown) == {:error, :not_found}
     end
 
     test "is one calibration of the target, whatever the kind of the others" do
@@ -230,51 +236,60 @@ defmodule VisionCore.Calibration.LibraryTest do
         Library.record("center", [{"center", calibration(590.0)}], origin: "dashboard")
 
       {:ok, pair} = Library.record("stereo", pair(880.0), origin: "dashboard")
-      :ok = Library.select("stereo", pair.id)
-      :ok = Library.select("center", center.id)
+      :ok = Library.put_in_use("stereo", pair.id)
+      :ok = Library.put_in_use("center", center.id)
 
-      assert {:error, _reason} = Library.select("center", pair.id)
-      assert Library.selected("center").id == center.id
-      assert Library.selected("stereo").id == pair.id
+      assert {:error, _reason} = Library.put_in_use("center", pair.id)
 
-      :ok = Library.select("center", other.id)
-      assert Library.selected("center").id == other.id
-      assert in_force_count(Models.CameraCalibration) == 1
+      assert Library.put_in_use("center", "abc") ==
+               {:error, ~s(no calibration "abc" is saved for center)}
 
-      :ok = Library.select("center", nil)
-      assert Library.selected("center") == nil
-      assert Library.selected("stereo").id == pair.id
+      assert {:error, _reason} = Library.put_in_use("center", @unknown)
+      assert Library.in_use("center").id == center.id
+      assert Library.in_use("stereo").id == pair.id
+
+      :ok = Library.put_in_use("center", other.id)
+      assert Library.in_use("center").id == other.id
+      assert in_use_count(Models.CameraCalibration) == 1
+
+      :ok = Library.put_in_use("center", nil)
+      assert Library.in_use("center") == nil
+      assert Library.in_use("stereo").id == pair.id
     end
 
-    test "is at most one calibration in force per target in the database" do
+    test "is at most one calibration per target in the database" do
       {:ok, _first} = Library.record("stereo", pair(880.0), origin: "dashboard")
       {:ok, _second} = Library.record("stereo", pair(890.0), origin: "dashboard")
 
       assert_raise Exqlite.Error, ~r/UNIQUE constraint failed/, fn ->
-        Repo.update_all(Models.StereoCameraCalibration, set: [in_force: true])
+        Repo.update_all(Models.StereoCameraCalibration, set: [in_use: true])
       end
     end
   end
 
-  test "names a calibration by its kind and its row, though the kinds' rows share numbers" do
+  test "names a calibration of any kind by a UUID of its own" do
     {:ok, pair} = Library.record("stereo", pair(880.0), origin: "dashboard")
-    {:ok, "stereo", row} = Models.KeptCalibrationId.parse(pair.id)
-    {:ok, lens} = Models.Lens.attributes(calibration(580.8))
+    {:ok, camera} = Library.record("center", [{"center", calibration(580.8)}], origin: "imported")
 
-    camera =
-      %Models.CameraCalibration{id: "camera-#{row}"}
-      |> Models.CameraCalibration.changeset(%{
-        target: "center",
-        camera: "center",
-        name: "Bench",
-        origin: "imported",
-        lens: lens
-      })
-      |> Repo.insert!()
+    pose = %VisionCore.Camera.Pose{
+      rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      translation: [-0.1, 0.0, 0.0]
+    }
+
+    {:ok, pose} = Library.record("center-pose", pose, origin: "dashboard")
+
+    ids = [pair.id, camera.id, pose.id]
+    assert Enum.all?(ids, &(Ecto.UUID.cast(&1) == {:ok, &1}))
+    assert length(Enum.uniq(ids)) == 3
 
     assert {:ok, %Models.StereoCameraCalibration{target: "stereo"}} = Library.fetch(pair.id)
     assert {:ok, %Models.CameraCalibration{target: "center"}} = Library.fetch(camera.id)
+    assert {:ok, %Models.CameraPose{target: "center-pose"}} = Library.fetch(pose.id)
+
+    :ok = Library.put_in_use("center-pose", pose.id)
+    assert Library.in_use("center-pose").id == pose.id
     assert Library.delete(camera.id) == :ok
+    assert Library.fetch(camera.id) == {:error, :not_found}
     assert {:ok, _pair} = Library.fetch(pair.id)
   end
 
