@@ -18,18 +18,38 @@ function accessibleName(group, unsaved, figure) {
   return parts.join(', ')
 }
 
-// An inference pipeline's Inference step shows the mean time its accelerator took per frame, as the unit status reports it.
-function useInferenceFigure(group) {
-  const ms = useStatus((state) =>
-    group.id === `${group.pipeline}.inference` ? state.snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
-  )
-  return ms == null ? null : `${formatNumber(ms)} ms`
+const milliseconds = (ms) => `${formatNumber(ms)} ms`
+
+// A step's name in its pipeline's times: the last segment of its id.
+const stageName = (group) => group.id.slice(group.id.lastIndexOf('.') + 1)
+
+// The time of the steps computed together that `stage` is the first of, with the numbers of the steps it covers.
+function segmentTime(times, stage, steps) {
+  const segment = times?.segments?.find((candidate) => candidate.stages[0] === stage)
+  if (!segment) return null
+  const numbers = segment.stages.map((name) => steps.findIndex((step) => stageName(step) === name) + 1).filter((number) => number > 0)
+  const [first, last] = [numbers[0], numbers[numbers.length - 1]]
+  return last > first ? `${milliseconds(segment.ms)} for steps ${first} to ${last}` : milliseconds(segment.ms)
 }
 
-function GroupBox({ group, unsaved, selected, onSelect }) {
+/**
+ * What the unit status says of the time of `group`, a step of the pipeline whose steps are `steps`: its mean time per
+ * pair or frame, then for an Inference step the time its accelerator took of it. A source has none.
+ */
+function stageFigure(snapshot, group, steps) {
+  if (group.role === 'source') return null
+  const times = snapshot?.pipelines?.[group.pipeline]
+  const stage = stageName(group)
+  const own = times?.stages?.[stage]
+  const accelerator = stage === 'inference' ? snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
+  const parts = [own == null ? segmentTime(times, stage, steps) : milliseconds(own), accelerator == null ? null : `NPU ${milliseconds(accelerator)}`]
+  return parts.filter(Boolean).join(', ') || null
+}
+
+function GroupBox({ group, steps, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
   const tags = computeTags(group.compute)
-  const figure = useInferenceFigure(group)
+  const figure = useStatus((state) => stageFigure(state.snapshot, group, steps))
   return (
     <OvcsMenuItem
       selected={selected}
@@ -97,8 +117,8 @@ function useGroupBoxes() {
 
   const pipelines = useMemo(() => pipelinesOf({ groups }), [groups])
 
-  const box = (group) => (
-    <GroupBox group={group} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
+  const box = (group, steps) => (
+    <GroupBox group={group} steps={steps} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
   )
 
   return { pipelines, selectedGroupId, box }
@@ -110,11 +130,20 @@ const title = (name) => {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** A pipeline's name over what it shows. */
+/** A pipeline's name, with the time one pair or frame takes it once the unit status reports it, over what it shows. */
 function Pipeline({ name, children }) {
+  const totalMs = useStatus((state) => state.snapshot?.pipelines?.[name]?.totalMs)
   return (
     <div className="flex flex-col gap-1">
-      <h3 className={SUBSECTION_HEADING}>{title(name)}</h3>
+      <h3 className={SUBSECTION_HEADING}>
+        {title(name)}
+        {totalMs == null ? null : (
+          <span data-total className="font-normal tabular-nums text-ovcs-muted">
+            {' '}
+            {milliseconds(totalMs)}
+          </span>
+        )}
+      </h3>
       {children}
     </div>
   )
@@ -127,7 +156,7 @@ function Steps({ name, groups, selectedGroupId, box }) {
       {groups.map((group, index) => (
         <li key={group.id} className="grid grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-2 py-0.5">
           <Step number={index + 1} first={index === 0} last={index === groups.length - 1} selected={group.id === selectedGroupId} />
-          {box(group)}
+          {box(group, groups)}
         </li>
       ))}
     </ol>
