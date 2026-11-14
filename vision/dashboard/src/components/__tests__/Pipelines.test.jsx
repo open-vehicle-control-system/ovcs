@@ -38,15 +38,17 @@ describe('Pipelines', () => {
     useStatus.setState({ snapshot: null })
   })
 
-  it('draws each pipeline as its own numbered flow, in order with arrows, the stereo pipeline first', () => {
+  const names = (flow) => within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
+  const numbers = (flow) => within(flow).getAllByRole('listitem').map((item) => item.firstElementChild.textContent)
+
+  it("draws each pipeline as its own numbered flow, in order with arrows, the stereo pipeline first, without the cameras' settings", () => {
     render(<Pipelines />)
-    const names = (flow) => within(flow).getAllByRole('button').map((button) => button.querySelector('[translate="no"]').textContent)
-    const numbers = (flow) => within(flow).getAllByRole('listitem').map((item) => item.firstElementChild.textContent)
 
     const stereo = screen.getByRole('list', { name: 'Stereo' })
-    expect(names(stereo)).toEqual(['Cameras', 'Match', 'Alignment', 'Temporal'])
-    expect(numbers(stereo)).toEqual(['1', '2', '3', '4'])
-    expect(stereo.querySelectorAll('[data-arrow]')).toHaveLength(3)
+    expect(names(stereo)).toEqual(['Match', 'Alignment', 'Temporal'])
+    expect(numbers(stereo)).toEqual(['1', '2', '3'])
+    expect(stereo.querySelectorAll('[data-arrow]')).toHaveLength(2)
+    expect(screen.queryByRole('button', { name: /^Cameras/ })).toBeNull()
 
     const detection = screen.getByRole('list', { name: 'Detection' })
     expect(names(detection)).toEqual(['Input', 'Inference'])
@@ -83,8 +85,11 @@ describe('Pipelines', () => {
     expect(time.getAttribute('aria-hidden')).toBe('true')
   })
 
-  it("shows the cameras' and the pairing's latencies on their rows, and leaves them out of the total", () => {
-    const pairing = group('stereo.pairing', 'Pairing', 1.5, { compute: { runsOn: 'cpu', implementation: 'elixir', backend: null } })
+  it("shows the pairing's latency on its row, first in the stereo pipeline, and leaves it out of the total", () => {
+    const pairing = group('stereo.pairing', 'Pairing', 1.5, {
+      role: 'source',
+      compute: { runsOn: 'cpu', implementation: 'elixir', backend: null }
+    })
     useParameters.setState({ groups: [...groups, pairing] })
     useStatus.setState({
       snapshot: {
@@ -95,17 +100,15 @@ describe('Pipelines', () => {
     })
     render(<Pipelines />)
 
-    const cameras = box('Stereo', /^Cameras/)
-    expect(cameras.querySelector('[data-latency]').textContent).toBe('4.2 ms')
-    expect(cameras.querySelector('[data-latency]').className).toContain('ml-auto')
-    expect(cameras.querySelector('[data-latency]').title).toBe("capture to unit, not in the pipeline's total")
-    expect(cameras.textContent).not.toContain('latency')
-    expect(cameras.getAttribute('aria-label')).toBe('Cameras, capture to unit 4.2 ms, not in the total')
-    expect(figure('Stereo', /^Cameras/)).toBeNull()
-
+    expect(names(screen.getByRole('list', { name: 'Stereo' }))[0]).toBe('Pairing')
     const pairingBox = box('Stereo', /^Pairing/)
     expect(pairingBox.querySelector('[data-latency]').textContent).toBe('1.1 ms')
+    expect(pairingBox.querySelector('[data-latency]').className).toContain('ml-auto')
+    expect(pairingBox.querySelector('[data-latency]').title).toBe("wait to pair, not in the pipeline's total")
+    expect(pairingBox.textContent).not.toContain('latency')
     expect(pairingBox.getAttribute('aria-label')).toBe('Pairing, on CPU, Elixir, wait to pair 1.1 ms, not in the total')
+    expect(figure('Stereo', /^Pairing/)).toBeNull()
+    expect(screen.queryByText('4.2 ms')).toBeNull()
 
     expect(screen.getByRole('heading', { name: 'Stereo 9.9 ms' })).toBeTruthy()
     expect(box('Stereo', /^Match/).querySelector('[data-latency]')).toBeNull()
@@ -116,14 +119,14 @@ describe('Pipelines', () => {
     render(<Pipelines />)
 
     expect(document.querySelectorAll('[data-latency]')).toHaveLength(0)
-    expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 
   it('shows no time on a source, which has no work to time', () => {
-    useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 1, stages: { cameras: 1 }, segments: [] } } } })
+    useParameters.setState({ groups: [...groups, group('stereo.pairing', 'Pairing', 1.5, { role: 'source' })] })
+    useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 1, stages: { pairing: 1 }, segments: [] } } } })
     render(<Pipelines />)
 
-    expect(figure('Stereo', /^Cameras/)).toBeNull()
+    expect(figure('Stereo', /^Pairing/)).toBeNull()
   })
 
   const segmented = (segment, stages = {}) =>
@@ -141,10 +144,10 @@ describe('Pipelines', () => {
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
 
     expect(brackets()).toHaveLength(1)
-    const bracket = screen.getByRole('img', { name: 'Steps 2 to 4 run as one GPU pass, 28.0 ms' })
-    expect(bracket.dataset.firstStep).toBe('2')
-    expect(bracket.dataset.lastStep).toBe('4')
-    expect(bracket.style.gridRow).toBe('2 / 5')
+    const bracket = screen.getByRole('img', { name: 'Steps 1 to 3 run as one GPU pass, 28.0 ms' })
+    expect(bracket.dataset.firstStep).toBe('1')
+    expect(bracket.dataset.lastStep).toBe('3')
+    expect(bracket.style.gridRow).toBe('1 / 4')
     expect(bracket.textContent).toBe('28.0 ms · GPU')
     expect(bracket.closest('ol')).toBeNull()
     expect(screen.queryByText(/run as one/)).toBeNull()
@@ -155,12 +158,12 @@ describe('Pipelines', () => {
     useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: onCpu } : g)) })
     segmented({ stages: ['match', 'alignment'], ms: 28.04 })
     const { unmount } = render(<Pipelines />)
-    expect(screen.getByRole('img', { name: 'Steps 2 to 3 run as one CPU pass, 28.0 ms' }).textContent).toBe('28.0 ms · CPU')
+    expect(screen.getByRole('img', { name: 'Steps 1 to 2 run as one CPU pass, 28.0 ms' }).textContent).toBe('28.0 ms · CPU')
     unmount()
 
     useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: undefined } : g)) })
     render(<Pipelines />)
-    expect(screen.getByRole('img', { name: 'Steps 2 to 3 run as one pass, 28.0 ms' }).textContent).toBe('28.0 ms')
+    expect(screen.getByRole('img', { name: 'Steps 1 to 2 run as one pass, 28.0 ms' }).textContent).toBe('28.0 ms')
   })
 
   it('draws no bracket for steps computed together that have no time', () => {
@@ -279,17 +282,34 @@ describe('Pipelines', () => {
     expect(screen.queryByText('No detector on this unit')).toBeNull()
   })
 
-  it('lists a camera of its own as a pipeline of one box, and still the greyed detection line without a detector', () => {
+  it("lists no pipeline left without a step once the cameras' settings are out, and still the greyed detection line", () => {
     useParameters.setState({
       groups: [
-        group('cameras', 'Cameras', 1, { role: 'source' }),
+        group('stereo.cameras', 'Cameras', 1, { role: 'source' }),
         group('center.camera', 'Camera', 50, { pipeline: 'center', role: 'source' })
       ]
     })
     render(<Pipelines />)
 
-    expect(within(screen.getByRole('list', { name: 'Center' })).getAllByRole('button')).toHaveLength(1)
+    expect(screen.queryByRole('heading', { name: 'Center' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Stereo' })).toBeNull()
+    expect(screen.queryAllByRole('button')).toHaveLength(0)
     expect(screen.getByText('No detector on this unit')).toBeTruthy()
+  })
+
+  it("keeps a camera's own pipeline that has steps beside its camera's settings, numbered from its first step", () => {
+    useParameters.setState({
+      groups: [
+        group('center.camera', 'Camera', 50, { pipeline: 'center', role: 'source' }),
+        group('center.input', 'Input', 51, { pipeline: 'center' }),
+        group('center.inference', 'Inference', 52, { pipeline: 'center' })
+      ]
+    })
+    render(<Pipelines />)
+
+    const center = screen.getByRole('list', { name: 'Center' })
+    expect(names(center)).toEqual(['Input', 'Inference'])
+    expect(numbers(center)).toEqual(['1', '2'])
   })
 
   it('shows no pipeline before the stages have loaded', () => {
@@ -313,8 +333,6 @@ describe('Pipelines', () => {
     expect(temporal.getAttribute('aria-label')).toBe('Temporal, off: switched off')
     expect(temporal.getAttribute('title')).toBe('switched off')
     expect(temporal.className).toContain('text-ovcs-muted')
-
-    expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 
   it('shows a status dot only when a step is not fine, after its name', () => {
@@ -347,7 +365,7 @@ describe('Pipelines', () => {
     const alignment = screen.getByRole('button', { name: /^Alignment/ })
     expect(borders(alignment)).toEqual(['border-ovcs-error'])
     expect(alignment.className).toContain(BAR)
-    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain(BAR)
+    expect(screen.getByRole('button', { name: /^Temporal/ }).className).not.toContain(BAR)
   })
 
   it('tags each stage with where it runs, under its name, and says it in the box name', () => {
@@ -358,7 +376,7 @@ describe('Pipelines', () => {
     expect(match.getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
     const inference = screen.getByRole('button', { name: /^Inference/ })
     expect([...inference.querySelectorAll('[data-tag]')].map((tag) => tag.textContent)).toEqual(['NPU', 'Rust'])
-    expect(screen.getByRole('button', { name: /^Cameras/ }).querySelectorAll('[data-tag]')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /^Temporal/ }).querySelectorAll('[data-tag]')).toHaveLength(0)
   })
 
   it('does not render again when a parameter changes without changing any unsaved count', () => {
@@ -390,12 +408,12 @@ describe('Pipelines', () => {
     render(<Pipelines />)
 
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-current')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Cameras' }).getAttribute('aria-current')).toBeNull()
+    expect(screen.getByRole('button', { name: /^Temporal/ }).getAttribute('aria-current')).toBeNull()
     expect(screen.getByRole('button', { name: /^Match/ }).className).toContain('bg-[color-mix(')
-    expect(screen.getByRole('button', { name: 'Cameras' }).className).not.toContain('bg-[color-mix(')
+    expect(screen.getByRole('button', { name: /^Temporal/ }).className).not.toContain('bg-[color-mix(')
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cameras' }))
-    expect(select).toHaveBeenCalledWith('cameras')
+    fireEvent.click(screen.getByRole('button', { name: /^Temporal/ }))
+    expect(select).toHaveBeenCalledWith('stereo.temporal')
     expect(useNavigation.getState().page).toBe('pipeline')
   })
 

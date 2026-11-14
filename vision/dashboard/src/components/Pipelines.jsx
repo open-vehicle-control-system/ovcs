@@ -7,9 +7,10 @@ import { useNavigation } from '../stores/navigation.js'
 import { useStatus } from '../stores/status.js'
 import { formatNumber } from '../status.js'
 import { computeTags, runsOnTag } from '../compute.js'
+import { cameraGroup } from '../cameras.js'
 
-function accessibleName(group, unsaved, figures) {
-  const parts = [group.name]
+function accessibleName(group, label, unsaved, figures) {
+  const parts = [label]
   const tags = computeTags(group.compute)
   if (tags.length > 0) parts.push(`on ${tags.join(', ')}`)
   parts.push(...figures)
@@ -115,7 +116,7 @@ function RunBrackets({ name, steps }) {
   return timedRuns(segments, steps).map((run) => <RunBracket key={run.first} {...run} />)
 }
 
-function GroupBox({ group, steps, unsaved, selected, onSelect }) {
+function GroupBox({ group, label, steps, unsaved, selected, onSelect }) {
   const style = STATUS_STYLES[group.status?.level] ?? STATUS_STYLES.ok
   const tags = computeTags(group.compute)
   const time = useStatus((state) => stageTime(state.snapshot, group, steps))
@@ -125,7 +126,7 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
   return (
     <OvcsMenuItem
       selected={selected}
-      aria-label={accessibleName(group, unsaved, figures)}
+      aria-label={accessibleName(group, label, unsaved, figures)}
       aria-current={selected ? 'true' : undefined}
       title={group.status?.detail}
       onClick={() => onSelect(group.id)}
@@ -133,7 +134,7 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
     >
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="flex flex-wrap items-baseline gap-x-2">
-          <span translate="no">{group.name}</span>
+          <span translate="no">{label}</span>
           {time ? (
             <span aria-hidden="true" data-time className={`text-[10px] ${FIGURE}`}>
               {time}
@@ -196,9 +197,11 @@ function Step({ number, first, last, selected }) {
   )
 }
 
-// The pipelines with their groups, and how to draw a group as a box that selects it.
-function useGroupBoxes() {
-  const groups = useParameters((state) => state.groups)
+/**
+ * How to draw a group as a box that selects it, named `label` (its name by default), with its unsaved count, its status
+ * and its figures among `steps`, the steps of its pipeline; and the group selected on the pipeline's page.
+ */
+export function useGroupBox() {
   // The counts alone, so a value changing every poll, such as an exposure, does not render the menu again.
   const unsaved = useParameters(useShallow(unsavedByGroup))
   const onPipeline = useNavigation((state) => state.page === 'pipeline')
@@ -210,13 +213,18 @@ function useGroupBoxes() {
     go('pipeline')
   }
 
-  const pipelines = useMemo(() => pipelinesOf({ groups }), [groups])
-
-  const box = (group, steps) => (
-    <GroupBox group={group} steps={steps} unsaved={unsaved[group.id] ?? 0} selected={group.id === selectedGroupId} onSelect={select} />
+  const box = (group, steps, label = group.name) => (
+    <GroupBox
+      group={group}
+      label={label}
+      steps={steps}
+      unsaved={unsaved[group.id] ?? 0}
+      selected={group.id === selectedGroupId}
+      onSelect={select}
+    />
   )
 
-  return { pipelines, selectedGroupId, box }
+  return { selectedGroupId, box }
 }
 
 // `lane_detection` reads as "Lane detection".
@@ -270,13 +278,15 @@ function Steps({ name, groups, selectedGroupId, box }) {
 }
 
 /**
- * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. Detection is listed on
+ * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. A camera's settings are
+ * listed under the camera, not as a step, and a pipeline left without a step is not listed. Detection is listed on
  * every unit, so the menu reads the same everywhere: on a unit whose only steps are the stereo pipeline's, as one greyed line.
  */
 export default function Pipelines() {
-  const { pipelines, selectedGroupId, box } = useGroupBoxes()
-  if (pipelines.length === 0) return null
-  // A camera of its own is a pipeline of one source, with no step.
+  const groups = useParameters((state) => state.groups)
+  const { selectedGroupId, box } = useGroupBox()
+  const pipelines = useMemo(() => pipelinesOf({ groups: groups.filter((group) => cameraGroup(group) == null) }), [groups])
+  if (groups.length === 0) return null
   const withInference = pipelines.some(({ name, groups }) => name !== 'stereo' && groups.some((group) => group.role === 'step'))
 
   return (

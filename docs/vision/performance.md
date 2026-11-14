@@ -13,7 +13,7 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 | Dashboard, camera captions | fps | Frames each camera delivered in the last second. |
 | Dashboard, top bar | CPU, Memory | Busy share of all processor cores over half a second at each read, and the share of the memory in use. The 1, 5 and 15 minute load averages are behind the bar's details button. |
 | Dashboard, bottom bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
-| Dashboard, Pipelines menu | each step's time, each pipeline's total, the Cameras' and Pairing's latencies | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: they share one time, which the total counts. The latencies are waits, which the total leaves out. See [Step times](#step-times) and [Latencies](#latencies). |
+| Dashboard, Cameras and Pipelines menus | each step's time, each pipeline's total, the stereo cameras' and Pairing's latencies | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: they share one time, which the total counts. The latencies are waits, which the total leaves out. See [Step times](#step-times) and [Latencies](#latencies). |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
 | Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
 
@@ -41,11 +41,11 @@ A pipeline on a camera of its own waits for the stereo pair captured closest to 
 
 ## Latencies
 
-The Cameras and Pairing steps do no work on a pair, so they have no step time. The `status` channel's `latencies.stereo` gives what they add to a pair's latency instead, averaged over the last second ([Status](./channels.md#status)). The stereo pipeline's total leaves them out: it stays the work one pair takes.
+The stereo cameras' capture and the Pairing step do no work on a pair, so they have no step time. The `status` channel's `latencies.stereo` gives what they add to a pair's latency instead, averaged over the last second ([Status](./channels.md#status)). The stereo pipeline's total leaves them out: it stays the work one pair takes.
 
-| Step | Latency | What it covers |
+| Part | Latency | What it covers |
 |---|---|---|
-| Cameras | `cameras` | From the capture time a frame's driver stamps (`Frame.capture_ns`) to the frame's arrival in the pairer, the mean over both cameras' frames: the readout, the driver and its hand-over to the unit. |
+| Stereo cameras | `cameras` | From the capture time a frame's driver stamps (`Frame.capture_ns`) to the frame's arrival in the pairer, the mean over both cameras' frames: the readout, the driver and its hand-over to the unit. |
 | Pairing | `pairing` | From the arrival of a pair's earlier frame to the pair going to the stereo pipeline, the mean over the pairs: the wait for the other camera's frame, and for the pipeline to finish the previous pair. |
 
 A high `cameras` latency points at the camera or its driver. A `pairing` latency near a frame period means the cameras capture out of step ([Status](./channels.md#status), `sync`).
