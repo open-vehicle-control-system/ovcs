@@ -598,6 +598,32 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_no_distance(person)
   end
 
+  test "takes a calibration of its camera committed while it runs, from the next frame on",
+       %{tmp_dir: dir} do
+    start_pipeline(dir)
+    publish_frame(100)
+    assert [person] = detections()
+    assert_bearing(person)
+
+    committed = %{
+      calibration()
+      | camera_matrix: [200.0, 0.0, 40.5, 0.0, 200.0, 20.5, 0.0, 0.0, 1.0],
+        projection_matrix: [200.0, 0.0, 40.5, 0.0, 0.0, 200.0, 20.5, 0.0, 0.0, 0.0, 1.0, 0.0]
+    }
+
+    File.write!(Path.join(dir, "hq.yaml"), CameraCalibration.to_yaml(committed, "hq"))
+
+    Outputs.publish(
+      VisionCore.Camera.Calibration.changed_key(:hq),
+      {:camera_calibration_changed, :hq}
+    )
+
+    publish_frame(200)
+    assert [person] = detections()
+    {azimuth, _elevation} = person.bearing
+    assert_in_delta azimuth, :math.atan(-0.1), 1.0e-6
+  end
+
   test "a camera without a pose places nothing, saying so once", %{tmp_dir: dir} do
     log =
       capture_log(fn ->

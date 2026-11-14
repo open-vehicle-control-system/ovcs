@@ -520,7 +520,7 @@ The unit keeps every calibration it was given, as `saved-calibrations`, each wit
 
 | Request | Does | Answers | Refuses with |
 |---|---|---|---|
-| `GET /api/saved-calibrations` | Lists them, the newest first within each calibration; `filter[calibration]=<id>` keeps one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
+| `GET /api/saved-calibrations` | Lists them, the one kept last first within each calibration; `filter[calibration]=<id>` keeps one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
 | `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit does not keep |
 | `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed. | 200 | 400 without a name, 409 for another type or id, 422 for a name out of bounds, 404 |
 | `DELETE /api/saved-calibrations/:id` | Removes it. | 204 | 409 for the calibration in force, 404 |

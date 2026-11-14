@@ -37,6 +37,15 @@ defmodule VisionCore.Exporter.Runner do
   of `c:VisionCore.Exporter.handle_action/4`, is logged the first time,
   up to a bound for each of the four.
 
+  A `c:VisionCore.Exporter.handle_output/3` or
+  `c:VisionCore.Exporter.handle_info/2` that raises, throws, exits or
+  answers none of its results does not stop the runner: the exporter
+  keeps the state it had, the value counts as not exported, and the
+  failure is logged once for the values in a row that fail. Until that
+  output is handed a value that does not fail, or `handle_info/2` a
+  message, the status is a warning naming the failure, whatever the
+  exporter's own status says.
+
   Without the exporter's own `c:VisionCore.Exporter.status/1`, the status
   is `{:ok, "Running"}`, a warning while the last value handed over of
   any output was not exported, and the count of values not exported once
@@ -142,6 +151,7 @@ defmodule VisionCore.Exporter.Runner do
          not_started: nil,
          retry_ms: @first_retry_ms,
          failures: 0,
+         failing: %{},
          logged: %{
            init: MapSet.new(),
            status: MapSet.new(),
@@ -240,17 +250,26 @@ defmodule VisionCore.Exporter.Runner do
   defp handle_message(_message, %{started: false} = state), do: {:noreply, state}
 
   defp handle_message(message, %{exporter: exporter} = state) do
-    if function_exported?(exporter, :handle_info, 2) do
-      case exporter.handle_info(message, state.exporter_state) do
-        {:ok, exporter_state} ->
-          {:noreply, %{state | exporter_state: exporter_state}}
+    if function_exported?(exporter, :handle_info, 2),
+      do: {:noreply, hand_message(state, message)},
+      else: {:noreply, state}
+  end
 
-        {:ready, outputs, exporter_state} ->
-          {:noreply, ready(%{state | exporter_state: exporter_state}, List.wrap(outputs))}
-      end
-    else
-      {:noreply, state}
+  defp hand_message(%{exporter: exporter} = state, message) do
+    case exporter.handle_info(message, state.exporter_state) do
+      {:ok, exporter_state} ->
+        succeeded(%{state | exporter_state: exporter_state}, :handle_info)
+
+      {:ready, outputs, exporter_state} ->
+        %{state | exporter_state: exporter_state}
+        |> succeeded(:handle_info)
+        |> ready(List.wrap(outputs))
+
+      malformed ->
+        failed(state, :handle_info, "handle_info/2 returned " <> inspect(malformed))
     end
+  catch
+    kind, reason -> failed(state, :handle_info, failure_text(kind, reason))
   end
 
   @impl GenServer
@@ -314,6 +333,11 @@ defmodule VisionCore.Exporter.Runner do
 
   defp status_of(%{started: false} = state),
     do: {{:warning, "Not started: " <> state.not_started}, state}
+
+  defp status_of(%{failing: failing} = state) when map_size(failing) > 0 do
+    {callback, text} = Enum.at(failing, 0)
+    {{:warning, "Failing on #{inspect(callback)}: #{text}"}, state}
+  end
 
   defp status_of(%{exporter: exporter} = state) do
     if function_exported?(exporter, :status, 1),
@@ -493,16 +517,20 @@ defmodule VisionCore.Exporter.Runner do
 
   # A slot timer still on its way when the value is handed over no longer matches the slot.
   defp hand_over(%{exporter: exporter} = state, output, value, now_ms) do
-    state = update_in(state, [:slots, output], &%{&1 | held: nil, handed_ms: now_ms, timer: nil})
+    state
+    |> update_in([:slots, output], &%{&1 | held: nil, handed_ms: now_ms, timer: nil})
+    |> export(exporter, output, value)
+  end
 
+  defp export(state, exporter, output, value) do
     case exporter.handle_output(output, value, state.exporter_state) do
       {:ok, exporter_state} ->
         state = put_in(state, [:slots, output, :failed], nil)
-        %{state | exporter_state: exporter_state}
+        succeeded(%{state | exporter_state: exporter_state}, output)
 
       {:busy, exporter_state} ->
         state = update_in(state, [:slots, output], &%{&1 | busy: true, failed: nil})
-        %{state | exporter_state: exporter_state}
+        succeeded(%{state | exporter_state: exporter_state}, output)
 
       {:error, reason, exporter_state} ->
         failures = state.failures + 1
@@ -511,9 +539,25 @@ defmodule VisionCore.Exporter.Runner do
         state
         |> put_in([:slots, output, :failed], {failures, reason})
         |> Map.merge(%{exporter_state: exporter_state, failures: failures})
+        |> succeeded(output)
         |> log_once(:output, reason, :warning, message)
+
+      malformed ->
+        failed(state, output, "handle_output/3 returned " <> inspect(malformed))
     end
+  catch
+    kind, reason -> failed(state, output, failure_text(kind, reason))
   end
+
+  # A callback that raised, threw, exited or answered nothing known: the exporter keeps its state.
+  defp failed(%{exporter: exporter} = state, callback, text) do
+    unless is_map_key(state.failing, callback),
+      do: Logger.error("#{inspect(exporter)} failed on #{inspect(callback)}: #{text}")
+
+    %{state | failing: Map.put(state.failing, callback, text), failures: state.failures + 1}
+  end
+
+  defp succeeded(state, callback), do: %{state | failing: Map.delete(state.failing, callback)}
 
   # Each distinct failure of a `kind` once, up to a bound for that kind, however often it recurs.
   defp log_once(state, kind, failure, level, message) do

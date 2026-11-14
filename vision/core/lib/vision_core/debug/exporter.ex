@@ -48,10 +48,11 @@ defmodule VisionCore.Debug.Exporter do
       `:snapshot_delay_ms` after the burst starts: each describes the
       second before it, so an earlier one describes the time before the
       burst. And whether the status could be subscribed to.
-    * The detections, each publication as its pair's `captureNs` and its
+    * The detections, each publication as the `captureNs` of its pair,
+      or of its frame from a pipeline on a camera of its own, and its
       detections with the fields of the API's detections event: `label`,
       `score`, `distanceM` and `outline`, the `[x, y]` vertices as
-      fractions of the left image's width and height.
+      fractions of the width and height of the image they were found on.
     * The time the burst started, how long before it the last change
       was, and whether `:last_change` moved between the burst's start and
       its end (`changesDuringBurst`, 1 or 0).
@@ -100,6 +101,7 @@ defmodule VisionCore.Debug.Exporter do
 
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.{Parameters, Preview, Status}
+  alias VisionCore.Camera.Frame
   alias VisionCore.Debug.Export
   alias VisionCore.Stereo.{Pair, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
@@ -198,11 +200,10 @@ defmodule VisionCore.Debug.Exporter do
 
   def handle_output(
         {:detections, :detection},
-        {pair, detections},
+        {source, detections},
         %{recording: %{phase: :burst}} = state
       ) do
-    frame = pair.left_frame
-    published = {Pair.capture_ns(pair), {frame.width, frame.height}, detections}
+    published = {capture_ns(source), image_size(source), detections}
     {:ok, update_in(state.recording.detections, &[published | &1])}
   end
 
@@ -427,6 +428,13 @@ defmodule VisionCore.Debug.Exporter do
                 "export needs: the stereo unit's stages do not provide it"
     end
   end
+
+  # What the detections were found on: a pair's left frame, or a camera's frame.
+  defp capture_ns(%Pair{} = pair), do: Pair.capture_ns(pair)
+  defp capture_ns(%Frame{capture_ns: capture_ns}), do: capture_ns
+
+  defp image_size(%Pair{left_frame: frame}), do: {frame.width, frame.height}
+  defp image_size(%Frame{width: width, height: height}), do: {width, height}
 
   defp detection_entry({capture_ns, size, detections}),
     do: %{

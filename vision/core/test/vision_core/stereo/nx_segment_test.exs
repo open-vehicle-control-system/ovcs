@@ -575,4 +575,38 @@ defmodule VisionCore.Stereo.NxSegmentTest do
       end
     end
   end
+
+  describe "await_gpu/2" do
+    test "waits for a render node before a segment compiled for Vulkan uses the GPU" do
+      nodes = :counters.new(1, [])
+
+      render_nodes = fn ->
+        :counters.add(nodes, 1, 1)
+        if :counters.get(nodes, 1) < 3, do: [], else: ["/dev/dri/renderD128"]
+      end
+
+      options = NxSegment.ventuno_q_defn_options("cache")
+
+      assert NxSegment.await_gpu(options,
+               render_nodes: render_nodes,
+               poll_ms: 1,
+               timeout_ms: 1_000
+             ) ==
+               :ok
+
+      assert :counters.get(nodes, 1) == 3
+    end
+
+    test "gives up after its timeout, for the build to say the device is missing" do
+      options = NxSegment.ventuno_q_defn_options("cache")
+
+      assert NxSegment.await_gpu(options, render_nodes: fn -> [] end, poll_ms: 1, timeout_ms: 5) ==
+               {:error, :no_gpu}
+    end
+
+    test "does not wait for a segment that does not run on Vulkan" do
+      assert NxSegment.await_gpu([], render_nodes: fn -> flunk("looked for a GPU") end) == :ok
+      assert NxSegment.await_gpu([compiler: EXLA], render_nodes: fn -> flunk("looked") end) == :ok
+    end
+  end
 end

@@ -168,6 +168,40 @@ defmodule VisionCore.StatusTest do
     end
   end
 
+  # A driver that says whether its capture program runs, as it is started with.
+  defmodule ReopeningCamera do
+    use GenServer
+
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def running?(server), do: GenServer.call(server, :running?)
+    def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: opts[:name])
+
+    @impl GenServer
+    def init(opts), do: {:ok, Keyword.fetch!(opts, :running?)}
+
+    @impl GenServer
+    def handle_call(:running?, _from, running?), do: {:reply, running?, running?}
+  end
+
+  test "a camera whose driver waits to start its capture program again is absent" do
+    for {label, running?} <- [{"left", true}, {"right", false}, {"hq", false}] do
+      start_supervised!(
+        {ReopeningCamera, name: ReopeningCamera.name_for(label), running?: running?},
+        id: label
+      )
+    end
+
+    components = [
+      {:stereo, driver: ReopeningCamera, left: [], right: []},
+      {:camera, name: :hq, driver: ReopeningCamera}
+    ]
+
+    start_supervised!({Status, config: config(components)})
+
+    assert %{left: %{present: true}, right: %{present: false}, hq: %{present: false}} =
+             Status.snapshot().cameras
+  end
+
   test "a configured Hailo detector that is not running is reported as a failed Hailo-8" do
     start_supervised!({Status, config: config([{:hailo_detector, hef_path: "/missing.hef"}])})
 

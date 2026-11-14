@@ -361,6 +361,20 @@ defmodule VisionCore.Stereo.SupervisorTest do
     assert log =~ "failed to start, cameras down: its :topic_prefix is now :prefix"
   end
 
+  test "is left down, saying why, with an :fps that is no integer from 1 on" do
+    Process.flag(:trap_exit, true)
+
+    for fps <- [0, 29.97] do
+      log =
+        capture_log(fn ->
+          assert StereoSupervisor.start_link(Keyword.merge(@stereo, fps: fps)) == :ignore
+        end)
+
+      assert log =~ "VisionCore.Stereo.Supervisor failed to start, cameras down: its :fps is"
+      refute log =~ "Elixir.VisionCore.Stereo.Supervisor failed"
+    end
+  end
+
   test "gives each camera driver its side's frame id, and starts no ROS 2 service" do
     {:ok, {_flags, children}} =
       StereoSupervisor.init(

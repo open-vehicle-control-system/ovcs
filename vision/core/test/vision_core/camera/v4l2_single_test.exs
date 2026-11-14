@@ -611,41 +611,145 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert_in_delta received_ms, System.system_time(:millisecond), 1_000
   end
 
-  test "stops when the capture program exits", %{tmp_dir: tmp_dir} do
-    script = write_script(tmp_dir, "capture.sh", "exit 3")
-
-    capture_log(fn ->
-      camera = start_camera(executable: script)
-      ref = Process.monitor(camera)
-      assert_receive {:DOWN, ^ref, :process, _, {:v4l2_capture_exit, 3}}, 2_000
-    end)
+  defp runs(tmp_dir) do
+    case File.read(Path.join(tmp_dir, "runs")) do
+      {:ok, runs} -> byte_size(runs)
+      {:error, :enoent} -> 0
+    end
   end
 
-  test "stops when the capture program stops delivering frames", %{tmp_dir: tmp_dir} do
-    records = Path.join(tmp_dir, "records.bin")
-    record = rgb_record(5)
-    File.write!(records, <<byte_size(record)::32, record::binary>>)
-    script = write_script(tmp_dir, "capture.sh", "cat #{records}\ncat > /dev/null")
+  # Counts its runs in `runs`, exits at once `failures` times, then does as `body` says.
+  defp counting_program(tmp_dir, failures, body) do
+    runs = Path.join(tmp_dir, "runs")
+
+    write_script(
+      tmp_dir,
+      "capture.sh",
+      "printf x >> #{runs}\n[ \"$(wc -c < #{runs})\" -le #{failures} ] && exit 3\n#{body}"
+    )
+  end
+
+  test "a capture program that exits is started again by the same camera, whose frames come back",
+       %{tmp_dir: tmp_dir} do
+    records = write_records(tmp_dir, [rgb_record(5)])
+    script = counting_program(tmp_dir, 3, "cat #{records}\ncat > /dev/null")
+    :ok = Outputs.subscribe({:camera_frame, V4L2Single.name_for("hq"), :full})
 
     log =
       capture_log(fn ->
-        camera = start_camera(executable: script, stall_timeout_ms: 100)
-        ref = Process.monitor(camera)
-        assert_receive {:DOWN, ^ref, :process, _, {:camera_stall, {:stalled, _silent_ms}}}, 3_000
+        camera = start_camera(executable: script, reopen_delays_ms: [10])
+
+        assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "hq"}}}, 5_000
+        assert runs(tmp_dir) == 4
+        assert Process.whereis(V4L2Single.name_for("hq")) == camera
+        assert VisionCore.Camera.Reopen.running?(camera)
+      end)
+
+    assert log =~ "exited with status 3"
+  end
+
+  test "a camera whose program is down answers, keeps the settings it is given and starts it with them",
+       %{tmp_dir: tmp_dir} do
+    arguments = Path.join(tmp_dir, "arguments.txt")
+
+    script =
+      counting_program(
+        tmp_dir,
+        1,
+        "printf '%s\\n' \"$@\" > #{arguments}\ncat > /dev/null"
+      )
+
+    capture_log(fn ->
+      camera = start_camera(executable: script, reopen_delays_ms: [60_000])
+      eventually(fn -> not VisionCore.Camera.Reopen.running?(camera) end)
+
+      assert V4L2Single.live(camera) == nil
+      assert {:ok, %{gamma: 1.8}} = V4L2Single.set_controls(camera, gamma: 1.8)
+      assert %{gamma: 1.8} = V4L2Single.controls(camera)
+
+      send(camera, :reopen)
+      eventually(fn -> File.exists?(arguments) and File.read!(arguments) =~ "--threads" end)
+      lines = arguments |> File.read!() |> String.split("\n", trim: true)
+      assert Enum.at(lines, Enum.find_index(lines, &(&1 == "--gamma")) + 1) == "1.8"
+    end)
+  end
+
+  test "a capture program that stops delivering frames is closed and started again",
+       %{tmp_dir: tmp_dir} do
+    records = write_records(tmp_dir, [rgb_record(5)])
+    runs = Path.join(tmp_dir, "runs")
+
+    # Its first run ignores the end of its stdin; the later ones exit on it.
+    script =
+      counting_program(
+        tmp_dir,
+        0,
+        "cat #{records}\n[ \"$(wc -c < #{runs})\" -eq 1 ] && exec sleep 600 < /dev/null\ncat > /dev/null"
+      )
+
+    log =
+      capture_log(fn ->
+        camera = start_camera(executable: script, stall_timeout_ms: 100, reopen_delays_ms: [10])
+        %{port: port} = :sys.get_state(camera)
+        os_pid = VisionCore.PortProcess.os_pid(port)
+
+        eventually(fn -> runs(tmp_dir) >= 2 end, 300)
+        assert Process.whereis(V4L2Single.name_for("hq")) == camera
+        eventually(fn -> not VisionCore.PortProcess.alive?(os_pid) end, 300)
       end)
 
     assert log =~ "stopped delivering"
   end
 
-  test "stops when the capture program delivers no first frame", %{tmp_dir: tmp_dir} do
-    script = write_script(tmp_dir, "capture.sh", "cat > /dev/null")
+  test "a capture program that delivers no first frame is closed and started again",
+       %{tmp_dir: tmp_dir} do
+    script = counting_program(tmp_dir, 0, "cat > /dev/null")
 
     capture_log(fn ->
-      camera = start_camera(executable: script, startup_timeout_ms: 100)
-      ref = Process.monitor(camera)
+      camera = start_camera(executable: script, startup_timeout_ms: 100, reopen_delays_ms: [10])
 
-      assert_receive {:DOWN, ^ref, :process, _, {:camera_stall, {:no_first_frame, _waited_ms}}},
-                     3_000
+      eventually(fn -> runs(tmp_dir) >= 2 end, 300)
+      assert Process.whereis(V4L2Single.name_for("hq")) == camera
     end)
+  end
+
+  test "a PHY without its sensor does not hold the start: it is routed again until the sensor is there",
+       %{tmp_dir: tmp_dir} do
+    {script, arguments, _commands} = listening_program(tmp_dir)
+    routed = media_runner()
+    sensor? = :atomics.new(1, [])
+
+    runner = fn command, args ->
+      if :atomics.get(sensor?, 1) == 1,
+        do: routed.(command, args),
+        else: {"media-ctl: cannot open /dev/media0", 1}
+    end
+
+    log =
+      capture_log(fn ->
+        {microseconds, camera} =
+          :timer.tc(fn ->
+            start_supervised!(
+              {V4L2Single,
+               name: :hq,
+               label: "hq",
+               csiphy: 2,
+               media_runner: runner,
+               executable: script,
+               reopen_delays_ms: [10]},
+              restart: :temporary
+            )
+          end)
+
+        assert microseconds < 1_000_000
+        refute VisionCore.Camera.Reopen.running?(camera)
+        refute File.exists?(arguments)
+
+        :atomics.put(sensor?, 1, 1)
+        eventually(fn -> VisionCore.Camera.Reopen.running?(camera) end)
+        assert "--sensor" in arguments(arguments)
+      end)
+
+    assert log =~ "cannot open /dev/media0"
   end
 end

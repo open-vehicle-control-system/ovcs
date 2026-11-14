@@ -27,8 +27,9 @@ defmodule VisionCore.Stereo.Pairer do
       USB cameras with a stable phase offset. It changes while the
       pairer runs (`put_pair_tolerance_ms/2`), as the vision parameter
       `<prefix>.pairing.pair_tolerance_ms`.
-    * `:fps` (30) — the cameras' frame rate: frames half a period apart
-      or more are not measured as a pair of the sync.
+    * `:fps` (30) — the cameras' frame rate, an integer from 1 on:
+      frames half a period apart or more are not measured as a pair of
+      the sync.
   """
   use GenServer
   require Logger
@@ -98,7 +99,7 @@ defmodule VisionCore.Stereo.Pairer do
        right_frames: [],
        awaiting_pair: false,
        submitted_at_ns: nil,
-       sync: Sync.new(Keyword.get(opts, :fps, @default_fps)),
+       sync: Sync.new(VisionCore.Options.integer!(opts, :fps, @default_fps, 1)),
        timer: StageTimer.new(window: 30, label: "pairer")
      }}
   end

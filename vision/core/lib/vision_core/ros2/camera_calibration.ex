@@ -32,9 +32,7 @@ defmodule VisionCore.Ros2.CameraCalibration do
   ## Numbers
 
   Every numeric spelling the calibration tools emit is accepted, which
-  `String.to_float/1` is too strict for; `load!/1` runs inside
-  `VisionCore.Stereo.Pipeline.init/1`, and a calibration it cannot read
-  leaves the stereo unit down:
+  `String.to_float/1` is too strict for:
 
     * `"0."` / `"1."` — cameracalibrator writes whole numbers with a
       bare trailing dot, which `Float.parse/1` leaves as a `"."`
@@ -68,41 +66,32 @@ defmodule VisionCore.Ros2.CameraCalibration do
         }
 
   @aspect_tolerance 0.01
-  @empty_3x3 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-  # Written as rows and flattened: `mix format` puts a flat 12-element
-  # list one element per line, which loses the 3x4 shape entirely.
-  @empty_3x4 List.flatten([
-               [0.0, 0.0, 0.0, 0.0],
-               [0.0, 0.0, 0.0, 0.0],
-               [0.0, 0.0, 0.0, 0.0]
-             ])
+  @distortion_counts %{"plumb_bob" => 5, "rational_polynomial" => 8, "equidistant" => 4}
 
   @doc """
-  Load a calibration YAML. Returns `{:ok, %CameraCalibration{}}` or
-  `{:error, reason}` if the file is unreadable. Missing fields
-  inside the YAML are populated with sensible defaults
-  (zero-matrices, `"plumb_bob"`, etc.).
+  The calibration of the YAML file at `path`: `{:ok, calibration}`,
+  `{:error, reason}` with the file error of a file that cannot be read,
+  or `{:error, {:malformed, message}}` for a file that is no calibration
+  (`parse/1`).
   """
   @spec load(Path.t() | nil) :: {:ok, t()} | {:error, term()}
   def load(nil), do: {:error, :no_path}
 
   def load(path) when is_binary(path) do
-    case File.read(path) do
-      {:ok, yaml} -> {:ok, parse(yaml)}
-      error -> error
-    end
+    with {:ok, yaml} <- File.read(path),
+         {:error, message} <- parse(yaml),
+         do: {:error, {:malformed, message}}
   end
 
-  @doc """
-  Same as `load/1` but raises on read failure. Use from
-  `init/1` callbacks where a missing calibration file should
-  fail the boot.
-  """
+  @doc "As `load/1`, raising when the file gives no calibration."
   @spec load!(Path.t()) :: t()
   def load!(path) do
     case load(path) do
       {:ok, calibration} ->
         calibration
+
+      {:error, {:malformed, message}} ->
+        raise "#{inspect(__MODULE__)}: #{inspect(path)} is no calibration: #{message}"
 
       {:error, reason} ->
         raise "#{inspect(__MODULE__)}: cannot read calibration #{inspect(path)}: " <>
@@ -111,54 +100,78 @@ defmodule VisionCore.Ros2.CameraCalibration do
   end
 
   @doc """
-  Parse a YAML body directly (no file I/O). Each missing field
-  falls back to a zero-matrix / `"plumb_bob"` default — the
-  caller can detect "no calibration" by checking that the
-  matrices are all zero.
+  The calibration a YAML body holds, when it passes `check/1`: a matrix
+  that is missing, cut short or of another count, a value that is no
+  finite number and focal lengths of zero are each `{:error, message}`.
+  An image size left out is 0, and the distortion model `plumb_bob`.
   """
-  @spec parse(String.t()) :: t()
+  @spec parse(String.t()) :: {:ok, t()} | {:error, String.t()}
   def parse(yaml) when is_binary(yaml) do
-    %__MODULE__{
-      width: read_integer(yaml, ~r/^image_width:\s*(\d+)/m, 0),
-      height: read_integer(yaml, ~r/^image_height:\s*(\d+)/m, 0),
-      distortion_model: read_string(yaml, ~r/^distortion_model:\s*"?([^"\n]+)"?/m, "plumb_bob"),
-      distortion_coefficients:
-        read_matrix(
-          yaml,
-          ~r/^distortion_coefficients:.*?data:\s*\[([^\]]*)\]/ms,
-          []
-        ),
-      camera_matrix: read_matrix(yaml, ~r/^camera_matrix:.*?data:\s*\[([^\]]*)\]/ms, @empty_3x3),
-      rectification_matrix:
-        read_matrix(
-          yaml,
-          ~r/^rectification_matrix:.*?data:\s*\[([^\]]*)\]/ms,
-          @empty_3x3
-        ),
-      projection_matrix:
-        read_matrix(yaml, ~r/^projection_matrix:.*?data:\s*\[([^\]]*)\]/ms, @empty_3x4)
-    }
+    with {:ok, distortion} <- read_matrix(yaml, "distortion_coefficients"),
+         {:ok, camera} <- read_matrix(yaml, "camera_matrix"),
+         {:ok, rectification} <- read_matrix(yaml, "rectification_matrix"),
+         {:ok, projection} <- read_matrix(yaml, "projection_matrix") do
+      calibration = %__MODULE__{
+        width: read_integer(yaml, ~r/^image_width:\s*(\d+)/m, 0),
+        height: read_integer(yaml, ~r/^image_height:\s*(\d+)/m, 0),
+        distortion_model: read_string(yaml, ~r/^distortion_model:\s*"?([^"\n]+)"?/m, "plumb_bob"),
+        distortion_coefficients: distortion,
+        camera_matrix: camera,
+        rectification_matrix: rectification,
+        projection_matrix: projection
+      }
+
+      with :ok <- check(calibration), do: {:ok, calibration}
+    end
   end
 
   @doc """
-  Whether the camera, rectification and projection matrices of
-  `calibration` have their 9, 9 and 12 values, which `parse/1` does not
-  check: `:ok`, or `{:error, message}` naming the first that has not.
+  Whether `calibration` can be used: its camera, rectification and
+  projection matrices have their 9, 9 and 12 numbers, its focal lengths
+  are positive, and its distortion coefficients are as many as its model
+  takes, for the models in `distortion_counts/0`. `:ok`, or
+  `{:error, message}` saying what is wrong first.
   """
-  @spec check_matrices(t()) :: :ok | {:error, String.t()}
-  def check_matrices(%__MODULE__{} = calibration) do
-    Enum.find_value(
-      [
-        {"camera", calibration.camera_matrix, 9},
-        {"rectification", calibration.rectification_matrix, 9},
-        {"projection", calibration.projection_matrix, 12}
-      ],
-      :ok,
-      fn {name, matrix, count} ->
-        if length(matrix) != count,
-          do: {:error, "its #{name} matrix has #{length(matrix)} values, not #{count}"}
-      end
-    )
+  @spec check(t()) :: :ok | {:error, String.t()}
+  def check(%__MODULE__{} = calibration) do
+    with :ok <- check_matrix("camera", calibration.camera_matrix, 9),
+         :ok <- check_matrix("rectification", calibration.rectification_matrix, 9),
+         :ok <- check_matrix("projection", calibration.projection_matrix, 12),
+         :ok <- check_focal_lengths(calibration.camera_matrix) do
+      check_distortion(calibration.distortion_model, calibration.distortion_coefficients)
+    end
+  end
+
+  @doc "How many distortion coefficients each distortion model `check/1` knows takes."
+  @spec distortion_counts() :: %{String.t() => pos_integer()}
+  def distortion_counts, do: @distortion_counts
+
+  defp check_matrix(name, matrix, count) when length(matrix) != count,
+    do: {:error, "its #{name} matrix has #{length(matrix)} values, not #{count}"}
+
+  defp check_matrix(name, matrix, _count) do
+    if Enum.all?(matrix, &is_number/1),
+      do: :ok,
+      else: {:error, "its #{name} matrix holds a value that is no number"}
+  end
+
+  defp check_focal_lengths([fx, _, _, _, fy | _rest]) when fx > 0 and fy > 0, do: :ok
+  defp check_focal_lengths(_camera_matrix), do: {:error, "its focal lengths are not positive"}
+
+  defp check_distortion(model, coefficients) do
+    cond do
+      not Enum.all?(coefficients, &is_number/1) ->
+        {:error, "its distortion coefficients hold a value that is no number"}
+
+      is_map_key(@distortion_counts, model) and
+          length(coefficients) != @distortion_counts[model] ->
+        {:error,
+         "it has #{length(coefficients)} distortion coefficients, " <>
+           "not the #{@distortion_counts[model]} of #{model}"}
+
+      true ->
+        :ok
+    end
   end
 
   defp read_integer(yaml, regex, default) do
@@ -175,31 +188,35 @@ defmodule VisionCore.Ros2.CameraCalibration do
     end
   end
 
-  defp read_matrix(yaml, regex, default) do
-    case Regex.run(regex, yaml) do
+  # The values of the block `name`, none when the file has no such block.
+  defp read_matrix(yaml, name) do
+    case Regex.run(~r/^#{name}:.*?data:\s*\[([^\]]*)\]/ms, yaml) do
       [_, body] ->
         body
         |> String.split(",")
         |> Enum.map(&String.trim/1)
         |> Enum.reject(&(&1 == ""))
-        |> Enum.map(&parse_float/1)
+        |> parse_numbers()
 
       _ ->
-        default
+        {:ok, []}
     end
+  end
+
+  defp parse_numbers(texts) do
+    Enum.reduce_while(texts, {:ok, []}, fn text, {:ok, numbers} ->
+      case parse_float(text) do
+        {:ok, number} -> {:cont, {:ok, numbers ++ [number]}}
+        :error -> {:halt, {:error, "#{inspect(text)} is no number"}}
+      end
+    end)
   end
 
   # See "Numbers" in the moduledoc for the spellings accepted.
   defp parse_float(text) do
-    text = text |> String.trim() |> pad_leading_zero()
-
-    case Float.parse(text) do
-      {number, rest} when rest in ["", "."] ->
-        number
-
-      _ ->
-        raise ArgumentError,
-              "#{inspect(__MODULE__)}: cannot parse #{inspect(text)} as a float"
+    case text |> pad_leading_zero() |> Float.parse() do
+      {number, rest} when rest in ["", "."] -> {:ok, number}
+      _not_a_number -> :error
     end
   end
 

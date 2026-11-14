@@ -9,6 +9,11 @@ defmodule VisionCore.Stereo.NxSegment do
   every tensor but the frames. Outputs come back to the CPU once, and
   each stage's `finish/3` fills the `Pair` from them.
 
+  A segment compiled for Vulkan first waits for the GPU's render node
+  (`await_gpu/2`): `nx_iree` lists its devices at its first use and keeps
+  that list, so a segment built before the GPU driver came up at boot
+  would find no device for as long as the unit runs.
+
   It is compiled at the pipeline's size with the `:defn_options` of its
   build options (`build/3`), which the pipeline's default backends take
   from its own `:defn_options`. On a device that cannot compile, such as
@@ -62,12 +67,53 @@ defmodule VisionCore.Stereo.NxSegment do
   @impl VisionCore.Stereo.Segment
   @spec build([map()], Stage.context(), keyword()) :: {:ok, t()} | {:error, String.t()}
   def build(members, context, opts) do
+    await_gpu(Keyword.get(opts, :defn_options, []))
+
     case NxStereo.NxSegment.build(members, context, opts) do
       {:error, "no compiled module" <> _rest = message} ->
         {:error, message <> ", with `mix vision_core.nx_cache`"}
 
       result ->
         result
+    end
+  end
+
+  @doc """
+  Waits until the system has a GPU render node when `defn_options`
+  compile for Vulkan, `:timeout_ms` (30 s) at most, looking every
+  `:poll_ms` (200). `{:error, :no_gpu}` once the time is up, which leaves
+  the build to say the device is missing. `:render_nodes` lists them, for
+  tests.
+  """
+  @spec await_gpu(keyword(), keyword()) :: :ok | {:error, :no_gpu}
+  def await_gpu(defn_options, opts \\ []) do
+    if vulkan?(defn_options) do
+      render_nodes =
+        Keyword.get(opts, :render_nodes, fn -> Path.wildcard("/dev/dri/renderD*") end)
+
+      deadline = System.monotonic_time(:millisecond) + Keyword.get(opts, :timeout_ms, 30_000)
+      wait_for_gpu(render_nodes, Keyword.get(opts, :poll_ms, 200), deadline)
+    else
+      :ok
+    end
+  end
+
+  defp vulkan?(defn_options) do
+    Keyword.get(defn_options, :compiler) == NxIREE.Compiler and
+      Enum.any?(Keyword.get(defn_options, :iree_compiler_flags, []), &(&1 =~ "vulkan"))
+  end
+
+  defp wait_for_gpu(render_nodes, poll_ms, deadline) do
+    cond do
+      render_nodes.() != [] ->
+        :ok
+
+      System.monotonic_time(:millisecond) >= deadline ->
+        {:error, :no_gpu}
+
+      true ->
+        Process.sleep(poll_ms)
+        wait_for_gpu(render_nodes, poll_ms, deadline)
     end
   end
 

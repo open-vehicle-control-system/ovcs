@@ -53,8 +53,11 @@ defmodule VisionCore.Camera.Unit do
 
   Exists to contain failure, as `VisionCore.Detection.Supervisor` does:
   a driver that keeps crashing is restarted within this supervisor's own
-  budget, then the unit stops and, a `:transient` child, stays down,
-  while the stereo unit and the rest of the vision core run on. A
+  budget, then the unit stops, a `:transient` child, until
+  `VisionCore.Reviver` starts it again, while the stereo unit and the
+  rest of the vision core run on. A driver whose capture program exits
+  does not crash: it starts the program again itself
+  (`VisionCore.Camera.Reopen`). A
   component whose `:name` or `:driver` is invalid raises `ArgumentError`
   as it starts. A unit that fails to start, such as one whose driver
   cannot, is left down with the reason logged.

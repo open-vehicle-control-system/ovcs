@@ -82,24 +82,25 @@ defmodule VisionCore.Camera.V4L2PairTest do
            }
   end
 
-  test "a CSI PHY without a sensor is a startup error naming the PHY" do
-    Process.flag(:trap_exit, true)
-
+  test "a CSI PHY without a sensor leaves the camera up without its program, the PHY logged" do
     log =
       capture_log(fn ->
-        assert {:error, message} =
-                 V4L2Pair.start_link(
-                   label: "left",
-                   width: 728,
-                   height: 544,
-                   fps: 30,
-                   left: [csiphy: 0],
-                   right: [csiphy: 2],
-                   media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
-                   executable: "/bin/true"
-                 )
+        left =
+          start_supervised!(
+            {V4L2Pair,
+             label: "left",
+             width: 728,
+             height: 544,
+             fps: 30,
+             left: [csiphy: 0],
+             right: [csiphy: 2],
+             media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
+             executable: "/bin/true",
+             reopen_delays_ms: [60_000]}
+          )
 
-        assert message =~ "msm_csiphy2"
+        refute VisionCore.Camera.Reopen.running?(left)
+        assert %{gamma: _gamma} = V4L2Pair.controls(left)
       end)
 
     assert log =~ "msm_csiphy2"
@@ -180,7 +181,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
   end
 
   @tag :tmp_dir
-  test "the left camera runs the capture program and hands the right frame on, each with its frame id, then stops with it",
+  test "the left camera runs the capture program and hands the right frame on, each with its frame id, and starts it again when it exits",
        %{tmp_dir: tmp_dir} do
     records = Path.join(tmp_dir, "records.bin")
     record = pair_record(5, 6)
@@ -207,13 +208,12 @@ defmodule VisionCore.Camera.V4L2PairTest do
            executable: script,
            width: 2,
            height: 1,
-           fps: 30},
+           fps: 30,
+           reopen_delays_ms: [10]},
           id: :left,
           restart: :temporary
         )
       )
-
-    ref = Process.monitor(left)
 
     assert_receive {:"$gen_cast",
                     {:camera_frame,
@@ -225,7 +225,8 @@ defmodule VisionCore.Camera.V4L2PairTest do
                      %Frame{label: "right", frame_id: "stereo_right_optical", grey: <<3, 4>>}}},
                    2_000
 
-    assert_receive {:DOWN, ^ref, :process, _, {:v4l2_capture_exit, 0}}, 2_000
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", grey: <<1, 2>>}}}, 2_000
+    assert Process.whereis(V4L2Pair.name_for("left")) == left
   end
 
   defp metadata_record(exposure_us, gain) do

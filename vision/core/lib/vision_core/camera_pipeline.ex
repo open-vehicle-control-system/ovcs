@@ -44,7 +44,10 @@ defmodule VisionCore.CameraPipeline do
   without one (`c:finish/5`), and published through `VisionCore.Outputs`
   under `c:output_key/1`.
 
-  The camera's calibration and pose are read at start.
+  The camera's calibration and pose are read at start, and again at
+  each change of the camera's calibration
+  (`VisionCore.Camera.Calibration.changed_key/1`), so a calibration
+  committed while the pipeline runs is taken from the next frame on.
 
   ## The steps' times
 
@@ -174,12 +177,17 @@ defmodule VisionCore.CameraPipeline do
   def init({module, opts}) do
     settings = module.init(opts)
 
+    config =
+      Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
+        %VisionCore.Config{}
+
     state = %{
       module: module,
       settings: settings,
       reply_tag: module.reply_tag(),
       output_key: module.output_key(settings),
-      camera: camera_depth(module, settings, opts),
+      config: config,
+      camera: camera_depth(module, settings, config),
       # The sequence of the last submission, accepted or not.
       sequence: 0,
       frame_count: 0,
@@ -196,6 +204,7 @@ defmodule VisionCore.CameraPipeline do
 
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
     :ok = Outputs.subscribe(state.camera.key)
+    :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(state.camera.name))
     {:ok, state, {:continue, :declare}}
   end
 
@@ -210,11 +219,7 @@ defmodule VisionCore.CameraPipeline do
 
   defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 
-  defp camera_depth(module, %{source: {:camera, camera, output}} = settings, opts) do
-    config =
-      Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0) ||
-        %VisionCore.Config{}
-
+  defp camera_depth(module, %{source: {:camera, camera, output}} = settings, config) do
     {owner, wording} = module.depth_wording(settings)
 
     CameraDepth.new(camera, config, owner, wording,
@@ -259,6 +264,10 @@ defmodule VisionCore.CameraPipeline do
       {:full, waiting} -> {:noreply, %{state | waiting: waiting}}
     end
   end
+
+  # The results still waiting are finished with the calibration committed.
+  def handle_cast({:camera_calibration_changed, name}, %{camera: %{name: name}} = state),
+    do: {:noreply, %{state | camera: CameraDepth.reload(state.camera, state.config)}}
 
   def handle_cast(_message, state), do: {:noreply, state}
 

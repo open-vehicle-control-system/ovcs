@@ -103,7 +103,7 @@ defmodule VisionCore.Calibration.SolverTest do
     {:ok, result} = Solver.solve(board, {@width, @height}, samples)
 
     for side <- [result.left, result.right] do
-      parsed = side |> CameraCalibration.to_yaml("camera") |> CameraCalibration.parse()
+      {:ok, parsed} = side |> CameraCalibration.to_yaml("camera") |> CameraCalibration.parse()
       assert parsed.width == side.width
       assert parsed.projection_matrix == side.projection_matrix
       assert parsed.camera_matrix == side.camera_matrix

@@ -1,8 +1,9 @@
 defmodule VisionCore.Stereo.Calibration do
   @moduledoc """
-  Reads and writes the stereo unit's calibration files, for the
-  dashboard. `cameracalibrator`'s COMMIT writes them one side at a time,
-  through `VisionCore.Ros2.Services.SetCameraInfoServer`.
+  Reads and writes the stereo unit's calibration files: both at once for
+  the dashboard (`commit/3`), one side at a time for `cameracalibrator`'s
+  COMMIT (`commit_side/4`, from
+  `VisionCore.Ros2.Services.SetCameraInfoServer`).
 
   The unit's options resolve where each side's calibration is
   (`VisionCore.Stereo.Supervisor.camera_options/1`): with a
@@ -22,9 +23,9 @@ defmodule VisionCore.Stereo.Calibration do
   the same: the files go back, and the unit reloads the calibration then
   in force.
   Each commit or reset the unit takes is published as
-  `{:stereo_calibration_changed, prefix}` under `changed_key/1`. The
-  commits and resets of one unit made here run one at a time; the ROS 2
-  service does not wait for them.
+  `{:stereo_calibration_changed, prefix}` under `changed_key/1`, a side
+  stored alone included. The commits and resets of one unit run one at a
+  time.
 
   A unit whose pipeline is not running, as an uncalibrated one that runs
   its cameras alone or one that gave up, is restarted instead, so that it
@@ -144,6 +145,48 @@ defmodule VisionCore.Stereo.Calibration do
   end
 
   @doc """
+  Writes the calibration of one `side`, as `commit/3` writes both. With
+  a store, the unit takes the stored calibration once the other side is
+  stored too: a side stored alone leaves the unit as it runs. `opts` are
+  `commit/3`'s.
+  """
+  @spec commit_side(VisionCore.Config.t(), :left | :right, CameraCalibration.t(), keyword()) ::
+          :ok | {:error, String.t()}
+  def commit_side(config, side, %CameraCalibration{} = calibration, opts \\ [])
+      when side in @sides do
+    with {:ok, cameras} <- StereoSupervisor.camera_options(config),
+         {:ok, paths} <- writable_paths(cameras, [side]) do
+      prefix = cameras[:prefix]
+
+      locked(prefix, fn ->
+        replace(
+          [{paths[side], yaml(calibration, prefix, side)}],
+          side_take(cameras, side, config, opts),
+          prefix,
+          opts
+        )
+      end)
+    end
+  end
+
+  # Called with the unit locked: the other side's file stays as it is found.
+  defp side_take(cameras, side, config, opts) do
+    case store_paths(cameras) do
+      {:ok, [left, right]} ->
+        other = if side == :left, do: right, else: left
+
+        if File.exists?(other),
+          do: unit_take(reload_paths(left, right), config, opts),
+          else: :leave
+
+      {:error, _no_store} ->
+        cameras[:left][:calibration_path]
+        |> reload_paths(cameras[:right][:calibration_path])
+        |> unit_take(config, opts)
+    end
+  end
+
+  @doc """
   Removes the stored calibration and has the unit reload the built-in
   one. Refused without a store, with nothing stored, or without a
   built-in calibration to go back to.
@@ -184,16 +227,10 @@ defmodule VisionCore.Stereo.Calibration do
   end
 
   defp parse_side(path, yaml) do
-    calibration = CameraCalibration.parse(yaml)
-
-    case CameraCalibration.check_matrices(calibration) do
-      :ok -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
+    case CameraCalibration.parse(yaml) do
+      {:ok, calibration} -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
       {:error, message} -> {%{path: path, calibration: nil, yaml: yaml}, "#{path}: #{message}"}
     end
-  rescue
-    exception ->
-      {%{path: path, calibration: nil, yaml: yaml},
-       "cannot parse #{path}: #{Exception.message(exception)}"}
   end
 
   defp unreadable(prefix, errors) do
@@ -232,12 +269,12 @@ defmodule VisionCore.Stereo.Calibration do
   end
 
   # As the pipeline computes it: the right camera's rectified `P[0,3] = -fx × baseline`.
-  defp baseline_m(%CameraCalibration{} = left, %CameraCalibration{} = right) do
-    case hd(left.projection_matrix) do
-      fx when fx > 0 -> -Enum.at(right.projection_matrix, 3) / fx
-      _fx -> nil
-    end
-  end
+  defp baseline_m(
+         %CameraCalibration{projection_matrix: [fx | _]},
+         %CameraCalibration{projection_matrix: [_, _, _, right_tx | _]}
+       )
+       when fx > 0,
+       do: -right_tx / fx
 
   defp baseline_m(_left, _right), do: nil
 
@@ -301,7 +338,7 @@ defmodule VisionCore.Stereo.Calibration do
   # The lock is local to the node, as the files are.
   defp locked(prefix, fun), do: :global.trans({{__MODULE__, prefix}, self()}, fun, [node()])
 
-  # A `nil` yaml removes its file; a `nil` take leaves the unit as it is.
+  # A `nil` yaml removes its file; the take `:leave` leaves the unit as it is.
   defp replace(files, take, prefix, opts) do
     with {:ok, previous} <- read_previous(files),
          :ok <- write(files, previous),
@@ -467,6 +504,8 @@ defmodule VisionCore.Stereo.Calibration do
       {:error, "the stereo unit did not start with this calibration; the log says why"}
     end
   end
+
+  defp take(:leave, _prefix, _opts, _previous), do: :ok
 
   # A reload that raised or exited may have reached the unit: it reloads the files put back.
   defp reload_in_force(reload, config, prefix) do

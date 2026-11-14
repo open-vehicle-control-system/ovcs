@@ -103,7 +103,7 @@ A detector with `source: {:camera, name}` detects on the camera of its own `name
 - **Its own frame.** Its detections are in the camera's `frame_id`. The ROS 2 exporter publishes those with a distance as markers and `vision_msgs/Detection3DArray`. It publishes those without as `vision_msgs/Detection2DArray` boxes in the camera's pixels, on `<prefix>/<pipeline>/detections_2d`. All of them go on `<prefix>/<pipeline>/annotations`, over the camera's image ([What leaves the unit](./data_flow.md#what-leaves-the-unit)).
 - **Another output.** When the exporter publishes a camera output other than the pipeline's, it scales the boxes to the published image.
 
-The pipeline reads the camera's calibration and pose at start, so it takes a committed calibration once the unit restarts ([Calibration and pose](./cameras.md#calibration-and-pose)).
+The pipeline reads the camera's calibration and pose at start, and again when a calibration of the camera is committed, which it takes from its next image on ([Calibration and pose](./cameras.md#calibration-and-pose)). A pose file changed by hand is read at the next start or commit.
 
 ## Detection models
 

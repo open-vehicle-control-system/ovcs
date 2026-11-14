@@ -503,16 +503,35 @@ defmodule VisionCore.Status do
 
   defp own_calls(%{own_cameras: own_cameras}) do
     for {name, driver, server} <- own_cameras,
-        function_exported?(driver, :live, 1),
+        call <- camera_calls({:own, name}, {:running, name}, driver, server),
         into: %{},
-        do: {{:own, name}, {fn -> live(driver, server) end, %{}}}
+        do: call
   end
+
+  # What a camera's driver is asked, when it answers it: what it applied, whether its program runs.
+  defp camera_calls(live_key, running_key, driver, server) do
+    live =
+      if function_exported?(driver, :live, 1),
+        do: [{live_key, {fn -> live(driver, server) end, %{}}}],
+        else: []
+
+    running =
+      if function_exported?(driver, :running?, 1),
+        do: [{running_key, {fn -> driver.running?(server) end, true}}],
+        else: []
+
+    live ++ running
+  end
+
+  # A driver without its capture program, which it waits to start again, has no camera.
+  defp present?(server, replies, running_key),
+    do: GenServer.whereis(server) != nil and Map.get(replies, running_key, true)
 
   defp live(driver, server), do: Map.take(driver.live(server) || %{}, @camera_metadata_keys)
 
   defp own_cameras(state, replies) do
     Map.new(state.own_cameras, fn {name, _driver, server} ->
-      if GenServer.whereis(server),
+      if present?(server, replies, {:running, name}),
         do:
           {name,
            Map.merge(
@@ -530,9 +549,9 @@ defmodule VisionCore.Status do
     row_correction = {&row_correction/0, nil}
 
     for {side, {driver, server}} <- Enum.zip([:left, :right], cameras),
-        function_exported?(driver, :live, 1),
+        call <- camera_calls(side, {:running, side}, driver, server),
         into: %{sync: sync, row_correction: row_correction},
-        do: {side, {fn -> live(driver, server) end, %{}}}
+        do: call
   end
 
   # The rows the stage declaring `right_row_offset` moves the right image by, as the row correction sets them.
@@ -548,7 +567,7 @@ defmodule VisionCore.Status do
   defp camera(%{cameras: [left, right]} = state, side, replies) do
     {_driver, server} = if side == :left, do: left, else: right
 
-    if GenServer.whereis(server),
+    if present?(server, replies, {:running, side}),
       do: Map.merge(%{present: true, fps: state.rates_hz[side]}, Map.get(replies, side, %{})),
       else: %{present: false}
   end

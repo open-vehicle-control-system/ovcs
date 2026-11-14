@@ -474,9 +474,10 @@ defmodule VisionCore.Calibration.SessionTest do
       assert unsubscribed?(Process.whereis(Session))
     end
 
-    test "tells the recorder what the commit carries, and takes it back when the commit is refused",
+    test "tells the recorder what the commit stores and carries, and takes it back once it answered",
          %{board: board} do
       test_pid = self()
+      expectation = make_ref()
 
       start_session(
         solve: fn _board, _size, _samples -> {:ok, result()} end,
@@ -484,8 +485,11 @@ defmodule VisionCore.Calibration.SessionTest do
           send(test_pid, :commit)
           {:error, "the unit refused it"}
         end,
-        expect: fn target, expected -> send(test_pid, {:expect, target, expected}) end,
-        forget: fn target -> send(test_pid, {:forget, target}) end
+        expect: fn target, cameras, expected ->
+          send(test_pid, {:expect, target, cameras, expected})
+          expectation
+        end,
+        forget: fn reference -> send(test_pid, {:forget, reference}) end
       )
 
       capture_enough(board)
@@ -493,9 +497,11 @@ defmodule VisionCore.Calibration.SessionTest do
       assert_receive {:calibration_session, %{phase: :solved}}
       assert :ok = Session.apply()
 
-      assert_receive {:expect, "stereo", {:record, kept}}
+      assert_receive {:expect, "stereo", cameras, {:record, kept}}
       assert_receive :commit
-      assert_receive {:forget, "stereo"}
+      assert_receive {:forget, ^expectation}
+
+      assert cameras == [{"left", result().left}, {"right", result().right}]
 
       assert kept[:origin] == "dashboard"
       assert kept[:board] == %{columns: board.columns, rows: board.rows, square_m: board.square_m}

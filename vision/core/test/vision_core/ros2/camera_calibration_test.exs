@@ -3,6 +3,8 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
 
   alias VisionCore.Ros2.CameraCalibration
 
+  @fixtures Path.expand("../../support/calibration", __DIR__)
+
   # Verbatim shape of what ROS `cameracalibrator` writes on SAVE:
   # whole numbers carry a bare trailing dot and the flow sequence
   # spans several lines.
@@ -36,7 +38,7 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
   """
 
   test "parses cameracalibrator output, including bare trailing-dot floats" do
-    calibration = CameraCalibration.parse(@ost_style)
+    assert {:ok, calibration} = CameraCalibration.parse(@ost_style)
 
     assert calibration.width == 640
     assert calibration.height == 480
@@ -55,20 +57,77 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
   end
 
   test "accepts leading-dot and integer spellings too" do
-    calibration_yaml = """
-    camera_matrix:
-      rows: 3
-      cols: 3
-      data: [.5, -.25, 3, 0., -0., 1e-3, 2.5E2, 0.0, 1]
-    """
+    calibration_yaml =
+      String.replace(
+        @ost_style,
+        ~r/camera_matrix:.*?\]/s,
+        "camera_matrix:\n  data: [.5, -.25, 3, 0., 1e-3, -0., 2.5E2, 0.0, 1]"
+      )
 
-    assert CameraCalibration.parse(calibration_yaml).camera_matrix ==
-             [0.5, -0.25, 3.0, 0.0, -0.0, 1.0e-3, 250.0, 0.0, 1.0]
+    assert {:ok, calibration} = CameraCalibration.parse(calibration_yaml)
+    assert calibration.camera_matrix == [0.5, -0.25, 3.0, 0.0, 1.0e-3, -0.0, 250.0, 0.0, 1.0]
+  end
+
+  describe "parse/1 of a file that is no calibration" do
+    test "says an empty file has no camera matrix" do
+      assert CameraCalibration.parse("") ==
+               {:error, "its camera matrix has 0 values, not 9"}
+    end
+
+    test "says which matrix a file cut short lacks" do
+      {cut, _rest} = :binary.split(@ost_style, "projection_matrix:") |> List.to_tuple()
+
+      assert CameraCalibration.parse(cut) ==
+               {:error, "its projection matrix has 0 values, not 12"}
+    end
+
+    test "refuses a matrix whose closing bracket was lost before the next block" do
+      broken = String.replace(@ost_style, "0.     ,   0.     ,   1.     ]", "0.     ,   0.")
+
+      assert {:error, message} = CameraCalibration.parse(broken)
+      assert message =~ "is no number"
+    end
+
+    test "refuses a value that is not a finite number" do
+      for spelling <- [".nan", ".inf", "-.inf", "NaN", "abc"] do
+        yaml = String.replace(@ost_style, "725.11023", spelling)
+
+        assert CameraCalibration.parse(yaml) ==
+                 {:error, "#{inspect(spelling)} is no number"}
+      end
+    end
+
+    test "refuses a file whose focal lengths are zero" do
+      zeroed = String.replace(@ost_style, "725.11023", "0.")
+
+      assert CameraCalibration.parse(zeroed) == {:error, "its focal lengths are not positive"}
+    end
+  end
+
+  describe "load/1" do
+    @describetag :tmp_dir
+
+    test "answers why a file is no calibration, and load!/1 raises it", %{tmp_dir: tmp_dir} do
+      path = Path.join(tmp_dir, "cut.yaml")
+      File.write!(path, "image_width: 640\ncamera_matrix:\n  data: [1, 2")
+
+      assert CameraCalibration.load(path) ==
+               {:error, {:malformed, "its camera matrix has 0 values, not 9"}}
+
+      assert_raise RuntimeError, ~r/its camera matrix has 0 values, not 9/, fn ->
+        CameraCalibration.load!(path)
+      end
+    end
+
+    test "answers the file error of a file it cannot read", %{tmp_dir: tmp_dir} do
+      assert CameraCalibration.load(Path.join(tmp_dir, "none.yaml")) == {:error, :enoent}
+    end
   end
 
   describe "scale_to/3" do
     setup do
-      %{calibration: CameraCalibration.parse(@ost_style)}
+      {:ok, calibration} = CameraCalibration.parse(@ost_style)
+      %{calibration: calibration}
     end
 
     test "scales pixel-indexed intrinsics and leaves the rest alone", %{calibration: calibration} do
@@ -130,8 +189,10 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
 
   describe "resample_to/3" do
     setup do
+      {:ok, parsed} = CameraCalibration.parse(@ost_style)
+
       calibration = %{
-        CameraCalibration.parse(@ost_style)
+        parsed
         | width: 2028,
           height: 1520,
           camera_matrix: [1161.3, 0.0, 1013.5, 0.0, 1161.3, 759.5, 0.0, 0.0, 1.0],
@@ -200,7 +261,8 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
 
   describe "proportional?/3" do
     setup do
-      %{calibration: %{CameraCalibration.parse(@ost_style) | width: 4056, height: 3040}}
+      {:ok, calibration} = CameraCalibration.parse(@ost_style)
+      %{calibration: %{calibration | width: 4056, height: 3040}}
     end
 
     test "is true for a resize that keeps the aspect ratio within 1 %", %{
@@ -219,21 +281,62 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
     end
   end
 
-  describe "check_matrices/1" do
-    test "takes a calibration whose matrices have their 9, 9 and 12 values" do
-      assert CameraCalibration.check_matrices(CameraCalibration.parse(@ost_style)) == :ok
-      assert CameraCalibration.check_matrices(CameraCalibration.parse("")) == :ok
+  describe "check/1" do
+    setup do
+      {:ok, calibration} = CameraCalibration.load(Path.join(@fixtures, "distorted_left.yaml"))
+      %{calibration: calibration}
     end
 
-    test "names the matrix that has another count" do
-      short = CameraCalibration.parse("camera_matrix:\n  data: [1, 2]\n")
-      assert {:error, message} = CameraCalibration.check_matrices(short)
-      assert message == "its camera matrix has 2 values, not 9"
+    test "takes a calibration with its matrices, focal lengths and distortion coefficients", %{
+      calibration: calibration
+    } do
+      assert CameraCalibration.check(calibration) == :ok
+    end
 
-      empty = CameraCalibration.parse("projection_matrix:\n  data: []\n")
+    test "names the matrix that has another count", %{calibration: calibration} do
+      for {field, name, count} <- [
+            {:camera_matrix, "camera", 9},
+            {:rectification_matrix, "rectification", 9},
+            {:projection_matrix, "projection", 12}
+          ] do
+        short = Map.put(calibration, field, [1.0, 2.0])
 
-      assert {:error, "its projection matrix has 0 values, not 12"} =
-               CameraCalibration.check_matrices(empty)
+        assert CameraCalibration.check(short) ==
+                 {:error, "its #{name} matrix has 2 values, not #{count}"}
+      end
+    end
+
+    test "refuses a value that is no number", %{calibration: calibration} do
+      matrix = List.replace_at(calibration.camera_matrix, 4, nil)
+
+      assert CameraCalibration.check(%{calibration | camera_matrix: matrix}) ==
+               {:error, "its camera matrix holds a value that is no number"}
+    end
+
+    test "refuses focal lengths that are not positive", %{calibration: calibration} do
+      for index <- [0, 4] do
+        matrix = List.replace_at(calibration.camera_matrix, index, 0.0)
+
+        assert CameraCalibration.check(%{calibration | camera_matrix: matrix}) ==
+                 {:error, "its focal lengths are not positive"}
+      end
+    end
+
+    test "refuses a count of distortion coefficients that is not its model's", %{
+      calibration: calibration
+    } do
+      for {model, count} <- [{"plumb_bob", 5}, {"rational_polynomial", 8}, {"equidistant", 4}] do
+        fitting = %{
+          calibration
+          | distortion_model: model,
+            distortion_coefficients: List.duplicate(0.0, count)
+        }
+
+        assert CameraCalibration.check(fitting) == :ok
+
+        assert CameraCalibration.check(%{fitting | distortion_coefficients: [0.0]}) ==
+                 {:error, "it has 1 distortion coefficients, not the #{count} of #{model}"}
+      end
     end
   end
 end

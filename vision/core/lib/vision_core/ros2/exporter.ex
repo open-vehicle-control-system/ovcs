@@ -31,6 +31,12 @@ defmodule VisionCore.Ros2.Exporter do
   built by plain functions; this module sends them with its `:publish`
   function.
 
+  A frame or a pair with an image to encode, a grey or RGB raw image
+  whose slot is open or a rectified image, is encoded and published in
+  a task of its own: the exporter is busy with that output alone, and
+  ready once it is published, or failed. The other outputs go out
+  meanwhile.
+
   It needs the ROS 2 link, the `ros2:` section of the configuration:
   without it, it is not started (`check/1`), nor when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
@@ -50,15 +56,12 @@ defmodule VisionCore.Ros2.Exporter do
 
   It answers `cameracalibrator`'s COMMIT for each side with a
   calibration path: a `VisionCore.Ros2.Services.SetCameraInfoServer`, a
-  helper under its supervisor, writes the calibration to the stereo
-  unit's store, or without one to the side's calibration path, has the
-  stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
-  exporter, which reads its camera info again and publishes the change
-  through `VisionCore.Outputs`, as a commit from the dashboard is, so that
-  the dashboard shows it. It reads its camera info again too
-  after a change from the dashboard, of the stereo unit's
-  (`VisionCore.Stereo.Calibration.changed_key/1`) or of a camera's
-  (`VisionCore.Camera.Calibration.changed_key/1`).
+  helper under its supervisor, commits the side's calibration as the
+  dashboard does (`VisionCore.Stereo.Calibration.commit_side/4`). It
+  reads its camera info again after each change of the stereo unit's
+  calibration (`VisionCore.Stereo.Calibration.changed_key/1`) or of a
+  camera's (`VisionCore.Camera.Calibration.changed_key/1`), whichever
+  committed it.
 
   ## Cameras of their own
 
@@ -66,9 +69,8 @@ defmodule VisionCore.Ros2.Exporter do
   (`VisionCore.Camera.Unit.settings/1`) at each start of its runner,
   and answers `set_camera_info` on `<prefix>/<name>/set_camera_info`
   for each camera with a calibration path or a store: a
-  `VisionCore.Ros2.Services.SetCameraInfoServer` writes the calibration
-  to the camera's store, or without one to its `:calibration`, and
-  tells the exporter, which reads its camera info again.
+  `VisionCore.Ros2.Services.SetCameraInfoServer` commits the calibration
+  as the dashboard does (`VisionCore.Camera.Calibration.commit/3`).
 
   The pose of each camera that has one goes out as a static transform,
   `tf2_msgs/TFMessage` on `/tf_static`, from the stereo unit's left
@@ -441,25 +443,24 @@ defmodule VisionCore.Ros2.Exporter do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
-    for {side, path} <- writable_calibration_paths(cameras) do
+    config = config(options)
+
+    for side <- writable_sides(cameras) do
       Supervisor.child_spec(
         {SetCameraInfoServer,
          service_name: set_camera_info_service(topic_prefix, side),
-         calibration_path: path,
-         camera_name: "#{cameras[:prefix]}_#{side}",
-         reload: reload_callback(cameras),
+         commit: &Calibration.commit_side(config, side, &1),
          register_service: register_service},
         id: {SetCameraInfoServer, side}
       )
     end
   end
 
-  # Where a commit writes each side's calibration: the stereo unit's store, else its calibration path.
-  defp writable_calibration_paths(cameras) do
+  # The sides a commit can write: those with a store, else a calibration path.
+  defp writable_sides(cameras) do
     for side <- [:left, :right],
-        path =
-          Keyword.get(cameras[side], :calibration_store_path, cameras[side][:calibration_path]),
-        do: {side, path}
+        Keyword.get(cameras[side], :calibration_store_path, cameras[side][:calibration_path]),
+        do: side
   end
 
   defp set_camera_info_service(topic_prefix, side), do: "#{topic_prefix}/#{side}/set_camera_info"
@@ -468,35 +469,17 @@ defmodule VisionCore.Ros2.Exporter do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
-    for settings <- published_cameras(options),
-        path = writable_calibration_path(settings) do
+    config = config(options)
+
+    for %{name: name} = settings <- published_cameras(options),
+        settings.calibration_store_path || settings.calibration_path do
       Supervisor.child_spec(
         {SetCameraInfoServer,
-         service_name: Camera.service_name(camera_topic_prefix(options), settings.name),
-         calibration_path: path,
-         camera_name: Atom.to_string(settings.name),
-         reload: nil,
+         service_name: Camera.service_name(camera_topic_prefix(options), name),
+         commit: &VisionCore.Camera.Calibration.commit(config, name, &1),
          register_service: register_service},
-        id: {SetCameraInfoServer, settings.name}
+        id: {SetCameraInfoServer, name}
       )
-    end
-  end
-
-  # Where a commit writes the camera's calibration: its store, else its calibration path.
-  defp writable_calibration_path(settings),
-    do: settings.calibration_store_path || settings.calibration_path
-
-  # Once both sides are stored the stereo unit reloads from its store; without one, from its own paths.
-  defp reload_callback(cameras) do
-    pipeline = VisionCore.Stereo.Pipeline
-
-    case {cameras[:left][:calibration_store_path], cameras[:right][:calibration_store_path]} do
-      {nil, nil} ->
-        {StereoSupervisor, :reload_calibration, [pipeline, cameras[:prefix]]}
-
-      {left_store, right_store} ->
-        {StereoSupervisor, :reload_stored_calibration,
-         [pipeline, cameras[:prefix], left_store, right_store]}
     end
   end
 
@@ -517,12 +500,11 @@ defmodule VisionCore.Ros2.Exporter do
         cameras: start_cameras(options),
         transform_parent_frame_id: left_frame_id(cameras),
         telemetry: StageTimer.new(window: 30, label: "publisher"),
-        last_pair_at_ns: nil
+        last_pair_at_ns: nil,
+        publishing: %{}
       }
 
-      if stereo, do: notify_on_commit(options[:stereo], cameras)
       if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
-      notify_cameras_on_commit(state.cameras)
 
       for name <- Map.keys(state.cameras),
           do: :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(name))
@@ -568,18 +550,6 @@ defmodule VisionCore.Ros2.Exporter do
     )
 
     {:ok, stereo}
-  end
-
-  # The servers outlive the runner's restarts: each start tells them where to send.
-  defp notify_on_commit(stereo_options, {:ok, cameras}) do
-    topic_prefix = Keyword.get(stereo_options, :topic_prefix, cameras[:prefix])
-
-    for {side, _path} <- writable_calibration_paths(cameras) do
-      topic_prefix
-      |> set_camera_info_service(side)
-      |> SetCameraInfoServer.name_for()
-      |> SetCameraInfoServer.notify(self())
-    end
   end
 
   # Each pipeline's settings and the count of its markers drawn last, by its output.
@@ -692,12 +662,6 @@ defmodule VisionCore.Ros2.Exporter do
     end
   end
 
-  defp notify_cameras_on_commit(cameras) do
-    for {_name, camera} <- cameras do
-      camera.service_name |> SetCameraInfoServer.name_for() |> SetCameraInfoServer.notify(self())
-    end
-  end
-
   defp left_frame_id({:ok, cameras}), do: cameras[:left][:frame_id]
   defp left_frame_id({:error, _reason}), do: nil
 
@@ -717,22 +681,20 @@ defmodule VisionCore.Ros2.Exporter do
   def handle_output(:stereo_pair, %Pair{} = pair, state) do
     now_ns = System.monotonic_time(:nanosecond)
 
-    {publish_ns, :ok} =
-      measure_ns(fn ->
-        pair
-        |> Stereo.pair_messages(state.stereo, &encode_image(&1, state.jpeg_codec))
-        |> publish_all(state)
-      end)
+    publish = fn ->
+      {publish_ns, :ok} =
+        measure_ns(fn ->
+          pair
+          |> Stereo.pair_messages(state.stereo, &encode_image(&1, state.jpeg_codec))
+          |> publish_all(state)
+        end)
 
-    pair_interval_ns = if state.last_pair_at_ns, do: now_ns - state.last_pair_at_ns, else: 0
+      publish_ns
+    end
 
-    telemetry =
-      state.telemetry
-      |> StageTimer.record(:pub_stereo, publish_ns)
-      |> StageTimer.record(:wall, pair_interval_ns)
-      |> StageTimer.tick()
-
-    {:ok, %{state | telemetry: telemetry, last_pair_at_ns: now_ns}}
+    if Stereo.encodes_pair?(pair, state.stereo),
+      do: publish_apart(state, :stereo_pair, {:pair, now_ns}, publish),
+      else: {:ok, published(state, {:pair, now_ns}, publish.())}
   end
 
   def handle_output({:camera_video, name, _output}, %Frame{} = frame, state) do
@@ -740,55 +702,11 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, state}
   end
 
-  def handle_output({:camera_frame, name, _output}, %Frame{} = frame, state),
-    do: handle_output({:camera_frame, name}, frame, state)
+  def handle_output({:camera_frame, name, _output} = output, %Frame{} = frame, state),
+    do: handle_frame(output, name, frame, state)
 
-  def handle_output({:camera_frame, name}, %Frame{} = frame, state)
-      when is_map_key(state.cameras, name) do
-    {messages, camera} =
-      Camera.frame_messages(
-        frame,
-        state.cameras[name],
-        System.monotonic_time(:millisecond),
-        &Frame.to_jpeg(&1, state.jpeg_codec)
-      )
-
-    publish_all(messages, state)
-    {:ok, put_in(state.cameras[name], camera)}
-  end
-
-  def handle_output({:camera_frame, side}, %Frame{} = frame, state) do
-    label = Atom.to_string(side)
-    {publish_stage, frames_counter} = frame_telemetry(side)
-    image_topic = state.stereo.sides[label].image_topic
-
-    # :pub_left and :pub_right time the raw image alone; the camera info goes out after.
-    {publish_ns, {camera_info, side_state}} =
-      measure_ns(fn ->
-        {messages, side_state} =
-          Stereo.frame_messages(
-            frame,
-            state.stereo.sides[label],
-            state.stereo,
-            System.monotonic_time(:millisecond),
-            &Frame.to_jpeg(&1, state.jpeg_codec)
-          )
-
-        {image, camera_info} = Enum.split_with(messages, &(elem(&1, 0) == image_topic))
-        publish_all(image, state)
-        {camera_info, side_state}
-      end)
-
-    publish_all(camera_info, state)
-
-    telemetry =
-      state.telemetry
-      |> StageTimer.record(publish_stage, publish_ns)
-      |> StageTimer.bump(frames_counter)
-
-    state = put_in(state.stereo.sides[label], side_state)
-    {:ok, %{state | telemetry: telemetry}}
-  end
+  def handle_output({:camera_frame, name} = output, %Frame{} = frame, state),
+    do: handle_frame(output, name, frame, state)
 
   def handle_output(output, {source, detections}, state)
       when is_map_key(state.detections, output) do
@@ -810,6 +728,116 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, state}
   end
 
+  defp handle_frame(output, name, frame, state) when is_map_key(state.cameras, name) do
+    now_ms = System.monotonic_time(:millisecond)
+    camera = state.cameras[name]
+
+    publish = fn ->
+      {messages, camera} =
+        Camera.frame_messages(frame, camera, now_ms, &Frame.to_jpeg(&1, state.jpeg_codec))
+
+      publish_all(messages, state)
+      camera
+    end
+
+    if Stereo.encodes_image?(frame, camera.next_image_ms, now_ms, camera.raw_image_max_hz),
+      do: publish_apart(state, output, {:camera, name}, publish),
+      else: {:ok, published(state, {:camera, name}, publish.())}
+  end
+
+  defp handle_frame(output, side, frame, state) do
+    label = Atom.to_string(side)
+    now_ms = System.monotonic_time(:millisecond)
+    side_state = state.stereo.sides[label]
+
+    # :pub_left and :pub_right time the raw image alone; the camera info goes out after.
+    publish = fn ->
+      {publish_ns, {camera_info, side_state}} =
+        measure_ns(fn ->
+          {messages, side_state} =
+            Stereo.frame_messages(
+              frame,
+              side_state,
+              state.stereo,
+              now_ms,
+              &Frame.to_jpeg(&1, state.jpeg_codec)
+            )
+
+          {image, camera_info} =
+            Enum.split_with(messages, &(elem(&1, 0) == side_state.image_topic))
+
+          publish_all(image, state)
+          {camera_info, side_state}
+        end)
+
+      publish_all(camera_info, state)
+      {publish_ns, side_state}
+    end
+
+    encodes? =
+      side_state.image_topic != false and
+        Stereo.encodes_image?(
+          frame,
+          side_state.next_image_ms,
+          now_ms,
+          state.stereo.raw_image_max_hz
+        )
+
+    if encodes?,
+      do: publish_apart(state, output, {:side, side}, publish),
+      else: {:ok, published(state, {:side, side}, publish.())}
+  end
+
+  # An encode can take seconds: the runner is busy with `output` alone until `publish` is done.
+  defp publish_apart(state, output, what, publish) do
+    task = Task.async(fn -> attempt(publish) end)
+    {:busy, put_in(state.publishing[task.ref], {output, what})}
+  end
+
+  defp attempt(publish) do
+    {:ok, publish.()}
+  catch
+    kind, reason -> {:error, Exception.format_banner(kind, reason)}
+  end
+
+  # What the exporter keeps of a publication: the counters it moved and the time it took.
+  defp published(state, {:pair, now_ns}, publish_ns) do
+    pair_interval_ns = if state.last_pair_at_ns, do: now_ns - state.last_pair_at_ns, else: 0
+
+    telemetry =
+      state.telemetry
+      |> StageTimer.record(:pub_stereo, publish_ns)
+      |> StageTimer.record(:wall, pair_interval_ns)
+      |> StageTimer.tick()
+
+    %{state | telemetry: telemetry, last_pair_at_ns: now_ns}
+  end
+
+  defp published(state, {:camera, name}, camera) do
+    update_in(state.cameras[name], fn current ->
+      if current.calibration == camera.calibration,
+        do: camera,
+        else: Map.merge(current, Map.take(camera, [:frame_counter, :next_image_ms]))
+    end)
+  end
+
+  defp published(state, {:side, side}, {publish_ns, side_state}) do
+    {publish_stage, frames_counter} = frame_telemetry(side)
+
+    telemetry =
+      state.telemetry
+      |> StageTimer.record(publish_stage, publish_ns)
+      |> StageTimer.bump(frames_counter)
+
+    state =
+      update_in(
+        state.stereo.sides[Atom.to_string(side)],
+        &Map.merge(&1, Map.take(side_state, [:frame_counter, :next_image_ms]))
+      )
+
+    %{state | telemetry: telemetry}
+  end
+
   @impl VisionCore.Exporter
   def handle_info(:heartbeat, %{heartbeat: heartbeat} = state) do
     counter = heartbeat.counter + 1
@@ -829,24 +857,6 @@ defmodule VisionCore.Ros2.Exporter do
     {:ok, state}
   end
 
-  def handle_info({:calibration_committed, service_name}, state) do
-    case Enum.find(Map.values(state.cameras), &(&1.service_name == service_name)) do
-      nil ->
-        tell_stereo_calibration_changed(state)
-        reload_stereo_calibration(state)
-
-      camera ->
-        name = camera.name
-
-        Outputs.publish(
-          VisionCore.Camera.Calibration.changed_key(name),
-          {:camera_calibration_changed, name}
-        )
-
-        recalibrate_camera(state, camera)
-    end
-  end
-
   def handle_info({:camera_calibration_changed, name}, state) do
     case state.cameras do
       %{^name => camera} -> recalibrate_camera(state, camera)
@@ -856,6 +866,27 @@ defmodule VisionCore.Ros2.Exporter do
 
   def handle_info({:stereo_calibration_changed, _prefix}, state),
     do: reload_stereo_calibration(state)
+
+  def handle_info({reference, answer}, state) when is_map_key(state.publishing, reference) do
+    Process.demonitor(reference, [:flush])
+    {{output, what}, publishing} = Map.pop(state.publishing, reference)
+    state = %{state | publishing: publishing}
+
+    case answer do
+      {:ok, publication} ->
+        {:ready, output, published(state, what, publication)}
+
+      {:error, failure} ->
+        Logger.warning("#{__MODULE__} did not publish #{inspect(output)}: #{failure}")
+        {:ready, output, state}
+    end
+  end
+
+  def handle_info({:DOWN, reference, :process, _task, _reason}, state)
+      when is_map_key(state.publishing, reference) do
+    {{output, _what}, publishing} = Map.pop(state.publishing, reference)
+    {:ready, output, %{state | publishing: publishing}}
+  end
 
   def handle_info(_message, state), do: {:ok, state}
 
@@ -881,13 +912,6 @@ defmodule VisionCore.Ros2.Exporter do
       other ->
         other
     end)
-  end
-
-  defp tell_stereo_calibration_changed(%{stereo: nil}), do: :ok
-
-  defp tell_stereo_calibration_changed(state) do
-    prefix = state.config |> StereoSupervisor.camera_options() |> unit_prefix()
-    Outputs.publish(Calibration.changed_key(prefix), {:stereo_calibration_changed, prefix})
   end
 
   defp reload_stereo_calibration(%{stereo: nil} = state), do: {:ok, state}

@@ -53,6 +53,7 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
+  # Its runner is killed by each pair while the process `options[:while_alive]` lives, or always.
   defmodule Crashing do
     @behaviour VisionCore.Exporter
 
@@ -60,10 +61,22 @@ defmodule VisionCore.ExportersTest do
     def outputs(_options), do: [:stereo_pair]
 
     @impl VisionCore.Exporter
-    def init(_options), do: {:ok, nil}
+    def init(options), do: {:ok, Map.new(options)}
 
     @impl VisionCore.Exporter
-    def handle_output(:stereo_pair, _pair, _state), do: raise("cannot export")
+    def handle_output(:stereo_pair, pair, state) do
+      case state do
+        %{while_alive: crasher, test: test} ->
+          if Process.alive?(crasher),
+            do: Process.exit(self(), :kill),
+            else: send(test, {:exported, pair})
+
+          {:ok, state}
+
+        _always ->
+          Process.exit(self(), :kill)
+      end
+    end
   end
 
   # Exports each pair but `:crash`, on which it crashes.
@@ -77,7 +90,7 @@ defmodule VisionCore.ExportersTest do
     def init(options), do: {:ok, Keyword.fetch!(options, :test)}
 
     @impl VisionCore.Exporter
-    def handle_output(:stereo_pair, :crash, _test), do: raise("cannot export")
+    def handle_output(:stereo_pair, :crash, _test), do: Process.exit(self(), :kill)
 
     def handle_output(:stereo_pair, pair, test) do
       send(test, {:exported, pair})
@@ -306,18 +319,20 @@ defmodule VisionCore.ExportersTest do
     runner
   end
 
-  defp produce_until_stopped(id, attempts \\ 300) do
+  defp produce_until_stopped(id), do: produce_until(fn -> exporter_pid(id) == :undefined end)
+
+  defp produce_until(done?, attempts \\ 300) do
     cond do
-      exporter_pid(id) == :undefined ->
+      done?.() ->
         :ok
 
       attempts > 0 ->
         Producer.produce(:producer, :pair)
         Process.sleep(10)
-        produce_until_stopped(id, attempts - 1)
+        produce_until(done?, attempts - 1)
 
       true ->
-        flunk("#{inspect(id)} kept running")
+        flunk("the exporter kept running")
     end
   end
 
@@ -592,8 +607,46 @@ defmodule VisionCore.ExportersTest do
     assert exporter_pid(Steady) == steady
     assert log =~ "#{inspect(Crashing)} stopped"
 
-    assert [%{status: {:off, "Stopped: it kept failing"}}, %{status: {:ok, _running}}] =
-             Exporters.list()
+    assert [
+             %{status: {:off, "Stopped: it kept failing; it starts again in 30 s"}},
+             %{status: {:ok, _running}}
+           ] = Exporters.list()
+  end
+
+  test "an exporter that kept failing is started again after its restart delay, and watched again" do
+    crasher = spawn(fn -> Process.sleep(:infinity) end)
+
+    start_supervised!(%{
+      id: :unit,
+      type: :supervisor,
+      start:
+        {Supervisor, :start_link,
+         [
+           [
+             {Producer, :producer},
+             {Exporters,
+              config: config(),
+              first_restart_ms: 1,
+              exporters: [{Crashing, while_alive: crasher, test: self()}]}
+           ],
+           [strategy: :rest_for_one]
+         ]}
+    })
+
+    stopped = exporter_pid(Crashing)
+
+    capture_log(fn ->
+      produce_until(fn -> exporter_pid(Crashing) != stopped end)
+      Process.exit(crasher, :kill)
+      eventually(fn -> is_pid(exporter_pid(Crashing)) end)
+    end)
+
+    await_runner(Crashing)
+    Producer.produce(:producer, :after_restart)
+
+    assert_receive {:exported, :after_restart}
+    assert [%{status: {:ok, "Running"}}] = Exporters.list()
+    eventually(fn -> watching?(exporter_pid(Crashing)) end)
   end
 
   test "an orderly shutdown logs no exporter as stopped" do

@@ -72,6 +72,56 @@ defmodule VisionCore.JpegTest do
     assert {:error, {:no_encoder, "/nonexistent/jpeg_codec"}} = Jpeg.encode(<<0>>, 1, 1, 1)
   end
 
+  describe "a codec program that misbehaves" do
+    setup do
+      path = Application.get_env(:vision_core, :jpeg_codec_path)
+      on_exit(fn -> Application.put_env(:vision_core, :jpeg_codec_path, path) end)
+      stop_supervised!(Jpeg)
+      :ok
+    end
+
+    defp codec_script(tmp_dir, script, mode) do
+      path = Path.join(tmp_dir, "jpeg_codec")
+      File.write!(path, "#!/bin/sh\n" <> script)
+      File.chmod!(path, mode)
+      Application.put_env(:vision_core, :jpeg_codec_path, path)
+    end
+
+    @tag :tmp_dir
+    @tag :capture_log
+    test "one that neither answers nor reads its stdin is killed once its request times out",
+         %{tmp_dir: tmp_dir} do
+      codec_script(tmp_dir, "exec sleep 600 < /dev/null\n", 0o755)
+      start_supervised!({Jpeg, timeout_ms: 50})
+
+      encode = Task.async(fn -> Jpeg.encode(<<0>>, 1, 1, 1) end)
+      await_busy_port()
+      [port] = Map.keys(:sys.get_state(Jpeg).ports)
+      os_pid = VisionCore.PortProcess.os_pid(port)
+
+      assert Task.await(encode) == {:error, :timeout}
+      assert :sys.get_state(Jpeg).ports == %{}
+      wait_until(fn -> not VisionCore.PortProcess.alive?(os_pid) end)
+    end
+
+    @tag :tmp_dir
+    test "one that cannot be run is an error, not a crash", %{tmp_dir: tmp_dir} do
+      codec_script(tmp_dir, "exit 0\n", 0o644)
+      codec = start_supervised!(Jpeg)
+
+      assert {:error, {:no_encoder, _path, _reason}} = Jpeg.encode(<<0>>, 1, 1, 1)
+      assert Process.whereis(Jpeg) == codec
+    end
+
+    defp wait_until(check, attempts \\ 300) do
+      cond do
+        check.() -> :ok
+        attempts == 0 -> flunk("condition never held")
+        true -> Process.sleep(10) && wait_until(check, attempts - 1)
+      end
+    end
+  end
+
   describe "a pool of Ports" do
     setup do
       path = Application.get_env(:vision_core, :jpeg_codec_path)

@@ -3,12 +3,14 @@ defmodule VisionCore.Camera.V4L2Capture do
   What the drivers running `v4l2_capture`, `VisionCore.Camera.V4L2Pair` and
   `VisionCore.Camera.V4L2Single`, share: their settings, given as a list
   of specs (`%{key:, type:, range:, default:, description:}`), the
-  program's Port, its log and metadata records, and the watchdog that
-  stops a driver whose program stops delivering frames.
+  program's Port, its log and metadata records, the watchdog that
+  finds a program that stops delivering frames, and how a driver whose
+  program exits or stalls starts it again (`VisionCore.Camera.Reopen`).
   """
   require Logger
 
-  alias VisionCore.Camera.LibCamera
+  alias VisionCore.Camera.{LibCamera, Reopen}
+  alias VisionCore.PortProcess
 
   @log_tag 2
   @metadata_tag 3
@@ -123,14 +125,11 @@ defmodule VisionCore.Camera.V4L2Capture do
   defp log_level(_), do: :error
 
   @doc """
-  Runs the program, `opts`'s `:executable` or `priv/v4l2_capture`, with
-  `arguments`, and starts the watchdog. Returns the fields the watchdog
-  reads (`watchdog/2`): `:port`, `:started_at`, `:last_frame_at` (`nil`),
-  and the given `:stall_timeout_ms` and `:startup_timeout_ms`. Raises,
-  naming `who`, when the program is missing.
+  The capture program, `opts`'s `:executable` or `priv/v4l2_capture`.
+  Raises, naming `who`, when it is missing.
   """
-  @spec open(keyword(), [String.t()], keyword(), String.t()) :: map()
-  def open(opts, arguments, timeouts, who) do
+  @spec executable!(keyword(), String.t()) :: Path.t()
+  def executable!(opts, who) do
     executable = Keyword.get_lazy(opts, :executable, fn -> binary_path(who) end)
 
     unless File.exists?(executable) do
@@ -138,18 +137,25 @@ defmodule VisionCore.Camera.V4L2Capture do
               "the :okdo_c100 and :arduino_ventuno_q firmware builds provide it."
     end
 
-    port =
-      Port.open({:spawn_executable, executable}, [
-        :binary,
-        :exit_status,
-        {:packet, 4},
-        args: arguments
-      ])
+    executable
+  end
 
+  @doc """
+  What a driver keeps of its program before it runs, from `opts`: the
+  `:executable` (`executable!/2`), no `:port`, the waits it is started
+  again on (`VisionCore.Camera.Reopen`), and `timeouts`'
+  `:stall_timeout_ms` and `:startup_timeout_ms`. Starts the watchdog,
+  which sends the calling process `:watchdog` (`watchdog/2`).
+  """
+  @spec closed(keyword(), keyword(), String.t()) :: map()
+  def closed(opts, timeouts, who) do
     Process.send_after(self(), :watchdog, @watchdog_interval_ms)
 
     %{
-      port: port,
+      executable: executable!(opts, who),
+      port: nil,
+      failures: 0,
+      reopen_delays_ms: Reopen.delays!(opts),
       started_at: now_ms(),
       last_frame_at: nil,
       stall_timeout_ms: Keyword.fetch!(timeouts, :stall_timeout_ms),
@@ -157,24 +163,83 @@ defmodule VisionCore.Camera.V4L2Capture do
     }
   end
 
+  @doc "`state` with its program running with `arguments`, no frame delivered yet."
+  @spec open(map(), [String.t()]) :: map()
+  def open(state, arguments) do
+    port =
+      Port.open({:spawn_executable, state.executable}, [
+        :binary,
+        :exit_status,
+        {:packet, 4},
+        args: arguments
+      ])
+
+    %{state | port: port, started_at: now_ms(), last_frame_at: nil}
+  end
+
+  @doc "`state` once its program has delivered a frame."
+  @spec delivered(map()) :: map()
+  def delivered(state), do: Reopen.delivered(%{state | last_frame_at: now_ms()})
+
   @doc """
-  The watchdog's check of `state`, which holds the fields `open/4`
-  returns: `{:noreply, state}`, the next check scheduled, while frames
-  come, `{:stop, {:camera_stall, verdict}, state}`, logged with `who`,
-  once none came within `:startup_timeout_ms` of the start or within
-  `:stall_timeout_ms` of the last frame.
+  `state` after its program exited with `status`, logged with `who`: no
+  Port, and `:reopen` sent to the calling process after the next wait.
   """
-  @spec watchdog(map(), String.t()) :: {:noreply, map()} | {:stop, term(), map()}
+  @spec exited(map(), non_neg_integer(), String.t()) :: map()
+  def exited(state, status, who) do
+    Logger.error(
+      "#{who} v4l2_capture exited with status #{status}; " <>
+        "starting it again in #{Reopen.delay_ms(state)} ms"
+    )
+
+    Reopen.closed(state)
+  end
+
+  @doc """
+  The watchdog's check of `state`, which holds the fields `closed/3`
+  returns, with the next check scheduled: `state` while frames come or
+  the program does not run; once none came within `:startup_timeout_ms`
+  of the start or within `:stall_timeout_ms` of the last frame, logged
+  with `who`, `state` with its Port closed, the program killed if it
+  does not exit (`VisionCore.PortProcess`), to be started again as
+  after an exit.
+  """
+  @spec watchdog(map(), String.t()) :: map()
+  def watchdog(%{port: nil} = state, _who) do
+    Process.send_after(self(), :watchdog, @watchdog_interval_ms)
+    state
+  end
+
   def watchdog(state, who) do
+    Process.send_after(self(), :watchdog, @watchdog_interval_ms)
+
     case LibCamera.stall_verdict(state, now_ms()) do
       :ok ->
-        Process.send_after(self(), :watchdog, @watchdog_interval_ms)
-        {:noreply, state}
+        state
 
       verdict ->
-        Logger.error("#{who} v4l2_capture stopped delivering: #{inspect(verdict)}")
-        {:stop, {:camera_stall, verdict}, state}
+        Logger.error(
+          "#{who} v4l2_capture stopped delivering: #{inspect(verdict)}; " <>
+            "starting it again in #{Reopen.delay_ms(state)} ms"
+        )
+
+        PortProcess.close(state.port)
+        Reopen.closed(state)
     end
+  end
+
+  @doc """
+  Sends `commands` to the program of `state`; without one they are left
+  out, the settings they set being its arguments when it starts.
+  """
+  @spec command(map(), [String.t()]) :: :ok
+  def command(%{port: nil}, _commands), do: :ok
+
+  def command(%{port: port}, commands) do
+    Enum.each(commands, &Port.command(port, &1))
+  rescue
+    # The program exited, its exit status not handled yet.
+    ArgumentError -> :ok
   end
 
   @doc "The monotonic time in milliseconds, as `:last_frame_at` holds it."

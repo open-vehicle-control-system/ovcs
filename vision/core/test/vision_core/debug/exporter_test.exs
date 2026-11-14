@@ -400,6 +400,33 @@ defmodule VisionCore.Debug.ExporterTest do
            ]
   end
 
+  test "includes the detections a pipeline on a camera publishes with their frame" do
+    runner = start_debug([], config([stereo(), :detector]))
+    detection = %{label: "cone", score: 0.8, z: nil, outline: [{48.0, 27.0}]}
+    camera_frame = %Frame{label: "hq", width: 192, height: 108, capture_ns: 7}
+
+    task = export(runner)
+    assert_receive {:burst_started, _at_ms}
+    Outputs.publish(@detections, {{:detections, :detection}, {camera_frame, [detection]}})
+    publish_pairs(runner, 1..3)
+
+    assert {:file, _filename, _type, zip} = Task.await(task)
+
+    assert json(files(zip), "detections.json") == [
+             %{
+               "captureNs" => 7,
+               "detections" => [
+                 %{
+                   "label" => "cone",
+                   "score" => 0.8,
+                   "distanceM" => nil,
+                   "outline" => [[0.25, 0.25]]
+                 }
+               ]
+             }
+           ]
+  end
+
   test "reads the pairs, and the detections when the configuration has a detector" do
     assert Exporter.outputs(config: config()) == [:stereo_pair]
 

@@ -20,7 +20,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
   # Commits a calibration of the camera `hq`, which the recorder keeps and selects.
   defp keep(config, fx, kept \\ nil) do
-    if kept, do: Recorder.expect("hq", {:record, kept})
+    if kept, do: Recorder.expect("hq", [{"hq", calibration(fx)}], {:record, kept})
     :ok = OwnCalibration.commit(config, :hq, calibration(fx))
     :sys.get_state(Recorder)
     hd(Library.list("hq"))
