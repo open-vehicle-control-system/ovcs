@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { boardClock, boardInterfaces, boardLoad } from './board.js'
+import OvcsButton from './OvcsButton.jsx'
 import OvcsHeader from './OvcsHeader.jsx'
 import OvcsStatus from './OvcsStatus.jsx'
 import OvcsThemeSwitch from './OvcsThemeSwitch.jsx'
+import { reloadPage } from './page.js'
 import { useOvcsProduct } from './product.js'
 import { FOCUS, classNames } from './styles.js'
 
@@ -171,6 +173,34 @@ function Details({ groups }) {
   )
 }
 
+/**
+ * Whether the unit runs another firmware than the first it answered, as after an upload under the open page: the page
+ * is then the previous firmware's.
+ */
+function useFirmwareChanged(firmware) {
+  const revision = firmware?.revision
+  const [first, setFirst] = useState(null)
+
+  useEffect(() => {
+    if (revision) setFirst((known) => known ?? revision)
+  }, [revision])
+
+  return first != null && revision != null && revision !== first
+}
+
+function ReloadPrompt() {
+  return (
+    <div role="status" className="flex min-w-0 items-center gap-2 rounded border border-ovcs-border px-2 py-1 text-sm">
+      <p className="ovcs-status ovcs-status--warn min-w-0 text-ovcs-warn-text">
+        The unit runs another firmware than this page: reload it.
+      </p>
+      <OvcsButton onClick={reloadPage} className="shrink-0">
+        Reload
+      </OvcsButton>
+    </div>
+  )
+}
+
 /** "OVCS" and the product, then the vehicle once known: the browser tab's title. */
 function usePageTitle(product, vehicle) {
   useEffect(() => {
@@ -183,12 +213,14 @@ function usePageTitle(product, vehicle) {
  * at its end the `firmware`'s vehicle, the `board`'s CPU, memory and clock, as `useOvcsBoard` reads them, a button that opens
  * the rest (the board's interfaces and load averages, the firmware's version and system, from `revision`, `target`,
  * `nervesSystem` and `nervesSystemVersion`) and the `OvcsThemeSwitch`, last; its content wraps on a narrow screen. It
- * titles the browser tab with "OVCS", the product and the vehicle.
+ * titles the browser tab with "OVCS", the product and the vehicle, and offers to reload the page once the firmware's
+ * `revision` changes under it.
  */
 export default function OvcsTopBar({ firmware, board, className, children, ...props }) {
   const product = useOvcsProduct()
   usePageTitle(product, firmware?.vehicle)
   const groups = details(firmware, board)
+  const firmwareChanged = useFirmwareChanged(firmware)
 
   return (
     <OvcsHeader
@@ -198,6 +230,7 @@ export default function OvcsTopBar({ firmware, board, className, children, ...pr
       <h1 className="text-lg font-semibold text-ovcs-text">
         OVCS <span className="font-normal text-ovcs-muted">{product}</span>
       </h1>
+      {firmwareChanged ? <ReloadPrompt /> : null}
       {children}
       <div className="ml-auto flex flex-wrap items-center justify-end gap-5">
         <Summary firmware={firmware} board={board} />

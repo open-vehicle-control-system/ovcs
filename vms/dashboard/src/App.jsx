@@ -3,6 +3,7 @@ import {
   OvcsBottomBar,
   OvcsConnectionStatus,
   OvcsMain,
+  OvcsRegion,
   OvcsShell,
   OvcsShellBody,
   OvcsTopBar,
@@ -86,6 +87,7 @@ export default function App() {
   const connection = useConnection((state) => state.state)
   // Each connection reads the firmware again, as after an upload.
   const firmware = useOvcsFirmware(fetchFirmware, connection === 'connected')
+  const path = useNavigation((state) => state.path)
   const board = useOvcsBoard(fetchBoard, connection === 'connected')
 
   useEffect(() => {
@@ -98,18 +100,26 @@ export default function App() {
 
   return (
     <OvcsShell product="VMS">
-      <OvcsTopBar firmware={firmware} board={board} />
+      <OvcsRegion name="The top bar">
+        <OvcsTopBar firmware={firmware} board={board} />
+      </OvcsRegion>
 
       <OvcsShellBody>
-        <Menu pages={pages ?? NO_PAGES} />
+        <OvcsRegion name="The menu">
+          <Menu pages={pages ?? NO_PAGES} />
+        </OvcsRegion>
         <OvcsMain>
-          <Content pages={pages} />
+          <OvcsRegion name="This page" resetOn={path}>
+            <Content pages={pages} />
+          </OvcsRegion>
         </OvcsMain>
       </OvcsShellBody>
 
-      <OvcsBottomBar>
-        <OvcsConnectionStatus state={connection} />
-      </OvcsBottomBar>
+      <OvcsRegion name="The status bar">
+        <OvcsBottomBar>
+          <OvcsConnectionStatus state={connection} />
+        </OvcsBottomBar>
+      </OvcsRegion>
     </OvcsShell>
   )
 }

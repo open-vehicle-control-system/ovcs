@@ -1,6 +1,10 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react'
 import { describe, expect, test, vi } from 'vitest'
 
+import { reloadPage } from './page.js'
+
+vi.mock('./page.js', () => ({ reloadPage: vi.fn() }))
+
 import {
   OvcsBottomBar,
   OvcsBottomBarItem,
@@ -113,6 +117,47 @@ describe('OvcsTopBar', () => {
       </OvcsShell>
     )
     expect(document.title).toBe('OVCS Bus Gateway · OVCS Mini')
+  })
+})
+
+describe('OvcsTopBar when the firmware changes', () => {
+  test('offers to reload the page once the unit answers another revision than at first', () => {
+    const { rerender } = render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '1e13961' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '1e13961' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
+
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '26e78c0' }} />
+      </OvcsShell>
+    )
+    expect(within(screen.getByRole('banner')).getByRole('status').textContent).toContain('another firmware')
+    fireEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(reloadPage).toHaveBeenCalledTimes(1)
+  })
+
+  test('offers nothing before the firmware is known', () => {
+    const { rerender } = render(
+      <OvcsShell product="VMS">
+        <OvcsTopBar />
+      </OvcsShell>
+    )
+    rerender(
+      <OvcsShell product="VMS">
+        <OvcsTopBar firmware={{ revision: '26e78c0' }} />
+      </OvcsShell>
+    )
+    expect(screen.queryByRole('button', { name: 'Reload' })).toBeNull()
   })
 })
 

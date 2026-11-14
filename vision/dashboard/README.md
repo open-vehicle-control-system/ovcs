@@ -27,7 +27,7 @@ Nothing shown outlives the link to the unit:
 - the socket's heartbeat is 5 s (`src/services/socket.js`), so a link gone without closing is noticed within 10 s;
 - a request the unit does not answer is aborted, after 5 s for a read and 15 s for an action (`request` in `src/services/parameters.js`), 60 s for an exporter's action, for a calibration put in force, which the unit answers once taken, and for the deletion of the calibration in use, which it answers once back on the firmware's.
 
-Each part of the page (top bar, menu, page, status bar) is a `Region` (`src/components/Region.jsx`): when it throws while rendering, it says so with a Reload button and the other parts stay. When the unit answers another firmware revision than the first, as after an upload under the open page, the top bar offers to reload.
+Each part of the page (top bar, menu, page, status bar) is an `OvcsRegion` from `@ovcs/ui`: when it throws while rendering, it says so with a Reload button and the other parts stay. When the unit answers another firmware revision than the first, as after an upload under the open page, the shared top bar offers to reload: the page compares the `revision` of `GET /api/firmware`, read again at each reconnection, with the first it read.
 
 `src/stores/calibration.js` holds the calibration session and the calibration in use, from the `calibration` channel. `src/stores/parameters.js` holds the groups and parameters; the controls and the save bar are `OvcsParameterControl` and `OvcsSaveBar` from `@ovcs/ui/react`.
 

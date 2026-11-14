@@ -28,6 +28,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsDialog` | `onClose`, `returnFocus`, `align`, `role`, and `aria-labelledby` (its heading's id) or `aria-label`: a modal dialog over the page that keeps the focus (Tab goes round its controls), closes on Escape when `onClose` is given, stops the page behind from scrolling, and once closed gives the focus back to `returnFocus`'s element, by default the one focused when it opened; `align` is `start` (default) or `center` |
   | `OvcsSwitch` | `checked`, `label`, `onClick`: an on/off switch whose position is `checked` alone |
   | `OvcsDot` | `on` |
+  | `OvcsRegion` | `name`, `resetOn`: a part of the page that fails alone: when what it holds throws while rendering, it says so with the error's message and a Reload button, and the other parts stay; it shows its content again once `resetOn` changes |
   | `OvcsRow` | `live`, `as` (element, default `div`) |
   | `OvcsParameterControl` | `parameter`, `bounds`, `controllerName`, `onChange`, `onReset`, `onEditStart`, `onEditEnd`: one parameter with its control, badge, description, allowed values, saved state and default |
   | `useOvcsConfirm()` | a hook that asks before an action in an `OvcsDialog`, in place of the browser's `window.confirm`: it returns `[confirm, confirmation]`; render `confirmation` in the component and `await confirm({ title, message, confirmLabel, danger })`, which shows `title`, `message` under it, Cancel (focused) and `confirmLabel` (`danger` for a destructive action), and resolves to `true` once confirmed, `false` when cancelled, on Escape, or when the component goes |
@@ -39,7 +40,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | Component | Props |
   |---|---|
   | `OvcsShell` | `product`: holds an `OvcsTopBar`, an `OvcsShellBody` and an `OvcsBottomBar`, which name the product |
-  | `OvcsTopBar` | `firmware`, `board`: the sticky top bar, the same on every dashboard: "OVCS" and the shell's product, its `children`, then at its end the Vehicle, the board's CPU, its Memory in use and its Clock in UTC, ticking, with `synchronized` or, as a warning, `not synchronized`, then a button that opens the rest, the board's interfaces, each name before its addresses, and its Load, and the firmware's Version (its commit) and System (its Nerves system, or target), and the `OvcsThemeSwitch`, last; it titles the browser tab `OVCS <product> · <vehicle>` |
+  | `OvcsTopBar` | `firmware`, `board`: the sticky top bar, the same on every dashboard: "OVCS" and the shell's product, its `children`, then at its end the Vehicle, the board's CPU, its Memory in use and its Clock in UTC, ticking, with `synchronized` or, as a warning, `not synchronized`, then a button that opens the rest, the board's interfaces, each name before its addresses, and its Load, and the firmware's Version (its commit) and System (its Nerves system, or target), and the `OvcsThemeSwitch`, last; it titles the browser tab `OVCS <product> · <vehicle>`, and once the firmware's `revision` differs from the first it was given, as after an upload under the open page, it offers to reload the page |
   | `OvcsShellBody` | holds an `OvcsMenu` and an `OvcsMain` |
   | `OvcsMenu` | `label`: the navigation, holding `OvcsMenuSection`s |
   | `OvcsMenuSection` | `title`, which names it |
