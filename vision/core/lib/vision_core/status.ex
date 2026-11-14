@@ -66,6 +66,15 @@ defmodule VisionCore.Status do
   between two keeping the last tick's. A tick without a pair or a frame
   has no time, as has a pipeline that does not answer.
 
+  `:latencies` holds, under `:stereo` on a unit with a `:stereo`
+  component, the latencies the pairer measured over the tick
+  (`VisionCore.Stereo.Pairer.latencies/1`): `:cameras`, from a frame's
+  capture to its arrival in the unit, and `:pairing`, a pair's wait to
+  be formed. They are no step's work, so the stereo pipeline's times
+  leave them out. Each tick takes them, a snapshot asked between two
+  keeping the last tick's; `nil` without a frame or a pair, or a pairer
+  that does not answer.
+
   `:distances` holds, by its name, each detection and segmentation
   pipeline on a camera of its own: its `:camera` and the `:reason` the
   stereo depth cannot be projected into it, which leaves its results
@@ -97,8 +106,10 @@ defmodule VisionCore.Status do
   @call_timeout_ms 200
   @camera_metadata_keys [:exposure_time_us, :analogue_gain, :lens_position, :colour_temperature]
   @quality_metrics [:matched_percent, :mean_disparity_px, :spread_px, :jitter_px]
+  @no_latencies %{cameras: nil, pairing: nil}
 
   @type camera :: %{required(:present) => boolean(), optional(atom()) => term()}
+  @type latencies :: %{cameras: float() | nil, pairing: float() | nil}
   @type exporter :: %{id: String.t(), name: String.t(), status: Exporter.status()}
   @type snapshot :: %{
           cameras: %{required(atom()) => camera()},
@@ -112,6 +123,7 @@ defmodule VisionCore.Status do
             }
             | nil,
           pipelines: %{required(atom()) => StageTimes.summary()},
+          latencies: %{optional(:stereo) => latencies()},
           distances: %{
             required(atom()) => %{
               camera: atom(),
@@ -180,6 +192,7 @@ defmodule VisionCore.Status do
     config = Keyword.fetch!(opts, :config)
     tick_ms = Keyword.get(opts, :tick_ms, @default_tick_ms)
     own_cameras = Unit.cameras(config)
+    cameras = StereoSupervisor.cameras(config)
 
     for {_output, key} <- StereoSupervisor.outputs(config) ++ Unit.outputs(config),
         do: :ok = Outputs.subscribe(key)
@@ -191,7 +204,8 @@ defmodule VisionCore.Status do
      %{
        tick_ms: tick_ms,
        config: config,
-       cameras: StereoSupervisor.cameras(config),
+       cameras: cameras,
+       latencies: if(cameras == [], do: %{}, else: %{stereo: @no_latencies}),
        own_cameras: own_cameras,
        npu_backends: npu_backends(config),
        npu_times: nil,
@@ -377,7 +391,7 @@ defmodule VisionCore.Status do
 
   defp build_snapshot(state, moment \\ :between_ticks) do
     replies = state |> calls(moment) |> call_all_within_timeout()
-    state = state |> npu_times(replies) |> pipeline_times(replies)
+    state = state |> npu_times(replies) |> pipeline_times(replies) |> latencies(replies)
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
     sync = sync(cameras, replies)
     state = listed(state, replies.exporters)
@@ -419,6 +433,7 @@ defmodule VisionCore.Status do
       depth: depth,
       npu: npu(state, replies),
       pipelines: state.pipelines,
+      latencies: state.latencies,
       distances: distances(state, replies),
       calibrated: calibrated(state),
       depth_hz: state.rates_hz.depth,
@@ -446,6 +461,7 @@ defmodule VisionCore.Status do
     %{exporters: {&exporters/0, :late}}
     |> Map.merge(npu_calls(state, moment))
     |> Map.merge(stage_times_calls(state, moment))
+    |> Map.merge(latencies_calls(state, moment))
     |> Map.merge(distances_calls(state))
     |> Map.merge(stereo_calls(state))
     |> Map.merge(own_calls(state))
@@ -497,6 +513,17 @@ defmodule VisionCore.Status do
 
     %{state | pipelines: Map.merge(state.pipelines, taken)}
   end
+
+  defp latencies_calls(%{cameras: []}, _moment), do: %{}
+
+  defp latencies_calls(_state, :tick),
+    do: %{latencies: {fn -> Pairer.latencies() end, @no_latencies}}
+
+  defp latencies_calls(_state, :between_ticks), do: %{}
+
+  # A tick's latencies; other snapshots keep the last tick's.
+  defp latencies(state, %{latencies: latencies}), do: %{state | latencies: %{stereo: latencies}}
+  defp latencies(state, _replies), do: state
 
   # The detection and segmentation pipelines, each with the module that hands its times over.
   defp timed_pipelines(config) do

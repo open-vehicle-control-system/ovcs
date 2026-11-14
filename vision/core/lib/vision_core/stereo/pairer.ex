@@ -16,7 +16,10 @@ defmodule VisionCore.Stereo.Pairer do
   done, failed or not.
 
   It also measures how far apart the two cameras capture, on every frame
-  they deliver (`VisionCore.Stereo.Sync`), which `sync/1` answers.
+  they deliver (`VisionCore.Stereo.Sync`), which `sync/1` answers, and
+  two latencies, which `latencies/1` answers: how long a frame takes
+  from its capture to its arrival here, and how long a pair waits here,
+  from the arrival of its earlier frame to its submission.
 
   ## Options
 
@@ -30,6 +33,9 @@ defmodule VisionCore.Stereo.Pairer do
     * `:fps` (30) — the cameras' frame rate, an integer from 1 on:
       frames half a period apart or more are not measured as a pair of
       the sync.
+    * `:now_ns` (`System.monotonic_time(:nanosecond)`) — the clock
+      arrivals and submissions are timed on, a function of no argument
+      on the timescale of `Frame.capture_ns`.
   """
   use GenServer
   require Logger
@@ -52,6 +58,8 @@ defmodule VisionCore.Stereo.Pairer do
   @frames_kept_per_side 4
   # Gaps closer than this are equally good: the newest pair is the one with least latency.
   @gap_resolution_ns 1_000_000
+  # A latency's sum in ns and how many times it was measured.
+  @no_latency {0, 0}
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -61,6 +69,16 @@ defmodule VisionCore.Stereo.Pairer do
   """
   @spec sync(GenServer.server()) :: Sync.summary()
   def sync(server \\ __MODULE__), do: GenServer.call(server, :sync)
+
+  @doc """
+  The mean latencies since the last call, in milliseconds, which then
+  start over: `:cameras`, from a frame's capture to its arrival here,
+  over both cameras' frames, and `:pairing`, from the arrival of a
+  submitted pair's earlier frame to its submission. Each is `nil`
+  without a frame or a pair.
+  """
+  @spec latencies(GenServer.server()) :: %{cameras: float() | nil, pairing: float() | nil}
+  def latencies(server \\ __MODULE__), do: GenServer.call(server, :latencies)
 
   @doc "The pairer's setting, `:pair_tolerance_ms`: its type, the values it takes and its default."
   @spec setting_specs() :: Settings.specs()
@@ -99,6 +117,10 @@ defmodule VisionCore.Stereo.Pairer do
        right_frames: [],
        awaiting_pair: false,
        submitted_at_ns: nil,
+       now_ns: Keyword.get(opts, :now_ns, fn -> System.monotonic_time(:nanosecond) end),
+       arrivals_ns: %{},
+       capture_latency_ns: @no_latency,
+       pairing_wait_ns: @no_latency,
        sync: Sync.new(VisionCore.Options.integer!(opts, :fps, @default_fps, 1)),
        timer: StageTimer.new(window: 30, label: "pairer")
      }}
@@ -107,6 +129,15 @@ defmodule VisionCore.Stereo.Pairer do
   @impl GenServer
   def handle_call(:sync, _from, state),
     do: {:reply, Sync.summary(state.sync, System.monotonic_time(:millisecond)), state}
+
+  def handle_call(:latencies, _from, state) do
+    latencies = %{
+      cameras: mean_ms(state.capture_latency_ns),
+      pairing: mean_ms(state.pairing_wait_ns)
+    }
+
+    {:reply, latencies, %{state | capture_latency_ns: @no_latency, pairing_wait_ns: @no_latency}}
+  end
 
   def handle_call(:pair_tolerance_ms, _from, state),
     do: {:reply, div(state.pair_tolerance_ns, @ns_per_ms), state}
@@ -122,8 +153,10 @@ defmodule VisionCore.Stereo.Pairer do
   end
 
   @impl GenServer
-  def handle_cast({:camera_frame, %Frame{} = frame}, state),
-    do: {:noreply, state |> measure(frame) |> keep(frame) |> maybe_submit()}
+  def handle_cast({:camera_frame, %Frame{} = frame}, state) do
+    arrived_ns = state.now_ns.()
+    {:noreply, state |> measure(frame, arrived_ns) |> keep(frame, arrived_ns) |> maybe_submit()}
+  end
 
   def handle_cast(_message, state), do: {:noreply, state}
 
@@ -131,7 +164,7 @@ defmodule VisionCore.Stereo.Pairer do
   def handle_info(:stereo_pipeline_ready, state) do
     round_trip_ns =
       if state.submitted_at_ns,
-        do: System.monotonic_time(:nanosecond) - state.submitted_at_ns,
+        do: state.now_ns.() - state.submitted_at_ns,
         else: 0
 
     timer = state.timer |> StageTimer.record(:pipeline, round_trip_ns) |> StageTimer.tick()
@@ -140,23 +173,46 @@ defmodule VisionCore.Stereo.Pairer do
     {:noreply, maybe_submit(%{state | awaiting_pair: false, submitted_at_ns: nil, timer: timer})}
   end
 
-  defp measure(state, %Frame{label: label, capture_ns: capture_ns})
+  defp measure(state, %Frame{label: label, capture_ns: capture_ns}, arrived_ns)
        when label in ["left", "right"] do
     side = String.to_existing_atom(label)
-    now_ms = System.monotonic_time(:millisecond)
+    now_ms = System.convert_time_unit(arrived_ns, :nanosecond, :millisecond)
     {_offset_ms, sync} = Sync.add(state.sync, side, capture_ns, now_ms)
-    %{state | sync: sync}
+
+    %{
+      state
+      | sync: sync,
+        capture_latency_ns: add_latency(state.capture_latency_ns, arrived_ns - capture_ns)
+    }
   end
 
-  defp measure(state, _frame), do: state
+  defp measure(state, _frame, _arrived_ns), do: state
 
-  defp keep(state, %Frame{label: "left"} = frame),
-    do: %{state | left_frames: Enum.take([frame | state.left_frames], @frames_kept_per_side)}
+  defp keep(state, %Frame{label: "left"} = frame, arrived_ns) do
+    left_frames = Enum.take([frame | state.left_frames], @frames_kept_per_side)
+    remember_arrival(%{state | left_frames: left_frames}, frame, arrived_ns)
+  end
 
-  defp keep(state, %Frame{label: "right"} = frame),
-    do: %{state | right_frames: Enum.take([frame | state.right_frames], @frames_kept_per_side)}
+  defp keep(state, %Frame{label: "right"} = frame, arrived_ns) do
+    right_frames = Enum.take([frame | state.right_frames], @frames_kept_per_side)
+    remember_arrival(%{state | right_frames: right_frames}, frame, arrived_ns)
+  end
 
-  defp keep(state, _frame), do: state
+  defp keep(state, _frame, _arrived_ns), do: state
+
+  # The arrivals of the frames kept, and of no other.
+  defp remember_arrival(state, frame, arrived_ns) do
+    kept = Enum.map(state.left_frames ++ state.right_frames, &arrival_key/1)
+    arrivals_ns = state.arrivals_ns |> Map.put(arrival_key(frame), arrived_ns) |> Map.take(kept)
+    %{state | arrivals_ns: arrivals_ns}
+  end
+
+  defp arrival_key(%Frame{label: label, capture_ns: capture_ns}), do: {label, capture_ns}
+
+  defp add_latency({sum_ns, count}, latency_ns), do: {sum_ns + latency_ns, count + 1}
+
+  defp mean_ms({_sum_ns, 0}), do: nil
+  defp mean_ms({sum_ns, count}), do: sum_ns / count / @ns_per_ms
 
   defp maybe_submit(state) do
     case ready_pair(state) do
@@ -171,13 +227,19 @@ defmodule VisionCore.Stereo.Pairer do
 
       {:ok, left, right, delta_ns} ->
         Pipeline.submit(state.pipeline, left, right)
+        submitted_at_ns = state.now_ns.()
+
+        first_arrival_ns =
+          min(state.arrivals_ns[arrival_key(left)], state.arrivals_ns[arrival_key(right)])
 
         %{
           state
           | left_frames: newer_than(state.left_frames, left),
             right_frames: newer_than(state.right_frames, right),
             awaiting_pair: true,
-            submitted_at_ns: System.monotonic_time(:nanosecond),
+            submitted_at_ns: submitted_at_ns,
+            pairing_wait_ns:
+              add_latency(state.pairing_wait_ns, submitted_at_ns - first_arrival_ns),
             timer: StageTimer.record(state.timer, :pair_delta, delta_ns)
         }
     end

@@ -46,6 +46,13 @@ A channel answers an event it does not take with an error reply, `{"reason": "un
 
 A step that did not run in the second is `null`, and so is the `totalMs` of a pipeline none of whose steps ran. [Step times](./performance.md#step-times) says what each time covers.
 
+`latencies` holds, under `stereo` on a unit with stereo cameras, two waits over the last second, in milliseconds. They are no step's work, so no `totalMs` counts them:
+
+- `cameras`, from a frame's capture to its arrival in the unit, the mean over both cameras' frames;
+- `pairing`, from the arrival of a pair's earlier frame to the pair going to the stereo pipeline, the mean over the pairs.
+
+Each is `null` in a second without a frame or a pair. [Latencies](./performance.md#latencies) says what each one covers.
+
 `distances` holds each detection and segmentation pipeline on a camera of its own, by its name: its `camera`, and `available`, whether that camera has the calibration and the pose the stereo depth is projected into it with. Without them, the pipeline's detections have no distance and its segmentation no points. With them, a result can still lack a distance, as one whose frame no stereo pair matched. `reason` says what is missing, `null` when available:
 
 | `reason` | The camera | To do |
@@ -94,6 +101,7 @@ A pipeline that does not answer is left out.
     "objects": {"totalMs": 11.9, "stages": {"input": 0.8, "inference": 10.3, "filtering": 0.1, "placement": 0.7}, "segments": []},
     "scene": {"totalMs": 21.4, "stages": {"input": 0.3, "inference": 14.6, "classes": 6.5}, "segments": []}
   },
+  "latencies": {"stereo": {"cameras": 4.2, "pairing": 1.1}},
   "distances": {
     "objects": {"camera": "center", "available": false, "reason": "no_pose"},
     "scene": {"camera": "center", "available": false, "reason": "no_pose"}

@@ -169,6 +169,63 @@ defmodule VisionCore.StatusTest do
     end
   end
 
+  describe "the stereo latencies" do
+    alias VisionCore.Stereo.Pairer
+
+    defp stereo_unit, do: config([{:stereo, driver: Camera, left: [], right: []}])
+
+    # A pairer on a clock at 1 s that received a pair captured 5 ms before.
+    defp pair_frames_captured_5_ms_ago do
+      now_ns = fn -> 1_000_000_000 end
+
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
+      )
+
+      for label <- ["left", "right"] do
+        frame = %Frame{label: label, width: 1, height: 1, capture_ns: 995_000_000, grey: <<0>>}
+        Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
+      end
+
+      Pairer.sync()
+    end
+
+    test "each tick reports the pairer's, beside the stereo pipeline's times and not in them" do
+      pair_frames_captured_5_ms_ago()
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 100})
+      :ok = Status.subscribe()
+
+      assert_receive {:vision_status, %{latencies: %{stereo: %{cameras: nil, pairing: nil}}}}
+
+      assert_receive {:vision_status, %{latencies: latencies, pipelines: pipelines}}, 600
+      assert latencies == %{stereo: %{cameras: 5.0, pairing: +0.0}}
+      assert pipelines.stereo == StageTimes.none()
+    end
+
+    test "a snapshot asked between ticks does not take them" do
+      pair_frames_captured_5_ms_ago()
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 60_000})
+
+      assert Status.snapshot().latencies == %{stereo: %{cameras: nil, pairing: nil}}
+      assert Pairer.latencies() == %{cameras: 5.0, pairing: +0.0}
+    end
+
+    test "a tick without a pairer has none" do
+      start_supervised!({Status, config: stereo_unit(), tick_ms: 100})
+      :ok = Status.subscribe()
+      assert_receive {:vision_status, _on_subscribing}
+
+      assert_receive {:vision_status, %{latencies: latencies}}, 600
+      assert latencies == %{stereo: %{cameras: nil, pairing: nil}}
+    end
+
+    test "a unit without a stereo component has none" do
+      start_supervised!({Status, config: config([])})
+
+      assert Status.snapshot().latencies == %{}
+    end
+  end
+
   # A driver that says whether its capture program runs, as it is started with.
   defmodule ReopeningCamera do
     use GenServer
