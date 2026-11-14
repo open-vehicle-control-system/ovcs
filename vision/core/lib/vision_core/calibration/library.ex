@@ -13,7 +13,8 @@ defmodule VisionCore.Calibration.Library do
   import Ecto.Query
   require Logger
 
-  alias VisionCore.Calibration.{Saved, SavedCamera, Selection}
+  alias VisionCore.Calibration.{Saved, SavedCamera, SavedPose, Selection}
+  alias VisionCore.Camera.Pose
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
 
@@ -23,9 +24,12 @@ defmodule VisionCore.Calibration.Library do
 
   @type cameras :: [{String.t(), CameraCalibration.t()}]
 
+  @typedoc "What a calibration holds: each camera's name with its calibration, or a camera's pose."
+  @type figures :: cameras() | Pose.t()
+
   @doc """
-  Keeps `cameras`, each camera's name with its calibration, as a
-  calibration of `target`.
+  Keeps `figures`, each camera's name with its calibration, or a camera's
+  pose, as a calibration of `target`.
 
   ## Options
 
@@ -34,20 +38,30 @@ defmodule VisionCore.Calibration.Library do
     * `:name` — its name, by default that time, in UTC.
     * `:board` — the session's board, `%{columns:, rows:, square_m:}`.
     * `:samples`, `:stereo_rms_px`, `:baseline_m` — the solve's figures.
-    * `:rms_px` — each camera's reprojection error, by camera name.
+    * `:rms_px` — each camera's reprojection error, by camera name; a
+      pose's, a number.
   """
-  @spec record(String.t(), cameras(), keyword()) :: {:ok, Saved.t()} | {:error, String.t()}
+  @spec record(String.t(), figures(), keyword()) :: {:ok, Saved.t()} | {:error, String.t()}
+  def record(target, %Pose{} = pose, opts) do
+    row = %{SavedPose.from_pose(pose) | rms_px: opts[:rms_px]}
+    insert(%Saved{target: target, cameras: [], pose: row}, opts)
+  end
+
   def record(target, cameras, opts) do
     rms_px = Keyword.get(opts, :rms_px, %{})
 
-    with {:ok, rows} <- camera_rows(cameras, rms_px) do
-      now = DateTime.truncate(Keyword.get_lazy(opts, :at, &DateTime.utc_now/0), :second)
-      board = Keyword.get(opts, :board) || %{}
+    with {:ok, rows} <- camera_rows(cameras, rms_px),
+         do: insert(%Saved{target: target, cameras: rows}, opts)
+  end
 
-      guarded(fn ->
-        Repo.insert(%Saved{
-          target: target,
-          name: Keyword.get_lazy(opts, :name, fn -> Calendar.strftime(now, "%Y-%m-%d %H:%M") end),
+  defp insert(saved, opts) do
+    now = DateTime.truncate(Keyword.get_lazy(opts, :at, &DateTime.utc_now/0), :second)
+    board = Keyword.get(opts, :board) || %{}
+
+    guarded(fn ->
+      Repo.insert(%{
+        saved
+        | name: Keyword.get_lazy(opts, :name, fn -> Calendar.strftime(now, "%Y-%m-%d %H:%M") end),
           origin: Keyword.fetch!(opts, :origin),
           board_columns: board[:columns],
           board_rows: board[:rows],
@@ -55,11 +69,9 @@ defmodule VisionCore.Calibration.Library do
           samples: opts[:samples],
           stereo_rms_px: opts[:stereo_rms_px],
           baseline_m: opts[:baseline_m],
-          cameras: rows,
           inserted_at: now
-        })
-      end)
-    end
+      })
+    end)
   end
 
   @doc """
@@ -72,7 +84,7 @@ defmodule VisionCore.Calibration.Library do
       from(saved in Saved,
         where: saved.target == ^target,
         order_by: [desc: saved.id],
-        preload: :cameras
+        preload: [:cameras, :pose]
       )
     )
   rescue
@@ -87,7 +99,7 @@ defmodule VisionCore.Calibration.Library do
     guarded(fn ->
       case Repo.get(Saved, id) do
         nil -> {:error, :not_found}
-        saved -> {:ok, Repo.preload(saved, :cameras)}
+        saved -> {:ok, Repo.preload(saved, [:cameras, :pose])}
       end
     end)
   end
@@ -105,7 +117,7 @@ defmodule VisionCore.Calibration.Library do
     end
   end
 
-  @doc "Removes the calibration `id` and its cameras, unless it is in force."
+  @doc "Removes the calibration `id` and its cameras or pose, unless it is in force."
   @spec delete(integer()) :: :ok | {:error, :not_found | :in_force | String.t()}
   def delete(id) do
     in_force = from(selection in Selection, where: selection.calibration_id == ^id)
@@ -133,7 +145,7 @@ defmodule VisionCore.Calibration.Library do
         join: selection in Selection,
         on: selection.calibration_id == saved.id,
         where: selection.target == ^target,
-        preload: :cameras
+        preload: [:cameras, :pose]
       )
     )
   rescue
@@ -162,12 +174,17 @@ defmodule VisionCore.Calibration.Library do
     end)
   end
 
-  @doc "The newest calibration of `target` whose cameras are `cameras`, element for element."
-  @spec holding(String.t(), cameras()) :: Saved.t() | nil
-  def holding(target, cameras), do: Enum.find(list(target), &holds?(&1, cameras))
+  @doc "The newest calibration of `target` that holds `figures`, element for element."
+  @spec holding(String.t(), figures()) :: Saved.t() | nil
+  def holding(target, figures), do: Enum.find(list(target), &holds?(&1, figures))
 
-  @doc "Whether the cameras of `saved` are `cameras`, element for element."
-  @spec holds?(Saved.t(), cameras()) :: boolean()
+  @doc "Whether `saved` holds `figures`, its cameras or its pose, element for element."
+  @spec holds?(Saved.t(), figures()) :: boolean()
+  def holds?(%Saved{pose: %SavedPose{} = saved_pose}, %Pose{} = pose),
+    do: SavedPose.holds?(saved_pose, pose)
+
+  def holds?(%Saved{}, %Pose{}), do: false
+
   def holds?(%Saved{} = saved, cameras) do
     length(saved.cameras) == length(cameras) and
       Enum.all?(cameras, fn {name, calibration} ->

@@ -352,6 +352,8 @@ defmodule VisionCore.Camera.UnitTest do
                  built_in_calibration_path: "hq.yaml",
                  calibration_store_path: nil,
                  pose_path: "hq_pose.yaml",
+                 built_in_pose_path: "hq_pose.yaml",
+                 pose_store_path: nil,
                  outputs: [
                    %Output{name: :half, index: 0, width: 1014, height: 760, processor: :cpu}
                  ]
@@ -364,6 +366,8 @@ defmodule VisionCore.Camera.UnitTest do
                  built_in_calibration_path: nil,
                  calibration_store_path: nil,
                  pose_path: nil,
+                 built_in_pose_path: nil,
+                 pose_store_path: nil,
                  outputs: []
                }
              ]
@@ -387,6 +391,31 @@ defmodule VisionCore.Camera.UnitTest do
 
       assert [%{calibration_path: ^stored, calibration_store_path: ^stored}] =
                Unit.settings(config)
+    end
+
+    @tag :tmp_dir
+    test "a pose stored as camera_<name>_pose.yaml takes precedence over :pose",
+         %{tmp_dir: tmp_dir} do
+      config =
+        config([
+          {:camera,
+           name: :hq, driver: V4L2Single, pose: "hq_pose.yaml", calibration_store_dir: tmp_dir}
+        ])
+
+      stored = Path.join(tmp_dir, "camera_hq_pose.yaml")
+
+      assert [
+               %{
+                 pose_path: "hq_pose.yaml",
+                 built_in_pose_path: "hq_pose.yaml",
+                 pose_store_path: ^stored
+               }
+             ] =
+               Unit.settings(config)
+
+      File.write!(stored, "rotation: []\n")
+
+      assert [%{pose_path: ^stored, pose_store_path: ^stored}] = Unit.settings(config)
     end
   end
 end

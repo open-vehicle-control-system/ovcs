@@ -49,6 +49,24 @@ defmodule VisionCore.Calibration.LibraryTest do
       assert SavedCamera.to_calibration(hd(saved.cameras)) == calibration(886.3)
     end
 
+    test "keeps a pose, each element in its own column, with no camera, and its error" do
+      pose = %VisionCore.Camera.Pose{
+        rotation: [0.999, -0.02, 0.04, 0.02, 0.9998, 0.001, -0.04, 0.0, 0.9992],
+        translation: [-0.1, 0.005, 0.002]
+      }
+
+      {:ok, saved} =
+        Library.record("center-pose", pose, origin: "dashboard", samples: 24, rms_px: 0.41)
+
+      {:ok, kept} = Library.fetch(saved.id)
+      assert kept.cameras == []
+      assert %VisionCore.Calibration.SavedPose{r01: -0.02, tx: -0.1, rms_px: 0.41} = kept.pose
+      assert VisionCore.Calibration.SavedPose.to_pose(kept.pose) == pose
+      assert Library.holds?(kept, pose)
+      refute Library.holds?(kept, %{pose | translation: [-0.1, 0.005, 0.003]})
+      assert Library.holding("center-pose", pose).id == saved.id
+    end
+
     test "names a calibration after the time it was kept, unless a name is given" do
       {:ok, dated} = Library.record("stereo", pair(886.3), origin: "dashboard")
       assert dated.name =~ ~r/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/

@@ -46,7 +46,8 @@ defmodule VisionCore.CameraPipeline do
 
   The camera's calibration and pose are read at start, and again at
   each change of the camera's calibration
-  (`VisionCore.Camera.Calibration.changed_key/1`), so a calibration
+  (`VisionCore.Camera.Calibration.changed_key/1`) or pose
+  (`VisionCore.Camera.Pose.changed_key/1`), so a calibration or a pose
   committed while the pipeline runs is taken from the next frame on.
   `distances/1` says why the depth cannot be projected into the camera.
 
@@ -217,6 +218,7 @@ defmodule VisionCore.CameraPipeline do
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
     :ok = Outputs.subscribe(state.camera.key)
     :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(state.camera.name))
+    :ok = Outputs.subscribe(VisionCore.Camera.Pose.changed_key(state.camera.name))
     {:ok, state, {:continue, :declare}}
   end
 
@@ -280,8 +282,11 @@ defmodule VisionCore.CameraPipeline do
     end
   end
 
-  # The results still waiting are finished with the calibration committed.
+  # The results still waiting are finished with the calibration or pose committed.
   def handle_cast({:camera_calibration_changed, name}, %{camera: %{name: name}} = state),
+    do: {:noreply, %{state | camera: CameraDepth.reload(state.camera, state.config)}}
+
+  def handle_cast({:camera_pose_changed, name}, %{camera: %{name: name}} = state),
     do: {:noreply, %{state | camera: CameraDepth.reload(state.camera, state.config)}}
 
   def handle_cast(_message, state), do: {:noreply, state}

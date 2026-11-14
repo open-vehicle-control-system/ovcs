@@ -1225,6 +1225,29 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     @tag :tmp_dir
+    test "a pose committed from the dashboard is published as its transform, starting the transforms",
+         %{tmp_dir: tmp_dir} do
+      options = hq_options(Camera, [calibration_store_dir: tmp_dir], cameras: [])
+      {:ok, state} = Exporter.init(options)
+      refute_received :publish_transforms
+      assert self() in VisionCore.Outputs.subscribers(VisionCore.Camera.Pose.changed_key(:hq))
+
+      File.write!(
+        Path.join(tmp_dir, "camera_hq_pose.yaml"),
+        "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [-0.2, 0, 0]\n"
+      )
+
+      {:ok, state} = Exporter.handle_info({:camera_pose_changed, :hq}, state)
+      assert {:ok, ^state} = Exporter.handle_info({:camera_pose_changed, :usb}, state)
+      assert_received :publish_transforms
+
+      {:ok, _state} = Exporter.handle_info(:publish_transforms, state)
+
+      assert_received {:published, "/tf_static", %TFMessage{transforms: [transform]}}
+      assert transform.transform.translation.x == 0.2
+    end
+
+    @tag :tmp_dir
     test "no transform without a stereo unit, or without a pose", %{tmp_dir: tmp_dir} do
       no_stereo =
         %VisionCore.Config{ros2: [zenoh_endpoint_ip: "127.0.0.1"]}

@@ -5,12 +5,13 @@ defmodule VisionCore.Calibration.Saved do
   (`dashboard` for one applied from a session, `imported` for one found
   in the store), the board and the count of views of the session that
   solved it, a pair's reprojection error and baseline, and its
-  `VisionCore.Calibration.SavedCamera`s. The session's figures are `nil`
-  for a calibration the unit did not solve.
+  `VisionCore.Calibration.SavedCamera`s, or, kept for a camera's pose, its
+  `VisionCore.Calibration.SavedPose` and no camera. The session's figures
+  are `nil` for a calibration the unit did not solve.
   """
   use Ecto.Schema
 
-  alias VisionCore.Calibration.SavedCamera
+  alias VisionCore.Calibration.{SavedCamera, SavedPose}
 
   @type t :: %__MODULE__{}
 
@@ -25,6 +26,7 @@ defmodule VisionCore.Calibration.Saved do
     field(:stereo_rms_px, :float)
     field(:baseline_m, :float)
     has_many(:cameras, SavedCamera, foreign_key: :calibration_id, preload_order: [asc: :id])
+    has_one(:pose, SavedPose, foreign_key: :calibration_id)
     timestamps(type: :utc_datetime, updated_at: false)
   end
 end

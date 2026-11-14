@@ -79,7 +79,9 @@ defmodule VisionCore.Ros2.Exporter do
   optical frame, the frame of its depth, to the camera's `frame_id`.
   The link publishes volatile, so a viewer that joins later would never
   see a transform sent once: it is sent again every second. No
-  transform without a stereo unit in the configuration.
+  transform without a stereo unit in the configuration. A pose committed
+  from the dashboard (`VisionCore.Camera.Pose.changed_key/1`) is read
+  again and sent from then on.
 
   ## Options
 
@@ -508,8 +510,10 @@ defmodule VisionCore.Ros2.Exporter do
 
       if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
 
-      for name <- Map.keys(state.cameras),
-          do: :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(name))
+      for name <- Map.keys(state.cameras) do
+        :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(name))
+        :ok = Outputs.subscribe(VisionCore.Camera.Pose.changed_key(name))
+      end
 
       if transform_message(state), do: send(self(), :publish_transforms)
       if state.heartbeat, do: Process.send_after(self(), :heartbeat, state.heartbeat.interval_ms)
@@ -875,6 +879,13 @@ defmodule VisionCore.Ros2.Exporter do
     end
   end
 
+  def handle_info({:camera_pose_changed, name}, state) do
+    case state.cameras do
+      %{^name => camera} -> repose_camera(state, camera)
+      _unpublished -> {:ok, state}
+    end
+  end
+
   def handle_info({:stereo_calibration_changed, _prefix}, state),
     do: reload_stereo_calibration(state)
 
@@ -905,6 +916,19 @@ defmodule VisionCore.Ros2.Exporter do
     camera = reload_camera(camera, state.config)
     state = put_in(state.cameras[camera.name], camera)
     {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
+  end
+
+  # The transforms start with the first pose, as they would have at start.
+  defp repose_camera(state, camera) do
+    pose_path =
+      Enum.find_value(Unit.settings(state.config), &(&1.name == camera.name and &1.pose_path))
+
+    reposed = put_in(state.cameras[camera.name], Camera.reload_pose(camera, pose_path))
+
+    if transform_message(state) == nil and transform_message(reposed),
+      do: send(self(), :publish_transforms)
+
+    {:ok, reposed}
   end
 
   defp reload_camera(camera, config) do

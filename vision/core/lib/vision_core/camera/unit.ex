@@ -22,7 +22,7 @@ defmodule VisionCore.Camera.Unit do
   has none. A consumer takes the output it names, or the camera's first
   sent image output, its default: the pipelines on a camera source
   (`source: {:camera, name, output}`), the exporters (`{:camera_frame,
-  name, output}`), the preview and the pose capture. Each refuses an
+  name, output}`) and the preview. Each refuses an
   output the camera does not send (`unsent_output?/3`). An H.264 output
   is a video, whose key only a consumer of videos takes
   (`video_key/3`): the exporters (`{:camera_video, name, output}`) and
@@ -48,8 +48,10 @@ defmodule VisionCore.Camera.Unit do
       apart from the stereo unit's `<prefix>_<side>.yaml` in a directory
       they share. Once stored there it takes precedence over
       `:calibration`, as the stereo unit's (`VisionCore.Stereo.Supervisor`).
-    * `:pose` — its pose relative to the stereo pair, a YAML
-      `VisionCore.Camera.Pose` reads.
+    * `:pose` — its built-in pose relative to the stereo pair, a YAML
+      `VisionCore.Camera.Pose` reads. A pose committed from the dashboard
+      is stored in `:calibration_store_dir` as `camera_<name>_pose.yaml`
+      and takes precedence over it.
 
   Exists to contain failure, as `VisionCore.Detection.Supervisor` does:
   a driver that keeps crashing is restarted within this supervisor's own
@@ -82,6 +84,8 @@ defmodule VisionCore.Camera.Unit do
           built_in_calibration_path: Path.t() | nil,
           calibration_store_path: Path.t() | nil,
           pose_path: Path.t() | nil,
+          built_in_pose_path: Path.t() | nil,
+          pose_store_path: Path.t() | nil,
           outputs: [Output.t()]
         }
 
@@ -294,8 +298,9 @@ defmodule VisionCore.Camera.Unit do
   registers under, its optical frame, its calibration path, the stored
   calibration first when there is one, its built-in calibration path,
   the path a committed calibration is stored at (`nil` without a store),
-  and its pose path. The store is
-  read at each call. `:outputs` are the named image outputs it sends, in
+  and its pose path, the stored pose first when there is one, its
+  built-in pose path and the path a committed pose is stored at. The
+  store is read at each call. `:outputs` are the named image outputs it sends, in
   config order, its default first, none for a driver without them or
   whose outputs cannot be made.
   """
@@ -305,7 +310,8 @@ defmodule VisionCore.Camera.Unit do
 
     for {name, driver, server} <- cameras(config) do
       opts = Map.fetch!(options, name)
-      store_path = calibration_store_path(opts[:calibration_store_dir], name)
+      store_path = store_path(opts[:calibration_store_dir], "camera_#{name}.yaml")
+      pose_store_path = store_path(opts[:calibration_store_dir], "camera_#{name}_pose.yaml")
 
       outputs =
         case named_outputs(driver, opts) do
@@ -317,22 +323,24 @@ defmodule VisionCore.Camera.Unit do
         name: name,
         server: server,
         frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
-        calibration_path: calibration_path(opts[:calibration], store_path),
+        calibration_path: in_force_path(opts[:calibration], store_path),
         built_in_calibration_path: opts[:calibration],
         calibration_store_path: store_path,
-        pose_path: opts[:pose],
+        pose_path: in_force_path(opts[:pose], pose_store_path),
+        built_in_pose_path: opts[:pose],
+        pose_store_path: pose_store_path,
         outputs: outputs
       }
     end
   end
 
-  defp calibration_store_path(nil, _name), do: nil
-  defp calibration_store_path(directory, name), do: Path.join(directory, "camera_#{name}.yaml")
+  defp store_path(nil, _file), do: nil
+  defp store_path(directory, file), do: Path.join(directory, file)
 
-  defp calibration_path(calibration, nil), do: calibration
+  defp in_force_path(built_in, nil), do: built_in
 
-  defp calibration_path(calibration, store_path),
-    do: if(File.exists?(store_path), do: store_path, else: calibration)
+  defp in_force_path(built_in, store_path),
+    do: if(File.exists?(store_path), do: store_path, else: built_in)
 
   defp default_frame_id(name), do: "#{name}_optical"
 
