@@ -135,8 +135,19 @@ defmodule VisionCore.Detection.Pipeline do
     * `:config` (the active `VisionCore.Config`) — the configuration the
       camera of a camera source is read from.
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
-      waits of a camera source are measured with, a function of no
-      argument.
+      steps and the waits of a camera source are measured with, a
+      function of no argument.
+
+  ## The steps' times
+
+  The pipeline times each of its steps (`stages/0`) for every pair or
+  frame it detects on: `:input`, preparing the image and handing it to
+  the backend; `:inference`, from the image handed over to the
+  backend's reply; `:filtering`, keeping the detections to pass on; and
+  `:placement`, placing and outlining them. The wait for a camera
+  frame's stereo pair is in none of them, and an image the backend
+  refused or could not detect on has no inference time.
+  `stage_times/1` hands the times over and starts them again.
 
   `:detect_every_n` and `:reprojection_stride` are integers from 1 on,
   `:max_detections` and `:pair_wait_ms` from 0 on, and `:min_score` is a
@@ -220,6 +231,19 @@ defmodule VisionCore.Detection.Pipeline do
 
   @doc "The COCO class names, indexed by class id."
   def labels, do: @coco_labels
+
+  @stages [:input, :inference, :filtering, :placement]
+
+  @doc "The pipeline's steps, as its parameter groups name them (`<name>.<step>`), in order."
+  @spec stages() :: [atom()]
+  def stages, do: @stages
+
+  @doc """
+  The time of each of the pipeline's steps (`stages/0`) over the pairs
+  or frames detected on since the last call, which this starts again.
+  """
+  @spec stage_times(GenServer.server()) :: VisionCore.StageTimes.t()
+  def stage_times(server), do: GenServer.call(server, :stage_times)
 
   @doc """
   What a detection pipeline keeps of `opts`, on either source: its

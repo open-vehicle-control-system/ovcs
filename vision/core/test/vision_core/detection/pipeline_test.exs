@@ -170,6 +170,53 @@ defmodule VisionCore.Detection.PipelineTest do
       assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
     end
 
+    test "times each step of a pair, its inference from the image handed over to the reply" do
+      script = start_supervised!({Agent, fn -> [] end})
+      clock = start_supervised!(%{id: :clock, start: {Agent, :start_link, [fn -> 0 end]}})
+
+      start_supervised!(
+        {Pipeline,
+         backend: Scripted,
+         backend_server: {self(), script},
+         clock: fn -> Agent.get(clock, & &1) end}
+      )
+
+      :ok = Outputs.subscribe({:detections, :detection})
+      pipeline = VisionCore.Pipelines.server(Pipeline, :detection)
+
+      publish_pair()
+      assert_receive {:submitted, in_flight}
+      _handed_over = :sys.get_state(pipeline)
+      Agent.update(clock, fn _now_ns -> 7_000_000 end)
+      send(GenServer.whereis(pipeline), {:inference_detections, in_flight, []})
+      assert_receive {:"$gen_cast", {{:detections, :detection}, {%Pair{}, []}}}, 1_000
+
+      assert Pipeline.stage_times(pipeline) == %{
+               input: {0.0, 1},
+               inference: {7.0, 1},
+               filtering: {0.0, 1},
+               placement: {0.0, 1}
+             }
+    end
+
+    test "starts its steps' times over once they are taken, and times no pair the backend refused" do
+      script = start_supervised!({Agent, fn -> [{:error, :unavailable}] end})
+      start_supervised!({Pipeline, backend: Scripted, backend_server: {self(), script}})
+      pipeline = VisionCore.Pipelines.server(Pipeline, :detection)
+      none = VisionCore.StageTimes.new([:input, :inference, :filtering, :placement])
+
+      publish_pair()
+      assert_receive {:submitted, _refused}
+      assert Pipeline.stage_times(pipeline) == none
+
+      publish_pair()
+      assert_receive {:submitted, taken}
+      send(GenServer.whereis(pipeline), {:inference_detections, taken, []})
+
+      assert %{inference: {_sum_ms, 1}} = Pipeline.stage_times(pipeline)
+      assert Pipeline.stage_times(pipeline) == none
+    end
+
     test "ignores a stray :pair_wait on the stereo source" do
       start_detection([{0, 0.9, {0.0, 0.0, 0.5, 1.0}}], [])
       publish_pair()

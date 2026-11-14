@@ -328,6 +328,19 @@ defmodule VisionCore.Segmentation.Pipeline do
   def reply_tag, do: :inference_labels
 
   @impl CameraPipeline
+  def stage(:prepare), do: :input
+  def stage(:result), do: nil
+  def stage(:finish), do: :classes
+
+  @doc """
+  The time of each of the pipeline's steps, `:input`, `:inference` and
+  `:classes`, over the frames segmented since the last call
+  (`VisionCore.CameraPipeline.stage_times/1`).
+  """
+  @spec stage_times(GenServer.server()) :: VisionCore.StageTimes.t()
+  defdelegate stage_times(server), to: CameraPipeline
+
+  @impl CameraPipeline
   def result(labels, band, _settings), do: {Map.put(labels, :band, band), true}
 
   @impl CameraPipeline

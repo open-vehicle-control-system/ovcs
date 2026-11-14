@@ -53,12 +53,25 @@ defmodule VisionCore.Status do
   reads and starts over, a snapshot asked between two not. Both are `nil`
   while no backend has reported a time.
 
+  `:pipelines` holds each pipeline's times (`t:VisionCore.StageTimes.summary/0`)
+  by its name, `:stereo` for the stereo pipeline: each step's mean time
+  over the tick's pairs or frames, and their sum, the work one pair or
+  frame takes, without the time it waits. The stereo pipeline's are its
+  pairs' (`Pair` `:stage_ms`, less its `:total`, which counts the pair's
+  waits): the stages a compiled segment runs as one function have one
+  time, among `:segments`. A detection or segmentation pipeline's are
+  those it hands over at each tick
+  (`VisionCore.Detection.Pipeline.stage_times/1`,
+  `VisionCore.Segmentation.Pipeline.stage_times/1`), a snapshot asked
+  between two keeping the last tick's. A tick without a pair or a frame
+  has no time, as has a pipeline that does not answer.
+
   Rates are counted over the last tick, one second by default (`:tick_ms`),
   and every subscriber receives `{:vision_status, snapshot}` each tick.
   """
   use GenServer
 
-  alias VisionCore.{Exporter, Exporters, Outputs}
+  alias VisionCore.{Exporter, Exporters, Outputs, Pipelines, StageTimes}
   alias VisionCore.Stereo.{AlignmentCorrection, DepthCheck, PairCheck, Pairer, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
   alias OvcsVehicle.SystemLoad
@@ -83,6 +96,7 @@ defmodule VisionCore.Status do
               pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
             }
             | nil,
+          pipelines: %{required(atom()) => StageTimes.summary()},
           calibrated: boolean() | nil,
           depth_hz: float(),
           exporters: [exporter()],
@@ -160,6 +174,9 @@ defmodule VisionCore.Status do
        own_cameras: own_cameras,
        npu_backends: npu_backends(config),
        npu_times: nil,
+       timed_pipelines: timed_pipelines(config),
+       stereo_times: StageTimes.new(),
+       pipelines: no_times(config),
        window_ms: 0,
        exporters: [],
        subscribers: %{},
@@ -209,6 +226,7 @@ defmodule VisionCore.Status do
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do
     state = %{count(state, :depth) | device_ms: state.device_ms + pair.device_ms}
+    state = %{state | stereo_times: add_stage_ms(state.stereo_times, pair.stage_ms)}
 
     {:noreply,
      %{
@@ -273,8 +291,17 @@ defmodule VisionCore.Status do
         near: state.last_pair && DepthCheck.near(state.last_pair),
         last_pair: nil,
         quality: mean_quality(state.qualities),
-        qualities: []
+        qualities: [],
+        pipelines: Map.put(state.pipelines, :stereo, StageTimes.summary(state.stereo_times)),
+        stereo_times: StageTimes.new()
     }
+  end
+
+  # A pair's `:total` counts its waits, which are no stage's work.
+  defp add_stage_ms(times, stage_ms) do
+    Enum.reduce(Map.delete(stage_ms, :total), times, fn {stage, duration_ms}, times ->
+      StageTimes.add(times, stage, duration_ms)
+    end)
   end
 
   defp prepend(nil, list), do: list
@@ -328,7 +355,7 @@ defmodule VisionCore.Status do
 
   defp build_snapshot(state, moment \\ :between_ticks) do
     replies = state |> calls(moment) |> call_all_within_timeout()
-    state = npu_times(state, replies)
+    state = state |> npu_times(replies) |> pipeline_times(replies)
     cameras = %{left: camera(state, :left, replies), right: camera(state, :right, replies)}
     sync = sync(cameras, replies)
     state = listed(state, replies.exporters)
@@ -369,6 +396,7 @@ defmodule VisionCore.Status do
       pair: pair,
       depth: depth,
       npu: npu(state, replies),
+      pipelines: state.pipelines,
       calibrated: calibrated(state),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
@@ -394,6 +422,7 @@ defmodule VisionCore.Status do
   defp calls(state, moment) do
     %{exporters: {&exporters/0, :late}}
     |> Map.merge(npu_calls(state, moment))
+    |> Map.merge(stage_times_calls(state, moment))
     |> Map.merge(stereo_calls(state))
     |> Map.merge(own_calls(state))
   end
@@ -424,6 +453,46 @@ defmodule VisionCore.Status do
     Map.new(backends, fn {_name, backend, server} ->
       {{:npu_times, server}, {fn -> backend.inference_times(server) end, nil}}
     end)
+  end
+
+  defp stage_times_calls(%{timed_pipelines: pipelines}, :tick) do
+    Map.new(pipelines, fn {name, module, server} ->
+      {{:stage_times, name}, {fn -> module.stage_times(server) end, nil}}
+    end)
+  end
+
+  defp stage_times_calls(_state, :between_ticks), do: %{}
+
+  # What the tick's replies make of the pipelines' times; other snapshots keep the last tick's.
+  defp pipeline_times(state, replies) do
+    taken =
+      for {name, _module, _server} <- state.timed_pipelines,
+          {:ok, times} <- [Map.fetch(replies, {:stage_times, name})],
+          into: %{},
+          do: {name, if(times, do: StageTimes.summary(times), else: StageTimes.none())}
+
+    %{state | pipelines: Map.merge(state.pipelines, taken)}
+  end
+
+  # The detection and segmentation pipelines, each with the module that hands its times over.
+  defp timed_pipelines(config) do
+    detection =
+      for {name, _backend, _server} <- VisionCore.Detection.Supervisor.pipelines(config),
+          module = VisionCore.Detection.Pipeline,
+          do: {name, module, Pipelines.server(module, name)}
+
+    segmentation =
+      for {name, _backend, _server} <- VisionCore.Segmentation.Supervisor.pipelines(config),
+          module = VisionCore.Segmentation.Pipeline,
+          do: {name, module, Pipelines.server(module, name)}
+
+    detection ++ segmentation
+  end
+
+  defp no_times(config) do
+    for {name, _module, _server} <- timed_pipelines(config),
+        into: %{stereo: StageTimes.none()},
+        do: {name, StageTimes.none()}
   end
 
   # Half the snapshot's deadline: the listing answers within it, a late exporter as not answering.
