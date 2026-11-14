@@ -22,6 +22,9 @@ defmodule VisionCore.Parameters do
 
   A parameter's default is the `default` it is first declared with, or else
   the first value its `get` returns; either is kept while the registry runs.
+  A value read after one was set through the registry, a saved one
+  included, is never a default: a parameter that could not be read before
+  then has none, and neither `reset/2` nor `discard/1` sets it back.
 
   ROS 2 and the API are adapters reading and setting parameters here.
   """
@@ -183,6 +186,8 @@ defmodule VisionCore.Parameters do
        changed: %{},
        # Ids of saved values their owner failed to set.
        unapplied_saved: MapSet.new(),
+       # Ids set through the registry: a value read from then on is no default.
+       set_ids: MapSet.new(),
        last_change_ms: nil
      }}
   end
@@ -270,8 +275,10 @@ defmodule VisionCore.Parameters do
 
   def handle_call(:discard, _from, state) do
     reference = fn declared, values ->
-      if parameter_state(declared, values, state) == :unsaved,
-        do: {:ok, Map.get(state.saved, declared.id, state.defaults[declared.id])}
+      with :unsaved <- parameter_state(declared, values, state),
+           value when not is_nil(value) <-
+             Map.get(state.saved, declared.id, state.defaults[declared.id]),
+           do: {:ok, value}
     end
 
     {set_ids, applied, refused} =
@@ -382,7 +389,14 @@ defmodule VisionCore.Parameters do
     do: Logger.info("vision parameter #{id} = #{inspect(value)} refused: #{reason}")
 
   defp touch(state, applied) when applied == %{}, do: state
-  defp touch(state, _applied), do: %{state | last_change_ms: System.monotonic_time(:millisecond)}
+
+  defp touch(state, applied) do
+    %{
+      state
+      | last_change_ms: System.monotonic_time(:millisecond),
+        set_ids: MapSet.union(state.set_ids, MapSet.new(Map.keys(applied)))
+    }
+  end
 
   # A parameter set again no longer waits for its saved value.
   defp mark_applied(state, ids),
@@ -675,16 +689,17 @@ defmodule VisionCore.Parameters do
 
   defp read_status(_group), do: nil
 
-  # Values by id; the first value read of each parameter is its default.
+  # Values by id; the first value read of each parameter, unless set by then, is its default.
   defp read_values(state, ids) do
     {values, _group_values, state} =
       Enum.reduce(Enum.uniq(ids), {%{}, %{}, state}, fn id, {values, group_values, state} ->
         {value, group_values} = read(find(state, id), group_values)
 
         state =
-          if is_nil(value) or Map.has_key?(state.defaults, id),
-            do: state,
-            else: put_in(state.defaults[id], value)
+          if is_nil(value) or Map.has_key?(state.defaults, id) or
+               MapSet.member?(state.set_ids, id),
+             do: state,
+             else: put_in(state.defaults[id], value)
 
         {Map.put(values, id, value), group_values, state}
       end)

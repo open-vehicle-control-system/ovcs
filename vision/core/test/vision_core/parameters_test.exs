@@ -683,6 +683,60 @@ defmodule VisionCore.ParametersTest do
       assert Agent.get(agent, & &1["p1"]) == 12
     end
 
+    @tag saved: %{"stereo.disparity.p1" => 10}
+    test "a saved value applied to a parameter not read yet is not its default, and survives a save",
+         %{server: server} do
+      unread_p1 = fn test ->
+        {groups, agent} = match_groups(test)
+        Agent.update(agent, &Map.put(&1, "p1", nil))
+        {groups, agent}
+      end
+
+      start_owner(server, unread_p1)
+      assert_receive {:set, "p1", 10}
+
+      assert {:ok, %{value: 10, default: nil, saved: 10, state: :saved}} =
+               Parameters.get(server, "stereo.disparity.p1")
+
+      assert Parameters.save(server) == {:ok, []}
+      assert MemoryStore.rows() == %{"stereo.disparity.p1" => 10}
+    end
+
+    test "a value set on a parameter not read yet is not its default, and is saved",
+         %{server: server} do
+      unread_p1 = fn test ->
+        {groups, agent} = match_groups(test)
+        Agent.update(agent, &Map.put(&1, "p1", nil))
+        {groups, agent}
+      end
+
+      start_owner(server, unread_p1)
+
+      assert {:ok, %{value: 12, default: nil, state: :unsaved}} =
+               Parameters.set(server, "stereo.disparity.p1", 12)
+
+      assert Parameters.save(server) == {:ok, ["stereo.disparity.p1"]}
+      assert MemoryStore.rows() == %{"stereo.disparity.p1" => 12}
+    end
+
+    test "discard leaves a parameter with neither a saved value nor a default alone",
+         %{server: server} do
+      unread_p1 = fn test ->
+        {groups, agent} = match_groups(test)
+        Agent.update(agent, &Map.put(&1, "p1", nil))
+        {groups, agent}
+      end
+
+      start_owner(server, unread_p1)
+      assert {:ok, _parameter} = Parameters.set(server, "stereo.disparity.p1", 12)
+      assert_receive {:set, "p1", 12}
+
+      log = capture_log(fn -> assert Parameters.discard(server) == {:ok, []} end)
+
+      refute log =~ "not set back"
+      refute_receive {:set, "p1", _value}
+    end
+
     @tag store: __MODULE__.FailingStore
     test "save answers the store's error and keeps the changes unsaved", %{server: server} do
       start_owner(server, &match_groups/1)
