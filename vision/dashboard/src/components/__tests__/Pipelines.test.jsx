@@ -54,10 +54,11 @@ describe('Pipelines', () => {
     expect(stereo.compareDocumentPosition(detection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  const figure = (pipeline, name) =>
-    within(screen.getByRole('list', { name: pipeline })).getByRole('button', { name }).querySelector('[data-figure]')?.textContent ?? null
+  const box = (pipeline, name) => within(screen.getByRole('list', { name: pipeline })).getByRole('button', { name })
+  const figure = (pipeline, name) => box(pipeline, name).querySelector('[data-time]')?.textContent ?? null
+  const acceleratorFigure = (pipeline, name) => box(pipeline, name).querySelector('[data-accelerator]')?.textContent ?? null
 
-  it("shows each step's time in its box, and says it in the box name", () => {
+  it("shows each step's time on its name's line, and says it in the box name", () => {
     useStatus.setState({
       snapshot: {
         npu: null,
@@ -75,6 +76,11 @@ describe('Pipelines', () => {
     expect(figure('Detection', /^Input/)).toBe('1.5 ms')
     expect(figure('Detection', /^Inference/)).toBe('10.3 ms')
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan, 7.3 ms')
+
+    const time = box('Stereo', /^Match/).querySelector('[data-time]')
+    expect(time.parentElement.querySelector('[translate="no"]').textContent).toBe('Match')
+    expect(time.className).toContain('ml-auto')
+    expect(time.getAttribute('aria-hidden')).toBe('true')
   })
 
   it('shows no time on a source, which has no work to time', () => {
@@ -87,7 +93,9 @@ describe('Pipelines', () => {
   const segmented = (segment, stages = {}) =>
     useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 28.04, stages, segments: [segment] } } } })
 
-  it('shows no time on steps computed together, and says under the heading which steps run as one pass', () => {
+  const brackets = () => [...document.querySelectorAll('[data-run]')]
+
+  it('draws steps computed together as one bracket over exactly their rows, with their one time and where they run', () => {
     segmented({ stages: ['match', 'alignment', 'temporal'], ms: 28.04 })
     render(<Pipelines />)
 
@@ -96,12 +104,14 @@ describe('Pipelines', () => {
     expect(figure('Stereo', /^Temporal/)).toBeNull()
     expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
 
-    const heading = screen.getByRole('heading', { name: 'Stereo 28.0 ms' })
-    const line = screen.getByText('Steps 2–4 run as one GPU pass')
-    expect(heading.contains(line)).toBe(false)
-    expect(heading.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(line.compareDocumentPosition(screen.getByRole('list', { name: 'Stereo' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(line.className).toContain('text-ovcs-muted')
+    expect(brackets()).toHaveLength(1)
+    const bracket = screen.getByRole('img', { name: 'Steps 2 to 4 run as one GPU pass, 28.0 ms' })
+    expect(bracket.dataset.firstStep).toBe('2')
+    expect(bracket.dataset.lastStep).toBe('4')
+    expect(bracket.style.gridRow).toBe('2 / 5')
+    expect(bracket.textContent).toBe('28.0 ms · GPU')
+    expect(bracket.closest('ol')).toBeNull()
+    expect(screen.queryByText(/run as one/)).toBeNull()
   })
 
   it('names where steps computed together run from their own tags, and nothing without any', () => {
@@ -109,23 +119,47 @@ describe('Pipelines', () => {
     useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: onCpu } : g)) })
     segmented({ stages: ['match', 'alignment'], ms: 28.04 })
     const { unmount } = render(<Pipelines />)
-    expect(screen.getByText('Steps 2–3 run as one CPU pass')).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Steps 2 to 3 run as one CPU pass, 28.0 ms' }).textContent).toBe('28.0 ms · CPU')
     unmount()
 
     useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: undefined } : g)) })
     render(<Pipelines />)
-    expect(screen.getByText('Steps 2–3 run as one pass')).toBeTruthy()
+    expect(screen.getByRole('img', { name: 'Steps 2 to 3 run as one pass, 28.0 ms' }).textContent).toBe('28.0 ms')
   })
 
-  it('keeps the time of a run of one step on that step, which is timed alone', () => {
+  it('draws no bracket for steps computed together that have no time', () => {
+    segmented({ stages: ['match', 'alignment', 'temporal'], ms: null })
+    render(<Pipelines />)
+
+    expect(brackets()).toHaveLength(0)
+    expect(figure('Stereo', /^Match/)).toBeNull()
+  })
+
+  it('keeps the time of a run of one step on that step, which is timed alone, with no bracket', () => {
+    segmented({ stages: ['alignment'], ms: 4.21 })
+    render(<Pipelines />)
+
+    expect(figure('Stereo', /^Alignment/)).toBe('4.2 ms')
+    expect(brackets()).toHaveLength(0)
+  })
+
+  it('counts a run as of one step when its other stages are not among the steps', () => {
     segmented({ stages: ['alignment', 'gone'], ms: 4.21 })
     render(<Pipelines />)
 
     expect(figure('Stereo', /^Alignment/)).toBe('4.2 ms')
-    expect(screen.queryByText(/run as one/)).toBeNull()
+    expect(brackets()).toHaveLength(0)
   })
 
-  it("shows the accelerator's own time beside an Inference step's time", () => {
+  it('shows no time on a step timed alone in a run that has none', () => {
+    segmented({ stages: ['alignment'], ms: null })
+    render(<Pipelines />)
+
+    expect(figure('Stereo', /^Alignment/)).toBeNull()
+    expect(screen.getByRole('button', { name: /^Alignment/ }).getAttribute('aria-label')).not.toContain('ms')
+  })
+
+  it("shows the accelerator's own time under an Inference step's time, on its tags' line", () => {
     const road = group('road.inference', 'Inference', 102, { pipeline: 'road' })
     useParameters.setState({ groups: [...groups, road] })
     useStatus.setState({
@@ -139,9 +173,15 @@ describe('Pipelines', () => {
     })
     render(<Pipelines />)
 
-    expect(figure('Detection', /^Inference/)).toBe('10.3 ms, NPU 2.1 ms')
-    expect(screen.getByRole('button', { name: /^Inference.*NPU 2\.1 ms/ })).toBeTruthy()
+    expect(figure('Detection', /^Inference/)).toBe('10.3 ms')
+    expect(acceleratorFigure('Detection', /^Inference/)).toBe('NPU 2.1 ms')
+    const accelerator = box('Detection', /^Inference/).querySelector('[data-accelerator]')
+    expect(accelerator.parentElement.querySelector('[data-tag]').textContent).toBe('NPU')
+    expect(accelerator.className).toContain('ml-auto')
+    expect(accelerator.className).toContain('text-ovcs-muted')
+    expect(box('Detection', /^Inference/).getAttribute('aria-label')).toBe('Inference, on NPU, Rust, 10.3 ms, NPU 2.1 ms')
     expect(figure('Road', /^Inference/)).toBeNull()
+    expect(acceleratorFigure('Road', /^Inference/)).toBeNull()
   })
 
   it("shows the accelerator's time alone while the step has none", () => {
@@ -150,11 +190,12 @@ describe('Pipelines', () => {
     })
     render(<Pipelines />)
 
-    expect(figure('Detection', /^Inference/)).toBe('NPU 21.5 ms')
+    expect(figure('Detection', /^Inference/)).toBeNull()
+    expect(acceleratorFigure('Detection', /^Inference/)).toBe('NPU 21.5 ms')
     expect(figure('Stereo', /^Match/)).toBeNull()
   })
 
-  it("shows each pipeline's total beside its name, once the unit reports one", () => {
+  it("shows each pipeline's total at the end of its heading's row, once the unit reports one", () => {
     useStatus.setState({
       snapshot: {
         npu: null,
@@ -163,8 +204,12 @@ describe('Pipelines', () => {
     })
     render(<Pipelines />)
 
-    expect(screen.getByRole('heading', { name: 'Stereo 28.4 ms' })).toBeTruthy()
-    expect(screen.getByRole('heading', { name: 'Detection' })).toBeTruthy()
+    const heading = screen.getByRole('heading', { name: 'Stereo 28.4 ms' })
+    const total = heading.querySelector('[data-total]')
+    expect(total.textContent).toBe('28.4 ms')
+    expect(total.className).toContain('ml-auto')
+    expect(total.className).toContain('tabular-nums')
+    expect(screen.getByRole('heading', { name: 'Detection' }).querySelector('[data-total]')).toBeNull()
     expect(screen.getByRole('list', { name: 'Stereo' })).toBeTruthy()
   })
 
@@ -173,6 +218,7 @@ describe('Pipelines', () => {
     render(<Pipelines />)
 
     expect(document.body.textContent).not.toContain('ms')
+    expect(document.querySelectorAll('[data-total], [data-time], [data-accelerator], [data-run]')).toHaveLength(0)
   })
 
   it('shows the detection pipeline as one greyed line on a unit without a detector', () => {

@@ -13,7 +13,7 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 | Dashboard, camera captions | fps | Frames each camera delivered in the last second. |
 | Dashboard, top bar | CPU, Memory | Busy share of all processor cores over half a second at each read, and the share of the memory in use. The 1, 5 and 15 minute load averages are behind the bar's details button. |
 | Dashboard, bottom bar | Stereo load | Share of each second spent computing the stereo stages, on the GPU or on the CPU cores. Near 100 %, the stages are the bottleneck. |
-| Dashboard, Pipelines menu | each step's time, each pipeline's total | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: the total counts their one time. See [Step times](#step-times). |
+| Dashboard, Pipelines menu | each step's time, each pipeline's total | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: they share one time, which the total counts. See [Step times](#step-times). |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
 | Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
 
@@ -35,7 +35,7 @@ The `status` channel's `pipelines` gives each pipeline's times, averaged over th
 | Detection | `filtering`, `placement` | Keeping the detections to pass on, then placing and outlining them. |
 | Segmentation | `classes` | Sorting the stereo points into road and off-road. |
 
-A compiled segment runs its stages as one function on the device, so they cannot be timed apart ([Nx: the stages as tensor programs](./compute.md#nx-the-stages-as-tensor-programs)): its time counts in the pipeline's total, and no stage of it has one of its own. `npu.pipelines.<name>.inferenceMs` is the accelerator's share of the `inference` step ([Accelerator load](./detection.md#accelerator-load)).
+A compiled segment runs its stages as one function on the device, so they cannot be timed apart ([Nx: the stages as tensor programs](./compute.md#nx-the-stages-as-tensor-programs)): its time counts in the pipeline's total, and no stage of it has one of its own. The Pipelines menu shows that time once for all its stages, with where they run. `npu.pipelines.<name>.inferenceMs` is the accelerator's share of the `inference` step ([Accelerator load](./detection.md#accelerator-load)).
 
 A pipeline on a camera of its own waits for the stereo pair captured closest to its frame. That wait is in no step's time. The stereo total leaves out the time a pair waits for the device, and the decoding of its frames before a segment. A pair's latency, `total` in the log's `[pipeline]` line, counts them.
 
