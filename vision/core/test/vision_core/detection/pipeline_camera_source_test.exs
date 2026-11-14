@@ -856,35 +856,76 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert_receive {:submitted, _next}
   end
 
-  test "declares its placement's projection settings, fixed at start" do
-    state = %{
-      name: :hq_people,
-      source: {:camera, :hq, nil},
-      detect_every_n: 1,
-      min_score: 0.5,
-      max_detections: 10,
-      depth_sample_fraction: 0.5,
-      reprojection_stride: 3,
-      pair_wait_ms: 500
-    }
-
-    [input, _filtering, placement] = Pipeline.groups(state)
+  test "declares its input on the camera, and its placement's projection settings" do
+    settings = Pipeline.settings(name: :hq_people, source: {:camera, :hq})
+    [input, _filtering, placement] = Pipeline.groups(settings)
 
     assert input.summary =~ "camera hq"
+    assert [%{name: "detect_every_n", default: 1}] = input.parameters
 
-    assert [
-             %{
-               name: "detect_every_n",
-               description: "Images per detection; 1 detects on every image"
-             }
-           ] =
-             input.parameters
-
-    assert Enum.map(placement.parameters, &{&1.name, &1.get.()}) == [
+    assert Enum.map(placement.parameters, &{&1.name, &1.default}) == [
              {"depth_sample_fraction", 0.5},
              {"reprojection_stride", 3},
              {"pair_wait_ms", 500}
            ]
+  end
+
+  describe "with the parameters registry" do
+    alias VisionCore.Parameters.MemoryStore
+
+    defp start_registry(saved) do
+      start_supervised!({MemoryStore, saved})
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    end
+
+    # The pipeline declares once it runs; the registry then applies the saved values.
+    defp await_declared do
+      :sys.get_state(VisionCore.Pipelines.server(Pipeline, :hq_people))
+      :sys.get_state(VisionCore.Parameters)
+    end
+
+    test "a setting changed through its parameter applies from the next frame", %{tmp_dir: dir} do
+      start_registry(%{})
+      start_pipeline(dir)
+      await_declared()
+      publish_pair(0)
+      publish_pair(100)
+      publish_frame(100)
+      assert [%{label: "person"}] = detections()
+
+      assert {:ok, %{value: 1.0}} =
+               VisionCore.Parameters.set("hq_people.filtering.min_score", 1.0)
+
+      publish_frame(200)
+
+      assert detections() == []
+    end
+
+    test "a saved setting reaches a pipeline as it starts", %{tmp_dir: dir} do
+      start_registry(%{"hq_people.filtering.max_detections" => 0})
+      start_pipeline(dir)
+      await_declared()
+      publish_pair(0)
+      publish_pair(100)
+      publish_frame(100)
+
+      assert detections() == []
+    end
+
+    test "a shorter wait for the pair applies to the boxes that come back from then on",
+         %{tmp_dir: dir} do
+      start_registry(%{})
+      start_pipeline(dir, pair_wait_ms: 60_000)
+      await_declared()
+      publish_pair(0)
+      publish_pair(1_000)
+
+      assert {:ok, %{value: 0}} = VisionCore.Parameters.set("hq_people.placement.pair_wait_ms", 0)
+      publish_frame(1_400)
+
+      # With the 60 s it started with, the boxes wait for the pair captured after the frame.
+      assert [%{label: "person"}] = detections()
+    end
   end
 
   test "a camera source names a camera of the configuration", %{tmp_dir: dir} do

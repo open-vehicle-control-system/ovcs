@@ -64,7 +64,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
                  "classes: road, sidewalk, buildings, vegetation, sky, people, vehicles and " <>
                  "the others. The model sees the band of the image the input step picks, " <>
                  "stretched to its input, and gives a class to each cell of its output grid. " <>
-                 "The model is fixed in the build. When the NPU is not ready, inference waits " <>
+                 "The model and the NPU's power vote are fixed in the build. When the NPU is not ready, inference waits " <>
                  "and starts again, and the depth carries on without it."
 
   @doc false
@@ -115,6 +115,7 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
       pipeline: pipeline,
       dlc_path: Keyword.fetch!(opts, :dlc_path),
       power_args: QnnPort.power_args!(opts),
+      power_parameters: QnnPort.power_parameters(opts),
       classes: Keyword.get(opts, :classes, length(VisionCore.Segmentation.labels())),
       runtime: QnnPort.runtime(opts),
       cache_dir: Keyword.get(opts, :cache_dir, "/data/vision/qnn/#{pipeline}"),
@@ -143,7 +144,12 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
         Parameters.build_parameter(
           {:model, Path.basename(settings.dlc_path)},
           "The model the NPU runs"
+        ),
+        Parameters.build_parameter(
+          {:classes, settings.classes},
+          "Classes the model scores, as many as the pipeline names"
         )
+        | settings.power_parameters
       ]
     })
   end

@@ -297,6 +297,23 @@ defmodule VisionCore.Detection.Backend.QnnTest do
              Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
   end
 
+  test "lists what is fixed at start: its model, threshold, power vote and timeout", %{
+    tmp_dir: dir
+  } do
+    start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
+    start_backend(dir, "answer", score_threshold: 1, performance: :balanced)
+
+    group = Enum.find(VisionCore.Parameters.groups(), &(&1.id == "detection.inference"))
+
+    assert Enum.map(group.parameters, &{&1.name, &1.type, &1.value, &1.applies}) == [
+             {"model", :string, "model.dlc", :build},
+             {"score_threshold", :double, 1.0, :build},
+             {"performance", :string, "balanced", :build},
+             {"rpc_polling_us", :integer, 0, :build},
+             {"infer_timeout_ms", :integer, 2000, :build}
+           ]
+  end
+
   test "log lines name a named pipeline", %{tmp_dir: dir} do
     start_supervised!({VisionCore.Parameters, store: VisionCore.Parameters.MemoryStore})
 

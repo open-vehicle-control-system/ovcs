@@ -32,16 +32,30 @@ defmodule VisionCore.Detection.StereoPipeline do
         times: StageTimes.new(Pipeline.stages())
       })
 
+    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
+    {:ok, state, {:continue, {:declare, settings}}}
+  end
+
+  # After `init/1`: the registry reads the settings it is declared from the running pipeline.
+  @impl GenServer
+  def handle_continue({:declare, settings}, state) do
     if Process.whereis(VisionCore.Parameters),
       do: :ok = VisionCore.Parameters.declare(Pipeline.groups(settings))
 
-    :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
-    {:ok, state}
+    {:noreply, state}
   end
 
-  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
-
   @impl GenServer
+  def handle_call(:live_settings, _from, state),
+    do: {:reply, Pipeline.setting_values(state), state}
+
+  def handle_call({:put_setting, key, value}, _from, state) do
+    case Pipeline.with_setting(state, key, value) do
+      {:ok, state} -> {:reply, :ok, state}
+      {:error, _reason} = refusal -> {:reply, refusal, state}
+    end
+  end
+
   def handle_call(:stage_times, _from, state),
     do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
 
@@ -150,4 +164,6 @@ defmodule VisionCore.Detection.StereoPipeline do
         })
     end
   end
+
+  defp monotonic_ns, do: System.monotonic_time(:nanosecond)
 end

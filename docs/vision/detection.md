@@ -43,6 +43,27 @@ The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the
 
 Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The Debug exporter reads the pipeline `detection` only, the one a detector without a name runs.
 
+## Settings
+
+A pipeline's settings are options of its detector component and vision parameters, `<name>.<step>.<setting>`. The option is the value the pipeline starts with, and the parameter's default. The live ones change while the unit runs, from the next pair or frame ([Change a parameter](./api.md#change-a-parameter)). A value outside a setting's range is refused, at start and at a change.
+
+| Parameter | Kind | Default | Values | Meaning |
+|---|---|---|---|---|
+| `input.detect_every_n` | live | 1 | 1 to 1000 | Detects on one pair or frame in `n`. |
+| `inference.model` | build | | | The model file the accelerator runs. |
+| `inference.score_threshold` | build | 0.4 | | Lowest score the accelerator reports: an argument of its program. |
+| `inference.performance` | build | `burst` | | On a QNN backend, the NPU's performance profile. |
+| `inference.rpc_polling_us` | build | 0 | | On a QNN backend, the RPC polling of its power vote. |
+| `inference.infer_timeout_ms` | build | 2000 | | Longest wait for an inference before the program is restarted. |
+| `filtering.min_score` | live | 0.4 | 0 to 1 | Lowest score passed on, at or above `score_threshold`. |
+| `filtering.max_detections` | live | 20 | 0 to 1000 | Most detections passed on per image, best first. |
+| `placement.depth_sample_fraction` | live | 0.5 | 0.05 to 1 | Share of a box's width and height whose depths give its distance. |
+| `placement.outline_segments` | live | 4 | 1 to 32 | On the stereo source, pieces each edge of an outline is cut into. |
+| `placement.reprojection_stride` | live | 3 | 1 to 32 | On a camera source, every how many pixels and rows of the depth are projected. |
+| `placement.pair_wait_ms` | live | 500 | 0 to 60000 | On a camera source, the longest a frame's boxes wait for their pair. |
+
+The build parameters are fixed when the pipeline starts: change them in your composer.
+
 ## Accelerator load
 
 The status's `npu` gives the accelerator's kind and load, and each detection or segmentation pipeline's mean inference time ([Status](./channels.md#status)). Neither accelerator exposes a load counter to Linux, so each Port times its own inferences and the status sums them every second:

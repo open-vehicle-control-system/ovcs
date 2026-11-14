@@ -87,7 +87,7 @@ The unit's settings are parameters, grouped by stage. A stage is a component, su
 | `implementation` | `nx`, `rust` or `elixir` |
 | `backend` | The compiler of Nx code: `vulkan`, `llvm_cpu`, `exla` or `evaluator` |
 
-A component, such as the cameras, has the role `source` and no `compute`. [Where depth is computed](./compute.md) says where each stage runs and why.
+A component, such as the stereo cameras, the pairing or a camera of its own, has the role `source` and no `compute`. A camera of its own is the one stage of a pipeline of its name. [Where depth is computed](./compute.md) says where each stage runs and why.
 
 `GET /api/parameters` lists every parameter, and `GET /api/parameters/stereo.disparity.p1` returns one:
 

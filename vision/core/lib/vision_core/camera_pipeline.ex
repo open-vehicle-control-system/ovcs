@@ -98,8 +98,20 @@ defmodule VisionCore.CameraPipeline do
   """
   @callback depth_wording(settings()) :: {owner :: String.t(), CameraDepth.wording()}
 
-  @doc "The steps the pipeline declares in `VisionCore.Parameters`."
+  @doc """
+  The steps the pipeline declares in `VisionCore.Parameters`, once it
+  runs: their live parameters read `c:setting_values/1` and set
+  `c:with_setting/3` through its process (`:live_settings` and
+  `{:put_setting, key, value}` calls).
+  """
   @callback groups(settings()) :: [VisionCore.Parameters.group_declaration()]
+
+  @doc "The settings that change while the pipeline runs, among `settings`, by their names."
+  @callback setting_values(settings()) :: %{String.t() => term()}
+
+  @doc "`settings` with the setting `key` at `value`, or why it is refused."
+  @callback with_setting(settings(), key :: atom(), value :: term()) ::
+              {:ok, settings()} | {:error, String.t()}
 
   @doc "The `VisionCore.Outputs` key the pipeline publishes under."
   @callback output_key(settings()) :: Outputs.key()
@@ -182,12 +194,18 @@ defmodule VisionCore.CameraPipeline do
         StageTimes.new([:inference | Enum.reject(Enum.map(@phases, &module.stage/1), &is_nil/1)])
     }
 
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(module.groups(settings))
-
     :ok = Outputs.subscribe({:stereo_pair, VisionCore.Stereo.Pipeline})
     :ok = Outputs.subscribe(state.camera.key)
-    {:ok, state}
+    {:ok, state, {:continue, :declare}}
+  end
+
+  # After `init/1`: the registry reads the settings it is declared from the running pipeline.
+  @impl GenServer
+  def handle_continue(:declare, state) do
+    if Process.whereis(VisionCore.Parameters),
+      do: :ok = VisionCore.Parameters.declare(state.module.groups(state.settings))
+
+    {:noreply, state}
   end
 
   defp monotonic_ns, do: System.monotonic_time(:nanosecond)
@@ -208,6 +226,25 @@ defmodule VisionCore.CameraPipeline do
   @impl GenServer
   def handle_call(:stage_times, _from, state),
     do: {:reply, state.times, %{state | times: StageTimes.reset(state.times)}}
+
+  def handle_call(:live_settings, _from, state),
+    do: {:reply, state.module.setting_values(state.settings), state}
+
+  def handle_call({:put_setting, key, value}, _from, state) do
+    case state.module.with_setting(state.settings, key, value) do
+      {:ok, settings} -> {:reply, :ok, with_pair_wait(%{state | settings: settings})}
+      {:error, _reason} = refusal -> {:reply, refusal, state}
+    end
+  end
+
+  # The results put from now on wait, and the pairs are kept, as long as the setting says.
+  defp with_pair_wait(%{settings: %{pair_wait_ms: pair_wait_ms}} = state) do
+    %{
+      state
+      | waiting: CameraDepth.Queue.put_pair_wait_ms(state.waiting, pair_wait_ms),
+        camera: CameraDepth.put_pair_wait_ms(state.camera, pair_wait_ms)
+    }
+  end
 
   @impl GenServer
   def handle_cast({:stereo_pair, %Pair{} = pair}, state) do

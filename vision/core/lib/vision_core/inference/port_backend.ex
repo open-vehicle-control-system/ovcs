@@ -220,9 +220,22 @@ defmodule VisionCore.Inference.PortBackend do
     }
 
     if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare([backend.inference_group(settings)])
+      do:
+        :ok =
+          VisionCore.Parameters.declare([inference_group(backend, settings, infer_timeout_ms)])
 
     {:ok, start_opening(state)}
+  end
+
+  # The backend's step, with the timeout every Port has, fixed at start.
+  defp inference_group(backend, settings, infer_timeout_ms) do
+    timeout =
+      VisionCore.Stereo.Parameters.build_parameter(
+        {:infer_timeout_ms, infer_timeout_ms},
+        "Longest wait for an inference before the Port is restarted, in ms"
+      )
+
+    Map.update!(backend.inference_group(settings), :parameters, &(&1 ++ [timeout]))
   end
 
   defp start_opening(%{backend: backend, settings: settings} = state) do

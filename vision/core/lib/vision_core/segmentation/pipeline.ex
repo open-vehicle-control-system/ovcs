@@ -32,8 +32,9 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   The model's input is 2:1, so the band is the frame's full width and
   half that in rows (`band/3`), its top at `:band_top`, a fraction of the
-  frame's height, kept inside the frame; by default it touches the
-  frame's bottom, where the road is. A frame wider than 2:1 is all band.
+  frame's height, kept inside the frame: at 1, the default, it touches
+  the frame's bottom, where the road is. A frame wider than 2:1 is all
+  band.
   The backend is sent the band's rows only, and stretches them onto the
   model's input; pixels outside the band have no class.
 
@@ -88,8 +89,8 @@ defmodule VisionCore.Segmentation.Pipeline do
       that camera's output `output` (`VisionCore.Camera.Output`).
     * `:backend` (`VisionCore.Segmentation.Backend.Qnn`) and
       `:backend_server` (the `:backend` module).
-    * `:band_top` (the band touching the frame's bottom) — the band's top
-      as a fraction of the frame's height, from 0 to 1.
+    * `:band_top` (`1.0`, the band touching the frame's bottom) — the
+      band's top as a fraction of the frame's height, from 0 to 1.
     * `:labels` (the 19 Cityscapes classes, `VisionCore.Segmentation.labels/0`)
       — class id to name.
     * `:road_classes` (`["road"]`) — the names of the classes that are
@@ -105,6 +106,16 @@ defmodule VisionCore.Segmentation.Pipeline do
       camera is read from.
     * `:clock` (`System.monotonic_time/1` in nanoseconds) — the time the
       waits for a pair are measured with, a function of no argument.
+
+  ## Settings
+
+  `:segment_every_n`, `:band_top`, `:reprojection_stride` and
+  `:pair_wait_ms` are the pipeline's settings (`setting_specs/0`, with
+  the values each takes): a composer's value outside them fails the
+  start, and each is a live vision parameter (`groups/1`), which changes
+  while the pipeline runs, from the next frame on (`put_setting/3`). A
+  new `:pair_wait_ms` applies to the label images that come back from
+  then on.
   """
   @behaviour VisionCore.CameraPipeline
 
@@ -114,13 +125,38 @@ defmodule VisionCore.Segmentation.Pipeline do
   alias VisionCore.Pipelines
   alias VisionCore.CameraDepth
   alias VisionCore.CameraDepth.Reprojection
-  alias VisionCore.{CameraPipeline, Options}
+  alias VisionCore.{CameraPipeline, Settings}
   alias VisionCore.Stereo.Pair
 
   @default_backend VisionCore.Segmentation.Backend.Qnn
-  @default_segment_every_n 1
-  @default_reprojection_stride 3
-  @default_pair_wait_ms 500
+  @setting_specs [
+    segment_every_n: %{
+      type: :integer,
+      range: {1, 1000},
+      default: 1,
+      description: "Images per segmentation; 1 segments every image"
+    },
+    band_top: %{
+      type: :double,
+      range: {0, 1},
+      default: 1.0,
+      description:
+        "Top of the band the model sees, as a share of the image's height; " <>
+          "1 puts the band at the image's bottom"
+    },
+    reprojection_stride: %{
+      type: :integer,
+      range: {1, 32},
+      default: 3,
+      description: "Every how many pixels and rows of the depth are projected"
+    },
+    pair_wait_ms: %{
+      type: :integer,
+      range: {0, 60_000},
+      default: 500,
+      description: "Longest wait for the matching pair, in ms"
+    }
+  ]
 
   @wording %{
     calibration: "its segmentation has no clouds",
@@ -147,16 +183,15 @@ defmodule VisionCore.Segmentation.Pipeline do
   The band of a `width × height` frame the model sees, `{x, y, w, h}` in
   the frame's pixels: full width, `round(width / 2)` rows, or the whole
   frame when it has fewer, its top at `band_top`, a fraction of the
-  height, moved up to keep the band inside the frame; `nil` puts it at
-  the frame's bottom.
+  height, moved up to keep the band inside the frame: 1 puts it at the
+  frame's bottom.
   """
-  @spec band(pos_integer(), pos_integer(), number() | nil) ::
+  @spec band(pos_integer(), pos_integer(), number()) ::
           {0, non_neg_integer(), pos_integer(), pos_integer()}
   def band(width, height, band_top) do
     band_height = min(round(width / 2), height)
     lowest = height - band_height
-    top = if is_nil(band_top), do: lowest, else: min(round(band_top * height), lowest)
-    {0, top, width, band_height}
+    {0, min(round(band_top * height), lowest), width, band_height}
   end
 
   @impl CameraPipeline
@@ -165,22 +200,39 @@ defmodule VisionCore.Segmentation.Pipeline do
     labels = Keyword.get(opts, :labels, VisionCore.Segmentation.labels())
     road_classes = Keyword.get(opts, :road_classes, VisionCore.Segmentation.road_classes())
 
-    %{
+    Map.merge(Settings.init!(@setting_specs, opts), %{
       name: VisionCore.Segmentation.name!(opts),
       source: source!(Keyword.get(opts, :source)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
-      band_top: band_top!(Keyword.get(opts, :band_top)),
       labels: labels,
       road_classes: road_classes,
       road: road!(road_classes, labels),
-      segment_every_n: Options.integer!(opts, :segment_every_n, @default_segment_every_n, 1),
-      reprojection_stride:
-        Options.integer!(opts, :reprojection_stride, @default_reprojection_stride, 1),
-      pair_wait_ms: Options.integer!(opts, :pair_wait_ms, @default_pair_wait_ms, 0),
       colourless_logged: false
-    }
+    })
   end
+
+  @doc "The pipeline's settings: each with its type, the values it takes and its default."
+  @spec setting_specs() :: Settings.specs()
+  def setting_specs, do: @setting_specs
+
+  @doc """
+  Changes the setting `key` of the pipeline `name` to `value`, from the
+  next frame on, or says why its spec refuses it.
+  """
+  @spec put_setting(atom(), atom(), term()) :: :ok | {:error, String.t()}
+  def put_setting(name, key, value),
+    do: GenServer.call(Pipelines.server(__MODULE__, name), {:put_setting, key, value})
+
+  @doc "The settings of the pipeline `name` as it runs, by their names."
+  @spec live_settings(atom()) :: %{String.t() => term()}
+  def live_settings(name), do: GenServer.call(Pipelines.server(__MODULE__, name), :live_settings)
+
+  @impl CameraPipeline
+  def with_setting(settings, key, value), do: Settings.put(@setting_specs, settings, key, value)
+
+  @impl CameraPipeline
+  def setting_values(settings), do: Settings.values(@setting_specs, settings)
 
   # A camera source names its output, `nil` for the camera's default.
   defp source!({:camera, camera}), do: source!({:camera, camera, nil})
@@ -205,17 +257,6 @@ defmodule VisionCore.Segmentation.Pipeline do
   @impl CameraPipeline
   def output_key(settings), do: VisionCore.Segmentation.output(settings.name)
 
-  defp band_top!(band_top)
-       when is_nil(band_top) or (is_number(band_top) and band_top >= 0 and band_top <= 1),
-       do: band_top
-
-  defp band_top!(band_top),
-    do:
-      raise(
-        ArgumentError,
-        "its :band_top is a fraction of the frame's height, from 0 to 1, got #{inspect(band_top)}"
-      )
-
   # Whether each class id, 0 to 255, is road.
   defp road!(road_classes, labels) do
     road_ids =
@@ -229,74 +270,83 @@ defmodule VisionCore.Segmentation.Pipeline do
   end
 
   @doc """
-  The segmentation pipeline's steps around the inference, for its
-  settings: `<name>.input` and `<name>.classes` in the pipeline `name`,
-  with their settings fixed at start. The backend declares the inference
-  step itself (`VisionCore.Segmentation.inference_group/2`).
+  The segmentation pipeline's steps around the inference, for what it
+  keeps of its options: `<name>.input` and `<name>.classes` in the
+  pipeline `name`, with its settings, live, their defaults the values it
+  starts with; `road_classes` is fixed at start. They are read from the
+  calling process and set on it, as `live_settings/1` and `put_setting/3`
+  do by name: the pipeline calls this itself, once it runs, so a
+  pipeline started again under the same name is never called for the
+  groups of the one before. The backend declares the inference step
+  itself (`VisionCore.Segmentation.inference_group/2`).
   """
   @impl CameraPipeline
-  def groups(%{source: {:camera, camera, _output}} = state) do
+  def groups(%{name: name, source: {:camera, camera, _output}} = settings) do
+    pipeline = self()
+    set = fn key, value -> GenServer.call(pipeline, {:put_setting, key, value}) end
+
+    live = fn keys ->
+      %{
+        compute: VisionCore.Parameters.on_the_beam(),
+        values: fn -> GenServer.call(pipeline, :live_settings) end,
+        parameters: Settings.parameters(@setting_specs, keys, settings, set)
+      }
+    end
+
     [
-      VisionCore.Parameters.step(state.name, "input", "Input", 101, %{
-        summary: "Hands a band of every nth image of the camera #{camera} to the model.",
-        explanation:
-          "Takes the images of the camera #{camera} and hands the model a band of each, its " <>
-            "full width and half that in height, the model's shape. band_top, fixed in the " <>
-            "build, is where the band's top is, as a share of the image's height; by default " <>
-            "the band touches the image's bottom, where the road is. The rest of the image " <>
-            "gets no class. segment_every_n, fixed in the build, segments one image out of n: " <>
-            "a higher value leaves the NPU more time and updates the classes less often. An " <>
-            "image to segment that arrives while the model is still busy waits, the newest " <>
-            "one only, and goes to the model as soon as it is done.",
-        compute: VisionCore.Parameters.on_the_beam(),
-        parameters: [
-          build_parameter(:segment_every_n, state.segment_every_n, "Images per segmentation"),
-          build_parameter(
-            :band_top,
-            state.band_top || "bottom",
-            "Top of the band the model sees, as a share of the image's height"
-          )
-        ]
-      }),
-      VisionCore.Parameters.step(state.name, "classes", "Classes", 103, %{
-        summary: "Sorts the stereo points seen in the band into road and off-road.",
-        explanation:
-          "Projects the depth of the stereo pair captured closest to the image into the " <>
-            "camera's image, through its calibration and its pose relative to the stereo " <>
-            "pair, and sorts each point by the class of the part of the band it lands in: " <>
-            "road for the classes in road_classes, off-road for every other. Points outside " <>
-            "the band are left out. Fixed in the build: road_classes; reprojection_stride, " <>
-            "every how many pixels and rows of the depth it projects, a higher value sorting " <>
-            "faster and fewer points; and pair_wait_ms, how long the classes wait for that " <>
-            "pair. The next images go to the model meanwhile, and the classes are published " <>
-            "in the images' order. While the stereo pairs have stopped, the classes are " <>
-            "published at once, with the pair already kept if one was captured within half " <>
-            "a pair period of the image. Without such a pair, or without the camera's " <>
-            "calibration or pose, they are published without points.",
-        compute: VisionCore.Parameters.on_the_beam(),
-        parameters: [
-          build_parameter(
-            :road_classes,
-            Enum.join(state.road_classes, ", "),
-            "Classes that are road"
-          ),
-          build_parameter(
-            :reprojection_stride,
-            state.reprojection_stride,
-            "Every how many pixels and rows of the depth are projected"
-          ),
-          build_parameter(
-            :pair_wait_ms,
-            state.pair_wait_ms,
-            "Longest wait for the matching pair, in ms"
-          )
-        ]
-      })
+      VisionCore.Parameters.step(
+        name,
+        "input",
+        "Input",
+        101,
+        Map.merge(live.([:segment_every_n, :band_top]), %{
+          summary: "Hands a band of every nth image of the camera #{camera} to the model.",
+          explanation:
+            "Takes the images of the camera #{camera} and hands the model a band of each, its " <>
+              "full width and half that in height, the model's shape. band_top is where the " <>
+              "band's top is, as a share of the image's height; at 1 the band touches the " <>
+              "image's bottom, where the road is. The rest of the image gets no class. " <>
+              "segment_every_n segments one image out of n: a higher value leaves the NPU " <>
+              "more time and updates the classes less often. An image to segment that " <>
+              "arrives while the model is still busy waits, the newest one only, and goes " <>
+              "to the model as soon as it is done."
+        })
+      ),
+      VisionCore.Parameters.step(
+        name,
+        "classes",
+        "Classes",
+        103,
+        classes_step(live.([:reprojection_stride, :pair_wait_ms]), settings)
+      )
     ]
   end
 
-  defp build_parameter(key, value, description),
-    do: VisionCore.Stereo.Parameters.build_parameter({key, value}, description)
+  defp classes_step(live, settings) do
+    road_classes =
+      VisionCore.Stereo.Parameters.build_parameter(
+        {:road_classes, Enum.join(settings.road_classes, ", ")},
+        "Classes that are road"
+      )
+
+    Map.merge(live, %{
+      summary: "Sorts the stereo points seen in the band into road and off-road.",
+      explanation:
+        "Projects the depth of the stereo pair captured closest to the image into the " <>
+          "camera's image, through its calibration and its pose relative to the stereo " <>
+          "pair, and sorts each point by the class of the part of the band it lands in: " <>
+          "road for the classes in road_classes, fixed in the build, off-road for every " <>
+          "other. Points outside the band are left out. reprojection_stride is every how " <>
+          "many pixels and rows of the depth it projects, a higher value sorting faster " <>
+          "and fewer points; pair_wait_ms, how long the classes wait for that pair. The " <>
+          "next images go to the model meanwhile, and the classes are published in the " <>
+          "images' order. While the stereo pairs have stopped, the classes are published " <>
+          "at once, with the pair already kept if one was captured within half a pair " <>
+          "period of the image. Without such a pair, or without the camera's calibration " <>
+          "or pose, they are published without points.",
+      parameters: [road_classes | live.parameters]
+    })
+  end
 
   @impl CameraPipeline
   def accept(%Frame{rgb: rgb}, settings) when is_binary(rgb), do: {:ok, settings}
