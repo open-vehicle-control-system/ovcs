@@ -15,12 +15,16 @@ defmodule VisionCore.Stereo.Calibration do
   A commit writes the files, then has the stereo unit reload them. Each
   file is written whole or not at all, through a temporary file renamed
   over it; every temporary file is written before the first rename, so
-  that the renames follow each other. When the unit refuses them, or the
-  reload raises or exits, the files go back to what they held, or are
-  removed when there was none, and the answer is `{:error, reason}`.
+  that the renames follow each other. When the unit refuses them, the
+  files go back to what they held, or are removed when there was none,
+  and the answer is `{:error, reason}`. When the reload raises or exits,
+  as one that does not answer in time, the unit may have taken them all
+  the same: the files go back, and the unit reloads the calibration then
+  in force.
   Each commit or reset the unit takes is published as
-  `{:stereo_calibration_changed, prefix}` under `changed_key/1`. Commits
-  and resets of one unit run one at a time.
+  `{:stereo_calibration_changed, prefix}` under `changed_key/1`. The
+  commits and resets of one unit made here run one at a time; the ROS 2
+  service does not wait for them.
 
   A unit whose pipeline is not running, as an uncalibrated one that runs
   its cameras alone or one that gave up, is restarted instead, so that it
@@ -67,7 +71,8 @@ defmodule VisionCore.Stereo.Calibration do
           prefix: String.t(),
           left: side(),
           right: side(),
-          baseline_m: float() | nil
+          baseline_m: float() | nil,
+          error: String.t() | nil
         }
 
   @doc "The `VisionCore.Outputs` key a change of the calibration of the unit `prefix` is published under."
@@ -81,14 +86,17 @@ defmodule VisionCore.Stereo.Calibration do
   later of the stored files was written, and `can_reset` whether
   anything is stored, a side stored alone included, with a built-in
   calibration to go back to. The baseline is the rectified one, `nil`
-  without both calibrations.
+  without both calibrations. A side whose file cannot be read, or whose
+  matrices have not their count of values, has no calibration, and
+  `error` says why, which is logged.
   """
   @spec in_use(VisionCore.Config.t()) :: {:ok, in_use()} | {:error, String.t()}
   def in_use(config) do
     with {:ok, cameras} <- StereoSupervisor.camera_options(config),
-         {:ok, left} <- read_side(cameras[:left][:calibration_path]),
-         {:ok, right} <- read_side(cameras[:right][:calibration_path]),
          {:ok, built_in} <- built_in_paths(config) do
+      {left, left_error} = read_side(cameras[:left][:calibration_path])
+      {right, right_error} = read_side(cameras[:right][:calibration_path])
+      error = unreadable(cameras[:prefix], [left_error, right_error])
       source = source(cameras, left, right)
 
       {:ok,
@@ -99,7 +107,8 @@ defmodule VisionCore.Stereo.Calibration do
          prefix: cameras[:prefix],
          left: left,
          right: right,
-         baseline_m: baseline_m(left.calibration, right.calibration)
+         baseline_m: baseline_m(left.calibration, right.calibration),
+         error: error
        }}
     end
   end
@@ -158,20 +167,45 @@ defmodule VisionCore.Stereo.Calibration do
     end
   end
 
-  defp read_side(nil), do: {:ok, %{path: nil, calibration: nil, yaml: nil}}
+  # The side, and why its file gives no calibration, `nil` when it does or there is no file.
+  defp read_side(nil), do: {%{path: nil, calibration: nil, yaml: nil}, nil}
 
   defp read_side(path) do
     case File.read(path) do
-      {:ok, yaml} -> parse_side(path, yaml)
-      {:error, :enoent} -> {:ok, %{path: path, calibration: nil, yaml: nil}}
-      {:error, reason} -> {:error, "cannot read #{path}: #{file_error(reason)}"}
+      {:ok, yaml} ->
+        parse_side(path, yaml)
+
+      {:error, :enoent} ->
+        {%{path: path, calibration: nil, yaml: nil}, nil}
+
+      {:error, reason} ->
+        {%{path: path, calibration: nil, yaml: nil}, "cannot read #{path}: #{file_error(reason)}"}
     end
   end
 
   defp parse_side(path, yaml) do
-    {:ok, %{path: path, calibration: CameraCalibration.parse(yaml), yaml: yaml}}
+    calibration = CameraCalibration.parse(yaml)
+
+    case CameraCalibration.check_matrices(calibration) do
+      :ok -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
+      {:error, message} -> {%{path: path, calibration: nil, yaml: yaml}, "#{path}: #{message}"}
+    end
   rescue
-    exception -> {:error, "cannot parse #{path}: #{Exception.message(exception)}"}
+    exception ->
+      {%{path: path, calibration: nil, yaml: yaml},
+       "cannot parse #{path}: #{Exception.message(exception)}"}
+  end
+
+  defp unreadable(prefix, errors) do
+    case Enum.reject(errors, &is_nil/1) do
+      [] ->
+        nil
+
+      errors ->
+        error = Enum.join(errors, "; ")
+        Logger.warning("#{__MODULE__}[#{prefix}] #{error}")
+        error
+    end
   end
 
   defp source(_cameras, %{calibration: nil}, %{calibration: nil}), do: :none
@@ -256,7 +290,7 @@ defmodule VisionCore.Stereo.Calibration do
   defp reload_paths(left, right), do: [left_calibration_path: left, right_calibration_path: right]
 
   defp unit_take(paths, config, opts),
-    do: if(pipeline_running?(opts), do: {:reload, paths}, else: {:restart, config})
+    do: if(pipeline_running?(opts), do: {:reload, paths, config}, else: {:restart, config})
 
   defp pipeline_running?(opts),
     do: Keyword.get(opts, :pipeline_running?, &default_pipeline_running?/0).()
@@ -402,12 +436,21 @@ defmodule VisionCore.Stereo.Calibration do
 
   defp take(nil, _prefix, _opts, _previous), do: :ok
 
-  defp take({:reload, paths}, prefix, opts, previous) do
+  defp take({:reload, paths, config}, prefix, opts, previous) do
     reload = Keyword.get(opts, :reload, &default_reload(prefix, &1))
 
-    with {:error, reason} <- call(fn -> reload.(paths) end, &reloaded/1) do
-      put_back(previous)
-      {:error, "the stereo unit refused the calibration: #{reason}"}
+    case call(fn -> reload.(paths) end, &reloaded/1) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        put_back(previous)
+        {:error, "the stereo unit refused the calibration: #{reason}"}
+
+      {:failed, reason} ->
+        put_back(previous)
+        reload_in_force(reload, config, prefix)
+        {:error, "the stereo unit did not take the calibration: #{reason}"}
     end
   end
 
@@ -419,7 +462,7 @@ defmodule VisionCore.Stereo.Calibration do
       restart_child.()
     end
 
-    with {:error, reason} <- call(restart, &restarted/1) do
+    with {_refused_or_failed, reason} <- call(restart, &restarted/1) do
       Logger.warning("#{__MODULE__}[#{prefix}] the stereo unit did not restart: #{reason}")
       put_back(previous)
       restart_again(restart, prefix)
@@ -427,16 +470,33 @@ defmodule VisionCore.Stereo.Calibration do
     end
   end
 
+  # A reload that raised or exited may have reached the unit: it reloads the files put back.
+  defp reload_in_force(reload, config, prefix) do
+    with {:ok, cameras} <- StereoSupervisor.camera_options(config),
+         paths =
+           reload_paths(cameras[:left][:calibration_path], cameras[:right][:calibration_path]),
+         :ok <- call(fn -> reload.(paths) end, &reloaded/1) do
+      :ok
+    else
+      {_refused_or_failed, reason} ->
+        Logger.error(
+          "#{__MODULE__}[#{prefix}] cannot have the stereo unit reload the calibration " <>
+            "in force: #{reason}"
+        )
+    end
+  end
+
   # On the files put back, so that its cameras run again.
   defp restart_again(restart, prefix) do
-    with {:error, reason} <- call(restart, &restarted/1),
+    with {_refused_or_failed, reason} <- call(restart, &restarted/1),
          do: Logger.error("#{__MODULE__}[#{prefix}] cannot restart the stereo unit: #{reason}")
   end
 
+  # `{:failed, reason}` for a call that raised or exited, which may have reached the unit.
   defp call(fun, answer) do
     answer.(fun.())
   catch
-    kind, reason -> {:error, Exception.format_banner(kind, reason)}
+    kind, reason -> {:failed, Exception.format_banner(kind, reason)}
   end
 
   defp reloaded(:ok), do: :ok

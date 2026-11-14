@@ -15,8 +15,9 @@ defmodule VisionCore.Calibration.Session do
   enough from every sample kept
   (`VisionCore.Calibration.Coverage.good_sample?/2`). Without a
   subscriber nothing is detected, and the samples stay. A camera whose
-  detection answers an error, such as a frame that does not decode, is
-  logged once, then again only after one of its detections has worked.
+  detection answers an error, such as a frame that does not decode, or
+  raises, is logged once, then again only after one of its detections has
+  worked.
 
   `solve/0`, once the samples are `good_enough`, runs
   `VisionCore.Calibration.Solver` on them. `apply/0` commits the solved
@@ -369,7 +370,7 @@ defmodule VisionCore.Calibration.Session do
   end
 
   defp detect_frames(detect, board, [first | _others] = frames) do
-    found = for frame <- frames, do: {frame.label, detect.(frame, board)}
+    found = for frame <- frames, do: {frame.label, detect_frame(detect, frame, board)}
     views = Map.new(found, fn {label, answer} -> {label, corners(answer)} end)
     sizes = Map.new(frames, &{&1.label, {&1.width, &1.height}})
 
@@ -386,6 +387,13 @@ defmodule VisionCore.Calibration.Session do
     }
   end
 
+  # OpenCV raises on a frame it cannot read.
+  defp detect_frame(detect, frame, board) do
+    detect.(frame, board)
+  catch
+    kind, reason -> {:error, Exception.format_banner(kind, reason, __STACKTRACE__)}
+  end
+
   defp corners({:ok, corners}), do: corners
   defp corners(_not_found), do: nil
 
@@ -393,7 +401,8 @@ defmodule VisionCore.Calibration.Session do
   defp detect_error(_detected), do: nil
 
   defp finished(state, :detect, found) do
-    state = log_detect_errors(state, found.errors)
+    state =
+      log_detect_errors(%{state | failing: MapSet.delete(state.failing, :task)}, found.errors)
 
     sample? =
       found.parameters != nil and
@@ -447,8 +456,10 @@ defmodule VisionCore.Calibration.Session do
   end
 
   defp crashed(state, :detect, reason) do
-    Logger.warning("#{__MODULE__} detection failed: #{Exception.format_exit(reason)}")
-    state
+    if not MapSet.member?(state.failing, :task),
+      do: Logger.warning("#{__MODULE__} detection failed: #{Exception.format_exit(reason)}")
+
+    %{state | failing: MapSet.put(state.failing, :task)}
   end
 
   defp crashed(state, :solve, reason) do

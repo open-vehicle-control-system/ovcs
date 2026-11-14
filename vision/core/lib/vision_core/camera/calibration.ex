@@ -7,7 +7,8 @@ defmodule VisionCore.Camera.Calibration do
   store and is the one in force; the camera's `:calibration` holds the
   built-in one, which `reset/2` goes back to. Without a store, a commit
   writes the `:calibration` path itself. The file is written whole or
-  not at all, through a temporary file renamed over it.
+  not at all, through a temporary file synced then renamed over it.
+  Commits and resets of one camera run one at a time.
 
   Each commit or reset is published as `{:camera_calibration_changed,
   name}` under `changed_key/1`. The camera's consumers read the
@@ -30,7 +31,8 @@ defmodule VisionCore.Camera.Calibration do
           source: :stored | :built_in | :none,
           stored_at: DateTime.t() | nil,
           can_reset: boolean(),
-          camera: camera()
+          camera: camera(),
+          error: String.t() | nil
         }
 
   @doc "The `VisionCore.Outputs` key a change of the calibration of the camera `name` is published under."
@@ -42,14 +44,16 @@ defmodule VisionCore.Camera.Calibration do
   `VisionCore.Config`: its path, parsed calibration and YAML (`nil`
   without a file), and its source. `stored_at` is the time the stored
   file was written, and `can_reset` whether one is stored with a built-in
-  calibration to go back to. `{:error, :not_found}` for a camera `config`
-  has not.
+  calibration to go back to. A file that cannot be read, or whose matrices
+  have not their count of values, gives no calibration, and `error` says
+  why, which is logged. `{:error, :not_found}` for a camera `config` has
+  not.
   """
-  @spec in_use(VisionCore.Config.t(), atom()) ::
-          {:ok, in_use()} | {:error, :not_found | String.t()}
+  @spec in_use(VisionCore.Config.t(), atom()) :: {:ok, in_use()} | {:error, :not_found}
   def in_use(config, name) do
-    with {:ok, settings} <- settings(config, name),
-         {:ok, camera} <- read(settings.calibration_path) do
+    with {:ok, settings} <- settings(config, name) do
+      {camera, error} = read(settings.calibration_path)
+      if error, do: Logger.warning("#{__MODULE__}[#{name}] #{error}")
       stored? = stored?(settings)
 
       {:ok,
@@ -57,7 +61,8 @@ defmodule VisionCore.Camera.Calibration do
          source: source(camera, stored?),
          stored_at: if(stored?, do: written_at(settings.calibration_store_path)),
          can_reset: stored? and built_in?(settings),
-         camera: camera
+         camera: camera,
+         error: error
        }}
     end
   end
@@ -70,21 +75,29 @@ defmodule VisionCore.Camera.Calibration do
           :ok | {:error, :not_found | String.t()}
   def commit(config, name, %CameraCalibration{} = calibration) do
     with {:ok, settings} <- settings(config, name),
-         {:ok, path} <- writable_path(settings),
-         :ok <- write(path, CameraCalibration.to_yaml(calibration, Atom.to_string(name))) do
-      changed(name)
+         {:ok, path} <- writable_path(settings) do
+      yaml = CameraCalibration.to_yaml(calibration, Atom.to_string(name))
+
+      locked(name, fn ->
+        with :ok <- write(path, yaml), do: changed(name)
+      end)
     end
   end
 
   @doc "Removes the camera `name`'s stored calibration, so that its built-in one is in force again."
   @spec reset(VisionCore.Config.t(), atom()) :: :ok | {:error, :not_found | String.t()}
   def reset(config, name) do
-    with {:ok, settings} <- settings(config, name),
-         :ok <- check_resettable(settings),
-         :ok <- remove(settings.calibration_store_path) do
-      changed(name)
+    with {:ok, settings} <- settings(config, name) do
+      locked(name, fn ->
+        with :ok <- check_resettable(settings),
+             :ok <- remove(settings.calibration_store_path),
+             do: changed(name)
+      end)
     end
   end
+
+  # The lock is local to the node, as the files are.
+  defp locked(name, fun), do: :global.trans({{__MODULE__, name}, self()}, fun, [node()])
 
   defp settings(config, name) do
     case Enum.find(Unit.settings(config), &(&1.name == name)) do
@@ -93,20 +106,33 @@ defmodule VisionCore.Camera.Calibration do
     end
   end
 
-  defp read(nil), do: {:ok, %{path: nil, calibration: nil, yaml: nil}}
+  # The camera, and why its file gives no calibration, `nil` when it does or there is no file.
+  defp read(nil), do: {%{path: nil, calibration: nil, yaml: nil}, nil}
 
   defp read(path) do
     case File.read(path) do
-      {:ok, yaml} -> parse(path, yaml)
-      {:error, :enoent} -> {:ok, %{path: path, calibration: nil, yaml: nil}}
-      {:error, reason} -> {:error, "cannot read #{path}: #{file_error(reason)}"}
+      {:ok, yaml} ->
+        parse(path, yaml)
+
+      {:error, :enoent} ->
+        {%{path: path, calibration: nil, yaml: nil}, nil}
+
+      {:error, reason} ->
+        {%{path: path, calibration: nil, yaml: nil}, "cannot read #{path}: #{file_error(reason)}"}
     end
   end
 
   defp parse(path, yaml) do
-    {:ok, %{path: path, calibration: CameraCalibration.parse(yaml), yaml: yaml}}
+    calibration = CameraCalibration.parse(yaml)
+
+    case CameraCalibration.check_matrices(calibration) do
+      :ok -> {%{path: path, calibration: calibration, yaml: yaml}, nil}
+      {:error, message} -> {%{path: path, calibration: nil, yaml: yaml}, "#{path}: #{message}"}
+    end
   rescue
-    exception -> {:error, "cannot parse #{path}: #{Exception.message(exception)}"}
+    exception ->
+      {%{path: path, calibration: nil, yaml: yaml},
+       "cannot parse #{path}: #{Exception.message(exception)}"}
   end
 
   defp source(%{calibration: nil}, _stored?), do: :none
@@ -148,7 +174,7 @@ defmodule VisionCore.Camera.Calibration do
     temporary = path <> ".tmp"
 
     with :ok <- File.mkdir_p(Path.dirname(path)),
-         :ok <- File.write(temporary, yaml),
+         :ok <- File.write(temporary, yaml, [:sync]),
          :ok <- File.rename(temporary, path) do
       Logger.info("#{__MODULE__} wrote #{byte_size(yaml)} B → #{path}")
     else

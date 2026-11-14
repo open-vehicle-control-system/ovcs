@@ -1112,11 +1112,22 @@ defmodule VisionCore.Ros2.ExporterTest do
       {:ok, state} =
         Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
 
+      assert_received {:"$gen_cast", {:camera_calibration_changed, :hq}}
+
       frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
       {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
 
       assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
       assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+
+    test "a stereo calibration committed through set_camera_info is told as a change" do
+      {:ok, state} = Exporter.init(options(Camera, stereo: []))
+
+      {:ok, _state} =
+        Exporter.handle_info({:calibration_committed, "stereo/left/set_camera_info"}, state)
+
+      assert_received {:"$gen_cast", {:stereo_calibration_changed, "stereo"}}
     end
 
     @tag :tmp_dir

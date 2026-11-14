@@ -141,6 +141,48 @@ defmodule VisionCore.Stereo.CalibrationTest do
       refute_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
     end
 
+    test "commit/3 whose reload does not answer puts the files back and has the unit reload them",
+         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
+      test = self()
+      left_store = Path.join(store(tmp_dir), "#{prefix}_left.yaml")
+      left_built_in = Path.join(tmp_dir, "built_in/#{prefix}_left.yaml")
+      right_built_in = Path.join(tmp_dir, "built_in/#{prefix}_right.yaml")
+
+      reload = fn paths ->
+        send(test, {:reloaded, paths})
+        if paths[:left_calibration_path] == left_store, do: exit({:timeout, :reload}), else: :ok
+      end
+
+      assert {:error, message} = Calibration.commit(config, distorted(), running(reload: reload))
+
+      assert message =~ "timeout"
+      refute File.exists?(left_store)
+      assert_received {:reloaded, [left_calibration_path: ^left_store, right_calibration_path: _]}
+
+      assert_received {:reloaded,
+                       [
+                         left_calibration_path: ^left_built_in,
+                         right_calibration_path: ^right_built_in
+                       ]}
+
+      refute_received {:"$gen_cast", {:stereo_calibration_changed, _prefix}}
+    end
+
+    test "in_use/1 says why a stored file it cannot parse gives no calibration",
+         %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
+      :ok = Calibration.commit(config, distorted(), reloading(:ok))
+      left_store = Path.join(store(tmp_dir), "#{prefix}_left.yaml")
+      File.write!(left_store, "projection_matrix:\n  data: []\n")
+
+      assert {:ok, in_use} = Calibration.in_use(config)
+
+      assert in_use.error =~ "projection matrix"
+      assert in_use.left.calibration == nil
+      assert in_use.right.calibration == distorted().right
+      assert in_use.baseline_m == nil
+      assert in_use.can_reset
+    end
+
     test "reset/2 removes the stored calibration, reloads the built-in one and tells the change",
          %{tmp_dir: tmp_dir, prefix: prefix, config: config} do
       :ok = Calibration.commit(config, distorted(), reloading(:ok))
@@ -372,7 +414,9 @@ defmodule VisionCore.Stereo.CalibrationTest do
 
     assert {:ok, in_use} = Calibration.in_use(tmp_dir |> config(prefix) |> with_store(tmp_dir))
 
-    assert %{source: :none, stored_at: nil, can_reset: false, baseline_m: nil} = in_use
+    assert %{source: :none, stored_at: nil, can_reset: false, baseline_m: nil, error: nil} =
+             in_use
+
     assert %{calibration: nil, yaml: nil} = in_use.left
     assert %{calibration: nil, yaml: nil} = in_use.right
   end

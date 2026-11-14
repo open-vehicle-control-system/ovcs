@@ -310,6 +310,44 @@ defmodule VisionCore.Calibration.SessionTest do
     assert Process.whereis(Session) == session
   end
 
+  test "a detection that crashes is logged once, until a detection works again", %{board: board} do
+    test_pid = self()
+
+    detect = fn frame, _board ->
+      case :erlang.binary_to_term(frame.grey) do
+        :crash ->
+          send(test_pid, {:crashing, div(frame.capture_ns, 1_000_000)})
+          raise "detection crashed"
+
+        answer ->
+          answer
+      end
+    end
+
+    start_session(detect: detect)
+    capture(board)
+
+    crash = fn capture_ms ->
+      publish("left", capture_ms, :crash)
+      publish("right", capture_ms, :crash)
+      assert_receive {:crashing, ^capture_ms}
+    end
+
+    log =
+      capture_log(fn ->
+        crash.(0)
+        crash.(100)
+        publish_pair(200, top_left())
+        assert_receive {:calibration_session, %{samples: 1}}
+        crash.(300)
+        publish_pair(400, bottom_right())
+        assert_receive {:calibration_session, %{samples: 2}}
+      end)
+
+    assert length(Regex.scan(~r/left detection failed: .*detection crashed/, log)) == 2
+    assert length(Regex.scan(~r/right detection failed: .*detection crashed/, log)) == 2
+  end
+
   describe "with no subscriber" do
     test "detection stops, the samples stay, and a new subscriber resumes it", %{board: board} do
       start_session()

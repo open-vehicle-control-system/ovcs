@@ -40,6 +40,14 @@ defmodule VisionCore.Calibration.ChessboardTest do
     assert_corners(corners, image.corners, 0.3)
   end
 
+  test "answers OpenCV's error for a board it cannot look for, not a board not found" do
+    image = ChessboardImage.render(@board)
+    board = %Board{columns: 2, rows: 6, square_m: 0.025}
+
+    assert {:error, reason} = Chessboard.detect(frame(image), board)
+    assert reason =~ "pattern"
+  end
+
   test "orders an upside-down board like an upright one" do
     image = ChessboardImage.render(@board, rotate: true)
 

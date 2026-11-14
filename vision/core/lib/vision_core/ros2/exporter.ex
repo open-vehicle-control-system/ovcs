@@ -53,7 +53,9 @@ defmodule VisionCore.Ros2.Exporter do
   helper under its supervisor, writes the calibration to the stereo
   unit's store, or without one to the side's calibration path, has the
   stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
-  exporter, which reads its camera info again. It reads it again too
+  exporter, which reads its camera info again and publishes the change
+  through `VisionCore.Outputs`, as a commit from the dashboard is, so that
+  the dashboard shows it. It reads its camera info again too
   after a change from the dashboard, of the stereo unit's
   (`VisionCore.Stereo.Calibration.changed_key/1`) or of a camera's
   (`VisionCore.Camera.Calibration.changed_key/1`).
@@ -829,8 +831,19 @@ defmodule VisionCore.Ros2.Exporter do
 
   def handle_info({:calibration_committed, service_name}, state) do
     case Enum.find(Map.values(state.cameras), &(&1.service_name == service_name)) do
-      nil -> reload_stereo_calibration(state)
-      camera -> recalibrate_camera(state, camera)
+      nil ->
+        tell_stereo_calibration_changed(state)
+        reload_stereo_calibration(state)
+
+      camera ->
+        name = camera.name
+
+        Outputs.publish(
+          VisionCore.Camera.Calibration.changed_key(name),
+          {:camera_calibration_changed, name}
+        )
+
+        recalibrate_camera(state, camera)
     end
   end
 
@@ -868,6 +881,13 @@ defmodule VisionCore.Ros2.Exporter do
       other ->
         other
     end)
+  end
+
+  defp tell_stereo_calibration_changed(%{stereo: nil}), do: :ok
+
+  defp tell_stereo_calibration_changed(state) do
+    prefix = state.config |> StereoSupervisor.camera_options() |> unit_prefix()
+    Outputs.publish(Calibration.changed_key(prefix), {:stereo_calibration_changed, prefix})
   end
 
   defp reload_stereo_calibration(%{stereo: nil} = state), do: {:ok, state}

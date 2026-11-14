@@ -20,7 +20,8 @@ defmodule VisionCore.Calibration.Chessboard do
   (`columns` x `rows` of them), the first one in the upper part of the frame.
 
   `:not_found` when the board is not seen, or when a corner lies within
-  #{@border_px} px of the frame's border.
+  #{@border_px} px of the frame's border; `{:error, reason}` for a frame that
+  does not decode, or a board OpenCV refuses to look for.
   """
   @spec detect(Frame.t(), Board.t()) ::
           {:ok, [{float(), float()}]} | :not_found | {:error, term()}
@@ -36,6 +37,7 @@ defmodule VisionCore.Calibration.Chessboard do
       else
         :not_found -> :not_found
         false -> :not_found
+        {:error, reason} -> {:error, reason}
       end
     end
   end
@@ -79,7 +81,10 @@ defmodule VisionCore.Calibration.Chessboard do
       %Evision.Mat{} = corners ->
         {:ok, corners |> Evision.Mat.to_nx() |> Nx.reshape({:auto, 2}) |> Nx.to_list()}
 
-      _ ->
+      {:error, reason} ->
+        {:error, reason}
+
+      _not_found ->
         :not_found
     end
   end

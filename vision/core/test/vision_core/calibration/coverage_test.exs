@@ -91,6 +91,23 @@ defmodule VisionCore.Calibration.CoverageTest do
       assert {:error, _} = Board.new(8, 8, 0.025)
     end
 
+    test "refuses a side of fewer than 3 inner corners, which OpenCV does not look for" do
+      assert {:error, reason} = Board.new(2, 6, 0.025)
+      assert reason =~ "at least 3"
+      assert {:error, _} = Board.new(8, 2, 0.025)
+      assert {:ok, _board} = Board.new(4, 3, 0.025)
+    end
+
+    test "refuses more inner corners per side, or a larger square, than a printed board has" do
+      assert {:error, reason} = Board.new(Board.max_corners() + 1, 6, 0.025)
+      assert reason =~ "at most #{Board.max_corners()}"
+      assert {:ok, _board} = Board.new(Board.max_corners(), 6, 0.025)
+
+      assert {:error, reason} = Board.new(8, 6, Board.max_square_m() * 2)
+      assert reason =~ "square size"
+      assert {:error, _} = Board.new(8, 6, Integer.pow(10, 400))
+    end
+
     test "accepts a valid board" do
       assert {:ok, %Board{columns: 8, rows: 6, square_m: 0.025}} = Board.new(8, 6, 0.025)
     end

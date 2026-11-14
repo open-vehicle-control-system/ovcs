@@ -20,7 +20,8 @@ defmodule VisionCore.Status do
   over the tick's pairs; `nil` without any. `:calibrated` is whether the
   stereo unit has both calibration files
   (`VisionCore.Stereo.Supervisor.calibrated?/1`), read at each snapshot;
-  `false` without a `:stereo` component.
+  `nil` without a `:stereo` component, which has nothing to calibrate
+  for depth.
 
   `:pair` judges the cameras together (`VisionCore.Stereo.PairCheck`):
   their timing, their rows, with the row correction the stage declaring
@@ -82,7 +83,7 @@ defmodule VisionCore.Status do
               pipelines: %{required(atom()) => %{inference_ms: float() | nil}}
             }
             | nil,
-          calibrated: boolean(),
+          calibrated: boolean() | nil,
           depth_hz: float(),
           exporters: [exporter()],
           cpu_percent: float() | nil,
@@ -368,7 +369,7 @@ defmodule VisionCore.Status do
       pair: pair,
       depth: depth,
       npu: npu(state, replies),
-      calibrated: StereoSupervisor.calibrated?(state.config),
+      calibrated: calibrated(state),
       depth_hz: state.rates_hz.depth,
       cpu_percent: state.cpu_percent,
       stereo_segment_percent: state.stereo_segment_percent,
@@ -486,6 +487,9 @@ defmodule VisionCore.Status do
   # Cameras that are not running have no sync.
   defp sync(%{left: %{present: false}, right: %{present: false}}, _replies), do: %{present: false}
   defp sync(_cameras, replies), do: Map.get(replies, :sync, %{present: false})
+
+  defp calibrated(%{cameras: []}), do: nil
+  defp calibrated(state), do: StereoSupervisor.calibrated?(state.config)
 
   defp npu(%{npu_backends: []}, _replies), do: nil
 

@@ -100,9 +100,9 @@ defmodule VisionCore.StatusTest do
     assert Status.snapshot().calibrated
   end
 
-  test "reports a unit without a stereo component uncalibrated" do
+  test "reports no calibration state for a unit without a stereo component" do
     start_supervised!({Status, config: config([])})
-    refute Status.snapshot().calibrated
+    assert Status.snapshot().calibrated == nil
   end
 
   test "reports each exporter's status, as the exporters list them" do

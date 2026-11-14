@@ -59,6 +59,26 @@ defmodule VisionCore.Camera.CalibrationTest do
     test "does not know a camera the configuration has not" do
       assert Calibration.in_use(config([]), :usb) == {:error, :not_found}
     end
+
+    test "says why a file it cannot read or parse gives no calibration", context do
+      config = config(calibration: context.built_in, calibration_store_dir: context.store_dir)
+      write_built_in(context.built_in)
+
+      File.mkdir_p!(context.stored)
+      assert {:ok, unreadable} = Calibration.in_use(config, :hq)
+      assert unreadable.error =~ "cannot read"
+      assert %{calibration: nil, yaml: nil} = unreadable.camera
+      File.rmdir!(context.stored)
+
+      File.write!(context.stored, "camera_matrix:\n  data: [1, 2]\n")
+      assert {:ok, malformed} = Calibration.in_use(config, :hq)
+      assert malformed.error =~ "camera matrix"
+      assert malformed.camera.calibration == nil
+      assert malformed.can_reset
+
+      File.rm!(context.stored)
+      assert {:ok, %{error: nil}} = Calibration.in_use(config, :hq)
+    end
   end
 
   describe "commit/3" do
@@ -86,6 +106,20 @@ defmodule VisionCore.Camera.CalibrationTest do
 
       assert :ok = Calibration.commit(config, :hq, @calibration)
       assert context.built_in |> File.read!() |> CameraCalibration.parse() == @calibration
+    end
+
+    test "waits for a commit or a reset of the same camera to end", context do
+      config = config(calibration: context.built_in, calibration_store_dir: context.store_dir)
+      lock = {{Calibration, :hq}, self()}
+      true = :global.set_lock(lock, [node()])
+
+      commit = Task.async(fn -> Calibration.commit(config, :hq, @calibration) end)
+      refute Task.yield(commit, 100)
+      refute File.exists?(context.stored)
+
+      true = :global.del_lock(lock, [node()])
+      assert Task.await(commit) == :ok
+      assert File.exists?(context.stored)
     end
 
     test "refuses a camera with nowhere to write, and one it does not know" do

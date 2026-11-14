@@ -45,8 +45,9 @@ defmodule VisionCore.Calibration do
   @typedoc """
   The calibration in use of a target: where it comes from, when a stored
   one was written, whether it can go back to a built-in one, each
-  camera's calibration with the file name to save it under, and for a
-  stereo pair its rectified baseline.
+  camera's calibration with the file name to save it under, for a
+  stereo pair its rectified baseline, and why a file gives no
+  calibration, `nil` when each does or is absent.
   """
   @type in_use :: %{
           id: String.t(),
@@ -55,7 +56,8 @@ defmodule VisionCore.Calibration do
           stored_at: DateTime.t() | nil,
           can_reset: boolean(),
           cameras: [camera()],
-          baseline_m: float() | nil
+          baseline_m: float() | nil,
+          error: String.t() | nil
         }
 
   @doc "The targets of `config`, the active `VisionCore.Config`: its stereo pair first, then its cameras in config order."
@@ -154,7 +156,8 @@ defmodule VisionCore.Calibration do
          stored_at: in_use.stored_at,
          can_reset: in_use.can_reset,
          cameras: cameras,
-         baseline_m: in_use.baseline_m
+         baseline_m: in_use.baseline_m,
+         error: in_use.error
        }}
     end
   end
@@ -169,7 +172,8 @@ defmodule VisionCore.Calibration do
          stored_at: in_use.stored_at,
          can_reset: in_use.can_reset,
          cameras: [camera(id, "#{id}.yaml", in_use.camera)],
-         baseline_m: nil
+         baseline_m: nil,
+         error: in_use.error
        }}
     end
   end
