@@ -12,7 +12,7 @@ defmodule VisionApiWeb.CoreUnavailableTest do
 
   defp selection do
     document("calibration-selections", %{
-      relationships: %{savedCalibration: %{data: %{type: "saved-calibrations", id: "1"}}}
+      relationships: %{savedCalibration: %{data: %{type: "saved-calibrations", id: "camera-1"}}}
     })
   end
 

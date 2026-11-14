@@ -52,15 +52,17 @@ defmodule VisionApiWeb.CalibrationUnit do
   end
 
   @doc """
-  The id of a calibration kept, from its text as the unit writes it:
-  digits without a sign nor a leading zero. `:error` for any other text,
+  The id of a calibration kept, from its text as the unit writes it
+  (`VisionCore.Models.KeptCalibrationId`): its kind, then digits without
+  a sign nor a leading zero, as `camera-12`. `:error` for any other text,
   which names no calibration.
   """
-  @spec saved_id(String.t()) :: {:ok, pos_integer()} | :error
+  @spec saved_id(String.t()) :: {:ok, String.t()} | :error
   def saved_id(text) do
-    if Regex.match?(~r/\A[1-9][0-9]{0,17}\z/, text),
-      do: {:ok, String.to_integer(text)},
-      else: :error
+    case VisionCore.Models.KeptCalibrationId.parse(text) do
+      {:ok, _kind, _row_id} -> {:ok, text}
+      :error -> :error
+    end
   end
 
   @doc """

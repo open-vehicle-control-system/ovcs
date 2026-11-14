@@ -3,11 +3,12 @@ defmodule VisionCore.Parameters.StoreTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Parameters.{SavedValue, Store}
+  alias VisionCore.Models.ParameterValue
+  alias VisionCore.Parameters.Store
   alias VisionCore.Repo
 
   setup do
-    Repo.delete_all(SavedValue)
+    Repo.delete_all(ParameterValue)
     :ok
   end
 
@@ -34,7 +35,7 @@ defmodule VisionCore.Parameters.StoreTest do
   end
 
   test "a row that is not valid JSON is skipped and logged" do
-    Repo.insert!(%SavedValue{parameter_id: "a.b.c", value: "{not json"})
+    Repo.insert!(%ParameterValue{parameter_id: "a.b.c", value: "{not json"})
     {values, log} = with_log(fn -> Store.load() end)
     assert values == %{}
     assert log =~ "a.b.c"

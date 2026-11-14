@@ -1,7 +1,7 @@
 defmodule VisionCore.Repo do
   @moduledoc """
   The vision unit's SQLite repository, holding the saved parameter values
-  (`VisionCore.Parameters.SavedValue`) and the calibrations kept
+  (`VisionCore.Models.ParameterValue`) and the calibrations kept
   (`VisionCore.Calibration.Library`).
   """
   use Ecto.Repo,
