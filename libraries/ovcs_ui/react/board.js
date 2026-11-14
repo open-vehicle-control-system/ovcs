@@ -3,13 +3,16 @@ import { useEffect, useState } from 'react'
 /**
  * The board `fetchBoard` answers, for the `OvcsTopBar`: read while `connected`, then every `intervalMs`, with the
  * `offsetMs` of its clock from this browser's at the read, so its clock keeps time between reads; `null` until first
- * read. A failed read keeps what it had.
+ * read, and again once disconnected, as its clock and load are then unknown. A failed read keeps what it had.
  */
 export function useOvcsBoard(fetchBoard, connected, intervalMs = 10_000) {
   const [board, setBoard] = useState(null)
 
   useEffect(() => {
-    if (!connected) return undefined
+    if (!connected) {
+      setBoard(null)
+      return undefined
+    }
     let live = true
     const read = () =>
       fetchBoard().then(
@@ -35,17 +38,20 @@ export function boardInterfaces(board) {
 }
 
 /**
- * The board's load as the top bar shows it: its CPU's busy share, rounded, with its `tone`, a warning from 90 %, and
- * its 1, 5 and 15 minute load averages as `uptime` prints them; each `null` where the board does not report it.
+ * The board's load as the top bar shows it: its CPU's busy share, rounded, with its `tone`, a warning from 90 %, its
+ * 1, 5 and 15 minute load averages as `uptime` prints them, and the share of its memory in use, rounded, with its
+ * `memoryTone`, a warning from 90 %; each `null` where the board does not report it.
  */
 export function boardLoad(board) {
   if (!board) return null
-  const { cpuPercent, loadAverage } = board
+  const { cpuPercent, loadAverage, memoryPercent } = board
 
   return {
     cpu: cpuPercent == null ? null : `${Math.round(cpuPercent)} %`,
     tone: cpuPercent == null ? null : cpuPercent >= 90 ? 'warn' : 'ok',
-    load: loadAverage ? loadAverage.map((average) => average.toFixed(2)).join(', ') : null
+    load: loadAverage ? loadAverage.map((average) => average.toFixed(2)).join(', ') : null,
+    memory: memoryPercent == null ? null : `${Math.round(memoryPercent)} %`,
+    memoryTone: memoryPercent == null ? null : memoryPercent >= 90 ? 'warn' : 'ok'
   }
 }
 

@@ -235,7 +235,7 @@ The `preview:depth` channel pushes the range to its clients on every change; see
 `GET /api/board` returns the board the unit runs on:
 
 - **Interfaces.** Each network interface that is up, with a device and an address, with its addresses. Loopback, container bridges and IPv6 link-local addresses are left out.
-- **Load.** The CPU's busy share over half a second, and the 1, 5 and 15 minute load averages.
+- **Load.** The CPU's busy share over half a second, the 1, 5 and 15 minute load averages, and the share of the memory in use.
 - **Clock.** The board's UTC time and whether NTP has synchronized it. On a host, `clockSynchronized` is `null`.
 
 A board whose clock is not synchronized publishes nothing to ROS 2. The dashboard's top bar reads `GET /api/board` every 10 s while connected.
@@ -252,6 +252,7 @@ A board whose clock is not synchronized publishes nothing to ROS 2. The dashboar
       ],
       "cpuPercent": 23.4,
       "loadAverage": [0.52, 0.48, 0.4],
+      "memoryPercent": 62.5,
       "time": "2026-11-11T14:53:12Z",
       "clockSynchronized": true
     }

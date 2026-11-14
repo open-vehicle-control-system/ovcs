@@ -48,7 +48,7 @@ function useChangedValues(groupId, members) {
   return { changed, commit: (id, value) => committed.current.set(id, value) }
 }
 
-/** The group's summary, with its explanation behind a toggle that stays as set from one group to the next. */
+/** The group's summary, with its explanation behind a toggle on a line of its own, under it, that stays as set from one group to the next. */
 function Summary({ summary, explanation }) {
   const explanationId = useId()
   const [open, setOpen] = useState(false)
@@ -56,15 +56,15 @@ function Summary({ summary, explanation }) {
 
   return (
     <>
-      <p className="mt-3 text-sm text-ovcs-text">
-        {summary}
-        {explanation ? (
+      <p className="mt-3 text-sm text-ovcs-text">{summary}</p>
+      {explanation ? (
+        <div className="mt-1 flex text-sm">
           <button
             type="button"
             aria-expanded={open}
             aria-controls={explanationId}
             onClick={() => setOpen((shown) => !shown)}
-            className={`ml-2 inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
+            className={`inline-flex min-h-6 items-center gap-0.5 rounded text-ovcs-accent-text hover:underline ${FOCUS}`}
           >
             How it works
             <svg
@@ -76,8 +76,8 @@ function Summary({ summary, explanation }) {
               <path d="M6 3.5 10.5 8 6 12.5Z" />
             </svg>
           </button>
-        ) : null}
-      </p>
+        </div>
+      ) : null}
       {explanation ? (
         <p id={explanationId} data-explanation hidden={!open} className="mt-1.5 text-sm leading-relaxed text-ovcs-muted">
           {explanation}

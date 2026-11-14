@@ -1,7 +1,8 @@
 defmodule OvcsVehicle.SystemLoad do
   @moduledoc """
   A board's load, from Linux: the CPU's busy share, from `/proc/stat`, and
-  the load averages, from `/proc/loadavg`.
+  the load averages, from `/proc/loadavg`, and the share of the memory in
+  use, from `/proc/meminfo`.
   """
 
   @doc """
@@ -35,6 +36,27 @@ defmodule OvcsVehicle.SystemLoad do
       do: 100 * (later_busy - earlier_busy) / (later_total - earlier_total)
 
   def cpu_percent(_earlier, _later), do: nil
+
+  @doc """
+  The percentage of the memory in use, what `MemAvailable` leaves of
+  `MemTotal` in a `/proc/meminfo`, or `nil` without both.
+  """
+  @spec parse_meminfo(String.t()) :: float() | nil
+  def parse_meminfo(meminfo) do
+    with total when is_integer(total) and total > 0 <- kilobytes(meminfo, "MemTotal"),
+         available when is_integer(available) <- kilobytes(meminfo, "MemAvailable") do
+      100 * (total - available) / total
+    else
+      _missing -> nil
+    end
+  end
+
+  defp kilobytes(meminfo, field) do
+    case Regex.run(~r/^#{field}:\s+(\d+) kB$/m, meminfo) do
+      [_line, kilobytes] -> String.to_integer(kilobytes)
+      nil -> nil
+    end
+  end
 
   @doc "The three load averages leading a `/proc/loadavg` line."
   @spec parse_loadavg(String.t()) :: [float()] | nil

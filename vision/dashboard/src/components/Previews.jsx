@@ -72,17 +72,18 @@ const needsAction = ({ actions }) => actions.length > 0
 const PAIR_TILE = 'row-span-3 grid grid-cols-[minmax(0,1fr)] grid-rows-subgrid'
 const ROW_TILE = 'lg:row-span-3 lg:grid lg:grid-cols-[minmax(0,1fr)] lg:grid-rows-subgrid'
 // The frame has its image's shape, 16:9 before any: as wide as its preview, and from `lg` the largest that fits the
-// frame's track, which its cell measures, at the top and centre of it.
-const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:[container-type:size]'
+// frame's track, which its cell measures, at the top and centre of it, inset from the card's edge.
+const ROW_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center px-2 pt-2 lg:[container-type:size]'
 const ROW_FRAME =
   'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,100cqw*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
-// Beside the frame, the aside sits next to it in its cell, the pair centred together, as tall as the frame and
+// Beside the frame, the aside sits at the cell's far edge, the frame centred in the room left, as tall as the frame and
 // scrolling what it cannot hold; the frame is the largest that leaves the aside's width. `ASIDE_REM` is that width
-// with the gap between them, the `9rem` and `0.75rem` below.
+// with the gap between them, the `9rem` and `0.75rem` below; `INSET_REM` is the cell's `px-2` and `pt-2`.
 const ASIDE_REM = 9.75
-const BESIDE_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:gap-3 lg:[container-type:size]'
+const INSET_REM = { width: 1, height: 0.5 }
+const BESIDE_CELL = 'lg:flex lg:min-h-0 lg:items-start lg:justify-center lg:gap-3 px-2 pt-2 lg:[container-type:size]'
 const BESIDE_FRAME =
-  'aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
+  'lg:mx-auto aspect-[var(--frame-width,16)/var(--frame-height,9)] lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))] lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
 const BESIDE_ASIDE =
   'w-[9rem] shrink-0 overflow-y-auto py-2 lg:h-[min(100cqh,(100cqw-9.75rem)*var(--frame-height,9)/var(--frame-width,16))]'
 // Tailwind's `lg`, from which the classes above apply.
@@ -104,7 +105,10 @@ function useBeside(ref) {
     const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
     const lg = window.matchMedia?.(LG)
     const measure = () =>
-      setBeside((lg?.matches ?? true) && preview.offsetWidth - ASIDE_REM * rem >= preview.offsetHeight - caption.offsetHeight)
+      setBeside(
+        (lg?.matches ?? true) &&
+          preview.offsetWidth - (ASIDE_REM + INSET_REM.width) * rem >= preview.offsetHeight - caption.offsetHeight - INSET_REM.height * rem
+      )
     // Measured before the first paint: the observer's first report can come after it.
     measure()
     const observer = new ResizeObserver(measure)
