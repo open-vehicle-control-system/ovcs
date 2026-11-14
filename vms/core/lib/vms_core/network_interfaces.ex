@@ -1,8 +1,10 @@
 defmodule VmsCore.NetworkInterfaces do
   @moduledoc """
   The CAN network interfaces Cantastic is configured with, and their
-  `ip` link statistics, for the VMS API.
+  `ip` link statistics, for the VMS API. Unavailable statistics are an empty map;
+  each request reads a fresh snapshot.
   """
+  @moduledoc safety: :none
   use GenServer
   alias Cantastic.ConfigurationStore
 
@@ -34,23 +36,27 @@ defmodule VmsCore.NetworkInterfaces do
     network_interfaces_with_statistics =
       state.network_interfaces
       |> Enum.map(fn network_interface ->
-        # `-s` twice adds the detailed error counters.
-        {statistics_as_json, 0} =
-          System.cmd("ip", [
-            "--json",
-            "-details",
-            "-s",
-            "-s",
-            "address",
-            "show",
-            network_interface.interface
-          ])
-
-        {:ok, [statistics]} = Jason.decode(statistics_as_json)
-        %{network_interface | statistics: statistics}
+        %{network_interface | statistics: statistics(network_interface.interface)}
       end)
 
     {:reply, {:ok, network_interfaces_with_statistics}, state}
+  end
+
+  # Diagnostics remain available when an interface or the `ip` executable is absent.
+  defp statistics(interface) do
+    with executable when is_binary(executable) <- System.find_executable("ip"),
+         # `-s` twice adds the detailed error counters.
+         {json, 0} <-
+           System.cmd(
+             executable,
+             ["--json", "-details", "-s", "-s", "address", "show", interface],
+             stderr_to_stdout: true
+           ),
+         {:ok, [statistics]} when is_map(statistics) <- Jason.decode(json) do
+      statistics
+    else
+      _ -> %{}
+    end
   end
 
   @doc "Each network interface with its current statistics."
