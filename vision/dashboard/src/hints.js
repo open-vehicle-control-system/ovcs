@@ -132,6 +132,6 @@ export const HINTS = {
     text:
       'The detections and segmentation on this camera take their distances from the stereo depth, which needs the ' +
       'camera’s calibration and its pose: where it sits relative to the stereo pair. Calibrate it, then measure its ' +
-      'position, from the menu’s Calibration section.'
+      'position, under the camera in the menu’s Cameras section.'
   }
 }

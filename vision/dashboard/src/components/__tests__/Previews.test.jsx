@@ -243,7 +243,7 @@ describe('Previews', () => {
       expect(lines[0].className).toContain('text-ovcs-muted')
 
       fireEvent.focus(screen.getByRole('button', { name: 'About No distances' }))
-      expect(screen.getByRole('tooltip').textContent).toContain('Calibration')
+      expect(screen.getByRole('tooltip').textContent).toContain('Cameras section')
       expect(figure('usb').querySelector('[data-distances]')).toBeNull()
     })
 
