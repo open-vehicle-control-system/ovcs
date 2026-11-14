@@ -16,6 +16,12 @@ defmodule VisionApiWeb.ParametersCase do
       defp parameter(conn, id) do
         conn |> get("/api/parameters/#{id}") |> json_response(200) |> Map.fetch!("data")
       end
+
+      defp set(id, value), do: {:ok, _} = VisionCore.Parameters.set(id, value)
+
+      defp unsaved(conn) do
+        conn |> get("/api/parameters") |> json_response(200) |> get_in(["meta", "unsaved"])
+      end
     end
   end
 

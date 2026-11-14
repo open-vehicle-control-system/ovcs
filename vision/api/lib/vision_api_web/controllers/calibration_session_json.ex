@@ -1,12 +1,12 @@
-defmodule VisionApiWeb.CalibrationActionJSON do
+defmodule VisionApiWeb.CalibrationSessionJSON do
   @moduledoc """
-  A created calibration action (session, cancel, solve, apply or reset) as
-  a JSON:API resource of `type`, carrying the session as it is after it,
+  A created calibration session, cancel, solve, apply or reset as a
+  JSON:API resource of `type`, carrying the session as it is after it,
   related to the `calibration` the session works on.
   """
   alias VisionApiWeb.{CalibrationJSON, JsonApi}
 
-  @doc "The action resource of `type` and `id`, with the `session` state."
+  @doc "The resource of `type` and `id`, with the `session` state."
   @spec show(%{type: String.t(), id: String.t(), session: VisionCore.Calibration.Session.state()}) ::
           map()
   def show(%{type: type, id: id, session: session}) do
