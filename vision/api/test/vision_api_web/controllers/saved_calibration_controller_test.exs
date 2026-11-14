@@ -119,15 +119,17 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                %{"data" => []}
     end
 
-    test "answers 400 for a filter that names no calibration", %{conn: conn} do
-      conn = get(conn, "/api/saved-calibrations?filter[calibration][]=hq")
-
-      assert %{
-               "errors" => [
-                 %{"status" => "400", "source" => %{"parameter" => "filter[calibration]"}}
-               ]
-             } =
-               json_response(conn, 400)
+    test "answers 400 for a filter that is not one calibration's id, naming the parameter",
+         %{conn: conn} do
+      for {query, parameter} <- [
+            {"filter[calibration][]=hq", "filter[calibration]"},
+            {"filter[target]=hq", "filter[target]"},
+            {"filter[calibration]=hq&filter[origin]=dashboard", "filter[origin]"},
+            {"filter=hq", "filter"}
+          ] do
+        assert %{"errors" => [%{"status" => "400", "source" => %{"parameter" => ^parameter}}]} =
+                 conn |> get("/api/saved-calibrations?#{query}") |> json_response(400)
+      end
     end
   end
 
@@ -148,6 +150,23 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
         assert detail == "no saved calibration #{id}"
       end
+    end
+
+    test "answers 404 for an id written another way than the unit writes it",
+         %{conn: conn, config: config} do
+      id = keep(config, 580.8).id
+
+      for other <- ["0#{id}", "+#{id}", "-#{id}", "0", "99999999999999999999999999"] do
+        assert conn |> get("/api/saved-calibrations/#{other}") |> json_response(404)
+        assert conn |> delete("/api/saved-calibrations/#{other}") |> json_response(404)
+
+        document = %{data: %{type: "saved-calibrations", id: other, attributes: %{name: "x"}}}
+        assert conn |> rename(other, document) |> json_response(404)
+
+        assert conn |> select(selection(other)) |> json_response(404)
+      end
+
+      assert {:ok, _saved} = Library.fetch(id)
     end
   end
 
@@ -301,6 +320,42 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
       document = put_in(selection("1"), [:data, :id], "7")
       assert conn |> select(document) |> json_response(403)
+    end
+  end
+
+  describe "while the saved calibrations cannot be read" do
+    setup %{config: config} do
+      saved = keep(config, 580.8)
+      Repo.query!("ALTER TABLE calibrations RENAME TO calibrations_away")
+      on_exit(fn -> Repo.query!("ALTER TABLE calibrations_away RENAME TO calibrations") end)
+      %{id: Integer.to_string(saved.id)}
+    end
+
+    defp assert_unavailable(conn) do
+      assert %{
+               "errors" => [
+                 %{"status" => "503", "title" => "Saved calibrations unavailable"} = error
+               ]
+             } =
+               json_response(conn, 503)
+
+      refute Map.has_key?(error, "source")
+    end
+
+    test "GET and DELETE /api/saved-calibrations/:id answer 503", %{conn: conn, id: id} do
+      conn |> get("/api/saved-calibrations/#{id}") |> assert_unavailable()
+      conn |> delete("/api/saved-calibrations/#{id}") |> assert_unavailable()
+    end
+
+    test "PATCH /api/saved-calibrations/:id answers 503, not a fault of the name",
+         %{conn: conn, id: id} do
+      document = %{data: %{type: "saved-calibrations", id: id, attributes: %{name: "Workshop"}}}
+
+      conn |> rename(id, document) |> assert_unavailable()
+    end
+
+    test "POST /api/calibration-selections answers 503", %{conn: conn, id: id} do
+      conn |> select(selection(id)) |> assert_unavailable()
     end
   end
 

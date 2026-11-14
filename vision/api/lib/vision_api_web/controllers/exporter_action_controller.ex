@@ -21,14 +21,13 @@ defmodule VisionApiWeb.ExporterActionController do
       {:ok, attributes} ->
         id |> Exporters.action(name, attributes, @timeout_ms) |> answer(conn, id, name)
 
-      {:error, status, detail, options} ->
-        JsonApi.error(conn, status, detail, options)
+      refusal ->
+        JsonApi.refuse(conn, refusal)
     end
   end
 
   defp answer({:ok, result}, conn, _id, _name) do
-    resource_id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
-    render(conn, :show, type: @document_type, id: resource_id, result: result)
+    render(conn, :show, type: @document_type, id: JsonApi.action_id(), result: result)
   end
 
   defp answer({:file, filename, content_type, contents}, conn, _id, _name),
@@ -52,22 +51,15 @@ defmodule VisionApiWeb.ExporterActionController do
   defp answer({:error, {:failed, message}}, conn, _id, _name),
     do: JsonApi.error(conn, 500, message, title: "Action failed")
 
-  defp fetch_attributes(%{"data" => %{"type" => @document_type, "id" => _id}}),
-    do: JsonApi.client_id_refusal()
+  defp fetch_attributes(document) do
+    with {:ok, data} <- JsonApi.fetch_created(document, @document_type) do
+      case Map.get(data, "attributes", %{}) do
+        attributes when is_map(attributes) ->
+          {:ok, attributes}
 
-  defp fetch_attributes(%{"data" => %{"type" => @document_type} = document}) do
-    case Map.get(document, "attributes", %{}) do
-      attributes when is_map(attributes) ->
-        {:ok, attributes}
-
-      _other ->
-        {:error, 400, "attributes must be an object", [source: "/data/attributes"]}
+        _other ->
+          {:error, 400, "attributes must be an object", [source: "/data/attributes"]}
+      end
     end
   end
-
-  defp fetch_attributes(%{"data" => %{"type" => _other}}),
-    do: {:error, 409, "type must be #{@document_type}", [source: "/data/type"]}
-
-  defp fetch_attributes(_params),
-    do: {:error, 400, "data with a type is required", [source: "/data"]}
 end

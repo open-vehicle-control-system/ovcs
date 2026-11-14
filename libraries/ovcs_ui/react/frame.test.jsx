@@ -253,6 +253,36 @@ describe('OvcsTopBar with a board', () => {
   })
 })
 
+describe('useOvcsFirmware after a failed read', () => {
+  test('reads again, later each time, until the firmware answers, and no more once told to read anew', async () => {
+    vi.useFakeTimers()
+    try {
+      const offline = new Error('offline')
+      const fetchFirmware = vi.fn().mockRejectedValueOnce(offline).mockRejectedValueOnce(offline).mockResolvedValue({ revision: '7ee101da' })
+      const { result, rerender } = renderHook(({ joins }) => useOvcsFirmware(fetchFirmware, joins), { initialProps: { joins: 1 } })
+
+      await act(() => vi.advanceTimersByTimeAsync(1_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(1_999))
+      expect(fetchFirmware).toHaveBeenCalledTimes(2)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(result.current).toEqual({ revision: '7ee101da' })
+
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(3)
+
+      fetchFirmware.mockRejectedValue(offline)
+      rerender({ joins: 2 })
+      await act(() => vi.advanceTimersByTimeAsync(0))
+      rerender({ joins: 0 })
+      await act(() => vi.advanceTimersByTimeAsync(60_000))
+      expect(fetchFirmware).toHaveBeenCalledTimes(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('useOvcsBoard', () => {
   const flush = () => act(() => Promise.resolve())
 
@@ -288,6 +318,26 @@ describe('useOvcsBoard', () => {
       expect(fetchBoard).toHaveBeenCalledTimes(3)
       // A board that cannot be reached has no clock to show ticking.
       expect(result.current).toBeNull()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('reads again an interval after the last read ended, never two at once', async () => {
+    vi.useFakeTimers()
+    try {
+      const answers = []
+      const fetchBoard = vi.fn(() => new Promise((resolve) => answers.push(resolve)))
+      renderHook(() => useOvcsBoard(fetchBoard, true, 1_000))
+
+      await act(() => vi.advanceTimersByTimeAsync(5_000))
+      expect(fetchBoard).toHaveBeenCalledTimes(1)
+
+      answers[0]({ interfaces: [], time: new Date().toISOString() })
+      await act(() => vi.advanceTimersByTimeAsync(999))
+      expect(fetchBoard).toHaveBeenCalledTimes(1)
+      await act(() => vi.advanceTimersByTimeAsync(1))
+      expect(fetchBoard).toHaveBeenCalledTimes(2)
     } finally {
       vi.useRealTimers()
     }
@@ -359,6 +409,14 @@ describe('the connection', () => {
 
     rerender(connection('connecting'))
     expect(screen.getByText('Connecting…')).toBeTruthy()
+  })
+
+  test('says its state in a status region, so a change is announced', () => {
+    const { rerender } = render(<OvcsConnectionStatus state="connected" />)
+    expect(screen.getByRole('status').textContent).toBe('Connected')
+
+    rerender(<OvcsConnectionStatus state="disconnected" />)
+    expect(screen.getByRole('status').textContent).toBe('Disconnected')
   })
 })
 

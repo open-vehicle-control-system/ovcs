@@ -151,7 +151,7 @@ The dashboard and the API are served from the board over HTTPS:
 https://<vehicle>-vision.local
 ```
 
-The certificate is self-signed: the unit makes it at its first start and keeps it in `/data/vision_api/`, so it stays the same across reboots and firmware updates. Accept it in your browser the first time. The dashboard needs HTTPS to decode a camera's H.264 video. Plain HTTP on port 80 and on port 4100, `http://<vehicle>-vision.local:4100`, redirects to the same page over HTTPS.
+The certificate is self-signed: the unit makes it at its first start and keeps it in `/data/vision_api/`, so it stays the same across reboots and firmware updates. The unit makes another when the stored one cannot be read or names another hostname. Accept it in your browser the first time. The dashboard needs HTTPS to decode a camera's H.264 video. Plain HTTP on port 80 and on port 4100, `http://<vehicle>-vision.local:4100`, redirects to the same page over HTTPS.
 
 A program checks the certificate against a copy of it:
 

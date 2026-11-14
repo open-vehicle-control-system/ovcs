@@ -6,9 +6,13 @@ function fakeSocket() {
   const handlers = {}
   const channel = {
     on: vi.fn((event, handler) => { handlers[event] = handler }),
-    join: vi.fn(() => ({ receive: vi.fn() })),
+    join: vi.fn(() => {
+      const join = { receive: vi.fn((status, handler) => { handlers[`join/${status}`] = handler; return join }) }
+      return join
+    }),
     push: vi.fn(),
     off: vi.fn((event) => { delete handlers[event] }),
+    onError: vi.fn((handler) => { handlers.error = handler }),
     leave: vi.fn()
   }
   return { channel: vi.fn(() => channel), handlers, fakeChannel: channel }
@@ -202,6 +206,32 @@ describe('Preview', () => {
     expect(socket.fakeChannel.leave).toHaveBeenCalled()
   })
 
+  it('drops its frame, released, and says it has none once its channel fails, as when the unit goes', () => {
+    const socket = fakeSocket()
+    render(<Preview stream="left" socket={socket} overlay={<span>boxes</span>} />)
+    sendFrame(socket, [1])
+    fireEvent.load(screen.getByRole('img'))
+
+    act(() => socket.handlers.error())
+
+    expect(screen.queryByRole('img')).toBeNull()
+    expect(screen.queryByText('boxes')).toBeNull()
+    expect(screen.getByText('No frame')).toBeTruthy()
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:frame-1')
+  })
+
+  it('says why the unit refuses its stream, until a join it accepts', () => {
+    const socket = fakeSocket()
+    render(<Preview stream="rear" socket={socket} />)
+
+    act(() => socket.handlers['join/error']({ reason: 'unknown stream' }))
+    expect(screen.getByText('The unit refuses this stream: unknown stream')).toBeTruthy()
+    expect(screen.queryByText('No frame')).toBeNull()
+
+    act(() => socket.handlers['join/ok']())
+    expect(screen.getByText('No frame')).toBeTruthy()
+  })
+
   describe('a video', () => {
     let animationFrames
     let decoders
@@ -277,6 +307,83 @@ describe('Preview', () => {
       expect(screen.getByText('2028 × 1520')).toBeTruthy()
     })
 
+    it('says it waits for the video until its first frame is drawn', async () => {
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+      expect(screen.getByText('Waiting for video')).toBeTruthy()
+
+      sendFrame(socket, keyFrame(0))
+      await configured()
+      act(() => decoders[0].output({ timestamp: 0, displayWidth: 2028, displayHeight: 1520, close: vi.fn() }))
+      act(() => animationFrames.splice(0).forEach((callback) => callback()))
+
+      expect(screen.queryByText('Waiting for video')).toBeNull()
+    })
+
+    it('hides the frame drawn, its overlays too, and waits again once its channel fails', async () => {
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video overlay={() => <span>boxes</span>} />)
+      sendFrame(socket, keyFrame(0))
+      await configured()
+      act(() => decoders[0].output({ timestamp: 0, displayWidth: 2028, displayHeight: 1520, close: vi.fn() }))
+      act(() => animationFrames.splice(0).forEach((callback) => callback()))
+      expect(screen.getByLabelText('center video').classList).not.toContain('invisible')
+
+      act(() => socket.handlers.error())
+
+      expect(screen.getByLabelText('center video').classList).toContain('invisible')
+      expect(screen.queryByText('boxes')).toBeNull()
+      expect(screen.getByText('Waiting for video')).toBeTruthy()
+    })
+
+    it('says why the unit refuses its video', () => {
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+
+      act(() => socket.handlers['join/error']({ reason: 'unknown video' }))
+
+      expect(screen.getByText('The unit refuses this stream: unknown video')).toBeTruthy()
+    })
+
+    it("shows nothing of the JPEG preview it replaces: neither its size, its overlays nor that a frame is shown", () => {
+      const socket = fakeSocket()
+      const { rerender } = render(<Preview stream="center" socket={socket} overlay={<span>boxes</span>} />)
+      sendFrame(socket, [1])
+      const image = screen.getByRole('img')
+      Object.defineProperty(image, 'naturalWidth', { value: 640 })
+      Object.defineProperty(image, 'naturalHeight', { value: 480 })
+      fireEvent.load(image)
+      expect(screen.getByText('boxes')).toBeTruthy()
+
+      rerender(<Preview stream="center" socket={socket} video overlay={<span>boxes</span>} />)
+
+      expect(screen.queryByText('boxes')).toBeNull()
+      expect(document.querySelector('[data-resolution]')).toBeNull()
+      expect(screen.getByText('Waiting for video')).toBeTruthy()
+    })
+
+    it('keeps hidden a frame decoded before its channel failed and drawn after, until the channel pushes again', async () => {
+      const socket = fakeSocket()
+      render(<Preview stream="center" socket={socket} video />)
+      sendFrame(socket, keyFrame(0))
+      await configured()
+      const draw = () => act(() => animationFrames.splice(0).forEach((callback) => callback()))
+      const output = (timestamp) => act(() => decoders[0].output({ timestamp, displayWidth: 2028, displayHeight: 1520, close: vi.fn() }))
+      output(0)
+      draw()
+
+      output(33_333)
+      act(() => socket.handlers.error())
+      draw()
+      expect(screen.getByLabelText('center video').classList).toContain('invisible')
+      expect(screen.getByText('Waiting for video')).toBeTruthy()
+
+      sendFrame(socket, keyFrame(1_000_000))
+      output(1_000_000)
+      draw()
+      expect(screen.getByLabelText('center video').classList).not.toContain('invisible')
+    })
+
     it('says the page is served over plain HTTP where the browser offers no WebCodecs for that, and joins nothing', () => {
       delete globalThis.VideoDecoder
       globalThis.isSecureContext = false
@@ -295,7 +402,10 @@ describe('Preview', () => {
       await configured()
 
       expect(screen.getByText(/cannot decode the camera's H.264 video/)).toBeTruthy()
+      expect(screen.queryByText('Waiting for video')).toBeNull()
       expect(decoders).toEqual([])
+      // Nothing takes the frames: the unit sends them no more.
+      expect(socket.fakeChannel.leave).toHaveBeenCalledTimes(1)
     })
   })
 

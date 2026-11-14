@@ -55,6 +55,8 @@ defmodule VisionApiWeb.VideoChannel do
     {:noreply, socket}
   end
 
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
   @impl Phoenix.Channel
   def handle_info({:vision_video, _camera, frame}, socket) do
     header =

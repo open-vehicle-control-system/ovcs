@@ -29,7 +29,8 @@ export function useOvcsConnection(socket) {
 
 /**
  * The dashboard's live connection, as an `OvcsBottomBarItem` labelled with the `OvcsShell`'s product: `state` as
- * `useOvcsConnection` answers it, and `hint`, an element after the label explaining it.
+ * `useOvcsConnection` answers it, in a status region, so a change is announced, and `hint`, an element after the label
+ * explaining it.
  */
 export default function OvcsConnectionStatus({ state, hint, ...props }) {
   const product = useOvcsProduct()
@@ -45,7 +46,7 @@ export default function OvcsConnectionStatus({ state, hint, ...props }) {
       }
       {...props}
     >
-      <OvcsStatus tone={tone} className="font-medium">
+      <OvcsStatus role="status" tone={tone} className="font-medium">
         {label}
       </OvcsStatus>
     </OvcsBottomBarItem>

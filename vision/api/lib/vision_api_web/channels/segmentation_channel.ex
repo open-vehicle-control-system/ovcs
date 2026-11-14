@@ -54,6 +54,8 @@ defmodule VisionApiWeb.SegmentationChannel do
   def handle_in("ack", _payload, socket),
     do: {:noreply, socket |> assign(:waiting, nil) |> send_grid(socket.assigns.waiting)}
 
+  def handle_in(_event, _payload, socket), do: VisionApiWeb.UnknownEvent.refuse(socket)
+
   @impl Phoenix.Channel
   def handle_info(
         {:vision_segmentation, segmentation},

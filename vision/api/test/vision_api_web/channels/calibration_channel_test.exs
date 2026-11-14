@@ -77,13 +77,13 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     assert_push "saved", %{calibration: "hq"}
   end
 
-  test "the channel takes no push" do
-    Process.flag(:trap_exit, true)
+  test "the channel takes no push: it refuses one, changes nothing and stays" do
     {:ok, _reply, socket} = join()
 
-    Phoenix.ChannelTest.push(socket, "session", %{"phase" => "idle"})
+    reference = Phoenix.ChannelTest.push(socket, "session", %{"phase" => "capturing"})
 
-    assert_receive {:EXIT, _pid, _reason}, 500
+    assert_reply reference, :error, %{reason: "unknown event"}
+    assert Process.alive?(socket.channel_pid)
     assert %{phase: :idle} = Session.state()
   end
 

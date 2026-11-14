@@ -22,6 +22,12 @@ The examples come from units of several builds, shortened where a list is long. 
 
 Every answer under `/api` is `application/vnd.api+json`. A write sends its document as a JSON body, with the content type `application/vnd.api+json` or `application/json`. Sent as a form or in the query string, the document is missing and the answer is a 400. A body that is not valid JSON is a 400 too, and a request whose `Accept` header takes no JSON a 406. A path sent a method it does not take answers a 405, with the methods it takes in the `allow` header. A `POST` creates a resource the unit names: a document carrying an `id` is a 403.
 
+Every route also answers:
+
+- a 400 for a path whose id is not valid UTF-8;
+- a 400 for a `sort` parameter, and for an `include` on a route that has none, with `source.parameter` naming it;
+- a 503 titled `Vision core unavailable` while the unit's vision pipeline does not run or is restarting. Send the request again later.
+
 A refusal is an `errors` list holding one error object. When a member of your document is at fault, `source.pointer` names it:
 
 ```sh
@@ -49,7 +55,7 @@ An unknown resource answers a 404 whose `detail` names it, such as `no parameter
 
 The unit's settings are parameters, grouped by stage. A stage is a component, such as the cameras, or a step of a pipeline.
 
-`GET /api/stages?include=parameters` returns the stages in pipeline order, their parameters in `included`, and the count of unsaved parameters in `meta.unsaved`. One stage of `data`:
+`GET /api/stages?include=parameters` returns the stages in pipeline order, their parameters in `included`, and the count of unsaved parameters in `meta.unsaved`. Any other `include` is a 400. One stage of `data`:
 
 ```json
 {
@@ -138,6 +144,7 @@ The answer is the parameter with `value` 10 and `state` `unsaved`. A live parame
 
 - a 422 for a value outside the constraint or a parameter fixed in the build;
 - a 409 for a `type` or `id` that does not match the URL;
+- a 404 for a parameter the unit does not have;
 - a 400 for a document without `data.type`, `data.id` or `data.attributes.value`.
 
 Then save, discard or reset. Each is a `POST` that answers a 201 with the ids of the parameters it touched:
@@ -370,7 +377,7 @@ The error's `detail` says why.
 - the topics it has published, with their rate over the last second;
 - the services it answers.
 
-A unit without the ROS 2 link answers a 404. The example is shortened to one topic and one service:
+A unit without the ROS 2 link answers a 404. An `include` other than `topics` and `services` is a 400. The example is shortened to one topic and one service:
 
 ```json
 {
@@ -402,7 +409,7 @@ A unit without the ROS 2 link answers a 404. The example is shortened to one top
 
 The calibration routes do what the dashboard's Calibration page does; [Calibrate the cameras](./calibration.md) explains the steps and the files.
 
-`GET /api/calibrations` lists the calibration in use of each thing the unit can calibrate: its stereo pair, identified by the stereo unit's prefix, then each camera of its own, identified by its name. `GET /api/calibrations/:id` returns one, a 404 for an id that is none of them. A calibration has:
+`GET /api/calibrations` lists the calibration in use of each thing the unit can calibrate: its stereo pair, identified by the stereo unit's prefix, then each camera of its own, identified by its name. `GET /api/calibrations/:id` returns one, a 404 for an id that is none of them, and a 503 when the unit cannot work out the stereo pair's calibration files. A calibration has:
 
 - its `kind`, `stereo` or `camera`;
 - its `source`, `builtIn`, `stored` or `none`, and `storedAt`, the time a stored one was stored;
@@ -465,7 +472,7 @@ A new calibration is made by a session, one per unit and shared by every client,
 | `POST /api/calibration-solves` | Computes the calibration from the samples. | 202 | 422 before they are good enough |
 | `POST /api/calibration-applies` | Has the unit take the solved calibration. | 202 | 422 before a solve |
 | `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 201 | 409 while a calibration is being applied |
-| `POST /api/calibration-resets` | Removes the stored files of the `calibration` it names and returns to the built-in one; the calibrations kept stay. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 500 when the unit does not take the built-in calibration, the stored one kept |
+| `POST /api/calibration-resets` | Removes the stored files of the `calibration` it names and returns to the built-in one; the calibrations kept stay. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 409 while a session runs, 500 when the unit does not take the built-in calibration, the stored one kept |
 
 Each also answers a 404 on a unit with nothing to calibrate, a 503 while the unit's calibration session does not run, a 409 for another `data.type`, a 403 for a document carrying an `id`, and a 400 for a document sent as a form or in the query string, or without `data.type`. Start a session on the stereo pair for a board of 8 × 6 inner corners and 25 mm squares:
 
@@ -513,11 +520,13 @@ The unit keeps every calibration it was given, as `saved-calibrations`, each wit
 
 | Request | Does | Answers | Refuses with |
 |---|---|---|---|
-| `GET /api/saved-calibrations` | Lists them, the newest first within each calibration; `filter[calibration]=<id>` keeps one calibration's. | 200 | 400 for a `filter` that names no calibration |
+| `GET /api/saved-calibrations` | Lists them, the newest first within each calibration; `filter[calibration]=<id>` keeps one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
 | `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit does not keep |
 | `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed. | 200 | 400 without a name, 409 for another type or id, 422 for a name out of bounds, 404 |
 | `DELETE /api/saved-calibrations/:id` | Removes it. | 204 | 409 for the calibration in force, 404 |
-| `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 while a calibration session runs, 422 when the unit refuses its files |
+| `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 for another `data.type` or while a calibration session runs, 422 when the unit refuses its files, 500 when the selection fails |
+
+An id is the number the unit gave, written as the unit writes it: `007` or `+7` is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
 
 ```json
 {

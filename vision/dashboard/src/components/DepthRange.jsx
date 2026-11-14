@@ -1,5 +1,5 @@
-import { useId, useState } from 'react'
-import { focusClass as FOCUS } from '@ovcs/ui/react'
+import { useId } from 'react'
+import { focusClass as FOCUS, useOvcsRangeEdit } from '@ovcs/ui/react'
 import Hint from './Hint.jsx'
 import { HINTS } from '../hints.js'
 
@@ -16,7 +16,7 @@ const fromSlider = (position) => (position > MAX ? 0 : position)
 
 /**
  * The depth video's colour range, `metres`, the distance coloured blue, set on the unit with `set` as soon as it is
- * released; 0, the slider's last notch, is ∞. `set` answers a promise of the range in force. `onChange` gets the range
+ * released (`useOvcsRangeEdit`); 0, the slider's last notch, is ∞. `set` answers a promise of the range in force. `onChange` gets the range
  * to show: the one chosen, then the unit's answer, or the previous one again when the unit refuses it. It is the unit's, shared by every dashboard, and
  * a view setting: nothing to save, back to the composer's at the next boot. It lies along a line, near to far from
  * left to right, or, `vertical`, stands as tall as the room it has: near at the bottom, far and the range at the top.
@@ -24,19 +24,17 @@ const fromSlider = (position) => (position > MAX ? 0 : position)
  */
 export default function DepthRange({ set, metres, onChange, vertical = false }) {
   const labelId = useId()
-  const [draft, setDraft] = useState(null)
+  const { draft, change, handlers } = useOvcsRangeEdit({
+    value: metres,
+    onCommit: (chosen) => {
+      onChange(chosen)
+      set(chosen).then(onChange, () => onChange(metres))
+    }
+  })
 
   if (metres === null) return null
 
   const shown = draft ?? metres
-  const finish = () => {
-    if (draft === null) return
-    const chosen = draft
-    setDraft(null)
-    if (chosen === metres) return
-    onChange(chosen)
-    set(chosen).then(onChange, () => onChange(metres))
-  }
 
   const label = (
     <span className="flex items-center gap-1 text-xs text-ovcs-muted">
@@ -56,10 +54,8 @@ export default function DepthRange({ set, metres, onChange, vertical = false }) 
       max={INFINITY}
       step={STEP}
       value={toSlider(shown)}
-      onChange={(event) => setDraft(fromSlider(Number(event.target.value)))}
-      onPointerUp={finish}
-      onKeyUp={finish}
-      onBlur={finish}
+      {...handlers}
+      onChange={(event) => change(fromSlider(Number(event.target.value)))}
       style={{ '--colours': colours(side) }}
       className={`colour-slider rounded-full ${className} ${FOCUS}`}
     />

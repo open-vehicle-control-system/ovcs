@@ -382,6 +382,32 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
                conn |> get("/api/calibrations/hq") |> json_response(200)
     end
 
+    test "answers 409 while a calibration session runs, and resets nothing",
+         %{conn: conn, config: config} do
+      :ok =
+        VisionCore.Camera.Calibration.commit(
+          config,
+          :hq,
+          %{VisionApiWeb.CalibrationCase.calibration() | width: 640}
+        )
+
+      {:ok, board} = VisionCore.Calibration.Board.new(8, 6, 0.025)
+      :ok = VisionCore.Calibration.Session.start("unit", board)
+
+      assert %{
+               "errors" => [
+                 %{
+                   "status" => "409",
+                   "title" => "Not reset",
+                   "detail" => "a calibration session is running"
+                 }
+               ]
+             } = conn |> post_action("/api/calibration-resets", reset("hq")) |> json_response(409)
+
+      assert %{"data" => %{"attributes" => %{"source" => "stored"}}} =
+               conn |> get("/api/calibrations/hq") |> json_response(200)
+    end
+
     test "answers 422 when nothing is stored", %{conn: conn} do
       for id <- ["unit", "hq"] do
         assert %{"errors" => [%{"status" => "422", "title" => "Not reset"}]} =

@@ -15,7 +15,6 @@ defmodule VisionApiWeb.CalibrationActionController do
   the unit fails, its stored calibration kept, a 500.
   """
   use VisionApiWeb, :controller
-  require Logger
 
   alias VisionApiWeb.{CalibrationUnit, JsonApi}
   alias VisionCore.Calibration
@@ -57,7 +56,8 @@ defmodule VisionApiWeb.CalibrationActionController do
 
   def reset(conn, _params) do
     act(conn, "calibration-resets", :created, fn data ->
-      with {:ok, id} <- target(data) do
+      with {:ok, id} <- target(data),
+           :ok <- CalibrationUnit.check_idle("Not reset") do
         config = CalibrationUnit.config()
         resettable? = match?({:ok, %{can_reset: true}}, Calibration.in_use(config, id))
 
@@ -72,30 +72,21 @@ defmodule VisionApiWeb.CalibrationActionController do
 
   # Outlives the request: a reset may wait for the stereo unit to restart.
   defp reset_task(config, id) do
-    task =
-      Task.Supervisor.async_nolink(Calibration.Tasks, fn -> Calibration.reset(config, id) end)
-
-    case Task.yield(task, :infinity) do
-      {:ok, outcome} ->
-        outcome
-
-      {:exit, reason} ->
-        Logger.error("#{__MODULE__} reset failed: #{Exception.format_exit(reason)}")
-        {:failed, "the reset failed; the log says why"}
+    case CalibrationUnit.run("the reset", fn -> Calibration.reset(config, id) end) do
+      {:ok, outcome} -> outcome
+      :failed -> {:failed, "the reset failed; the log says why"}
     end
   end
 
   defp act(conn, type, status, run) do
     with :ok <- check_unit(),
-         {:ok, data} <- fetch_data(JsonApi.document(conn), type),
+         {:ok, data} <- JsonApi.fetch_created(JsonApi.document(conn), type),
          :ok <- run.(data) do
-      id = Integer.to_string(System.unique_integer([:positive, :monotonic]))
-
       conn
       |> put_status(status)
-      |> render(:show, type: type, id: id, session: Session.state())
+      |> render(:show, type: type, id: JsonApi.action_id(), session: Session.state())
     else
-      {:error, status, detail, options} -> JsonApi.error(conn, status, detail, options)
+      refusal -> JsonApi.refuse(conn, refusal)
     end
   end
 
@@ -120,17 +111,6 @@ defmodule VisionApiWeb.CalibrationActionController do
   defp not_found(id), do: {:error, 404, "no calibration #{id}", [source: @target_pointer]}
 
   defp start_status, do: if(Session.state().phase == :idle, do: 422, else: 409)
-
-  defp fetch_data(%{"data" => %{"type" => type, "id" => _id}}, type),
-    do: JsonApi.client_id_refusal()
-
-  defp fetch_data(%{"data" => %{"type" => type} = data}, type), do: {:ok, data}
-
-  defp fetch_data(%{"data" => %{"type" => _other}}, type),
-    do: {:error, 409, "type must be #{type}", [source: "/data/type"]}
-
-  defp fetch_data(_params, _type),
-    do: {:error, 400, "data with a type is required", [source: "/data"]}
 
   defp target(%{
          "relationships" => %{

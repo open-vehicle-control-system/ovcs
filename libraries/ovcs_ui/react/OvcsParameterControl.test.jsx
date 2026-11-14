@@ -100,6 +100,28 @@ describe('ParameterControl', () => {
     expect(handlers.onEditEnd).toHaveBeenCalledTimes(1)
   })
 
+  it('ends the edit, committing nothing, when removed while dragged', () => {
+    const handlers = { onChange: vi.fn(), onReset: vi.fn(), onEditStart: vi.fn(), onEditEnd: vi.fn() }
+    const { unmount } = render(<ParameterControl parameter={p1} {...handlers} />)
+    const slider = screen.getByRole('slider', { name: 'p1' })
+    fireEvent.pointerDown(slider)
+    fireEvent.change(slider, { target: { value: '20' } })
+
+    unmount()
+
+    expect(handlers.onEditEnd).toHaveBeenCalledTimes(1)
+    expect(handlers.onChange).not.toHaveBeenCalled()
+  })
+
+  it('ends no edit when removed while idle', () => {
+    const handlers = { onChange: vi.fn(), onReset: vi.fn(), onEditStart: vi.fn(), onEditEnd: vi.fn() }
+    const { unmount } = render(<ParameterControl parameter={p1} {...handlers} />)
+
+    unmount()
+
+    expect(handlers.onEditEnd).not.toHaveBeenCalled()
+  })
+
   it('does not write back a polled value on blur when you typed nothing', () => {
     const handlers = { onChange: vi.fn(), onReset: vi.fn() }
     const { rerender } = render(<ParameterControl parameter={p1} {...handlers} />)

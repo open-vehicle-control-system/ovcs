@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { selectedCalibration, selectedId, useCalibration } from '../calibration.js'
-import { loadBoard, saveBoard } from '../../services/calibration.js'
+import { TAKE_TIMEOUT_MS, loadBoard, resetCalibration, saveBoard, selectSaved } from '../../services/calibration.js'
 
 function fakeChannel() {
   const handlers = {}
@@ -20,7 +20,7 @@ function fakeChannel() {
   return { channel, handlers, receivers }
 }
 
-const initial = { session: null, calibrations: {}, saved: {}, selected: null, error: null, busy: false, unavailable: false }
+const initial = { targets: [], session: null, calibrations: {}, saved: {}, selected: null, error: null, busy: false, unavailable: false }
 const fallback = { columns: 8, rows: 6, squareMm: 25 }
 
 describe('calibration store', () => {
@@ -213,6 +213,99 @@ describe('calibration store', () => {
       await useCalibration.getState().deleteSaved('7')
       expect(useCalibration.getState().error).toBe('the unit runs on this calibration')
     })
+    it('keeps the answer of the last read started when an earlier one answers after it', async () => {
+      const answers = []
+      vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => answers.push(resolve))))
+      const list = (name) => answer(200, { data: [resource('7', { name })] })
+
+      const earlier = useCalibration.getState().loadSaved('stereo')
+      const later = useCalibration.getState().loadSaved('stereo')
+      answers[1](list('Workshop'))
+      await later
+      answers[0](list('Bench'))
+      await earlier
+
+      expect(useCalibration.getState().saved.stereo).toEqual([{ id: '7', name: 'Workshop' }])
+    })
+
+    it('reads the list of the calibration shown again each time the channel joins, as after the unit comes back', async () => {
+      const fetch = vi.fn(async () => answer(200, { data: [] }))
+      vi.stubGlobal('fetch', fetch)
+      const { channel, receivers } = fakeChannel()
+      useCalibration.setState({ calibrations: { stereo: { id: 'stereo' } }, selected: 'stereo', saved: { stereo: [{ id: '7' }] } })
+      useCalibration.getState().listen({ channel: vi.fn(() => channel) })
+
+      receivers.ok()
+      await vi.waitFor(() => expect(useCalibration.getState().saved.stereo).toEqual([]))
+      receivers.ok()
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(fetch.mock.calls[1][0]).toMatch(/filter\[calibration\]=stereo$/)
+    })
+  })
+
+  describe('what the unit can calibrate', () => {
+    const answer = (status, document) => ({ ok: status < 400, status, json: async () => document })
+    const listed = answer(200, { data: [{ type: 'calibrations', id: 'stereo', attributes: { kind: 'stereo' } }] })
+    const down = answer(503, { errors: [{ detail: 'down' }] })
+
+    beforeEach(() => vi.useFakeTimers())
+    afterEach(() => {
+      vi.clearAllTimers()
+      vi.useRealTimers()
+    })
+
+    it('is listed again after a failed read, later each time, until one succeeds', async () => {
+      const fetch = vi.fn().mockResolvedValueOnce(down).mockResolvedValueOnce(down).mockResolvedValue(listed)
+      vi.stubGlobal('fetch', fetch)
+
+      await useCalibration.getState().loadTargets()
+      expect(useCalibration.getState().targets).toEqual([])
+
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1999)
+      expect(fetch).toHaveBeenCalledTimes(2)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(useCalibration.getState().targets).toEqual([{ id: 'stereo', kind: 'stereo' }])
+
+      await vi.advanceTimersByTimeAsync(60000)
+      expect(fetch).toHaveBeenCalledTimes(3)
+    })
+
+    it('keeps the answer of the last read started when an earlier one answers after it', async () => {
+      const answers = []
+      vi.stubGlobal('fetch', vi.fn(() => new Promise((resolve) => answers.push(resolve))))
+
+      const earlier = useCalibration.getState().loadTargets()
+      const later = useCalibration.getState().loadTargets()
+      answers[1](listed)
+      await later
+      answers[0](answer(200, { data: [] }))
+      await earlier
+
+      expect(useCalibration.getState().targets).toEqual([{ id: 'stereo', kind: 'stereo' }])
+    })
+  })
+
+  it('gives the unit TAKE_TIMEOUT_MS to take a calibration, which it answers only once taken', async () => {
+    vi.useFakeTimers()
+    try {
+      const signals = []
+      vi.stubGlobal('fetch', vi.fn((_url, { signal }) => {
+        signals.push(signal)
+        return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+      }))
+      const refusals = [selectSaved('7'), resetCalibration('stereo')].map((taking) => taking.catch((error) => error.message))
+
+      await vi.advanceTimersByTimeAsync(TAKE_TIMEOUT_MS - 1)
+      expect(signals.map((signal) => signal.aborted)).toEqual([false, false])
+      await vi.advanceTimersByTimeAsync(1)
+
+      expect(await Promise.all(refusals)).toEqual(['The vision unit did not answer in time', 'The vision unit did not answer in time'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('loadBoard falls back to the default when storage throws or holds junk', () => {

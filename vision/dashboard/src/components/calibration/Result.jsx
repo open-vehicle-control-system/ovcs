@@ -28,6 +28,8 @@ function Row({ label, solved, inUse }) {
 }
 
 function RmsValue({ px }) {
+  // An error the solve did not give is not judged.
+  if (px == null) return '–'
   const { tone, word } = rmsVerdict(px)
 
   return (

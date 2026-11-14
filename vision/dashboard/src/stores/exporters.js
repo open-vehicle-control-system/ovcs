@@ -4,6 +4,9 @@ import { fetchExporters } from '../services/unit.js'
 const FIRST_RETRY_MS = 1000
 const MAX_RETRY_MS = 30000
 
+// Counts the loads started: of loads that overlap, only the last started is applied or tried again.
+let loads = 0
+
 /**
  * The unit's exporters as the API lists them; their live statuses come with the unit status (`exporterStatus`). A
  * failed load keeps the exporters listed before and is tried again, the delay doubling up to a cap, until one succeeds.
@@ -14,9 +17,13 @@ export const useExporters = create((set, get) => ({
   retryTimer: null,
   async load() {
     clearTimeout(get().retryTimer)
+    loads += 1
+    const started = loads
     try {
-      set({ exporters: await fetchExporters(), retryMs: FIRST_RETRY_MS, retryTimer: null })
+      const exporters = await fetchExporters()
+      if (started === loads) set({ exporters, retryMs: FIRST_RETRY_MS, retryTimer: null })
     } catch {
+      if (started !== loads) return
       const { retryMs } = get()
       set({ retryTimer: setTimeout(() => get().load(), retryMs), retryMs: Math.min(retryMs * 2, MAX_RETRY_MS) })
     }

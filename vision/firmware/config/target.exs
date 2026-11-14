@@ -53,7 +53,9 @@ config :logger, backends: [RingLogger], level: :info
 
 # `:nerves_hub_link` boots before the main app so a unit whose
 # application crashes at startup stays reachable for an OTA fix.
-config :shoehorn, init: [:nerves_runtime, :nerves_pack, :nerves_hub_link]
+config :shoehorn,
+  init: [:nerves_runtime, :nerves_pack, :nerves_hub_link],
+  handler: VisionFirmware.ShoehornHandler
 
 # Both systems mount the application partition at `/root` and link `/data`, where
 # NervesSSH, nerves_time and the rest of the codebase expect it, to it.
@@ -185,7 +187,8 @@ config :vision_api, VisionApiWeb.Endpoint,
     keyfile: "/data/vision_api/key.pem"
   ],
   secret_key_base: System.get_env("SECRET_KEY_BASE"),
-  check_origin: false,
+  # The unit is reached by name or by address: the socket takes the pages it served itself, under either.
+  check_origin: :conn,
   adapter: Bandit.PhoenixAdapter,
   render_errors: [formats: [json: VisionApiWeb.ErrorJSON], layout: false],
   pubsub_server: VisionApi.PubSub,
