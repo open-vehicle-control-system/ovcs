@@ -1,14 +1,18 @@
 defmodule VmsApiWeb.NetworkInterfacesChannel do
+  @moduledoc "Streams CAN interface statistics at a validated dashboard refresh interval."
   use VmsApiWeb, :channel
+  alias VmsApiWeb.RefreshInterval
   alias VmsCore.NetworkInterfaces
 
   intercept ["update"]
 
   @impl Phoenix.Channel
   def join("network-interfaces", payload, socket) do
-    send(self(), :push_network_interfaces)
-    {:ok, timer} = :timer.send_interval(payload["interval"], :push_network_interfaces)
-    {:ok, socket |> assign(:timer, timer)}
+    with {:ok, interval} <- RefreshInterval.fetch(payload) do
+      send(self(), :push_network_interfaces)
+      {:ok, timer} = :timer.send_interval(interval, :push_network_interfaces)
+      {:ok, socket |> assign(:timer, timer)}
+    end
   end
 
   @impl Phoenix.Channel
