@@ -79,6 +79,14 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
       pair as the matcher does. The left one's intrinsics are
       `<topic_prefix>/depth/camera_info`; `<topic_prefix>/left/camera_info`
       describes the raw image.
+    * `:pair_messages` (`[:disparity, :depth, :points]`) — which of a
+      pair's messages it makes: the `DisparityImage`, the depth image with
+      its camera info, the point cloud. The rectified and bare disparity
+      images follow their own switches.
+    * `:sides` (`[:left, :right]`) — the sides whose frames it publishes:
+      their raw images and camera info.
+
+  `outputs/1` gives the `VisionCore.Exporter` outputs these options read.
   """
   require Logger
 
@@ -101,6 +109,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   @default_height 720
   @default_camera_info_interval_frames 30
   @default_raw_image_max_hz 10
+  @pair_messages [:disparity, :depth, :points]
+  @sides [:left, :right]
 
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
@@ -134,6 +144,45 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
           next_image_ms: number() | nil
         }
 
+  @doc """
+  The outputs the stereo `options` read: the pairs, when it makes any of
+  a pair's messages, then the frames of each side it publishes.
+  """
+  @spec outputs(keyword()) :: [VisionCore.Exporter.output()]
+  def outputs(options) do
+    pairs =
+      Keyword.get(options, :pair_messages, @pair_messages) != [] or
+        Keyword.get(options, :publish_rectified_image, false) or
+        Keyword.get(options, :publish_disparity_image, false)
+
+    sides = Keyword.get(options, :sides, @sides)
+
+    if(pairs, do: [:stereo_pair], else: []) ++
+      for(side <- @sides, side in sides, do: {:camera_frame, side})
+  end
+
+  @doc """
+  `:ok`, or why the stereo `options` cannot work: a `:sides` or
+  `:pair_messages` naming what it does not know.
+  """
+  @spec check(keyword()) :: :ok | {:error, String.t()}
+  def check(options) do
+    with :ok <- check_subset(options, :sides, @sides),
+         do: check_subset(options, :pair_messages, @pair_messages)
+  end
+
+  defp check_subset(options, key, known) do
+    case Keyword.get(options, key, known) do
+      listed when is_list(listed) ->
+        if listed -- known == [],
+          do: :ok,
+          else: {:error, "its stereo: #{key} takes #{inspect(known)}, not #{inspect(listed)}"}
+
+      listed ->
+        {:error, "its stereo: #{key} takes a list of #{inspect(known)}, not #{inspect(listed)}"}
+    end
+  end
+
   @doc "The topics, sides and rates of the stereo `options`; see the module doc."
   @spec new(keyword()) :: t()
   def new(options) do
@@ -163,6 +212,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
       disparity_topic: "#{prefix}/disparity",
       disparity_image_topic:
         Keyword.get(options, :publish_disparity_image, false) && "#{prefix}/disparity/image",
+      pair_messages: Keyword.get(options, :pair_messages, @pair_messages),
       depth_topic: "#{prefix}/depth/image_rect",
       depth_camera_info_topic: "#{prefix}/depth/camera_info",
       cloud_topic: "#{prefix}/points",
@@ -349,23 +399,30 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     }
 
     disparity_image = disparity_image(pair, header)
+    made = stereo.pair_messages
 
-    [
-      {stereo.disparity_topic, DisparityImage, disparity_message(pair, header, disparity_image)},
-      {stereo.depth_topic, Image, depth_message(pair, header)}
-    ] ++
-      cloud_messages(pair, header, stereo.cloud_topic) ++
+    made_messages(made, :disparity, fn ->
+      [{stereo.disparity_topic, DisparityImage, disparity_message(pair, header, disparity_image)}]
+    end) ++
+      made_messages(made, :depth, fn ->
+        [{stereo.depth_topic, Image, depth_message(pair, header)}]
+      end) ++
+      made_messages(made, :points, fn -> cloud_messages(pair, header, stereo.cloud_topic) end) ++
       rectified_messages(pair, header, stereo, encode) ++
-      [
+      made_messages(made, :depth, fn ->
         # Consumers look for camera_info next to the depth image topic.
-        {stereo.depth_camera_info_topic, CameraInfo,
-         depth_camera_info(pair.geometry.left_calibration, header)}
-      ] ++
+        [
+          {stereo.depth_camera_info_topic, CameraInfo,
+           depth_camera_info(pair.geometry.left_calibration, header)}
+        ]
+      end) ++
       if(stereo.disparity_image_topic,
         do: [{stereo.disparity_image_topic, Image, disparity_image}],
         else: []
       )
   end
+
+  defp made_messages(made, kind, messages), do: if(kind in made, do: messages.(), else: [])
 
   defp disparity_image(pair, header) do
     {width, height} = Pair.size(pair)

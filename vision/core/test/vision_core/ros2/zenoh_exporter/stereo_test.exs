@@ -120,6 +120,17 @@ defmodule VisionCore.Ros2.ZenohExporter.StereoTest do
       refute Enum.any?(unencodable, &match?({_topic, CompressedImage, _message}, &1))
     end
 
+    test "with pair_messages, makes only the messages it lists: the depth with its camera info" do
+      messages = Stereo.pair_messages(pair(), stereo(pair_messages: [:depth]), &encode/1)
+
+      assert topics(messages) == ["stereo/depth/image_rect", "stereo/depth/camera_info"]
+
+      assert topics(Stereo.pair_messages(pair(), stereo(pair_messages: [:points]), &encode/1)) ==
+               ["stereo/points"]
+
+      assert Stereo.pair_messages(pair(), stereo(pair_messages: []), &encode/1) == []
+    end
+
     test "names its topics under the prefix" do
       messages = Stereo.pair_messages(pair(), stereo(topic_prefix: "front"), &encode/1)
 
@@ -260,6 +271,31 @@ defmodule VisionCore.Ros2.ZenohExporter.StereoTest do
       {messages, _side} = Stereo.frame_messages(jpeg, stereo.sides["left"], stereo, 0, &encode/1)
 
       refute "stereo/left/image_raw" in topics(messages)
+    end
+  end
+
+  describe "outputs/1" do
+    test "reads the pairs and both sides by default" do
+      assert Stereo.outputs([]) == [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}]
+    end
+
+    test "reads the sides it publishes alone" do
+      assert Stereo.outputs(sides: [:left]) == [:stereo_pair, {:camera_frame, :left}]
+      assert Stereo.outputs(sides: [:right]) == [:stereo_pair, {:camera_frame, :right}]
+    end
+
+    test "reads no pair when it publishes none of a pair's messages" do
+      assert Stereo.outputs(pair_messages: []) == [
+               {:camera_frame, :left},
+               {:camera_frame, :right}
+             ]
+
+      assert Stereo.outputs(pair_messages: [:depth]) |> hd() == :stereo_pair
+    end
+
+    test "reads the pairs for their rectified or bare disparity images" do
+      assert hd(Stereo.outputs(pair_messages: [], publish_rectified_image: true)) == :stereo_pair
+      assert hd(Stereo.outputs(pair_messages: [], publish_disparity_image: true)) == :stereo_pair
     end
   end
 

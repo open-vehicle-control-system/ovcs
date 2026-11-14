@@ -242,6 +242,19 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
         assert reason =~ refusal
       end
     end
+
+    test "refuses stereo sides or pair messages it does not know" do
+      assert ZenohExporter.check(options(Camera, stereo: [sides: [:left], pair_messages: []])) ==
+               :ok
+
+      assert {:error, reason} = ZenohExporter.check(options(Camera, stereo: [sides: [:middle]]))
+      assert reason =~ "sides"
+
+      assert {:error, reason} =
+               ZenohExporter.check(options(Camera, stereo: [pair_messages: [:colour]]))
+
+      assert reason =~ "pair_messages"
+    end
   end
 
   test "is listed as ROS 2" do
@@ -258,6 +271,11 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
              ]
 
       assert ZenohExporter.outputs(heartbeat: []) == []
+    end
+
+    test "reads the stereo outputs its stereo options publish" do
+      assert ZenohExporter.outputs(stereo: [sides: [:left], pair_messages: []]) ==
+               [{:camera_frame, :left}]
     end
 
     test "reads the detections of each pipeline its detection options list" do
@@ -903,6 +921,22 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
       assert_received {:published, "stereo/left/camera_info", %CameraInfo{}}
       assert [_publish_ns] = state.telemetry.stages.pub_left
+    end
+
+    test "is listed among the publications in flight until its task answers", %{codec: codec} do
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+      assert ZenohExporter.publishing(state) == %{}
+
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
+      assert [{reference, {:camera_frame, :left}}] = Map.to_list(ZenohExporter.publishing(state))
+      assert is_reference(reference)
+
+      assert_receive {:encoding, encode}
+      GenServer.reply(encode, {:ok, "the jpeg"})
+      assert {:ready, _output, state} = encoded(state)
+      assert ZenohExporter.publishing(state) == %{}
     end
 
     test "that does not encode leaves its output ready, its camera info published",

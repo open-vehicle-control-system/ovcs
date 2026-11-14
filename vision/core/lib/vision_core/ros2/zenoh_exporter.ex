@@ -98,8 +98,10 @@ defmodule VisionCore.Ros2.ZenohExporter do
     * `:stereo` — publishes the stereo unit; `VisionCore.Ros2.ZenohExporter.Stereo`
       documents its options: `:topic_prefix`, the stereo unit's
       `:prefix` by default, the `:publish_*` switches, `:raw_images`,
-      off by default, `:raw_image_max_hz` and
-      `:camera_info_interval_frames`.
+      off by default, `:raw_image_max_hz`,
+      `:camera_info_interval_frames`, and `:pair_messages` and `:sides`,
+      which leave out a pair's messages or a side, and the outputs
+      they would read.
     * `:detections` — publishes the detections of each pipeline its
       `:pipelines` list (`[:detection]`, a detector without a name), each on
       topics and in a marker namespace of its own, under the pipeline's
@@ -235,7 +237,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
   defp check_stereo(stereo_options, config) do
     with true <- is_list(stereo_options) and Keyword.keyword?(stereo_options),
          {:ok, _cameras} <- StereoSupervisor.camera_options(config) do
-      :ok
+      Stereo.check(stereo_options)
     else
       false -> {:error, "its stereo: is not a keyword list: #{inspect(stereo_options)}"}
       {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
@@ -401,10 +403,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   @impl VisionCore.Exporter
   def outputs(options) do
-    stereo =
-      if options[:stereo],
-        do: [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}],
-        else: []
+    stereo = if options[:stereo], do: Stereo.outputs(options[:stereo]), else: []
 
     stereo ++
       Enum.map(detection_pipelines(options[:detections]), &Detection.output/1) ++
@@ -896,6 +895,14 @@ defmodule VisionCore.Ros2.ZenohExporter do
       do: publish_apart(state, output, {:side, side}, publish),
       else: {:ok, published(state, {:side, side}, publish.())}
   end
+
+  @doc """
+  The publications in flight in `state`: each task's reference, whose
+  answer `handle_info/2` takes, and the output it is busy with.
+  """
+  @spec publishing(map()) :: %{reference() => VisionCore.Exporter.output()}
+  def publishing(state),
+    do: Map.new(state.publishing, fn {ref, {output, _what}} -> {ref, output} end)
 
   # An encode can take seconds: the runner is busy with `output` alone until `publish` is done.
   defp publish_apart(state, output, what, publish) do
