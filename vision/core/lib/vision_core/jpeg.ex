@@ -31,7 +31,9 @@ defmodule VisionCore.Jpeg do
   busy and fewer than `:ports` open. A Port that exits fails its own
   request only, and another opens for the next. A request without a
   reply within `:timeout_ms` of reaching its Port closes that Port, so
-  its late reply cannot answer the next one.
+  its late reply cannot answer the next one, and kills its program if
+  it does not exit (`VisionCore.PortProcess`). A program that cannot be
+  run answers its request with `{:error, {:no_encoder, path, reason}}`.
 
   ## Options
 
@@ -312,12 +314,8 @@ defmodule VisionCore.Jpeg do
 
   defp hold_latest(finished, _stream, _frame, {:error, _reason}), do: finished
 
-  defp close(port) do
-    Port.close(port)
-  rescue
-    # Already closed by its exit, whose status is ignored once the Port is forgotten.
-    ArgumentError -> :ok
-  end
+  # A program that does not exit with its Port is killed; one already gone is left alone.
+  defp close(port), do: VisionCore.PortProcess.close(port)
 
   defp open_port do
     path = executable()
@@ -325,7 +323,14 @@ defmodule VisionCore.Jpeg do
     if File.exists?(path),
       do: {:ok, Port.open({:spawn_executable, path}, [:binary, {:packet, 4}, :exit_status])},
       else: {:error, {:no_encoder, path}}
+  rescue
+    # A program that cannot be run, or no room for another Port.
+    error in [ErlangError, ArgumentError, SystemLimitError] ->
+      {:error, {:no_encoder, executable(), error_reason(error)}}
   end
+
+  defp error_reason(%ErlangError{original: reason}), do: reason
+  defp error_reason(error), do: Exception.message(error)
 
   defp executable do
     Application.get_env(:vision_core, :jpeg_codec_path) ||
