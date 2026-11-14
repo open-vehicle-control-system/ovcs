@@ -8,14 +8,15 @@ The codecs are pure Elixir. `Ros2Zenoh.Client` holds the one [`zenohex`](https:/
 
 | Module | |
 |---|---|
-| `Ros2Zenoh.<Package>.Msg.<Name>` | One codec per message type: `encode/1` for the CDR body, `parse/1` where a consumer reads it, and `dds_type/0` + `type_hash/0` for publishing |
+| `Ros2Zenoh.<Package>.Msg.<Name>` | One codec per message type: `encode/1` for the CDR body, `parse/1` where a consumer reads it, `dds_type/0` + `type_hash/0` for publishing, and `msg_definition/0` + `dependencies/0` for recording |
+| `Ros2Zenoh` | `definition/1`, the `ros2msg` schema rosbag2 writes for a message type into an MCAP file: its `.msg` text and each type it depends on |
 | `Ros2Zenoh.Common` | The CDR primitives each message module gets with `use Ros2Zenoh.Common`, and their alignment rules |
 | `Ros2Zenoh.Cdr` | Lower-level CDR helpers shared by the codecs |
 | `Ros2Zenoh.RmwZenoh` | Key expressions, the encapsulation header, publisher attachments and liveliness tokens |
 | `Ros2Zenoh.RclInterfaces.Parameters` | The `rcl_interfaces` parameter services, for a node that serves parameters |
 | `Ros2Zenoh.Client` | The session: connects to the router and reconnects, publishes (encoding in the caller), subscribes, answers services and declares the liveliness tokens that make all of them visible in the ROS graph. With `config :ros2_zenoh, clock_synchronized?: {NervesTime, :synchronized?, []}`, as the Nerves firmwares set it, it publishes nothing until the board's clock is synchronized: `clock_synchronized?/0` says whether it has begun, and `link/0` counts the publishes dropped until then. Images and point clouds go out at a lower Zenoh priority than every other message (`Ros2Zenoh.priority/1`) |
 
-The packages are `builtin_interfaces`, `diagnostic_msgs`, `foxglove_msgs`, `geometry_msgs`, `nav_msgs`, `rosgraph_msgs`, `sensor_msgs`, `std_msgs`, `stereo_msgs`, `tf2_msgs`, `vision_msgs` and `visualization_msgs`, each with the message types something here publishes or reads; `lib/ros2_zenoh/` lists them. Type hashes are those of ROS 2 Lyrical.
+The packages are `builtin_interfaces`, `diagnostic_msgs`, `foxglove_msgs`, `geometry_msgs`, `nav_msgs`, `rosgraph_msgs`, `sensor_msgs`, `std_msgs`, `stereo_msgs`, `tf2_msgs`, `vision_msgs` and `visualization_msgs`, each with the message types something here publishes or reads; `lib/ros2_zenoh/` lists them. Type hashes and definitions are those of ROS 2 Lyrical, the definitions its `.msg` files, comments included. A type nested in a published one but never encoded on its own (`diagnostic_msgs/DiagnosticStatus`, `foxglove_msgs/CircleAnnotation`, …) has a module with its definition only.
 
 ## The rmw_zenoh wire format
 
@@ -74,11 +75,17 @@ undeclared and the topic disappears from `ros2 topic list`.
 3. For **subscribing** only `parse/1` is needed — the rmw_zenoh
    keyexpr is matched on the `<domain>/<topic>/**` wildcard, so the
    message's DDS type name and hash don't have to be hard-coded.
-4. Use it: `RmwZenoh.key_expr/3` and `RmwZenoh.encode_payload/1` work
+4. For **recording**, `def msg_definition` returns the type's `.msg`
+   file as ROS 2 Lyrical installs it, verbatim (trailing spaces as `\s`),
+   and `def dependencies` the message modules its fields name, once
+   each, in field order; every module it names needs the same two. Copy the
+   `.msg` file into `test/support/msg/<pkg>/` and its source into the
+   README there.
+5. Use it: `RmwZenoh.key_expr/3` and `RmwZenoh.encode_payload/1` work
    uniformly across types for the publisher side;
    on the subscriber side, strip the header with
    `RmwZenoh.decode_payload/1` before the message's `parse/1`.
 
 ## Tests
 
-`mix test` round-trips every codec that has a `parse/1` and checks the alignment of the encode-only ones. `test/support/golden_cdr.json` holds byte vectors that a real ROS 2 runtime deserialised; `test/support/golden_cdr.md` records how they were produced and how to regenerate them.
+`mix test` round-trips every codec that has a `parse/1` and checks the alignment of the encode-only ones. `definition_test.exs` checks each `msg_definition/0` and `dependencies/0` against ROS 2 Lyrical's `.msg` files in `test/support/msg`, and `Ros2Zenoh.definition/1` against rosbag2's algorithm run over those files. `test/support/golden_cdr.json` holds byte vectors that a real ROS 2 runtime deserialised; `test/support/golden_cdr.md` records how they were produced and how to regenerate them.

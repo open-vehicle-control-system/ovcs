@@ -14,6 +14,17 @@ defmodule Ros2Zenoh.GeometryMsgs.Msg.Pose do
 
   defstruct position: %Point{}, orientation: %Quaternion{x: 0.0, y: 0.0, z: 0.0, w: 1.0}
 
+  def msg_definition do
+    """
+    # A representation of pose in free space, composed of position and orientation.
+
+    Point position
+    Quaternion orientation
+    """
+  end
+
+  def dependencies, do: [Point, Quaternion]
+
   def encode(%__MODULE__{position: position, orientation: orientation}) do
     Point.encode(position) <> Quaternion.encode(orientation)
   end

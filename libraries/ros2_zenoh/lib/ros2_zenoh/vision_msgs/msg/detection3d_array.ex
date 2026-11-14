@@ -16,6 +16,20 @@ defmodule Ros2Zenoh.VisionMsgs.Msg.Detection3DArray do
 
   defstruct header: nil, detections: []
 
+  def msg_definition do
+    """
+    # A list of 3D detections, for a multi-object 3D detector.
+
+    std_msgs/Header header
+
+    # A list of the detected proposals. A multi-proposal detector might generate
+    #   this list with many candidate detections generated from a single input.
+    Detection3D[] detections
+    """
+  end
+
+  def dependencies, do: [Header, Detection3D]
+
   def dds_type, do: "vision_msgs::msg::dds_::Detection3DArray_"
 
   def type_hash,

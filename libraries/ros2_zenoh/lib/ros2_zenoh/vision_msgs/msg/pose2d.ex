@@ -9,6 +9,17 @@ defmodule Ros2Zenoh.VisionMsgs.Msg.Pose2D do
 
   defstruct position: %Point2D{}, theta: 0.0
 
+  def msg_definition do
+    """
+    # Represents a 2D pose (coordinates and a radian rotation). Rotation is positive counterclockwise.
+
+    vision_msgs/Point2D position
+    float64 theta
+    """
+  end
+
+  def dependencies, do: [Point2D]
+
   def encode(%__MODULE__{position: position, theta: theta}),
     do: Point2D.encode(position) <> encode_float64(theta)
 end

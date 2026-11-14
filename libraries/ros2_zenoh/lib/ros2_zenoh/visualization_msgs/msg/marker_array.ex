@@ -32,6 +32,14 @@ defmodule Ros2Zenoh.VisualizationMsgs.Msg.MarkerArray do
 
   defstruct markers: []
 
+  def msg_definition do
+    """
+    Marker[] markers
+    """
+  end
+
+  def dependencies, do: [Marker]
+
   def dds_type, do: "visualization_msgs::msg::dds_::MarkerArray_"
 
   def type_hash,

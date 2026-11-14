@@ -19,6 +19,14 @@ defmodule Ros2Zenoh.Tf2Msgs.Msg.TFMessage do
 
   defstruct transforms: []
 
+  def msg_definition do
+    """
+    geometry_msgs/TransformStamped[] transforms
+    """
+  end
+
+  def dependencies, do: [TransformStamped]
+
   @dds_type "tf2_msgs::msg::dds_::TFMessage_"
   # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @type_hash "RIHS01_e369d0f05a23ae52508854b66f6aa0437f3449d652e8cbf22d5abe85d020f087"

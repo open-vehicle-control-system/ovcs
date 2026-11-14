@@ -11,6 +11,21 @@ defmodule Ros2Zenoh.VisualizationMsgs.Msg.MeshFile do
 
   defstruct filename: "", data: <<>>
 
+  def msg_definition do
+    """
+    # Used to send raw mesh files.
+
+    # The filename is used for both debug purposes and to provide a file extension
+    # for whatever parser is used.
+    string filename
+
+    # This stores the raw text of the mesh file.
+    uint8[] data
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{filename: filename, data: data}) do
     encode_string(filename) <> encode_byte_sequence(data)
   end

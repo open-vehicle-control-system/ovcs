@@ -9,6 +9,32 @@ defmodule Ros2Zenoh.SensorMsgs.Msg.RegionOfInterest do
 
   defstruct x_offset: 0, y_offset: 0, height: 0, width: 0, do_rectify: false
 
+  def msg_definition do
+    """
+    # This message is used to specify a region of interest within an image.
+    #
+    # When used to specify the ROI setting of the camera when the image was
+    # taken, the height and width fields should either match the height and
+    # width fields for the associated image; or height = width = 0
+    # indicates that the full resolution image was captured.
+
+    uint32 x_offset  # Leftmost pixel of the ROI
+                     # (0 if the ROI includes the left edge of the image)
+    uint32 y_offset  # Topmost pixel of the ROI
+                     # (0 if the ROI includes the top edge of the image)
+    uint32 height    # Height of ROI
+    uint32 width     # Width of ROI
+
+    # True if a distinct rectified ROI should be calculated from the "raw"
+    # ROI in this message. Typically this should be False if the full image
+    # is captured (ROI not used), and True if a subwindow is captured (ROI
+    # used).
+    bool do_rectify
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{} = roi) do
     encode_uint32(roi.x_offset) <>
       encode_uint32(roi.y_offset) <>
