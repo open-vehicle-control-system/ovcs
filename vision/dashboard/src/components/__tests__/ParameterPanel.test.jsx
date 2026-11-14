@@ -60,7 +60,10 @@ describe('ParameterPanel', () => {
 
     const toggle = screen.getByRole('button', { name: 'How it works' })
     const explanation = screen.getByText('The shift between the two images is the disparity. Watch Matched pixels.')
-    expect(screen.getByText('Find each pixel in the other image', { exact: false }).contains(toggle)).toBe(true)
+    const summary = screen.getByText('Find each pixel in the other image', { exact: false })
+    // In a block of its own under the summary, not inline in it, however the summary wraps.
+    expect(summary.contains(toggle)).toBe(false)
+    expect(summary.nextElementSibling.contains(toggle)).toBe(true)
     expect(toggle.getAttribute('aria-controls')).toBe(explanation.id)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(explanation.hidden).toBe(true)
