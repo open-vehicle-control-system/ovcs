@@ -119,6 +119,7 @@ defmodule VisionCore.Stereo.Pipeline do
 
   @default_flush_after_ms 100
   @default_device_timeout_ms 10_000
+  @reload_timeout_ms 30_000
   @max_failed_pairs 10
 
   alias VisionCore.Camera.Frame
@@ -232,9 +233,10 @@ defmodule VisionCore.Stereo.Pipeline do
   stage with its settings in force, so the next pair reflects the new
   geometry. `paths` (`:left_calibration_path`, `:right_calibration_path`)
   replaces the YAMLs to read, for this and later reloads, once they load.
+  The call waits #{div(@reload_timeout_ms, 1_000)} s for the stages to be rebuilt, then exits.
   """
   def reload_calibration(server, paths \\ []),
-    do: GenServer.call(server, {:reload_calibration, paths})
+    do: GenServer.call(server, {:reload_calibration, paths}, @reload_timeout_ms)
 
   @doc """
   The monotonic time, in milliseconds, of the pipeline's start, of its
@@ -690,7 +692,12 @@ defmodule VisionCore.Stereo.Pipeline do
 
   defp normalise_stage(module) when is_atom(module), do: normalise_stage({module, []})
 
-  defp stage_name(module),
+  @doc """
+  The name the stage `module` goes by in the pipeline, its parameters'
+  ids and `stage_options/1`: its last segment, underscored.
+  """
+  @spec stage_name(module()) :: atom()
+  def stage_name(module),
     do: module |> Module.split() |> List.last() |> Macro.underscore() |> String.to_atom()
 
   defp backends(opts) do

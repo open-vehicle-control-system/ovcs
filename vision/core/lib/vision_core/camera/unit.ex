@@ -69,6 +69,7 @@ defmodule VisionCore.Camera.Unit do
           server: atom(),
           frame_id: String.t(),
           calibration_path: Path.t() | nil,
+          built_in_calibration_path: Path.t() | nil,
           calibration_store_path: Path.t() | nil,
           pose_path: Path.t() | nil,
           outputs: [Output.t()]
@@ -268,8 +269,9 @@ defmodule VisionCore.Camera.Unit do
   What the consumers of `config`'s cameras read of each, in config order,
   for the cameras `cameras/1` lists: its name, the name its driver
   registers under, its optical frame, its calibration path, the stored
-  calibration first when there is one, the path a committed calibration
-  is stored at (`nil` without a store), and its pose path. The store is
+  calibration first when there is one, its built-in calibration path,
+  the path a committed calibration is stored at (`nil` without a store),
+  and its pose path. The store is
   read at each call. `:outputs` are the named image outputs it sends, in
   config order, its default first, none for a driver without them or
   whose outputs cannot be made.
@@ -293,6 +295,7 @@ defmodule VisionCore.Camera.Unit do
         server: server,
         frame_id: Keyword.get(opts, :frame_id, default_frame_id(name)),
         calibration_path: calibration_path(opts[:calibration], store_path),
+        built_in_calibration_path: opts[:calibration],
         calibration_store_path: store_path,
         pose_path: opts[:pose],
         outputs: outputs

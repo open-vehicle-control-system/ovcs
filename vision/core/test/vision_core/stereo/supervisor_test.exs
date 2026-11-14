@@ -11,6 +11,16 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
   @moduletag :tmp_dir
 
+  # A camera that runs and captures nothing.
+  defmodule IdleCamera do
+    use Agent
+
+    def name_for(label), do: Module.concat(__MODULE__, label)
+
+    def start_link(opts),
+      do: Agent.start_link(fn -> opts end, name: name_for(Keyword.fetch!(opts, :label)))
+  end
+
   @left_options [calibration_path: "/rom/stereo_left.yaml"]
   @right_options [calibration_path: "/rom/stereo_right.yaml"]
 
@@ -399,6 +409,146 @@ defmodule VisionCore.Stereo.SupervisorTest do
     end
   end
 
+  describe "an uncalibrated unit" do
+    defp child_ids(opts) do
+      {:ok, {_flags, children}} = StereoSupervisor.init(opts)
+      Enum.map(children, & &1.id)
+    end
+
+    defp in_dir(tmp_dir),
+      do: Keyword.merge(@stereo, calibration_dir: tmp_dir, left: [], right: [])
+
+    defp install_calibration(tmp_dir, sides) do
+      for side <- sides,
+          do:
+            File.cp!(calibration_path(:identity, side), Path.join(tmp_dir, "stereo_#{side}.yaml"))
+    end
+
+    defp start_unit(tmp_dir) do
+      Process.flag(:trap_exit, true)
+      StereoSupervisor.start_link(Keyword.put(in_dir(tmp_dir), :driver, IdleCamera))
+    end
+
+    test "with neither calibration file, starts the two cameras alone and says so",
+         %{tmp_dir: tmp_dir} do
+      log =
+        capture_log(fn ->
+          assert {:ok, unit} = start_unit(tmp_dir)
+
+          assert unit |> Supervisor.which_children() |> Enum.map(&elem(&1, 0)) |> Enum.sort() ==
+                   [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
+
+          Supervisor.stop(unit)
+        end)
+
+      assert log =~ "uncalibrated"
+      assert log =~ Path.join(tmp_dir, "stereo_left.yaml")
+    end
+
+    test "without calibration paths, starts the two cameras alone" do
+      log =
+        capture_log(fn ->
+          assert child_ids(Keyword.merge(@stereo, left: [], right: [])) == [
+                   {:stereo, :driver, :left},
+                   {:stereo, :driver, :right}
+                 ]
+        end)
+
+      assert log =~ "uncalibrated"
+    end
+
+    test "with one calibration file, fails to start, the pipeline refusing the missing one",
+         %{tmp_dir: tmp_dir} do
+      install_calibration(tmp_dir, [:left])
+
+      log = capture_log(fn -> assert start_unit(tmp_dir) == :ignore end)
+
+      assert log =~ "failed to start, cameras down"
+      assert log =~ "cannot read calibration"
+      assert log =~ Path.join(tmp_dir, "stereo_right.yaml")
+      assert Process.whereis(StereoSupervisor) == nil
+    end
+
+    test "with both calibration files, starts the pipeline", %{tmp_dir: tmp_dir} do
+      install_calibration(tmp_dir, [:left, :right])
+      assert Pipeline in child_ids(in_dir(tmp_dir))
+    end
+
+    test "calibrated?/1 once both sides' calibration files exist", %{tmp_dir: tmp_dir} do
+      config = %VisionCore.Config{components: [{:stereo, in_dir(tmp_dir)}]}
+      refute StereoSupervisor.calibrated?(config)
+
+      install_calibration(tmp_dir, [:left])
+      refute StereoSupervisor.calibrated?(config)
+
+      install_calibration(tmp_dir, [:right])
+      assert StereoSupervisor.calibrated?(config)
+    end
+
+    test "calibrated?/1 is false without a stereo component" do
+      refute StereoSupervisor.calibrated?(%VisionCore.Config{})
+    end
+
+    test "a commit forgets the saved row offset before it restarts the unit", %{tmp_dir: tmp_dir} do
+      start_supervised!(
+        {MemoryStore,
+         %{"stereo.rectification.right_row_offset" => 2.0, "stereo.disparity.p1" => 5}}
+      )
+
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+      config = %VisionCore.Config{components: [{:stereo, in_dir(tmp_dir)}]}
+      test = self()
+
+      calibrations =
+        Map.new([:left, :right], fn side ->
+          {side, VisionCore.Ros2.CameraCalibration.load!(calibration_path(:identity, side))}
+        end)
+
+      assert :ok =
+               VisionCore.Stereo.Calibration.commit(config, calibrations,
+                 pipeline_running?: fn -> false end,
+                 restart: fn ->
+                   send(test, {:restarted, MemoryStore.rows()})
+                   {:ok, test}
+                 end
+               )
+
+      assert_received {:restarted, %{"stereo.disparity.p1" => 5} = rows}
+      assert map_size(rows) == 1
+    end
+
+    test "forget_row_offset/1 forgets the offset of the stage that declares it, whatever its name" do
+      start_supervised!(
+        {MemoryStore,
+         %{
+           "front.vehicle_rectification.right_row_offset" => 2.0,
+           "front.disparity.p1" => 5
+         }}
+      )
+
+      start_supervised!({VisionCore.Parameters, store: MemoryStore})
+
+      stereo =
+        Keyword.merge(@stereo,
+          prefix: "front",
+          stages: [VehicleRectification | tl(Pipeline.default_stages())]
+        )
+
+      assert :ok =
+               StereoSupervisor.forget_row_offset(%VisionCore.Config{
+                 components: [stereo: stereo]
+               })
+
+      assert MemoryStore.rows() == %{"front.disparity.p1" => 5}
+      assert :ok = StereoSupervisor.forget_row_offset(%VisionCore.Config{})
+    end
+
+    test "pipeline_options/1 still names the calibration it needs", %{tmp_dir: tmp_dir} do
+      opts = StereoSupervisor.pipeline_options(in_dir(tmp_dir))
+      assert opts[:left_calibration_path] == Path.join(tmp_dir, "stereo_left.yaml")
+    end
+  end
+
   describe "reload_calibration/3" do
     defp start_pipeline(stages) do
       start_supervised!(
@@ -440,20 +590,6 @@ defmodule VisionCore.Stereo.SupervisorTest do
       values = Map.new(Pipeline.stage_options(pipeline), &{&1.stage, &1.values})
       assert values.vehicle_rectification.right_row_offset == 0.0
       assert MemoryStore.rows() == %{"stereo.disparity.p1" => 5}
-    end
-  end
-
-  describe "reload_stored_calibration/4" do
-    test "waits for the second side before reloading", %{tmp_dir: tmp_dir} do
-      left_path = Path.join(tmp_dir, "stereo_left.yaml")
-      File.write!(left_path, "")
-
-      assert StereoSupervisor.reload_stored_calibration(
-               :no_backend,
-               "stereo",
-               left_path,
-               Path.join(tmp_dir, "stereo_right.yaml")
-             ) == :ok
     end
   end
 end

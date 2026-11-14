@@ -218,4 +218,22 @@ defmodule VisionCore.Ros2.CameraCalibrationTest do
       refute CameraCalibration.proportional?(calibration, 4056, 2980)
     end
   end
+
+  describe "check_matrices/1" do
+    test "takes a calibration whose matrices have their 9, 9 and 12 values" do
+      assert CameraCalibration.check_matrices(CameraCalibration.parse(@ost_style)) == :ok
+      assert CameraCalibration.check_matrices(CameraCalibration.parse("")) == :ok
+    end
+
+    test "names the matrix that has another count" do
+      short = CameraCalibration.parse("camera_matrix:\n  data: [1, 2]\n")
+      assert {:error, message} = CameraCalibration.check_matrices(short)
+      assert message == "its camera matrix has 2 values, not 9"
+
+      empty = CameraCalibration.parse("projection_matrix:\n  data: []\n")
+
+      assert {:error, "its projection matrix has 0 values, not 12"} =
+               CameraCalibration.check_matrices(empty)
+    end
+  end
 end

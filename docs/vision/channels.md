@@ -218,3 +218,19 @@ scene.join()
 ```
 
 A name no segmentation pipeline of the unit runs under, a detection pipeline's included, is refused with `{"reason": "unavailable"}`.
+
+## Calibration
+
+`calibration` follows what the [calibration routes](./api.md#calibration) change. On join, it pushes a `calibration` event for each calibration the unit has, then a `session` event; afterwards, a `calibration` event each time the unit takes another calibration, and a `session` event on each change of the session, a new detection at most 15 times a second.
+
+- A `calibration` event carries the calibration's `id` and its attributes, as `GET /api/calibrations/:id` gives them.
+- A `session` event carries the session's attributes, as the action routes answer them, and `calibration`, the id of the calibration it works on, `null` while idle.
+
+```javascript
+const calibration = socket.channel('calibration')
+calibration.on('calibration', ({ id, source }) => console.log(id, source))
+calibration.on('session', ({ phase, samples, progress }) => console.log(phase, samples, progress))
+calibration.join()
+```
+
+Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.

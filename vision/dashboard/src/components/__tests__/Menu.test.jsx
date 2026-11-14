@@ -5,6 +5,7 @@ import { useParameters } from '../../stores/parameters.js'
 import { useNavigation } from '../../stores/navigation.js'
 import { useExporters } from '../../stores/exporters.js'
 import { useStatus } from '../../stores/status.js'
+import { useCalibration } from '../../stores/calibration.js'
 
 vi.mock('../../services/parameters.js')
 
@@ -33,7 +34,7 @@ describe('Menu', () => {
     render(<Menu />)
 
     const main = screen.getByRole('region', { name: 'Main' })
-    expect(within(main).getAllByRole('button').map((button) => button.textContent)).toEqual(['Overview', 'Calibration'])
+    expect(within(main).getAllByRole('button').map((button) => button.textContent)).toEqual(['Overview'])
 
     const pipelines = screen.getByRole('region', { name: 'Pipelines' })
     expect(within(within(pipelines).getByRole('list', { name: 'Stereo' })).getByRole('button', { name: 'Cameras' })).toBeTruthy()
@@ -41,6 +42,27 @@ describe('Menu', () => {
 
     const exporters = screen.getByRole('region', { name: 'Exporters' })
     expect(within(exporters).getAllByRole('button').map((button) => button.textContent)).toEqual(['ROS 2', 'API'])
+  })
+
+  it("lists what the unit can calibrate, its stereo cameras first, each opening its calibration", () => {
+    useCalibration.setState({ targets: [{ id: 'stereo', kind: 'stereo' }, { id: 'center', kind: 'camera' }] })
+    render(<Menu />)
+
+    const calibration = screen.getByRole('region', { name: 'Calibration' })
+    const buttons = within(calibration).getAllByRole('button')
+    expect(buttons.map((button) => button.textContent)).toEqual(['Stereo cameras', 'Center camera'])
+
+    fireEvent.click(buttons[1])
+    expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'center' })
+    expect(buttons[1].getAttribute('aria-current')).toBe('page')
+    expect(buttons[0].getAttribute('aria-current')).toBeNull()
+  })
+
+  it('has no Calibration section on a unit with nothing to calibrate', () => {
+    useCalibration.setState({ targets: [] })
+    render(<Menu />)
+
+    expect(screen.queryByRole('region', { name: 'Calibration' })).toBeNull()
   })
 
   it('marks each exporter with the status the unit status reports for it, and opens its page', () => {

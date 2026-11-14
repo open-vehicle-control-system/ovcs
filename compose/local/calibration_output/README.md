@@ -1,5 +1,12 @@
 # Stereo calibration outputs
 
+The vision unit's dashboard calibrates its cameras on its own, with
+the same OpenCV steps and defaults as `cameracalibrator`, and needs
+neither ROS 2 nor an X display: see
+[Calibrate the cameras](../../../docs/vision/calibration.md). This
+directory serves the other path, `cameracalibrator` over ROS 2, which
+commits through the same code on the unit.
+
 The `calibrator` compose service writes its captured-samples tarball
 into this directory when you click **Save** in the cameracalibrator
 GUI (`calibrationdata.tar.gz`). Both the tarball and any extracted
@@ -52,7 +59,10 @@ with `docker compose exec ros2 ros2 topic list`.
    calibration live and keeps it across restarts in its
    `:calibration_store_dir`, `/data/vision/calibration/` on the OVCS
    Mini (the firmware's own files are read-only), which it prefers at
-   boot once both sides are there. The calibrator exits after COMMIT.
+   boot once both sides are there. A unit without a calibration
+   restarts with its depth pipeline once both sides are written. The
+   dashboard's Calibration page then shows it in use. The calibrator
+   exits after COMMIT.
 
 7. **Install it in your vehicle package,** so a fresh firmware or
    a wiped data partition gets it too. Either extract the tarball:
@@ -61,7 +71,8 @@ with `docker compose exec ros2 ros2 topic list`.
    cp left.yaml  ../../../vehicles/<vehicle>/priv/calibration/stereo_left.yaml
    cp right.yaml ../../../vehicles/<vehicle>/priv/calibration/stereo_right.yaml
    ```
-   or copy the committed files off the vehicle:
+   or download them from the dashboard's Calibration page, or copy
+   the committed files off the vehicle:
    ```
    sftp <vehicle>-vision.local:/data/vision/calibration/stereo_left.yaml  ../../../vehicles/<vehicle>/priv/calibration/
    sftp <vehicle>-vision.local:/data/vision/calibration/stereo_right.yaml ../../../vehicles/<vehicle>/priv/calibration/

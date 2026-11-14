@@ -55,6 +55,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         load_percent: 64.5,
         pipelines: %{detection: %{inference_ms: 21.5}, road: %{inference_ms: nil}}
       },
+      calibrated: true,
       depth_hz: 29.9,
       cpu_percent: 61.0,
       stereo_segment_percent: 96.5,
@@ -115,6 +116,7 @@ defmodule VisionApiWeb.StatusJSONTest do
                loadPercent: 64.5,
                pipelines: %{detection: %{inferenceMs: 21.5}, road: %{inferenceMs: nil}}
              },
+             calibrated: true,
              depthHz: 29.9,
              stereoLoadPercent: 96.5,
              alignment: %{offsetRows: -0.02, bandOffsetRows: [0.1, -0.1]},
@@ -147,6 +149,7 @@ defmodule VisionApiWeb.StatusJSONTest do
         range: %{level: :off, camera: nil, issues: []}
       },
       npu: nil,
+      calibrated: false,
       depth_hz: 0.0,
       cpu_percent: nil,
       stereo_segment_percent: 0.0,
@@ -162,6 +165,7 @@ defmodule VisionApiWeb.StatusJSONTest do
              sharpness: nil,
              quality: nil,
              npu: nil,
+             calibrated: false,
              exporters: [%{id: "api"}]
            } = payload = StatusJSON.status(snapshot)
 

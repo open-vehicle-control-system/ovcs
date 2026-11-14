@@ -62,6 +62,8 @@ defmodule VisionFirmware.MixProject do
       # Compiles the Nx stereo stages on a workstation; boards load
       # precompiled modules.
       {:exla, "~> 1.0", targets: :host},
+      # EXLA needs Nx 1.0; evision, through vision_core, asks for < 1.0.
+      {:nx, "~> 1.0", override: true},
       # `OvcsVehicle.Firmware.resolve_side/4` is used from
       # `config/runtime.exs` to prepend the vehicle's ebin.
       {:ovcs_vehicle, path: "../../libraries/ovcs_vehicle"},

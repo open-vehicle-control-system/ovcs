@@ -9,6 +9,9 @@ import { issueActions, issueWording } from './issues.js'
 
 export const formatNumber = (number, decimals = 1) => (number == null ? '–' : Number(number).toFixed(decimals))
 
+/** A length in metres, shown in millimetres. */
+export const millimetres = (metres) => (metres == null ? '–' : `${formatNumber(metres * 1000)} mm`)
+
 export function cameraFigures(camera) {
   if (!camera || !camera.present) return [{ label: 'camera', value: 'absent', tone: 'error', hint: HINTS.cameraRate }]
   const figures = [
@@ -168,9 +171,16 @@ function npuValue(npu) {
   return npu.loadPercent == null ? npu.kind : `${npu.kind} ${formatNumber(npu.loadPercent, 0)} %`
 }
 
+// Shown only on a unit without a calibration, which computes no depth.
+function calibrationStatus(calibrated) {
+  if (calibrated !== false) return []
+  return [{ id: 'calibration', title: 'Calibration', value: 'uncalibrated', healthy: false, hint: HINTS.calibration }]
+}
+
 /** The unit's links and load, each with the widest form of its value, which the top bar keeps room for. */
 export function unitStatus(status) {
   return [
+    ...calibrationStatus(status.calibrated),
     ...ros2Status(status.exporters),
     // Neither is a fault: no NPU is a unit built without an accelerator, one starting is preparing its model.
     {

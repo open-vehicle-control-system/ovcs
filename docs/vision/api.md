@@ -1,6 +1,6 @@
 ---
 title: Vision API
-description: How a program reads and changes the vision unit's parameters, and reads its configuration, firmware and exports, over HTTPS.
+description: How a program reads and changes the vision unit's parameters, calibrates its cameras, and reads its configuration, firmware and exports, over HTTPS.
 ---
 
 The vision unit serves its API next to the dashboard, over HTTPS:
@@ -396,6 +396,115 @@ A unit without the ROS 2 link answers a 404. The example is shortened to one top
   ]
 }
 ```
+
+## Calibration
+
+The calibration routes do what the dashboard's Calibration page does; [Calibrate the cameras](./calibration.md) explains the steps and the files.
+
+`GET /api/calibrations` lists the calibration in use of each thing the unit can calibrate: its stereo pair, identified by the stereo unit's prefix, then each camera of its own, identified by its name. `GET /api/calibrations/:id` returns one, a 404 for an id that is none of them. A calibration has:
+
+- its `kind`, `stereo` or `camera`;
+- its `source`, `builtIn`, `stored` or `none`, and `storedAt`, the time a stored one was stored;
+- `canReset`, whether you can return to the built-in one: while anything is stored and a built-in calibration exists;
+- its `cameras`, two for a stereo pair and one for a camera: each one's `name`, the `file` name to save its `yaml` under, its image size, `fx`, `fy`, `cx`, `cy` and distortion coefficients, each `null` without a file;
+- for a stereo pair, `baselineM`, the rectified baseline, and `rectifiedFx`, the left camera's rectified focal length; both `null` for a camera;
+- `error`, why a file gives no calibration, such as one that cannot be read or whose matrices are malformed, `null` otherwise. That camera's figures are `null`, and the calibration can still be made again or reset.
+
+On the OVCS Mini, the YAML shortened:
+
+```json
+{
+  "data": {
+    "type": "calibrations",
+    "id": "stereo",
+    "attributes": {
+      "kind": "stereo",
+      "source": "builtIn",
+      "storedAt": null,
+      "canReset": false,
+      "error": null,
+      "baselineM": 0.09,
+      "rectifiedFx": 378.65,
+      "cameras": [
+        {
+          "name": "left",
+          "file": "stereo_left.yaml",
+          "imageWidth": 480,
+          "imageHeight": 270,
+          "fx": 344.48,
+          "fy": 343.86,
+          "cx": 233.18,
+          "cy": 141.23,
+          "distortion": [0.0899, -0.0749, 0.0027, -0.008, 0.0],
+          "yaml": "image_width: 480\nimage_height: 270\ncamera_name: stereo_left\n…"
+        },
+        {
+          "name": "right",
+          "file": "stereo_right.yaml",
+          "imageWidth": 480,
+          "imageHeight": 270,
+          "fx": 345.1,
+          "fy": 344.93,
+          "cx": 240.82,
+          "cy": 137.82,
+          "distortion": [0.1133, -0.1296, 0.002, -0.0037, 0.0],
+          "yaml": "image_width: 480\nimage_height: 270\ncamera_name: stereo_right\n…"
+        }
+      ]
+    }
+  }
+}
+```
+
+A new calibration is made by a session, one per unit and shared by every client, driven by action resources as the parameters are. Each is a `POST` whose document carries `data.type`, answered with the session as it is after the action, related to the `calibration` it works on:
+
+| Route | Does | Answers | Refused with |
+|---|---|---|---|
+| `POST /api/calibration-sessions` | Starts capturing views of the board in `data.attributes.board`, with the cameras of the calibration its `calibration` relationship names. The board has `columns` and `rows` in inner corners, two different whole numbers from 3 to 50, and `squareMm`, the side of a square in millimetres, above 0 and at most 1000. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 for an invalid board or while the cameras do not run, 409 while a session runs |
+| `POST /api/calibration-solves` | Computes the calibration from the samples. | 202 | 422 before they are good enough |
+| `POST /api/calibration-applies` | Has the unit take the solved calibration. | 202 | 422 before a solve |
+| `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 201 | 409 while a calibration is being applied |
+| `POST /api/calibration-resets` | Deletes the stored calibration of the `calibration` it names and returns to the built-in one. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 without a store, with nothing stored or without a built-in calibration, 500 when the unit does not take the built-in calibration, the stored one kept |
+
+Each also answers a 404 on a unit with nothing to calibrate, a 503 while the unit's calibration session does not run, a 409 for another `data.type`, a 403 for a document carrying an `id`, and a 400 for a document sent as a form or in the query string, or without `data.type`. Start a session on the stereo pair for a board of 8 × 6 inner corners and 25 mm squares:
+
+```sh
+curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/calibration-sessions \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "calibration-sessions",
+       "attributes": {"board": {"columns": 8, "rows": 6, "squareMm": 25}},
+       "relationships": {"calibration": {"data": {"type": "calibrations", "id": "stereo"}}}}}'
+```
+
+```json
+{
+  "data": {
+    "type": "calibration-sessions",
+    "id": "41",
+    "attributes": {
+      "phase": "capturing",
+      "board": {"columns": 8, "rows": 6, "squareMm": 25.0},
+      "samples": 0,
+      "progress": {"x": 0.0, "y": 0.0, "size": 0.0, "skew": 0.0},
+      "goodEnough": false,
+      "detection": null,
+      "result": null,
+      "error": null
+    },
+    "relationships": {
+      "calibration": {"data": {"type": "calibrations", "id": "stereo"}}
+    }
+  }
+}
+```
+
+- `phase` goes from `idle` to `capturing`, `solving`, `solved`, then `applying` and back to `idle`; a failed solve goes back to `capturing`.
+- `progress` is the coverage of each axis from 0 to 1; `goodEnough` turns true at 40 samples or with every axis at 1.
+- `detection` is the last frames looked at: in `views`, each `camera` with its corners as `[x, y]` fractions of the image's width and height, `null` where the board was not found, and `sample`, whether the detection became a sample.
+- `result`, once solved, holds `imageWidth` and `imageHeight`, the size of the images it is for, its `cameras`, each with its `name`, its `rmsPx`, the `file` name and its `yaml`, then `fxPx`, the focal length of the first camera's projection in pixels of that image, and `samples`. A stereo pair's also has `stereoRmsPx` and `baselineM`, both `null` for a camera.
+- `error` is why the last solve or apply failed.
+
+The unit looks for the board only while a client is joined to the [calibration channel](./channels.md#calibration): a session started over HTTP alone captures nothing. A solve answers at once, a 202 with the phase `solving`, and its outcome comes on the channel: `solved` with the `result`, or `capturing` with `error` set. An apply answers at once too, a 202 with the phase `applying`, and its outcome comes on the channel: the phase `idle` and the new calibration in use when the unit takes it, or `solved` with `error` set when it refuses it. A reset answers once the unit has taken the built-in calibration.
 
 ## Live channels
 

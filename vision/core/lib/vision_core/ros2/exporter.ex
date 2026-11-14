@@ -53,7 +53,12 @@ defmodule VisionCore.Ros2.Exporter do
   helper under its supervisor, writes the calibration to the stereo
   unit's store, or without one to the side's calibration path, has the
   stereo unit reload it (`VisionCore.Stereo.Supervisor`), and tells the
-  exporter, which reads its camera info again.
+  exporter, which reads its camera info again and publishes the change
+  through `VisionCore.Outputs`, as a commit from the dashboard is, so that
+  the dashboard shows it. It reads its camera info again too
+  after a change from the dashboard, of the stereo unit's
+  (`VisionCore.Stereo.Calibration.changed_key/1`) or of a camera's
+  (`VisionCore.Camera.Calibration.changed_key/1`).
 
   ## Cameras of their own
 
@@ -121,13 +126,13 @@ defmodule VisionCore.Ros2.Exporter do
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Unit}
-  alias VisionCore.{Detection, Segmentation}
+  alias VisionCore.{Detection, Outputs, Segmentation}
   alias VisionCore.Ros2.Exporter.{Camera, Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Exporter.Segmentation, as: SegmentationMessages
   alias VisionCore.Segmentation.Supervisor, as: SegmentationSupervisor
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias VisionCore.Ros2.{Node, Stamp, Topics}
-  alias VisionCore.Stereo.{Pair, StageTimer}
+  alias VisionCore.Stereo.{Calibration, Pair, StageTimer}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @heartbeat_topic "ovcs_heartbeat"
@@ -516,7 +521,12 @@ defmodule VisionCore.Ros2.Exporter do
       }
 
       if stereo, do: notify_on_commit(options[:stereo], cameras)
+      if stereo, do: :ok = Outputs.subscribe(Calibration.changed_key(unit_prefix(cameras)))
       notify_cameras_on_commit(state.cameras)
+
+      for name <- Map.keys(state.cameras),
+          do: :ok = Outputs.subscribe(VisionCore.Camera.Calibration.changed_key(name))
+
       if transform_message(state), do: send(self(), :publish_transforms)
       if state.heartbeat, do: Process.send_after(self(), :heartbeat, state.heartbeat.interval_ms)
       {:ok, state}
@@ -822,16 +832,38 @@ defmodule VisionCore.Ros2.Exporter do
   def handle_info({:calibration_committed, service_name}, state) do
     case Enum.find(Map.values(state.cameras), &(&1.service_name == service_name)) do
       nil ->
+        tell_stereo_calibration_changed(state)
         reload_stereo_calibration(state)
 
       camera ->
-        camera = reload_camera(camera, state.config)
-        state = put_in(state.cameras[camera.name], camera)
-        {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
+        name = camera.name
+
+        Outputs.publish(
+          VisionCore.Camera.Calibration.changed_key(name),
+          {:camera_calibration_changed, name}
+        )
+
+        recalibrate_camera(state, camera)
     end
   end
 
+  def handle_info({:camera_calibration_changed, name}, state) do
+    case state.cameras do
+      %{^name => camera} -> recalibrate_camera(state, camera)
+      _unpublished -> {:ok, state}
+    end
+  end
+
+  def handle_info({:stereo_calibration_changed, _prefix}, state),
+    do: reload_stereo_calibration(state)
+
   def handle_info(_message, state), do: {:ok, state}
+
+  defp recalibrate_camera(state, camera) do
+    camera = reload_camera(camera, state.config)
+    state = put_in(state.cameras[camera.name], camera)
+    {:ok, %{state | segmentation: recalibrate_segmentation(state.segmentation, camera)}}
+  end
 
   defp reload_camera(camera, config) do
     case Enum.find(Unit.settings(config), &(&1.name == camera.name)) do
@@ -849,6 +881,13 @@ defmodule VisionCore.Ros2.Exporter do
       other ->
         other
     end)
+  end
+
+  defp tell_stereo_calibration_changed(%{stereo: nil}), do: :ok
+
+  defp tell_stereo_calibration_changed(state) do
+    prefix = state.config |> StereoSupervisor.camera_options() |> unit_prefix()
+    Outputs.publish(Calibration.changed_key(prefix), {:stereo_calibration_changed, prefix})
   end
 
   defp reload_stereo_calibration(%{stereo: nil} = state), do: {:ok, state}

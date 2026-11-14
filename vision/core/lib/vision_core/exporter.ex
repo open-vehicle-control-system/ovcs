@@ -153,6 +153,7 @@ defmodule VisionCore.Exporter do
         @impl VisionCore.Exporter
         def handle_info({:mqtt_published, output}, state), do: {:ready, output, state}
         def handle_info({:mqtt_link, link}, state), do: {:ok, %{state | link: link}}
+        def handle_info(_message, state), do: {:ok, state}
 
         @impl VisionCore.Exporter
         def status(%{link: :up}), do: {:ok, "Connected"}
@@ -246,7 +247,9 @@ defmodule VisionCore.Exporter do
   @doc """
   Handles a message sent to the runner, such as a timer of its own or a
   helper's; `{:ready, output_or_outputs, state}` ends the outputs'
-  `{:busy, state}`.
+  `{:busy, state}`. An exporter whose `c:init/1` subscribes to a
+  `VisionCore.Outputs` key that is none of its outputs receives here
+  every message published under that key. It must accept any message.
   """
   @callback handle_info(message :: term(), state()) ::
               {:ok, state()} | {:ready, output() | [output()], state()}

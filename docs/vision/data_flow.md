@@ -44,6 +44,7 @@ A Port's row below names the process that owns it.
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
 | ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
+| Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Supervisor`, on a unit with a stereo pair or a camera of its own to calibrate |
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
@@ -152,6 +153,19 @@ The ROS 2 exporter, [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_co
 Each time it starts, it reads the stereo unit's cameras in the configuration, the calibration a commit stored first. The camera info it publishes is therefore the calibration the stereo unit uses.
 
 `GET /api/exporters` lists the exporters with the outputs they read and their actions. Their statuses come on the `status` channel, where an exporter that does not run says why. The API comes last, as it is the one answering. The dashboard's Exporters menu is built from it.
+
+## A new calibration
+
+A new calibration from the dashboard's Calibration page, and the return to the built-in one, go through [`VisionCore.Stereo.Calibration`](../../vision/core/lib/vision_core/stereo/calibration.ex):
+
+1. **Write.** Each camera's YAML goes to the stereo unit's calibration store, or to its calibration path without one, through a temporary file renamed over it, so a file is never half written; both temporary files are written before the first rename. Commits to one unit run one at a time.
+2. **Take.** The Pipeline reloads the files and rectifies the next pairs with them. A unit whose Pipeline is not running, because it has no calibration or has given up, is restarted instead and starts with its Pipeline.
+3. **Take back.** When the unit refuses the calibration, each file goes back to what it held, or is removed when there was none, and the commit answers the error. When the reload fails without an answer, as one that takes more than 30 seconds, the files go back too, and the Pipeline reloads the calibration then in force.
+4. **Tell.** A calibration the unit takes is published through `VisionCore.Outputs` as `{:stereo_calibration_changed, prefix}`, under the key `{:stereo_calibration, prefix}` (`VisionCore.Stereo.Calibration.changed_key/1`). The ROS 2 exporter then reads its camera info again, and the dashboard's calibration channel pushes the calibration in use.
+
+`cameracalibrator`'s commit takes another path, [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex), one camera at a time: it writes that camera's file in place, to the same store or calibration path, has the Pipeline reload it, and puts the file back when the Pipeline refuses it. With a store, the unit takes the calibration once both cameras' files are stored, a side stored by an earlier commit included, so a COMMIT is best finished on both sides. It does not wait for a commit from the dashboard to end, so use one path at a time. The ROS 2 exporter publishes the same change once the unit took it.
+
+The calibration session finds the board in the cameras' frames, which it reads from `VisionCore.Outputs` like any subscriber, from a session's start to its end, so it works on a unit without a calibration, whose cameras run without the Pipeline. It looks only while a dashboard has the Calibration page open. [Calibrate the cameras](./calibration.md) covers the steps.
 
 ## The dashboard's previews
 

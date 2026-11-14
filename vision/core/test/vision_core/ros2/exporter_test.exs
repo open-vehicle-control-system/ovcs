@@ -1112,11 +1112,70 @@ defmodule VisionCore.Ros2.ExporterTest do
       {:ok, state} =
         Exporter.handle_info({:calibration_committed, "stereo/hq/set_camera_info"}, state)
 
+      assert_received {:"$gen_cast", {:camera_calibration_changed, :hq}}
+
       frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
       {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
 
       assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
       assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+
+    test "a stereo calibration committed through set_camera_info is told as a change" do
+      {:ok, state} = Exporter.init(options(Camera, stereo: []))
+
+      {:ok, _state} =
+        Exporter.handle_info({:calibration_committed, "stereo/left/set_camera_info"}, state)
+
+      assert_received {:"$gen_cast", {:stereo_calibration_changed, "stereo"}}
+    end
+
+    @tag :tmp_dir
+    test "a calibration changed from the dashboard is published as its camera info",
+         %{tmp_dir: tmp_dir} do
+      stored = Path.join(tmp_dir, "camera_hq.yaml")
+
+      options =
+        hq_options(
+          Camera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: []
+        )
+
+      {:ok, state} = Exporter.init(options)
+      File.cp!(Path.join(@calibration, "identity_left.yaml"), stored)
+
+      {:ok, state} = Exporter.handle_info({:camera_calibration_changed, :hq}, state)
+      assert {:ok, ^state} = Exporter.handle_info({:camera_calibration_changed, :usb}, state)
+
+      frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
+      {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
+
+      assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
+      assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
+    end
+
+    @tag :tmp_dir
+    test "the exporter follows the calibration changes of each camera it publishes",
+         %{tmp_dir: tmp_dir} do
+      options =
+        hq_options(
+          Camera,
+          [
+            calibration: Path.join(@calibration, "distorted_left.yaml"),
+            calibration_store_dir: tmp_dir
+          ],
+          cameras: []
+        )
+
+      {:ok, _state} = Exporter.init(options)
+
+      assert self() in VisionCore.Outputs.subscribers(
+               VisionCore.Camera.Calibration.changed_key(:hq)
+             )
     end
 
     @tag :tmp_dir

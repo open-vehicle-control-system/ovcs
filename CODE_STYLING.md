@@ -152,7 +152,8 @@ first, evidence before a claim, small reviewed PRs) is in
   creates, `PATCH` changes the members it sends, `DELETE` removes. An
   operation that is not a change to one resource is a resource of its own,
   created with `POST` (`POST /api/parameter-saves`).
-- **The status code is the outcome.** 200, 201 or 204 on success; 400 for
+- **The status code is the outcome.** 200, 201 or 204 on success, 202
+  when the work goes on after the answer; 400 for
   a document that cannot be read, 404 for an unknown resource, 409 for a
   `type` or `id` that does not match the route, 422 for a value the
   resource refuses; 5xx only for a fault of the server. Never a 200

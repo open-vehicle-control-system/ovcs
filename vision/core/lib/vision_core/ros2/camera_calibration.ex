@@ -140,6 +140,27 @@ defmodule VisionCore.Ros2.CameraCalibration do
     }
   end
 
+  @doc """
+  Whether the camera, rectification and projection matrices of
+  `calibration` have their 9, 9 and 12 values, which `parse/1` does not
+  check: `:ok`, or `{:error, message}` naming the first that has not.
+  """
+  @spec check_matrices(t()) :: :ok | {:error, String.t()}
+  def check_matrices(%__MODULE__{} = calibration) do
+    Enum.find_value(
+      [
+        {"camera", calibration.camera_matrix, 9},
+        {"rectification", calibration.rectification_matrix, 9},
+        {"projection", calibration.projection_matrix, 12}
+      ],
+      :ok,
+      fn {name, matrix, count} ->
+        if length(matrix) != count,
+          do: {:error, "its #{name} matrix has #{length(matrix)} values, not #{count}"}
+      end
+    )
+  end
+
   defp read_integer(yaml, regex, default) do
     case Regex.run(regex, yaml) do
       [_, digits] -> String.to_integer(digits)

@@ -22,10 +22,10 @@ The unit follows the same split as the VMS and the infotainment: a core, an API,
 
 | Layer | Path | What it is |
 |---|---|---|
-| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
-| API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters and the active configuration as JSON:API resources, with channels that stream status and camera previews. |
+| Core | [`vision/core`](../../vision/core/README.md) | `VisionCore`: camera drivers, the stereo pipeline and its stages (rectification, matching, depth, in Nx), the cameras' calibration, detection, and the exporters, the ROS 2 one and the ROS 2 link under `VisionCore.Ros2`. No vehicle knowledge, no web dependencies. |
+| API | [`vision/api`](../../vision/api/README.md) | `VisionApi`: a Phoenix endpoint serving the vision parameters, the calibration and the active configuration as JSON:API resources, with channels that stream status, camera previews and the calibration session. |
 | Firmware | [`vision/firmware`](../../vision/firmware/README.md) | The Nerves image for the `rpi5`, `okdo_c100` and `arduino_ventuno_q` targets. At boot it reads `VEHICLE` and loads the vehicle's composer. |
-| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app for the unit's status, previews and parameters. |
+| Dashboard | [`vision/dashboard`](../../vision/dashboard/README.md) | A React app for the unit's status, previews, parameters and the cameras' calibration. |
 | Ports | [`vision/rust`](../../vision/rust/README.md) | The Rust programs the core drives as Ports: capture, detection, road segmentation, JPEG and stereo matching on the CPU. |
 
 ## Opting in
@@ -114,6 +114,7 @@ The rates measured on this unit are in [Vision performance](./performance.md#mea
 The stereo stages turn each pair of camera frames into a disparity, then a depth image and a point cloud. The disparity is the horizontal shift of each point between the two images. Where the stages run depends on the board. On the C100 and the VENTUNO Q, they run on the GPU, compiled from Nx. On the Raspberry Pi 5, they run on the CPU cores, in native code. The guides of this section explain them:
 
 - [Stereo vision basics](./basics.md): lens, baseline, rectification, disparity, depth and point cloud, with diagrams and a worked example.
+- [Calibrate the cameras](./calibration.md): from the dashboard or with ROS 2's `cameracalibrator`, where the unit keeps the calibration, and how to ship it in your vehicle package.
 - [How a pair flows](./data_flow.md): the processes a pair goes through, from the cameras to the ROS 2 topics and the dashboard.
 - [Stereo stages](./stages.md): what each stage does, what it reads and fills, and its settings.
 - [Where depth is computed](./compute.md): Nx, `nx_iree`, the `stereo_match` Port, and how each uses the GPU, the CPU cores and memory.
@@ -164,6 +165,8 @@ The command prints the firmware the unit runs. The certificate names the unit's 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
+
+The Calibration page shows the calibration the cameras use and where it comes from, returns to the built-in one, and calibrates the cameras from views of a chessboard with the unit alone ([Calibrate the cameras](./calibration.md)). A unit without a calibration runs its cameras without depth, and the top bar reads uncalibrated until one is applied.
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
 

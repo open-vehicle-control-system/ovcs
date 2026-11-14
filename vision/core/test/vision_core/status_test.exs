@@ -86,6 +86,25 @@ defmodule VisionCore.StatusTest do
     assert snapshot.depth_hz == 0.0
   end
 
+  @tag :tmp_dir
+  test "reports whether the stereo unit has both calibration files, at each snapshot",
+       %{tmp_dir: tmp_dir} do
+    start_supervised!(
+      {Status,
+       config: config([{:stereo, driver: Camera, calibration_dir: tmp_dir, left: [], right: []}])}
+    )
+
+    refute Status.snapshot().calibrated
+
+    for side <- ["left", "right"], do: File.write!(Path.join(tmp_dir, "stereo_#{side}.yaml"), "")
+    assert Status.snapshot().calibrated
+  end
+
+  test "reports no calibration state for a unit without a stereo component" do
+    start_supervised!({Status, config: config([])})
+    assert Status.snapshot().calibrated == nil
+  end
+
   test "reports each exporter's status, as the exporters list them" do
     start_exporter([])
     start_supervised!({Status, config: config([])})

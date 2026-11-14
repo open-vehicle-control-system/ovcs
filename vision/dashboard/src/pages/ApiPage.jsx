@@ -12,6 +12,8 @@ const resources = (parameterId) => [
   ['POST', 'parameter-resets', 'Sets a parameter, a stage or everything back to its built-in value'],
   ['GET', 'depth-preview', "The depth video's colour range, the distance coloured blue"],
   ['PATCH', 'depth-preview', "Sets the depth video's colour range, for every dashboard, until the next boot"],
+  ['GET', 'calibrations', 'The calibration in use of the stereo pair and of each camera of its own'],
+  ['POST', 'calibration-sessions', 'Starts calibrating one of them from views of a chessboard; solves, applies, cancels and resets are created the same way'],
   ['GET', 'configuration', 'The active composer configuration'],
   ['GET', 'firmware', 'The firmware: the commit it is built from, its target and its Nerves system'],
   ['GET', 'exporters', 'What takes the outputs out of the unit: each exporter with the outputs it reads and its actions, this API last'],

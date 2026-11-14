@@ -1,0 +1,53 @@
+import { request } from './parameters.js'
+import { downloadFile } from './download.js'
+
+export const DEFAULT_BOARD = { columns: 8, rows: 6, squareMm: 25 }
+const BOARD_KEY = 'vision.calibration.board'
+
+// `calibration` is the id of the calibration the action works on, for those that name one.
+const act = async (type, { attributes, calibration } = {}) => {
+  const data = { type }
+  if (attributes) data.attributes = attributes
+  if (calibration) data.relationships = { calibration: { data: { type: 'calibrations', id: calibration } } }
+  const document = await request(type, { method: 'POST', body: { data } })
+  return document.data.attributes
+}
+
+/** What the unit can calibrate: each calibration's `id` and `kind`, its stereo pair first. */
+export async function fetchCalibrations() {
+  const document = await request('calibrations')
+  return document.data.map((resource) => ({ id: resource.id, kind: resource.attributes.kind }))
+}
+
+/** The name a calibration goes by in the menu and on its page. */
+export const calibrationName = ({ id, kind }) =>
+  kind === 'stereo' ? 'Stereo cameras' : `${id.charAt(0).toUpperCase()}${id.slice(1)} camera`
+
+export const startSession = (calibration, board) => act('calibration-sessions', { attributes: { board }, calibration })
+export const cancelSession = () => act('calibration-cancels')
+export const solveSession = () => act('calibration-solves')
+export const applySession = () => act('calibration-applies')
+export const resetCalibration = (calibration) => act('calibration-resets', { calibration })
+
+export function loadBoard() {
+  try {
+    const board = JSON.parse(localStorage.getItem(BOARD_KEY))
+    if (board && [board.columns, board.rows, board.squareMm].every((value) => Number.isFinite(value))) {
+      return { columns: board.columns, rows: board.rows, squareMm: board.squareMm }
+    }
+  } catch {
+    // Storage unavailable or corrupt: the default board applies.
+  }
+  return { ...DEFAULT_BOARD }
+}
+
+export function saveBoard(board) {
+  try {
+    localStorage.setItem(BOARD_KEY, JSON.stringify(board))
+  } catch {
+    // Storage unavailable: the board is not remembered.
+  }
+}
+
+/** Saves `yaml` as the file `name`. */
+export const downloadYaml = (name, yaml) => downloadFile(new Blob([yaml], { type: 'text/yaml' }), name)
