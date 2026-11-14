@@ -7,6 +7,8 @@ defmodule VisionCore.Calibration.SavedPose do
   """
   use Ecto.Schema
 
+  import Ecto.Changeset
+
   alias VisionCore.Calibration.Saved
   alias VisionCore.Camera.Pose
 
@@ -24,10 +26,18 @@ defmodule VisionCore.Calibration.SavedPose do
     end
   end
 
-  @doc "The row holding `pose`."
-  @spec from_pose(Pose.t()) :: t()
-  def from_pose(%Pose{rotation: rotation, translation: translation}),
-    do: struct!(__MODULE__, Enum.zip(@rotation ++ @translation, rotation ++ translation))
+  @doc "The changeset of `saved` with `attributes`; every element is required, `rms_px` is not."
+  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  def changeset(%__MODULE__{} = saved, attributes) do
+    saved
+    |> cast(attributes, [:rms_px | @rotation ++ @translation])
+    |> validate_required(@rotation ++ @translation)
+  end
+
+  @doc "The attributes of the row holding `pose`."
+  @spec attributes(Pose.t()) :: map()
+  def attributes(%Pose{rotation: rotation, translation: translation}),
+    do: Map.new(Enum.zip(@rotation ++ @translation, rotation ++ translation))
 
   @doc "The pose `saved` holds."
   @spec to_pose(t()) :: Pose.t()

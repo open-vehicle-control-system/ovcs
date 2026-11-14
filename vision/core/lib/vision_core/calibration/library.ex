@@ -19,8 +19,6 @@ defmodule VisionCore.Calibration.Library do
   alias VisionCore.Ros2.CameraCalibration
 
   @unavailable "saved calibrations unavailable"
-  @name_rule "a name has 1 to 80 characters"
-  @max_name 80
 
   @type cameras :: [{String.t(), CameraCalibration.t()}]
 
@@ -43,25 +41,25 @@ defmodule VisionCore.Calibration.Library do
   """
   @spec record(String.t(), figures(), keyword()) :: {:ok, Saved.t()} | {:error, String.t()}
   def record(target, %Pose{} = pose, opts) do
-    row = %{SavedPose.from_pose(pose) | rms_px: opts[:rms_px]}
-    insert(%Saved{target: target, cameras: [], pose: row}, opts)
+    pose = Map.put(SavedPose.attributes(pose), :rms_px, opts[:rms_px])
+    insert(%{target: target, cameras: [], pose: pose}, opts)
   end
 
   def record(target, cameras, opts) do
     rms_px = Keyword.get(opts, :rms_px, %{})
 
-    with {:ok, rows} <- camera_rows(cameras, rms_px),
-         do: insert(%Saved{target: target, cameras: rows}, opts)
+    with {:ok, cameras} <- camera_attributes(cameras, rms_px),
+         do: insert(%{target: target, cameras: cameras}, opts)
   end
 
-  defp insert(saved, opts) do
+  defp insert(figures, opts) do
     now = DateTime.truncate(Keyword.get_lazy(opts, :at, &DateTime.utc_now/0), :second)
     board = Keyword.get(opts, :board) || %{}
 
     guarded(fn ->
-      Repo.insert(%{
-        saved
-        | name:
+      attributes =
+        Map.merge(figures, %{
+          name:
             Keyword.get_lazy(opts, :name, fn -> Calendar.strftime(now, "%Y-%m-%d %H:%M UTC") end),
           origin: Keyword.fetch!(opts, :origin),
           board_columns: board[:columns],
@@ -71,7 +69,9 @@ defmodule VisionCore.Calibration.Library do
           stereo_rms_px: opts[:stereo_rms_px],
           baseline_m: opts[:baseline_m],
           inserted_at: now
-      })
+        })
+
+      %Saved{} |> Saved.changeset(attributes) |> Repo.insert() |> written()
     end)
   end
 
@@ -105,16 +105,19 @@ defmodule VisionCore.Calibration.Library do
     end)
   end
 
-  @doc "Names the calibration `id`; a name has 1 to #{@max_name} characters once trimmed."
+  @doc "Names the calibration `id`; a name has 1 to 80 characters once trimmed."
   @spec rename(integer(), String.t()) :: {:ok, Saved.t()} | {:error, :not_found | String.t()}
   def rename(id, name) when is_binary(name) do
-    name = String.trim(name)
+    with :ok <- check_name(name),
+         {:ok, saved} <- fetch(id) do
+      guarded(fn -> saved |> Saved.changeset(%{name: name}) |> Repo.update() |> written() end)
+    end
+  end
 
-    if String.length(name) in 1..@max_name do
-      with {:ok, saved} <- fetch(id),
-           do: guarded(fn -> saved |> Ecto.Changeset.change(name: name) |> Repo.update() end)
-    else
-      {:error, @name_rule}
+  defp check_name(name) do
+    case Saved.changeset(%Saved{}, %{name: name}).errors[:name] do
+      nil -> :ok
+      {rule, _validation} -> {:error, rule}
     end
   end
 
@@ -166,10 +169,9 @@ defmodule VisionCore.Calibration.Library do
 
   def select(target, id) do
     guarded(fn ->
-      Repo.insert!(%Selection{target: target, calibration_id: id},
-        on_conflict: {:replace, [:calibration_id]},
-        conflict_target: :target
-      )
+      %Selection{}
+      |> Selection.changeset(%{target: target, calibration_id: id})
+      |> Repo.insert!(on_conflict: {:replace, [:calibration_id]}, conflict_target: :target)
 
       :ok
     end)
@@ -193,13 +195,23 @@ defmodule VisionCore.Calibration.Library do
       end)
   end
 
-  defp camera_rows(cameras, rms_px) do
-    Enum.reduce_while(cameras, {:ok, []}, fn {name, calibration}, {:ok, rows} ->
-      case SavedCamera.from_calibration(name, calibration) do
-        {:ok, row} -> {:cont, {:ok, rows ++ [%{row | rms_px: rms_px[name]}]}}
+  defp camera_attributes(cameras, rms_px) do
+    Enum.reduce_while(cameras, {:ok, []}, fn {name, calibration}, {:ok, kept} ->
+      case SavedCamera.attributes(name, calibration) do
+        {:ok, camera} -> {:cont, {:ok, kept ++ [Map.put(camera, :rms_px, rms_px[name])]}}
         {:error, reason} -> {:halt, {:error, "the #{name} camera cannot be kept: #{reason}"}}
       end
     end)
+  end
+
+  # A refused name answers its rule, any other refusal as a write that failed.
+  defp written({:ok, saved}), do: {:ok, saved}
+
+  defp written({:error, %Ecto.Changeset{} = changeset}) do
+    case changeset.errors[:name] do
+      {rule, _validation} -> {:error, rule}
+      nil -> unavailable(changeset, {:error, @unavailable})
+    end
   end
 
   defp guarded(write) do

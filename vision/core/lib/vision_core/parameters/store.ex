@@ -58,7 +58,9 @@ defmodule VisionCore.Parameters.Store do
   end
 
   defp write_one({id, value}) do
-    Repo.insert!(%SavedValue{parameter_id: id, value: Jason.encode!(value)},
+    %SavedValue{}
+    |> SavedValue.changeset(%{parameter_id: id, value: Jason.encode!(value)})
+    |> Repo.insert!(
       on_conflict: {:replace, [:value, :updated_at]},
       conflict_target: :parameter_id
     )

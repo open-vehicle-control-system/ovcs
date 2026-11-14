@@ -58,6 +58,7 @@ defmodule VisionCore.Calibration.LibraryTest do
       {:ok, saved} =
         Library.record("center-pose", pose, origin: "dashboard", samples: 24, rms_px: 0.41)
 
+      assert saved.cameras == []
       {:ok, kept} = Library.fetch(saved.id)
       assert kept.cameras == []
       assert %VisionCore.Calibration.SavedPose{r01: -0.02, tx: -0.1, rms_px: 0.41} = kept.pose
@@ -99,6 +100,25 @@ defmodule VisionCore.Calibration.LibraryTest do
       assert {:ok, %{name: "2026-11-13 23:37 UTC"}} = Library.fetch(dated)
       assert {:ok, %{name: "Bench"}} = Library.fetch(named)
       assert {:ok, %{name: "2026-11-12 10:00"}} = Library.fetch(chosen)
+    end
+
+    test "keeps the time a calibration was made" do
+      {:ok, saved} =
+        Library.record("stereo", pair(886.3), origin: "dashboard", at: ~U[2026-11-13 09:00:00Z])
+
+      {:ok, kept} = Library.fetch(saved.id)
+      assert kept.inserted_at == ~U[2026-11-13 09:00:00Z]
+      assert kept.name == "2026-11-13 09:00 UTC"
+    end
+
+    test "refuses a name of more than 80 characters, and keeps nothing" do
+      assert Library.record("stereo", pair(886.3),
+               origin: "imported",
+               name: String.duplicate("a", 81)
+             ) ==
+               {:error, "a name has 1 to 80 characters"}
+
+      assert Library.list("stereo") == []
     end
 
     test "refuses a calibration with no columns to go to, and keeps nothing" do
@@ -147,6 +167,10 @@ defmodule VisionCore.Calibration.LibraryTest do
 
     assert Library.rename(-1, "x") == {:error, :not_found}
     assert {:ok, %{name: "Workshop, 30 mm board"}} = Library.fetch(saved.id)
+  end
+
+  test "refuses a name before looking for the calibration" do
+    assert Library.rename(-1, "   ") == {:error, "a name has 1 to 80 characters"}
   end
 
   describe "the selection" do

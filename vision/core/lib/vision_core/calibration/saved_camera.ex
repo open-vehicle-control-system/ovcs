@@ -7,12 +7,14 @@ defmodule VisionCore.Calibration.SavedCamera do
   matrix `p00` to `p23`, each element a column, and the reprojection
   error of the solve that made it, when known.
 
-  `from_calibration/2` and `to_calibration/1` convert from and to the
+  `attributes/2` and `to_calibration/1` convert from and to the
   `VisionCore.Ros2.CameraCalibration` the files hold. A calibration with
   another distortion model, another count of coefficients or a camera
   matrix with a skew has no columns to go to, and is refused.
   """
   use Ecto.Schema
+
+  import Ecto.Changeset
 
   alias VisionCore.Calibration.Saved
   alias VisionCore.Ros2.CameraCalibration
@@ -21,6 +23,8 @@ defmodule VisionCore.Calibration.SavedCamera do
   @rectification for row <- 0..2, column <- 0..2, do: :"r#{row}#{column}"
   @projection for row <- 0..2, column <- 0..3, do: :"p#{row}#{column}"
   @distortion_model "plumb_bob"
+  @required [:name, :image_width, :image_height, :fx, :fy, :cx, :cy] ++
+              @distortion ++ @rectification ++ @projection
 
   @type t :: %__MODULE__{}
 
@@ -40,9 +44,17 @@ defmodule VisionCore.Calibration.SavedCamera do
     end
   end
 
-  @doc "The camera `name` holding `calibration`, or why it has no columns to go to."
-  @spec from_calibration(String.t(), CameraCalibration.t()) :: {:ok, t()} | {:error, String.t()}
-  def from_calibration(name, %CameraCalibration{} = calibration) do
+  @doc "The changeset of `camera` with `attributes`; every column but `rms_px` is required."
+  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  def changeset(%__MODULE__{} = camera, attributes) do
+    camera
+    |> cast(attributes, [:rms_px | @required])
+    |> validate_required(@required)
+  end
+
+  @doc "The attributes of the camera `name` holding `calibration`, or why it has no columns to go to."
+  @spec attributes(String.t(), CameraCalibration.t()) :: {:ok, map()} | {:error, String.t()}
+  def attributes(name, %CameraCalibration{} = calibration) do
     with :ok <- check_model(calibration.distortion_model),
          {:ok, distortion} <-
            elements(calibration.distortion_coefficients, @distortion, "distortion coefficients"),
@@ -55,7 +67,7 @@ defmodule VisionCore.Calibration.SavedCamera do
         [name: name, image_width: calibration.width, image_height: calibration.height] ++
           intrinsics ++ distortion ++ rectification ++ projection
 
-      {:ok, struct!(__MODULE__, fields)}
+      {:ok, Map.new(fields)}
     end
   end
 
@@ -76,7 +88,7 @@ defmodule VisionCore.Calibration.SavedCamera do
   @doc "Whether `camera` holds `calibration`, element for element."
   @spec holds?(t(), CameraCalibration.t()) :: boolean()
   def holds?(%__MODULE__{} = camera, %CameraCalibration{} = calibration) do
-    case from_calibration(camera.name, calibration) do
+    case attributes(camera.name, calibration) do
       {:ok, other} -> Enum.all?(compared(), &same?(Map.fetch!(camera, &1), Map.fetch!(other, &1)))
       {:error, _reason} -> false
     end
