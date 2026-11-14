@@ -36,6 +36,46 @@ describe('Preview', () => {
     delete URL.revokeObjectURL
   })
 
+  it('shows its frame, overlays included, full screen from a button, and leaves it from the same one', () => {
+    const frameOf = () => document.querySelector('[data-frame]')
+    const request = vi.fn(function () {
+      document.fullscreenElement = this
+      fireEvent(document, new Event('fullscreenchange'))
+      return Promise.resolve()
+    })
+    Element.prototype.requestFullscreen = request
+    document.exitFullscreen = vi.fn(() => {
+      document.fullscreenElement = null
+      fireEvent(document, new Event('fullscreenchange'))
+      return Promise.resolve()
+    })
+    try {
+      const socket = fakeSocket()
+      render(<Preview stream="left" socket={socket} overlay={<svg data-overlay />} />)
+      sendFrame(socket, [1])
+      const image = screen.getByRole('img', { name: 'left preview' })
+      Object.defineProperties(image, { naturalWidth: { value: 640 }, naturalHeight: { value: 480 } })
+      fireEvent.load(image)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show left full screen' }))
+      expect(request.mock.contexts[0]).toBe(frameOf())
+      expect(frameOf().contains(document.querySelector('[data-overlay]'))).toBe(true)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Leave full screen' }))
+      expect(document.exitFullscreen).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('button', { name: 'Show left full screen' })).toBeTruthy()
+    } finally {
+      delete Element.prototype.requestFullscreen
+      delete document.exitFullscreen
+      delete document.fullscreenElement
+    }
+  })
+
+  it('offers no full screen where the browser has none', () => {
+    render(<Preview stream="left" socket={fakeSocket()} />)
+    expect(screen.queryByRole('button', { name: /full screen/ })).toBeNull()
+  })
+
   it('renders the latest frame from its JPEG bytes', () => {
     const socket = fakeSocket()
     render(<Preview stream="left" socket={socket} />)

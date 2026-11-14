@@ -1,5 +1,5 @@
 import { Children, createContext, use, useEffect, useRef, useState } from 'react'
-import { OvcsCard } from '@ovcs/ui/react'
+import { OvcsCard, focusClass as FOCUS } from '@ovcs/ui/react'
 import { LiveDecoder, hasVideoDecoder } from '../liveDecoder.js'
 
 const FrameSize = createContext(null)
@@ -106,6 +106,41 @@ function VideoFrame({ stream, socket, onSize, onShown, onDrawn }) {
   )
 }
 
+const EXPAND = 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5'
+const SHRINK = 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5'
+
+/** Whether `ref`'s element is the one shown full screen, and a toggle of it; `null` where the browser has none. */
+function useFullScreen(ref) {
+  const [full, setFull] = useState(false)
+
+  useEffect(() => {
+    const follow = () => setFull(document.fullscreenElement != null && document.fullscreenElement === ref.current)
+    document.addEventListener('fullscreenchange', follow)
+    return () => document.removeEventListener('fullscreenchange', follow)
+  }, [ref])
+
+  if (typeof Element.prototype.requestFullscreen !== 'function') return null
+  return { full, toggle: () => (full ? document.exitFullscreen() : ref.current?.requestFullscreen())?.catch?.(() => {}) }
+}
+
+function FullScreenButton({ stream, full, toggle }) {
+  const label = full ? 'Leave full screen' : `Show ${stream} full screen`
+
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={toggle}
+      className={`absolute right-2 top-2 flex size-7 items-center justify-center rounded bg-black/50 text-white opacity-70 hover:opacity-100 focus-visible:opacity-100 ${FOCUS}`}
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d={full ? SHRINK : EXPAND} />
+      </svg>
+    </button>
+  )
+}
+
 /**
  * A stream's latest frame, with its resolution; `children` sit in the caption, under the stream's name, and `aside`
  * in a part of its own after the caption, there and empty without one, so previews sharing a row's tracks keep their
@@ -116,7 +151,7 @@ function VideoFrame({ stream, socket, onSize, onShown, onDrawn }) {
  * gets before it joins, to bind its own events. `overlay`, elements, none, or a function of the capture time in
  * microseconds of the frame shown (`null` for a JPEG preview, which shows the newest) that gives them, is drawn over
  * the frame once its size is known (`useFrameSize`), `badge` in the frame's corner and, with `alert`, a warning ring
- * around it, frame or not.
+ * around it, frame or not. A button in the frame's other corner shows it full screen, overlays included.
  */
 export default function Preview({
   stream,
@@ -137,6 +172,8 @@ export default function Preview({
   const [size, setSize] = useState(null)
   const [shown, setShown] = useState(false)
   const [drawnUs, setDrawnUs] = useState(null)
+  const frameRef = useRef(null)
+  const fullScreen = useFullScreen(frameRef)
   const decodable = !video || hasVideoDecoder()
   const overlays = typeof overlay === 'function' ? overlay(video ? drawnUs : null) : overlay
 
@@ -152,12 +189,13 @@ export default function Preview({
         className={cellClassName}
         style={size ? { '--frame-width': size.width, '--frame-height': size.height } : undefined}
       >
-        <div data-frame className={`relative flex items-center justify-center bg-black ${frameClassName}`}>
+        <div ref={frameRef} data-frame className={`relative flex items-center justify-center bg-black ${frameClassName}`}>
           {decodable ? frame : <p className="px-4 text-center text-sm text-ovcs-muted">{noVideoDecoder()}</p>}
           {decodable && !shown && !video ? <p className="text-sm text-ovcs-muted">No frame</p> : null}
           {shown && size && Children.count(overlays) > 0 ? <FrameSize value={size}>{overlays}</FrameSize> : null}
           {alert ? <div data-alert className="pointer-events-none absolute inset-0 ring-2 ring-inset ring-ovcs-warn" /> : null}
           {badge ? <div className="absolute left-2 top-2 flex flex-wrap gap-1">{badge}</div> : null}
+          {fullScreen ? <FullScreenButton stream={stream} {...fullScreen} /> : null}
         </div>
         {asideBeside ? (
           <div data-aside data-beside className={`flex flex-col gap-1.5 text-sm ${asideClassName}`}>
