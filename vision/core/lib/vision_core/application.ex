@@ -34,7 +34,7 @@ defmodule VisionCore.Application do
   them, and so does one with two such segmenters
   (`VisionCore.Segmentation`), or a detector and a segmenter of one name. So does one with two cameras of one name
   (`VisionCore.Camera.Unit`), or a camera named as a detection or a
-  segmentation pipeline, both publishing under `<prefix>/<name>/`. So
+  segmentation pipeline, both publishing under `<name>/`. So
   does a detector or a segmenter whose `:name` is not a valid pipeline
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 

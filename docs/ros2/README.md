@@ -71,14 +71,14 @@ The boundary between Gazebo's transport and ROS is exactly the list in `gazebo.l
 | `/joy/<profile>` | `sensor_msgs/Joy` | the operator's `joy` service | `RosBridge.Consumers.Joy` |
 | `/simulator/drive` | `geometry_msgs/Twist` | `RosBridge.Simulator.World` ([simulated hardware](./commands.md#the-vms-drives-the-simulator)) | `AckermannSteering` |
 | `/simulator/odom` | `nav_msgs/Odometry` | the model's `OdometryPublisher`: [ground truth](./commands.md#ground-truth) | you, to compare with `/odom` |
-| `/stereo/...` disparity, depth, points, detections | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit | Nav2, Foxglove |
+| `/stereo/...` disparity, depth, points; `/<pipeline>/detections` | `stereo_msgs`, `sensor_msgs`, `vision_msgs` | the vision unit, its detections under each detection pipeline's name ([What leaves the unit](../vision/data_flow.md#what-leaves-the-unit)) | Nav2, Foxglove |
 | `/stereo/{left,right}/image_rect/compressed` | `sensor_msgs/CompressedImage` | the vision unit, with `publish_rectified_image: true`; their intrinsics are `/stereo/depth/camera_info` | displays that draw over the image, Foxglove |
 | `/octomap/point_cloud_centers` | `sensor_msgs/PointCloud2` | the Nav2 image's `octomap_server`, from `/stereo/points`, for a vehicle with `nav2/octomap.yaml` | displays, Foxglove |
 | `<cloud>/draco` | `point_cloud_interfaces/CompressedPointCloud2` | the Nav2 image's `point_cloud_transport`, for `/stereo/points` and the OctoMap map, for a vehicle with `nav2/draco.yaml` | displays over a wireless link |
 | `/vehicle/*` | `std_msgs/String`, `Bool`, `Float64` | `RosBridge.Publishers.VehicleStatus`, from the VMS's `0x1A0`, `0x600` and `0x60C` | Foxglove: the control level, ROS commander, gear, ready to drive, VMS status and requested throttle and steering |
 | `/vehicle/predicted_path`, `/vehicle/predicted_pose` | `nav_msgs/Path`, `geometry_msgs/PoseStamped` | `RosBridge.Publishers.PathPrediction`, from the VMS's `0x60B` and `0x600` | displays drawing where the vehicle heads |
 | `/proximity/nearest`, `/proximity/labels` | `sensor_msgs/Range`, `visualization_msgs/MarkerArray` | `RosBridge.Publishers.Proximity`, from `/scan` | displays, Foxglove |
-| `/ovcs_heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` | you, to see the BEAM is alive |
+| `/<node_name>/heartbeat` | `std_msgs/String` | every `RosBridge` that lists `:heartbeat` (`/ovcs_bridge/heartbeat` under the default node name), and the vision unit (`/ovcs_vision/heartbeat`) | you, to see the BEAM is alive |
 
 **Two transform buffers.** `/tf` is time-indexed: `tf2` stores each sample against its stamp and interpolates. `/tf_static` is timeless. It carries the URDF's fixed joints, the sensor mounts among them; a point cloud stamped after the newest `/tf` sample could not be transformed, and Nav2 would drop it.
 
@@ -212,13 +212,12 @@ With `./ovcs run <vehicle>` running and the `compose/local/base.yml` stack up, r
 ```sh
 cd compose/local && docker compose -f base.yml exec ros2 bash -lc '
   source /opt/ros/*/setup.bash
-  ros2 topic list
-  ros2 topic info -v /ovcs_heartbeat
-  ros2 topic echo /ovcs_heartbeat std_msgs/msg/String
+  ros2 topic list | grep heartbeat
+  ros2 topic echo /<node_name>/heartbeat std_msgs/msg/String
 '
 ```
 
-Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to `/ovcs_heartbeat`.
+The list shows each node's heartbeat under its node name. The ROS bridge's is `ovcs_bridge` unless your vehicle's `RosBridge.Config` sets `node_name`: on the OVCS Mini reference vehicle, `/ovcs_bridge_ros/heartbeat`. The vision unit's is `/ovcs_vision/heartbeat`. Or open Foxglove Studio against `ws://<docker-host>:8765` and subscribe to one of them.
 
 `compose/local/foxglove/ovcs_stereo_tuning.json` is for tuning the stereo cameras. A vehicle's own layouts live in its `foxglove/` directory. The OVCS Mini reference vehicle has `ovcs_nav2.json` for the planner and `ovcs_stereo.json` for the stereo pipeline.
 

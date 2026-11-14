@@ -21,7 +21,7 @@
 #   CHESSBOARD_SQUARE_M=0.030
 #   APPROXIMATE_SYNC=0.05
 #   CALIBRATION_CAMERA=center        # as --camera
-#   CALIBRATION_TOPIC_PREFIX=stereo  # the vision unit's topic prefix
+#   CALIBRATION_TOPIC_PREFIX=stereo  # the stereo unit's topic prefix; none for a camera of its own
 #   DISPLAY=:0
 
 set -euo pipefail
@@ -34,7 +34,11 @@ if [[ "${1:-}" == "--camera" ]]; then
   shift 2
 fi
 
-topic_prefix="${CALIBRATION_TOPIC_PREFIX:-stereo}"
+if [[ -n "${camera}" ]]; then
+  topic_prefix="${CALIBRATION_TOPIC_PREFIX:-}"
+else
+  topic_prefix="${CALIBRATION_TOPIC_PREFIX:-stereo}"
+fi
 corners="${CHESSBOARD_INNER_CORNERS:-${1:-8x6}}"
 square="${CHESSBOARD_SQUARE_M:-${2:-0.030}}"
 approx_sync="${APPROXIMATE_SYNC:-0.05}"
@@ -67,7 +71,7 @@ else
 fi
 
 echo "calibrate.sh: launching calibrator"
-echo "  camera:                   ${camera:-the stereo pair} (/${topic_prefix})"
+echo "  camera:                   ${camera:-the stereo pair} (/${topic_prefix:+${topic_prefix}/}${camera:-left, right})"
 echo "  chessboard inner corners: ${corners}"
 echo "  square size:              ${square} m"
 echo "  approximate sync window:  ${approx_sync} s"

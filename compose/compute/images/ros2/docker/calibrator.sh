@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # CMD for the calibrator one-shot service. Subscribes to the vision
-# unit's /<prefix>/<camera>/image_raw/compressed topics, decompresses
+# unit's /stereo/{left,right}/image_raw/compressed topics, or a camera
+# of its own's /<camera>/image_raw/compressed, decompresses
 # them so the calibrator can consume raw `sensor_msgs/Image`, then
 # launches the standard ROS 2 `cameracalibrator` GUI: in stereo mode for
 # the stereo pair, the default, or in monocular mode for the camera of
@@ -27,15 +28,18 @@ set -euo pipefail
 : "${CHESSBOARD_INNER_CORNERS:=8x6}"
 : "${CHESSBOARD_SQUARE_M:=0.025}"
 : "${APPROXIMATE_SYNC:=0.05}"
-: "${CALIBRATION_TOPIC_PREFIX:=stereo}"
 : "${CALIBRATION_CAMERA:=}"
 
-prefix="/${CALIBRATION_TOPIC_PREFIX}"
+# The namespace the cameras are under: the stereo unit's prefix, none for
+# a camera of its own unless its exporter gives it a topic_prefix.
 if [[ -n "${CALIBRATION_CAMERA}" ]]; then
+  : "${CALIBRATION_TOPIC_PREFIX:=}"
   cameras=("${CALIBRATION_CAMERA}")
 else
+  : "${CALIBRATION_TOPIC_PREFIX:=stereo}"
   cameras=(left right)
 fi
+prefix="${CALIBRATION_TOPIC_PREFIX:+/${CALIBRATION_TOPIC_PREFIX}}"
 
 # Waits up to 15 s for every topic named after the cameras with `suffix`.
 wait_for_topics() {

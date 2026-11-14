@@ -13,18 +13,24 @@ defmodule VisionCore.Ros2.Exporter do
       exporter's supervisor).
     * Each detection pipeline's detections, as markers, `vision_msgs`
       and an overlay on the left raw image, or on a camera source the
-      camera's (`VisionCore.Ros2.Exporter.Detections`).
+      camera's, under the pipeline's name
+      (`VisionCore.Ros2.Exporter.Detections`).
     * Each segmentation pipeline's label image, with the camera info that
-      places it on its camera, and its road and off-road points
-      (`VisionCore.Ros2.Exporter.Segmentation`). The camera info is read
-      from the camera's calibration at each start of its runner, and
+      places it on its camera, and its road and off-road points, under
+      the pipeline's name (`VisionCore.Ros2.Exporter.Segmentation`).
+      The camera info is read from the camera's calibration at each
+      start of its runner, and
       again when a calibration is committed through the camera's
       `set_camera_info`.
     * Each camera of its own's image, camera info, video and pose
-      relative to the stereo pair (`VisionCore.Ros2.Exporter.Camera`).
-    * A heartbeat, `std_msgs/String` on `ovcs_heartbeat`, so consumers
-      see the unit alive even when no other topic flows. Its data names
-      the node, so nodes sharing the topic tell themselves apart.
+      relative to the stereo pair, under the camera's name
+      (`VisionCore.Ros2.Exporter.Camera`), and the exposure and gain it
+      applies, when its driver reports them
+      (`VisionCore.Ros2.Exporter.CameraLive`, a helper under the
+      exporter's supervisor).
+    * A heartbeat, `std_msgs/String` on `<node_name>/heartbeat`, so
+      consumers see the unit alive even when no other topic flows. Its
+      data names the node and counts.
 
   Each publishes only when its options are given. A message is stamped
   with the frame id its camera frame or pair carries. The messages are
@@ -69,7 +75,7 @@ defmodule VisionCore.Ros2.Exporter do
 
   It reads each camera's settings in the configuration
   (`VisionCore.Camera.Unit.settings/1`) at each start of its runner,
-  and answers `set_camera_info` on `<prefix>/<name>/set_camera_info`
+  and answers `set_camera_info` on `<name>/set_camera_info`
   for each camera with a calibration path or a store: a
   `VisionCore.Ros2.Services.SetCameraInfoServer` commits the calibration
   as the dashboard does (`VisionCore.Camera.Calibration.commit/3`).
@@ -91,31 +97,34 @@ defmodule VisionCore.Ros2.Exporter do
       `:raw_image_max_hz` and `:camera_info_interval_frames`.
     * `:detections` — publishes the detections of each pipeline its
       `:pipelines` list (`[:detection]`, a detector without a name), each on
-      topics and in a marker namespace of its own;
-      `VisionCore.Ros2.Exporter.Detections` documents its other options
-      and the topics, its `:topic_prefix` the stereo unit's `:prefix` by
-      default.
+      topics and in a marker namespace of its own, under the pipeline's
+      name; `VisionCore.Ros2.Exporter.Detections` documents the topics
+      and its other options, among them `:topic_prefix`, none by
+      default, a namespace to put the pipelines' topics under. A pair
+      without a frame id is in the stereo unit's `"<prefix>_left"`.
     * `:cameras` — publishes the cameras of their own its `:names` list,
       every camera of the configuration by default, each its default
       output or the one `:outputs` names for each camera it publishes (`hq: :view`;
       `VisionCore.Camera.Output`), and the H.264 output `:videos` names
       for a camera as its video, every frame of it (`hq: :view_h264`):
-      `:topic_prefix`, the stereo unit's `:prefix` by default, else
-      `"stereo"`; `:raw_image_max_hz` (10), the most images a second per
+      `:topic_prefix`, none by default, a namespace to put the cameras'
+      topics under, each camera's being under its name
+      (`VisionCore.Ros2.Exporter.Camera.topic_root/2`);
+      `:raw_image_max_hz` (10), the most images a second per
       camera for frames it encodes, JPEG frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
     * `:segmentation` — publishes the results of each segmentation
       pipeline its `:pipelines` lists, by default every one of the
       configuration on a camera (`VisionCore.Segmentation.Supervisor.cameras/1`),
       on the topics `VisionCore.Ros2.Exporter.Segmentation`
-      documents, under `:topic_prefix`, the stereo unit's `:prefix` by
-      default, else `"stereo"`. Clouds whose pair carries no frame id are
-      in the stereo unit's left `:frame_id`, else in `"<prefix>_left"`,
-      this `:topic_prefix`'s.
+      documents, under each pipeline's name, and under `:topic_prefix`
+      when given, none by default. Clouds whose pair carries no frame id
+      are in the stereo unit's left `:frame_id`, else in its
+      `"<prefix>_left"`, `"stereo_left"` without a stereo unit.
     * `:heartbeat` — publishes the heartbeat; `:interval_ms` (`1_000`),
       the time between two heartbeats.
     * `:node_name` (the node name of the configuration's `ros2:`) —
-      the node the heartbeat names.
+      the node the heartbeat names, and is published under.
     * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
       message: called with its topic, its module, the message and `[]`.
     * `:register_service` (`&Ros2Zenoh.Client.register_service/3`)
@@ -133,7 +142,7 @@ defmodule VisionCore.Ros2.Exporter do
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Unit}
   alias VisionCore.{Detection, Outputs, Segmentation}
-  alias VisionCore.Ros2.Exporter.{Camera, Detections, Diagnostics, Stereo}
+  alias VisionCore.Ros2.Exporter.{Camera, CameraLive, Detections, Diagnostics, Stereo}
   alias VisionCore.Ros2.Exporter.Segmentation, as: SegmentationMessages
   alias VisionCore.Segmentation.Supervisor, as: SegmentationSupervisor
   alias VisionCore.Ros2.Services.SetCameraInfoServer
@@ -141,7 +150,6 @@ defmodule VisionCore.Ros2.Exporter do
   alias VisionCore.Stereo.{Calibration, Pair, StageTimer}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
-  @heartbeat_topic "ovcs_heartbeat"
   @default_heartbeat_interval_ms 1_000
   @default_prefix "stereo"
   @transform_topic "/tf_static"
@@ -414,11 +422,7 @@ defmodule VisionCore.Ros2.Exporter do
     end
   end
 
-  defp camera_topic_prefix(options) do
-    Keyword.get_lazy(options[:cameras], :topic_prefix, fn ->
-      options |> config() |> StereoSupervisor.camera_options() |> unit_prefix()
-    end)
-  end
+  defp camera_topic_prefix(options), do: Keyword.get(options[:cameras], :topic_prefix)
 
   defp detection_pipelines(nil), do: []
 
@@ -469,7 +473,10 @@ defmodule VisionCore.Ros2.Exporter do
 
   defp set_camera_info_service(topic_prefix, side), do: "#{topic_prefix}/#{side}/set_camera_info"
 
-  defp camera_children(options) do
+  defp camera_children(options),
+    do: set_camera_info_children(options) ++ camera_live_children(options)
+
+  defp set_camera_info_children(options) do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
@@ -485,6 +492,21 @@ defmodule VisionCore.Ros2.Exporter do
         id: {SetCameraInfoServer, name}
       )
     end
+  end
+
+  # One helper for the published cameras whose driver reports what it applied.
+  defp camera_live_children(options) do
+    published = published_camera_names(options)
+
+    cameras =
+      for {name, driver, server} <- Unit.cameras(config(options)),
+          name in published,
+          Code.ensure_loaded?(driver) and function_exported?(driver, :live, 1),
+          do: {Camera.topic_root(camera_topic_prefix(options), name), driver, server}
+
+    if cameras == [],
+      do: [],
+      else: [{CameraLive, cameras: cameras, publish: publish_function(options)}]
   end
 
   @impl VisionCore.Exporter
@@ -534,9 +556,12 @@ defmodule VisionCore.Ros2.Exporter do
     node_name =
       Keyword.get_lazy(options, :node_name, fn -> Node.configured_node_name(config) end)
 
-    Logger.info("#{__MODULE__} ticking a heartbeat on #{@heartbeat_topic} every #{interval_ms}ms")
-    %{interval_ms: interval_ms, node_name: node_name, counter: 0}
+    topic = heartbeat_topic(node_name)
+    Logger.info("#{__MODULE__} ticking a heartbeat on #{topic} every #{interval_ms}ms")
+    %{interval_ms: interval_ms, node_name: node_name, topic: topic, counter: 0}
   end
+
+  defp heartbeat_topic(node_name), do: "#{node_name}/heartbeat"
 
   defp start_stereo(nil, _cameras), do: {:ok, nil}
 
@@ -567,7 +592,7 @@ defmodule VisionCore.Ros2.Exporter do
         options
         |> Keyword.delete(:pipelines)
         |> Keyword.put(:pipeline, pipeline)
-        |> Keyword.put_new(:topic_prefix, unit_prefix(cameras))
+        |> Keyword.put(:pair_frame_id, "#{unit_prefix(cameras)}_left")
         |> Keyword.put(:image_size, camera_image_size(sources[Detection.output(pipeline)], all))
         |> Detections.new()
 
@@ -610,7 +635,7 @@ defmodule VisionCore.Ros2.Exporter do
         config = config(options)
         pipeline_cameras = Map.new(SegmentationSupervisor.cameras(config))
         camera_settings = Map.new(Unit.settings(config), &{&1.name, &1})
-        topic_prefix = Keyword.get(options[:segmentation], :topic_prefix, unit_prefix(cameras))
+        topic_prefix = Keyword.get(options[:segmentation], :topic_prefix)
 
         calibrations =
           for camera <- pipeline_cameras |> Map.take(pipelines) |> Map.values() |> Enum.uniq(),
@@ -627,7 +652,7 @@ defmodule VisionCore.Ros2.Exporter do
               camera: camera,
               camera_frame_id: camera_settings[camera] && camera_settings[camera].frame_id,
               calibration: calibrations[camera],
-              cloud_frame_id: left_frame_id(cameras)
+              cloud_frame_id: left_frame_id(cameras) || "#{unit_prefix(cameras)}_left"
             )
 
           Logger.info(
@@ -857,7 +882,7 @@ defmodule VisionCore.Ros2.Exporter do
   def handle_info(:heartbeat, %{heartbeat: heartbeat} = state) do
     counter = heartbeat.counter + 1
     message = heartbeat_message(counter, heartbeat.node_name, System.system_time(:millisecond))
-    publish(state, {@heartbeat_topic, StringMessage, message})
+    publish(state, {heartbeat.topic, StringMessage, message})
     Process.send_after(self(), :heartbeat, heartbeat.interval_ms)
     {:ok, %{state | heartbeat: %{heartbeat | counter: counter}}}
   end

@@ -43,7 +43,7 @@ A Port's row below names the process that owns it.
 | Pairer | [`VisionCore.Stereo.Pairer`](../../vision/core/lib/vision_core/stereo/pairer.ex), which also measures how far apart the cameras capture, for the Status | `VisionCore.Stereo.Supervisor` |
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
-| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
+| ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the stereo cameras do and their sync, [`VisionCore.Ros2.Exporter.CameraLive`](../../vision/core/lib/vision_core/ros2/exporter/camera_live.ex) plotting what the cameras of their own apply, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
 | Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Consumers`, on a unit with a stereo pair or a camera of its own to calibrate |
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
@@ -90,7 +90,13 @@ With a compiled segment first, as on the C100, the Pipeline overlaps differently
 
 ## What leaves the unit
 
-The exporters take the unit's outputs out of it; see [Exporters](#exporters). The ROS 2 exporter publishes them over Zenoh as ROS 2 messages, under its `:topic_prefix`. By default that is the stereo unit's `:prefix`, `stereo`:
+The exporters take the unit's outputs out of it; see [Exporters](#exporters). The ROS 2 exporter publishes them over Zenoh as ROS 2 messages, each part when its option is given:
+
+- The stereo unit's topics are under its `:prefix`, `stereo` by default: `<prefix>` below.
+- A camera of its own's topics are under its name: `<camera>`.
+- A detection or segmentation pipeline's topics are under its name, whatever camera it reads: `<pipeline>`. A detector without a name is the pipeline `detection`.
+
+A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`.
 
 | Topic | Content |
 |---|---|
@@ -100,13 +106,23 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 | `<prefix>/depth/image_rect` | The depth as a 16UC1 image of millimetres, 0 where there is no measurement: the ROS depth-image convention, at half the bytes of 32-bit metres. |
 | `<prefix>/depth/camera_info` | The left camera's rectified intrinsics, next to the depth image so viewers can project it. |
 | `<prefix>/points` | The decimated point cloud, organized, NaN where nothing was measured. |
-| `<prefix>/<pipeline>/detections`, `<prefix>/<pipeline>/detections/markers`, `<prefix>/<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A detector without a name is the pipeline `detection`. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
-| `<prefix>/<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
-| `<prefix>/<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
-| `<prefix>/<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
-| `<prefix>/<pipeline>/road/points`, `<prefix>/<pipeline>/off_road/points` | The segmentation pipeline `<pipeline>`'s stereo points in a road cell and in any other cell, as `sensor_msgs/PointCloud2` in the stereo left optical frame. They are stamped with their stereo pair's capture time, as `<prefix>/points` is, so syncing them with the label image takes an approximate-time policy. None is published for a frame without a matched stereo pair. None is published either when the camera's calibration or pose is missing, or its calibration cannot be projected at the frame's size. |
+| `<prefix>/<side>/exposure_us`, `<prefix>/<side>/analogue_gain` | `std_msgs/Float64`, five times a second: the exposure in microseconds and the analogue gain each camera applied, for plotting. |
+| `<prefix>/sync_offset_ms` | `std_msgs/Float64`, five times a second: the median time between the two cameras' frames since the last one, right minus left. |
+| `/diagnostics` | `diagnostic_msgs/DiagnosticArray`, every second: what each stereo camera applied, and the pair's sync. |
+| `<camera>/image_raw/compressed`, `<camera>/camera_info` | A camera of its own's image and calibration; [On ROS 2](./cameras.md#on-ros-2) describes them. |
+| `<camera>/image_raw/h264` | With `videos:`, each frame of a camera's H.264 output, as `foxglove_msgs/CompressedVideo`. |
+| `<camera>/exposure_us`, `<camera>/analogue_gain` | As the stereo cameras', for a camera whose driver reports them, such as `VisionCore.Camera.V4L2Single`. |
+| `/tf_static` | Each camera of its own's pose, from the stereo left camera's frame. |
+| `<pipeline>/detections`, `<pipeline>/detections/markers`, `<pipeline>/annotations` | The detection pipeline `<pipeline>`'s objects with their position in metres, markers for RViz or Foxglove in the namespace `<pipeline>`, and the 2D overlay on the left image. A pipeline on a camera of its own publishes the objects with a distance there, in the camera's frame, and its overlay over the camera's image. |
+| `<pipeline>/detections_2d` | A pipeline on a camera of its own: `vision_msgs/Detection2DArray` of the objects it has no distance for, boxes in the camera's pixels. |
+| `<pipeline>/labels` | The segmentation pipeline `<pipeline>`'s label image, a `mono8` `sensor_msgs/Image` of class ids. Each pixel is a cell of the model's output grid, over the band of the camera's image the model sees. It is in the camera's frame, stamped with the frame's capture time. |
+| `<pipeline>/camera_info` | Sent with each label image, under its header: the camera's calibration mapped onto the label grid. A point projected through it lands on the label pixel of its cell. Empty but for its size when the camera has no calibration of the frame's aspect ratio. |
+| `<pipeline>/road/points`, `<pipeline>/off_road/points` | The segmentation pipeline `<pipeline>`'s stereo points in a road cell and in any other cell, as `sensor_msgs/PointCloud2` in the stereo left optical frame. They are stamped with their stereo pair's capture time, as `<prefix>/points` is, so syncing them with the label image takes an approximate-time policy. None is published for a frame without a matched stereo pair. None is published either when the camera's calibration or pose is missing, or its calibration cannot be projected at the frame's size. |
+| `<node_name>/heartbeat` | `std_msgs/String`, every second by default: the node's name and a count, so a consumer sees the unit alive when nothing else flows. `/ovcs_vision/heartbeat` under the default node name. |
 
-A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline). Segmentation pipelines are published only with the exporter's `segmentation:` option: those its `pipelines:` lists, or without `pipelines:` every one on a camera. Clouds whose pair carries no frame id, the stereo unit's left camera having been given none, are in `<prefix>_left`.
+The unit answers `sensor_msgs/srv/SetCameraInfo` on `<prefix>/<side>/set_camera_info` for each stereo side and on `<camera>/set_camera_info` for each camera of its own ([A new calibration](#a-new-calibration)). Its parameter services are under its node name, as `/ovcs_vision/list_parameters`.
+
+A named pipeline is published only when the exporter's `detections:` lists it in `pipelines:` (`[:detection]` by default, the unnamed pipeline). Segmentation pipelines are published only with the exporter's `segmentation:` option: those its `pipelines:` lists, or without `pipelines:` every one on a camera. Clouds and detections whose pair carries no frame id, the stereo unit's left camera having been given none, are in `<prefix>_left`.
 
 `VisionCore.Ros2.Exporter.Stereo`'s documentation lists the topics that are off unless you turn them on, such as the rectified images. `GET /api/ros2-node` on the unit lists every topic it has published, with its live rate ([Vision unit](./README.md#dashboard-and-api)).
 

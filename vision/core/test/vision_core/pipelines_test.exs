@@ -20,6 +20,7 @@ defmodule VisionCore.PipelinesTest do
     refute Pipelines.name?(:left)
     assert Pipelines.name?(:device)
     assert Pipelines.name?(:detections)
+    assert Pipelines.name?(:live)
     refute Pipelines.name?(:"front-cam")
     refute Pipelines.name?("road")
     refute Pipelines.name?(nil)

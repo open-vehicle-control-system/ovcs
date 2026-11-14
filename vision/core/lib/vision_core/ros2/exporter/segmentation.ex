@@ -4,18 +4,19 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   (`VisionCore.Segmentation.Pipeline`), which `VisionCore.Ros2.Exporter`
   publishes:
 
-    * `<prefix>/<name>/labels` — the label image, a `mono8`
+    * `<name>/labels` — the label image, a `mono8`
       `sensor_msgs/Image` whose pixels are the class ids of the model's
       output grid over the band of the camera's image it saw, in the
       camera's frame, stamped with the segmented frame's capture time.
-    * `<prefix>/<name>/camera_info` — with each label image and under its
+    * `<name>/camera_info` — with each label image and under its
       header, the `sensor_msgs/CameraInfo` that places it on the camera:
       the image's sibling, where `image_transport` looks for it.
-    * `<prefix>/<name>/road/points` and `<prefix>/<name>/off_road/points`
+    * `<name>/road/points` and `<name>/off_road/points`
       — the stereo points in a road cell and in any other cell, each a
       `sensor_msgs/PointCloud2` of `x`, `y`, `z` in the stereo pair's
       left optical frame, the frame of its depth, stamped with the pair's
-      capture time, as its `<prefix>/points` is. The labels and the
+      capture time, as the stereo unit's points are
+      (`VisionCore.Ros2.Exporter.Stereo`). The labels and the
       clouds of one result therefore carry different stamps: a consumer
       syncing them needs an approximate-time policy. A result without
       clouds, as without a matched stereo pair, publishes none; one whose
@@ -39,12 +40,13 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
 
     * `:pipeline` (required) — the segmentation pipeline's name, the
       `<name>` of the topics.
-    * `:topic_prefix` (`"stereo"`) — the `<prefix>` of the topics.
+    * `:topic_prefix` (none) — a namespace the topics go under,
+      `<prefix>/<name>/labels` and so on.
     * `:camera` and `:camera_frame_id` (`"<camera>_optical"`) — the
       source camera and its frame, for a frame that carries none.
     * `:calibration` (`nil`) — the camera's
       `VisionCore.Ros2.CameraCalibration`.
-    * `:cloud_frame_id` (`"<prefix>_left"`) — the stereo left optical
+    * `:cloud_frame_id` (`"stereo_left"`) — the stereo left optical
       frame, for a pair that carries none.
   """
 
@@ -53,7 +55,7 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
   alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
 
-  @default_topic_prefix "stereo"
+  @default_cloud_frame_id "stereo_left"
 
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
@@ -83,11 +85,13 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
         :camera_frame_id,
         :cloud_frame_id,
         :calibration,
-        topic_prefix: @default_topic_prefix
+        :topic_prefix
       ])
 
     pipeline = Keyword.fetch!(options, :pipeline)
-    topic_root = "#{options[:topic_prefix]}/#{pipeline}"
+
+    topic_root =
+      if options[:topic_prefix], do: "#{options[:topic_prefix]}/#{pipeline}", else: "#{pipeline}"
 
     %{
       labels_topic: "#{topic_root}/labels",
@@ -97,7 +101,7 @@ defmodule VisionCore.Ros2.Exporter.Segmentation do
       camera: options[:camera],
       calibration: options[:calibration],
       camera_frame_id: options[:camera_frame_id] || "#{options[:camera]}_optical",
-      cloud_frame_id: options[:cloud_frame_id] || "#{options[:topic_prefix]}_left"
+      cloud_frame_id: options[:cloud_frame_id] || @default_cloud_frame_id
     }
   end
 

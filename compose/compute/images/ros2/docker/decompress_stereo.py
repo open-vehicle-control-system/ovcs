@@ -3,11 +3,12 @@
 JPEG payload via OpenCV, and republish as raw `sensor_msgs/Image`
 on fresh topics that cameracalibrator can consume:
 `/<prefix>/<camera>/image_raw/compressed` to
-`/<prefix>/<camera>/image_calibration`.
+`/<prefix>/<camera>/image_calibration`, or `/<camera>/...` with an empty
+prefix.
 
 Usage: `decompress_stereo [<prefix> [<camera> ...]]`, the stereo pair,
-`stereo left right`, by default; `decompress_stereo stereo center` for the
-camera of its own named `center`.
+`stereo left right`, by default; `decompress_stereo "" center` for the
+camera of its own named `center`, whose topics are under its name.
 
 We use this instead of `image_transport republish` because the
 latter's CompressedImage subscriber and our Elixir bridge's
@@ -43,8 +44,9 @@ class CompressedToRaw(Node):
         )
 
         for side in cameras:
-            in_topic = f"/{prefix}/{side}/image_raw/compressed"
-            out_topic = f"/{prefix}/{side}/image_calibration"
+            namespace = f"/{prefix}/{side}" if prefix else f"/{side}"
+            in_topic = f"{namespace}/image_raw/compressed"
+            out_topic = f"{namespace}/image_calibration"
             pub = self.create_publisher(Image, out_topic, qos)
             self.create_subscription(
                 CompressedImage,

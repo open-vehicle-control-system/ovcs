@@ -34,10 +34,10 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
   defp messages(detections, drawn \\ 0) do
     assert [
-             {"stereo/detection/detections/markers", MarkerArray, %MarkerArray{markers: markers},
+             {"detection/detections/markers", MarkerArray, %MarkerArray{markers: markers},
               _options},
-             {"stereo/detection/detections", Detection3DArray, array},
-             {"stereo/detection/annotations", ImageAnnotations, overlay}
+             {"detection/detections", Detection3DArray, array},
+             {"detection/annotations", ImageAnnotations, overlay}
            ] = Detections.messages(detections, pair(), Detections.new([]), drawn)
 
     {markers, array, overlay}
@@ -121,14 +121,13 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
   end
 
   test "publishes a named pipeline's detections under its name, its markers in its own namespace" do
-    settings = Detections.new(topic_prefix: "front", pipeline: :road)
+    settings = Detections.new(pipeline: :road, pair_frame_id: "front_left")
     messages = Detections.messages([detection("lane", square(0.0, 0.0))], pair(), settings, 2)
 
     assert [
-             {"front/road/detections/markers", MarkerArray, %MarkerArray{markers: markers},
-              keep: true},
-             {"front/road/detections", Detection3DArray, array},
-             {"front/road/annotations", ImageAnnotations, _overlay}
+             {"road/detections/markers", MarkerArray, %MarkerArray{markers: markers}, keep: true},
+             {"road/detections", Detection3DArray, array},
+             {"road/annotations", ImageAnnotations, _overlay}
            ] = messages
 
     assert Enum.map(markers, &{&1.ns, &1.id, &1.action}) == [
@@ -141,12 +140,18 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
     assert array.header.frame_id == "front_left"
   end
 
-  test "stamps the detections of a pair without a frame id in the prefix's left frame" do
-    settings = Detections.new(topic_prefix: "front")
+  test "stamps the detections of a pair without a frame id in the stereo unit's left frame" do
+    settings = Detections.new(topic_prefix: "front", pair_frame_id: "rear_left")
     messages = Detections.messages([detection("person", square(0.0, 0.0))], pair(), settings, 0)
 
     assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
-    assert array.header.frame_id == "front_left"
+    assert array.header.frame_id == "rear_left"
+
+    messages =
+      Detections.messages([detection("person", square(0.0, 0.0))], pair(), Detections.new([]), 0)
+
+    assert {_topic, Detection3DArray, array} = Enum.at(messages, 1)
+    assert array.header.frame_id == "stereo_left"
   end
 
   describe "on a camera source" do
@@ -169,17 +174,17 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
     end
 
     defp camera_messages(detections, drawn \\ 0) do
-      settings = Detections.new(topic_prefix: "front", pipeline: :hq_people)
+      settings = Detections.new(pipeline: :hq_people)
       Detections.messages(detections, camera_frame(), settings, drawn)
     end
 
     test "publishes the detections with a distance in 3D, the others in 2D, all in the camera's frame" do
       assert [
-               {"front/hq_people/detections/markers", MarkerArray, %MarkerArray{markers: markers},
+               {"hq_people/detections/markers", MarkerArray, %MarkerArray{markers: markers},
                 keep: false},
-               {"front/hq_people/detections", Detection3DArray, array_3d},
-               {"front/hq_people/detections_2d", Detection2DArray, array_2d},
-               {"front/hq_people/annotations", ImageAnnotations, overlay}
+               {"hq_people/detections", Detection3DArray, array_3d},
+               {"hq_people/detections_2d", Detection2DArray, array_2d},
+               {"hq_people/annotations", ImageAnnotations, overlay}
              ] =
                camera_messages([
                  detection("person", square(0.0, 0.0)),
@@ -203,7 +208,7 @@ defmodule VisionCore.Ros2.Exporter.DetectionsTest do
 
     test "draws the 2D boxes and the overlay on an image of another size, pixel centres on pixel centres" do
       settings =
-        Detections.new(topic_prefix: "front", pipeline: :hq_people, image_size: {2028, 1520})
+        Detections.new(pipeline: :hq_people, image_size: {2028, 1520})
 
       messages =
         Detections.messages([unplaced("car", square(40.0, 10.0))], camera_frame(), settings, 0)

@@ -314,7 +314,7 @@ defmodule VisionCore.Calibration.RecorderTest do
     server =
       start_supervised!(
         {SetCameraInfoServer,
-         service_name: "stereo/hq/set_camera_info",
+         service_name: "hq/set_camera_info",
          commit: &OwnCalibration.commit(config, :hq, &1),
          register_service: fn _name, _module, _handler -> :ok end,
          respond: fn _name, _query, _payload -> :ok end}

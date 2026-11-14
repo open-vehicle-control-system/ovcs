@@ -89,7 +89,7 @@ defmodule VisionCore.ApplicationTest do
     assert VisionCore.Ros2.Topics in ids
 
     assert eventually(fn ->
-             Enum.any?(VisionCore.Ros2.Topics.topics(), &(&1.name == "/ovcs_heartbeat"))
+             Enum.any?(VisionCore.Ros2.Topics.topics(), &(&1.name == "/ovcs_vision/heartbeat"))
            end)
   end
 

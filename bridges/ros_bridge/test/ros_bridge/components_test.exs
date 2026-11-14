@@ -6,7 +6,7 @@ defmodule RosBridge.ComponentsTest do
   describe "start/2 — :heartbeat" do
     test "returns a single RosBridge.Publishers.Heartbeat child spec with defaults" do
       assert [{RosBridge.Publishers.Heartbeat, opts}] = Components.start(:heartbeat, [])
-      assert opts[:topic] == "ovcs_heartbeat"
+      refute Keyword.has_key?(opts, :topic)
       assert opts[:message_module] == Ros2Zenoh.StdMsgs.Msg.String
       assert opts[:interval_ms] == 1_000
       assert is_function(opts[:build], 2)
@@ -17,6 +17,11 @@ defmodule RosBridge.ComponentsTest do
 
       assert %{data: "ovcs_bridge_ros heartbeat 7 @ " <> _ms} =
                opts[:build].(7, "ovcs_bridge_ros")
+    end
+
+    test "publishes under the bridge's node name" do
+      assert RosBridge.Publishers.Heartbeat.topic("ovcs_bridge_ros") ==
+               "ovcs_bridge_ros/heartbeat"
     end
 
     test ":interval_ms overrides the default" do

@@ -22,7 +22,7 @@ defmodule Ros2Zenoh.ClientPublishTest do
 
   @moduletag :capture_log
 
-  @topic "ovcs_heartbeat"
+  @topic "heartbeat"
   @node_name "ros2_zenoh_test"
 
   # Stands in for the client process: hands every publish request to the test.

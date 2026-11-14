@@ -8,8 +8,8 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
       focus, frame duration, colour temperature, sync), stale when the
       camera stops reporting, and one for the pair's sync with the time
       between the two cameras' frames, a warning above 1 ms
-    * `<prefix>/live/sync_offset_ms` and, per camera,
-      `<prefix>/live/<side>/exposure_time_us` and `.../analogue_gain`
+    * `<prefix>/sync_offset_ms` and, per camera,
+      `<prefix>/<side>/exposure_us` and `<prefix>/<side>/analogue_gain`
       (`std_msgs/Float64`), five times a second, for plotting
 
   The sync offset is measured on every pair of frames taken less than
@@ -46,6 +46,7 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
   alias VisionCore.Ros2.{Stamp, Topics}
+  alias VisionCore.Ros2.Exporter.Camera
   alias VisionCore.Stereo.Sync
 
   @default_topic_prefix "stereo"
@@ -150,14 +151,10 @@ defmodule VisionCore.Ros2.Exporter.Diagnostics do
     sync =
       if offsets_ms == [],
         do: [],
-        else: [float_message("#{prefix}/live/sync_offset_ms", Sync.median(offsets_ms))]
+        else: [float_message("#{prefix}/sync_offset_ms", Sync.median(offsets_ms))]
 
     cameras =
-      for side <- [:left, :right],
-          metadata = live_metadata[side],
-          key <- [:exposure_time_us, :analogue_gain],
-          is_number(metadata[key]),
-          do: float_message("#{prefix}/live/#{side}/#{key}", metadata[key])
+      Enum.flat_map([:left, :right], &Camera.live_messages("#{prefix}/#{&1}", live_metadata[&1]))
 
     sync ++ cameras
   end

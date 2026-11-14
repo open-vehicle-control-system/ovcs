@@ -6,12 +6,12 @@ defmodule VisionCore.Ros2.Exporter.Camera do
   encodes a frame to JPEG.
 
     * Its **image** as `sensor_msgs/CompressedImage` on
-      `<topic_prefix>/<name>/image_raw/compressed`: an RGB or grey frame,
+      `<root>/image_raw/compressed`: an RGB or grey frame,
       encoded to JPEG, at most `:raw_image_max_hz` a second, a JPEG
       frame as it arrives (`VisionCore.Ros2.Exporter.Stereo.image_slot/4`);
       and its
       **calibration** as `sensor_msgs/CameraInfo` on
-      `<topic_prefix>/<name>/camera_info` every Nth frame, both in the
+      `<root>/camera_info` every Nth frame, both in the
       frame id the frame carries. The camera info is the calibration's K
       and D, resampled to the frame's size
       (`VisionCore.Ros2.CameraCalibration.resample_to/3`), with R the identity and P = K
@@ -19,20 +19,25 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       pair. Without a calibration, or with one of another aspect ratio
       than the frames', which is logged, it is empty.
     * Its **video**, each frame of an H.264 output, as
-      `foxglove_msgs/CompressedVideo` on `<topic_prefix>/<name>/video`,
+      `foxglove_msgs/CompressedVideo` on `<root>/image_raw/h264`,
       in the frame id the frame carries (`video_message/2`).
+    * The **exposure and gain** it applied, as `std_msgs/Float64` on
+      `<root>/exposure_us` and `<root>/analogue_gain`
+      (`live_messages/2`), for a camera whose driver reports them.
     * Its **pose** relative to the stereo pair (`VisionCore.Camera.Pose`)
       as a `tf2_msgs/TFMessage` transform from the stereo left optical
       frame to the camera's `frame_id` (`transform_message/3`).
 
-  `set_camera_info`'s service name is `<topic_prefix>/<name>/set_camera_info`.
+  `set_camera_info`'s service name is `<root>/set_camera_info`. The
+  `<root>` is the camera's name, `<topic_prefix>/<name>` with a
+  `:topic_prefix` (`topic_root/2`).
   """
   require Logger
 
   alias Ros2Zenoh.FoxgloveMsgs.Msg.CompressedVideo
   alias Ros2Zenoh.GeometryMsgs.Msg.{Quaternion, Transform, TransformStamped, Vector3}
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage}
-  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
   alias VisionCore.Camera.{Frame, Pose}
   alias VisionCore.Ros2.{CameraCalibration, Stamp}
@@ -64,10 +69,9 @@ defmodule VisionCore.Ros2.Exporter.Camera do
 
   @doc """
   The camera of `settings` (`VisionCore.Camera.Unit.settings/1`) with
-  its calibration and pose read, and `options`: `:topic_prefix`
-  (required), `:raw_image_max_hz` (10) and `:camera_info_interval_frames`
-  (30). A calibration or pose that cannot be read is left out, with a
-  warning.
+  its calibration and pose read, and `options`: `:topic_prefix` (none),
+  `:raw_image_max_hz` (10) and `:camera_info_interval_frames` (30). A
+  calibration or pose that cannot be read is left out, with a warning.
   """
   @spec new(VisionCore.Camera.Unit.settings(), keyword()) :: t()
   def new(settings, options) do
@@ -85,7 +89,7 @@ defmodule VisionCore.Ros2.Exporter.Camera do
       frame_id: settings.frame_id,
       image_topic: "#{topic_root}/image_raw/compressed",
       camera_info_topic: "#{topic_root}/camera_info",
-      video_topic: "#{topic_root}/video",
+      video_topic: "#{topic_root}/image_raw/h264",
       service_name: service_name(options[:topic_prefix], settings.name),
       calibration: calibration(settings.calibration_path, settings.name),
       pose: load_pose(settings.pose_path, settings.name),
@@ -97,11 +101,28 @@ defmodule VisionCore.Ros2.Exporter.Camera do
     }
   end
 
-  @doc "The `set_camera_info` service of the camera `name` under `topic_prefix`."
-  @spec service_name(String.t(), atom()) :: String.t()
+  @doc "The `set_camera_info` service of the camera `name` under `topic_prefix`, if any."
+  @spec service_name(String.t() | nil, atom()) :: String.t()
   def service_name(topic_prefix, name), do: "#{topic_root(topic_prefix, name)}/set_camera_info"
 
-  defp topic_root(topic_prefix, name), do: "#{topic_prefix}/#{name}"
+  @doc "The namespace of the camera `name`'s topics: its name, under `topic_prefix` when given."
+  @spec topic_root(String.t() | nil, atom()) :: String.t()
+  def topic_root(nil, name), do: Atom.to_string(name)
+  def topic_root(topic_prefix, name), do: "#{topic_prefix}/#{name}"
+
+  @doc """
+  The exposure and gain in `live_metadata`, what the camera under
+  `topic_root` applied (`c:VisionCore.Camera.live/1`), as
+  `std_msgs/Float64` on `<topic_root>/exposure_us` and
+  `<topic_root>/analogue_gain`; none for a figure it did not report.
+  """
+  @spec live_messages(String.t(), map() | nil) :: [Stereo.message()]
+  def live_messages(topic_root, live_metadata) do
+    for {key, topic} <- [exposure_time_us: "exposure_us", analogue_gain: "analogue_gain"],
+        is_map(live_metadata),
+        is_number(live_metadata[key]),
+        do: {"#{topic_root}/#{topic}", Float64, %Float64{data: live_metadata[key] * 1.0}}
+  end
 
   @doc "`camera` with its calibration read again from `calibration_path`."
   @spec reload(t(), Path.t() | nil) :: t()

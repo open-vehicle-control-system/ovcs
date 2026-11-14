@@ -5,7 +5,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.FoxgloveMsgs.Msg.{CompressedVideo, ImageAnnotations}
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, CompressedImage, Image, PointCloud2}
-  alias Ros2Zenoh.StdMsgs.Msg.Header
+  alias Ros2Zenoh.StdMsgs.Msg.{Float64, Header}
   alias Ros2Zenoh.StdMsgs.Msg.String, as: StringMessage
   alias Ros2Zenoh.StereoMsgs.Msg.DisparityImage
   alias Ros2Zenoh.Tf2Msgs.Msg.TFMessage
@@ -16,7 +16,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   alias VisionCore.Outputs
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Ros2.Exporter
-  alias VisionCore.Ros2.Exporter.Diagnostics
+  alias VisionCore.Ros2.Exporter.{CameraLive, Diagnostics}
   alias VisionCore.Ros2.Services.SetCameraInfoServer
   alias Ros2Zenoh.Client
   alias VisionCore.Stereo.Pair
@@ -27,6 +27,12 @@ defmodule VisionCore.Ros2.ExporterTest do
   # Names the cameras, which need not be running.
   defmodule Camera do
     def name_for(label), do: Module.concat(__MODULE__, label)
+  end
+
+  # Reports what each camera applied, as `VisionCore.Camera.V4L2Single` does.
+  defmodule LiveCamera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+    def live(_server), do: %{exposure_time_us: 8_000, analogue_gain: 2.5, received_ms: 0}
   end
 
   # Names a second unit's cameras, for the tests that publish through the runner.
@@ -340,7 +346,7 @@ defmodule VisionCore.Ros2.ExporterTest do
   end
 
   describe "heartbeat" do
-    test "names the node and counts, every interval" do
+    test "names the node and counts, every interval, on the node's heartbeat topic" do
       {:ok, state} =
         Exporter.init(
           heartbeat: [interval_ms: 10],
@@ -350,12 +356,12 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       assert_receive :heartbeat, 1_000
       {:ok, state} = Exporter.handle_info(:heartbeat, state)
-      assert_receive {:published, "ovcs_heartbeat", %StringMessage{data: first}}
+      assert_receive {:published, "front_vision/heartbeat", %StringMessage{data: first}}
       assert first =~ ~r/^front_vision heartbeat 1 @ \d+$/
 
       assert_receive :heartbeat, 1_000
       {:ok, _state} = Exporter.handle_info(:heartbeat, state)
-      assert_receive {:published, "ovcs_heartbeat", %StringMessage{data: second}}
+      assert_receive {:published, "front_vision/heartbeat", %StringMessage{data: second}}
       assert second =~ "heartbeat 2 @"
     end
 
@@ -370,7 +376,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert_receive :heartbeat, 1_000
       {:ok, _state} = Exporter.handle_info(:heartbeat, state)
 
-      assert_receive {:published, "ovcs_heartbeat",
+      assert_receive {:published, "rear_vision/heartbeat",
                       %StringMessage{data: "rear_vision heartbeat 1" <> _time}}
     end
 
@@ -598,20 +604,32 @@ defmodule VisionCore.Ros2.ExporterTest do
         state
       )
 
-    assert_received {:published, "stereo/detection/detections/markers",
+    assert_received {:published, "detection/detections/markers",
                      %MarkerArray{markers: [marker | _markers]}}
 
     assert marker.header.frame_id == "stereo_left_optical"
-    assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
+    assert_received {:published, "detection/annotations", %ImageAnnotations{}}
 
     {:ok, _state} =
       Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detection/detections/markers",
-                     %MarkerArray{markers: markers}}
+    assert_received {:published, "detection/detections/markers", %MarkerArray{markers: markers}}
 
     assert Enum.map(markers, & &1.action) ==
              List.duplicate(Marker.add(), 2) ++ List.duplicate(Marker.delete(), 2)
+  end
+
+  test "publishes a pipeline's detections under its name whatever the stereo unit's prefix, a pair without a frame id in its left frame" do
+    options = options(Camera, detections: [])
+    {:ok, state} = Exporter.init(Keyword.put(options, :config, config(Camera, prefix: "front")))
+
+    {:ok, _state} =
+      Exporter.handle_output({:detections, :detection}, {pair(nil), [detection("person")]}, state)
+
+    assert_received {:published, "detection/detections/markers",
+                     %MarkerArray{markers: [marker | _]}}
+
+    assert marker.header.frame_id == "front_left"
   end
 
   test "publishes a camera source's detections in the camera's frame, deleting only the markers it drew" do
@@ -631,19 +649,17 @@ defmodule VisionCore.Ros2.ExporterTest do
         state
       )
 
-    assert_received {:published, "stereo/hq_people/detections/markers",
+    assert_received {:published, "hq_people/detections/markers",
                      %MarkerArray{markers: [marker, _label]}}
 
     assert marker.header.frame_id == "hq_optical"
 
-    assert_received {:published, "stereo/hq_people/detections_2d",
-                     %Detection2DArray{detections: [_car]}}
+    assert_received {:published, "hq_people/detections_2d", %Detection2DArray{detections: [_car]}}
 
     {:ok, _state} =
       Exporter.handle_output({:detections, :hq_people}, {frame, [unplaced]}, state)
 
-    assert_received {:published, "stereo/hq_people/detections/markers",
-                     %MarkerArray{markers: markers}}
+    assert_received {:published, "hq_people/detections/markers", %MarkerArray{markers: markers}}
 
     assert Enum.map(markers, & &1.action) == List.duplicate(Marker.delete(), 2)
   end
@@ -661,30 +677,30 @@ defmodule VisionCore.Ros2.ExporterTest do
       two = [detection("person"), detection("car")]
       {:ok, state} = Exporter.handle_output({:detections, :detection}, {pair(), two}, state)
 
-      assert markers_of("stereo/detection/detections/markers") ==
+      assert markers_of("detection/detections/markers") ==
                List.duplicate({"detection", Marker.add()}, 4)
 
-      assert_received {:published, "stereo/detection/detections", _array}
-      assert_received {:published, "stereo/detection/annotations", %ImageAnnotations{}}
+      assert_received {:published, "detection/detections", _array}
+      assert_received {:published, "detection/annotations", %ImageAnnotations{}}
 
       {:ok, state} =
         Exporter.handle_output({:detections, :road}, {pair(), [detection("lane")]}, state)
 
-      assert markers_of("stereo/road/detections/markers") ==
+      assert markers_of("road/detections/markers") ==
                List.duplicate({"road", Marker.add()}, 2)
 
-      assert_received {:published, "stereo/road/detections", _array}
-      assert_received {:published, "stereo/road/annotations", %ImageAnnotations{}}
-      refute_received {:published, "stereo/" <> _topic, _message}
+      assert_received {:published, "road/detections", _array}
+      assert_received {:published, "road/annotations", %ImageAnnotations{}}
+      refute_received {:published, _topic, _message}
 
       {:ok, _state} =
         Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-      assert markers_of("stereo/detection/detections/markers") ==
+      assert markers_of("detection/detections/markers") ==
                List.duplicate({"detection", Marker.add()}, 2) ++
                  List.duplicate({"detection", Marker.delete()}, 2)
 
-      refute_received {:published, "stereo/road/" <> _topic, _message}
+      refute_received {:published, "road/" <> _topic, _message}
     end
 
     test "through the runner, each pipeline's detections reach only its own topics" do
@@ -709,16 +725,16 @@ defmodule VisionCore.Ros2.ExporterTest do
         {{:detections, :road}, {pair(), [detection("lane")]}}
       )
 
-      assert_receive {:published, "stereo/road/detections", _array}, 1_000
-      refute_receive {:published, "stereo/detection/detections", _array}, 100
+      assert_receive {:published, "road/detections", _array}, 1_000
+      refute_receive {:published, "detection/detections", _array}, 100
 
       Outputs.publish(
         {:detections, :detection},
         {{:detections, :detection}, {pair(), [detection("person")]}}
       )
 
-      assert_receive {:published, "stereo/detection/detections", _array}, 1_000
-      refute_receive {:published, "stereo/road/detections", _array}, 100
+      assert_receive {:published, "detection/detections", _array}, 1_000
+      refute_receive {:published, "road/detections", _array}, 100
     end
   end
 
@@ -734,12 +750,12 @@ defmodule VisionCore.Ros2.ExporterTest do
         state
       )
 
-    assert_received {:published, "stereo/detection/detections/markers", [keep: false]}
+    assert_received {:published, "detection/detections/markers", [keep: false]}
 
     {:ok, _state} =
       Exporter.handle_output({:detections, :detection}, {pair(), [detection("person")]}, state)
 
-    assert_received {:published, "stereo/detection/detections/markers", [keep: true]}
+    assert_received {:published, "detection/detections/markers", [keep: true]}
   end
 
   describe "on its own JPEG codec" do
@@ -885,7 +901,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       GenServer.reply(encode, {:ok, "the jpeg"})
 
       assert {:ready, {:camera_frame, :hq, :small}, state} = encoded(state)
-      assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+      assert_received {:published, "hq/image_raw/compressed", %CompressedImage{}}
       assert state.cameras.hq.frame_counter == 1
     end
   end
@@ -1012,8 +1028,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       end)
 
       for jpeg <- jpegs do
-        assert_received {:published, "stereo/hq/image_raw/compressed",
-                         %CompressedImage{data: ^jpeg}}
+        assert_received {:published, "hq/image_raw/compressed", %CompressedImage{data: ^jpeg}}
       end
     end
 
@@ -1082,11 +1097,11 @@ defmodule VisionCore.Ros2.ExporterTest do
       end)
 
       for %Frame{h264: h264} <- frames do
-        assert_received {:published, "stereo/hq/video",
+        assert_received {:published, "hq/image_raw/h264",
                          %CompressedVideo{data: ^h264, format: "h264", frame_id: "hq_optical"}}
       end
 
-      refute_received {:published, "stereo/hq/image_raw/compressed", _image}
+      refute_received {:published, "hq/image_raw/compressed", _image}
     end
 
     test "draws a camera pipeline's 2D boxes at the detected frame's size when it publishes no image of the camera" do
@@ -1117,7 +1132,7 @@ defmodule VisionCore.Ros2.ExporterTest do
 
       frame = %{jpeg_frame("hq", 1) | output: :inference}
       {:ok, _state} = Exporter.handle_output({:camera_frame, :hq, :inference}, frame, state)
-      assert_received {:published, "stereo/hq/image_raw/compressed", %CompressedImage{}}
+      assert_received {:published, "hq/image_raw/compressed", %CompressedImage{}}
     end
 
     test "draws a camera pipeline's 2D boxes on the camera's first sent output by default" do
@@ -1161,7 +1176,7 @@ defmodule VisionCore.Ros2.ExporterTest do
     end
 
     @tag :tmp_dir
-    test "answers set_camera_info on <prefix>/<name>/set_camera_info, committing to its store",
+    test "answers set_camera_info on <name>/set_camera_info, committing to its store",
          %{tmp_dir: tmp_dir} do
       calibration = CameraCalibration.load!(Path.join(@calibration, "distorted_left.yaml"))
 
@@ -1173,18 +1188,34 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert %{id: {SetCameraInfoServer, :hq}, start: {SetCameraInfoServer, :start_link, [args]}} =
                server
 
-      assert args[:service_name] == "stereo/hq/set_camera_info"
+      assert args[:service_name] == "hq/set_camera_info"
       assert args[:commit].(calibration) == :ok
       assert File.read!(Path.join(tmp_dir, "camera_hq.yaml")) =~ "camera_name: hq"
     end
 
-    test "without a store, answers set_camera_info with a calibration file; with neither, no service" do
+    test "without a store, answers set_camera_info with a calibration file, under :topic_prefix when given; with neither, no service" do
       options = hq_options(Camera, [calibration: "hq.yaml"], cameras: [topic_prefix: "front"])
 
       assert [%{start: {SetCameraInfoServer, :start_link, [args]}}] = Exporter.children(options)
       assert args[:service_name] == "front/hq/set_camera_info"
 
       assert Exporter.children(hq_options(Camera, [], cameras: [])) == []
+    end
+
+    test "plots the exposure and gain of each camera whose driver reports them, in a helper" do
+      assert [{CameraLive, live_options}] =
+               Exporter.children(hq_options(LiveCamera, [], cameras: []))
+
+      assert live_options[:cameras] == [{"hq", LiveCamera, LiveCamera.name_for("hq")}]
+      start_supervised!({CameraLive, live_options})
+
+      assert_receive {:published, "hq/exposure_us", %Float64{data: 8000.0}}, 1_000
+      assert_receive {:published, "hq/analogue_gain", %Float64{data: 2.5}}, 1_000
+
+      assert [{CameraLive, front_options}] =
+               Exporter.children(hq_options(LiveCamera, [], cameras: [topic_prefix: "front"]))
+
+      assert [{"front/hq", _driver, _server}] = front_options[:cameras]
     end
 
     test "publishes its image and camera info through the runner, in the frame it carries" do
@@ -1197,12 +1228,12 @@ defmodule VisionCore.Ros2.ExporterTest do
         {:camera_frame, %{jpeg_frame("hq", 1) | width: 96, height: 72}}
       )
 
-      assert_receive {:published, "stereo/hq/image_raw/compressed", %CompressedImage{} = image},
+      assert_receive {:published, "hq/image_raw/compressed", %CompressedImage{} = image},
                      1_000
 
       assert image.header.frame_id == "hq_optical"
 
-      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}, 1_000
+      assert_receive {:published, "hq/camera_info", %CameraInfo{} = camera_info}, 1_000
       assert camera_info.k == [81.3, 0.0, 47.2, 0.0, 80.9, 35.6, 0.0, 0.0, 1.0]
       assert camera_info.r == [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
     end
@@ -1285,7 +1316,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       frame = %{jpeg_frame("hq", 1) | width: 192, height: 108}
       {:ok, _state} = Exporter.handle_output({:camera_frame, :hq}, frame, state)
 
-      assert_received {:published, "stereo/hq/camera_info", %CameraInfo{} = camera_info}
+      assert_received {:published, "hq/camera_info", %CameraInfo{} = camera_info}
       assert camera_info.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
     end
 
@@ -1342,7 +1373,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         p: identity.projection_matrix
       }
 
-      server = SetCameraInfoServer.name_for("stereo/hq/set_camera_info")
+      server = SetCameraInfoServer.name_for("hq/set_camera_info")
 
       send(
         server,
@@ -1360,7 +1391,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         {:camera_frame, %{jpeg_frame("hq", 1) | width: 192, height: 108}}
       )
 
-      assert_receive {:published, "stereo/hq/camera_info", %CameraInfo{} = published}, 1_000
+      assert_receive {:published, "hq/camera_info", %CameraInfo{} = published}, 1_000
       assert published.k == [200.0, 0.0, 96.0, 0.0, 200.0, 54.0, 0.0, 0.0, 1.0]
     end
   end
@@ -1455,19 +1486,19 @@ defmodule VisionCore.Ros2.ExporterTest do
           state
         )
 
-      assert_received {:published, "stereo/road/labels", %Image{} = labels}
+      assert_received {:published, "road/labels", %Image{} = labels}
       assert labels.header.frame_id == "hq_optical"
       assert labels.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(7)
       assert labels.data == <<0, 10>>
 
       # The camera has no calibration.
-      assert_received {:published, "stereo/road/camera_info", %CameraInfo{} = camera_info}
+      assert_received {:published, "road/camera_info", %CameraInfo{} = camera_info}
       assert camera_info == %CameraInfo{header: labels.header, width: 2, height: 1}
 
-      assert_received {:published, "stereo/road/road/points", %PointCloud2{width: 1} = road}
+      assert_received {:published, "road/road/points", %PointCloud2{width: 1} = road}
       assert road.header.frame_id == "stereo_left_optical"
       assert road.header.stamp == VisionCore.Ros2.Stamp.stamp_from_monotonic(5)
-      assert_received {:published, "stereo/road/off_road/points", %PointCloud2{width: 0}}
+      assert_received {:published, "road/off_road/points", %PointCloud2{width: 0}}
       refute_received {:published, _topic, _message}
 
       {:ok, _state} =
@@ -1477,8 +1508,8 @@ defmodule VisionCore.Ros2.ExporterTest do
           state
         )
 
-      assert_received {:published, "stereo/lanes/labels", %Image{}}
-      assert_received {:published, "stereo/lanes/camera_info", %CameraInfo{}}
+      assert_received {:published, "lanes/labels", %Image{}}
+      assert_received {:published, "lanes/camera_info", %CameraInfo{}}
       refute_received {:published, _topic, _message}
     end
 
@@ -1504,7 +1535,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       {:ok, state} =
         Exporter.handle_output({:segmentation, :road}, {frame, grid_labels(), nil}, state)
 
-      assert_received {:published, "stereo/road/camera_info", %CameraInfo{k: k}}
+      assert_received {:published, "road/camera_info", %CameraInfo{k: k}}
       {k, state}
     end
 
@@ -1566,7 +1597,7 @@ defmodule VisionCore.Ros2.ExporterTest do
       assert road.header.frame_id == "rig_left"
     end
 
-    test "without a stereo unit in its configuration, publishes under stereo, its clouds' fallback frame the prefix's left one" do
+    test "without a stereo unit in its configuration, publishes under its name, its clouds' fallback frame the default stereo unit's left one" do
       config = %VisionCore.Config{
         ros2: [zenoh_endpoint_ip: "127.0.0.1"],
         components: [
@@ -1575,7 +1606,7 @@ defmodule VisionCore.Ros2.ExporterTest do
         ]
       }
 
-      for {segmentation, prefix} <- [{[], "stereo"}, {[topic_prefix: "front"], "front"}] do
+      for {segmentation, root} <- [{[], "road"}, {[topic_prefix: "front"], "front/road"}] do
         options = [config: config, publish: publish_to(self()), segmentation: segmentation]
         assert Exporter.check(options) == :ok
         {:ok, state} = Exporter.init(options)
@@ -1587,9 +1618,9 @@ defmodule VisionCore.Ros2.ExporterTest do
             state
           )
 
-        road_topic = "#{prefix}/road/road/points"
+        road_topic = "#{root}/road/points"
         assert_received {:published, ^road_topic, %PointCloud2{} = road}
-        assert road.header.frame_id == "#{prefix}_left"
+        assert road.header.frame_id == "stereo_left"
       end
     end
 
@@ -1603,9 +1634,9 @@ defmodule VisionCore.Ros2.ExporterTest do
          {segmented_frame(), segmentation_labels(), segmentation_clouds()}}
       )
 
-      assert_receive {:published, "stereo/lanes/labels", %Image{}}, 1_000
-      assert_receive {:published, "stereo/lanes/road/points", %PointCloud2{}}, 1_000
-      refute_receive {:published, "stereo/road/" <> _topic, _message}, 100
+      assert_receive {:published, "lanes/labels", %Image{}}, 1_000
+      assert_receive {:published, "lanes/road/points", %PointCloud2{}}, 1_000
+      refute_receive {:published, "road/" <> _topic, _message}, 100
     end
   end
 end

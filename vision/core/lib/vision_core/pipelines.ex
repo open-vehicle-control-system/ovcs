@@ -9,14 +9,15 @@ defmodule VisionCore.Pipelines do
   name keys the unit's processes (`server/2`), its `VisionCore.Outputs`
   key, its parameter groups (`<name>.*`, a camera's `<name>.camera`), its
   exporters' outputs and its
-  ROS 2 topics (`<prefix>/<name>/…`), so no two of them share one
+  ROS 2 topics (`<name>/…`), so no two of them share one
   (`VisionCore.Application`).
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
-  and is none of the reserved names: `:stereo`, the stereo pipeline's;
-  `:left`, `:right`, `:depth`, `:disparity`, `:points` and `:live`, the
-  first segments of the topics the ROS 2 exporter publishes under
-  `<prefix>/`.
+  and is none of the reserved names: `:stereo`, the stereo pipeline's and
+  its topics' default namespace; `:left`, `:right`, `:depth`,
+  `:disparity` and `:points`, the first segments of the stereo unit's
+  topics, which a camera or pipeline whose exporter gives it the stereo
+  unit's prefix as its `:topic_prefix` would publish among.
   """
 
   @name_pattern ~r/^[a-z][a-z0-9_]*$/
@@ -26,8 +27,7 @@ defmodule VisionCore.Pipelines do
     :right,
     :depth,
     :disparity,
-    :points,
-    :live
+    :points
   ]
 
   @doc """
