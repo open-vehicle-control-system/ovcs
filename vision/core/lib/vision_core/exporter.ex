@@ -236,12 +236,16 @@ defmodule VisionCore.Exporter do
 
   @typedoc """
   What an action answers: a JSON object, a file to download, or why it
-  did not run.
+  did not run: `:busy` while it runs another that a retry may follow,
+  `{:timeout, reason}`, `{:refused, reason}` for a request it does not
+  take, such as a parameter outside the values it allows, and
+  `{:failed, reason}` for one it took and could not carry out.
   """
   @type action_result ::
           {:ok, map()}
           | {:file, filename :: String.t(), content_type :: String.t(), binary()}
-          | {:error, :busy | {:timeout, String.t()} | {:failed, String.t()}}
+          | {:error,
+             :busy | {:timeout, String.t()} | {:refused, String.t()} | {:failed, String.t()}}
 
   @doc "The outputs the exporter reads, given its options; it returns at once."
   @callback outputs(options :: keyword()) :: [output_spec()]

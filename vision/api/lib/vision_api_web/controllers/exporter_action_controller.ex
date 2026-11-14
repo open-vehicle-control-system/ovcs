@@ -43,6 +43,9 @@ defmodule VisionApiWeb.ExporterActionController do
   defp answer({:error, {:timeout, message}}, conn, _id, _name),
     do: JsonApi.error(conn, 504, message, title: "Action timed out")
 
+  defp answer({:error, {:refused, reason}}, conn, _id, _name),
+    do: JsonApi.error(conn, 422, reason, title: "Action refused")
+
   defp answer({:error, {:failed, message}}, conn, _id, _name),
     do: JsonApi.error(conn, 500, message, title: "Action failed")
 

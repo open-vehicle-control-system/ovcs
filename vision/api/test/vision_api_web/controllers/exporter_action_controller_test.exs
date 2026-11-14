@@ -23,7 +23,7 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
     def actions(_options),
       do:
         for(
-          name <- ~w(export echo occupied stalled broken)a,
+          name <- ~w(export echo occupied stalled broken refusing)a,
           do: %{name: name, label: "Run #{name}", description: "Runs #{name}."}
         )
 
@@ -39,6 +39,9 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
 
     def handle_action(:broken, _params, _from, state),
       do: {:reply, {:error, {:failed, "No frames arrived"}}, state}
+
+    def handle_action(:refusing, _params, _from, state),
+      do: {:reply, {:error, {:refused, "preset must be one of replay, review"}}, state}
   end
 
   setup do
@@ -179,12 +182,25 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
              conn |> run_action("/api/exporters/acting/actions/broken") |> json_response(500)
   end
 
+  test "answers 422 with the refusal's reason", %{conn: conn} do
+    assert %{
+             "errors" => [
+               %{
+                 "status" => "422",
+                 "title" => "Action refused",
+                 "detail" => "preset must be one of replay, review"
+               }
+             ]
+           } =
+             conn |> run_action("/api/exporters/acting/actions/refusing") |> json_response(422)
+  end
+
   test "GET /api/exporters lists each exporter's actions", %{conn: conn} do
     assert %{"data" => [acting, api]} = conn |> get("/api/exporters") |> json_response(200)
 
     assert %{"id" => "acting", "attributes" => %{"actions" => actions}} = acting
 
-    assert Enum.map(actions, & &1["name"]) == ~w(export echo occupied stalled broken)
+    assert Enum.map(actions, & &1["name"]) == ~w(export echo occupied stalled broken refusing)
 
     assert %{"name" => "export", "label" => "Run export", "description" => "Runs export."} =
              hd(actions)
