@@ -38,11 +38,13 @@ A channel answers an event it does not take with an error reply, `{"reason": "un
 
 [Accelerator load](./detection.md#accelerator-load) says what they measure on each accelerator.
 
+`stereoLoadPercent` is the share of the last second the stereo pairs spent at the stereo pipeline's device, at most 100. A pair's time runs from its hand-over to the device's reply: on a GPU, the upload of its frames, the submission and the GPU's work. The download of its outputs is left out, as it runs during the next pair's device work. The device takes one pair at a time, so at 100 % the pipeline drops the cameras' pairs that come faster. [Stereo load](./performance.md#stereo-load) says how it compares with the GPU's own busy share.
+
 `pipelines` holds the time of each pipeline, by its name, `stereo` for the stereo pipeline:
 
 - `stages`, the mean time of each step over the last second's pairs or frames, in milliseconds, by the step's name. The name is the last segment of the stage's id in `GET /api/stages`: `stereo.speckle_filter` is `speckle_filter`.
 - `segments`, the runs of steps computed as one, each with its `stages` in order and its one time, `ms`. Those steps have no entry in `stages`.
-- `totalMs`, the sum of the steps' and segments' times: the work one pair or frame takes, without the time it waits.
+- `totalMs`, the sum of the steps' and segments' times: the work one pair or frame takes, without the time it waits. A stereo segment's download that runs during the next pair's device work counts once.
 
 A step that did not run in the second is `null`, and so is the `totalMs` of a pipeline none of whose steps ran. [Step times](./performance.md#step-times) says what each time covers.
 
@@ -83,21 +85,21 @@ A pipeline that does not answer is left out.
                    "differencePercent": 4, "left": 96.1, "right": 99.9}
   },
   "depth": {
-    "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.24, "droppedPercent": 1.2,
-             "depthHz": 34.4, "cameraHz": 34.8, "loadPercent": 98.0},
+    "rate": {"level": "ok", "camera": null, "issues": [], "gauge": 0.2, "droppedPercent": 1.0,
+             "depthHz": 29.7, "cameraHz": 30.0, "loadPercent": 94.8},
     "range": {"level": "warning", "camera": null, "issues": ["too_near"], "gauge": 1.5, "nearPercent": 22.5, "nearestM": 1.39}
   },
   "alignment": {"offsetRows": 0.09, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14]},
   "sharpness": {"left": 0.0048, "right": 0.0056},
   "quality": {"matchedPercent": 64.7, "jitterPx": 0.087, "meanDisparityPx": 11.9, "spreadPx": 7.7},
-  "depthHz": 26.0,
-  "stereoLoadPercent": 98.0,
+  "depthHz": 30.0,
+  "stereoLoadPercent": 94.8,
   "npu": {"kind": "Hexagon", "state": "running", "loadPercent": 23.1,
           "pipelines": {"objects": {"inferenceMs": 2.1}, "scene": {"inferenceMs": 5.6}}},
   "pipelines": {
-    "stereo": {"totalMs": 37.7, "stages": {},
+    "stereo": {"totalMs": 31.6, "stages": {},
                "segments": [{"stages": ["rectification", "sharpness", "disparity", "speckle_filter", "row_alignment",
-                                        "temporal_filter", "depth", "point_cloud", "quality"], "ms": 37.7}]},
+                                        "temporal_filter", "depth", "point_cloud", "quality"], "ms": 31.6}]},
     "objects": {"totalMs": 11.9, "stages": {"input": 0.8, "inference": 10.3, "filtering": 0.1, "placement": 0.7}, "segments": []},
     "scene": {"totalMs": 21.4, "stages": {"input": 0.3, "inference": 14.6, "classes": 6.5}, "segments": []}
   },
@@ -138,10 +140,10 @@ Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stere
 
 | Check | Figures | Issue | Raised when |
 |---|---|---|---|
-| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that do not become depth, at `depthHz`; `loadPercent`, the stereo segment's busy share | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
+| `rate` | `droppedPercent`, the share of the slower camera's pairs, at `cameraHz`, that did not become depth, at `depthHz`, all three over the last 10 s; `loadPercent`, the last second's `stereoLoadPercent` | `pairs_dropped` | more than 5% of the pairs are dropped: lower the cameras' frame rate or the stereo work |
 | `range` | `nearPercent`, the share of the last pair's matched pixels in the nearest 15% of the disparity range; `nearestM`, the nearest depth that range measures | `too_near` | more than 15% of the matches are in that band: the scene is nearer than the unit measures, so widen the range or move back |
 
-`VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
+The `rate` check is `off` until the unit has counted pairs for 10 s. Over 10 s, a frame counted in one second rather than the next moves `droppedPercent` by a pair in 300, not one in 30. `VisionCore.Stereo.DepthCheck` holds their thresholds and issues.
 
 [Vision unit](./README.md#dashboard-and-api) and [Vision performance](./performance.md) give what each figure measures and the values to aim for.
 

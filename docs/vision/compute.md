@@ -86,7 +86,7 @@ The Jetson Nano module of the C100 has 4 Cortex-A57 cores and a 128-core Maxwell
 3. Every stage runs as Vulkan compute shaders, with libSGM's algorithm for the matching. The temporal filter's previous disparity stays on the GPU from one pair to the next.
 4. The outputs are copied back once, and the stages after the segment run on the BEAM.
 
-While one pair's outputs are collected, the next pair's GPU work already runs. The CPU's part is capture, the copies and publishing; the GPU does the arithmetic. The dashboard's Stereo load is the share of each second the segment takes, waits for the GPU included.
+While one pair's outputs are collected, the next pair's GPU work already runs. The CPU's part is capture, the copies and publishing; the GPU does the arithmetic. The dashboard's Stereo load is the share of each second a pair spends at the GPU, from its upload to the GPU's reply ([Reading the figures](./performance.md#reading-the-figures)).
 
 ## On the VENTUNO Q's GPU
 
