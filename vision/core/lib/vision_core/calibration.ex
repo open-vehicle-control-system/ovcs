@@ -108,7 +108,7 @@ defmodule VisionCore.Calibration do
   @typedoc "A calibration kept, and whether it is the one its target runs on."
   @type kept :: %{saved: Saved.t(), in_force: boolean()}
 
-  @doc "The calibrations kept for the target `id` of `config`, the newest first."
+  @doc "The calibrations kept for the target `id` of `config`, the one kept last first."
   @spec saved(VisionCore.Config.t(), String.t()) :: {:ok, [kept()]} | {:error, :not_found}
   def saved(config, id) do
     with {:ok, _target} <- fetch(config, id) do
@@ -134,12 +134,11 @@ defmodule VisionCore.Calibration do
           :ok | {:error, :not_found | String.t()}
   def use_saved(config, saved_id, opts \\ []) do
     with {:ok, saved, target} <- saved_target(config, saved_id) do
-      Recorder.expect(target.id, {:select, saved.id})
-
-      with {:error, _reason} = refused <- commit_saved(config, target, saved, opts) do
-        Recorder.forget(target.id)
-        refused
-      end
+      cameras = for camera <- saved.cameras, do: {camera.name, SavedCamera.to_calibration(camera)}
+      expectation = Recorder.expect(target.id, cameras, {:select, saved.id})
+      answer = commit_cameras(config, target, cameras, opts)
+      Recorder.forget(expectation)
+      answer
     end
   end
 
@@ -175,15 +174,15 @@ defmodule VisionCore.Calibration do
     end
   end
 
-  defp commit_saved(config, %{kind: :stereo}, saved, opts) do
+  defp commit_cameras(config, %{kind: :stereo}, cameras, opts) do
     calibrations =
-      Map.new(saved.cameras, &{String.to_existing_atom(&1.name), SavedCamera.to_calibration(&1)})
+      Map.new(cameras, fn {side, calibration} -> {String.to_existing_atom(side), calibration} end)
 
     StereoCalibration.commit(config, calibrations, opts)
   end
 
-  defp commit_saved(config, %{kind: :camera, name: name}, %{cameras: [camera]}, _opts),
-    do: OwnCalibration.commit(config, name, SavedCamera.to_calibration(camera))
+  defp commit_cameras(config, %{kind: :camera, name: name}, [{_name, calibration}], _opts),
+    do: OwnCalibration.commit(config, name, calibration)
 
   defp fetch(config, id) do
     case fetch_target(config, id) do

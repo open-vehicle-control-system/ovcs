@@ -112,7 +112,7 @@ defmodule VisionCore.CalibrationTest do
     end
 
     defp calibration(fx) do
-      built_in = @built_in |> File.read!() |> CameraCalibration.parse()
+      built_in = CameraCalibration.load!(@built_in)
       [_fx | rest] = built_in.camera_matrix
       %{built_in | camera_matrix: [fx | rest]}
     end
@@ -159,6 +159,17 @@ defmodule VisionCore.CalibrationTest do
 
       assert id == first.id
       assert {:ok, [%{in_force: false}, %{in_force: true}]} = Calibration.saved(config, "hq")
+    end
+
+    test "use_saved/2 selects the calibration asked for among those holding the same figures",
+         %{config: config} do
+      {:ok, older} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
+      {:ok, _newer} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
+
+      assert Calibration.use_saved(config, older.id) == :ok
+      :sys.get_state(Recorder)
+
+      assert Library.selected("hq").id == older.id
     end
 
     test "use_saved/2 refuses a calibration that is not kept, or kept for a target the unit has not",

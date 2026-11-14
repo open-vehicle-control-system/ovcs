@@ -62,13 +62,16 @@ defmodule VisionCore.Calibration.Library do
     end
   end
 
-  @doc "The calibrations of `target`, the newest first, with their cameras."
+  @doc """
+  The calibrations of `target` with their cameras, the one kept last
+  first: in the order the unit was given them, whatever its clock read.
+  """
   @spec list(String.t()) :: [Saved.t()]
   def list(target) do
     Repo.all(
       from(saved in Saved,
         where: saved.target == ^target,
-        order_by: [desc: saved.inserted_at, desc: saved.id],
+        order_by: [desc: saved.id],
         preload: :cameras
       )
     )
@@ -105,16 +108,19 @@ defmodule VisionCore.Calibration.Library do
   @doc "Removes the calibration `id` and its cameras, unless it is in force."
   @spec delete(integer()) :: :ok | {:error, :not_found | :in_force | String.t()}
   def delete(id) do
+    in_force = from(selection in Selection, where: selection.calibration_id == ^id)
+
+    # One statement: a selection made meanwhile cannot fall between the check and the removal.
+    not_in_force =
+      from(saved in Saved,
+        where: saved.id == ^id and not exists(from(selection in in_force, select: 1))
+      )
+
     guarded(fn ->
       cond do
-        Repo.exists?(from(selection in Selection, where: selection.calibration_id == ^id)) ->
-          {:error, :in_force}
-
-        match?({1, _}, Repo.delete_all(from(saved in Saved, where: saved.id == ^id))) ->
-          :ok
-
-        true ->
-          {:error, :not_found}
+        match?({1, _}, Repo.delete_all(not_in_force)) -> :ok
+        Repo.exists?(in_force) -> {:error, :in_force}
+        true -> {:error, :not_found}
       end
     end)
   end

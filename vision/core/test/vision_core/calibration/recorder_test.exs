@@ -1,11 +1,15 @@
 defmodule VisionCore.Calibration.RecorderTest do
   use ExUnit.Case, async: false
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
+  alias Ros2Zenoh.SensorMsgs.Msg.CameraInfo
+  alias Ros2Zenoh.StdMsgs.Msg.Header
   alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
   alias VisionCore.Outputs
   alias VisionCore.Repo
   alias VisionCore.Ros2.CameraCalibration
+  alias VisionCore.Ros2.Services.SetCameraInfoServer
 
   @moduletag :tmp_dir
 
@@ -35,10 +39,14 @@ defmodule VisionCore.Calibration.RecorderTest do
   end
 
   defp calibration(fx) do
-    built_in = @built_in |> File.read!() |> CameraCalibration.parse()
+    built_in = CameraCalibration.load!(@built_in)
     [_fx | rest] = built_in.camera_matrix
     %{built_in | camera_matrix: [fx | rest]}
   end
+
+  # What a commit of `calibration(fx)` announces it stores, and how a session says it was made.
+  defp figures(fx), do: [{"hq", calibration(fx)}]
+  defp dashboard(samples), do: {:record, origin: "dashboard", samples: samples}
 
   defp start(config), do: start_supervised!({Recorder, config: config})
 
@@ -88,15 +96,15 @@ defmodule VisionCore.Calibration.RecorderTest do
   } do
     start(config)
 
-    :ok =
-      Recorder.expect(
-        "hq",
-        {:record,
-         origin: "dashboard",
-         board: %{columns: 8, rows: 6, square_m: 0.03},
-         samples: 41,
-         rms_px: %{"hq" => 0.2}}
-      )
+    Recorder.expect(
+      "hq",
+      figures(580.8),
+      {:record,
+       origin: "dashboard",
+       board: %{columns: 8, rows: 6, square_m: 0.03},
+       samples: 41,
+       rms_px: %{"hq" => 0.2}}
+    )
 
     commit(config, 580.8)
 
@@ -119,11 +127,76 @@ defmodule VisionCore.Calibration.RecorderTest do
 
   test "forgets what it was told to expect when the commit did not happen", %{config: config} do
     start(config)
-    :ok = Recorder.expect("hq", {:record, origin: "dashboard", samples: 41})
-    :ok = Recorder.forget("hq")
+    expectation = Recorder.expect("hq", figures(580.8), dashboard(41))
+    :ok = Recorder.forget(expectation)
 
     commit(config, 580.8)
     assert [%{origin: "imported", samples: nil}] = Library.list("hq")
+  end
+
+  test "keeps each of two commits announced with its own figures, whichever is committed first",
+       %{config: config} do
+    start(config)
+    Recorder.expect("hq", figures(600.0), dashboard(11))
+    Recorder.expect("hq", figures(700.0), dashboard(22))
+
+    commit(config, 700.0)
+    commit(config, 600.0)
+
+    assert [
+             %{origin: "dashboard", samples: 11, cameras: [%{fx: 600.0}]},
+             %{origin: "dashboard", samples: 22, cameras: [%{fx: 700.0}]}
+           ] = Library.list("hq")
+  end
+
+  test "forgetting one commit leaves what another announced", %{config: config} do
+    start(config)
+    refused = Recorder.expect("hq", figures(600.0), dashboard(11))
+    Recorder.expect("hq", figures(700.0), dashboard(22))
+
+    :ok = Recorder.forget(refused)
+    commit(config, 700.0)
+
+    assert [%{origin: "dashboard", samples: 22}] = Library.list("hq")
+  end
+
+  test "keeps a change that is not the one announced as imported", %{config: config} do
+    start(config)
+    Recorder.expect("hq", figures(600.0), dashboard(11))
+
+    commit(config, 650.0)
+
+    assert [%{origin: "imported", cameras: [%{fx: 650.0}]}] = Library.list("hq")
+  end
+
+  test "drops what a process announced once it is gone without committing", %{config: config} do
+    start(config)
+
+    {announcer, monitor} =
+      spawn_monitor(fn -> Recorder.expect("hq", figures(600.0), dashboard(11)) end)
+
+    assert_receive {:DOWN, ^monitor, :process, ^announcer, :normal}
+    settled()
+    commit(config, 600.0)
+
+    assert [%{origin: "imported", samples: nil}] = Library.list("hq")
+  end
+
+  test "keeps a commit with what its process announced when the process ends right after", %{
+    config: config
+  } do
+    start(config)
+
+    task =
+      Task.async(fn ->
+        Recorder.expect("hq", figures(600.0), dashboard(11))
+        OwnCalibration.commit(config, :hq, calibration(600.0))
+      end)
+
+    assert Task.await(task) == :ok
+    settled()
+
+    assert [%{origin: "dashboard", samples: 11}] = Library.list("hq")
   end
 
   test "selects a calibration it already keeps instead of keeping it again", %{config: config} do
@@ -145,11 +218,35 @@ defmodule VisionCore.Calibration.RecorderTest do
     {:ok, older} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
     {:ok, _newer} = Library.record("hq", [{"hq", calibration(580.8)}], origin: "dashboard")
 
-    :ok = Recorder.expect("hq", {:select, older.id})
+    Recorder.expect("hq", figures(580.8), {:select, older.id})
     commit(config, 580.8)
 
     assert Library.selected("hq").id == older.id
     assert length(Library.list("hq")) == 2
+  end
+
+  test "selects nothing for a stored calibration the library cannot keep, not the one before", %{
+    config: config
+  } do
+    start(config)
+    commit(config, 580.8)
+    assert Library.selected("hq") != nil
+    skewed = calibration(590.0)
+
+    log =
+      ExUnit.CaptureLog.capture_log(fn ->
+        :ok =
+          OwnCalibration.commit(config, :hq, %{
+            skewed
+            | camera_matrix: List.replace_at(skewed.camera_matrix, 1, 0.5)
+          })
+
+        settled()
+      end)
+
+    assert Library.selected("hq") == nil
+    assert log =~ "could not keep the calibration of hq"
+    assert [%{cameras: [%{fx: 580.8}]}] = Library.list("hq")
   end
 
   test "selects nothing once the target is back on the firmware's calibration, and keeps the calibrations",
@@ -164,14 +261,26 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert [%{cameras: [%{fx: 580.8}]}] = Library.list("hq")
   end
 
-  test "selects nothing for a pair whose stored file of one side gives no calibration", %{
-    tmp_dir: tmp_dir
-  } do
+  for {flaw, left} <- [
+        {"a matrix cut short", "camera_matrix:\n  data: [1.0, 2.0]\n"},
+        {"an empty projection matrix",
+         "camera_matrix:\n  data: [1, 0, 0, 0, 1, 0, 0, 0, 1]\nprojection_matrix:\n  data: []\n"},
+        {"a value that is no number", "camera_matrix:\n  data: [.nan, 0, 0, 0, 1, 0, 0, 0, 1]\n"},
+        {"nothing", ""}
+      ] do
+    test "starts and selects nothing for a pair whose stored left file holds #{flaw}", %{
+      tmp_dir: tmp_dir
+    } do
+      assert_nothing_selected(tmp_dir, unquote(left))
+    end
+  end
+
+  defp assert_nothing_selected(tmp_dir, left) do
     fixtures = Path.expand("../../support/calibration", __DIR__)
     store = Path.join(tmp_dir, "pair_store")
     File.mkdir_p!(store)
     File.cp!(Path.join(fixtures, "identity_right.yaml"), Path.join(store, "front_right.yaml"))
-    File.write!(Path.join(store, "front_left.yaml"), "camera_matrix:\n  data: [1.0, 2.0]\n")
+    File.write!(Path.join(store, "front_left.yaml"), left)
 
     config = %VisionCore.Config{
       components: [
@@ -196,6 +305,45 @@ defmodule VisionCore.Calibration.RecorderTest do
     assert Library.selected("front") == nil
   end
 
+  test "keeps a calibration committed through the camera's set_camera_info service, and tells it",
+       %{config: config} do
+    start(config)
+    :ok = Outputs.subscribe(Recorder.changed_key("hq"))
+    committed = calibration(733.25)
+
+    server =
+      start_supervised!(
+        {SetCameraInfoServer,
+         service_name: "stereo/hq/set_camera_info",
+         commit: &OwnCalibration.commit(config, :hq, &1),
+         register_service: fn _name, _module, _handler -> :ok end,
+         respond: fn _name, _query, _payload -> :ok end}
+      )
+
+    camera_info = %CameraInfo{
+      header: %Header{stamp: %Time{}, frame_id: "hq"},
+      width: committed.width,
+      height: committed.height,
+      distortion_model: committed.distortion_model,
+      d: committed.distortion_coefficients,
+      k: committed.camera_matrix,
+      r: committed.rectification_matrix,
+      p: committed.projection_matrix
+    }
+
+    send(
+      server,
+      {:service_request,
+       %{query: %Zenohex.Query{}, request_payload: CameraInfo.encode(camera_info)}}
+    )
+
+    :sys.get_state(server)
+    settled()
+
+    assert %{origin: "imported", cameras: [%{fx: 733.25}]} = Library.selected("hq")
+    assert_received {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
+  end
+
   test "publishes each change of a target's library", %{config: config} do
     start(config)
     Outputs.subscribe(Recorder.changed_key("hq"))
@@ -208,7 +356,9 @@ defmodule VisionCore.Calibration.RecorderTest do
   end
 
   test "answers without a recorder running" do
-    assert Recorder.expect("hq", {:select, 1}) == :ok
-    assert Recorder.forget("hq") == :ok
+    expectation = Recorder.expect("hq", figures(580.8), {:select, 1})
+
+    assert is_reference(expectation)
+    assert Recorder.forget(expectation) == :ok
   end
 end

@@ -57,10 +57,11 @@ defmodule VisionCore.Calibration.Session do
       `:solve_camera` (`VisionCore.Calibration.Solver.solve_camera/3`),
       `:commit_camera` (`VisionCore.Camera.Calibration.commit/3`) — what
       the tasks run.
-    * `:expect` (`VisionCore.Calibration.Recorder.expect/2`), `:forget`
+    * `:expect` (`VisionCore.Calibration.Recorder.expect/3`), `:forget`
       (`VisionCore.Calibration.Recorder.forget/1`) — how a commit is
-      announced to the recorder with the board, the views and the errors
-      of the calibration, and taken back when it is refused.
+      announced to the recorder with the calibrations it stores, the
+      board, the views and the errors, and taken back once the commit
+      has answered, which leaves nothing of a refused one.
   """
   use GenServer
   require Logger
@@ -159,7 +160,7 @@ defmodule VisionCore.Calibration.Session do
          solve_camera: Keyword.get(opts, :solve_camera, &Solver.solve_camera/3),
          commit_camera:
            Keyword.get(opts, :commit_camera, &VisionCore.Camera.Calibration.commit/3),
-         expect: Keyword.get(opts, :expect, &Recorder.expect/2),
+         expect: Keyword.get(opts, :expect, &Recorder.expect/3),
          forget: Keyword.get(opts, :forget, &Recorder.forget/1),
          subscribers: %{},
          task: nil,
@@ -319,17 +320,22 @@ defmodule VisionCore.Calibration.Session do
   # The commit, announced to the recorder with what the session knows of the calibration.
   defp committer(%{target: %{id: id}, expect: expect, forget: forget} = state, result) do
     commit = commit(state, result)
+    cameras = committed_cameras(state.target, result)
     kept = {:record, kept(state, result)}
 
     fn ->
-      expect.(id, kept)
-
-      with {:error, _reason} = refused <- commit.() do
-        forget.(id)
-        refused
-      end
+      expectation = expect.(id, cameras, kept)
+      answer = commit.()
+      forget.(expectation)
+      answer
     end
   end
+
+  # Each camera's calibration as the commit stores it, by the name the recorder reads it under.
+  defp committed_cameras(%{kind: :stereo}, result),
+    do: [{"left", result.left}, {"right", result.right}]
+
+  defp committed_cameras(%{kind: :camera, labels: [label]}, result), do: [{label, result.camera}]
 
   defp commit(%{target: %{kind: :stereo}, commit: commit, config: config}, result),
     do: fn -> commit.(config, %{left: result.left, right: result.right}) end

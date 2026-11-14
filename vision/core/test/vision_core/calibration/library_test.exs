@@ -66,6 +66,16 @@ defmodule VisionCore.Calibration.LibraryTest do
     end
   end
 
+  test "lists the calibration kept last first, whatever the dates they carry" do
+    {:ok, first} =
+      Library.record("stereo", pair(880.0), origin: "dashboard", at: ~U[2026-11-14 10:00:00Z])
+
+    {:ok, second} =
+      Library.record("stereo", pair(890.0), origin: "imported", at: ~U[2026-11-13 09:00:00Z])
+
+    assert Enum.map(Library.list("stereo"), & &1.id) == [second.id, first.id]
+  end
+
   test "lists a target's calibrations, the newest first, and no other target's" do
     {:ok, first} = Library.record("stereo", pair(880.0), origin: "dashboard")
     {:ok, second} = Library.record("stereo", pair(890.0), origin: "dashboard")
