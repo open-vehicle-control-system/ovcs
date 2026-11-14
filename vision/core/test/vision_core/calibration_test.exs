@@ -93,4 +93,107 @@ defmodule VisionCore.CalibrationTest do
     assert :ok = Calibration.reset(config, "hq")
     assert {:ok, %{source: :built_in}} = Calibration.in_use(config, "hq")
   end
+
+  describe "the calibrations kept" do
+    alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
+    alias VisionCore.Camera.Calibration, as: OwnCalibration
+    alias VisionCore.Outputs
+    alias VisionCore.Repo
+    alias VisionCore.Ros2.CameraCalibration
+
+    @built_in Path.join(@fixtures, "identity_left.yaml")
+
+    setup %{tmp_dir: tmp_dir} do
+      Repo.delete_all(Selection)
+      Repo.delete_all(Saved)
+      config = config(tmp_dir, calibration: @built_in)
+      start_supervised!({Recorder, config: config})
+      %{config: config}
+    end
+
+    defp calibration(fx) do
+      built_in = @built_in |> File.read!() |> CameraCalibration.parse()
+      [_fx | rest] = built_in.camera_matrix
+      %{built_in | camera_matrix: [fx | rest]}
+    end
+
+    defp commit(config, fx) do
+      :ok = OwnCalibration.commit(config, :hq, calibration(fx))
+      :sys.get_state(Recorder)
+    end
+
+    defp fx_in_use(config) do
+      {:ok, %{cameras: [%{calibration: %{camera_matrix: [fx | _rest]}}]}} =
+        Calibration.in_use(config, "hq")
+
+      fx
+    end
+
+    test "saved/2 lists a target's calibrations, the newest first, the one in force marked", %{
+      config: config
+    } do
+      commit(config, 580.8)
+      commit(config, 590.0)
+
+      assert {:ok, [%{saved: %{cameras: [%{fx: 590.0}]}, in_force: true}, %{in_force: false}]} =
+               Calibration.saved(config, "hq")
+
+      assert Calibration.saved(config, "front") == {:ok, []}
+      assert Calibration.saved(config, "rear") == {:error, :not_found}
+    end
+
+    test "use_saved/2 puts a kept calibration back in force", %{config: config} do
+      commit(config, 580.8)
+      commit(config, 590.0)
+      {:ok, [_second, %{saved: first}]} = Calibration.saved(config, "hq")
+      Outputs.subscribe(Calibration.changed_key(elem(Calibration.fetch_target(config, "hq"), 1)))
+
+      assert Calibration.use_saved(config, first.id) == :ok
+      assert_receive {:"$gen_cast", {:camera_calibration_changed, :hq}}
+      :sys.get_state(Recorder)
+
+      assert fx_in_use(config) == 580.8
+
+      assert {:ok, %{saved: %{id: id}, in_force: true}} =
+               Calibration.fetch_saved(config, first.id)
+
+      assert id == first.id
+      assert {:ok, [%{in_force: false}, %{in_force: true}]} = Calibration.saved(config, "hq")
+    end
+
+    test "use_saved/2 refuses a calibration that is not kept, or kept for a target the unit has not",
+         %{config: config} do
+      {:ok, foreign} = Library.record("rear", [{"rear", calibration(600.0)}], origin: "imported")
+
+      assert Calibration.use_saved(config, -1) == {:error, :not_found}
+      assert Calibration.use_saved(config, foreign.id) == {:error, :not_found}
+      assert Calibration.fetch_saved(config, foreign.id) == {:error, :not_found}
+    end
+
+    test "rename_saved/3 and delete_saved/2 publish the change of the target's library", %{
+      config: config
+    } do
+      commit(config, 580.8)
+      commit(config, 590.0)
+      {:ok, [_second, %{saved: first}]} = Calibration.saved(config, "hq")
+      Outputs.subscribe(Recorder.changed_key("hq"))
+
+      assert {:ok, %{saved: %{name: "Bench"}, in_force: false}} =
+               Calibration.rename_saved(config, first.id, "Bench")
+
+      assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
+
+      assert Calibration.delete_saved(config, first.id) == :ok
+      assert_receive {:"$gen_cast", {:saved_calibrations_changed, "hq"}}
+      assert {:ok, [%{in_force: true}]} = Calibration.saved(config, "hq")
+    end
+
+    test "delete_saved/2 keeps the calibration in force", %{config: config} do
+      commit(config, 580.8)
+      {:ok, [%{saved: saved}]} = Calibration.saved(config, "hq")
+
+      assert Calibration.delete_saved(config, saved.id) == {:error, :in_force}
+      assert Calibration.rename_saved(config, -1, "x") == {:error, :not_found}
+    end
+  end
 end

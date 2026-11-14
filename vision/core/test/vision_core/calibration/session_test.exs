@@ -474,6 +474,37 @@ defmodule VisionCore.Calibration.SessionTest do
       assert unsubscribed?(Process.whereis(Session))
     end
 
+    test "tells the recorder what the commit carries, and takes it back when the commit is refused",
+         %{board: board} do
+      test_pid = self()
+
+      start_session(
+        solve: fn _board, _size, _samples -> {:ok, result()} end,
+        commit: fn _config, _calibrations ->
+          send(test_pid, :commit)
+          {:error, "the unit refused it"}
+        end,
+        expect: fn target, expected -> send(test_pid, {:expect, target, expected}) end,
+        forget: fn target -> send(test_pid, {:forget, target}) end
+      )
+
+      capture_enough(board)
+      :ok = Session.solve()
+      assert_receive {:calibration_session, %{phase: :solved}}
+      assert :ok = Session.apply()
+
+      assert_receive {:expect, "stereo", {:record, kept}}
+      assert_receive :commit
+      assert_receive {:forget, "stereo"}
+
+      assert kept[:origin] == "dashboard"
+      assert kept[:board] == %{columns: board.columns, rows: board.rows, square_m: board.square_m}
+      assert kept[:samples] == 3
+      assert kept[:stereo_rms_px] == 0.4
+      assert kept[:baseline_m] == 0.06
+      assert kept[:rms_px] == %{"left" => 0.2, "right" => 0.3}
+    end
+
     test "that is refused stays solved, with the refusal", %{board: board} do
       solved(board, fn _config, _calibrations -> {:error, "the unit refused it"} end)
 

@@ -28,6 +28,9 @@ defmodule VisionCore.Outputs do
     * `{:camera_calibration, name}` — `{:camera_calibration_changed, name}`
       from `VisionCore.Camera.Calibration`, after each change of the
       calibration of the camera `name`.
+    * `{:saved_calibrations, target}` — `{:saved_calibrations_changed, target}`
+      from `VisionCore.Calibration.Recorder`, after each change of the
+      calibrations kept for the calibration target `target`.
 
   A consumer subscribes to the keys it reads and receives each message
   as a cast. One that takes messages out of its mailbox itself matches
@@ -52,6 +55,7 @@ defmodule VisionCore.Outputs do
           | {:camera_frame, atom(), atom()}
           | {:stereo_calibration, String.t()}
           | {:camera_calibration, atom()}
+          | {:saved_calibrations, String.t()}
 
   @doc "Starts the registry."
   @spec start_link(keyword()) :: Supervisor.on_start()
