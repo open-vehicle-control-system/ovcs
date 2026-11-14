@@ -136,6 +136,8 @@ A camera whose driver has runtime controls, as `VisionCore.Camera.V4L2Single` ha
 
 While `auto_exposure` is on, `exposure_us` and `analogue_gain` read what the sensor applies, and a change to them is refused. The same holds for the colour gains under `awb`, which read the gains last set.
 
+`max_exposure_us` and `max_gain` hold at once: lowered, auto exposure brings the exposure and gain within them, and keeps the brightness as far as they allow. Raised, they change nothing until the image moves away from its target.
+
 The frame rate, the sensor mode and each output, with its size and its format's quality or bitrate, are listed after them as `fps`, `sensor_mode` and `output_<name>`. They are fixed when the camera starts: change them in your composer.
 
 ## Worked example: the OVCS1 reference vehicle

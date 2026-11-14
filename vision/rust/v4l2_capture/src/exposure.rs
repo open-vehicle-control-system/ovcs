@@ -5,6 +5,7 @@
 /// `max_gain`. Brightness is gamma-encoded, so the light needed scales with
 /// the brightness ratio to the power `gamma`; each step at most doubles or
 /// halves it, against oscillation while the sensor applies the last one.
+/// The caps hold at every step, the image close to its target or not.
 pub struct AutoExposure {
     pub exposure_us: f64,
     pub gain: f64,
@@ -19,14 +20,27 @@ const DEADBAND: f64 = 0.08;
 
 impl AutoExposure {
     /// The new `{exposure_us, gain}` for an image of mean grey `mean`, or
-    /// `None` when it is close enough to the target.
+    /// `None` when it is close enough to the target and within the caps.
     pub fn observe(&mut self, mean: f64) -> Option<(f64, f64)> {
         let ratio = self.target / mean.max(1.0);
         if (ratio - 1.0).abs() < DEADBAND {
+            return self.capped();
+        }
+        self.step_to(self.exposure_us * self.gain * ratio.powf(self.gamma).clamp(0.5, 2.0))
+    }
+
+    /// The exposure and gain brought within the caps, the light kept as far
+    /// as they allow, or `None` when both already are.
+    pub fn capped(&mut self) -> Option<(f64, f64)> {
+        if self.exposure_us <= self.max_exposure_us && self.gain <= self.max_gain {
             return None;
         }
-        let light = (self.exposure_us * self.gain * ratio.powf(self.gamma).clamp(0.5, 2.0))
-            .clamp(MIN_EXPOSURE_US, self.max_exposure_us * self.max_gain);
+        self.step_to(self.exposure_us * self.gain)
+    }
+
+    /// Exposure then gain for `light`, their product, within the caps.
+    fn step_to(&mut self, light: f64) -> Option<(f64, f64)> {
+        let light = light.clamp(MIN_EXPOSURE_US, self.max_exposure_us * self.max_gain);
         let exposure_us = light.min(self.max_exposure_us);
         let gain = (light / exposure_us).clamp(1.0, self.max_gain);
         if (exposure_us, gain) == (self.exposure_us, self.gain) {
@@ -95,6 +109,41 @@ mod tests {
         let (exposure_us, gain) = auto_exposure.observe(250.0).unwrap();
         assert!(gain < 4.0);
         assert_eq!(exposure_us, 20_000.0);
+    }
+
+    #[test]
+    fn a_lowered_exposure_cap_holds_on_a_well_exposed_image() {
+        let mut auto_exposure = auto_exposure(20_000.0, 2.0);
+        auto_exposure.max_exposure_us = 5_000.0;
+        assert_eq!(auto_exposure.observe(110.0), Some((5_000.0, 8.0)));
+    }
+
+    #[test]
+    fn a_lowered_gain_cap_holds_on_a_well_exposed_image() {
+        let mut auto_exposure = auto_exposure(20_000.0, 10.0);
+        auto_exposure.max_gain = 4.0;
+        assert_eq!(auto_exposure.observe(110.0), Some((20_000.0, 4.0)));
+    }
+
+    #[test]
+    fn a_raised_cap_leaves_a_well_exposed_image_alone() {
+        let mut auto_exposure = auto_exposure(10_000.0, 4.0);
+        auto_exposure.max_exposure_us = 40_000.0;
+        auto_exposure.max_gain = 16.0;
+        assert_eq!(auto_exposure.observe(110.0), None);
+    }
+
+    #[test]
+    fn capped_brings_the_running_values_within_lowered_caps() {
+        let mut auto_exposure = auto_exposure(20_000.0, 2.0);
+        auto_exposure.max_exposure_us = 5_000.0;
+        auto_exposure.max_gain = 4.0;
+        assert_eq!(auto_exposure.capped(), Some((5_000.0, 4.0)));
+        assert_eq!(
+            (auto_exposure.exposure_us, auto_exposure.gain),
+            (5_000.0, 4.0)
+        );
+        assert_eq!(auto_exposure.capped(), None);
     }
 
     #[test]

@@ -57,6 +57,10 @@ defmodule VisionCore.Camera.V4L2Pair do
   defaults. No autofocus runs: the program holds both lenses at the
   `focus` setting.
 
+  Auto exposure keeps the exposure and gain within `max_exposure_us`
+  and `max_gain` at every step, and brings them within lowered caps as
+  they are set.
+
   ## Opts
 
   The stereo unit gives each instance these; the left one uses all of

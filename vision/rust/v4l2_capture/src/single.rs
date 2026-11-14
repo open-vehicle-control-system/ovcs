@@ -25,7 +25,7 @@ use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
-    auto_exposure, auto_exposure_from, input, open_camera, pollfd, resume_point,
+    auto_exposure, auto_exposure_from, capped_now, input, open_camera, pollfd, resume_point,
     EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
 };
 
@@ -575,6 +575,13 @@ fn convert_frames(
                         })?;
                         auto_exposure =
                             auto_exposure_from(&settings.capture, frame_us, resume_from);
+                        if let Some((exposure_us, gain)) =
+                            capped_now(&settings.capture, &mut auto_exposure)
+                        {
+                            let applied = set_exposure(exposure_us, gain)?;
+                            let record = exposure_record(applied, last_ns.unwrap_or(0));
+                            queue.send(Record::Other(record))?;
+                        }
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
                     Err(message) => log(LogLevel::Warning, &message),
@@ -869,6 +876,7 @@ mod tests {
     }
 
     const OUTPUT_FRAME: u8 = 7;
+    const METADATA: u8 = 3;
 
     // The images of the output `index`'s records, in order.
     fn output_images(records: &[Vec<u8>], index: u8) -> Vec<Vec<u8>> {
@@ -1196,6 +1204,33 @@ mod tests {
             .nth(2)
             .map(|(position, _)| position);
         assert_eq!(applied, third_frame.map(|position| position + 1));
+    }
+
+    // The value in `slot` of a metadata record.
+    fn metadata_value(record: &[u8], slot: usize) -> f64 {
+        let start = 10 + 8 * slot;
+        f64::from_le_bytes(record[start..start + 8].try_into().unwrap())
+    }
+
+    // The exposure and gain of a metadata record.
+    fn exposure_of(record: &[u8]) -> (f64, f64) {
+        (metadata_value(record, 0), metadata_value(record, 1))
+    }
+
+    #[test]
+    fn a_lowered_exposure_cap_applies_with_the_setting() {
+        let records = captured(scenes(4, None), vec![(1, "max_exposure_us=1000")]);
+        let applied = records
+            .iter()
+            .position(|record| record.starts_with(b"\x02\x00settings: "))
+            .unwrap();
+        let capped = records[..applied]
+            .iter()
+            .rev()
+            .find(|record| record[..2] == [METADATA, 0b11])
+            .map(|record| exposure_of(record));
+
+        assert_eq!(capped, Some((1_000.0, 16.0)));
     }
 
     // Holds the first frame's first record of the tag `held` until the loop
