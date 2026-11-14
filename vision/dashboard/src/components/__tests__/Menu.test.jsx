@@ -45,12 +45,24 @@ describe('Menu', () => {
   })
 
   it("lists what the unit can calibrate, its stereo cameras first, each opening its calibration", () => {
-    useCalibration.setState({ targets: [{ id: 'stereo', kind: 'stereo' }, { id: 'center', kind: 'camera' }] })
+    useCalibration.setState({
+      targets: [
+        { id: 'stereo', kind: 'stereo' },
+        { id: 'center', kind: 'camera' },
+        { id: 'center-pose', kind: 'pose' }
+      ]
+    })
     render(<Menu />)
 
     const calibration = screen.getByRole('region', { name: 'Calibration' })
     const buttons = within(calibration).getAllByRole('button')
-    expect(buttons.map((button) => button.textContent)).toEqual(['Stereo cameras', 'Center camera'])
+    expect(buttons.map((button) => button.textContent)).toEqual(['Stereo cameras', 'Center camera', 'Position'])
+    // A camera's position is listed under its camera.
+    const center = within(calibration).getByRole('list', { name: 'Center camera' })
+    expect(within(center).getByRole('button', { name: 'Position' })).toBeTruthy()
+
+    fireEvent.click(buttons[2])
+    expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'center-pose' })
 
     fireEvent.click(buttons[1])
     expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'center' })

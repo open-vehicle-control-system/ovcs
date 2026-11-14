@@ -112,6 +112,10 @@ defmodule VisionCore.Ros2.Exporter.Camera do
         misfit_size: nil
     }
 
+  @doc "`camera` with its pose read again from `pose_path`, none without a path."
+  @spec reload_pose(t(), Path.t() | nil) :: t()
+  def reload_pose(camera, pose_path), do: %{camera | pose: load_pose(pose_path, camera.name)}
+
   @doc """
   The messages of the camera's `frame` at `now_ms`, and the camera after
   it: the frame as an image when its slot is open, encoded by `encode`,

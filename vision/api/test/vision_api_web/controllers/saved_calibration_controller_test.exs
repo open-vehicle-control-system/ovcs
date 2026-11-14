@@ -127,6 +127,49 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert {:ok, %{camera_matrix: [590.0 | _rest]}} = CameraCalibration.parse(right_yaml)
     end
 
+    test "gives a pose its rotation, translation, distance and error, and the file to save its YAML under",
+         %{conn: conn, config: config} do
+      pose = VisionApiWeb.CalibrationCase.pose()
+      Recorder.expect("hq-pose", pose, {:record, origin: "dashboard", samples: 30, rms_px: 0.4})
+      :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
+      :sys.get_state(Recorder)
+
+      conn = get(conn, "/api/saved-calibrations?filter[calibration]=hq-pose")
+      assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+
+      assert %{
+               "data" => [
+                 %{
+                   "type" => "saved-calibrations",
+                   "attributes" => %{
+                     "origin" => "dashboard",
+                     "inForce" => true,
+                     "samples" => 30,
+                     "cameras" => [],
+                     "pose" => %{
+                       "rotation" => [0.999 | _],
+                       "translation" => translation,
+                       "distanceMm" => distance_mm,
+                       "rmsPx" => 0.4,
+                       "file" => "hq_pose.yaml",
+                       "yaml" => yaml
+                     }
+                   },
+                   "relationships" => %{"calibration" => %{"data" => %{"id" => "hq-pose"}}}
+                 }
+               ]
+             } = json_response(conn, 200)
+
+      assert translation == pose.translation
+      assert_in_delta distance_mm, 60.53, 0.01
+      assert VisionCore.Camera.Pose.parse(yaml) == {:ok, pose}
+
+      keep(config, 580.8)
+
+      assert %{"data" => [%{"attributes" => %{"pose" => nil}}]} =
+               conn |> get("/api/saved-calibrations?filter[calibration]=hq") |> json_response(200)
+    end
+
     test "lists one target's with filter[calibration], and none for a target without any",
          %{conn: conn, config: config} do
       keep(config, 580.8)
@@ -350,6 +393,21 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
       assert {:ok, %{cameras: [%{calibration: %{camera_matrix: [580.8 | _rest]}}]}} =
                VisionCore.Calibration.in_use(config, "hq")
+    end
+
+    test "puts a pose kept back in force", %{conn: conn, config: config} do
+      pose = VisionApiWeb.CalibrationCase.pose()
+      :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
+      :ok = VisionCore.Camera.Pose.commit(config, :hq, %{pose | translation: [-0.07, 0.0, 0.0]})
+      :sys.get_state(Recorder)
+      [_newest, first] = Library.list("hq-pose")
+
+      assert %{"data" => %{"type" => "calibration-selections"}} =
+               conn |> select(selection(Integer.to_string(first.id))) |> json_response(201)
+
+      :sys.get_state(Recorder)
+      assert Library.selected("hq-pose").id == first.id
+      assert {:ok, %{pose: %{pose: ^pose}}} = VisionCore.Calibration.in_use(config, "hq-pose")
     end
 
     test "answers 404 for a calibration the unit does not keep", %{conn: conn} do

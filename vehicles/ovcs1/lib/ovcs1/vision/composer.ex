@@ -28,8 +28,10 @@ defmodule Ovcs1.Vision.Composer do
 
   `priv/calibration` holds the rig's calibration, from `cameracalibrator`,
   and the center camera's nominal one, `center.yaml`, for its 3.6 mm lens,
-  until it is calibrated. Without `center_pose.yaml`, its pose relative
-  to the stereo pair, its pipelines run without distances. The stereo
+  until it is calibrated. Its pose relative to the stereo pair is
+  measured on the dashboard's Calibration page and stored on the unit;
+  `center_pose.yaml`, not shipped yet, would be the built-in one. Without
+  a pose, its pipelines run without distances. The stereo
   cameras deliver grey frames, which the ROS 2 exporter encodes to JPEG;
   it publishes every pair (`raw_image_max_hz` at the capture rate), so a
   consumer pairing left and right images gets frames of the same capture.

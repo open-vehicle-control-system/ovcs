@@ -59,7 +59,7 @@ A unit with a camera of its own, such as the OVCS1 reference vehicle's center ca
 
 The unit looks for the board in the image output it receives from the camera, and the calibration is for that image's size; the unit scales it to the camera's other outputs. An apply stores it as `camera_<name>.yaml` in the camera's `calibration_store_dir`, or over its `calibration:` file without a store. The ROS 2 exporter publishes it as the camera's info at once, and the camera's detection and segmentation pipelines take it from their next image on, without a restart.
 
-The camera's pose relative to the stereo pair is a separate file, its `pose:`, which the page does not write.
+The camera's pose relative to the stereo pair is a calibration of its own, listed under the camera as **Center camera position** on the OVCS1. [Measure the pose](./cameras.md#measure-the-pose) has its steps.
 
 ## Where the calibration lives
 
@@ -131,7 +131,7 @@ A calibration holds for one sensor mode and one lens position. Changing the focu
 
 `cameracalibrator`, the ROS 2 calibration tool, runs on a workstation in the `calibrator` service of `compose/local/`, reads the unit's raw camera images over Zenoh and shows its own window, with the same coverage bars. Its **COMMIT** sends each camera's calibration to that camera's `set_camera_info` service on the unit, which writes it as the dashboard does, to the store, or to the calibration path without one, with a refused calibration taken back. A camera info that is no calibration, as one with a matrix missing a value or without an image size, is refused before anything is written. With a store, the unit takes the calibration once both sides' files are stored, a side stored by an earlier commit included: a **COMMIT** on one side alone pairs it with whatever the other side holds, so finish it on both sides. The dashboard's Calibration page shows it once taken.
 
-It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on by default), a Zenoh router both sides reach, and an X display; the steps are in [`compose/local/calibration_output/README.md`](../../compose/local/calibration_output/README.md). Use it when you want `cameracalibrator`'s saved samples; otherwise the dashboard needs none of this.
+It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on by default), a Zenoh router both sides reach, and an X display; the steps are in [`compose/local/calibration_output/README.md`](../../compose/local/calibration_output/README.md). A camera of its own is calibrated the same way, in monocular mode: give its name to [`calibrate.sh`](../../compose/local/scripts/calibrate.sh) with `--camera`. Use it when you want `cameracalibrator`'s saved samples; otherwise the dashboard needs none of this.
 
 ## A unit without a calibration
 

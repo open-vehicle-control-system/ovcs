@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest'
-import { render, screen, act, fireEvent } from '@testing-library/react'
+import { render, screen, act, fireEvent, within } from '@testing-library/react'
 import Previews from '../Previews.jsx'
 import { useExporters } from '../../stores/exporters.js'
+import { useCalibration } from '../../stores/calibration.js'
+import { useNavigation } from '../../stores/navigation.js'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
@@ -241,8 +243,31 @@ describe('Previews', () => {
       expect(lines[0].className).toContain('text-ovcs-muted')
 
       fireEvent.focus(screen.getByRole('button', { name: 'About No distances' }))
-      expect(screen.getByRole('tooltip').textContent).toContain('docs/vision/cameras.md')
+      expect(screen.getByRole('tooltip').textContent).toContain('Calibration')
       expect(figure('usb').querySelector('[data-distances]')).toBeNull()
+    })
+
+    it("opens the page that measures a camera's position from the line that says it is unknown", () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }, { id: 'hq-pose', kind: 'pose' }] })
+      useNavigation.setState({ page: 'overview', calibrationId: null })
+      const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      fireEvent.click(within(figure('hq')).getByRole('button', { name: "Measure the hq camera's position" }))
+
+      expect(useNavigation.getState()).toMatchObject({ page: 'calibration', calibrationId: 'hq-pose' })
+    })
+
+    it('offers no such page for a camera whose position the unit cannot measure', () => {
+      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }] })
+      const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
+      const { socket } = liveSocket()
+      render(<Previews status={{ ...snapshot, distances }} socket={socket} />)
+
+      expect(within(figure('hq')).queryByRole('button', { name: /Measure/ })).toBeNull()
     })
 
     it("names each reason the camera's pipelines give, and nothing without a status", () => {

@@ -901,4 +901,140 @@ describe('CalibrationPage', () => {
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center solved']])
     })
   })
+
+  describe("a camera's position", () => {
+    // The center camera 100 mm right of the left camera, 8 mm below it, turned 10° to the right.
+    const cos = Math.cos((10 * Math.PI) / 180)
+    const sin = Math.sin((10 * Math.PI) / 180)
+    const rotation = [cos, 0, -sin, 0, 1, 0, sin, 0, cos]
+    const translation = [-cos * 0.1, -0.008, -sin * 0.1]
+    const pose = (attributes) => ({
+      rotation,
+      translation,
+      distanceMm: 100.32,
+      file: 'center_pose.yaml',
+      yaml: 'pose in use',
+      ...attributes
+    })
+
+    const measured = {
+      id: 'center-pose',
+      kind: 'pose',
+      source: 'stored',
+      storedAt: '2026-11-14T10:00:00Z',
+      canReset: false,
+      baselineM: null,
+      rectifiedFx: null,
+      error: null,
+      cameras: [side('left', 912.34, 'left in use'), { ...side('center', 880.5, 'center in use'), file: 'center.yaml' }],
+      pose: pose()
+    }
+    const unmeasured = { ...measured, source: 'none', storedAt: null, pose: null }
+    const poseCard = () => screen.getByRole('region', { name: /Measured on this unit|shipped with the firmware|Not measured/ })
+    const facts = () =>
+      Object.fromEntries([...poseCard().querySelectorAll('dt')].map((label) => [label.textContent, label.nextElementSibling.textContent]))
+
+    it('shows where the camera sits from the left camera, how far and how it is turned, then its rotation and translation', () => {
+      show({ inUse: measured, closed: true, session: session() })
+
+      expect(within(poseCard()).getByRole('heading').textContent).toMatch(/^Measured on this unit, /)
+      expect(facts()).toEqual({
+        'Position from the left camera': '100.0 mm right, 8.0 mm down, 0.0 mm forward',
+        'Distance to the left camera': '100.3 mm',
+        'Turned (yaw, pitch, roll)': '10.0° right, 0.0° up, 0.0° clockwise'
+      })
+      const matrix = within(poseCard()).getByRole('table', { name: /Rotation/ })
+      expect(within(matrix).getAllByRole('row').map((row) => row.textContent)).toEqual([
+        '0.98480.0000-0.1736',
+        '0.00001.00000.0000',
+        '0.17360.00000.9848'
+      ])
+      expect(within(poseCard()).getByRole('table', { name: /Translation/ }).textContent).toContain('-98.5')
+      expect(within(poseCard()).queryByText(/Focal length/)).toBeNull()
+
+      fireEvent.click(button('Download the position the unit uses'))
+      expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose in use']])
+    })
+
+    it('says a position not measured, with a dash for each figure and nothing to download', () => {
+      show({ inUse: unmeasured, closed: true, session: session() })
+
+      expect(within(poseCard()).getByRole('heading').textContent).toBe('Not measured')
+      expect(poseCard().textContent).toContain('no distance')
+      expect(Object.values(facts())).toEqual(['–', '–', '–'])
+      expect(query('Download the position the unit uses')).toBeNull()
+      expect(button('Calibrate')).toBeTruthy()
+    })
+
+    it('warns of a board that looks the same after a half turn, which can number the corners apart in two cameras', () => {
+      show({ inUse: unmeasured, session: session() })
+      expect(screen.getByText(/looks the same after a half turn/)).toBeTruthy()
+
+      fireEvent.change(screen.getByLabelText('Inner corners (columns)'), { target: { value: '9' } })
+      expect(screen.queryByText(/looks the same after a half turn/)).toBeNull()
+    })
+
+    it('shows both previews, the left camera first, with the corners found in each', () => {
+      show({ inUse: measured, session: capturing({ calibration: 'center-pose' }) })
+
+      const captions = [...document.querySelectorAll('figcaption span')].map((caption) => caption.textContent)
+      expect(captions.slice(0, 2)).toEqual(['left', 'center'])
+      expect(screen.getByText(/Hold the board still where both cameras see it whole/).textContent).toContain('or 40 views are kept')
+    })
+
+    it('reads a solved position: its error with its verdict, where the camera sits, beside the one in use, and downloads it', () => {
+      const solved = {
+        imageWidth: null,
+        imageHeight: null,
+        cameras: [],
+        stereoRmsPx: null,
+        baselineM: null,
+        fxPx: null,
+        samples: 24,
+        pose: pose({ rmsPx: 0.62, yaml: 'pose solved', distanceMm: 100.32 })
+      }
+      show({ inUse: measured, session: session({ phase: 'solved', board, calibration: 'center-pose', result: solved }) })
+
+      const figures = screen.getByRole('region', { name: /^Calibrate( again)?$/ })
+      expect(within(figures).getByRole('row', { name: /Error \(reprojection RMS\)/ }).textContent).toContain('0.62 px, fair')
+      expect(within(figures).getByRole('row', { name: /Position from the left camera/ }).textContent).toContain(
+        '100.0 mm right, 8.0 mm down, 0.0 mm forward'
+      )
+      expect(within(figures).getByRole('row', { name: /Distance to the left camera/ }).textContent).toBe(
+        'Distance to the left camera100.3 mm100.3 mm'
+      )
+      expect(within(figures).getByRole('row', { name: /Turned/ }).textContent).toContain('10.0° right')
+      expect(within(figures).getByText('Used now')).toBeTruthy()
+      expect(within(figures).queryByRole('row', { name: /Focal length/ })).toBeNull()
+
+      fireEvent.click(button('Download the new calibration'))
+      expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose solved']])
+    })
+
+    it('lists each position kept with its error and distance, and downloads its YAML', () => {
+      const kept = {
+        id: '9',
+        name: 'Bench',
+        origin: 'dashboard',
+        createdAt: '2026-11-14T10:00:00Z',
+        inForce: true,
+        board: { columns: 9, rows: 6, squareMm: 30 },
+        samples: 24,
+        stereoRmsPx: null,
+        baselineM: null,
+        cameras: [],
+        pose: pose({ rmsPx: 0.41, yaml: 'pose kept' })
+      }
+      show({ inUse: measured, closed: true, saved: { 'center-pose': [kept] }, session: session() })
+
+      const card = screen.getByRole('region', { name: 'Calibrations kept on the unit' })
+      expect(within(card).getByRole('columnheader', { name: 'Distance to the left camera' })).toBeTruthy()
+      const row = within(card).getByRole('row', { name: /Bench/ })
+      expect(row.textContent).toContain('0.41 px')
+      expect(row.textContent).toContain('100.3 mm')
+
+      fireEvent.click(within(row).getByRole('button', { name: 'Download Bench' }))
+      expect(downloadYaml.mock.calls).toEqual([['center_pose.yaml', 'pose kept']])
+    })
+  })
 })

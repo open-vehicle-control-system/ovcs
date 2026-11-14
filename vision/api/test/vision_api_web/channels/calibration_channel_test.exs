@@ -15,6 +15,7 @@ defmodule VisionApiWeb.CalibrationChannelTest do
 
     assert_push "calibration", %{id: "unit", kind: "stereo", source: "builtIn", cameras: [_, _]}
     assert_push "calibration", %{id: "hq", kind: "camera", cameras: [%{name: "hq", fx: 900.0}]}
+    assert_push "calibration", %{id: "hq-pose", kind: "pose", pose: nil, cameras: [_, _]}
 
     assert_push "session", %{
       phase: "idle",
@@ -67,6 +68,15 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     )
 
     assert_push "calibration", %{id: "hq", source: "builtIn"}
+  end
+
+  test "a change of a camera's pose is pushed as its pose's calibration", %{config: config} do
+    {:ok, _reply, _socket} = join()
+    assert_push "calibration", %{id: "hq-pose", pose: nil}
+
+    :ok = VisionCore.Camera.Pose.commit(config, :hq, VisionApiWeb.CalibrationCase.pose())
+
+    assert_push "calibration", %{id: "hq-pose", source: "stored", pose: %{distanceMm: _distance}}
   end
 
   test "a change of the calibrations kept for a target is pushed with its calibration's id" do

@@ -4,7 +4,8 @@ defmodule VisionApiWeb.CalibrationChannel do
   of `VisionCore.Calibration.Session`, with the id of the `calibration` it
   works on, and each calibration in use as `"calibration"`, with its `id`,
   on join and each time the unit takes another one; both shaped by
-  `VisionApiWeb.CalibrationJSON`. Each change of the calibrations kept
+  `VisionApiWeb.CalibrationJSON`; a camera's pose as its own calibration,
+  at each change of the pose. Each change of the calibrations kept
   for one of them, as one kept, renamed, removed or put in force, is
   pushed as `"saved"` with the id of that `calibration`: the client
   reads the `saved-calibrations` again. Joining subscribes to the session, which
@@ -46,6 +47,13 @@ defmodule VisionApiWeb.CalibrationChannel do
 
   def handle_cast({:camera_calibration_changed, name}, socket) do
     push_calibration(socket, Atom.to_string(name))
+    {:noreply, socket}
+  end
+
+  def handle_cast({:camera_pose_changed, name}, socket) do
+    for %{kind: :pose, name: ^name, id: id} <- socket.assigns.targets,
+        do: push_calibration(socket, id)
+
     {:noreply, socket}
   end
 

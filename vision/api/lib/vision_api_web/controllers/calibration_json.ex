@@ -5,19 +5,27 @@ defmodule VisionApiWeb.CalibrationJSON do
   and the `calibration` channel carry it. Both shapes are shared by the
   controllers and the channel.
 
-  A calibration has its `kind`, `stereo` or `camera`, its `source`
-  (`builtIn`, `stored` or `none`), `storedAt`, `canReset`, its `cameras`,
-  each with its `name`, the `file` to save its `yaml` under, its image
-  size, intrinsics and distortion, for a stereo pair `baselineM` and
-  `rectifiedFx`, `null` for a camera, and its `error`, why a file gives no
-  calibration.
+  A calibration has its `kind`, `stereo`, `camera` or `pose`, its
+  `source` (`builtIn`, `stored` or `none`), `storedAt`, `canReset`, its
+  `cameras`, each with its `name`, the `file` to save its `yaml` under,
+  its image size, intrinsics and distortion, for a stereo pair
+  `baselineM` and `rectifiedFx`, `null` otherwise, for a pose its `pose`,
+  `null` otherwise or without one, and its `error`, why a file gives no
+  calibration. A pose's cameras are the stereo left camera's and the
+  camera's calibrations it is measured with.
 
   A session has its `phase`, `board`, `samples`, `progress`, `goodEnough`,
   its last `detection`, the corners found in each camera's frame as
   fractions of it, its `result` once solved, with the image size it is
   for, and its `error`.
+
+  A pose has its `rotation`, row-major, its `translation` in metres, the
+  `distanceMm` between the two cameras, and the `file` to save its
+  `yaml` under; a solved one also its `rmsPx`.
   """
-  alias VisionApiWeb.JsonApi
+  alias VisionApiWeb.{CalibrationUnit, JsonApi}
+  alias VisionCore.Calibration
+  alias VisionCore.Camera.Pose
   alias VisionCore.Ros2.CameraCalibration
 
   @doc "The `calibrations` resources of `calibrations`, each from `VisionCore.Calibration.in_use/2`."
@@ -41,9 +49,24 @@ defmodule VisionApiWeb.CalibrationJSON do
       error: in_use.error,
       baselineM: in_use.baseline_m,
       rectifiedFx: rectified_fx(in_use),
-      cameras: Enum.map(in_use.cameras, &camera/1)
+      cameras: Enum.map(in_use.cameras, &camera/1),
+      pose: pose_in_use(in_use.pose)
     }
   end
+
+  defp pose_in_use(nil), do: nil
+  defp pose_in_use(%{pose: pose, file: file, yaml: yaml}), do: pose(pose, file, yaml)
+
+  @doc "The attributes of `pose`, saved under `file` as `yaml`."
+  @spec pose(Pose.t(), String.t(), String.t()) :: map()
+  def pose(%Pose{} = pose, file, yaml),
+    do: %{
+      rotation: pose.rotation,
+      translation: pose.translation,
+      distanceMm: Pose.distance_m(pose) * 1000,
+      file: file,
+      yaml: yaml
+    }
 
   @doc "The attributes of the session `state` of `VisionCore.Calibration.Session`."
   @spec session(VisionCore.Calibration.Session.state()) :: map()
@@ -132,7 +155,8 @@ defmodule VisionApiWeb.CalibrationJSON do
       stereoRmsPx: result.stereo_rms_px,
       baselineM: result.baseline_m,
       fxPx: result.fx_px,
-      samples: result.samples
+      samples: result.samples,
+      pose: nil
     }
 
   defp result(result, %{kind: :camera, id: name}),
@@ -143,8 +167,26 @@ defmodule VisionApiWeb.CalibrationJSON do
       stereoRmsPx: nil,
       baselineM: nil,
       fxPx: result.fx_px,
-      samples: result.samples
+      samples: result.samples,
+      pose: nil
     }
+
+  # The session names its target by id: its camera's name comes from the configuration.
+  defp result(result, %{kind: :pose, id: id}) do
+    {:ok, %{name: name}} = Calibration.fetch_target(CalibrationUnit.config(), id)
+    file = Calibration.pose_file(name)
+
+    %{
+      imageWidth: nil,
+      imageHeight: nil,
+      cameras: [],
+      stereoRmsPx: nil,
+      baselineM: nil,
+      fxPx: nil,
+      samples: result.samples,
+      pose: Map.put(pose(result.pose, file, Pose.to_yaml(result.pose)), :rmsPx, result.rms_px)
+    }
+  end
 
   defp solved(name, file, calibration, rms_px),
     do: %{

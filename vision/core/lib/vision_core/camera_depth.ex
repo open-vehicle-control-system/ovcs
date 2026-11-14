@@ -182,9 +182,9 @@ defmodule VisionCore.CameraDepth do
 
   @doc """
   `depth` with its camera's calibration and pose read again from
-  `config`, as `new/5` reads them, and the lenses made from the previous
-  calibration dropped: what a calibration committed while the owner runs
-  takes. The pairs kept stay.
+  `config`, as `new/5` reads them, the stored ones first, and the lenses
+  made from the previous calibration dropped: what a calibration or a
+  pose committed while the owner runs takes. The pairs kept stay.
   """
   @spec reload(t(), VisionCore.Config.t()) :: t()
   def reload(depth, config) do

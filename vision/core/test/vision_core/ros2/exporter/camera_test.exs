@@ -224,6 +224,14 @@ defmodule VisionCore.Ros2.Exporter.CameraTest do
     assert camera_info.d == [0.0, 0.0, 0.0, 0.0, 0.0]
   end
 
+  @tag :tmp_dir
+  test "reload_pose/2 reads the pose again, from the path given", %{tmp_dir: tmp_dir} do
+    pose_path = write_pose(tmp_dir, [1, 0, 0, 0, 1, 0, 0, 0, 1], [-0.2, 0.0, 0.0])
+
+    assert Camera.reload_pose(camera(), pose_path).pose.translation == [-0.2, 0.0, 0.0]
+    assert Camera.reload_pose(camera(%{pose_path: pose_path}), nil).pose == nil
+  end
+
   describe "the static transform" do
     @describetag :tmp_dir
 

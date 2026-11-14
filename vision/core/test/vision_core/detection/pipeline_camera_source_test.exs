@@ -664,6 +664,28 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     assert VisionCore.CameraPipeline.distances(pipeline).reason == nil
   end
 
+  test "takes a pose of its camera committed while it runs, from the store", %{tmp_dir: dir} do
+    %{components: [{:camera, camera}]} = config(dir, [:calibration])
+    store_dir = Path.join(dir, "store")
+
+    config = %VisionCore.Config{
+      components: [{:camera, camera ++ [calibration_store_dir: store_dir]}]
+    }
+
+    start_pipeline(dir, config: config)
+    pipeline = VisionCore.Pipelines.server(Pipeline, :hq_people)
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == :no_pose
+
+    pose = %VisionCore.Camera.Pose{
+      rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+      translation: [0.0, 0.0, 0.0]
+    }
+
+    :ok = VisionCore.Camera.Pose.commit(config, :hq, pose)
+
+    assert VisionCore.CameraPipeline.distances(pipeline).reason == nil
+  end
+
   test "says nothing stops the distances of a camera with a calibration and a pose",
        %{tmp_dir: dir} do
     start_pipeline(dir)
