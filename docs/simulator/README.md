@@ -22,9 +22,47 @@ A simulated component is the inverse of the VMS component that drives the same p
 
 ## Where it runs
 
-The simulator runs in your vehicle's `ros` bridge, on the host only. The bridge's host configuration lists a `:simulated_hardware` component, and its host CAN topology declares the simulated hardware's frames. On the vehicle, neither exists. The OVCS Mini reference vehicle selects this configuration when `OVCS_SIM=1` is set; your vehicle can use the same switch.
+The simulator runs on the host only, in one of two places:
+
+| Where | Started by | Moves the vehicle |
+|---|---|---|
+| The simulator runner, `simulator/runner/`, a BEAM of its own | `./ovcs run <vehicle> --simulate` | `SimulatorCore.Vehicle`, with no world |
+| Your vehicle's `ros` bridge | your vehicle's own switch, `OVCS_SIM=1` on the OVCS Mini reference vehicle | Gazebo, through `RosBridge.Simulator.World` |
+
+The runner reads your vehicle's `simulator/0`: the motion model's parameters, the simulated components, and the CAN topology and host mapping of their frames. `OvcsVehicle` documents its fields. The OVCS Mini reference vehicle's is in `vehicles/ovcs_mini/lib/ovcs_mini.ex`.
+
+In the `ros` bridge, the bridge's host configuration lists a `:simulated_hardware` component, and its host CAN topology declares the simulated hardware's frames. On the vehicle, neither exists.
 
 [Simulation](../../compose/local/simulation/README.md) runs the OVCS Mini reference vehicle against Gazebo. [Command paths](../ros2/commands.md) follows one 20 ms tick through the loop.
+
+## Run your vehicle in simulation
+
+Start your vehicle with its simulated hardware. On the OVCS Mini reference vehicle:
+
+```sh
+./ovcs run ovcs_mini --simulate
+```
+
+`run` starts the simulator runner first, then waits for its ready line:
+
+```text
+[simulator] OVCS simulator ready
+```
+
+Only then does it start the VMS and the other BEAMs, so the VMS boots against hardware that already answers, as on the vehicle. A VMS that boots first finds its parts silent and can latch `FAILURE`.
+
+> [!WARNING]
+> Don't set your vehicle's `ros` bridge switch with `--simulate`, such as `OVCS_SIM=1` on the OVCS Mini. Both would then answer the VMS's frames.
+
+`run` stops with an error if the runner exits or prints no ready line within 60 seconds. It refuses a vehicle with no `simulator/0`.
+
+In another terminal, attach to it:
+
+```sh
+./ovcs attach ovcs_mini
+```
+
+The decoded `vms_status` frame should read `status="OK"`. The runner's output appears only in the `run` terminal, prefixed `[simulator]`.
 
 ## Pages
 
