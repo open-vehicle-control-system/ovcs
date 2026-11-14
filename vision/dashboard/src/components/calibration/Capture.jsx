@@ -3,8 +3,9 @@ import { focusClass as FOCUS } from '@ovcs/ui/react'
 import Preview from '../Preview.jsx'
 import CornerOverlay from './CornerOverlay.jsx'
 import Coverage from './Coverage.jsx'
-import Section from './Section.jsx'
+import Flow from './Flow.jsx'
 import { SessionError } from './Errors.jsx'
+import { useHeld } from './held.js'
 import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { loadBoard, saveBoard } from '../../services/calibration.js'
 import { BUTTON, PRIMARY } from '../../styles.js'
@@ -41,7 +42,10 @@ export function BoardForm() {
   }
 
   return (
-    <Section title="New calibration">
+    <Flow step={0}>
+      <p className="max-w-prose text-sm text-ovcs-muted">
+        Fix a printed chessboard flat on a rigid plate. Count its inner corners, where four squares meet, not its squares.
+      </p>
       <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
         {FIELDS.map(({ key, label, step }) => (
           <label key={key} htmlFor={`${id}-${key}`} className="flex flex-col gap-1 text-sm">
@@ -68,21 +72,21 @@ export function BoardForm() {
           {BOARD_RULE}
         </p>
       )}
-    </Section>
+    </Flow>
   )
 }
 
-// Shown while no camera finds the board: the usual cause is a board entered in squares.
+// Whether a camera finds the board, on a line that stays in place; a board never found is usually one entered in squares.
 function BoardHint() {
-  const searching = useCalibration((state) => !state.session?.detection?.views?.some((view) => view.points))
+  const found = useHeld(useCalibration((state) => (state.session?.detection?.views?.some((view) => view.points) ? true : null)))
   const columns = useCalibration((state) => state.session?.board?.columns)
   const rows = useCalibration((state) => state.session?.board?.rows)
 
-  return searching ? (
+  return (
     <p role="status" className="text-sm text-ovcs-muted">
-      {`Looking for a board with ${columns} × ${rows} inner corners, which is ${columns + 1} × ${rows + 1} squares.`}
+      {found ? 'Board found.' : `Looking for a board with ${columns} × ${rows} inner corners, which is ${columns + 1} × ${rows + 1} squares.`}
     </p>
-  ) : null
+  )
 }
 
 // The names of the cameras being calibrated, as one string so that a push changing none does not render again.
@@ -97,7 +101,13 @@ export function Capturing({ socket }) {
   const cancel = useCalibration((state) => state.cancel)
 
   return (
-    <Section title="New calibration">
+    <Flow step={1}>
+      <p className="max-w-prose text-sm text-ovcs-muted">
+        {cameras.length > 1
+          ? 'Move the board slowly, whole in both images, until the four gauges are full.'
+          : 'Move the board slowly, whole in the image, until the four gauges are full.'}{' '}
+        A view is kept each time the board is found somewhere new.
+      </p>
       <BoardHint />
       <SessionError />
       <div className="flex min-w-0 flex-col gap-4 lg:flex-row">
@@ -108,17 +118,17 @@ export function Capturing({ socket }) {
         </div>
         <div className="flex shrink-0 flex-col gap-4 lg:w-56">
           <Coverage />
-          <div className="flex flex-wrap gap-2">
-            <button type="button" disabled={busy || !goodEnough} onClick={solve} className={PRIMARY}>
+          <div className="flex flex-col gap-2">
+            <button type="button" disabled={busy || !goodEnough} onClick={solve} className={`w-full ${PRIMARY}`}>
               Compute calibration
             </button>
-            <button type="button" disabled={busy} onClick={cancel} className={BUTTON}>
+            <button type="button" disabled={busy} onClick={cancel} className={`w-full ${BUTTON}`}>
               Cancel
             </button>
           </div>
         </div>
       </div>
-    </Section>
+    </Flow>
   )
 }
 
@@ -129,7 +139,7 @@ export function Solving() {
   const cancel = useCalibration((state) => state.cancel)
 
   return (
-    <Section title="New calibration">
+    <Flow step={2}>
       <p role="status" className="text-sm">
         {`Computing the calibration from ${samples} views…`}
       </p>
@@ -138,6 +148,6 @@ export function Solving() {
           Cancel
         </button>
       </div>
-    </Section>
+    </Flow>
   )
 }

@@ -1,6 +1,6 @@
 import { OvcsStatus } from '@ovcs/ui/react'
 import { HealthValue } from '../UnitStatus.jsx'
-import Section from './Section.jsx'
+import Flow from './Flow.jsx'
 import { SessionError } from './Errors.jsx'
 import { selectedCalibration, useCalibration } from '../../stores/calibration.js'
 import { downloadYaml } from '../../services/calibration.js'
@@ -18,11 +18,11 @@ const capitalised = (name) => name.charAt(0).toUpperCase() + name.slice(1)
 function Row({ label, solved, inUse }) {
   return (
     <tr className="border-t border-ovcs-border">
-      <th scope="row" className="py-1 pr-4 font-medium">
+      <th scope="row" className="py-1 pr-6 font-medium">
         {label}
       </th>
-      <td className="py-1 pr-4">{solved}</td>
-      <td className="py-1 text-ovcs-muted">{inUse}</td>
+      <td className="py-1 pr-6">{solved}</td>
+      {inUse === undefined ? null : <td className="py-1 text-ovcs-muted">{inUse ?? ''}</td>}
     </tr>
   )
 }
@@ -42,6 +42,9 @@ function Figures() {
   const solution = useCalibration((state) => state.session?.result)
   const inUse = useCalibration(selectedCalibration)
 
+  // Only a calibrated pair has figures to set beside the new ones.
+  const used = (value) => (inUse?.kind === 'stereo' && inUse.source !== 'none' ? value : undefined)
+
   return solution ? (
     <div className="overflow-x-auto">
       <table className="text-left text-sm tabular-nums">
@@ -50,21 +53,21 @@ function Figures() {
             <th className="pb-1 pr-4 font-medium">
               <span className="sr-only">figure</span>
             </th>
-            <th className="pb-1 pr-4 font-medium">{`new, from ${solution.samples} views`}</th>
-            <th className="pb-1 font-medium">current</th>
+            <th className="pb-1 pr-6 font-medium">{`New, from ${solution.samples} views`}</th>
+            {used(true) ? <th className="pb-1 font-medium">Used now</th> : null}
           </tr>
         </thead>
         <tbody>
           {solution.cameras.map((camera) => (
-            <Row key={camera.name} label={`${capitalised(camera.name)} camera error`} solved={<RmsValue px={camera.rmsPx} />} />
+            <Row key={camera.name} label={`${capitalised(camera.name)} camera error (reprojection RMS)`} solved={<RmsValue px={camera.rmsPx} />} inUse={used(null)} />
           ))}
           {solution.stereoRmsPx == null ? null : (
             <>
-              <Row label="Pair error" solved={<RmsValue px={solution.stereoRmsPx} />} />
-              <Row label="Distance between cameras" solved={millimetres(solution.baselineM)} inUse={millimetres(inUse?.baselineM)} />
+              <Row label="Pair error (stereo reprojection RMS)" solved={<RmsValue px={solution.stereoRmsPx} />} inUse={used(null)} />
+              <Row label="Distance between cameras (baseline)" solved={millimetres(solution.baselineM)} inUse={used(millimetres(inUse?.baselineM))} />
             </>
           )}
-          <Row label="Focal length" solved={pixels(solution.fxPx)} inUse={pixels(inUse?.rectifiedFx)} />
+          <Row label="Focal length (fx)" solved={pixels(solution.fxPx)} inUse={used(pixels(inUse?.rectifiedFx))} />
         </tbody>
       </table>
     </div>
@@ -83,7 +86,10 @@ export function Solved() {
   }
 
   return (
-    <Section title="New calibration">
+    <Flow step={2}>
+      <p className="max-w-prose text-sm text-ovcs-muted">
+        The errors say how well the calibration fits the views kept: under 0.5 px is good, over 2 px needs more views or more varied ones.
+      </p>
       <Figures />
       <SessionError />
       <div className="flex flex-wrap gap-2">
@@ -103,18 +109,18 @@ export function Solved() {
           Discard
         </button>
       </div>
-    </Section>
+    </Flow>
   )
 }
 
 /** The unit taking the solved calibration, which cannot be stopped. */
 export function Applying() {
   return (
-    <Section title="New calibration">
+    <Flow step={2}>
       <Figures />
       <p role="status" className="text-sm">
         Applying… the unit is taking the calibration.
       </p>
-    </Section>
+    </Flow>
   )
 }

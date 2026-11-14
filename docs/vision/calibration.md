@@ -31,7 +31,7 @@ A view counts only when both cameras see the whole board, with every corner at l
 - near, with the board filling much of the image, and far;
 - tilted left, right, up and down.
 
-Four gauges beside the previews follow the coverage: **Left to right** and **Top to bottom** the spread of positions across and down, **Near to far** the spread of apparent sizes, **Tilted** the spread of tilts. A gauge turns green once full. **Compute calibration** is enabled once every gauge is full, or at 40 views kept. **Cancel** ends the session and drops the views.
+Four gauges beside the previews follow the coverage, each with the name `cameracalibrator` gives it: **Left to right (X)** and **Top to bottom (Y)** the spread of positions across and down, **Near to far (size)** the spread of apparent sizes, **Tilted (skew)** the spread of tilts. A gauge turns green once full. **Compute calibration** is enabled once every gauge is full, or at 40 views kept. **Cancel** ends the session and drops the views.
 
 ### Solve and read the errors
 
@@ -45,7 +45,7 @@ The result shows three reprojection errors, in pixels: how far, on average, the 
 | 0.5 to 2 px | fair |
 | over 2 px | poor: capture again, with more samples and better coverage |
 
-Next to them, the **Distance between cameras**, the baseline, and the **Focal length**, the left camera's after rectification (the `fx` of its projection matrix), with the values of the current calibration. It differs from the `fx` the Current calibration part shows, the camera's own before rectification. The baseline should match the distance between the two lenses, measured with a ruler: a different one usually means a wrong square size, as the baseline scales with it.
+Next to them, the **Distance between cameras (baseline)** and the **Focal length (fx)**, the left camera's after rectification (the `fx` of its projection matrix), beside the values the unit uses now, when it has a calibration. Each camera's own `fx`, before rectification, is among the camera parameters in the page's first part. The baseline should match the distance between the two lenses, measured with a ruler: a different one usually means a wrong square size, as the baseline scales with it.
 
 ### Use the calibration
 
@@ -83,7 +83,7 @@ A commit, from the dashboard or from `cameracalibrator`, writes the store. Once 
 
 Without a `:calibration_store_dir`, a commit writes the built-in files themselves, and there is nothing to go back to. On a workstation, where Mix links your vehicle's `priv` into its build, those are the files in `vehicles/<vehicle>/priv/calibration/`: `git diff` shows the change.
 
-The page's **Current calibration** part says which is in force: **Built into the firmware**, **Saved on the unit** with the time it was saved, or **No calibration**. It shows each camera's `fx`, `fy`, `cx`, `cy` and distortion, the baseline and the image size, and **Download** saves the two files in use.
+The page's first part says which is in force: **Using the calibration shipped with the firmware**, **Calibrated on this unit** with the time, or **Not calibrated**. Under it, the image size, the focal length, whether the lens distortion is corrected, which a calibration with every distortion coefficient at 0 does not, and for a pair the distance between the cameras; a unit without a calibration shows a dash for each. Beside them, the camera parameters: each camera's `fx`, `fy`, `cx`, `cy` and distortion coefficients, in pixels; **Download** saves the two files in use. **Calibrate again**, or **Calibrate** on a unit without a calibration, opens a dialog that makes a new one in three steps: the board, the capture, the result. The dialog stays open while a session runs, in every browser on the page, until its own buttons end it.
 
 **Go back to the firmware's calibration**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
 
@@ -108,7 +108,7 @@ The stored calibration belongs to one unit. To ship it in the firmware, so that 
    def required_files, do: ["priv/calibration/stereo_left.yaml", "priv/calibration/stereo_right.yaml"]
    ```
 
-4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Go back to the firmware's calibration**; then the page reads Built-in.
+4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Go back to the firmware's calibration**; then the page reads Using the calibration shipped with the firmware.
 
 A calibration holds for one sensor mode and one lens position. Changing the focus, or the image's aspect ratio, needs a new one; [Stereo vision basics](./basics.md#calibration) says why.
 
