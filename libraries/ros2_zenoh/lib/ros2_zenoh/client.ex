@@ -150,6 +150,8 @@ defmodule Ros2Zenoh.Client do
   publishing never stops again. Without a check, as on a host
   or against a simulator, publishing begins at once. Subscriptions and
   services are never held back, so commands still reach the vehicle.
+  `clock_synchronized?/0` says whether publishing has begun, and `link/0`
+  also counts the publishes dropped until then.
 
   ## Parsing
 
@@ -347,10 +349,23 @@ defmodule Ros2Zenoh.Client do
   end
 
   @doc """
+  Whether the board's clock is synchronized, so publishing has begun (see
+  "The clock" in the moduledoc), read like `session_open?/0` without waiting
+  on the client. `false` when the client is not running.
+  """
+  @spec clock_synchronized?() :: boolean()
+  def clock_synchronized? do
+    :ets.lookup_element(@session_table, :clock_synchronized, 2)
+  rescue
+    ArgumentError -> false
+  end
+
+  @doc """
   The node and its link to the router: the node name and ROS 2 domain,
-  whether a session is open, the router endpoint, and the services this
-  client answers, by full name and ROS type, sorted by name; `nil` when the
-  client is not running.
+  whether a session is open, the router endpoint, whether the clock is
+  synchronized and the publishes dropped while waiting for it, 0 once it
+  is, and the services this client answers, by full name and ROS type,
+  sorted by name; `nil` when the client is not running.
   """
   @spec link() ::
           %{
@@ -358,6 +373,8 @@ defmodule Ros2Zenoh.Client do
             domain_id: non_neg_integer(),
             connected: boolean(),
             endpoint: String.t(),
+            clock_synchronized: boolean(),
+            drops_before_clock_synchronized: non_neg_integer(),
             services: [%{name: String.t(), type: String.t()}]
           }
           | nil
@@ -419,6 +436,8 @@ defmodule Ros2Zenoh.Client do
        domain_id: state.domain_id,
        connected: not is_nil(state.session),
        endpoint: "tcp/#{state.endpoint_ip}:#{@zenoh_port}",
+       clock_synchronized: state.clock_synchronized,
+       drops_before_clock_synchronized: state.drops_before_clock_sync,
        services: services
      }, state}
   end
