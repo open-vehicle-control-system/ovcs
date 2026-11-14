@@ -4,6 +4,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
   alias VisionCore.Calibration.{Library, Recorder, Saved, Selection}
   alias VisionCore.Camera.Calibration, as: OwnCalibration
   alias VisionCore.Repo
+  alias VisionCore.Ros2.CameraCalibration
 
   setup %{config: config} do
     Repo.delete_all(Selection)
@@ -82,7 +83,9 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                      "cx" => 640.0,
                      "cy" => 360.0,
                      "distortion" => distortion,
-                     "rmsPx" => 0.2
+                     "rmsPx" => 0.2,
+                     "file" => "hq.yaml",
+                     "yaml" => yaml
                    }
                  ]
                },
@@ -94,6 +97,7 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert id == Integer.to_string(second.id)
       assert name == second.name
       assert distortion == [0.1, -0.2, 0.0, 0.0, 0.0]
+      assert yaml == CameraCalibration.to_yaml(calibration(590.0), "hq")
       assert {:ok, _time, 0} = DateTime.from_iso8601(created_at)
 
       assert %{
@@ -103,6 +107,24 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
                oldest
 
       assert oldest_id == Integer.to_string(first.id)
+    end
+
+    test "gives a pair's cameras the files of the calibration in use, under the stereo unit's prefix",
+         %{conn: conn, prefix: prefix} do
+      {:ok, _pair} =
+        Library.record(prefix, [{"left", calibration(580.8)}, {"right", calibration(590.0)}],
+          origin: "dashboard"
+        )
+
+      assert %{"data" => [%{"attributes" => %{"cameras" => [left, right]}}]} =
+               conn
+               |> get("/api/saved-calibrations?filter[calibration]=#{prefix}")
+               |> json_response(200)
+
+      assert %{"name" => "left", "file" => "unit_left.yaml", "yaml" => left_yaml} = left
+      assert %{"name" => "right", "file" => "unit_right.yaml", "yaml" => right_yaml} = right
+      assert left_yaml == CameraCalibration.to_yaml(calibration(580.8), "unit_left")
+      assert {:ok, %{camera_matrix: [590.0 | _rest]}} = CameraCalibration.parse(right_yaml)
     end
 
     test "lists one target's with filter[calibration], and none for a target without any",
@@ -248,17 +270,57 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert Library.fetch(first.id) == {:error, :not_found}
     end
 
-    test "answers 409 for the calibration in force, 404 for one not kept", %{
-      conn: conn,
-      config: config
-    } do
+    test "returns the unit to its built-in calibration, then removes the calibration in force",
+         %{conn: conn, config: config} do
       saved = keep(config, 580.8)
 
-      assert %{"errors" => [%{"status" => "409", "title" => "In force"}]} =
+      conn = delete(conn, "/api/saved-calibrations/#{saved.id}")
+
+      assert response(conn, 204) == ""
+      assert Library.fetch(saved.id) == {:error, :not_found}
+      assert {:ok, %{source: :built_in}} = VisionCore.Calibration.in_use(config, "hq")
+    end
+
+    test "answers 409 for the calibration in force without a built-in calibration to return to",
+         %{conn: conn, config: config, tmp_dir: tmp_dir} do
+      saved = keep(config, 580.8)
+      File.rm!(Path.join(tmp_dir, "hq.yaml"))
+
+      assert %{"errors" => [%{"status" => "409", "title" => "In force", "detail" => detail}]} =
                conn |> delete("/api/saved-calibrations/#{saved.id}") |> json_response(409)
 
-      assert conn |> delete("/api/saved-calibrations/999999") |> json_response(404)
+      assert detail =~ "no built-in calibration to return to"
       assert {:ok, _saved} = Library.fetch(saved.id)
+    end
+
+    test "answers 409 for the calibration in force while a calibration session runs",
+         %{conn: conn, config: config} do
+      saved = keep(config, 580.8)
+      {:ok, board} = VisionCore.Calibration.Board.new(8, 6, 0.025)
+      :ok = VisionCore.Calibration.Session.start("hq", board)
+
+      assert %{"errors" => [%{"status" => "409", "title" => "Not deleted"}]} =
+               conn |> delete("/api/saved-calibrations/#{saved.id}") |> json_response(409)
+
+      assert {:ok, _saved} = Library.fetch(saved.id)
+    end
+
+    test "answers 500 when the unit cannot return to its built-in calibration, keeping the one in force",
+         %{conn: conn, config: config, tmp_dir: tmp_dir} do
+      saved = keep(config, 580.8)
+      store = Path.join(tmp_dir, "camera_store")
+      File.chmod!(store, 0o500)
+      on_exit(fn -> File.chmod(store, 0o700) end)
+
+      assert %{"errors" => [%{"status" => "500", "detail" => "cannot remove " <> _reason}]} =
+               conn |> delete("/api/saved-calibrations/#{saved.id}") |> json_response(500)
+
+      assert {:ok, _saved} = Library.fetch(saved.id)
+      assert {:ok, %{source: :stored}} = VisionCore.Calibration.in_use(config, "hq")
+    end
+
+    test "answers 404 for one not kept", %{conn: conn} do
+      assert conn |> delete("/api/saved-calibrations/999999") |> json_response(404)
     end
   end
 

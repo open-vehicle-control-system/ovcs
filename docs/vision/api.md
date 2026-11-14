@@ -523,7 +523,7 @@ The unit keeps every calibration it was given, as `saved-calibrations`, each wit
 | `GET /api/saved-calibrations` | Lists them, the one kept last first within each calibration; `filter[calibration]=<id>` keeps one calibration's, and lists none for an id that is no calibration's. | 200 | 400 for any other `filter`, named in `source.parameter` |
 | `GET /api/saved-calibrations/:id` | Reads one. | 200 | 404 for one the unit does not keep |
 | `PATCH /api/saved-calibrations/:id` | Names it, from `data.attributes.name`, 1 to 80 characters once trimmed. | 200 | 400 without a name, 409 for another type or id, 422 for a name out of bounds, 404 |
-| `DELETE /api/saved-calibrations/:id` | Removes it. | 204 | 409 for the calibration in force, 404 |
+| `DELETE /api/saved-calibrations/:id` | Removes it. The calibration in force is removed once the unit has returned to its built-in calibration, as a reset does. | 204 | 409 for the calibration in force while a calibration session runs, or without a built-in calibration to return to, 404, 500 when the unit does not return to the built-in calibration, the one in force kept |
 | `POST /api/calibration-selections` | Puts the one its `savedCalibration` relationship names back in force, answering once the unit has taken it. | 201 | 400 without the relationship, 403 with a client id, 404 for one the unit does not keep, 409 for another `data.type` or while a calibration session runs, 422 when the unit refuses its files, 500 when the selection fails |
 
 An id is the number the unit gave, written as the unit writes it: `007` or `+7` is a 404. Each of these routes answers a 503 titled `Saved calibrations unavailable` while the unit cannot reach its database.
@@ -552,7 +552,9 @@ An id is the number the unit gave, written as the unit writes it: `007` or `+7` 
           "cx": 364.6,
           "cy": 298.6,
           "distortion": [-0.4783, 0.2121, -0.0003, 0.0013, 0.0],
-          "rmsPx": 0.21
+          "rmsPx": 0.21,
+          "file": "stereo_left.yaml",
+          "yaml": "image_width: 728\nimage_height: 544\ncamera_name: stereo_left\n…"
         }
       ]
     },
@@ -563,7 +565,7 @@ An id is the number the unit gave, written as the unit writes it: `007` or `+7` 
 }
 ```
 
-`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A selection is created with:
+`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. Each camera has the `file` name to save its `yaml` under, named as the calibration in use's. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A selection is created with:
 
 ```json
 {

@@ -46,8 +46,9 @@ export async function renameSaved(id, name) {
   return toSaved((await request(`saved-calibrations/${id}`, { method: 'PATCH', body })).data)
 }
 
-/** Removes the saved calibration `id`, which the unit refuses for the one in force. */
-export const deleteSaved = (id) => request(`saved-calibrations/${id}`, { method: 'DELETE', answer: () => null })
+/** Removes the saved calibration `id`; the one in force once the unit has returned to the firmware's calibration. */
+export const deleteSaved = (id) =>
+  request(`saved-calibrations/${id}`, { method: 'DELETE', timeoutMs: TAKE_TIMEOUT_MS, answer: () => null })
 
 /** Puts the saved calibration `id` back in force. */
 export const selectSaved = (id) =>

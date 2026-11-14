@@ -266,13 +266,22 @@ describe('CalibrationPage', () => {
       stereoRmsPx: 0.34,
       baselineM: 0.198,
       cameras: [
-        { name: 'left', rmsPx: 0.21 },
-        { name: 'right', rmsPx: 0.3 }
+        { name: 'left', rmsPx: 0.21, file: 'ovcs_mini_left.yaml', yaml: 'left kept' },
+        { name: 'right', rmsPx: 0.3, file: 'ovcs_mini_right.yaml', yaml: 'right kept' }
       ],
       ...attributes
     })
 
-    const found = kept({ id: '3', name: 'Bench', origin: 'imported', stereoRmsPx: null, cameras: [{ name: 'left', rmsPx: null }, { name: 'right', rmsPx: null }] })
+    const found = kept({
+      id: '3',
+      name: 'Bench',
+      origin: 'imported',
+      stereoRmsPx: null,
+      cameras: [
+        { name: 'left', rmsPx: null, file: 'ovcs_mini_left.yaml', yaml: 'left found' },
+        { name: 'right', rmsPx: null, file: 'ovcs_mini_right.yaml', yaml: 'right found' }
+      ]
+    })
 
     it('reads the list of the calibration shown', () => {
       show({ inUse: stored, session: session() })
@@ -290,26 +299,86 @@ describe('CalibrationPage', () => {
       expect(first.textContent).toContain('left 0.21 px, right 0.30 px, pair 0.34 px')
       expect(first.textContent).toContain('198.0 mm')
       expect(within(first).getByText('In use')).toBeTruthy()
-      expect(within(first).queryByRole('button', { name: /^(Use|Delete) / })).toBeNull()
+      expect(within(first).queryByRole('button', { name: /^Use / })).toBeNull()
 
       const second = row(/Bench/)
-      expect(second.textContent).toContain('Found on the unit')
+      expect(second.textContent).toContain('Made outside this page')
+      expect(second.textContent).not.toContain('Found on the unit')
       expect(second.textContent).toContain('–')
       expect(within(second).queryByText('In use')).toBeNull()
     })
 
-    it('puts another calibration in use, and deletes one once confirmed', () => {
-      const confirm = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true)
+    // Answers the question the page asks with its button `choice`, and gives what it asked.
+    const answer = async (choice) => {
+      const dialog = screen.getByRole('alertdialog')
+      const question = dialog.textContent
+      await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: choice })))
+      return question
+    }
+
+    it('puts another calibration in use, and deletes one once confirmed in its own dialog', async () => {
+      const confirm = vi.spyOn(window, 'confirm')
       show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
 
       fireEvent.click(button('Use Bench'))
       expect(actions.useSaved).toHaveBeenCalledWith('3')
 
       fireEvent.click(button('Delete Bench'))
+      expect(await answer('Cancel')).toContain('Delete the calibration "Bench"?')
       expect(actions.deleteSaved).not.toHaveBeenCalled()
+
       fireEvent.click(button('Delete Bench'))
-      expect(confirm).toHaveBeenCalledTimes(2)
+      expect(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }).className).toContain('text-ovcs-error-text')
+      await answer('Delete')
       expect(actions.deleteSaved).toHaveBeenCalledWith('3')
+      expect(confirm).not.toHaveBeenCalled()
+    })
+
+    it('explains where a calibration was made beside the column that says it', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [found] }, session: session() })
+
+      const header = within(keptCard()).getByRole('columnheader', { name: /^Made/ })
+      fireEvent.focus(within(header).getByRole('button', { name: 'About Where it was made' }))
+
+      const card = screen.getByRole('tooltip')
+      expect(card.textContent).toContain('Made on this page')
+      expect(card.textContent).toContain('cameracalibrator')
+    })
+
+    it('downloads the YAML files of every calibration kept, the one in use included', () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      fireEvent.click(button('Download 2026-11-14 00:28'))
+      expect(downloadYaml.mock.calls).toEqual([
+        ['ovcs_mini_left.yaml', 'left kept'],
+        ['ovcs_mini_right.yaml', 'right kept']
+      ])
+
+      downloadYaml.mockClear()
+      fireEvent.click(button('Download Bench'))
+      expect(downloadYaml.mock.calls).toEqual([
+        ['ovcs_mini_left.yaml', 'left found'],
+        ['ovcs_mini_right.yaml', 'right found']
+      ])
+      expect(within(row(/Shipped with the firmware/)).queryByRole('button', { name: /^(Download|Delete)/ })).toBeNull()
+    })
+
+    it("deletes the calibration in use once confirmed, saying the unit goes back to the firmware's calibration", async () => {
+      show({ inUse: stored, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      fireEvent.click(button('Delete 2026-11-14 00:28'))
+
+      expect(await answer('Delete')).toContain('goes back to the calibration shipped with the firmware')
+      expect(actions.deleteSaved).toHaveBeenCalledWith('7')
+    })
+
+    it('keeps Delete off the calibration in use on a unit with no firmware calibration to go back to, saying why', () => {
+      show({ inUse: { ...stored, canReset: false }, closed: true, saved: { ovcs_mini: [kept({ inForce: true }), found] }, session: session() })
+
+      const remove = button('Delete 2026-11-14 00:28')
+      expect(remove.disabled).toBe(true)
+      expect(remove.title).toBe('The unit has no calibration shipped with the firmware to go back to')
+      expect(button('Delete Bench').disabled).toBe(false)
     })
 
     it('renames a calibration in place, and leaves it on Escape or an unchanged name', () => {
