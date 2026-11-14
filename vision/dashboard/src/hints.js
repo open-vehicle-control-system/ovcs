@@ -131,7 +131,7 @@ export const HINTS = {
     title: 'No distances',
     text:
       'The detections and segmentation on this camera take their distances from the stereo depth, which needs the ' +
-      'camera’s calibration and its pose: where it sits relative to the stereo pair. Calibrate it from its ' +
-      'Calibration page, and measure its pose as docs/vision/cameras.md says, under Measure the pose.'
+      'camera’s calibration and its pose: where it sits relative to the stereo pair. Calibrate it, then measure its ' +
+      'position, from the menu’s Calibration section.'
   }
 }

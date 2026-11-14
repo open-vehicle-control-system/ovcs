@@ -205,10 +205,13 @@ const NO_DISTANCES = {
   unreadable_pose: (camera) => `the ${camera} camera's pose file cannot be read`
 }
 
-/** Why the pipelines on `camera` have no distance, one line per reason the status gives; none while they have. */
+/**
+ * Why the pipelines on `camera` have no distance, one line per reason the status gives, each with its `reason` and its
+ * `text`; none while they have.
+ */
 export function distanceGaps(status, camera) {
   const reasons = Object.values(status?.distances ?? {})
     .filter((pipeline) => pipeline.camera === camera && !pipeline.available)
     .map((pipeline) => pipeline.reason)
-  return [...new Set(reasons)].map((reason) => `No distances: ${NO_DISTANCES[reason]?.(camera) ?? reason}`)
+  return [...new Set(reasons)].map((reason) => ({ reason, text: `No distances: ${NO_DISTANCES[reason]?.(camera) ?? reason}` }))
 }

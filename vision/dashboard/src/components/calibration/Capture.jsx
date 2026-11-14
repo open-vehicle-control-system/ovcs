@@ -87,14 +87,17 @@ function Field({ id, field, value, onChange }) {
 
 /**
  * The board to look for, in inner corners, drawn as entered so that it can be checked against the printed one, and
- * remembered in this browser; Start begins capturing.
+ * remembered in this browser; Start begins capturing. A camera's position warns of a board that looks the same after
+ * a half turn.
  */
 export function BoardForm() {
   const id = useId()
   const [fields, setFields] = useState(() => asFields(loadBoard()))
   const busy = useCalibration((state) => state.busy)
   const start = useCalibration((state) => state.start)
+  const pose = useCalibration((state) => selectedCalibration(state)?.kind === 'pose')
   const board = boardOf(fields)
+  const symmetric = board != null && board.columns % 2 === board.rows % 2
   const [columns, rows, squareMm] = FIELDS
   const field = (description) => (
     <Field
@@ -155,6 +158,11 @@ export function BoardForm() {
           {BOARD_RULE}
         </p>
       )}
+      {pose && symmetric ? (
+        <p className="ovcs-status ovcs-status--warn max-w-prose text-sm text-ovcs-warn-text">
+          {`A board of ${board.columns} × ${board.rows} inner corners looks the same after a half turn: two cameras turned far apart may number its corners differently, which gives a wrong position. Use one odd and one even count, such as 9 × 6.`}
+        </p>
+      ) : null}
     </Flow>
   )
 }
@@ -175,9 +183,21 @@ function BoardHint() {
 // The names of the cameras being calibrated, as one string so that a push changing none does not render again.
 const cameraNames = (state) => (selectedCalibration(state)?.cameras ?? []).map((camera) => camera.name).join(',')
 
+// A position's views pair frames up to half a stereo pair period apart, and its board stays where both cameras see it.
+const POSE_CAPTURE =
+  'Hold the board still where both cameras see it whole, then move it to the next place, until the four gauges are full or 40 views are kept.'
+
+function captureText(pose, cameras) {
+  if (pose) return POSE_CAPTURE
+  return cameras > 1
+    ? 'Move the board slowly, whole in both images, until the four gauges are full.'
+    : 'Move the board slowly, whole in the image, until the four gauges are full.'
+}
+
 /** Each camera with the board corners found, the samples' coverage, then Calibrate once it is good enough. */
 export function Capturing({ socket }) {
   const cameras = useCalibration(cameraNames).split(',').filter(Boolean)
+  const pose = useCalibration((state) => selectedCalibration(state)?.kind === 'pose')
   const goodEnough = useCalibration((state) => state.session?.goodEnough === true)
   const busy = useCalibration((state) => state.busy)
   const solve = useCalibration((state) => state.solve)
@@ -186,10 +206,7 @@ export function Capturing({ socket }) {
   return (
     <Flow step={1}>
       <p className="max-w-prose text-sm text-ovcs-muted">
-        {cameras.length > 1
-          ? 'Move the board slowly, whole in both images, until the four gauges are full.'
-          : 'Move the board slowly, whole in the image, until the four gauges are full.'}{' '}
-        A view is kept each time the board is found somewhere new.
+        {captureText(pose, cameras.length)} A view is kept each time the board is found somewhere new.
       </p>
       <BoardHint />
       <SessionError />

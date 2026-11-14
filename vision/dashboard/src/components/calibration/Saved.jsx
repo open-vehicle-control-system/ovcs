@@ -20,8 +20,9 @@ const stamp = (iso) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium',
 
 const NONE = []
 
-// The reprojection errors of the solve that made a calibration, each camera's then the pair's; none for one made outside this page.
-function errors({ cameras, stereoRmsPx }) {
+// The reprojection errors of the solve that made a calibration, each camera's then the pair's, or a position's; none for one made outside this page.
+function errors({ cameras, stereoRmsPx, pose }) {
+  if (pose) return pose.rmsPx == null ? '–' : `${formatNumber(pose.rmsPx, 2)} px`
   const each = cameras.filter((camera) => camera.rmsPx != null).map((camera) => `${camera.name} ${formatNumber(camera.rmsPx, 2)} px`)
   if (stereoRmsPx != null) each.push(`pair ${formatNumber(stereoRmsPx, 2)} px`)
   return each.length > 0 ? each.join(', ') : '–'
@@ -137,6 +138,12 @@ const deleteQuestion = ({ name, inForce }) => ({
 
 const NO_FIRMWARE = 'The unit has no calibration shipped with the firmware to go back to'
 
+// A pair's baseline, or the distance from a camera to the left camera; nothing for a camera's own calibration.
+function distance(kept, pair) {
+  if (pair) return millimetres(kept.baselineM)
+  return kept.pose ? `${formatNumber(kept.pose.distanceMm)} mm` : ''
+}
+
 /** A kept calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. */
 function Row({ kept, pair, busy, firmware }) {
   const noWayBack = kept.inForce && !firmware
@@ -149,8 +156,11 @@ function Row({ kept, pair, busy, firmware }) {
   }
 
   const download = () => {
-    for (const camera of kept.cameras) downloadYaml(camera.file, camera.yaml)
+    if (kept.pose) downloadYaml(kept.pose.file, kept.pose.yaml)
+    else for (const camera of kept.cameras) downloadYaml(camera.file, camera.yaml)
   }
+
+  const downloadable = kept.pose ? kept.pose.yaml : kept.cameras.every((camera) => camera.yaml)
 
   return (
     <tr>
@@ -162,7 +172,7 @@ function Row({ kept, pair, busy, firmware }) {
         <span className="block text-xs">{ORIGINS[kept.origin] ?? kept.origin}</span>
       </td>
       <td className={`${CELL} tabular-nums`}>{errors(kept)}</td>
-      <td className={`${CELL} tabular-nums`}>{pair ? millimetres(kept.baselineM) : ''}</td>
+      <td className={`${CELL} tabular-nums`}>{distance(kept, pair)}</td>
       <td className={`${CELL} pr-0`}>
         <div className="flex flex-wrap items-center justify-end gap-2">
           {kept.inForce ? (
@@ -172,7 +182,7 @@ function Row({ kept, pair, busy, firmware }) {
               Use
             </button>
           )}
-          {kept.cameras.every((camera) => camera.yaml) ? (
+          {downloadable ? (
             <button type="button" aria-label={`Download ${kept.name}`} onClick={download} className={BUTTON}>
               Download
             </button>
@@ -207,6 +217,7 @@ export default function Saved() {
   if (!calibration) return null
 
   const pair = calibration.kind === 'stereo'
+  const distanceHeading = pair ? 'Distance between cameras (baseline)' : calibration.kind === 'pose' ? 'Distance to the left camera' : ''
   const firmware = calibration.source === 'builtIn' || calibration.canReset
 
   return (
@@ -226,7 +237,7 @@ export default function Saved() {
                   </span>
                 </th>
                 <th className="pb-1 pr-4 font-medium">Errors (reprojection RMS)</th>
-                <th className="pb-1 pr-4 font-medium">{pair ? 'Distance between cameras (baseline)' : ''}</th>
+                <th className="pb-1 pr-4 font-medium">{distanceHeading}</th>
                 <th className="pb-1 font-medium">
                   <span className="sr-only">Actions</span>
                 </th>

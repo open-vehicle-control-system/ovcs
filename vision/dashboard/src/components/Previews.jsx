@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
 import Preview from './Preview.jsx'
-import { OvcsStatus } from '@ovcs/ui/react'
+import { OvcsStatus, focusClass as FOCUS } from '@ovcs/ui/react'
 import { HealthValue } from './UnitStatus.jsx'
 import PairStatus from './PairStatus.jsx'
 import DepthRange from './DepthRange.jsx'
@@ -8,6 +8,9 @@ import DetectionOverlay from './DetectionOverlay.jsx'
 import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
 import { useApiOutputs } from '../stores/exporters.js'
+import { useCalibration } from '../stores/calibration.js'
+import { useNavigation } from '../stores/navigation.js'
+import { poseId } from '../services/calibration.js'
 import { setDepthRange } from '../services/unit.js'
 import {
   SEGMENTATION,
@@ -226,6 +229,8 @@ function CameraPreview({ name, status, socket, beside, video }) {
   const figures = [...(status?.cameras?.[name] ? cameraFigures(status.cameras[name]) : []), ...objectFigures(detections)]
   const overlay = (captureUs) => [...grids(captureUs), ...boxes(captureUs)]
   const gaps = distanceGaps(status, name)
+  const measurable = useCalibration((state) => state.targets.some((target) => target.id === poseId(name)))
+  const openCalibration = useNavigation((state) => state.openCalibration)
 
   return (
     <Preview stream={name} socket={socket} video={video} overlay={overlay} aside={legends} {...rowLayout(beside)}>
@@ -233,9 +238,22 @@ function CameraPreview({ name, status, socket, beside, video }) {
       {gaps.length > 0 ? (
         <div className="flex items-start gap-1">
           <div className="flex flex-col">
-            {gaps.map((gap) => (
-              <p key={gap} data-distances className="text-xs text-ovcs-muted">
-                {gap}
+            {gaps.map(({ reason, text }) => (
+              <p key={reason} data-distances className="text-xs text-ovcs-muted">
+                {text}
+                {reason === 'no_pose' && measurable ? (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      aria-label={`Measure the ${name} camera's position`}
+                      onClick={() => openCalibration(poseId(name))}
+                      className={`rounded underline hover:text-ovcs-text ${FOCUS}`}
+                    >
+                      Measure it
+                    </button>
+                  </>
+                ) : null}
               </p>
             ))}
           </div>

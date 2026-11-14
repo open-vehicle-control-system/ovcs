@@ -22,9 +22,17 @@ export async function fetchCalibrations() {
   return document.data.map((resource) => ({ id: resource.id, kind: resource.attributes.kind }))
 }
 
+const capitalised = (name) => `${name.charAt(0).toUpperCase()}${name.slice(1)}`
+
+/** The id of the calibration that measures the camera `name`'s position relative to the stereo pair. */
+export const poseId = (name) => `${name}-pose`
+
 /** The name a calibration goes by in the menu and on its page. */
-export const calibrationName = ({ id, kind }) =>
-  kind === 'stereo' ? 'Stereo cameras' : `${id.charAt(0).toUpperCase()}${id.slice(1)} camera`
+export function calibrationName({ id, kind }) {
+  if (kind === 'stereo') return 'Stereo cameras'
+  if (kind === 'pose') return `${capitalised(id.slice(0, -poseId('').length))} camera position`
+  return `${capitalised(id)} camera`
+}
 
 export const startSession = (calibration, board) => act('calibration-sessions', { attributes: { board }, calibration })
 export const cancelSession = () => act('calibration-cancels')
