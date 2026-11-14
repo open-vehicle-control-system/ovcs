@@ -16,6 +16,7 @@ defmodule VisionApiWeb.BoardControllerTest do
                  "interfaces" => interfaces,
                  "cpuPercent" => cpu_percent,
                  "loadAverage" => [_, _, _],
+                 "memoryPercent" => memory_percent,
                  "time" => time,
                  "clockSynchronized" => nil
                }
@@ -24,6 +25,7 @@ defmodule VisionApiWeb.BoardControllerTest do
 
     assert is_list(interfaces)
     assert is_number(cpu_percent)
+    assert is_number(memory_percent)
     assert {:ok, _time, 0} = DateTime.from_iso8601(time)
   end
 
@@ -32,6 +34,7 @@ defmodule VisionApiWeb.BoardControllerTest do
       interfaces: [%{name: "eth0", addresses: ["192.168.10.232"]}],
       cpu_percent: 23.4,
       load_average: [0.52, 0.48, 0.4],
+      memory_percent: 62.5,
       time: ~U[2026-11-11 14:53:12Z],
       synchronized: false
     }
@@ -44,6 +47,7 @@ defmodule VisionApiWeb.BoardControllerTest do
                  interfaces: [%{name: "eth0", addresses: ["192.168.10.232"]}],
                  cpuPercent: 23.4,
                  loadAverage: [0.52, 0.48, 0.4],
+                 memoryPercent: 62.5,
                  time: "2026-11-11T14:53:12Z",
                  clockSynchronized: false
                }

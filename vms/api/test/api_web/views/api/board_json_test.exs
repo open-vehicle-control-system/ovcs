@@ -8,6 +8,7 @@ defmodule VmsApiWeb.Api.BoardJSONTest do
       interfaces: [%{name: "eth0", addresses: ["192.168.1.20"]}],
       cpu_percent: 23.4,
       load_average: [0.52, 0.48, 0.4],
+      memory_percent: 62.5,
       time: ~U[2026-11-11 14:53:12Z],
       synchronized: true
     }
@@ -20,6 +21,7 @@ defmodule VmsApiWeb.Api.BoardJSONTest do
                  interfaces: [%{name: "eth0", addresses: ["192.168.1.20"]}],
                  cpuPercent: 23.4,
                  loadAverage: [0.52, 0.48, 0.4],
+                 memoryPercent: 62.5,
                  time: "2026-11-11T14:53:12Z",
                  clockSynchronized: true
                }

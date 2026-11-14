@@ -4,7 +4,8 @@ defmodule OvcsVehicle.BoardStatus do
   dashboard's top bar shows them: every network interface with a device
   that is up and running, with its addresses, IPv6 link-local ones left
   out, its load, the CPU's busy share over a half-second sample and the 1,
-  5 and 15 minute load averages (`OvcsVehicle.SystemLoad`), and the
+  5 and 15 minute load averages and the share of its memory in use
+  (`OvcsVehicle.SystemLoad`), and the
   clock's UTC time with whether NTP synchronized it
   (`NervesTime.synchronized?/0`). A host, without NervesTime, reports no
   synchronization, `nil`.
@@ -12,14 +13,14 @@ defmodule OvcsVehicle.BoardStatus do
   An interface without a device in `/sys/class/net`, such as loopback, a
   container bridge or a tunnel, is left out.
 
-  Options, for tests: `:getifaddrs`, `:cpu_times`, `:loadavg`, `:now` and
+  Options, for tests: `:getifaddrs`, `:cpu_times`, `:loadavg`, `:meminfo`, `:now` and
   `:synchronized?`, functions of no argument, `:device?`, a function of an
   interface's name, and `:sleep`, of the sample's milliseconds.
   """
 
   alias OvcsVehicle.SystemLoad
 
-  @enforce_keys [:interfaces, :cpu_percent, :load_average, :time, :synchronized]
+  @enforce_keys [:interfaces, :cpu_percent, :load_average, :memory_percent, :time, :synchronized]
   defstruct @enforce_keys
 
   @type interface :: %{name: String.t(), addresses: [String.t()]}
@@ -27,6 +28,7 @@ defmodule OvcsVehicle.BoardStatus do
           interfaces: [interface()],
           cpu_percent: float() | nil,
           load_average: [float()] | nil,
+          memory_percent: float() | nil,
           time: DateTime.t(),
           synchronized: boolean() | nil
         }
@@ -47,11 +49,13 @@ defmodule OvcsVehicle.BoardStatus do
     cpu_times = Keyword.get(opts, :cpu_times, &SystemLoad.cpu_times/0)
     sleep = Keyword.get(opts, :sleep, &Process.sleep/1)
     loadavg = Keyword.get(opts, :loadavg, fn -> read("/proc/loadavg") end)
+    meminfo = Keyword.get(opts, :meminfo, fn -> read("/proc/meminfo") end)
 
     %__MODULE__{
       interfaces: interfaces(getifaddrs.(), device?),
       cpu_percent: cpu_percent(cpu_times, sleep),
       load_average: load_average(loadavg.()),
+      memory_percent: memory_percent(meminfo.()),
       time: DateTime.truncate(now.(), :second),
       synchronized: synchronized?.()
     }
@@ -81,6 +85,15 @@ defmodule OvcsVehicle.BoardStatus do
 
   defp load_average(nil), do: nil
   defp load_average(loadavg), do: SystemLoad.parse_loadavg(loadavg)
+
+  defp memory_percent(nil), do: nil
+
+  defp memory_percent(meminfo) do
+    case SystemLoad.parse_meminfo(meminfo) do
+      nil -> nil
+      percent -> Float.round(percent, 1)
+    end
+  end
 
   defp read(path) do
     case File.read(path) do
