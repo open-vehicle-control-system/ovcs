@@ -127,6 +127,62 @@ defmodule VisionCore.Stereo.PairerTest do
     assert_in_delta offset_ms, 0.2, 1.0e-9
   end
 
+  describe "latencies/1" do
+    # A clock the test sets, read by the pairer in place of the monotonic one.
+    defp start_clock(now_ms) do
+      clock = start_supervised!({Agent, fn -> now_ms * 1_000_000 end})
+      {clock, fn -> Agent.get(clock, & &1) end}
+    end
+
+    defp set_clock(clock, now_ms), do: Agent.update(clock, fn _now_ns -> now_ms * 1_000_000 end)
+
+    defp start_timed_pairer(now_ns) do
+      start_supervised!(
+        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
+      )
+    end
+
+    defp publish(label, capture_time_ms),
+      do:
+        Outputs.publish(
+          {:camera_frame, Camera.name_for(label)},
+          {:camera_frame, frame(label, capture_time_ms)}
+        )
+
+    test "measures each frame from its capture to its arrival, and each pair's wait to be submitted" do
+      {clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      publish("left", 996)
+      Pairer.sync(pairer)
+      set_clock(clock, 1_002)
+      publish("right", 996)
+      Pairer.sync(pairer)
+
+      assert_received {:"$gen_cast", {:submit, %Frame{}, %Frame{}, _pairer}}
+      assert Pairer.latencies(pairer) == %{cameras: 5.0, pairing: 2.0}
+    end
+
+    test "starts over once asked" do
+      {_clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      for label <- ["left", "right"], do: publish(label, 990)
+      assert %{cameras: 10.0, pairing: +0.0} = Pairer.latencies(pairer)
+
+      assert Pairer.latencies(pairer) == %{cameras: nil, pairing: nil}
+    end
+
+    test "has no pairing wait while no pair is submitted" do
+      {_clock, now_ns} = start_clock(1_000)
+      pairer = start_timed_pairer(now_ns)
+
+      publish("left", 997)
+
+      assert Pairer.latencies(pairer) == %{cameras: 3.0, pairing: nil}
+    end
+  end
+
   test "nothing to pair until both sides have a frame" do
     assert Pairer.ready_pair(state([0], [], 5)) == :not_ready
     assert Pairer.ready_pair(state([], [0], 5)) == :not_ready
