@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
 /**
- * The board `fetchBoard` answers, for the `OvcsTopBar`: read while `connected`, then every `intervalMs`, with the
- * `offsetMs` of its clock from this browser's at the read, so its clock keeps time between reads; `null` until first
- * read, and again once disconnected, as its clock and load are then unknown. A failed read keeps what it had.
+ * The board `fetchBoard` answers, for the `OvcsTopBar`: read while `connected`, then again `intervalMs` after each
+ * read ended, so never two at once, with the `offsetMs` of its clock from this browser's at the read, so its clock
+ * keeps time between reads; `null` until first read, and again once disconnected, as its clock and load are then
+ * unknown. A failed read keeps what it had.
  */
 export function useOvcsBoard(fetchBoard, connected, intervalMs = 10_000) {
   const [board, setBoard] = useState(null)
@@ -14,18 +15,20 @@ export function useOvcsBoard(fetchBoard, connected, intervalMs = 10_000) {
       return undefined
     }
     let live = true
-    const read = () =>
-      fetchBoard().then(
-        (next) => {
-          if (live) setBoard({ ...next, offsetMs: Date.parse(next.time) - Date.now() })
-        },
-        () => {}
-      )
+    let timer = null
+    const read = async () => {
+      try {
+        const next = await fetchBoard()
+        if (live) setBoard({ ...next, offsetMs: Date.parse(next.time) - Date.now() })
+      } catch {
+        // The board shown stays; the next read may answer.
+      }
+      if (live) timer = setTimeout(read, intervalMs)
+    }
     read()
-    const timer = setInterval(read, intervalMs)
     return () => {
       live = false
-      clearInterval(timer)
+      clearTimeout(timer)
     }
   }, [fetchBoard, connected, intervalMs])
 

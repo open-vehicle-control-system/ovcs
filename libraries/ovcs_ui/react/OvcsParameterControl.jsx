@@ -1,8 +1,8 @@
-import { useId, useRef, useState } from 'react'
+import { useId, useState } from 'react'
+import { useOvcsRangeEdit } from './rangeEdit.js'
 import { FOCUS } from './styles.js'
 
 const BUTTON = `min-h-8 rounded border border-ovcs-border px-2 text-sm enabled:hover:border-ovcs-accent disabled:cursor-not-allowed disabled:opacity-50 ${FOCUS}`
-const KEYS_THAT_STEP = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End'])
 const STATE_LABELS = { builtin: 'built-in', saved: 'saved' }
 
 /** Rounds away floating-point noise from sums of steps. */
@@ -92,39 +92,11 @@ function ValueField({ parameter, shown, bounds, label, onChange }) {
   )
 }
 
-/** A slider and its number; a drag or key press is committed once, when released. */
+/** A slider and its number; a drag or key press is committed once, when released (`useOvcsRangeEdit`). */
 function RangeControl({ parameter, bounds, labelId, name, onChange, onEditStart, onEditEnd }) {
-  const [draft, setDraft] = useState(null)
-  const draftRef = useRef(null)
-  const editing = useRef(false)
+  const { draft, change, handlers } = useOvcsRangeEdit({ value: parameter.value, onCommit: onChange, onEditStart, onEditEnd, same: sameValue })
   const disabled = parameter.value == null
   const shown = draft ?? parameter.value
-
-  const begin = () => {
-    if (editing.current) return
-    editing.current = true
-    onEditStart?.()
-  }
-
-  const finish = () => {
-    if (!editing.current) return
-    editing.current = false
-    const value = draftRef.current
-    draftRef.current = null
-    setDraft(null)
-    if (value !== null && !sameValue(value, parameter.value)) onChange(value)
-    onEditEnd?.()
-  }
-
-  const move = (event) => {
-    const value = Number(event.target.value)
-    if (!editing.current) {
-      if (!sameValue(value, parameter.value)) onChange(value)
-      return
-    }
-    draftRef.current = value
-    setDraft(value)
-  }
 
   return (
     <div className="flex items-center gap-3">
@@ -136,19 +108,8 @@ function RangeControl({ parameter, bounds, labelId, name, onChange, onEditStart,
         step={rangeStep(parameter)}
         value={disabled ? bounds.min : shown}
         disabled={disabled}
-        onPointerDown={(event) => {
-          event.currentTarget.setPointerCapture?.(event.pointerId)
-          begin()
-        }}
-        onPointerUp={finish}
-        onPointerCancel={finish}
-        onLostPointerCapture={finish}
-        onKeyDown={(event) => {
-          if (KEYS_THAT_STEP.has(event.key)) begin()
-        }}
-        onKeyUp={finish}
-        onBlur={finish}
-        onChange={move}
+        {...handlers}
+        onChange={(event) => change(Number(event.target.value))}
         className={`h-6 min-w-0 flex-1 accent-ovcs-accent disabled:opacity-50 ${FOCUS}`}
       />
       <ValueField parameter={parameter} shown={shown} bounds={bounds} label={`${name} value`} onChange={onChange} />
