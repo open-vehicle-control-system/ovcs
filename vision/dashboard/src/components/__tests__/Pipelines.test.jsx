@@ -84,19 +84,45 @@ describe('Pipelines', () => {
     expect(figure('Stereo', /^Cameras/)).toBeNull()
   })
 
-  it('shows the one time of steps computed together once, on the first of them, with the steps it covers', () => {
-    useStatus.setState({
-      snapshot: {
-        npu: null,
-        pipelines: { stereo: { totalMs: 28.04, stages: {}, segments: [{ stages: ['match', 'alignment', 'temporal'], ms: 28.04 }] } }
-      }
-    })
+  const segmented = (segment, stages = {}) =>
+    useStatus.setState({ snapshot: { npu: null, pipelines: { stereo: { totalMs: 28.04, stages, segments: [segment] } } } })
+
+  it('shows no time on steps computed together, and says under the heading which steps run as one pass', () => {
+    segmented({ stages: ['match', 'alignment', 'temporal'], ms: 28.04 })
     render(<Pipelines />)
 
-    expect(figure('Stereo', /^Match/)).toBe('28.0 ms for steps 2 to 4')
-    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toContain('28.0 ms for steps 2 to 4')
+    expect(figure('Stereo', /^Match/)).toBeNull()
     expect(figure('Stereo', /^Alignment/)).toBeNull()
     expect(figure('Stereo', /^Temporal/)).toBeNull()
+    expect(screen.getByRole('button', { name: /^Match/ }).getAttribute('aria-label')).toBe('Match, on GPU, Elixir Nx, Vulkan')
+
+    const heading = screen.getByRole('heading', { name: 'Stereo 28.0 ms' })
+    const line = screen.getByText('Steps 2–4 run as one GPU pass')
+    expect(heading.contains(line)).toBe(false)
+    expect(heading.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line.compareDocumentPosition(screen.getByRole('list', { name: 'Stereo' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(line.className).toContain('text-ovcs-muted')
+  })
+
+  it('names where steps computed together run from their own tags, and nothing without any', () => {
+    const onCpu = { runsOn: 'cpu', implementation: 'nx', backend: 'llvm_cpu' }
+    useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: onCpu } : g)) })
+    segmented({ stages: ['match', 'alignment'], ms: 28.04 })
+    const { unmount } = render(<Pipelines />)
+    expect(screen.getByText('Steps 2–3 run as one CPU pass')).toBeTruthy()
+    unmount()
+
+    useParameters.setState({ groups: groups.map((g) => (g.id === 'stereo.match' ? { ...g, compute: undefined } : g)) })
+    render(<Pipelines />)
+    expect(screen.getByText('Steps 2–3 run as one pass')).toBeTruthy()
+  })
+
+  it('keeps the time of a run of one step on that step, which is timed alone', () => {
+    segmented({ stages: ['alignment', 'gone'], ms: 4.21 })
+    render(<Pipelines />)
+
+    expect(figure('Stereo', /^Alignment/)).toBe('4.2 ms')
+    expect(screen.queryByText(/run as one/)).toBeNull()
   })
 
   it("shows the accelerator's own time beside an Inference step's time", () => {

@@ -6,7 +6,7 @@ import { STATUS_STYLES, SUBSECTION_HEADING } from './menu.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useStatus } from '../stores/status.js'
 import { formatNumber } from '../status.js'
-import { computeTags } from '../compute.js'
+import { computeTags, runsOnTag } from '../compute.js'
 
 function accessibleName(group, unsaved, figure) {
   const parts = [group.name]
@@ -23,18 +23,23 @@ const milliseconds = (ms) => `${formatNumber(ms)} ms`
 // A step's name in its pipeline's times: the last segment of its id.
 const stageName = (group) => group.id.slice(group.id.lastIndexOf('.') + 1)
 
-// The time of the steps computed together that `stage` is the first of, with the numbers of the steps it covers.
-function segmentTime(times, stage, steps) {
-  const segment = times?.segments?.find((candidate) => candidate.stages[0] === stage)
-  if (!segment) return null
-  const numbers = segment.stages.map((name) => steps.findIndex((step) => stageName(step) === name) + 1).filter((number) => number > 0)
-  const [first, last] = [numbers[0], numbers[numbers.length - 1]]
-  return last > first ? `${milliseconds(segment.ms)} for steps ${first} to ${last}` : milliseconds(segment.ms)
+// The numbers of the steps, among `steps`, that a run timed as one covers.
+const stepNumbers = (segment, steps) =>
+  segment.stages.map((name) => steps.findIndex((step) => stageName(step) === name) + 1).filter((number) => number > 0)
+
+// The time of a run timed as one whose only step among `steps` is `stage`, which is then a step timed alone.
+function aloneTime(times, stage, steps) {
+  const segment = times?.segments?.find((candidate) => {
+    const numbers = stepNumbers(candidate, steps)
+    return numbers.length === 1 && stageName(steps[numbers[0] - 1]) === stage
+  })
+  return segment ? milliseconds(segment.ms) : null
 }
 
 /**
  * What the unit status says of the time of `group`, a step of the pipeline whose steps are `steps`: its mean time per
- * pair or frame, then for an Inference step the time its accelerator took of it. A source has none.
+ * pair or frame, then for an Inference step the time its accelerator took of it. A source has none, nor has a step
+ * computed in one pass with others, whose time is theirs too.
  */
 function stageFigure(snapshot, group, steps) {
   if (group.role === 'source') return null
@@ -42,8 +47,31 @@ function stageFigure(snapshot, group, steps) {
   const stage = stageName(group)
   const own = times?.stages?.[stage]
   const accelerator = stage === 'inference' ? snapshot?.npu?.pipelines?.[group.pipeline]?.inferenceMs : null
-  const parts = [own == null ? segmentTime(times, stage, steps) : milliseconds(own), accelerator == null ? null : `NPU ${milliseconds(accelerator)}`]
+  const parts = [own == null ? aloneTime(times, stage, steps) : milliseconds(own), accelerator == null ? null : `NPU ${milliseconds(accelerator)}`]
   return parts.filter(Boolean).join(', ') || null
+}
+
+const NO_SEGMENTS = []
+
+/**
+ * One line for each run of the pipeline `name`'s `steps` computed in one pass, timed as one: which steps, and where
+ * they run when they all say the same.
+ */
+function OnePassSteps({ name, steps }) {
+  const segments = useStatus((state) => state.snapshot?.pipelines?.[name]?.segments ?? NO_SEGMENTS)
+  const lines = segments.flatMap((segment) => {
+    const numbers = stepNumbers(segment, steps)
+    if (numbers.length < 2) return []
+    const places = new Set(numbers.map((number) => runsOnTag(steps[number - 1].compute)).filter(Boolean))
+    const place = places.size === 1 ? `${[...places][0]} ` : ''
+    return [`Steps ${numbers[0]}–${numbers.at(-1)} run as one ${place}pass`]
+  })
+
+  return lines.map((line) => (
+    <p key={line} data-one-pass className="px-3 text-xs text-ovcs-muted">
+      {line}
+    </p>
+  ))
 }
 
 function GroupBox({ group, steps, unsaved, selected, onSelect }) {
@@ -177,6 +205,7 @@ export default function Pipelines() {
     <div className="flex flex-col gap-3">
       {pipelines.map(({ name, groups }) => (
         <Pipeline key={name} name={name}>
+          <OnePassSteps name={name} steps={groups} />
           <Steps name={name} groups={groups} selectedGroupId={selectedGroupId} box={box} />
         </Pipeline>
       ))}
