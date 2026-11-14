@@ -6,7 +6,8 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   While the contact is on, a generic controller's relay powers the
   inverter and the VMS frames it expects are emitted. Each tick turns the
   selected source's throttle request into a torque request, signed by the
-  selected gear and zero outside `:drive` and `:reverse`. Publishes the
+  selected gear, bounded by its configured maximum, and zero outside
+  `:drive` and `:reverse`. Publishes the
   motor rpm (unsigned, and `nil` above the EM57's rated 10,500, where
   the reading is invalid), requested and effective torque, output
   voltage, the inverter and motor temperatures, and `:ready_to_drive`.
@@ -27,11 +28,17 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
     * `:effective_throttle_threshold` — requests below it are zero,
       default 0.05.
   """
+  @moduledoc safety: :relevant
   use GenServer
   alias Cantastic.{Emitter, Frame, Receiver, Signal}
   alias Decimal, as: D
   alias OvcsBus, as: Bus
-  alias VmsCore.Components.{Nissan.FrameIntegrity, OVCS.GenericController}
+
+  alias VmsCore.Components.{
+    Nissan.FrameIntegrity,
+    Nissan.LeafAZE0.Inverter.Torque,
+    OVCS.GenericController
+  }
 
   @zero D.new(0)
   # The EM57's rated maximum; the inverter reports higher, invalid values at start.
@@ -236,20 +243,7 @@ defmodule VmsCore.Components.Nissan.LeafAZE0.Inverter do
   end
 
   defp apply_torque(state) do
-    max_torque =
-      case state.selected_gear do
-        :drive -> state.drive_max_torque_nm
-        :reverse -> D.negate(state.reverse_max_torque_nm)
-        _ -> @zero
-      end
-
-    requested_throttle =
-      case D.lt?(state.requested_throttle, state.effective_throttle_threshold) do
-        true -> @zero
-        false -> state.requested_throttle
-      end
-
-    requested_torque = D.mult(requested_throttle, max_torque)
+    requested_torque = Torque.request(state)
 
     :ok =
       Emitter.update(state.network, "vms_torque_request", fn emitter_data ->
