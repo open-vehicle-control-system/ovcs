@@ -1,0 +1,67 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 3599506483
+  starting_time:
+    nanoseconds_since_epoch: 1794692889512996946
+  message_count: 73
+  topics_with_message_count:
+    - topic_metadata:
+        name: /speed
+        type: std_msgs/msg/Float64
+        serialization_format: cdr
+        offered_qos_profiles:
+          - history: keep_last
+            depth: 10
+            reliability: reliable
+            durability: volatile
+            deadline:
+              sec: 9223372036
+              nsec: 854775807
+            lifespan:
+              sec: 9223372036
+              nsec: 854775807
+            liveliness: automatic
+            liveliness_lease_duration:
+              sec: 9223372036
+              nsec: 854775807
+            avoid_ros_namespace_conventions: false
+        type_description_hash: RIHS01_705ba9c3d1a09df43737eb67095534de36fd426c0587779bda2bc51fe790182a
+      message_count: 73
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - 0_split_bag_2026_11_14-21_48_09.mcap
+    - 1_split_bag_2026_11_14-21_48_10.mcap
+    - 2_split_bag_2026_11_14-21_48_11.mcap
+    - 3_split_bag_2026_11_14-21_48_12.mcap
+  files:
+    - path: 0_split_bag_2026_11_14-21_48_09.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1794692889512996946
+      duration:
+        nanoseconds: 950361547
+      message_count: 20
+    - path: 1_split_bag_2026_11_14-21_48_10.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1794692890513181802
+      duration:
+        nanoseconds: 999603203
+      message_count: 21
+    - path: 2_split_bag_2026_11_14-21_48_11.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1794692891563223602
+      duration:
+        nanoseconds: 999573162
+      message_count: 21
+    - path: 3_split_bag_2026_11_14-21_48_12.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1794692892612857691
+      duration:
+        nanoseconds: 499645738
+      message_count: 11
+  custom_data:
+    clock: since_start
+    preset: replay
+  ros_distro: lyrical

@@ -1,0 +1,23 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 0
+  starting_time:
+    nanoseconds_since_epoch: 9223372036854775807
+  message_count: 0
+  topics_with_message_count:
+    []
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - 0_empty_bag_2026_11_14-21_48_13.mcap
+  files:
+    - path: 0_empty_bag_2026_11_14-21_48_13.mcap
+      starting_time:
+        nanoseconds_since_epoch: 9223372036854775807
+      duration:
+        nanoseconds: 0
+      message_count: 0
+  custom_data: ~
+  ros_distro: lyrical

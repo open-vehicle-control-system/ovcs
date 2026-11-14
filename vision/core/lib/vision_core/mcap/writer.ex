@@ -141,6 +141,18 @@ defmodule VisionCore.Mcap.Writer do
     write_file!(writer, chunk_bytes)
   end
 
+  @doc """
+  Puts what was written to the file, held back writes included, on the
+  disk (`:file.datasync/1`). The open chunk waits for `close_chunk/1`.
+  """
+  @spec sync(t()) :: t()
+  def sync(%__MODULE__{} = writer) do
+    case :file.datasync(writer.file) do
+      :ok -> writer
+      {:error, reason} -> raise File.Error, reason: reason, action: "sync", path: writer.path
+    end
+  end
+
   @doc "Writes an Attachment record."
   @spec add_attachment(
           t(),

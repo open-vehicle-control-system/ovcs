@@ -1,0 +1,46 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 0
+  starting_time:
+    nanoseconds_since_epoch: 9223372036854775807
+  message_count: 0
+  topics_with_message_count:
+    []
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - 0_quoting_bag_2026_11_14-21_54_16.mcap
+  files:
+    - path: 0_quoting_bag_2026_11_14-21_54_16.mcap
+      starting_time:
+        nanoseconds_since_epoch: 9223372036854775807
+      duration:
+        nanoseconds: 0
+      message_count: 0
+  custom_data:
+    ws: a b
+    dropped:/a/b: 3
+    brack: "[x]"
+    sp: " lead"
+    at: "@x"
+    q: itx27s
+    tr: "trail "
+    json: "{\"x\":1}"
+    star: "*x"
+    lead: -x
+    dq: say"hi"
+    hash: "a #b"
+    uni: été
+    colon: a:b
+    colonspace: "a: b"
+    nul: "null"
+    f: 1.5
+    tilde: /root
+    y: yes
+    slash: /camera/left
+    b: true
+    v: 0.1.0
+    n: 10
+  ros_distro: lyrical
