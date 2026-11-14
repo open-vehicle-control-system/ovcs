@@ -1,27 +1,29 @@
 defmodule VisionApiWeb.BoardControllerTest do
   use VisionApiWeb.ConnCase, async: true
 
-  alias VisionApiWeb.BoardJSON
+  alias OvcsVehicle.BoardStatus
 
-  test "GET /api/board answers the interfaces, the load and the clock, without synchronization on a host",
+  test "GET /api/board answers the shared board document, without synchronization on a host",
        %{conn: conn} do
     conn = get(conn, "/api/board")
     assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
 
+    %{"data" => data} = document = json_response(conn, 200)
+    %{"data" => shared_data} = shared = shared_document()
+
+    assert Map.keys(document) == Map.keys(shared)
+    assert Map.keys(data) == Map.keys(shared_data)
+    assert {data["type"], data["id"]} == {shared_data["type"], shared_data["id"]}
+    assert Map.keys(data["attributes"]) == Map.keys(shared_data["attributes"])
+
     assert %{
-             "data" => %{
-               "type" => "boards",
-               "id" => "current",
-               "attributes" => %{
-                 "interfaces" => interfaces,
-                 "cpuPercent" => cpu_percent,
-                 "loadAverage" => [_, _, _],
-                 "memoryPercent" => memory_percent,
-                 "time" => time,
-                 "clockSynchronized" => nil
-               }
-             }
-           } = json_response(conn, 200)
+             "interfaces" => interfaces,
+             "cpuPercent" => cpu_percent,
+             "loadAverage" => [_, _, _],
+             "memoryPercent" => memory_percent,
+             "time" => time,
+             "clockSynchronized" => nil
+           } = data["attributes"]
 
     assert is_list(interfaces)
     assert is_number(cpu_percent)
@@ -29,29 +31,17 @@ defmodule VisionApiWeb.BoardControllerTest do
     assert {:ok, _time, 0} = DateTime.from_iso8601(time)
   end
 
-  test "a board carries its interfaces' addresses, its load, and its clock's time and synchronization" do
-    board = %OvcsVehicle.BoardStatus{
-      interfaces: [%{name: "eth0", addresses: ["192.168.10.232"]}],
-      cpu_percent: 23.4,
-      load_average: [0.52, 0.48, 0.4],
-      memory_percent: 62.5,
+  defp shared_document do
+    %BoardStatus{
+      interfaces: [],
+      cpu_percent: nil,
+      load_average: nil,
+      memory_percent: nil,
       time: ~U[2026-11-11 14:53:12Z],
-      synchronized: false
+      synchronized: nil
     }
-
-    assert BoardJSON.show(%{board: board}) == %{
-             data: %{
-               type: "boards",
-               id: "current",
-               attributes: %{
-                 interfaces: [%{name: "eth0", addresses: ["192.168.10.232"]}],
-                 cpuPercent: 23.4,
-                 loadAverage: [0.52, 0.48, 0.4],
-                 memoryPercent: 62.5,
-                 time: "2026-11-11T14:53:12Z",
-                 clockSynchronized: false
-               }
-             }
-           }
+    |> BoardStatus.document()
+    |> Jason.encode!()
+    |> Jason.decode!()
   end
 end

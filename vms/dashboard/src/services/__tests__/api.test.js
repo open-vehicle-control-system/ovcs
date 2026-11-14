@@ -72,11 +72,11 @@ describe('api', () => {
     expect(fetch.mock.calls[0][0]).toMatch(/\/api\/firmware$/)
   })
 
-  it("reads the board's interfaces and clock", async () => {
-    const attributes = { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true }
-    fetch.mockImplementation(() => answer(200, JSON.stringify({ data: { type: 'board', id: 'current', attributes } })))
+  it('answers the board document as GET /api/board serves it, for useOvcsBoard to read', async () => {
+    const document = { data: { type: 'boards', id: 'current', attributes: { interfaces: [{ name: 'eth0', addresses: ['192.168.1.20'] }], time: '2026-11-11T14:53:12Z', clockSynchronized: true } } }
+    fetch.mockImplementation(() => answer(200, JSON.stringify(document)))
 
-    expect(await fetchBoard()).toEqual(attributes)
+    expect(await fetchBoard()).toEqual(document)
     expect(fetch.mock.calls[0][0]).toMatch(/\/api\/board$/)
   })
 })

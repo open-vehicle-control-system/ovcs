@@ -39,9 +39,9 @@ export async function fetchFirmware() {
   return (await request('firmware')).data.attributes
 }
 
-/** The board the VMS runs on: its `interfaces`, each a `name` with its `addresses`, its clock's `time` and `clockSynchronized`. */
-export async function fetchBoard() {
-  return (await request('board')).data.attributes
+/** The board the VMS runs on, as the `GET /api/board` document every API serves, which `useOvcsBoard` reads. */
+export function fetchBoard() {
+  return request('board')
 }
 
 /** The vehicle's pages, `id` and `name`, in their order. */

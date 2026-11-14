@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 
 /**
- * The board `fetchBoard` answers, for the `OvcsTopBar`: read while `connected`, then again `intervalMs` after each
- * read ended, so never two at once, with the `offsetMs` of its clock from this browser's at the read, so its clock
- * keeps time between reads; `null` until first read, and again once disconnected, as its clock and load are then
- * unknown. A failed read keeps what it had.
+ * The board for the `OvcsTopBar`, from the `GET /api/board` document `fetchBoard` answers, the one every API serves:
+ * its `boards` resource's attributes, read while `connected`, then again `intervalMs` after each read ended, so never
+ * two at once, with the `offsetMs` of its clock from this browser's at the read, so its clock keeps time between
+ * reads; `null` until first read, and again once disconnected, as its clock and load are then unknown. A failed read
+ * keeps what it had.
  */
 export function useOvcsBoard(fetchBoard, connected, intervalMs = 10_000) {
   const [board, setBoard] = useState(null)
@@ -18,7 +19,7 @@ export function useOvcsBoard(fetchBoard, connected, intervalMs = 10_000) {
     let timer = null
     const read = async () => {
       try {
-        const next = await fetchBoard()
+        const next = (await fetchBoard()).data.attributes
         if (live) setBoard({ ...next, offsetMs: Date.parse(next.time) - Date.now() })
       } catch {
         // The board shown stays; the next read may answer.

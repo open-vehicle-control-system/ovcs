@@ -51,6 +51,8 @@ GET  /api/firmware                        the commit, target, Nerves system and 
 GET  /api/board                           the board's network interfaces with their addresses, its load and its clock
 ```
 
+`GET /api/board` answers the same document as the vision unit's, shown in [The unit and its exports](../vision/api.md#the-unit-and-its-exports).
+
 A Phoenix socket at `/sockets/dashboard` carries two channels:
 
 - `metrics` streams the values of the module and key pairs a client subscribes to.

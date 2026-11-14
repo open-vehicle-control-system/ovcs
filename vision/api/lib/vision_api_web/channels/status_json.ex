@@ -18,7 +18,7 @@ defmodule VisionApiWeb.StatusJSON do
   are left out. Each exporter's status is a `level`, `ok`, `warning` or
   `off`, and a `detail`; the API's own comes last, as
   `GET /api/exporters` lists it. The CPU's load is the board's
-  (`VisionApiWeb.BoardJSON`). `pair` holds the
+  (`OvcsVehicle.BoardStatus`). `pair` holds the
   `VisionCore.Stereo.PairCheck` checks, `timing`,
   `rows`, `focus` and `brightness`, and `depth` the
   `VisionCore.Stereo.DepthCheck` checks, `rate` and `range`, with
