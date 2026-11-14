@@ -481,6 +481,47 @@ defmodule VmsCore.Managers.ControlLevelTest do
     end
   end
 
+  describe "the braking source" do
+    @braking_sources %{
+      manual: nil,
+      radio: RadioThrottle,
+      ros: %{teleop: TeleopThrottle, autonomous: PlannerVelocity}
+    }
+
+    test "is routed with the level, from the vehicle's map" do
+      state = manager(%{requested_braking_sources: @braking_sources})
+      assert state.requested_braking_source == nil
+
+      state = request(state, :radio)
+      assert state.requested_braking_source == RadioThrottle
+
+      state = request(state, :ros)
+      assert state.requested_braking_source == TeleopThrottle
+    end
+
+    test "is published, so the brake actuator follows it" do
+      manager(%{requested_braking_sources: @braking_sources}) |> request(:radio)
+
+      assert_receive %Message{
+        name: :requested_braking_source,
+        value: RadioThrottle,
+        source: ControlLevel
+      }
+    end
+
+    test "is none on every level of a vehicle without a braking map" do
+      assert in_ros().requested_braking_source == nil
+    end
+
+    test "a flat :ros entry is refused at init" do
+      arguments = Map.put(@init_arguments, :requested_braking_sources, %{ros: Planner})
+
+      assert_raise ArgumentError, ~r/requested_braking_sources.*:ros.*keyed by commander/s, fn ->
+        ControlLevel.init(arguments)
+      end
+    end
+  end
+
   describe "source map validation" do
     test "a flat :ros entry is refused at init rather than on the first flip to :ros" do
       arguments = %{

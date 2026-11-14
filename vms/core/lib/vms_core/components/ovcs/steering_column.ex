@@ -4,13 +4,14 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   motor, its angle read from a Bosch LWS sensor on the CAN network named by
   `:network`.
 
-  While the selected control level is `:radio`, it powers the stepper
-  driver through a relay, smooths the selected `:requested_steering`
+  While `Managers.ControlLevel` names a steering source, it powers the
+  stepper driver through a relay, smooths that source's `:requested_steering`
   with an `OvcsControl.InputFilter`, scales it to a desired angle and
   closes the loop with an `OvcsControl.PID` on the measured angle. The
   PID output sets the step frequency of an external PWM and the
-  direction pin of a generic controller. Any other control level cuts
-  the relay.
+  direction pin of a generic controller. With no source named, it cuts
+  the relay: the vehicle's `requested_steering_sources` decide which
+  control levels steer.
 
   The PID gains and the filter's deadband and alpha are tunable live
   from the dashboard through `trigger_action/2`. Invalid tuning is rejected
@@ -21,7 +22,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
     * `:network` — the CAN network it sits on, as named in the vehicle's
       CAN topology.
     * `:selected_control_level_source` — publishes
-      `:selected_control_level` and `:requested_steering_source`.
+      `:requested_steering_source`.
     * `:power_relay_controller`, `:power_relay_pin` — the stepper
       driver's power relay.
     * `:actuation_controller` — the generic controller driving the
@@ -116,7 +117,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
        desired_angle: @zero,
        target_motor_speed_percentage: @zero,
        selected_control_level_source: selected_control_level_source,
-       selected_control_level: nil,
        max_steering_angle_deg: D.new(max_steering_angle_deg),
        kp: tuning.kp,
        ki: tuning.ki,
@@ -162,18 +162,6 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
 
   def handle_info(
         %Bus.Message{
-          name: :selected_control_level,
-          value: selected_control_level,
-          source: source
-        },
-        state
-      )
-      when source == state.selected_control_level_source do
-    {:noreply, %{state | selected_control_level: selected_control_level}}
-  end
-
-  def handle_info(
-        %Bus.Message{
           name: :requested_steering_source,
           value: requested_steering_source,
           source: source
@@ -197,7 +185,7 @@ defmodule VmsCore.Components.OVCS.SteeringColumn do
   end
 
   defp toggle_automatic_mode(state) do
-    automatic_mode_requested = state.selected_control_level == :radio
+    automatic_mode_requested = not is_nil(state.requested_steering_source)
 
     cond do
       automatic_mode_requested && !state.automatic_mode_enabled ->

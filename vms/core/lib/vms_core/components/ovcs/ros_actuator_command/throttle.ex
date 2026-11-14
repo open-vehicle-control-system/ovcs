@@ -2,9 +2,9 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   @moduledoc """
   Throttle from the ROS bridge's actuator command (`ros_actuator_command`,
   `0x2B0`): the operator's axis in [-1, 1], applied as is and broadcast
-  as `:requested_throttle`. A negative value can mean regenerative
-  braking, as on the OVCS1 reference vehicle; reverse is the frame's
-  `direction`, read by `RosActuatorCommand.Direction`.
+  as `:requested_throttle`. A negative value can mean braking: the
+  OVCS1 reference vehicle's iBooster brakes on it. Reverse is the
+  frame's `direction`, read by `RosActuatorCommand.Direction`.
 
   ## The throttle expires; it is not held
 

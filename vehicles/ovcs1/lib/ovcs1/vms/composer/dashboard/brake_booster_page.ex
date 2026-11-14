@@ -14,9 +14,9 @@ defmodule Ovcs1.Vms.Composer.Dashboard.BrakeBoosterPage do
             %{type: :metric, name: "Status", module: IBoosterGen2, key: :status},
             %{
               type: :metric,
-              name: "Requested Throttle Source",
+              name: "Requested Braking Source",
               module: IBoosterGen2,
-              key: :requested_throttle_source
+              key: :requested_braking_source
             },
             %{
               type: :metric,

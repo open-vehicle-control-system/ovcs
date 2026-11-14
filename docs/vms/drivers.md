@@ -39,8 +39,8 @@ The moduledoc of each driver is the reference for its options. The composers of 
 
 | Driver | Network | Options | Publishes |
 |---|---|---|---|
-| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level, contact sources; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, `:manual_braking`, `:status` |
-| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level source; `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id`, `max_steering_angle_deg`; PID gains, input filter | angle, angular speed, calibration, PID gains |
+| `Bosch.IBoosterGen2` | `network:` (`misc` in OVCS1) | control level manager (braking source), contact source; `controller`, `power_relay_pin`; PID gains | rod position, flow rate, `:manual_braking`, `:status` |
+| `OVCS.SteeringColumn` | `network:` (`misc` in OVCS1) | control level manager (steering source); `power_relay_controller`, `power_relay_pin`, `actuation_controller`, `direction_pin`, `external_pwm_id`, `max_steering_angle_deg`; PID gains, input filter | angle, angular speed, calibration, PID gains |
 | `Traxxas.Steering` (no reference vehicle) | none, through a controller | `controller`, `external_pwm_id`, control level source | nothing |
 | `Volkswagen.Polo9N.PowerSteeringPump` | `network:` (`misc` in OVCS1) | gear source | nothing |
 
