@@ -6,12 +6,13 @@ defmodule VisionCore.Exporter.Supervisor do
   runner restarts with a helper it may hold state about.
 
   `VisionCore.Exporters` starts it as a `:transient` child: an exporter
-  that keeps crashing exhausts this budget, its supervisor shuts down and
-  stays down, and the cameras, the pipelines and the other exporters run
-  on. An exporter that cannot start, because its outputs are invalid or
-  a helper fails to start, is left down the same way, with an error
-  logged; an exporter whose `c:VisionCore.Exporter.init/1` fails is not
-  one of them, its runner trying it again.
+  that keeps crashing exhausts this budget, its supervisor shuts down
+  until `VisionCore.Exporters` starts it again, and the cameras, the
+  pipelines and the other exporters run on. An exporter that cannot
+  start, because its outputs are invalid or a helper fails to start, is
+  left down, with an error logged; an exporter whose
+  `c:VisionCore.Exporter.init/1` fails is not one of them, its runner
+  trying it again.
 
   Before anything starts, the exporter's `c:VisionCore.Exporter.check/1`,
   when it has one, is asked whether it can run: when it cannot, or

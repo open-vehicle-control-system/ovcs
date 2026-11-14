@@ -65,6 +65,33 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  # Counts the pairs it exports, which its status reports; fails on the pairs and messages that say how.
+  defmodule Failing do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: [:stereo_pair]
+
+    @impl VisionCore.Exporter
+    def init(_options), do: {:ok, %{pairs: 0}}
+
+    @impl VisionCore.Exporter
+    def handle_output(:stereo_pair, {:fail, how}, _state), do: fail(how)
+    def handle_output(:stereo_pair, _pair, state), do: {:ok, %{state | pairs: state.pairs + 1}}
+
+    @impl VisionCore.Exporter
+    def status(state), do: {:ok, "#{state.pairs} pairs"}
+
+    @impl VisionCore.Exporter
+    def handle_info({:fail, how}, _state), do: fail(how)
+    def handle_info(_message, state), do: {:ok, state}
+
+    defp fail(:raise), do: raise("no room left")
+    defp fail(:throw), do: throw(:thrown)
+    defp fail(:exit), do: exit(:gone)
+    defp fail(:answer), do: :neither_ok_nor_error
+  end
+
   # Sends each pair on, as a slow transport would, and takes the next once told it is sent.
   defmodule Slow do
     @behaviour VisionCore.Exporter
@@ -1013,6 +1040,62 @@ defmodule VisionCore.Exporter.RunnerTest do
         end)
 
       assert log =~ "status failed: no link"
+    end
+  end
+
+  describe "an exporter that fails on a value" do
+    for {how, said} <- [
+          raise: "no room left",
+          throw: ":thrown",
+          exit: ":gone",
+          answer: ":neither_ok_nor_error"
+        ] do
+      test "by #{how} keeps running with its state, warns, and exports the next value" do
+        runner = start_runner(Failing, [])
+        publish_pair(1)
+        :sys.get_state(runner)
+
+        publish_pair({:fail, unquote(how)})
+
+        assert {:warning, warning} = Runner.status(runner)
+        assert warning =~ ":stereo_pair"
+        assert warning =~ unquote(said)
+
+        publish_pair(2)
+
+        assert Runner.status(runner) == {:ok, "2 pairs"}
+        assert Process.alive?(runner)
+      end
+    end
+
+    test "logs the failure once for the values in a row it fails on" do
+      runner = start_runner(Failing, [])
+
+      log =
+        capture_log(fn ->
+          for pair <- [{:fail, :raise}, {:fail, :raise}, 1, {:fail, :raise}] do
+            publish_pair(pair)
+            :sys.get_state(runner)
+          end
+        end)
+
+      assert length(String.split(log, "no room left")) == 3
+    end
+
+    for how <- [:raise, :throw, :exit, :answer] do
+      test "a handle_info/2 that fails by #{how} keeps the exporter and its state" do
+        runner = start_runner(Failing, [])
+        publish_pair(1)
+
+        send(runner, {:fail, unquote(how)})
+
+        assert {:warning, warning} = Runner.status(runner)
+        assert warning =~ "handle_info"
+
+        send(runner, :fine)
+
+        assert Runner.status(runner) == {:ok, "1 pairs"}
+      end
     end
   end
 
