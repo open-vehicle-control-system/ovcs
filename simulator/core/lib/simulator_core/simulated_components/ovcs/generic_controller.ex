@@ -27,6 +27,8 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.GenericController do
 
   import SimulatorCore.SimulatedComponent, only: [decimal: 2]
 
+  alias SimulatorCore.SimulatedComponents.OVCS.GenericController.DigitalPinRequest
+
   # The VMS reads the status and the board errors, never the counter.
   @alive %{
     "counter" => 0,
@@ -35,8 +37,7 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.GenericController do
     "expansion_board2_last_error" => "OK"
   }
 
-  @digital_pin_names Enum.map(0..18, &"digital_pin#{&1}_enabled")
-  @digital_pins @digital_pin_names |> Map.new(&{&1, false}) |> Map.put("filler0", 0)
+  @digital_pins DigitalPinRequest.signal_names() |> Map.new(&{&1, false}) |> Map.put("filler0", 0)
   # The controller reports zero once no edge has arrived for this long.
   @pulse_timeout_ms 2_000
   @counter_range 65_536
@@ -49,7 +50,7 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.GenericController do
     state = %{
       network: Map.get(opts, :network, :ovcs),
       alive: "#{name}_alive",
-      pin_request: "#{name}_digital_pin_request",
+      pin_request: DigitalPinRequest.frame_name(name),
       pin_status: "#{name}_digital_and_analog_pin_status",
       pulse_counter: "#{name}_pulse_counter_status",
       pins: pin_status(Map.get(opts, :analog_pins, %{})),
@@ -74,12 +75,7 @@ defmodule SimulatorCore.SimulatedComponents.OVCS.GenericController do
 
   @impl SimulatorCore.SimulatedComponent
   def handle_frame(name, signals, %{pin_request: name} = state, _now_ms) do
-    requested =
-      signals
-      |> Map.take(@digital_pin_names)
-      |> Map.new(fn {pin, signal} -> {pin, signal.value} end)
-
-    pins = Map.merge(state.pins, requested)
+    pins = Map.merge(state.pins, DigitalPinRequest.requested(signals))
     %{state | pins: pins, pins_changed: state.pins_changed or pins != state.pins}
   end
 
