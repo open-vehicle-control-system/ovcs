@@ -1,10 +1,10 @@
 ---
 id: TASK-139
 title: Solve a camera's pose relative to the stereo pair from the dashboard
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-13T18:40:00Z'
-updated_date: '2026-11-14T01:04:00Z'
+updated_date: '2026-11-14T12:00:00Z'
 labels: []
 dependencies: []
 ordinal: 96000
@@ -36,7 +36,19 @@ Open points for agreement: whether a pose commit may restart the camera's pipeli
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Design agreed and recorded in this task
+- [x] #1 Design agreed and recorded in this task
 - [ ] #2 A camera's pose is solved and committed from the Calibration page, on a unit
 - [ ] #3 The solved pose agrees with scripts/camera_pose.py on the same views
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+- Each camera of its own on a unit with a stereo pair has the target `<name>-pose`, listed after the camera. Its cameras are the camera, then the stereo left camera: detection pairs the camera's frame with the left raw frame closest in time within half a stereo pair period, and coverage is measured in the camera's image. A session start is refused, naming it, while either calibration is missing or is not `plumb_bob`.
+- `VisionCore.Calibration.Solver.solve_pose/3` runs `stereoCalibrate` with both intrinsics fixed, each calibration resampled to its frames, then takes the rotation to the rectified left frame (`R · R_rectᵀ`, translation unchanged, in metres).
+- `VisionCore.Camera.Pose` stores a committed pose as `camera_<name>_pose.yaml` in the camera's `calibration_store_dir` and publishes `{:camera_pose_changed, name}`. The pipelines on the camera and the ROS 2 exporter read the pose again without a restart, rather than restarting.
+- Kept poses are rows of `calibration_poses`, recorded and selected by the Recorder like the other calibrations.
+- `VisionCore.Camera.PoseCapture`, `scripts/camera_pose.py` and its tests are removed. The solver tests reuse the script tests' synthetic views, rectification, scaled calibration and upside-down camera, so #3 holds on synthetic views; it is not checked on a unit's views.
+- On OVCS1 the center camera sees wider than the left camera, so a board both see stays in the middle of its image: the X and Y gauges may stay short, and Compute calibration then opens at 40 views.
+- Not carried over from the script: `equidistant` calibrations, the refusal of a board that looks the same after a half turn (the page warns instead), and each pair's error with `--exclude`.
+<!-- SECTION:NOTES:END -->

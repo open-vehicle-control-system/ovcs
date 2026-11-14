@@ -76,10 +76,6 @@ run = 'test -n "$VEHICLE" || { echo "VEHICLE=<Vehicle> mise run fetch-qairt" >&2
 description = "Expand each vehicle's xacro into the URDF its package reads (needs ROS's xacro on the PATH)"
 run = "./scripts/expand_urdf.sh"
 
-[tasks.pose-test]
-description = "Test scripts/camera_pose.py with the system Python, which needs python3-opencv"
-run = "/usr/bin/python3 -I -B -m unittest discover -s scripts/tests"
-
 [tasks.cli]
 description = "Build the ovcs CLI (Rust release binary → cli/ovcs)"
 run = "cd cli && cargo build --release && strip --strip-all target/release/ovcs && cp target/release/ovcs ovcs && chmod +x ovcs"

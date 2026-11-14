@@ -417,13 +417,14 @@ A unit without the ROS 2 link answers a 404. An `include` other than `topics` an
 
 The calibration routes do what the dashboard's Calibration page does; [Calibrate the cameras](./calibration.md) explains the steps and the files.
 
-`GET /api/calibrations` lists the calibration in use of each thing the unit can calibrate: its stereo pair, identified by the stereo unit's prefix, then each camera of its own, identified by its name. `GET /api/calibrations/:id` returns one, a 404 for an id that is none of them, and a 503 when the unit cannot work out the stereo pair's calibration files. A calibration has:
+`GET /api/calibrations` lists the calibration in use of each thing the unit can calibrate: its stereo pair, identified by the stereo unit's prefix, then each camera of its own, identified by its name, followed, on a unit with a stereo pair, by the camera's pose relative to the pair, identified as `<name>-pose`. `GET /api/calibrations/:id` returns one, a 404 for an id that is none of them, and a 503 when the unit cannot work out the stereo pair's calibration files. A calibration has:
 
-- its `kind`, `stereo` or `camera`;
+- its `kind`, `stereo`, `camera` or `pose`;
 - its `source`, `builtIn`, `stored` or `none`, and `storedAt`, the time a stored one was stored;
 - `canReset`, whether you can return to the built-in one: while anything is stored and a built-in calibration exists;
-- its `cameras`, two for a stereo pair and one for a camera: each one's `name`, the `file` name to save its `yaml` under, its image size, `fx`, `fy`, `cx`, `cy` and distortion coefficients, each `null` without a file;
-- for a stereo pair, `baselineM`, the rectified baseline, and `rectifiedFx`, the left camera's rectified focal length; both `null` for a camera;
+- its `cameras`, two for a stereo pair and one for a camera: each one's `name`, the `file` name to save its `yaml` under, its image size, `fx`, `fy`, `cx`, `cy` and distortion coefficients, each `null` without a file. A pose's are the stereo left camera's and the camera's calibrations in use, which it is measured with;
+- for a stereo pair, `baselineM`, the rectified baseline, and `rectifiedFx`, the left camera's rectified focal length; both `null` otherwise;
+- for a pose, `pose`: its `rotation`, 9 numbers row-major, its `translation` in metres, `distanceMm`, the distance between the two cameras, and the `file` name to save its `yaml` under; `null` without a pose, and for a stereo pair or a camera ([Calibration and pose](./cameras.md#calibration-and-pose) says what they mean);
 - `error`, why a file gives no calibration, such as one that cannot be read or whose matrices are malformed, `null` otherwise. That camera's figures are `null`, and the calibration can still be made again or reset.
 
 On the OVCS Mini, the YAML shortened:
@@ -472,11 +473,39 @@ On the OVCS Mini, the YAML shortened:
 }
 ```
 
+A camera's pose on the OVCS1 reference vehicle, the YAML shortened and the cameras left out:
+
+```json
+{
+  "data": {
+    "type": "calibrations",
+    "id": "center-pose",
+    "attributes": {
+      "kind": "pose",
+      "source": "stored",
+      "storedAt": "2026-11-14T10:02:41Z",
+      "canReset": false,
+      "error": null,
+      "baselineM": null,
+      "rectifiedFx": null,
+      "cameras": ["…"],
+      "pose": {
+        "rotation": [0.9998, -0.0123, 0.0151, 0.0124, 0.9999, -0.0042, -0.0150, 0.0044, 0.9999],
+        "translation": [-0.0991, 0.0052, 0.0013],
+        "distanceMm": 99.2,
+        "file": "center_pose.yaml",
+        "yaml": "# From the rectified left optical frame to the camera's optical frame:\n…"
+      }
+    }
+  }
+}
+```
+
 A new calibration is made by a session, one per unit and shared by every client, driven by action resources as the parameters are. Each is a `POST` whose document carries `data.type`, answered with the session as it is after the action, related to the `calibration` it works on:
 
 | Route | Does | Answers | Refused with |
 |---|---|---|---|
-| `POST /api/calibration-sessions` | Starts capturing views of the board in `data.attributes.board`, with the cameras of the calibration its `calibration` relationship names. The board has `columns` and `rows` in inner corners, two different whole numbers from 3 to 50, and `squareMm`, the side of a square in millimetres, above 0 and at most 1000. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 for an invalid board or while the cameras do not run, 409 while a session runs |
+| `POST /api/calibration-sessions` | Starts capturing views of the board in `data.attributes.board`, with the cameras of the calibration its `calibration` relationship names. The board has `columns` and `rows` in inner corners, two different whole numbers from 3 to 50, and `squareMm`, the side of a square in millimetres, above 0 and at most 1000. | 201 | 400 without a `calibration`, 404 for one the unit has not, 422 for an invalid board, while the cameras do not run, or for a pose whose stereo pair or camera has no `plumb_bob` calibration, naming it, 409 while a session runs |
 | `POST /api/calibration-solves` | Computes the calibration from the samples. | 202 | 422 before they are good enough |
 | `POST /api/calibration-applies` | Has the unit take the solved calibration. | 202 | 422 before a solve |
 | `POST /api/calibration-cancels` | Ends the session, stopping a running solve. | 201 | 409 while a calibration is being applied |
@@ -517,14 +546,14 @@ curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/calibration-
 - `phase` goes from `idle` to `capturing`, `solving`, `solved`, then `applying` and back to `idle`; a failed solve goes back to `capturing`.
 - `progress` is the coverage of each axis from 0 to 1; `goodEnough` turns true at 40 samples or with every axis at 1.
 - `detection` is the last frames looked at: in `views`, each `camera` with its corners as `[x, y]` fractions of the image's width and height, `null` where the board was not found, and `sample`, whether the detection became a sample.
-- `result`, once solved, holds `imageWidth` and `imageHeight`, the size of the images it is for, its `cameras`, each with its `name`, its `rmsPx`, the `file` name and its `yaml`, then `fxPx`, the focal length of the first camera's projection in pixels of that image, and `samples`. A stereo pair's also has `stereoRmsPx` and `baselineM`, both `null` for a camera.
+- `result`, once solved, holds `imageWidth` and `imageHeight`, the size of the images it is for, its `cameras`, each with its `name`, its `rmsPx`, the `file` name and its `yaml`, then `fxPx`, the focal length of the first camera's projection in pixels of that image, and `samples`. A stereo pair's also has `stereoRmsPx` and `baselineM`, both `null` for a camera. A pose's has no camera, `null` sizes and `fxPx`, and its `pose`, as the calibration in use's, with its `rmsPx`, the reprojection error over both cameras' corners; `pose` is `null` for the others.
 - `error` is why the last solve or apply failed.
 
 The unit looks for the board only while a client is joined to the [calibration channel](./channels.md#calibration): a session started over HTTP alone captures nothing. A solve answers at once, a 202 with the phase `solving`, and its outcome comes on the channel: `solved` with the `result`, or `capturing` with `error` set. An apply answers at once too, a 202 with the phase `applying`, and its outcome comes on the channel: the phase `idle` and the new calibration in use when the unit takes it, or `solved` with `error` set when it refuses it. A reset answers once the unit has taken the built-in calibration.
 
 ### The calibrations kept
 
-The unit keeps every calibration it was given, as `saved-calibrations`, each with its `calibration` relationship, the one of the `calibrations` it belongs to.
+The unit keeps every calibration it was given, poses included, as `saved-calibrations`, each with its `calibration` relationship, the one of the `calibrations` it belongs to.
 
 | Request | Does | Answers | Refuses with |
 |---|---|---|---|
@@ -573,7 +602,7 @@ An id is the number the unit gave, written as the unit writes it: `007` or `+7` 
 }
 ```
 
-`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. Each camera has the `file` name to save its `yaml` under, named as the calibration in use's. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A selection is created with:
+`origin` is `dashboard` for a calibration applied from a session and `imported` for one the unit found in its store. Each camera has the `file` name to save its `yaml` under, named as the calibration in use's. `board`, `samples`, `stereoRmsPx` and each camera's `rmsPx` are `null` for an imported one, and `stereoRmsPx` and `baselineM` for a camera of its own. A pose kept has no camera and its `pose`, as the calibration in use's, with the `rmsPx` of the solve that made it, `null` for an imported one; `pose` is `null` for the others. A selection is created with:
 
 ```json
 {

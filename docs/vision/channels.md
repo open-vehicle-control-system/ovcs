@@ -60,7 +60,7 @@ Each is `null` in a second without a frame or a pair. [Latencies](./performance.
 | `no_calibration` | has no `calibration:` file | [calibrate it](./calibration.md#a-camera-of-its-own) |
 | `unreadable_calibration` | has a calibration file that cannot be read | calibrate it again, or fix the file |
 | `unusable_calibration` | has a calibration whose lens model the unit cannot project with | calibrate it with the `plumb_bob` or `equidistant` model |
-| `no_pose` | has no `pose:` file: where it sits relative to the stereo pair is unknown | [measure its pose](./cameras.md#measure-the-pose) |
+| `no_pose` | has no pose: where it sits relative to the stereo pair is unknown | [measure its pose](./cameras.md#measure-the-pose) |
 | `unreadable_pose` | has a pose file that cannot be read | fix the file |
 
 A pipeline that does not answer is left out.
