@@ -3,7 +3,8 @@ defmodule VisionApiWeb.CalibrationController do
   The calibrations in use, read-only: one `calibrations` resource per
   target the unit can calibrate (`VisionCore.Calibration`), its stereo
   pair, identified by the stereo unit's prefix, and each camera of its
-  own, identified by its name.
+  own, identified by its name. A calibration whose file cannot be read is
+  still a resource, with its `error`.
   """
   use VisionApiWeb, :controller
 

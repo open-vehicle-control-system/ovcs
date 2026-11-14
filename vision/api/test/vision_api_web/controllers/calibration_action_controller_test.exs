@@ -107,6 +107,29 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
       end
     end
 
+    test "refuses a board out of bounds as a 422, however large its numbers", %{conn: conn} do
+      huge = Integer.pow(10, 400)
+
+      for board <- [
+            %{columns: 2, rows: 6, squareMm: 25},
+            %{columns: huge, rows: 6, squareMm: 25},
+            %{columns: 8, rows: 6, squareMm: huge},
+            %{columns: 8, rows: 6, squareMm: 0},
+            %{columns: 8, rows: 6, squareMm: "25"}
+          ] do
+        assert %{
+                 "errors" => [
+                   %{"status" => "422", "source" => %{"pointer" => "/data/attributes/board"}}
+                 ]
+               } =
+                 conn
+                 |> post_action("/api/calibration-sessions", session("unit", board))
+                 |> json_response(422)
+      end
+
+      assert Session.state().phase == :idle
+    end
+
     test "answers 409 while a session runs", %{conn: conn} do
       post_action(conn, "/api/calibration-sessions", session())
 
@@ -207,7 +230,7 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
                |> json_response(422)
     end
 
-    test "POST /api/calibration-solves starts the solve, whose result carries each camera's YAML",
+    test "POST /api/calibration-solves answers 202 once the solve has begun, whose result carries the image size and each camera's YAML",
          %{conn: conn} do
       solvable()
       {:ok, _state} = Session.subscribe()
@@ -215,7 +238,7 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
       assert %{"data" => %{"type" => "calibration-solves", "attributes" => %{"phase" => phase}}} =
                conn
                |> post_action("/api/calibration-solves", %{type: "calibration-solves"})
-               |> json_response(201)
+               |> json_response(202)
 
       assert phase in ["solving", "solved"]
 
@@ -223,6 +246,8 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
 
       assert %{
                result: %{
+                 imageWidth: 1280,
+                 imageHeight: 720,
                  stereoRmsPx: 0.5,
                  baselineM: 0.12,
                  cameras: [
@@ -271,6 +296,8 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
 
     assert %{
              result: %{
+               imageWidth: 1280,
+               imageHeight: 720,
                stereoRmsPx: nil,
                baselineM: nil,
                fxPx: 880.0,
@@ -357,6 +384,55 @@ defmodule VisionApiWeb.CalibrationActionControllerTest do
         assert %{"errors" => [%{"status" => "422", "title" => "Not reset"}]} =
                  conn |> post_action("/api/calibration-resets", reset(id)) |> json_response(422)
       end
+    end
+
+    test "answers 422 without a built-in calibration to return to", %{conn: conn, config: config} do
+      :ok =
+        VisionCore.Camera.Calibration.commit(
+          config,
+          :hq,
+          VisionApiWeb.CalibrationCase.calibration()
+        )
+
+      File.rm!(config.components[:camera][:calibration])
+
+      assert %{"errors" => [%{"status" => "422", "title" => "Not reset", "detail" => detail}]} =
+               conn |> post_action("/api/calibration-resets", reset("hq")) |> json_response(422)
+
+      assert detail =~ "no built-in calibration"
+    end
+
+    @tag :capture_log
+    test "answers 500 when the unit does not take the built-in calibration, the stored one kept",
+         %{conn: conn, config: config, tmp_dir: tmp_dir} do
+      store = Path.join(tmp_dir, "store")
+      File.mkdir_p!(store)
+
+      config =
+        update_in(config.components[:stereo], &Keyword.put(&1, :calibration_store_dir, store))
+
+      :persistent_term.put({VisionCore.Application, :active_config}, config)
+      {:ok, cameras} = VisionCore.Stereo.Supervisor.camera_options(config)
+
+      for side <- [:left, :right],
+          do: File.write!(cameras[side][:calibration_store_path], "stored #{side}")
+
+      # Refuses the reload of the stereo pipeline.
+      pipeline =
+        spawn_link(fn ->
+          receive do
+            {:"$gen_call", from, {:reload_calibration, _paths}} ->
+              GenServer.reply(from, {:error, :does_not_fit})
+          end
+        end)
+
+      Process.register(pipeline, VisionCore.Stereo.Pipeline)
+
+      reset = post_action(conn, "/api/calibration-resets", reset("unit"))
+      assert get_resp_header(reset, "content-type") == [@media_type]
+      assert %{"errors" => [%{"status" => "500", "detail" => detail}]} = json_response(reset, 500)
+      assert detail =~ "does_not_fit"
+      assert File.read!(cameras[:left][:calibration_store_path]) == "stored left"
     end
 
     test "answers 400 without a calibration to reset, and 404 for one the unit has not",

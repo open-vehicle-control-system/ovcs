@@ -46,6 +46,7 @@ defmodule VisionApiWeb.CalibrationControllerTest do
                  "source" => "builtIn",
                  "storedAt" => nil,
                  "canReset" => false,
+                 "error" => nil,
                  "baselineM" => baseline_m,
                  "rectifiedFx" => 880.0,
                  "cameras" => [
@@ -87,16 +88,39 @@ defmodule VisionApiWeb.CalibrationControllerTest do
            } = conn |> get("/api/calibrations/unit") |> json_response(200)
   end
 
-  test "GET /api/calibrations/:id answers 503 when the calibration cannot be read",
+  @tag :capture_log
+  test "a calibration whose file cannot be read is listed and shown with why, its cameras without figures",
        %{conn: conn, tmp_dir: tmp_dir} do
     path = Path.join(tmp_dir, "unit_left.yaml")
     File.rm!(path)
     File.mkdir!(path)
 
-    assert %{"errors" => [%{"status" => "503", "detail" => detail}]} =
-             conn |> get("/api/calibrations/unit") |> json_response(503)
+    assert %{"data" => %{"attributes" => attributes}} =
+             conn |> get("/api/calibrations/unit") |> json_response(200)
 
-    assert detail =~ "cannot read"
+    assert attributes["error"] =~ "cannot read"
+
+    assert [%{"name" => "left", "fx" => nil, "yaml" => nil}, %{"fx" => 900.0}] =
+             attributes["cameras"]
+
+    assert attributes["baselineM"] == nil
+    assert attributes["rectifiedFx"] == nil
+
+    assert %{"data" => [%{"id" => "unit", "attributes" => %{"error" => error}}, %{"id" => "hq"}]} =
+             conn |> get("/api/calibrations") |> json_response(200)
+
+    assert error =~ "cannot read"
+  end
+
+  @tag :capture_log
+  test "a calibration file whose matrices are malformed gives an error, not a crash",
+       %{conn: conn, tmp_dir: tmp_dir} do
+    File.write!(Path.join(tmp_dir, "hq.yaml"), "camera_matrix:\n  data: [1, 2]\n")
+
+    assert %{"data" => %{"attributes" => %{"error" => error, "cameras" => [%{"fx" => nil}]}}} =
+             conn |> get("/api/calibrations/hq") |> json_response(200)
+
+    assert error =~ "camera matrix has 2 values"
   end
 
   test "GET /api/calibrations/:id answers 404 for an id that is none of the unit's targets",

@@ -7,8 +7,12 @@ defmodule VisionApiWeb.CalibrationActionController do
   from the JSON body only: a form or a query string, which another site's
   page can send without asking, is refused.
 
-  An apply answers 202 once it has begun, with the session `applying`;
-  its outcome comes through the `calibration` channel.
+  A solve and an apply answer 202 once they have begun, with the session
+  `solving` or `applying`; their outcome comes through the `calibration`
+  channel.
+
+  A reset the target refuses, as one with nothing stored, is a 422; one
+  the unit fails, its stored calibration kept, a 500.
   """
   use VisionApiWeb, :controller
   require Logger
@@ -18,6 +22,7 @@ defmodule VisionApiWeb.CalibrationActionController do
   alias VisionCore.Calibration.{Board, Session}
 
   @target_pointer "/data/relationships/calibration"
+  @max_square_mm round(Board.max_square_m() * 1000)
 
   def start(conn, _params) do
     act(conn, "calibration-sessions", :created, fn data ->
@@ -39,7 +44,7 @@ defmodule VisionApiWeb.CalibrationActionController do
   end
 
   def solve(conn, _params) do
-    act(conn, "calibration-solves", :created, fn _data ->
+    act(conn, "calibration-solves", :accepted, fn _data ->
       refused(Session.solve(), 422, "Not solved")
     end)
   end
@@ -53,8 +58,12 @@ defmodule VisionApiWeb.CalibrationActionController do
   def reset(conn, _params) do
     act(conn, "calibration-resets", :created, fn data ->
       with {:ok, id} <- target(data) do
-        case reset_task(id) do
+        config = CalibrationUnit.config()
+        resettable? = match?({:ok, %{can_reset: true}}, Calibration.in_use(config, id))
+
+        case reset_task(config, id) do
           {:error, :not_found} -> not_found(id)
+          {:error, reason} when resettable? -> {:error, 500, reason, []}
           outcome -> refused(outcome, 422, "Not reset")
         end
       end
@@ -62,9 +71,7 @@ defmodule VisionApiWeb.CalibrationActionController do
   end
 
   # Outlives the request: a reset may wait for the stereo unit to restart.
-  defp reset_task(id) do
-    config = CalibrationUnit.config()
-
+  defp reset_task(config, id) do
     task =
       Task.Supervisor.async_nolink(Calibration.Tasks, fn -> Calibration.reset(config, id) end)
 
@@ -137,10 +144,10 @@ defmodule VisionApiWeb.CalibrationActionController do
     do: {:error, 400, "calibration must name one of the calibrations", [source: @target_pointer]}
 
   defp board(%{"attributes" => %{"board" => %{} = board}}) do
-    case Board.new(board["columns"], board["rows"], square_m(board["squareMm"])) do
-      {:ok, board} ->
-        {:ok, board}
-
+    with {:ok, square_m} <- square_m(board["squareMm"]),
+         {:ok, board} <- Board.new(board["columns"], board["rows"], square_m) do
+      {:ok, board}
+    else
       {:error, reason} ->
         {:error, 422, reason, [source: "/data/attributes/board", title: "Invalid board"]}
     end
@@ -151,6 +158,11 @@ defmodule VisionApiWeb.CalibrationActionController do
       {:error, 422, "board with columns, rows and squareMm is required",
        [source: "/data/attributes/board", title: "Invalid board"]}
 
-  defp square_m(square_mm) when is_number(square_mm), do: square_mm / 1000
-  defp square_m(_square_mm), do: nil
+  # Checked before the division, which raises for an integer no float holds.
+  defp square_m(square_mm)
+       when is_number(square_mm) and square_mm > 0 and square_mm <= @max_square_mm,
+       do: {:ok, square_mm / 1000}
+
+  defp square_m(_square_mm),
+    do: {:error, "squareMm must be a number above 0 and at most #{@max_square_mm}"}
 end

@@ -25,6 +25,16 @@ defmodule VisionApiWeb.CalibrationChannelTest do
     }
   end
 
+  @tag :capture_log
+  test "join pushes a calibration whose file cannot be read, with why", %{tmp_dir: tmp_dir} do
+    File.write!(Path.join(tmp_dir, "hq.yaml"), "camera_matrix:\n  data: [1, 2]\n")
+
+    {:ok, _reply, _socket} = join()
+
+    assert_push "calibration", %{id: "hq", error: error, cameras: [%{name: "hq", fx: nil}]}
+    assert error =~ "camera matrix"
+  end
+
   test "a session change is pushed" do
     {:ok, _reply, _socket} = join()
     assert_push "session", %{phase: "idle"}

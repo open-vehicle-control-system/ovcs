@@ -8,12 +8,14 @@ defmodule VisionApiWeb.CalibrationJSON do
   A calibration has its `kind`, `stereo` or `camera`, its `source`
   (`builtIn`, `stored` or `none`), `storedAt`, `canReset`, its `cameras`,
   each with its `name`, the `file` to save its `yaml` under, its image
-  size, intrinsics and distortion, and for a stereo pair `baselineM` and
-  `rectifiedFx`, `null` for a camera.
+  size, intrinsics and distortion, for a stereo pair `baselineM` and
+  `rectifiedFx`, `null` for a camera, and its `error`, why a file gives no
+  calibration.
 
   A session has its `phase`, `board`, `samples`, `progress`, `goodEnough`,
   its last `detection`, the corners found in each camera's frame as
-  fractions of it, its `result` once solved and its `error`.
+  fractions of it, its `result` once solved, with the image size it is
+  for, and its `error`.
   """
   alias VisionApiWeb.JsonApi
   alias VisionCore.Ros2.CameraCalibration
@@ -36,6 +38,7 @@ defmodule VisionApiWeb.CalibrationJSON do
       source: source(in_use.source),
       storedAt: in_use.stored_at && DateTime.to_iso8601(in_use.stored_at),
       canReset: in_use.can_reset,
+      error: in_use.error,
       baselineM: in_use.baseline_m,
       rectifiedFx: rectified_fx(in_use),
       cameras: Enum.map(in_use.cameras, &camera/1)
@@ -120,6 +123,8 @@ defmodule VisionApiWeb.CalibrationJSON do
 
   defp result(result, %{kind: :stereo, id: prefix}),
     do: %{
+      imageWidth: result.left.width,
+      imageHeight: result.left.height,
       cameras: [
         solved("left", "#{prefix}_left", result.left, result.left_rms_px),
         solved("right", "#{prefix}_right", result.right, result.right_rms_px)
@@ -132,6 +137,8 @@ defmodule VisionApiWeb.CalibrationJSON do
 
   defp result(result, %{kind: :camera, id: name}),
     do: %{
+      imageWidth: result.camera.width,
+      imageHeight: result.camera.height,
       cameras: [solved(name, name, result.camera, result.rms_px)],
       stereoRmsPx: nil,
       baselineM: nil,
