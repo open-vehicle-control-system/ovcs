@@ -87,7 +87,7 @@ defmodule VisionCore.Calibration.RecorderTest do
 
     start(config)
 
-    assert [%{name: "2026-11-13 23:28", inserted_at: ~U[2026-11-13 23:28:11Z]}] =
+    assert [%{name: "2026-11-13 23:28 UTC", inserted_at: ~U[2026-11-13 23:28:11Z]}] =
              Library.list("hq")
   end
 

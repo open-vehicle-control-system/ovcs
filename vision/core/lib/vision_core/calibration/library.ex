@@ -61,7 +61,8 @@ defmodule VisionCore.Calibration.Library do
     guarded(fn ->
       Repo.insert(%{
         saved
-        | name: Keyword.get_lazy(opts, :name, fn -> Calendar.strftime(now, "%Y-%m-%d %H:%M") end),
+        | name:
+            Keyword.get_lazy(opts, :name, fn -> Calendar.strftime(now, "%Y-%m-%d %H:%M UTC") end),
           origin: Keyword.fetch!(opts, :origin),
           board_columns: board[:columns],
           board_rows: board[:rows],

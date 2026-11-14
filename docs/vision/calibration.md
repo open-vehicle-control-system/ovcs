@@ -95,7 +95,7 @@ The unit keeps every calibration it was given, in its database, beside the param
 The page's second part, **Calibrations kept on the unit**, lists those of the calibration shown, the one the unit kept last first, with the time each was made, where, its reprojection errors and a pair's distance between cameras, and marks the one **In use**:
 
 - **Use** puts a calibration back in force: the unit writes its files to the store and takes them, as for a new one. It is refused while a calibration session runs.
-- **Rename** names one, in 1 to 80 characters; a calibration starts with the time it was kept as its name.
+- **Rename** names one, in 1 to 80 characters; a calibration starts with the time it was kept, in UTC, as its name, such as `2026-11-13 23:37 UTC`.
 - **Download** saves its YAML files, named as those of the calibration in use.
 - **Delete** removes one after asking. Deleting the calibration in use first takes the unit back to the calibration shipped with the firmware, as its **Use** does; it is refused without one, and while a calibration session runs.
 - **Shipped with the firmware**, the last row while a built-in calibration exists, takes the unit back to it. Nothing kept is removed: the calibration that was in use stays in the list.

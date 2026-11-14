@@ -68,11 +68,37 @@ defmodule VisionCore.Calibration.LibraryTest do
     end
 
     test "names a calibration after the time it was kept, unless a name is given" do
-      {:ok, dated} = Library.record("stereo", pair(886.3), origin: "dashboard")
-      assert dated.name =~ ~r/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/
+      {:ok, dated} =
+        Library.record("stereo", pair(886.3), origin: "dashboard", at: ~U[2026-11-13 23:37:12Z])
+
+      assert dated.name == "2026-11-13 23:37 UTC"
 
       {:ok, named} = Library.record("stereo", pair(886.3), origin: "imported", name: "Bench")
       assert named.name == "Bench"
+    end
+
+    test "marks UTC on the names kept before they said it, and only on those" do
+      migration = "priv/repo/migrations/20261114180000_mark_utc_in_calibration_names.exs"
+      [{module, _}] = Code.require_file(migration)
+      version = 20_261_114_180_000
+      :ok = Ecto.Migrator.down(Repo, version, module, log: false)
+
+      record = fn name, at ->
+        {:ok, saved} =
+          Library.record("stereo", pair(886.3), origin: "dashboard", name: name, at: at)
+
+        saved.id
+      end
+
+      dated = record.("2026-11-13 23:37", ~U[2026-11-13 23:37:12Z])
+      named = record.("Bench", ~U[2026-11-13 23:38:00Z])
+      chosen = record.("2026-11-12 10:00", ~U[2026-11-13 23:39:00Z])
+
+      :ok = Ecto.Migrator.up(Repo, version, module, log: false)
+
+      assert {:ok, %{name: "2026-11-13 23:37 UTC"}} = Library.fetch(dated)
+      assert {:ok, %{name: "Bench"}} = Library.fetch(named)
+      assert {:ok, %{name: "2026-11-12 10:00"}} = Library.fetch(chosen)
     end
 
     test "refuses a calibration with no columns to go to, and keeps nothing" do
