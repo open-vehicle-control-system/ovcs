@@ -65,6 +65,14 @@ HTTPS on port 443, with a self-signed certificate the unit generates
 in `/data/vision_api/` at its first start. Ports 80 and 4100 redirect
 plain HTTP there.
 
+When `vision_core`, `vision_api` or the firmware's own application
+exits, or does not start, `VisionFirmware.ShoehornHandler` starts those
+that do not run again, after a wait that doubles from a second to a
+minute, for as long as they exit: the unit does not reboot itself. An
+exit after five minutes of running waits a second again. SSH and the
+firmware updates start before these applications and keep running
+meanwhile, so a unit whose vision keeps failing stays reachable.
+
 ## Building
 
 Preferred, from the repo root:
