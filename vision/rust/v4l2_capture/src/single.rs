@@ -105,6 +105,8 @@ pub fn run(
 
 /// The sysfs name of the video encoder node: Qualcomm's Iris, on the VENTUNO Q.
 const VIDEO_ENCODER: &str = "qcom-iris-encoder";
+// Metadata slots 2 (red gain) and 3 (blue gain).
+const WHITE_BALANCE_PRESENT: u8 = 0b1100;
 
 /// An encoder for each output of `arguments` sent as H.264, in their order,
 /// started at the camera's frame rate.
@@ -150,6 +152,15 @@ fn exposure_record((exposure_us, gain): (f64, f64), capture_ns: i64) -> Vec<u8> 
     values[0] = exposure_us;
     values[1] = gain;
     metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
+}
+
+/// The record telling the host the white balance gains applied to the frame
+/// starting at `capture_ns`.
+fn white_balance_record(gains: Gains, capture_ns: i64) -> Vec<u8> {
+    let mut values = [0.0; framing::METADATA_FIELDS];
+    values[2] = gains.red;
+    values[3] = gains.blue;
+    metadata_record(capture_ns, WHITE_BALANCE_PRESENT, &values)
 }
 
 /// Where the frame loop takes its frames from.
@@ -540,6 +551,7 @@ fn convert_frames(
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
     let mut last_ns = None;
+    let mut reported_gains = None;
 
     let mut converted = 0u32;
     let mut statistics = Statistics::default();
@@ -612,13 +624,14 @@ fn convert_frames(
                 threads,
             };
             let measures = plan.develop(&raw, &development, &mut images);
+            let applied_gains = gains;
             if let Some(means) = measures.channel_means {
                 gains = white_balance::grey_world(means, gains);
             }
             statistics.conversion += converting.elapsed();
-            Some((start_ns, measures.green_mean))
+            Some((start_ns, measures.green_mean, applied_gains))
         })? {
-            let Some((start_ns, green_mean)) = taken else {
+            let Some((start_ns, green_mean, applied_gains)) = taken else {
                 statistics.incomplete += 1;
                 continue;
             };
@@ -629,6 +642,11 @@ fn convert_frames(
                     let applied = set_exposure(exposure_us, gain)?;
                     queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
+            }
+            if settings.awb && reported_gains != Some(applied_gains) {
+                let record = white_balance_record(applied_gains, start_ns);
+                queue.send(Record::Other(record))?;
+                reported_gains = Some(applied_gains);
             }
             if plan.scales() {
                 let scaling = Instant::now();
@@ -904,14 +922,16 @@ mod tests {
     #[test]
     fn a_sequence_of_frames_gives_the_same_records_in_the_same_order() {
         let records = captured(scenes(12, Some(5)), vec![]);
-        let tags: Vec<u8> = records.iter().map(|record| record[0]).collect();
+        let tags: Vec<u8> = without_white_balance(&records)
+            .map(|record| record[0])
+            .collect();
         // Frames (7), each fourth whole one after the exposure it sets (3).
         assert_eq!(tags, [7, 7, 7, 3, 7, 7, 7, 7, 3, 7, 7, 7, 7]);
         assert!(records
             .iter()
             .all(|record| record[0] != 7 || record[1] == 0));
         // Which thread writes the records changes none of them nor their order.
-        assert_eq!(records_digest(&records), 0xd4ba9e80010111ea);
+        assert_eq!(records_digest(&records), 0xf59f18cebb97b9cf);
     }
 
     #[test]
@@ -927,7 +947,7 @@ mod tests {
         let records = captured_as(&[FULL, half], scenes(6, Some(2)), vec![]);
 
         // Each frame's outputs (7) in order, the fourth's after the exposure it sets (3).
-        let heads: Vec<(u8, u8)> = (records.iter())
+        let heads: Vec<(u8, u8)> = without_white_balance(&records)
             .map(|record| {
                 (
                     record[0],
@@ -1117,7 +1137,7 @@ mod tests {
         let records = captured_as(&outputs, scenes(6, Some(2)), vec![]);
 
         // Each frame's outputs in order, the fourth's after the exposure it sets (3).
-        let heads: Vec<(u8, u8)> = (records.iter())
+        let heads: Vec<(u8, u8)> = without_white_balance(&records)
             .map(|record| match record[0] {
                 OUTPUT_FRAME | OUTPUT_JPEG => (record[0], record[1]),
                 tag => (tag, 0),
@@ -1162,7 +1182,7 @@ mod tests {
         let records = captured_as(&outputs, scenes(6, Some(2)), vec![]);
 
         // Each frame's sent outputs, with their indices, the fourth's after the exposure it sets (3).
-        let heads: Vec<(u8, u8)> = (records.iter())
+        let heads: Vec<(u8, u8)> = without_white_balance(&records)
             .map(|record| match record[0] {
                 OUTPUT_FRAME | OUTPUT_JPEG => (record[0], record[1]),
                 tag => (tag, 0),
@@ -1215,6 +1235,73 @@ mod tests {
     // The exposure and gain of a metadata record.
     fn exposure_of(record: &[u8]) -> (f64, f64) {
         (metadata_value(record, 0), metadata_value(record, 1))
+    }
+
+    // The red and blue gains of a white balance metadata record.
+    fn white_balance_of(record: &[u8]) -> Option<(f64, f64)> {
+        (record[..2] == [METADATA, 0b1100])
+            .then(|| (metadata_value(record, 2), metadata_value(record, 3)))
+    }
+
+    // `records` but their white balance records.
+    fn without_white_balance(records: &[Vec<u8>]) -> impl Iterator<Item = &Vec<u8>> {
+        records
+            .iter()
+            .filter(|record| white_balance_of(record).is_none())
+    }
+
+    #[test]
+    fn a_white_balance_record_carries_the_gains_in_slots_2_and_3() {
+        let gains = Gains {
+            red: 2.5,
+            blue: 1.75,
+        };
+        let mut values = [0.0; framing::METADATA_FIELDS];
+        values[2] = 2.5;
+        values[3] = 1.75;
+
+        assert_eq!(
+            white_balance_record(gains, 42),
+            metadata_record(42, 0b1100, &values)
+        );
+    }
+
+    #[test]
+    fn automatic_white_balance_reports_the_gains_it_applies() {
+        let records = captured(scenes(4, None), vec![]);
+        let reported: Vec<(f64, f64)> = records
+            .iter()
+            .filter_map(|record| white_balance_of(record))
+            .collect();
+        let first_frame = records
+            .iter()
+            .position(|record| record[0] == OUTPUT_FRAME)
+            .unwrap();
+
+        assert!(records[..first_frame]
+            .iter()
+            .any(|record| white_balance_of(record).is_some()));
+        assert!(!reported.is_empty());
+        assert!(reported
+            .iter()
+            .all(|&(red, blue)| (0.5..=4.0).contains(&red) && (0.5..=4.0).contains(&blue)));
+        assert!(reported.iter().any(|&gains| gains != (1.0, 1.0)));
+    }
+
+    #[test]
+    fn fixed_white_balance_reports_no_gains() {
+        let records = captured(
+            scenes(4, None),
+            vec![(0, "awb=false"), (0, "red_gain=2"), (0, "blue_gain=1.5")],
+        );
+        let applied = records
+            .iter()
+            .position(|record| record.starts_with(b"\x02\x00settings: "))
+            .unwrap();
+
+        assert!(records[applied..]
+            .iter()
+            .all(|record| white_balance_of(record).is_none()));
     }
 
     #[test]
@@ -1514,7 +1601,7 @@ mod tests {
             captured_encoded(&outputs, vec![fake_encoder(None, None)], scenes(6, Some(2)));
 
         // Each frame's outputs in order, the fourth's after the exposure it sets (3).
-        let heads: Vec<(u8, u8)> = (records.iter())
+        let heads: Vec<(u8, u8)> = without_white_balance(&records)
             .map(|record| match record[0] {
                 OUTPUT_FRAME | OUTPUT_JPEG | OUTPUT_H264 => (record[0], record[1]),
                 tag => (tag, 0),

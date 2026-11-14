@@ -134,7 +134,7 @@ A camera whose driver has runtime controls, as `VisionCore.Camera.V4L2Single` ha
 | `denoise` | on or off | The chroma denoise. |
 | `threads` | 1 to 8 | Threads converting each frame. |
 
-While `auto_exposure` is on, `exposure_us` and `analogue_gain` read what the sensor applies, and a change to them is refused. The same holds for the colour gains under `awb`, which read the gains last set.
+While `auto_exposure` is on, `exposure_us` and `analogue_gain` read what the sensor applies, and a change to them is refused. The same holds for the colour gains under `awb`, which read the gains the white balance applies. Switching either mode off keeps the values it applied.
 
 `max_exposure_us` and `max_gain` hold at once: lowered, auto exposure brings the exposure and gain within them, and keeps the brightness as far as they allow. Raised, they change nothing until the image moves away from its target.
 

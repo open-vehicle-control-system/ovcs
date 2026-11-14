@@ -49,6 +49,15 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     <<3, 0b11, 1_000::little-signed-64, values::binary>>
   end
 
+  defp white_balance_record(red_gain, blue_gain) do
+    values =
+      for field <- [0, 0, red_gain, blue_gain, 0, 0, 0, 0],
+          into: <<>>,
+          do: <<field::little-float-64>>
+
+    <<3, 0b1100, 2_000::little-signed-64, values::binary>>
+  end
+
   # Answers `media-ctl -p` with a CAMSS graph captured on the Arduino VENTUNO Q, whose CSI PHY 2
   # has an IMX477, and sends the test every other media-ctl call's arguments.
   defp media_runner do
@@ -609,6 +618,31 @@ defmodule VisionCore.Camera.V4L2SingleTest do
              V4L2Single.live(camera)
 
     assert_in_delta received_ms, System.system_time(:millisecond), 1_000
+  end
+
+  test "parses the white balance gains of a metadata record as they are" do
+    assert {:metadata, %{red_gain: 2.54, blue_gain: 1.94} = metadata} =
+             V4L2Single.parse_record(white_balance_record(2.54, 1.94))
+
+    refute Map.has_key?(metadata, :exposure_time_us)
+  end
+
+  test "live keeps the white balance gains across an exposure record, and the exposure across theirs",
+       %{tmp_dir: tmp_dir} do
+    {script, _arguments, _commands} = listening_program(tmp_dir)
+    camera = start_camera(executable: script)
+    %{port: port} = :sys.get_state(camera)
+
+    send(camera, {port, {:data, white_balance_record(2.54, 1.94)}})
+    send(camera, {port, {:data, metadata_record(4_000.0, 4.0)}})
+
+    assert %{exposure_time_us: 4000, analogue_gain: 4.0, red_gain: 2.54, blue_gain: 1.94} =
+             V4L2Single.live(camera)
+
+    send(camera, {port, {:data, white_balance_record(2.5, 1.9)}})
+
+    assert %{exposure_time_us: 4000, analogue_gain: 4.0, red_gain: 2.5, blue_gain: 1.9} =
+             V4L2Single.live(camera)
   end
 
   defp runs(tmp_dir) do

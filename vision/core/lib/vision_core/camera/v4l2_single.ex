@@ -41,7 +41,10 @@ defmodule VisionCore.Camera.V4L2Single do
   same header under tag 9, OUTPUT_H264, then a byte of flags, bit 0 set
   on a key frame, then the frame's NAL units in Annex B form; one record
   per sent output per frame, in the order of their indices, or the log
-  and metadata records `VisionCore.Camera.V4L2Pair` reads. Records
+  and metadata records `VisionCore.Camera.V4L2Capture.parse_record/1`
+  reads: the exposure and gain as the pair's, and, while `awb` is on,
+  the white balance gains each time they change, the present bits 2 and
+  3, `values[2]` the red gain and `values[3]` the blue gain. Records
   the other way, on the program's stdin, change a setting each:
   `name=value`. Closing stdin stops the program.
 
@@ -52,7 +55,8 @@ defmodule VisionCore.Camera.V4L2Single do
   shares apply as they do to the pair, but `black_level`, a 12-bit
   sample, and the auto exposure, which steers the mean green. `awb`
   balances the white on each frame from the previous one; `red_gain` and
-  `blue_gain` apply while it is off. On a sensor with a tuning, the
+  `blue_gain` apply while it is off. `live/1` carries the gains it
+  applies, which switching it off keeps (`VisionCore.Camera.Parameters`). On a sensor with a tuning, the
   IMX477, auto exposure measures the green after lens shading and white
   balance, through the tuning's contrast curve, before the colour matrix
   and the denoise; `ccm` and `denoise` switch its colour correction
@@ -221,8 +225,9 @@ defmodule VisionCore.Camera.V4L2Single do
   def controls(server), do: GenServer.call(server, :controls)
 
   @doc """
-  The exposure and gain the capture program applies, as
-  `VisionCore.Camera.V4L2Pair.live/1` reports them; `nil` before the first
+  What the capture program applies: the exposure and gain, as
+  `VisionCore.Camera.V4L2Pair.live/1` reports them, and, once the white
+  balance has run, `:red_gain` and `:blue_gain`; `nil` before the first
   report.
   """
   @spec live(GenServer.server()) :: map() | nil
@@ -504,8 +509,7 @@ defmodule VisionCore.Camera.V4L2Single do
         {:noreply, V4L2Capture.delivered(%{state | applied: refreshed(state.applied)})}
 
       {:metadata, metadata} ->
-        applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
-        {:noreply, %{state | applied: applied}}
+        {:noreply, %{state | applied: V4L2Capture.applied(state.applied, metadata)}}
 
       {:log, level, message} ->
         Logger.log(level, "#{state.who} v4l2_capture: #{message}")

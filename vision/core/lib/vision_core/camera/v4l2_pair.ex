@@ -36,11 +36,11 @@ defmodule VisionCore.Camera.V4L2Pair do
       uint8   level               # 0 info, 1 warning, 2 error
       bytes   message
 
-  or the exposure and gain the program just applied, in
-  `VisionCore.Camera.LibCamera`'s metadata record (tag 3): the present
-  bits are 0 and 1, `values[0]` is the exposure in microseconds,
-  `values[1]` the analogue gain, and the time is the left frame's start
-  (0 before the first frame). `live/1` returns the latest.
+  or the exposure and gain the program just applied, in the metadata
+  record `VisionCore.Camera.V4L2Capture.parse_record/1` reads: the
+  present bits are 0 and 1, `values[0]` is the exposure in
+  microseconds, `values[1]` the analogue gain, and the time is the left
+  frame's start (0 before the first frame). `live/1` returns the latest.
 
   Records the other way, on the program's stdin, change a setting each:
   `name=value`, as `control_commands/1` builds them. Closing stdin stops
@@ -385,8 +385,7 @@ defmodule VisionCore.Camera.V4L2Pair do
         {:noreply, V4L2Capture.delivered(%{state | applied: refreshed(state.applied)})}
 
       {:metadata, metadata} ->
-        applied = Map.put(metadata, :received_ms, System.system_time(:millisecond))
-        {:noreply, %{state | applied: applied}}
+        {:noreply, %{state | applied: V4L2Capture.applied(state.applied, metadata)}}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__} v4l2_capture: #{message}")
