@@ -46,12 +46,13 @@ defmodule RosBridge.Simulator.World do
   Pure.
   """
   def twist(%Vehicle{} = vehicle) do
-    yaw_rate =
-      vehicle.commanded_speed_m_s * :math.tan(vehicle.steering_rad) / vehicle.wheelbase_m
-
     %Twist{
       linear: %Vector3{x: vehicle.commanded_speed_m_s, y: 0.0, z: 0.0},
-      angular: %Vector3{x: 0.0, y: 0.0, z: yaw_rate}
+      angular: %Vector3{
+        x: 0.0,
+        y: 0.0,
+        z: vehicle.commanded_speed_m_s * Vehicle.curvature(vehicle)
+      }
     }
   end
 
