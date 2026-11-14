@@ -19,6 +19,7 @@ defmodule VisionCore.Inference.QnnPort do
   """
 
   alias VisionCore.Inference.QnnContext
+  alias VisionCore.Stereo.Parameters
 
   @default_runtime [
     qairt_dir: "/opt/qairt",
@@ -127,6 +128,34 @@ defmodule VisionCore.Inference.QnnPort do
         )
 
     performance_args!(performance) ++ rpc_polling_args!(rpc_polling_us)
+  end
+
+  @doc """
+  The power vote the Port holds for `opts`, as parameters fixed at
+  start: its `performance`, `burst` without one, and its
+  `rpc_polling_us`, 0 without one, which `performance: :none` has not.
+  """
+  @spec power_parameters(keyword()) :: [VisionCore.Parameters.declaration()]
+  def power_parameters(opts) do
+    performance = Keyword.get(opts, :performance, :burst)
+
+    polling =
+      if performance == :none,
+        do: [],
+        else: [
+          Parameters.build_parameter(
+            {:rpc_polling_us, Keyword.get(opts, :rpc_polling_us, 0)},
+            "How long the Port polls for an inference's end before it sleeps, in µs"
+          )
+        ]
+
+    [
+      Parameters.build_parameter(
+        {:performance, performance},
+        "Performance profile the Port votes on the NPU"
+      )
+      | polling
+    ]
   end
 
   defp performance_args!(:error), do: []

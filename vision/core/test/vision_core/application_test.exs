@@ -758,6 +758,13 @@ defmodule VisionCore.ApplicationTest do
     end)
   end
 
+  # An uncalibrated unit: its cameras and their parameters, without the pipeline.
+  @uncalibrated_children [
+    {:stereo, :parameters},
+    {:stereo, :driver, :left},
+    {:stereo, :driver, :right}
+  ]
+
   defp stereo_child_ids, do: stereo_processes() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
 
   test "with a :stereo component, the calibration recorder and session start after the exporters, before Status",
@@ -798,11 +805,11 @@ defmodule VisionCore.ApplicationTest do
     Task.shutdown(task, :brutal_kill)
   end
 
-  test "an uncalibrated stereo unit runs its cameras alone, and a commit restarts it with its pipeline",
+  test "an uncalibrated stereo unit runs its cameras and their parameters, and a commit restarts it with its pipeline",
        %{tmp_dir: tmp_dir} do
     config = start_uncalibrated_unit(tmp_dir)
 
-    assert stereo_child_ids() == [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
+    assert stereo_child_ids() == @uncalibrated_children
     refute VisionCore.Status.snapshot().calibrated
     status = Process.whereis(VisionCore.Status)
     exporters = Process.whereis(VisionCore.Exporters)
@@ -825,7 +832,7 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(VisionCore.Calibration.Session) == session
   end
 
-  test "an uncalibrated stereo unit whose pipeline refuses a commit runs its cameras alone again, without the files",
+  test "an uncalibrated stereo unit whose pipeline refuses a commit runs without its pipeline again, without the files",
        %{tmp_dir: tmp_dir} do
     config = start_uncalibrated_unit(tmp_dir)
 
@@ -838,7 +845,7 @@ defmodule VisionCore.ApplicationTest do
     assert {:error, message} = Calibration.commit(config, calibrations)
     assert message == "the stereo unit did not start with this calibration; the log says why"
     assert File.ls!(Path.join(tmp_dir, "calibration")) == []
-    assert stereo_child_ids() == [{:stereo, :driver, :left}, {:stereo, :driver, :right}]
+    assert stereo_child_ids() == @uncalibrated_children
   end
 
   test "a ROS 2 exporter that keeps crashing stops alone: the stereo unit runs on as it was",

@@ -63,6 +63,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
   alias VisionCore.Detection.Backend.Wire
   alias VisionCore.Detection.Pipeline
   alias VisionCore.Inference.PortBackend
+  alias VisionCore.Options
   alias VisionCore.Stereo.Parameters
 
   # :hailort is a dependency only on targets that build hailo_detect.
@@ -125,7 +126,7 @@ defmodule VisionCore.Detection.Backend.Hailo do
       pipeline: Keyword.get(opts, :pipeline, :detection),
       executable: Keyword.get_lazy(opts, :executable, &default_executable_path/0),
       hef_path: Keyword.fetch!(opts, :hef_path),
-      score_threshold: Keyword.get(opts, :score_threshold, @default_score_threshold),
+      score_threshold: Options.number!(opts, :score_threshold, @default_score_threshold) * 1.0,
       working_directory: Keyword.get(opts, :working_directory, "/data"),
       library_path: Keyword.get(opts, :library_path)
     }

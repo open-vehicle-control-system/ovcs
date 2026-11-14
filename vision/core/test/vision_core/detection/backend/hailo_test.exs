@@ -181,11 +181,12 @@ defmodule VisionCore.Detection.Backend.HailoTest do
              pipeline: :detection,
              position: 102,
              compute: %{runs_on: :npu, implementation: :rust},
-             parameters: [model, threshold]
+             parameters: [model, threshold, timeout]
            } = Enum.find(VisionCore.Parameters.groups(), &(&1.id == "detection.inference"))
 
     assert {model.name, model.value, model.applies} == {"model", "model.hef", :build}
     assert {threshold.name, threshold.value} == {"score_threshold", 0.3}
+    assert {timeout.name, timeout.value, timeout.applies} == {"infer_timeout_ms", 2000, :build}
   end
 
   test "a named pipeline's backend runs under its server name and declares that pipeline's step",

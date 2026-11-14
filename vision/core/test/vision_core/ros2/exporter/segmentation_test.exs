@@ -185,7 +185,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         calibration("plumb_bob", {500.0, 480.0, 499.5, 199.5}, [0.0], {1000, 400}, 2.0)
 
       frame = %Frame{frame() | width: 2000, height: 800}
-      band = Pipeline.band(2000, 800, nil)
+      band = Pipeline.band(2000, 800, 1.0)
       assert band == {0, 0, 2000, 800}
       labels = %{width: 256, height: 128, data: :binary.copy(<<0>>, 256 * 128), band: band}
 
@@ -218,7 +218,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
         calibration("plumb_bob", {1161.3, 1161.3, 1013.5, 759.5}, [0.0], {2028, 1520})
 
       frame = %Frame{frame() | width: 1014, height: 760}
-      {x, y, w, h} = band = Pipeline.band(1014, 760, nil)
+      {x, y, w, h} = band = Pipeline.band(1014, 760, 1.0)
       assert band == {0, 253, 1014, 507}
       labels = %{width: 256, height: 128, data: :binary.copy(<<0>>, 256 * 128), band: band}
 
@@ -256,7 +256,7 @@ defmodule VisionCore.Ros2.Exporter.SegmentationTest do
 
         # Twice the calibration's size: the camera info starts from it resampled to the frame.
         frame = %Frame{frame() | width: 1280, height: 960}
-        {x, y, w, h} = band = Pipeline.band(1280, 960, nil)
+        {x, y, w, h} = band = Pipeline.band(1280, 960, 1.0)
         {grid_w, grid_h} = {256, 128}
         labels = %{width: grid_w, height: grid_h, data: <<>>, band: band}
 

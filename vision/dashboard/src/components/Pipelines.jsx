@@ -165,12 +165,13 @@ function Steps({ name, groups, selectedGroupId, box }) {
 
 /**
  * The vision unit's pipelines as a menu, each a numbered flow of boxes that select their group. Detection is listed on
- * every unit, so the menu reads the same everywhere: on a unit with no pipeline beyond the stereo one, as one greyed line.
+ * every unit, so the menu reads the same everywhere: on a unit whose only steps are the stereo pipeline's, as one greyed line.
  */
 export default function Pipelines() {
   const { pipelines, selectedGroupId, box } = useGroupBoxes()
   if (pipelines.length === 0) return null
-  const withInference = pipelines.some((pipeline) => pipeline.name !== 'stereo')
+  // A camera of its own is a pipeline of one source, with no step.
+  const withInference = pipelines.some(({ name, groups }) => name !== 'stereo' && groups.some((group) => group.role === 'step'))
 
   return (
     <div className="flex flex-col gap-3">

@@ -7,7 +7,8 @@ defmodule VisionCore.Pipelines do
   (`VisionCore.Segmentation`) and a camera of its own
   (`VisionCore.Camera.Unit`) are each named by their `:name` option. The
   name keys the unit's processes (`server/2`), its `VisionCore.Outputs`
-  key, its parameter groups (`<name>.*`), its exporters' outputs and its
+  key, its parameter groups (`<name>.*`, a camera's `<name>.camera`), its
+  exporters' outputs and its
   ROS 2 topics (`<prefix>/<name>/…`), so no two of them share one
   (`VisionCore.Application`).
 

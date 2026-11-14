@@ -131,7 +131,7 @@ It needs the ROS 2 exporter, publishing the raw images (`publish_raw_images`, on
 
 ## A unit without a calibration
 
-A unit with no calibration file for either camera, such as one for a new vehicle, starts its cameras alone and logs that it is uncalibrated. It computes no depth, and the camera settings are not offered on the dashboard: the cameras run with your composer's options. The dashboard's top bar reads **uncalibrated**, and the Calibration page says that depth starts once a calibration is applied.
+A unit with no calibration file for either camera, such as one for a new vehicle, starts its cameras without the depth pipeline and logs that it is uncalibrated. It computes no depth. The cameras' controls are vision parameters all the same, so set the exposure, the gain and the focus before you calibrate. The dashboard's top bar reads **uncalibrated**, and the Calibration page says that depth starts once a calibration is applied.
 
 Calibrate it from the page. When the unit takes the first calibration, it restarts with its pipeline, as it does on any apply from the page while its pipeline has stopped. A commit from `cameracalibrator` has the running pipeline reload the files, so it is refused on a unit whose pipeline does not run: calibrate such a unit from the page.
 

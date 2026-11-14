@@ -284,10 +284,16 @@ defmodule VisionCore.Segmentation.Backend.QnnTest do
     assert log =~ "#{inspect(Qnn)} (road) loaded model.dlc"
     refute Process.whereis(Qnn)
 
-    assert %{pipeline: :road, position: 102, parameters: [model]} =
+    assert %{pipeline: :road, position: 102, parameters: parameters} =
              Enum.find(VisionCore.Parameters.groups(), &(&1.id == "road.inference"))
 
-    assert model.value == "model.dlc"
+    assert Enum.map(parameters, &{&1.name, &1.value, &1.applies}) == [
+             {"model", "model.dlc", :build},
+             {"classes", 19, :build},
+             {"performance", "burst", :build},
+             {"rpc_polling_us", 0, :build},
+             {"infer_timeout_ms", 2000, :build}
+           ]
   end
 
   test "keeps its context binary in a directory of its pipeline's", %{tmp_dir: dir} do

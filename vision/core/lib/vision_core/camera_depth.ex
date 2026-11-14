@@ -168,6 +168,11 @@ defmodule VisionCore.CameraDepth do
     }
   end
 
+  @doc "`depth`, keeping the pairs captured up to `pair_wait_ms` before the newest one."
+  @spec put_pair_wait_ms(t(), non_neg_integer()) :: t()
+  def put_pair_wait_ms(%__MODULE__{} = depth, pair_wait_ms),
+    do: %{depth | keep_ns: pair_wait_ms * @ns_per_ms}
+
   defp outputs_text([]), do: "which has no named outputs"
 
   defp outputs_text(outputs),

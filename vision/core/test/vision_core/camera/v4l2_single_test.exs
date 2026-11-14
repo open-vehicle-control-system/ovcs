@@ -429,6 +429,36 @@ defmodule VisionCore.Camera.V4L2SingleTest do
     assert log =~ ":output is :full or :half"
   end
 
+  test "its settings fixed at start are its frame rate, its sensor mode and each output, in the program's order" do
+    opts = [
+      csiphy: 2,
+      fps: 30,
+      outputs: [
+        full: [resolution: {2028, 1520}, processor: :cpu, send: false],
+        half: [resolution: {1014, 760}, from: :full],
+        half_jpeg: [from: :half, format: :jpeg, quality: 80],
+        full_h264: [from: :full, format: :h264, bitrate_kbps: 8_000, keyframe_interval: 30]
+      ]
+    ]
+
+    assert V4L2Single.fixed_settings(opts) == [
+             fps: 30,
+             sensor_mode: {2028, 1520},
+             output_full: "2028x1520 rgb, not sent",
+             output_half: "1014x760 rgb",
+             output_full_h264: "2028x1520 h264, 8000 kbps, a key frame every 30",
+             output_half_jpeg: "1014x760 jpeg, quality 80"
+           ]
+  end
+
+  test "its fixed settings default to 15 frames a second and the full sensor mode in one output" do
+    assert V4L2Single.fixed_settings(csiphy: 2) == [
+             fps: 15,
+             sensor_mode: {2028, 1520},
+             output_full: "2028x1520 rgb"
+           ]
+  end
+
   test "takes each frame's size from its record, whatever the sensor mode" do
     rgb = :binary.copy(<<1, 2, 3>>, 4 * 3)
 

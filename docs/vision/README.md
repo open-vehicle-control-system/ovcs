@@ -174,11 +174,12 @@ On a unit whose cameras have lens actuators, such as the Camera Module 3, both l
 
 The vision parameters are the unit's own settings, grouped by component and pipeline stage:
 
-- the cameras' controls;
-- each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness`;
-- on a unit with detection, the detection's settings.
+- the stereo cameras' controls, also on a unit not calibrated yet, so exposure, gain and focus can be set before the calibration;
+- the pairing's tolerance and each stereo stage's settings, among them the matcher's `p1`, `p2` and `uniqueness` ([Stereo stages](./stages.md));
+- the controls of each camera of its own, as `<name>.camera` ([Parameters](./cameras.md#parameters));
+- each detection pipeline's settings ([Settings](./detection.md#settings)) and each segmentation pipeline's ([Settings](./segmentation.md#settings)).
 
-Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
+Most apply live. The stereo settings are inputs of the stages, not compiled in, so a change applies from one of the next pairs without restarting anything. Others are fixed in the build, such as the image size, a model or the options of an accelerator's program. Some are set by an automatic mode while it is on, such as the exposure under auto exposure.
 
 The dashboard keeps the selected step in the URL (`?box=stereo.disparity`), so a link opens it again.
 

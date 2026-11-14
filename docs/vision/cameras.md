@@ -112,6 +112,31 @@ Auto exposure measures the green after lens shading and white balance, through t
 
 On a processor whose cores differ in speed, such as the VENTUNO Q's Cortex-A78 and Cortex-A55, every thread of the camera's `v4l2_capture` runs on the cores faster than the slowest, from the kernel's `cpu_capacity`. A frame waits for its last band, so one band on a slow core holds the whole frame back.
 
+## Parameters
+
+A camera whose driver has runtime controls, as `VisionCore.Camera.V4L2Single` has, lists them as vision parameters, `<name>.camera.<control>`. They change while the camera captures ([Change a parameter](./api.md#change-a-parameter)), and a saved value is applied again each time the camera starts. A control given in the `:camera` component is the value the camera starts with.
+
+| Parameter | Values | Meaning |
+|---|---|---|
+| `rotation` | 0 or 180 | Image rotation in degrees. |
+| `auto_exposure` | on or off | Automatic exposure. On, it sets `exposure_us` and `analogue_gain`. |
+| `exposure_us` | 100 to 1000000 | Exposure time in µs: fixed, or where auto exposure starts. |
+| `analogue_gain` | 1 to 16 | Analogue gain: fixed, or where auto exposure starts. |
+| `target_brightness` | 1 to 254 | Mean green auto exposure steers the image to. |
+| `max_exposure_us` | 100 to 1000000 | Longest exposure auto exposure uses before it raises the gain. |
+| `max_gain` | 1 to 16 | Highest analogue gain auto exposure uses. |
+| `black_level` | 0 to 4094 | Raw sample value of black. |
+| `gamma` | 0.5 to 4 | Gamma of the image, or of auto exposure's steps on a sensor with a tuning. |
+| `awb` | on or off | Automatic white balance. On, it sets `red_gain` and `blue_gain`. |
+| `red_gain`, `blue_gain` | 0.5 to 4 | Colour gains while the white balance is off. |
+| `ccm` | on or off | The tuning's colour correction matrix. |
+| `denoise` | on or off | The chroma denoise. |
+| `threads` | 1 to 8 | Threads converting each frame. |
+
+While `auto_exposure` is on, `exposure_us` and `analogue_gain` read what the sensor applies, and a change to them is refused. The same holds for the colour gains under `awb`, which read the gains last set.
+
+The frame rate, the sensor mode and each output, with its size and its format's quality or bitrate, are listed after them as `fps`, `sensor_mode` and `output_<name>`. They are fixed when the camera starts: change them in your composer.
+
 ## Worked example: the OVCS1 reference vehicle
 
 `Ovcs1.Vision.Composer` runs a Raspberry Pi HQ Camera (IMX477) with a 3.6 mm lens on Camera 2, `:center`. It captures 2028 × 1520 in colour at 30 frames a second. That image, its `:full` output, is not sent. `v4l2_capture` makes three outputs from it:

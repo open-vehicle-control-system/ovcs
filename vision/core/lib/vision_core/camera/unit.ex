@@ -30,6 +30,13 @@ defmodule VisionCore.Camera.Unit do
   cannot make, or `:outputs` given to a driver without named outputs,
   stop the unit at start, saying why.
 
+  A driver with runtime controls (`c:VisionCore.Camera.control_specs/0`)
+  has them as the camera's vision parameters, the group `<name>.camera`
+  (`VisionCore.Camera.Parameters`), with the settings it fixes at start
+  (`c:VisionCore.Camera.fixed_settings/1`) listed after them. They are
+  declared after the driver starts, at each of its starts, so its saved
+  values are applied again.
+
   Three options describe the camera to its consumers, such as
   `VisionCore.Ros2.Exporter`, and are not given to the driver
   (`settings/1`):
@@ -54,7 +61,7 @@ defmodule VisionCore.Camera.Unit do
   """
   use Supervisor
 
-  alias VisionCore.Camera.Output
+  alias VisionCore.Camera.{Output, Parameters}
   alias VisionCore.Pipelines
 
   # Its own budget, so a crash loop stops here instead of in the vision core supervisor.
@@ -123,11 +130,24 @@ defmodule VisionCore.Camera.Unit do
       |> Keyword.put_new(:frame_id, default_frame_id(name))
       |> Keyword.put(:label, Atom.to_string(name))
 
-    Supervisor.init([{driver, driver_opts}],
-      strategy: :one_for_one,
+    Supervisor.init([{driver, driver_opts} | parameters(name, driver, driver_opts)],
+      strategy: :rest_for_one,
       max_restarts: @max_restarts,
       max_seconds: @max_seconds
     )
+  end
+
+  # After the driver, whose controls it declares and gives their saved values at each start.
+  defp parameters(name, driver, driver_opts) do
+    if function_exported?(driver, :control_specs, 0),
+      do: [{Parameters, name: name, driver: driver, fixed: fixed_settings(driver, driver_opts)}],
+      else: []
+  end
+
+  defp fixed_settings(driver, driver_opts) do
+    if function_exported?(driver, :fixed_settings, 1),
+      do: driver.fixed_settings(driver_opts),
+      else: []
   end
 
   @doc """

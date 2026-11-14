@@ -42,6 +42,12 @@ defmodule VisionCore.Detection.CameraPipeline do
   defdelegate groups(settings), to: Pipeline
 
   @impl VisionCore.CameraPipeline
+  defdelegate setting_values(settings), to: Pipeline
+
+  @impl VisionCore.CameraPipeline
+  defdelegate with_setting(settings, key, value), to: Pipeline
+
+  @impl VisionCore.CameraPipeline
   defdelegate output_key(settings), to: Pipeline
 
   @impl VisionCore.CameraPipeline
