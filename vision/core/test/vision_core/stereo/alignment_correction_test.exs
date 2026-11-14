@@ -12,16 +12,19 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
 
     {:ok, pid} =
       AlignmentCorrection.start_link(
-        [
-          name: nil,
-          subscribe: false,
-          current_offset: fn -> :counters.get(current, 1) / 1000 end,
-          set_offset: fn rows ->
-            :counters.put(current, 1, round(rows * 1000))
-            send(test_pid, {:set, rows})
-            :ok
-          end
-        ] ++ opts
+        Keyword.merge(
+          [
+            name: nil,
+            subscribe: false,
+            current_offset: fn -> :counters.get(current, 1) / 1000 end,
+            set_offset: fn rows ->
+              :counters.put(current, 1, round(rows * 1000))
+              send(test_pid, {:set, rows})
+              :ok
+            end
+          ],
+          opts
+        )
       )
 
     pid
@@ -37,6 +40,25 @@ defmodule VisionCore.Stereo.AlignmentCorrectionTest do
     for _ <- 1..5, do: tick(pid, 1.0)
     assert_receive {:set, rows}
     assert_in_delta rows, 1.5, 1.0e-6
+  end
+
+  @tag :capture_log
+  test "a pipeline that does not answer costs the correction that reading, not the process" do
+    pid =
+      start(0.0,
+        current_offset: fn ->
+          exit({:timeout, {GenServer, :call, [:pipeline, :stage_options]}})
+        end
+      )
+
+    for _ <- 1..5, do: tick(pid, 1.0)
+    assert :sys.get_state(pid).offsets == []
+    assert Process.alive?(pid)
+
+    pid = start(0.0, set_offset: fn _rows -> exit(:noproc) end)
+    for _ <- 1..5, do: tick(pid, 1.0)
+    assert :sys.get_state(pid).offsets == []
+    assert Process.alive?(pid)
   end
 
   test "builds on the correction in force" do

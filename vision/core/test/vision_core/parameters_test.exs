@@ -14,6 +14,12 @@ defmodule VisionCore.ParametersTest do
     def write(_changes), do: {:error, "saved parameters unavailable"}
   end
 
+  defmodule ReadOnlyStore do
+    @moduledoc false
+    def load, do: %{"stereo.disparity.p1" => 10, "stereo.disparity.gone" => 1}
+    def write(_changes), do: {:error, "saved parameters unavailable"}
+  end
+
   @auto_exposure "stereo.cameras.auto_exposure"
 
   # MemoryStore is one named Agent: other modules using it are synchronous, so run after these tests.
@@ -36,6 +42,82 @@ defmodule VisionCore.ParametersTest do
     assert [p1, p2] = group.parameters
     assert %{id: "stereo.disparity.p1", value: 12, default: 8, saved: nil, state: :unsaved} = p1
     assert %{id: "stereo.disparity.p2", greater_than: "stereo.disparity.p1", state: :builtin} = p2
+  end
+
+  test "a listing asks an owner that does not answer once, and lists the others' values" do
+    server = :"#{__MODULE__}.listing"
+
+    start_supervised!(
+      {Parameters, name: server, store: MemoryStore, listing_timeout_ms: 50},
+      id: :listing
+    )
+
+    start_owner(server, &match_groups/1)
+    asked = :counters.new(1, [])
+    stuck? = :atomics.new(1, [])
+
+    # Answers `value` until the test makes the owner stop answering.
+    answering = fn value ->
+      fn ->
+        if :atomics.get(stuck?, 1) == 1 do
+          :counters.add(asked, 1, 1)
+          Process.sleep(:infinity)
+        else
+          value
+        end
+      end
+    end
+
+    groups =
+      for {id, position} <- [{"stuck.a", 10}, {"stuck.b", 11}, {"stuck.c", 12}] do
+        %{
+          id: id,
+          name: id,
+          summary: "Never answers",
+          kind: :stage,
+          pipeline: :stereo,
+          position: position,
+          status: answering.({:ok, "running"}),
+          values: answering.(%{"first" => 1}),
+          parameters: [
+            %{name: "first", type: :integer, set: fn _value -> :ok end},
+            %{name: "second", type: :integer, get: answering.(2), set: fn _value -> :ok end}
+          ]
+        }
+      end
+
+    test = self()
+
+    owner =
+      spawn_link(fn ->
+        :ok = Parameters.declare(server, groups)
+        send(test, :declared)
+        Process.sleep(:infinity)
+      end)
+
+    assert_receive :declared
+    on_exit(fn -> Process.exit(owner, :kill) end)
+
+    assert [1, 2] =
+             for(
+               %{id: "stuck.a", parameters: ps} <- Parameters.groups(server),
+               p <- ps,
+               do: p.value
+             )
+
+    :atomics.put(stuck?, 1, 1)
+
+    listed = Parameters.groups(server)
+
+    assert :counters.get(asked, 1) == 1
+
+    assert [8, 64] =
+             for(%{id: "stereo.disparity", parameters: ps} <- listed, p <- ps, do: p.value)
+
+    for %{id: "stuck." <> _rest} = group <- listed do
+      assert group.status == nil
+      assert Enum.map(group.parameters, & &1.value) == [nil, nil]
+    end
   end
 
   test "a declared default wins over the first read", %{server: server} do
@@ -811,6 +893,27 @@ defmodule VisionCore.ParametersTest do
 
       assert Parameters.save(server) == {:ok, ["stereo.disparity.p1"]}
       assert MemoryStore.rows() == %{}
+    end
+
+    @tag store: __MODULE__.ReadOnlyStore
+    test "forget answers the store's error and keeps the saved value it could not delete",
+         %{server: server} do
+      capture_log(fn -> start_owner(server, &match_groups/1) end)
+
+      assert Parameters.forget(server, "stereo.disparity.p1") ==
+               {:error, "saved parameters unavailable"}
+
+      assert {:ok, %{saved: 10}} = Parameters.get(server, "stereo.disparity.p1")
+    end
+
+    @tag store: __MODULE__.ReadOnlyStore
+    test "a saved value dropped at a declaration stays saved while the store cannot delete it, which is logged",
+         %{server: server} do
+      log = capture_log(fn -> start_owner(server, &match_groups/1) end)
+
+      assert log =~ "stereo.disparity.gone = 1 dropped: no such parameter"
+      assert log =~ "stereo.disparity.gone still saved: saved parameters unavailable"
+      assert Map.has_key?(:sys.get_state(server).saved, "stereo.disparity.gone")
     end
 
     @tag saved: %{"stereo.disparity.p1" => 10}

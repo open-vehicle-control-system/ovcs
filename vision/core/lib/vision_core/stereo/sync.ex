@@ -39,9 +39,10 @@ defmodule VisionCore.Stereo.Sync do
           pairs: non_neg_integer()
         }
 
-  @doc "A measurement of cameras capturing `fps` frames a second."
+  @doc "A measurement of cameras capturing `fps` frames a second, a positive integer."
   @spec new(pos_integer()) :: t()
-  def new(fps), do: %__MODULE__{half_period_ns: div(1_000_000_000, 2 * fps)}
+  def new(fps) when is_integer(fps) and fps > 0,
+    do: %__MODULE__{half_period_ns: div(1_000_000_000, 2 * fps)}
 
   @doc """
   `sync` with the frame of `side` captured at `capture_ns`, arrived at

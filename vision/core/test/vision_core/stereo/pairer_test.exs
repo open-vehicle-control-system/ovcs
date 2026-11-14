@@ -96,6 +96,18 @@ defmodule VisionCore.Stereo.PairerTest do
              {:error, "pair_tolerance_ms must be an integer, got 1.5"}
   end
 
+  test "refuses at start an :fps that is no integer from 1 on" do
+    for fps <- [0, 29.97, nil] do
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {Pairer,
+                  cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: fps}
+               )
+
+      assert message =~ ":fps"
+    end
+  end
+
   test "measures the sync of the frames its cameras publish" do
     pairer =
       start_supervised!(

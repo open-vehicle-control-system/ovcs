@@ -212,12 +212,20 @@ defmodule VisionCore.Stereo.AlignmentCorrection do
 
   def handle_info(_message, state), do: {:noreply, state}
 
+  # A pipeline that is busy or restarting costs this correction, which the next readings make again.
   defp correct(state, offset) do
     case state.current_offset.() do
       # No right_row_offset to move the rows.
       nil -> state
       current -> correct(state, offset, current)
     end
+  catch
+    :exit, reason ->
+      Logger.warning(
+        "#{__MODULE__}: the pipeline did not answer, rows left as they are: #{inspect(reason)}"
+      )
+
+      state
   end
 
   defp correct(state, offset, current) do
