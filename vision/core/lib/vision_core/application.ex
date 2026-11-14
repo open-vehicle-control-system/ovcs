@@ -40,8 +40,8 @@ defmodule VisionCore.Application do
 
   After the components come `VisionCore.Exporters`, which runs the
   configuration's exporters, then, on a unit with something to calibrate
-  (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Session`,
-  then `VisionCore.Status`, which
+  (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Recorder`
+  and `VisionCore.Calibration.Session`, then `VisionCore.Status`, which
   reports the exporters' statuses, `VisionCore.Preview` and
   `VisionCore.Video`: a restart
   of the dashboard's sources does not restart the exporters.
@@ -135,8 +135,14 @@ defmodule VisionCore.Application do
 
   defp calibration_children(config) do
     case VisionCore.Calibration.targets(config) do
-      [] -> []
-      _targets -> [{VisionCore.Calibration.Session, config: config}]
+      [] ->
+        []
+
+      _targets ->
+        [
+          {VisionCore.Calibration.Recorder, config: config},
+          {VisionCore.Calibration.Session, config: config}
+        ]
     end
   end
 

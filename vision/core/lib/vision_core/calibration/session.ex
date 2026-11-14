@@ -57,12 +57,16 @@ defmodule VisionCore.Calibration.Session do
       `:solve_camera` (`VisionCore.Calibration.Solver.solve_camera/3`),
       `:commit_camera` (`VisionCore.Camera.Calibration.commit/3`) — what
       the tasks run.
+    * `:expect` (`VisionCore.Calibration.Recorder.expect/2`), `:forget`
+      (`VisionCore.Calibration.Recorder.forget/1`) — how a commit is
+      announced to the recorder with the board, the views and the errors
+      of the calibration, and taken back when it is refused.
   """
   use GenServer
   require Logger
 
   alias VisionCore.Calibration
-  alias VisionCore.Calibration.{Board, Chessboard, Coverage, Solver}
+  alias VisionCore.Calibration.{Board, Chessboard, Coverage, Recorder, Solver}
   alias VisionCore.Camera.Frame
   alias VisionCore.Outputs
 
@@ -155,6 +159,8 @@ defmodule VisionCore.Calibration.Session do
          solve_camera: Keyword.get(opts, :solve_camera, &Solver.solve_camera/3),
          commit_camera:
            Keyword.get(opts, :commit_camera, &VisionCore.Camera.Calibration.commit/3),
+         expect: Keyword.get(opts, :expect, &Recorder.expect/2),
+         forget: Keyword.get(opts, :forget, &Recorder.forget/1),
          subscribers: %{},
          task: nil,
          tick: nil,
@@ -310,13 +316,47 @@ defmodule VisionCore.Calibration.Session do
     fn -> solve.(board, size, views) end
   end
 
-  defp committer(%{target: %{kind: :stereo}, commit: commit, config: config}, result),
+  # The commit, announced to the recorder with what the session knows of the calibration.
+  defp committer(%{target: %{id: id}, expect: expect, forget: forget} = state, result) do
+    commit = commit(state, result)
+    kept = {:record, kept(state, result)}
+
+    fn ->
+      expect.(id, kept)
+
+      with {:error, _reason} = refused <- commit.() do
+        forget.(id)
+        refused
+      end
+    end
+  end
+
+  defp commit(%{target: %{kind: :stereo}, commit: commit, config: config}, result),
     do: fn -> commit.(config, %{left: result.left, right: result.right}) end
 
-  defp committer(%{target: %{kind: :camera, name: name}, config: config} = state, result) do
+  defp commit(%{target: %{kind: :camera, name: name}, config: config} = state, result) do
     %{commit_camera: commit} = state
     fn -> commit.(config, name, result.camera) end
   end
+
+  defp kept(%{target: target, board: board}, result) do
+    [
+      origin: "dashboard",
+      board: %{columns: board.columns, rows: board.rows, square_m: board.square_m},
+      samples: result.samples,
+      rms_px: rms_px(target, result)
+    ] ++ pair_figures(target, result)
+  end
+
+  defp rms_px(%{kind: :stereo}, result),
+    do: %{"left" => result.left_rms_px, "right" => result.right_rms_px}
+
+  defp rms_px(%{kind: :camera, labels: [label]}, result), do: %{label => result.rms_px}
+
+  defp pair_figures(%{kind: :stereo}, result),
+    do: [stereo_rms_px: result.stereo_rms_px, baseline_m: result.baseline_m]
+
+  defp pair_figures(%{kind: :camera}, _result), do: []
 
   defp detecting?(state), do: state.phase == :capturing and state.subscribers != %{}
 

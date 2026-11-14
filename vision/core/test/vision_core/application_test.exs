@@ -760,15 +760,16 @@ defmodule VisionCore.ApplicationTest do
 
   defp stereo_child_ids, do: stereo_processes() |> Enum.map(&elem(&1, 0)) |> Enum.sort()
 
-  test "with a :stereo component, the calibration session starts after the exporters, before Status",
+  test "with a :stereo component, the calibration recorder and session start after the exporters, before Status",
        %{tmp_dir: tmp_dir} do
     start_idle_unit(tmp_dir)
 
-    assert Enum.take(child_ids(VisionCore.Supervisor), 5) == [
+    assert Enum.take(child_ids(VisionCore.Supervisor), 6) == [
              VisionCore.Video,
              VisionCore.Preview,
              VisionCore.Status,
              VisionCore.Calibration.Session,
+             VisionCore.Calibration.Recorder,
              VisionCore.Exporters
            ]
   end
@@ -777,6 +778,7 @@ defmodule VisionCore.ApplicationTest do
     start_pipeline(%VisionCore.Config{})
 
     refute VisionCore.Calibration.Session in child_ids(VisionCore.Supervisor)
+    refute VisionCore.Calibration.Recorder in child_ids(VisionCore.Supervisor)
   end
 
   test "a restart of the components leaves a running commit's task alive", %{tmp_dir: tmp_dir} do

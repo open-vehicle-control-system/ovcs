@@ -20,7 +20,7 @@ function fakeChannel() {
   return { channel, handlers, receivers }
 }
 
-const initial = { session: null, calibrations: {}, selected: null, error: null, busy: false, unavailable: false }
+const initial = { session: null, calibrations: {}, saved: {}, selected: null, error: null, busy: false, unavailable: false }
 const fallback = { columns: 8, rows: 6, squareMm: 25 }
 
 describe('calibration store', () => {
@@ -159,6 +159,60 @@ describe('calibration store', () => {
     await pending
 
     expect(useCalibration.getState()).toMatchObject({ error: 'cannot cancel while applying', busy: false })
+  })
+
+  describe('the calibrations kept', () => {
+    const resource = (id, attributes) => ({ type: 'saved-calibrations', id, attributes })
+    const answer = (status, document) => ({ ok: status < 400, status, json: async () => document, text: async () => JSON.stringify(document ?? '') })
+
+    it('reads the list of the calibration picked, of the first one pushed, and again at each change the channel announces', async () => {
+      const fetch = vi.fn(async () => answer(200, { data: [resource('7', { name: 'Bench', inForce: true })] }))
+      vi.stubGlobal('fetch', fetch)
+      const { channel, handlers } = fakeChannel()
+      useCalibration.getState().listen({ channel: vi.fn(() => channel) })
+
+      handlers.calibration({ id: 'stereo', kind: 'stereo', source: 'stored' })
+      await vi.waitFor(() => expect(useCalibration.getState().saved.stereo).toEqual([{ id: '7', name: 'Bench', inForce: true }]))
+      expect(fetch.mock.calls[0][0]).toMatch(/\/api\/saved-calibrations\?filter\[calibration\]=stereo$/)
+
+      // Another push of a calibration whose list is known reads nothing; a change of its list does.
+      handlers.calibration({ id: 'stereo', kind: 'stereo', source: 'builtIn' })
+      expect(fetch).toHaveBeenCalledTimes(1)
+      handlers.saved({ calibration: 'stereo' })
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+      useCalibration.getState().select('center')
+      await vi.waitFor(() => expect(fetch.mock.calls[2][0]).toMatch(/filter\[calibration\]=center$/))
+    })
+
+    it('keeps the list it had when the unit cannot be read', async () => {
+      useCalibration.setState({ saved: { stereo: [{ id: '7' }] } })
+      vi.stubGlobal('fetch', vi.fn(async () => answer(503, { errors: [{ detail: 'down' }] })))
+
+      await useCalibration.getState().loadSaved('stereo')
+      expect(useCalibration.getState().saved.stereo).toEqual([{ id: '7' }])
+      expect(useCalibration.getState().error).toBeNull()
+    })
+
+    it('selects, renames and deletes over the API, and shows a refusal', async () => {
+      const fetch = vi.fn(async (_url, { method }) => (method === 'DELETE' ? answer(409, { errors: [{ detail: 'the unit runs on this calibration' }] }) : answer(200, { data: resource('7', { name: 'Workshop' }) })))
+      vi.stubGlobal('fetch', fetch)
+
+      await useCalibration.getState().useSaved('7')
+      const [selectUrl, select] = fetch.mock.calls[0]
+      expect(selectUrl).toMatch(/\/api\/calibration-selections$/)
+      expect(JSON.parse(select.body)).toEqual({
+        data: { type: 'calibration-selections', relationships: { savedCalibration: { data: { type: 'saved-calibrations', id: '7' } } } }
+      })
+
+      await useCalibration.getState().renameSaved('7', 'Workshop')
+      const [renameUrl, rename] = fetch.mock.calls[1]
+      expect([renameUrl.endsWith('/api/saved-calibrations/7'), rename.method]).toEqual([true, 'PATCH'])
+      expect(JSON.parse(rename.body)).toEqual({ data: { type: 'saved-calibrations', id: '7', attributes: { name: 'Workshop' } } })
+
+      await useCalibration.getState().deleteSaved('7')
+      expect(useCalibration.getState().error).toBe('the unit runs on this calibration')
+    })
   })
 
   it('loadBoard falls back to the default when storage throws or holds junk', () => {

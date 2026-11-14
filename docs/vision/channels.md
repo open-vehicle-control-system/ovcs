@@ -240,6 +240,7 @@ A name no segmentation pipeline of the unit runs under, a detection pipeline's i
 
 - A `calibration` event carries the calibration's `id` and its attributes, as `GET /api/calibrations/:id` gives them.
 - A `session` event carries the session's attributes, as the action routes answer them, and `calibration`, the id of the calibration it works on, `null` while idle.
+- A `saved` event carries `calibration`, the id of a calibration whose [kept calibrations](./api.md#the-calibrations-kept) changed: one was kept, renamed, removed or put in force. Read `GET /api/saved-calibrations?filter[calibration]=<id>` again.
 
 ```javascript
 const calibration = socket.channel('calibration')

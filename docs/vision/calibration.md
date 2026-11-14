@@ -85,7 +85,18 @@ Without a `:calibration_store_dir`, a commit writes the built-in files themselve
 
 The page says which is in force: **Using the calibration shipped with the firmware**, **Calibrated on this unit** with the time, or **Not calibrated**. Under it, the image size, the focal length, whether the lens distortion is corrected, which a calibration with every distortion coefficient at 0 does not, and for a pair the distance between the cameras; a unit without a calibration shows a dash for each. When a calibration file cannot be read, or its matrices are malformed, the page says why under them and shows that camera without figures; calibrate again, or go back to the firmware's calibration, to replace the file. Beside them, the camera parameters: each camera's `fx`, `fy`, `cx`, `cy` and distortion coefficients, in pixels; **Download** saves the two files in use. **Calibrate again**, or **Calibrate** on a unit without a calibration, opens a dialog that makes a new one in three steps: the board, the capture, the result. The dialog stays open while a session runs, in every browser on the page, until its own buttons end it.
 
-**Go back to the firmware's calibration**, shown while anything is stored on the unit, a side stored alone included, and a built-in calibration exists, deletes the stored files after asking, and the unit takes the built-in calibration again. A firmware upload keeps the data partition, and with it the stored calibration; wiping the partition loses it.
+### The calibrations kept
+
+The unit keeps every calibration it was given, in its database, beside the parameters you save: each one applied from the page, with its board, its count of views and its errors, and each one it finds in its store that it does not know, as one committed by `cameracalibrator`, which it notes as found on the unit. A calibration found there is kept when the unit starts.
+
+The page's second part, **Calibrations kept on the unit**, lists those of the calibration shown, the newest first, with the time each was made, its reprojection errors and a pair's distance between cameras, and marks the one **In use**:
+
+- **Use** puts a calibration back in force: the unit writes its files to the store and takes them, as for a new one. It is refused while a calibration session runs.
+- **Rename** names one, in 1 to 80 characters; a calibration starts with the time it was kept as its name.
+- **Delete** removes one after asking. The calibration in use has no Delete.
+- **Shipped with the firmware**, the last row while a built-in calibration exists, takes the unit back to it. Nothing kept is removed: the calibration that was in use stays in the list.
+
+A firmware upload keeps the data partition, and with it the store and the calibrations kept; wiping the partition loses them.
 
 ## Install it in your vehicle package
 
@@ -108,7 +119,7 @@ The stored calibration belongs to one unit. To ship it in the firmware, so that 
    def required_files, do: ["priv/calibration/stereo_left.yaml", "priv/calibration/stereo_right.yaml"]
    ```
 
-4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Go back to the firmware's calibration**; then the page reads Using the calibration shipped with the firmware.
+4. Build and upload the firmware (`./ovcs upload <vehicle> vision`). The stored calibration stays in force until you **Use** the one **Shipped with the firmware**; then the page reads Using the calibration shipped with the firmware.
 
 A calibration holds for one sensor mode and one lens position. Changing the focus, or the image's aspect ratio, needs a new one; [Stereo vision basics](./basics.md#calibration) says why.
 
