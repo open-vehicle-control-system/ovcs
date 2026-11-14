@@ -10,10 +10,11 @@ defmodule VisionCore.Camera.V4L2Capture do
   require Logger
 
   alias VisionCore.Camera.{LibCamera, Reopen}
-  alias VisionCore.PortProcess
+  alias VisionCore.{PortProcess, Timing}
 
   @log_tag 2
   @metadata_tag 3
+  @metadata_keys [:exposure_time_us, :analogue_gain, :red_gain, :blue_gain]
   @watchdog_interval_ms 1_000
 
   @doc "The command-line flag of a setting or option: `--exposure-us` for `:exposure_us`."
@@ -111,14 +112,52 @@ defmodule VisionCore.Camera.V4L2Capture do
 
   @doc """
   A log record (tag 2) as `{:log, level, message}`, a metadata record
-  (tag 3) as `VisionCore.Camera.LibCamera.parse_record/1` reads it, and
-  `{:error, :malformed_record}` for anything else.
+  (tag 3) as `{:metadata, map}`, and `{:error, :malformed_record}` for
+  anything else.
+
+  The metadata record is `VisionCore.Camera.LibCamera`'s layout: a byte
+  whose bit `i` is set when `values[i]` was reported, the frame start in
+  kernel nanoseconds, then eight little-endian doubles. The program
+  reports `values[0]`, the exposure in microseconds, and `values[1]`, the
+  analogue gain, when it applies them, and `values[2]` and `values[3]`,
+  the red and blue white balance gains, when they change. The map holds
+  the values reported, as `:exposure_time_us` (rounded), `:analogue_gain`,
+  `:red_gain` and `:blue_gain`, and the frame start as `:capture_ns`.
   """
   @spec parse_record(binary()) ::
           {:log, Logger.level(), binary()} | {:metadata, map()} | {:error, :malformed_record}
   def parse_record(<<@log_tag, level, message::binary>>), do: {:log, log_level(level), message}
-  def parse_record(<<@metadata_tag, _rest::binary>> = record), do: LibCamera.parse_record(record)
+
+  def parse_record(
+        <<@metadata_tag, present, capture_ns::little-signed-64, encoded::binary-size(64)>>
+      ) do
+    values = for <<value::little-float-64 <- encoded>>, do: value
+
+    reported =
+      for {{key, value}, index} <- Enum.with_index(Enum.zip(@metadata_keys, values)),
+          Bitwise.band(present, Bitwise.bsl(1, index)) != 0,
+          into: %{},
+          do: {key, metadata_value(key, value)}
+
+    {:metadata, Map.put(reported, :capture_ns, Timing.monotonic_from_kernel(capture_ns))}
+  end
+
   def parse_record(_other), do: {:error, :malformed_record}
+
+  defp metadata_value(:exposure_time_us, value), do: round(value)
+  defp metadata_value(_key, value), do: value
+
+  @doc """
+  What the program applies, `applied` (`nil` before any report), with
+  `metadata`'s values, a record reporting some of them, and the system
+  time it was received as `:received_ms`.
+  """
+  @spec applied(map() | nil, map()) :: map()
+  def applied(applied, metadata) do
+    (applied || %{})
+    |> Map.merge(metadata)
+    |> Map.put(:received_ms, System.system_time(:millisecond))
+  end
 
   defp log_level(0), do: :info
   defp log_level(1), do: :warning

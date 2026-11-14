@@ -2,16 +2,18 @@ defmodule VisionCore.Camera.Parameters do
   @moduledoc """
   The runtime controls of a camera driver as vision parameters
   (`VisionCore.Parameters`): each control of its
-  `c:VisionCore.Camera.control_specs/0`, set through
+  `c:VisionCore.Camera.control_specs/0`, or of
+  `c:VisionCore.Camera.control_specs/1` where it has it, set through
   `c:VisionCore.Camera.set_controls/2` and read from
   `c:VisionCore.Camera.controls/1`.
 
   A control an automatic mode of the driver sets is set by that mode
-  while it is on (`applies: {:auto, mode}`): `exposure_us` and
-  `analogue_gain` by `auto_exposure`, and then read what the sensor
-  applies (`c:VisionCore.Camera.live/1`), their defaults the manual
-  settings; `red_gain` and `blue_gain` by `awb`. A driver without the
-  mode among its controls has the control live.
+  while it is on (`applies: {:auto, mode}`), and then reads what the
+  camera applies (`c:VisionCore.Camera.live/1`), its default the manual
+  setting: `exposure_us` and `analogue_gain` by `auto_exposure`,
+  `red_gain` and `blue_gain` by `awb`. Switching the mode off keeps
+  those values. A driver without the mode among its controls has the
+  control live.
 
   Started for a camera of its own (`VisionCore.Camera.Unit`), it declares
   the camera's group, `<name>.camera`, a component of the pipeline
@@ -83,7 +85,7 @@ defmodule VisionCore.Camera.Parameters do
   @spec controls(module(), GenServer.server(), String.t()) ::
           [VisionCore.Parameters.declaration()]
   def controls(driver, server, group_id) do
-    specs = driver.control_specs()
+    specs = control_specs(driver, server)
     keys = Enum.map(specs, & &1.key)
     manual = driver.controls(server)
 
@@ -103,6 +105,12 @@ defmodule VisionCore.Camera.Parameters do
     end)
   end
 
+  defp control_specs(driver, server) do
+    if function_exported?(driver, :control_specs, 1),
+      do: driver.control_specs(server),
+      else: driver.control_specs()
+  end
+
   defp automatic_mode(key, keys) do
     mode = @automatic_modes[key]
     if mode in keys, do: mode
@@ -116,22 +124,22 @@ defmodule VisionCore.Camera.Parameters do
   defp put_manual_default(declaration, _mode, nil), do: declaration
   defp put_manual_default(declaration, _mode, manual), do: Map.put(declaration, :default, manual)
 
-  defp control_get(key, :auto_exposure, driver, server) do
+  defp control_get(key, nil, driver, server), do: fn -> driver.controls(server)[key] end
+
+  defp control_get(key, mode, driver, server) do
     fn ->
       controls = driver.controls(server)
-      applied = controls.auto_exposure && live(driver, server)
+      applied = controls[mode] && live(driver, server)
       if applied, do: applied[live_key(key)] || controls[key], else: controls[key]
     end
   end
-
-  defp control_get(key, _mode, driver, server), do: fn -> driver.controls(server)[key] end
 
   defp live(driver, server) do
     if function_exported?(driver, :live, 1), do: driver.live(server)
   end
 
   defp live_key(:exposure_us), do: :exposure_time_us
-  defp live_key(:analogue_gain), do: :analogue_gain
+  defp live_key(key), do: key
 
   defp constraint(%{key: :rotation}), do: %{kind: :choices, values: [0, 180]}
   defp constraint(spec), do: Check.constraint(spec)

@@ -106,6 +106,85 @@ defmodule VisionCore.Camera.V4L2PairTest do
     assert log =~ "msm_csiphy2"
   end
 
+  defp start_left(opts) do
+    start_supervised!(
+      {V4L2Pair,
+       [label: "left", width: 728, height: 544, fps: 30, executable: "/bin/true"] ++
+         Keyword.merge([reopen_delays_ms: [60_000]], opts)}
+    )
+  end
+
+  defp control_keys(camera), do: camera |> V4L2Pair.control_specs() |> Enum.map(& &1.key)
+
+  describe "focus" do
+    @describetag :capture_log
+
+    test "is a control of sensors with a lens actuator" do
+      left = start_left(left: [sensor: "imx708 5-001a"], right: [sensor: "imx708 6-001a"])
+
+      assert :focus in control_keys(left)
+      assert %{focus: 428} = V4L2Pair.controls(left)
+      assert {:ok, %{focus: 400}} = V4L2Pair.set_controls(left, focus: 400)
+    end
+
+    test "is no control of sensors without one, and is refused" do
+      left =
+        start_left(
+          left: [csiphy: 0],
+          right: [csiphy: 1],
+          media_runner: media_runner("media-ctl-p.txt")
+        )
+
+      refute :focus in control_keys(left)
+      refute Map.has_key?(V4L2Pair.controls(left), :focus)
+      assert {:error, "focus" <> _} = V4L2Pair.set_controls(left, focus: 400)
+      assert {:ok, controls} = V4L2Pair.set_controls(left, gamma: 1.8)
+      refute Map.has_key?(controls, :focus)
+    end
+
+    test "is a control while the sensors are not known yet" do
+      left =
+        start_left(
+          left: [csiphy: 0],
+          right: [csiphy: 2],
+          media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt")
+        )
+
+      assert :focus in control_keys(left)
+    end
+
+    test "the right camera answers with the left one's controls" do
+      start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
+
+      start_left(
+        left: [csiphy: 0],
+        right: [csiphy: 1],
+        media_runner: media_runner("media-ctl-p.txt")
+      )
+
+      refute :focus in control_keys(V4L2Pair.name_for("right"))
+    end
+
+    test "a change of the controls is published once routing finds the sensors" do
+      {:ok, fixture} = Agent.start_link(fn -> "media-ctl-p-no-csiphy2-sensor.txt" end)
+
+      runner = fn command, args ->
+        media_runner(Agent.get(fixture, & &1)).(command, args)
+      end
+
+      :ok = Outputs.subscribe(VisionCore.Camera.controls_changed_key(V4L2Pair.name_for("left")))
+      left = start_left(left: [csiphy: 0], right: [csiphy: 2], media_runner: runner)
+      assert :focus in control_keys(left)
+
+      Agent.update(fixture, fn _fixture -> "media-ctl-p.txt" end)
+      send(left, :reopen)
+
+      assert_receive {:"$gen_cast", {:camera_controls_changed, name}}, 2_000
+      assert name == V4L2Pair.name_for("left")
+      refute :focus in control_keys(left)
+    end
+  end
+
   test "settings become name=value commands, checked against their specs" do
     assert V4L2Pair.control_commands(rotation: 180, gamma: 1.8, auto_exposure: false) ==
              {:ok, ["rotation=180", "gamma=1.8", "auto_exposure=false"]}

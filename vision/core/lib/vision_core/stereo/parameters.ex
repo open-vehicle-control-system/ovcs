@@ -32,6 +32,9 @@ defmodule VisionCore.Stereo.Parameters do
   `<prefix>.rectification.auto_row_offset`, and RowAlignment the row
   offset.
 
+  The groups are declared again when the left camera publishes a change
+  of the controls it has (`c:VisionCore.Camera.control_specs/1`).
+
   Declares nothing when the registry is not running.
   """
   use GenServer
@@ -77,10 +80,19 @@ defmodule VisionCore.Stereo.Parameters do
 
   @impl GenServer
   def init(opts) do
-    if Process.whereis(VisionCore.Parameters),
-      do: :ok = VisionCore.Parameters.declare(groups(opts))
+    if Process.whereis(VisionCore.Parameters) do
+      driver = Keyword.fetch!(opts, :driver)
+      :ok = VisionCore.Outputs.subscribe(Camera.controls_changed_key(driver.name_for("left")))
+      :ok = VisionCore.Parameters.declare(groups(opts))
+    end
 
-    {:ok, nil}
+    {:ok, opts}
+  end
+
+  @impl GenServer
+  def handle_cast({:camera_controls_changed, _name}, opts) do
+    :ok = VisionCore.Parameters.declare(groups(opts))
+    {:noreply, opts}
   end
 
   @doc "The unit's group declarations for `opts`; see `start_link/1`."

@@ -31,6 +31,10 @@ defmodule VisionCore.Outputs do
     * `{:camera_pose, name}` — `{:camera_pose_changed, name}` from
       `VisionCore.Camera.Pose`, after each change of the pose of the
       camera `name`.
+    * `{:camera_controls, name}` — `{:camera_controls_changed, name}`
+      from the `VisionCore.Camera` driver instance registered as `name`,
+      after a change of the controls it has
+      (`c:VisionCore.Camera.control_specs/1`).
     * `{:saved_calibrations, target}` — `{:saved_calibrations_changed, target}`
       from `VisionCore.Calibration.Recorder`, after each change of the
       calibrations kept for the calibration target `target`.
@@ -59,6 +63,7 @@ defmodule VisionCore.Outputs do
           | {:stereo_calibration, String.t()}
           | {:camera_calibration, atom()}
           | {:camera_pose, atom()}
+          | {:camera_controls, atom()}
           | {:saved_calibrations, String.t()}
 
   @doc "Starts the registry."

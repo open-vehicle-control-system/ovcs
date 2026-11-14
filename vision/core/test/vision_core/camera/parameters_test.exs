@@ -109,6 +109,19 @@ defmodule VisionCore.Camera.ParametersTest do
     assert parameter(group, "analogue_gain").default == 2.0
   end
 
+  test "the colour gains read what the white balance applies while it runs, and the manual gains once it is off" do
+    Agent.update(Driver, &%{&1 | live: %{red_gain: 2.54, blue_gain: 1.94}})
+    group = group()
+
+    assert parameter(group, "red_gain").get.() == 2.54
+    assert parameter(group, "blue_gain").get.() == 1.94
+
+    Agent.update(Driver, &put_in(&1.controls.awb, false))
+
+    assert parameter(group, "red_gain").get.() == 1.0
+    assert parameter(group, "blue_gain").get.() == 1.0
+  end
+
   test "a control whose automatic mode its driver does not have is live" do
     gain = parameter(group(name: :usb, driver: ManualDriver), "analogue_gain")
 
@@ -154,6 +167,15 @@ defmodule VisionCore.Camera.ParametersTest do
       assert {:ok, _parameter} = VisionCore.Parameters.set("center.camera.awb", false)
       assert {:ok, %{value: 2.0}} = VisionCore.Parameters.set("center.camera.red_gain", 2.0)
       assert Driver.controls("center").red_gain == 2.0
+    end
+
+    test "switching the white balance off keeps the gains it applied" do
+      Agent.update(Driver, &%{&1 | live: %{red_gain: 2.54, blue_gain: 1.94}})
+
+      assert {:ok, _parameter} = VisionCore.Parameters.set("center.camera.awb", false)
+
+      assert %{awb: false, red_gain: 2.54, blue_gain: 1.94} = Driver.controls("center")
+      assert {:ok, %{value: 2.54}} = VisionCore.Parameters.get("center.camera.red_gain")
     end
   end
 

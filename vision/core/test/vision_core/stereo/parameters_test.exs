@@ -35,6 +35,7 @@ defmodule VisionCore.Stereo.ParametersTest do
     def name_for(label), do: label
     def shared_controls?, do: true
     def control_specs, do: VisionCore.Camera.V4L2Pair.control_specs()
+    def control_specs("left"), do: Agent.get(__MODULE__, &Map.get(&1, :specs, control_specs()))
     def controls("left"), do: Agent.get(__MODULE__, & &1.controls)
     def live("left"), do: Agent.get(__MODULE__, & &1.live)
 
@@ -703,6 +704,56 @@ defmodule VisionCore.Stereo.ParametersTest do
     ids = Enum.map(VisionCore.Parameters.groups(), & &1.id)
     assert "stereo.cameras" in ids
     assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.disparity.p1")
+  end
+
+  test "lists the controls the cameras have, and lists them again once the driver publishes a change" do
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    assert {:ok, _focus} = VisionCore.Parameters.get("stereo.cameras.focus")
+
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+
+    VisionCore.Outputs.publish(
+      VisionCore.Camera.controls_changed_key("left"),
+      {:camera_controls_changed, "left"}
+    )
+
+    :sys.get_state(Parameters)
+    assert {:error, :not_found} = VisionCore.Parameters.get("stereo.cameras.focus")
+    assert {:ok, _gamma} = VisionCore.Parameters.get("stereo.cameras.gamma")
+    assert {:ok, %{value: 8}} = VisionCore.Parameters.get("stereo.disparity.p1")
+  end
+
+  test "a saved focus is dropped once the cameras turn out to have none" do
+    start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    :sys.get_state(VisionCore.Parameters)
+    assert MemoryStore.rows() == %{"stereo.cameras.focus" => 500}
+
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+
+    VisionCore.Outputs.publish(
+      VisionCore.Camera.controls_changed_key("left"),
+      {:camera_controls_changed, "left"}
+    )
+
+    :sys.get_state(Parameters)
+    :sys.get_state(VisionCore.Parameters)
+    assert MemoryStore.rows() == %{}
+  end
+
+  test "a saved focus is dropped when the cameras have none from the start" do
+    without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
+    Agent.update(Driver, &Map.put(&1, :specs, without_focus))
+    start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
+    start_supervised!({VisionCore.Parameters, store: MemoryStore})
+    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+    :sys.get_state(VisionCore.Parameters)
+
+    assert MemoryStore.rows() == %{}
   end
 
   test "without a pipeline, declares the cameras alone and gives them their saved values" do
