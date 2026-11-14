@@ -2,7 +2,8 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   @moduledoc """
   Throttle requested from a radio control trigger: broadcasts
   `:requested_throttle`, normalised to [-1, 1] around the channel's
-  centre, and `:radio_braking` while the trigger is pulled in reverse
+  centre, `:requested_braking`, the trigger's travel into reverse in
+  [0, 1], and `:radio_braking` while the trigger is pulled in reverse
   past `@braking_threshold`.
 
   `:radio_braking` takes authority back from ROS and latches a forced
@@ -18,6 +19,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
   alias Cantastic.{Receiver, Frame}
   alias Decimal, as: D
   alias OvcsBus, as: Bus
+  alias VmsCore.NormalisedRequest
 
   @loop_period_ms 10
   @zero D.new(0)
@@ -96,6 +98,12 @@ defmodule VmsCore.Components.OVCS.RadioControl.Throttle do
     Bus.broadcast("messages", %Bus.Message{
       name: :requested_throttle,
       value: state.requested_throttle,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_braking,
+      value: NormalisedRequest.braking(state.requested_throttle),
       source: __MODULE__
     })
 
