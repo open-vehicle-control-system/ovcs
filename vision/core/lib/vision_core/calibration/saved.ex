@@ -11,9 +11,26 @@ defmodule VisionCore.Calibration.Saved do
   """
   use Ecto.Schema
 
+  import Ecto.Changeset
+
   alias VisionCore.Calibration.{SavedCamera, SavedPose}
 
   @type t :: %__MODULE__{}
+
+  @fields [
+    :target,
+    :name,
+    :origin,
+    :board_columns,
+    :board_rows,
+    :board_square_m,
+    :samples,
+    :stereo_rms_px,
+    :baseline_m,
+    :inserted_at
+  ]
+  @max_name 80
+  @name_rule "a name has 1 to #{@max_name} characters"
 
   schema "calibrations" do
     field(:target, :string)
@@ -29,4 +46,23 @@ defmodule VisionCore.Calibration.Saved do
     has_one(:pose, SavedPose, foreign_key: :calibration_id)
     timestamps(type: :utc_datetime, updated_at: false)
   end
+
+  @doc """
+  The changeset of `saved` with `attributes`, its `cameras` or its `pose`
+  among them. A name is trimmed and has 1 to #{@max_name} characters.
+  """
+  @spec changeset(t(), map()) :: Ecto.Changeset.t()
+  def changeset(%__MODULE__{} = saved, attributes) do
+    saved
+    |> cast(attributes, @fields)
+    |> update_change(:name, &trim/1)
+    |> validate_required([:target, :origin])
+    |> validate_required(:name, message: @name_rule)
+    |> validate_length(:name, min: 1, max: @max_name, message: @name_rule)
+    |> cast_assoc(:cameras)
+    |> cast_assoc(:pose)
+  end
+
+  defp trim(nil), do: nil
+  defp trim(name), do: String.trim(name)
 end
