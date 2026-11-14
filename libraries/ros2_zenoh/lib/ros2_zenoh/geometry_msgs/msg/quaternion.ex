@@ -9,6 +9,19 @@ defmodule Ros2Zenoh.GeometryMsgs.Msg.Quaternion do
 
   defstruct x: 0.0, y: 0.0, z: 0.0, w: 0.0
 
+  def msg_definition do
+    """
+    # This represents an orientation in free space in quaternion form.
+
+    float64 x 0
+    float64 y 0
+    float64 z 0
+    float64 w 1
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{x: x, y: y, z: z, w: w}) do
     encode_float64(x) <> encode_float64(y) <> encode_float64(z) <> encode_float64(w)
   end

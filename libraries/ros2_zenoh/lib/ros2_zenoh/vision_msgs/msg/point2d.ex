@@ -7,5 +7,17 @@ defmodule Ros2Zenoh.VisionMsgs.Msg.Point2D do
 
   defstruct x: 0.0, y: 0.0
 
+  def msg_definition do
+    """
+    # Represents a 2D point in pixel coordinates.
+    # XY matches the sensor_msgs/Image convention: X is positive right and Y is positive down.
+
+    float64 x
+    float64 y
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{x: x, y: y}), do: encode_float64(x) <> encode_float64(y)
 end

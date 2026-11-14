@@ -12,6 +12,17 @@ defmodule Ros2Zenoh.RosgraphMsgs.Msg.Clock do
 
   defstruct clock: %Time{}
 
+  def msg_definition do
+    """
+    # This message communicates the current time.
+    #
+    # For more information, see https://design.ros2.org/articles/clock_and_time.html.
+    builtin_interfaces/Time clock
+    """
+  end
+
+  def dependencies, do: [Time]
+
   # RIHS01 hash for ROS 2 Lyrical; it changes with the distro.
   @dds_type "rosgraph_msgs::msg::dds_::Clock_"
   @type_hash "RIHS01_692f7a66e93a3c83e71765d033b60349ba68023a8c689a79e48078bcb5c58564"

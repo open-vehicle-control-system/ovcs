@@ -13,6 +13,25 @@ defmodule Ros2Zenoh.BuiltinInterfaces.Msg.Duration do
 
   defstruct sec: 0, nanosec: 0
 
+  def msg_definition do
+    """
+    # Duration defines a period between two time points.
+    # Messages of this datatype are of ROS Time following this design:
+    # https://design.ros2.org/articles/clock_and_time.html
+
+    # The seconds component, valid over all int32 values.
+    int32 sec
+
+    # The nanoseconds component, valid in the range [0, 1e9), to be added to the seconds component.\s
+    # e.g.
+    # The duration -1.7 seconds is represented as {sec: -2, nanosec: 3e8}
+    # The duration 1.7 seconds is represented as {sec: 1, nanosec: 7e8}
+    uint32 nanosec
+    """
+  end
+
+  def dependencies, do: []
+
   @doc "Build a Duration from a millisecond span."
   def from_milliseconds(milliseconds) when is_integer(milliseconds) and milliseconds >= 0 do
     %__MODULE__{

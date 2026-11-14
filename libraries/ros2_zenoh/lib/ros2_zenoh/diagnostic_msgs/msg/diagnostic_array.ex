@@ -7,9 +7,21 @@ defmodule Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticArray do
   """
 
   import Ros2Zenoh.Cdr
+  alias Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticStatus
   alias Ros2Zenoh.StdMsgs.Msg.Header
 
   defstruct header: %Header{}, status: []
+
+  def msg_definition do
+    """
+    # This message is used to send diagnostic information about the state of the robot.
+    std_msgs/Header header # for timestamp
+    DiagnosticStatus[] status # an array of components being reported on
+    """
+  end
+
+  def dependencies,
+    do: [Header, DiagnosticStatus]
 
   @dds_type "diagnostic_msgs::msg::dds_::DiagnosticArray_"
   @type_hash "RIHS01_5a8a36efb05fb25070fa0fb3810290c0e6cd4862b54a8fb975a1ee8dc55a333e"

@@ -12,6 +12,22 @@ defmodule Ros2Zenoh.StdMsgs.Msg.Header do
 
   defstruct stamp: nil, frame_id: ""
 
+  def msg_definition do
+    """
+    # Standard metadata for higher-level stamped data types.
+    # This is generally used to communicate timestamped data
+    # in a particular coordinate frame.
+
+    # Two-integer timestamp that is expressed as seconds and nanoseconds.
+    builtin_interfaces/Time stamp
+
+    # Transform frame with which this data is associated.
+    string frame_id
+    """
+  end
+
+  def dependencies, do: [Time]
+
   def encode(%__MODULE__{stamp: stamp, frame_id: frame_id}) do
     Time.encode(stamp) <> encode_string(frame_id)
   end

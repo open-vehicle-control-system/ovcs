@@ -13,6 +13,17 @@ defmodule Ros2Zenoh.GeometryMsgs.Msg.Point do
 
   defstruct x: 0.0, y: 0.0, z: 0.0
 
+  def msg_definition do
+    """
+    # This contains the position of a point in free space
+    float64 x
+    float64 y
+    float64 z
+    """
+  end
+
+  def dependencies, do: []
+
   def encode(%__MODULE__{x: x, y: y, z: z}) do
     encode_float64(x) <> encode_float64(y) <> encode_float64(z)
   end
