@@ -180,6 +180,7 @@ jobs:
           - bridges/radio_control_bridge
           - bridges/ros_bridge
           - simulator/core
+          - simulator/runner
           - vehicles/ovcs1
           - vehicles/ovcs_mini
           - vehicles/obd2
