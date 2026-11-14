@@ -98,7 +98,8 @@ describe('Pipelines', () => {
     const cameras = box('Stereo', /^Cameras/)
     expect(cameras.querySelector('[data-latency]').textContent).toBe('4.2 ms')
     expect(cameras.querySelector('[data-latency]').className).toContain('ml-auto')
-    expect(cameras.querySelector('[data-latency-note]').textContent).toBe('latency')
+    expect(cameras.querySelector('[data-latency]').title).toBe("capture to unit, not in the pipeline's total")
+    expect(cameras.textContent).not.toContain('latency')
     expect(cameras.getAttribute('aria-label')).toBe('Cameras, capture to unit 4.2 ms, not in the total')
     expect(figure('Stereo', /^Cameras/)).toBeNull()
 
@@ -114,7 +115,7 @@ describe('Pipelines', () => {
     useStatus.setState({ snapshot: { npu: null, latencies: { stereo: { cameras: null, pairing: null } } } })
     render(<Pipelines />)
 
-    expect(document.querySelectorAll('[data-latency], [data-latency-note]')).toHaveLength(0)
+    expect(document.querySelectorAll('[data-latency]')).toHaveLength(0)
     expect(screen.getByRole('button', { name: 'Cameras' })).toBeTruthy()
   })
 

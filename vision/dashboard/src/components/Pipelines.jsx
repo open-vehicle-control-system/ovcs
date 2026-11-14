@@ -70,7 +70,9 @@ function latencyTime(snapshot, group) {
   return ms == null ? null : milliseconds(ms)
 }
 
-const latencyFigure = (group, latency) => `${LATENCY_NAMES[stageName(group)] ?? 'latency'} ${latency}, not in the total`
+const latencyName = (group) => LATENCY_NAMES[stageName(group)] ?? 'latency'
+
+const latencyFigure = (group, latency) => `${latencyName(group)} ${latency}, not in the total`
 
 const NO_SEGMENTS = []
 
@@ -138,12 +140,17 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
             </span>
           ) : null}
           {latency ? (
-            <span aria-hidden="true" data-latency className={`text-[10px] ${FIGURE}`}>
+            <span
+              aria-hidden="true"
+              data-latency
+              title={`${latencyName(group)}, not in the pipeline's total`}
+              className={`text-[10px] ${FIGURE}`}
+            >
               {latency}
             </span>
           ) : null}
         </span>
-        {tags.length > 0 || accelerator || latency ? (
+        {tags.length > 0 || accelerator ? (
           <span aria-hidden="true" className="flex flex-wrap items-baseline gap-x-2">
             {tags.length > 0 ? (
               <span className="flex flex-wrap gap-1">
@@ -157,11 +164,6 @@ function GroupBox({ group, steps, unsaved, selected, onSelect }) {
             {accelerator ? (
               <span data-accelerator className={`text-[9px] leading-none ${FIGURE}`}>
                 {accelerator}
-              </span>
-            ) : null}
-            {latency ? (
-              <span data-latency-note title="Not in the pipeline's total" className={`text-[9px] leading-none ${FIGURE}`}>
-                latency
               </span>
             ) : null}
           </span>
