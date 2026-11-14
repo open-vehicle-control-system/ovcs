@@ -145,7 +145,12 @@ defmodule VisionCore.ApplicationTest do
       exporters: [{VisionCore.Ros2.Exporter, heartbeat: []}]
     })
 
-    assert Enum.take(child_ids(VisionCore.Supervisor), 5) == [
+    assert Enum.take(child_ids(VisionCore.Supervisor), 2) == [
+             VisionCore.Reviver,
+             VisionCore.Consumers
+           ]
+
+    assert child_ids(VisionCore.Consumers) == [
              VisionCore.Video,
              VisionCore.Preview,
              VisionCore.Status,
@@ -174,6 +179,54 @@ defmodule VisionCore.ApplicationTest do
     end
 
     assert Process.whereis(VisionCore.Exporters) == exporters
+  end
+
+  test "consumers that keep crashing stop together, the components running on, and the reviver starts them again" do
+    start_pipeline(%VisionCore.Config{
+      components: [{:detector, backend: VisionCore.Detection.Backend.Stub}]
+    })
+
+    core = Process.whereis(VisionCore.Supervisor)
+    detector = VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+    unit = child_pid(VisionCore.Supervisor, detector)
+    assert is_pid(unit)
+    consumers = Process.whereis(VisionCore.Consumers)
+    ref = Process.monitor(consumers)
+
+    crash_until_down(VisionCore.Status, ref)
+
+    assert child_pid(VisionCore.Supervisor, VisionCore.Consumers) == :undefined
+    assert Process.whereis(VisionCore.Supervisor) == core
+    assert child_pid(VisionCore.Supervisor, detector) == unit
+
+    send(VisionCore.Reviver, :revive)
+    assert eventually(fn -> is_pid(Process.whereis(VisionCore.Status)) end)
+    assert child_pid(VisionCore.Supervisor, detector) == unit
+  end
+
+  # Kills the process registered as `name` each time it is back, until the monitored supervisor is down.
+  defp crash_until_down(name, ref) do
+    receive do
+      {:DOWN, ^ref, :process, _pid, :shutdown} -> :ok
+    after
+      0 ->
+        with pid when is_pid(pid) <- Process.whereis(name), do: Process.exit(pid, :kill)
+        Process.sleep(5)
+        crash_until_down(name, ref)
+    end
+  end
+
+  test "the reviver starts again a unit that is down, as it is given the components' ids" do
+    start_pipeline(%VisionCore.Config{
+      components: [{:detector, backend: VisionCore.Detection.Backend.Stub}]
+    })
+
+    detector = VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
+    :ok = Supervisor.terminate_child(VisionCore.Supervisor, detector)
+    assert child_pid(VisionCore.Supervisor, detector) == :undefined
+
+    send(VisionCore.Reviver, :revive)
+    assert eventually(fn -> is_pid(child_pid(VisionCore.Supervisor, detector)) end)
   end
 
   test "the core starts the parameter storage and registry, the outputs' and the processes' registries, the calibration tasks, then the ROS 2 link, before the Port servers" do
@@ -639,19 +692,22 @@ defmodule VisionCore.ApplicationTest do
     path
   end
 
-  test "a camera Port that exits restarts the stereo unit", %{tmp_dir: tmp_dir} do
+  test "a camera Port that exits is started again by its driver, the stereo unit as it was",
+       %{tmp_dir: tmp_dir} do
     frame_path = write_frame(tmp_dir)
 
     exiting =
       write_script(
         tmp_dir,
         "exiting_camera.sh",
-        "sleep 1.5\ncat \"#{frame_path}\"\nsleep 0.3\nexit 3"
+        "sleep 0.5\ncat \"#{frame_path}\"\nsleep 0.3\nexit 3"
       )
 
     idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
 
-    start_pipeline(%VisionCore.Config{components: [stereo_component(exiting, idle)]})
+    start_pipeline(%VisionCore.Config{
+      components: [stereo_component(exiting, idle, reopen_delays_ms: [20])]
+    })
 
     :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
     stereo = VisionCore.Stereo.Supervisor
@@ -665,31 +721,33 @@ defmodule VisionCore.ApplicationTest do
              {:stereo, :parameters}
            ]
 
-    first_driver = child_pid(stereo, {:stereo, :driver, :left})
+    processes = stereo_processes()
     assert_receive {:"$gen_cast", {:camera_frame, %Frame{frame_id: "stereo_left"}}}, 5_000
-
-    second_driver = wait_for_new_driver(stereo, first_driver)
-    refute second_driver == first_driver
     assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
+    assert_receive {:"$gen_cast", {:camera_frame, _frame}}, 5_000
+
+    assert stereo_processes() == processes
   end
 
-  test "a camera Port that exits at start leaves the stereo unit down, not the pipeline",
+  test "camera Ports that keep exiting leave the stereo unit, the pipeline and the exporters running, the cameras absent",
        %{tmp_dir: tmp_dir} do
     start_failing_cameras(tmp_dir, "exit 3")
-    assert_stereo_unit_down()
-  end
-
-  test "a camera Port that keeps exiting stops the stereo unit, not the pipeline nor the exporters",
-       %{tmp_dir: tmp_dir} do
-    start_failing_cameras(tmp_dir, "cat \"#{write_frame(tmp_dir)}\"\nsleep 0.3\nexit 3")
-    assert Process.whereis(VisionCore.Stereo.Supervisor)
+    core = Process.whereis(VisionCore.Supervisor)
+    processes = stereo_processes()
     exporter = child_pid(VisionCore.Exporters, :ros2)
     assert is_pid(exporter)
 
-    assert_stereo_unit_down()
+    assert eventually(fn ->
+             match?(
+               %{cameras: %{left: %{present: false}, right: %{present: false}}},
+               VisionCore.Status.snapshot()
+             )
+           end)
 
-    assert child_pid(VisionCore.Exporters, :ros2) == exporter
     assert VisionCore.Status.snapshot().sync == %{present: false}
+    assert Process.whereis(VisionCore.Supervisor) == core
+    assert stereo_processes() == processes
+    assert child_pid(VisionCore.Exporters, :ros2) == exporter
   end
 
   defp start_failing_cameras(tmp_dir, script) do
@@ -773,7 +831,7 @@ defmodule VisionCore.ApplicationTest do
        %{tmp_dir: tmp_dir} do
     start_idle_unit(tmp_dir)
 
-    assert Enum.take(child_ids(VisionCore.Supervisor), 6) == [
+    assert Enum.take(child_ids(VisionCore.Consumers), 6) == [
              VisionCore.Video,
              VisionCore.Preview,
              VisionCore.Status,
@@ -786,8 +844,8 @@ defmodule VisionCore.ApplicationTest do
   test "without a :stereo component, no calibration session starts" do
     start_pipeline(%VisionCore.Config{})
 
-    refute VisionCore.Calibration.Session in child_ids(VisionCore.Supervisor)
-    refute VisionCore.Calibration.Recorder in child_ids(VisionCore.Supervisor)
+    refute VisionCore.Calibration.Session in child_ids(VisionCore.Consumers)
+    refute VisionCore.Calibration.Recorder in child_ids(VisionCore.Consumers)
   end
 
   test "a restart of the components leaves a running commit's task alive", %{tmp_dir: tmp_dir} do
@@ -978,59 +1036,25 @@ defmodule VisionCore.ApplicationTest do
     assert_pair_streams_on(stereo_processes())
   end
 
-  test "a camera that keeps crashing is restarted within its own budget, then left down, and the stereo pair streams on",
+  test "a camera whose program keeps exiting is started again by its driver, its unit never restarted, and the stereo pair streams on",
        %{tmp_dir: tmp_dir} do
-    crashing = write_script(tmp_dir, "crashing_camera.sh", "sleep 0.5\nexit 3")
-    start_camera_beside_streaming_pair(tmp_dir, executable: crashing)
+    runs = Path.join(tmp_dir, "runs")
+    crashing = write_script(tmp_dir, "crashing_camera.sh", "printf x >> #{runs}\nexit 3")
+    start_camera_beside_streaming_pair(tmp_dir, executable: crashing, reopen_delays_ms: [5])
 
     core = Process.whereis(VisionCore.Supervisor)
     stereo = stereo_processes()
     unit = child_pid(VisionCore.Supervisor, {:camera, :hq})
     assert is_pid(unit)
-    first_driver = Process.whereis(V4L2Single.name_for("hq"))
-    assert is_pid(first_driver)
+    driver = Process.whereis(V4L2Single.name_for("hq"))
+    assert is_pid(driver)
 
-    ref = Process.monitor(unit)
+    assert eventually(fn -> File.exists?(runs) and byte_size(File.read!(runs)) > 15 end)
 
-    capture_log(fn ->
-      assert eventually(fn ->
-               driver = Process.whereis(V4L2Single.name_for("hq"))
-               is_pid(driver) and driver != first_driver
-             end)
-
-      assert_receive {:DOWN, ^ref, :process, ^unit, :shutdown}, 10_000
-    end)
-
-    assert child_pid(VisionCore.Supervisor, {:camera, :hq}) == :undefined
+    assert child_pid(VisionCore.Supervisor, {:camera, :hq}) == unit
+    assert Process.whereis(V4L2Single.name_for("hq")) == driver
     assert Process.whereis(VisionCore.Supervisor) == core
     assert_pair_streams_on(stereo)
-  end
-
-  defp assert_stereo_unit_down do
-    pipeline = Process.whereis(VisionCore.Supervisor)
-    status = Process.whereis(VisionCore.Status)
-    wait_until_stopped(VisionCore.Stereo.Supervisor)
-
-    assert Process.whereis(VisionCore.Supervisor) == pipeline
-    assert Process.whereis(VisionCore.Status) == status
-    assert Process.alive?(Process.whereis(VisionCore.Preview))
-
-    assert %{cameras: %{left: %{present: false}, right: %{present: false}}} =
-             VisionCore.Status.snapshot()
-  end
-
-  defp wait_until_stopped(name, attempts \\ 300) do
-    cond do
-      Process.whereis(name) == nil ->
-        :ok
-
-      attempts > 0 ->
-        Process.sleep(50)
-        wait_until_stopped(name, attempts - 1)
-
-      true ->
-        flunk("#{inspect(name)} kept running")
-    end
   end
 
   defp eventually(check, attempts \\ 60) do
@@ -1052,20 +1076,6 @@ defmodule VisionCore.ApplicationTest do
 
       _ ->
         flunk("#{inspect(name)} was not restarted")
-    end
-  end
-
-  defp wait_for_new_driver(stereo, old_pid, attempts \\ 100) do
-    case child_pid(stereo, {:stereo, :driver, :left}) do
-      pid when is_pid(pid) and pid != old_pid ->
-        pid
-
-      _ when attempts > 0 ->
-        Process.sleep(50)
-        wait_for_new_driver(stereo, old_pid, attempts - 1)
-
-      _ ->
-        flunk("the left camera driver was not restarted")
     end
   end
 

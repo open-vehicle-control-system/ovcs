@@ -44,15 +44,15 @@ A Port's row below names the process that owns it.
 | Pipeline | [`VisionCore.Stereo.Pipeline`](../../vision/core/lib/vision_core/stereo/pipeline.ex) | `VisionCore.Stereo.Supervisor` |
 | `stereo_match` Port | [`VisionCore.Stereo.Matcher`](../../vision/core/lib/vision_core/stereo/matcher.ex) | `VisionCore.Supervisor` |
 | ROS 2 exporter | [`VisionCore.Ros2.Exporter`](../../vision/core/lib/vision_core/ros2/exporter.ex), with [`VisionCore.Ros2.Exporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/exporter/diagnostics.ex) publishing what the cameras do and their sync, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
-| Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Supervisor`, on a unit with a stereo pair or a camera of its own to calibrate |
+| Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Consumers`, on a unit with a stereo pair or a camera of its own to calibrate |
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
 | `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
 | Segmentation pipeline, one per segmenter | [`VisionCore.Segmentation.Pipeline`](../../vision/core/lib/vision_core/segmentation/pipeline.ex), with [`VisionCore.Segmentation.Live`](../../vision/core/lib/vision_core/segmentation/live.ex) passing its label grids to the dashboard | `VisionCore.Segmentation.Supervisor`, one per pipeline |
 | `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |
-| Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Supervisor` |
-| Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Supervisor` |
-| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` |
+| Status | [`VisionCore.Status`](../../vision/core/lib/vision_core/status.ex) | `VisionCore.Consumers` |
+| Preview | [`VisionCore.Preview`](../../vision/core/lib/vision_core/preview.ex) | `VisionCore.Consumers` |
+| `jpeg_codec` Ports | [`VisionCore.Jpeg`](../../vision/core/lib/vision_core/jpeg.ex), twice: the Pipeline decodes JPEG camera frames on `VisionCore.Jpeg`, one Port; the Preview and the exporters encode on `VisionCore.Jpeg.Export`, a pool of Ports | `VisionCore.Supervisor` for the first, `VisionCore.Consumers` for the pool |
 
 The drivers, the Pipeline and the detection and segmentation pipelines publish their frames, pairs, detections and label grids through [`VisionCore.Outputs`](../../vision/core/lib/vision_core/outputs.ex). It is a registry of subscriptions that `VisionCore.Supervisor` starts before the components. A process subscribes to the outputs it reads, under the name of the process that produces them. Its subscription holds while that process restarts.
 
@@ -61,7 +61,9 @@ The drivers, the Pipeline and the detection and segmentation pipelines publish t
 - The Pairer waits on the Pipeline.
 - The process that declares the unit's parameters applies their values to the drivers and the Pipeline when it starts.
 
-The unit has its own restart budget. A camera that keeps failing stops the unit and leaves the rest of the vision core running.
+A camera's capture program that exits or stops delivering does not restart the unit. Its driver stays up, starts the program again after 1 s, then 2, 5, 10 and 30 s while it keeps failing, and the status reports the camera absent meanwhile. The processes reading its frames keep their subscriptions.
+
+The unit has its own restart budget. Children that keep crashing stop the unit and leave the rest of the vision core running. [`VisionCore.Reviver`](../../vision/core/lib/vision_core/reviver.ex) starts a unit that is down again, once a minute, so a unit comes back without a reboot once what made it fail is gone.
 
 ## One pair, step by step
 
@@ -141,7 +143,9 @@ An exporter can also declare **actions**: things people ask of it, rather than o
 
 An action answers a JSON result, an error or a file to download. It may answer later than it was asked, as an export that spans many pairs does. [`VisionCore.Debug.Exporter`](../../vision/core/lib/vision_core/debug/exporter.ex) is the one that ships with the core. Its `export` action returns a zip of a burst of pairs and the unit's state, for [tuning the unit's parameters](./tuning.md).
 
-[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components in `VisionCore.Supervisor`. It starts before the Preview and before the Status, which reports the exporters' statuses. It runs each exporter under a supervisor with its own restart budget:
+[`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components, under [`VisionCore.Consumers`](../../vision/core/lib/vision_core/consumers.ex). That supervisor holds what reads the outputs: the exporters and their JPEG codec, the calibration session, the Status, the Preview and the videos. It has its own restart budget, so consumers that keep crashing stop together and leave the cameras and pipelines running, until the Reviver starts them again.
+
+The exporters start before the Preview and before the Status, which reports the exporters' statuses. Each exporter runs under a supervisor with its own restart budget:
 
 - An exporter that cannot start yet, such as one waiting for its storage, is tried again until it starts. It does not delay the rest of the unit.
 - An exporter that keeps crashing stops alone, permanently, with an error logged. The cameras, the pipelines and the other exporters keep running.

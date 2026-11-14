@@ -38,7 +38,10 @@ defmodule VisionCore.Application do
   does a detector or a segmenter whose `:name` is not a valid pipeline
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
-  After the components come `VisionCore.Exporters`, which runs the
+  After the components comes `VisionCore.Consumers`, a supervisor with
+  its own restart budget, so that what reads the outputs cannot take the
+  cameras and pipelines down by crashing. It starts, in order,
+  `VisionCore.Jpeg.Export`, `VisionCore.Exporters`, which runs the
   configuration's exporters, then, on a unit with something to calibrate
   (`VisionCore.Calibration.targets/1`), `VisionCore.Calibration.Recorder`
   and `VisionCore.Calibration.Session`, then `VisionCore.Status`, which
@@ -52,9 +55,13 @@ defmodule VisionCore.Application do
   Ports sized by the configuration's `jpeg:` options, apart from those
   decodes; `jpeg:` options other than a positive number of `:ports`
   fail the start. The
-  second starts after the components, before the exporters, so that its
-  restart reaches only what starts after it, its users among them, not
+  second starts first among the consumers, so that its
+  restart reaches only its users, not
   the cameras and pipelines.
+
+  `VisionCore.Reviver` comes last. It starts again the components and
+  the consumers that are down, having exhausted their restart budget or
+  failed to start.
   """
   use Application
 
@@ -132,7 +139,14 @@ defmodule VisionCore.Application do
       start:
         {Supervisor, :start_link,
          [
-           core_children ++ component_children ++ consumer_children,
+           core_children ++
+             component_children ++
+             [
+               {VisionCore.Consumers, consumer_children},
+               {VisionCore.Reviver,
+                supervisor: VisionCore.Supervisor,
+                units: Enum.map(component_children, & &1.id) ++ [VisionCore.Consumers]}
+             ],
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}
     }
