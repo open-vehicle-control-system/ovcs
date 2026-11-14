@@ -8,7 +8,7 @@ defmodule VisionCore.Camera.Unit do
   pipeline's name (`VisionCore.Pipelines.name?/1`), whose reserved names
   include `:left` and `:right`, so no camera takes a stereo side's name;
   and no camera shares a detection pipeline's name, since both publish
-  under `<prefix>/<name>/` (`VisionCore.Application` refuses both, and
+  under `<name>/` (`VisionCore.Application` refuses both, and
   two cameras of one name). `:driver` is the driver's module. The driver
   is started with the other options, `:label`, the name's text, which
   its frames carry, and `:frame_id`, `"<name>_optical"` unless the camera

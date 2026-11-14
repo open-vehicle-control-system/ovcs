@@ -12,7 +12,7 @@
         "flipHorizontal": false,
         "flipVertical": false,
         "annotations": {
-          "/stereo/detection/annotations": {
+          "/detection/annotations": {
             "visible": false
           }
         }

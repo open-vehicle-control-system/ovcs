@@ -178,14 +178,15 @@ The camera's `camera_info`, a segmentation pipeline's label `camera_info`, a det
 
 ## On ROS 2
 
-The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists. `<camera>` is the camera's name.
+The ROS 2 exporter's `cameras:` option publishes each camera of its own (`VisionCore.Ros2.Exporter`): every one by default, or those its `names:` lists. `<camera>` is the camera's name, the namespace of its topics; `topic_prefix:` in `cameras:` puts them under `<topic_prefix>/<camera>/` instead. On the OVCS1 reference vehicle, the camera `center` publishes `/center/image_raw/compressed`. [What leaves the unit](./data_flow.md#what-leaves-the-unit) lists every topic of the unit.
 
 | Topic or service | Type | What |
 |---|---|---|
-| `<prefix>/<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
-| `<prefix>/<camera>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
-| `<prefix>/<camera>/video` | `foxglove_msgs/CompressedVideo` | With `videos:`, each frame of the camera's H.264 output, format `h264`, its NAL units in Annex B form. Foxglove's Image panel decodes it. It needs `ros-<distro>-foxglove-msgs` on the ROS side. |
-| `<prefix>/<camera>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
+| `<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
+| `<camera>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
+| `<camera>/image_raw/h264` | `foxglove_msgs/CompressedVideo` | With `videos:`, each frame of the camera's H.264 output, format `h264`, its NAL units in Annex B form. Foxglove's Image panel decodes it. It needs `ros-<distro>-foxglove-msgs` on the ROS side. |
+| `<camera>/exposure_us`, `<camera>/analogue_gain` | `std_msgs/Float64` | Five times a second, the exposure in microseconds and the analogue gain the camera applied, when its driver reports them, as `VisionCore.Camera.V4L2Single` does. |
+| `<camera>/set_camera_info` | `sensor_msgs/srv/SetCameraInfo` | Stores a committed calibration, in `calibration_store_dir` or else over `calibration:`. |
 | `/tf_static` | `tf2_msgs/TFMessage` | Its pose, from the stereo left camera's `frame_id` to the camera's, every second. The parent is the frame the depth is published in, in rectified coordinates: the rectified left camera, not the raw one. |
 
 ## Measure the pose

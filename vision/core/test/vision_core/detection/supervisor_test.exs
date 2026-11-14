@@ -110,11 +110,11 @@ defmodule VisionCore.Detection.SupervisorTest do
     end
   end
 
-  # Each a first segment of the ROS 2 topics under the stereo prefix.
+  # The stereo prefix, and each a first segment of the ROS 2 topics under it.
   test "is left down, saying why, with a name the unit's topics already take" do
     Process.flag(:trap_exit, true)
 
-    for name <- [:stereo, :left, :right, :depth, :disparity, :points, :live] do
+    for name <- [:stereo, :left, :right, :depth, :disparity, :points] do
       log =
         capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
 

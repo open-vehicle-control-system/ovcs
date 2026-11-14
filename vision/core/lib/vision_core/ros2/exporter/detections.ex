@@ -9,7 +9,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   A pipeline on a camera of its own publishes its detections with a
   distance as markers and a `Detection3DArray`, those without one as a
   `vision_msgs/Detection2DArray` of boxes in the camera's pixels, on
-  `<prefix>/<name>/detections_2d`, an empty one included, and all of
+  `<name>/detections_2d`, an empty one included, and all of
   them on its overlay, over the camera's image. Each array's
   detections are numbered (`id`) by their place in the pipeline's
   result, so the two arrays never share a number.
@@ -28,10 +28,13 @@ defmodule VisionCore.Ros2.Exporter.Detections do
 
     * `:pipeline` (`:detection`) — the detection pipeline whose
       detections these are (`VisionCore.Detection`), `<name>`: its
-      markers go to `<prefix>/<name>/detections/markers` in the
-      marker namespace `"<name>"`, its detections to
-      `<prefix>/<name>/detections` and `<prefix>/<name>/annotations`.
-    * `:topic_prefix` (`"stereo"`) — the `<prefix>` of the topics.
+      markers go to `<name>/detections/markers` in the marker
+      namespace `"<name>"`, its detections to `<name>/detections` and
+      `<name>/annotations`, whatever its source.
+    * `:topic_prefix` (none) — a namespace the topics go under,
+      `<prefix>/<name>/detections` and so on.
+    * `:pair_frame_id` (`"stereo_left"`) — the frame of a pair that
+      carries none, the stereo unit's left one.
     * `:marker_lifetime_ms` (`500`) — how long a marker survives
       without being refreshed. Longer than the frame interval so
       markers do not flicker, short enough that a stale box goes away
@@ -82,7 +85,7 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   alias VisionCore.Ros2.Stamp
   alias VisionCore.Stereo.Pair
 
-  @default_topic_prefix "stereo"
+  @default_pair_frame_id "stereo_left"
   @default_marker_lifetime_ms 500
   @default_label_font_size 12.0
 
@@ -111,13 +114,11 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   @doc "The topics and settings of the detection `options`; see the module doc."
   @spec new(keyword()) :: t()
   def new(options) do
-    topic_prefix = Keyword.get(options, :topic_prefix, @default_topic_prefix)
-
     options
     |> Keyword.get(:pipeline, :detection)
-    |> topics(topic_prefix)
+    |> topics(options[:topic_prefix])
     |> Map.merge(%{
-      default_frame_id: "#{topic_prefix}_left",
+      default_frame_id: Keyword.get(options, :pair_frame_id, @default_pair_frame_id),
       marker_lifetime:
         options
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
@@ -128,11 +129,13 @@ defmodule VisionCore.Ros2.Exporter.Detections do
   end
 
   defp topics(pipeline, topic_prefix) do
+    topic_root = if topic_prefix, do: "#{topic_prefix}/#{pipeline}", else: "#{pipeline}"
+
     %{
-      markers_topic: "#{topic_prefix}/#{pipeline}/detections/markers",
-      detections_topic: "#{topic_prefix}/#{pipeline}/detections",
-      detections_2d_topic: "#{topic_prefix}/#{pipeline}/detections_2d",
-      overlay_topic: "#{topic_prefix}/#{pipeline}/annotations",
+      markers_topic: "#{topic_root}/detections/markers",
+      detections_topic: "#{topic_root}/detections",
+      detections_2d_topic: "#{topic_root}/detections_2d",
+      overlay_topic: "#{topic_root}/annotations",
       namespace: Atom.to_string(pipeline)
     }
   end

@@ -133,20 +133,28 @@ defmodule VisionCore.Ros2.TopicsTest do
 
       await_session()
 
-      assert :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      assert :ok =
+               Topics.publish("ovcs_vision/heartbeat", StringMessage, %StringMessage{
+                 data: "alive"
+               })
+
       tick(pid)
 
-      assert [%{name: "/ovcs_heartbeat", type: "std_msgs/msg/String", rate_hz: +0.0}] =
+      assert [%{name: "/ovcs_vision/heartbeat", type: "std_msgs/msg/String", rate_hz: +0.0}] =
                Topics.topics()
     end
 
     test "lists a topic at no rate while the client has no session", %{topics: pid} do
       start_client(open_session: fn _endpoint_ip -> Process.sleep(:infinity) end)
 
-      assert :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      assert :ok =
+               Topics.publish("ovcs_vision/heartbeat", StringMessage, %StringMessage{
+                 data: "alive"
+               })
+
       tick(pid)
 
-      assert [%{name: "/ovcs_heartbeat", rate_hz: +0.0}] = Topics.topics()
+      assert [%{name: "/ovcs_vision/heartbeat", rate_hz: +0.0}] = Topics.topics()
     end
   end
 
@@ -160,12 +168,16 @@ defmodule VisionCore.Ros2.TopicsTest do
     end
 
     test "counts a message the client takes as a publish", %{topics: pid} do
-      assert :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      assert :ok =
+               Topics.publish("ovcs_vision/heartbeat", StringMessage, %StringMessage{
+                 data: "alive"
+               })
+
       tick(pid)
 
       assert [
                %{
-                 name: "/ovcs_heartbeat",
+                 name: "/ovcs_vision/heartbeat",
                  type: "std_msgs/msg/String",
                  rate_hz: rate_hz,
                  encode_failures: 0
@@ -179,13 +191,13 @@ defmodule VisionCore.Ros2.TopicsTest do
     test "counts a message that cannot be encoded apart from the publishes", %{topics: pid} do
       for _ <- 1..2 do
         assert {:error, {:encode_raised, _reason}} =
-                 Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: nil})
+                 Topics.publish("ovcs_vision/heartbeat", StringMessage, %StringMessage{data: nil})
       end
 
       tick(pid)
       assert [%{rate_hz: +0.0, encode_failures: 2}] = Topics.topics()
 
-      :ok = Topics.publish("ovcs_heartbeat", StringMessage, %StringMessage{data: "alive"})
+      :ok = Topics.publish("ovcs_vision/heartbeat", StringMessage, %StringMessage{data: "alive"})
       tick(pid)
 
       assert [%{rate_hz: rate_hz, encode_failures: 2}] = Topics.topics()

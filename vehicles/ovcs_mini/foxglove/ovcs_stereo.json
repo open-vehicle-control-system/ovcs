@@ -13,7 +13,7 @@
         "flipHorizontal": false,
         "flipVertical": false,
         "annotations": {
-          "/stereo/detection/annotations": {
+          "/detection/annotations": {
             "visible": true
           }
         }
@@ -76,7 +76,7 @@
       "foxglovePanelTitle": "Depth (mm)"
     },
     "RawMessages!heartbeat": {
-      "topicPath": "/ovcs_heartbeat.data",
+      "topicPath": "/ovcs_vision/heartbeat.data",
       "diffEnabled": false,
       "showFullMessageForDiff": false,
       "diffMethod": "custom",
@@ -130,7 +130,7 @@
           "maxValue": 4.0,
           "pointSize": 3
         },
-        "/stereo/detection/detections/markers": {
+        "/detection/detections/markers": {
           "visible": true
         },
         "/scan": {
@@ -154,7 +154,7 @@
       "foxglovePanelTitle": "Obstacles: stereo cloud, detections, lidar, ultrasound"
     },
     "RawMessages!detections": {
-      "topicPath": "/stereo/detection/detections.detections",
+      "topicPath": "/detection/detections.detections",
       "diffEnabled": false,
       "showFullMessageForDiff": false,
       "diffMethod": "custom",
@@ -165,7 +165,7 @@
     "Plot!sync_offset": {
       "paths": [
         {
-          "value": "/stereo/live/sync_offset_ms.data",
+          "value": "/stereo/sync_offset_ms.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "right - left (ms)"

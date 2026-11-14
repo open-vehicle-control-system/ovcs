@@ -72,7 +72,7 @@
     "Plot!sync": {
       "paths": [
         {
-          "value": "/stereo/live/sync_offset_ms.data",
+          "value": "/stereo/sync_offset_ms.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "offset"
@@ -90,13 +90,13 @@
     "Plot!exposure": {
       "paths": [
         {
-          "value": "/stereo/live/left/exposure_time_us.data",
+          "value": "/stereo/left/exposure_us.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "left"
         },
         {
-          "value": "/stereo/live/right/exposure_time_us.data",
+          "value": "/stereo/right/exposure_us.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "right"
@@ -114,13 +114,13 @@
     "Plot!gain": {
       "paths": [
         {
-          "value": "/stereo/live/left/analogue_gain.data",
+          "value": "/stereo/left/analogue_gain.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "left"
         },
         {
-          "value": "/stereo/live/right/analogue_gain.data",
+          "value": "/stereo/right/analogue_gain.data",
           "enabled": true,
           "timestampMethod": "receiveTime",
           "label": "right"
