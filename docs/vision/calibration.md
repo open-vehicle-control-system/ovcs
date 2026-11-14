@@ -17,7 +17,7 @@ The unit holds one calibration session, shared by every dashboard: a second brow
 
 Print a chessboard and glue it flat to something rigid; a board that bends gives a wrong calibration. Measure one square with a ruler after printing, as printers scale.
 
-Enter the board in **inner corners**, the points where four squares meet, not in squares: a board of 9 × 7 squares has 8 × 6 inner corners. The columns and rows must differ, as a board with as many of each looks the same turned a quarter, and both must be 2 or more. Then enter the side of one square in millimetres. The page starts with 8 × 6 inner corners and 25 mm, and your browser remembers what you enter.
+Enter the board in **inner corners**, the points where four squares meet, not in squares: a board of 9 × 7 squares has 8 × 6 inner corners. The columns and rows must differ, as a board with as many of each looks the same turned a quarter, and both must be 2 or more. Then enter the side of one square in millimetres. The page draws the board as you enter it, with a dot on each inner corner, to check against the printed one. It starts with 8 × 6 inner corners and 25 mm, and your browser remembers what you enter.
 
 **Start capturing** begins the capture.
 

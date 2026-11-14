@@ -308,6 +308,19 @@ describe('CalibrationPage', () => {
       expect(actions.start).toHaveBeenCalledWith({ columns: 8, rows: 6, squareMm: 25 })
     })
 
+    it('draws the board entered, its inner corners marked, and nothing for a board it cannot look for', () => {
+      show({ inUse: stored, session: session() })
+
+      const drawing = screen.getByRole('img', { name: 'Board of 9 × 7 squares, with 8 × 6 inner corners' })
+      expect(drawing.querySelectorAll('circle')).toHaveLength(48)
+
+      fireEvent.change(screen.getByLabelText('Inner corners (columns)'), { target: { value: '5' } })
+      expect(screen.getByRole('img', { name: 'Board of 6 × 7 squares, with 5 × 6 inner corners' }).querySelectorAll('circle')).toHaveLength(30)
+
+      fireEvent.change(screen.getByLabelText('Inner corners (columns)'), { target: { value: '' } })
+      expect(screen.queryByRole('img', { name: /^Board of/ })).toBeNull()
+    })
+
     it('starts with the board entered, and remembers it', () => {
       const { unmount } = show({ inUse: stored, session: session() })
 

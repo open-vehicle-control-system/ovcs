@@ -26,13 +26,76 @@ function boardOf(fields) {
   return FIELDS.every(({ key, valid }) => valid(board[key])) && board.columns !== board.rows ? board : null
 }
 
-/** The board to look for, in inner corners, remembered in this browser; Start begins capturing. */
+const INPUT = `min-h-9 w-16 rounded border border-ovcs-border bg-ovcs-bg px-2 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none ${FOCUS}`
+
+// The largest board drawn square by square; a larger one is not drawn.
+const DRAWN_SQUARES = 30
+
+/** The board as entered: its squares, and a dot on each inner corner the unit looks for. */
+function BoardDrawing({ board }) {
+  if (!board || board.columns >= DRAWN_SQUARES || board.rows >= DRAWN_SQUARES) return null
+  const across = board.columns + 1
+  const down = board.rows + 1
+  const squares = Array.from({ length: across * down }, (_, index) => [index % across, Math.floor(index / across)])
+  const corners = Array.from({ length: board.columns * board.rows }, (_, index) => [
+    (index % board.columns) + 1,
+    Math.floor(index / board.columns) + 1
+  ])
+
+  return (
+    <svg
+      role="img"
+      aria-label={`Board of ${across} × ${down} squares, with ${board.columns} × ${board.rows} inner corners`}
+      viewBox={`0 0 ${across} ${down}`}
+      className="h-28 w-auto shrink-0 rounded-sm bg-white"
+    >
+      {squares.map(([x, y]) => ((x + y) % 2 === 0 ? <rect key={`${x},${y}`} x={x} y={y} width="1" height="1" fill="black" /> : null))}
+      <g className="text-ovcs-accent">
+        {corners.map(([x, y]) => (
+          <circle key={`${x},${y}`} cx={x} cy={y} r="0.2" fill="currentColor" />
+        ))}
+      </g>
+    </svg>
+  )
+}
+
+function Field({ id, field, value, onChange }) {
+  return (
+    <input
+      id={id}
+      aria-label={field.label}
+      type="number"
+      inputMode={field.step === 1 ? 'numeric' : 'decimal'}
+      min={field.step === 1 ? 2 : 0}
+      step={field.step}
+      required
+      autoComplete="off"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className={INPUT}
+    />
+  )
+}
+
+/**
+ * The board to look for, in inner corners, drawn as entered so that it can be checked against the printed one, and
+ * remembered in this browser; Start begins capturing.
+ */
 export function BoardForm() {
   const id = useId()
   const [fields, setFields] = useState(() => asFields(loadBoard()))
   const busy = useCalibration((state) => state.busy)
   const start = useCalibration((state) => state.start)
   const board = boardOf(fields)
+  const [columns, rows, squareMm] = FIELDS
+  const field = (description) => (
+    <Field
+      id={`${id}-${description.key}`}
+      field={description}
+      value={fields[description.key]}
+      onChange={(value) => setFields((current) => ({ ...current, [description.key]: value }))}
+    />
+  )
 
   const submit = (event) => {
     event.preventDefault()
@@ -44,28 +107,40 @@ export function BoardForm() {
   return (
     <Flow step={0}>
       <p className="max-w-prose text-sm text-ovcs-muted">
-        Fix a printed chessboard flat on a rigid plate. Count its inner corners, where four squares meet, not its squares.
+        Fix a printed chessboard flat on a rigid plate. Count its inner corners, the dots on the drawing, where four squares
+        meet, not its squares.
       </p>
-      <form onSubmit={submit} className="flex flex-wrap items-end gap-3">
-        {FIELDS.map(({ key, label, step }) => (
-          <label key={key} htmlFor={`${id}-${key}`} className="flex flex-col gap-1 text-sm">
-            <span className="text-ovcs-muted">{label}</span>
-            <input
-              id={`${id}-${key}`}
-              type="number"
-              inputMode={step === 1 ? 'numeric' : 'decimal'}
-              min={step === 1 ? 2 : 0}
-              step={step}
-              required
-              value={fields[key]}
-              onChange={(event) => setFields((current) => ({ ...current, [key]: event.target.value }))}
-              className={`min-h-9 w-36 rounded border border-ovcs-border bg-ovcs-bg px-2 tabular-nums ${FOCUS}`}
-            />
-          </label>
-        ))}
-        <button type="submit" disabled={busy || !board} aria-describedby={board ? undefined : `${id}-rule`} className={PRIMARY}>
-          Start capturing
-        </button>
+      <form onSubmit={submit} className="flex flex-wrap items-center gap-x-8 gap-y-4">
+        <BoardDrawing board={board} />
+        <div className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+            <div className="flex flex-col gap-1">
+              <span className="text-ovcs-muted">Inner corners, across × down</span>
+              <span className="flex items-center gap-2">
+                {field(columns)}
+                <span aria-hidden="true" className="text-ovcs-muted">
+                  ×
+                </span>
+                {field(rows)}
+                {board ? <span className="text-ovcs-muted">{`${board.columns + 1} × ${board.rows + 1} squares`}</span> : null}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-ovcs-muted">Side of one square</span>
+              <span className="flex items-center gap-2">
+                {field(squareMm)}
+                <span aria-hidden="true" className="text-ovcs-muted">
+                  mm
+                </span>
+              </span>
+            </div>
+          </div>
+          <div>
+            <button type="submit" disabled={busy || !board} aria-describedby={board ? undefined : `${id}-rule`} className={PRIMARY}>
+              Start capturing
+            </button>
+          </div>
+        </div>
       </form>
       {board ? null : (
         <p id={`${id}-rule`} className="text-sm text-ovcs-error-text">
