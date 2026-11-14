@@ -350,7 +350,9 @@ defmodule VmsCore.Components.OVCS.ThrottlePedal do
   end
 
   defp store_calibration_value(key, raw_throttle) do
-    %ThrottleCalibration{key: key, value: raw_throttle} |> Repo.insert()
+    %ThrottleCalibration{}
+    |> ThrottleCalibration.changeset(%{key: key, value: raw_throttle})
+    |> Repo.insert()
   end
 
   defp calibrated?(state) do
