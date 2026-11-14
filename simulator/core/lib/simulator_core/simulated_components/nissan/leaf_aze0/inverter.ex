@@ -35,6 +35,8 @@ defmodule SimulatorCore.SimulatedComponents.Nissan.LeafAZE0.Inverter do
 
   import SimulatorCore.SimulatedComponent, only: [decimal: 2, float: 2]
 
+  alias SimulatorCore.SimulatedComponents.OVCS.GenericController.DigitalPinRequest
+
   @temperatures %{
     "inverter_communication_board_temperature" => 77,
     "insulated_gate_bipolar_transistor_temperature" => 77,
@@ -54,12 +56,10 @@ defmodule SimulatorCore.SimulatedComponents.Nissan.LeafAZE0.Inverter do
 
     state = %{
       network: Map.fetch!(opts, :network),
-      pin_request: "#{Map.fetch!(opts, :controller)}_digital_pin_request",
+      pin_request: DigitalPinRequest.frame_name(Map.fetch!(opts, :controller)),
       controller_network: Map.get(opts, :controller_network, :ovcs),
-      relay_signals:
-        Map.new(@relay_pin_options, fn {relay, option} ->
-          {relay, "digital_pin#{Map.fetch!(opts, option)}_enabled"}
-        end),
+      relay_pins:
+        Map.new(@relay_pin_options, fn {relay, option} -> {relay, Map.fetch!(opts, option)} end),
       closed_relays: MapSet.new(),
       pack_voltage_v: Map.fetch!(opts, :pack_voltage_v),
       reduction_ratio: Map.fetch!(opts, :reduction_ratio),
@@ -86,8 +86,8 @@ defmodule SimulatorCore.SimulatedComponents.Nissan.LeafAZE0.Inverter do
 
   def handle_frame(name, signals, %{pin_request: name} = state, _now_ms) do
     closed_relays =
-      for {relay, signal} <- state.relay_signals,
-          match?(%{^signal => %{value: true}}, signals),
+      for {relay, pin} <- state.relay_pins,
+          DigitalPinRequest.enabled?(signals, pin),
           into: MapSet.new(),
           do: relay
 

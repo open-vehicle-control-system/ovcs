@@ -32,6 +32,8 @@ defmodule SimulatorCore.SimulatedComponents.Bosch.IBoosterGen2 do
 
   import SimulatorCore.SimulatedComponent, only: [float: 2]
 
+  alias SimulatorCore.SimulatedComponents.OVCS.GenericController.DigitalPinRequest
+
   # The VMS's flow rates around the booster's zero point, and its rod travel.
   @zero_point_flow_rate 0x7E00
   @flow_rate_range 0x1400
@@ -46,9 +48,9 @@ defmodule SimulatorCore.SimulatedComponents.Bosch.IBoosterGen2 do
 
     state = %{
       network: Map.fetch!(opts, :network),
-      pin_request: "#{Map.fetch!(opts, :controller)}_digital_pin_request",
+      pin_request: DigitalPinRequest.frame_name(Map.fetch!(opts, :controller)),
       controller_network: Map.get(opts, :controller_network, :ovcs),
-      power_relay_pin: "digital_pin#{Map.fetch!(opts, :power_relay_pin)}_enabled",
+      power_relay_pin: Map.fetch!(opts, :power_relay_pin),
       rod_speed_mm_s: Map.fetch!(opts, :rod_speed_mm_s),
       full_travel_deceleration_m_s2: Map.fetch!(opts, :full_travel_deceleration_m_s2),
       powered: false,
@@ -64,7 +66,7 @@ defmodule SimulatorCore.SimulatedComponents.Bosch.IBoosterGen2 do
 
   @impl SimulatorCore.SimulatedComponent
   def handle_frame(name, signals, %{pin_request: name, power_relay_pin: pin} = state, _now_ms),
-    do: %{state | powered: match?(%{^pin => %{value: true}}, signals)}
+    do: %{state | powered: DigitalPinRequest.enabled?(signals, pin)}
 
   def handle_frame("brake_request", %{"external_request" => request} = signals, state, _now_ms),
     do: %{state | external_request: request.value, flow_rate: float(signals, "flow_rate")}
