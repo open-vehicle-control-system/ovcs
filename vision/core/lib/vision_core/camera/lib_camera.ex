@@ -45,6 +45,9 @@ defmodule VisionCore.Camera.LibCamera do
       int64   capture_ns LE
       float64 values[8] LE        # in the order of `live/1`'s keys
 
+  or, for each output it sends (see "Outputs"), an OUTPUT_JPEG record
+  (`VisionCore.Camera.OutputRecord`), after the frame's own.
+
   Records the other way, on the binary's stdin, are runtime controls
   (see "Runtime controls"), one `Name=value` each: a libcamera control
   by its name, such as `LensPosition=1.5` or `AeExposureMode=1`, which
@@ -74,6 +77,22 @@ defmodule VisionCore.Camera.LibCamera do
   sync and the controls apply to both. The JPEG of a limited-range
   output is expanded to full range; the grey frames keep the luma as
   captured, 16 to 235 on the Pi 5.
+
+  ## Outputs
+
+  `:outputs` asks the capture program for a second stream of the ISP
+  beside the frames, in the same request, as a camera's named outputs
+  (`VisionCore.Camera.Output`): one output made by the processor `:isp`
+  at an even size up to the `:sensor_mode`'s, with `send: false`, since
+  its YUV420 frames never leave the program, and JPEGs made `:from` it
+  at its size. `:outputs_max_hz` makes them on at most that many frames
+  a second, chosen on their capture times; without it, on every frame.
+  Each output's frames are published under `{:camera_frame, name,
+  output}`, `name` the instance's registered name, each frame carrying
+  its output's name as its `:output`; the frames stay under
+  `{:camera_frame, name}`, so that the stereo unit's Pairer never
+  receives an output's. `capture_outputs/1` refuses outputs the capture
+  program cannot make, before it starts.
 
   ## Sync
 
@@ -141,8 +160,8 @@ defmodule VisionCore.Camera.LibCamera do
   before it; see `start_controls/1`. One the camera refuses is logged and
   left out.
 
-  The sync role, sensor mode, output format, resolution and frame rate
-  are fixed at start.
+  The sync role, sensor mode, output format, resolution, frame rate and
+  outputs are fixed at start.
 
   ## Stall watchdog
 
@@ -166,8 +185,10 @@ defmodule VisionCore.Camera.LibCamera do
   use GenServer
   require Logger
 
-  alias VisionCore.Camera.{Frame, Reopen}
+  alias VisionCore.Camera.{Frame, Output, OutputRecord, Reopen}
   alias VisionCore.{Outputs, PortProcess}
+
+  require OutputRecord
 
   @frame_tag 1
   @log_tag 2
@@ -189,6 +210,8 @@ defmodule VisionCore.Camera.LibCamera do
   @watchdog_interval_ms 1_000
   @default_stall_timeout_ms 2_000
   @default_startup_timeout_ms 15_000
+  # camera_capture's bound on --outputs-max-hz.
+  @max_outputs_hz 1_000
 
   def start_link(opts) do
     label = Keyword.fetch!(opts, :label)
@@ -283,6 +306,8 @@ defmodule VisionCore.Camera.LibCamera do
             "#{__MODULE__}[#{label}]: :format must be :jpeg or :grey, got #{inspect(format)}"
     end
 
+    outputs = capture_outputs!(opts, label)
+
     executable = Keyword.get_lazy(opts, :executable, &binary_path/0)
 
     unless File.exists?(executable) do
@@ -308,7 +333,9 @@ defmodule VisionCore.Camera.LibCamera do
         sync_arguments(sync_role) ++
         exposure_mode_arguments(exposure_mode) ++
         lens_position_arguments(lens_position) ++
-        sensor_mode_arguments(sensor_mode) ++ format_arguments(format)
+        sensor_mode_arguments(sensor_mode) ++
+        format_arguments(format) ++
+        output_arguments(outputs, Keyword.get(opts, :outputs_max_hz))
 
     Logger.info(
       "#{__MODULE__}[#{label}] camera #{camera_id} @ #{width}×#{height}/#{fps}fps, #{format} frames, via #{executable}"
@@ -327,6 +354,7 @@ defmodule VisionCore.Camera.LibCamera do
        failures: 0,
        reopen_delays_ms: Reopen.delays!(opts),
        output: {:camera_frame, name_for(label)},
+       outputs: Map.new(Output.sent(outputs), &{&1.index, {output_key(label, &1.name), &1.name}}),
        controls: Map.merge(initial_controls(), Map.new(start_controls, &normalise_control/1)),
        applied_metadata: nil,
        start_controls: start_controls,
@@ -336,6 +364,165 @@ defmodule VisionCore.Camera.LibCamera do
        startup_timeout_ms: Keyword.get(opts, :startup_timeout_ms, @default_startup_timeout_ms)
      })}
   end
+
+  @doc """
+  The outputs the camera `opts` asks of the ISP's second stream (see
+  "Outputs"), in their configured order, `[]` without `:outputs`; or
+  `{:error, message}` for outputs `VisionCore.Camera.Output.resolve/3`
+  refuses, an ISP output sent, of an odd size or larger than the
+  `:sensor_mode`, a second ISP output, an output made `:from` another
+  that is not its JPEG at its size, outputs without a `:sensor_mode`, or
+  an `:outputs_max_hz` without `:outputs` or outside (0, 1000]. Pure.
+  """
+  @spec capture_outputs(keyword()) :: {:ok, [Output.t()]} | {:error, String.t()}
+  def capture_outputs(opts) do
+    case {Keyword.fetch(opts, :outputs), Keyword.get(opts, :outputs_max_hz)} do
+      {:error, nil} ->
+        {:ok, []}
+
+      {:error, _max_hz} ->
+        {:error, ":outputs_max_hz caps the outputs: give it with :outputs"}
+
+      {{:ok, outputs}, max_hz} ->
+        with :ok <- check_outputs_max_hz(max_hz),
+             {:ok, sensor_size} <- sensor_size(Keyword.get(opts, :sensor_mode)),
+             {:ok, resolved} <- resolve_isp_outputs(outputs),
+             :ok <- check_capture_outputs(resolved, sensor_size),
+             do: {:ok, resolved}
+    end
+  end
+
+  defp capture_outputs!(opts, label) do
+    case capture_outputs(opts) do
+      {:ok, outputs} -> outputs
+      {:error, message} -> raise ArgumentError, "#{__MODULE__}[#{label}]: #{message}"
+    end
+  end
+
+  defp check_outputs_max_hz(nil), do: :ok
+
+  defp check_outputs_max_hz(max_hz)
+       when is_number(max_hz) and max_hz > 0 and max_hz <= @max_outputs_hz,
+       do: :ok
+
+  defp check_outputs_max_hz(other),
+    do:
+      {:error,
+       ":outputs_max_hz is a number above 0 and up to #{@max_outputs_hz}, got #{inspect(other)}"}
+
+  defp sensor_size({width, height}), do: {:ok, {width, height}}
+  defp sensor_size({width, height, _bit_depth}), do: {:ok, {width, height}}
+
+  defp sensor_size(nil),
+    do:
+      {:error,
+       ":outputs need a :sensor_mode: an ISP output is at most its size, and " <>
+         "without it libcamera picks the mode for the largest stream"}
+
+  @doc """
+  `outputs`, a camera's named outputs, resolved for the processor `:isp`
+  at any size they ask and the formats RGB and JPEG
+  (`VisionCore.Camera.Output.resolve/3`), without the bounds of
+  `capture_outputs/1`. Pure.
+  """
+  @spec resolve_isp_outputs(term()) :: {:ok, [Output.t()]} | {:error, String.t()}
+  def resolve_isp_outputs(outputs),
+    do: Output.resolve(outputs, %{isp: asked_sizes(outputs)}, formats: [:rgb, :jpeg])
+
+  # `Output.resolve/3` refuses malformed outputs.
+  defp asked_sizes(outputs) when is_list(outputs) do
+    for {_name, options} <- outputs,
+        is_list(options) and Keyword.keyword?(options),
+        resolution = options[:resolution],
+        do: resolution
+  end
+
+  defp asked_sizes(_outputs), do: []
+
+  defp check_capture_outputs(outputs, sensor_size) do
+    {isp, made_from} = Enum.split_with(outputs, &(&1.processor == :isp))
+    sources = Map.new(isp, &{&1.name, &1})
+
+    with :ok <- first_error(isp, &check_isp_output(&1, sensor_size)),
+         :ok <- check_one_isp_output(isp),
+         do: first_error(made_from, &check_made_from(&1, Map.fetch!(sources, &1.from)))
+  end
+
+  defp first_error(outputs, check) do
+    Enum.find_value(outputs, :ok, fn output ->
+      case check.(output) do
+        :ok -> nil
+        {:error, _message} = error -> error
+      end
+    end)
+  end
+
+  defp check_isp_output(%Output{send: true} = output, _sensor_size),
+    do:
+      {:error,
+       "output #{output.name}: an ISP output is YUV420, which no record carries: " <>
+         "give it send: false"}
+
+  defp check_isp_output(output, {sensor_width, sensor_height}) do
+    cond do
+      rem(output.width, 2) != 0 or rem(output.height, 2) != 0 ->
+        {:error,
+         "output #{output.name}: an ISP output takes an even width and height, " <>
+           "not #{size(output)}"}
+
+      output.width > sensor_width or output.height > sensor_height ->
+        {:error,
+         "output #{output.name}: #{size(output)} is larger than the sensor mode's " <>
+           "#{sensor_width}x#{sensor_height}, the most the ISP makes"}
+
+      true ->
+        :ok
+    end
+  end
+
+  defp check_one_isp_output([_one]), do: :ok
+
+  defp check_one_isp_output([_first, second | _others]),
+    do: {:error, "output #{second.name}: the ISP makes one stream beside the frames' own"}
+
+  defp check_made_from(%Output{format: :jpeg} = output, source) do
+    if {output.width, output.height} == {source.width, source.height},
+      do: :ok,
+      else:
+        {:error,
+         "output #{output.name}: a JPEG is of its source's size, #{size(source)}, " <>
+           "not #{size(output)}"}
+  end
+
+  defp check_made_from(output, _source),
+    do:
+      {:error, "output #{output.name}: an output made from another is its JPEG, not an RGB image"}
+
+  defp size(output), do: "#{output.width}x#{output.height}"
+
+  defp output_key(label, output), do: {:camera_frame, name_for(label), output}
+
+  defp output_arguments([], _max_hz), do: []
+
+  defp output_arguments(outputs, max_hz) do
+    indices = Map.new(outputs, &{&1.name, &1.index})
+
+    Enum.flat_map(Output.port_order(outputs), &["--output", output_argument(&1, indices)]) ++
+      outputs_max_hz_arguments(max_hz)
+  end
+
+  defp output_argument(%Output{processor: :isp} = output, _indices),
+    do: "isp:#{size(output)}:unsent"
+
+  defp output_argument(%Output{format: :jpeg, from: from} = output, indices),
+    do: "from:#{Map.fetch!(indices, from)}:#{size(output)}:jpeg:#{output.quality}"
+
+  defp outputs_max_hz_arguments(nil), do: []
+
+  defp outputs_max_hz_arguments(max_hz) when is_integer(max_hz),
+    do: ["--outputs-max-hz", Integer.to_string(max_hz)]
+
+  defp outputs_max_hz_arguments(max_hz), do: ["--outputs-max-hz", Float.to_string(max_hz)]
 
   defp open_port(%{program: {executable, arguments}} = state) do
     port =
@@ -368,6 +555,12 @@ defmodule VisionCore.Camera.LibCamera do
         Outputs.publish(state.output, {:camera_frame, frame})
         state = Reopen.delivered(%{state | last_frame_at: now_ms()})
         {:noreply, apply_start_controls(state)}
+
+      {:frame, index, frame} ->
+        {key, output} = Map.fetch!(state.outputs, index)
+        frame = %{frame | label: state.label, frame_id: state.frame_id, output: output}
+        Outputs.publish(key, {:camera_frame, frame})
+        {:noreply, state}
 
       {:log, level, message} ->
         Logger.log(level, "#{__MODULE__}[#{state.label}] camera_capture: #{message}")
@@ -716,6 +909,9 @@ defmodule VisionCore.Camera.LibCamera do
     {:metadata,
      Map.put(reported, :capture_ns, VisionCore.Timing.monotonic_from_kernel(capture_ns))}
   end
+
+  def parse_record(<<tag, _rest::binary>> = record) when OutputRecord.output_tag?(tag),
+    do: OutputRecord.parse(record)
 
   def parse_record(_other), do: {:error, :malformed_record}
 

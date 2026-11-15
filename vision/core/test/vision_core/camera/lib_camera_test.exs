@@ -1,8 +1,8 @@
 defmodule VisionCore.Camera.LibCameraTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Camera.{Frame, LibCamera}
-  alias VisionCore.Outputs
+  alias VisionCore.Camera.{Frame, LibCamera, Output}
+  alias VisionCore.{Outputs, Timing}
 
   @output {:camera_frame, LibCamera.name_for("left")}
 
@@ -359,25 +359,208 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       assert message =~ ":format"
     end
+  end
 
-    # Flag and value pairs, one per line, as the program received them.
-    defp captured_arguments(tmp_dir) do
-      path = Path.join(tmp_dir, "args")
-      wait_until(fn -> File.exists?(path) and File.read!(path) =~ "\n" end)
+  @isp_outputs [
+    half: [resolution: {1152, 648}, processor: :isp, send: false],
+    half_jpeg: [from: :half, format: :jpeg, quality: 80]
+  ]
 
-      path
-      |> File.read!()
-      |> String.split("\n", trim: true)
-      |> Enum.chunk_every(2)
-      |> Enum.map(&Enum.join(&1, " "))
+  describe "capture_outputs/1" do
+    test "resolves the ISP output and the JPEG made from it, in the program's order" do
+      assert {:ok, [half, half_jpeg]} =
+               LibCamera.capture_outputs(outputs: @isp_outputs, sensor_mode: {2304, 1296})
+
+      assert %Output{name: :half, index: 0, processor: :isp, send: false} = half
+
+      assert %Output{name: :half_jpeg, index: 1, from: :half, format: :jpeg, quality: 80} =
+               half_jpeg
     end
 
-    defp wait_until(check, attempts \\ 50) do
-      cond do
-        check.() -> :ok
-        attempts == 0 -> flunk("timed out")
-        true -> Process.sleep(10) && wait_until(check, attempts - 1)
+    test "is none without :outputs" do
+      assert LibCamera.capture_outputs(sensor_mode: {2304, 1296}) == {:ok, []}
+    end
+
+    test "takes an ISP output up to the sensor mode's size, its bit depth aside" do
+      outputs = [
+        full: [resolution: {2028, 1520}, processor: :isp, send: false],
+        full_jpeg: [from: :full, format: :jpeg]
+      ]
+
+      assert {:ok, _outputs} =
+               LibCamera.capture_outputs(outputs: outputs, sensor_mode: {2028, 1520, 12})
+    end
+
+    for {refusal, outputs, extra, message} <- [
+          {"a sent ISP output",
+           [
+             half: [resolution: {1152, 648}, processor: :isp],
+             half_jpeg: [from: :half, format: :jpeg]
+           ], [],
+           "output half: an ISP output is YUV420, which no record carries: give it send: false"},
+          {"a second ISP output",
+           @isp_outputs ++
+             [
+               small: [resolution: {576, 324}, processor: :isp, send: false],
+               small_jpeg: [from: :small, format: :jpeg]
+             ], [], "output small: the ISP makes one stream beside the frames' own"},
+          {"an ISP output of an odd size",
+           [
+             half: [resolution: {1151, 648}, processor: :isp, send: false],
+             half_jpeg: [from: :half, format: :jpeg]
+           ], [], "output half: an ISP output takes an even width and height, not 1151x648"},
+          {"an ISP output wider than the sensor mode",
+           [
+             wide: [resolution: {2400, 648}, processor: :isp, send: false],
+             wide_jpeg: [from: :wide, format: :jpeg]
+           ], [],
+           "output wide: 2400x648 is larger than the sensor mode's 2304x1296, the most the ISP makes"},
+          {"an RGB output made from the ISP output",
+           @isp_outputs ++ [quarter: [resolution: {576, 324}, from: :half]], [],
+           "output quarter: an output made from another is its JPEG, not an RGB image"},
+          {"a JPEG of another size than its source",
+           [
+             half: [resolution: {1152, 648}, processor: :isp, send: false],
+             quarter_jpeg: [resolution: {576, 324}, from: :half, format: :jpeg]
+           ], [], "output quarter_jpeg: a JPEG is of its source's size, 1152x648, not 576x324"},
+          {"a processor the driver lacks",
+           [
+             half: [resolution: {1152, 648}, processor: :cpu, send: false],
+             half_jpeg: [from: :half, format: :jpeg]
+           ], [], "output half: its processor :cpu is not one this driver has (:isp)"},
+          {"an :outputs_max_hz of 0", @isp_outputs, [outputs_max_hz: 0],
+           ":outputs_max_hz is a number above 0 and up to 1000, got 0"},
+          {"an :outputs_max_hz above 1000", @isp_outputs, [outputs_max_hz: 1001],
+           ":outputs_max_hz is a number above 0 and up to 1000, got 1001"}
+        ] do
+      @outputs outputs
+      @extra extra
+      @message message
+
+      test "refuses #{refusal}" do
+        assert LibCamera.capture_outputs([outputs: @outputs, sensor_mode: {2304, 1296}] ++ @extra) ==
+                 {:error, @message}
       end
+    end
+
+    test "refuses outputs without the sensor mode they are checked against" do
+      assert LibCamera.capture_outputs(outputs: @isp_outputs) ==
+               {:error,
+                ":outputs need a :sensor_mode: an ISP output is at most its size, and " <>
+                  "without it libcamera picks the mode for the largest stream"}
+    end
+
+    test "refuses :outputs_max_hz without :outputs" do
+      assert LibCamera.capture_outputs(outputs_max_hz: 10, sensor_mode: {2304, 1296}) ==
+               {:error, ":outputs_max_hz caps the outputs: give it with :outputs"}
+    end
+  end
+
+  describe "outputs" do
+    @describetag :tmp_dir
+
+    test "are asked of the capture program in their order, at most :outputs_max_hz a second",
+         %{tmp_dir: tmp_dir} do
+      start_camera(tmp_dir, "stereo/left",
+        format: :grey,
+        sensor_mode: {2304, 1296},
+        outputs: @isp_outputs,
+        outputs_max_hz: 10
+      )
+
+      assert Enum.take(captured_arguments(tmp_dir), -3) == [
+               "--output isp:1152x648:unsent",
+               "--output from:0:1152x648:jpeg:80",
+               "--outputs-max-hz 10"
+             ]
+    end
+
+    test "are not asked of the capture program without :outputs", %{tmp_dir: tmp_dir} do
+      start_camera(tmp_dir, "stereo/left", format: :grey, sensor_mode: {2304, 1296})
+      arguments = captured_arguments(tmp_dir)
+
+      refute Enum.any?(arguments, &String.starts_with?(&1, "--output"))
+    end
+
+    @tag :capture_log
+    test "the camera refuses, saying why, before its capture program starts",
+         %{tmp_dir: tmp_dir} do
+      executable = fake_capture_program(tmp_dir)
+
+      assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
+               start_supervised(
+                 {LibCamera,
+                  label: "stereo/left",
+                  camera_id: 0,
+                  executable: executable,
+                  sensor_mode: {2304, 1296},
+                  outputs: [half: [resolution: {1152, 648}, processor: :isp]]}
+               )
+
+      assert message =~ "an ISP output is YUV420"
+      refute File.exists?(Path.join(tmp_dir, "args"))
+    end
+
+    test "publish their JPEGs under their own keys, the grey frames under the camera's alone",
+         %{tmp_dir: tmp_dir} do
+      server = LibCamera.name_for("stereo/left")
+      jpeg = <<0xFF, 0xD8, 1, 2, 3, 0xFF, 0xD9>>
+
+      records = [
+        <<5, 2::little-16, 1::little-16, 5::little-signed-64, 7, 8>>,
+        <<8, 1, 1152::little-16, 648::little-16, 5::little-signed-64, jpeg::binary>>
+      ]
+
+      :ok = Outputs.subscribe({:camera_frame, server})
+      :ok = Outputs.subscribe({:camera_frame, server, :half_jpeg})
+
+      start_supervised!(
+        {LibCamera,
+         label: "stereo/left",
+         frame_id: "stereo_left_optical",
+         camera_id: 1,
+         format: :grey,
+         sensor_mode: {2304, 1296},
+         outputs: @isp_outputs,
+         executable: recording_capture_program(tmp_dir, records)}
+      )
+
+      assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: :half_jpeg} = colour}}, 2_000
+
+      assert %Frame{
+               label: "stereo/left",
+               frame_id: "stereo_left_optical",
+               width: 1152,
+               height: 648,
+               jpeg: ^jpeg,
+               grey: nil
+             } = colour
+
+      assert_in_delta colour.capture_ns, Timing.monotonic_from_kernel(5), 1_000_000
+
+      assert_receive {:"$gen_cast", {:camera_frame, %Frame{output: nil, grey: <<7, 8>>}}}
+      refute_receive {:"$gen_cast", {:camera_frame, _frame}}, 200
+    end
+
+    # Writes `records`, then reads its commands.
+    defp recording_capture_program(tmp_dir, records) do
+      path = Path.join(tmp_dir, "records.bin")
+
+      File.write!(
+        path,
+        for(record <- records, into: <<>>, do: <<byte_size(record)::32>> <> record)
+      )
+
+      executable = Path.join(tmp_dir, "camera_capture")
+
+      File.write!(executable, """
+      #!/bin/sh
+      cat "$(dirname "$0")/records.bin"
+      exec cat > /dev/null
+      """)
+
+      File.chmod!(executable, 0o755)
+      executable
     end
   end
 
@@ -449,6 +632,26 @@ defmodule VisionCore.Camera.LibCameraTest do
 
       File.chmod!(executable, 0o755)
       executable
+    end
+  end
+
+  # Flag and value pairs, one per line, as the program received them.
+  defp captured_arguments(tmp_dir) do
+    path = Path.join(tmp_dir, "args")
+    wait_until(fn -> File.exists?(path) and File.read!(path) =~ "\n" end)
+
+    path
+    |> File.read!()
+    |> String.split("\n", trim: true)
+    |> Enum.chunk_every(2)
+    |> Enum.map(&Enum.join(&1, " "))
+  end
+
+  defp wait_until(check, attempts \\ 50) do
+    cond do
+      check.() -> :ok
+      attempts == 0 -> flunk("timed out")
+      true -> Process.sleep(10) && wait_until(check, attempts - 1)
     end
   end
 

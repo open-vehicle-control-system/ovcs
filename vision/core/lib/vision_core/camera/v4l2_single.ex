@@ -27,19 +27,9 @@ defmodule VisionCore.Camera.V4L2Single do
 
   ## Framing protocol
 
-  Records on the Port's stdout are `{:packet, 4}`:
-
-      uint8   tag                 # 7 = OUTPUT_FRAME
-      uint8   output              # the output's index, `VisionCore.Camera.Output`'s
-      uint16  width   LE
-      uint16  height  LE
-      int64   capture_ns LE       # frame start, kernel CLOCK_MONOTONIC
-      bytes   rgb                 # width * height * 3, R, G, B
-
-  or, for a JPEG output, the same header under tag 8, OUTPUT_JPEG, then
-  the JPEG of the `width` x `height` image, or, for an H.264 output, the
-  same header under tag 9, OUTPUT_H264, then a byte of flags, bit 0 set
-  on a key frame, then the frame's NAL units in Annex B form; one record
+  Records on the Port's stdout are `{:packet, 4}`: an output record
+  (`VisionCore.Camera.OutputRecord`), OUTPUT_FRAME for an RGB output,
+  OUTPUT_JPEG for a JPEG output or OUTPUT_H264 for an H.264 output, one
   per sent output per frame, in the order of their indices, or the log
   and metadata records `VisionCore.Camera.V4L2Capture.parse_record/1`
   reads: the exposure and gain as the pair's, and, while `awb` is on,
@@ -117,14 +107,12 @@ defmodule VisionCore.Camera.V4L2Single do
 
   @behaviour VisionCore.Camera
 
-  alias VisionCore.Camera.{Camss, Frame, Output, Reopen}
+  alias VisionCore.Camera.{Camss, Output, OutputRecord, Reopen}
   alias VisionCore.Camera.V4L2Capture
-  alias VisionCore.{Outputs, Timing}
+  alias VisionCore.Outputs
 
-  @output_frame_tag 7
-  @output_jpeg_tag 8
-  @output_h264_tag 9
-  @key_frame_flag 1
+  require OutputRecord
+
   @stall_timeout_ms 2_000
   @startup_timeout_ms 15_000
   @default_sensor_width 2028
@@ -235,55 +223,8 @@ defmodule VisionCore.Camera.V4L2Single do
   def live(server), do: GenServer.call(server, :live)
 
   @doc false
-  def parse_record(
-        <<@output_frame_tag, output, width::little-16, height::little-16,
-          kernel_ns::little-signed-64, rgb::binary>>
-      )
-      when byte_size(rgb) == width * height * 3 do
-    {:frame, output,
-     %Frame{
-       label: nil,
-       width: width,
-       height: height,
-       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
-       rgb: rgb
-     }}
-  end
-
-  def parse_record(
-        <<@output_jpeg_tag, output, width::little-16, height::little-16,
-          kernel_ns::little-signed-64, jpeg::binary>>
-      )
-      when byte_size(jpeg) > 0 do
-    {:frame, output,
-     %Frame{
-       label: nil,
-       width: width,
-       height: height,
-       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
-       jpeg: jpeg
-     }}
-  end
-
-  def parse_record(
-        <<@output_h264_tag, output, width::little-16, height::little-16,
-          kernel_ns::little-signed-64, flags, h264::binary>>
-      )
-      when byte_size(h264) > 0 do
-    {:frame, output,
-     %Frame{
-       label: nil,
-       width: width,
-       height: height,
-       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
-       h264: h264,
-       keyframe?: Bitwise.band(flags, @key_frame_flag) != 0
-     }}
-  end
-
-  def parse_record(<<tag, _rest::binary>>)
-      when tag in [@output_frame_tag, @output_jpeg_tag, @output_h264_tag],
-      do: {:error, :malformed_record}
+  def parse_record(<<tag, _rest::binary>> = record) when OutputRecord.output_tag?(tag),
+    do: OutputRecord.parse(record)
 
   def parse_record(record), do: V4L2Capture.parse_record(record)
 
