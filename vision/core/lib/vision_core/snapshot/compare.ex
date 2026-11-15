@@ -1,13 +1,13 @@
-defmodule VisionCore.Debug.Compare do
+defmodule VisionCore.Snapshot.Compare do
   @moduledoc """
-  Compares two exports of `VisionCore.Debug.Export`, to tell what a change
-  to the unit did and whether it exceeds the noise between exports of one
+  Compares two snapshots of `VisionCore.Snapshot`, to tell what a change
+  to the unit did and whether it exceeds the noise between snapshots of one
   setup. It reads each zip's `manifest.json`, `parameters.json`,
   `figures.json`, `timings.json`, `last/disparity.f32` and
-  `last/depth.png`; `mix vision_core.compare_exports` prints the result.
+  `last/depth.png`; `mix vision_core.compare_snapshots` prints the result.
   """
 
-  alias VisionCore.Debug.Png
+  alias VisionCore.Snapshot.Png
 
   @required_files ~w(
     manifest.json parameters.json figures.json timings.json
@@ -34,7 +34,7 @@ defmodule VisionCore.Debug.Compare do
         }
   @type only_in :: %{a: [String.t()], b: [String.t()]}
   @type report :: %{
-          exports: %{a: manifest(), b: manifest()},
+          snapshots: %{a: manifest(), b: manifest()},
           parameters: [{String.t(), term(), term()}],
           figures: [
             %{
@@ -67,40 +67,40 @@ defmodule VisionCore.Debug.Compare do
           images: %{String.t() => binary()}
         }
 
-  @doc "How many samples a figure of the pairs needs in both exports for its spread to count."
+  @doc "How many samples a figure of the pairs needs in both snapshots for its spread to count."
   @spec minimum_samples() :: pos_integer()
   def minimum_samples, do: @minimum_samples
 
   @doc """
-  Compares the export `zip_a` with the export `zip_b`, B read against A.
-  Raises `ArgumentError`, with a message naming the export, the file and
-  the problem, when a zip is not an export or a file of it is malformed,
-  and when the two exports' images differ in size.
+  Compares the snapshot `zip_a` with the snapshot `zip_b`, B read against A.
+  Raises `ArgumentError`, with a message naming the snapshot, the file and
+  the problem, when a zip is not a snapshot or a file of it is malformed,
+  and when the two snapshots' images differ in size.
 
-    * `:exports` — `%{a: manifest, b: manifest}`, what each export's manifest says
+    * `:snapshots` — `%{a: manifest, b: manifest}`, what each snapshot's manifest says
       of it: `hostname`, `time`, `firmware` (the revision), `change_age_ms`,
       `changes_during_burst` and `status_available`.
     * `:parameters` — `{id, a, b}` for each parameter whose value differs,
-      by id. A parameter one export lacks reads `nil` in it.
-    * `:figures` — for each figure both exports measured, by name,
+      by id. A parameter one snapshot lacks reads `nil` in it.
+    * `:figures` — for each figure both snapshots measured, by name,
       `%{name, a, b, delta, status, within_spread}`: `a` and `b` are the
       figure's summaries `%{mean, min, max, std, n}`, `delta` is
       `b.mean - a.mean`, `status` is `true` for a figure of the status
-      snapshots (`figures.json`'s `snapshots`, in either export), and
+      snapshots (`figures.json`'s `snapshots`, in either snapshot), and
       `within_spread` is `abs(delta) <= max(a.std, b.std)`. A status figure
       is never judged, and neither is a figure with fewer than 3 samples in
-      either export: their `within_spread` is always `true`.
-    * `:timings` — for each stage both exports timed, by name,
+      either snapshot: their `within_spread` is always `true`.
+    * `:timings` — for each stage both snapshots timed, by name,
       `%{stage, a_median, b_median, a_p95, b_p95}`.
     * `:figures_only_in`, `:timings_only_in` — the names of the figures and
-      of the stages only one export has, `%{a: names, b: names}`.
+      of the stages only one snapshot has, `%{a: names, b: names}`.
     * `:pixels` — the last pairs' pixels: `both`, `a_only` and `b_only` count
-      the disparity-matched pixels (disparity above 0) in both exports and
+      the disparity-matched pixels (disparity above 0) in both snapshots and
       in one only; `mean_abs_disparity_px` is the mean absolute difference
       over `both`, and `mean_abs_depth_mm` over the pixels with a depth in
       both. A mean is `nil` where no pixel counts.
     * `:images` — `"disparity-diff.png"` and `"depth-diff.png"`, 8-bit grey
-      PNGs of the image's size. A pixel is 255 where only one export has
+      PNGs of the image's size. A pixel is 255 where only one snapshot has
       a value, 0 where neither has, and otherwise the absolute
       difference: `min(255, round(abs(da - db) * 32))` in pixels for the
       disparity, `min(255, round(abs(za - zb) / 4))` in millimetres for
@@ -108,12 +108,12 @@ defmodule VisionCore.Debug.Compare do
   """
   @spec compare(binary(), binary()) :: report()
   def compare(zip_a, zip_b) do
-    a = read_export(zip_a, "A")
-    b = read_export(zip_b, "B")
+    a = read_snapshot(zip_a, "A")
+    b = read_snapshot(zip_b, "B")
 
     if a.size != b.size do
       raise ArgumentError,
-            "the exports' images differ in size: A is #{dimensions(a.size)}, B is #{dimensions(b.size)}"
+            "the snapshots' images differ in size: A is #{dimensions(a.size)}, B is #{dimensions(b.size)}"
     end
 
     disparity = compare_samples(a.disparity, b.disparity, @disparity_grey_per_px)
@@ -121,7 +121,7 @@ defmodule VisionCore.Debug.Compare do
     {width, height} = a.size
 
     %{
-      exports: %{a: a.manifest, b: b.manifest},
+      snapshots: %{a: a.manifest, b: b.manifest},
       parameters: parameters(a.parameters, b.parameters),
       figures: figures(a.figures, b.figures),
       figures_only_in: only_in(a.figures.summaries, b.figures.summaries),
@@ -141,14 +141,14 @@ defmodule VisionCore.Debug.Compare do
     }
   end
 
-  defp read_export(zip, label) do
-    case parse_export(zip) do
-      {:ok, export} -> export
-      {:error, problem} -> raise ArgumentError, "export #{label}: #{problem}"
+  defp read_snapshot(zip, label) do
+    case parse_snapshot(zip) do
+      {:ok, snapshot} -> snapshot
+      {:error, problem} -> raise ArgumentError, "snapshot #{label}: #{problem}"
     end
   end
 
-  defp parse_export(zip) do
+  defp parse_snapshot(zip) do
     with {:ok, files} <- unzip(zip),
          :ok <- require_files(files),
          {:ok, {size, manifest}} <- read_json(files, "manifest.json", &check_manifest/1),

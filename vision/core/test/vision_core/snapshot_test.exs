@@ -1,14 +1,14 @@
-defmodule VisionCore.Debug.ExportTest do
+defmodule VisionCore.SnapshotTest do
   use ExUnit.Case, async: true
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Debug.Export
+  alias VisionCore.Snapshot
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Parameters.{Group, Parameter}
   alias VisionCore.Stereo.Pair
   alias VisionCore.TestPng
 
-  @directory "vision-export-unit-1-20261103T140509Z"
+  @directory "vision-snapshot-unit-1-20261103T140509Z"
   @width 8
   @height 6
   @depth_mm for index <- 0..47, do: if(rem(index, 5) == 0, do: 0, else: 300 + index * 1_000)
@@ -21,14 +21,14 @@ defmodule VisionCore.Debug.ExportTest do
   )
 
   test "holds the spec's files" do
-    {filename, zip} = Export.build(recording())
+    {filename, zip} = Snapshot.build(recording())
 
     assert filename == @directory <> ".zip"
     assert names(zip) == Enum.sort(Enum.map(@spec_files, &Path.join(@directory, &1)))
   end
 
   test "leaves out the depth JPEG and the detections the recording lacks" do
-    {_filename, zip} = Export.build(recording(depth_coloured_jpeg: nil, detections: nil))
+    {_filename, zip} = Snapshot.build(recording(depth_coloured_jpeg: nil, detections: nil))
 
     names = names(zip)
     refute Path.join(@directory, "last/depth-coloured.jpg") in names
@@ -37,10 +37,10 @@ defmodule VisionCore.Debug.ExportTest do
   end
 
   test "names the zip after the hostname, cleaned of what a path cannot hold, and the UTC time" do
-    {filename, zip} = Export.build(recording(hostname: "vision unit/1"))
+    {filename, zip} = Snapshot.build(recording(hostname: "vision unit/1"))
 
-    assert filename == "vision-export-vision-unit-1-20261103T140509Z.zip"
-    assert Enum.all?(names(zip), &String.starts_with?(&1, "vision-export-vision-unit-1-"))
+    assert filename == "vision-snapshot-vision-unit-1-20261103T140509Z.zip"
+    assert Enum.all?(names(zip), &String.starts_with?(&1, "vision-snapshot-vision-unit-1-"))
   end
 
   test "keeps JPEG frames as delivered" do
@@ -199,6 +199,10 @@ defmodule VisionCore.Debug.ExportTest do
     assert files(recording())["README.md"] =~ "Something changed during the burst: no."
   end
 
+  test "titles the README as a snapshot of the unit" do
+    assert files(recording())["README.md"] =~ ~r/\A# Vision unit snapshot\n\nTaken from `unit-1`/
+  end
+
   test "says in the README that pairs can be skipped, and how to read the stages' metrics" do
     readme = files(recording())["README.md"]
 
@@ -209,7 +213,8 @@ defmodule VisionCore.Debug.ExportTest do
   end
 
   test "describes the burst, the unit and the binary files in the manifest" do
-    manifest = json(files(recording(status_available: false, snapshots: [])), "manifest.json")
+    manifest =
+      json(files(recording(status_available: false, status_snapshots: [])), "manifest.json")
 
     assert manifest["time"] == "2026-11-03T14:05:09Z"
     assert manifest["hostname"] == "unit-1"
@@ -239,7 +244,7 @@ defmodule VisionCore.Debug.ExportTest do
   end
 
   defp files(recording) do
-    {_filename, zip} = Export.build(recording)
+    {_filename, zip} = Snapshot.build(recording)
     {:ok, entries} = :zip.unzip(zip, [:memory])
     prefix = @directory <> "/"
 
@@ -275,7 +280,7 @@ defmodule VisionCore.Debug.ExportTest do
       calibration: %{left: "left calibration\n", right: "right calibration\n"},
       pairs: Enum.map(0..2, &burst_pair/1),
       last_pair: last_pair(),
-      snapshots: [snapshot(29.0, nil, 1.0), snapshot(31.0, 40.0, 2.0)],
+      status_snapshots: [status_snapshot(29.0, nil, 1.0), status_snapshot(31.0, 40.0, 2.0)],
       detections: [%{"label" => "cup", "score" => 0.9}],
       change_age_ms: 2_150,
       changes_during_burst: 0,
@@ -315,7 +320,7 @@ defmodule VisionCore.Debug.ExportTest do
     }
   end
 
-  defp snapshot(depth_hz, cpu_percent, offset_max_ms) do
+  defp status_snapshot(depth_hz, cpu_percent, offset_max_ms) do
     %{
       cameras: %{
         left: %{present: true, fps: depth_hz},

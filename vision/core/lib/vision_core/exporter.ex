@@ -117,8 +117,8 @@ defmodule VisionCore.Exporter do
   `c:outputs/1` and `c:actions/1` again at each listing, which
   `VisionCore.Status` makes every second.
 
-  `c:actions/1` lists what people can ask of the exporter, such as an
-  export to download, each run by `VisionCore.Exporters.action/4` through
+  `c:actions/1` lists what people can ask of the exporter, such as a
+  snapshot to download, each run by `VisionCore.Exporters.action/4` through
   the runner. The runner answers `{:error, :not_running}` until
   `c:init/1` succeeds and `{:error, :unknown_action}` for a name the
   exporter does not list, without calling it; otherwise it hands the

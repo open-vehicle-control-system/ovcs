@@ -348,16 +348,16 @@ Writing an exporter of your own is in [How a pair flows](./data_flow.md#exporter
 
 An action is listed with its `name`, a `label` and a `description`. `POST /api/exporters/:id/actions/:name` runs it, with a JSON:API document of the type `exporter-actions`. The action's parameters go in `attributes` when it takes any.
 
-This request runs the `export` action of an exporter whose id is `debug`, which answers a zip file ([Tune with exports](./tuning.md)), and saves it:
+This request runs the `take` action of an exporter whose id is `snapshot`, which answers a zip file ([Tune with snapshots](./tuning.md)), and saves it:
 
 ```sh
-curl --cacert vision.pem --fail-with-body -X POST https://<vehicle>-vision.local/api/exporters/debug/actions/export \
+curl --cacert vision.pem --fail-with-body -X POST https://<vehicle>-vision.local/api/exporters/snapshot/actions/take \
   -H 'content-type: application/vnd.api+json' \
   -d '{"data": {"type": "exporter-actions"}}' \
-  -o export.zip
+  -o snapshot.zip
 ```
 
-`--fail-with-body` needs curl 7.76 or later. On an error answer, curl exits with 22 and `export.zip` holds the JSON error, not a zip: check the exit status before you use the file.
+`--fail-with-body` needs curl 7.76 or later. On an error answer, curl exits with 22 and `snapshot.zip` holds the JSON error, not a zip: check the exit status before you use the file.
 
 An action that produces a file answers it with a 200 and `content-disposition: attachment`. One that answers JSON gets a 200 with an `exporter-actions` resource whose `attributes` hold the result. The request waits up to 60 s for the answer. The unit answers:
 

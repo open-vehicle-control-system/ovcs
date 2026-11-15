@@ -157,7 +157,7 @@ An exporter of your own needs no change to the core, the API or the dashboard. I
 
 An exporter can also declare **actions**: things people ask of it, rather than outputs it reads. It declares them with the optional `actions/1` and `handle_action/4` callbacks of `VisionCore.Exporter`. The API lists them in `GET /api/exporters` and runs them with `POST /api/exporters/:id/actions/:name` ([Vision API](./api.md#the-unit-and-its-exports)). The exporter's dashboard page shows a button for each.
 
-An action answers a JSON result, an error or a file to download. It may answer later than it was asked, as an export that spans many pairs does. [`VisionCore.Debug.Exporter`](../../vision/core/lib/vision_core/debug/exporter.ex) is the one that ships with the core. Its `export` action returns a zip of a burst of pairs and the unit's state, for [tuning the unit's parameters](./tuning.md).
+An action answers a JSON result, an error or a file to download. It may answer later than it was asked, as a snapshot that spans many pairs does. [`VisionCore.Snapshot.Exporter`](../../vision/core/lib/vision_core/snapshot/exporter.ex) is the one that ships with the core. Its `take` action returns a zip of a burst of pairs and the unit's state, for [tuning the unit's parameters](./tuning.md).
 
 [`VisionCore.Exporters`](../../vision/core/lib/vision_core/exporters.ex) starts after the components, under [`VisionCore.Consumers`](../../vision/core/lib/vision_core/consumers.ex). That supervisor holds what reads the outputs: the exporters and their JPEG codec, the calibration session, the Status, the Preview and the videos. It has its own restart budget, so consumers that keep crashing stop together and leave the cameras and pipelines running, until the Reviver starts them again.
 

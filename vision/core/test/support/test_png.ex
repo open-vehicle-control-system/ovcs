@@ -1,6 +1,6 @@
 defmodule VisionCore.TestPng do
   @moduledoc """
-  A PNG reader for the tests, independent of `VisionCore.Debug.Png`: it
+  A PNG reader for the tests, independent of `VisionCore.Snapshot.Png`: it
   checks the signature, the chunk order, each chunk's CRC and the filter
   bytes, and answers the image's header fields and its unfiltered pixels
   as the file holds them (16-bit samples big-endian).
