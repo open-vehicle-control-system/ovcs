@@ -102,7 +102,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
         }
 
   @doc """
-  Starts a recording in `:dir`, created if missing.
+  Starts a recording in `:dir`, created if missing in its parent folder,
+  which must exist.
 
   Options:
     * `:dir` - the recording's folder
@@ -333,9 +334,15 @@ defmodule VisionCore.Ros2.Bag.Recording do
     end
   end
 
+  # Makes the folder in its parent, which a disk not mounted lacks.
   defp open_folder(state) do
-    File.mkdir_p!(state.dir)
-    open_file(state)
+    case File.mkdir(state.dir) do
+      made when made in [:ok, {:error, :eexist}] ->
+        open_file(state)
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "make directory", path: state.dir
+    end
   end
 
   defp open_file(state) do

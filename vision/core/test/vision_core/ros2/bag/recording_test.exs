@@ -443,6 +443,16 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.stop(pid)
     end
 
+    test "at the start refuses a folder whose parent is missing, as on a disk not mounted",
+         %{tmp_dir: dir} do
+      unmounted = Path.join([dir, "disks", "stick", "recordings"])
+      pid = start_linked!(unmounted, @no_chunk_close)
+
+      assert Recording.status(pid).error =~ bag_dir(unmounted)
+      refute File.exists?(Path.join(dir, "disks"))
+      :ok = Recording.stop(pid)
+    end
+
     test "at the start leaves a recording that only reports it", %{tmp_dir: dir} do
       File.write!(bag_dir(dir), "a file where the folder goes")
       pid = start_linked!(dir, @no_chunk_close)
