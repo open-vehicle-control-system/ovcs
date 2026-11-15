@@ -2,7 +2,7 @@ defmodule VisionCore.Jpeg do
   @moduledoc """
   JPEG through a pool of `jpeg_codec` Ports: encodes grey frames and
   rectified images, colours and encodes depth previews, and decodes JPEG
-  camera frames to grey.
+  camera frames to grey or to RGB.
 
   Each Port serves one request at a time. A request goes to any free
   Port, so a slow encode holds only its own Port; once all `:ports` are
@@ -51,6 +51,7 @@ defmodule VisionCore.Jpeg do
   @encode 0
   @decode 1
   @depth 2
+  @decode_rgb 3
 
   @typedoc """
   `:codec`, the instance a request runs on, an encode's `:quality`
@@ -133,9 +134,22 @@ defmodule VisionCore.Jpeg do
   @doc "A JPEG's luma: `{width, height, pixels}`, one byte a pixel, row-major."
   @spec decode_grey(binary(), [{:codec, GenServer.server()}]) ::
           {:ok, {pos_integer(), pos_integer(), binary()}} | {:error, term()}
-  def decode_grey(jpeg, options \\ []) when is_binary(jpeg) do
-    case call(options, <<@decode, jpeg::binary>>) do
-      {:ok, <<width::little-16, height::little-16, pixels::binary>>} ->
+  def decode_grey(jpeg, options \\ []) when is_binary(jpeg),
+    do: decode(<<@decode, jpeg::binary>>, 1, options)
+
+  @doc """
+  A JPEG's pixels as RGB: `{width, height, pixels}`, three bytes a pixel,
+  row-major; a grey JPEG's luma in each channel.
+  """
+  @spec decode_rgb(binary(), [{:codec, GenServer.server()}]) ::
+          {:ok, {pos_integer(), pos_integer(), binary()}} | {:error, term()}
+  def decode_rgb(jpeg, options \\ []) when is_binary(jpeg),
+    do: decode(<<@decode_rgb, jpeg::binary>>, 3, options)
+
+  defp decode(request, channels, options) do
+    case call(options, request) do
+      {:ok, <<width::little-16, height::little-16, pixels::binary>>}
+      when byte_size(pixels) == width * height * channels ->
         {:ok, {width, height, pixels}}
 
       {:ok, _malformed} ->
