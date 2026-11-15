@@ -1,14 +1,15 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import UnitStatus from '../UnitStatus.jsx'
 import Previews from '../Previews.jsx'
 import { PAIR_CHECKS } from '../../status.js'
 import { HINTS } from '../../hints.js'
+import { useExporters } from '../../stores/exporters.js'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
 const snapshot = {
-  cameras: { left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, right: { present: false } },
+  cameras: { 'stereo/left': { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0 }, 'stereo/right': { present: false } },
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
   npu: null,
   depthHz: 12.8,
@@ -52,6 +53,13 @@ const snapshot = {
 }
 
 describe('UnitStatus and the pair status', () => {
+  const stereo = [
+    { name: 'stereo_frame:left', maxHz: 5, source: 'stereo/left' },
+    { name: 'stereo_frame:right', maxHz: 5, source: 'stereo/right' }
+  ]
+  beforeEach(() => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: stereo }] }))
+  afterEach(() => useExporters.setState({ exporters: [] }))
+
   const card = (id) => document.querySelector(`[data-card="${id}"]`)
   const show = (status) =>
     render(

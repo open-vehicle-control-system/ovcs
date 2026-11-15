@@ -7,7 +7,7 @@ import DepthRange from './DepthRange.jsx'
 import DetectionOverlay from './DetectionOverlay.jsx'
 import SegmentationOverlay, { SegmentationLegend } from './SegmentationOverlay.jsx'
 import Hint from './Hint.jsx'
-import { useApiOutputs } from '../stores/exporters.js'
+import { useApiOutputs, useStereoStreams } from '../stores/exporters.js'
 import { useCalibration } from '../stores/calibration.js'
 import { useNavigation } from '../stores/navigation.js'
 import { poseId } from '../services/calibration.js'
@@ -190,11 +190,10 @@ function useSourceSegmentations(socket, source, vertical) {
 
 const CAMERA_FRAME = 'camera_frame:'
 const CAMERA_VIDEO = 'camera_video:'
-const STEREO_SIDES = ['left', 'right']
 
 /**
  * The cameras of their own: each camera the API exporter lists a `camera_frame:<name>` output for, then each other one
- * whose video it relays, but the stereo pair's sides.
+ * whose video it relays.
  */
 function useCameraNames(videos) {
   const outputs = useApiOutputs()
@@ -203,7 +202,7 @@ function useCameraNames(videos) {
     .filter((name) => name.startsWith(CAMERA_FRAME))
     .map((name) => name.slice(CAMERA_FRAME.length))
 
-  return [...new Set([...framed, ...videos])].filter((name) => !STEREO_SIDES.includes(name))
+  return [...new Set([...framed, ...videos])]
 }
 
 /** The cameras whose video the API relays: each `camera_video:<name>:<output>` output it lists. */
@@ -264,22 +263,26 @@ function CameraPreview({ name, status, socket, beside, video }) {
   )
 }
 
-/** The left camera with the stereo pipelines' detected objects drawn over it and counted; their results re-render it alone. */
-function LeftPreview({ status, socket }) {
-  const { overlays, detections } = useSourceDetections(socket, 'left')
+/**
+ * The stereo unit's left camera, on its `stream`, with the stereo pipelines' detected objects drawn over it and
+ * counted; their results re-render it alone.
+ */
+function LeftPreview({ stream, status, socket }) {
+  const { overlays, detections } = useSourceDetections(socket, stream)
+  const camera = status?.cameras?.[stream]
 
   return (
     <Preview
-      stream="left"
+      stream={stream}
       socket={socket}
       overlay={overlays}
       className={PAIR_TILE}
       cellClassName={ROW_CELL}
       frameClassName={ROW_FRAME}
-      badge={badges(cameraIssues(status?.cameras?.left))}
-      alert={needsAction(cameraIssues(status?.cameras?.left))}
+      badge={badges(cameraIssues(camera))}
+      alert={needsAction(cameraIssues(camera))}
     >
-      {status ? <Figures id="left" figures={[...cameraFigures(status.cameras?.left), ...objectFigures(detections)]} /> : null}
+      {status ? <Figures id="left" figures={[...cameraFigures(camera), ...objectFigures(detections)]} /> : null}
     </Preview>
   )
 }
@@ -288,7 +291,7 @@ function LeftPreview({ status, socket }) {
  * The depth with its rate, its checks and quality, badged with what to do about it, and its colour range, upright beside the frame, which the unit pushes after
  * every join, a rejoin included, and on every change; the handler is bound before the join, so it misses none.
  */
-function DepthPreview({ status, socket, beside }) {
+function DepthPreview({ stream, status, socket, beside }) {
   const [metres, setMetres] = useState(null)
 
   const follow = useCallback((channel) => {
@@ -298,7 +301,7 @@ function DepthPreview({ status, socket, beside }) {
 
   return (
     <Preview
-      stream="depth"
+      stream={stream}
       socket={socket}
       onChannel={follow}
       aside={<DepthRange set={setDepthRange} metres={metres} onChange={setMetres} vertical={beside} />}
@@ -318,13 +321,15 @@ const ROWS_BESIDE_PANEL = 'lg:min-h-min lg:flex-1 lg:grid-rows-[minmax(12.5rem,1
 
 /**
  * Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of
- * their own side by side, filling the height left. Each preview of a row spans the row's three tracks, frame, caption
- * and aside, so its frame's track starts and ends level with its neighbours' whatever their captions and asides hold;
- * in the depth's row, each frame has its image's shape, and the asides go beside the frames where those keep a frame
- * at least as wide as tall (`useBeside`). `besidePanel`, in the narrower column beside a page's panel, each frame
- * keeps at least 12.5rem of height, for its column to scroll.
+ * their own side by side, filling the height left; the stereo unit's previews once the API names their streams. Each
+ * preview of a row spans the row's three tracks, frame, caption and aside, so its frame's track starts and ends level
+ * with its neighbours' whatever their captions and asides hold; in the depth's row, each frame has its image's shape,
+ * and the asides go beside the frames where those keep a frame at least as wide as tall (`useBeside`). `besidePanel`,
+ * in the narrower column beside a page's panel, each frame keeps at least 12.5rem of height, for its column to scroll.
  */
 export default function Previews({ status, socket, besidePanel = false }) {
+  const stereo = useStereoStreams()
+  const right = status?.cameras?.[stereo.right]
   const videos = useVideoCameras()
   const cameras = useCameraNames(videos)
   const rowRef = useRef(null)
@@ -335,29 +340,31 @@ export default function Previews({ status, socket, besidePanel = false }) {
     <section aria-label="Previews" className={`flex flex-col gap-3 lg:flex-1 ${besidePanel ? 'lg:min-h-min' : 'lg:min-h-0'}`}>
       {/* The asides' track takes the height the pair's checks add, under the captions; on a narrow screen the checks go
           under both previews. */}
-      <div
-        className={`grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 ${rows}`}
-      >
-        <LeftPreview status={status} socket={socket} />
-        <PairStatus status={status} />
-        <Preview
-          stream="right"
-          socket={socket}
-          className={PAIR_TILE}
-          cellClassName={ROW_CELL}
-          frameClassName={ROW_FRAME}
-          badge={badges(cameraIssues(status?.cameras?.right))}
-          alert={needsAction(cameraIssues(status?.cameras?.right))}
+      {stereo.left && stereo.right ? (
+        <div
+          className={`grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 ${rows}`}
         >
-          {status ? <Figures id="right" figures={cameraFigures(status.cameras?.right)} /> : null}
-        </Preview>
-      </div>
+          <LeftPreview stream={stereo.left} status={status} socket={socket} />
+          <PairStatus status={status} />
+          <Preview
+            stream={stereo.right}
+            socket={socket}
+            className={PAIR_TILE}
+            cellClassName={ROW_CELL}
+            frameClassName={ROW_FRAME}
+            badge={badges(cameraIssues(right))}
+            alert={needsAction(cameraIssues(right))}
+          >
+            {status ? <Figures id="right" figures={cameraFigures(right)} /> : null}
+          </Preview>
+        </div>
+      ) : null}
       <div
         ref={rowRef}
         data-cameras
         className={`grid gap-3 lg:auto-cols-fr lg:grid-flow-col lg:gap-y-0 ${rows}`}
       >
-        <DepthPreview status={status} socket={socket} beside={beside} />
+        {stereo.depth ? <DepthPreview stream={stereo.depth} status={status} socket={socket} beside={beside} /> : null}
         {cameras.map((name) => (
           <CameraPreview key={name} name={name} status={status} socket={socket} beside={beside} video={videos.includes(name)} />
         ))}

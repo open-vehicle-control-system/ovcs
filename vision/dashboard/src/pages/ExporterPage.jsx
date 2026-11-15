@@ -16,8 +16,8 @@ const TONES = { ok: 'ok', warning: 'error', off: 'muted' }
 
 const OUTPUT_NAMES = {
   stereo_pair: 'Stereo pairs',
-  'camera_frame:left': 'Left camera frames',
-  'camera_frame:right': 'Right camera frames',
+  'stereo_frame:left': 'Stereo left camera frames',
+  'stereo_frame:right': 'Stereo right camera frames',
   camera_frame: 'Camera frames',
   detections: 'Detections',
   segmentation: 'Segmentation'

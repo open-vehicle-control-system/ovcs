@@ -72,28 +72,43 @@ describe('cameraStatus', () => {
   const stereo = { key: 'stereo', kind: 'stereo' }
   const center = { key: 'center', kind: 'camera' }
   const present = (fps, issues = []) => ({ present: true, fps, issues })
+  const sides = { left: 'stereo/left', right: 'stereo/right' }
+
+  it("tells the stereo pair's cameras from a camera of its own named left", () => {
+    const left = { key: 'left', kind: 'camera' }
+    const snapshot = { cameras: { 'stereo/left': present(20), 'stereo/right': present(20), left: present(10) } }
+
+    expect(cameraStatus(snapshot, left, sides)).toEqual({ level: 'ok', detail: null, fps: '10 fps' })
+    expect(cameraStatus(snapshot, stereo, sides)).toEqual({ level: 'ok', detail: null, fps: '20 fps' })
+  })
+
+  it("says nothing of the stereo pair before the API names its cameras' streams", () => {
+    const snapshot = { cameras: { 'stereo/left': present(20), 'stereo/right': present(20) } }
+
+    expect(cameraStatus(snapshot, stereo, { left: null, right: null })).toBeNull()
+  })
 
   it('says nothing before the unit reports', () => {
-    expect(cameraStatus(null, stereo)).toBeNull()
+    expect(cameraStatus(null, stereo, sides)).toBeNull()
   })
 
   it("gives a camera of its own's rate, ok while it delivers frames", () => {
-    const snapshot = { cameras: { left: present(10), right: present(10), center: present(29.97) } }
-    expect(cameraStatus(snapshot, center)).toEqual({ level: 'ok', detail: null, fps: '30 fps' })
+    const snapshot = { cameras: { 'stereo/left': present(10), 'stereo/right': present(10), center: present(29.97) } }
+    expect(cameraStatus(snapshot, center, sides)).toEqual({ level: 'ok', detail: null, fps: '30 fps' })
   })
 
   it("gives the stereo pair the lower of its sides' rates, and the worst of their states", () => {
-    expect(cameraStatus({ cameras: { left: present(30), right: present(24.6) } }, stereo)).toEqual({
+    expect(cameraStatus({ cameras: { 'stereo/left': present(30), 'stereo/right': present(24.6) } }, stereo, sides)).toEqual({
       level: 'ok',
       detail: null,
       fps: '25 fps'
     })
-    expect(cameraStatus({ cameras: { left: present(30), right: present(30, ['focus_mismatch']) } }, stereo)).toEqual({
+    expect(cameraStatus({ cameras: { 'stereo/left': present(30), 'stereo/right': present(30, ['focus_mismatch']) } }, stereo, sides)).toEqual({
       level: 'warning',
       detail: 'Softer than the other camera: refocus it',
       fps: '30 fps'
     })
-    expect(cameraStatus({ cameras: { left: present(30), right: { present: false } } }, stereo)).toEqual({
+    expect(cameraStatus({ cameras: { 'stereo/left': present(30), 'stereo/right': { present: false } } }, stereo, sides)).toEqual({
       level: 'error',
       detail: 'absent',
       fps: null
@@ -101,7 +116,7 @@ describe('cameraStatus', () => {
   })
 
   it('is an error for a camera the unit does not report, or that delivers no frame', () => {
-    expect(cameraStatus({ cameras: {} }, center)).toEqual({ level: 'error', detail: 'absent', fps: null })
-    expect(cameraStatus({ cameras: { center: present(0) } }, center)).toEqual({ level: 'error', detail: 'no frames', fps: '0 fps' })
+    expect(cameraStatus({ cameras: {} }, center, sides)).toEqual({ level: 'error', detail: 'absent', fps: null })
+    expect(cameraStatus({ cameras: { center: present(0) } }, center, sides)).toEqual({ level: 'error', detail: 'no frames', fps: '0 fps' })
   })
 })

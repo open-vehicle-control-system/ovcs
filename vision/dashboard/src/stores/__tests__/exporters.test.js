@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { exporterStatus, useExporters } from '../exporters.js'
+import { exporterStatus, stereoStreams, useExporters } from '../exporters.js'
 import * as unit from '../../services/unit.js'
 
 vi.mock('../../services/unit.js')
@@ -80,5 +80,22 @@ describe('exporters store', () => {
     expect(exporterStatus(listed, null)).toBeNull()
     expect(exporterStatus(listed, { exporters: [] })).toBeNull()
     expect(exporterStatus(listed, { exporters: [{ id: 'ros2_zenoh', status: live }] })).toEqual(live)
+  })
+})
+
+describe('stereoStreams', () => {
+  it("names the stereo unit's preview streams by the sources the API lists for its frames and its pairs", () => {
+    const outputs = [
+      { name: 'stereo_frame:left', maxHz: 10, source: 'front/left' },
+      { name: 'stereo_frame:right', maxHz: 10, source: 'front/right' },
+      { name: 'stereo_pair', maxHz: 10, source: 'front/depth' },
+      { name: 'camera_frame:left', maxHz: 10, source: 'left' }
+    ]
+
+    expect(stereoStreams(outputs)).toEqual({ left: 'front/left', right: 'front/right', depth: 'front/depth' })
+  })
+
+  it('has none before the API lists them, or on a unit without a stereo unit', () => {
+    expect(stereoStreams([])).toEqual({ left: null, right: null, depth: null })
   })
 })

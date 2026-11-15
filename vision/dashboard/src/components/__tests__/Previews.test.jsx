@@ -7,10 +7,17 @@ import { useNavigation } from '../../stores/navigation.js'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
+// The stereo unit's outputs as the API lists them, each with the preview stream it is shown on.
+const STEREO = [
+  { name: 'stereo_frame:left', maxHz: 5, source: 'stereo/left' },
+  { name: 'stereo_frame:right', maxHz: 5, source: 'stereo/right' },
+  { name: 'stereo_pair', maxHz: 5, source: 'stereo/depth' }
+]
+
 const snapshot = {
   cameras: {
-    left: { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0, issues: [] },
-    right: { present: false }
+    'stereo/left': { present: true, fps: 29.6, exposureTimeUs: 8000, analogueGain: 2.0, issues: [] },
+    'stereo/right': { present: false }
   },
   sync: { present: true, offsetMedianMs: 0.12, offsetMaxMs: 0.4, pairs: 150 },
   pair: {
@@ -37,7 +44,7 @@ function liveSocket({ depthRange = null } = {}) {
     channel: vi.fn((topic) => ({
       on: vi.fn((event, handler) => { handlers[`${topic}/${event}`] = handler }),
       join: vi.fn(() => {
-        if (topic === 'preview:depth' && depthRange !== null) deliver(topic, 'depth_range', { metres: depthRange })
+        if (topic === 'preview:stereo/depth' && depthRange !== null) deliver(topic, 'depth_range', { metres: depthRange })
         return { receive() { return this } }
       }),
       push: vi.fn(() => ({ receive() { return this } })),
@@ -54,19 +61,36 @@ function liveSocket({ depthRange = null } = {}) {
 }
 
 describe('Previews', () => {
+  beforeEach(() => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: STEREO }] }))
+  afterEach(() => act(() => useExporters.setState({ exporters: [] })))
   const card = (id) => document.querySelector(`[data-card="${id}"]`)
   const figure = (stream) => screen.getByText(stream, { selector: 'figcaption span' }).closest('figure')
+
+  it("shows the stereo unit's previews once the API lists their streams, joining none before", () => {
+    useExporters.setState({ exporters: [] })
+    const { socket } = liveSocket()
+    render(<Previews status={snapshot} socket={socket} />)
+
+    expect(document.querySelectorAll('figure')).toHaveLength(0)
+    expect(socket.channel).not.toHaveBeenCalled()
+
+    act(() => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: STEREO }] }))
+
+    const topics = socket.channel.mock.calls.map(([topic]) => topic)
+    expect(topics.sort()).toEqual(['preview:stereo/depth', 'preview:stereo/left', 'preview:stereo/right'])
+    expect(figure('stereo/left')).not.toBeNull()
+  })
 
   it("puts each camera's rate and exposure under its own preview", () => {
     render(<Previews status={snapshot} socket={socket} />)
 
-    expect(figure('left').contains(card('left'))).toBe(true)
+    expect(figure('stereo/left').contains(card('left'))).toBe(true)
     const shown = (id, label) => card(id).querySelector(`[data-figure="${label}"]`).textContent
     expect(shown('left', 'rate')).toBe('rate29.6 fps')
     expect(shown('left', 'exposure')).toBe('exposure8.0 ms')
     expect(shown('left', 'gain')).toBe('gain2.0')
     expect(card('left').querySelector('[data-figure="rate"] .ovcs-status--ok')).not.toBeNull()
-    expect(figure('right').contains(card('right'))).toBe(true)
+    expect(figure('stereo/right').contains(card('right'))).toBe(true)
     expect(card('right').textContent).toContain('absent')
   })
 
@@ -75,7 +99,7 @@ describe('Previews', () => {
 
     const pair = screen.getByRole('list', { name: 'Camera pair' })
     const row = [...pair.parentElement.children]
-    expect(row).toEqual([figure('left'), pair, figure('right')])
+    expect(row).toEqual([figure('stereo/left'), pair, figure('stereo/right')])
     for (const id of ['timing', 'rows', 'rotation', 'focus', 'brightness']) expect(pair.contains(card(id))).toBe(true)
     expect(card('timing').textContent).toContain('0.12 ms')
     expect(card('brightness').textContent).toContain('left brighter')
@@ -83,14 +107,14 @@ describe('Previews', () => {
 
   it("badges the frame of a camera with something to do, and rings it, its text and layout unchanged", () => {
     const right = { present: true, fps: 29.6, issues: ['focus_mismatch', 'large_row_correction', 'rotation_mismatch'] }
-    render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, right } }} socket={socket} />)
+    render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, 'stereo/right': right } }} socket={socket} />)
 
-    const badges = [...figure('right').querySelectorAll('[data-badge]')]
+    const badges = [...figure('stereo/right').querySelectorAll('[data-badge]')]
     expect(badges.map((badge) => badge.textContent)).toEqual(['Refocus', 'Recalibrate'])
     expect(badges[0].title).toContain('Softer than the other camera: refocus it')
-    expect(figure('right').querySelector('[data-alert]')).not.toBeNull()
-    expect(figure('left').querySelector('[data-badge]')).toBeNull()
-    expect(figure('left').querySelector('[data-alert]')).toBeNull()
+    expect(figure('stereo/right').querySelector('[data-alert]')).not.toBeNull()
+    expect(figure('stereo/left').querySelector('[data-badge]')).toBeNull()
+    expect(figure('stereo/left').querySelector('[data-alert]')).toBeNull()
   })
 
   it('badges and rings the depth with what to do about it', () => {
@@ -100,9 +124,9 @@ describe('Previews', () => {
     }
     render(<Previews status={{ ...snapshot, depth }} socket={socket} />)
 
-    const badges = [...figure('depth').querySelectorAll('[data-badge]')]
+    const badges = [...figure('stereo/depth').querySelectorAll('[data-badge]')]
     expect(badges.map((badge) => badge.textContent)).toEqual(['Lower frame rate', 'Too near'])
-    expect(figure('depth').querySelector('[data-alert]')).not.toBeNull()
+    expect(figure('stereo/depth').querySelector('[data-alert]')).not.toBeNull()
 
     const shown = (label) => card('depth').querySelector(`[data-figure="${label}"]`).textContent
     expect(shown('dropped')).toContain('14 %, unhealthy')
@@ -112,8 +136,8 @@ describe('Previews', () => {
   it('leaves out a depth check with nothing to judge, and badges nothing while the depth is healthy', () => {
     render(<Previews status={snapshot} socket={socket} />)
 
-    expect(figure('depth').querySelector('[data-badge]')).toBeNull()
-    expect(figure('depth').querySelector('[data-alert]')).toBeNull()
+    expect(figure('stereo/depth').querySelector('[data-badge]')).toBeNull()
+    expect(figure('stereo/depth').querySelector('[data-alert]')).toBeNull()
     expect(card('depth').querySelector('[data-figure="dropped"]').textContent).toBe('dropped1 %')
     expect(card('depth').querySelector('[data-figure="too near"]')).toBeNull()
   })
@@ -124,7 +148,7 @@ describe('Previews', () => {
 
     expect(card('depth').querySelector('[data-figure="dropped"]').textContent).toBe('dropped0 %')
     expect(card('depth').querySelector('[data-figure="capped"]').textContent).toBe('capped50 %')
-    expect(figure('depth').querySelector('[data-alert]')).toBeNull()
+    expect(figure('stereo/depth').querySelector('[data-alert]')).toBeNull()
   })
 
   it('shows a capped share of 0 % on a unit without max_hz, as every unit shows it', () => {
@@ -137,7 +161,7 @@ describe('Previews', () => {
   it('puts the depth rate under the depth preview', () => {
     render(<Previews status={snapshot} socket={socket} />)
 
-    expect(figure('depth').contains(card('depth'))).toBe(true)
+    expect(figure('stereo/depth').contains(card('depth'))).toBe(true)
     expect(card('depth').textContent).toContain('12.8 Hz')
   })
 
@@ -169,7 +193,7 @@ describe('Previews', () => {
   })
 
   describe('colour range', () => {
-    const scale = () => figure('depth').querySelector('[data-colour-scale]')
+    const scale = () => figure('stereo/depth').querySelector('[data-colour-scale]')
 
     it('shows the range the depth stream pushes as it joins, then each one pushed after a rejoin or a change', () => {
       const { socket, push } = liveSocket({ depthRange: 8 })
@@ -177,26 +201,26 @@ describe('Previews', () => {
       expect(scale().textContent).toContain('8.0 m')
 
       // phoenix.js rejoins on the same channel, as after the unit restarted, and the unit pushes its range again.
-      push('preview:depth', 'depth_range', { metres: 12 })
+      push('preview:stereo/depth', 'depth_range', { metres: 12 })
       expect(scale().textContent).toContain('12.0 m')
 
-      push('preview:depth', 'depth_range', { metres: 0 })
+      push('preview:stereo/depth', 'depth_range', { metres: 0 })
       expect(scale().textContent).toContain('∞')
     })
   })
 
   describe('cameras of their own', () => {
     const listed = (...outputs) =>
-      useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: outputs.map((name) => ({ name, maxHz: 5 })) }] })
+      useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: [...STEREO, ...outputs.map((name) => ({ name, maxHz: 5 }))] }] })
     afterEach(() => act(() => useExporters.setState({ exporters: [] })))
 
     it('shows a preview titled by its name for each camera_frame output beside the stereo pair', () => {
-      listed('camera_frame:left', 'camera_frame:right', 'stereo_pair', 'camera_frame:hq', 'camera_frame:usb', 'detections')
+      listed('camera_frame:hq', 'camera_frame:usb', 'detections')
       const { socket } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
 
       const topics = socket.channel.mock.calls.map(([topic]) => topic).filter((topic) => topic.startsWith('preview:'))
-      expect(topics.sort()).toEqual(['preview:depth', 'preview:hq', 'preview:left', 'preview:right', 'preview:usb'])
+      expect(topics.sort()).toEqual(['preview:hq', 'preview:stereo/depth', 'preview:stereo/left', 'preview:stereo/right', 'preview:usb'])
       expect(figure('hq')).not.toBeNull()
       expect(figure('usb')).not.toBeNull()
     })
@@ -204,7 +228,7 @@ describe('Previews', () => {
     it('decodes the video of a camera whose video the API relays, instead of its JPEG preview', () => {
       globalThis.VideoDecoder = class {}
       const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({}))
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_video:hq:full_h264', 'camera_frame:usb')
+      listed('camera_frame:hq', 'camera_video:hq:full_h264', 'camera_frame:usb')
       const { socket } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
       delete globalThis.VideoDecoder
@@ -219,7 +243,7 @@ describe('Previews', () => {
     it('shows the video of a camera that sends no image', () => {
       globalThis.VideoDecoder = class {}
       const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ({}))
-      listed('camera_frame:left', 'camera_frame:right', 'camera_video:hq:full_h264')
+      listed('camera_video:hq:full_h264')
       const { socket } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
       delete globalThis.VideoDecoder
@@ -232,7 +256,7 @@ describe('Previews', () => {
     })
 
     it("puts a camera of its own's rate, exposure and gain under its preview, nothing while the status has none", () => {
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
+      listed('camera_frame:hq', 'camera_frame:usb')
       const hq = { present: true, fps: 9.8, exposureTimeUs: 12000, analogueGain: 4.0 }
       const { socket } = liveSocket()
       render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, hq } }} socket={socket} />)
@@ -246,7 +270,7 @@ describe('Previews', () => {
     })
 
     it("says under a camera's preview why its pipelines have no distance, once for the same reason, with how to give them one", () => {
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq', 'camera_frame:usb')
+      listed('camera_frame:hq', 'camera_frame:usb')
       const distances = {
         objects: { camera: 'hq', available: false, reason: 'no_pose' },
         scene: { camera: 'hq', available: false, reason: 'no_pose' },
@@ -265,7 +289,7 @@ describe('Previews', () => {
     })
 
     it("opens the page that measures a camera's position from the line that says it is unknown", () => {
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      listed('camera_frame:hq')
       useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }, { id: 'hq-pose', kind: 'pose' }] })
       useNavigation.setState({ page: 'overview', calibrationId: null })
       const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
@@ -278,7 +302,7 @@ describe('Previews', () => {
     })
 
     it('offers no such page for a camera whose position the unit cannot measure', () => {
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      listed('camera_frame:hq')
       useCalibration.setState({ targets: [{ id: 'hq', kind: 'camera' }] })
       const distances = { objects: { camera: 'hq', available: false, reason: 'no_pose' } }
       const { socket } = liveSocket()
@@ -288,7 +312,7 @@ describe('Previews', () => {
     })
 
     it("names each reason the camera's pipelines give, and nothing without a status", () => {
-      listed('camera_frame:left', 'camera_frame:right', 'camera_frame:hq')
+      listed('camera_frame:hq')
       const distances = {
         objects: { camera: 'hq', available: false, reason: 'no_calibration' },
         scene: { camera: 'hq', available: false, reason: 'unreadable_pose' }
@@ -306,20 +330,20 @@ describe('Previews', () => {
     })
 
     it('shows none without a camera of its own, the depth alone filling the row below the pair', () => {
-      listed('camera_frame:left', 'camera_frame:right', 'stereo_pair')
+      listed()
       const { socket } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
 
       expect(document.querySelectorAll('figure')).toHaveLength(3)
       const row = document.querySelector('[data-cameras]')
       expect(row.children).toHaveLength(1)
-      expect(row.firstElementChild.contains(figure('depth'))).toBe(true)
+      expect(row.firstElementChild.contains(figure('stereo/depth'))).toBe(true)
       expect(row.className.split(' ')).toContain('lg:grid-rows-[minmax(0,1fr)_auto_auto]')
     })
   })
 
   describe('asides', () => {
-    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs }] })
+    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: [...STEREO, ...outputs] }] })
 
     // jsdom lays nothing out: the row's observer reports each preview `width` × `height` px, `caption` px of it its caption's.
     let observers
@@ -383,7 +407,7 @@ describe('Previews', () => {
       const { socket } = liveSocket({ depthRange: 8 })
       render(<Previews status={snapshot} socket={socket} />)
 
-      expect(aside('depth').querySelector('[data-colour-scale]').textContent).toContain('8.0 m')
+      expect(aside('stereo/depth').querySelector('[data-colour-scale]').textContent).toContain('8.0 m')
       expect(card('depth').querySelector('[data-colour-scale]')).toBeNull()
     })
 
@@ -402,11 +426,11 @@ describe('Previews', () => {
       // The frame beside a 9rem aside and its 0.75rem gap would be 319 px wide and 320 px tall.
       previewsSized(483, 400, 80)
 
-      const streams = ['left', 'right', 'depth', 'hq', 'usb']
+      const streams = ['stereo/left', 'stereo/right', 'stereo/depth', 'hq', 'usb']
       for (const stream of streams) expect(aside(stream)).not.toBeNull()
-      for (const stream of streams) expect(aside(stream).className).toBe(aside('depth').className)
+      for (const stream of streams) expect(aside(stream).className).toBe(aside('stereo/depth').className)
       for (const stream of streams) expect(cellOf(stream).className).not.toContain('col-')
-      for (const stream of ['left', 'right', 'usb']) expect(aside(stream).childElementCount).toBe(0)
+      for (const stream of ['stereo/left', 'stereo/right', 'usb']) expect(aside(stream).childElementCount).toBe(0)
       // Under a caption, the scale lies along its line and the legend fills its width with columns.
       expect(scale().dataset.orientation).toBe('horizontal')
       expect(slider().hasAttribute('aria-orientation')).toBe(false)
@@ -416,12 +440,12 @@ describe('Previews', () => {
       const pair = screen.getByRole('list', { name: 'Camera pair' })
       expect(classes(pair.parentElement)).toEqual(expect.arrayContaining(['grid-rows-[auto_auto_1fr]', 'gap-y-0']))
       expect(classes(pair)).toEqual(expect.arrayContaining(['row-span-3', 'self-center']))
-      for (const stream of ['left', 'right']) {
+      for (const stream of ['stereo/left', 'stereo/right']) {
         expect(classes(figure(stream))).toEqual(expect.arrayContaining(['row-span-3', 'grid', 'grid-cols-[minmax(0,1fr)]', 'grid-rows-subgrid']))
       }
       const row = document.querySelector('[data-cameras]')
       expect(classes(row)).toEqual(expect.arrayContaining(['lg:grid-rows-[minmax(0,1fr)_auto_auto]', 'lg:gap-y-0']))
-      for (const stream of ['depth', 'hq', 'usb']) {
+      for (const stream of ['stereo/depth', 'hq', 'usb']) {
         expect(figure(stream).parentElement).toBe(row)
         expect(classes(figure(stream))).toEqual(expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)]', 'lg:grid-rows-subgrid']))
       }
@@ -432,28 +456,28 @@ describe('Previews', () => {
       previewsSized(484, 400, 80)
 
       const row = document.querySelector('[data-cameras]')
-      for (const stream of ['depth', 'hq', 'usb']) {
+      for (const stream of ['stereo/depth', 'hq', 'usb']) {
         // The aside sits after the frame in its cell, the two centred together, as wide in every preview, empty or not.
         expect(aside(stream).parentElement).toBe(cellOf(stream))
         expect(aside(stream).previousElementSibling).toBe(frameOf(stream))
         expect(classes(aside(stream))).toEqual(expect.arrayContaining(['w-[9rem]', 'shrink-0', 'overflow-y-auto']))
-        expect(aside(stream).className).toBe(aside('depth').className)
+        expect(aside(stream).className).toBe(aside('stereo/depth').className)
         expect(classes(cellOf(stream))).toEqual(expect.arrayContaining(['lg:flex', 'lg:justify-center', 'lg:gap-3']))
         // The row keeps its third track, empty, after the caption.
         expect(figure(stream).lastElementChild.hasAttribute('data-aside-track')).toBe(true)
         expect(classes(figure(stream))).toEqual(expect.arrayContaining(['lg:row-span-3', 'lg:grid', 'lg:grid-cols-[minmax(0,1fr)]', 'lg:grid-rows-subgrid']))
         expect(figure(stream).parentElement).toBe(row)
       }
-      expect(aside('depth').querySelector('[data-colour-scale]')).not.toBeNull()
+      expect(aside('stereo/depth').querySelector('[data-colour-scale]')).not.toBeNull()
       expect(aside('hq').contains(screen.getByRole('list', { name: 'road classes' }))).toBe(true)
       expect(aside('usb').childElementCount).toBe(0)
 
       // The pair's row keeps its asides under the captions, where they take the height the pair's checks add.
-      for (const stream of ['left', 'right']) expect(aside(stream).parentElement).toBe(figure(stream))
+      for (const stream of ['stereo/left', 'stereo/right']) expect(aside(stream).parentElement).toBe(figure(stream))
 
       previewsSized(484, 401, 80)
-      expect(aside('depth').className).toBe(aside('left').className)
-      expect(aside('depth').parentElement).toBe(figure('depth'))
+      expect(aside('stereo/depth').className).toBe(aside('stereo/left').className)
+      expect(aside('stereo/depth').parentElement).toBe(figure('stereo/depth'))
     })
 
     it('stands the colour scale up and spreads the classes in one column, in class order, beside their frames', () => {
@@ -476,7 +500,7 @@ describe('Previews', () => {
       renderAll()
       previewsSized(484, 400, 80)
 
-      expect(aside('depth').className).toBe(aside('left').className)
+      expect(aside('stereo/depth').className).toBe(aside('stereo/left').className)
       expect(scale().dataset.orientation).toBe('horizontal')
       expect(classes(legend())).not.toContain('flex-col')
     })
@@ -497,11 +521,11 @@ describe('Previews', () => {
 
     it("fits every frame to its image's shape in the frame's track, from lg, in both rows", () => {
       const push = renderAll()
-      for (const stream of ['depth', 'hq', 'left']) loadFrame(push, stream, 640, 480)
+      for (const stream of ['stereo/depth', 'hq', 'stereo/left']) loadFrame(push, stream, 640, 480)
 
       for (const beside of [false, true]) {
         previewsSized(beside ? 484 : 483, 400, 80)
-        for (const stream of ['left', 'right', 'depth', 'hq', 'usb']) {
+        for (const stream of ['stereo/left', 'stereo/right', 'stereo/depth', 'hq', 'usb']) {
           // The cell takes the frame's track and measures it; the frame is the largest box of its shape in it.
           expect(classes(cellOf(stream))).toEqual(
             expect.arrayContaining(['lg:flex', 'lg:min-h-0', 'lg:items-start', 'lg:justify-center', 'lg:[container-type:size]', 'px-2', 'pt-2'])
@@ -511,19 +535,19 @@ describe('Previews', () => {
           expect(classes(frameOf(stream))).not.toContain('aspect-video')
         }
         for (const stream of ['hq', 'usb']) {
-          expect(cellOf(stream).className).toBe(cellOf('depth').className)
-          expect(frameOf(stream).className).toBe(frameOf('depth').className)
+          expect(cellOf(stream).className).toBe(cellOf('stereo/depth').className)
+          expect(frameOf(stream).className).toBe(frameOf('stereo/depth').className)
         }
         // Beside, the frame leaves its aside's width; under, it takes the whole track.
-        expect(classes(frameOf('depth'))).toContain(
+        expect(classes(frameOf('stereo/depth'))).toContain(
           beside
             ? 'lg:w-[min(100cqw-9.75rem,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
             : 'lg:w-[min(100cqw,100cqh*var(--frame-width,16)/var(--frame-height,9))]'
         )
         // Beside, the frame takes the room its width leaves, which pins the aside to the card's edge.
-        expect(classes(frameOf('depth')).includes('lg:mx-auto')).toBe(beside)
+        expect(classes(frameOf('stereo/depth')).includes('lg:mx-auto')).toBe(beside)
       }
-      for (const stream of ['depth', 'hq', 'left']) {
+      for (const stream of ['stereo/depth', 'hq', 'stereo/left']) {
         expect([cellOf(stream).style.getPropertyValue('--frame-width'), cellOf(stream).style.getPropertyValue('--frame-height')]).toEqual(['640', '480'])
       }
       // Without a frame yet, a preview keeps a 16:9 box.
@@ -564,7 +588,7 @@ describe('Previews', () => {
       previewsSized(484, 400, 80)
       renderAll()
 
-      expect(aside('depth').parentElement).toBe(cellOf('depth'))
+      expect(aside('stereo/depth').parentElement).toBe(cellOf('stereo/depth'))
     })
 
     it('keeps the asides under the captions without an observer to measure the previews', () => {
@@ -572,13 +596,16 @@ describe('Previews', () => {
       vi.stubGlobal('ResizeObserver', undefined)
       renderAll()
 
-      expect(aside('hq').className).toBe(aside('left').className)
+      expect(aside('hq').className).toBe(aside('stereo/left').className)
     })
   })
 
   describe('detections', () => {
-    const listed = (...outputs) =>
-      useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: outputs.map((name) => ({ name, maxHz: 5 })) }] })
+    // A detection pipeline on the stereo pair, as the API lists it: its boxes on the stereo unit's left camera.
+    const listed = (...names) =>
+      useExporters.setState({
+        exporters: [{ id: 'api', name: 'API', outputs: [...STEREO, ...names.map((name) => ({ name, maxHz: 5, source: 'stereo/left' }))] }]
+      })
     afterEach(() => act(() => useExporters.setState({ exporters: [] })))
 
     const person = {
@@ -597,7 +624,7 @@ describe('Previews', () => {
       fireEvent.load(image)
     }
 
-    const showLeftFrame = (push) => showFrame(push, 'left')
+    const showLeftFrame = (push) => showFrame(push, 'stereo/left')
 
     it("labels an object above its outline's top-left, whichever vertex comes first", () => {
       listed('detections')
@@ -608,7 +635,7 @@ describe('Previews', () => {
 
       push('detections', 'detections', { detections: [turned] })
 
-      const label = figure('left').querySelector('svg[data-detections] text')
+      const label = figure('stereo/left').querySelector('svg[data-detections] text')
       expect([label.getAttribute('x'), label.getAttribute('y')]).toEqual(['123', '50'])
     })
 
@@ -632,20 +659,20 @@ describe('Previews', () => {
 
       push('detections', 'detections', { detections: [person] })
 
-      const overlay = figure('left').querySelector('svg[data-detections]')
+      const overlay = figure('stereo/left').querySelector('svg[data-detections]')
       expect(overlay.getAttribute('viewBox')).toBe('0 0 480 270')
       expect(overlay.querySelector('polygon').getAttribute('points')).toBe('120,54 360,54 360,216 120,216')
       expect(overlay.querySelector('text').textContent).toBe('person 1.8\u00a0m')
       expect(screen.getByRole('img', { name: 'Detected: person at 1.8\u00a0m' })).toBe(overlay)
 
       push('detections', 'detections', { detections: [] })
-      expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(0)
-      expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-hidden')).toBe('true')
+      expect(figure('stereo/left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(0)
+      expect(figure('stereo/left').querySelector('svg[data-detections]').getAttribute('aria-hidden')).toBe('true')
     })
 
     describe('with named pipelines', () => {
       it("subscribes to each channel the API exporter lists, the default's and every named pipeline's", () => {
-        listed('stereo_pair', 'detections', 'detections:road_signs', 'detections:lanes')
+        listed('detections', 'detections:road_signs', 'detections:lanes')
         const { socket } = liveSocket()
         render(<Previews status={snapshot} socket={socket} />)
 
@@ -659,11 +686,11 @@ describe('Previews', () => {
 
         const topics = socket.channel.mock.calls.map(([topic]) => topic)
         expect(topics.filter((topic) => topic.startsWith('detections'))).toEqual([])
-        expect(figure('left').querySelector('svg[data-detections]')).toBeNull()
+        expect(figure('stereo/left').querySelector('svg[data-detections]')).toBeNull()
       })
 
       it("joins only the named pipelines' channels on a unit without the default pipeline", () => {
-        listed('stereo_pair', 'detections:road_signs')
+        listed('detections:road_signs')
         const { socket } = liveSocket()
         render(<Previews status={snapshot} socket={socket} />)
 
@@ -677,7 +704,7 @@ describe('Previews', () => {
         render(<Previews status={snapshot} socket={socket} />)
         showLeftFrame(push)
 
-        expect(figure('left').querySelector('svg[data-detections]')).toBeNull()
+        expect(figure('stereo/left').querySelector('svg[data-detections]')).toBeNull()
       })
 
       it("draws each pipeline's boxes on the left preview and counts all their objects", () => {
@@ -690,7 +717,7 @@ describe('Previews', () => {
         push('detections', 'detections', { detections: [person] })
         push('detections:road_signs', 'detections', { detections: [stop, stop] })
 
-        const overlays = [...figure('left').querySelectorAll('svg[data-detections]')]
+        const overlays = [...figure('stereo/left').querySelectorAll('svg[data-detections]')]
         expect(overlays.map((overlay) => overlay.getAttribute('aria-label'))).toEqual([
           'Detected: person at 1.8 m',
           'Detected: stop at 1.8 m, stop at 1.8 m'
@@ -706,8 +733,8 @@ describe('Previews', () => {
 
         push('detections:road_signs', 'detections', { detections: [person] })
 
-        expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
-        expect(figure('left').querySelector('svg[data-detections]').getAttribute('aria-label')).toBe('Detected: person at 1.8 m')
+        expect(figure('stereo/left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
+        expect(figure('stereo/left').querySelector('svg[data-detections]').getAttribute('aria-label')).toBe('Detected: person at 1.8 m')
         expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
       })
     })
@@ -721,9 +748,9 @@ describe('Previews', () => {
               id: 'api',
               name: 'API',
               outputs: [
-                { name: 'camera_frame:left', maxHz: 5 },
+                ...STEREO,
                 { name: 'camera_frame:hq', maxHz: 5 },
-                { name: 'detections', maxHz: 5, source: 'left' },
+                { name: 'detections', maxHz: 5, source: 'stereo/left' },
                 { name: 'detections:hq_people', maxHz: 5, source: 'hq' }
               ]
             }
@@ -736,7 +763,7 @@ describe('Previews', () => {
         listedWithSources()
         const { socket, push } = liveSocket()
         render(<Previews status={snapshot} socket={socket} />)
-        showFrame(push, 'left')
+        showFrame(push, 'stereo/left')
         showFrame(push, 'hq')
 
         push('detections:hq_people', 'detections', { detections: [car, person] })
@@ -746,7 +773,7 @@ describe('Previews', () => {
         expect(topics.sort()).toEqual(['detections', 'detections:hq_people'])
         expect(figure('hq').querySelectorAll('svg[data-detections]')).toHaveLength(1)
         expect(figure('hq').querySelectorAll('svg[data-detections] polygon')).toHaveLength(2)
-        expect(figure('left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(1)
+        expect(figure('stereo/left').querySelectorAll('svg[data-detections] polygon')).toHaveLength(1)
         expect(card('hq').querySelector('[data-figure="objects"]').textContent).toBe('objects2')
         expect(card('left').querySelector('[data-figure="objects"]').textContent).toBe('objects1')
       })
@@ -763,28 +790,14 @@ describe('Previews', () => {
         expect(overlay.querySelector('text').textContent).toBe('car')
         expect(overlay.getAttribute('aria-label')).toBe('Detected: car')
       })
-
-      it('draws a pipeline whose source the API does not name on the left preview', () => {
-        listed('camera_frame:hq', 'detections:road_signs')
-        const { socket, push } = liveSocket()
-        render(<Previews status={snapshot} socket={socket} />)
-        showFrame(push, 'left')
-        showFrame(push, 'hq')
-
-        push('detections:road_signs', 'detections', { detections: [person] })
-
-        expect(figure('left').querySelectorAll('svg[data-detections]')).toHaveLength(1)
-        expect(figure('hq').querySelector('svg[data-detections]')).toBeNull()
-      })
     })
   })
 
   describe('segmentation', () => {
-    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs }] })
+    const listed = (...outputs) => useExporters.setState({ exporters: [{ id: 'api', name: 'API', outputs: [...STEREO, ...outputs] }] })
     afterEach(() => act(() => useExporters.setState({ exporters: [] })))
 
     const outputs = [
-      { name: 'camera_frame:left', maxHz: 5 },
       { name: 'camera_frame:hq', maxHz: 5 },
       { name: 'segmentation:road', maxHz: 5, source: 'hq' }
     ]
@@ -855,7 +868,7 @@ describe('Previews', () => {
       listed(...outputs)
       const { socket, push } = liveSocket()
       render(<Previews status={snapshot} socket={socket} />)
-      showFrame(push, 'left')
+      showFrame(push, 'stereo/left')
       showFrame(push, 'hq')
 
       push('segmentation:road', 'segmentation', result)
@@ -863,7 +876,7 @@ describe('Previews', () => {
       const topics = socket.channel.mock.calls.map(([topic]) => topic).filter((topic) => topic.startsWith('segmentation'))
       expect(topics).toEqual(['segmentation:road'])
       expect(figure('hq').querySelector('[data-segmentation]')).not.toBeNull()
-      expect(figure('left').querySelector('[data-segmentation]')).toBeNull()
+      expect(figure('stereo/left').querySelector('[data-segmentation]')).toBeNull()
     })
 
     it("stretches the label grid, a sharp pixel a cell, over the band of the camera's preview it covers", () => {
