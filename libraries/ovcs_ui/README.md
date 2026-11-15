@@ -23,7 +23,7 @@ Design tokens, shared components and a Tailwind preset for OVCS web UIs. Plain C
   | `OvcsCard` | `href` (renders a link), `as` (element, default `div`) |
   | `OvcsHeader` | |
   | `OvcsStatus` | `tone`: `ok`, `warn`, `error`, `muted` (default) |
-  | `OvcsBadge` | `tone`: `neutral` (default), `warn`, `error` |
+  | `OvcsBadge` | `tone`: `neutral` (default), `ok`, `warn`, `error` |
   | `OvcsButton` | `variant`: `default`, `primary` (the action a view leads to) or `danger` (an action that destroys something, in the error colour); an outlined button that never submits a form |
   | `OvcsDialog` | `onClose`, `returnFocus`, `align`, `role`, and `aria-labelledby` (its heading's id) or `aria-label`: a modal dialog over the page that keeps the focus (Tab goes round its controls), closes on Escape when `onClose` is given, stops the page behind from scrolling, and once closed gives the focus back to `returnFocus`'s element, by default the one focused when it opened; `align` is `start` (default) or `center` |
   | `OvcsSwitch` | `checked`, `label`, `onClick`: an on/off switch whose position is `checked` alone |

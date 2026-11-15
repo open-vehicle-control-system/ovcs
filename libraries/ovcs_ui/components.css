@@ -70,6 +70,11 @@ a.ovcs-card:hover {
   color: var(--ovcs-text);
 }
 
+.ovcs-badge--ok {
+  background-color: var(--ovcs-ok-text);
+  color: var(--ovcs-bg);
+}
+
 .ovcs-badge--warn {
   background-color: var(--ovcs-warn);
   color: var(--ovcs-bg);

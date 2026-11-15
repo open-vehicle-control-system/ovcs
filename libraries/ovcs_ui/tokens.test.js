@@ -40,4 +40,11 @@ describe('tokens.css', () => {
       expect(tokens(selector)[`--ovcs-${name}-text`]).toBe(`var(--ovcs-${name})`)
     }
   })
+
+  test('the ok badge, --ovcs-bg on --ovcs-ok-text, reads at AA in both themes', () => {
+    const light = tokens(':root')
+    const dark = tokens('[data-theme="dark"]')
+    expect(contrast(light['--ovcs-bg'], light['--ovcs-ok-text'])).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(dark['--ovcs-bg'], dark['--ovcs-ok'])).toBeGreaterThanOrEqual(4.5)
+  })
 })
