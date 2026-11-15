@@ -355,6 +355,26 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.stop(pid)
     end
 
+    test "reports the end only once metadata.yaml is rewritten", %{tmp_dir: dir} do
+      File.mkdir_p!(file_path(dir, 1))
+      # Past a pipe's buffer, so the rewrite waits for this test to read it.
+      metadata = %{"notes" => String.duplicate("x", 1_048_576)}
+      pid = start_linked!(dir, max_file_bytes: 1, chunk_interval_ms: 1, metadata: metadata)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> complete?(dir, 0) end)
+      rewrite = Path.join(bag_dir(dir), "metadata.yaml.tmp")
+      {_output, 0} = System.cmd("mkfifo", [rewrite])
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 2_000)
+
+      rewriting = File.open!(rewrite, [:read, :binary])
+      assert Recording.status(pid).error == nil
+
+      assert IO.binread(rewriting, :eof) =~ "message_count: 1"
+      eventually(fn -> Recording.status(pid).error != nil end)
+      :ok = Recording.stop(pid)
+    end
+
     test "at the start leaves a recording that only reports it", %{tmp_dir: dir} do
       File.write!(bag_dir(dir), "a file where the folder goes")
       pid = start_linked!(dir, @no_chunk_close)

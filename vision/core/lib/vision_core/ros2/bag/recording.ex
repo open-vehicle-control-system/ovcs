@@ -32,7 +32,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   A write the disk refuses, from a full disk or one pulled out, ends the
   recording: the files are closed as far as the disk allows, `metadata.yaml`
-  written if it can be, and the reason kept in `status/1`. The process then
+  written if it can be, and only then the reason kept in `status/1`. The process then
   only counts the messages it is handed as drops until `stop/1` stops it
   normally; a disk that refuses the folder at the start leaves it in that
   state from the start.
@@ -387,13 +387,15 @@ defmodule VisionCore.Ros2.Bag.Recording do
     Logger.error("#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording ends")
     if state.writer, do: Writer.close(state.writer)
     state = %{state | writer: nil, ended: true}
-    :ets.insert(state.table, {:error, reason})
 
     try do
       write_metadata_file(state)
     rescue
-      _error in File.Error -> state
+      _error in File.Error -> :ok
     end
+
+    :ets.insert(state.table, {:error, reason})
+    state
   end
 
   defp write_metadata_file(state) do
