@@ -11,7 +11,7 @@ The pipeline takes a camera source only, `{:camera, name}` or `{:camera, name, o
 
 The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. It runs its model as the detection Port does ([On the VENTUNO Q's NPU](./detection.md#on-the-ventuno-qs-npu)). The board generates its context binary on first boot, into `/data/vision/qnn/<name>`, and the Port holds a power vote set by `performance:` and `rpc_polling_us:`.
 
-The `:hailo_segmenter` component runs it on a Raspberry Pi 5's Hailo-8, through the `hailo` Port that every Hailo pipeline shares ([VisionCore.Hailo](../../vision/core/lib/vision_core/hailo.ex)): HailoRT's scheduler gives the detection and segmentation models the device in turn. `hef_path` names a HEF whose argmax is in-graph, scoring the 19 Cityscapes classes, such as Hailo's `stdc1`. `cell_pixels` (8) is the side of the cells a class stands for, in the model's input pixels: the Port answers one class a cell rather than one a pixel.
+The `:hailo_segmenter` component runs it on a Raspberry Pi 5's Hailo-8, through the `hailo` Port that every Hailo pipeline shares ([VisionCore.Hailo](../../vision/core/lib/vision_core/hailo.ex)): HailoRT's scheduler gives the detection and segmentation models the device in turn. `hef_path` names a HEF whose argmax is in-graph, scoring the 19 Cityscapes classes, at its input's size, as Hailo's `stdc1`, or at a whole fraction of it. `cell_pixels` (8) is the side of the cells a class stands for, in the model's input pixels: the Port answers one class a cell rather than one a pixel, and keeps as they are the class ids of a HEF whose argmax already answers one a cell.
 
 With the OVCS1 reference vehicle's colour camera, `:center`, and its `:half` output, it reads as below; it works the same with your camera:
 
@@ -62,6 +62,8 @@ The road model the OVCS1 reference vehicle runs is FFNet-122NS-LowRes, quantised
 > FFNet-122NS-LowRes's weights are for non-commercial use only. FFNet's code is BSD-3-Clause, but the weights are trained on Cityscapes, whose terms allow non-commercial use only. A vehicle used commercially needs a road model trained on data you may use commercially.
 
 `mise run fetch-models` downloads it as `vehicles/ovcs1/priv/models/ffnet_122ns_lowres.dlc`. It prints the model's licence, which `scripts/models.tsv` records, before the download.
+
+The OVCS Mini reference vehicle runs DDRNet-23-slim on its Hailo-8, compiled for its 1152 × 576 band: [`vehicles/ovcs_mini/models/README.md`](../../vehicles/ovcs_mini/models/README.md) builds it with Hailo's Dataflow Compiler. Its code is MIT and its weights are trained on Cityscapes: the same warning holds. It takes about 20 ms a frame on the Mini's Hailo-8 and segments one frame in three (`segment_every_n: 3`), the frames it detects on. A model compiled for a larger input costs more than the time: the zoo's STDC1, at 1920 × 1024, moves about 56 MB a frame between the Hailo-8 and the Pi 5's memory, which slows the cameras and the depth.
 
 ## See also
 

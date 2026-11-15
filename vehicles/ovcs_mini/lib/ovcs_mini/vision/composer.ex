@@ -2,19 +2,28 @@ defmodule OvcsMini.Vision.Composer do
   @moduledoc """
   The OVCS Mini's vision unit: a Raspberry Pi 5 with two Camera Module 3
   (IMX708) on its CSI ports, the right one synchronised to the left by
-  libcamera's software sync, depth on the CPU, and detection on a
-  Hailo-8.
+  libcamera's software sync, depth on the CPU, and detection and scene
+  segmentation on a Hailo-8.
 
   The cameras bin the whole sensor (2304x1296) and deliver 480x270 grey
-  frames, which the pipeline matches at that size. Every stage runs
-  natively in `stereo_match` (`compute: :native`), on at most 20 pairs a
-  second (`max_hz`), so matching leaves the processor room for the
-  cameras; detection, on each pair matched, runs at that rate too.
+  frames, 25 a second, which the pipeline matches at that size, at most
+  20 pairs a second (`max_hz`). Every stage runs natively in
+  `stereo_match` (`compute: :native`). At 30 frames a second the Pi 5's
+  memory bandwidth no longer keeps up with the cameras, the depth, the
+  Hailo-8's transfers and the ROS 2 exporter together.
 
   The left camera's capture also makes a colour camera of its own,
   `:left` (`VisionCore.Camera.LibCameraStream`): a second ISP stream at
-  half the sensor mode, sent as a JPEG on at most 30 frames a second
-  (`max_hz`). The stereo frames do not change.
+  half the sensor mode, sent as a JPEG on each frame (`max_hz`). The
+  stereo frames do not change.
+
+  Detection and the scene's segmentation, `:scene`, both run on that
+  colour image, on the Hailo-8 (`VisionCore.Hailo`), on one frame in
+  three: NanoDet finds the objects, DDRNet-23-slim classes each part of
+  the image among the Cityscapes classes. More often, the Pi 5's memory
+  bandwidth no longer keeps up with the depth beside them. Both take their
+  distances from the stereo depth projected into the camera, once it is
+  calibrated and its pose measured.
 
   The ROS 2 exporter publishes the rectified pair, which the cockpit
   shows, and the left camera's JPEG. The bag exporter records the
@@ -25,13 +34,15 @@ defmodule OvcsMini.Vision.Composer do
   and stamps with its clock; without it, the unit runs no cameras.
 
   The detection model is fetched, not committed: `mise run fetch-models`
-  at the repository root.
+  at the repository root. The segmentation model is compiled for the
+  Mini's band, `models/README.md`.
   """
   @behaviour VisionCore.Composer
 
   alias VisionCore.Stereo.Pipeline
 
   @hailo_model "priv/models/nanodet_repvgg.hef"
+  @segmentation_model "priv/models/ddrnet_23_slim_576x1152.hef"
 
   @impl VisionCore.Composer
   def config(:host) do
@@ -48,13 +59,14 @@ defmodule OvcsMini.Vision.Composer do
       ros2: [
         zenoh_endpoint_ip: Application.get_env(:vision_core, :zenoh_endpoint_ip, "127.0.0.1")
       ],
-      components: [stereo_component(), colour_camera(), hailo_detector()],
+      components: [stereo_component(), colour_camera(), hailo_detector(), hailo_segmenter()],
       exporters: [
         {VisionCore.Ros2.ZenohExporter,
          heartbeat: [],
          stereo: [publish_rectified_image: true],
          cameras: [names: [:left], outputs: [left: :half_jpeg]],
-         detections: []},
+         detections: [],
+         segmentation: [pipelines: [:scene]]},
         {VisionCore.Snapshot.Exporter, []},
         {VisionCore.Ros2.BagExporter, []}
       ]
@@ -63,7 +75,12 @@ defmodule OvcsMini.Vision.Composer do
 
   @impl VisionCore.Composer
   def required_files do
-    ["priv/calibration/stereo_left.yaml", "priv/calibration/stereo_right.yaml", @hailo_model]
+    [
+      "priv/calibration/stereo_left.yaml",
+      "priv/calibration/stereo_right.yaml",
+      @hailo_model,
+      @segmentation_model
+    ]
   end
 
   # Gazebo renders an ideal pinhole, so the simulator has a calibration of its own.
@@ -97,7 +114,7 @@ defmodule OvcsMini.Vision.Composer do
        driver: VisionCore.Camera.LibCamera,
        width: 480,
        height: 270,
-       fps: 30,
+       fps: 25,
        pair_tolerance_ms: 5,
        max_hz: 20,
        calibration_dir: Application.app_dir(:ovcs_mini, "priv/calibration"),
@@ -126,7 +143,7 @@ defmodule OvcsMini.Vision.Composer do
      name: :left,
      driver: VisionCore.Camera.LibCameraStream,
      stream_of: :left,
-     max_hz: 30,
+     max_hz: 25,
      outputs: [
        half: [resolution: {1152, 648}, processor: :isp, send: false],
        half_jpeg: [from: :half, format: :jpeg, quality: 80]
@@ -136,6 +153,17 @@ defmodule OvcsMini.Vision.Composer do
 
   defp hailo_detector do
     {:hailo_detector,
-     hef_path: Application.app_dir(:ovcs_mini, @hailo_model), score_threshold: 0.4}
+     source: {:camera, :left, :half_jpeg},
+     hef_path: Application.app_dir(:ovcs_mini, @hailo_model),
+     score_threshold: 0.4,
+     detect_every_n: 3}
+  end
+
+  defp hailo_segmenter do
+    {:hailo_segmenter,
+     name: :scene,
+     source: {:camera, :left, :half_jpeg},
+     hef_path: Application.app_dir(:ovcs_mini, @segmentation_model),
+     segment_every_n: 3}
   end
 end

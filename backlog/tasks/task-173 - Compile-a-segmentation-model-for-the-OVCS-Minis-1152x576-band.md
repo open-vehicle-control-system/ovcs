@@ -24,7 +24,7 @@ STDC1 from Hailo's model zoo takes 1024x1920: the Mini's 1152x576 band is enlarg
 - [x] #1 The model zoo's ONNX is rewritten for a 576x1152 input, reproducibly
 - [x] #2 A HEF of it is compiled with the Dataflow Compiler v3.34.0, the one HailoRT 4.24.0 runs, calibrated on the Mini's camera frames
 - [x] #3 Its classes agree with the float model's on a road scene, road IoU at least 0.95
-- [x] #4 On the Mini, with detection on every frame and segmentation on every third, the stereo keeps at least 18 pairs a second
+- [ ] #4 On the Mini, with detection on every frame and segmentation on every third, the stereo keeps at least 18 pairs a second
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -36,5 +36,5 @@ Rewrite the simplified ONNX's input, output and Resize sizes for 576x1152 (scrip
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-On a Cityscapes street image: the 576x1152 float model agrees with the 1024x2048 one on 94.5% of the pixels (road IoU 0.98); the HEF on the Mini agrees with the float model on 98.8% of the cells (road IoU 0.99). Calibrated on 64 indoor frames of the Mini; outdoor frames would suit the scenes better. The HEF is local: vehicles/ovcs_mini/models/README.md builds it.
+On a Cityscapes street image: the 576x1152 float model agrees with the 1024x2048 one on 94.5% of the pixels (road IoU 0.98); the HEF on the Mini agrees with the float model on 98.8% of the cells (road IoU 0.99). Calibrated on 64 indoor frames of the Mini; outdoor frames would suit the scenes better. The HEF is local: vehicles/ovcs_mini/models/README.md builds it. #4 held, at 25 pairs a second, while the ROS 2 exporter dropped its messages; publishing, the stereo keeps 16.4 (TASK-174).
 <!-- SECTION:NOTES:END -->
