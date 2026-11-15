@@ -351,6 +351,16 @@ defmodule VisionApiWeb.RecordingControllerTest do
                |> json_response(404)
     end
 
+    test "answers 409 when another recording is in progress", %{conn: conn} = context do
+      stopped!(context)
+      AnsweringBag.answer({:error, :other_recording})
+
+      assert %{"errors" => [%{"status" => "409", "detail" => detail}]} =
+               conn |> change(@stopped, %{state: "stopped"}) |> json_response(409)
+
+      assert detail =~ "not the recording in progress"
+    end
+
     test "answers 504 when the bag exporter does not answer in time, the stop maybe done",
          %{conn: conn} = context do
       stopped!(context)

@@ -100,17 +100,21 @@ defmodule VisionCore.Recordings do
   @doc """
   Stops the recording `name` and answers it, stopped;
   `{:error, :stopped}` for a recording that is not in progress,
-  `{:error, :not_found}` for a name no recording has.
+  `{:error, :not_found}` for a name no recording has, and the bag
+  exporter's `{:error, :not_recording}` or `{:error, :other_recording}`
+  when the recording ended, or another started, before the stop reached
+  it.
   """
   @spec stop(String.t(), keyword()) ::
-          {:ok, Recording.t()} | {:error, :not_found | :stopped | :not_recording | unanswered()}
+          {:ok, Recording.t()}
+          | {:error, :not_found | :stopped | :not_recording | :other_recording | unanswered()}
   def stop(name, opts) do
     opts = validate!(opts)
 
     with {:ok, runner} <- runner(opts),
          {:ok, live} <- BagExporter.recording(runner),
          :ok <- check_recording(name, live, opts),
-         {:ok, _summary} <- BagExporter.stop_recording(runner) do
+         {:ok, _summary} <- BagExporter.stop_recording(runner, name) do
       fetch_with(name, nil, opts)
     end
   end

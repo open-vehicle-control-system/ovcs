@@ -136,6 +136,12 @@ defmodule VisionApiWeb.RecordingController do
   defp refuse(conn, id, {:error, :recording}),
     do: JsonApi.error(conn, 409, "#{id} is recording: stop it first", title: "Recording")
 
+  defp refuse(conn, id, {:error, :other_recording}),
+    do:
+      JsonApi.error(conn, 409, "#{id} is not the recording in progress, another is",
+        title: "Recording"
+      )
+
   defp refuse(conn, id, {:error, stopped}) when stopped in [:stopped, :not_recording],
     do: JsonApi.error(conn, 422, "#{id} is stopped already", source: @state_pointer)
 

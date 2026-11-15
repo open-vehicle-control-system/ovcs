@@ -5,7 +5,7 @@ defmodule VisionCore.Ros2.BagExporter do
   `VisionCore.Exporters` runs as any other.
 
   A recording starts with `start_recording/3` and stops with
-  `stop_recording/1`, which reach the exporter through its runner
+  `stop_recording/2`, which reach the exporter through its runner
   (`VisionCore.Exporter.Runner.call/3`); `VisionCore.Recordings` calls
   them. Its messages are those `VisionCore.Ros2.ZenohExporter` would publish with
   the options of its preset (`VisionCore.Ros2.BagExporter.Preset`), built
@@ -189,7 +189,7 @@ defmodule VisionCore.Ros2.BagExporter do
           dropped: %{String.t() => pos_integer()}
         }
 
-  @typedoc "A stopped recording, as `stop_recording/1` answers it."
+  @typedoc "A stopped recording, as `stop_recording/2` answers it."
   @type summary :: %{
           folder: Path.t(),
           folders: [Path.t()],
@@ -226,14 +226,15 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   @doc """
-  Closes the recording in progress, answering its first folder, every
-  part's folder, the bytes of its closed files on the disks still
-  mounted, its files, and the messages and drops counted when it was
-  asked; `{:error, :not_recording}` while idle.
+  Closes the recording in progress named `name`, answering its first
+  folder, every part's folder, the bytes of its closed files on the
+  disks still mounted, its files, and the messages and drops counted
+  when it was asked; `{:error, :not_recording}` while idle and
+  `{:error, :other_recording}` while another records.
   """
-  @spec stop_recording(GenServer.server()) ::
-          {:ok, summary()} | {:error, :not_recording | unanswered()}
-  def stop_recording(runner), do: Runner.call(runner, :stop, @stop_timeout_ms)
+  @spec stop_recording(GenServer.server(), String.t()) ::
+          {:ok, summary()} | {:error, :not_recording | :other_recording | unanswered()}
+  def stop_recording(runner, name), do: Runner.call(runner, {:stop, name}, @stop_timeout_ms)
 
   @doc """
   The recording in progress: its name, its first folder and every
@@ -374,12 +375,16 @@ defmodule VisionCore.Ros2.BagExporter do
     end
   end
 
-  def handle_call(:stop, _from, %{recording: nil} = state),
+  def handle_call({:stop, _name}, _from, %{recording: nil} = state),
     do: {:reply, {:error, :not_recording}, state}
 
-  def handle_call(:stop, _from, state) do
-    {summary, state} = end_recording(state)
-    {:reply, {:ok, summary}, state}
+  def handle_call({:stop, name}, _from, %{recording: recording} = state) do
+    if Path.basename(recording.dir) == name do
+      {summary, state} = end_recording(state)
+      {:reply, {:ok, summary}, state}
+    else
+      {:reply, {:error, :other_recording}, state}
+    end
   end
 
   def handle_call(:recording, _from, %{recording: nil} = state), do: {:reply, {:ok, nil}, state}

@@ -128,7 +128,8 @@ defmodule VisionCore.Ros2.BagExporterTest do
   end
 
   defp stop!(state) do
-    {{:ok, stopped}, state} = call(state, :stop)
+    {{:ok, %{name: name}}, state} = call(state, :recording)
+    {{:ok, stopped}, state} = call(state, {:stop, name})
     {stopped, state}
   end
 
@@ -514,10 +515,19 @@ defmodule VisionCore.Ros2.BagExporterTest do
   test "refuses a start while recording and a stop while idle" do
     state = init!(options())
 
-    assert {{:error, :not_recording}, state} = call(state, :stop)
+    assert {{:error, :not_recording}, state} = call(state, {:stop, "20261115T090000Z_replay"})
 
     {_started, state} = start!(state, :replay)
     assert {{:error, :busy}, state} = call(state, {:start, :review, :automatic})
+    stop!(state)
+  end
+
+  test "refuses to stop a recording by another name than the one in progress" do
+    {started, state} = options() |> init!() |> start!(:replay)
+
+    assert {{:error, :other_recording}, state} = call(state, {:stop, started.name <> "_2"})
+    assert {{:ok, %{name: name}}, state} = call(state, :recording)
+    assert name == started.name
     stop!(state)
   end
 
@@ -637,7 +647,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
     assert {:warning, "Stopped: " <> reason} = BagExporter.status(state)
     assert reason =~ "open"
-    assert {{:error, :not_recording}, _state} = call(state, :stop)
+    assert {{:error, :not_recording}, _state} = call(state, {:stop, started.name})
   end
 
   # Takes the exporter's checks until one finds the recording ended.
@@ -809,10 +819,10 @@ defmodule VisionCore.Ros2.BagExporterTest do
              BagExporter.start_recording(runner, :review, :since_start)
 
     assert {:error, :busy} = BagExporter.start_recording(runner, :replay, :automatic)
-    assert {:ok, %{folder: folder}} = BagExporter.stop_recording(runner)
+    assert {:ok, %{folder: folder}} = BagExporter.stop_recording(runner, started.name)
     assert folder == started.folder
     assert BagExporter.recording(runner) == {:ok, nil}
-    assert BagExporter.stop_recording(runner) == {:error, :not_recording}
+    assert BagExporter.stop_recording(runner, started.name) == {:error, :not_recording}
   end
 
   test "makes a busy output ready when its encode answers after the stop" do

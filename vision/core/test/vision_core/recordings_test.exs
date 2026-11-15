@@ -10,7 +10,7 @@ defmodule VisionCore.RecordingsTest do
   @moduletag :tmp_dir
   @moduletag :capture_log
 
-  # Answers every call of the bag exporter's functions with its option `:answer`.
+  # Answers every call of the bag exporter's functions with its option `:answer`, or what it makes of the call.
   defmodule Answering do
     @behaviour VisionCore.Exporter
 
@@ -24,6 +24,9 @@ defmodule VisionCore.RecordingsTest do
     def handle_output(_output, _value, answer), do: {:ok, answer}
 
     @impl VisionCore.Exporter
+    def handle_call(request, _from, answer) when is_function(answer, 1),
+      do: {:reply, answer.(request), answer}
+
     def handle_call(_request, _from, answer), do: {:reply, answer, answer}
   end
 
@@ -276,6 +279,23 @@ defmodule VisionCore.RecordingsTest do
     test "without a bag exporter, start and stop answer so" do
       assert Recordings.start([]) == {:error, :no_bag_exporter}
       assert Recordings.stop(@first, []) == {:error, :no_bag_exporter}
+    end
+
+    test "stop names the recording it stops, refused when another records" do
+      test = self()
+
+      runner =
+        answering!(fn
+          :recording ->
+            {:ok, %{name: @first}}
+
+          request ->
+            send(test, {:asked, request})
+            {:error, :other_recording}
+        end)
+
+      assert Recordings.stop(@first, exporter: runner) == {:error, :other_recording}
+      assert_received {:asked, {:stop, @first}}
     end
 
     test "stop refuses a recording that is stopped, and one it does not have", context do
