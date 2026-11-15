@@ -57,6 +57,18 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
   defp speed(data), do: %Float64{data: data}
 
+  # Past the writer's 1 MiB of held back writes: its chunk's write fails at once on a full disk.
+  defp large_image do
+    %Image{
+      header: %Header{stamp: %Time{sec: 0, nanosec: 0}, frame_id: "left"},
+      height: 1_000,
+      width: 2_000,
+      encoding: "mono8",
+      step: 2_000,
+      data: :binary.copy(<<7>>, 2_000_000)
+    }
+  end
+
   defp image(sec) do
     %Image{
       header: %Header{stamp: %Time{sec: sec, nanosec: 0}, frame_id: "left"},
@@ -461,6 +473,19 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.stop(pid)
     end
 
+    test "does not count the messages of the chunk it loses", %{tmp_dir: dir} do
+      pid = start_linked!(dir, compression: :none, max_file_bytes: 1, chunk_interval_ms: 1_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      File.ln_s!("/dev/full", file_path(dir, 1))
+      :ok = Recording.write(pid, "/left/image_raw", Image, large_image(), 2_000_000_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 4_000_000_000)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Recording.status(pid).messages == %{"/speed" => 1}
+      assert metadata_yaml!(dir)["message_count"] == 1
+      :ok = Recording.stop(pid)
+    end
+
     test "at the start refuses a folder whose parent is missing, as on a disk not mounted",
          %{tmp_dir: dir} do
       unmounted = Path.join([dir, "disks", "stick", "recordings"])
@@ -695,6 +720,88 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
                part!(Path.join(disks.options[:internal], "bag_part2"))
 
       refute Map.has_key?(custom_data, "dropped:/speed")
+    end
+
+    test "does not count the messages of the chunk the disk it leaves lost",
+         %{disks: disks, stick: stick} do
+      pid =
+        start_on!(disks, stick, compression: :none, max_file_bytes: 1, chunk_interval_ms: 1_000)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      File.ln_s!("/dev/full", Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
+      :ok = Recording.write(pid, "/left/image_raw", Image, large_image(), 2_000_000_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 4_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert Recording.status(pid).messages == %{"/speed" => 2}
+      :ok = Recording.stop(pid)
+
+      assert {_files, %{"message_count" => 1, "topics_with_message_count" => topics}} =
+               part!(Path.join(stick.recordings_path, "bag"))
+
+      assert for(%{"message_count" => count} <- topics, do: count) |> Enum.sum() == 1
+
+      assert {_files, %{"message_count" => 1}} =
+               part!(Path.join(disks.options[:internal], "bag_part2"))
+    end
+
+    test "a file closed before the disk refuses the next one is closed once, its messages kept",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 60_000)
+      File.mkdir_p!(Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+
+      # A chunk interval later: this write closes the chunk, then the file, then opens the next.
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 61_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert %{messages: %{"/speed" => 2}, files: 2} = Recording.status(pid)
+      :ok = Recording.stop(pid)
+
+      assert {[part1], %{"message_count" => 1, "files" => [%{"path" => "bag_0.mcap"}]}} =
+               part!(Path.join(stick.recordings_path, "bag"))
+
+      assert [{"/speed", 0, 0, 0, _payload}] = messages(part1)
+
+      assert {[part2], %{"message_count" => 1}} =
+               part!(Path.join(disks.options[:internal], "bag_part2"))
+
+      assert [{"/speed", 0, 61_000_000_000, 61_000_000_000, _payload}] = messages(part2)
+    end
+
+    test "a file opened whose metadata.yaml the disk refuses is closed before going on",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 60_000)
+      folder = Path.join(stick.recordings_path, "bag")
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      _state = :sys.get_state(pid)
+      File.mkdir_p!(Path.join(folder, "metadata.yaml.tmp"))
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 61_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert %{files: 2} = Recording.status(pid)
+      assert %{messages: []} = McapReader.read!(File.read!(Path.join(folder, "bag_1.mcap")))
+      :ok = Recording.stop(pid)
+    end
+
+    test "with no disk left after closing a file whose metadata.yaml the disk refuses, ends",
+         %{disks: disks, stick: stick} do
+      :ok = Disks.put_enabled(disks.server, "internal", false)
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      _state = :sys.get_state(pid)
+      File.mkdir_p!(Path.join([stick.recordings_path, "bag", "metadata.yaml.tmp"]))
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Process.alive?(pid)
+      assert {[part1], _yaml} = part!(Path.join(stick.recordings_path, "bag"))
+      assert [{"/speed", 0, 0, 0, _payload}] = messages(part1)
+      :ok = Recording.stop(pid)
     end
 
     test "counts a drop in one part, one while it goes on to the next disk too",

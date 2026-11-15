@@ -48,7 +48,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
   `<name>_part<n>_<i>.mcap`, its schemas and channels, the attachments
   and metadata in its first file, and its own drops in `metadata.yaml`.
   A message the disk refused is written again in the next part; those of
-  the chunk the disk lost are not.
+  the chunk the disk lost are not, and leave the messages counted in
+  `status/1` and `metadata.yaml`.
 
   A write the disk refuses with no disk to go on, or without `:disks`,
   ends the recording: the open file is closed with nothing more written
@@ -221,7 +222,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
     case encode(message) do
       {:ok, payload} ->
         {:noreply,
-         attempt_or_leave_disk(state, &write_message(&1, topic, module, payload, log_time))}
+         attempt_or_leave_disk(state, write_steps(state, topic, module, payload, log_time))}
 
       {:error, reason} ->
         count_drop(state.table, topic)
@@ -236,12 +237,10 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def handle_info(:tick, %{ended: true} = state), do: {:noreply, state}
 
   def handle_info(:tick, state) do
-    state = check_disk(state)
-
     state =
-      if not state.ended and chunk_due?(state, state.last_log_time),
-        do: attempt_or_leave_disk(state, &flush/1),
-        else: state
+      state
+      |> check_disk()
+      |> attempt_or_leave_disk([&flush_due(&1, &1.last_log_time), &close_file_if_full/1])
 
     {:noreply, schedule_tick(state)}
   end
@@ -254,10 +253,21 @@ defmodule VisionCore.Ros2.Bag.Recording do
     :persistent_term.erase({__MODULE__, self()})
   end
 
+  # A write's steps, each one write to the disk: one the disk refuses is the only one redone.
+  defp write_steps(state, topic, module, payload, log_time) do
+    clamped = max(log_time, state.last_log_time)
+
+    [
+      &flush_due(&1, clamped),
+      &close_file_if_full/1,
+      &ensure_file/1,
+      &ensure_channel(&1, topic, module),
+      &write_message(&1, topic, module, payload, log_time)
+    ]
+  end
+
   defp write_message(state, topic, module, payload, log_time) do
     clamped = max(log_time, state.last_log_time)
-    state = if chunk_due?(state, clamped), do: flush(state), else: state
-    state = state |> ensure_file() |> ensure_channel(topic, module)
     sequence = get_in(state.topics, [topic, :message_count]) || 0
 
     writer =
@@ -282,9 +292,15 @@ defmodule VisionCore.Ros2.Bag.Recording do
             %{topic | message_count: topic.message_count + 1}
           end),
         last_log_time: clamped,
-        open_chunk: state.open_chunk || %{first_log_time: clamped, opened_ms: now_ms()}
+        open_chunk: count_in_chunk(state.open_chunk, topic, clamped)
     }
   end
+
+  defp count_in_chunk(nil, topic, log_time),
+    do: %{first_log_time: log_time, opened_ms: now_ms(), messages: %{topic => 1}}
+
+  defp count_in_chunk(chunk, topic, _log_time),
+    do: %{chunk | messages: Map.update(chunk.messages, topic, 1, &(&1 + 1))}
 
   defp count_message(file, log_time) do
     %{
@@ -334,7 +350,6 @@ defmodule VisionCore.Ros2.Bag.Recording do
     end
   end
 
-  # Makes the folder in its parent, which a disk not mounted lacks.
   defp open_folder(state) do
     case File.mkdir(state.dir) do
       made when made in [:ok, {:error, :eexist}] ->
@@ -356,11 +371,12 @@ defmodule VisionCore.Ros2.Bag.Recording do
         {:error, reason} -> raise File.Error, reason: reason, action: "open", path: path
       end
 
-    writer = if index == 0, do: add_attachments_and_metadata(writer, state), else: writer
-    :ets.update_counter(state.table, :files, 1)
-    :ets.insert(state.table, [{:disk, state.disk}, {:folders, state.folders}])
+    writer =
+      if index == 0,
+        do: closing_on_refusal(writer, fn -> add_attachments_and_metadata(writer, state) end),
+        else: writer
 
-    %{
+    state = %{
       state
       | writer: writer,
         files: [
@@ -369,8 +385,20 @@ defmodule VisionCore.Ros2.Bag.Recording do
         schemas: %{},
         channels: %{}
     }
-    |> put_bytes()
-    |> write_metadata_file()
+
+    state = closing_on_refusal(writer, fn -> write_metadata_file(state) end)
+    :ets.update_counter(state.table, :files, 1)
+    :ets.insert(state.table, [{:disk, state.disk}, {:folders, state.folders}])
+    put_bytes(state)
+  end
+
+  # Runs `write` on a file just opened; the disk refusing it, the file is closed.
+  defp closing_on_refusal(writer, write) do
+    write.()
+  rescue
+    error in File.Error ->
+      Writer.close(writer)
+      reraise error, __STACKTRACE__
   end
 
   defp add_attachments_and_metadata(writer, state) do
@@ -394,14 +422,25 @@ defmodule VisionCore.Ros2.Bag.Recording do
       now_ms() - chunk.opened_ms >= interval_ms
   end
 
-  # Closes the open chunk and syncs it, and closes the file once past its size.
+  defp flush_due(state, log_time),
+    do: if(chunk_due?(state, log_time), do: flush(state), else: state)
+
+  # Closes the open chunk and syncs it.
   defp flush(state) do
     writer = state.writer |> Writer.close_chunk() |> Writer.sync()
-    state = put_bytes(%{state | writer: writer, open_chunk: nil})
+    put_bytes(%{state | writer: writer, open_chunk: nil})
+  end
 
-    if Writer.bytes_written(writer) >= state.max_file_bytes,
-      do: close_file(state),
-      else: state
+  # Closes a file past its size once its messages are flushed.
+  defp close_file_if_full(%{writer: nil} = state), do: state
+
+  defp close_file_if_full(state) do
+    [file | _files] = state.files
+
+    if state.open_chunk == nil and file.message_count > 0 and
+         Writer.bytes_written(state.writer) >= state.max_file_bytes,
+       do: close_file(state),
+       else: state
   end
 
   defp close_file(state) do
@@ -450,7 +489,12 @@ defmodule VisionCore.Ros2.Bag.Recording do
     error in File.Error -> end_recording(state, Exception.message(error))
   end
 
-  # Runs a step that writes to the disk, and again on the next disk when this one refuses it.
+  # Runs each step on the state the one before left; one the disk refuses again on the next disk.
+  defp attempt_or_leave_disk(state, steps) when is_list(steps),
+    do: Enum.reduce(steps, state, &attempt_or_leave_disk(&2, &1))
+
+  defp attempt_or_leave_disk(%{ended: true} = state, _step), do: state
+
   defp attempt_or_leave_disk(state, step) do
     step.(state)
   rescue
@@ -508,12 +552,57 @@ defmodule VisionCore.Ros2.Bag.Recording do
   end
 
   # Closes the part as far as the disk allows.
-  defp close_part_on_leaving(state, drops) do
-    close_part(state, drops)
+  defp close_part_on_leaving(state, drops),
+    do: state |> close_file_or_lose_chunk() |> write_metadata_file_if_allowed(drops)
+
+  defp write_metadata_file_if_allowed(state, drops) do
+    write_metadata_file(state, drops)
   rescue
-    _error in File.Error ->
-      if state.writer, do: Writer.close(state.writer)
-      %{state | writer: nil}
+    _error in File.Error -> state
+  end
+
+  # A file the disk refuses to close is closed all the same, its open chunk lost.
+  defp close_file_or_lose_chunk(%{writer: nil} = state), do: state
+
+  defp close_file_or_lose_chunk(state) do
+    close_file(state)
+  rescue
+    _error in File.Error -> lose_open_chunk(%{state | writer: nil})
+  end
+
+  # The step that failed may have written more than `state.writer` holds: its open chunk is lost.
+  defp abandon_file(%{writer: nil} = state), do: state
+
+  defp abandon_file(state) do
+    Writer.abandon(state.writer)
+    lose_open_chunk(%{state | writer: nil})
+  end
+
+  # Uncounts the open chunk's messages, which the disk did not take.
+  defp lose_open_chunk(%{open_chunk: nil} = state), do: state
+
+  defp lose_open_chunk(%{open_chunk: chunk} = state) do
+    for {topic, count} <- chunk.messages, do: uncount_messages(state.table, topic, count)
+
+    [file | files] = state.files
+    lost = chunk.messages |> Map.values() |> Enum.sum()
+
+    topics =
+      Enum.reduce(chunk.messages, state.topics, fn {topic, count}, topics ->
+        update_in(topics[topic].message_count, &(&1 - count))
+      end)
+
+    %{
+      state
+      | open_chunk: nil,
+        topics: topics,
+        files: [%{file | message_count: file.message_count - lost} | files]
+    }
+  end
+
+  defp uncount_messages(table, topic, count) do
+    if :ets.update_counter(table, {:messages, topic}, -count) == 0,
+      do: :ets.delete(table, {:messages, topic})
   end
 
   defp start_part(state, disk, drops) do
@@ -556,9 +645,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   defp end_recording(state, reason) do
     Logger.error("#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording ends")
-    # The step that failed may have written more than `state.writer` holds.
-    if state.writer, do: Writer.abandon(state.writer)
-    state = %{state | writer: nil, ended: true}
+    state = %{abandon_file(state) | ended: true}
 
     try do
       write_metadata_file(state)
