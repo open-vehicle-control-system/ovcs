@@ -152,6 +152,45 @@ The models' inputs are smaller still, so the full image would cross to their Por
 
 `priv/calibration/center.yaml` holds the camera's nominal calibration, from the lens and the pixel pitch, until it is calibrated. Until its pose is measured, its detections have no distance and its segmentation no road or off-road clouds. The same composer shape works on your own vehicle with your cameras and connectors.
 
+## A second stream of a stereo camera
+
+On a Raspberry Pi 5, a camera of its own can come from a stereo camera's capture: the image signal processor makes a second stream beside the stereo unit's frames, in the same request. Use it for a colour view where the board has no third camera. Its driver is `VisionCore.Camera.LibCameraStream`, and `stream_of:` names the stereo side:
+
+```elixir
+{:camera,
+ name: :left,
+ driver: VisionCore.Camera.LibCameraStream,
+ stream_of: :left,
+ max_hz: 10,
+ outputs: [
+   half: [resolution: {1152, 648}, processor: :isp, send: false],
+   half_jpeg: [from: :half, format: :jpeg, quality: 80]
+ ],
+ calibration_store_dir: "/data/vision/calibration"}
+```
+
+The stereo side's `VisionCore.Camera.LibCamera` owns the capture. At start, the vision core hands it the camera's `outputs:` and `max_hz:`, and `camera_capture` writes the outputs beside the stereo frames ([`vision/rust/README.md`](../../vision/rust/README.md)). The stereo frames, their size, rate and calibration do not change, and the stereo pairs never receive a colour frame.
+
+| Option | Effect |
+|---|---|
+| `processor: :isp` | The second stream, YUV420, at an even size up to the side's `:sensor_mode`. It needs `send: false`: no record carries YUV420. |
+| `format: :jpeg` | The stream encoded by `camera_capture` at its size, made `from:` it. It is the camera's only sent output and its default. |
+| `max_hz:` | The most frames a second the outputs are made on, above 0 and up to 1000. Without it, every frame. The frames are chosen on their capture times. |
+
+The camera works as any camera of its own: its preview, its ROS 2 topics, its calibration and its pose. Calibrate it at its outputs' size, and measure its pose, as for any camera ([Measure the pose](#measure-the-pose)). Give it a frame of its own, `left_optical` by default: the stereo side's `stereo_left_optical` is the frame the depth is in.
+
+The sensor's controls stay the stereo unit's `stereo.cameras.*` parameters, so the camera has no parameter group and publishes no exposure. When the stereo unit restarts, the camera's unit stays up and the status reports the camera absent until its frames return. A restart of the camera's unit leaves the stereo unit untouched.
+
+Each of these fails the vision core's start, naming the camera, before any capture opens:
+
+- a stereo unit whose driver is not `VisionCore.Camera.LibCamera`, or no stereo unit;
+- a `stream_of:` other than `:left` or `:right`, on another driver, or missing;
+- two cameras naming one side: the Pi 5's image signal processor makes one stream beside the frames' own;
+- a side without a `:sensor_mode`: libcamera would pick the sensor mode for the larger stream and change the stereo cameras' field of view;
+- an ISP output of an odd size, larger than the side's sensor mode, or sent;
+- an output made `from:` the stream that is not its JPEG at its size;
+- a `max_hz:` of 0 or less, or above 1000.
+
 ## Calibration and pose
 
 Three options of a camera's `:camera` component describe it to the rest of the unit. Its driver does not see them (`VisionCore.Camera.Unit`):

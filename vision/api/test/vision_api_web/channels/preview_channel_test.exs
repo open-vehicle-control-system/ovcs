@@ -153,3 +153,38 @@ defmodule VisionApiWeb.PreviewChannelCameraTest do
     assert_raise ArgumentError, fn -> String.to_existing_atom("nonexistent_camera_xyz") end
   end
 end
+
+defmodule VisionApiWeb.PreviewChannelStreamCameraTest do
+  use VisionApiWeb.ChannelCase, async: false
+
+  alias VisionCore.Camera.{Frame, LibCamera}
+
+  @moduletag :tmp_dir
+
+  setup %{tmp_dir: tmp_dir} do
+    tmp_dir |> VisionApiWeb.TestUnit.stream_camera_config() |> VisionApiWeb.TestUnit.start()
+  end
+
+  test "preview:left pushes the JPEGs of the camera made from the stereo left camera's stream" do
+    {:ok, _reply, _socket} =
+      VisionApiWeb.DashboardSocket
+      |> socket()
+      |> subscribe_and_join(VisionApiWeb.PreviewChannel, "preview:left")
+
+    frame = %Frame{
+      label: "stereo/left",
+      output: :half_jpeg,
+      width: 1152,
+      height: 648,
+      capture_ns: 0,
+      jpeg: <<0xFF, 0xD8, 9>>
+    }
+
+    VisionCore.Outputs.publish(
+      {:camera_frame, LibCamera.name_for("stereo/left"), :half_jpeg},
+      {:camera_frame, frame}
+    )
+
+    assert_push "frame", {:binary, <<0xFF, 0xD8, 9>>}, 1_000
+  end
+end

@@ -14,7 +14,9 @@ defmodule VisionCore.Camera.Unit do
   is started with the other options, `:label`, the name's text, which
   its frames carry, and `:frame_id`, `"<name>_optical"` unless the camera
   sets one: `VisionCore.Camera.V4L2Single` on a CAMSS board,
-  `VisionCore.Camera.GStreamer` for a USB camera on a workstation.
+  `VisionCore.Camera.GStreamer` for a USB camera on a workstation,
+  `VisionCore.Camera.LibCameraStream` for a second stream of a stereo
+  camera on a Raspberry Pi 5.
 
   A driver with named outputs (`c:VisionCore.Camera.outputs/1`), such as
   `VisionCore.Camera.V4L2Single`, makes each of the camera's `:outputs`

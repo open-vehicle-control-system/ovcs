@@ -3,7 +3,7 @@ defmodule VisionCore.ApplicationTest do
 
   import ExUnit.CaptureLog
 
-  alias VisionCore.Camera.{Frame, GStreamer, LibCamera, V4L2Single}
+  alias VisionCore.Camera.{Frame, GStreamer, LibCamera, LibCameraStream, V4L2Single}
   alias VisionCore.Models.ParameterValue
   alias VisionCore.Ros2.CameraCalibration
   alias VisionCore.Stereo.Calibration
@@ -1067,6 +1067,167 @@ defmodule VisionCore.ApplicationTest do
     assert Process.whereis(V4L2Single.name_for("hq")) == driver
     assert Process.whereis(VisionCore.Supervisor) == core
     assert_pair_streams_on(stereo)
+  end
+
+  describe "a camera of its own made from a stereo side's stream" do
+    @stream_outputs [
+      half: [resolution: {1152, 648}, processor: :isp, send: false],
+      half_jpeg: [from: :half, format: :jpeg, quality: 80]
+    ]
+
+    # The left side writes its arguments, then a 64x48 frame and a JPEG of its output 1 every 50 ms.
+    defp start_stream_beside_pair(tmp_dir) do
+      jpeg = Evision.imencode(".jpg", Evision.Mat.zeros({48, 64}, :u8))
+      colour = <<8, 1, 1152::little-16, 648::little-16, 0::little-64>> <> jpeg
+      records = Path.join(tmp_dir, "records.bin")
+
+      File.write!(
+        records,
+        File.read!(write_frame(tmp_dir)) <> <<byte_size(colour)::32>> <> colour
+      )
+
+      left =
+        write_script(tmp_dir, "left_camera.sh", """
+        printf '%s\\n' "$@" > "#{tmp_dir}/left_arguments"
+        (while cat "#{records}" 2> /dev/null; do sleep 0.05; done) &
+        cat > /dev/null
+        """)
+
+      idle = write_script(tmp_dir, "idle_camera.sh", "cat > /dev/null")
+
+      start_pipeline(%VisionCore.Config{
+        components: [
+          stereo_component(left, idle, sensor_mode: {2304, 1296}, startup_timeout_ms: 60_000),
+          {:camera,
+           name: :left,
+           driver: LibCameraStream,
+           stream_of: :left,
+           max_hz: 10,
+           outputs: @stream_outputs,
+           calibration_store_dir: tmp_dir}
+        ]
+      })
+
+      :ok =
+        VisionCore.Outputs.subscribe(
+          {:camera_frame, LibCameraStream.name_for("left"), :half_jpeg}
+        )
+    end
+
+    defp left_arguments(tmp_dir) do
+      path = Path.join(tmp_dir, "left_arguments")
+      assert eventually(fn -> File.exists?(path) and File.read!(path) =~ "--outputs-max-hz" end)
+      path |> File.read!() |> String.split("\n", trim: true)
+    end
+
+    defp assert_stream_frame do
+      assert_receive {:"$gen_cast",
+                      {:camera_frame,
+                       %Frame{label: "left", frame_id: "left_optical", output: :half_jpeg}}},
+                     5_000
+    end
+
+    test "asks the left side's capture for its outputs and publishes them under its own name",
+         %{tmp_dir: tmp_dir} do
+      start_stream_beside_pair(tmp_dir)
+
+      assert Enum.take(left_arguments(tmp_dir), -6) == [
+               "--output",
+               "isp:1152x648:unsent",
+               "--output",
+               "from:0:1152x648:jpeg:80",
+               "--outputs-max-hz",
+               "10"
+             ]
+
+      assert_stream_frame()
+    end
+
+    test "is told apart from the stereo unit's left camera by the status, the previews and the calibration",
+         %{tmp_dir: tmp_dir} do
+      start_stream_beside_pair(tmp_dir)
+      assert_stream_frame()
+      :ok = VisionCore.Preview.subscribe("left")
+      :ok = VisionCore.Preview.subscribe("stereo/left")
+
+      assert_receive {:vision_preview, "left", <<0xFF, 0xD8, _rest::binary>>}, 5_000
+      assert_receive {:vision_preview, "stereo/left", <<0xFF, 0xD8, _rest::binary>>}, 5_000
+
+      assert eventually(fn ->
+               match?(
+                 %{"left" => %{present: true}, "stereo/left" => %{present: true}},
+                 VisionCore.Status.snapshot().cameras
+               )
+             end)
+
+      targets = VisionCore.Calibration.targets(VisionCore.Application.active_config())
+      assert %{kind: :camera, labels: ["left"]} = Enum.find(targets, &(&1.id == "left"))
+
+      assert %{kind: :pose, labels: ["left", "stereo/left"]} =
+               Enum.find(targets, &(&1.id == "left-pose"))
+    end
+
+    test "a restart of the stereo unit leaves the camera's unit up, absent until the stream returns",
+         %{tmp_dir: tmp_dir} do
+      start_stream_beside_pair(tmp_dir)
+      assert_stream_frame()
+      unit = child_pid(VisionCore.Supervisor, {:camera, :left})
+      stream = Process.whereis(LibCameraStream.name_for("left"))
+
+      :ok = Supervisor.terminate_child(VisionCore.Supervisor, VisionCore.Stereo.Supervisor)
+      File.rm!(Path.join(tmp_dir, "left_arguments"))
+
+      assert eventually(fn ->
+               match?(%{"left" => %{present: false}}, VisionCore.Status.snapshot().cameras)
+             end)
+
+      {:ok, _stereo} =
+        Supervisor.restart_child(VisionCore.Supervisor, VisionCore.Stereo.Supervisor)
+
+      assert "isp:1152x648:unsent" in left_arguments(tmp_dir)
+      assert_stream_frame()
+      assert child_pid(VisionCore.Supervisor, {:camera, :left}) == unit
+      assert Process.whereis(LibCameraStream.name_for("left")) == stream
+
+      assert eventually(fn ->
+               match?(%{"left" => %{present: true}}, VisionCore.Status.snapshot().cameras)
+             end)
+    end
+
+    test "a restart of the camera's unit leaves the stereo unit untouched", %{tmp_dir: tmp_dir} do
+      start_stream_beside_pair(tmp_dir)
+      assert_stream_frame()
+      stereo = stereo_processes()
+
+      :ok = Supervisor.terminate_child(VisionCore.Supervisor, {:camera, :left})
+      {:ok, _unit} = Supervisor.restart_child(VisionCore.Supervisor, {:camera, :left})
+
+      assert_stream_frame()
+      assert stereo_processes() == stereo
+    end
+
+    test "one the stereo unit cannot make fails the start, naming the camera" do
+      Application.put_env(:vision_core, :test_config, %VisionCore.Config{
+        components: [
+          {:stereo,
+           driver: GStreamer, left: [device: "/dev/video0"], right: [device: "/dev/video1"]},
+          {:camera,
+           name: :left, driver: LibCameraStream, stream_of: :left, outputs: @stream_outputs}
+        ]
+      })
+
+      Application.put_env(:vision_core, :vehicle, Composer)
+
+      assert {:error,
+              {:vision_core,
+               {:bad_return, {_start, {:EXIT, {%ArgumentError{message: message}, _stacktrace}}}}}} =
+               Application.ensure_all_started(:vision_core)
+
+      assert message =~
+               "camera :left: stream_of: is a second stream of a VisionCore.Camera.LibCamera"
+
+      assert VisionCore.Application.active_config() == nil
+    end
   end
 
   defp eventually(check, attempts \\ 60) do

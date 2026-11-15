@@ -38,6 +38,12 @@ defmodule VisionCore.Application do
   does a detector or a segmenter whose `:name` is not a valid pipeline
   name, or a segmenter without one (`VisionCore.Pipelines.name!/2`).
 
+  A camera of its own made from a stereo side's stream is wired to that
+  side first (`VisionCore.Components.wire_streams!/1`), so the
+  configuration the components start with, and `active_config/0`, carry
+  the side's outputs. A camera the side cannot make fails the start,
+  naming it, before any capture opens.
+
   After the components comes `VisionCore.Consumers`, a supervisor with
   its own restart budget, so that what reads the outputs cannot take the
   cameras and pipelines down by crashing. It starts, in order,
@@ -65,7 +71,7 @@ defmodule VisionCore.Application do
   """
   use Application
 
-  alias VisionCore.{Detection, Segmentation}
+  alias VisionCore.{Components, Detection, Segmentation}
 
   # Not the app env: `stop/1` runs while the application controller is
   # stopping the app, so a call to it from there times out.
@@ -81,6 +87,7 @@ defmodule VisionCore.Application do
 
         composer ->
           config = composer.config(VisionCore.arm())
+          config = %{config | components: Components.wire_streams!(config.components)}
           children = cluster_child() ++ [pipeline_child(config)]
           :persistent_term.put(@active_config, config)
           children
@@ -276,10 +283,9 @@ defmodule VisionCore.Application do
     do:
       for(%{start: {^supervisor, _function, [opts]}} <- children, do: Keyword.fetch!(opts, :name))
 
-  defp resolve_component(name) when is_atom(name), do: VisionCore.Components.start(name, [])
+  defp resolve_component(name) when is_atom(name), do: Components.start(name, [])
 
-  defp resolve_component({name, opts}) when is_atom(name),
-    do: VisionCore.Components.start(name, opts)
+  defp resolve_component({name, opts}) when is_atom(name), do: Components.start(name, opts)
 
   # Without a selected vehicle the cluster has no peers to probe for.
   defp cluster_child do

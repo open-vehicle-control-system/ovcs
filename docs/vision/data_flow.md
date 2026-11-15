@@ -16,7 +16,7 @@ Each box below is a process on the BEAM, or a Port: a separate program the BEAM 
 The diagram shows the Pi 5. The other boards differ:
 
 - On the C100 and the VENTUNO Q, one `v4l2_capture` Port captures both cameras and sends their frames as pairs.
-- A camera of its own has a `v4l2_capture` Port of its own, sending single frames.
+- A camera of its own has a `v4l2_capture` Port of its own, sending single frames. One made from a stereo camera's second stream (`VisionCore.Camera.LibCameraStream`) has no Port: the stereo side's `camera_capture` writes its JPEGs after each frame's record, and its driver publishes them under the camera's name.
 - On the VENTUNO Q, detection runs in the `qnn_detect` Port, on the NPU.
 
 A unit runs one detection pipeline per detector its vehicle lists, each with its own supervisor, backend and model. The diagram shows one. A pipeline on a camera of its own subscribes to that camera's frames and to the pairs. It projects the pairs' depth into the camera's image. A segmentation pipeline does the same, one per segmenter, with its band of each frame segmented in the `qnn_segment` Port.
