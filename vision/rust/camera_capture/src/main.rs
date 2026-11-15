@@ -11,6 +11,8 @@ mod capture;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod controls;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod full_range;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod grey;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod schedule;

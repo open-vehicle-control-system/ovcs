@@ -68,7 +68,9 @@ The ISP output is the `VideoRecording` stream and the frames are the `ViewFinder
 
 `--outputs-max-hz <hz>`, 0 to 1000, makes the outputs on at most that many frames a second. The frames are chosen on their capture times: a slot every `1 / hz` s, a frame due within three quarters of a frame period (`--fps`) of its slot. A later frame, or one captured before the last one chosen, starts the slots over from its capture time. Without the flag, or at 0, the outputs are made on every frame. The JPEG is encoded on the capture thread, after the frame's record is written.
 
-When libcamera adjusts the configuration, `camera_capture` logs each stream's configuration, as asked and as adjusted, with its colour space. If the ISP output's size changed, it writes the frames without the outputs.
+At start, `camera_capture` logs each stream's configuration, its colour space and how its frames are written. When libcamera adjusts the configuration, it also logs each stream as asked. If the ISP output's size changed, it writes the frames without the outputs.
+
+A JPEG holds full-range YCbCr, 0 to 255, while a stream in a limited-range colour space, such as libcamera's Rec709, has its luma from 16 to 235 and its chroma from 16 to 240. Each JPEG `camera_capture` writes from a limited-range stream, the frames' and the outputs', is encoded from the stream's planes expanded to full range, one table per plane. The grey frames are the luma as captured. On the Pi 5, every YUV stream of a capture takes the colour space of the first, and the `VideoRecording` stream asks for Rec709. The expanded chroma keeps BT.709's matrix, where a JPEG decoder assumes BT.601's, so saturated colours are slightly off.
 
 ## One camera with `v4l2_capture`
 

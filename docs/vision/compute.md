@@ -201,7 +201,7 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 
 | Port | Board | What it does |
 |---|---|---|
-| `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG; takes camera controls on stdin. |
+| `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG, expanded to full range; takes camera controls on stdin. |
 | `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. A camera of its own in colour, its outputs converted, averaged or encoded as JPEG with libjpeg-turbo. |
 | `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
 | `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
