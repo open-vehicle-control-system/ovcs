@@ -16,16 +16,23 @@ defmodule VisionCore.Ros2.BagExporter do
     * `start`, with `preset` (`"replay"` or `"review"`, the default) and
       `clock` (`"system"`, `"since_start"` or `"automatic"`, the default;
       `VisionCore.Ros2.Bag.Clock`), records into
-      `<root>/<YYYYMMDDTHHMMSSZ>_<preset>`, the time the UTC start, `_2`,
-      `_3`… after it for a folder already there. It answers the folder,
-      the preset, the clock chosen and the clock in use, and whether the
-      clock was synchronized; `{:error, :busy}` while recording,
-      `{:error, {:refused, reason}}` naming the allowed values for a
-      preset or clock it does not know, and `{:error, {:failed, reason}}`
-      when the folder cannot be written.
-    * `stop` closes the recording, answering its folder, the bytes of its
-      closed files, its files, and the messages and drops counted when
-      it was asked; `{:error, {:refused, "Not recording"}}` while idle.
+      `<YYYYMMDDTHHMMSSZ>_<preset>`, the time the UTC start, `_2`, `_3`…
+      after it for a folder already there, in the recordings folder of
+      the first disk `VisionCore.Disks.next/3` gives. It answers the
+      folder, its disk, the preset, the clock chosen and the clock in
+      use, and whether the clock was synchronized; `{:error, :busy}`
+      while recording, `{:error, {:refused, reason}}` naming the allowed
+      values for a preset or clock it does not know, and
+      `{:error, {:failed, reason}}` with no disk to record on or when the
+      folder cannot be written.
+    * `stop` closes the recording, answering its first folder, every
+      part's folder, the bytes of its closed files on the disks still
+      mounted, its files, and the messages and drops counted when it was
+      asked; `{:error, {:refused, "Not recording"}}` while idle.
+
+  A recording goes on on the next disk when its disk fills past
+  `:free_floor_bytes`, is ejected or pulled out, in a folder of the same
+  name with `_part<n>` (`VisionCore.Ros2.Bag.Recording`).
 
   The clock stamps every header and transform, and each message's log
   time, the time the message is handed to the recording. The first MCAP
@@ -59,12 +66,16 @@ defmodule VisionCore.Ros2.BagExporter do
   ## Status and ends
 
   `status/1` is `Idle`, or the recording's preset, start, duration,
-  clock, bytes, files, messages and drops by topic, a warning once any
-  message is dropped. A recording the disk ends, full or pulled out, is
+  disk, clock, bytes, files, messages and drops by topic, a warning once
+  any message is dropped. A recording that ends with no disk left is
   seen within a second: the exporter is idle again and its status a
   warning saying why until the next start. `terminate/2` closes a
   recording; the recording process is linked to the runner, whose exit
   closes it as well.
+
+  Its helper (`c:VisionCore.Exporter.children/1`) is the
+  `VisionCore.Disks` it records on, so a unit without a bag exporter
+  mounts no disk.
 
   ## Options
 
@@ -76,7 +87,11 @@ defmodule VisionCore.Ros2.BagExporter do
       the `ZenohExporter` refuses, and the options this exporter sets
       itself: `:config`, `:link`, `:services`, `:jpeg_codec`, `:publish`
       and `:stamp`.
-    * `:root` (`"/data/recordings"`) — the folder the recordings go in.
+    * `:disks` (`VisionCore.Disks`) — the name of the `VisionCore.Disks`
+      it starts and records on.
+    * `:free_floor_bytes` (`1_000_000_000`) — the free bytes a disk keeps:
+      a recording starts on a disk above it and leaves one below it.
+      `check/1` refuses one that is no count of bytes.
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
       `:compression`, `:max_file_bytes`, `:queue` and
       `:chunk_interval_ms`.
@@ -93,14 +108,14 @@ defmodule VisionCore.Ros2.BagExporter do
 
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Camera.Frame
-  alias VisionCore.Exporter
+  alias VisionCore.{Disks, Exporter}
   alias VisionCore.Parameters.Group
   alias VisionCore.Ros2.Bag.{Clock, Recording}
   alias VisionCore.Ros2.BagExporter.Preset
   alias VisionCore.Ros2.ZenohExporter
   alias VisionCore.Stereo.Pair
 
-  @default_root "/data/recordings"
+  @free_floor_bytes 1_000_000_000
   @queue 64
   @check_interval_ms 1_000
   @clocks [:system, :since_start, :automatic]
@@ -114,6 +129,13 @@ defmodule VisionCore.Ros2.BagExporter do
 
   @impl Exporter
   def delivery(_options), do: {:queue, @queue}
+
+  @impl Exporter
+  def children(options), do: [{Disks, name: disks(options)}]
+
+  defp disks(options), do: Keyword.get(options, :disks, Disks)
+
+  defp free_floor(options), do: Keyword.get(options, :free_floor_bytes, @free_floor_bytes)
 
   @impl Exporter
   def actions(_options),
@@ -135,6 +157,9 @@ defmodule VisionCore.Ros2.BagExporter do
     cond do
       not (is_list(presets) and Keyword.keyword?(presets)) ->
         {:error, "its presets: is not a keyword list: #{inspect(presets)}"}
+
+      not match?(floor when is_integer(floor) and floor >= 0, free_floor(options)) ->
+        {:error, "its free_floor_bytes: is not a count of bytes: #{inspect(free_floor(options))}"}
 
       (unknown = Keyword.keys(presets) -- Preset.names()) != [] ->
         {:error,
@@ -204,7 +229,8 @@ defmodule VisionCore.Ros2.BagExporter do
      %{
        options: options,
        config: config(options),
-       root: Keyword.get(options, :root, @default_root),
+       disks: disks(options),
+       free_floor_bytes: free_floor(options),
        recording: nil,
        stopped: nil,
        in_flight: %{}
@@ -254,9 +280,14 @@ defmodule VisionCore.Ros2.BagExporter do
   defp allowed(names), do: Enum.map_join(names, ", ", &Atom.to_string/1)
 
   defp start_recording(state, preset, clock_choice) do
+    with {:ok, disk} <- Disks.next(state.disks, state.free_floor_bytes),
+         do: start_recording(state, preset, clock_choice, disk)
+  end
+
+  defp start_recording(state, preset, clock_choice, disk) do
     started_at = DateTime.utc_now()
-    name = folder_name(state.root, started_at, preset)
-    dir = Path.join(state.root, name)
+    name = folder_name(disk.recordings_path, started_at, preset)
+    dir = Path.join(disk.recordings_path, name)
     synchronized? = Keyword.get(state.options, :clock_synchronized?)
     clock_options = if synchronized?, do: [synchronized?: synchronized?], else: []
     clock = Clock.new(clock_choice, System.monotonic_time(:nanosecond), clock_options)
@@ -269,6 +300,9 @@ defmodule VisionCore.Ros2.BagExporter do
         dir: dir,
         name: name,
         start_time_ns: Clock.start_time_ns(clock),
+        disks: state.disks,
+        disk: disk.uuid,
+        free_floor_bytes: state.free_floor_bytes,
         attachments: attachments(state),
         metadata: metadata(preset, clock_choice, clock, started_at)
       )
@@ -278,6 +312,7 @@ defmodule VisionCore.Ros2.BagExporter do
     recording = %{
       pid: pid,
       dir: dir,
+      disk: disk.uuid,
       preset: preset,
       clock_choice: clock_choice,
       clock: clock,
@@ -363,6 +398,7 @@ defmodule VisionCore.Ros2.BagExporter do
 
     %{
       folder: recording.dir,
+      disk: recording.disk,
       preset: Atom.to_string(recording.preset),
       clock: Atom.to_string(recording.clock_choice),
       clock_in_use: described.clock,
@@ -386,11 +422,13 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   defp summary(recording, status) do
-    status = status || %{bytes: 0, files: 0, messages: %{}, dropped: %{}}
+    status =
+      status || %{bytes: 0, files: 0, messages: %{}, dropped: %{}, folders: [recording.dir]}
 
     %{
       folder: recording.dir,
-      bytes: folder_bytes(recording.dir),
+      folders: status.folders,
+      bytes: status.folders |> Enum.map(&folder_bytes/1) |> Enum.sum(),
       files: status.files,
       messages: status.messages |> Map.values() |> Enum.sum(),
       dropped: status.dropped
@@ -513,7 +551,10 @@ defmodule VisionCore.Ros2.BagExporter do
     do: {:warning, "Stopped: #{stopped.error} (#{Path.basename(stopped.folder)})"}
 
   def status(%{recording: recording}) do
-    status = Recording.status(recording.pid) || %{bytes: 0, files: 0, messages: %{}, dropped: %{}}
+    status =
+      Recording.status(recording.pid) ||
+        %{bytes: 0, files: 0, messages: %{}, dropped: %{}, disk: recording.disk}
+
     level = if status.dropped == %{}, do: :ok, else: :warning
     {level, recording_text(recording, status)}
   end
@@ -525,8 +566,8 @@ defmodule VisionCore.Ros2.BagExporter do
 
     "Recording #{recording.preset} since " <>
       Calendar.strftime(recording.started_at, "%H:%M:%S UTC") <>
-      " (#{duration(System.monotonic_time(:millisecond) - recording.started_ms)}), " <>
-      "clock #{described.clock}, #{synchronized} (#{recording.clock_choice}): " <>
+      " (#{duration(System.monotonic_time(:millisecond) - recording.started_ms)}) " <>
+      "on #{status.disk}, clock #{described.clock}, #{synchronized} (#{recording.clock_choice}): " <>
       "#{size(status.bytes)} in #{count(status.files, "file")}, " <>
       "#{count(messages, "message")}" <> dropped_text(status.dropped)
   end
