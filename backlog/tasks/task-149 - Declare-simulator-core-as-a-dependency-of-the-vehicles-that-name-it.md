@@ -1,10 +1,11 @@
 ---
 id: TASK-149
 title: Declare simulator core as a dependency of the vehicles that name it
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14 10:45'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
 dependencies: []

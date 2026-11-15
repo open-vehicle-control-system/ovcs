@@ -1,10 +1,11 @@
 ---
 id: TASK-128
 title: Track the simulated vehicle's pose
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 14:00'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
 dependencies: []

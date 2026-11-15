@@ -1,10 +1,11 @@
 ---
 id: TASK-140
 title: Simulate the Volkswagen Polo 9N ignition lock
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 22:52'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
 dependencies:

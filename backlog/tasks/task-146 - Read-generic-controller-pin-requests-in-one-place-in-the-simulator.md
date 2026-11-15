@@ -1,10 +1,11 @@
 ---
 id: TASK-146
 title: Read generic controller pin requests in one place in the simulator
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14 10:00'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
 dependencies: []

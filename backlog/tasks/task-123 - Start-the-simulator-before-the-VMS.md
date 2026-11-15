@@ -1,11 +1,11 @@
 ---
 id: TASK-123
 title: Start the simulator before the VMS
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 14:00'
-updated_date: '2026-11-13 22:05'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
   - cli

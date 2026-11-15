@@ -1,10 +1,11 @@
 ---
 id: TASK-147
 title: Run the simulator runner's checks in CI
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-14 10:30'
+updated_date: '2026-11-15 17:10'
 labels:
   - simulator
   - ci
