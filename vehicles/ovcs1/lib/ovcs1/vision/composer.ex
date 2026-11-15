@@ -97,7 +97,8 @@ defmodule Ovcs1.Vision.Composer do
            outputs: [center: :half_jpeg],
            videos: [center: :full_h264]
          ],
-         segmentation: [pipelines: [:scene]]}
+         segmentation: [pipelines: [:scene]]},
+        {VisionCore.Debug.Exporter, []}
       ]
     }
   end
