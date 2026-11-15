@@ -518,6 +518,31 @@ describe('Previews', () => {
       expect(classes(document.querySelector('[data-cameras]'))).toContain('lg:flex-1')
     })
 
+    it('beside a panel, keeps each frame a useful height and the pair checks under both cameras, the column scrolling instead', () => {
+      listed({ name: 'camera_frame:hq', maxHz: 5 })
+      const { socket } = liveSocket({ depthRange: 8 })
+      const { rerender } = render(<Previews status={snapshot} socket={socket} besidePanel />)
+
+      const pair = screen.getByRole('list', { name: 'Camera pair' })
+      const rows = [pair.parentElement, document.querySelector('[data-cameras]')]
+      for (const row of rows) {
+        // Each frame's track is at least 12.5rem tall, and a row is never shorter than its tracks' minimums.
+        expect(classes(row)).toEqual(expect.arrayContaining(['lg:flex-1', 'lg:min-h-min', 'lg:grid-rows-[minmax(12.5rem,1fr)_auto_auto]']))
+        expect(classes(row)).not.toContain('lg:min-h-0')
+        expect(classes(row)).not.toContain('lg:grid-rows-[minmax(0,1fr)_auto_auto]')
+      }
+      expect(classes(screen.getByRole('region', { name: 'Previews' }))).toContain('lg:min-h-min')
+      // The checks leave both cameras the row's width.
+      expect(classes(rows[0])).toContain('lg:grid-cols-2')
+      expect(classes(pair)).toEqual(expect.arrayContaining(['lg:col-span-2', 'lg:row-start-4', 'lg:grid', 'lg:grid-cols-2', 'lg:w-full']))
+
+      rerender(<Previews status={snapshot} socket={socket} />)
+      expect(classes(rows[0])).toEqual(expect.arrayContaining(['lg:min-h-0', 'lg:grid-rows-[minmax(0,1fr)_auto_auto]']))
+      expect(classes(rows[0])).not.toContain('lg:grid-cols-2')
+      expect(classes(pair)).not.toContain('lg:col-span-2')
+      expect(classes(screen.getByRole('region', { name: 'Previews' }))).not.toContain('lg:min-h-min')
+    })
+
     it('places the asides as the row mounts, before its observer reports', () => {
       previewsSized(484, 400, 80)
       renderAll()

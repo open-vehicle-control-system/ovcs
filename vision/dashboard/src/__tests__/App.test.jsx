@@ -109,6 +109,21 @@ describe('App', () => {
     expect(within(screen.getByRole('banner')).getByRole('switch', { name: 'Dark mode' })).toBeTruthy()
   })
 
+  it('scrolls the previews within their column beside a panel, and lays them out as on the overview without one', () => {
+    useParameters.setState({ groups })
+    visit('/?box=stereo.match')
+    const { unmount } = render(<App />)
+
+    const column = () => screen.getByRole('region', { name: 'Previews' }).parentElement
+    expect(column().className.split(' ')).toContain('lg:overflow-y-auto')
+    expect(screen.getByRole('region', { name: 'Previews' }).className.split(' ')).toContain('lg:min-h-min')
+    unmount()
+
+    visit('/')
+    render(<App />)
+    expect(column().className.split(' ')).not.toContain('lg:overflow-y-auto')
+  })
+
   it('selects the box named in the URL once the groups are loaded', () => {
     visit('/?box=stereo.match')
     render(<App />)

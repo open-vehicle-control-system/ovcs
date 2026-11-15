@@ -171,7 +171,8 @@ function UnitStatusBar({ connection }) {
 
 /**
  * The videos and their figures: at the full width on the overview, beside the `panel` of a stage or a calibration,
- * in a card with its `footer`, filling the main's height from lg. Every such page renders them at the same place, so
+ * in a card with its `footer`, filling the main's height from lg, where beside a panel they scroll within their
+ * column rather than shrink their frames. Every such page renders them at the same place, so
  * going from one to another keeps the videos playing. `paused` leaves them out.
  */
 function PreviewsPage({ panel, footer, paused }) {
@@ -190,7 +191,9 @@ function PreviewsPage({ panel, footer, paused }) {
         </OvcsCard>
       ) : null}
 
-      <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">{paused ? null : <LivePreviews />}</div>
+      <div className={`flex min-w-0 flex-col lg:min-h-0 lg:flex-1 ${panel ? 'lg:overflow-y-auto' : ''}`}>
+        {paused ? null : <LivePreviews besidePanel={Boolean(panel)} />}
+      </div>
     </div>
   )
 }
