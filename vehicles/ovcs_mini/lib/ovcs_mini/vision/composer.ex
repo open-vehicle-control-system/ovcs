@@ -7,7 +7,7 @@ defmodule OvcsMini.Vision.Composer do
 
   The cameras bin the whole sensor (2304x1296) and deliver 480x270 grey
   frames, which the pipeline matches at that size. Every stage runs
-  natively in `stereo_match` (`compute: :native`), on at most 15 pairs a
+  natively in `stereo_match` (`compute: :native`), on at most 20 pairs a
   second (`max_hz`), so matching leaves the processor room for the
   cameras; detection, on each pair matched, runs at that rate too.
 
@@ -88,7 +88,7 @@ defmodule OvcsMini.Vision.Composer do
        height: 270,
        fps: 30,
        pair_tolerance_ms: 5,
-       max_hz: 15,
+       max_hz: 20,
        calibration_dir: Application.app_dir(:ovcs_mini, "priv/calibration"),
        calibration_store_dir: "/data/vision/calibration",
        stages: stages(),
