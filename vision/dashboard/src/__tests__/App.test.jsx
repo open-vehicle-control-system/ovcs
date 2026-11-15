@@ -58,10 +58,11 @@ const initial = useParameters.getState()
 describe('App', () => {
   let actions
   beforeEach(() => {
-    actions = { startPolling: vi.fn(), stopPolling: vi.fn() }
+    const unlisten = vi.fn()
+    actions = { listen: vi.fn(() => unlisten), unlisten }
     dashboardSocket.channel.mockClear()
     dashboardSocket.isConnected.mockReturnValue(true)
-    useParameters.setState({ ...initial, ...actions, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
+    useParameters.setState({ ...initial, listen: actions.listen, groups: [], parameters: {}, unsaved: 0, selectedGroupId: null })
     useExporters.setState({ exporters })
     useStatus.setState({ snapshot: null, joins: 0 })
     useCalibration.setState({ targets: [], session: null, calibrations: {}, saved: {}, selected: null })
@@ -104,13 +105,14 @@ describe('App', () => {
     }
   })
 
-  it('polls the parameters while mounted', () => {
+  it('follows the parameters channel while mounted', () => {
     const { unmount } = render(<App />)
-    expect(actions.startPolling).toHaveBeenCalledTimes(1)
-    expect(actions.stopPolling).not.toHaveBeenCalled()
+    expect(actions.listen).toHaveBeenCalledTimes(1)
+    expect(actions.listen).toHaveBeenCalledWith(dashboardSocket)
+    expect(actions.unlisten).not.toHaveBeenCalled()
 
     unmount()
-    expect(actions.stopPolling).toHaveBeenCalledTimes(1)
+    expect(actions.unlisten).toHaveBeenCalledTimes(1)
   })
 
   it('offers the dark mode switch in the top bar', () => {

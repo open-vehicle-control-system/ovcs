@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import * as service from '../services/parameters.js'
+import { snapshotOf } from '../services/stages.js'
 
-let timer = null
 let loading = null
 let reloadRequested = false
 let generation = 0
@@ -57,18 +57,13 @@ export const useParameters = create((set, get) => ({
   discard: () => perform(service.discardParameters, set, get),
   reset: (target) => perform(() => service.resetParameters(target), set, get),
 
-  startPolling(intervalMs = 1000) {
-    if (timer) return
-    const poll = () => {
-      if (!loading) get().load()
-    }
-    poll()
-    timer = setInterval(poll, intervalMs)
-  },
-
-  stopPolling() {
-    clearInterval(timer)
-    timer = null
+  // Follows the parameters channel, which pushes every stage on join and as they change; answers how to leave it.
+  listen(socket) {
+    const channel = socket.channel('parameters', {})
+    channel.on('stages', (document) => receive(set, get, snapshotOf(document)))
+    channel.onError(() => set({ error: service.UNREACHABLE, errorSource: 'load' }))
+    channel.join()
+    return () => channel.leave()
   },
 
   beginEdit: (id) => set((state) => ({ editing: new Set(state.editing).add(id) })),
@@ -104,23 +99,36 @@ async function loadOnce(set, get) {
       reloadRequested = true
       return
     }
-    const { parameters: current, editing } = get()
-    const parameters = { ...snapshot.parameters }
-    for (const id of [...editing, ...changing.keys()]) {
-      if (current[id] && parameters[id]) parameters[id] = current[id]
-    }
-    set((state) => ({
-      groups: keepUnchanged(state.groups, snapshot.groups),
-      parameters: keepUnchanged(state.parameters, parameters),
-      unsaved: snapshot.unsaved,
-      ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
-    }))
+    receive(set, get, { ...snapshot, complete: true })
   } catch (error) {
     set({ error: message(error), errorSource: 'load' })
   }
 }
 
-// A poll mostly answers what is already shown: keeping the objects it did not change spares their components a render.
+// The stages of `snapshot` shown, all of them or, for an incomplete one, those it carries; a parameter being edited or
+// changed keeps the value shown.
+function receive(set, get, { groups, parameters, unsaved, complete }) {
+  const { parameters: current, editing } = get()
+  const next = complete ? { ...parameters } : { ...current, ...parameters }
+  for (const id of [...editing, ...changing.keys()]) {
+    if (current[id] && next[id]) next[id] = current[id]
+  }
+  set((state) => ({
+    groups: keepUnchanged(state.groups, complete ? groups : replaceById(state.groups, groups)),
+    parameters: keepUnchanged(state.parameters, next),
+    ...(complete ? { unsaved } : {}),
+    ...(state.errorSource === 'load' ? { error: null, errorSource: null } : {})
+  }))
+}
+
+// `groups` with each of `updated` in place of the group of its id, any new one after them.
+function replaceById(groups, updated) {
+  const byId = new Map(updated.map((group) => [group.id, group]))
+  const known = new Set(groups.map((group) => group.id))
+  return [...groups.map((group) => byId.get(group.id) ?? group), ...updated.filter((group) => !known.has(group.id))]
+}
+
+// A push or a load mostly answers what is already shown: keeping the objects it did not change spares their components a render.
 const same = (a, b) => a === b || JSON.stringify(a) === JSON.stringify(b)
 
 // `next`, an array or an object, with each item equal to `previous`'s at the same key kept; `previous` itself if all are.

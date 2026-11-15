@@ -19,7 +19,7 @@ vi.mock('../components/Menu.jsx', () => ({
 
 describe('App and the status', () => {
   it('shows each status in the bottom bar without rendering the rest of the page again', () => {
-    useParameters.setState({ startPolling: vi.fn(), stopPolling: vi.fn() })
+    useParameters.setState({ listen: vi.fn(() => () => {}) })
     render(<App />)
     const before = menuRenders.count
 

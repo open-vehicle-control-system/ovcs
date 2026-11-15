@@ -1,3 +1,5 @@
+import { snapshotOf, toParameter } from './stages.js'
+
 const MEDIA_TYPE = 'application/vnd.api+json'
 
 /** The URL of `path` under the unit's `/api`. */
@@ -9,7 +11,7 @@ const readDocument = (response) => response.json().catch(() => ({}))
 const READ_TIMEOUT_MS = 5000
 const ACTION_TIMEOUT_MS = 15000
 
-const UNREACHABLE = 'Cannot reach the vision unit'
+export const UNREACHABLE = 'Cannot reach the vision unit'
 const TIMED_OUT = 'The vision unit did not answer in time'
 
 /**
@@ -50,29 +52,9 @@ export async function request(path, { method = 'GET', body, answer = readDocumen
   }
 }
 
-const relatedId = (resource, name) => resource.relationships?.[name]?.data?.id ?? null
-
-const toParameter = (resource) => ({
-  ...resource.attributes,
-  id: resource.id,
-  stage: relatedId(resource, 'stage'),
-  controlledBy: relatedId(resource, 'controlledBy'),
-  greaterThan: relatedId(resource, 'greaterThan')
-})
-
-const toGroup = (resource) => ({
-  ...resource.attributes,
-  id: resource.id,
-  parameterIds: (resource.relationships?.parameters?.data ?? []).map((ref) => ref.id)
-})
-
 export async function fetchGroups() {
-  const document = await request('stages?include=parameters')
-  const parameters = {}
-  for (const resource of document.included ?? []) {
-    if (resource.type === 'parameters') parameters[resource.id] = toParameter(resource)
-  }
-  return { groups: document.data.map(toGroup), parameters, unsaved: document.meta?.unsaved ?? 0 }
+  const { groups, parameters, unsaved } = snapshotOf(await request('stages?include=parameters'))
+  return { groups, parameters, unsaved }
 }
 
 export async function setParameter(id, value) {

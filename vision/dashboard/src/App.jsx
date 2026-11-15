@@ -203,15 +203,10 @@ const capturing = (state) => state.session?.phase === 'capturing'
 
 export default function App() {
   const listen = useStatus((state) => state.listen)
-  const startPolling = useParameters((state) => state.startPolling)
-  const stopPolling = useParameters((state) => state.stopPolling)
+  const listenParameters = useParameters((state) => state.listen)
 
   useEffect(() => listen(dashboardSocket), [listen])
-
-  useEffect(() => {
-    startPolling()
-    return stopPolling
-  }, [startPolling, stopPolling])
+  useEffect(() => listenParameters(dashboardSocket), [listenParameters])
 
   useExportersListed()
 
