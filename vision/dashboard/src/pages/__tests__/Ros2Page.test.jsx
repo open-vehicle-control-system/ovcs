@@ -88,6 +88,16 @@ describe('Ros2Page', () => {
     expect(document.querySelector('[data-topic="/stereo/depth/image_rect"]').textContent).not.toContain('Hz')
   })
 
+  it('says so when the node answers no service', async () => {
+    const quiet = { data: { ...node.data, relationships: { ...node.data.relationships, services: linkage([]) } }, included: topics }
+    fetchMock.mockResolvedValue(answer(quiet))
+    render(<Ros2Page />)
+    await flush()
+
+    expect(screen.getByText('No service answered.')).toBeTruthy()
+    expect(screen.getAllByRole('table')).toHaveLength(1)
+  })
+
   it('asks again a second after each answer, and says so when the unit cannot be reached', async () => {
     fetchMock.mockResolvedValueOnce(answer(node)).mockRejectedValue(new TypeError('Failed to fetch'))
     render(<Ros2Page />)

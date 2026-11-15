@@ -5,6 +5,10 @@ import { formatNumber } from '../status.js'
 
 const POLL_MS = 1000
 
+// On a narrow screen a topic's or service's type goes under its name, where a column of its own has no room.
+const TOPIC_ROW = 'max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto]'
+const SERVICE_ROW = 'max-sm:grid max-sm:grid-cols-1'
+
 // Whether the unit puts what it publishes on the Zenoh link: nothing goes out before the board's clock is synchronized.
 const publishing = (node) => {
   if (!node.connected) return { tone: 'error', word: 'no' }
@@ -81,18 +85,18 @@ export default function Ros2Page() {
             ) : (
               <table className="w-full text-left text-sm">
                 <thead className="text-xs text-ovcs-muted">
-                  <tr>
-                    <th className="pb-2 pr-3 font-medium">topic</th>
-                    <th className="pb-2 pr-3 font-medium">type</th>
-                    <th className="pb-2 text-right font-medium">rate</th>
+                  <tr className={TOPIC_ROW}>
+                    <th scope="col" className="pb-2 pr-3 font-medium">topic</th>
+                    <th scope="col" className="pb-2 pr-3 font-medium max-sm:sr-only">type</th>
+                    <th scope="col" className="pb-2 text-right font-medium">rate</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-ovcs-border">
                   {node.topics.map((topic) => (
-                    <tr key={topic.name} data-topic={topic.name}>
-                      <td className="py-2 pr-3 font-mono text-xs">{topic.name}</td>
-                      <td className="py-2 pr-3 font-mono text-xs text-ovcs-muted">{topic.messageType}</td>
-                      <td className="py-2 text-right font-semibold tabular-nums">{status.tone === 'ok' ? `${formatNumber(topic.rateHz)} Hz` : '–'}</td>
+                    <tr key={topic.name} data-topic={topic.name} className={TOPIC_ROW}>
+                      <td className="py-2 pr-3 font-mono text-xs max-sm:break-all">{topic.name}</td>
+                      <td className="py-2 pr-3 font-mono text-xs text-ovcs-muted max-sm:row-start-2 max-sm:break-all max-sm:pt-0">{topic.messageType}</td>
+                      <td className="whitespace-nowrap py-2 text-right font-semibold tabular-nums max-sm:col-start-2 max-sm:row-span-2 max-sm:row-start-1">{status.tone === 'ok' ? `${formatNumber(topic.rateHz)} Hz` : '–'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -101,22 +105,26 @@ export default function Ros2Page() {
           </OvcsCard>
           <OvcsCard className="flex flex-col gap-3">
             <h3 className="font-semibold">Services</h3>
-            <table className="w-full text-left text-sm">
-              <thead className="text-xs text-ovcs-muted">
-                <tr>
-                  <th className="pb-2 pr-3 font-medium">service</th>
-                  <th className="pb-2 font-medium">type</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-ovcs-border">
-                {node.services.map((service) => (
-                  <tr key={service.name} data-service={service.name}>
-                    <td className="py-2 pr-3 font-mono text-xs">{service.name}</td>
-                    <td className="py-2 font-mono text-xs text-ovcs-muted">{service.serviceType}</td>
+            {node.services.length === 0 ? (
+              <p className="text-sm text-ovcs-muted">No service answered.</p>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead className="text-xs text-ovcs-muted">
+                  <tr className={SERVICE_ROW}>
+                    <th scope="col" className="pb-2 pr-3 font-medium">service</th>
+                    <th scope="col" className="pb-2 font-medium max-sm:sr-only">type</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-ovcs-border">
+                  {node.services.map((service) => (
+                    <tr key={service.name} data-service={service.name} className={SERVICE_ROW}>
+                      <td className="py-2 pr-3 font-mono text-xs max-sm:break-all">{service.name}</td>
+                      <td className="py-2 font-mono text-xs text-ovcs-muted max-sm:break-all max-sm:pt-0">{service.serviceType}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
             <p className="text-sm text-ovcs-muted">
               The pipeline&apos;s settings are ROS 2 parameters: <code className="text-ovcs-text">ros2 param list</code>, then
               for example <code className="text-ovcs-text">ros2 param set &lt;node&gt; stereo.disparity.p1 10</code>. A change

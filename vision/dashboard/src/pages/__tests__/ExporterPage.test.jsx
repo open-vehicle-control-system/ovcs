@@ -70,6 +70,14 @@ describe('ExporterPage', () => {
     expect(screen.getByText('Recording').closest('.ovcs-status--ok')).not.toBeNull()
   })
 
+  it('shows an exporter that is off muted, as the menu does, not as an error', () => {
+    useStatus.setState({ snapshot: { exporters: [{ id: 'recorder', name: 'Recorder', status: { level: 'off', detail: 'Not running' } }] } })
+    render(<ExporterPage id="recorder" />)
+
+    const status = screen.getByText('Not running').closest('.ovcs-status')
+    expect(status.className).not.toContain('ovcs-status--')
+  })
+
   it('opens the pages of the ROS 2 · Zenoh exporter and the API', () => {
     render(<ExporterPage id="ros2_zenoh" />)
     expect(screen.getByRole('heading', { name: 'ROS 2 · Zenoh' })).toBeTruthy()

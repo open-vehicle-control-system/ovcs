@@ -10,7 +10,8 @@ import { BUTTON } from '../styles.js'
 
 const OWN_PAGES = { ros2_zenoh: Ros2Page, api: ApiPage }
 
-const TONES = { ok: 'ok', warning: 'error', off: 'error' }
+// Coloured as the exporter's entry in the menu.
+const TONES = { ok: 'ok', warning: 'error', off: 'muted' }
 
 const OUTPUT_NAMES = {
   stereo_pair: 'Stereo pairs',

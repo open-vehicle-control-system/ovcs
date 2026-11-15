@@ -54,7 +54,7 @@ function PoseFigures({ solution, inUse }) {
               <span className="sr-only">figure</span>
             </th>
             <th className="pb-1 pr-6 font-medium">{`New, from ${solution.samples} views`}</th>
-            {used ? <th className="pb-1 font-medium">Used now</th> : null}
+            {used ? <th className="pb-1 font-medium">In use</th> : null}
           </tr>
         </thead>
         <tbody>
@@ -90,7 +90,7 @@ function Figures() {
               <span className="sr-only">figure</span>
             </th>
             <th className="pb-1 pr-6 font-medium">{`New, from ${solution.samples} views`}</th>
-            {used(true) ? <th className="pb-1 font-medium">Used now</th> : null}
+            {used(true) ? <th className="pb-1 font-medium">In use</th> : null}
           </tr>
         </thead>
         <tbody>

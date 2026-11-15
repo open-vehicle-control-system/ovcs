@@ -311,23 +311,33 @@ function DepthPreview({ status, socket, beside }) {
   )
 }
 
+// From `lg`, how the rows share the height: alone, they fill it, their frames taking what the captions leave; beside
+// a panel, each frame keeps a useful height, and the rows grow past the column, which then scrolls.
+const ROWS_FILL = 'lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)_auto_auto]'
+const ROWS_BESIDE_PANEL = 'lg:min-h-min lg:flex-1 lg:grid-rows-[minmax(12.5rem,1fr)_auto_auto]'
+
 /**
  * Both cameras with their rates and how they compare between them, then the depth with its rate and the cameras of
  * their own side by side, filling the height left. Each preview of a row spans the row's three tracks, frame, caption
  * and aside, so its frame's track starts and ends level with its neighbours' whatever their captions and asides hold;
  * in the depth's row, each frame has its image's shape, and the asides go beside the frames where those keep a frame
- * at least as wide as tall (`useBeside`).
+ * at least as wide as tall (`useBeside`). `besidePanel`, in the narrower column beside a page's panel, each frame
+ * keeps at least 12.5rem of height, for its column to scroll.
  */
-export default function Previews({ status, socket }) {
+export default function Previews({ status, socket, besidePanel = false }) {
   const videos = useVideoCameras()
   const cameras = useCameraNames(videos)
   const rowRef = useRef(null)
   const beside = useBeside(rowRef)
+  const rows = besidePanel ? ROWS_BESIDE_PANEL : ROWS_FILL
 
   return (
-    <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
-      {/* The asides' track takes the height the pair's checks add, under the captions; from `lg` both rows share the height. */}
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)_auto_auto]">
+    <section aria-label="Previews" className={`flex flex-col gap-3 lg:flex-1 ${besidePanel ? 'lg:min-h-min' : 'lg:min-h-0'}`}>
+      {/* The asides' track takes the height the pair's checks add, under the captions; on a narrow screen the checks go
+          under both previews. */}
+      <div
+        className={`grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 ${rows}`}
+      >
         <LeftPreview status={status} socket={socket} />
         <PairStatus status={status} />
         <Preview
@@ -345,7 +355,7 @@ export default function Previews({ status, socket }) {
       <div
         ref={rowRef}
         data-cameras
-        className="grid gap-3 lg:min-h-0 lg:flex-1 lg:auto-cols-fr lg:grid-flow-col lg:grid-rows-[minmax(0,1fr)_auto_auto] lg:gap-y-0"
+        className={`grid gap-3 lg:auto-cols-fr lg:grid-flow-col lg:gap-y-0 ${rows}`}
       >
         <DepthPreview status={status} socket={socket} beside={beside} />
         {cameras.map((name) => (

@@ -228,6 +228,44 @@ describe('ParameterPanel', () => {
     })
   })
 
+  it('says a step without parameters has nothing to set, and offers nothing to reset', () => {
+    render(<ParameterPanel groupId="stereo.depth" />)
+
+    expect(screen.getByText('This step has no settings.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Reset/ })).toBeNull()
+  })
+
+  describe("the step's status", () => {
+    const withStatus = (status) =>
+      useParameters.setState({ groups: groups.map((group) => (group.id === 'stereo.match' ? { ...group, status } : group)) })
+
+    it('says what is wrong with a step in warning, in the error colour as its box in the menu', () => {
+      withStatus({ level: 'warning', detail: 'Model failed to load' })
+      render(<ParameterPanel groupId="stereo.match" />)
+
+      const status = screen.getByText('Model failed to load')
+      expect(status.className).toContain('ovcs-status--error')
+    })
+
+    it('says that a step is off, muted as its box in the menu', () => {
+      withStatus({ level: 'off', detail: 'Not running' })
+      render(<ParameterPanel groupId="stereo.match" />)
+
+      const status = screen.getByText('Not running')
+      expect(status.className).not.toContain('ovcs-status--error')
+      expect(status.className).toContain('ovcs-status')
+    })
+
+    it('says nothing of a step that is fine, or that reports no status', () => {
+      withStatus({ level: 'ok', detail: 'Running' })
+      const { rerender } = render(<ParameterPanel groupId="stereo.match" />)
+      expect(screen.queryByText('Running')).toBeNull()
+
+      rerender(<ParameterPanel groupId="stereo.depth" />)
+      expect(document.querySelector('.ovcs-status')).toBeNull()
+    })
+  })
+
   it('asks you to choose a box when none is selected', () => {
     render(<ParameterPanel groupId={null} />)
 

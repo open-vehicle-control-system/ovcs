@@ -42,12 +42,21 @@ function PairCheck({ item }) {
   )
 }
 
-/** How the cameras work together, as the unit judges them, one line a check between their previews; a dash until the first status. */
+// Under both previews, two checks a row, on a narrow screen.
+const UNDER_NARROW = 'max-md:col-span-2 max-md:row-span-1 max-md:row-start-4 max-md:mt-3 max-md:grid max-md:w-full max-md:grid-cols-2 max-md:gap-x-4'
+
+/**
+ * How the cameras work together, as the unit judges them, one line a check between their previews, or under them, two
+ * a row, on a narrow screen; a dash until the first status.
+ */
 export default function PairStatus({ status }) {
   const items = status ? pairStatus(status) : PAIR_CHECKS.map((check) => ({ ...check, value: '–', tone: 'muted', issues: [] }))
 
   return (
-    <ul aria-label="Camera pair" className="row-span-3 flex w-52 flex-col gap-3 self-center">
+    <ul
+      aria-label="Camera pair"
+      className={`row-span-3 flex w-52 flex-col gap-3 self-center ${UNDER_NARROW}`}
+    >
       {items.map((item) => (
         <PairCheck key={item.id} item={item} />
       ))}
