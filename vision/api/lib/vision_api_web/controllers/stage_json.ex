@@ -4,7 +4,7 @@ defmodule VisionApiWeb.StageJSON do
   `pipeline` is the pipeline it is part of, such as `stereo` or `detection`,
   and its `role` there `source` for a component, `step` for a stage.
   """
-  alias VisionApiWeb.{JsonApi, ParameterJSON}
+  alias VisionApiWeb.{JsonApi, ParameterResource}
   alias VisionCore.Parameters.Group
 
   @doc """
@@ -13,11 +13,13 @@ defmodule VisionApiWeb.StageJSON do
   """
   @spec index(%{groups: [Group.t()], include_parameters: boolean()}) :: map()
   def index(%{groups: groups, include_parameters: include_parameters}) do
-    document = %{data: Enum.map(groups, &data/1), meta: ParameterJSON.meta(groups)}
+    document = %{data: Enum.map(groups, &data/1), meta: ParameterResource.meta(groups)}
 
     if include_parameters do
       included =
-        for group <- groups, parameter <- group.parameters, do: ParameterJSON.data(parameter)
+        for group <- groups,
+            parameter <- group.parameters,
+            do: ParameterResource.object(parameter)
 
       Map.put(document, :included, included)
     else
