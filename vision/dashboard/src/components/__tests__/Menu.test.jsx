@@ -292,6 +292,22 @@ describe('Menu', () => {
     expect(within(pipelines).queryByRole('button', { name: /Detection/ })).toBeNull()
   })
 
+  it('leaves out the Pipelines and Exporters sections until the unit lists them', () => {
+    useParameters.setState({ groups: [] })
+    useExporters.setState({ exporters: [] })
+    render(<Menu />)
+
+    expect(screen.queryByRole('region', { name: 'Pipelines' })).toBeNull()
+    expect(screen.queryByRole('region', { name: 'Exporters' })).toBeNull()
+
+    act(() => {
+      useParameters.setState({ groups: [group('stereo.match', 'Match', 2, 'stereo')] })
+      useExporters.setState({ exporters: [exporter('api', 'API')] })
+    })
+    expect(screen.getByRole('region', { name: 'Pipelines' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Exporters' })).toBeTruthy()
+  })
+
   it('lists a named pipeline without the greyed detection line', () => {
     useParameters.setState({
       groups: [group('cameras', 'Cameras', 0, 'stereo', 'source'), group('road_signs.input', 'Input', 101, 'road_signs')]
