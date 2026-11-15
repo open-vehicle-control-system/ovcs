@@ -476,6 +476,29 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert {:error, _reason} = BagExporter.check(options(free_floor_bytes: "1 GB"))
   end
 
+  test "refuses a root that is no folder's path, and an option it does not know" do
+    assert BagExporter.check(options(root: "/tmp/recordings", id: :second_bag)) == :ok
+
+    for root <- ["", 42, ~c"/tmp"] do
+      assert {:error, reason} = BagExporter.check(options(root: root))
+      assert reason =~ "root", inspect(root)
+    end
+
+    assert {:error, reason} = BagExporter.check(options(roots: "/tmp/recordings"))
+    assert reason =~ ":roots"
+  end
+
+  test "refuses a chunk interval not below the time an eject waits for the recording" do
+    assert BagExporter.check(options(recording: [chunk_interval_ms: 9_999])) == :ok
+
+    for interval_ms <- [10_000, -1, "1 s"] do
+      assert {:error, reason} =
+               BagExporter.check(options(recording: [chunk_interval_ms: interval_ms]))
+
+      assert reason =~ "chunk_interval_ms", inspect(interval_ms)
+    end
+  end
+
   test "refuses a start while recording, a stop while idle, and what it does not know" do
     state = init!(options())
 
@@ -631,8 +654,32 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert text =~ "Recording replay"
   end
 
-  test "starts the disks it records on as its helper" do
-    assert BagExporter.children([]) == [{Disks, name: Disks}]
+  test "starts the disks it records on as its helper, the unit's storage in its root" do
+    assert BagExporter.children([]) == [
+             {Disks, name: Disks, internal: "/data/recordings", eject_timeout_ms: 10_000}
+           ]
+
+    assert [{Disks, options}] = BagExporter.children(root: "/tmp/recordings", disks: :other)
+    assert options[:name] == :other
+    assert options[:internal] == "/tmp/recordings"
+  end
+
+  test "records in its root on a host", %{tmp_dir: tmp_dir} do
+    root = Path.join(tmp_dir, "host_recordings")
+    name = :"bag_exporter_test_disks_#{System.unique_integer([:positive])}"
+    options = options(root: root, disks: name)
+    [{Disks, disks_options}] = BagExporter.children(options)
+    start_supervised!({Disks, disks_options ++ [repo: TestDisks.start_repo!()]})
+
+    eventually(fn ->
+      match?({:ok, %{free_bytes: free}} when free != nil, Disks.fetch(name, "internal"))
+    end)
+
+    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {_stopped, _state} = stop!(state)
+
+    assert Path.dirname(started.folder) == root
+    assert File.exists?(Path.join(started.folder, "metadata.yaml"))
   end
 
   test "terminate/2 closes the recording" do

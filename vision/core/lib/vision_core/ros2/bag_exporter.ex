@@ -89,18 +89,25 @@ defmodule VisionCore.Ros2.BagExporter do
       and `:stamp`.
     * `:disks` (`VisionCore.Disks`) — the name of the `VisionCore.Disks`
       it starts and records on.
+    * `:root` (`"/data/recordings"`) — the recordings folder of the
+      unit's own storage, the disk `internal`; another folder on a host.
+      `check/1` refuses one that is no path.
     * `:free_floor_bytes` (`1_000_000_000`) — the free bytes a disk keeps:
       a recording starts on a disk above it and leaves one below it.
       `check/1` refuses one that is no count of bytes.
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
       `:compression`, `:max_file_bytes`, `:queue` and
-      `:chunk_interval_ms`.
+      `:chunk_interval_ms`. `check/1` refuses a `:chunk_interval_ms` not
+      below the 10 s an eject waits for the recording to leave the disk,
+      which it checks once a chunk interval.
     * `:parameters` (`&VisionCore.Parameters.groups/0`) — the parameter
       groups to attach, none when it exits.
     * `:clock_synchronized?` — whether the clock is synchronized, the
       `:synchronized?` of `VisionCore.Ros2.Bag.Clock.new/3`.
     * `:jpeg_codec` (`VisionCore.Jpeg`) and `:config` (the active
       `VisionCore.Config`), which `VisionCore.Exporters` gives.
+
+  `check/1` refuses any other option but the exporter's `:id`.
   """
   @behaviour VisionCore.Exporter
 
@@ -116,6 +123,21 @@ defmodule VisionCore.Ros2.BagExporter do
   alias VisionCore.Stereo.Pair
 
   @free_floor_bytes 1_000_000_000
+  @root "/data/recordings"
+  # A recording leaves an ejecting disk at its next check, a chunk interval later at most.
+  @eject_timeout_ms 10_000
+  @known_options [
+    :id,
+    :presets,
+    :disks,
+    :root,
+    :free_floor_bytes,
+    :recording,
+    :parameters,
+    :clock_synchronized?,
+    :jpeg_codec,
+    :config
+  ]
   @queue 64
   @check_interval_ms 1_000
   @clocks [:system, :since_start, :automatic]
@@ -131,7 +153,13 @@ defmodule VisionCore.Ros2.BagExporter do
   def delivery(_options), do: {:queue, @queue}
 
   @impl Exporter
-  def children(options), do: [{Disks, name: disks(options)}]
+  def children(options),
+    do: [
+      {Disks,
+       name: disks(options),
+       internal: Keyword.get(options, :root, @root),
+       eject_timeout_ms: @eject_timeout_ms}
+    ]
 
   defp disks(options), do: Keyword.get(options, :disks, Disks)
 
@@ -154,12 +182,31 @@ defmodule VisionCore.Ros2.BagExporter do
   def check(options) do
     presets = Keyword.get(options, :presets, [])
 
+    root = Keyword.get(options, :root, @root)
+
+    chunk_interval_ms =
+      options |> Keyword.get(:recording, []) |> Keyword.get(:chunk_interval_ms, 0)
+
     cond do
+      (unknown = Keyword.keys(options) -- @known_options) != [] ->
+        {:error,
+         "it takes no option #{Enum.map_join(unknown, ", ", &inspect/1)}, only " <>
+           Enum.map_join(@known_options, ", ", &inspect/1)}
+
       not (is_list(presets) and Keyword.keyword?(presets)) ->
         {:error, "its presets: is not a keyword list: #{inspect(presets)}"}
 
       not match?(floor when is_integer(floor) and floor >= 0, free_floor(options)) ->
         {:error, "its free_floor_bytes: is not a count of bytes: #{inspect(free_floor(options))}"}
+
+      not (is_binary(root) and root != "") ->
+        {:error, "its root: is not a folder's path: #{inspect(root)}"}
+
+      chunk_interval_ms not in 0..(@eject_timeout_ms - 1)//1 ->
+        {:error,
+         "its recording: chunk_interval_ms: is not a time in ms below #{@eject_timeout_ms}, " <>
+           "the time an eject waits for the recording to leave the disk: " <>
+           inspect(chunk_interval_ms)}
 
       (unknown = Keyword.keys(presets) -- Preset.names()) != [] ->
         {:error,

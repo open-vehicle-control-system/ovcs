@@ -209,7 +209,7 @@ The bag exporter takes every value, queued up to 64 per output. The runner's dro
 
 ### Disks
 
-A disk is the unit's own storage, `internal`, which records in `/data/recordings`, or a USB disk formatted f2fs or ext4. [`VisionCore.Disks`](../../vision/core/lib/vision_core/disks.ex), which the bag exporter starts, keeps them:
+A disk is the unit's own storage, `internal`, which records in `/data/recordings`, or a USB disk formatted f2fs or ext4. Set another folder for `internal` with the bag exporter's `root:`. [`VisionCore.Disks`](../../vision/core/lib/vision_core/disks.ex), which the bag exporter starts, keeps them:
 
 1. **Find.** It looks at the USB disks every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; `VisionCore.Disks.format/3` makes it f2fs.
 2. **Mount.** It mounts a USB disk at `/data/disks/<uuid>`. Its recordings go in `recordings/` there.
@@ -222,7 +222,7 @@ Each disk a recording goes on holds a part of it, in a folder of the same name w
 > [!WARNING]
 > A disk pulled out without ejecting loses the chunk being written, up to a second of messages, and its last file has no summary. Eject it first with `VisionCore.Disks.eject/2`: the recording closes its file and goes on on the next disk, then the disk is unmounted.
 
-A run on a host watches no USB disk: its only disk is `internal`.
+A run on a host watches no USB disk: its only disk is `internal`. Give it a folder you can write with `root:`.
 
 ## A new calibration
 
