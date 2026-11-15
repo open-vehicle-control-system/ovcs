@@ -37,6 +37,19 @@ defmodule VisionCore.Inference.PortBackend do
   does not exit (`VisionCore.PortProcess`), so a program wedged on its
   accelerator does not keep it from the next one.
 
+  ## Lanes
+
+  A backend whose program runs several models, such as networks on one
+  accelerator, names them as its lanes (`c:lanes/1`), from its settings.
+  Each lane carries its own request in flight, its own reply tag and its
+  own inference times: `submit/4` and `inference_times/2` take the lane.
+  Such a backend builds a lane's request, reads a packet's lane and gives
+  a lane's reply tag from its settings (`c:lane_request/4`,
+  `c:lane_parse/2`, `c:lane_reply_tag/2`). A backend without lanes has
+  one, `:default`, which `submit/3` and `inference_times/1` use. The Port
+  is one: when it exits or is closed, every lane's request in flight is
+  answered with `nil`.
+
   ## The inference time
 
   A reply may carry the accelerator's time for it. `inference_times/1`
@@ -63,6 +76,7 @@ defmodule VisionCore.Inference.PortBackend do
   @log_tag 2
 
   # Detects a wedged Port; not a latency budget.
+  @default_lane :default
   @default_infer_timeout_ms 2_000
   @default_reopen_delays_ms [1_000, 2_000, 5_000, 10_000, 30_000]
 
@@ -90,8 +104,13 @@ defmodule VisionCore.Inference.PortBackend do
   @doc "The words of the backend's log lines."
   @callback wording(settings()) :: wording()
 
-  @doc "The inference step the backend declares in `VisionCore.Parameters`."
-  @callback inference_group(settings()) :: VisionCore.Parameters.group_declaration()
+  @doc "The inference steps the backend declares in `VisionCore.Parameters`, one a lane."
+  @callback inference_group(settings()) ::
+              VisionCore.Parameters.group_declaration()
+              | [VisionCore.Parameters.group_declaration()]
+
+  @doc "The lanes the program serves, `[:default]` without this callback."
+  @callback lanes(settings()) :: [atom(), ...]
 
   @doc """
   What the Port is opened on, made ready before each opening, in a task:
@@ -109,6 +128,25 @@ defmodule VisionCore.Inference.PortBackend do
   @doc "The packet that asks the program for the inference `sequence` on `input`."
   @callback request(sequence :: non_neg_integer(), input :: term()) :: iodata()
 
+  @doc "As `c:request/2`, on `lane`, for a backend with lanes."
+  @callback lane_request(
+              settings(),
+              lane :: atom(),
+              sequence :: non_neg_integer(),
+              input :: term()
+            ) ::
+              iodata()
+
+  @doc "As `c:parse/1`, naming the packet's lane, for a backend with lanes."
+  @callback lane_parse(settings(), packet :: binary()) ::
+              {:ok, lane :: atom(), sequence :: non_neg_integer(), result :: term(),
+               time_us :: non_neg_integer() | nil}
+              | {:cut_short, lane :: atom(), sequence :: non_neg_integer()}
+              | :error
+
+  @doc "As `c:reply_tag/0`, for `lane`, for a backend with lanes."
+  @callback lane_reply_tag(settings(), lane :: atom()) :: atom()
+
   @doc """
   What a packet of the program that is no log line says: the result of
   the inference `sequence` and its time in microseconds, `nil` when it
@@ -124,7 +162,14 @@ defmodule VisionCore.Inference.PortBackend do
   @doc "The tag of the message a caller receives its result in."
   @callback reply_tag() :: atom()
 
-  @optional_callbacks prepare: 1
+  @optional_callbacks prepare: 1,
+                      lanes: 1,
+                      request: 2,
+                      parse: 1,
+                      reply_tag: 0,
+                      lane_request: 4,
+                      lane_parse: 2,
+                      lane_reply_tag: 2
 
   @doc "Starts `backend`'s Port process; see the module doc for `opts`."
   @spec start_link(module(), keyword()) :: GenServer.on_start()
@@ -138,8 +183,13 @@ defmodule VisionCore.Inference.PortBackend do
   """
   @spec submit(GenServer.server(), non_neg_integer(), term()) ::
           :ok | {:error, :busy | :unavailable}
-  def submit(server, sequence, input) do
-    GenServer.call(server, {:submit, sequence, input, self()})
+  def submit(server, sequence, input), do: submit(server, @default_lane, sequence, input)
+
+  @doc "As `submit/3`, on `lane`; `{:error, :unavailable}` on a lane the backend has not."
+  @spec submit(GenServer.server(), atom(), non_neg_integer(), term()) ::
+          :ok | {:error, :busy | :unavailable}
+  def submit(server, lane, sequence, input) do
+    GenServer.call(server, {:submit, lane, sequence, input, self()})
   catch
     :exit, _ -> {:error, :unavailable}
   end
@@ -164,10 +214,10 @@ defmodule VisionCore.Inference.PortBackend do
   the last call, in microseconds, which this starts again; `nil` until
   it has reported one since it last opened, and when the backend is gone.
   """
-  @spec inference_times(GenServer.server()) ::
+  @spec inference_times(GenServer.server(), atom()) ::
           %{sum_us: non_neg_integer(), count: non_neg_integer()} | nil
-  def inference_times(server) do
-    GenServer.call(server, :inference_times)
+  def inference_times(server, lane \\ @default_lane) do
+    GenServer.call(server, {:inference_times, lane})
   catch
     :exit, _ -> nil
   end
@@ -209,6 +259,7 @@ defmodule VisionCore.Inference.PortBackend do
     Process.flag(:trap_exit, true)
     {infer_timeout_ms, reopen_delays_ms} = timings!(opts)
     settings = backend.init(opts)
+    lanes = lanes(backend, settings)
 
     state = %{
       backend: backend,
@@ -222,28 +273,36 @@ defmodule VisionCore.Inference.PortBackend do
       # The task preparing what the Port opens on, until it is done.
       opening: nil,
       failures: 0,
-      inflight: nil,
-      times: nil,
+      lanes: lanes,
+      inflight: %{},
+      times: Map.new(lanes, &{&1, nil}),
       unreadable_logged: false
     }
 
     if Process.whereis(VisionCore.Parameters),
       do:
         :ok =
-          VisionCore.Parameters.declare([inference_group(backend, settings, infer_timeout_ms)])
+          VisionCore.Parameters.declare(inference_groups(backend, settings, infer_timeout_ms))
 
     {:ok, start_opening(state)}
   end
 
-  # The backend's step, with the timeout every Port has, fixed at start.
-  defp inference_group(backend, settings, infer_timeout_ms) do
+  defp lanes(backend, settings) do
+    if function_exported?(backend, :lanes, 1), do: backend.lanes(settings), else: [@default_lane]
+  end
+
+  # The backend's steps, each with the timeout every Port has, fixed at start.
+  defp inference_groups(backend, settings, infer_timeout_ms) do
     timeout =
       VisionCore.Stereo.Parameters.build_parameter(
         {:infer_timeout_ms, infer_timeout_ms},
         "Longest wait for an inference before the Port is restarted, in ms"
       )
 
-    Map.update!(backend.inference_group(settings), :parameters, &(&1 ++ [timeout]))
+    settings
+    |> backend.inference_group()
+    |> List.wrap()
+    |> Enum.map(fn group -> Map.update!(group, :parameters, &(&1 ++ [timeout])) end)
   end
 
   defp start_opening(%{backend: backend, settings: settings} = state) do
@@ -286,19 +345,56 @@ defmodule VisionCore.Inference.PortBackend do
   defp reopen_delay_ms(%{reopen_delays_ms: delays_ms, failures: failures}),
     do: Enum.at(delays_ms, failures, List.last(delays_ms))
 
-  # Answers the request in flight with no result and reopens the Port after the next wait.
+  # Answers every request in flight with no result and reopens the Port after the next wait.
   defp port_down(state) do
-    state = answer_inflight(state, nil)
+    state = Enum.reduce(Map.keys(state.inflight), state, &answer_inflight(&2, &1, nil))
     Process.send_after(self(), :reopen, reopen_delay_ms(state))
-    %{state | port: nil, os_pid: nil, times: nil, failures: state.failures + 1}
+
+    %{
+      state
+      | port: nil,
+        os_pid: nil,
+        times: Map.new(state.lanes, &{&1, nil}),
+        failures: state.failures + 1
+    }
   end
 
-  defp answer_inflight(%{inflight: nil} = state, _result), do: state
+  defp answer_inflight(state, lane, result) do
+    case Map.pop(state.inflight, lane) do
+      {nil, _inflight} ->
+        state
 
-  defp answer_inflight(%{inflight: inflight} = state, result) do
-    Process.cancel_timer(inflight.timer)
-    send(inflight.reply_to, {state.backend.reply_tag(), inflight.sequence, result})
-    %{state | inflight: nil}
+      {request, inflight} ->
+        Process.cancel_timer(request.timer)
+        send(request.reply_to, {reply_tag(state, lane), request.sequence, result})
+        %{state | inflight: inflight}
+    end
+  end
+
+  defp laned?(state), do: function_exported?(state.backend, :lanes, 1)
+
+  defp reply_tag(state, lane) do
+    if laned?(state),
+      do: state.backend.lane_reply_tag(state.settings, lane),
+      else: state.backend.reply_tag()
+  end
+
+  defp request(state, lane, sequence, input) do
+    if laned?(state),
+      do: state.backend.lane_request(state.settings, lane, sequence, input),
+      else: state.backend.request(sequence, input)
+  end
+
+  defp parse(state, packet) do
+    if laned?(state) do
+      state.backend.lane_parse(state.settings, packet)
+    else
+      case state.backend.parse(packet) do
+        {:ok, sequence, result, time_us} -> {:ok, @default_lane, sequence, result, time_us}
+        {:cut_short, sequence} -> {:cut_short, @default_lane, sequence}
+        :error -> :error
+      end
+    end
   end
 
   @impl GenServer
@@ -306,28 +402,42 @@ defmodule VisionCore.Inference.PortBackend do
   def handle_call(:state, _from, %{port: nil} = state), do: {:reply, :starting, state}
   def handle_call(:state, _from, state), do: {:reply, :running, state}
 
-  def handle_call(:inference_times, _from, %{times: nil} = state), do: {:reply, nil, state}
-
   # Once a time has been reported, a window without one is zero, not unknown.
-  def handle_call(:inference_times, _from, state),
-    do: {:reply, state.times, %{state | times: %{sum_us: 0, count: 0}}}
+  def handle_call({:inference_times, lane}, _from, state) do
+    case state.times do
+      %{^lane => nil} -> {:reply, nil, state}
+      %{^lane => times} -> {:reply, times, put_in(state.times[lane], %{sum_us: 0, count: 0})}
+      _no_lane -> {:reply, nil, state}
+    end
+  end
 
-  def handle_call({:submit, _sequence, _input, _reply_to}, _from, %{port: nil} = state),
+  def handle_call({:submit, _lane, _sequence, _input, _reply_to}, _from, %{port: nil} = state),
     do: {:reply, {:error, :unavailable}, state}
 
-  def handle_call({:submit, _sequence, _input, _reply_to}, _from, %{inflight: inflight} = state)
-      when not is_nil(inflight),
-      do: {:reply, {:error, :busy}, state}
+  def handle_call({:submit, lane, sequence, input, reply_to}, _from, state) do
+    cond do
+      lane not in state.lanes ->
+        {:reply, {:error, :unavailable}, state}
 
-  def handle_call({:submit, sequence, input, reply_to}, _from, state) do
-    case command(state.port, state.backend.request(sequence, input)) do
-      :ok ->
-        timer = Process.send_after(self(), {:infer_timeout, sequence}, state.infer_timeout_ms)
-        inflight = %{sequence: sequence, reply_to: reply_to, timer: timer}
-        {:reply, :ok, %{state | inflight: inflight}}
+      Map.has_key?(state.inflight, lane) ->
+        {:reply, {:error, :busy}, state}
 
-      :closed ->
-        {:reply, {:error, :unavailable}, port_down(state)}
+      true ->
+        case command(state.port, request(state, lane, sequence, input)) do
+          :ok ->
+            timer =
+              Process.send_after(
+                self(),
+                {:infer_timeout, lane, sequence},
+                state.infer_timeout_ms
+              )
+
+            request = %{sequence: sequence, reply_to: reply_to, timer: timer}
+            {:reply, :ok, put_in(state.inflight[lane], request)}
+
+          :closed ->
+            {:reply, {:error, :unavailable}, port_down(state)}
+        end
     end
   end
 
@@ -357,31 +467,36 @@ defmodule VisionCore.Inference.PortBackend do
   end
 
   def handle_info({port, {:data, packet}}, %{port: port} = state) do
-    case state.backend.parse(packet) do
-      {:ok, sequence, result, time_us} ->
-        {:noreply, deliver(%{state | unreadable_logged: false}, sequence, result, time_us)}
+    case parse(state, packet) do
+      {:ok, lane, sequence, result, time_us} ->
+        state = %{state | unreadable_logged: false}
+        {:noreply, deliver(state, lane, sequence, result, time_us)}
 
-      {:cut_short, sequence} ->
-        {:noreply, state |> note_unreadable("cut short") |> answer_cut_short(sequence)}
+      {:cut_short, lane, sequence} ->
+        {:noreply, state |> note_unreadable("cut short") |> answer_cut_short(lane, sequence)}
 
       :error ->
         {:noreply, note_unreadable(state, "none it knows")}
     end
   end
 
-  def handle_info({:infer_timeout, sequence}, %{inflight: %{sequence: sequence}} = state) do
-    %{wording: wording} = state
+  def handle_info({:infer_timeout, lane, sequence}, state) do
+    case state.inflight do
+      %{^lane => %{sequence: ^sequence}} ->
+        %{wording: wording} = state
 
-    Logger.warning(
-      "#{wording.label} #{wording.input} #{sequence} not answered in " <>
-        "#{state.infer_timeout_ms} ms; restarting #{wording.program}"
-    )
+        Logger.warning(
+          "#{wording.label} #{wording.input} #{sequence} not answered in " <>
+            "#{state.infer_timeout_ms} ms; restarting #{wording.program}"
+        )
 
-    PortProcess.close(state.port)
-    {:noreply, port_down(state)}
+        PortProcess.close(state.port)
+        {:noreply, port_down(state)}
+
+      _stale ->
+        {:noreply, state}
+    end
   end
-
-  def handle_info({:infer_timeout, _stale_sequence}, state), do: {:noreply, state}
 
   def handle_info({port, {:exit_status, status}}, %{port: port} = state) do
     Logger.error("#{state.wording.label} #{state.wording.program} exited with status #{status}")
@@ -399,13 +514,17 @@ defmodule VisionCore.Inference.PortBackend do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  defp deliver(%{inflight: %{sequence: sequence}} = state, sequence, result, time_us) do
-    state = answer_inflight(state, result)
-    %{state | failures: 0, times: add_time(state.times, time_us)}
-  end
+  defp deliver(state, lane, sequence, result, time_us) do
+    case state.inflight do
+      %{^lane => %{sequence: ^sequence}} ->
+        state = answer_inflight(state, lane, result)
+        %{state | failures: 0, times: Map.update!(state.times, lane, &add_time(&1, time_us))}
 
-  # Late reply for a timed-out request: dropped.
-  defp deliver(state, _stale_sequence, _result, _time_us), do: state
+      # A late reply for a timed-out request: dropped.
+      _stale ->
+        state
+    end
+  end
 
   defp note_unreadable(%{unreadable_logged: true} = state, _what), do: state
 
@@ -414,10 +533,12 @@ defmodule VisionCore.Inference.PortBackend do
     %{state | unreadable_logged: true}
   end
 
-  defp answer_cut_short(%{inflight: %{sequence: sequence}} = state, sequence),
-    do: answer_inflight(state, nil)
-
-  defp answer_cut_short(state, _stale_sequence), do: state
+  defp answer_cut_short(state, lane, sequence) do
+    case state.inflight do
+      %{^lane => %{sequence: ^sequence}} -> answer_inflight(state, lane, nil)
+      _stale -> state
+    end
+  end
 
   defp add_time(times, nil), do: times
   defp add_time(nil, time_us), do: %{sum_us: time_us, count: 1}
