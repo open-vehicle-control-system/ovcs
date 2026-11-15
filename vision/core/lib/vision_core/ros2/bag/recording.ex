@@ -17,10 +17,10 @@ defmodule VisionCore.Ros2.Bag.Recording do
   the disk, so a power cut loses at most that much. Past `:max_file_bytes`
   the file is closed and the next message opens the next one.
   `metadata.yaml` is rewritten, through a synced temporary file, at each
-  new file and at the stop. The first file holds the attachments and, as a
-  Metadata record named `recording`, the metadata, which `metadata.yaml`
-  also carries as its custom data along with each topic's drops, as
-  `dropped:<topic>`.
+  new file and at the stop. The first file holds the attachments, at
+  `:start_time_ns`, and, as a Metadata record named `recording`, the
+  metadata, which `metadata.yaml` also carries as its custom data along
+  with each topic's drops, as `dropped:<topic>`.
 
   Log times never go back within a recording, as MCAP readers expect: a
   log time earlier than the latest written is raised to it, and the time
@@ -52,6 +52,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   @options [
     :dir,
     :name,
+    :start_time_ns,
     compression: :zstd,
     max_file_bytes: 2_000_000_000,
     queue: 256,
@@ -78,6 +79,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   Options:
     * `:dir` - the recording's folder
     * `:name` - its files' names before `_<n>.mcap`
+    * `:start_time_ns` - the recording's start on its messages' clock, the attachments' time
     * `:compression` - `:zstd` or `:none`, its chunks' (`:zstd`)
     * `:max_file_bytes` - the size past which a file is closed (`2_000_000_000`)
     * `:queue` - the messages that may wait for this process (`256`)
@@ -146,6 +148,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
       max_file_bytes: Keyword.fetch!(opts, :max_file_bytes),
       chunk_interval_ms: Keyword.fetch!(opts, :chunk_interval_ms),
       attachments: Keyword.fetch!(opts, :attachments),
+      start_time_ns: Keyword.fetch!(opts, :start_time_ns),
       metadata: Keyword.fetch!(opts, :metadata),
       table: table,
       writer: nil,
@@ -314,11 +317,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
   end
 
   defp add_attachments_and_metadata(writer, state) do
-    now = System.system_time(:nanosecond)
+    time = state.start_time_ns
 
     writer =
       Enum.reduce(state.attachments, writer, fn {name, media_type, contents}, writer ->
-        Writer.add_attachment(writer, name, media_type, now, now, contents)
+        Writer.add_attachment(writer, name, media_type, time, time, contents)
       end)
 
     if state.metadata == %{},

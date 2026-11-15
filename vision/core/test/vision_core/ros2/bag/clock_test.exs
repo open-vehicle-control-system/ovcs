@@ -69,4 +69,12 @@ defmodule VisionCore.Ros2.Bag.ClockTest do
     assert stamp.(@start + 2_000_000_123) == %Time{sec: 2, nanosec: 123}
     assert stamp.(@start - 10) == %Time{sec: 0, nanosec: 0}
   end
+
+  test "start_time_ns/1 is the time of the start" do
+    since_start = Clock.new(:since_start, @start, synchronized(true))
+    system = Clock.new(:system, @start, synchronized(true))
+
+    assert Clock.start_time_ns(since_start) == 0
+    assert Clock.start_time_ns(system) == Timing.export_time_from_monotonic(@start)
+  end
 end

@@ -15,14 +15,16 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
   # Long enough that no chunk closes on its own in a test that does not wait for one.
   @no_chunk_close [chunk_interval_ms: 60_000]
 
-  defp start!(dir, opts),
-    do: start_supervised!({Recording, [dir: bag_dir(dir), name: "bag"] ++ opts})
+  defp start!(dir, opts), do: start_supervised!({Recording, recording_options(dir, opts)})
 
   # Linked to the test process, which does not trap exits: a crash would end the test.
   defp start_linked!(dir, opts) do
-    {:ok, pid} = Recording.start_link([dir: bag_dir(dir), name: "bag"] ++ opts)
+    {:ok, pid} = Recording.start_link(recording_options(dir, opts))
     pid
   end
+
+  defp recording_options(dir, opts),
+    do: Keyword.merge([dir: bag_dir(dir), name: "bag", start_time_ns: 0], opts)
 
   defp bag_dir(dir), do: Path.join(dir, "bag")
   defp file_path(dir, index), do: Path.join(bag_dir(dir), "bag_#{index}.mcap")
@@ -161,6 +163,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
           max_file_bytes: 1,
           chunk_interval_ms: 1,
           attachments: [{"left.yaml", "application/yaml", "fx: 1\n"}],
+          start_time_ns: 500,
           metadata: %{"preset" => "replay"}
         )
 
@@ -198,11 +201,19 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       end
     end
 
-    test "the attachments and metadata go in the first file only", %{tmp_dir: dir} do
+    test "the attachments and metadata go in the first file only, at the start time",
+         %{tmp_dir: dir} do
       [first, second, third] = for index <- 0..2, do: read_file!(dir, index)
 
-      assert [%{name: "left.yaml", media_type: "application/yaml", data: "fx: 1\n"}] =
-               first.attachments
+      assert [
+               %{
+                 name: "left.yaml",
+                 media_type: "application/yaml",
+                 data: "fx: 1\n",
+                 log_time: 500,
+                 create_time: 500
+               }
+             ] = first.attachments
 
       assert [%{name: "recording", metadata: %{"preset" => "replay"}}] = first.metadata
       assert second.attachments == [] and third.attachments == []

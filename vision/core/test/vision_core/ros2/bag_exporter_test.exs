@@ -213,11 +213,18 @@ defmodule VisionCore.Ros2.BagExporterTest do
     {_stopped, _state} = state |> hand(options) |> stop!()
 
     now_ns = System.os_time(:nanosecond)
-    {files, _metadata} = bag!(started.folder)
+    {[file] = files, _metadata} = bag!(started.folder)
 
     for {_topic, log_time, stamp} <- stamped(files) do
       assert abs(now_ns - stamp) < 5_000_000_000
       assert abs(now_ns - log_time) < 5_000_000_000
+    end
+
+    first_log_time = file.messages |> Enum.map(& &1.log_time) |> Enum.min()
+
+    for attachment <- file.attachments do
+      assert attachment.log_time == attachment.create_time
+      assert attachment.log_time in (now_ns - 5_000_000_000)..first_log_time
     end
   end
 
@@ -228,13 +235,18 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert %{clock: "automatic", clock_in_use: "since_start", synchronized: false} = started
   end
 
-  test "attaches the calibration files in use and the parameters", %{tmp_dir: tmp_dir} do
+  test "attaches the calibration files in use and the parameters, at the clock's start",
+       %{tmp_dir: tmp_dir} do
     options = options(tmp_dir)
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+
+    {started, state} =
+      options |> init!() |> start!(%{"preset" => "replay", "clock" => "since_start"})
+
     stop!(state)
 
     {[file], _metadata} = bag!(started.folder)
     attachments = Map.new(file.attachments, &{&1.name, &1})
+    assert Enum.all?(file.attachments, &(&1.log_time == 0 and &1.create_time == 0))
 
     assert Map.keys(attachments) == [
              "calibration/stereo_left.yaml",

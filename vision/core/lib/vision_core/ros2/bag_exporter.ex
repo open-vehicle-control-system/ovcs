@@ -29,8 +29,8 @@ defmodule VisionCore.Ros2.BagExporter do
 
   The clock stamps every header and transform, and each message's log
   time, the time the message is handed to the recording. The first MCAP
-  file attaches the calibration files in use (`VisionCore.Calibration`),
-  as `calibration/<file>`, and the parameters
+  file attaches, at the clock's start, the calibration files in use
+  (`VisionCore.Calibration`), as `calibration/<file>`, and the parameters
   (`VisionCore.Parameters.groups/0`) as `parameters.json`, and carries as
   its metadata, as `metadata.yaml` does: the preset, the clock chosen, the
   clock in use and whether it was synchronized, the start, the vehicle and
@@ -253,6 +253,7 @@ defmodule VisionCore.Ros2.BagExporter do
       |> Keyword.merge(
         dir: dir,
         name: name,
+        start_time_ns: Clock.start_time_ns(clock),
         attachments: attachments(state),
         metadata: metadata(preset, clock_choice, clock, started_at)
       )

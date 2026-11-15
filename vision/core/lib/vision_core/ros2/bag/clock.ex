@@ -61,6 +61,10 @@ defmodule VisionCore.Ros2.Bag.Clock do
   def time_ns(%__MODULE__{mode: :since_start, start_monotonic_ns: start}, monotonic_ns),
     do: max(monotonic_ns - start, 0)
 
+  @doc "The time of the recording's start, which a message handed at the start gets."
+  @spec start_time_ns(t()) :: non_neg_integer()
+  def start_time_ns(%__MODULE__{start_monotonic_ns: start} = clock), do: time_ns(clock, start)
+
   @doc "The clock as the ROS 2 builders' `:stamp` option takes it, giving `time_ns/2`'s time."
   @spec stamp(t()) :: VisionCore.Ros2.Stamp.stamp_function()
   def stamp(%__MODULE__{} = clock) do
