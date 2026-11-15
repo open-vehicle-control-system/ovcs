@@ -1,9 +1,9 @@
 ---
 title: Vision channels
-description: How a program follows the vision unit's status, previews, detections and segmentation live over Phoenix channels.
+description: How a program follows the vision unit's status, previews, detections, segmentation, calibration and parameters live over Phoenix channels.
 ---
 
-Follow the vision unit live from a program: its status, its camera and depth previews, and its pipelines' detections and label grids. You need the unit's address and a Phoenix channels client. [Vision API](./api.md) covers the HTTP resources.
+Follow the vision unit live from a program: its status, its camera and depth previews, its pipelines' detections and label grids, its calibration and its parameters. You need the unit's address and a Phoenix channels client. [Vision API](./api.md) covers the HTTP resources.
 
 The unit serves a socket next to the dashboard, over HTTPS, at `/sockets/dashboard`. It speaks the Phoenix channels protocol. With the [`phoenix`](https://www.npmjs.com/package/phoenix) JavaScript client, in a browser or in Node.js:
 
@@ -284,3 +284,18 @@ calibration.join()
 ```
 
 Joining turns the unit's board detection on, until the last client leaves. The channel takes no push: every change goes through the routes, and a pushed event gets an error reply. On a unit with nothing to calibrate, the join is refused with `{"reason": "nothing to calibrate"}`; while the unit's calibration session is not running, with `{"reason": "unavailable"}`, which the dashboard retries.
+
+## Parameters
+
+`parameters` follows the unit's [stages and parameters](./api.md#stages-and-parameters). Each event is `stages`, the document `GET /api/stages?include=parameters` answers:
+
+- On join, and each time the unit changes a parameter, the stages with every parameter, `meta.complete` true and `meta.unsaved` the count of unsaved parameters. A change is a parameter set, saved, discarded or reset, from any client, or a component starting or stopping; the changes of 100 ms come as one event.
+- Each second at most, while a client is joined, the stages whose values changed on their own, without the others: `meta.complete` false, without `meta.unsaved`. A stage with a status or a parameter its automatic mode sets, such as the cameras' exposure under auto exposure, changes on its own. Replace those stages and their parameters only.
+
+```javascript
+const parameters = socket.channel('parameters')
+parameters.on('stages', ({ data, included, meta }) => console.log(meta.complete, data.length, included.length))
+parameters.join()
+```
+
+The unit reads its parameters for the channel once, whatever the number of clients, and reads nothing while none is joined. The channel takes no push: parameters are set, saved, discarded and reset through the [API](./api.md#stages-and-parameters). While the unit's parameters are not running, the join is refused with `{"reason": "unavailable"}`.
