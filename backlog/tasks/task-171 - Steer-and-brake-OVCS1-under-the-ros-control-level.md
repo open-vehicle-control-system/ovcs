@@ -1,10 +1,11 @@
 ---
-id: TASK-137
+id: TASK-171
 title: Steer and brake OVCS1 under the ros control level
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-13 13:30'
+updated_date: '2026-11-15 17:10'
 labels:
   - vms
   - ovcs1
