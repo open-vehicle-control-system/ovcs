@@ -99,8 +99,8 @@ export const HINTS = {
   calibration: {
     title: 'Calibration',
     text:
-      'The unit has no calibration for its cameras, so it computes no depth. Calibrate them on the Calibration ' +
-      'page: depth starts once a calibration is applied.'
+      'The unit has no calibration for its stereo cameras, so it computes no depth. Calibrate them on their ' +
+      'Calibration page, under Cameras: depth starts once a calibration is applied.'
   },
   connection: {
     title: 'Connection',
@@ -118,7 +118,7 @@ export const HINTS = {
   objects: {
     title: 'Objects',
     text:
-      'Objects the detector found in the latest image, each outlined on the left video with its distance. ' +
+      'Objects the detector found in the latest image, each outlined on the video it was found in, with its distance. ' +
       'An object with no depth in the middle of its box, such as one nearer than the depth can measure, is left out.'
   },
   stereoLoad: {
