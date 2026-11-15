@@ -161,7 +161,7 @@ On a Raspberry Pi 5, a camera of its own can come from a stereo camera's capture
  name: :left,
  driver: VisionCore.Camera.LibCameraStream,
  stream_of: :left,
- max_hz: 10,
+ max_hz: 30,
  outputs: [
    half: [resolution: {1152, 648}, processor: :isp, send: false],
    half_jpeg: [from: :half, format: :jpeg, quality: 80]

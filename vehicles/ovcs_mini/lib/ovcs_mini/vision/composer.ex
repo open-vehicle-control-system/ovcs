@@ -13,7 +13,7 @@ defmodule OvcsMini.Vision.Composer do
 
   The left camera's capture also makes a colour camera of its own,
   `:left` (`VisionCore.Camera.LibCameraStream`): a second ISP stream at
-  half the sensor mode, sent as a JPEG on at most 10 frames a second
+  half the sensor mode, sent as a JPEG on at most 30 frames a second
   (`max_hz`). The stereo frames do not change.
 
   The ROS 2 exporter publishes the rectified pair, which the cockpit
@@ -126,7 +126,7 @@ defmodule OvcsMini.Vision.Composer do
      name: :left,
      driver: VisionCore.Camera.LibCameraStream,
      stream_of: :left,
-     max_hz: 10,
+     max_hz: 30,
      outputs: [
        half: [resolution: {1152, 648}, processor: :isp, send: false],
        half_jpeg: [from: :half, format: :jpeg, quality: 80]

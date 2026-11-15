@@ -52,13 +52,13 @@ defmodule OvcsMini.VisionComposerTest do
     end
   end
 
-  test "the left camera of its own is a second stream of the stereo unit's left capture, a JPEG at half the sensor mode, at most 10 a second" do
+  test "the left camera of its own is a second stream of the stereo unit's left capture, a JPEG at half the sensor mode, at most 30 a second" do
     config = OvcsMini.Vision.Composer.config(:target)
     camera = camera(config, :left)
 
     assert camera[:driver] == LibCameraStream
     assert camera[:stream_of] == :left
-    assert camera[:max_hz] == 10
+    assert camera[:max_hz] == 30
 
     assert camera[:outputs] == [
              half: [resolution: {1152, 648}, processor: :isp, send: false],
@@ -76,7 +76,7 @@ defmodule OvcsMini.VisionComposerTest do
     stereo = Keyword.fetch!(components, :stereo)
 
     assert stereo[:left][:outputs] == camera[:outputs]
-    assert stereo[:left][:outputs_max_hz] == 10
+    assert stereo[:left][:outputs_max_hz] == 30
     assert {:ok, _outputs} = LibCamera.capture_outputs(stereo[:left])
     refute Keyword.has_key?(stereo[:right], :outputs)
     assert camera(%{config | components: components}, :left)[:side_label] == "stereo/left"
