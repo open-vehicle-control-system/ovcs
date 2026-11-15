@@ -1,14 +1,18 @@
 //! The detection network: a HEF whose NMS is in-graph, so a request's pixels are letterboxed
-//! in and its boxes read back out, in the request's pixel coordinates.
+//! in and its boxes read back out, in the request's pixel coordinates. A request's image comes
+//! as its pixels or as a JPEG, which the network decodes.
 
 use std::sync::Arc;
 
 use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::nms;
-use detection::protocol::{detections_record, inference_micros, parse_request};
+use detection::protocol::{
+    detections_record, inference_micros, parse_jpeg_request, parse_request, Request,
+};
 use framing::{LogLevel, Writer};
 
 use crate::hailo::{Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
+use crate::jpeg::RgbDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
 
@@ -22,6 +26,8 @@ pub struct Detect {
     score_threshold: f32,
     model_input: Vec<u8>,
     output: Vec<f32>,
+    decoder: RgbDecoder,
+    decoded: Vec<u8>,
 }
 
 impl Detect {
@@ -46,6 +52,8 @@ impl Detect {
             score_threshold,
             model_input: vec![0u8; model_size * model_size * 3],
             output: vec![0f32; output_floats],
+            decoder: RgbDecoder::new()?,
+            decoded: Vec::new(),
             network,
         })
     }
@@ -61,9 +69,38 @@ impl Detect {
 
     /// The reply to the detect request `record`, one whatever happens to it.
     pub fn answer(&mut self, record: &[u8], writer: &Writer) -> Answer {
-        let Some(request) = parse_request(record) else {
+        if let Some(request) = parse_request(record) {
+            return self.answer_request(&request, writer);
+        }
+        let Some(request) = parse_jpeg_request(record) else {
             return Answer::Nothing;
         };
+        let mut decoded = std::mem::take(&mut self.decoded);
+        let answer = match self.decoder.decode(request.jpeg, &mut decoded) {
+            Ok((width, height)) => self.answer_request(
+                &Request {
+                    sequence: request.sequence,
+                    width,
+                    height,
+                    channels: 3,
+                    pixels: &decoded,
+                },
+                writer,
+            ),
+            Err(message) => {
+                log(
+                    writer,
+                    LogLevel::Warning,
+                    &format!("frame {}: {message}", request.sequence),
+                );
+                Answer::Reply(detections_record(request.sequence, &[], None))
+            }
+        };
+        self.decoded = decoded;
+        answer
+    }
+
+    fn answer_request(&mut self, request: &Request, writer: &Writer) -> Answer {
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, self.model_size);
         let mut inference_time = None;

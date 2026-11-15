@@ -1,14 +1,16 @@
 //! The segmentation network: a HEF whose argmax is in-graph, so a request's band is resized to
-//! its input and the class ids it gives, one a pixel, are kept as one a cell.
+//! its input and the class ids it gives, one a pixel, are kept as one a cell. A request's image
+//! comes as its pixels or as a JPEG, which the network decodes.
 
 use std::sync::Arc;
 
 use framing::{LogLevel, Writer};
 use segmentation::band::resize_band;
-use segmentation::protocol::{labels_record, parse_request};
+use segmentation::protocol::{labels_record, parse_jpeg_request, parse_request, Request};
 
 use crate::grid::cell_labels;
 use crate::hailo::{Device, Network, HAILO_FORMAT_TYPE_UINT8};
+use crate::jpeg::RgbDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
 
@@ -20,6 +22,8 @@ pub struct Segment {
     cell_pixels: usize,
     model_input: Vec<u8>,
     output: Vec<u8>,
+    decoder: RgbDecoder,
+    decoded: Vec<u8>,
 }
 
 impl Segment {
@@ -47,6 +51,8 @@ impl Segment {
             cell_pixels,
             model_input: vec![0u8; input.width * input.height * 3],
             output: vec![0u8; network.output_bytes],
+            decoder: RgbDecoder::new()?,
+            decoded: Vec::new(),
             network,
         })
     }
@@ -61,9 +67,40 @@ impl Segment {
 
     /// The reply to the segment request `record`, one whatever happens to it.
     pub fn answer(&mut self, record: &[u8], writer: &Writer) -> Answer {
-        let Some(request) = parse_request(record) else {
+        if let Some(request) = parse_request(record) {
+            return self.answer_request(&request, writer);
+        }
+        let Some(request) = parse_jpeg_request(record) else {
             return Answer::Nothing;
         };
+        let mut decoded = std::mem::take(&mut self.decoded);
+        let answer = match self.decoder.decode(request.jpeg, &mut decoded) {
+            Ok((width, height)) => self.answer_request(
+                &Request {
+                    sequence: request.sequence,
+                    width,
+                    height,
+                    channels: 3,
+                    band_top: request.band_top,
+                    band_height: request.band_height,
+                    pixels: &decoded,
+                },
+                writer,
+            ),
+            Err(message) => {
+                log(
+                    writer,
+                    LogLevel::Warning,
+                    &format!("frame {}: {message}", request.sequence),
+                );
+                Answer::Reply(labels_record(request.sequence, 0, 0, &[], None))
+            }
+        };
+        self.decoded = decoded;
+        answer
+    }
+
+    fn answer_request(&mut self, request: &Request, writer: &Writer) -> Answer {
         let input = self.network.input;
         let mut inference_time = None;
         let outcome = match request.check() {

@@ -150,6 +150,7 @@ dependencies = [
  "detection",
  "framing",
  "segmentation",
+ "turbojpeg",
 ]
 
 [[package]]

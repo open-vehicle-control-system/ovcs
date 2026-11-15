@@ -8,9 +8,10 @@
 //! the tag 10, the network's index, then the reply of its kind:
 //!
 //! - detection (`detection::protocol`): u8 tag 1, u32 sequence, u16 width, u16 height, u8
-//!   channels (1 gray, 3 RGB), pixels; answered with the boxes, in the request's pixel
+//!   channels (1 gray, 3 RGB), pixels, or u8 tag 3, u32 sequence, a JPEG; answered with the boxes, in the request's pixel
 //!   coordinates, the HEF carrying its NMS in-graph.
-//! - segmentation (`segmentation::protocol`): u8 tag 7, an RGB image and a band of its rows;
+//! - segmentation (`segmentation::protocol`): u8 tag 7, an RGB image and a band of its rows,
+//!   or u8 tag 8, a band and a JPEG;
 //!   answered with a class id for each `cell_pixels` square cell of the band resized to the
 //!   HEF's input, whose argmax is in-graph.
 //!
@@ -27,6 +28,8 @@ mod detect;
 mod grid;
 #[cfg(feature = "device")]
 mod hailo;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod jpeg;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod outcome;
 #[cfg(feature = "device")]

@@ -1,10 +1,12 @@
 //! Port records: a detect request in, a detections record out. Scalars are little-endian.
 //!
-//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 RGB), pixels.
+//! Request: u8 tag 1, u32 sequence, u16 width, u16 height, u8 channels (1 grey, 3 RGB), pixels;
+//! or, to a Port that decodes JPEG, u8 tag 3, u32 sequence, a JPEG.
 //! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
 //! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 
 pub const TAG_DETECT: u8 = 1;
+pub const TAG_DETECT_JPEG: u8 = 3;
 const TAG_DETECTIONS: u8 = 1;
 /// tag, sequence, width, height, channels
 const DETECT_HEADER_BYTES: usize = 1 + 4 + 2 + 2 + 1;
@@ -28,6 +30,24 @@ pub struct Detection {
     pub y0: f32,
     pub x1: f32,
     pub y1: f32,
+}
+
+/// A detect request carrying a JPEG, which the Port decodes.
+#[derive(Debug, PartialEq)]
+pub struct JpegRequest<'a> {
+    pub sequence: u32,
+    pub jpeg: &'a [u8],
+}
+
+/// `None` for a short record or a wrong tag: with no sequence to answer, it is skipped.
+pub fn parse_jpeg_request(record: &[u8]) -> Option<JpegRequest<'_>> {
+    if record.len() < 5 || record[0] != TAG_DETECT_JPEG {
+        return None;
+    }
+    Some(JpegRequest {
+        sequence: u32::from_le_bytes([record[1], record[2], record[3], record[4]]),
+        jpeg: &record[5..],
+    })
 }
 
 /// `None` for a short record or a wrong tag: with no sequence to answer, it is skipped.
@@ -120,6 +140,23 @@ mod tests {
         record.push(channels);
         record.extend_from_slice(pixels);
         record
+    }
+
+    #[test]
+    fn reads_a_jpeg_request_and_refuses_another_tag() {
+        let mut record = vec![3];
+        record.extend_from_slice(&7u32.to_le_bytes());
+        record.extend_from_slice(b"jpeg");
+        assert_eq!(
+            parse_jpeg_request(&record),
+            Some(JpegRequest {
+                sequence: 7,
+                jpeg: b"jpeg"
+            })
+        );
+        assert_eq!(parse_jpeg_request(&[3, 7, 0]), None);
+        assert_eq!(parse_jpeg_request(&request(7, 1, 1, 1, &[0])), None);
+        assert_eq!(parse_request(&record), None);
     }
 
     #[test]

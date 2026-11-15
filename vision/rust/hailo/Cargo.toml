@@ -10,6 +10,7 @@ device = ["dep:bindgen"]
 detection = { path = "../detection" }
 framing = { path = "../framing" }
 segmentation = { path = "../segmentation" }
+turbojpeg = { version = "1.5", default-features = false, features = ["cmake", "pkg-config"] }
 
 [build-dependencies]
 bindgen = { version = "0.70", optional = true }

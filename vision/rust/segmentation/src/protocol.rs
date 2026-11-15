@@ -2,12 +2,16 @@
 //!
 //! Request: u8 tag 7, u32 sequence, u16 width, u16 height, u8 channels (3, RGB), u16 band_top,
 //! u16 band_height, pixels. The band is the image's rows `band_top..band_top + band_height`,
-//! full width.
+//! full width. To a Port that decodes JPEG: u8 tag 8, u32 sequence, u16 band_top, u16
+//! band_height, a JPEG, whose rows the band is.
 //! Labels: u8 tag 7, u32 sequence, u16 width, u16 height, width × height class ids (u8, row
 //! by row), then a u32 inference time in µs when the band was inferred, absent otherwise. A
 //! request that cannot be inferred is answered with a 0 × 0 label image.
 
 pub const TAG_SEGMENT: u8 = 7;
+pub const TAG_SEGMENT_JPEG: u8 = 8;
+/// tag, sequence, band_top, band_height
+const SEGMENT_JPEG_HEADER_BYTES: usize = 1 + 4 + 2 + 2;
 const TAG_LABELS: u8 = 7;
 /// tag, sequence, width, height, channels, band_top, band_height
 const SEGMENT_HEADER_BYTES: usize = 1 + 4 + 2 + 2 + 1 + 2 + 2;
@@ -21,6 +25,29 @@ pub struct Request<'a> {
     pub band_top: u16,
     pub band_height: u16,
     pub pixels: &'a [u8],
+}
+
+/// A segment request carrying a JPEG, which the Port decodes, and the band of its rows.
+#[derive(Debug, PartialEq)]
+pub struct JpegRequest<'a> {
+    pub sequence: u32,
+    pub band_top: u16,
+    pub band_height: u16,
+    pub jpeg: &'a [u8],
+}
+
+/// `None` for a short record or a wrong tag: with no sequence to answer, it is skipped.
+pub fn parse_jpeg_request(record: &[u8]) -> Option<JpegRequest<'_>> {
+    if record.len() < SEGMENT_JPEG_HEADER_BYTES || record[0] != TAG_SEGMENT_JPEG {
+        return None;
+    }
+    let u16_at = |at: usize| u16::from_le_bytes([record[at], record[at + 1]]);
+    Some(JpegRequest {
+        sequence: u32::from_le_bytes([record[1], record[2], record[3], record[4]]),
+        band_top: u16_at(5),
+        band_height: u16_at(7),
+        jpeg: &record[SEGMENT_JPEG_HEADER_BYTES..],
+    })
 }
 
 /// `None` for a short record or a wrong tag: with no sequence to answer, it is skipped.
@@ -111,6 +138,26 @@ mod tests {
         record.extend_from_slice(&band_height.to_le_bytes());
         record.extend_from_slice(pixels);
         record
+    }
+
+    #[test]
+    fn reads_a_jpeg_request_and_refuses_another_tag() {
+        let mut record = vec![8];
+        record.extend_from_slice(&9u32.to_le_bytes());
+        record.extend_from_slice(&4u16.to_le_bytes());
+        record.extend_from_slice(&2u16.to_le_bytes());
+        record.extend_from_slice(b"jpeg");
+        assert_eq!(
+            parse_jpeg_request(&record),
+            Some(JpegRequest {
+                sequence: 9,
+                band_top: 4,
+                band_height: 2,
+                jpeg: b"jpeg"
+            })
+        );
+        assert_eq!(parse_jpeg_request(&record[..8]), None);
+        assert_eq!(parse_request(&record), None);
     }
 
     #[test]
