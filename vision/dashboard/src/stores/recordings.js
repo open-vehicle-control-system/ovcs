@@ -11,10 +11,14 @@ import {
   stopRecording
 } from '../services/recordings.js'
 
+// Counts the starts and ends of actions: a read answers only while it has not changed since the read began.
+let generation = 0
+
 /**
  * The bag exporter's recordings and the disks they go on, as the API lists them. `refresh` reads the disks and the
  * recording in progress, `load` every recording, whose metadata the unit reads from the disks. An action is `busy`
- * until it answers; the lists are read again after it, and its failure is the `error` shown until the next action.
+ * until it answers and the lists are read again after it; its failure is the `error` shown until the next action. A
+ * read begun before an action starts or ends is dropped: it may tell what the action changed.
  */
 export const useRecordings = create((set, get) => ({
   recordings: [],
@@ -24,23 +28,26 @@ export const useRecordings = create((set, get) => ({
   busy: null,
   error: null,
   async load() {
+    const begun = generation
     try {
       const [recordings, disks] = await Promise.all([fetchRecordings(), fetchDisks()])
-      set({ recordings, disks, loaded: true, loadError: null })
+      if (begun === generation) set({ recordings, disks, loaded: true, loadError: null })
     } catch (failure) {
-      set({ loadError: failure.message })
+      if (begun === generation) set({ loadError: failure.message })
     }
   },
   async refresh() {
+    const begun = generation
     const live = recording(get())
     try {
       const [disks, current] = await Promise.all([fetchDisks(), live ? fetchRecording(live.id) : null])
+      if (begun !== generation) return
       set({ disks, loadError: null })
       if (!current) return
       if (current.state !== 'recording') return get().load()
       set((state) => ({ recordings: state.recordings.map((listed) => (listed.id === current.id ? current : listed)) }))
     } catch (failure) {
-      set({ loadError: failure.message })
+      if (begun === generation) set({ loadError: failure.message })
     }
   },
   start: (choices) => run(set, get, 'start', () => startRecording(choices)),
@@ -53,15 +60,16 @@ export const useRecordings = create((set, get) => ({
 }))
 
 async function run(set, get, busy, action) {
+  generation += 1
   set({ busy, error: null })
   try {
     await action()
   } catch (failure) {
     set({ error: failure.message })
-  } finally {
-    set({ busy: null })
-    await get().load()
   }
+  generation += 1
+  await get().load()
+  set({ busy: null })
 }
 
 /** The recording in progress, `null` while none records. */
