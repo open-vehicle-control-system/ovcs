@@ -50,10 +50,37 @@ describe('ApiPage', () => {
     expect(screen.getByRole('row', { name: /^detections:<name> / }).textContent).not.toContain('left image')
   })
 
+  it('says the status channel carries what the status bar shows', () => {
+    render(<ApiPage />)
+
+    const status = screen.getByRole('row', { name: /^status / })
+    expect(status.textContent).toContain('status bar')
+    expect(status.textContent).not.toContain('top bar')
+  })
+
+  it('lists every route the API serves', () => {
+    render(<ApiPage />)
+
+    const routes = within(screen.getAllByRole('table')[0])
+      .getAllByRole('row')
+      .slice(1)
+      .map((row) => `${row.cells[0].textContent} ${row.cells[1].textContent}`)
+    expect(routes).toEqual(
+      expect.arrayContaining([
+        'GET /api/board',
+        'GET /api/calibrations/{id}',
+        'GET /api/saved-calibrations?filter[calibration]={id}',
+        'PATCH /api/saved-calibrations/{id}',
+        'DELETE /api/saved-calibrations/{id}',
+        'POST /api/exporters/{id}/actions/{name}'
+      ])
+    )
+  })
+
   it('lists the exporters, and says nothing of the unit but how to reach it', () => {
     render(<ApiPage />)
 
-    expect(screen.getByRole('row', { name: /\/api\/exporters/ }).textContent).toContain('outputs')
+    expect(screen.getByRole('row', { name: /^GET \/api\/exporters What/ }).textContent).toContain('outputs')
     expect(screen.queryByText(/besides ROS 2/)).toBeNull()
   })
 })
