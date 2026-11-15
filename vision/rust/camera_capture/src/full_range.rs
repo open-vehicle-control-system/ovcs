@@ -87,6 +87,9 @@ pub fn chroma_size(width: usize, height: usize) -> (usize, usize) {
 }
 
 /// The first `width` bytes of each of `height` rows `stride` apart, through `table`, into `out`.
+///
+/// Each row is copied before it is mapped: the camera's buffer is not cached, so reading it a
+/// byte at a time costs a memory access per byte, where a copy reads it in wide loads.
 fn map_plane(
     table: &[u8; 256],
     out: &mut Vec<u8>,
@@ -97,7 +100,10 @@ fn map_plane(
 ) {
     out.clear();
     for row in plane.chunks(stride).take(height) {
-        out.extend(row[..width].iter().map(|&value| table[usize::from(value)]));
+        out.extend_from_slice(&row[..width]);
+    }
+    for value in out.iter_mut() {
+        *value = table[usize::from(*value)];
     }
 }
 
