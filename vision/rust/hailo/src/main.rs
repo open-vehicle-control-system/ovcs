@@ -25,6 +25,8 @@ mod arguments;
 #[cfg(feature = "device")]
 mod detect;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod direct;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod grid;
 #[cfg(feature = "device")]
 mod hailo;

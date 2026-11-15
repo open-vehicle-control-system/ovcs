@@ -11,7 +11,7 @@ use detection::protocol::{
 };
 use framing::{LogLevel, Writer};
 
-use crate::hailo::{Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
+use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
 use crate::jpeg::RgbDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
@@ -24,8 +24,6 @@ pub struct Detect {
     model_size: i32,
     class_count: usize,
     score_threshold: f32,
-    model_input: Vec<u8>,
-    output: Vec<f32>,
     decoder: RgbDecoder,
     decoded: Vec<u8>,
 }
@@ -45,13 +43,10 @@ impl Detect {
             ));
         }
         let model_size = input.width;
-        let output_floats = network.output_bytes.div_ceil(std::mem::size_of::<f32>());
         Ok(Detect {
             class_count: network.nms_classes(),
             model_size: model_size as i32,
             score_threshold,
-            model_input: vec![0u8; model_size * model_size * 3],
-            output: vec![0f32; output_floats],
             decoder: RgbDecoder::new()?,
             decoded: Vec::new(),
             network,
@@ -60,9 +55,10 @@ impl Detect {
 
     pub fn description(&self) -> String {
         format!(
-            "{size}x{size}, {} classes, threshold {}",
+            "{size}x{size}, {} classes, threshold {}, {}",
             self.class_count,
             self.score_threshold,
+            io(&self.network),
             size = self.model_size
         )
     }
@@ -117,19 +113,12 @@ impl Detect {
                         height,
                         channels: request.channels,
                     },
-                    &mut self.model_input,
+                    self.network.input_mut(),
                     self.model_size,
                     &letterbox,
                     LETTERBOX_THREADS,
                 );
-                // SAFETY: the f32 buffer viewed as its bytes, for HailoRT to write into.
-                let output_bytes = unsafe {
-                    std::slice::from_raw_parts_mut(
-                        self.output.as_mut_ptr().cast::<u8>(),
-                        std::mem::size_of_val(self.output.as_slice()),
-                    )
-                };
-                match self.network.infer(&self.model_input, output_bytes) {
+                match self.network.infer() {
                     Ok(elapsed) => {
                         inference_time = Some(inference_micros(elapsed.as_micros()));
                         FrameOutcome::Inferred
@@ -157,8 +146,16 @@ impl Detect {
             Reply::Result => {}
         }
 
+        let output = self.network.output();
+        // SAFETY: the output buffer is page-aligned, so f32-aligned, and HailoRT wrote f32s.
+        let output = unsafe {
+            std::slice::from_raw_parts(
+                output.as_ptr().cast::<f32>(),
+                output.len() / std::mem::size_of::<f32>(),
+            )
+        };
         let detections = nms::decode_nms_by_class(
-            &self.output[..self.network.output_bytes / std::mem::size_of::<f32>()],
+            output,
             self.class_count,
             width,
             height,

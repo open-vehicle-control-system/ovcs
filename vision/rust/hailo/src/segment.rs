@@ -9,7 +9,7 @@ use segmentation::band::resize_band;
 use segmentation::protocol::{labels_record, parse_jpeg_request, parse_request, Request};
 
 use crate::grid::cell_labels;
-use crate::hailo::{Device, Network, HAILO_FORMAT_TYPE_UINT8};
+use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_UINT8};
 use crate::jpeg::RgbDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
@@ -20,8 +20,6 @@ const RESIZE_THREADS: usize = 2;
 pub struct Segment {
     network: Network,
     cell_pixels: usize,
-    model_input: Vec<u8>,
-    output: Vec<u8>,
     decoder: RgbDecoder,
     decoded: Vec<u8>,
 }
@@ -49,8 +47,6 @@ impl Segment {
         }
         Ok(Segment {
             cell_pixels,
-            model_input: vec![0u8; input.width * input.height * 3],
-            output: vec![0u8; network.output_bytes],
             decoder: RgbDecoder::new()?,
             decoded: Vec::new(),
             network,
@@ -60,8 +56,12 @@ impl Segment {
     pub fn description(&self) -> String {
         let input = self.network.input;
         format!(
-            "{}x{}, labels in {}x{} cells",
-            input.width, input.height, self.cell_pixels, self.cell_pixels
+            "{}x{}, labels in {}x{} cells, {}",
+            input.width,
+            input.height,
+            self.cell_pixels,
+            self.cell_pixels,
+            io(&self.network)
         )
     }
 
@@ -114,12 +114,12 @@ impl Segment {
                     request.pixels,
                     usize::from(request.width),
                     top..top + usize::from(request.band_height),
-                    &mut self.model_input,
+                    self.network.input_mut(),
                     input.width,
                     input.height,
                     RESIZE_THREADS,
                 );
-                match self.network.infer(&self.model_input, &mut self.output) {
+                match self.network.infer() {
                     Ok(elapsed) => {
                         inference_time = Some(elapsed.as_micros() as u64);
                         FrameOutcome::Inferred
@@ -147,8 +147,12 @@ impl Segment {
             Reply::Result => {}
         }
 
-        let (columns, rows, cells) =
-            cell_labels(&self.output, input.width, input.height, self.cell_pixels);
+        let (columns, rows, cells) = cell_labels(
+            self.network.output(),
+            input.width,
+            input.height,
+            self.cell_pixels,
+        );
         Answer::Reply(labels_record(
             request.sequence,
             columns as u16,
