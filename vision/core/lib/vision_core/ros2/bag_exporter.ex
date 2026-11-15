@@ -260,29 +260,42 @@ defmodule VisionCore.Ros2.BagExporter do
 
     {:ok, pid} = Recording.start_link(recording_options)
 
-    case Recording.status(pid) do
-      %{error: nil} ->
-        start_building(state, pid, %{
-          pid: pid,
-          dir: dir,
-          preset: preset,
-          clock_choice: clock_choice,
-          clock: clock,
-          started_at: started_at,
-          started_ms: System.monotonic_time(:millisecond),
-          transforms_ms: nil
-        })
+    recording = %{
+      pid: pid,
+      dir: dir,
+      preset: preset,
+      clock_choice: clock_choice,
+      clock: clock,
+      started_at: started_at,
+      started_ms: System.monotonic_time(:millisecond),
+      transforms_ms: nil
+    }
 
-      %{error: reason} ->
+    case build_recording(state, recording) do
+      {:ok, recording} ->
+        {:ok, recording}
+
+      {:error, reason} ->
         Recording.stop(pid)
         {:error, reason}
     end
   end
 
-  # The `ZenohExporter` state that builds the recording's messages, and the outputs handed to it.
-  defp start_building(state, pid, recording) do
-    clock = recording.clock
+  # Any failure once the recording has started, an exit included, fails the start.
+  defp build_recording(state, recording) do
+    case Recording.status(recording.pid) do
+      %{error: nil} -> start_building(state, recording)
+      %{error: reason} -> {:error, reason}
+    end
+  catch
+    kind, reason ->
+      {:error,
+       "cannot build the #{recording.preset} preset's messages: " <>
+         Exception.format_banner(kind, reason)}
+  end
 
+  # The `ZenohExporter` state that builds the recording's messages, and the outputs handed to it.
+  defp start_building(state, %{pid: pid, clock: clock} = recording) do
     publish = fn topic, module, message, _options ->
       log_time = Clock.time_ns(clock, System.monotonic_time(:nanosecond))
       Recording.write(pid, topic, module, message, log_time)
@@ -299,9 +312,9 @@ defmodule VisionCore.Ros2.BagExporter do
 
     {:ok, max_hz} = Preset.max_hz(preset_options(recording.preset, state.options))
 
-    case init_building(options) do
+    case ZenohExporter.init(options) do
       {:ok, building} ->
-        check_later(recording.pid)
+        check_later(pid)
 
         {:ok,
          Map.merge(recording, %{
@@ -312,18 +325,8 @@ defmodule VisionCore.Ros2.BagExporter do
          })}
 
       {:error, reason} ->
-        Recording.stop(pid)
         {:error, "cannot build the #{recording.preset} preset's messages: #{reason}"}
     end
-  end
-
-  defp init_building(options) do
-    case ZenohExporter.init(options) do
-      {:ok, building} -> {:ok, building}
-      {:error, reason} -> {:error, to_string(reason)}
-    end
-  rescue
-    exception -> {:error, Exception.message(exception)}
   end
 
   defp folder_name(root, started_at, preset) do

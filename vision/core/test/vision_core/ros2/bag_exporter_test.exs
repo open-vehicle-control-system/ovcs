@@ -7,6 +7,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   alias VisionCore.Parameters.{Group, Parameter}
   alias VisionCore.Ros2.Bag.Recording
   alias VisionCore.Ros2.BagExporter
+  alias VisionCore.Ros2.BagExporter.Preset
 
   @moduletag :tmp_dir
   @moduletag :capture_log
@@ -550,6 +551,28 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
     assert {[%{messages: []}], %{"files" => [_file]}} = bag!(started.folder)
     assert Recording.status(recording) == nil
+  end
+
+  test "a start whose builder exits answers the failure and leaves its recording closed",
+       %{tmp_dir: tmp_dir} do
+    # A preset's own :stamp comes before the recording's, and the builder's init stamps the transforms.
+    preset =
+      Preset.options(:replay, BagTestUnit.config()) ++
+        [stamp: fn _monotonic_ns -> exit(:no_clock) end]
+
+    options = options(tmp_dir, presets: [replay: preset])
+
+    runner =
+      start_supervised!(
+        {Runner, exporter: BagExporter, options: options, config: options[:config]}
+      )
+
+    assert {:error, {:failed, reason}} =
+             Runner.action(runner, "start", %{"preset" => "replay"}, 5_000)
+
+    assert reason =~ "no_clock"
+    assert [folder] = options[:root] |> Path.join("*") |> Path.wildcard()
+    assert {[%{messages: []}], %{"files" => [_file]}} = bag!(folder)
   end
 
   test "makes a busy output ready when its encode answers after the stop", %{tmp_dir: tmp_dir} do
