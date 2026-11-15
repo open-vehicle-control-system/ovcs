@@ -2,8 +2,9 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   @moduledoc """
   Throttle from the ROS bridge's actuator command (`ros_actuator_command`,
   `0x2B0`): the operator's axis in [-1, 1], applied as is and broadcast
-  as `:requested_throttle`. A negative value can mean braking: the
-  OVCS1 reference vehicle's iBooster brakes on it. Reverse is the
+  as `:requested_throttle`. A negative value asks for braking, and its
+  magnitude is also broadcast as `:requested_braking`, in [0, 1], which
+  the OVCS1 reference vehicle's iBooster follows. Reverse is the
   frame's `direction`, read by `RosActuatorCommand.Direction`.
 
   ## The throttle expires; it is not held
@@ -34,6 +35,7 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
   alias Decimal, as: D
   alias OvcsBus, as: Bus
   alias VmsCore.Components.OVCS.RosCommand.Freshness
+  alias VmsCore.NormalisedRequest
 
   require Logger
 
@@ -107,6 +109,12 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Throttle do
     Bus.broadcast("messages", %Bus.Message{
       name: :requested_throttle,
       value: state.requested_throttle,
+      source: __MODULE__
+    })
+
+    Bus.broadcast("messages", %Bus.Message{
+      name: :requested_braking,
+      value: NormalisedRequest.braking(state.requested_throttle),
       source: __MODULE__
     })
 

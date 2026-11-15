@@ -28,7 +28,7 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
   end
 
   # Reads the bus, not state: the manager only sees `radio_braking` there.
-  defp outputs_at(raw) do
+  defp emitted_at(raw) do
     frame =
       {:handle_frame,
        %Frame{
@@ -43,8 +43,34 @@ defmodule VmsCore.Components.OVCS.RadioControl.ThrottleTest do
     {:noreply, _state} = Throttle.handle_info(:loop, state)
 
     assert_receive %Message{name: :requested_throttle, value: throttle, source: Throttle}
-    assert_receive %Message{name: :radio_braking, value: braking, source: Throttle}
-    {D.to_float(throttle), braking}
+    assert_receive %Message{name: :requested_braking, value: requested_braking, source: Throttle}
+    assert_receive %Message{name: :radio_braking, value: radio_braking, source: Throttle}
+
+    %{
+      throttle: D.to_float(throttle),
+      requested_braking: D.to_float(requested_braking),
+      radio_braking: radio_braking
+    }
+  end
+
+  defp outputs_at(raw) do
+    emitted = emitted_at(raw)
+    {emitted.throttle, emitted.radio_braking}
+  end
+
+  defp requested_braking_at(raw), do: emitted_at(raw).requested_braking
+
+  describe "the braking request" do
+    test "is the trigger's travel into reverse, with no dead zone" do
+      assert_in_delta requested_braking_at(1400), 0.2, 1.0e-9
+      assert_in_delta requested_braking_at(1490), 0.02, 1.0e-9
+      assert_in_delta requested_braking_at(1000), 1.0, 1.0e-9
+    end
+
+    test "is zero at centre and while driving" do
+      assert requested_braking_at(1500) == 0.0
+      assert requested_braking_at(1800) == 0.0
+    end
   end
 
   describe "a trigger at rest" do

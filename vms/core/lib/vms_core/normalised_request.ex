@@ -6,6 +6,7 @@ defmodule VmsCore.NormalisedRequest do
   """
   alias Decimal, as: D
 
+  @zero D.new(0)
   @one D.new(1)
 
   @doc """
@@ -14,6 +15,15 @@ defmodule VmsCore.NormalisedRequest do
   """
   def clamp(requested) do
     requested |> D.max(D.negate(@one)) |> D.min(@one)
+  end
+
+  @doc """
+  The braking a signed request asks for, in [0, 1]: the magnitude of
+  its negative half. A hand's single axis drives when positive and
+  brakes when negative.
+  """
+  def braking(requested) do
+    requested |> clamp() |> D.min(@zero) |> D.abs()
   end
 
   @doc """

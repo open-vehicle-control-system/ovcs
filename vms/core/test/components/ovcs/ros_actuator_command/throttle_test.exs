@@ -53,6 +53,31 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.ThrottleTest do
     {throttle, state}
   end
 
+  defp emitted_braking(state) do
+    {:noreply, state} = Throttle.handle_info(:loop, state)
+    assert_receive %Message{name: :requested_braking, value: braking, source: Throttle}
+    {braking, state}
+  end
+
+  describe "the braking request" do
+    test "is the magnitude of a negative throttle" do
+      {:noreply, state} = Throttle.handle_info(frame("-0.4", 2), stub_state())
+      {braking, _state} = emitted_braking(state)
+      assert D.equal?(braking, D.new("0.4"))
+    end
+
+    test "is zero while the throttle drives" do
+      {:noreply, state} = Throttle.handle_info(frame("0.6", 2), stub_state())
+      {braking, _state} = emitted_braking(state)
+      assert D.equal?(braking, 0)
+    end
+
+    test "goes to zero with the throttle when the command goes stale" do
+      {braking, _state} = emitted_braking(stub_state(%{requested_throttle: D.new("-0.8")}))
+      assert D.equal?(braking, 0)
+    end
+  end
+
   describe "a sequence that stops changing" do
     test "zeroes the throttle, once, with a warning" do
       # Full throttle commanded, then the bridge goes quiet: the frame
