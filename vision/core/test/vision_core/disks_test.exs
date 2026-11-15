@@ -1,7 +1,7 @@
 defmodule VisionCore.DisksTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.{Disk, Disks, TestDisks}
+  alias VisionCore.{Disk, Disks, Models, Repo, TestDisks}
 
   @moduletag :tmp_dir
 
@@ -529,6 +529,45 @@ defmodule VisionCore.DisksTest do
     assert {:error, reason} = Disks.put_order(disks.server, [@stick, "internal"])
     assert reason =~ "unavailable"
     assert Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal", @stick]
+  end
+
+  test "reads the saved order once the database starts, and saves nothing over it before",
+       %{tmp_dir: dir} do
+    database = Path.join(dir, "disks.db")
+    repo_name = :"disks_test_repo_#{System.unique_integer([:positive])}"
+    repo = TestDisks.start_repo!(name: repo_name, database: database, id: :first_repo)
+    Repo.put_dynamic_repo(repo)
+    Repo.insert!(Models.Disk.changeset(%Models.Disk{}, %{uuid: @stick, position: 0}))
+
+    Repo.insert!(
+      Models.Disk.changeset(%Models.Disk{}, %{uuid: "internal", position: 1, enabled: false})
+    )
+
+    :ok = stop_supervised!(:first_repo)
+
+    disks = dir |> Path.join("late") |> TestDisks.setup!() |> TestDisks.start!(repo: repo_name)
+    TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+    mounted!(disks, @stick)
+    assert {:error, _unavailable} = Disks.put_enabled(disks.server, "internal", true)
+
+    TestDisks.start_repo!(name: repo_name, database: database)
+
+    eventually(fn ->
+      match?(
+        [%Disk{uuid: @stick, position: 0}, %Disk{uuid: "internal", position: 1, enabled: false}],
+        Disks.list(disks.server)
+      )
+    end)
+
+    TestDisks.pull(disks, "sda1")
+    eventually(fn -> state(disks, @stick) == :unplugged end)
+    TestDisks.stop!(disks)
+    again = dir |> Path.join("again") |> TestDisks.setup!() |> TestDisks.start!(repo: repo_name)
+
+    assert [
+             %Disk{uuid: @stick, position: 0},
+             %Disk{uuid: "internal", position: 1, enabled: false}
+           ] = Disks.list(again.server)
   end
 
   test "watches no USB disk unless asked, as on a host", %{tmp_dir: dir} do

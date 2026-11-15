@@ -63,13 +63,18 @@ defmodule VisionCore.TestDisks do
   @spec stop!(t()) :: :ok
   def stop!(%__MODULE__{id: id}), do: ExUnit.Callbacks.stop_supervised!(id)
 
-  @doc "A fresh database, in memory, migrated."
-  @spec start_repo!() :: pid()
-  def start_repo! do
-    repo =
-      start_supervised!({Repo, name: nil, database: ":memory:", pool_size: 1, log: false},
-        id: make_ref()
-      )
+  @doc """
+  A database, migrated: fresh and in memory by default, or the file
+  `:database`, under `:name`, supervised as `:id`.
+  """
+  @spec start_repo!(keyword()) :: pid()
+  def start_repo!(opts \\ []) do
+    {id, opts} =
+      opts
+      |> Keyword.validate!(name: nil, database: ":memory:", id: make_ref())
+      |> Keyword.pop!(:id)
+
+    repo = start_supervised!({Repo, opts ++ [pool_size: 1, log: false]}, id: id)
 
     Ecto.Migrator.run(Repo, migrations(), :up, all: true, dynamic_repo: repo, log: false)
     repo

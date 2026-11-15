@@ -25,7 +25,9 @@ defmodule VisionCore.Disks do
   they answer while it mounts. `mkfs.f2fs` runs in a task, so the disks
   are watched and set while one formats. Without the database the disks
   are still found, mounted and chosen; only `put_order/2` and
-  `put_enabled/3` answer an error.
+  `put_enabled/3` answer an error. It saves nothing until it has read
+  the saved disks, which it tries again at each look, so a database
+  that starts late keeps the order it holds.
 
   The bag exporter (`VisionCore.Ros2.BagExporter`) starts it as its
   helper. The USB disks are watched only in a target build
@@ -193,13 +195,15 @@ defmodule VisionCore.Disks do
       %{
         options: Map.new(opts),
         table: table,
-        disks: Map.new(load(), &{&1.uuid, &1}),
+        disks: %{},
+        loaded: false,
         unusable: %{},
         formats: %{},
         devices: %{},
         mount_points: %{},
         ejecting: %{}
       }
+      |> load_saved()
       |> remember_internal()
       |> refresh_free_bytes()
       |> publish()
@@ -290,6 +294,7 @@ defmodule VisionCore.Disks do
   def terminate(_reason, _state), do: :persistent_term.erase({__MODULE__, self()})
 
   defp poll(state) do
+    state = if state.loaded, do: state, else: load_saved_again(state)
     state = if state.options.usb, do: watch_usb(state), else: state
     Process.send_after(self(), :poll, state.options.poll_interval_ms)
     state |> refresh_free_bytes() |> publish()
@@ -386,7 +391,7 @@ defmodule VisionCore.Disks do
             last_seen_at: now()
           })
 
-        save([disk])
+        save(state, [disk])
         state = put_in(state.devices[device].uuid, identity.uuid)
         mount(state, disk)
     end
@@ -526,7 +531,7 @@ defmodule VisionCore.Disks do
     if ejecting, do: GenServer.reply(elem(ejecting, 0), :ok)
 
     disk = %{unplugged(disk) | last_seen_at: now()}
-    save([disk])
+    save(state, [disk])
     put_disk(%{state | mount_points: mount_points, ejecting: others}, disk)
   end
 
@@ -691,7 +696,7 @@ defmodule VisionCore.Disks do
     disk =
       Map.get_lazy(state.disks, @internal, fn ->
         disk = %{new_disk(state, @internal) | last_seen_at: now()}
-        save([disk])
+        save(state, [disk])
         disk
       end)
 
@@ -718,21 +723,64 @@ defmodule VisionCore.Disks do
     state
   end
 
-  defp load do
-    for row <- Repo.all(Models.Disk) do
-      %Disk{
-        uuid: row.uuid,
-        label: row.label,
-        filesystem: filesystem(row.filesystem),
-        position: row.position,
-        enabled: row.enabled,
-        last_seen_at: row.last_seen_at
-      }
+  # Takes the saved disks once readable; saving nothing before, it never overwrites them.
+  defp load_saved(state) do
+    case load() do
+      {:ok, saved} -> take_saved(state, saved)
+      {:error, reason} -> unavailable(reason, state)
     end
+  end
+
+  # As `load_saved/1`, its failure logged once, at the start.
+  defp load_saved_again(state) do
+    case load() do
+      {:ok, saved} -> take_saved(state, saved)
+      {:error, _reason} -> state
+    end
+  end
+
+  # Disks seen before take their saved position and enabled; the others go after the saved ones.
+  defp take_saved(state, saved) do
+    saved = Map.new(saved, &{&1.uuid, &1})
+    first_free = saved |> Map.values() |> Enum.map(& &1.position) |> Enum.max(fn -> -1 end)
+
+    {known, unsaved} =
+      state.disks |> Map.values() |> Enum.split_with(&Map.has_key?(saved, &1.uuid))
+
+    known =
+      for disk <- known,
+          do: %{disk | position: saved[disk.uuid].position, enabled: saved[disk.uuid].enabled}
+
+    unsaved =
+      unsaved
+      |> Enum.sort_by(&{&1.position, &1.uuid})
+      |> Enum.with_index(first_free + 1)
+      |> Enum.map(fn {disk, position} -> %{disk | position: position} end)
+
+    disks = Map.new(Map.values(saved) ++ known ++ unsaved, &{&1.uuid, &1})
+    state = %{state | loaded: true, disks: disks}
+    save(state, unsaved)
+    state
+  end
+
+  defp load do
+    disks =
+      for row <- Repo.all(Models.Disk) do
+        %Disk{
+          uuid: row.uuid,
+          label: row.label,
+          filesystem: filesystem(row.filesystem),
+          position: row.position,
+          enabled: row.enabled,
+          last_seen_at: row.last_seen_at
+        }
+      end
+
+    {:ok, disks}
   rescue
-    error -> unavailable(error, [])
+    error -> {:error, error}
   catch
-    :exit, reason -> unavailable(reason, [])
+    :exit, reason -> {:error, reason}
   end
 
   defp filesystem("f2fs"), do: :f2fs
@@ -741,7 +789,7 @@ defmodule VisionCore.Disks do
 
   # Saves `disks`, all or none, then holds them.
   defp save_all(state, disks) do
-    case save(disks) do
+    case save(state, disks) do
       :ok ->
         state = Enum.reduce(disks, state, &put_disk(&2, &1))
         {:reply, :ok, publish(state)}
@@ -751,7 +799,10 @@ defmodule VisionCore.Disks do
     end
   end
 
-  defp save(disks) do
+  defp save(%{loaded: false}, _disks), do: {:error, @unavailable}
+  defp save(_state, []), do: :ok
+
+  defp save(_state, disks) do
     {:ok, :ok} = Repo.transaction(fn -> Enum.each(disks, &upsert/1) end)
     :ok
   rescue
