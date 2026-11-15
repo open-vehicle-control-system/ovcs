@@ -71,7 +71,9 @@ defmodule VisionCore.Camera.LibCamera do
   previews then encode the frames they send, as for any driver that
   delivers grey frames (see `VisionCore.Ros2.ZenohExporter.Stereo`'s
   `:raw_image_max_hz` and `VisionCore.Preview`). Rotation, sensor mode,
-  sync and the controls apply to both.
+  sync and the controls apply to both. The JPEG of a limited-range
+  output is expanded to full range; the grey frames keep the luma as
+  captured, 16 to 235 on the Pi 5.
 
   ## Sync
 
