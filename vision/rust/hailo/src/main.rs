@@ -129,6 +129,7 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
 
     let writer = Arc::new(writer);
     let opened = hailo::Device::open().and_then(|device| {
+        let jpegs = jpeg::SharedDecoder::new()?;
         networks
             .iter()
             .map(|network| -> Result<Box<dyn Lane>, String> {
@@ -137,11 +138,13 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
                         &device,
                         &network.hef_path,
                         score_threshold,
+                        &jpegs,
                     )?),
                     Kind::Segmentation { cell_pixels } => Box::new(segment::Segment::open(
                         &device,
                         &network.hef_path,
                         cell_pixels,
+                        &jpegs,
                     )?),
                 })
             })

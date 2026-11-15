@@ -10,7 +10,7 @@ use segmentation::protocol::{labels_record, parse_jpeg_request, parse_request, R
 
 use crate::grid::{cell_labels, output_stride};
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_UINT8};
-use crate::jpeg::RgbDecoder;
+use crate::jpeg::SharedDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
 
@@ -22,8 +22,7 @@ pub struct Segment {
     cell_pixels: usize,
     /// A cell's side in output pixels.
     stride: usize,
-    decoder: RgbDecoder,
-    decoded: Vec<u8>,
+    jpegs: Arc<SharedDecoder>,
 }
 
 impl Segment {
@@ -32,6 +31,7 @@ impl Segment {
         device: &Arc<Device>,
         hef_path: &str,
         cell_pixels: usize,
+        jpegs: &Arc<SharedDecoder>,
     ) -> Result<Segment, String> {
         let network = Network::open(device, hef_path, HAILO_FORMAT_TYPE_UINT8)?;
         let (input, output) = (network.input, network.output_shape());
@@ -56,8 +56,7 @@ impl Segment {
         Ok(Segment {
             cell_pixels,
             stride,
-            decoder: RgbDecoder::new()?,
-            decoded: Vec::new(),
+            jpegs: Arc::clone(jpegs),
             network,
         })
     }
@@ -82,31 +81,29 @@ impl Segment {
         let Some(request) = parse_jpeg_request(record) else {
             return Answer::Nothing;
         };
-        let mut decoded = std::mem::take(&mut self.decoded);
-        let answer = match self.decoder.decode(request.jpeg, &mut decoded) {
-            Ok((width, height)) => self.answer_request(
-                &Request {
-                    sequence: request.sequence,
-                    width,
-                    height,
-                    channels: 3,
-                    band_top: request.band_top,
-                    band_height: request.band_height,
-                    pixels: &decoded,
-                },
-                writer,
-            ),
+        let decoded = match self.jpegs.decode(request.jpeg) {
+            Ok(decoded) => decoded,
             Err(message) => {
                 log(
                     writer,
                     LogLevel::Warning,
                     &format!("frame {}: {message}", request.sequence),
                 );
-                Answer::Reply(labels_record(request.sequence, 0, 0, &[], None))
+                return Answer::Reply(labels_record(request.sequence, 0, 0, &[], None));
             }
         };
-        self.decoded = decoded;
-        answer
+        self.answer_request(
+            &Request {
+                sequence: request.sequence,
+                width: decoded.width,
+                height: decoded.height,
+                channels: 3,
+                band_top: request.band_top,
+                band_height: request.band_height,
+                pixels: &decoded.pixels,
+            },
+            writer,
+        )
     }
 
     fn answer_request(&mut self, request: &Request, writer: &Writer) -> Answer {

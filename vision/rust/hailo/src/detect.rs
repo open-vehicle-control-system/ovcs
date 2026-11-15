@@ -12,7 +12,7 @@ use detection::protocol::{
 use framing::{LogLevel, Writer};
 
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
-use crate::jpeg::RgbDecoder;
+use crate::jpeg::SharedDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
 use crate::{log, Answer};
 
@@ -24,8 +24,7 @@ pub struct Detect {
     model_size: i32,
     class_count: usize,
     score_threshold: f32,
-    decoder: RgbDecoder,
-    decoded: Vec<u8>,
+    jpegs: Arc<SharedDecoder>,
 }
 
 impl Detect {
@@ -33,6 +32,7 @@ impl Detect {
         device: &Arc<Device>,
         hef_path: &str,
         score_threshold: f32,
+        jpegs: &Arc<SharedDecoder>,
     ) -> Result<Detect, String> {
         let network = Network::open(device, hef_path, HAILO_FORMAT_TYPE_FLOAT32)?;
         let input = network.input;
@@ -47,8 +47,7 @@ impl Detect {
             class_count: network.nms_classes(),
             model_size: model_size as i32,
             score_threshold,
-            decoder: RgbDecoder::new()?,
-            decoded: Vec::new(),
+            jpegs: Arc::clone(jpegs),
             network,
         })
     }
@@ -71,29 +70,27 @@ impl Detect {
         let Some(request) = parse_jpeg_request(record) else {
             return Answer::Nothing;
         };
-        let mut decoded = std::mem::take(&mut self.decoded);
-        let answer = match self.decoder.decode(request.jpeg, &mut decoded) {
-            Ok((width, height)) => self.answer_request(
-                &Request {
-                    sequence: request.sequence,
-                    width,
-                    height,
-                    channels: 3,
-                    pixels: &decoded,
-                },
-                writer,
-            ),
+        let decoded = match self.jpegs.decode(request.jpeg) {
+            Ok(decoded) => decoded,
             Err(message) => {
                 log(
                     writer,
                     LogLevel::Warning,
                     &format!("frame {}: {message}", request.sequence),
                 );
-                Answer::Reply(detections_record(request.sequence, &[], None))
+                return Answer::Reply(detections_record(request.sequence, &[], None));
             }
         };
-        self.decoded = decoded;
-        answer
+        self.answer_request(
+            &Request {
+                sequence: request.sequence,
+                width: decoded.width,
+                height: decoded.height,
+                channels: 3,
+                pixels: &decoded.pixels,
+            },
+            writer,
+        )
     }
 
     fn answer_request(&mut self, request: &Request, writer: &Writer) -> Answer {
