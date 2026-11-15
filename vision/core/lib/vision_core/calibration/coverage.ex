@@ -18,14 +18,15 @@ defmodule VisionCore.Calibration.Coverage do
   @ranges %{x: 0.7, y: 0.7, size: 0.4, skew: 0.5}
   @enough_samples 40
 
-  @type params :: %{x: float(), y: float(), size: float(), skew: float()}
+  @typedoc "A value in 0..1 for each axis: a sample's, or the coverage of each."
+  @type axes :: %{x: float(), y: float(), size: float(), skew: float()}
 
   @doc """
   Position, size and skew of the board in an image of `{width, height}` pixels.
 
   `corners` are the detected inner corners as `{x, y}` pixel tuples, row by row.
   """
-  @spec parameters([{number(), number()}], Board.t(), {pos_integer(), pos_integer()}) :: params()
+  @spec parameters([{number(), number()}], Board.t(), {pos_integer(), pos_integer()}) :: axes()
   def parameters(corners, %Board{columns: columns}, {width, height}) do
     {up_left, up_right, down_right, down_left} = outside_corners(corners, columns)
     board_area = area(up_left, up_right, down_right, down_left)
@@ -42,12 +43,12 @@ defmodule VisionCore.Calibration.Coverage do
     }
   end
 
-  @doc "Whether `params` is far enough from every sample in `kept`."
-  @spec good_sample?(params(), [params()]) :: boolean()
-  def good_sample?(params, kept), do: Enum.all?(kept, &(distance(params, &1) > @min_distance))
+  @doc "Whether `sample` is far enough from every sample in `kept`."
+  @spec good_sample?(axes(), [axes()]) :: boolean()
+  def good_sample?(sample, kept), do: Enum.all?(kept, &(distance(sample, &1) > @min_distance))
 
   @doc "Coverage of each axis in 0..1, from the spread of `samples`; size and skew count from 0."
-  @spec progress([params()]) :: params()
+  @spec progress([axes()]) :: axes()
   def progress([]), do: %{x: 0.0, y: 0.0, size: 0.0, skew: 0.0}
 
   def progress(samples) do
@@ -59,7 +60,7 @@ defmodule VisionCore.Calibration.Coverage do
   end
 
   @doc "Whether `samples` are enough to run the calibration."
-  @spec good_enough?([params()]) :: boolean()
+  @spec good_enough?([axes()]) :: boolean()
   def good_enough?(samples) do
     length(samples) >= @enough_samples or
       (samples != [] and Enum.all?(progress(samples), fn {_axis, value} -> value >= 1.0 end))
