@@ -103,13 +103,14 @@ defmodule VisionCore.Ros2.BagExporterTest do
     state
   end
 
-  defp action(state, name, params) do
-    {:reply, result, state} = BagExporter.handle_action(name, params, {self(), make_ref()}, state)
-    {result, state}
+  # Hands the exporter the call its module's function makes through the runner.
+  defp call(state, request) do
+    {:reply, reply, state} = BagExporter.handle_call(request, {self(), make_ref()}, state)
+    {reply, state}
   end
 
-  defp start!(state, params) do
-    {{:ok, started}, state} = action(state, :start, params)
+  defp start!(state, preset, clock \\ :automatic) do
+    {{:ok, started}, state} = call(state, {:start, preset, clock})
     {started, state}
   end
 
@@ -127,7 +128,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   end
 
   defp stop!(state) do
-    {{:ok, stopped}, state} = action(state, :stop, %{})
+    {{:ok, stopped}, state} = call(state, :stop)
     {stopped, state}
   end
 
@@ -154,11 +155,17 @@ defmodule VisionCore.Ros2.BagExporterTest do
     end
   end
 
-  test "is listed as ROS 2 · Bag, takes every value in a queue, and lists start and stop" do
+  test "is listed as ROS 2 · Bag, takes every value in a queue, and has no action" do
     assert BagExporter.describe([]) == %{id: :ros2_bag, name: "ROS 2 · Bag"}
     assert BagExporter.delivery([]) == {:queue, 64}
-    assert Enum.map(BagExporter.actions([]), & &1.name) == [:start, :stop]
+    refute function_exported?(BagExporter, :actions, 1)
+    refute function_exported?(BagExporter, :handle_action, 4)
     assert BagExporter.check(options()) == :ok
+  end
+
+  test "lists the presets and the clocks a recording takes" do
+    assert BagExporter.presets() == [:replay, :review]
+    assert BagExporter.clocks() == [:system, :since_start, :automatic]
   end
 
   test "reads every output the presets record on the configuration" do
@@ -199,8 +206,12 @@ defmodule VisionCore.Ros2.BagExporterTest do
     options = options()
     state = init!(options)
 
-    {started, state} = start!(state, %{"preset" => "replay", "clock" => "since_start"})
-    assert %{preset: "replay", clock: "since_start", clock_in_use: "since_start"} = started
+    {started, state} = start!(state, :replay, :since_start)
+    assert %{preset: :replay, clock: :since_start, clock_in_use: :since_start} = started
+    assert started.name == Path.basename(started.folder)
+    assert started.folders == [started.folder]
+    assert started.disk == "internal"
+    assert %DateTime{} = started.started_at
     assert Path.dirname(started.folder) == recordings(disks)
     assert Path.basename(started.folder) =~ ~r/^\d{8}T\d{6}Z_replay$/
 
@@ -234,8 +245,8 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "the system clock stamps with the wall clock" do
     options = options()
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
-    assert %{clock: "automatic", clock_in_use: "system", synchronized: true} = started
+    {started, state} = options |> init!() |> start!(:replay)
+    assert %{clock: :automatic, clock_in_use: :system, synchronized: true} = started
 
     {_stopped, _state} = state |> hand(options) |> stop!()
 
@@ -257,17 +268,14 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "an automatic clock not synchronized counts from the start" do
     options = options(clock_synchronized?: fn -> false end)
-    {started, _state} = options |> init!() |> start!(%{"preset" => "review"})
+    {started, _state} = options |> init!() |> start!(:review)
 
-    assert %{clock: "automatic", clock_in_use: "since_start", synchronized: false} = started
+    assert %{clock: :automatic, clock_in_use: :since_start, synchronized: false} = started
   end
 
   test "attaches the calibration files in use and the parameters, at the clock's start" do
     options = options()
-
-    {started, state} =
-      options |> init!() |> start!(%{"preset" => "replay", "clock" => "since_start"})
-
+    {started, state} = options |> init!() |> start!(:replay, :since_start)
     stop!(state)
 
     {[file], _metadata} = bag!(started.folder)
@@ -292,7 +300,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "review builds no raw image, and records the depth and the pipelines" do
     options = options()
-    {started, state} = options |> init!() |> start!(%{"preset" => "review"})
+    {started, state} = options |> init!() |> start!(:review)
     {_stopped, _state} = state |> hand(options) |> stop!()
 
     {files, _metadata} = bag!(started.folder)
@@ -311,7 +319,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     options = options(presets: [review: [cameras: [outputs: [hq: :view_jpeg]]]])
     assert BagExporter.check(options) == :ok
 
-    {started, state} = options |> init!() |> start!(%{"preset" => "review"})
+    {started, state} = options |> init!() |> start!(:review)
     {_stopped, _state} = state |> hand(options) |> stop!()
 
     {files, _metadata} = bag!(started.folder)
@@ -321,7 +329,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   # Records 3 s of every output at 30 Hz of capture time: the stop's answer and messages by topic.
   defp record_30_hz(options, preset) do
     outputs = BagExporter.outputs(options)
-    {started, state} = options |> init!() |> start!(%{"preset" => preset})
+    {started, state} = options |> init!() |> start!(preset)
     first_ns = System.monotonic_time(:nanosecond) - 3_000_000_000
 
     state =
@@ -352,7 +360,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "review records the depth at 5 Hz and each camera at 10 Hz of capture time, none dropped" do
     options = options(recording: [queue: 10_000])
-    {stopped, counts} = record_30_hz(options, "review")
+    {stopped, counts} = record_30_hz(options, :review)
 
     assert stopped.dropped == %{}
     assert counts["/stereo/depth/image_rect"] in 14..16
@@ -364,7 +372,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "replay records every frame" do
     options = options(recording: [queue: 10_000])
-    {stopped, counts} = record_30_hz(options, "replay")
+    {stopped, counts} = record_30_hz(options, :replay)
 
     assert stopped.dropped == %{}
     assert counts["/stereo/left/image_raw"] == 90
@@ -382,10 +390,10 @@ defmodule VisionCore.Ros2.BagExporterTest do
         recording: [queue: 10_000]
       )
 
-    {_stopped, counts} = record_30_hz(options, "replay")
+    {_stopped, counts} = record_30_hz(options, :replay)
     assert counts["/usb/image_raw/compressed"] == 90
 
-    {_stopped, counts} = record_30_hz(options, "review")
+    {_stopped, counts} = record_30_hz(options, :review)
     assert counts["/usb/image_raw/compressed"] in 29..31
   end
 
@@ -393,12 +401,12 @@ defmodule VisionCore.Ros2.BagExporterTest do
     preset = [cameras: [outputs: [hq: :view_jpeg]], max_hz: [cameras: 2]]
     options = options(presets: [review: preset], recording: [queue: 10_000])
     assert BagExporter.check(options) == :ok
-    {_stopped, counts} = record_30_hz(options, "review")
+    {_stopped, counts} = record_30_hz(options, :review)
     assert counts["/hq/image_raw/compressed"] in 5..7
 
     preset = [cameras: [outputs: [hq: :view_jpeg]]]
     options = options(presets: [review: preset], recording: [queue: 10_000])
-    {_stopped, counts} = record_30_hz(options, "review")
+    {_stopped, counts} = record_30_hz(options, :review)
     assert counts["/hq/image_raw/compressed"] == 90
   end
 
@@ -457,7 +465,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     options = options(presets: [replay: preset])
 
     {started, state} =
-      options |> init!() |> start!(%{"preset" => "replay", "clock" => "since_start"})
+      options |> init!() |> start!(:replay, :since_start)
 
     {_stopped, _state} = state |> hand(options) |> stop!()
 
@@ -497,42 +505,50 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
       assert reason =~ "chunk_interval_ms", inspect(interval_ms)
     end
+
+    options = options(disks: [eject_timeout_ms: 50], recording: [chunk_interval_ms: 50])
+    assert {:error, reason} = BagExporter.check(options)
+    assert reason =~ "below 50"
   end
 
-  test "refuses a start while recording, a stop while idle, and what it does not know" do
+  test "refuses a start while recording and a stop while idle" do
     state = init!(options())
 
-    assert {{:error, {:refused, "Not recording"}}, state} = action(state, :stop, %{})
+    assert {{:error, :not_recording}, state} = call(state, :stop)
 
-    assert {{:error, {:refused, reason}}, state} = action(state, :start, %{"preset" => "fast"})
-    assert reason =~ "replay, review"
-
-    assert {{:error, {:refused, reason}}, state} =
-             action(state, :start, %{"preset" => "replay", "clock" => "gps"})
-
-    assert reason =~ "system, since_start, automatic"
-
-    {_started, state} = start!(state, %{"preset" => "replay"})
-    assert {{:error, :busy}, state} = action(state, :start, %{"preset" => "review"})
+    {_started, state} = start!(state, :replay)
+    assert {{:error, :busy}, state} = call(state, {:start, :review, :automatic})
     stop!(state)
   end
 
-  test "starts review with the automatic clock when given no attributes" do
-    {started, state} = options() |> init!() |> start!(%{})
+  test "answers the recording in progress, none while idle" do
+    options = options()
+    state = init!(options)
+    assert {{:ok, nil}, state} = call(state, :recording)
 
-    assert %{preset: "review", clock: "automatic"} = started
-    assert Path.basename(started.folder) =~ ~r/_review$/
-    stop!(state)
+    {started, state} = start!(state, :replay)
+    state = hand(state, options)
+    eventually(fn -> match?({{:ok, %{messages: 6}}, _state}, call(state, :recording)) end)
 
-    assert [%{name: :start, description: description} | _stop] = BagExporter.actions([])
-    assert description =~ "review by default"
+    assert {{:ok, recording}, state} = call(state, :recording)
+
+    assert Map.take(recording, [:name, :folders, :disk, :preset, :clock, :started_at]) ==
+             Map.take(started, [:name, :folders, :disk, :preset, :clock, :started_at])
+
+    assert recording.bytes > 0
+    assert recording.files == 1
+    assert recording.dropped == %{}
+    assert recording.duration_ms >= 0
+
+    {_stopped, state} = stop!(state)
+    assert {{:ok, nil}, _state} = call(state, :recording)
   end
 
   test "a second recording in the same second takes a folder of its own" do
     state = init!(options())
-    {first, state} = start!(state, %{"preset" => "replay"})
+    {first, state} = start!(state, :replay)
     {_stopped, state} = stop!(state)
-    {second, state} = start!(state, %{"preset" => "replay"})
+    {second, state} = start!(state, :replay)
     stop!(state)
 
     refute first.folder == second.folder
@@ -541,7 +557,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "status: what it records, since when, how much, and what it dropped" do
     options = options()
-    {_started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {_started, state} = options |> init!() |> start!(:replay)
     state = hand(state, options)
 
     # The recording counts a message once it has written it, after the cast.
@@ -554,7 +570,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     stop!(state)
 
     options = options(recording: [queue: 0])
-    {_started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {_started, state} = options |> init!() |> start!(:replay)
     state = hand(state, options)
 
     assert {:warning, text} = BagExporter.status(state)
@@ -584,7 +600,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "is idle again once its recording ends on its own, saying why" do
     options = options(recording: [max_file_bytes: 1, chunk_interval_ms: 0])
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {started, state} = options |> init!() |> start!(:replay)
     File.rm_rf!(started.folder)
 
     state = state |> hand(options) |> hand(options)
@@ -592,7 +608,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
     assert {:warning, "Stopped: " <> reason} = BagExporter.status(state)
     assert reason =~ "open"
-    assert {{:error, {:refused, "Not recording"}}, _state} = action(state, :stop, %{})
+    assert {{:error, :not_recording}, _state} = call(state, :stop)
   end
 
   # Takes the exporter's checks until one finds the recording ended.
@@ -610,7 +626,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     File.write!(recordings(disks), "")
     state = init!(options())
 
-    assert {{:error, {:failed, reason}}, state} = action(state, :start, %{"preset" => "replay"})
+    assert {{:error, {:failed, reason}}, state} = call(state, {:start, :replay, :automatic})
     assert reason =~ recordings(disks)
     assert BagExporter.status(state) == {:ok, "Idle"}
   end
@@ -619,7 +635,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     :ok = Disks.put_enabled(Disks, "internal", false)
     state = init!(options())
 
-    assert {{:error, {:failed, reason}}, state} = action(state, :start, %{"preset" => "replay"})
+    assert {{:error, {:no_disk, reason}}, state} = call(state, {:start, :replay, :automatic})
     assert reason =~ "no disk"
     assert BagExporter.status(state) == {:ok, "Idle"}
   end
@@ -632,7 +648,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     {:ok, stick} = Disks.fetch(Disks, @stick)
 
     options = options(free_floor_bytes: 1_000_000, recording: [chunk_interval_ms: 1])
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {started, state} = options |> init!() |> start!(:replay)
     assert Path.dirname(started.folder) == stick.recordings_path
     assert {:ok, text} = wait_for_status(state, &(&1 =~ "on #{@stick}"))
 
@@ -659,15 +675,27 @@ defmodule VisionCore.Ros2.BagExporterTest do
              {Disks, name: Disks, internal: "/data/recordings", eject_timeout_ms: 10_000}
            ]
 
-    assert [{Disks, options}] = BagExporter.children(root: "/tmp/recordings", disks: :other)
+    assert [{Disks, options}] =
+             BagExporter.children(
+               root: "/tmp/recordings",
+               disks: [name: :other, eject_timeout_ms: 50]
+             )
+
     assert options[:name] == :other
     assert options[:internal] == "/tmp/recordings"
+    assert options[:eject_timeout_ms] == 50
+
+    assert {:error, reason} = BagExporter.check(options(disks: :elsewhere))
+    assert reason =~ "disks"
+
+    assert {:error, reason} = BagExporter.check(options(disks: [internal: "/srv/recordings"]))
+    assert reason =~ "root:"
   end
 
   test "records in its root on a host", %{tmp_dir: tmp_dir} do
     root = Path.join(tmp_dir, "host_recordings")
     name = :"bag_exporter_test_disks_#{System.unique_integer([:positive])}"
-    options = options(root: root, disks: name)
+    options = options(root: root, disks: [name: name])
     [{Disks, disks_options}] = BagExporter.children(options)
     start_supervised!({Disks, disks_options ++ [repo: TestDisks.start_repo!()]})
 
@@ -675,7 +703,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
       match?({:ok, %{free_bytes: free}} when free != nil, Disks.fetch(name, "internal"))
     end)
 
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {started, state} = options |> init!() |> start!(:replay)
     {_stopped, _state} = stop!(state)
 
     assert Path.dirname(started.folder) == root
@@ -684,7 +712,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "terminate/2 closes the recording" do
     options = options()
-    {started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {started, state} = options |> init!() |> start!(:replay)
     state = hand(state, options)
 
     BagExporter.terminate(:shutdown, state)
@@ -704,7 +732,9 @@ defmodule VisionCore.Ros2.BagExporterTest do
       )
 
     :sys.get_state(runner)
-    assert {:ok, started} = Runner.action(runner, "start", %{"preset" => "replay"}, 5_000)
+    assert {:ok, started} = BagExporter.start_recording(runner, :replay, :automatic)
+    assert {:ok, %{name: name}} = BagExporter.recording(runner)
+    assert name == started.name
     recording = :sys.get_state(runner).exporter_state.recording.pid
     monitor = Process.monitor(recording)
 
@@ -729,18 +759,37 @@ defmodule VisionCore.Ros2.BagExporterTest do
         {Runner, exporter: BagExporter, options: options, config: options[:config]}
       )
 
-    assert {:error, {:failed, reason}} =
-             Runner.action(runner, "start", %{"preset" => "replay"}, 5_000)
+    assert {:error, {:failed, reason}} = BagExporter.start_recording(runner, :replay, :automatic)
 
     assert reason =~ "cannot build the replay preset's messages: ** (ArithmeticError)"
     assert [folder] = disks |> recordings() |> Path.join("*") |> Path.wildcard()
     assert {[%{messages: []}], %{"files" => [_file]}} = bag!(folder)
   end
 
+  test "starts, reads and stops a recording through the runner" do
+    options = options()
+
+    runner =
+      start_supervised!(
+        {Runner, exporter: BagExporter, options: options, config: options[:config]}
+      )
+
+    :sys.get_state(runner)
+
+    assert {:ok, %{preset: :review, clock: :since_start} = started} =
+             BagExporter.start_recording(runner, :review, :since_start)
+
+    assert {:error, :busy} = BagExporter.start_recording(runner, :replay, :automatic)
+    assert {:ok, %{folder: folder}} = BagExporter.stop_recording(runner)
+    assert folder == started.folder
+    assert BagExporter.recording(runner) == {:ok, nil}
+    assert BagExporter.stop_recording(runner) == {:error, :not_recording}
+  end
+
   test "makes a busy output ready when its encode answers after the stop" do
     codec = start_supervised!({HeldCodec, self()})
     options = options(jpeg_codec: codec)
-    {_started, state} = options |> init!() |> start!(%{"preset" => "review"})
+    {_started, state} = options |> init!() |> start!(:review)
 
     grey = %{BagTestUnit.stereo_frame(:left, System.monotonic_time(:nanosecond)) | jpeg: nil}
     assert {:busy, state} = BagExporter.handle_output({:camera_frame, :left}, grey, state)
@@ -759,9 +808,9 @@ defmodule VisionCore.Ros2.BagExporterTest do
     File.write!(pose, "rotation: [1, 0, 0, 0, 1, 0, 0, 0, 1]\ntranslation: [-0.1, 0, 0]\n")
     options = options(config: BagTestUnit.config(pose: pose))
 
-    {_started, state} = options |> init!() |> start!(%{"preset" => "replay"})
+    {_started, state} = options |> init!() |> start!(:replay)
     {_stopped, state} = stop!(state)
-    {_started, state} = start!(state, %{"preset" => "replay"})
+    {_started, state} = start!(state, :replay)
 
     # Both recordings' first ticks.
     assert_receive :publish_transforms
