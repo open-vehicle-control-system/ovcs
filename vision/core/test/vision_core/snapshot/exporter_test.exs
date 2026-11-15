@@ -273,13 +273,13 @@ defmodule VisionCore.Snapshot.ExporterTest do
   end
 
   # The files of a snapshot whose burst received two status snapshots, one as it subscribed.
-  defp take_with_status_snapshots(snapshot_delay_ms) do
+  defp take_with_status_snapshots(status_snapshot_delay_ms) do
     subscribe = fn runner -> send(runner, {:vision_status, status_snapshot(1.0)}) end
 
     runner =
       start_exporter(
         status: {subscribe, fn _runner -> :ok end},
-        snapshot_delay_ms: snapshot_delay_ms
+        status_snapshot_delay_ms: status_snapshot_delay_ms
       )
 
     task = take(runner)

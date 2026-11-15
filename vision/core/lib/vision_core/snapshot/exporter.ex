@@ -45,7 +45,7 @@ defmodule VisionCore.Snapshot.Exporter do
       and `:stage_ms`, and the raw frames of the first `:frames_kept`.
     * The last pair, whole.
     * The `VisionCore.Status` snapshots that arrive at least
-      `:snapshot_delay_ms` after the burst starts: each describes the
+      `:status_snapshot_delay_ms` after the burst starts: each describes the
       second before it, so an earlier one describes the time before the
       burst. And whether the status could be subscribed to.
     * The detections, each publication as the `captureNs` of its pair,
@@ -70,7 +70,7 @@ defmodule VisionCore.Snapshot.Exporter do
       the burst.
     * `:frames_kept` (`30`) — how many of the burst's first pairs keep
       their raw frames.
-    * `:snapshot_delay_ms` (`1_000`) — how long after the burst starts a
+    * `:status_snapshot_delay_ms` (`1_000`) — how long after the burst starts a
       status snapshot must arrive to be kept: the window a status snapshot
       describes.
     * `:last_change` — `(-> integer() | nil)`, the monotonic time in
@@ -112,7 +112,7 @@ defmodule VisionCore.Snapshot.Exporter do
   @default_settle_ms 2_000
   @default_deadline_ms 30_000
   @default_frames_kept 30
-  @default_snapshot_delay_ms 1_000
+  @default_status_snapshot_delay_ms 1_000
   @depth_range_m 0.0
   @last_pair_fields [:left, :right, :disparity_bytes, :depth]
 
@@ -155,7 +155,8 @@ defmodule VisionCore.Snapshot.Exporter do
        settle_ms: Keyword.get(options, :settle_ms, @default_settle_ms),
        deadline_ms: Keyword.get(options, :deadline_ms, @default_deadline_ms),
        frames_kept: Keyword.get(options, :frames_kept, @default_frames_kept),
-       snapshot_delay_ms: Keyword.get(options, :snapshot_delay_ms, @default_snapshot_delay_ms),
+       status_snapshot_delay_ms:
+         Keyword.get(options, :status_snapshot_delay_ms, @default_status_snapshot_delay_ms),
        last_change: Keyword.get(options, :last_change, fn -> last_change(pipeline) end),
        unit_state: Keyword.get(options, :unit_state, fn -> unit_state(config) end),
        status: Keyword.get(options, :status, {&Status.subscribe/1, &Status.unsubscribe/1}),
@@ -346,7 +347,7 @@ defmodule VisionCore.Snapshot.Exporter do
     do: (capture_ns - previous.capture_ns) / 1.0e6
 
   defp record_status_snapshot(%{recording: recording} = state, status_snapshot) do
-    if now_ms() - recording.started_ms >= state.snapshot_delay_ms do
+    if now_ms() - recording.started_ms >= state.status_snapshot_delay_ms do
       status_snapshots = [status_snapshot | recording.status_snapshots]
       recording = %{recording | status_snapshots: status_snapshots, status_available: true}
       %{state | recording: recording}

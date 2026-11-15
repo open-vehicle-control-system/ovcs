@@ -44,7 +44,7 @@ Its options are the second element of the tuple, for example `{VisionCore.Snapsh
 | `settle_ms` | `2_000` | How old the last change must be for a burst to start. |
 | `deadline_ms` | `30_000` | The time from the request to the end of the burst. |
 | `frames_kept` | `30` | How many of the burst's first pairs keep their raw frames. |
-| `snapshot_delay_ms` | `1_000` | How long after the burst starts a status snapshot must arrive to be kept. |
+| `status_snapshot_delay_ms` | `1_000` | How long after the burst starts a status snapshot must arrive to be kept. |
 
 The settle wait counts against `deadline_ms`. If you raise `burst_pairs` or `burst_ms`, raise `deadline_ms` with them. Keep it, with the encoding, under the 60 s the API waits for an answer ([Take a snapshot](#take-a-snapshot)). [`VisionCore.Snapshot.Exporter`](../../vision/core/lib/vision_core/snapshot/exporter.ex) documents the remaining options, whose defaults read the running unit.
 
