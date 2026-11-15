@@ -2,9 +2,9 @@ defmodule VmsCore.Components.OVCS.RosActuatorCommand.Direction do
   @moduledoc """
   Direction from the ROS bridge's actuator command (`ros_actuator_command`,
   `0x2B0`), broadcast as `:requested_direction`. Carried as its own
-  signal because a negative throttle can mean regenerative braking
-  rather than reverse, as on the OVCS1 reference vehicle: reverse is a
-  gear, and this is what asks for it. Holds when the input goes stale;
+  signal because a negative throttle can mean braking rather than
+  reverse, as on the OVCS1 reference vehicle: reverse is a gear, and
+  this is what asks for it. Holds when the input goes stale;
   direction is inert once the throttle has been zeroed.
   """
   use GenServer
