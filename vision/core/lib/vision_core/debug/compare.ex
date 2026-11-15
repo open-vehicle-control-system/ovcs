@@ -24,7 +24,7 @@ defmodule VisionCore.Debug.Compare do
           std: number(),
           n: non_neg_integer()
         }
-  @type exporter :: %{
+  @type manifest :: %{
           hostname: String.t() | nil,
           time: String.t() | nil,
           firmware: String.t() | nil,
@@ -34,7 +34,7 @@ defmodule VisionCore.Debug.Compare do
         }
   @type only_in :: %{a: [String.t()], b: [String.t()]}
   @type report :: %{
-          exports: %{a: exporter(), b: exporter()},
+          exports: %{a: manifest(), b: manifest()},
           parameters: [{String.t(), term(), term()}],
           figures: [
             %{
@@ -77,7 +77,7 @@ defmodule VisionCore.Debug.Compare do
   the problem, when a zip is not an export or a file of it is malformed,
   and when the two exports' images differ in size.
 
-    * `:exports` — `%{a: info, b: info}`, what each export's manifest says
+    * `:exports` — `%{a: manifest, b: manifest}`, what each export's manifest says
       of it: `hostname`, `time`, `firmware` (the revision), `change_age_ms`,
       `changes_during_burst` and `status_available`.
     * `:parameters` — `{id, a, b}` for each parameter whose value differs,
@@ -121,7 +121,7 @@ defmodule VisionCore.Debug.Compare do
     {width, height} = a.size
 
     %{
-      exports: %{a: a.info, b: b.info},
+      exports: %{a: a.manifest, b: b.manifest},
       parameters: parameters(a.parameters, b.parameters),
       figures: figures(a.figures, b.figures),
       figures_only_in: only_in(a.figures.summaries, b.figures.summaries),
@@ -151,16 +151,16 @@ defmodule VisionCore.Debug.Compare do
   defp parse_export(zip) do
     with {:ok, files} <- unzip(zip),
          :ok <- require_files(files),
-         {:ok, manifest} <- read_json(files, "manifest.json", &check_manifest/1),
+         {:ok, {size, manifest}} <- read_json(files, "manifest.json", &check_manifest/1),
          {:ok, parameters} <- read_json(files, "parameters.json", &check_parameters/1),
          {:ok, figures} <- read_json(files, "figures.json", &check_figures/1),
          {:ok, timings} <- read_json(files, "timings.json", &check_timings/1),
-         {:ok, disparity} <- disparity(files["last/disparity.f32"], manifest.size),
-         {:ok, depth} <- depth(files["last/depth.png"], manifest.size) do
+         {:ok, disparity} <- disparity(files["last/disparity.f32"], size),
+         {:ok, depth} <- depth(files["last/depth.png"], size) do
       {:ok,
        %{
-         size: manifest.size,
-         info: manifest.info,
+         size: size,
+         manifest: manifest,
          parameters: parameters,
          figures: figures,
          timings: timings,
@@ -206,23 +206,23 @@ defmodule VisionCore.Debug.Compare do
     end
   end
 
-  defp check_manifest(%{"imageSize" => %{"width" => width, "height" => height}} = manifest)
+  defp check_manifest(%{"imageSize" => %{"width" => width, "height" => height}} = decoded)
        when is_integer(width) and is_integer(height) and width > 0 and height > 0 do
-    firmware = with %{"revision" => revision} <- manifest["firmware"], do: revision
+    firmware = with %{"revision" => revision} <- decoded["firmware"], do: revision
 
-    info = %{
-      hostname: manifest["hostname"],
-      time: manifest["time"],
+    manifest = %{
+      hostname: decoded["hostname"],
+      time: decoded["time"],
       firmware: if(is_binary(firmware), do: firmware),
-      change_age_ms: manifest["changeAgeMs"],
-      changes_during_burst: manifest["changesDuringBurst"],
-      status_available: manifest["statusAvailable"]
+      change_age_ms: decoded["changeAgeMs"],
+      changes_during_burst: decoded["changesDuringBurst"],
+      status_available: decoded["statusAvailable"]
     }
 
-    {:ok, %{size: {width, height}, info: info}}
+    {:ok, {{width, height}, manifest}}
   end
 
-  defp check_manifest(_manifest),
+  defp check_manifest(_decoded),
     do: {:error, "has no imageSize with a positive integer width and height"}
 
   defp check_parameters(parameters) when is_list(parameters) do

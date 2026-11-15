@@ -96,15 +96,15 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
           "status",
           "file"
         ],
-        for {label, path, info} <- [{"A", path_a, exports.a}, {"B", path_b, exports.b}] do
+        for {label, path, manifest} <- [{"A", path_a, exports.a}, {"B", path_b, exports.b}] do
           [
             label,
-            text(info.hostname),
-            text(info.time),
-            text(info.firmware),
-            change_age(info.change_age_ms),
-            text(info.changes_during_burst),
-            status(info.status_available),
+            text(manifest.hostname),
+            text(manifest.time),
+            text(manifest.firmware),
+            change_age(manifest.change_age_ms),
+            text(manifest.changes_during_burst),
+            status(manifest.status_available),
             path
           ]
         end

@@ -23,11 +23,11 @@ const currentExporterId = (id) => RENAMED_EXPORTERS.get(id) ?? id
  * unknown or missing page the overview.
  */
 export function pageFromUrl(search = window.location.search) {
-  const params = new URLSearchParams(search)
-  if (params.has(BOX_PARAMETER)) return 'pipeline'
+  const query = new URLSearchParams(search)
+  if (query.has(BOX_PARAMETER)) return 'pipeline'
   if (exporterFromUrl(search) != null) return 'exporter'
-  if (params.has(CALIBRATION_PARAMETER)) return 'calibration'
-  const page = params.get(PAGE_PARAMETER)
+  if (query.has(CALIBRATION_PARAMETER)) return 'calibration'
+  const page = query.get(PAGE_PARAMETER)
   return PAGES.includes(page) && page !== 'pipeline' && page !== 'exporter' ? page : 'overview'
 }
 
@@ -36,9 +36,9 @@ export const boxFromUrl = (search = window.location.search) => new URLSearchPara
 
 /** The exporter the URL names, if any: its `exporter`, or a `page` naming one, under its current id. */
 export function exporterFromUrl(search = window.location.search) {
-  const params = new URLSearchParams(search)
-  const page = currentExporterId(params.get(PAGE_PARAMETER))
-  return currentExporterId(params.get(EXPORTER_PARAMETER)) ?? (EXPORTER_PAGES.includes(page) ? page : null)
+  const query = new URLSearchParams(search)
+  const page = currentExporterId(query.get(PAGE_PARAMETER))
+  return currentExporterId(query.get(EXPORTER_PARAMETER)) ?? (EXPORTER_PAGES.includes(page) ? page : null)
 }
 
 /** The calibration the URL names, if any. */

@@ -47,7 +47,7 @@ defmodule VisionApiWeb.CalibrationSolveControllerTest do
                    %{name: "right", file: "unit_right.yaml", rmsPx: 0.4, yaml: right_yaml}
                  ]
                }
-             } = VisionApiWeb.CalibrationJSON.session(state)
+             } = VisionApiWeb.CalibrationSessionJSON.session(state)
 
       assert "image_width: 1280" <> _ = left_yaml
       assert left_yaml =~ "camera_name: unit_left"

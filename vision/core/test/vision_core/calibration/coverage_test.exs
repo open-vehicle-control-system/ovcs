@@ -17,12 +17,12 @@ defmodule VisionCore.Calibration.CoverageTest do
 
   describe "parameters/3" do
     test "a centred axis-aligned grid filling a quarter of the image" do
-      params = Coverage.parameters(grid(160, 120, 320, 240), @board, @image)
+      sample = Coverage.parameters(grid(160, 120, 320, 240), @board, @image)
 
-      assert_in_delta params.x, 0.5, 0.02
-      assert_in_delta params.y, 0.5, 0.02
-      assert_in_delta params.size, 0.5, 0.02
-      assert_in_delta params.skew, 0.0, 0.02
+      assert_in_delta sample.x, 0.5, 0.02
+      assert_in_delta sample.y, 0.5, 0.02
+      assert_in_delta sample.size, 0.5, 0.02
+      assert_in_delta sample.skew, 0.0, 0.02
     end
 
     test "a grid at the left edge has a small x" do

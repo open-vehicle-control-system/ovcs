@@ -104,7 +104,7 @@ defmodule VisionCore.Calibration.Session do
           target: %{id: String.t(), kind: Calibration.kind()} | nil,
           board: Board.t() | nil,
           samples: non_neg_integer(),
-          progress: Coverage.params(),
+          progress: Coverage.axes(),
           good_enough: boolean(),
           detection: %{views: %{String.t() => fractions() | nil}, sample: boolean()} | nil,
           result: Solver.result() | Solver.camera_result() | Solver.pose_result() | nil,

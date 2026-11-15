@@ -44,6 +44,19 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
 
   defp put_in_use(conn, id), do: patch_saved(conn, id, %{inUse: true})
 
+  defp await_calibration_task do
+    case Task.Supervisor.children(VisionCore.Calibration.Tasks) do
+      [task] ->
+        task
+
+      [] ->
+        receive do
+        after
+          5 -> await_calibration_task()
+        end
+    end
+  end
+
   defp reset(conn, target) do
     document = %{
       data: %{
@@ -491,6 +504,32 @@ defmodule VisionApiWeb.SavedCalibrationControllerTest do
       assert Library.in_use("hq").id == second.id
       assert {:ok, %{name: name}} = Library.fetch(first.id)
       assert name == first.name
+    end
+
+    @tag :capture_log
+    test "answers 500 when the task putting it in use exits, the one in use left",
+         %{conn: conn, config: config} do
+      first = save(config, 580.8)
+      second = save(config, 590.0)
+
+      # Holds the camera's lock, so that the task waits for it until killed.
+      lock = {{VisionCore.Camera.Calibration, :hq}, self()}
+      true = :global.set_lock(lock, [node()])
+      request = Task.async(fn -> put_in_use(conn, first.id) end)
+      Process.exit(await_calibration_task(), :kill)
+      answer = Task.await(request)
+      :global.del_lock(lock, [node()])
+
+      assert %{
+               "errors" => [
+                 %{
+                   "status" => "500",
+                   "detail" => "putting the calibration in use failed; the log says why"
+                 }
+               ]
+             } = json_response(answer, 500)
+
+      assert Library.in_use("hq").id == second.id
     end
 
     test "answers 404 for a calibration not saved", %{conn: conn} do

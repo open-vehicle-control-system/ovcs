@@ -51,8 +51,8 @@ function InUseBadge() {
   return <OvcsBadge tone="ok">In use</OvcsBadge>
 }
 
-/** The firmware's calibration or position, which the unit goes back to: nothing saved is removed. */
-function FirmwareItem({ kind, inUse, busy, onUse }) {
+/** The built-in calibration or position, which the unit goes back to: nothing saved is removed. */
+function BuiltInItem({ kind, inUse, busy, onUse }) {
   return (
     <li aria-label="Shipped with the firmware" className={ITEM}>
       <div className={TITLE}>
@@ -119,7 +119,7 @@ function NameEditor({ saved, onClose }) {
   )
 }
 
-// Removing the calibration in use first takes the unit back to the firmware's.
+// Removing the calibration in use first takes the unit back to the built-in one.
 const deleteQuestion = ({ name, inUse }) => ({
   title: `Delete the calibration "${name}"?`,
   message: inUse ? 'The unit uses it: it goes back to the calibration shipped with the firmware first.' : null,
@@ -127,15 +127,15 @@ const deleteQuestion = ({ name, inUse }) => ({
   danger: true
 })
 
-const NO_FIRMWARE = 'The unit has no calibration shipped with the firmware to go back to'
+const NO_BUILT_IN = 'The unit has no calibration shipped with the firmware to go back to'
 
 /**
- * A saved calibration; the one in use can be deleted only where `firmware`, the firmware's calibration, exists. Its name
+ * A saved calibration; the one in use can be deleted only where `builtIn`, the built-in calibration, exists. Its name
  * gives way to a field while it is renamed; once renamed, the focus goes back to Rename, or to the name while the
  * rename disables that button.
  */
-function Item({ saved, kind, busy, firmware }) {
-  const noWayBack = saved.inUse && !firmware
+function Item({ saved, kind, busy, builtIn }) {
+  const noWayBack = saved.inUse && !builtIn
   const use = useCalibration((state) => state.useSaved)
   const remove = useCalibration((state) => state.deleteSaved)
   const [confirm, confirmation] = useOvcsConfirm()
@@ -198,7 +198,7 @@ function Item({ saved, kind, busy, firmware }) {
           <button
             type="button"
             disabled={busy || noWayBack}
-            title={noWayBack ? NO_FIRMWARE : undefined}
+            title={noWayBack ? NO_BUILT_IN : undefined}
             aria-label={`Delete ${saved.name}`}
             onClick={confirmRemove}
             className={SMALL_BUTTON}
@@ -213,7 +213,7 @@ function Item({ saved, kind, busy, firmware }) {
 }
 
 /**
- * Every calibration the unit saved for the one shown, the newest first, and the firmware's: each can be put back in
+ * Every calibration the unit saved for the one shown, the newest first, and the built-in one: each can be put back in
  * use, and a saved one renamed, downloaded and deleted. Nothing changes while a calibration session runs.
  */
 export default function Saved() {
@@ -224,18 +224,18 @@ export default function Saved() {
 
   if (!calibration) return null
 
-  const firmware = calibration.source === 'builtIn' || calibration.canReset
+  const builtIn = calibration.source === 'builtIn' || calibration.canReset
 
   return (
     <Section title="Calibrations saved on the unit" hint={<Hint hint={ORIGIN_HINT} />} className="border-t border-ovcs-border pt-4">
-      {list.length === 0 && !firmware ? (
+      {list.length === 0 && !builtIn ? (
         <p className="text-sm text-ovcs-muted">None yet: each calibration made is saved here, to name and to use again.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-ovcs-border text-sm">
           {list.map((one) => (
-            <Item key={one.id} saved={one} kind={calibration.kind} busy={busy} firmware={firmware} />
+            <Item key={one.id} saved={one} kind={calibration.kind} busy={busy} builtIn={builtIn} />
           ))}
-          {firmware ? <FirmwareItem kind={calibration.kind} inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
+          {builtIn ? <BuiltInItem kind={calibration.kind} inUse={calibration.source === 'builtIn'} busy={busy} onUse={reset} /> : null}
         </ul>
       )}
     </Section>

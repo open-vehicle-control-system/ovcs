@@ -60,7 +60,21 @@ defmodule VisionApiWeb.JsonApiTest do
       end
     end
 
-    for path <- ["/api/stages", "/api/ros2-node", "/api/parameters", "/api/saved-calibrations"] do
+    for path <- [
+          "/api/stages",
+          "/api/ros2-node",
+          "/api/parameters",
+          "/api/parameters/stereo.disparity.p1",
+          "/api/depth-preview",
+          "/api/configuration",
+          "/api/firmware",
+          "/api/board",
+          "/api/exporters",
+          "/api/calibrations",
+          "/api/calibrations/unit",
+          "/api/saved-calibrations",
+          "/api/saved-calibrations/1"
+        ] do
       test "GET #{path} answers 400 to a sort, naming it", %{conn: conn} do
         conn = get(conn, unquote(path) <> "?sort=name")
 

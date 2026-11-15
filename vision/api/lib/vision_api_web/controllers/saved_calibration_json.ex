@@ -8,12 +8,11 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   pair's `baselineM`, and its `cameras`, each with its `name`, image
   size, intrinsics, distortion coefficients, `rmsPx`, and the `file`
   name to save its `yaml` under, as the calibration in use's. A camera's
-  pose has no camera and its `pose`, as `VisionApiWeb.CalibrationJSON`
-  renders one, with the `rmsPx` of the solve that made it; `null` for
+  pose has no camera and its `pose`, a `VisionApiWeb.CalibrationPose`, with the `rmsPx` of the solve that made it; `null` for
   any other calibration. Its `calibration` relationship names the target
   it calibrates, one of the `calibrations`.
   """
-  alias VisionApiWeb.{CalibrationJSON, JsonApi}
+  alias VisionApiWeb.{CalibrationPose, JsonApi}
   alias VisionCore.Calibration.Library
   alias VisionCore.Models
 
@@ -56,7 +55,7 @@ defmodule VisionApiWeb.SavedCalibrationJSON do
   defp pose(%Models.CameraPose{} = saved_pose, [%{file: file, yaml: yaml}]) do
     saved_pose
     |> Models.CameraPose.to_pose()
-    |> CalibrationJSON.pose(file, yaml)
+    |> CalibrationPose.attributes(file, yaml)
     |> Map.put(:rmsPx, saved_pose.rms_px)
   end
 
