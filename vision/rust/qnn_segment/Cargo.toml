@@ -7,3 +7,4 @@ edition = "2021"
 detection = { path = "../detection" }
 framing = { path = "../framing" }
 qnn = { path = "../qnn" }
+segmentation = { path = "../segmentation" }
