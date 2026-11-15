@@ -36,6 +36,20 @@ defmodule VisionCore.Ros2.BagExporterTest do
     end
   end
 
+  # Answers each encode at once.
+  defmodule InstantCodec do
+    use GenServer
+
+    def start_link(_options), do: GenServer.start_link(__MODULE__, nil)
+
+    @impl GenServer
+    def init(nil), do: {:ok, nil}
+
+    @impl GenServer
+    def handle_call({:request, _request, _shared_frame}, _from, nil),
+      do: {:reply, {:ok, <<0xFF, 0xD8, 0xFF, 0xD9>>}, nil}
+  end
+
   defp options(tmp_dir, extra \\ []) do
     Keyword.merge(
       [
@@ -303,14 +317,25 @@ defmodule VisionCore.Ros2.BagExporterTest do
           {output, value} <- BagTestUnit.values(first_ns + n * 33_333_333),
           output in outputs,
           reduce: state do
-        state ->
-          assert {:ok, state} = BagExporter.handle_output(output, value, state)
-          state
+        state -> hand_over!(state, output, value)
       end
 
     {stopped, _state} = stop!(state)
     {files, _metadata} = bag!(started.folder)
     {stopped, files |> stamped() |> Enum.frequencies_by(&elem(&1, 0))}
+  end
+
+  # As the runner does: an output busy encoding takes its next value once the encode is answered.
+  defp hand_over!(state, output, value) do
+    case BagExporter.handle_output(output, value, state) do
+      {:ok, state} ->
+        state
+
+      {:busy, state} ->
+        assert_receive {reference, _answer} = answer when is_reference(reference)
+        assert {:ready, ^output, state} = BagExporter.handle_info(answer, state)
+        state
+    end
   end
 
   test "review records the depth at 5 Hz and each camera at 10 Hz of capture time, none dropped",
@@ -334,6 +359,23 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert counts["/stereo/left/image_raw"] == 90
     assert counts["/stereo/right/image_raw"] == 90
     assert counts["/hq/image_raw/compressed"] == 90
+  end
+
+  test "a camera that sends no JPEG is recorded on its capture times alone", %{tmp_dir: tmp_dir} do
+    codec = start_supervised!(InstantCodec)
+
+    options =
+      options(tmp_dir,
+        config: BagTestUnit.config(grey_camera: true),
+        jpeg_codec: codec,
+        recording: [queue: 10_000]
+      )
+
+    {_stopped, counts} = record_30_hz(options, "replay")
+    assert counts["/usb/image_raw/compressed"] == 90
+
+    {_stopped, counts} = record_30_hz(options, "review")
+    assert counts["/usb/image_raw/compressed"] in 29..31
   end
 
   test "a vehicle's preset sets its own rates, none without them", %{tmp_dir: tmp_dir} do

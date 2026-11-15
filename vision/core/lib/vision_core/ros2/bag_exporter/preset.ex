@@ -20,7 +20,11 @@ defmodule VisionCore.Ros2.BagExporter.Preset do
       pipeline's results; the cameras' poses. What a drive is looked at
       with, hours long.
 
-  A part the configuration lacks, such as a stereo unit, is left out.
+  A camera's images are rated on their capture times alone, by the
+  preset's `:max_hz`: its `:raw_image_max_hz` is `:infinity`, since the
+  Zenoh exporter's rate counts the times frames are handed over, which
+  the queue shifts. A part the configuration lacks, such as a stereo
+  unit, is left out.
   """
 
   alias VisionCore.Camera.{Output, Unit}
@@ -121,7 +125,11 @@ defmodule VisionCore.Ros2.BagExporter.Preset do
               output = jpeg_output(config, name),
               do: {name, output}
 
-        [cameras: options ++ if(jpeg_outputs == [], do: [], else: [outputs: jpeg_outputs])]
+        [
+          cameras:
+            [raw_image_max_hz: :infinity] ++
+              options ++ if(jpeg_outputs == [], do: [], else: [outputs: jpeg_outputs])
+        ]
     end
   end
 

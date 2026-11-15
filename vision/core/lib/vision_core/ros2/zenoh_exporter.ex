@@ -118,7 +118,8 @@ defmodule VisionCore.Ros2.ZenohExporter do
       topics under, each camera's being under its name
       (`VisionCore.Ros2.ZenohExporter.Camera.topic_root/2`);
       `:raw_image_max_hz` (10), the most images a second per
-      camera for frames it encodes, JPEG frames going out as they arrive;
+      camera for frames it encodes, `:infinity` for every frame, JPEG
+      frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
     * `:segmentation` — publishes the results of each segmentation
       pipeline its `:pipelines` lists, by default every one of the

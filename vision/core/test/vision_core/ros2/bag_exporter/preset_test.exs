@@ -52,7 +52,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
 
     assert Preset.options(:replay, config) == [
              stereo: [raw_images: true, publish_raw_images: false, pair_messages: []],
-             cameras: [outputs: [hq: :view_jpeg]]
+             cameras: [raw_image_max_hz: :infinity, outputs: [hq: :view_jpeg]]
            ]
 
     assert topics(published(:replay, config)) == [
@@ -73,7 +73,11 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
 
     assert Preset.options(:review, config) == [
              stereo: [sides: [:left], pair_messages: [:depth]],
-             cameras: [camera_info_interval_frames: 10, outputs: [hq: :view_jpeg]],
+             cameras: [
+               raw_image_max_hz: :infinity,
+               camera_info_interval_frames: 10,
+               outputs: [hq: :view_jpeg]
+             ],
              detections: [pipelines: [:objects]],
              segmentation: [],
              max_hz: [pairs: 5, cameras: 10]
@@ -120,8 +124,10 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
         end)
       end)
 
-    assert Preset.options(:replay, config)[:cameras] == []
-    assert Preset.options(:review, config)[:cameras] == [camera_info_interval_frames: 10]
+    assert Preset.options(:replay, config)[:cameras] == [raw_image_max_hz: :infinity]
+
+    assert Preset.options(:review, config)[:cameras] ==
+             [raw_image_max_hz: :infinity, camera_info_interval_frames: 10]
   end
 
   # Review Focus 3: a type without its definition would fail at the first recording.

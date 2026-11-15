@@ -386,5 +386,10 @@ defmodule VisionCore.Ros2.ZenohExporter.StereoTest do
       jpeg = %Frame{label: "left", width: 1, height: 1, capture_ns: 0, jpeg: <<0xFF, 0xD8>>}
       assert published(jpeg, 10) == 30
     end
+
+    test "every grey frame is published at a max_hz of :infinity" do
+      grey = %Frame{label: "left", width: 1, height: 1, capture_ns: 0, grey: <<0>>}
+      assert published(grey, :infinity) == 30
+    end
   end
 end

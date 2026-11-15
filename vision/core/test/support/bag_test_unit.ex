@@ -3,7 +3,8 @@ defmodule VisionCore.BagTestUnit do
   A vision unit with every kind of producer the bag exporter's presets
   record, for its tests: a stereo unit, a camera `:hq` with a JPEG output,
   a detection pipeline `:objects` and a segmentation pipeline `:road` on it,
-  and values of each of their outputs.
+  with `grey_camera: true` a camera `:usb` that sends grey frames, and
+  values of each of their outputs.
   """
 
   alias VisionCore.Camera.Frame
@@ -18,7 +19,10 @@ defmodule VisionCore.BagTestUnit do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
-  @doc "The unit's configuration; with `pose:`, the camera's pose file, so that transforms go out."
+  @doc """
+  The unit's configuration; with `pose:`, the camera's pose file, so that
+  transforms go out, and with `grey_camera: true`, the camera `:usb`.
+  """
   @spec config(keyword()) :: VisionCore.Config.t()
   def config(opts \\ []) do
     %VisionCore.Config{
@@ -57,7 +61,13 @@ defmodule VisionCore.BagTestUnit do
          source: {:camera, :hq, :small}}
       ]
     }
+    |> add_grey_camera(opts[:grey_camera])
   end
+
+  defp add_grey_camera(config, true),
+    do: %{config | components: config.components ++ [{:camera, name: :usb, driver: Camera}]}
+
+  defp add_grey_camera(config, _none), do: config
 
   @doc "A stereo camera's frame of `side`, with grey bytes and a JPEG, captured at `capture_ns`."
   @spec stereo_frame(:left | :right, integer()) :: Frame.t()
@@ -108,6 +118,19 @@ defmodule VisionCore.BagTestUnit do
       cloud: :binary.copy(<<0::32>>, 3 * 2),
       cloud_points: 2,
       cloud_size: {1, 2}
+    }
+  end
+
+  @doc "A grey frame of the camera `:usb`, captured at `capture_ns`."
+  @spec grey_camera_frame(integer()) :: Frame.t()
+  def grey_camera_frame(capture_ns) do
+    %Frame{
+      label: "usb",
+      frame_id: "usb_optical",
+      width: 4,
+      height: 2,
+      capture_ns: capture_ns,
+      grey: <<0, 32, 64, 96, 128, 160, 192, 224>>
     }
   end
 
@@ -171,6 +194,7 @@ defmodule VisionCore.BagTestUnit do
       {{:camera_frame, :right}, stereo_frame(:right, capture_ns)},
       {:stereo_pair, pair(capture_ns)},
       {{:camera_frame, :hq, :view_jpeg}, camera_frame(capture_ns)},
+      {{:camera_frame, :usb}, grey_camera_frame(capture_ns)},
       {{:detections, :objects}, detections(capture_ns)},
       {{:segmentation, :road}, segmentation(capture_ns)}
     ]

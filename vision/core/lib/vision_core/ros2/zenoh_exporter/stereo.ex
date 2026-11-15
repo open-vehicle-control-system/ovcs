@@ -343,15 +343,18 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
 
   @doc """
   Whether to publish `frame` as a raw image at `now_ms`. A JPEG frame is
-  always published. A grey frame, which has to be encoded, is published
-  once the side's next slot, `next_ms`, has opened: slots are
-  `1000 / max_hz` ms apart, so frames on a coarser grid still average
-  `max_hz`. Returns the next slot when the frame is published.
+  always published, and any frame with a `max_hz` of `:infinity`. A grey
+  frame, which has to be encoded, is published once the side's next
+  slot, `next_ms`, has opened: slots are `1000 / max_hz` ms apart, so
+  frames on a coarser grid still average `max_hz`. Returns the next slot
+  when the frame is published.
   """
-  @spec image_slot(number() | nil, Frame.t(), number(), number()) ::
+  @spec image_slot(number() | nil, Frame.t(), number(), number() | :infinity) ::
           {:publish, number() | nil} | :skip
   def image_slot(next_ms, %Frame{jpeg: jpeg}, _now_ms, _max_hz) when is_binary(jpeg),
     do: {:publish, next_ms}
+
+  def image_slot(next_ms, %Frame{}, _now_ms, :infinity), do: {:publish, next_ms}
 
   def image_slot(nil, %Frame{}, now_ms, max_hz), do: {:publish, now_ms + 1_000 / max_hz}
 
@@ -364,7 +367,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   Whether publishing `frame` as a raw image at `now_ms` encodes it: it is
   no JPEG frame and its slot is open (`image_slot/4`).
   """
-  @spec encodes_image?(Frame.t(), number() | nil, number(), number()) :: boolean()
+  @spec encodes_image?(Frame.t(), number() | nil, number(), number() | :infinity) :: boolean()
   def encodes_image?(%Frame{jpeg: jpeg}, _next_ms, _now_ms, _max_hz) when is_binary(jpeg),
     do: false
 

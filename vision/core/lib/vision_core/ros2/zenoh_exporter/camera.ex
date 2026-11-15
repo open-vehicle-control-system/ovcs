@@ -60,7 +60,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
           service_name: String.t(),
           calibration: CameraCalibration.t() | nil,
           pose: Pose.t() | nil,
-          raw_image_max_hz: number(),
+          raw_image_max_hz: number() | :infinity,
           camera_info_interval_frames: pos_integer(),
           stamp: Stamp.stamp_function(),
           frame_counter: non_neg_integer(),
@@ -71,7 +71,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Camera do
   @doc """
   The camera of `settings` (`VisionCore.Camera.Unit.settings/1`) with
   its calibration and pose read, and `options`: `:topic_prefix` (none),
-  `:raw_image_max_hz` (10), `:camera_info_interval_frames` (30) and
+  `:raw_image_max_hz` (10, `:infinity` for every frame),
+  `:camera_info_interval_frames` (30) and
   `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`), what
   stamps its images and video from their capture time. A calibration
   or pose that cannot be read is left out, with a warning.
