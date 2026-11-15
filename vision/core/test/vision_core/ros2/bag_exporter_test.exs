@@ -555,6 +555,35 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert File.exists?(Path.join(first.folder, "metadata.yaml"))
   end
 
+  # Folders of `suffix` after each name the next seconds' recordings of replay take, on the stick.
+  defp taken_on_stick!(disks, suffix) do
+    TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+    eventually(fn -> match?({:ok, %{state: :mounted}}, Disks.fetch(Disks, @stick)) end)
+    :ok = Disks.put_order(Disks, ["internal", @stick])
+    {:ok, stick} = Disks.fetch(Disks, @stick)
+    now = DateTime.utc_now()
+
+    for seconds <- -1..10 do
+      name = Calendar.strftime(DateTime.add(now, seconds), "%Y%m%dT%H%M%SZ") <> "_replay"
+      File.mkdir_p!(Path.join(stick.recordings_path, name <> suffix))
+      name
+    end
+  end
+
+  for suffix <- ["", "_part2"] do
+    test "takes no name a recording on another disk has, as #{inspect(suffix)}", %{disks: disks} do
+      taken = taken_on_stick!(disks, unquote(suffix))
+      state = init!(options())
+
+      {started, state} = start!(state, :replay)
+      stop!(state)
+
+      assert started.disk == "internal"
+      refute started.name in taken
+      assert started.name =~ ~r/_replay_2$/
+    end
+  end
+
   test "status: what it records, since when, how much, and what it dropped" do
     options = options()
     {_started, state} = options |> init!() |> start!(:replay)

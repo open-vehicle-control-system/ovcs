@@ -14,8 +14,10 @@ defmodule VisionCore.Ros2.BagExporter do
   ROS 2 link and answers no service. While idle it builds nothing.
 
   A recording records into `<YYYYMMDDTHHMMSSZ>_<preset>`, the time the
-  UTC start, `_2`, `_3`… after it for a folder already there, in the
-  recordings folder of the first disk `VisionCore.Disks.next/3` gives.
+  UTC start, `_2`, `_3`… after it for a name a recording on any mounted
+  disk has, a part `<name>_part<n>` included, so that no two recordings
+  join, in the recordings folder of the first disk
+  `VisionCore.Disks.next/3` gives.
   A recording goes on on the next disk when its disk fills past
   `:free_floor_bytes`, is ejected or pulled out, in a folder of the same
   name with `_part<n>` (`VisionCore.Ros2.Bag.Recording`).
@@ -394,7 +396,7 @@ defmodule VisionCore.Ros2.BagExporter do
 
   defp begin_recording(state, preset, clock_choice, disk) do
     started_at = DateTime.utc_now()
-    name = folder_name(disk.recordings_path, started_at, preset)
+    name = folder_name(state.disks, disk.recordings_path, started_at, preset)
     dir = Path.join(disk.recordings_path, name)
     synchronized? = Keyword.get(state.options, :clock_synchronized?)
     clock_options = if synchronized?, do: [synchronized?: synchronized?], else: []
@@ -487,15 +489,26 @@ defmodule VisionCore.Ros2.BagExporter do
     end
   end
 
-  defp folder_name(root, started_at, preset) do
+  # A name no recording on a mounted disk has, as `VisionCore.Recordings` joins their parts, nor any file in `root`.
+  defp folder_name(disks, root, started_at, preset) do
     base = Calendar.strftime(started_at, "%Y%m%dT%H%M%SZ") <> "_#{preset}"
+    taken = taken_names(disks)
 
     Stream.iterate(1, &(&1 + 1))
     |> Stream.map(fn
       1 -> base
       n -> "#{base}_#{n}"
     end)
-    |> Enum.find(&(not File.exists?(Path.join(root, &1))))
+    |> Enum.find(&(not MapSet.member?(taken, &1) and not File.exists?(Path.join(root, &1))))
+  end
+
+  defp taken_names(disks) do
+    for %{recordings_path: recordings} <- Disks.list(disks),
+        is_binary(recordings),
+        {:ok, folders} <- [File.ls(recordings)],
+        folder <- folders,
+        into: MapSet.new(),
+        do: folder |> VisionCore.Recording.part_of() |> elem(0)
   end
 
   defp check_later(pid),
