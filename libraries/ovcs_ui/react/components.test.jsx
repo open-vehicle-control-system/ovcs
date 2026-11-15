@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { render } from '@testing-library/react'
 import { describe, expect, test } from 'vitest'
 import { OvcsBadge, OvcsCard, OvcsDot, OvcsHeader, OvcsRow, OvcsStatus } from './index.js'
@@ -25,6 +26,14 @@ describe('OvcsBadge', () => {
     const { container } = render(<OvcsBadge tone="warn">stale</OvcsBadge>)
     expect(container.firstChild.textContent).toBe('stale')
     expect(classesOf(container.firstChild)).toEqual(['ovcs-badge', 'ovcs-badge--warn'])
+  })
+
+  test('has an ok tone', () => {
+    const { container } = render(<OvcsBadge tone="ok">in use</OvcsBadge>)
+    expect(classesOf(container.firstChild)).toEqual(['ovcs-badge', 'ovcs-badge--ok'])
+    expect(readFileSync('components.css', 'utf8')).toMatch(
+      /\.ovcs-badge--ok \{\s*background-color: var\(--ovcs-ok-text\);\s*color: var\(--ovcs-bg\);/
+    )
   })
 
   test('is neutral without a tone', () => {
