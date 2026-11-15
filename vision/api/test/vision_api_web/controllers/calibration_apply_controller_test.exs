@@ -58,7 +58,7 @@ defmodule VisionApiWeb.CalibrationApplyControllerTest do
                fxPx: 880.0,
                cameras: [%{name: "hq", file: "hq.yaml", rmsPx: 0.2, yaml: yaml}]
              }
-           } = VisionApiWeb.CalibrationJSON.session(Session.state())
+           } = VisionApiWeb.CalibrationSessionJSON.session(Session.state())
 
     assert yaml =~ "camera_name: hq"
 
@@ -89,7 +89,7 @@ defmodule VisionApiWeb.CalibrationApplyControllerTest do
                  yaml: yaml
                }
              }
-           } = VisionApiWeb.CalibrationJSON.session(Session.state())
+           } = VisionApiWeb.CalibrationSessionJSON.session(Session.state())
 
     assert translation == VisionApiWeb.CalibrationCase.pose().translation
     assert_in_delta distance_mm, 60.53, 0.01

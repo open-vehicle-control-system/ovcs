@@ -2,10 +2,10 @@ defmodule VisionApiWeb.CalibrationChannel do
   @moduledoc """
   Pushes the calibration session as `"session"` on join and on each change
   of `VisionCore.Calibration.Session`, with the id of the `calibration` it
-  works on, and each calibration in use as `"calibration"`, with its `id`,
-  on join and each time the unit takes another one; both shaped by
-  `VisionApiWeb.CalibrationJSON`; a camera's pose as its own calibration,
-  at each change of the pose. Each change of the saved calibrations
+  works on, shaped by `VisionApiWeb.CalibrationSessionJSON`, and each
+  calibration in use as `"calibration"`, with its `id`, on join and each
+  time the unit takes another one, shaped by `VisionApiWeb.CalibrationJSON`;
+  a camera's pose as its own calibration, at each change of the pose. Each change of the saved calibrations
   of one of them, as one saved, renamed, removed or put in use, is
   pushed as `"saved"` with the id of that `calibration`: the client
   reads the `saved-calibrations` again. Joining subscribes to the session, which
@@ -19,7 +19,7 @@ defmodule VisionApiWeb.CalibrationChannel do
   """
   use VisionApiWeb, :channel
 
-  alias VisionApiWeb.{CalibrationJSON, CalibrationUnit, SourceMonitor}
+  alias VisionApiWeb.{CalibrationJSON, CalibrationSessionJSON, CalibrationUnit, SourceMonitor}
   alias VisionCore.Calibration
   alias VisionCore.Calibration.{Recorder, Session}
   alias VisionCore.Outputs
@@ -88,7 +88,7 @@ defmodule VisionApiWeb.CalibrationChannel do
   end
 
   defp push_session(socket, state) do
-    session = CalibrationJSON.session(state)
+    session = CalibrationSessionJSON.session(state)
     push(socket, "session", Map.put(session, :calibration, state.target && state.target.id))
   end
 
