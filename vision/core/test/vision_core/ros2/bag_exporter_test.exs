@@ -2,6 +2,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   # Starts the Zenoh exporter's state, which subscribes to calibration keys.
   use ExUnit.Case, async: false
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias VisionCore.{BagTestUnit, McapReader}
   alias VisionCore.Exporter.Runner
   alias VisionCore.Parameters.{Group, Parameter}
@@ -412,6 +413,58 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert reason =~ "review" and reason =~ ":usb"
   end
 
+  test "refuses a vehicle's preset that sets an option the bag exporter sets itself",
+       %{tmp_dir: tmp_dir} do
+    own_options = [
+      config: %VisionCore.Config{},
+      link: true,
+      services: true,
+      jpeg_codec: self(),
+      publish: fn _topic, _module, _message, _options -> :ok end,
+      stamp: fn _monotonic_ns -> nil end
+    ]
+
+    for {key, _value} = option <- own_options do
+      options = options(tmp_dir, presets: [replay: [option]])
+
+      assert BagExporter.check(options) ==
+               {:error, "its replay preset: sets #{key}:, which the bag exporter sets itself"}
+    end
+
+    options = options(tmp_dir, presets: [review: Keyword.take(own_options, [:publish, :stamp])])
+
+    assert BagExporter.check(options) ==
+             {:error,
+              "its review preset: sets publish:, stamp:, which the bag exporter sets itself"}
+  end
+
+  test "a vehicle's preset neither sends the recording's messages elsewhere nor stamps them",
+       %{tmp_dir: tmp_dir} do
+    test = self()
+
+    preset =
+      Preset.options(:replay, BagTestUnit.config()) ++
+        [
+          publish: fn topic, _module, _message, _options -> send(test, {:published, topic}) end,
+          stamp: fn _monotonic_ns -> %Time{sec: 1_000_000, nanosec: 0} end
+        ]
+
+    options = options(tmp_dir, presets: [replay: preset])
+
+    {started, state} =
+      options |> init!() |> start!(%{"preset" => "replay", "clock" => "since_start"})
+
+    {_stopped, _state} = state |> hand(options) |> stop!()
+
+    {files, _metadata} = bag!(started.folder)
+    assert topics(files) == @replay_topics
+
+    for {topic, _log_time, stamp} <- stamped(files),
+        do: assert(stamp in 0..5_000_000_000, "#{topic} stamped #{stamp}")
+
+    refute_received {:published, _topic}
+  end
+
   test "refuses a start while recording, a stop while idle, and what it does not know",
        %{tmp_dir: tmp_dir} do
     state = init!(options(tmp_dir))
@@ -553,14 +606,14 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert Recording.status(recording) == nil
   end
 
-  test "a start whose builder exits answers the failure and leaves its recording closed",
+  test "a start whose builder raises answers the failure and leaves its recording closed",
        %{tmp_dir: tmp_dir} do
-    # A preset's own :stamp comes before the recording's, and the builder's init stamps the transforms.
-    preset =
-      Preset.options(:replay, BagTestUnit.config()) ++
-        [stamp: fn _monotonic_ns -> exit(:no_clock) end]
-
-    options = options(tmp_dir, presets: [replay: preset])
+    # The builder's init computes the camera's transform, whose numbers overflow.
+    pose = Path.join(tmp_dir, "hq_pose.yaml")
+    File.write!(pose, "rotation: [1.0e+308, 0, 0, 0, 1.0e+308, 0, 0, 0, 1.0e+308]\n")
+    File.write!(pose, "translation: [0, 0, 0]\n", [:append])
+    options = options(tmp_dir, config: BagTestUnit.config(pose: pose))
+    assert BagExporter.check(options) == :ok
 
     runner =
       start_supervised!(
@@ -570,7 +623,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert {:error, {:failed, reason}} =
              Runner.action(runner, "start", %{"preset" => "replay"}, 5_000)
 
-    assert reason =~ "no_clock"
+    assert reason =~ "cannot build the replay preset's messages: ** (ArithmeticError)"
     assert [folder] = options[:root] |> Path.join("*") |> Path.wildcard()
     assert {[%{messages: []}], %{"files" => [_file]}} = bag!(folder)
   end

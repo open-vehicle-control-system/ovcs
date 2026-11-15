@@ -72,8 +72,10 @@ defmodule VisionCore.Ros2.BagExporter do
       preset's, by preset name, with its own `:max_hz`, every value
       without: `[review: [cameras: [names: [:front]], max_hz: [cameras: 5]]]`.
       `check/1` refuses a name that is no preset, a `:max_hz` that
-      `VisionCore.Ros2.BagExporter.Preset.max_hz/1` refuses, and options
-      the `ZenohExporter` refuses.
+      `VisionCore.Ros2.BagExporter.Preset.max_hz/1` refuses, options
+      the `ZenohExporter` refuses, and the options this exporter sets
+      itself: `:config`, `:link`, `:services`, `:jpeg_codec`, `:publish`
+      and `:stamp`.
     * `:root` (`"/data/recordings"`) — the folder the recordings go in.
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
       `:compression`, `:max_file_bytes`, `:queue` and
@@ -103,6 +105,7 @@ defmodule VisionCore.Ros2.BagExporter do
   @check_interval_ms 1_000
   @clocks [:system, :since_start, :automatic]
   @recording_options [:compression, :max_file_bytes, :queue, :chunk_interval_ms]
+  @own_zenoh_options [:config, :link, :services, :jpeg_codec, :publish, :stamp]
   # A transforms tick within this of the last one handed over is a stopped recording's.
   @stale_transforms_ms 500
 
@@ -144,11 +147,23 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   defp check_preset(preset, options) do
-    with {:ok, _max_hz} <- Preset.max_hz(preset_options(preset, options)),
+    with :ok <- check_own_options(preset_options(preset, options)),
+         {:ok, _max_hz} <- Preset.max_hz(preset_options(preset, options)),
          :ok <- ZenohExporter.check(zenoh_options(preset, options)) do
       nil
     else
       {:error, reason} -> {:error, "its #{preset} preset: #{reason}"}
+    end
+  end
+
+  defp check_own_options(preset_options) do
+    case Enum.filter(@own_zenoh_options, &Keyword.has_key?(preset_options, &1)) do
+      [] ->
+        :ok
+
+      set ->
+        {:error,
+         "sets #{Enum.map_join(set, ", ", &"#{&1}:")}, which the bag exporter sets itself"}
     end
   end
 
@@ -171,11 +186,11 @@ defmodule VisionCore.Ros2.BagExporter do
     end)
   end
 
-  # A preset's options as `ZenohExporter` takes them, without what a recording adds.
+  # A preset's options as `ZenohExporter` takes them, the exporter's own in place of the preset's.
   defp zenoh_options(preset, options) do
-    Keyword.delete(preset_options(preset, options), :max_hz) ++
-      [config: config(options), link: false, services: false] ++
-      Keyword.take(options, [:jpeg_codec])
+    [config: config(options), link: false, services: false] ++
+      Keyword.take(options, [:jpeg_codec]) ++
+      Keyword.drop(preset_options(preset, options), [:max_hz | @own_zenoh_options])
   end
 
   defp config(options) do
@@ -302,8 +317,8 @@ defmodule VisionCore.Ros2.BagExporter do
     end
 
     options =
-      zenoh_options(recording.preset, state.options) ++
-        [publish: publish, stamp: Clock.stamp(clock)]
+      [publish: publish, stamp: Clock.stamp(clock)] ++
+        zenoh_options(recording.preset, state.options)
 
     preset_keys = MapSet.new(ZenohExporter.outputs(options), &key(&1, state.config))
 
