@@ -8,7 +8,7 @@ use framing::{LogLevel, Writer};
 use segmentation::band::resize_band;
 use segmentation::protocol::{labels_record, parse_jpeg_request, parse_request, Request};
 
-use crate::grid::cell_labels;
+use crate::grid::{cell_labels, output_stride};
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_UINT8};
 use crate::jpeg::RgbDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
@@ -20,6 +20,8 @@ const RESIZE_THREADS: usize = 2;
 pub struct Segment {
     network: Network,
     cell_pixels: usize,
+    /// A cell's side in output pixels.
+    stride: usize,
     decoder: RgbDecoder,
     decoded: Vec<u8>,
 }
@@ -39,14 +41,21 @@ impl Segment {
                 input.features
             ));
         }
-        if output.features != 1 || output.width != input.width || output.height != input.height {
+        if output.features != 1 {
             return Err(format!(
-                "{hef_path}: expected one class id a pixel of its {}x{} input, its output is {}x{}x{}",
-                input.width, input.height, output.width, output.height, output.features
+                "{hef_path}: expected one class id an output pixel, it has {}",
+                output.features
             ));
         }
+        let stride = output_stride(
+            (input.width, input.height),
+            (output.width, output.height),
+            cell_pixels,
+        )
+        .map_err(|message| format!("{hef_path}: {message}"))?;
         Ok(Segment {
             cell_pixels,
+            stride,
             decoder: RgbDecoder::new()?,
             decoded: Vec::new(),
             network,
@@ -147,11 +156,12 @@ impl Segment {
             Reply::Result => {}
         }
 
+        let output = self.network.output_shape();
         let (columns, rows, cells) = cell_labels(
             self.network.output(),
-            input.width,
-            input.height,
-            self.cell_pixels,
+            output.width,
+            output.height,
+            self.stride,
         );
         Answer::Reply(labels_record(
             request.sequence,
