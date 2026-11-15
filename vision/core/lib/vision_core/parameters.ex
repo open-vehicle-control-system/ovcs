@@ -33,10 +33,29 @@ defmodule VisionCore.Parameters do
   then has none, and neither `reset/2` nor `discard/1` sets it back.
 
   ROS 2 and the API are adapters reading and setting parameters here.
+
+  ## Changes
+
+  The registry publishes its listing under `changes_key/1`
+  (`VisionCore.Outputs`), once for every subscriber, rather than each
+  client listing it again and again:
+
+    * `{:parameter_groups, :all, groups}`, every group, as `groups/1`
+      lists them, `:publish_delay_ms` after a change it makes: a
+      declaration and its saved values applied, an owner gone, a set, a
+      save, a discard, a reset or a forget. The changes within that delay
+      are published once.
+    * `{:parameter_groups, :changed, groups}`, the groups whose listing
+      changed on its own since it was last published: every
+      `:sample_interval_ms`, while a process subscribes, the registry
+      reads again the groups with a status or a parameter set
+      automatically (`applies: {:auto, controller}`), whose values their
+      owners change without it.
   """
   use GenServer
   require Logger
 
+  alias VisionCore.Outputs
   alias VisionCore.Parameters.{Check, Group, Parameter, Store}
 
   @type id :: String.t()
@@ -73,6 +92,8 @@ defmodule VisionCore.Parameters do
         }
 
   @default_listing_timeout_ms 1_000
+  @default_publish_delay_ms 100
+  @default_sample_interval_ms 1_000
 
   @parameter_fields [:id, :group, :name, :type, :constraint, :applies, :greater_than] ++
                       [:description]
@@ -106,11 +127,20 @@ defmodule VisionCore.Parameters do
   `:listing_timeout_ms` (`1000`), how long `groups/1` waits for an
   owner's values: one that does not answer in time is listed without its
   values and its statuses, and is not asked again in that listing.
+  `:publish_delay_ms` (`100`) and `:sample_interval_ms` (`1000`) pace
+  what it publishes (see Changes).
   """
   def start_link(opts \\ []) do
     {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
+    GenServer.start_link(__MODULE__, [{:key, changes_key(name)} | opts], name: name)
   end
+
+  @doc """
+  The `VisionCore.Outputs` key the registry named `name` publishes its
+  changes under (see Changes).
+  """
+  @spec changes_key(atom()) :: {:parameters, atom()}
+  def changes_key(name \\ __MODULE__), do: {:parameters, name}
 
   @doc """
   Declares the calling process's groups, replacing those it declared before.
@@ -191,10 +221,22 @@ defmodule VisionCore.Parameters do
   def init(opts) do
     store = Keyword.get(opts, :store, Store)
 
+    sample_interval_ms =
+      VisionCore.Options.integer!(opts, :sample_interval_ms, @default_sample_interval_ms, 1)
+
+    Process.send_after(self(), :sample, sample_interval_ms)
+
     {:ok,
      %{
        listing_timeout_ms:
          VisionCore.Options.integer!(opts, :listing_timeout_ms, @default_listing_timeout_ms, 1),
+       key: Keyword.fetch!(opts, :key),
+       publish_delay_ms:
+         VisionCore.Options.integer!(opts, :publish_delay_ms, @default_publish_delay_ms, 0),
+       sample_interval_ms: sample_interval_ms,
+       publish_timer: nil,
+       # The groups with a status or an automatic parameter, as last published.
+       sampled: %{},
        store: store,
        saved: store.load(),
        groups: %{},
@@ -230,14 +272,7 @@ defmodule VisionCore.Parameters do
   end
 
   def handle_call(:groups, _from, state) do
-    ids = Enum.map(all_parameters(state), & &1.id)
-    {values, late, state} = read_all(state, ids, MapSet.new())
-
-    {groups, _late} =
-      state
-      |> sorted_groups()
-      |> Enum.map_reduce(late, &to_group(&1, values, state, &2))
-
+    {groups, state} = list(state, sorted_groups(state))
     {:reply, groups, state}
   end
 
@@ -256,7 +291,7 @@ defmodule VisionCore.Parameters do
 
   def handle_call({:set, id, value}, _from, state) do
     {reply, state} = set_value(state, id, value)
-    {:reply, reply, state}
+    {:reply, reply, changed(state)}
   end
 
   def handle_call({:set_and_save, id, value}, _from, state) do
@@ -267,10 +302,10 @@ defmodule VisionCore.Parameters do
         case save_values(state, [declared]) do
           {:ok, _ids, state} ->
             {parameter, state} = read_parameter(state, declared)
-            {:reply, {:ok, parameter}, state}
+            {:reply, {:ok, parameter}, changed(state)}
 
           {:error, reason, state} ->
-            {:reply, {:error, "applied but not saved: #{reason}"}, state}
+            {:reply, {:error, "applied but not saved: #{reason}"}, changed(state)}
         end
 
       {refused, state} ->
@@ -286,8 +321,8 @@ defmodule VisionCore.Parameters do
       )
 
     case save_values(state, parameters) do
-      {:ok, ids, state} -> {:reply, {:ok, ids}, state}
-      {:error, reason, state} -> {:reply, {:error, reason}, state}
+      {:ok, ids, state} -> {:reply, {:ok, ids}, changed(state)}
+      {:error, reason, state} -> {:reply, {:error, reason}, changed(state)}
     end
   end
 
@@ -305,7 +340,7 @@ defmodule VisionCore.Parameters do
     log_refused(refused, "not set back")
     kept = for {declared, _value, _reason} <- refused, do: declared.id
     state = %{state | changed: Map.take(state.changed, kept)} |> mark_applied(Map.keys(applied))
-    {:reply, {:ok, set_ids}, touch(state, applied)}
+    {:reply, {:ok, set_ids}, state |> touch(applied) |> changed()}
   end
 
   def handle_call({:reset, scope}, _from, state) do
@@ -327,7 +362,7 @@ defmodule VisionCore.Parameters do
           |> mark_applied(Map.keys(applied))
           |> touch(applied)
 
-        {:reply, reset_reply(set_ids, refused), state}
+        {:reply, reset_reply(set_ids, refused), changed(state)}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -336,7 +371,8 @@ defmodule VisionCore.Parameters do
 
   def handle_call({:forget, id}, _from, state) do
     {deleted, state} = delete_saved(state, Enum.filter([id], &Map.has_key?(state.saved, &1)))
-    {:reply, deleted, %{state | changed: Map.delete(state.changed, id)} |> mark_applied([id])}
+    state = %{state | changed: Map.delete(state.changed, id)} |> mark_applied([id])
+    {:reply, deleted, changed(state)}
   end
 
   @impl GenServer
@@ -371,12 +407,40 @@ defmodule VisionCore.Parameters do
     {_ids, changed_applied, refused} = apply_values(state, declared, changed, &apply_value/4)
     log_refused(refused, "not set back")
 
-    {:noreply, state |> touch(saved_applied) |> touch(changed_applied)}
+    {:noreply, state |> touch(saved_applied) |> touch(changed_applied) |> changed()}
   end
 
   @impl GenServer
   def handle_info({:DOWN, _reference, :process, owner, _reason}, state),
-    do: {:noreply, drop_owner(state, owner)}
+    do: {:noreply, state |> drop_owner(owner) |> changed()}
+
+  def handle_info(:publish, state) do
+    state = %{state | publish_timer: nil}
+
+    if subscribed?(state) do
+      {groups, state} = list(state, sorted_groups(state))
+      Outputs.publish(state.key, {:parameter_groups, :all, groups})
+
+      {:noreply,
+       %{state | sampled: Map.new(Enum.filter(groups, &moving?(state, &1.id)), &{&1.id, &1})}}
+    else
+      {:noreply, state}
+    end
+  end
+
+  def handle_info(:sample, state) do
+    Process.send_after(self(), :sample, state.sample_interval_ms)
+    moving = Enum.filter(sorted_groups(state), &moving?/1)
+
+    if moving != [] and is_nil(state.publish_timer) and subscribed?(state) do
+      {groups, state} = list(state, moving)
+      changed = Enum.reject(groups, &(state.sampled[&1.id] == &1))
+      if changed != [], do: Outputs.publish(state.key, {:parameter_groups, :changed, changed})
+      {:noreply, %{state | sampled: Map.merge(state.sampled, Map.new(changed, &{&1.id, &1}))}}
+    else
+      {:noreply, state}
+    end
+  end
 
   def handle_info(_message, state), do: {:noreply, state}
 
@@ -774,6 +838,39 @@ defmodule VisionCore.Parameters do
       end)
 
     {values, late, state}
+  end
+
+  # `groups` listed with their values and statuses; the owners that do not answer are asked once.
+  defp list(state, groups) do
+    ids =
+      for group <- groups,
+          declared <- group.parameters,
+          id <- related_ids(state, declared),
+          do: id
+
+    {values, late, state} = read_all(state, ids, MapSet.new())
+    {listed, _late} = Enum.map_reduce(groups, late, &to_group(&1, values, state, &2))
+    {listed, state}
+  end
+
+  # A change the registry made: its listing is published once the changes of the next publish_delay_ms are in.
+  defp changed(%{publish_timer: nil} = state),
+    do: %{state | publish_timer: Process.send_after(self(), :publish, state.publish_delay_ms)}
+
+  defp changed(state), do: state
+
+  # Whose listing its owner changes on its own: a status, or a parameter set automatically.
+  defp moving?(group),
+    do: not is_nil(group.status) or Enum.any?(group.parameters, &(controller(&1) != nil))
+
+  defp moving?(state, group_id),
+    do: Enum.any?(sorted_groups(state), &(&1.id == group_id and moving?(&1)))
+
+  # Outputs starts after the registry; until it runs, no process can subscribe.
+  defp subscribed?(state) do
+    Outputs.subscribers(state.key) != []
+  rescue
+    ArgumentError -> false
   end
 
   defp read_parameter(state, declared) do
