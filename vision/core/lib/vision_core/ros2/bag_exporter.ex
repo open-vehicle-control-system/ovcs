@@ -36,15 +36,25 @@ defmodule VisionCore.Ros2.BagExporter do
   clock in use and whether it was synchronized, the start, the vehicle and
   the firmware (`OvcsVehicle.FirmwareInfo`).
 
-  ## Outputs and drops
+  ## Outputs, rates and drops
 
   `outputs/1` reads what any preset records on the configuration, fixed
   at start: one output per `VisionCore.Outputs` key, so a camera two
   presets take under two names is read once. While recording, only the
   outputs of the recording's preset are handed to its `ZenohExporter`
-  state. Every value is queued (`delivery/1`, 64 per output): the
-  runner's drops are counted by output beside the status, the
-  recording's by topic in it and in `metadata.yaml`.
+  state, each at most as often a second as the preset's `:max_hz` gives
+  its kind (`VisionCore.Ros2.BagExporter.Preset.max_hz/1`). The rate is
+  measured on capture times, in slots `1 / max_hz` s apart, so that 5 Hz
+  of 30 fps takes every 6th value; a value before its output's next slot
+  is skipped, which is no drop. Replay records every value. Review
+  records the pairs, their depth and its camera info, at 5 Hz, each
+  camera's image at 10 Hz with its camera info every 10th image, and the
+  stereo left image, encoded from grey frames, at most 10 a second, the
+  stereo `:raw_image_max_hz` of the `ZenohExporter`.
+
+  Every value is queued (`delivery/1`, 64 per output): the runner's
+  drops are counted by output beside the status, the recording's by
+  topic in it and in `metadata.yaml`.
 
   ## Status and ends
 
@@ -59,9 +69,11 @@ defmodule VisionCore.Ros2.BagExporter do
   ## Options
 
     * `:presets` (`[]`) — a vehicle's `ZenohExporter` options replacing a
-      preset's, by preset name: `[review: [cameras: [names: [:front]]]]`.
-      `check/1` refuses a name that is no preset and options the
-      `ZenohExporter` refuses.
+      preset's, by preset name, with its own `:max_hz`, every value
+      without: `[review: [cameras: [names: [:front]], max_hz: [cameras: 5]]]`.
+      `check/1` refuses a name that is no preset, a `:max_hz` that
+      `VisionCore.Ros2.BagExporter.Preset.max_hz/1` refuses, and options
+      the `ZenohExporter` refuses.
     * `:root` (`"/data/recordings"`) — the folder the recordings go in.
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
       `:compression`, `:max_file_bytes`, `:queue` and
@@ -78,11 +90,13 @@ defmodule VisionCore.Ros2.BagExporter do
   require Logger
 
   alias OvcsVehicle.FirmwareInfo
+  alias VisionCore.Camera.Frame
   alias VisionCore.Exporter
   alias VisionCore.Parameters.Group
   alias VisionCore.Ros2.Bag.{Clock, Recording}
   alias VisionCore.Ros2.BagExporter.Preset
   alias VisionCore.Ros2.ZenohExporter
+  alias VisionCore.Stereo.Pair
 
   @default_root "/data/recordings"
   @queue 64
@@ -130,8 +144,10 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   defp check_preset(preset, options) do
-    case ZenohExporter.check(zenoh_options(preset, options)) do
-      :ok -> nil
+    with {:ok, _max_hz} <- Preset.max_hz(preset_options(preset, options)),
+         :ok <- ZenohExporter.check(zenoh_options(preset, options)) do
+      nil
+    else
       {:error, reason} -> {:error, "its #{preset} preset: #{reason}"}
     end
   end
@@ -148,14 +164,16 @@ defmodule VisionCore.Ros2.BagExporter do
   # The key an output is published under, which two names of one camera output share.
   defp key(output, config), do: Exporter.output_key(output, config) || output
 
+  # The vehicle's options of `preset`, else the preset's own.
+  defp preset_options(preset, options) do
+    Keyword.get_lazy(Keyword.get(options, :presets, []), preset, fn ->
+      Preset.options(preset, config(options))
+    end)
+  end
+
   # A preset's options as `ZenohExporter` takes them, without what a recording adds.
   defp zenoh_options(preset, options) do
-    preset_options =
-      Keyword.get_lazy(Keyword.get(options, :presets, []), preset, fn ->
-        Preset.options(preset, config(options))
-      end)
-
-    preset_options ++
+    Keyword.delete(preset_options(preset, options), :max_hz) ++
       [config: config(options), link: false, services: false] ++
       Keyword.take(options, [:jpeg_codec])
   end
@@ -278,10 +296,19 @@ defmodule VisionCore.Ros2.BagExporter do
     routed =
       for output <- outputs(state.options), key(output, state.config) in preset_keys, do: output
 
+    {:ok, max_hz} = Preset.max_hz(preset_options(recording.preset, state.options))
+
     case init_building(options) do
       {:ok, building} ->
         check_later(recording.pid)
-        {:ok, Map.merge(recording, %{building: building, routed: MapSet.new(routed)})}
+
+        {:ok,
+         Map.merge(recording, %{
+           building: building,
+           routed: MapSet.new(routed),
+           max_hz: max_hz,
+           next_slot_ns: %{}
+         })}
 
       {:error, reason} ->
         Recording.stop(pid)
@@ -367,12 +394,46 @@ defmodule VisionCore.Ros2.BagExporter do
 
   @impl Exporter
   def handle_output(output, value, %{recording: %{} = recording} = state) do
-    if MapSet.member?(recording.routed, output),
-      do: output |> ZenohExporter.handle_output(value, recording.building) |> building(state),
-      else: {:ok, state}
+    with true <- MapSet.member?(recording.routed, output),
+         {:take, next_slot_ns} <- slot(recording, output, value) do
+      output
+      |> ZenohExporter.handle_output(value, recording.building)
+      |> building(put_in(state.recording.next_slot_ns, next_slot_ns))
+    else
+      _not_recorded -> {:ok, state}
+    end
   end
 
   def handle_output(_output, _value, state), do: {:ok, state}
+
+  # Takes a value at or past its output's next slot; the first, or one a slot late, starts them anew.
+  defp slot(%{next_slot_ns: next_slot_ns} = recording, output, value) do
+    case Map.fetch(recording.max_hz, Preset.kind(output)) do
+      {:ok, max_hz} ->
+        period_ns = round(1_000_000_000 / max_hz)
+        capture_ns = capture_ns(value)
+        next_ns = next_slot_ns[output]
+
+        cond do
+          next_ns && capture_ns < next_ns ->
+            :skip
+
+          next_ns && capture_ns - next_ns < period_ns ->
+            {:take, %{next_slot_ns | output => next_ns + period_ns}}
+
+          true ->
+            {:take, Map.put(next_slot_ns, output, capture_ns + period_ns)}
+        end
+
+      :error ->
+        {:take, next_slot_ns}
+    end
+  end
+
+  defp capture_ns(%Pair{} = pair), do: Pair.capture_ns(pair)
+  defp capture_ns(%Frame{capture_ns: capture_ns}), do: capture_ns
+  defp capture_ns({source, _detections}), do: capture_ns(source)
+  defp capture_ns({%Frame{capture_ns: capture_ns}, _labels, _clouds}), do: capture_ns
 
   defp building({:ok, building}, state), do: {:ok, put_in(state.recording.building, building)}
   defp building({:busy, building}, state), do: {:busy, put_in(state.recording.building, building)}

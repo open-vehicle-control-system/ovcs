@@ -187,12 +187,14 @@ exporters: [{VisionCore.Ros2.BagExporter, []}]
 
 A recording records one preset. A preset sets what is built, from your configuration, so a recording costs only what it holds:
 
-| Preset | What it records |
-|---|---|
-| `replay` | each stereo side's frames uncompressed (`<prefix>/<side>/image_raw`, `mono8`) and its camera info; each camera's image, its first JPEG output when it has one, and its camera info; the cameras' poses on `/tf_static` |
-| `review` | the stereo left image compressed, the depth and its camera info, each camera's image and camera info, every detection and segmentation pipeline's results, the cameras' poses |
+| Preset | What it records | Rates |
+|---|---|---|
+| `replay` | each stereo side's frames uncompressed (`<prefix>/<side>/image_raw`, `mono8`) and its camera info; each camera's image, its first JPEG output when it has one, and its camera info; the cameras' poses on `/tf_static` | every frame |
+| `review` | the stereo left image compressed, the depth and its camera info, each camera's image and camera info, every detection and segmentation pipeline's results, the cameras' poses | the depth and its camera info at 5 Hz; each camera's image at 10 Hz, its camera info every 10th image; the stereo left image, encoded from grey frames, at most 10 a second; the pipelines' results as they come |
 
-[`VisionCore.Ros2.BagExporter.Preset`](../../vision/core/lib/vision_core/ros2/bag_exporter/preset.ex) builds them. Your vehicle replaces one with `presets:`, the ROS 2 exporter's options for it: `presets: [review: [cameras: [names: [:front]]]]`. A preset or an option the ROS 2 exporter refuses keeps the bag exporter from starting, with the reason logged.
+[`VisionCore.Ros2.BagExporter.Preset`](../../vision/core/lib/vision_core/ros2/bag_exporter/preset.ex) builds them. A preset's `max_hz:` caps the values of each kind it records a second: `pairs`, `sides`, `cameras`, `detections`, `segmentation`. The rate is measured on capture times, so 5 Hz of 30 fps records every 6th pair; a value skipped for its rate is not a drop. A camera's video is recorded whole.
+
+Your vehicle replaces a preset with `presets:`, the ROS 2 exporter's options for it and its own `max_hz:`, every value without one: `presets: [review: [cameras: [names: [:front]], max_hz: [pairs: 2, cameras: 5]]]`. A preset, a rate or an option the ROS 2 exporter refuses keeps the bag exporter from starting, with the reason logged.
 
 Start and stop a recording with the exporter's actions, `POST /api/exporters/ros2_bag/actions/start` and `.../actions/stop` ([Vision API](./api.md#the-unit-and-its-exports)). `start` takes two attributes:
 

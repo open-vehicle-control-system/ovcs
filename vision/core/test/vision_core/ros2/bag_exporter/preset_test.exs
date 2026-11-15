@@ -18,7 +18,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
   # The topics and modules the Zenoh exporter publishes with `preset`'s options, handed a value of each output.
   defp published(preset, config) do
     options =
-      Preset.options(preset, config) ++
+      Keyword.delete(Preset.options(preset, config), :max_hz) ++
         [config: config, link: false, services: false, publish: publish_to(self())]
 
     {:ok, state} = ZenohExporter.init(options)
@@ -73,9 +73,10 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
 
     assert Preset.options(:review, config) == [
              stereo: [sides: [:left], pair_messages: [:depth]],
-             cameras: [outputs: [hq: :view_jpeg]],
+             cameras: [camera_info_interval_frames: 10, outputs: [hq: :view_jpeg]],
              detections: [pipelines: [:objects]],
-             segmentation: []
+             segmentation: [],
+             max_hz: [pairs: 5, cameras: 10]
            ]
 
     topics = topics(published(:review, config))
@@ -94,7 +95,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
 
   test "names only what the configuration has" do
     assert Preset.options(:replay, %VisionCore.Config{}) == []
-    assert Preset.options(:review, %VisionCore.Config{}) == []
+    assert Preset.options(:review, %VisionCore.Config{}) == [max_hz: [pairs: 5, cameras: 10]]
 
     stereo_only = %{
       BagTestUnit.config()
@@ -102,7 +103,8 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
     }
 
     assert Preset.options(:review, stereo_only) == [
-             stereo: [sides: [:left], pair_messages: [:depth]]
+             stereo: [sides: [:left], pair_messages: [:depth]],
+             max_hz: [pairs: 5, cameras: 10]
            ]
   end
 
@@ -119,6 +121,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
       end)
 
     assert Preset.options(:replay, config)[:cameras] == []
+    assert Preset.options(:review, config)[:cameras] == [camera_info_interval_frames: 10]
   end
 
   # Review Focus 3: a type without its definition would fail at the first recording.

@@ -280,6 +280,72 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert topics(files) == ["/hq/camera_info", "/hq/image_raw/compressed"]
   end
 
+  # Records 3 s of every output at 30 Hz of capture time: the stop's answer and messages by topic.
+  defp record_30_hz(options, preset) do
+    outputs = BagExporter.outputs(options)
+    {started, state} = options |> init!() |> start!(%{"preset" => preset})
+    first_ns = System.monotonic_time(:nanosecond) - 3_000_000_000
+
+    state =
+      for n <- 0..89,
+          {output, value} <- BagTestUnit.values(first_ns + n * 33_333_333),
+          output in outputs,
+          reduce: state do
+        state ->
+          assert {:ok, state} = BagExporter.handle_output(output, value, state)
+          state
+      end
+
+    {stopped, _state} = stop!(state)
+    {files, _metadata} = bag!(started.folder)
+    {stopped, files |> stamped() |> Enum.frequencies_by(&elem(&1, 0))}
+  end
+
+  test "review records the depth at 5 Hz and each camera at 10 Hz of capture time, none dropped",
+       %{tmp_dir: tmp_dir} do
+    options = options(tmp_dir, recording: [queue: 10_000])
+    {stopped, counts} = record_30_hz(options, "review")
+
+    assert stopped.dropped == %{}
+    assert counts["/stereo/depth/image_rect"] in 14..16
+    assert counts["/stereo/depth/camera_info"] in 14..16
+    assert counts["/hq/image_raw/compressed"] in 29..31
+    # One camera info a second, as at 30 fps without a rate.
+    assert counts["/hq/camera_info"] in 2..4
+  end
+
+  test "replay records every frame", %{tmp_dir: tmp_dir} do
+    options = options(tmp_dir, recording: [queue: 10_000])
+    {stopped, counts} = record_30_hz(options, "replay")
+
+    assert stopped.dropped == %{}
+    assert counts["/stereo/left/image_raw"] == 90
+    assert counts["/stereo/right/image_raw"] == 90
+    assert counts["/hq/image_raw/compressed"] == 90
+  end
+
+  test "a vehicle's preset sets its own rates, none without them", %{tmp_dir: tmp_dir} do
+    preset = [cameras: [outputs: [hq: :view_jpeg]], max_hz: [cameras: 2]]
+    options = options(tmp_dir, presets: [review: preset], recording: [queue: 10_000])
+    assert BagExporter.check(options) == :ok
+    {_stopped, counts} = record_30_hz(options, "review")
+    assert counts["/hq/image_raw/compressed"] in 5..7
+
+    preset = [cameras: [outputs: [hq: :view_jpeg]]]
+    options = options(tmp_dir, presets: [review: preset], recording: [queue: 10_000])
+    {_stopped, counts} = record_30_hz(options, "review")
+    assert counts["/hq/image_raw/compressed"] == 90
+  end
+
+  test "refuses a preset's rate of a kind it does not know, or not above zero",
+       %{tmp_dir: tmp_dir} do
+    for max_hz <- [[videos: 1], [pairs: 0], [cameras: "10"], :fast] do
+      options = options(tmp_dir, presets: [review: [max_hz: max_hz]])
+      assert {:error, reason} = BagExporter.check(options)
+      assert reason =~ "review" and reason =~ "max_hz", inspect(max_hz)
+    end
+  end
+
   test "refuses a vehicle's preset it does not know, or one the Zenoh exporter refuses",
        %{tmp_dir: tmp_dir} do
     assert {:error, reason} = BagExporter.check(options(tmp_dir, presets: [fast: []]))
