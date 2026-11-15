@@ -28,6 +28,33 @@ defmodule VisionCore.DisksTest do
 
   defp started(%{tmp_dir: dir}), do: %{disks: dir |> TestDisks.setup!() |> TestDisks.start!()}
 
+  # Waits for two more looks at the disks, each of which runs df.
+  defp looked_twice!(disks) do
+    looks = length(TestDisks.commands(disks, "df"))
+    eventually(fn -> length(TestDisks.commands(disks, "df")) >= looks + 2 end)
+  end
+
+  # Disks whose mkfs.f2fs tells the test it runs, then waits for `:finish` or `:fail`.
+  defp start_held_mkfs!(dir) do
+    test = self()
+    disks = dir |> Path.join("held") |> TestDisks.setup!()
+
+    TestDisks.start!(disks,
+      run: fn
+        "mkfs.f2fs", arguments ->
+          send(test, {:mkfs_running, self()})
+
+          receive do
+            :finish -> disks.options[:run].("mkfs.f2fs", arguments)
+            :fail -> {"\tError: Failed to open #{List.last(arguments)}\n", 255}
+          end
+
+        command, arguments ->
+          disks.options[:run].(command, arguments)
+      end
+    )
+  end
+
   describe "the unit's storage" do
     setup :started
 
@@ -382,6 +409,48 @@ defmodule VisionCore.DisksTest do
 
       assert {:error, reason} = Disks.format(disks.server, "sdc", "label")
       assert reason =~ "Failed to open"
+    end
+
+    test "runs mkfs.f2fs aside: the device is formatting, the disks are still watched and set",
+         %{tmp_dir: dir} do
+      disks = start_held_mkfs!(dir)
+      TestDisks.plug(disks, "sdc", TestDisks.blank_image())
+      eventually(fn -> length(Disks.list(disks.server)) == 2 end)
+
+      format = Task.async(fn -> Disks.format(disks.server, "sdc", "new-recordings") end)
+      assert_receive {:mkfs_running, mkfs}
+
+      assert [_internal, %Disk{device: "sdc", state: :formatting}] = Disks.list(disks.server)
+      assert Disks.put_enabled(disks.server, "internal", false) == :ok
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+      mounted!(disks, @stick)
+
+      send(mkfs, :finish)
+      assert Task.await(format) == :ok
+
+      eventually(fn ->
+        Enum.any?(Disks.list(disks.server), &match?(%Disk{device: "sdc", state: :mounted}, &1))
+      end)
+    end
+
+    test "answers mkfs.f2fs's failure for a device pulled out while formatting, then forgets it",
+         %{tmp_dir: dir} do
+      disks = start_held_mkfs!(dir)
+      TestDisks.plug(disks, "sdc", TestDisks.blank_image())
+      eventually(fn -> length(Disks.list(disks.server)) == 2 end)
+
+      format = Task.async(fn -> Disks.format(disks.server, "sdc", "new-recordings") end)
+      assert_receive {:mkfs_running, mkfs}
+      TestDisks.pull(disks, "sdc")
+      looked_twice!(disks)
+      send(mkfs, :fail)
+
+      assert {:error, reason} = Task.await(format)
+      assert reason =~ "Failed to open"
+      eventually(fn -> Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal"] end)
+
+      TestDisks.plug(disks, "sdc", TestDisks.f2fs_image(@other, "again"))
+      mounted!(disks, @other)
     end
 
     test "refuses a device that holds another disk than the one listed, and looks at it again",

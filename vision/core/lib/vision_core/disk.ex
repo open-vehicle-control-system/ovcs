@@ -22,6 +22,7 @@ defmodule VisionCore.Disk do
     * `:ejected` — unmounted, still plugged in.
     * `:unplugged` — known, not plugged in.
     * `:unusable` — plugged in but not mounted, `problem` says why.
+    * `:formatting` — being made f2fs (`VisionCore.Disks.format/3`).
   """
 
   @superblock_bytes 4096
@@ -32,7 +33,7 @@ defmodule VisionCore.Disk do
   @no_uuid <<0::128>>
 
   @type filesystem :: :f2fs | :ext4
-  @type state :: :mounted | :ejecting | :ejected | :unplugged | :unusable
+  @type state :: :mounted | :ejecting | :ejected | :unplugged | :unusable | :formatting
   @type identity :: %{filesystem: filesystem(), uuid: String.t(), label: String.t()}
 
   @type t :: %__MODULE__{

@@ -19,7 +19,8 @@ defmodule VisionCore.Disks do
   mounted disk's free bytes with `df`.
 
   `list/1`, `fetch/2` and `next/3` read a table this process keeps, so
-  they answer while it mounts or formats. Without the database the disks
+  they answer while it mounts. `mkfs.f2fs` runs in a task, so the disks
+  are watched and set while one formats. Without the database the disks
   are still found, mounted and chosen; only `put_order/2` and
   `put_enabled/3` answer an error.
 
@@ -151,10 +152,11 @@ defmodule VisionCore.Disks do
 
   @doc """
   Makes `device`, a USB disk's partition such as `sda1` that is not
-  mounted, f2fs labelled `label` (`mkfs.f2fs -f -l`). It is mounted at
-  the next look at the disks, as a new disk. A device whose superblock
-  no longer reads as the disk listed is not formatted, and read again
-  at the next look.
+  mounted, f2fs labelled `label` (`mkfs.f2fs -f -l`), listed as
+  `:formatting` meanwhile. It answers once `mkfs.f2fs` ends, and the
+  device is read again at the next look at the disks: a new disk,
+  mounted. A device whose superblock no longer reads as the disk listed
+  is not formatted.
   """
   @spec format(GenServer.server(), String.t(), String.t()) :: :ok | {:error, String.t()}
   def format(server, device, label),
@@ -188,6 +190,7 @@ defmodule VisionCore.Disks do
         table: table,
         disks: Map.new(load(), &{&1.uuid, &1}),
         unusable: %{},
+        formats: %{},
         devices: %{},
         mount_points: %{},
         ejecting: %{}
@@ -246,19 +249,28 @@ defmodule VisionCore.Disks do
     end
   end
 
-  def handle_call({:format, device, label}, _from, state) do
+  def handle_call({:format, device, label}, from, state) do
     with :ok <- check_label(label),
-         :ok <- check_formattable(state, device),
-         :ok <- check_unchanged(state, device) do
-      run_format(state, device, label)
+         :ok <- check_formattable(state, device) do
+      {:noreply, start_format(state, device, label, from)}
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
-      {:changed, reason} -> {:reply, {:error, reason}, state |> forget(device) |> publish()}
     end
   end
 
   @impl GenServer
   def handle_info(:poll, state), do: {:noreply, poll(state)}
+
+  def handle_info({reference, answer}, state) when is_map_key(state.formats, reference) do
+    Process.demonitor(reference, [:flush])
+    {:noreply, end_format(state, reference, answer)}
+  end
+
+  def handle_info({:DOWN, reference, :process, _pid, reason}, state)
+      when is_map_key(state.formats, reference),
+      do:
+        {:noreply,
+         end_format(state, reference, {:error, "mkfs.f2fs stopped: #{inspect(reason)}"})}
 
   def handle_info({:unmount, uuid}, state) do
     case state.ejecting do
@@ -284,6 +296,7 @@ defmodule VisionCore.Disks do
 
     present
     |> Map.drop(Map.keys(state.devices))
+    |> Map.drop(for {_reference, format} <- state.formats, do: format.disk.device)
     |> Enum.sort()
     |> Enum.reduce(state, fn {device, block}, state -> plug_in(state, device, block) end)
   end
@@ -545,22 +558,36 @@ defmodule VisionCore.Disks do
     end
   end
 
-  defp run_format(state, device, label) do
-    case run(state, "mkfs.f2fs", ["-f", "-l", label, device_path(state, device)]) do
-      :ok ->
-        Logger.info("#{inspect(__MODULE__)} #{device} formatted f2fs, #{label}")
-        {:reply, :ok, state |> forget(device) |> publish()}
+  # Runs mkfs.f2fs in a task, the device forgotten meanwhile: the next look after it reads it anew.
+  defp start_format(state, device, label, from) do
+    %{block: block, identity: identity} = state.devices[device]
+    path = device_path(state, device)
+    run = state.options.run
+    task = Task.async(fn -> format_device(run, device, path, identity, label) end)
+    disk = %Disk{device: device, label: label, size_bytes: block.size_bytes, state: :formatting}
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, state}
-    end
+    %{state | formats: Map.put(state.formats, task.ref, %{from: from, disk: disk})}
+    |> forget(device)
+    |> publish()
   end
 
-  # Whether `device` holds the disk listed, as `mkfs.f2fs` would otherwise wipe another.
-  defp check_unchanged(state, device) do
-    if Disk.read_identity(device_path(state, device)) == state.devices[device].identity,
-      do: :ok,
-      else: {:changed, "#{device} holds another disk than the one listed: not formatted"}
+  # Formats the device at `path` if it still holds the disk read as `identity`.
+  defp format_device(run, device, path, identity, label) do
+    if Disk.read_identity(path) == identity,
+      do: run_with(run, "mkfs.f2fs", ["-f", "-l", label, path]),
+      else: {:error, "#{device} holds another disk than the one listed: not formatted"}
+  end
+
+  defp end_format(state, reference, answer) do
+    {%{from: from, disk: disk}, formats} = Map.pop!(state.formats, reference)
+
+    case answer do
+      :ok -> Logger.info("#{inspect(__MODULE__)} #{disk.device} formatted f2fs, #{disk.label}")
+      {:error, reason} -> Logger.warning("#{inspect(__MODULE__)} #{disk.device}: #{reason}")
+    end
+
+    GenServer.reply(from, answer)
+    publish(%{state | formats: formats})
   end
 
   # Drops what is known of `device`, so the next look at the disks reads it anew.
@@ -596,8 +623,10 @@ defmodule VisionCore.Disks do
     end
   end
 
-  defp run(state, command, arguments) do
-    case state.options.run.(command, arguments) do
+  defp run(state, command, arguments), do: run_with(state.options.run, command, arguments)
+
+  defp run_with(run, command, arguments) do
+    case run.(command, arguments) do
       {_output, 0} ->
         :ok
 
@@ -635,7 +664,8 @@ defmodule VisionCore.Disks do
   defp ordered(state), do: Enum.sort_by(Map.values(state.disks), &{&1.position, &1.uuid})
 
   defp publish(state) do
-    unusable = state.unusable |> Map.values() |> Enum.sort_by(& &1.device)
+    formatting = for {_reference, format} <- state.formats, do: format.disk
+    unusable = (Map.values(state.unusable) ++ formatting) |> Enum.sort_by(& &1.device)
     :ets.insert(state.table, {:disks, ordered(state) ++ unusable})
     state
   end
