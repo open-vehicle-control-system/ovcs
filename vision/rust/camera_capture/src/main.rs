@@ -1,7 +1,9 @@
 //! `camera_capture`: one libcamera sensor's YUV420 output, written to stdout
 //! as JPEG FRAME records or, with `--format grey`, as GREY_FRAME records of
-//! its luma; `Name=value` controls arrive on stdin, and stdin EOF stops the
-//! capture.
+//! its luma. With `--output`, a second ISP stream of the same capture is
+//! written as OUTPUT_JPEG records after each frame's own, on at most
+//! `--outputs-max-hz` frames a second. `Name=value` controls arrive on stdin,
+//! and stdin EOF stops the capture.
 
 mod arguments;
 #[cfg(feature = "device")]
@@ -10,6 +12,10 @@ mod capture;
 mod controls;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod grey;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod schedule;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod streams;
 
 use std::process::exit;
 use std::sync::Arc;

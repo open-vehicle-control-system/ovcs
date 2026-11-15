@@ -2,6 +2,8 @@
 //! record. Record scalars are little-endian and match the Elixir parser in
 //! `VisionCore.Camera.LibCamera` byte for byte.
 
+pub mod output_flag;
+
 use std::fs::File;
 use std::io::{self, IoSlice, Read, Write};
 use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, RawFd};

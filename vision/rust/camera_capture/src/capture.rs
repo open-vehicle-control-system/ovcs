@@ -1,4 +1,5 @@
-//! The libcamera capture loop, its JPEG encoder and its grey output.
+//! The libcamera capture loop, its JPEG encoder, its grey output and the
+//! JPEG outputs of its ISP output.
 
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_void, CStr};
@@ -12,9 +13,12 @@ use std::thread;
 use std::time::Duration;
 
 use framing::{
-    frame_header, grey_frame_header, metadata_record, LogLevel, Writer, METADATA_FIELDS,
+    frame_header, grey_frame_header, metadata_record, output_jpeg_header, LogLevel, Writer,
+    METADATA_FIELDS,
 };
-use libcamera::camera::{Camera, CameraConfigurationStatus, Orientation, SensorConfiguration};
+use libcamera::camera::{
+    Camera, CameraConfiguration, CameraConfigurationStatus, Orientation, SensorConfiguration,
+};
 use libcamera::camera_manager::CameraManager;
 use libcamera::control::{ControlEntry, ControlList};
 use libcamera::control_value::{ControlType, ControlValue as LibcameraValue};
@@ -25,12 +29,14 @@ use libcamera::geometry::Size;
 use libcamera::pixel_format::PixelFormat;
 use libcamera::properties;
 use libcamera::request::{RequestStatus, ReuseFlag};
-use libcamera::stream::StreamRole;
+use libcamera::stream::{Stream, StreamRole};
 
-use crate::arguments::{Arguments, ExposureMode, Format, SyncMode};
+use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
 use crate::grey::{luma_length, pack_luma};
 use crate::log;
+use crate::schedule::Schedule;
+use crate::streams::{self, Role};
 
 const METADATA_EVERY_FRAMES: u32 = 5;
 const JPEG_QUALITY: c_int = 85;
@@ -141,10 +147,17 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         }
     };
 
-    let mut configuration = match camera.generate_configuration(&[StreamRole::VideoRecording]) {
-        Some(configuration) if configuration.len() == 1 => configuration,
+    let plan = streams::plan(arguments);
+    let roles: Vec<StreamRole> = (plan.streams.iter())
+        .map(|stream| match stream.role {
+            Role::VideoRecording => StreamRole::VideoRecording,
+            Role::ViewFinder => StreamRole::ViewFinder,
+        })
+        .collect();
+    let mut configuration = match camera.generate_configuration(&roles) {
+        Some(configuration) if configuration.len() == roles.len() => configuration,
         _ => {
-            error("generateConfiguration failed".to_string());
+            error(format!("generateConfiguration failed for {roles:?}"));
             return 1;
         }
     };
@@ -164,10 +177,12 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     };
     configuration.set_orientation(orientation);
 
-    if let Some(mut stream_configuration) = configuration.get_mut(0) {
-        stream_configuration.set_size(Size::new(arguments.width, arguments.height));
-        stream_configuration.set_pixel_format(YUV420);
-        stream_configuration.set_buffer_count(BUFFER_COUNT);
+    for (index, stream) in plan.streams.iter().enumerate() {
+        if let Some(mut stream_configuration) = configuration.get_mut(index) {
+            stream_configuration.set_size(Size::new(stream.width, stream.height));
+            stream_configuration.set_pixel_format(YUV420);
+            stream_configuration.set_buffer_count(BUFFER_COUNT);
+        }
     }
 
     if let Some(mode) = arguments.sensor_mode {
@@ -177,17 +192,18 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         configuration.set_sensor_configuration(sensor);
     }
 
+    let asked: Vec<String> = (0..configuration.len())
+        .map(|index| describe_stream(&configuration, index))
+        .collect();
     match configuration.validate() {
         CameraConfigurationStatus::Valid => {}
         CameraConfigurationStatus::Adjusted => {
-            let stream_configuration = configuration.get(0).expect("one stream configuration");
-            let size = stream_configuration.get_size();
-            info(format!(
-                "configuration adjusted to {}x{} {}",
-                size.width,
-                size.height,
-                stream_configuration.get_pixel_format()
-            ));
+            for (index, asked) in asked.iter().enumerate() {
+                info(format!(
+                    "configuration adjusted: stream {index} asked as {asked}, now {}",
+                    describe_stream(&configuration, index)
+                ));
+            }
         }
         CameraConfigurationStatus::Invalid => {
             error(match arguments.sensor_mode {
@@ -208,15 +224,33 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         ));
     }
 
-    let pixel_format = configuration
-        .get(0)
-        .expect("one stream configuration")
-        .get_pixel_format();
-    if pixel_format != YUV420 {
-        error(format!(
-            "driver refused YUV420 (got {pixel_format}); aborting"
-        ));
-        return 1;
+    for index in 0..configuration.len() {
+        let pixel_format = configuration
+            .get(index)
+            .expect("stream configuration")
+            .get_pixel_format();
+        if pixel_format != YUV420 {
+            error(format!(
+                "driver refused YUV420 on stream {index} (got {pixel_format}); aborting"
+            ));
+            return 1;
+        }
+    }
+    // The JPEG outputs' records carry the size asked for; the frames go on without them.
+    let mut isp_output_adjusted = false;
+    if let Some(index) = plan.isp_output {
+        let asked = &plan.streams[index];
+        let size = configuration
+            .get(index)
+            .expect("stream configuration")
+            .get_size();
+        if (size.width, size.height) != (asked.width, asked.height) {
+            error(format!(
+                "ISP output adjusted to {}x{} from {}x{}; its outputs are not written",
+                size.width, size.height, asked.width, asked.height
+            ));
+            isp_output_adjusted = true;
+        }
     }
 
     if camera.configure(&mut configuration).is_err() {
@@ -224,87 +258,96 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         return 1;
     }
 
-    let stream_configuration = configuration.get(0).expect("one stream configuration");
-    let Some(stream) = stream_configuration.stream() else {
-        error("no stream after Camera::configure".to_string());
-        return 1;
-    };
+    let mut configured = Vec::with_capacity(configuration.len());
+    for index in 0..configuration.len() {
+        let stream_configuration = configuration.get(index).expect("stream configuration");
+        let Some(stream) = stream_configuration.stream() else {
+            error("no stream after Camera::configure".to_string());
+            return 1;
+        };
+        configured.push(ConfiguredStream {
+            stream,
+            size: stream_configuration.get_size(),
+            stride: stream_configuration.get_stride() as usize,
+        });
+    }
     let Size {
         width: output_width,
         height: output_height,
-    } = stream_configuration.get_size();
-    let y_stride = stream_configuration.get_stride() as usize;
-    // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
-    let uv_stride = y_stride / 2;
+    } = configured[plan.frames].size;
+    let y_stride = configured[plan.frames].stride;
 
     let mut allocator = FrameBufferAllocator::new(&camera);
-    let buffers = match allocator.alloc(&stream) {
-        Ok(buffers) => buffers,
-        Err(_) => {
-            error("buffer allocation failed".to_string());
-            return 1;
+    let mut stream_buffers = Vec::with_capacity(configured.len());
+    for configured_stream in &configured {
+        match allocator.alloc(&configured_stream.stream) {
+            Ok(buffers) => stream_buffers.push(buffers.into_iter()),
+            Err(_) => {
+                error("buffer allocation failed".to_string());
+                return 1;
+            }
         }
-    };
+    }
+    let buffer_count = stream_buffers.iter().map(|buffers| buffers.len()).min();
 
     let mut mapper = FdMapper::default();
-    let mut views = Vec::new();
+    // Each stream's buffer views, by a request's cookie.
+    let mut views: Vec<Vec<YuvView>> = configured.iter().map(|_| Vec::new()).collect();
     let mut requests = Vec::new();
-    for (index, buffer) in buffers.into_iter().enumerate() {
-        let view = {
-            let planes = buffer.planes();
-            if planes.is_empty() {
-                error("buffer has no planes".to_string());
-                return 1;
-            }
-            let plane = |plane_index: usize| {
-                let plane = planes.get(plane_index).expect("plane in range");
-                (plane.fd(), plane.offset().unwrap_or(0), plane.len())
-            };
-            let mut sync_fds = Vec::new();
-            let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
-                if !sync_fds.contains(&fd) {
-                    sync_fds.push(fd);
-                }
-                mapper.map_plane(fd, offset, length).map_err(|map_error| {
-                    error(format!("mmap(fd={fd}) failed: {map_error}"));
-                })
-            };
-            let mapped = if planes.len() >= 3 {
-                (|| Ok((map(plane(0))?, map(plane(1))?, map(plane(2))?)))()
-            } else {
-                // Single-plane dmabuf: Y, U and V at known offsets within it.
-                let y_size = y_stride * output_height as usize;
-                let uv_size = uv_stride * (output_height as usize / 2);
-                let (fd, offset, _) = plane(0);
-                // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
-                map((fd, offset, y_size + 2 * uv_size))
-                    .map(|base| unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) })
-            };
-            let Ok((y, u, v)) = mapped else {
-                error("failed to mmap buffer planes".to_string());
-                return 1;
-            };
-            YuvView {
-                planes: [y, u, v],
-                strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
-                sync_fds,
-            }
-        };
-        views.push(view);
-
+    for index in 0..buffer_count.unwrap_or(0) {
         let Some(mut request) = camera.create_request(Some(index as u64)) else {
             error("createRequest failed".to_string());
             return 1;
         };
-        if request.add_buffer(&stream, buffer).is_err() {
-            error("addBuffer failed".to_string());
-            return 1;
+        for (stream_index, buffers) in stream_buffers.iter_mut().enumerate() {
+            let buffer = buffers.next().expect("a buffer per request");
+            let configured_stream = &configured[stream_index];
+            match map_view(&mut mapper, &buffer, configured_stream) {
+                Ok(view) => views[stream_index].push(view),
+                Err(message) => {
+                    error(message);
+                    return 1;
+                }
+            }
+            if request
+                .add_buffer(&configured_stream.stream, buffer)
+                .is_err()
+            {
+                error("addBuffer failed".to_string());
+                return 1;
+            }
         }
         requests.push(request);
     }
 
+    let mut jpeg_outputs = match jpeg_outputs(arguments) {
+        Ok(_) if isp_output_adjusted => Vec::new(),
+        Ok(jpeg_outputs) => jpeg_outputs,
+        Err(message) => {
+            error(message);
+            return 1;
+        }
+    };
+    let mut output_schedule = Schedule::new(arguments.outputs_max_hz, arguments.fps);
+    if let (Some(index), false) = (plan.isp_output, jpeg_outputs.is_empty()) {
+        let isp_output = &plan.streams[index];
+        let frames = match arguments.outputs_max_hz {
+            0.0 => "every frame".to_string(),
+            max_hz => format!("at most {max_hz} frames a second"),
+        };
+        info(format!(
+            "ISP output {}x{}, JPEG outputs {:?}, on {frames}",
+            isp_output.width,
+            isp_output.height,
+            jpeg_outputs
+                .iter()
+                .map(|output| output.index)
+                .collect::<Vec<_>>(),
+        ));
+    }
+
     let mut output = match arguments.format {
-        Format::Jpeg => match JpegEncoder::new(output_width, output_height) {
+        Format::Jpeg => match JpegEncoder::new(output_width, output_height, JPEG_QUALITY) {
             Ok(encoder) => Output::Jpeg(encoder),
             Err(message) => {
                 error(message);
@@ -416,7 +459,8 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         if request.status() == RequestStatus::Cancelled {
             continue;
         }
-        let Some(view) = views.get(request.cookie() as usize) else {
+        let buffer_index = request.cookie() as usize;
+        let Some(view) = views[plan.frames].get(buffer_index) else {
             continue;
         };
         let metadata = FrameMetadata::read(request.metadata(), &metadata_ids);
@@ -482,6 +526,15 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
                 }
             }
             Err(message) => warning(message),
+        }
+
+        if let (Some(isp_output), false) = (plan.isp_output, jpeg_outputs.is_empty()) {
+            if output_schedule.take_if_due(capture_ns) {
+                let view = &views[isp_output][buffer_index];
+                if write_jpeg_outputs(writer, view, &mut jpeg_outputs, capture_ns).is_err() {
+                    stop.store(true, Ordering::Relaxed);
+                }
+            }
         }
 
         request.reuse(ReuseFlag::REUSE_BUFFERS);
@@ -626,6 +679,132 @@ fn monotonic_ns() -> i64 {
     now.tv_sec * 1_000_000_000 + now.tv_nsec
 }
 
+/// A stream as `Camera::configure` set it up.
+struct ConfiguredStream {
+    stream: Stream,
+    size: Size,
+    /// Its luma line stride.
+    stride: usize,
+}
+
+/// A stream's configuration as libcamera prints it, with its stride and colour space.
+fn describe_stream(configuration: &CameraConfiguration, index: usize) -> String {
+    let stream_configuration = configuration.get(index).expect("stream configuration");
+    let colour_space = stream_configuration.get_color_space().map_or_else(
+        || "none".to_string(),
+        |colour_space| colour_space.to_string(),
+    );
+    format!(
+        "{} stride {} colour space {colour_space}",
+        stream_configuration.to_string_repr(),
+        stream_configuration.get_stride()
+    )
+}
+
+/// One buffer's planes, mapped.
+fn map_view(
+    mapper: &mut FdMapper,
+    buffer: &impl AsFrameBuffer,
+    stream: &ConfiguredStream,
+) -> Result<YuvView, String> {
+    let y_stride = stream.stride;
+    // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
+    let uv_stride = y_stride / 2;
+    let planes = buffer.planes();
+    if planes.is_empty() {
+        return Err("buffer has no planes".to_string());
+    }
+    let plane = |plane_index: usize| {
+        let plane = planes.get(plane_index).expect("plane in range");
+        (plane.fd(), plane.offset().unwrap_or(0), plane.len())
+    };
+    let mut sync_fds = Vec::new();
+    let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
+        if !sync_fds.contains(&fd) {
+            sync_fds.push(fd);
+        }
+        (mapper.map_plane(fd, offset, length))
+            .map_err(|map_error| format!("mmap(fd={fd}) failed: {map_error}"))
+    };
+    let (y, u, v) = if planes.len() >= 3 {
+        (map(plane(0))?, map(plane(1))?, map(plane(2))?)
+    } else {
+        // Single-plane dmabuf: Y, U and V at known offsets within it.
+        let y_size = y_stride * stream.size.height as usize;
+        let uv_size = uv_stride * (stream.size.height as usize / 2);
+        let (fd, offset, _) = plane(0);
+        let base = map((fd, offset, y_size + 2 * uv_size))?;
+        // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
+        unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) }
+    };
+    Ok(YuvView {
+        planes: [y, u, v],
+        strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
+        sync_fds,
+    })
+}
+
+/// A JPEG output of the ISP output, written as OUTPUT_JPEG records under its index.
+struct JpegOutput {
+    index: u8,
+    width: u16,
+    height: u16,
+    encoder: JpegEncoder,
+}
+
+fn jpeg_outputs(arguments: &Arguments) -> Result<Vec<JpegOutput>, String> {
+    let mut jpeg_outputs = Vec::new();
+    for (index, spec) in arguments.outputs.iter().enumerate() {
+        if let OutputSpec::Jpeg {
+            width,
+            height,
+            quality,
+            ..
+        } = *spec
+        {
+            jpeg_outputs.push(JpegOutput {
+                index: index as u8,
+                width: width as u16,
+                height: height as u16,
+                encoder: JpegEncoder::new(width, height, c_int::from(quality))?,
+            });
+        }
+    }
+    Ok(jpeg_outputs)
+}
+
+/// Encodes the ISP output's frame `view` for each JPEG output and writes its
+/// record. An encode that fails is logged and skipped; a write that fails is
+/// returned.
+fn write_jpeg_outputs(
+    writer: &Writer,
+    view: &YuvView,
+    jpeg_outputs: &mut [JpegOutput],
+    capture_ns: i64,
+) -> std::io::Result<()> {
+    dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+    let mut written = Ok(());
+    for output in jpeg_outputs.iter_mut() {
+        match output.encoder.encode(view) {
+            Ok(jpeg) => {
+                let header =
+                    output_jpeg_header(output.index, output.width, output.height, capture_ns);
+                written = writer.write_record_parts(&[&header, jpeg]);
+                if written.is_err() {
+                    break;
+                }
+            }
+            Err(message) => log(
+                writer,
+                LogLevel::Warning,
+                &format!("output {} tjCompressFromYUVPlanes: {message}", output.index),
+            ),
+        }
+    }
+    dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_END | DMA_BUF_SYNC_READ);
+    written
+}
+
 /// One mmap per dmabuf fd: libcamera often carves several planes out of one buffer.
 #[derive(Default)]
 struct FdMapper {
@@ -739,10 +918,12 @@ struct JpegEncoder {
     capacity: c_ulong,
     width: c_int,
     height: c_int,
+    quality: c_int,
 }
 
 impl JpegEncoder {
-    fn new(width: u32, height: u32) -> Result<JpegEncoder, String> {
+    /// At `quality`, 1 to 100; the chroma stays the YUV420 frame's 4:2:0.
+    fn new(width: u32, height: u32, quality: c_int) -> Result<JpegEncoder, String> {
         let (width, height) = (width as c_int, height as c_int);
         // SAFETY: TurboJPEG C API; the handle and buffer are freed in Drop.
         unsafe {
@@ -762,6 +943,7 @@ impl JpegEncoder {
                 capacity,
                 width,
                 height,
+                quality,
             })
         }
     }
@@ -780,7 +962,7 @@ impl JpegEncoder {
                 TJSAMP_420,
                 &mut self.buffer,
                 &mut size,
-                JPEG_QUALITY,
+                self.quality,
                 TJFLAG_FASTDCT | TJFLAG_NOREALLOC,
             );
             if status != 0 {
