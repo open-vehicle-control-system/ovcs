@@ -95,9 +95,12 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
   end
 
   # Raw, so that the open waiting for the writer does not hold the file server.
+  # Closed once read, so that the writer's next open waits for the next read.
   defp read_pipe!(path) do
     {:ok, pipe} = :file.open(path, [:raw, :read, :binary])
-    read_to_end!(pipe, [])
+    bytes = read_to_end!(pipe, [])
+    :ok = :file.close(pipe)
+    bytes
   end
 
   defp read_to_end!(pipe, read) do
