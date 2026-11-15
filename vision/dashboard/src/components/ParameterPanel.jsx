@@ -1,8 +1,11 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { groupParameters, useParameters } from '../stores/parameters.js'
-import { OvcsBadge, OvcsParameterControl, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
+import { OvcsBadge, OvcsParameterControl, OvcsStatus, formatValue, rangeStep, tidy, focusClass as FOCUS } from '@ovcs/ui/react'
 import { computeTags } from '../compute.js'
 import { useExplanations } from '../stores/explanations.js'
+
+// A step's status by its level, coloured as its box in the menu; an ok step says nothing.
+const STATUS_TONES = { warning: 'error', off: 'muted' }
 
 // A relation is strict: the margin is the smallest step between two values.
 const margin = (parameter) => (parameter.valueType === 'integer' ? 1 : rangeStep(parameter))
@@ -117,6 +120,7 @@ export default function ParameterPanel({ groupId }) {
   if (!group) return <p className="text-sm text-ovcs-muted">Choose a box in the pipeline to see its parameters.</p>
 
   const tags = computeTags(group.compute)
+  const settable = group.parameterIds.length > 0
 
   return (
     <section aria-labelledby={headingId}>
@@ -135,18 +139,26 @@ export default function ParameterPanel({ groupId }) {
             </ul>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => reset({ type: 'stages', id: group.id })}
-          className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm hover:border-ovcs-accent ${FOCUS}`}
-        >
-          Reset <span translate="no">{group.name}</span>
-        </button>
+        {settable ? (
+          <button
+            type="button"
+            onClick={() => reset({ type: 'stages', id: group.id })}
+            className={`min-h-8 shrink-0 rounded border border-ovcs-border px-2 text-sm hover:border-ovcs-accent ${FOCUS}`}
+          >
+            Reset <span translate="no">{group.name}</span>
+          </button>
+        ) : null}
       </div>
+      {group.status && STATUS_TONES[group.status.level] ? (
+        <p className="mt-2 text-sm font-medium">
+          <OvcsStatus tone={STATUS_TONES[group.status.level]}>{group.status.detail}</OvcsStatus>
+        </p>
+      ) : null}
       <Summary groupId={group.id} summary={group.summary} explanation={group.explanation} />
       <p aria-live="polite" className="sr-only">
         {changed}
       </p>
+      {settable ? null : <p className="mt-4 text-sm text-ovcs-muted">This step has no settings.</p>}
       <div className="divide-y divide-ovcs-border">
         {members.map((parameter) => (
           <OvcsParameterControl
