@@ -217,7 +217,7 @@ A disk is the unit's own storage, `internal`, which records in `/data/recordings
 4. **Choose.** A recording starts on the first disk in the order that is mounted, turned on and has 1 GB free. Set another floor with the bag exporter's `free_floor_bytes:`.
 5. **Go on.** When the disk falls below the floor, refuses a write, is ejected or pulled out, the recording goes on on the next such disk. It never goes back to a disk it left.
 
-Each disk a recording goes on holds a part of it, in a folder of the same name with `_part2`, `_part3`, and so on. Each part is a complete rosbag2 folder, with its own `metadata.yaml`, attachments and metadata: open the parts one after the other. With no disk left, the recording stops, and the status says why until the next start. Its last file is closed without its summary and reads up to its last whole chunk.
+Each disk a recording goes on holds a part of it, in a folder of the same name with `_part2`, `_part3`, and so on. Each part is a complete rosbag2 folder, with its own `metadata.yaml`, attachments and metadata: open the parts one after the other. A part left at a write the disk refuses keeps its last file without its summary: it reads up to its last whole chunk, and the messages of the chunk the disk did not take are not counted. With no disk left, the recording stops, and the status says why until the next start.
 
 > [!WARNING]
 > A disk pulled out without ejecting loses the chunk being written, up to a second of messages, and its last file has no summary. Eject it first with `VisionCore.Disks.eject/2`: the recording closes its file and goes on on the next disk, then the disk is unmounted.

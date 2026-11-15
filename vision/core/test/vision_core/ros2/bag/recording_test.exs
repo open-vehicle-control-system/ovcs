@@ -486,6 +486,28 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.stop(pid)
     end
 
+    test "a stop whose metadata.yaml the disk refuses keeps the messages of the file it closed",
+         %{tmp_dir: dir} do
+      pid = start_linked!(dir, @no_chunk_close)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
+
+      # A pipe takes metadata.yaml and refuses its sync; the test reads each attempt through it.
+      temporary = Path.join(bag_dir(dir), "metadata.yaml.tmp")
+      {_output, 0} = System.cmd("mkfifo", [temporary])
+      stopping = Task.async(fn -> Recording.stop(pid) end)
+      _refused = read_pipe!(temporary)
+      after_refusal = read_pipe!(temporary)
+      :ok = Task.await(stopping)
+
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(read_file!(dir, 0))
+
+      assert %{"message_count" => 1} =
+               after_refusal
+               |> YamlElixir.read_from_string!()
+               |> Map.fetch!("rosbag2_bagfile_information")
+    end
+
     test "at the start refuses a folder whose parent is missing, as on a disk not mounted",
          %{tmp_dir: dir} do
       unmounted = Path.join([dir, "disks", "stick", "recordings"])
@@ -784,6 +806,25 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
       assert %{files: 2} = Recording.status(pid)
       assert %{messages: []} = McapReader.read!(File.read!(Path.join(folder, "bag_1.mcap")))
+      :ok = Recording.stop(pid)
+    end
+
+    test "a sync refused after its chunk is written leaves that chunk once, uncounted, on leaving",
+         %{disks: disks, stick: stick} do
+      # A pipe takes the writes and refuses the sync; the test reads the file through it.
+      folder = Path.join(stick.recordings_path, "bag")
+      File.mkdir_p!(folder)
+      {_output, 0} = System.cmd("mkfifo", [Path.join(folder, "bag_0.mcap")])
+      reader = Task.async(fn -> read_pipe!(Path.join(folder, "bag_0.mcap")) end)
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert [%{log_time: 1_000}] = reader |> Task.await() |> McapReader.read_complete_chunks!()
+      assert Recording.status(pid).messages == %{}
+      assert {[], %{"message_count" => 0}} = part!(folder)
       :ok = Recording.stop(pid)
     end
 

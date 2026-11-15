@@ -39,17 +39,19 @@ defmodule VisionCore.Ros2.Bag.Recording do
   `dir` is on, the recording goes on on the next disk when it leaves
   one: at a write the disk refuses, or at a check, every
   `:chunk_interval_ms`, that finds the disk below `:free_floor_bytes`
-  free, ejecting, ejected or pulled out. It closes the part's files as
-  far as the disk allows and writes its `metadata.yaml`, then goes on in
-  `<name>_part<n>`, `n` from 2, in the recordings folder of the next disk
-  `VisionCore.Disks.next/3` gives, never one it left; a disk that holds a
-  folder of that name already is left too, the folder untouched. Each
+  free, ejecting, ejected or pulled out. It closes the part's file, with
+  nothing more written to it after a write the disk refused
+  (`VisionCore.Mcap.Writer.abandon/1`), writes its `metadata.yaml` if
+  the disk allows, then goes on in `<name>_part<n>`, `n` from 2, in the
+  recordings folder of the next disk `VisionCore.Disks.next/3` gives,
+  never one it left; a disk that holds a folder of that name already is
+  left too, the folder untouched. Each
   part is a rosbag2 folder of its own: its files
   `<name>_part<n>_<i>.mcap`, its schemas and channels, the attachments
   and metadata in its first file, and its own drops in `metadata.yaml`.
   A message the disk refused is written again in the next part; those of
-  the chunk the disk lost are not, and leave the messages counted in
-  `status/1` and `metadata.yaml`.
+  the chunk the disk lost, or whose sync it refused, are not, and leave
+  the messages counted in `status/1` and `metadata.yaml`.
 
   A write the disk refuses with no disk to go on, or without `:disks`,
   ends the recording: the open file is closed with nothing more written
@@ -373,7 +375,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
     writer =
       if index == 0,
-        do: closing_on_refusal(writer, fn -> add_attachments_and_metadata(writer, state) end),
+        do:
+          on_refusal(
+            fn -> add_attachments_and_metadata(writer, state) end,
+            fn -> Writer.abandon(writer) end
+          ),
         else: writer
 
     state = %{
@@ -386,18 +392,18 @@ defmodule VisionCore.Ros2.Bag.Recording do
         channels: %{}
     }
 
-    state = closing_on_refusal(writer, fn -> write_metadata_file(state) end)
+    state = on_refusal(fn -> write_metadata_file(state) end, fn -> Writer.close(writer) end)
     :ets.update_counter(state.table, :files, 1)
     :ets.insert(state.table, [{:disk, state.disk}, {:folders, state.folders}])
     put_bytes(state)
   end
 
-  # Runs `write` on a file just opened; the disk refusing it, the file is closed.
-  defp closing_on_refusal(writer, write) do
+  # Runs `write`; the disk refusing it, `close` closes the file just opened.
+  defp on_refusal(write, close) do
     write.()
   rescue
     error in File.Error ->
-      Writer.close(writer)
+      close.()
       reraise error, __STACKTRACE__
   end
 
@@ -471,22 +477,24 @@ defmodule VisionCore.Ros2.Bag.Recording do
   defp finish(%{ended: true} = state), do: state
 
   defp finish(state) do
-    state = attempt_or_end(state, &close_part/1)
+    state = attempt_or_end(state, [&close_open_file/1, &write_metadata_file/1])
     %{state | ended: true}
   end
 
-  defp close_part(state), do: close_part(state, drops(state.table))
+  defp close_open_file(%{writer: nil} = state), do: state
+  defp close_open_file(state), do: close_file(state)
 
-  defp close_part(state, drops) do
-    state = if state.writer, do: close_file(state), else: state
-    write_metadata_file(state, drops)
-  end
+  # Runs each step on the state the one before left; one the disk refuses ends the recording.
+  defp attempt_or_end(state, steps) when is_list(steps),
+    do: Enum.reduce(steps, state, &attempt_or_end(&2, &1))
 
-  # Runs a step that writes to the disk; a write it refuses ends the recording.
+  defp attempt_or_end(%{ended: true} = state, _step), do: state
+
   defp attempt_or_end(state, step) do
     step.(state)
   rescue
-    error in File.Error -> end_recording(state, Exception.message(error))
+    error in File.Error ->
+      state |> abandon_file() |> end_recording(Exception.message(error))
   end
 
   # Runs each step on the state the one before left; one the disk refuses again on the next disk.
@@ -499,7 +507,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
     step.(state)
   rescue
     error in File.Error ->
-      case leave_disk(state, Exception.message(error)) do
+      case state |> abandon_file() |> leave_disk(Exception.message(error)) do
         %{ended: true} = state -> state
         state -> attempt_or_leave_disk(state, step)
       end
@@ -570,7 +578,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
     _error in File.Error -> lose_open_chunk(%{state | writer: nil})
   end
 
-  # The step that failed may have written more than `state.writer` holds: its open chunk is lost.
+  # A refused step's writer may not hold what reached the file: its open chunk is lost.
   defp abandon_file(%{writer: nil} = state), do: state
 
   defp abandon_file(state) do
@@ -643,9 +651,9 @@ defmodule VisionCore.Ros2.Bag.Recording do
     attempt_or_leave_disk(state, &open_file/1)
   end
 
-  defp end_recording(state, reason) do
+  defp end_recording(%{writer: nil} = state, reason) do
     Logger.error("#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording ends")
-    state = %{abandon_file(state) | ended: true}
+    state = %{state | ended: true}
 
     try do
       write_metadata_file(state)
