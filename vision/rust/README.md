@@ -4,7 +4,7 @@ Cargo workspace of the programs `vision_core` runs as Ports.
 
 | Crate | What it does |
 |---|---|
-| `camera_capture` | Captures frames through libcamera and writes them as JPEG records or, with `--format grey`, as grey records of their luma |
+| `camera_capture` | Captures frames through libcamera and writes them as JPEG records or, with `--format grey`, as grey records of their luma. Given outputs, it also writes JPEGs of a second stream of the same capture ([Outputs of `camera_capture`](#outputs-of-camera_capture)) |
 | `hailo_detect` | Runs a compiled model on a Hailo accelerator through HailoRT and writes detections |
 | `qnn_detect` | Runs a model's QNN context binary on a Qualcomm Hexagon NPU and writes detections, YOLOX's boxes decoded. Its statistics line, every minute, gives each stage's mean time per request: waiting (`idle`), reading, the letterbox, the execution's stages (`qnn`), decoding and the reply |
 | `qnn_segment` | Runs a semantic segmentation model's QNN context binary on a Qualcomm Hexagon NPU, over a band of an RGB image resized to the model's input. It writes each output cell's class. Its statistics line, every minute, gives each stage's mean time per request: waiting (`idle`), reading, the resize, the execution's stages (`qnn`), argmax and the reply |
@@ -56,6 +56,19 @@ An execution's stages are:
   - the remote procedure call as the CPU and as the HTP time it, `host RPC` and `HTP RPC`;
   - the graph on the HTP, `HTP`;
 - reading the profile after it (`profile read`).
+
+## Outputs of `camera_capture`
+
+With `--output`, `camera_capture` asks libcamera for a second stream of the same capture beside its frames, in the same request. The Pi 5's ISP has two output streams, so it makes one output stream beside the frames. Each `--output`, in the order of their indices, is one of:
+
+- `isp:<width>x<height>:unsent`: the ISP's second stream, YUV420 at an even size, made only for the outputs made from it;
+- `from:<index>:<width>x<height>:jpeg:<quality>`: an earlier ISP output encoded as a JPEG at its size, its chroma 4:2:0. It writes one OUTPUT_JPEG record, tagged with the output's index, as `v4l2_capture` does.
+
+The ISP output is the `VideoRecording` stream and the frames are the `ViewFinder` one. The frames' records are unchanged, and each frame's comes before its outputs'.
+
+`--outputs-max-hz <hz>`, 0 to 1000, makes the outputs on at most that many frames a second. The frames are chosen on their capture times: a slot every `1 / hz` s, a frame due within three quarters of a frame period (`--fps`) of its slot. A later frame, or one captured before the last one chosen, starts the slots over from its capture time. Without the flag, or at 0, the outputs are made on every frame. The JPEG is encoded on the capture thread, after the frame's record is written.
+
+When libcamera adjusts the configuration, `camera_capture` logs each stream's configuration, as asked and as adjusted, with its colour space. If the ISP output's size changed, it writes the frames without the outputs.
 
 ## One camera with `v4l2_capture`
 
