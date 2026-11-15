@@ -3,7 +3,7 @@
 # reaches OVCS by changing its pin.
 #
 # owner/name	commit
-open-vehicle-control-system/cantastic	d8c2d77d47903f02d6d6c57ac31a6c3fa76f14ea
+open-vehicle-control-system/cantastic	a38c451213cd511869c4ca4ecf6ebe4264926f4c
 open-vehicle-control-system/express_lrs	3b5ca55d106bf17ef6f60a5af855a8b0c836681e
 open-vehicle-control-system/msp_osd	adffb5377924f1d6cee52c715250efc566587bc5
 open-vehicle-control-system/ovcs_control	89ff073f5f92d29ace8387ef738593177664fddd
