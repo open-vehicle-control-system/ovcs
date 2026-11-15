@@ -326,8 +326,9 @@ export default function Previews({ status, socket }) {
 
   return (
     <section aria-label="Previews" className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">
-      {/* The asides' track takes the height the pair's checks add, under the captions; from `lg` both rows share the height. */}
-      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)_auto_auto]">
+      {/* The asides' track takes the height the pair's checks add, under the captions; on a narrow screen the checks go
+          under both previews; from `lg` both rows share the height. */}
+      <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 lg:min-h-0 lg:flex-1 lg:grid-rows-[minmax(0,1fr)_auto_auto]">
         <LeftPreview status={status} socket={socket} />
         <PairStatus status={status} />
         <Preview
