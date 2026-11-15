@@ -35,7 +35,9 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
     * `:topic_prefix` (`"stereo"`), `:fps` (30).
     * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
       stamps `/diagnostics` from the time it is sent.
-    * `:left`, `:right` — each camera's `:sync` role, when it has one.
+    * `:left`, `:right` — each camera's options: its `:label`, by which
+      its frames are told apart and its driver names it (required), and
+      its `:sync` role, when it has one.
     * `:publish` (`&VisionCore.Ros2.Topics.publish/4`) — sends one
       message, as `VisionCore.Ros2.ZenohExporter`'s does.
     * `:name` (this module) — the name it registers under.
@@ -76,10 +78,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
     driver = Keyword.fetch!(opts, :driver)
     Code.ensure_loaded(driver)
 
-    servers = %{
-      left: driver.name_for("left"),
-      right: driver.name_for("right")
-    }
+    labels = Map.new([:left, :right], &{&1, opts |> Keyword.fetch!(&1) |> Keyword.fetch!(:label)})
+    servers = Map.new(labels, fn {side, label} -> {side, driver.name_for(label)} end)
 
     Enum.each(servers, fn {_side, server} -> :ok = Outputs.subscribe({:camera_frame, server}) end)
     Process.send_after(self(), :plot, @plot_period_ms)
@@ -90,6 +90,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
        prefix: Keyword.get(opts, :topic_prefix, @default_topic_prefix),
        driver: driver,
        servers: servers,
+       sides: Map.new(labels, fn {side, label} -> {label, side} end),
        roles: %{left: get_in(opts, [:left, :sync]), right: get_in(opts, [:right, :sync])},
        publish: Keyword.get(opts, :publish, &Topics.publish/4),
        stamp: Keyword.get(opts, :stamp, &Stamp.stamp_from_monotonic/1),
@@ -100,8 +101,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Diagnostics do
 
   @impl GenServer
   def handle_cast({:camera_frame, %Frame{label: label, capture_ns: capture_ns}}, state)
-      when label in ["left", "right"] do
-    side = String.to_existing_atom(label)
+      when is_map_key(state.sides, label) do
+    side = Map.fetch!(state.sides, label)
 
     case Sync.add(state.sync, side, capture_ns, System.monotonic_time(:millisecond)) do
       {nil, sync} ->

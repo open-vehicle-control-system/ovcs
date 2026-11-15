@@ -42,7 +42,7 @@ Not explained yet: `CameraConfiguration::validate()` returns Adjusted with two s
 - [ ] #7 On the Mini: `/left/image_raw/compressed` at 10 Hz, 1152×648, full-range colour; `/stereo/left/image_raw/compressed` unchanged; stereo at 20 pairs a second with 0 % dropped; added CPU within 6 % of one core
 - [ ] #8 The `left` camera is calibrated at 1152×648 and its pose measured on the Calibration page, as OVCS1's `center`; both are shipped in `vehicles/ovcs_mini/priv/calibration/`
 - [ ] #9 Guides updated: `docs/vision/cameras.md`, `docs/vision/data_flow.md`, `docs/vision/channels.md`, `docs/vision/api.md`, `vision/rust/README.md`
-- [ ] #10 PR 1: the stereo unit gives each side's driver its `:side`; `V4L2Pair`, the Pairer, the stereo parameters, the ROS 2 diagnostics and the focus sweep tell the sides apart by it or by the labels the unit gives, never by a label's text; nothing visible changes
+- [x] #10 PR 1: the stereo unit gives each side's driver its `:side`; `V4L2Pair`, the Pairer, the stereo parameters, the ROS 2 diagnostics and the focus sweep tell the sides apart by it or by the labels the unit gives, never by a label's text; nothing visible changes
 - [ ] #11 PR 2: with a stereo unit and a camera `:left` of its own, the status, the preview channels, the exporter outputs, the detection sources and a pose session tell them apart; a camera `topic_prefix:` that lands on a stereo topic is refused; the stereo unit's ROS 2 topics, frame ids, parameters and calibration files are unchanged
 <!-- AC:END -->
 
@@ -231,3 +231,13 @@ PR 2 splits into core (2a) and API with dashboard (2b) if it passes 400 lines; t
 | 7 | OVCS Mini composer: the `:left` camera, `cameras: [names: [:left]]`, moduledoc | The vehicle's composer test | On the Mini, AC #7: `ros2 topic hz`, status, CPU against the figures above |
 | 8 | Ship `left.yaml` and `left_pose.yaml` after calibrating on the unit | Composer test lists them in `required_files/0` | Calibration page shows them in use after a reflash |
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+PR 1:
+
+- Of the stereo drivers, only `V4L2Pair` read its side from its label. `LibCamera`, `GStreamer` and `Ros2.Camera` take no side from their label: they receive `:side` and need nothing of it.
+- Each side's `:label` is among the side options the stereo unit resolves (`VisionCore.Stereo.Supervisor.camera_options/1`). The Pairer, the stereo parameters, the ROS 2 diagnostics and `V4L2Pair`'s peer take it from there, so PR 2 changes the label in one function.
+- `VisionCore.Camera.FocusSweep` sets the focus through the stereo unit's own driver, found in the configuration, rather than `V4L2Pair` by its registered name.
+<!-- SECTION:NOTES:END -->

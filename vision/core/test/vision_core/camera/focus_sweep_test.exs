@@ -49,6 +49,31 @@ defmodule VisionCore.Camera.FocusSweepTest do
     end
   end
 
+  # A stereo camera that hands the focus it is set to the process registered under its name.
+  defmodule FocusCamera do
+    def name_for(label), do: Module.concat(__MODULE__, label)
+
+    def set_controls(server, controls) do
+      send(server, {:focus, controls[:focus]})
+      {:ok, Map.new(controls)}
+    end
+  end
+
+  test "without :set_focus, sets the focus on the left camera of the config's stereo unit" do
+    Process.register(self(), FocusCamera.name_for("left"))
+    config = %VisionCore.Config{components: [{:stereo, driver: FocusCamera, left: [], right: []}]}
+
+    assert {:ok, %{best: 400}} =
+             FocusSweep.run(
+               from: 400,
+               to: 400,
+               config: config,
+               measure: fn -> {:ok, %{left: 1.0, right: 1.0}} end
+             )
+
+    assert focus_messages() == [400, 400]
+  end
+
   test "refuses a range with no position in it" do
     assert {:error, "no focus position" <> _} = sweep(from: 480, to: 380, step: 10)
   end

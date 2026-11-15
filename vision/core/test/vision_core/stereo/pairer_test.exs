@@ -10,6 +10,14 @@ defmodule VisionCore.Stereo.PairerTest do
     def name_for(label), do: Module.concat(__MODULE__, label)
   end
 
+  # Labels that are not the sides' names: the pairer tells the sides apart by its :cameras.
+  @cameras [left: {Camera, "front/left"}, right: {Camera, "front/right"}]
+
+  defp label(side), do: elem(@cameras[side], 1)
+
+  defp publish_frame(side, frame),
+    do: Outputs.publish({:camera_frame, Camera.name_for(label(side))}, {:camera_frame, frame})
+
   defp frame(label, capture_time_ms),
     do: %Frame{
       label: label,
@@ -35,55 +43,40 @@ defmodule VisionCore.Stereo.PairerTest do
 
   test "pairs the frames its cameras publish and submits them to its pipeline" do
     pairer =
-      start_supervised!(
-        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()}
-      )
+      start_supervised!({Pairer, cameras: @cameras, pipeline: self()})
 
-    for label <- ["left", "right"],
-        do:
-          Outputs.publish(
-            {:camera_frame, Camera.name_for(label)},
-            {:camera_frame, frame(label, 33)}
-          )
+    for side <- [:left, :right], do: publish_frame(side, frame(label(side), 33))
 
     # A barrier: the Pairer handles both frames, and submits, before it answers.
     Pairer.sync(pairer)
 
     assert_received {:"$gen_cast",
-                     {:submit, %Frame{label: "left"}, %Frame{label: "right"}, _pairer}}
+                     {:submit, %Frame{label: "front/left"}, %Frame{label: "front/right"}, _pairer}}
   end
 
   test "its tolerance changes while it runs, from the next pair on" do
     pairer =
-      start_supervised!(
-        {Pairer,
-         cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), pair_tolerance_ms: 5}
-      )
+      start_supervised!({Pairer, cameras: @cameras, pipeline: self(), pair_tolerance_ms: 5})
 
-    publish = fn label, capture_ms ->
-      Outputs.publish(
-        {:camera_frame, Camera.name_for(label)},
-        {:camera_frame, frame(label, capture_ms)}
-      )
-    end
+    publish = fn side, capture_ms -> publish_frame(side, frame(label(side), capture_ms)) end
 
     assert Pairer.pair_tolerance_ms(pairer) == 5
-    publish.("left", 100)
-    publish.("right", 120)
+    publish.(:left, 100)
+    publish.(:right, 120)
     Pairer.sync(pairer)
     refute_received {:"$gen_cast", {:submit, _left, _right, _pairer}}
 
     assert Pairer.put_pair_tolerance_ms(pairer, 25) == :ok
-    publish.("right", 121)
+    publish.(:right, 121)
     Pairer.sync(pairer)
 
-    assert_received {:"$gen_cast", {:submit, %Frame{label: "left"}, %Frame{}, _pairer}}
+    assert_received {:"$gen_cast", {:submit, %Frame{label: "front/left"}, %Frame{}, _pairer}}
     assert Pairer.pair_tolerance_ms(pairer) == 25
   end
 
   test "refuses a tolerance that is no integer from 0 to 1000 ms, at start and while it runs" do
     Process.flag(:trap_exit, true)
-    cameras = [{Camera, "left"}, {Camera, "right"}]
+    cameras = @cameras
 
     assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
              Pairer.start_link(cameras: cameras, pipeline: self(), pair_tolerance_ms: -1)
@@ -99,10 +92,7 @@ defmodule VisionCore.Stereo.PairerTest do
   test "refuses at start an :fps that is no integer from 1 on" do
     for fps <- [0, 29.97, nil] do
       assert {:error, {{%ArgumentError{message: message}, _stacktrace}, _child}} =
-               start_supervised(
-                 {Pairer,
-                  cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: fps}
-               )
+               start_supervised({Pairer, cameras: @cameras, pipeline: self(), fps: fps})
 
       assert message =~ ":fps"
     end
@@ -110,18 +100,12 @@ defmodule VisionCore.Stereo.PairerTest do
 
   test "measures the sync of the frames its cameras publish" do
     pairer =
-      start_supervised!(
-        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: 30}
-      )
+      start_supervised!({Pairer, cameras: @cameras, pipeline: self(), fps: 30})
 
     assert Pairer.sync(pairer) == %{offset_median_ms: nil, offset_max_ms: nil, pairs: 0}
 
-    for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}],
-        do:
-          Outputs.publish(
-            {:camera_frame, Camera.name_for(label)},
-            {:camera_frame, %{frame(label, 0) | capture_ns: capture_ns}}
-          )
+    for {side, capture_ns} <- [left: 1_000_000_000, right: 1_000_200_000],
+        do: publish_frame(side, %{frame(label(side), 0) | capture_ns: capture_ns})
 
     assert %{pairs: 1, offset_median_ms: offset_ms} = Pairer.sync(pairer)
     assert_in_delta offset_ms, 0.2, 1.0e-9
@@ -137,26 +121,20 @@ defmodule VisionCore.Stereo.PairerTest do
     defp set_clock(clock, now_ms), do: Agent.update(clock, fn _now_ns -> now_ms * 1_000_000 end)
 
     defp start_timed_pairer(now_ns) do
-      start_supervised!(
-        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
-      )
+      start_supervised!({Pairer, cameras: @cameras, pipeline: self(), now_ns: now_ns})
     end
 
-    defp publish(label, capture_time_ms),
-      do:
-        Outputs.publish(
-          {:camera_frame, Camera.name_for(label)},
-          {:camera_frame, frame(label, capture_time_ms)}
-        )
+    defp publish(side, capture_time_ms),
+      do: publish_frame(side, frame(label(side), capture_time_ms))
 
     test "measures each frame from its capture to its arrival, and each pair's wait to be submitted" do
       {clock, now_ns} = start_clock(1_000)
       pairer = start_timed_pairer(now_ns)
 
-      publish("left", 996)
+      publish(:left, 996)
       Pairer.sync(pairer)
       set_clock(clock, 1_002)
-      publish("right", 996)
+      publish(:right, 996)
       Pairer.sync(pairer)
 
       assert_received {:"$gen_cast", {:submit, %Frame{}, %Frame{}, _pairer}}
@@ -167,7 +145,7 @@ defmodule VisionCore.Stereo.PairerTest do
       {_clock, now_ns} = start_clock(1_000)
       pairer = start_timed_pairer(now_ns)
 
-      for label <- ["left", "right"], do: publish(label, 990)
+      for side <- [:left, :right], do: publish(side, 990)
       assert %{cameras: 10.0, pairing: +0.0} = Pairer.latencies(pairer)
 
       assert Pairer.latencies(pairer) == %{cameras: nil, pairing: nil}
@@ -177,7 +155,7 @@ defmodule VisionCore.Stereo.PairerTest do
       {_clock, now_ns} = start_clock(1_000)
       pairer = start_timed_pairer(now_ns)
 
-      publish("left", 997)
+      publish(:left, 997)
 
       assert Pairer.latencies(pairer) == %{cameras: 3.0, pairing: nil}
     end
@@ -189,10 +167,7 @@ defmodule VisionCore.Stereo.PairerTest do
     @jitter_ms [0, 1, -2, 2, -1]
 
     defp start_capped_pairer(opts) do
-      start_supervised!(
-        {Pairer,
-         [cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), fps: 30] ++ opts}
-      )
+      start_supervised!({Pairer, [cameras: @cameras, pipeline: self(), fps: 30] ++ opts})
     end
 
     # The capture times of `count` pairs at 30 fps, each a little early or late.
@@ -210,12 +185,8 @@ defmodule VisionCore.Stereo.PairerTest do
     end
 
     defp publish_pair(capture_ns) do
-      for {label, offset_ns} <- [{"left", 0}, {"right", 100_000}],
-          do:
-            Outputs.publish(
-              {:camera_frame, Camera.name_for(label)},
-              {:camera_frame, %{frame(label, 0) | capture_ns: capture_ns + offset_ns}}
-            )
+      for {side, offset_ns} <- [left: 0, right: 100_000],
+          do: publish_frame(side, %{frame(label(side), 0) | capture_ns: capture_ns + offset_ns})
     end
 
     # Publishes a pair at each capture time, the pipeline taking each pair at once, and returns the times submitted.
@@ -325,10 +296,9 @@ defmodule VisionCore.Stereo.PairerTest do
 
     test "refuses a rate that is no number from 0 to 1000, at start and while it runs" do
       Process.flag(:trap_exit, true)
-      cameras = [{Camera, "left"}, {Camera, "right"}]
 
       assert {:error, {%ArgumentError{message: message}, _stacktrace}} =
-               Pairer.start_link(cameras: cameras, pipeline: self(), max_hz: "15")
+               Pairer.start_link(cameras: @cameras, pipeline: self(), max_hz: "15")
 
       assert message == "its :max_hz must be a number, got \"15\""
 

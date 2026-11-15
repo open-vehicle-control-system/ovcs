@@ -14,7 +14,8 @@ defmodule VisionCore.Ros2.Camera do
 
   ## Options
 
-    * `:label` (required) — `"left"` / `"right"`, as for every driver.
+    * `:label` (required) — the label its frames carry and it registers
+      by, as for every driver. It reads no `:side`: the topic is the side.
     * `:topic` (required) — the ROS topic to consume, e.g.
       `"/stereo/left/image_raw/compressed"`.
     * `:frame_id` — the optical frame each frame carries, `nil`

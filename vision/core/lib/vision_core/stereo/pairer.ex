@@ -34,7 +34,9 @@ defmodule VisionCore.Stereo.Pairer do
 
   ## Options
 
-    * `:cameras` (required) — `[{driver_module, "left"}, {driver_module, "right"}]`.
+    * `:cameras` (required) — `[left: {driver_module, label}, right:
+      {driver_module, label}]`: each side's camera, its frames told
+      apart by their label.
     * `:pipeline` (`VisionCore.Stereo.Pipeline`) — the pipeline server.
     * `:pair_tolerance_ms` (33) — the largest capture time gap of a
       pair, an integer from 0 to 1000; wide enough for unsynchronised
@@ -148,10 +150,12 @@ defmodule VisionCore.Stereo.Pairer do
     %{pair_tolerance_ms: tolerance_ms, max_hz: max_hz} = Settings.init!(@setting_specs, opts)
     fps = VisionCore.Options.integer!(opts, :fps, @default_fps, 1)
 
-    for side <- ["left", "right"] do
-      {driver, ^side} = List.keyfind(cameras, side, 1) || raise "no #{side} camera in :cameras"
-      :ok = Outputs.subscribe({:camera_frame, driver.name_for(side)})
-    end
+    sides =
+      Map.new([:left, :right], fn side ->
+        {driver, label} = Keyword.get(cameras, side) || raise "no #{side} camera in :cameras"
+        :ok = Outputs.subscribe({:camera_frame, driver.name_for(label)})
+        {label, side}
+      end)
 
     rate = if max_hz > 0, do: ", at most #{max_hz} pairs a second", else: ""
     Logger.info("#{__MODULE__} pairing within #{tolerance_ms} ms#{rate}")
@@ -159,6 +163,7 @@ defmodule VisionCore.Stereo.Pairer do
     {:ok,
      %{
        pipeline: pipeline,
+       sides: sides,
        pair_tolerance_ns: tolerance_ms * @ns_per_ms,
        max_hz: max_hz,
        due_slack_ns: div(3 * @ns_per_s, 4 * fps),
@@ -212,9 +217,16 @@ defmodule VisionCore.Stereo.Pairer do
   end
 
   @impl GenServer
-  def handle_cast({:camera_frame, %Frame{} = frame}, state) do
+  def handle_cast({:camera_frame, %Frame{label: label} = frame}, state)
+      when is_map_key(state.sides, label) do
+    side = Map.fetch!(state.sides, label)
     arrived_ns = state.now_ns.()
-    {:noreply, state |> measure(frame, arrived_ns) |> keep(frame, arrived_ns) |> maybe_submit()}
+
+    {:noreply,
+     state
+     |> measure(side, frame, arrived_ns)
+     |> keep(side, frame, arrived_ns)
+     |> maybe_submit()}
   end
 
   def handle_cast(_message, state), do: {:noreply, state}
@@ -232,9 +244,7 @@ defmodule VisionCore.Stereo.Pairer do
     {:noreply, maybe_submit(%{state | awaiting_pair: false, submitted_at_ns: nil, timer: timer})}
   end
 
-  defp measure(state, %Frame{label: label, capture_ns: capture_ns}, arrived_ns)
-       when label in ["left", "right"] do
-    side = String.to_existing_atom(label)
+  defp measure(state, side, %Frame{capture_ns: capture_ns}, arrived_ns) do
     now_ms = System.convert_time_unit(arrived_ns, :nanosecond, :millisecond)
     {_offset_ms, sync} = Sync.add(state.sync, side, capture_ns, now_ms)
 
@@ -245,19 +255,15 @@ defmodule VisionCore.Stereo.Pairer do
     }
   end
 
-  defp measure(state, _frame, _arrived_ns), do: state
-
-  defp keep(state, %Frame{label: "left"} = frame, arrived_ns) do
+  defp keep(state, :left, frame, arrived_ns) do
     left_frames = Enum.take([frame | state.left_frames], @frames_kept_per_side)
     remember_arrival(%{state | left_frames: left_frames}, frame, arrived_ns)
   end
 
-  defp keep(state, %Frame{label: "right"} = frame, arrived_ns) do
+  defp keep(state, :right, frame, arrived_ns) do
     right_frames = Enum.take([frame | state.right_frames], @frames_kept_per_side)
     remember_arrival(%{state | right_frames: right_frames}, frame, arrived_ns)
   end
-
-  defp keep(state, _frame, _arrived_ns), do: state
 
   # The arrivals of the frames kept, and of no other.
   defp remember_arrival(state, frame, arrived_ns) do

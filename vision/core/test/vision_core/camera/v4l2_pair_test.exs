@@ -14,6 +14,20 @@ defmodule VisionCore.Camera.V4L2PairTest do
     end
   end
 
+  # Labels that are not the sides' names: each instance takes its side from :side.
+  @labels [left: "front/left", right: "front/right"]
+
+  defp name(side), do: V4L2Pair.name_for(@labels[side])
+
+  # The options the stereo unit gives the instance of `side`, with both sides' labels.
+  defp instance_options(side, opts \\ []) do
+    {sides, opts} = Keyword.split(opts, [:left, :right])
+
+    [side: side, label: @labels[side]] ++
+      opts ++
+      for({each, label} <- @labels, do: {each, [label: label] ++ Keyword.get(sides, each, [])})
+  end
+
   defp pair_record(left_ns, right_ns) do
     <<4, 2::little-16, 1::little-16, left_ns::little-signed-64, right_ns::little-signed-64, 1, 2,
       3, 4>>
@@ -88,15 +102,16 @@ defmodule VisionCore.Camera.V4L2PairTest do
         left =
           start_supervised!(
             {V4L2Pair,
-             label: "left",
-             width: 728,
-             height: 544,
-             fps: 30,
-             left: [csiphy: 0],
-             right: [csiphy: 2],
-             media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
-             executable: "/bin/true",
-             reopen_delays_ms: [60_000]}
+             instance_options(:left,
+               width: 728,
+               height: 544,
+               fps: 30,
+               left: [csiphy: 0],
+               right: [csiphy: 2],
+               media_runner: media_runner("media-ctl-p-no-csiphy2-sensor.txt"),
+               executable: "/bin/true",
+               reopen_delays_ms: [60_000]
+             )}
           )
 
         refute VisionCore.Camera.Reopen.running?(left)
@@ -109,8 +124,11 @@ defmodule VisionCore.Camera.V4L2PairTest do
   defp start_left(opts) do
     start_supervised!(
       {V4L2Pair,
-       [label: "left", width: 728, height: 544, fps: 30, executable: "/bin/true"] ++
-         Keyword.merge([reopen_delays_ms: [60_000]], opts)}
+       instance_options(
+         :left,
+         [width: 728, height: 544, fps: 30, executable: "/bin/true"] ++
+           Keyword.merge([reopen_delays_ms: [60_000]], opts)
+       )}
     )
   end
 
@@ -154,7 +172,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
     end
 
     test "the right camera answers with the left one's controls" do
-      start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
+      start_supervised!(Supervisor.child_spec({V4L2Pair, instance_options(:right)}, id: :right))
 
       start_left(
         left: [csiphy: 0],
@@ -162,7 +180,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
         media_runner: media_runner("media-ctl-p.txt")
       )
 
-      refute :focus in control_keys(V4L2Pair.name_for("right"))
+      refute :focus in control_keys(name(:right))
     end
 
     test "a change of the controls is published once routing finds the sensors" do
@@ -172,7 +190,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
         media_runner(Agent.get(fixture, & &1)).(command, args)
       end
 
-      :ok = Outputs.subscribe(VisionCore.Camera.controls_changed_key(V4L2Pair.name_for("left")))
+      :ok = Outputs.subscribe(VisionCore.Camera.controls_changed_key(name(:left)))
       left = start_left(left: [csiphy: 0], right: [csiphy: 2], media_runner: runner)
       assert :focus in control_keys(left)
 
@@ -180,7 +198,7 @@ defmodule VisionCore.Camera.V4L2PairTest do
       send(left, :reopen)
 
       assert_receive {:"$gen_cast", {:camera_controls_changed, name}}, 2_000
-      assert name == V4L2Pair.name_for("left")
+      assert name == name(:left)
       refute :focus in control_keys(left)
     end
   end
@@ -201,17 +219,17 @@ defmodule VisionCore.Camera.V4L2PairTest do
     File.write!(script, "#!/bin/sh\ncat > #{commands}\n")
     File.chmod!(script, 0o755)
 
-    start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
+    start_supervised!(Supervisor.child_spec({V4L2Pair, instance_options(:right)}, id: :right))
 
     start_supervised!(
       Supervisor.child_spec(
-        {V4L2Pair, label: "left", executable: script, width: 2, height: 1, fps: 30},
+        {V4L2Pair, instance_options(:left, executable: script, width: 2, height: 1, fps: 30)},
         id: :left
       )
     )
 
-    assert {:ok, %{gamma: 1.8}} = V4L2Pair.set_controls(V4L2Pair.name_for("right"), gamma: 1.8)
-    assert %{gamma: 1.8, rotation: 0} = V4L2Pair.controls(V4L2Pair.name_for("right"))
+    assert {:ok, %{gamma: 1.8}} = V4L2Pair.set_controls(name(:right), gamma: 1.8)
+    assert %{gamma: 1.8, rotation: 0} = V4L2Pair.controls(name(:right))
 
     eventually(fn -> File.read(commands) == {:ok, <<9::32, "gamma=1.8">>} end)
   end
@@ -227,28 +245,29 @@ defmodule VisionCore.Camera.V4L2PairTest do
       capture_log(fn ->
         start_supervised!(
           {V4L2Pair,
-           label: "left",
-           executable: script,
-           width: 2,
-           height: 1,
-           fps: 30,
-           gamma: 9.0,
-           rotation: 180}
+           instance_options(:left,
+             executable: script,
+             width: 2,
+             height: 1,
+             fps: 30,
+             gamma: 9.0,
+             rotation: 180
+           )}
         )
 
         eventually(fn -> File.exists?(arguments) end)
       end)
 
     assert log =~ "gamma: invalid value 9.0"
-    assert %{gamma: 2.2, rotation: 180} = V4L2Pair.controls(V4L2Pair.name_for("left"))
+    assert %{gamma: 2.2, rotation: 180} = V4L2Pair.controls(name(:left))
     eventually(fn -> File.read!(arguments) =~ "--gamma 2.2" end)
   end
 
   test "a pair record becomes a left and a right grey frame" do
     assert {:pair, left, right} = V4L2Pair.parse_record(pair_record(5, 6))
 
-    assert %Frame{label: "left", width: 2, height: 1, grey: <<1, 2>>} = left
-    assert %Frame{label: "right", width: 2, height: 1, grey: <<3, 4>>} = right
+    assert %Frame{width: 2, height: 1, grey: <<1, 2>>} = left
+    assert %Frame{width: 2, height: 1, grey: <<3, 4>>} = right
     # The kernel-to-Erlang offset is read on each conversion.
     assert_in_delta left.capture_ns, Timing.monotonic_from_kernel(5), 1_000_000
     assert_in_delta right.capture_ns - left.capture_ns, 1, 1_000_000
@@ -269,11 +288,11 @@ defmodule VisionCore.Camera.V4L2PairTest do
     File.write!(script, "#!/bin/sh\nsleep 0.3\ncat #{records}\n")
     File.chmod!(script, 0o755)
 
-    for label <- ["left", "right"],
-        do: :ok = Outputs.subscribe({:camera_frame, V4L2Pair.name_for(label)})
+    for side <- [:left, :right], do: :ok = Outputs.subscribe({:camera_frame, name(side)})
 
     start_supervised!(
-      Supervisor.child_spec({V4L2Pair, label: "right", frame_id: "stereo_right_optical"},
+      Supervisor.child_spec(
+        {V4L2Pair, instance_options(:right, frame_id: "stereo_right_optical")},
         id: :right
       )
     )
@@ -282,13 +301,14 @@ defmodule VisionCore.Camera.V4L2PairTest do
       start_supervised!(
         Supervisor.child_spec(
           {V4L2Pair,
-           label: "left",
-           frame_id: "stereo_left_optical",
-           executable: script,
-           width: 2,
-           height: 1,
-           fps: 30,
-           reopen_delays_ms: [10]},
+           instance_options(:left,
+             frame_id: "stereo_left_optical",
+             executable: script,
+             width: 2,
+             height: 1,
+             fps: 30,
+             reopen_delays_ms: [10]
+           )},
           id: :left,
           restart: :temporary
         )
@@ -296,16 +316,22 @@ defmodule VisionCore.Camera.V4L2PairTest do
 
     assert_receive {:"$gen_cast",
                     {:camera_frame,
-                     %Frame{label: "left", frame_id: "stereo_left_optical", grey: <<1, 2>>}}},
+                     %Frame{label: "front/left", frame_id: "stereo_left_optical", grey: <<1, 2>>}}},
                    2_000
 
     assert_receive {:"$gen_cast",
                     {:camera_frame,
-                     %Frame{label: "right", frame_id: "stereo_right_optical", grey: <<3, 4>>}}},
+                     %Frame{
+                       label: "front/right",
+                       frame_id: "stereo_right_optical",
+                       grey: <<3, 4>>
+                     }}},
                    2_000
 
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left", grey: <<1, 2>>}}}, 2_000
-    assert Process.whereis(V4L2Pair.name_for("left")) == left
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "front/left", grey: <<1, 2>>}}},
+                   2_000
+
+    assert Process.whereis(name(:left)) == left
   end
 
   defp metadata_record(exposure_us, gain) do
@@ -330,35 +356,35 @@ defmodule VisionCore.Camera.V4L2PairTest do
     File.write!(script, "#!/bin/sh\nsleep 5\n")
     File.chmod!(script, 0o755)
 
-    start_supervised!(Supervisor.child_spec({V4L2Pair, label: "right"}, id: :right))
+    start_supervised!(Supervisor.child_spec({V4L2Pair, instance_options(:right)}, id: :right))
 
     left =
       start_supervised!(
         Supervisor.child_spec(
-          {V4L2Pair, label: "left", executable: script, width: 2, height: 1, fps: 30},
+          {V4L2Pair, instance_options(:left, executable: script, width: 2, height: 1, fps: 30)},
           id: :left
         )
       )
 
-    assert V4L2Pair.live(V4L2Pair.name_for("right")) == nil
+    assert V4L2Pair.live(name(:right)) == nil
 
     %{port: port} = :sys.get_state(left)
     send(left, {port, {:data, metadata_record(8_000.0, 2.0)}})
     send(left, {port, {:data, metadata_record(4_000.0, 4.0)}})
 
-    for label <- ["left", "right"] do
+    for side <- [:left, :right] do
       assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: received_ms} =
-               V4L2Pair.live(V4L2Pair.name_for(label))
+               V4L2Pair.live(name(side))
 
       assert_in_delta received_ms, System.system_time(:millisecond), 1_000
     end
 
-    %{received_ms: before_ms} = V4L2Pair.live(V4L2Pair.name_for("left"))
+    %{received_ms: before_ms} = V4L2Pair.live(name(:left))
     Process.sleep(20)
     send(left, {port, {:data, pair_record(5, 6)}})
 
     assert %{exposure_time_us: 4000, analogue_gain: 4.0, received_ms: after_ms} =
-             V4L2Pair.live(V4L2Pair.name_for("right"))
+             V4L2Pair.live(name(:right))
 
     assert after_ms > before_ms
   end
