@@ -83,6 +83,7 @@ defmodule VisionCore.Stereo.ParametersTest do
   end
 
   @controls Map.new(VisionCore.Camera.V4L2Pair.control_specs(), &{&1.key, &1.default})
+  @sides [left: [label: "left"], right: [label: "right"]]
 
   setup do
     start_supervised!({Pipeline, stages()})
@@ -140,7 +141,15 @@ defmodule VisionCore.Stereo.ParametersTest do
       match_height: 360
     ]
     |> Keyword.merge(opts)
+    |> with_labels()
     |> Parameters.groups()
+  end
+
+  # Each side labelled by its name, as the stereo unit labels it, unless the test labels it.
+  defp with_labels(opts) do
+    Enum.reduce(@sides, opts, fn {side, [label: label]}, opts ->
+      Keyword.update(opts, side, [label: label], &Keyword.put_new(&1, :label, label))
+    end)
   end
 
   defp group(id), do: Enum.find(groups(), &(&1.id == id))
@@ -207,8 +216,8 @@ defmodule VisionCore.Stereo.ParametersTest do
          prefix: "stereo",
          driver: VisionCore.Camera.LibCamera,
          pipeline: Pipeline,
-         left: left,
-         right: []}
+         left: [label: "left"] ++ left,
+         right: [label: "right"]}
       )
 
       assert {:ok, %{value: 0.2, default: 0.2, state: :builtin}} =
@@ -325,6 +334,21 @@ defmodule VisionCore.Stereo.ParametersTest do
       assert parameter(cameras_group(), "exposure_time_us").get.() == 1
     end
 
+    test "reaches each camera by the label of its side" do
+      Agent.update(SideDriver, fn state ->
+        %{state | controls: %{"front/left" => @side_controls, "front/right" => @side_controls}}
+      end)
+
+      cameras = cameras_group(left: [label: "front/left"], right: [label: "front/right"])
+
+      assert :ok = parameter(cameras, "exposure_time_us").set.(5000)
+
+      assert SideDriver.calls() == [
+               {"front/left", [exposure_time_us: 5000]},
+               {"front/right", [exposure_time_us: 5000]}
+             ]
+    end
+
     test "exposure and gain default to the composer's manual values for the left camera" do
       cameras = cameras_group(left: [exposure_time_us: 6000, analogue_gain: 1.5])
 
@@ -373,8 +397,8 @@ defmodule VisionCore.Stereo.ParametersTest do
          prefix: "stereo",
          driver: SideDriver,
          pipeline: Pipeline,
-         left: [exposure_time_us: 6000],
-         right: []}
+         left: [label: "left", exposure_time_us: 6000],
+         right: [label: "right"]}
       )
 
       assert {:ok, %{value: false}} =
@@ -395,7 +419,9 @@ defmodule VisionCore.Stereo.ParametersTest do
       start_supervised!({MemoryStore, %{}})
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
-      start_supervised!({Parameters, prefix: "stereo", driver: SideDriver, pipeline: Pipeline})
+      start_supervised!(
+        {Parameters, [prefix: "stereo", driver: SideDriver, pipeline: Pipeline] ++ @sides}
+      )
 
       assert {:ok, %{value: 1.0, default: 1.0, state: :builtin}} =
                VisionCore.Parameters.get("stereo.cameras.lens_position")
@@ -415,7 +441,9 @@ defmodule VisionCore.Stereo.ParametersTest do
     test "a changed noise reduction is discarded back to libcamera's mode" do
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
-      start_supervised!({Parameters, prefix: "stereo", driver: SideDriver, pipeline: Pipeline})
+      start_supervised!(
+        {Parameters, [prefix: "stereo", driver: SideDriver, pipeline: Pipeline] ++ @sides}
+      )
 
       assert {:ok, %{state: :unsaved}} =
                VisionCore.Parameters.set("stereo.cameras.noise_reduction", "off")
@@ -437,7 +465,9 @@ defmodule VisionCore.Stereo.ParametersTest do
 
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
-      start_supervised!({Parameters, prefix: "stereo", driver: SideDriver, pipeline: Pipeline})
+      start_supervised!(
+        {Parameters, [prefix: "stereo", driver: SideDriver, pipeline: Pipeline] ++ @sides}
+      )
 
       assert {:ok, %{value: false, state: :saved}} =
                VisionCore.Parameters.get("stereo.cameras.auto_exposure")
@@ -459,7 +489,9 @@ defmodule VisionCore.Stereo.ParametersTest do
     test "switching auto exposure off gives both cameras the exposure the left one applied" do
       start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
-      start_supervised!({Parameters, prefix: "stereo", driver: SideDriver, pipeline: Pipeline})
+      start_supervised!(
+        {Parameters, [prefix: "stereo", driver: SideDriver, pipeline: Pipeline] ++ @sides}
+      )
 
       assert {:ok, %{value: true, state: :builtin}} =
                VisionCore.Parameters.get("stereo.cameras.auto_exposure")
@@ -711,7 +743,10 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "declares its groups into the registry when it runs" do
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
 
     ids = Enum.map(VisionCore.Parameters.groups(), & &1.id)
     assert "stereo.cameras" in ids
@@ -720,7 +755,11 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "lists the controls the cameras have, and lists them again once the driver publishes a change" do
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
+
     assert {:ok, _focus} = VisionCore.Parameters.get("stereo.cameras.focus")
 
     without_focus = Enum.reject(Driver.control_specs(), &(&1.key == :focus))
@@ -740,7 +779,11 @@ defmodule VisionCore.Stereo.ParametersTest do
   test "a saved focus is dropped once the cameras turn out to have none" do
     start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
+
     :sys.get_state(VisionCore.Parameters)
     assert MemoryStore.rows() == %{"stereo.cameras.focus" => 500}
 
@@ -762,7 +805,11 @@ defmodule VisionCore.Stereo.ParametersTest do
     Agent.update(Driver, &Map.put(&1, :specs, without_focus))
     start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
+
     :sys.get_state(VisionCore.Parameters)
 
     assert MemoryStore.rows() == %{}
@@ -771,7 +818,7 @@ defmodule VisionCore.Stereo.ParametersTest do
   test "without a pipeline, declares the cameras alone and gives them their saved values" do
     start_supervised!({MemoryStore, %{"stereo.cameras.focus" => 500}})
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: nil})
+    start_supervised!({Parameters, [prefix: "stereo", driver: Driver, pipeline: nil] ++ @sides})
 
     assert Enum.map(VisionCore.Parameters.groups(), & &1.id) == ["stereo.cameras"]
     assert Driver.controls("left").focus == 500
@@ -786,7 +833,10 @@ defmodule VisionCore.Stereo.ParametersTest do
     end)
 
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
 
     assert {:ok, %{value: 8000, default: 5000, state: :automatic}} =
              VisionCore.Parameters.get("stereo.cameras.exposure_us")
@@ -811,7 +861,10 @@ defmodule VisionCore.Stereo.ParametersTest do
   test "a stage setting without a type constraint, values or range takes any value of its type" do
     use_stages([stage(:blur, Blur, summary: "Blurs")])
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+    )
 
     assert {:ok, %{constraint: nil}} = VisionCore.Parameters.get("stereo.blur.radius")
     assert {:ok, %{value: 1_000}} = VisionCore.Parameters.set("stereo.blur.radius", 1_000)
@@ -820,7 +873,9 @@ defmodule VisionCore.Stereo.ParametersTest do
 
   test "starts without a registry" do
     assert {:ok, _pid} =
-             start_supervised({Parameters, prefix: "stereo", driver: Driver, pipeline: Pipeline})
+             start_supervised(
+               {Parameters, [prefix: "stereo", driver: Driver, pipeline: Pipeline] ++ @sides}
+             )
   end
 
   test "a calibration reload forgets the saved right_row_offset" do
@@ -840,7 +895,9 @@ defmodule VisionCore.Stereo.ParametersTest do
 
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
 
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: pipeline})
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: pipeline] ++ @sides}
+    )
 
     assert {:ok, %{value: 1.5}} =
              VisionCore.Parameters.get("stereo.rectification.right_row_offset")
@@ -865,7 +922,10 @@ defmodule VisionCore.Stereo.ParametersTest do
       )
 
     start_supervised!({VisionCore.Parameters, store: MemoryStore})
-    start_supervised!({Parameters, prefix: "stereo", driver: Driver, pipeline: pipeline})
+
+    start_supervised!(
+      {Parameters, [prefix: "stereo", driver: Driver, pipeline: pipeline] ++ @sides}
+    )
 
     stage_value = fn id ->
       ["stereo", stage, key] = String.split(id, ".")

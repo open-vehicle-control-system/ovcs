@@ -3,8 +3,8 @@ defmodule VisionCore.Stereo.Supervisor do
   Self-contained supervisor for one stereo unit. Owns:
 
     1. Two camera drivers (left + right) of the same `VisionCore.Camera`
-       implementation, each given its side's frame id, which its frames
-       carry.
+       implementation, each given its `:side`, `:left` or `:right`, its
+       side's `:label` and its side's frame id, which its frames carry.
     2. `VisionCore.Stereo.Pipeline`, which turns a pair of frames into
        disparity and depth through its stages.
     3. `VisionCore.Stereo.Pairer`, which pairs the drivers' frames and
@@ -181,7 +181,7 @@ defmodule VisionCore.Stereo.Supervisor do
     with opts when is_list(opts) <- Enum.find_value(components, &stereo_options/1),
          driver = Keyword.get(opts, :driver),
          true <- camera_driver?(driver) do
-      for label <- ["left", "right"], do: {driver, driver.name_for(label)}
+      for side <- [:left, :right], do: {driver, driver.name_for(label(side))}
     else
       _no_cameras -> []
     end
@@ -462,7 +462,11 @@ defmodule VisionCore.Stereo.Supervisor do
     |> Keyword.put_new_lazy(:calibration_path, fn ->
       default_calibration_path(calibration_dir, prefix, side_string)
     end)
+    |> Keyword.put(:label, label(side))
   end
+
+  # The label of the camera of `side`, which its frames carry and its driver registers by.
+  defp label(side), do: Atom.to_string(side)
 
   @doc """
   The per-side opts with `:calibration_store_path` set from
@@ -579,7 +583,10 @@ defmodule VisionCore.Stereo.Supervisor do
     [
       pipeline_spec(config),
       {Pairer,
-       cameras: [{config.driver, "left"}, {config.driver, "right"}],
+       cameras: [
+         left: {config.driver, config.left[:label]},
+         right: {config.driver, config.right[:label]}
+       ],
        pair_tolerance_ms: config.pair_tolerance_ms,
        max_hz: config.max_hz,
        fps: config.fps}
@@ -615,12 +622,11 @@ defmodule VisionCore.Stereo.Supervisor do
   defp alignment_correction_specs(_config), do: []
 
   defp camera_driver_spec(config, side) do
-    label = Atom.to_string(side)
     side_opts = Map.fetch!(config, side)
 
     driver_opts =
       side_opts
-      |> Keyword.put(:label, label)
+      |> Keyword.put(:side, side)
       |> Keyword.put_new(:width, config.width)
       |> Keyword.put_new(:height, config.height)
       |> Keyword.put_new(:fps, config.fps)

@@ -153,11 +153,13 @@ defmodule VisionCore.Stereo.SupervisorTest do
                   height: 360,
                   fps: 30,
                   left: [
+                    label: "left",
                     calibration_path: "/rom/calibration/stereo_left.yaml",
                     device: "/dev/video0",
                     frame_id: "front_left_optical"
                   ],
                   right: [
+                    label: "right",
                     frame_id: "stereo_right",
                     device: "/dev/video2",
                     calibration_path: "/rom/right.yaml"
@@ -239,7 +241,9 @@ defmodule VisionCore.Stereo.SupervisorTest do
                  )
                )
 
-      assert options[:left] == [calibration_path: nil, frame_id: "stereo_left_optical", csiphy: 0]
+      assert options[:left] ==
+               [label: "left", calibration_path: nil, frame_id: "stereo_left_optical", csiphy: 0]
+
       refute Keyword.has_key?(options, :black_level)
     end
 
@@ -430,13 +434,42 @@ defmodule VisionCore.Stereo.SupervisorTest do
       %{start: {VisionCore.Camera.V4L2Pair, :start_link, [options]}} =
         Enum.find(children, &(&1.id == {:stereo, :driver, side}))
 
+      assert options[:side] == side
       assert options[:label] == Atom.to_string(side)
       assert options[:frame_id] == "stereo_#{side}_optical"
       assert {options[:width], options[:height], options[:black_level]} == {728, 544, 60}
       assert options[:executable] == "/opt/v4l2_capture"
-      assert options[:left] == [frame_id: "stereo_left_optical", csiphy: 0]
-      assert options[:right] == [frame_id: "stereo_right_optical", csiphy: 1]
+      assert options[:left] == [label: "left", frame_id: "stereo_left_optical", csiphy: 0]
+      assert options[:right] == [label: "right", frame_id: "stereo_right_optical", csiphy: 1]
     end
+  end
+
+  test "gives each camera driver its side and its label, and the pairer each side's camera",
+       %{tmp_dir: tmp_dir} do
+    for side <- [:left, :right],
+        do: File.cp!(calibration_path(:identity, side), Path.join(tmp_dir, "stereo_#{side}.yaml"))
+
+    {:ok, {_flags, children}} =
+      StereoSupervisor.init(
+        driver: IdleCamera,
+        calibration_dir: tmp_dir,
+        align_correction: false,
+        left: [],
+        right: []
+      )
+
+    start_options = fn id ->
+      %{start: {_module, :start_link, [options]}} = Enum.find(children, &(&1.id == id))
+      options
+    end
+
+    for side <- [:left, :right] do
+      assert start_options.({:stereo, :driver, side})[:side] == side
+      assert start_options.({:stereo, :driver, side})[:label] == Atom.to_string(side)
+    end
+
+    assert start_options.(Pairer)[:cameras] ==
+             [left: {IdleCamera, "left"}, right: {IdleCamera, "right"}]
   end
 
   describe "an uncalibrated unit" do

@@ -138,7 +138,7 @@ defmodule VisionCore.StatusTest do
     # One pair of frames measured by the stereo unit, the right one 0.2 ms after the left one.
     defp measure_one_pair do
       start_supervised!(
-        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self()}
+        {Pairer, cameras: [left: {Camera, "left"}, right: {Camera, "right"}], pipeline: self()}
       )
 
       for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
@@ -181,7 +181,10 @@ defmodule VisionCore.StatusTest do
       now_ns = fn -> 1_000_000_000 end
 
       start_supervised!(
-        {Pairer, cameras: [{Camera, "left"}, {Camera, "right"}], pipeline: self(), now_ns: now_ns}
+        {Pairer,
+         cameras: [left: {Camera, "left"}, right: {Camera, "right"}],
+         pipeline: self(),
+         now_ns: now_ns}
       )
 
       for label <- ["left", "right"] do

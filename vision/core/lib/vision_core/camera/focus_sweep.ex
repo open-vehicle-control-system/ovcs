@@ -13,8 +13,8 @@ defmodule VisionCore.Camera.FocusSweep do
   settle, then reads the next.
   """
 
-  alias VisionCore.Camera.V4L2Pair
   alias VisionCore.Status
+  alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @type result :: %{focus: non_neg_integer(), left: float(), right: float()}
 
@@ -27,8 +27,12 @@ defmodule VisionCore.Camera.FocusSweep do
     * `:from` (`380`), `:to` (`480`), `:step` (`10`) — the positions tried.
     * `:set` (`true`) — set the best position at the end.
     * `:set_focus`, `:measure` — how a position is set and both cameras'
-      sharpness read: the stereo unit's V4L2 cameras and status by default.
-      Measuring through the status subscribes the caller for the sweep only.
+      sharpness read: on the left camera of the stereo unit of `:config`,
+      which forwards it to the right one, and through the status by
+      default. Measuring through the status subscribes the caller for the
+      sweep only.
+    * `:config` (the active `VisionCore.Config`) — whose stereo unit's
+      cameras the default `:set_focus` sets.
   """
   @spec run(keyword()) ::
           {:ok, %{best: non_neg_integer(), results: [result()]}} | {:error, String.t()}
@@ -50,7 +54,11 @@ defmodule VisionCore.Camera.FocusSweep do
   end
 
   defp sweep_and_set(opts, measure) do
-    set_focus = Keyword.get_lazy(opts, :set_focus, fn -> &set_v4l2_focus/1 end)
+    set_focus =
+      Keyword.get_lazy(opts, :set_focus, fn ->
+        config = Keyword.get_lazy(opts, :config, &VisionCore.Application.active_config/0)
+        &set_stereo_focus(config, &1)
+      end)
 
     from = Keyword.get(opts, :from, 380)
     to = Keyword.get(opts, :to, 480)
@@ -100,9 +108,10 @@ defmodule VisionCore.Camera.FocusSweep do
     |> Map.fetch!(:focus)
   end
 
-  # The right camera forwards its settings to the left, which drives both lenses.
-  defp set_v4l2_focus(focus) do
-    case V4L2Pair.set_controls(V4L2Pair.name_for("left"), focus: focus) do
+  defp set_stereo_focus(config, focus) do
+    [{driver, left} | _right] = StereoSupervisor.cameras(config)
+
+    case driver.set_controls(left, focus: focus) do
       {:ok, _controls} -> :ok
       error -> error
     end

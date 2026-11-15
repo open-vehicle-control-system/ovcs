@@ -29,8 +29,8 @@ defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
            driver: driver,
            topic_prefix: "stereo",
            fps: 30,
-           left: [sync: :server],
-           right: [sync: :client],
+           left: [label: "front/left", sync: :server],
+           right: [label: "front/right", sync: :client],
            name: Module.concat(driver, Diagnostics),
            publish: fn topic, _module, message, _options ->
              send(test, {:published, topic, message})
@@ -43,7 +43,8 @@ defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
   test "plots the sync it measures on the frames the cameras publish" do
     diagnostics = start_diagnostics(Camera)
 
-    for {label, capture_ns} <- [{"left", 1_000_000_000}, {"right", 1_000_200_000}] do
+    # Labels that are not the sides' names: it tells the sides apart by their options.
+    for {label, capture_ns} <- [{"front/left", 1_000_000_000}, {"front/right", 1_000_200_000}] do
       frame = %Frame{label: label, width: 1, height: 1, capture_ns: capture_ns, grey: <<0>>}
       Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
     end

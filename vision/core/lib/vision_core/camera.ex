@@ -3,9 +3,11 @@ defmodule VisionCore.Camera do
   Contract for the camera drivers under `VisionCore.Camera.*`. A driver
   instance represents one image sensor, named by its `:label`: it
   captures and publishes frames, as JPEG, grey or RGB
-  `VisionCore.Camera.Frame`s. A stereo pair is two instances, `"left"`
-  and `"right"`; a camera of its own (`VisionCore.Camera.Unit`) is one,
-  labelled with its name's text.
+  `VisionCore.Camera.Frame`s. A stereo pair is two instances, which the
+  stereo unit gives their `:side`, `:left` or `:right`, beside their
+  labels; a driver that needs to know its side reads it there, never in
+  its label. A camera of its own (`VisionCore.Camera.Unit`) is one
+  instance, labelled with its name's text.
 
   A driver MUST:
 

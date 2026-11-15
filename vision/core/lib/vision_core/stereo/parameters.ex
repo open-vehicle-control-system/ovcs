@@ -77,7 +77,8 @@ defmodule VisionCore.Stereo.Parameters do
   @doc """
   Declares the unit's groups. Options: `:prefix`, `:driver`,
   `:pipeline` (`VisionCore.Stereo.Pipeline`), `nil` for a unit without
-  one, which has the cameras' group alone, `:left`, `:right`, `:width`,
+  one, which has the cameras' group alone, `:left`, `:right`, each
+  side's options with the `:label` its camera is reached by, `:width`,
   `:height`, `:fps`, `:match_width` and `:match_height`.
   """
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -85,8 +86,8 @@ defmodule VisionCore.Stereo.Parameters do
   @impl GenServer
   def init(opts) do
     if Process.whereis(VisionCore.Parameters) do
-      driver = Keyword.fetch!(opts, :driver)
-      :ok = VisionCore.Outputs.subscribe(Camera.controls_changed_key(driver.name_for("left")))
+      [left | _right] = servers(Keyword.fetch!(opts, :driver), opts)
+      :ok = VisionCore.Outputs.subscribe(Camera.controls_changed_key(left))
       :ok = VisionCore.Parameters.declare(groups(opts))
     end
 
@@ -201,7 +202,7 @@ defmodule VisionCore.Stereo.Parameters do
       pipeline: :stereo,
       position: 0,
       parameters:
-        Camera.Parameters.controls(driver, driver.name_for("left"), id) ++
+        Camera.Parameters.controls(driver, hd(servers(driver, opts)), id) ++
           camera_build_parameters(opts, [:left, :right])
     }
   end
@@ -209,7 +210,7 @@ defmodule VisionCore.Stereo.Parameters do
   # Each setting goes to both cameras' drivers; values are read from the left one.
   defp paired_cameras_group(prefix, driver, opts) do
     id = "#{prefix}.cameras"
-    servers = Enum.map(["left", "right"], &driver.name_for/1)
+    servers = servers(driver, opts)
     configured = Keyword.get(opts, :left, [])
 
     %{
@@ -321,6 +322,14 @@ defmodule VisionCore.Stereo.Parameters do
   defp live(driver, server) do
     if function_exported?(driver, :live, 1), do: driver.live(server)
   end
+
+  # The registered names of the left camera, then the right one, from each side's label.
+  defp servers(driver, opts),
+    do:
+      for(
+        side <- [:left, :right],
+        do: driver.name_for(opts |> Keyword.fetch!(side) |> Keyword.fetch!(:label))
+      )
 
   defp camera_build_parameters(opts, sides) do
     general =

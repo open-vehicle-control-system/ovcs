@@ -6,8 +6,8 @@ defmodule VisionCore.Camera.V4L2Pair do
   ports. The program locks the right sensor's frame starts to the left
   one's and writes frame pairs, so both sides come from one Port.
 
-  The `"left"` instance opens the Port and publishes left frames. It
-  hands each right frame to the `"right"` instance, which opens nothing
+  The left instance opens the Port and publishes left frames. It
+  hands each right frame to the right instance, which opens nothing
   and publishes what it receives. When the program exits or stops
   delivering, the left instance stays up and starts it again after a
   wait that grows with each failure in a row
@@ -69,12 +69,16 @@ defmodule VisionCore.Camera.V4L2Pair do
   ## Opts
 
   The stereo unit gives each instance these; the left one uses all of
-  them, the right one its `:label` and `:frame_id`.
+  them, the right one its `:side`, `:label`, `:frame_id` and both
+  sides' `:label`.
 
-    * `:label` — `"left"` or `"right"`.
+    * `:side` — `:left` or `:right`, the camera this instance is.
+    * `:label` — the label its frames carry and it registers by.
     * `:frame_id` — the optical frame each of this side's frames carries.
     * `:width`, `:height`, `:fps` — the output size and frame rate.
     * `:left`, `:right` — each side's options:
+      * `:label` — the side's label, by which each instance reaches the
+        other.
       * `:video`, `:sensor` — the V4L2 names
         (`/sys/class/video4linux/*/name`) of the side's capture node and
         sensor subdevice; the C100's CSI ports by default.
@@ -309,15 +313,15 @@ defmodule VisionCore.Camera.V4L2Pair do
       when byte_size(pixels) == 2 * width * height do
     <<left::binary-size(^width * ^height), right::binary>> = pixels
 
-    {:pair, frame("left", width, height, left_ns, left),
-     frame("right", width, height, right_ns, right)}
+    {:pair, frame(width, height, left_ns, left), frame(width, height, right_ns, right)}
   end
 
   def parse_record(record), do: V4L2Capture.parse_record(record)
 
-  defp frame(label, width, height, kernel_ns, grey) do
+  # Labelled by the instance that publishes it.
+  defp frame(width, height, kernel_ns, grey) do
     %Frame{
-      label: label,
+      label: nil,
       width: width,
       height: height,
       capture_ns: Timing.monotonic_from_kernel(kernel_ns),
@@ -327,21 +331,25 @@ defmodule VisionCore.Camera.V4L2Pair do
 
   @impl GenServer
   def init(opts) do
+    side = Keyword.fetch!(opts, :side)
     label = Keyword.fetch!(opts, :label)
     opts = V4L2Capture.accepted(@settings, opts, "#{__MODULE__}[#{label}]")
     controls = V4L2Capture.controls(@settings, opts)
 
     state = %{
+      side: side,
       label: label,
       frame_id: Keyword.get(opts, :frame_id),
       output: {:camera_frame, name_for(label)},
+      left: registered_name(opts, :left),
+      right: registered_name(opts, :right),
       port: nil,
       controls: controls,
       lens: nil,
       applied: nil
     }
 
-    if label == "left" do
+    if side == :left do
       timeouts = [stall_timeout_ms: @stall_timeout_ms, startup_timeout_ms: @startup_timeout_ms]
       state = Map.merge(state, V4L2Capture.closed(opts, timeouts, "#{__MODULE__}"))
       {:ok, Map.put(state, :opts, opts), {:continue, :open}}
@@ -349,6 +357,9 @@ defmodule VisionCore.Camera.V4L2Pair do
       {:ok, state}
     end
   end
+
+  defp registered_name(opts, side),
+    do: opts |> Keyword.fetch!(side) |> Keyword.fetch!(:label) |> name_for()
 
   @impl GenServer
   def handle_continue(:open, state), do: {:noreply, open(state)}
@@ -368,9 +379,9 @@ defmodule VisionCore.Camera.V4L2Pair do
   end
 
   @impl GenServer
-  def handle_call(request, _from, %{label: "right"} = state) do
+  def handle_call(request, _from, %{side: :right} = state) do
     # The settings live with the left camera, which runs the program.
-    {:reply, GenServer.call(name_for("left"), request), state}
+    {:reply, GenServer.call(state.left, request), state}
   end
 
   def handle_call(:running?, _from, state), do: {:reply, state.port != nil, state}
@@ -404,7 +415,7 @@ defmodule VisionCore.Camera.V4L2Pair do
     case parse_record(packet) do
       {:pair, left, right} ->
         publish_frame(state, left)
-        GenServer.cast(name_for("right"), {:pair_frame, right})
+        GenServer.cast(state.right, {:pair_frame, right})
 
         {:noreply, V4L2Capture.delivered(%{state | applied: refreshed(state.applied)})}
 
@@ -425,7 +436,7 @@ defmodule VisionCore.Camera.V4L2Pair do
     {:noreply, V4L2Capture.exited(%{state | applied: nil}, status, "#{__MODULE__}")}
   end
 
-  def handle_info(:reopen, %{label: "left", port: nil} = state), do: {:noreply, open(state)}
+  def handle_info(:reopen, %{side: :left, port: nil} = state), do: {:noreply, open(state)}
 
   def handle_info(:watchdog, state),
     do: {:noreply, V4L2Capture.watchdog(state, "#{__MODULE__}")}
@@ -439,8 +450,8 @@ defmodule VisionCore.Camera.V4L2Pair do
     if focus?(state.lens) != focus?(lens),
       do:
         Outputs.publish(
-          VisionCore.Camera.controls_changed_key(name_for("left")),
-          {:camera_controls_changed, name_for("left")}
+          VisionCore.Camera.controls_changed_key(state.left),
+          {:camera_controls_changed, state.left}
         )
 
     %{state | lens: lens}
@@ -468,5 +479,9 @@ defmodule VisionCore.Camera.V4L2Pair do
   defp refreshed(applied), do: %{applied | received_ms: System.system_time(:millisecond)}
 
   defp publish_frame(state, frame),
-    do: Outputs.publish(state.output, {:camera_frame, %{frame | frame_id: state.frame_id}})
+    do:
+      Outputs.publish(
+        state.output,
+        {:camera_frame, %{frame | label: state.label, frame_id: state.frame_id}}
+      )
 end
