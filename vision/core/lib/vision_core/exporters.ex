@@ -137,6 +137,26 @@ defmodule VisionCore.Exporters do
     end
   end
 
+  @doc """
+  The runner of the exporter whose id `list/1` lists as `id`, to hand
+  calls of its module's functions (`VisionCore.Exporter.Runner.call/3`):
+  `{:error, :not_found}` for an id no exporter has, and
+  `{:error, :not_running}` when the exporter does not run.
+  """
+  @spec fetch_runner(String.t()) :: {:ok, pid()} | {:error, :not_found | :not_running}
+  def fetch_runner(id) do
+    case List.keyfind(exporter_supervisors(), id, 0) do
+      nil ->
+        {:error, :not_found}
+
+      {^id, supervisor} ->
+        case runner(supervisor) do
+          nil -> {:error, :not_running}
+          runner -> {:ok, runner}
+        end
+    end
+  end
+
   defp exporter_supervisors do
     for {id, supervisor, :supervisor, _modules} <- children(__MODULE__),
         do: {id_text(id), supervisor}

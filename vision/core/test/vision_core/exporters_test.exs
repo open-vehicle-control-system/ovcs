@@ -514,6 +514,25 @@ defmodule VisionCore.ExportersTest do
     end
   end
 
+  describe "fetch_runner/1" do
+    test "answers the runner of the exporter its id names" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+      runner = await_runner(:acting)
+
+      assert Exporters.fetch_runner("acting") == {:ok, runner}
+    end
+
+    test "an id no exporter has is not found, and an exporter that does not run is not running" do
+      start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})
+      await_runner(:acting)
+
+      assert Exporters.fetch_runner("unknown") == {:error, :not_found}
+
+      :ok = Supervisor.terminate_child(Exporters, :acting)
+      assert Exporters.fetch_runner("acting") == {:error, :not_running}
+    end
+  end
+
   describe "action/4" do
     test "runs an action of the exporter its id names" do
       start_supervised!({Exporters, config: config(), exporters: [{Acting, test: self()}]})

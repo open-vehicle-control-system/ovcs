@@ -4,13 +4,15 @@ defmodule VisionCore.Exporter.Runner do
   names through `VisionCore.Outputs`, hands it the values of each, at
   most each output's `:max_hz` times a second and only while it is not
   busy with that output, answers its status and the values it dropped
-  by a deadline (`report/2`, `status/2`), and runs its actions
-  (`action/4`). It passes the
+  by a deadline (`report/2`, `status/2`), runs its actions
+  (`action/4`) and hands it the calls of its module's functions
+  (`call/3`). It passes the
   exporter's `c:VisionCore.Exporter.handle_info/2` the messages sent to
   the runner with `send/2` and the casts that are not outputs, such as
   those of the keys the exporter subscribed to from its
   `c:VisionCore.Exporter.init/1`. Calls other than `report/2`'s,
-  `status/2`'s and `action/4`'s are answered `{:error, :unknown_call}`.
+  `status/2`'s, `action/4`'s and `call/3`'s are answered
+  `{:error, :unknown_call}`.
 
   With the exporter's delivery `:latest` (`c:VisionCore.Exporter.delivery/1`),
   when the runner takes a value from its mailbox, the newest value of
@@ -38,9 +40,10 @@ defmodule VisionCore.Exporter.Runner do
   raises, the runner logs it, reports `{:warning, "Not started: reason"}`
   and calls it again later, the delay doubling up to a cap. It subscribes
   once `init/1` succeeds, and never calls `init/1` again. Every failure,
-  of `init/1`, of a value's export, of `c:VisionCore.Exporter.status/1` or
-  of `c:VisionCore.Exporter.handle_action/4`, is logged the first time,
-  up to a bound for each of the four.
+  of `init/1`, of a value's export, of `c:VisionCore.Exporter.status/1`,
+  of `c:VisionCore.Exporter.handle_action/4` or of
+  `c:VisionCore.Exporter.handle_call/3`, is logged the first time, up to
+  a bound for each of the five.
 
   A `c:VisionCore.Exporter.handle_output/3` or
   `c:VisionCore.Exporter.handle_info/2` that raises, throws, exits or
@@ -147,6 +150,25 @@ defmodule VisionCore.Exporter.Runner do
   def action(runner, name, params, timeout),
     do: GenServer.call(runner, {:action, name, params}, timeout)
 
+  @doc """
+  Hands `request` to the exporter's `c:VisionCore.Exporter.handle_call/3`
+  and answers its reply, waiting up to `timeout`: `{:error, :not_running}`
+  before its `c:VisionCore.Exporter.init/1` succeeds and when the runner
+  is not running or stops before answering, `{:error, :timeout}` past
+  `timeout`, `{:error, :unknown_call}` for an exporter without
+  `handle_call/3`, and `{:error, {:failed, reason}}` when it raises or
+  answers neither `{:reply, reply, state}` nor `{:noreply, state}`, the
+  exporter's state kept as it was.
+  """
+  @spec call(GenServer.server(), term(), timeout()) ::
+          term() | {:error, :not_running | :timeout | :unknown_call | {:failed, String.t()}}
+  def call(runner, request, timeout) do
+    GenServer.call(runner, {:exporter_call, request}, timeout)
+  catch
+    :exit, {:timeout, _call} -> {:error, :timeout}
+    :exit, _reason -> {:error, :not_running}
+  end
+
   @impl GenServer
   def init(opts) do
     exporter = Code.ensure_loaded!(Keyword.fetch!(opts, :exporter))
@@ -177,7 +199,8 @@ defmodule VisionCore.Exporter.Runner do
            init: MapSet.new(),
            status: MapSet.new(),
            output: MapSet.new(),
-           action: MapSet.new()
+           action: MapSet.new(),
+           call: MapSet.new()
          }
        }, {:continue, :start_exporter}}
     else
@@ -235,6 +258,15 @@ defmodule VisionCore.Exporter.Runner do
       nil -> {:reply, {:error, :unknown_action}, state}
       %{name: action} -> run_action(state, action, params, from)
     end
+  end
+
+  def handle_call({:exporter_call, _request}, _from, %{started: false} = state),
+    do: {:reply, {:error, :not_running}, state}
+
+  def handle_call({:exporter_call, request}, from, %{exporter: exporter} = state) do
+    if function_exported?(exporter, :handle_call, 3),
+      do: run_call(state, request, from),
+      else: {:reply, {:error, :unknown_call}, state}
   end
 
   def handle_call(_request, _from, state), do: {:reply, {:error, :unknown_call}, state}
@@ -344,6 +376,26 @@ defmodule VisionCore.Exporter.Runner do
     end
   catch
     kind, reason -> action_failed(state, action, failure_text(kind, reason))
+  end
+
+  defp run_call(%{exporter: exporter} = state, request, from) do
+    case exporter.handle_call(request, from, state.exporter_state) do
+      {:reply, reply, exporter_state} ->
+        {:reply, reply, %{state | exporter_state: exporter_state}}
+
+      {:noreply, exporter_state} ->
+        {:noreply, %{state | exporter_state: exporter_state}}
+
+      malformed ->
+        call_failed(state, request, "handle_call/3 returned " <> inspect(malformed))
+    end
+  catch
+    kind, reason -> call_failed(state, request, failure_text(kind, reason))
+  end
+
+  defp call_failed(%{exporter: exporter} = state, request, text) do
+    message = "#{inspect(exporter)} call #{inspect(request)} failed: #{text}"
+    {:reply, {:error, {:failed, text}}, log_once(state, :call, text, :error, message)}
   end
 
   defp action_failed(%{exporter: exporter} = state, action, text) do

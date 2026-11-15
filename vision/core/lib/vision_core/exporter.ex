@@ -78,8 +78,8 @@ defmodule VisionCore.Exporter do
   ## Callbacks
 
   `c:init/1`, `c:handle_output/3`, `c:handle_info/2`,
-  `c:handle_action/4`, `c:status/1` and `c:terminate/2` run in the
-  runner's process, and each returns at once:
+  `c:handle_action/4`, `c:handle_call/3`, `c:status/1` and
+  `c:terminate/2` run in the runner's process, and each returns at once:
 
     * `c:init/1` must not block. It is called after the runner starts,
       and again, after a growing delay, until it returns `{:ok, state}`;
@@ -139,6 +139,12 @@ defmodule VisionCore.Exporter do
   action to `c:handle_action/4`, which returns at once: with its result,
   or with `{:noreply, state}` and answers later with `reply/2`, from any
   process.
+
+  `c:handle_call/3` answers the calls of the exporter's own module's
+  functions, which reach it through `VisionCore.Exporter.Runner.call/3`
+  on the runner `VisionCore.Exporters.fetch_runner/1` finds: what an
+  exporter offers a program rather than people, such as the bag
+  exporter's start and stop of a recording. It returns at once too.
 
   ## Example
 
@@ -330,6 +336,16 @@ defmodule VisionCore.Exporter do
   @callback handle_action(name :: atom(), params :: map(), from :: GenServer.from(), state()) ::
               {:reply, action_result(), state()} | {:noreply, state()}
 
+  @doc """
+  Answers `request`, a call of the exporter's own module's functions
+  (`VisionCore.Exporter.Runner.call/3`), without waiting:
+  `{:reply, reply, state}`, or `{:noreply, state}` to answer `from` later
+  with `reply/2`. One that raises, or returns anything else, answers
+  `{:error, {:failed, reason}}`, the state kept as it was.
+  """
+  @callback handle_call(request :: term(), from :: GenServer.from(), state()) ::
+              {:reply, term(), state()} | {:noreply, state()}
+
   @optional_callbacks handle_info: 2,
                       status: 1,
                       children: 1,
@@ -338,6 +354,7 @@ defmodule VisionCore.Exporter do
                       describe: 1,
                       actions: 1,
                       handle_action: 4,
+                      handle_call: 3,
                       delivery: 1
 
   @doc """
@@ -464,11 +481,11 @@ defmodule VisionCore.Exporter do
   end
 
   @doc """
-  Answers the action `from` asked for, after `c:handle_action/4` returned
-  `{:noreply, state}`. It can be called from any process, such as a task
-  the exporter starts.
+  Answers the action or call `from` asked for, after `c:handle_action/4`
+  or `c:handle_call/3` returned `{:noreply, state}`. It can be called from
+  any process, such as a task the exporter starts.
   """
-  @spec reply(GenServer.from(), action_result()) :: :ok
+  @spec reply(GenServer.from(), term()) :: :ok
   def reply(from, result), do: GenServer.reply(from, result)
 
   @doc """
