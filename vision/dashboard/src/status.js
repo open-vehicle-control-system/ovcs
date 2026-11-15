@@ -37,9 +37,9 @@ function depthCheckFigure(label, check, value, hint) {
   return [{ label, value: value(check), tone: check.level === 'ok' ? 'ok' : 'error', hint }]
 }
 
-// The pairs skipped for the unit's max_hz, by choice: shown without a health colour, and only under a cap.
+// The pairs skipped for the unit's max_hz, by choice: shown without a health colour, 0 % on a unit without a cap.
 function cappedFigure(check) {
-  if (!check || check.level === 'off' || !(check.cappedPercent > 0)) return []
+  if (!check || check.level === 'off' || typeof check.cappedPercent !== 'number') return []
   return [{ label: 'capped', value: `${formatNumber(check.cappedPercent, 0)} %`, hint: HINTS.capped }]
 }
 
