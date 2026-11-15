@@ -96,7 +96,7 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 - A camera of its own's topics are under its name: `<camera>`.
 - A detection or segmentation pipeline's topics are under its name, whatever camera it reads: `<pipeline>`. A detector without a name is the pipeline `detection`.
 
-A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. The exporter refuses one that puts a camera or pipeline named `left` or `right` on the stereo unit's topics, such as `topic_prefix: "stereo"` beside a camera `left`. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`.
+A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. The exporter refuses one that puts a camera or pipeline named `left` or `right` on the stereo unit's topics, such as `topic_prefix: "stereo"` beside a camera `left`. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`. On the OVCS Mini reference vehicle, the camera `left`, a second stream of the stereo unit's left camera, publishes `/left/image_raw/compressed` beside the stereo unit's `/stereo/left/image_raw/compressed`.
 
 | Topic | Content |
 |---|---|
