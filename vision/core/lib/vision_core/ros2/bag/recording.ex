@@ -436,9 +436,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
     %{state | ended: true}
   end
 
-  defp close_part(state) do
+  defp close_part(state), do: close_part(state, drops(state.table))
+
+  defp close_part(state, drops) do
     state = if state.writer, do: close_file(state), else: state
-    write_metadata_file(state)
+    write_metadata_file(state, drops)
   end
 
   # Runs a step that writes to the disk; a write it refuses ends the recording.
@@ -483,8 +485,13 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   defp leave_disk(%{disks: nil} = state, reason), do: end_recording(state, reason)
 
+  # The drops counted once, the part's until now and the next part's after.
   defp leave_disk(state, reason) do
-    state = close_part_on_leaving(state)
+    drops = drops(state.table)
+    state |> close_part_on_leaving(drops) |> go_on(reason, drops)
+  end
+
+  defp go_on(state, reason, drops) do
     left = [state.disk | state.left_disks]
 
     case Disks.next(state.disks, state.free_floor_bytes, left) do
@@ -493,7 +500,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
           "#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording goes on on #{disk.uuid}"
         )
 
-        start_part(%{state | left_disks: left}, disk)
+        start_part(%{state | left_disks: left}, disk, drops)
 
       {:error, no_disk} ->
         end_recording(state, "#{reason}; #{no_disk}")
@@ -501,32 +508,33 @@ defmodule VisionCore.Ros2.Bag.Recording do
   end
 
   # Closes the part as far as the disk allows.
-  defp close_part_on_leaving(state) do
-    close_part(state)
+  defp close_part_on_leaving(state, drops) do
+    close_part(state, drops)
   rescue
     _error in File.Error ->
       if state.writer, do: Writer.close(state.writer)
       %{state | writer: nil}
   end
 
-  defp start_part(state, disk) do
+  defp start_part(state, disk, drops) do
     part = state.part + 1
     part_name = "#{state.name}_part#{part}"
     dir = Path.join(disk.recordings_path, part_name)
 
     case File.mkdir(dir) do
       :ok ->
-        open_part(state, disk, part, part_name, dir)
+        open_part(state, disk, part, part_name, dir, drops)
 
       {:error, reason} ->
-        leave_disk(
+        go_on(
           %{state | disk: disk.uuid},
-          "cannot make #{dir}: #{:file.format_error(reason)}"
+          "cannot make #{dir}: #{:file.format_error(reason)}",
+          drops
         )
     end
   end
 
-  defp open_part(state, disk, part, part_name, dir) do
+  defp open_part(state, disk, part, part_name, dir, drops) do
     state = %{
       state
       | dir: dir,
@@ -539,7 +547,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
         topics: %{},
         schemas: %{},
         channels: %{},
-        dropped_before: drops(state.table),
+        dropped_before: drops,
         open_chunk: nil
     }
 
@@ -562,12 +570,16 @@ defmodule VisionCore.Ros2.Bag.Recording do
     state
   end
 
-  defp write_metadata_file(state) do
+  defp write_metadata_file(state), do: write_metadata_file(state, drops(state.table))
+
+  # Writes metadata.yaml with the part's share of `drops`, the drops counted per topic.
+  defp write_metadata_file(state, drops) do
     path = Path.join(state.dir, @metadata_file)
     temporary = path <> ".tmp"
+    metadata = metadata(state, drops)
 
     with {:ok, file} <- :file.open(temporary, [:raw, :binary, :write]),
-         :ok <- write_and_close(file, Metadata.encode(metadata(state))),
+         :ok <- write_and_close(file, Metadata.encode(metadata)),
          :ok <- :file.rename(temporary, path) do
       state
     else
@@ -581,9 +593,9 @@ defmodule VisionCore.Ros2.Bag.Recording do
     if written == :ok, do: closed, else: written
   end
 
-  defp metadata(state) do
+  defp metadata(state, drops) do
     drops =
-      for {topic, count} <- drops(state.table),
+      for {topic, count} <- drops,
           part_count = count - Map.get(state.dropped_before, topic, 0),
           part_count > 0,
           into: %{},

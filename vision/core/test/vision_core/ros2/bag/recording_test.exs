@@ -1,6 +1,24 @@
 defmodule VisionCore.Ros2.Bag.RecordingTest do
   use ExUnit.Case, async: true
 
+  defmodule DropOnLookup do
+    @moduledoc """
+    A name for a `VisionCore.Disks` at which each lookup by a recording
+    hands that recording a message it drops, its queue being 0, and counts it.
+    """
+    alias Ros2Zenoh.StdMsgs.Msg.Float64
+    alias VisionCore.Ros2.Bag.Recording
+
+    def whereis_name({disks, lookups}) do
+      if Recording.status(self()) do
+        :ok = Recording.write(self(), "/speed", Float64, %Float64{data: 0.0}, 0)
+        :counters.add(lookups, 1, 1)
+      end
+
+      disks
+    end
+  end
+
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.RmwZenoh
   alias Ros2Zenoh.SensorMsgs.Msg.Image
@@ -677,6 +695,30 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
                part!(Path.join(disks.options[:internal], "bag_part2"))
 
       refute Map.has_key?(custom_data, "dropped:/speed")
+    end
+
+    test "counts a drop in one part, one while it goes on to the next disk too",
+         %{disks: disks, stick: stick} do
+      lookups = :counters.new(1, [])
+      disks = %{disks | server: {:via, DropOnLookup, {disks.server, lookups}}}
+      pid = start_on!(disks, stick, queue: 0, chunk_interval_ms: 1)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.stop(pid)
+
+      parts = [
+        Path.join(stick.recordings_path, "bag"),
+        Path.join(disks.options[:internal], "bag_part2")
+      ]
+
+      dropped =
+        for folder <- parts do
+          {_files, %{"custom_data" => custom_data}} = part!(folder)
+          Map.get(custom_data, "dropped:/speed", 0)
+        end
+
+      assert Enum.sum(dropped) == :counters.get(lookups, 1)
     end
 
     test "with no disk left, ends saying why", %{disks: disks, stick: stick} do
