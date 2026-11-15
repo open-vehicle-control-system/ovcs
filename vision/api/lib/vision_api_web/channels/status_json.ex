@@ -27,7 +27,7 @@ defmodule VisionApiWeb.StatusJSON do
   strings, as each camera's `issues`.
   """
 
-  alias VisionApiWeb.{ExporterJSON, ExporterOutput}
+  alias VisionApiWeb.Exporter
 
   @camera_keys %{
     present: :present,
@@ -71,16 +71,16 @@ defmodule VisionApiWeb.StatusJSON do
   # The API pushes this status, so it is answering.
   defp api,
     do:
-      Map.merge(ExporterJSON.api(), %{status: %{level: "ok", detail: "Answering"}, dropped: %{}})
+      Map.merge(Exporter.api_entry(), %{status: %{level: "ok", detail: "Answering"}, dropped: %{}})
 
   defp exporter(exporter),
     do: %{
       id: exporter.id,
       name: exporter.name,
-      status: ExporterJSON.status(exporter.status),
+      status: Exporter.status(exporter.status),
       dropped:
         Map.new(exporter.dropped, fn {output, count} ->
-          {ExporterOutput.name(output), count}
+          {Exporter.output_name(output), count}
         end)
     }
 
