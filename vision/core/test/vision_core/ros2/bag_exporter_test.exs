@@ -360,7 +360,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   end
 
   test "review records the depth at 5 Hz and each camera at 10 Hz of capture time, none dropped" do
-    options = options(recording: [queue: 10_000])
+    options = options(recording: [buffer_bytes: 1_000_000_000])
     {stopped, counts} = record_30_hz(options, :review)
 
     assert stopped.dropped == %{}
@@ -372,7 +372,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
   end
 
   test "replay records every frame" do
-    options = options(recording: [queue: 10_000])
+    options = options(recording: [buffer_bytes: 1_000_000_000])
     {stopped, counts} = record_30_hz(options, :replay)
 
     assert stopped.dropped == %{}
@@ -388,7 +388,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
       options(
         config: BagTestUnit.config(grey_camera: true),
         jpeg_codec: codec,
-        recording: [queue: 10_000]
+        recording: [buffer_bytes: 1_000_000_000]
       )
 
     {_stopped, counts} = record_30_hz(options, :replay)
@@ -400,13 +400,13 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "a vehicle's preset sets its own rates, none without them" do
     preset = [cameras: [outputs: [hq: :view_jpeg]], max_hz: [cameras: 2]]
-    options = options(presets: [review: preset], recording: [queue: 10_000])
+    options = options(presets: [review: preset], recording: [buffer_bytes: 1_000_000_000])
     assert BagExporter.check(options) == :ok
     {_stopped, counts} = record_30_hz(options, :review)
     assert counts["/hq/image_raw/compressed"] in 5..7
 
     preset = [cameras: [outputs: [hq: :view_jpeg]]]
-    options = options(presets: [review: preset], recording: [queue: 10_000])
+    options = options(presets: [review: preset], recording: [buffer_bytes: 1_000_000_000])
     {_stopped, counts} = record_30_hz(options, :review)
     assert counts["/hq/image_raw/compressed"] == 90
   end
@@ -608,7 +608,7 @@ defmodule VisionCore.Ros2.BagExporterTest do
     assert text =~ ~r/\d+(\.\d+)? [kM]?B/
     stop!(state)
 
-    options = options(recording: [queue: 0])
+    options = options(recording: [buffer_bytes: 0])
     {_started, state} = options |> init!() |> start!(:replay)
     state = hand(state, options)
 

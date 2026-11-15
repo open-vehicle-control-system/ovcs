@@ -87,7 +87,7 @@ defmodule VisionCore.Ros2.BagExporter do
       a recording starts on a disk above it and leaves one below it.
       `check/1` refuses one that is no count of bytes.
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
-      `:compression`, `:max_file_bytes`, `:queue` and
+      `:compression`, `:max_file_bytes`, `:buffer_bytes` and
       `:chunk_interval_ms`. `check/1` refuses a `:chunk_interval_ms` not
       below the time an eject waits for the recording to leave the disk,
       which it checks once a chunk interval: 10 s, or the
@@ -139,7 +139,7 @@ defmodule VisionCore.Ros2.BagExporter do
   # A stop waits for the recording to write what it holds, longer than `Bag.Recording.stop/1` waits.
   @stop_timeout_ms 45_000
   @recording_timeout_ms 5_000
-  @recording_options [:compression, :max_file_bytes, :queue, :chunk_interval_ms]
+  @recording_options [:compression, :max_file_bytes, :buffer_bytes, :chunk_interval_ms]
   @own_zenoh_options [:config, :link, :services, :jpeg_codec, :publish, :stamp]
   # A transforms tick within this of the last one handed over is a stopped recording's.
   @stale_transforms_ms 500

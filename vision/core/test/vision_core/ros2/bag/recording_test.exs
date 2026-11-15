@@ -4,7 +4,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
   defmodule DropOnLookup do
     @moduledoc """
     A name for a `VisionCore.Disks` at which each lookup by a recording
-    hands that recording a message it drops, its queue being 0, and counts it.
+    hands that recording a message it drops, its buffer being 0 bytes, and counts it.
     """
     alias Ros2Zenoh.StdMsgs.Msg.Float64
     alias VisionCore.Ros2.Bag.Recording
@@ -25,8 +25,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias VisionCore.{Disk, Disks, McapReader, TestDisks}
-  alias VisionCore.Ros2.Bag.Metadata
-  alias VisionCore.Ros2.Bag.Recording
+  alias VisionCore.Ros2.Bag.{Buffer, Metadata, Recording}
 
   @moduletag :tmp_dir
 
@@ -204,7 +203,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
   test "a chunk spans at most the interval of log time, however late its messages are written",
        %{tmp_dir: dir} do
-    pid = start!(dir, chunk_interval_ms: 1_000, queue: 1_000)
+    pid = start!(dir, chunk_interval_ms: 1_000, buffer_bytes: 100_000_000)
 
     depth = %{
       image(0)
@@ -329,8 +328,9 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
     end
   end
 
-  test "past its queue, a write is dropped and counted per topic", %{tmp_dir: dir} do
-    pid = start!(dir, [queue: 2] ++ @no_chunk_close)
+  test "past its buffer, a write is dropped and counted per topic", %{tmp_dir: dir} do
+    # Two payloads of 12 bytes, the one handed to the stalled writer among them.
+    pid = start!(dir, [buffer_bytes: 24] ++ @no_chunk_close)
     :ok = :sys.suspend(pid)
 
     for n <- 1..5, do: :ok = Recording.write(pid, "/speed", Float64, speed(n), n)
@@ -348,6 +348,102 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
              "dropped:/speed" => 3,
              "dropped:/steering" => 1
            }
+  end
+
+  describe "while the disk stalls" do
+    # 215 messages and 4 MB a second, as the review preset records.
+    @rate_hz 215
+    @payload_bytes 18_600
+
+    defp stalled_seconds(pid, seconds) do
+      :ok = :sys.suspend(pid)
+      image = %{image(0) | data: :binary.copy(<<7>>, @payload_bytes)}
+
+      for n <- 1..(seconds * @rate_hz) do
+        :ok = Recording.write(pid, "/image", Image, image, div(n * 1_000_000_000, @rate_hz))
+      end
+    end
+
+    test "records every message of a 3 s stall within its buffer", %{tmp_dir: dir} do
+      pid = start!(dir, buffer_bytes: 64 * 1_048_576, chunk_interval_ms: 1_000)
+      stalled_seconds(pid, 3)
+
+      :ok = :sys.resume(pid)
+      eventually(fn -> Recording.status(pid).messages == %{"/image" => 645} end, 2_000)
+
+      assert Recording.status(pid).dropped == %{}
+      :ok = Recording.stop(pid)
+      assert metadata_yaml!(dir)["message_count"] == 645
+    end
+
+    test "a stop writes what the buffer holds before closing the files", %{tmp_dir: dir} do
+      pid = start!(dir, buffer_bytes: 64 * 1_048_576, chunk_interval_ms: 1_000)
+      stalled_seconds(pid, 3)
+
+      stopping = Task.async(fn -> Recording.stop(pid) end)
+      eventually(fn -> stop_waiting?(pid) end)
+      :ok = :sys.resume(pid)
+      :ok = Task.await(stopping)
+
+      assert length(read_file!(dir, 0).messages) == 645
+      assert metadata_yaml!(dir)["message_count"] == 645
+    end
+
+    test "a stop counts what the buffer holds past its drain time as dropped", %{tmp_dir: dir} do
+      pid = start!(dir, buffer_bytes: 1_048_576, drain_ms: 0, chunk_interval_ms: 60_000)
+      :ok = :sys.suspend(pid)
+      for n <- 1..5, do: :ok = Recording.write(pid, "/speed", Float64, speed(n), n)
+      eventually(fn -> write_waiting?(pid) end)
+
+      stopping = Task.async(fn -> Recording.stop(pid) end)
+      eventually(fn -> stop_waiting?(pid) end)
+      :ok = :sys.resume(pid)
+      :ok = Task.await(stopping)
+
+      # The first, handed to the writer before the stop, is written.
+      assert metadata_yaml!(dir)["message_count"] == 1
+      assert metadata_yaml!(dir)["custom_data"] == %{"dropped:/speed" => 4}
+    end
+  end
+
+  defp stop_waiting?(pid), do: waiting?(pid, &match?({:"$gen_call", _from, :stop}, &1))
+
+  defp write_waiting?(pid), do: waiting?(pid, &match?({:"$gen_cast", {:write, _message}}, &1))
+
+  defp waiting?(pid, message?) do
+    {:messages, messages} = Process.info(pid, :messages)
+    Enum.any?(messages, message?)
+  end
+
+  describe "its buffer" do
+    @describetag :capture_log
+
+    defp buffer_of(pid) do
+      {:links, links} = Process.info(pid, :links)
+      Enum.find(links, &match?({Buffer, :init, _arity}, :proc_lib.initial_call(&1)))
+    end
+
+    test "stops with the recording", %{tmp_dir: dir} do
+      pid = start!(dir, @no_chunk_close)
+      buffer = buffer_of(pid)
+      ref = Process.monitor(buffer)
+
+      :ok = Recording.stop(pid)
+
+      assert_receive {:DOWN, ^ref, :process, ^buffer, _reason}
+    end
+
+    test "exiting stops the recording, its file closed", %{tmp_dir: dir} do
+      pid = start!(dir, @no_chunk_close)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
+      ref = Process.monitor(pid)
+
+      Process.exit(buffer_of(pid), :kill)
+
+      assert_receive {:DOWN, ^ref, :process, ^pid, _reason}
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(read_file!(dir, 0))
+    end
   end
 
   test "status/1 counts the bytes, files and messages", %{tmp_dir: dir} do
@@ -394,7 +490,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
     :ok = Recording.write(pid, "/speed", Float64, %Float64{data: "fast"}, 1_000)
     :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 2_000)
-    _state = :sys.get_state(pid)
+    eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
 
     assert %{dropped: %{"/speed" => 1}, messages: %{"/speed" => 1}} = Recording.status(pid)
     :ok = Recording.stop(pid)
@@ -416,8 +512,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       assert Process.alive?(pid)
 
       :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 2_000)
-      _state = :sys.get_state(pid)
-      assert %{dropped: %{"/speed" => 1}} = Recording.status(pid)
+      eventually(fn -> Recording.status(pid).dropped == %{"/speed" => 1} end)
 
       ref = Process.monitor(pid)
       :ok = Recording.stop(pid)
@@ -727,7 +822,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
     end
 
     test "each part's metadata.yaml counts the drops of that part", %{disks: disks, stick: stick} do
-      pid = start_on!(disks, stick, queue: 1, chunk_interval_ms: 1)
+      pid = start_on!(disks, stick, buffer_bytes: 12, chunk_interval_ms: 1)
       :ok = :sys.suspend(pid)
       for n <- 1..3, do: :ok = Recording.write(pid, "/speed", Float64, speed(n), n)
       :ok = :sys.resume(pid)
@@ -756,8 +851,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       File.ln_s!("/dev/full", Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
       :ok = Recording.write(pid, "/left/image_raw", Image, large_image(), 2_000_000_000)
       :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 4_000_000_000)
-      eventually(fn -> on_disk?(pid, "internal") end)
-      _state = :sys.get_state(pid)
+      eventually(fn -> Recording.status(pid).messages["/speed"] == 2 end)
 
       assert Recording.status(pid).messages == %{"/speed" => 2}
       :ok = Recording.stop(pid)
@@ -801,7 +895,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 60_000)
       folder = Path.join(stick.recordings_path, "bag")
       :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
-      _state = :sys.get_state(pid)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
       File.mkdir_p!(Path.join(folder, "metadata.yaml.tmp"))
       :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 61_000_000_000)
       eventually(fn -> on_disk?(pid, "internal") end)
@@ -836,7 +930,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Disks.put_enabled(disks.server, "internal", false)
       pid = start_on!(disks, stick, chunk_interval_ms: 1)
       :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
-      _state = :sys.get_state(pid)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
       File.mkdir_p!(Path.join([stick.recordings_path, "bag", "metadata.yaml.tmp"]))
 
       TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
@@ -852,7 +946,7 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
          %{disks: disks, stick: stick} do
       lookups = :counters.new(1, [])
       disks = %{disks | server: {:via, DropOnLookup, {disks.server, lookups}}}
-      pid = start_on!(disks, stick, queue: 0, chunk_interval_ms: 1)
+      pid = start_on!(disks, stick, buffer_bytes: 0, chunk_interval_ms: 1)
 
       TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
       eventually(fn -> on_disk?(pid, "internal") end)
