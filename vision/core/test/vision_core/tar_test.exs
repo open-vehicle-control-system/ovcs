@@ -79,6 +79,14 @@ defmodule VisionCore.TarTest do
     assert Enum.all?(chunks, &(IO.iodata_length(&1) <= 1_048_576))
   end
 
+  test "takes no link, nor what it leads to", %{tmp_dir: dir} do
+    target = Path.join(dir, "target")
+    File.write!(target, "elsewhere")
+    File.ln_s!(target, Path.join(dir, "link"))
+
+    assert Tar.read_entry("link", Path.join(dir, "link")) == {:error, :einval}
+  end
+
   test "answers why a file cannot be read" do
     assert {:error, :enoent} = Tar.read_entry("gone", "/nonexistent/gone")
   end

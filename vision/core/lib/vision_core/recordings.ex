@@ -8,7 +8,10 @@ defmodule VisionCore.Recordings do
   disks' recordings folders, its parts joined by name
   (`VisionCore.Recording.part_of/1`); a name is never made into a path,
   so no request reaches a folder that is not a recording's. A part on a
-  disk that is not mounted is not listed, nor deleted.
+  disk that is not mounted is not listed, nor deleted. Only real folders
+  count, the recordings folder and each part's, and only a part's
+  regular files are archived: a disk's links, which could lead out of
+  its recordings, are left out of listings, archives and deletes.
 
   The recording in progress, if any, is the one the bag exporter
   answers (`VisionCore.Ros2.BagExporter.recording/1`), with the facts
@@ -179,17 +182,14 @@ defmodule VisionCore.Recordings do
     end)
   end
 
-  # A part's folder, then its files, each with its name in the archive.
+  # A part's folder, then its regular files, each with its name in the archive.
   defp archived_paths(part) do
-    files =
-      case File.ls(part.folder) do
-        {:ok, files} -> Enum.sort(files)
-        {:error, _reason} -> []
-      end
-
     [
       {part.name <> "/", part.folder}
-      | Enum.map(files, &{"#{part.name}/#{&1}", Path.join(part.folder, &1)})
+      | for(
+          {file, _bytes} <- Recording.files(part.folder),
+          do: {"#{part.name}/#{file}", Path.join(part.folder, file)}
+        )
     ]
   end
 
@@ -215,13 +215,14 @@ defmodule VisionCore.Recordings do
     Recording.read(started.name, parts)
   end
 
-  # The folders of every mounted disk's recordings folder, by recording name.
+  # The folders of every mounted disk's recordings folder, by recording name; a link is no folder.
   defp parts_by_name(opts) do
     for %{recordings_path: recordings, uuid: disk} <- Disks.list(opts[:disks]),
         is_binary(recordings),
+        directory?(recordings),
         {:ok, folders} <- [File.ls(recordings)],
         folder <- folders,
-        File.dir?(Path.join(recordings, folder)),
+        directory?(Path.join(recordings, folder)),
         reduce: %{} do
       parts ->
         {name, number} = Recording.part_of(folder)
@@ -229,6 +230,8 @@ defmodule VisionCore.Recordings do
         Map.update(parts, name, [part], &[part | &1])
     end
   end
+
+  defp directory?(path), do: match?({:ok, %File.Stat{type: :directory}}, File.lstat(path))
 
   defp live_recording(opts) do
     case answered_recording(opts) do

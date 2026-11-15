@@ -12,7 +12,9 @@ defmodule VisionCore.Recording do
   its drops by topic (`dropped:<topic>`), summed over the parts, and its
   duration, from the first message of its parts to the last. A fact no
   part tells, as in a folder a power cut left without `metadata.yaml`,
-  is `nil`. Its bytes are those of its parts' files.
+  is `nil`; a `metadata.yaml` that is not a regular file, or is past
+  1 MiB, is not read. Its bytes are those of its parts' regular files: a
+  link or any other file in a part is left out (`files/1`).
 
   The recording in progress takes its facts from the bag exporter
   (`put_recording/2`): the `disk` it records on, its duration so far and
@@ -20,6 +22,7 @@ defmodule VisionCore.Recording do
   """
 
   @metadata_file "metadata.yaml"
+  @metadata_max_bytes 1_048_576
   @no_start 9_223_372_036_854_775_807
   @nanoseconds_per_ms 1_000_000
 
@@ -125,9 +128,28 @@ defmodule VisionCore.Recording do
     }
   end
 
+  @doc """
+  The regular files of the folder `folder`, sorted by name, with their
+  bytes; a link or any other file is left out.
+  """
+  @spec files(Path.t()) :: [{String.t(), non_neg_integer()}]
+  def files(folder) do
+    case File.ls(folder) do
+      {:ok, names} ->
+        for name <- Enum.sort(names),
+            {:ok, %File.Stat{type: :regular, size: bytes}} <- [
+              File.lstat(Path.join(folder, name))
+            ],
+            do: {name, bytes}
+
+      {:error, _reason} ->
+        []
+    end
+  end
+
   defp read_part(part) do
     name = Path.basename(part.folder)
-    files = folder_files(part.folder)
+    files = files(part.folder)
 
     %{
       name: name,
@@ -139,22 +161,14 @@ defmodule VisionCore.Recording do
     }
   end
 
-  defp folder_files(folder) do
-    case File.ls(folder) do
-      {:ok, names} ->
-        for name <- names,
-            {:ok, %File.Stat{type: :regular, size: bytes}} <- [File.stat(Path.join(folder, name))],
-            do: {name, bytes}
-
-      {:error, _reason} ->
-        []
-    end
-  end
-
-  # The facts of a part's metadata.yaml, `nil` without one that reads.
+  # The facts of a part's metadata.yaml, `nil` without a regular file of a sane size that reads.
   defp read_metadata(folder) do
-    with {:ok, %{"rosbag2_bagfile_information" => %{} = bag}} <-
-           YamlElixir.read_from_file(Path.join(folder, @metadata_file)),
+    path = Path.join(folder, @metadata_file)
+
+    with {:ok, %File.Stat{type: :regular, size: size}} when size <= @metadata_max_bytes <-
+           File.lstat(path),
+         {:ok, text} <- File.read(path),
+         {:ok, %{"rosbag2_bagfile_information" => %{} = bag}} <- YamlElixir.read_from_string(text),
          %{"message_count" => messages, "files" => files} when is_integer(messages) <- bag do
       %{
         messages: messages,

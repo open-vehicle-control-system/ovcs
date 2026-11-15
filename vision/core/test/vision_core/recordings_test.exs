@@ -302,6 +302,104 @@ defmodule VisionCore.RecordingsTest do
     end
   end
 
+  # Files outside any recordings folder, in a folder named as a recording.
+  defp outside!(tmp_dir) do
+    outside = Path.join(tmp_dir, "outside")
+    File.mkdir_p!(Path.join(outside, @first))
+    File.write!(Path.join([outside, @first, "key.pem"]), "PRIVATE KEY")
+    outside
+  end
+
+  defp refuses_everything_on(outside) do
+    assert Recordings.list() == []
+    assert Recordings.fetch(@first) == {:error, :not_found}
+    assert Recordings.archive(@first) == {:error, :not_found}
+    assert Recordings.delete(@first) == {:error, :not_found}
+    assert File.read!(Path.join([outside, @first, "key.pem"])) == "PRIVATE KEY"
+  end
+
+  describe "a disk's links and special files" do
+    test "leaves out a recordings folder that links elsewhere", %{stick: stick} = context do
+      outside = outside!(context.tmp_dir)
+      File.rm_rf!(stick)
+      File.ln_s!(outside, stick)
+
+      refuses_everything_on(outside)
+    end
+
+    test "leaves out a part folder that links elsewhere", %{internal: internal} = context do
+      outside = outside!(context.tmp_dir)
+      File.ln_s!(Path.join(outside, @first), Path.join(internal, @first))
+
+      refuses_everything_on(outside)
+    end
+
+    test "neither counts, archives nor deletes a file a part links to", context do
+      outside = outside!(context.tmp_dir)
+      {first, second} = two_parts!(context)
+      bytes = folder_bytes(first) + folder_bytes(second)
+      File.ln_s!(Path.join([outside, @first, "key.pem"]), Path.join(first, "key.mcap"))
+
+      assert [%Recording{name: @first, bytes: ^bytes}] = Recordings.list()
+
+      {:ok, archive} = Recordings.archive(@first)
+      tar = Enum.into(archive.stream, <<>>)
+      assert {:ok, files} = :erl_tar.extract({:binary, tar}, [:memory])
+      refute Enum.any?(files, fn {name, _bytes} -> name == ~c"#{@first}/key.mcap" end)
+      refute tar =~ "PRIVATE KEY"
+
+      assert Recordings.delete(@first) == :ok
+      refute File.exists?(first)
+      assert File.read!(Path.join([outside, @first, "key.pem"])) == "PRIVATE KEY"
+    end
+
+    test "reads no metadata.yaml that is not a regular file, nor archives it",
+         %{internal: internal} do
+      folder = Path.join(internal, @first)
+      File.mkdir_p!(folder)
+      File.write!(Path.join(folder, "#{@first}_0.mcap"), "cut")
+      fifo = Path.join(folder, "metadata.yaml")
+      {_output, 0} = System.cmd("mkfifo", [fifo])
+
+      assert [%Recording{name: @first, preset: nil, messages: nil, bytes: 3}] =
+               within(fn -> Recordings.list() end, fifo)
+
+      {:ok, archive} = within(fn -> Recordings.archive(@first) end, fifo)
+
+      assert :erl_tar.extract({:binary, Enum.into(archive.stream, <<>>)}, [:memory]) ==
+               {:ok, [{~c"#{@first}/#{@first}_0.mcap", "cut"}]}
+    end
+
+    test "reads no metadata.yaml past a mebibyte", context do
+      {first, _second} = two_parts!(context)
+      metadata = Path.join(first, "metadata.yaml")
+      File.write!(metadata, ["# ", :binary.copy("x", 1_048_576), "\n"], [:append])
+
+      assert [%Recording{name: @first, messages: 200}] = Recordings.list()
+    end
+  end
+
+  # What `fun` answers within a second; a writer holds `fifo` open until then, so a reader stuck on it ends.
+  defp within(fun, fifo) do
+    writer =
+      Port.open({:spawn_executable, System.find_executable("sh")},
+        args: ["-c", ~s(exec 3<>"$0"; read line), fifo]
+      )
+
+    task = Task.async(fun)
+    answer = Task.yield(task, 1_000)
+    Port.close(writer)
+
+    case answer do
+      {:ok, answer} ->
+        answer
+
+      nil ->
+        Task.shutdown(task, :brutal_kill)
+        flunk("stuck reading #{fifo}")
+    end
+  end
+
   describe "archive/2" do
     test "is the tar of a recording, each part a folder with its files", context do
       {first, second} = two_parts!(context)

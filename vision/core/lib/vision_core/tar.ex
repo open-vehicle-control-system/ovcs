@@ -38,11 +38,11 @@ defmodule VisionCore.Tar do
   @doc """
   The entry named `name` in the archive, of the folder or file at
   `path`: its type, size and time as they are now. A folder's name ends
-  with `/`.
+  with `/`. A link, followed by no archive, is `{:error, :einval}`.
   """
   @spec read_entry(String.t(), Path.t()) :: {:ok, t()} | {:error, File.posix()}
   def read_entry(name, path) do
-    case File.stat(path, time: :posix) do
+    case File.lstat(path, time: :posix) do
       {:ok, %File.Stat{type: :directory, mtime: mtime}} ->
         {:ok, %__MODULE__{name: name, type: :directory, path: path, size: 0, mtime: mtime}}
 
