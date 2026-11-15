@@ -3,6 +3,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
   use ExUnit.Case, async: false
 
   alias VisionCore.BagTestUnit
+  alias VisionCore.Camera.Frame
   alias VisionCore.Ros2.BagExporter.Preset
   alias VisionCore.Ros2.ZenohExporter
 
@@ -16,7 +17,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
   end
 
   # The topics and modules the Zenoh exporter publishes with `preset`'s options, handed a value of each output.
-  defp published(preset, config) do
+  defp published(preset, config, values \\ BagTestUnit.values(1_000)) do
     options =
       Keyword.delete(Preset.options(preset, config), :max_hz) ++
         [config: config, link: false, services: false, publish: publish_to(self())]
@@ -25,7 +26,7 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
     outputs = ZenohExporter.outputs(options)
 
     state =
-      for {output, value} <- BagTestUnit.values(1_000), output in outputs, reduce: state do
+      for {output, value} <- values, output in outputs, reduce: state do
         state ->
           {:ok, state} = ZenohExporter.handle_output(output, value, state)
           state
@@ -128,6 +129,45 @@ defmodule VisionCore.Ros2.BagExporter.PresetTest do
 
     assert Preset.options(:review, config)[:cameras] ==
              [raw_image_max_hz: :infinity, camera_info_interval_frames: 10]
+  end
+
+  test "records a camera named left apart from the stereo unit's left camera" do
+    camera =
+      {:camera,
+       name: :left,
+       driver: VisionCore.Camera.V4L2Single,
+       frame_id: "left_optical",
+       outputs: [
+         view: [resolution: {1014, 760}, processor: :cpu, send: false],
+         view_jpeg: [from: :view, format: :jpeg]
+       ]}
+
+    config = Map.update!(BagTestUnit.config(), :components, &(&1 ++ [camera]))
+
+    assert Preset.options(:replay, config)[:cameras] ==
+             [raw_image_max_hz: :infinity, outputs: [hq: :view_jpeg, left: :view_jpeg]]
+
+    assert Preset.kind({:stereo_frame, :left}) == :sides
+    assert Preset.kind({:camera_frame, :left}) == :cameras
+    assert Preset.kind({:camera_frame, :left, :view_jpeg}) == :cameras
+
+    frame = %Frame{
+      label: "left",
+      output: :view_jpeg,
+      frame_id: "left_optical",
+      width: 1014,
+      height: 760,
+      capture_ns: 1_000,
+      jpeg: <<0xFF, 0xD8, 0xFF, 0xD9>>
+    }
+
+    values = BagTestUnit.values(1_000) ++ [{{:camera_frame, :left, :view_jpeg}, frame}]
+
+    for preset <- Preset.names() do
+      topics = topics(published(preset, config, values))
+      assert "left/image_raw/compressed" in topics
+      assert Enum.any?(topics, &String.starts_with?(&1, "stereo/left/image_raw"))
+    end
   end
 
   # Review Focus 3: a type without its definition would fail at the first recording.

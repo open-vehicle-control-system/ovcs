@@ -171,8 +171,8 @@ defmodule VisionCore.Ros2.BagExporterTest do
 
   test "reads every output the presets record on the configuration" do
     assert BagExporter.outputs(options()) == [
-             {:camera_frame, :left},
-             {:camera_frame, :right},
+             {:stereo_frame, :left},
+             {:stereo_frame, :right},
              {:camera_frame, :hq, :view_jpeg},
              :stereo_pair,
              {:detections, :objects},
@@ -831,14 +831,14 @@ defmodule VisionCore.Ros2.BagExporterTest do
     {_started, state} = options |> init!() |> start!(:review)
 
     grey = %{BagTestUnit.stereo_frame(:left, System.monotonic_time(:nanosecond)) | jpeg: nil}
-    assert {:busy, state} = BagExporter.handle_output({:camera_frame, :left}, grey, state)
+    assert {:busy, state} = BagExporter.handle_output({:stereo_frame, :left}, grey, state)
     assert_receive {:encoding, encode}
 
     {_stopped, state} = stop!(state)
     GenServer.reply(encode, {:ok, "the jpeg"})
 
     assert_receive {reference, _answer} = answer when is_reference(reference)
-    assert {:ready, {:camera_frame, :left}, _state} = BagExporter.handle_info(answer, state)
+    assert {:ready, {:stereo_frame, :left}, _state} = BagExporter.handle_info(answer, state)
   end
 
   test "keeps one loop of transforms when a recording starts again within a second",

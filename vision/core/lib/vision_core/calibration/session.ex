@@ -349,9 +349,9 @@ defmodule VisionCore.Calibration.Session do
 
   defp check_solvable(_state, _target), do: :ok
 
-  defp solver(%{target: %{kind: :stereo}, solve: solve, board: board, size: size} = state) do
-    samples =
-      for %{views: views} <- state.samples, do: %{left: views["left"], right: views["right"]}
+  defp solver(%{target: %{kind: :stereo, labels: [left, right]}, board: board} = state) do
+    %{solve: solve, size: size} = state
+    samples = for %{views: views} <- state.samples, do: %{left: views[left], right: views[right]}
 
     fn -> solve.(board, size, samples) end
   end

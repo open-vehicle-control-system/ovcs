@@ -153,13 +153,13 @@ defmodule VisionCore.Stereo.SupervisorTest do
                   height: 360,
                   fps: 30,
                   left: [
-                    label: "left",
+                    label: "stereo/left",
                     calibration_path: "/rom/calibration/stereo_left.yaml",
                     device: "/dev/video0",
                     frame_id: "front_left_optical"
                   ],
                   right: [
-                    label: "right",
+                    label: "stereo/right",
                     frame_id: "stereo_right",
                     device: "/dev/video2",
                     calibration_path: "/rom/right.yaml"
@@ -180,6 +180,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
                )
 
       assert options[:prefix] == "front"
+      assert options[:left][:label] == "front/left"
       assert options[:left][:frame_id] == "front_left"
       assert options[:right][:calibration_path] == "/rom/calibration/front_right.yaml"
     end
@@ -242,7 +243,12 @@ defmodule VisionCore.Stereo.SupervisorTest do
                )
 
       assert options[:left] ==
-               [label: "left", calibration_path: nil, frame_id: "stereo_left_optical", csiphy: 0]
+               [
+                 label: "stereo/left",
+                 calibration_path: nil,
+                 frame_id: "stereo_left_optical",
+                 csiphy: 0
+               ]
 
       refute Keyword.has_key?(options, :black_level)
     end
@@ -329,17 +335,36 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
     test "its cameras, left then right, and its outputs: the pipeline's pairs, then each camera's frames" do
       config = config([{:detector, []}, {:stereo, @stereo}])
-      left = VisionCore.Camera.V4L2Pair.name_for("left")
-      right = VisionCore.Camera.V4L2Pair.name_for("right")
+      left = VisionCore.Camera.V4L2Pair.name_for("stereo/left")
+      right = VisionCore.Camera.V4L2Pair.name_for("stereo/right")
 
       assert StereoSupervisor.cameras(config) ==
                [{VisionCore.Camera.V4L2Pair, left}, {VisionCore.Camera.V4L2Pair, right}]
 
       assert StereoSupervisor.outputs(config) == [
                {:stereo_pair, {:stereo_pair, Pipeline}},
-               {{:camera_frame, :left}, {:camera_frame, left}},
-               {{:camera_frame, :right}, {:camera_frame, right}}
+               {{:stereo_frame, :left}, {:camera_frame, left}},
+               {{:stereo_frame, :right}, {:camera_frame, right}}
              ]
+    end
+
+    test "its prefix and its cameras' labels, under the prefix" do
+      config = config([{:stereo, Keyword.put(@stereo, :prefix, "front")}])
+
+      assert StereoSupervisor.prefix(config) == "front"
+      assert StereoSupervisor.labels(config) == [left: "front/left", right: "front/right"]
+
+      assert StereoSupervisor.cameras(config) == [
+               {VisionCore.Camera.V4L2Pair, VisionCore.Camera.V4L2Pair.name_for("front/left")},
+               {VisionCore.Camera.V4L2Pair, VisionCore.Camera.V4L2Pair.name_for("front/right")}
+             ]
+    end
+
+    test "the default prefix and its labels without a stereo unit" do
+      config = config([{:detector, []}])
+
+      assert StereoSupervisor.prefix(config) == "stereo"
+      assert StereoSupervisor.labels(config) == [left: "stereo/left", right: "stereo/right"]
     end
 
     test "none without a stereo component, nor with one whose driver names no camera" do
@@ -435,12 +460,14 @@ defmodule VisionCore.Stereo.SupervisorTest do
         Enum.find(children, &(&1.id == {:stereo, :driver, side}))
 
       assert options[:side] == side
-      assert options[:label] == Atom.to_string(side)
+      assert options[:label] == "stereo/#{side}"
       assert options[:frame_id] == "stereo_#{side}_optical"
       assert {options[:width], options[:height], options[:black_level]} == {728, 544, 60}
       assert options[:executable] == "/opt/v4l2_capture"
-      assert options[:left] == [label: "left", frame_id: "stereo_left_optical", csiphy: 0]
-      assert options[:right] == [label: "right", frame_id: "stereo_right_optical", csiphy: 1]
+      assert options[:left] == [label: "stereo/left", frame_id: "stereo_left_optical", csiphy: 0]
+
+      assert options[:right] ==
+               [label: "stereo/right", frame_id: "stereo_right_optical", csiphy: 1]
     end
   end
 
@@ -465,11 +492,11 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
     for side <- [:left, :right] do
       assert start_options.({:stereo, :driver, side})[:side] == side
-      assert start_options.({:stereo, :driver, side})[:label] == Atom.to_string(side)
+      assert start_options.({:stereo, :driver, side})[:label] == "stereo/#{side}"
     end
 
     assert start_options.(Pairer)[:cameras] ==
-             [left: {IdleCamera, "left"}, right: {IdleCamera, "right"}]
+             [left: {IdleCamera, "stereo/left"}, right: {IdleCamera, "stereo/right"}]
   end
 
   describe "an uncalibrated unit" do

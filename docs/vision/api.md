@@ -212,7 +212,7 @@ The range is a view setting of the unit, shared by every client: it is not saved
 - a 400 for a document without `data.type`, `data.id` or `data.attributes.colourRangeM`;
 - a 503 while the previews do not run.
 
-The `preview:depth` channel pushes the range to its clients on every change; see [Live channels](./channels.md).
+The `preview:<prefix>/depth` channel, `preview:stereo/depth` by default, pushes the range to its clients on every change; see [Live channels](./channels.md).
 
 ## The unit and its exports
 
@@ -307,8 +307,8 @@ A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ro
         "module": "VisionCore.Ros2.ZenohExporter",
         "outputs": [
           {"name": "stereo_pair", "maxHz": null},
-          {"name": "camera_frame:left", "maxHz": null},
-          {"name": "camera_frame:right", "maxHz": null},
+          {"name": "stereo_frame:left", "maxHz": null},
+          {"name": "stereo_frame:right", "maxHz": null},
           {"name": "detections:objects", "maxHz": null},
           {"name": "segmentation:scene", "maxHz": null},
           {"name": "camera_frame:center:half_jpeg", "maxHz": null},
@@ -324,10 +324,10 @@ A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ro
         "name": "API",
         "module": "VisionApiWeb.Endpoint",
         "outputs": [
-          {"name": "camera_frame:left", "maxHz": 10},
-          {"name": "camera_frame:right", "maxHz": 10},
-          {"name": "stereo_pair", "maxHz": 10},
-          {"name": "camera_frame:center", "maxHz": 10},
+          {"name": "stereo_frame:left", "maxHz": 10, "source": "stereo/left"},
+          {"name": "stereo_frame:right", "maxHz": 10, "source": "stereo/right"},
+          {"name": "stereo_pair", "maxHz": 10, "source": "stereo/depth"},
+          {"name": "camera_frame:center", "maxHz": 10, "source": "center"},
           {"name": "detections:objects", "maxHz": 10, "source": "center"},
           {"name": "segmentation:scene", "maxHz": 5, "source": "center"}
         ],
@@ -338,9 +338,9 @@ A board whose clock is not synchronized publishes nothing to ROS 2; `GET /api/ro
 }
 ```
 
-The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The API lists a `camera_frame:<name>` output for each camera of its own that sends an image, between `stereo_pair` and the detections: `camera_frame:center` here. Each has a `preview:<name>` channel ([Previews](./channels.md#previews)). An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:half_jpeg`. One that reads a camera's H.264 video lists it as `camera_video:<name>:<output>`, such as `camera_video:center:full_h264`, its `maxHz` `null`.
+The example unit has a camera `center`, with a detection pipeline `objects` and a segmentation pipeline `scene` on it. The stereo unit's camera frames are `stereo_frame:left` and `stereo_frame:right`. The API lists a `camera_frame:<name>` output for each camera of its own that sends an image, between `stereo_pair` and the detections: `camera_frame:center` here. Each of these API outputs has a `source`, its [preview channel](./channels.md#previews)'s stream: `<prefix>/left`, `<prefix>/right` and `<prefix>/depth` under the stereo unit's `:prefix`, `stereo` by default, and the camera's name for a camera of its own. An exporter that reads another output of a camera than its default lists it as `camera_frame:<name>:<output>`, such as `camera_frame:center:half_jpeg`. One that reads a camera's H.264 video lists it as `camera_video:<name>:<output>`, such as `camera_video:center:full_h264`, its `maxHz` `null`.
 
-A unit lists each detection pipeline's output: `detections:<name>` for the pipeline `<name>`, `detections:detection` for a detector without a name. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is `left` for the stereo pair, or the name of a camera of its own: `center` for `objects`.
+A unit lists each detection pipeline's output: `detections:<name>` for the pipeline `<name>`, `detections:detection` for a detector without a name. The API lists every pipeline's; the ROS 2 exporter lists those its `detections:` names. The API's detection outputs name their pipeline's `source`, the preview its boxes belong on. It is the stereo unit's left camera, `stereo/left` by default, for the stereo pair, or the name of a camera of its own: `center` for `objects`.
 
 A unit with segmentation pipelines lists `segmentation:<name>` for the pipeline `<name>`, after the detections. The API lists every one, with the pipeline's camera as its `source`. The ROS 2 exporter lists them only with its `segmentation:` option: those its `pipelines:` names, or without `pipelines:` every one on a camera.
 
@@ -423,7 +423,7 @@ The calibration routes do what the dashboard's Calibration page does; [Calibrate
 - its `kind`, `stereo`, `camera` or `pose`;
 - its `source`, `builtIn`, `stored` or `none`, and `storedAt`, the time a stored one was stored;
 - `canReset`, whether you can return to the built-in one: while anything is stored and a built-in calibration exists;
-- its `cameras`, two for a stereo pair and one for a camera: each one's `name`, the `file` name to save its `yaml` under, its image size, `fx`, `fy`, `cx`, `cy` and distortion coefficients, each `null` without a file. A pose's are the stereo left camera's and the camera's calibrations in use, which it is measured with;
+- its `cameras`, two for a stereo pair and one for a camera: each one's `name`, its preview stream (`<prefix>/left` and `<prefix>/right` for a stereo pair's), the `file` name to save its `yaml` under, its image size, `fx`, `fy`, `cx`, `cy` and distortion coefficients, each `null` without a file. A pose's are the stereo left camera's, named `<prefix>/left`, and the camera's calibrations in use, which it is measured with;
 - for a stereo pair, `baselineM`, the rectified baseline, and `rectifiedFx`, the left camera's rectified focal length; both `null` otherwise;
 - for a pose, `pose`: its `rotation`, 9 numbers row-major, its `translation` in metres, `distanceMm`, the distance between the two cameras, and the `file` name to save its `yaml` under; `null` without a pose, and for a stereo pair or a camera ([Calibration and pose](./cameras.md#calibration-and-pose) says what they mean);
 - `error`, why a file gives no calibration, such as one that cannot be read or whose matrices are malformed, `null` otherwise. That camera's figures are `null`, and the calibration can still be made again or reset.
@@ -445,7 +445,7 @@ On the OVCS Mini, the YAML shortened:
       "rectifiedFx": 378.65,
       "cameras": [
         {
-          "name": "left",
+          "name": "stereo/left",
           "file": "stereo_left.yaml",
           "imageWidth": 480,
           "imageHeight": 270,
@@ -457,7 +457,7 @@ On the OVCS Mini, the YAML shortened:
           "yaml": "image_width: 480\nimage_height: 270\ncamera_name: stereo_left\n…"
         },
         {
-          "name": "right",
+          "name": "stereo/right",
           "file": "stereo_right.yaml",
           "imageWidth": 480,
           "imageHeight": 270,

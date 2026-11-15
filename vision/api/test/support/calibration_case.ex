@@ -72,7 +72,7 @@ defmodule VisionApiWeb.CalibrationCase do
 
     :persistent_term.put({VisionCore.Application, :active_config}, config)
 
-    for label <- ["left", "right", "hq"] do
+    for label <- ["#{@prefix}/left", "#{@prefix}/right", "hq"] do
       camera = spawn(fn -> Process.sleep(:infinity) end)
       Process.register(camera, Camera.name_for(label))
       on_exit(fn -> Process.exit(camera, :kill) end)
@@ -158,7 +158,7 @@ defmodule VisionApiWeb.CalibrationCase do
   def good_samples do
     List.duplicate(
       %{
-        views: %{"left" => [], "right" => [], "hq" => []},
+        views: %{"unit/left" => [], "unit/right" => [], "hq" => []},
         parameters: %{x: 0.5, y: 0.5, size: 0.2, skew: 0.1}
       },
       40

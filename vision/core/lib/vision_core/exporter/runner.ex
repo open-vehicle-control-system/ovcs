@@ -28,8 +28,9 @@ defmodule VisionCore.Exporter.Runner do
   handed over in order, from a key frame, with no `:max_hz`, up to a
   bound past which it skips to the next key frame
   (`VisionCore.Camera.VideoQueue`), uncounted. The camera outputs tell their
-  frames apart by `:label`, `"left"`, `"right"` or a camera's name, and
-  by `:output`, the camera output a frame is of. Every other message is
+  frames apart by `:label`, a stereo camera's
+  (`VisionCore.Stereo.Supervisor.labels/1`) or a camera's name, and by
+  `:output`, the camera output a frame is of. Every other message is
   `{output, value}`, `output` being the output it is of: a detection
   pipeline's value is `{pair, detections}`, or `{frame, detections}`
   from a pipeline on a camera, a segmentation pipeline's
@@ -90,6 +91,7 @@ defmodule VisionCore.Exporter.Runner do
   alias VisionCore.Camera.{Frame, Unit, VideoQueue}
   alias VisionCore.Exporter
   alias VisionCore.Exporter.ValueQueue
+  alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @default_status_timeout_ms 200
   @first_retry_ms 500
@@ -488,20 +490,33 @@ defmodule VisionCore.Exporter.Runner do
 
         key ->
           :ok = Outputs.subscribe(key)
-          [{output, Map.put(slot, :frame_output, frame_output(key))}]
+          [{output, Map.merge(slot, frame_identity(output, key, config))}]
       end
     end)
     |> Map.new()
   end
 
-  # The output name a camera's frames published under `key` carry.
+  # The label and the output name the frames of `output`, published under `key`, carry.
+  defp frame_identity(output, key, config),
+    do: %{label: frame_label(output, config), frame_output: frame_output(key)}
+
+  defp frame_label({:stereo_frame, side}, config),
+    do: Keyword.fetch!(StereoSupervisor.labels(config), side)
+
+  defp frame_label({:camera_frame, name}, _config), do: Atom.to_string(name)
+
+  defp frame_label({kind, name, _output}, _config) when kind in [:camera_frame, :camera_video],
+    do: Atom.to_string(name)
+
+  defp frame_label(_output, _config), do: nil
+
   defp frame_output({:camera_frame, _server, output}), do: output
   defp frame_output(_key), do: nil
 
   # The output a message is of, among those subscribed; `newest/2` matches the same shapes.
   defp route({:camera_frame, %{label: label, output: frame_output}}, slots) do
     Enum.find_value(slots, fn
-      {output, %{frame_output: ^frame_output}} -> if camera_label(output) == label, do: output
+      {output, %{label: ^label, frame_output: ^frame_output}} -> output
       _slot -> nil
     end)
   end
@@ -511,11 +526,6 @@ defmodule VisionCore.Exporter.Runner do
     if is_map_key(slots, output), do: output
   end
 
-  defp camera_label({:camera_frame, name}), do: Atom.to_string(name)
-  defp camera_label({:camera_frame, name, _output}), do: Atom.to_string(name)
-  defp camera_label({:camera_video, name, _output}), do: Atom.to_string(name)
-  defp camera_label(_output), do: nil
-
   defp message_output({output, _value}), do: output
   defp message_output(_message), do: nil
 
@@ -523,7 +533,7 @@ defmodule VisionCore.Exporter.Runner do
 
   # The newest value of the output waiting in the mailbox replaces `value`.
   defp newest(output, %Frame{label: label, output: frame_output} = value)
-       when is_tuple(output) and elem(output, 0) == :camera_frame do
+       when is_tuple(output) and elem(output, 0) in [:camera_frame, :stereo_frame] do
     receive do
       Outputs.queued({:camera_frame, %{label: ^label, output: ^frame_output} = frame}) ->
         newest(output, frame)

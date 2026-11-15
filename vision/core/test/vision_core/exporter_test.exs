@@ -34,10 +34,10 @@ defmodule VisionCore.ExporterTest do
 
   test "the outputs an exporter reads, each with the most values it takes a second, if bounded" do
     assert Exporter.output_specs(Reading,
-             outputs: [{:camera_frame, :left}, {:stereo_pair, max_hz: 5}, {:detections, :road}]
+             outputs: [{:stereo_frame, :left}, {:stereo_pair, max_hz: 5}, {:detections, :road}]
            ) ==
              {:ok,
-              [{{:camera_frame, :left}, nil}, {:stereo_pair, 5}, {{:detections, :road}, nil}]}
+              [{{:stereo_frame, :left}, nil}, {:stereo_pair, 5}, {{:detections, :road}, nil}]}
   end
 
   test "a detection pipeline's detections are an output of their own, detection without a name" do
@@ -90,8 +90,26 @@ defmodule VisionCore.ExporterTest do
 
   test "a named camera's frames are an output of their own, beside the stereo pair's" do
     assert Exporter.output_specs(Reading,
-             outputs: [{:camera_frame, :left}, {{:camera_frame, :hq}, max_hz: 2}]
-           ) == {:ok, [{{:camera_frame, :left}, nil}, {{:camera_frame, :hq}, 2}]}
+             outputs: [{:stereo_frame, :left}, {{:camera_frame, :hq}, max_hz: 2}]
+           ) == {:ok, [{{:stereo_frame, :left}, nil}, {{:camera_frame, :hq}, 2}]}
+  end
+
+  test "a camera named left is an output apart from the stereo pair's left camera" do
+    config =
+      config([
+        {:stereo, driver: Camera, left: [], right: []},
+        {:camera, name: :left, driver: Camera}
+      ])
+
+    assert Exporter.output?({:camera_frame, :left})
+    assert Exporter.output?({:camera_frame, :left, :view})
+    refute Exporter.output?({:stereo_frame, :center})
+
+    assert Exporter.output_key({:camera_frame, :left}, config) ==
+             {:camera_frame, Camera.name_for("left")}
+
+    assert Exporter.output_key({:stereo_frame, :left}, config) ==
+             {:camera_frame, Camera.name_for("stereo/left")}
   end
 
   test "a named camera's frames resolve to the key its driver publishes under" do
@@ -104,8 +122,8 @@ defmodule VisionCore.ExporterTest do
     assert Exporter.output_key({:camera_frame, :hq}, config) ==
              {:camera_frame, Camera.name_for("hq")}
 
-    assert Exporter.output_key({:camera_frame, :left}, config) ==
-             {:camera_frame, Camera.name_for("left")}
+    assert Exporter.output_key({:stereo_frame, :left}, config) ==
+             {:camera_frame, Camera.name_for("stereo/left")}
 
     assert Exporter.output_key({:camera_frame, :usb}, config) == nil
   end
@@ -125,7 +143,7 @@ defmodule VisionCore.ExporterTest do
     server = VisionCore.Camera.V4L2Single.name_for("hq")
 
     assert Exporter.output?({:camera_frame, :hq, :inference})
-    refute Exporter.output?({:camera_frame, :left, :inference})
+    refute Exporter.output?({:camera_frame, :stereo, :inference})
     assert Exporter.output_key({:camera_frame, :hq}, config) == {:camera_frame, server, :view}
 
     assert Exporter.output_key({:camera_frame, :hq, :inference}, config) ==
@@ -139,11 +157,11 @@ defmodule VisionCore.ExporterTest do
 
     assert Exporter.output_key(:stereo_pair, config) == {:stereo_pair, VisionCore.Stereo.Pipeline}
 
-    assert Exporter.output_key({:camera_frame, :left}, config) ==
-             {:camera_frame, Camera.name_for("left")}
+    assert Exporter.output_key({:stereo_frame, :left}, config) ==
+             {:camera_frame, Camera.name_for("stereo/left")}
 
-    assert Exporter.output_key({:camera_frame, :right}, config) ==
-             {:camera_frame, Camera.name_for("right")}
+    assert Exporter.output_key({:stereo_frame, :right}, config) ==
+             {:camera_frame, Camera.name_for("stereo/right")}
 
     assert Exporter.output_key({:detections, :detection}, config) ==
              {:detections, :detection}
@@ -193,8 +211,9 @@ defmodule VisionCore.ExporterTest do
   test "an output no component of the configuration produces has no key" do
     for output <- [
           :stereo_pair,
+          {:stereo_frame, :left},
+          {:stereo_frame, :right},
           {:camera_frame, :left},
-          {:camera_frame, :right},
           {:camera_frame, :hq},
           {:detections, :detection},
           {:detections, :road},

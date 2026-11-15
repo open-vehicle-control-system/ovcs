@@ -43,8 +43,8 @@ defmodule VisionApiWeb.CalibrationSolveControllerTest do
                  stereoRmsPx: 0.5,
                  baselineM: 0.12,
                  cameras: [
-                   %{name: "left", file: "unit_left.yaml", rmsPx: 0.3, yaml: left_yaml},
-                   %{name: "right", file: "unit_right.yaml", rmsPx: 0.4, yaml: right_yaml}
+                   %{name: "unit/left", file: "unit_left.yaml", rmsPx: 0.3, yaml: left_yaml},
+                   %{name: "unit/right", file: "unit_right.yaml", rmsPx: 0.4, yaml: right_yaml}
                  ]
                }
              } = VisionApiWeb.CalibrationSessionJSON.session(state)

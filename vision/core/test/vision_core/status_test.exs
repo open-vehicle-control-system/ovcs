@@ -50,8 +50,8 @@ defmodule VisionCore.StatusTest do
   end
 
   defp pair do
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
-    %Pair{left_frame: frame, right_frame: %{frame | label: "right"}}
+    frame = %Frame{label: "stereo/left", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
+    %Pair{left_frame: frame, right_frame: %{frame | label: "stereo/right"}}
   end
 
   test "subscribes to no frames of a camera whose outputs cannot be made" do
@@ -74,8 +74,8 @@ defmodule VisionCore.StatusTest do
     assert snapshot.exporters == []
 
     assert snapshot.cameras == %{
-             left: %{present: false, issues: []},
-             right: %{present: false, issues: []}
+             "stereo/left" => %{present: false, issues: []},
+             "stereo/right" => %{present: false, issues: []}
            }
 
     for {_name, check} <- Map.merge(snapshot.pair, snapshot.depth),
@@ -157,7 +157,7 @@ defmodule VisionCore.StatusTest do
 
     test "is the one the stereo unit measured while the cameras run" do
       measure_one_pair()
-      for label <- ["left", "right"], do: run_camera(label)
+      for label <- ["stereo/left", "stereo/right"], do: run_camera(label)
       start_supervised!({Status, config: stereo_config()})
 
       assert %{present: true, pairs: 1} = Status.snapshot().sync
@@ -247,7 +247,7 @@ defmodule VisionCore.StatusTest do
   end
 
   test "a camera whose driver waits to start its capture program again is absent" do
-    for {label, running?} <- [{"left", true}, {"right", false}, {"hq", false}] do
+    for {label, running?} <- [{"stereo/left", true}, {"stereo/right", false}, {"hq", false}] do
       start_supervised!(
         {ReopeningCamera, name: ReopeningCamera.name_for(label), running?: running?},
         id: label
@@ -261,8 +261,11 @@ defmodule VisionCore.StatusTest do
 
     start_supervised!({Status, config: config(components)})
 
-    assert %{left: %{present: true}, right: %{present: false}, hq: %{present: false}} =
-             Status.snapshot().cameras
+    assert %{
+             "stereo/left" => %{present: true},
+             "stereo/right" => %{present: false},
+             "hq" => %{present: false}
+           } = Status.snapshot().cameras
   end
 
   test "a configured Hailo detector that is not running is reported as a failed Hailo-8" do
@@ -695,7 +698,7 @@ defmodule VisionCore.StatusTest do
 
   test "counts the pairs and frames the stereo unit of its config publishes" do
     left = spawn(fn -> Process.sleep(:infinity) end)
-    Process.register(left, Camera.name_for("left"))
+    Process.register(left, Camera.name_for("stereo/left"))
     on_exit(fn -> Process.exit(left, :kill) end)
     stereo = {:stereo, driver: Camera, left: [], right: []}
     start_supervised!({Status, config: config([stereo]), tick_ms: 200})
@@ -705,12 +708,13 @@ defmodule VisionCore.StatusTest do
       Outputs.publish({:stereo_pair, VisionCore.Stereo.Pipeline}, {:stereo_pair, pair()})
 
       Outputs.publish(
-        {:camera_frame, Camera.name_for("left")},
+        {:camera_frame, Camera.name_for("stereo/left")},
         {:camera_frame, pair().left_frame}
       )
     end
 
-    assert_receive {:vision_status, %{depth_hz: depth_hz, cameras: %{left: %{fps: fps}}}}
+    assert_receive {:vision_status,
+                    %{depth_hz: depth_hz, cameras: %{"stereo/left" => %{fps: fps}}}}
                    when depth_hz > 0.0 and fps > 0.0,
                    500
   end
@@ -764,7 +768,7 @@ defmodule VisionCore.StatusTest do
     test "is absent while it is not running" do
       start_supervised!({Status, config: hq_config()})
 
-      assert Status.snapshot().cameras.hq == %{present: false}
+      assert Status.snapshot().cameras["hq"] == %{present: false}
     end
 
     test "reports its rate over the tick and the figures its driver's live/1 gives" do
@@ -777,7 +781,7 @@ defmodule VisionCore.StatusTest do
       for _ <- 1..4,
           do: Outputs.publish({:camera_frame, NamedCamera.name_for("hq")}, {:camera_frame, frame})
 
-      assert_receive {:vision_status, %{cameras: %{hq: %{fps: fps} = hq}}} when fps > 0.0, 500
+      assert_receive {:vision_status, %{cameras: %{"hq" => %{fps: fps} = hq}}} when fps > 0.0, 500
 
       assert hq == %{
                present: true,
@@ -791,8 +795,35 @@ defmodule VisionCore.StatusTest do
     test "leaves the stereo sides' entries as they are" do
       start_supervised!({Status, config: hq_config()})
 
-      assert %{left: %{present: false, issues: []}, right: %{present: false, issues: []}} =
-               Status.snapshot().cameras
+      assert %{
+               "stereo/left" => %{present: false, issues: []},
+               "stereo/right" => %{present: false, issues: []}
+             } = Status.snapshot().cameras
+    end
+
+    test "named left, is counted apart from the stereo unit's left camera" do
+      for name <- ["left", "stereo/left"],
+          do: start_supervised!(%{id: name, start: {NamedCamera, :start_link, [name]}})
+
+      components = [
+        {:stereo, driver: NamedCamera, left: [], right: []},
+        {:camera, name: :left, driver: NamedCamera}
+      ]
+
+      start_supervised!({Status, config: config(components), tick_ms: 200})
+      :ok = Status.subscribe()
+
+      for _ <- 1..4 do
+        frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 0, jpeg: <<>>}
+        Outputs.publish({:camera_frame, NamedCamera.name_for("left")}, {:camera_frame, frame})
+      end
+
+      assert_receive {:vision_status, %{cameras: %{"left" => %{fps: fps}} = cameras}}
+                     when fps > 0.0,
+                     500
+
+      assert %{present: true, fps: +0.0} = cameras["stereo/left"]
+      assert %{present: false} = cameras["stereo/right"]
     end
   end
 

@@ -114,13 +114,13 @@ defmodule VisionCore.Detection.SupervisorTest do
   test "is left down, saying why, with a name the unit's topics already take" do
     Process.flag(:trap_exit, true)
 
-    for name <- [:stereo, :left, :right, :depth, :disparity, :points] do
+    for name <- [:stereo, :depth, :disparity, :points] do
       log =
         capture_log(fn -> assert Supervisor.start_link(@options ++ [name: name]) == :ignore end)
 
       assert log =~ "failed to start"
       assert log =~ "^[a-z][a-z0-9_]*$"
-      assert log =~ "not one of :stereo, :left"
+      assert log =~ "not one of :stereo, :depth"
       assert log =~ "got #{inspect(name)}"
     end
   end

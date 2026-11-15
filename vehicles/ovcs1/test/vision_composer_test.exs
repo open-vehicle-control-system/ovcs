@@ -237,8 +237,8 @@ defmodule Ovcs1.VisionComposerTest do
     assert {:ok, specs} = VisionCore.Exporter.output_specs(VisionCore.Ros2.BagExporter, options)
 
     assert Enum.map(specs, &elem(&1, 0)) == [
-             {:camera_frame, :left},
-             {:camera_frame, :right},
+             {:stereo_frame, :left},
+             {:stereo_frame, :right},
              {:camera_frame, :center, :half_jpeg},
              :stereo_pair,
              {:detections, :objects},

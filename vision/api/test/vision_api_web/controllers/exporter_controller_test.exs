@@ -56,6 +56,7 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
       components: [
         {:stereo, driver: Camera, left: [], right: []},
         {:camera, name: :hq, driver: NamedCamera},
+        {:camera, name: :left, driver: NamedCamera},
         {:detector, backend: VisionCore.Detection.Backend.Stub, max_hz: 4},
         {:detector, name: :road, backend: VisionCore.Detection.Backend.Stub, max_hz: 2},
         {:detector,
@@ -80,12 +81,13 @@ defmodule VisionApiWeb.ExporterControllerWithUnitTest do
              conn |> get("/api/exporters") |> json_response(200)
 
     assert outputs == [
-             %{"name" => "camera_frame:left", "maxHz" => 5},
-             %{"name" => "camera_frame:right", "maxHz" => 5},
-             %{"name" => "stereo_pair", "maxHz" => 5},
-             %{"name" => "camera_frame:hq", "maxHz" => 5},
-             %{"name" => "detections:detection", "maxHz" => 4, "source" => "left"},
-             %{"name" => "detections:road", "maxHz" => 2, "source" => "left"},
+             %{"name" => "stereo_frame:left", "maxHz" => 5, "source" => "stereo/left"},
+             %{"name" => "stereo_frame:right", "maxHz" => 5, "source" => "stereo/right"},
+             %{"name" => "stereo_pair", "maxHz" => 5, "source" => "stereo/depth"},
+             %{"name" => "camera_frame:hq", "maxHz" => 5, "source" => "hq"},
+             %{"name" => "camera_frame:left", "maxHz" => 5, "source" => "left"},
+             %{"name" => "detections:detection", "maxHz" => 4, "source" => "stereo/left"},
+             %{"name" => "detections:road", "maxHz" => 2, "source" => "stereo/left"},
              %{"name" => "detections:hq_people", "maxHz" => 3, "source" => "hq"},
              %{"name" => "segmentation:road_surface", "maxHz" => 1, "source" => "hq"}
            ]
@@ -118,7 +120,7 @@ defmodule VisionApiWeb.ExporterControllerWithVideoTest do
              conn |> get("/api/exporters") |> json_response(200)
 
     assert outputs == [
-             %{"name" => "camera_frame:hq", "maxHz" => 5},
+             %{"name" => "camera_frame:hq", "maxHz" => 5, "source" => "hq"},
              %{"name" => "camera_video:hq:full_h264", "maxHz" => nil}
            ]
   end
@@ -169,7 +171,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
       status: {:off, "Not running"},
       outputs: [
         %{output: :stereo_pair, max_hz: 2},
-        %{output: {:camera_frame, :left}, max_hz: nil},
+        %{output: {:stereo_frame, :left}, max_hz: nil, source: "stereo/left"},
         %{output: {:camera_frame, :hq, :inference}, max_hz: 10},
         %{output: {:detections, :detection}, max_hz: nil},
         %{output: {:detections, :road}, max_hz: 3, source: "hq"},
@@ -186,7 +188,7 @@ defmodule VisionApiWeb.ExporterJSONTest do
              module: "MyCar.Recorder",
              outputs: [
                %{name: "stereo_pair", maxHz: 2},
-               %{name: "camera_frame:left", maxHz: nil},
+               %{name: "stereo_frame:left", maxHz: nil, source: "stereo/left"},
                %{name: "camera_frame:hq:inference", maxHz: 10},
                %{name: "detections:detection", maxHz: nil},
                %{name: "detections:road", maxHz: 3, source: "hq"},

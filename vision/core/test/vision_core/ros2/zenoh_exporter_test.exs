@@ -152,6 +152,42 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
   end
 
   describe "check/1" do
+    test "refuses a topic_prefix that puts a camera or a pipeline on a stereo camera's topics" do
+      stub = VisionCore.Detection.Backend.Stub
+
+      config =
+        update_in(
+          config(Camera).components,
+          &(&1 ++
+              [{:camera, name: :left, driver: Camera}, {:detector, backend: stub, name: :right}])
+        )
+
+      published = fn exporter_options ->
+        Keyword.put(options(Camera, [stereo: []] ++ exporter_options), :config, config)
+      end
+
+      assert ZenohExporter.check(published.(cameras: [], detections: [pipelines: [:right]])) ==
+               :ok
+
+      assert ZenohExporter.check(published.(cameras: [topic_prefix: "stereo"])) ==
+               {:error,
+                "its cameras: topic_prefix \"stereo\" puts the camera :left on the stereo " <>
+                  "unit's topics, stereo/left"}
+
+      assert ZenohExporter.check(
+               published.(detections: [pipelines: [:right], topic_prefix: "stereo"])
+             ) ==
+               {:error,
+                "its detections: topic_prefix \"stereo\" puts the pipeline :right on the stereo " <>
+                  "unit's topics, stereo/right"}
+
+      assert ZenohExporter.check(
+               Keyword.put(published.(cameras: [topic_prefix: "stereo"]), :stereo,
+                 topic_prefix: "front"
+               )
+             ) == :ok
+    end
+
     test "refuses detections: that is no keyword list, or names no detection pipeline has" do
       with_detectors = fn detections ->
         Keyword.update!(options(Camera, detections: detections), :config, fn config ->
@@ -265,8 +301,8 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
     test "reads the stereo unit's pairs and frames, and the detections, each when it publishes them" do
       assert ZenohExporter.outputs(stereo: [], detections: []) == [
                :stereo_pair,
-               {:camera_frame, :left},
-               {:camera_frame, :right},
+               {:stereo_frame, :left},
+               {:stereo_frame, :right},
                {:detections, :detection}
              ]
 
@@ -275,7 +311,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
     test "reads the stereo outputs its stereo options publish" do
       assert ZenohExporter.outputs(stereo: [sides: [:left], pair_messages: []]) ==
-               [{:camera_frame, :left}]
+               [{:stereo_frame, :left}]
     end
 
     test "reads the detections of each pipeline its detection options list" do
@@ -451,8 +487,8 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       start_runner(options(OtherCamera, stereo: []), config(OtherCamera))
 
       Outputs.publish(
-        {:camera_frame, OtherCamera.name_for("left")},
-        {:camera_frame, jpeg_frame("left", 1)}
+        {:camera_frame, OtherCamera.name_for("stereo/left")},
+        {:camera_frame, %{jpeg_frame("stereo/left", 1) | frame_id: "left_optical"}}
       )
 
       assert_receive {:published, "stereo/left/image_raw/compressed", %CompressedImage{} = image},
@@ -490,6 +526,32 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
             do: options[:service_name]
 
       assert services == ["stereo/left/set_camera_info", "stereo/right/set_camera_info"]
+    end
+
+    test "publishes a camera of its own named left beside the stereo unit's left camera" do
+      config =
+        update_in(
+          config(OtherCamera).components,
+          &(&1 ++ [{:camera, name: :left, driver: OtherCamera}])
+        )
+
+      options = Keyword.put(options(OtherCamera, stereo: [], cameras: []), :config, config)
+      start_runner(options, config)
+
+      for label <- ["left", "stereo/left"],
+          do:
+            Outputs.publish(
+              {:camera_frame, OtherCamera.name_for(label)},
+              {:camera_frame, jpeg_frame(label, 1)}
+            )
+
+      assert_receive {:published, "left/image_raw/compressed", %CompressedImage{} = camera}, 1_000
+      assert camera.header.frame_id == "left_optical"
+
+      assert_receive {:published, "stereo/left/image_raw/compressed", %CompressedImage{} = side},
+                     1_000
+
+      assert side.header.frame_id == "stereo/left_optical"
     end
 
     test "publishes each pair, in the frame its left frame carries" do
@@ -566,8 +628,8 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
     defp left_camera_info do
       Outputs.publish(
-        {:camera_frame, OtherCamera.name_for("left")},
-        {:camera_frame, jpeg_frame("left", 1)}
+        {:camera_frame, OtherCamera.name_for("stereo/left")},
+        {:camera_frame, %{jpeg_frame("stereo/left", 1) | frame_id: "left_optical"}}
       )
 
       assert_receive {:published, "stereo/left/camera_info", %CameraInfo{} = camera_info}, 1_000
@@ -676,7 +738,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
     {:ok, state} = ZenohExporter.init(Keyword.put(options(Camera, stereo: []), :publish, publish))
     jpeg = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, jpeg: <<0xFF, 0xD8>>}
 
-    {:ok, state} = ZenohExporter.handle_output({:camera_frame, :left}, jpeg, state)
+    {:ok, state} = ZenohExporter.handle_output({:stereo_frame, :left}, jpeg, state)
 
     assert_received {:published, "stereo/left/image_raw/compressed"}
     assert [publish_ns] = state.telemetry.stages.pub_left
@@ -886,9 +948,9 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
         )
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
-      {:ready, {:camera_frame, :left}, state} = encoded(state)
+      {:ready, {:stereo_frame, :left}, state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_raw/compressed",
                        %CompressedImage{data: raw}}
@@ -931,7 +993,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
       assert_receive {:encoding, encode}
       {:ok, state} = ZenohExporter.handle_output(:stereo_pair, pair(), state)
@@ -941,7 +1003,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
       GenServer.reply(encode, {:ok, "the jpeg"})
 
-      assert {:ready, {:camera_frame, :left}, state} = encoded(state)
+      assert {:ready, {:stereo_frame, :left}, state} = encoded(state)
 
       assert_received {:published, "stereo/left/image_raw/compressed",
                        %CompressedImage{data: "the jpeg"}}
@@ -955,9 +1017,9 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       assert ZenohExporter.publishing(state) == %{}
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
-      assert [{reference, {:camera_frame, :left}}] = Map.to_list(ZenohExporter.publishing(state))
+      assert [{reference, {:stereo_frame, :left}}] = Map.to_list(ZenohExporter.publishing(state))
       assert is_reference(reference)
 
       assert_receive {:encoding, encode}
@@ -971,12 +1033,12 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+        ZenohExporter.handle_output({:stereo_frame, :right}, grey_frame("stereo/right"), state)
 
       assert_receive {:encoding, encode}
       GenServer.reply(encode, {:error, :timeout})
 
-      assert {:ready, {:camera_frame, :right}, _state} = encoded(state)
+      assert {:ready, {:stereo_frame, :right}, _state} = encoded(state)
       refute_received {:published, "stereo/right/image_raw/compressed", _image}
       assert_received {:published, "stereo/right/camera_info", %CameraInfo{}}
     end
@@ -986,16 +1048,16 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: gone))
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
-      assert {:ready, {:camera_frame, :left}, _state} = encoded(state)
+      assert {:ready, {:stereo_frame, :left}, _state} = encoded(state)
     end
 
     test "keeps the calibration read while it was encoded", %{codec: codec} do
       {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
       assert_receive {:encoding, encode}
       reloaded = put_in(state.stereo.sides["left"].camera_info, :read_since)
@@ -1010,17 +1072,25 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
         ZenohExporter.init(options(Camera, stereo: [raw_image_max_hz: 1], jpeg_codec: codec))
 
       {:busy, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, grey_frame("stereo/left"), state)
 
       assert_receive {:encoding, encode}
       GenServer.reply(encode, {:ok, "the jpeg"})
       {:ready, _output, state} = encoded(state)
 
       assert {:ok, state} =
-               ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+               ZenohExporter.handle_output(
+                 {:stereo_frame, :left},
+                 grey_frame("stereo/left"),
+                 state
+               )
 
       assert {:ok, _state} =
-               ZenohExporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 3), state)
+               ZenohExporter.handle_output(
+                 {:stereo_frame, :left},
+                 jpeg_frame("stereo/left", 3),
+                 state
+               )
     end
 
     test "of a camera's named output is ready under the output it was handed as", %{codec: codec} do
@@ -1832,7 +1902,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       {:ok, state} = ZenohExporter.handle_output(:stereo_pair, pair, state)
 
       {:ok, state} =
-        ZenohExporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 4), state)
+        ZenohExporter.handle_output({:stereo_frame, :left}, jpeg_frame("stereo/left", 4), state)
 
       {:ok, state} = ZenohExporter.handle_output({:camera_frame, :hq}, hq_frame, state)
 
@@ -1868,7 +1938,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       {:ok, state} = ZenohExporter.init(options(Camera, stereo: stereo))
 
       {:ok, _state} =
-        ZenohExporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+        ZenohExporter.handle_output({:stereo_frame, :right}, grey_frame("stereo/right"), state)
 
       assert_received {:published, "stereo/right/image_raw", %Image{} = image}
       assert {image.encoding, image.step, image.data} == {"mono8", 2, <<0, 64, 128, 255>>}

@@ -11,7 +11,10 @@ defmodule VisionApiWeb.CalibrationControllerTest do
     assert %{
              "type" => "calibrations",
              "id" => "unit",
-             "attributes" => %{"kind" => "stereo", "cameras" => [%{"name" => "left"}, _right]}
+             "attributes" => %{
+               "kind" => "stereo",
+               "cameras" => [%{"name" => "unit/left"}, _right]
+             }
            } = stereo
 
     assert %{
@@ -38,13 +41,27 @@ defmodule VisionApiWeb.CalibrationControllerTest do
                "error" => nil,
                "pose" => nil,
                "cameras" => [
-                 %{"name" => "left", "file" => "unit_left.yaml", "fx" => 900.0},
+                 %{"name" => "unit/left", "file" => "unit_left.yaml", "fx" => 900.0},
                  %{"name" => "hq", "file" => "hq.yaml", "fx" => 900.0}
                ]
              }
            } = pose
 
     assert stereo["attributes"]["pose"] == nil
+  end
+
+  test "GET /api/calibrations names each camera as the preview stream its frames are shown on",
+       %{conn: conn, config: config} do
+    %{"data" => calibrations} = conn |> get("/api/calibrations") |> json_response(200)
+    streams = VisionCore.Preview.streams(config)
+
+    names =
+      for %{"attributes" => %{"cameras" => cameras}} <- calibrations,
+          %{"name" => name} <- cameras,
+          do: name
+
+    assert names == ["unit/left", "unit/right", "hq", "unit/left", "hq"]
+    assert Enum.all?(names, &(&1 in streams))
   end
 
   test "GET /api/calibrations/:id renders a camera's pose in use, its translation in metres and the distance between the cameras in millimetres",
@@ -104,7 +121,7 @@ defmodule VisionApiWeb.CalibrationControllerTest do
                  "rectifiedFx" => 880.0,
                  "cameras" => [
                    %{
-                     "name" => "left",
+                     "name" => "unit/left",
                      "file" => "unit_left.yaml",
                      "imageWidth" => 1280,
                      "imageHeight" => 720,
@@ -115,7 +132,7 @@ defmodule VisionApiWeb.CalibrationControllerTest do
                      "distortion" => [0.1, -0.2 | _],
                      "yaml" => "image_width: 1280" <> _
                    },
-                   %{"name" => "right", "file" => "unit_right.yaml", "fx" => 900.0}
+                   %{"name" => "unit/right", "file" => "unit_right.yaml", "fx" => 900.0}
                  ]
                }
              }
@@ -153,7 +170,7 @@ defmodule VisionApiWeb.CalibrationControllerTest do
 
     assert attributes["error"] =~ "cannot read"
 
-    assert [%{"name" => "left", "fx" => nil, "yaml" => nil}, %{"fx" => 900.0}] =
+    assert [%{"name" => "unit/left", "fx" => nil, "yaml" => nil}, %{"fx" => 900.0}] =
              attributes["cameras"]
 
     assert attributes["baselineM"] == nil

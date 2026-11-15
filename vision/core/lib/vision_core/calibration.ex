@@ -28,9 +28,6 @@ defmodule VisionCore.Calibration do
   alias VisionCore.Stereo.Calibration, as: StereoCalibration
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
-  @sides [:left, :right]
-  @pose_left_label "left"
-
   @typedoc """
   A calibration target: its `id`, its `kind`, a camera's `name`, the
   labels of the frames its cameras send, the `VisionCore.Outputs` keys
@@ -332,9 +329,9 @@ defmodule VisionCore.Calibration do
             id: cameras[:prefix],
             kind: :stereo,
             name: nil,
-            labels: Enum.map(@sides, &Atom.to_string/1),
+            labels: Keyword.values(StereoSupervisor.labels(config)),
             frame_keys:
-              for({{:camera_frame, _side}, key} <- StereoSupervisor.outputs(config), do: key),
+              for({{:stereo_frame, _side}, key} <- StereoSupervisor.outputs(config), do: key),
             servers: for({_driver, server} <- StereoSupervisor.cameras(config), do: server)
           }
         ]
@@ -347,12 +344,18 @@ defmodule VisionCore.Calibration do
   # The camera's pose relative to the pair: its frames first, whose image the coverage is measured in.
   defp with_pose(camera, []), do: [camera]
 
-  defp with_pose(camera, [%{frame_keys: [left_key, _right_key], servers: [left_server, _right]}]) do
+  defp with_pose(camera, [
+         %{
+           labels: [left_label, _right],
+           frame_keys: [left_key, _right_key],
+           servers: [left_server, _]
+         }
+       ]) do
     pose = %{
       camera
       | id: "#{camera.id}-pose",
         kind: :pose,
-        labels: camera.labels ++ [@pose_left_label],
+        labels: camera.labels ++ [left_label],
         frame_keys: camera.frame_keys ++ [left_key],
         servers: camera.servers ++ [left_server]
     }
@@ -379,8 +382,8 @@ defmodule VisionCore.Calibration do
   defp target_in_use(config, %{kind: :stereo, id: prefix}) do
     with {:ok, in_use} <- StereoCalibration.in_use(config) do
       cameras =
-        for side <- @sides,
-            do: camera(Atom.to_string(side), "#{prefix}_#{side}.yaml", in_use[side])
+        for {side, label} <- StereoSupervisor.labels(config),
+            do: camera(label, "#{prefix}_#{side}.yaml", in_use[side])
 
       {:ok,
        %{
@@ -428,7 +431,7 @@ defmodule VisionCore.Calibration do
          stored_at: in_use.stored_at,
          can_reset: in_use.can_reset,
          cameras: [
-           camera(@pose_left_label, "#{pair.prefix}_left.yaml", pair.left),
+           camera(left_label(config), "#{pair.prefix}_left.yaml", pair.left),
            camera(label, "#{label}.yaml", own.camera)
          ],
          baseline_m: nil,
@@ -437,6 +440,8 @@ defmodule VisionCore.Calibration do
        }}
     end
   end
+
+  defp left_label(config), do: Keyword.fetch!(StereoSupervisor.labels(config), :left)
 
   defp pose_in_use(%{pose: nil}, _name), do: nil
 

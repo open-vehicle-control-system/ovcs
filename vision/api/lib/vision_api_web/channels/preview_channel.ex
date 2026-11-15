@@ -1,10 +1,12 @@
 defmodule VisionApiWeb.PreviewChannel do
   @moduledoc """
   Pushes one `VisionCore.Preview` stream as `"frame"` events whose
-  binary payload is the JPEG itself. The topic names the stream:
-  `"preview:left"`, `"preview:right"`, `"preview:depth"` or
-  `"preview:<name>"` for the frames of the unit's camera of its own
-  `<name>`; a name that is none of the unit's cameras is refused.
+  binary payload is the JPEG itself. The topic names the stream
+  (`VisionCore.Preview.streams/1`): `"preview:<prefix>/left"`,
+  `"preview:<prefix>/right"` and `"preview:<prefix>/depth"` for the
+  stereo unit's cameras and depth, under its prefix, `stereo` by
+  default, or `"preview:<name>"` for the frames of the unit's camera of
+  its own `<name>`; a stream the unit has not is refused.
 
   The client pushes `"ack"` once it has shown a frame, and only then is
   the next one sent, so a slow link gets the latest frame instead of a
@@ -20,39 +22,21 @@ defmodule VisionApiWeb.PreviewChannel do
 
   alias VisionApiWeb.{PreviewJSON, SourceMonitor}
 
-  @stereo_streams %{"left" => :left, "right" => :right, "depth" => :depth}
-
   @impl Phoenix.Channel
-  def join("preview:" <> stream_name, _payload, socket) do
-    case stream(stream_name) do
-      {:ok, stream} ->
-        socket
-        |> assign(:stream, stream)
-        |> SourceMonitor.join(VisionCore.Preview, fn -> subscribe(stream) end)
+  def join("preview:" <> stream, _payload, socket) do
+    config = VisionCore.Application.active_config() || %VisionCore.Config{}
 
-      :error ->
-        {:error, %{reason: "unknown stream"}}
-    end
-  end
+    if stream in VisionCore.Preview.streams(config) do
+      subscribe =
+        if stream == VisionCore.Preview.depth_stream(config),
+          do: fn -> subscribe_depth(stream) end,
+          else: fn -> VisionCore.Preview.subscribe(stream) end
 
-  # A name among the configured cameras' atoms, compared as text: a client's topics cannot grow the atom table.
-  defp stream(stream_name) do
-    case Map.fetch(@stereo_streams, stream_name) do
-      {:ok, stream} -> {:ok, stream}
-      :error -> camera_stream(stream_name)
-    end
-  end
-
-  defp camera_stream(stream_name) do
-    case VisionCore.Application.active_config() do
-      nil ->
-        :error
-
-      config ->
-        Enum.find_value(VisionCore.Camera.Unit.cameras(config), :error, fn {name, _driver,
-                                                                            _server} ->
-          if Atom.to_string(name) == stream_name, do: {:ok, name}
-        end)
+      socket
+      |> assign(:stream, stream)
+      |> SourceMonitor.join(VisionCore.Preview, subscribe)
+    else
+      {:error, %{reason: "unknown stream"}}
     end
   end
 
@@ -79,11 +63,9 @@ defmodule VisionApiWeb.PreviewChannel do
     do: SourceMonitor.handle_down(monitor_reference, socket)
 
   # Every join hears the range in force, as after a change: a client rejoining may have missed one.
-  defp subscribe(:depth) do
-    :ok = VisionCore.Preview.subscribe(:depth)
+  defp subscribe_depth(stream) do
+    :ok = VisionCore.Preview.subscribe(stream)
     send(self(), {:vision_preview_options, VisionCore.Preview.options()})
     :ok
   end
-
-  defp subscribe(stream), do: VisionCore.Preview.subscribe(stream)
 end

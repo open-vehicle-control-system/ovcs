@@ -17,7 +17,9 @@ defmodule VisionCore.PipelinesTest do
   test "tells a valid pipeline name from an invalid one" do
     assert Pipelines.name?(:road_signs)
     refute Pipelines.name?(:stereo)
-    refute Pipelines.name?(:left)
+    assert Pipelines.name?(:left)
+    assert Pipelines.name?(:right)
+    refute Pipelines.name?(:depth)
     assert Pipelines.name?(:device)
     assert Pipelines.name?(:detections)
     assert Pipelines.name?(:live)

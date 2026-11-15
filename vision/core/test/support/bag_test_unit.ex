@@ -73,7 +73,7 @@ defmodule VisionCore.BagTestUnit do
   @spec stereo_frame(:left | :right, integer()) :: Frame.t()
   def stereo_frame(side, capture_ns) do
     %Frame{
-      label: Atom.to_string(side),
+      label: "stereo/#{side}",
       frame_id: "stereo_#{side}_optical",
       width: 4,
       height: 2,
@@ -104,7 +104,7 @@ defmodule VisionCore.BagTestUnit do
 
     %Pair{
       left_frame: left,
-      right_frame: %{left | label: "right", frame_id: "stereo_right_optical"},
+      right_frame: %{left | label: "stereo/right", frame_id: "stereo_right_optical"},
       left: Nx.broadcast(Nx.u8(0), {4, 8}),
       geometry: %{
         focal_length_px: 600.0,
@@ -190,8 +190,8 @@ defmodule VisionCore.BagTestUnit do
   @spec values(integer()) :: [{VisionCore.Exporter.output(), VisionCore.Exporter.value()}]
   def values(capture_ns) do
     [
-      {{:camera_frame, :left}, stereo_frame(:left, capture_ns)},
-      {{:camera_frame, :right}, stereo_frame(:right, capture_ns)},
+      {{:stereo_frame, :left}, stereo_frame(:left, capture_ns)},
+      {{:stereo_frame, :right}, stereo_frame(:right, capture_ns)},
       {:stereo_pair, pair(capture_ns)},
       {{:camera_frame, :hq, :view_jpeg}, camera_frame(capture_ns)},
       {{:camera_frame, :usb}, grey_camera_frame(capture_ns)},

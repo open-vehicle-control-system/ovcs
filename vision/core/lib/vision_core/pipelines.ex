@@ -14,17 +14,19 @@ defmodule VisionCore.Pipelines do
 
   A name is a ROS 2 parameter name segment, so it holds no `.` or `-`,
   and is none of the reserved names: `:stereo`, the stereo pipeline's and
-  its topics' default namespace; `:left`, `:right`, `:depth`,
-  `:disparity` and `:points`, the first segments of the stereo unit's
-  topics, which a camera or pipeline whose exporter gives it the stereo
-  unit's prefix as its `:topic_prefix` would publish among.
+  its topics' default namespace; `:depth`, `:disparity` and `:points`,
+  first segments of the stereo unit's topics, which a camera or pipeline
+  whose exporter gives it the stereo unit's prefix as its
+  `:topic_prefix` would publish among. `:left` and `:right` are names: the
+  stereo unit's cameras are `<prefix>/left` and `<prefix>/right`
+  (`VisionCore.Stereo.Supervisor.labels/1`), and the ROS 2 exporter
+  refuses a `:topic_prefix` that puts a camera or pipeline on a stereo
+  side's topics.
   """
 
   @name_pattern ~r/^[a-z][a-z0-9_]*$/
   @reserved_names [
     :stereo,
-    :left,
-    :right,
     :depth,
     :disparity,
     :points

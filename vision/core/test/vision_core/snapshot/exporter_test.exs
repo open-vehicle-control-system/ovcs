@@ -62,6 +62,7 @@ defmodule VisionCore.Snapshot.ExporterTest do
       parameters: [],
       configuration: %{"components" => []},
       calibration: %{left: "left calibration\n", right: "right calibration\n"},
+      camera_labels: [left: "stereo/left", right: "stereo/right"],
       hostname: "unit-1"
     }
   end
@@ -293,7 +294,7 @@ defmodule VisionCore.Snapshot.ExporterTest do
 
   defp status_snapshot(depth_hz),
     do: %{
-      cameras: %{left: %{present: true}, right: %{present: true}},
+      cameras: %{"stereo/left" => %{present: true}, "stereo/right" => %{present: true}},
       sync: %{present: true},
       depth_hz: depth_hz,
       cpu_percent: 20.0,

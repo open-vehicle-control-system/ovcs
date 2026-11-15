@@ -46,10 +46,12 @@ defmodule VisionCore.Status do
   and the depth rate is zero; the sync is absent too while neither camera
   runs, as once the stereo unit gave up.
 
-  Each camera of its own (`VisionCore.Camera.Unit.cameras/1`) is reported
-  beside the sides under its name, with its rate and the figures its
-  driver's `live/1` gives, but no `:issues`, as the pair checks do not
-  judge it.
+  `:cameras` holds each camera by its name as text: the stereo unit's
+  under their labels, `<prefix>/left` and `<prefix>/right`
+  (`VisionCore.Stereo.Supervisor.labels/1`), and each camera of its own
+  (`VisionCore.Camera.Unit.cameras/1`) under its name, with its rate and
+  the figures its driver's `live/1` gives, but no `:issues`, as the pair
+  checks do not judge it.
 
   The NPU's load is the share of the last tick its pipelines spent
   inferring, summed over them and clamped to 100, and a pipeline's
@@ -124,7 +126,7 @@ defmodule VisionCore.Status do
           dropped: %{Exporter.output() => non_neg_integer()}
         }
   @type snapshot :: %{
-          cameras: %{required(atom()) => camera()},
+          cameras: %{required(String.t()) => camera()},
           sync: map(),
           npu:
             %{
@@ -212,6 +214,7 @@ defmodule VisionCore.Status do
     if cameras != [], do: :ok = Outputs.subscribe(Pairer.capped_key())
 
     own_names = Enum.map(own_cameras, fn {name, _driver, _server} -> name end)
+    labels = StereoSupervisor.labels(config)
     Process.send_after(self(), :tick, tick_ms)
 
     {:ok,
@@ -219,6 +222,8 @@ defmodule VisionCore.Status do
        tick_ms: tick_ms,
        config: config,
        cameras: cameras,
+       labels: labels,
+       count_keys: count_keys(labels, own_names),
        latencies: if(cameras == [], do: %{}, else: %{stereo: @no_latencies}),
        own_cameras: own_cameras,
        npu_backends: npu_backends(config),
@@ -291,9 +296,9 @@ defmodule VisionCore.Status do
   end
 
   def handle_cast({:camera_frame, %Frame{label: label}}, state) do
-    case Enum.find(Map.keys(state.counts), &(Atom.to_string(&1) == label)) do
-      nil -> {:noreply, state}
-      key -> {:noreply, count(state, key)}
+    case Map.fetch(state.count_keys, label) do
+      {:ok, key} -> {:noreply, count(state, key)}
+      :error -> {:noreply, state}
     end
   end
 
@@ -316,7 +321,13 @@ defmodule VisionCore.Status do
   def handle_info(_message, state), do: {:noreply, state}
 
   defp zero_counts(own_names),
-    do: Map.new([:left, :right, :depth, :capped | own_names], &{&1, 0})
+    do: Map.new([:left, :right, :depth, :capped | Enum.map(own_names, &{:camera, &1})], &{&1, 0})
+
+  # The count each frame label adds to: a stereo camera's side, a camera of its own's `{:camera, name}`.
+  defp count_keys(labels, own_names) do
+    sides = Map.new(labels, fn {side, label} -> {label, side} end)
+    Map.merge(sides, Map.new(own_names, &{Atom.to_string(&1), {:camera, &1}}))
+  end
 
   defp count(state, key), do: %{state | counts: Map.update!(state.counts, key, &(&1 + 1))}
 
@@ -450,7 +461,9 @@ defmodule VisionCore.Status do
     state = %{state | pair: pair, depth: depth}
 
     sides =
-      Map.new(cameras, fn {side, camera} -> {side, Map.put(camera, :issues, issues[side])} end)
+      Map.new(cameras, fn {side, camera} ->
+        {Keyword.fetch!(state.labels, side), Map.put(camera, :issues, issues[side])}
+      end)
 
     snapshot = %{
       cameras: Map.merge(own_cameras(state, replies), sides),
@@ -607,7 +620,7 @@ defmodule VisionCore.Status do
 
   defp own_calls(%{own_cameras: own_cameras}) do
     for {name, driver, server} <- own_cameras,
-        call <- camera_calls({:own, name}, {:running, name}, driver, server),
+        call <- camera_calls({:own, name}, {:running, {:own, name}}, driver, server),
         into: %{},
         do: call
   end
@@ -635,14 +648,14 @@ defmodule VisionCore.Status do
 
   defp own_cameras(state, replies) do
     Map.new(state.own_cameras, fn {name, _driver, server} ->
-      if present?(server, replies, {:running, name}),
+      if present?(server, replies, {:running, {:own, name}}),
         do:
-          {name,
+          {Atom.to_string(name),
            Map.merge(
-             %{present: true, fps: state.rates_hz[name]},
+             %{present: true, fps: state.rates_hz[{:camera, name}]},
              Map.get(replies, {:own, name}, %{})
            )},
-        else: {name, %{present: false}}
+        else: {Atom.to_string(name), %{present: false}}
     end)
   end
 

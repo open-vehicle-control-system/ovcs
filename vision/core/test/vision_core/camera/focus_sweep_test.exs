@@ -60,7 +60,7 @@ defmodule VisionCore.Camera.FocusSweepTest do
   end
 
   test "without :set_focus, sets the focus on the left camera of the config's stereo unit" do
-    Process.register(self(), FocusCamera.name_for("left"))
+    Process.register(self(), FocusCamera.name_for("stereo/left"))
     config = %VisionCore.Config{components: [{:stereo, driver: FocusCamera, left: [], right: []}]}
 
     assert {:ok, %{best: 400}} =

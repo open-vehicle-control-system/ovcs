@@ -78,7 +78,7 @@ defmodule VisionCore.Ros2.BagExporter.Preset do
   """
   @spec kind(VisionCore.Exporter.output()) :: kind() | nil
   def kind(:stereo_pair), do: :pairs
-  def kind({:camera_frame, side}) when side in [:left, :right], do: :sides
+  def kind({:stereo_frame, _side}), do: :sides
   def kind({:camera_frame, _name}), do: :cameras
   def kind({:camera_frame, _name, _output}), do: :cameras
   def kind({:camera_video, _name, _output}), do: nil

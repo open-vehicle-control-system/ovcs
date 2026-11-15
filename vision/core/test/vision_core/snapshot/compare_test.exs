@@ -423,6 +423,7 @@ defmodule VisionCore.Snapshot.CompareTest do
       parameters: Keyword.get(options, :parameters, [parameter("stereo.block_size", 5)]),
       configuration: %{"components" => []},
       calibration: %{left: "left\n", right: "right\n"},
+      camera_labels: [left: "stereo/left", right: "stereo/right"],
       pairs:
         [matched, sharpness, total_ms]
         |> Enum.zip()

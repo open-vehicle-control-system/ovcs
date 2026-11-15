@@ -42,7 +42,7 @@ defmodule VisionCore.Calibration.SessionTest do
     on_exit(fn -> Process.exit(camera, :kill) end)
   end
 
-  defp run_cameras, do: Enum.each(["left", "right"], &run_camera/1)
+  defp run_cameras, do: Enum.each(["stereo/left", "stereo/right"], &run_camera/1)
 
   # A detection that reports each call and answers what the frame carries.
   defp detect_stub(options \\ []) do
@@ -78,8 +78,8 @@ defmodule VisionCore.Calibration.SessionTest do
   end
 
   defp publish_pair(capture_ms, corners) do
-    publish("left", capture_ms, {:ok, corners})
-    publish("right", capture_ms, {:ok, corners})
+    publish("stereo/left", capture_ms, {:ok, corners})
+    publish("stereo/right", capture_ms, {:ok, corners})
   end
 
   defp capture(board) do
@@ -103,7 +103,7 @@ defmodule VisionCore.Calibration.SessionTest do
 
   defp count_left_detections(count) do
     receive do
-      {:detect, "left", _capture_ms, _running} -> count_left_detections(count + 1)
+      {:detect, "stereo/left", _capture_ms, _running} -> count_left_detections(count + 1)
     after
       0 -> count
     end
@@ -161,16 +161,16 @@ defmodule VisionCore.Calibration.SessionTest do
     publish_pair(0, top_left())
     assert_receive {:calibration_session, %{samples: 1, detection: detection} = state}
     assert detection.sample
-    assert [{x, y} | _] = detection.views["left"]
+    assert [{x, y} | _] = detection.views["stereo/left"]
     assert_in_delta x, 10 / @width, 1.0e-9
     assert_in_delta y, 10 / @height, 1.0e-9
-    assert length(detection.views["right"]) == 12
+    assert length(detection.views["stereo/right"]) == 12
     assert state.board == board
 
     publish_pair(100, top_left())
 
     assert_receive {:calibration_session,
-                    %{samples: 1, detection: %{sample: false, views: %{"left" => [_ | _]}}}}
+                    %{samples: 1, detection: %{sample: false, views: %{"stereo/left" => [_ | _]}}}}
 
     publish_pair(200, bottom_right())
     assert_receive {:calibration_session, %{samples: 2, detection: %{sample: true}} = state}
@@ -183,13 +183,16 @@ defmodule VisionCore.Calibration.SessionTest do
     start_session()
     capture(board)
 
-    publish("left", 0, {:ok, top_left()})
-    publish("right", 0, :not_found)
+    publish("stereo/left", 0, {:ok, top_left()})
+    publish("stereo/right", 0, :not_found)
 
     assert_receive {:calibration_session,
                     %{
                       samples: 0,
-                      detection: %{views: %{"left" => [_ | _], "right" => nil}, sample: false}
+                      detection: %{
+                        views: %{"stereo/left" => [_ | _], "stereo/right" => nil},
+                        sample: false
+                      }
                     }}
   end
 
@@ -197,13 +200,13 @@ defmodule VisionCore.Calibration.SessionTest do
     start_session(pair_tolerance_ms: 33)
     capture(board)
 
-    publish("left", 1_000, {:ok, top_left()})
-    publish("right", 1_050, {:ok, top_left()})
+    publish("stereo/left", 1_000, {:ok, top_left()})
+    publish("stereo/right", 1_050, {:ok, top_left()})
     refute_receive {:detect, _label, _capture_ms, _running}, 100
 
-    publish("right", 1_020, {:ok, top_left()})
-    assert_receive {:detect, "left", 1_000, _running}
-    assert_receive {:detect, "right", 1_020, _running}
+    publish("stereo/right", 1_020, {:ok, top_left()})
+    assert_receive {:detect, "stereo/left", 1_000, _running}
+    assert_receive {:detect, "stereo/right", 1_020, _running}
   end
 
   test "the unit's pair_tolerance_ms is the default", %{board: board} do
@@ -214,9 +217,9 @@ defmodule VisionCore.Calibration.SessionTest do
     start_session(config: config)
     capture(board)
 
-    publish("left", 1_000, {:ok, top_left()})
-    publish("right", 1_050, {:ok, top_left()})
-    assert_receive {:detect, "right", 1_050, _running}
+    publish("stereo/left", 1_000, {:ok, top_left()})
+    publish("stereo/right", 1_050, {:ok, top_left()})
+    assert_receive {:detect, "stereo/right", 1_050, _running}
   end
 
   test "a slow detection never runs twice at once, and the frames in between are replaced",
@@ -225,7 +228,7 @@ defmodule VisionCore.Calibration.SessionTest do
     capture(board)
 
     publish_pair(0, top_left())
-    assert_receive {:detect, "left", 0, 1}
+    assert_receive {:detect, "stereo/left", 0, 1}
     for capture_ms <- 10..90//10, do: publish_pair(capture_ms, bottom_right())
 
     detections =
@@ -234,7 +237,7 @@ defmodule VisionCore.Calibration.SessionTest do
         {label, capture_ms, running}
       end
 
-    assert detections == [{"right", 0, 1}, {"left", 90, 1}, {"right", 90, 1}]
+    assert detections == [{"stereo/right", 0, 1}, {"stereo/left", 90, 1}, {"stereo/right", 90, 1}]
     refute_receive {:detect, _label, _capture_ms, _running}, 300
   end
 
@@ -262,21 +265,25 @@ defmodule VisionCore.Calibration.SessionTest do
     log =
       capture_log(fn ->
         for capture_ms <- [0, 100] do
-          publish("left", capture_ms, {:error, {:jpeg, "not a JPEG"}})
-          publish("right", capture_ms, {:ok, top_left()})
+          publish("stereo/left", capture_ms, {:error, {:jpeg, "not a JPEG"}})
+          publish("stereo/right", capture_ms, {:ok, top_left()})
 
           assert_receive {:calibration_session,
-                          %{detection: %{views: %{"left" => nil, "right" => [_ | _]}}}}
+                          %{
+                            detection: %{
+                              views: %{"stereo/left" => nil, "stereo/right" => [_ | _]}
+                            }
+                          }}
         end
 
         publish_pair(200, top_left())
-        assert_receive {:calibration_session, %{detection: %{views: %{"left" => [_ | _]}}}}
+        assert_receive {:calibration_session, %{detection: %{views: %{"stereo/left" => [_ | _]}}}}
 
-        publish("left", 300, {:error, {:jpeg, "not a JPEG"}})
-        publish("right", 300, :not_found)
+        publish("stereo/left", 300, {:error, {:jpeg, "not a JPEG"}})
+        publish("stereo/right", 300, :not_found)
 
         assert_receive {:calibration_session,
-                        %{detection: %{views: %{"left" => nil, "right" => nil}}}}
+                        %{detection: %{views: %{"stereo/left" => nil, "stereo/right" => nil}}}}
 
         :sys.get_state(Session)
       end)
@@ -301,9 +308,9 @@ defmodule VisionCore.Calibration.SessionTest do
     session = start_session(detect: detect)
     capture(board)
 
-    publish("left", 0, :crash)
-    publish("right", 0, :crash)
-    assert_receive {:detect, "left", 0, _running}
+    publish("stereo/left", 0, :crash)
+    publish("stereo/right", 0, :crash)
+    assert_receive {:detect, "stereo/left", 0, _running}
 
     publish_pair(100, top_left())
     assert_receive {:calibration_session, %{samples: 1}}
@@ -328,8 +335,8 @@ defmodule VisionCore.Calibration.SessionTest do
     capture(board)
 
     crash = fn capture_ms ->
-      publish("left", capture_ms, :crash)
-      publish("right", capture_ms, :crash)
+      publish("stereo/left", capture_ms, :crash)
+      publish("stereo/right", capture_ms, :crash)
       assert_receive {:crashing, ^capture_ms}
     end
 
@@ -380,7 +387,7 @@ defmodule VisionCore.Calibration.SessionTest do
 
       assert {:ok, %{phase: :capturing, samples: 1}} = Session.subscribe()
       publish_pair(1_000, bottom_right())
-      assert_receive {:detect, "left", 1_000, _running}
+      assert_receive {:detect, "stereo/left", 1_000, _running}
       assert_receive {:calibration_session, %{samples: 2}}
     end
   end
@@ -434,7 +441,7 @@ defmodule VisionCore.Calibration.SessionTest do
                       %{phase: :capturing, error: "no convergence", samples: 3, result: nil}}
 
       publish_pair(1_000, grid({600, 300}, 40))
-      assert_receive {:detect, "left", 1_000, _running}
+      assert_receive {:detect, "stereo/left", 1_000, _running}
     end
 
     test "that crashes goes back to capturing with an error", %{board: board} do
@@ -584,7 +591,7 @@ defmodule VisionCore.Calibration.SessionTest do
   end
 
   defp frame_keys,
-    do: for(label <- ["left", "right"], do: {:camera_frame, Camera.name_for(label)})
+    do: for(label <- ["stereo/left", "stereo/right"], do: {:camera_frame, Camera.name_for(label)})
 
   defp subscribed?(session), do: Enum.all?(frame_keys(), &(session in Outputs.subscribers(&1)))
 
@@ -599,9 +606,9 @@ defmodule VisionCore.Calibration.SessionTest do
     capture(board)
     assert subscribed?(session)
 
-    Process.exit(Process.whereis(Camera.name_for("left")), :kill)
-    eventually(fn -> Process.whereis(Camera.name_for("left")) == nil end)
-    run_camera("left")
+    Process.exit(Process.whereis(Camera.name_for("stereo/left")), :kill)
+    eventually(fn -> Process.whereis(Camera.name_for("stereo/left")) == nil end)
+    run_camera("stereo/left")
     publish_pair(100, top_left())
     assert_receive {:calibration_session, %{samples: 1}}
 
@@ -624,7 +631,7 @@ defmodule VisionCore.Calibration.SessionTest do
 
       assert Session.start("stereo", board) == {:error, "the stereo cameras are not running"}
 
-      run_camera("left")
+      run_camera("stereo/left")
       assert Session.start("stereo", board) == {:error, "the stereo cameras are not running"}
       assert %{phase: :idle} = Session.state()
     end
@@ -765,14 +772,14 @@ defmodule VisionCore.Calibration.SessionTest do
       {width, height} = @left_size
 
       frame = %Frame{
-        label: "left",
+        label: "stereo/left",
         width: width,
         height: height,
         capture_ns: capture_ms * 1_000_000,
         grey: :erlang.term_to_binary(answer)
       }
 
-      Outputs.publish({:camera_frame, Camera.name_for("left")}, {:camera_frame, frame})
+      Outputs.publish({:camera_frame, Camera.name_for("stereo/left")}, {:camera_frame, frame})
     end
 
     defp capture_pose(board) do
@@ -797,7 +804,7 @@ defmodule VisionCore.Calibration.SessionTest do
         assert_receive {:calibration_session,
                         %{samples: ^index, detection: %{sample: true, views: views}}}
 
-        assert Map.keys(views) == ["hq", "left"]
+        assert Map.keys(views) == ["hq", "stereo/left"]
       end
 
       assert %{good_enough: true} = Session.state()
@@ -817,6 +824,30 @@ defmodule VisionCore.Calibration.SessionTest do
              ]
 
       assert_receive {:calibration_session, %{phase: :solved, result: @pose_result}}
+    end
+
+    test "of a camera named left keeps its views apart from the stereo left camera's",
+         %{board: board} do
+      config =
+        update_in(@pose_config.components, fn components ->
+          List.keyreplace(components, :camera, 0, {:camera, [name: :left, driver: Camera]})
+        end)
+
+      start_pose_session(config: config)
+      run_camera("left")
+      run_cameras()
+      {:ok, %{phase: :idle}} = Session.subscribe()
+      :ok = Session.start("left-pose", board)
+
+      publish("left", 100, {:ok, bottom_right()})
+      publish_left(110, {:ok, top_left()})
+
+      assert_receive {:calibration_session, %{samples: 1, detection: %{views: views}}}
+
+      assert Map.keys(views) == ["left", "stereo/left"]
+      assert [{camera_x, _y} | _corners] = views["left"]
+      assert [{left_x, _y} | _corners] = views["stereo/left"]
+      assert camera_x > 0.5 and left_x < 0.5
     end
 
     test "commits the solved pose, announced to the recorder with its error", %{board: board} do
@@ -853,7 +884,7 @@ defmodule VisionCore.Calibration.SessionTest do
 
       publish_left(1_020, {:ok, top_left()})
       assert_receive {:detect, "hq", 1_000, _running}
-      assert_receive {:detect, "left", 1_020, _running}
+      assert_receive {:detect, "stereo/left", 1_020, _running}
     end
 
     test "is refused, naming it, while a calibration the solve needs is missing", %{board: board} do

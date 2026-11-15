@@ -505,6 +505,7 @@ defmodule VisionCore.Snapshot.Exporter do
       parameters: Parameters.groups(),
       configuration: VisionCore.settings(),
       calibration: calibration(config),
+      camera_labels: StereoSupervisor.labels(config),
       hostname: hostname()
     }
   end
