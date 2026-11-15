@@ -16,19 +16,18 @@
 //! the profile is unavailable; or a LOG record.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
-mod band;
 mod labels;
 mod model;
-mod protocol;
 
 use std::process::exit;
 use std::time::Instant;
 
 use framing::{LogLevel, Writer};
 use model::Geometry;
-use protocol::{labels_record, parse_request};
 use qnn::port::{self, Clock, Start};
 use qnn::{Power, TimeLog};
+use segmentation::band;
+use segmentation::protocol::{labels_record, parse_request};
 
 /// Threads the resize and the argmax each split their rows across.
 const THREADS: usize = 3;
