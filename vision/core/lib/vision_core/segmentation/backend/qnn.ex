@@ -55,10 +55,8 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
 
   alias VisionCore.Inference.QnnPort
   alias VisionCore.Inference.PortBackend
+  alias VisionCore.Segmentation.Backend.Wire
   alias VisionCore.Stereo.Parameters
-
-  # Port protocol tag; must match `qnn_segment`.
-  @segment_tag 7
 
   @explanation "Classes each part of the image on the Hexagon NPU among the 19 Cityscapes " <>
                  "classes: road, sidewalk, buildings, vegetation, sky, people, vehicles and " <>
@@ -167,37 +165,10 @@ defmodule VisionCore.Segmentation.Backend.Qnn do
   defdelegate final?(reason), to: QnnPort
 
   @impl PortBackend
-  def request(sequence, %{width: width, height: height, rgb: rgb}) do
-    [
-      <<@segment_tag, sequence::little-32, width::little-16, height::little-16, 3, 0::little-16,
-        height::little-16>>,
-      rgb
-    ]
-  end
+  defdelegate request(sequence, band), to: Wire
 
-  # The labels may be followed by the inference time, a `u32` in microseconds.
   @impl PortBackend
-  def parse(
-        <<@segment_tag, sequence::little-32, width::little-16, height::little-16, rest::binary>>
-      ) do
-    cells = width * height
-
-    case rest do
-      _empty when cells == 0 ->
-        {:ok, sequence, nil, nil}
-
-      <<data::binary-size(^cells), time_us::little-32, _rest::binary>> ->
-        {:ok, sequence, %{width: width, height: height, data: data}, time_us}
-
-      <<data::binary-size(^cells)>> ->
-        {:ok, sequence, %{width: width, height: height, data: data}, nil}
-
-      _short ->
-        {:cut_short, sequence}
-    end
-  end
-
-  def parse(_packet), do: :error
+  defdelegate parse(packet), to: Wire
 
   @impl PortBackend
   def reply_tag, do: :inference_labels
