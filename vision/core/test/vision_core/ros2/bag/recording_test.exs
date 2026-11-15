@@ -1,12 +1,30 @@
 defmodule VisionCore.Ros2.Bag.RecordingTest do
   use ExUnit.Case, async: true
 
+  defmodule DropOnLookup do
+    @moduledoc """
+    A name for a `VisionCore.Disks` at which each lookup by a recording
+    hands that recording a message it drops, its queue being 0, and counts it.
+    """
+    alias Ros2Zenoh.StdMsgs.Msg.Float64
+    alias VisionCore.Ros2.Bag.Recording
+
+    def whereis_name({disks, lookups}) do
+      if Recording.status(self()) do
+        :ok = Recording.write(self(), "/speed", Float64, %Float64{data: 0.0}, 0)
+        :counters.add(lookups, 1, 1)
+      end
+
+      disks
+    end
+  end
+
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.RmwZenoh
   alias Ros2Zenoh.SensorMsgs.Msg.Image
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias Ros2Zenoh.StdMsgs.Msg.Header
-  alias VisionCore.McapReader
+  alias VisionCore.{Disk, Disks, McapReader, TestDisks}
   alias VisionCore.Ros2.Bag.Metadata
   alias VisionCore.Ros2.Bag.Recording
 
@@ -39,6 +57,18 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
   defp speed(data), do: %Float64{data: data}
 
+  # Past the writer's 1 MiB of held back writes: its chunk's write fails at once on a full disk.
+  defp large_image do
+    %Image{
+      header: %Header{stamp: %Time{sec: 0, nanosec: 0}, frame_id: "left"},
+      height: 1_000,
+      width: 2_000,
+      encoding: "mono8",
+      step: 2_000,
+      data: :binary.copy(<<7>>, 2_000_000)
+    }
+  end
+
   defp image(sec) do
     %Image{
       header: %Header{stamp: %Time{sec: sec, nanosec: 0}, frame_id: "left"},
@@ -65,9 +95,12 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
   end
 
   # Raw, so that the open waiting for the writer does not hold the file server.
+  # Closed once read, so that the writer's next open waits for the next read.
   defp read_pipe!(path) do
     {:ok, pipe} = :file.open(path, [:raw, :read, :binary])
-    read_to_end!(pipe, [])
+    bytes = read_to_end!(pipe, [])
+    :ok = :file.close(pipe)
+    bytes
   end
 
   defp read_to_end!(pipe, read) do
@@ -443,6 +476,51 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.stop(pid)
     end
 
+    test "does not count the messages of the chunk it loses", %{tmp_dir: dir} do
+      pid = start_linked!(dir, compression: :none, max_file_bytes: 1, chunk_interval_ms: 1_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      File.ln_s!("/dev/full", file_path(dir, 1))
+      :ok = Recording.write(pid, "/left/image_raw", Image, large_image(), 2_000_000_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 4_000_000_000)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Recording.status(pid).messages == %{"/speed" => 1}
+      assert metadata_yaml!(dir)["message_count"] == 1
+      :ok = Recording.stop(pid)
+    end
+
+    test "a stop whose metadata.yaml the disk refuses keeps the messages of the file it closed",
+         %{tmp_dir: dir} do
+      pid = start_linked!(dir, @no_chunk_close)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
+
+      # A pipe takes metadata.yaml and refuses its sync; the test reads each attempt through it.
+      temporary = Path.join(bag_dir(dir), "metadata.yaml.tmp")
+      {_output, 0} = System.cmd("mkfifo", [temporary])
+      stopping = Task.async(fn -> Recording.stop(pid) end)
+      _refused = read_pipe!(temporary)
+      after_refusal = read_pipe!(temporary)
+      :ok = Task.await(stopping)
+
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(read_file!(dir, 0))
+
+      assert %{"message_count" => 1} =
+               after_refusal
+               |> YamlElixir.read_from_string!()
+               |> Map.fetch!("rosbag2_bagfile_information")
+    end
+
+    test "at the start refuses a folder whose parent is missing, as on a disk not mounted",
+         %{tmp_dir: dir} do
+      unmounted = Path.join([dir, "disks", "stick", "recordings"])
+      pid = start_linked!(unmounted, @no_chunk_close)
+
+      assert Recording.status(pid).error =~ bag_dir(unmounted)
+      refute File.exists?(Path.join(dir, "disks"))
+      :ok = Recording.stop(pid)
+    end
+
     test "at the start leaves a recording that only reports it", %{tmp_dir: dir} do
       File.write!(bag_dir(dir), "a file where the folder goes")
       pid = start_linked!(dir, @no_chunk_close)
@@ -484,5 +562,327 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
     assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(read_file!(dir, 0))
     assert metadata_yaml!(dir)["message_count"] == 1
+  end
+
+  describe "on disks" do
+    @describetag :capture_log
+
+    @stick "c8803634-2bd4-4a62-8a68-ad456f6a52ce"
+    @floor_bytes 1_000_000
+
+    # The USB stick first, then the unit's storage.
+    setup %{tmp_dir: dir} do
+      disks = dir |> TestDisks.setup!() |> TestDisks.start!()
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+
+      eventually(fn ->
+        match?({:ok, %Disk{state: :mounted}}, Disks.fetch(disks.server, @stick))
+      end)
+
+      :ok = Disks.put_order(disks.server, [@stick, "internal"])
+      {:ok, stick} = Disks.fetch(disks.server, @stick)
+      %{disks: disks, stick: stick}
+    end
+
+    defp start_on!(disks, disk, opts) do
+      start_supervised!(
+        {Recording,
+         [
+           dir: Path.join(disk.recordings_path, "bag"),
+           name: "bag",
+           disks: disks.server,
+           disk: disk.uuid,
+           free_floor_bytes: @floor_bytes,
+           attachments: [{"left.yaml", "application/yaml", "fx: 1\n"}],
+           metadata: %{"preset" => "replay"},
+           start_time_ns: 0
+         ] ++ opts}
+      )
+    end
+
+    # The part's MCAP files, without a folder a test put in a file's place.
+    defp part!(folder) do
+      files =
+        folder
+        |> Path.join("*.mcap")
+        |> Path.wildcard()
+        |> Enum.filter(&File.regular?/1)
+        |> Enum.sort()
+
+      yaml = folder |> Path.join("metadata.yaml") |> YamlElixir.read_from_file!()
+      {Enum.map(files, &McapReader.read!(File.read!(&1))), yaml["rosbag2_bagfile_information"]}
+    end
+
+    defp on_disk?(pid, uuid), do: match?(%{disk: ^uuid}, Recording.status(pid))
+
+    test "below the floor, goes on in <name>_part2 on the next disk, each part a whole bag",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), @floor_bytes - 1)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 2_000)
+      :ok = Recording.stop(pid)
+
+      first = Path.join(stick.recordings_path, "bag")
+      second = Path.join(disks.options[:internal], "bag_part2")
+
+      assert {[part1], %{"relative_file_paths" => ["bag_0.mcap"], "message_count" => 1}} =
+               part!(first)
+
+      assert {[part2], %{"relative_file_paths" => ["bag_part2_0.mcap"], "message_count" => 1}} =
+               part!(second)
+
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(part1)
+      assert [{"/speed", 0, 2_000, 2_000, _payload}] = messages(part2)
+
+      for part <- [part1, part2] do
+        assert [%{name: "left.yaml"}] = part.attachments
+        assert [%{name: "recording", metadata: %{"preset" => "replay"}}] = part.metadata
+        assert [%{name: "std_msgs/msg/Float64"}] = Map.values(part.schemas)
+      end
+    end
+
+    test "status/1 names the disk in use and every part's folder", %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+      first = Path.join(stick.recordings_path, "bag")
+      assert %{disk: @stick, folders: [^first]} = Recording.status(pid)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> on_disk?(pid, "internal") end)
+
+      second = Path.join(disks.options[:internal], "bag_part2")
+      assert %{folders: [^first, ^second], files: 2, error: nil} = Recording.status(pid)
+      :ok = Recording.stop(pid)
+    end
+
+    test "a write the disk refuses goes on on the next disk, never back on the one it left",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 1)
+      File.mkdir_p!(Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> complete?(stick.recordings_path, 0) end)
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 2_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 3_000)
+      :ok = Recording.stop(pid)
+
+      assert {[part1], _yaml} = part!(Path.join(stick.recordings_path, "bag"))
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(part1)
+
+      second = Path.join(disks.options[:internal], "bag_part2")
+      assert {parts, %{"message_count" => 2}} = part!(second)
+
+      assert [2_000, 3_000] =
+               for(part <- parts, {_t, _s, time, _p, _d} <- messages(part), do: time)
+
+      assert File.ls!(stick.recordings_path) == ["bag"]
+    end
+
+    test "an ejected disk is left, its file closed, and unmounted", %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
+
+      assert Disks.eject(disks.server, @stick) == :ok
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.stop(pid)
+
+      assert {:ok, %Disk{state: :ejected}} = Disks.fetch(disks.server, @stick)
+      assert {[part1], %{"message_count" => 1}} = part!(Path.join(stick.recordings_path, "bag"))
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(part1)
+      assert {[_part2], _yaml} = part!(Path.join(disks.options[:internal], "bag_part2"))
+    end
+
+    test "a disk pulled out is left for the next one", %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+
+      TestDisks.pull(disks, "sda1")
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      :ok = Recording.stop(pid)
+
+      assert {[part2], _yaml} = part!(Path.join(disks.options[:internal], "bag_part2"))
+      assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(part2)
+    end
+
+    test "skips a disk that holds the part's folder already, leaving the folder as it is",
+         %{disks: disks, stick: stick} do
+      taken = Path.join(disks.options[:internal], "bag_part2")
+      File.mkdir_p!(taken)
+      File.write!(Path.join(taken, "metadata.yaml"), "kept")
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Recording.status(pid).error =~ taken
+      assert Recording.status(pid).error =~ "no disk"
+      assert File.ls!(taken) == ["metadata.yaml"]
+      assert File.read!(Path.join(taken, "metadata.yaml")) == "kept"
+      :ok = Recording.stop(pid)
+    end
+
+    test "each part's metadata.yaml counts the drops of that part", %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, queue: 1, chunk_interval_ms: 1)
+      :ok = :sys.suspend(pid)
+      for n <- 1..3, do: :ok = Recording.write(pid, "/speed", Float64, speed(n), n)
+      :ok = :sys.resume(pid)
+      # The stick fills once the message taken is on it, not before.
+      eventually(fn -> Recording.status(pid).messages["/speed"] == 1 end)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.stop(pid)
+
+      assert {_files, %{"custom_data" => %{"dropped:/speed" => 2}}} =
+               part!(Path.join(stick.recordings_path, "bag"))
+
+      assert {_files, %{"custom_data" => custom_data}} =
+               part!(Path.join(disks.options[:internal], "bag_part2"))
+
+      refute Map.has_key?(custom_data, "dropped:/speed")
+    end
+
+    test "does not count the messages of the chunk the disk it leaves lost",
+         %{disks: disks, stick: stick} do
+      pid =
+        start_on!(disks, stick, compression: :none, max_file_bytes: 1, chunk_interval_ms: 1_000)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      File.ln_s!("/dev/full", Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
+      :ok = Recording.write(pid, "/left/image_raw", Image, large_image(), 2_000_000_000)
+      :ok = Recording.write(pid, "/speed", Float64, speed(3.0), 4_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert Recording.status(pid).messages == %{"/speed" => 2}
+      :ok = Recording.stop(pid)
+
+      assert {_files, %{"message_count" => 1, "topics_with_message_count" => topics}} =
+               part!(Path.join(stick.recordings_path, "bag"))
+
+      assert for(%{"message_count" => count} <- topics, do: count) |> Enum.sum() == 1
+
+      assert {_files, %{"message_count" => 1}} =
+               part!(Path.join(disks.options[:internal], "bag_part2"))
+    end
+
+    test "a file closed before the disk refuses the next one is closed once, its messages kept",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 60_000)
+      File.mkdir_p!(Path.join([stick.recordings_path, "bag", "bag_1.mcap"]))
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+
+      # A chunk interval later: this write closes the chunk, then the file, then opens the next.
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 61_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert %{messages: %{"/speed" => 2}, files: 2} = Recording.status(pid)
+      :ok = Recording.stop(pid)
+
+      assert {[part1], %{"message_count" => 1, "files" => [%{"path" => "bag_0.mcap"}]}} =
+               part!(Path.join(stick.recordings_path, "bag"))
+
+      assert [{"/speed", 0, 0, 0, _payload}] = messages(part1)
+
+      assert {[part2], %{"message_count" => 1}} =
+               part!(Path.join(disks.options[:internal], "bag_part2"))
+
+      assert [{"/speed", 0, 61_000_000_000, 61_000_000_000, _payload}] = messages(part2)
+    end
+
+    test "a file opened whose metadata.yaml the disk refuses is closed before going on",
+         %{disks: disks, stick: stick} do
+      pid = start_on!(disks, stick, max_file_bytes: 1, chunk_interval_ms: 60_000)
+      folder = Path.join(stick.recordings_path, "bag")
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      _state = :sys.get_state(pid)
+      File.mkdir_p!(Path.join(folder, "metadata.yaml.tmp"))
+      :ok = Recording.write(pid, "/speed", Float64, speed(2.0), 61_000_000_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert %{files: 2} = Recording.status(pid)
+      assert %{messages: []} = McapReader.read!(File.read!(Path.join(folder, "bag_1.mcap")))
+      :ok = Recording.stop(pid)
+    end
+
+    test "a sync refused after its chunk is written leaves that chunk once, uncounted, on leaving",
+         %{disks: disks, stick: stick} do
+      # A pipe takes the writes and refuses the sync; the test reads the file through it.
+      folder = Path.join(stick.recordings_path, "bag")
+      File.mkdir_p!(folder)
+      {_output, 0} = System.cmd("mkfifo", [Path.join(folder, "bag_0.mcap")])
+      reader = Task.async(fn -> read_pipe!(Path.join(folder, "bag_0.mcap")) end)
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      _state = :sys.get_state(pid)
+
+      assert [%{log_time: 1_000}] = reader |> Task.await() |> McapReader.read_complete_chunks!()
+      assert Recording.status(pid).messages == %{}
+      assert {[], %{"message_count" => 0}} = part!(folder)
+      :ok = Recording.stop(pid)
+    end
+
+    test "with no disk left after closing a file whose metadata.yaml the disk refuses, ends",
+         %{disks: disks, stick: stick} do
+      :ok = Disks.put_enabled(disks.server, "internal", false)
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 0)
+      _state = :sys.get_state(pid)
+      File.mkdir_p!(Path.join([stick.recordings_path, "bag", "metadata.yaml.tmp"]))
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Process.alive?(pid)
+      assert {[part1], _yaml} = part!(Path.join(stick.recordings_path, "bag"))
+      assert [{"/speed", 0, 0, 0, _payload}] = messages(part1)
+      :ok = Recording.stop(pid)
+    end
+
+    test "counts a drop in one part, one while it goes on to the next disk too",
+         %{disks: disks, stick: stick} do
+      lookups = :counters.new(1, [])
+      disks = %{disks | server: {:via, DropOnLookup, {disks.server, lookups}}}
+      pid = start_on!(disks, stick, queue: 0, chunk_interval_ms: 1)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> on_disk?(pid, "internal") end)
+      :ok = Recording.stop(pid)
+
+      parts = [
+        Path.join(stick.recordings_path, "bag"),
+        Path.join(disks.options[:internal], "bag_part2")
+      ]
+
+      dropped =
+        for folder <- parts do
+          {_files, %{"custom_data" => custom_data}} = part!(folder)
+          Map.get(custom_data, "dropped:/speed", 0)
+        end
+
+      assert Enum.sum(dropped) == :counters.get(lookups, 1)
+    end
+
+    test "with no disk left, ends saying why", %{disks: disks, stick: stick} do
+      :ok = Disks.put_enabled(disks.server, "internal", false)
+      pid = start_on!(disks, stick, chunk_interval_ms: 1)
+
+      TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Recording.status(pid).error =~ "below"
+      assert Recording.status(pid).error =~ "no disk"
+      assert {[_part1], _yaml} = part!(Path.join(stick.recordings_path, "bag"))
+      :ok = Recording.stop(pid)
+    end
   end
 end

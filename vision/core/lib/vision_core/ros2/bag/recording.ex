@@ -33,13 +33,34 @@ defmodule VisionCore.Ros2.Bag.Recording do
   `:queue` messages wait for this process. A message that does not encode
   is dropped and counted too.
 
-  A write the disk refuses, from a full disk or one pulled out, ends the
-  recording: the open file is closed with nothing more written to it, and
-  reads up to its last whole chunk (`VisionCore.Mcap.Writer.abandon/1`),
-  `metadata.yaml` is written if it can be, and only then the reason kept in
-  `status/1`. The process then only counts the messages it is handed as
-  drops until `stop/1` stops it normally; a disk that refuses the folder at
-  the start leaves it in that state from the start.
+  ## Disks
+
+  With `:disks`, a `VisionCore.Disks`, and `:disk`, the UUID of the disk
+  `dir` is on, the recording goes on on the next disk when it leaves
+  one: at a write the disk refuses, or at a check, every
+  `:chunk_interval_ms`, that finds the disk below `:free_floor_bytes`
+  free, ejecting, ejected or pulled out. It closes the part's file, with
+  nothing more written to it after a write the disk refused
+  (`VisionCore.Mcap.Writer.abandon/1`), writes its `metadata.yaml` if
+  the disk allows, then goes on in `<name>_part<n>`, `n` from 2, in the
+  recordings folder of the next disk `VisionCore.Disks.next/3` gives,
+  never one it left; a disk that holds a folder of that name already is
+  left too, the folder untouched. Each
+  part is a rosbag2 folder of its own: its files
+  `<name>_part<n>_<i>.mcap`, its schemas and channels, the attachments
+  and metadata in its first file, and its own drops in `metadata.yaml`.
+  A message the disk refused is written again in the next part; those of
+  the chunk the disk lost, or whose sync it refused, are not, and leave
+  the messages counted in `status/1` and `metadata.yaml`.
+
+  A write the disk refuses with no disk to go on, or without `:disks`,
+  ends the recording: the open file is closed with nothing more written
+  to it, and reads up to its last whole chunk
+  (`VisionCore.Mcap.Writer.abandon/1`), `metadata.yaml` is written if it
+  can be, and only then the reason kept in `status/1`. The process then
+  only counts the messages it is handed as drops until `stop/1` stops it
+  normally; a disk that refuses the folder at the start leaves it in that
+  state from the start.
 
   `status/1` reads a table this process keeps, without waiting on it, and
   `write/5`, `status/1` and `stop/1` answer even once it has stopped. A
@@ -48,6 +69,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   use GenServer, restart: :temporary
 
   alias Ros2Zenoh.RmwZenoh
+  alias VisionCore.{Disk, Disks}
   alias VisionCore.Mcap.Writer
   alias VisionCore.Ros2.Bag.Metadata
 
@@ -62,7 +84,10 @@ defmodule VisionCore.Ros2.Bag.Recording do
     queue: 256,
     attachments: [],
     metadata: %{},
-    chunk_interval_ms: 1_000
+    chunk_interval_ms: 1_000,
+    disks: nil,
+    disk: nil,
+    free_floor_bytes: 1_000_000_000
   ]
 
   @metadata_file "metadata.yaml"
@@ -74,11 +99,14 @@ defmodule VisionCore.Ros2.Bag.Recording do
           files: non_neg_integer(),
           messages: %{String.t() => pos_integer()},
           dropped: %{String.t() => pos_integer()},
-          error: String.t() | nil
+          error: String.t() | nil,
+          disk: String.t() | nil,
+          folders: [Path.t()]
         }
 
   @doc """
-  Starts a recording in `:dir`, created if missing.
+  Starts a recording in `:dir`, created if missing in its parent folder,
+  which must exist.
 
   Options:
     * `:dir` - the recording's folder
@@ -91,6 +119,9 @@ defmodule VisionCore.Ros2.Bag.Recording do
     * `:metadata` - string keys and values for the first file and `metadata.yaml` (`%{}`)
     * `:chunk_interval_ms` - the longest a chunk spans, in log time and since its
       first message (`1_000`)
+    * `:disks` - the `VisionCore.Disks` to go on on, none by default
+    * `:disk` - the UUID of the disk `:dir` is on
+    * `:free_floor_bytes` - the free bytes below which a disk is left (`1_000_000_000`)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -118,8 +149,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   @doc """
   The bytes written to the files, the files begun, the messages written and
-  dropped per topic, and why the recording ended early, if it did; `nil`
-  once the process has stopped.
+  dropped per topic, why the recording ended early, if it did, the disk
+  in use and the folder of each part; `nil` once the process has stopped.
   """
   @spec status(pid()) :: status() | nil
   def status(server) do
@@ -143,12 +174,24 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def init(opts) do
     Process.flag(:trap_exit, true)
     table = :ets.new(__MODULE__, [:set, :public, write_concurrency: true])
-    :ets.insert(table, [{:bytes, 0}, {:files, 0}, {:error, nil}])
+    dir = Keyword.fetch!(opts, :dir)
+    disk = Keyword.fetch!(opts, :disk)
+
+    :ets.insert(table, [{:bytes, 0}, {:files, 0}, {:error, nil}, {:disk, disk}, {:folders, [dir]}])
+
     :persistent_term.put({__MODULE__, self()}, {table, Keyword.fetch!(opts, :queue)})
 
     state = %{
-      dir: Keyword.fetch!(opts, :dir),
+      dir: dir,
       name: Keyword.fetch!(opts, :name),
+      part: 1,
+      part_name: Keyword.fetch!(opts, :name),
+      folders: [dir],
+      disks: Keyword.fetch!(opts, :disks),
+      disk: disk,
+      left_disks: [],
+      dropped_before: %{},
+      free_floor_bytes: Keyword.fetch!(opts, :free_floor_bytes),
       compression: Keyword.fetch!(opts, :compression),
       max_file_bytes: Keyword.fetch!(opts, :max_file_bytes),
       chunk_interval_ms: Keyword.fetch!(opts, :chunk_interval_ms),
@@ -168,13 +211,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
       unencodable_topics: MapSet.new()
     }
 
-    state =
-      attempt(state, fn state ->
-        File.mkdir_p!(state.dir)
-        open_file(state)
-      end)
-
-    {:ok, schedule_tick(state)}
+    {:ok, state |> attempt_or_end(&open_folder/1) |> schedule_tick()}
   end
 
   @impl GenServer
@@ -186,7 +223,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def handle_cast({:write, topic, module, message, log_time}, state) do
     case encode(message) do
       {:ok, payload} ->
-        {:noreply, attempt(state, &write_message(&1, topic, module, payload, log_time))}
+        {:noreply,
+         attempt_or_leave_disk(state, write_steps(state, topic, module, payload, log_time))}
 
       {:error, reason} ->
         count_drop(state.table, topic)
@@ -201,7 +239,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def handle_info(:tick, %{ended: true} = state), do: {:noreply, state}
 
   def handle_info(:tick, state) do
-    state = if chunk_due?(state, state.last_log_time), do: attempt(state, &flush/1), else: state
+    state =
+      state
+      |> check_disk()
+      |> attempt_or_leave_disk([&flush_due(&1, &1.last_log_time), &close_file_if_full/1])
+
     {:noreply, schedule_tick(state)}
   end
 
@@ -213,10 +255,21 @@ defmodule VisionCore.Ros2.Bag.Recording do
     :persistent_term.erase({__MODULE__, self()})
   end
 
+  # A write's steps, each one write to the disk: one the disk refuses is the only one redone.
+  defp write_steps(state, topic, module, payload, log_time) do
+    clamped = max(log_time, state.last_log_time)
+
+    [
+      &flush_due(&1, clamped),
+      &close_file_if_full/1,
+      &ensure_file/1,
+      &ensure_channel(&1, topic, module),
+      &write_message(&1, topic, module, payload, log_time)
+    ]
+  end
+
   defp write_message(state, topic, module, payload, log_time) do
     clamped = max(log_time, state.last_log_time)
-    state = if chunk_due?(state, clamped), do: flush(state), else: state
-    state = state |> ensure_file() |> ensure_channel(topic, module)
     sequence = get_in(state.topics, [topic, :message_count]) || 0
 
     writer =
@@ -241,9 +294,15 @@ defmodule VisionCore.Ros2.Bag.Recording do
             %{topic | message_count: topic.message_count + 1}
           end),
         last_log_time: clamped,
-        open_chunk: state.open_chunk || %{first_log_time: clamped, opened_ms: now_ms()}
+        open_chunk: count_in_chunk(state.open_chunk, topic, clamped)
     }
   end
+
+  defp count_in_chunk(nil, topic, log_time),
+    do: %{first_log_time: log_time, opened_ms: now_ms(), messages: %{topic => 1}}
+
+  defp count_in_chunk(chunk, topic, _log_time),
+    do: %{chunk | messages: Map.update(chunk.messages, topic, 1, &(&1 + 1))}
 
   defp count_message(file, log_time) do
     %{
@@ -293,9 +352,19 @@ defmodule VisionCore.Ros2.Bag.Recording do
     end
   end
 
+  defp open_folder(state) do
+    case File.mkdir(state.dir) do
+      made when made in [:ok, {:error, :eexist}] ->
+        open_file(state)
+
+      {:error, reason} ->
+        raise File.Error, reason: reason, action: "make directory", path: state.dir
+    end
+  end
+
   defp open_file(state) do
     index = length(state.files)
-    file_name = "#{state.name}_#{index}.mcap"
+    file_name = "#{state.part_name}_#{index}.mcap"
     path = Path.join(state.dir, file_name)
 
     writer =
@@ -304,10 +373,16 @@ defmodule VisionCore.Ros2.Bag.Recording do
         {:error, reason} -> raise File.Error, reason: reason, action: "open", path: path
       end
 
-    writer = if index == 0, do: add_attachments_and_metadata(writer, state), else: writer
-    :ets.insert(state.table, {:files, index + 1})
+    writer =
+      if index == 0,
+        do:
+          on_refusal(
+            fn -> add_attachments_and_metadata(writer, state) end,
+            fn -> Writer.abandon(writer) end
+          ),
+        else: writer
 
-    %{
+    state = %{
       state
       | writer: writer,
         files: [
@@ -316,8 +391,20 @@ defmodule VisionCore.Ros2.Bag.Recording do
         schemas: %{},
         channels: %{}
     }
-    |> put_bytes()
-    |> write_metadata_file()
+
+    state = on_refusal(fn -> write_metadata_file(state) end, fn -> Writer.close(writer) end)
+    :ets.update_counter(state.table, :files, 1)
+    :ets.insert(state.table, [{:disk, state.disk}, {:folders, state.folders}])
+    put_bytes(state)
+  end
+
+  # Runs `write`; the disk refusing it, `close` closes the file just opened.
+  defp on_refusal(write, close) do
+    write.()
+  rescue
+    error in File.Error ->
+      close.()
+      reraise error, __STACKTRACE__
   end
 
   defp add_attachments_and_metadata(writer, state) do
@@ -341,14 +428,25 @@ defmodule VisionCore.Ros2.Bag.Recording do
       now_ms() - chunk.opened_ms >= interval_ms
   end
 
-  # Closes the open chunk and syncs it, and closes the file once past its size.
+  defp flush_due(state, log_time),
+    do: if(chunk_due?(state, log_time), do: flush(state), else: state)
+
+  # Closes the open chunk and syncs it.
   defp flush(state) do
     writer = state.writer |> Writer.close_chunk() |> Writer.sync()
-    state = put_bytes(%{state | writer: writer, open_chunk: nil})
+    put_bytes(%{state | writer: writer, open_chunk: nil})
+  end
 
-    if Writer.bytes_written(writer) >= state.max_file_bytes,
-      do: close_file(state),
-      else: state
+  # Closes a file past its size once its messages are flushed.
+  defp close_file_if_full(%{writer: nil} = state), do: state
+
+  defp close_file_if_full(state) do
+    [file | _files] = state.files
+
+    if state.open_chunk == nil and file.message_count > 0 and
+         Writer.bytes_written(state.writer) >= state.max_file_bytes,
+       do: close_file(state),
+       else: state
   end
 
   defp close_file(state) do
@@ -379,27 +477,183 @@ defmodule VisionCore.Ros2.Bag.Recording do
   defp finish(%{ended: true} = state), do: state
 
   defp finish(state) do
-    state =
-      attempt(state, fn state ->
-        state = if state.writer, do: close_file(state), else: state
-        write_metadata_file(state)
-      end)
-
+    state = attempt_or_end(state, [&close_open_file/1, &write_metadata_file/1])
     %{state | ended: true}
   end
 
-  # Runs a step that writes to the disk; a write it refuses ends the recording.
-  defp attempt(state, step) do
+  defp close_open_file(%{writer: nil} = state), do: state
+  defp close_open_file(state), do: close_file(state)
+
+  # Runs each step on the state the one before left; one the disk refuses ends the recording.
+  defp attempt_or_end(state, steps) when is_list(steps),
+    do: Enum.reduce(steps, state, &attempt_or_end(&2, &1))
+
+  defp attempt_or_end(%{ended: true} = state, _step), do: state
+
+  defp attempt_or_end(state, step) do
     step.(state)
   rescue
-    error in File.Error -> end_recording(state, Exception.message(error))
+    error in File.Error ->
+      state |> abandon_file() |> end_recording(Exception.message(error))
   end
 
-  defp end_recording(state, reason) do
+  # Runs each step on the state the one before left; one the disk refuses again on the next disk.
+  defp attempt_or_leave_disk(state, steps) when is_list(steps),
+    do: Enum.reduce(steps, state, &attempt_or_leave_disk(&2, &1))
+
+  defp attempt_or_leave_disk(%{ended: true} = state, _step), do: state
+
+  defp attempt_or_leave_disk(state, step) do
+    step.(state)
+  rescue
+    error in File.Error ->
+      case state |> abandon_file() |> leave_disk(Exception.message(error)) do
+        %{ended: true} = state -> state
+        state -> attempt_or_leave_disk(state, step)
+      end
+  end
+
+  defp check_disk(%{disks: nil} = state), do: state
+
+  defp check_disk(state) do
+    case Disks.fetch(state.disks, state.disk) do
+      {:ok, disk} ->
+        if Disk.writable?(disk, state.free_floor_bytes),
+          do: state,
+          else: leave_disk(state, leaving_reason(disk, state.free_floor_bytes))
+
+      :error ->
+        state
+    end
+  end
+
+  defp leaving_reason(%Disk{state: :mounted, free_bytes: nil} = disk, _free_floor_bytes),
+    do: "the free space of #{disk.uuid} is unknown"
+
+  defp leaving_reason(%Disk{state: :mounted} = disk, free_floor_bytes),
+    do: "#{disk.uuid} has #{disk.free_bytes} bytes free, below #{free_floor_bytes}"
+
+  defp leaving_reason(%Disk{} = disk, _free_floor_bytes), do: "#{disk.uuid} is #{disk.state}"
+
+  defp leave_disk(%{disks: nil} = state, reason), do: end_recording(state, reason)
+
+  # The drops counted once, the part's until now and the next part's after.
+  defp leave_disk(state, reason) do
+    drops = drops(state.table)
+    state |> close_part_on_leaving(drops) |> go_on(reason, drops)
+  end
+
+  defp go_on(state, reason, drops) do
+    left = [state.disk | state.left_disks]
+
+    case Disks.next(state.disks, state.free_floor_bytes, left) do
+      {:ok, disk} ->
+        Logger.warning(
+          "#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording goes on on #{disk.uuid}"
+        )
+
+        start_part(%{state | left_disks: left}, disk, drops)
+
+      {:error, no_disk} ->
+        end_recording(state, "#{reason}; #{no_disk}")
+    end
+  end
+
+  # Closes the part as far as the disk allows.
+  defp close_part_on_leaving(state, drops),
+    do: state |> close_file_or_lose_chunk() |> write_metadata_file_if_allowed(drops)
+
+  defp write_metadata_file_if_allowed(state, drops) do
+    write_metadata_file(state, drops)
+  rescue
+    _error in File.Error -> state
+  end
+
+  # A file the disk refuses to close is closed all the same, its open chunk lost.
+  defp close_file_or_lose_chunk(%{writer: nil} = state), do: state
+
+  defp close_file_or_lose_chunk(state) do
+    close_file(state)
+  rescue
+    _error in File.Error -> lose_open_chunk(%{state | writer: nil})
+  end
+
+  # A refused step's writer may not hold what reached the file: its open chunk is lost.
+  defp abandon_file(%{writer: nil} = state), do: state
+
+  defp abandon_file(state) do
+    Writer.abandon(state.writer)
+    lose_open_chunk(%{state | writer: nil})
+  end
+
+  # Uncounts the open chunk's messages, which the disk did not take.
+  defp lose_open_chunk(%{open_chunk: nil} = state), do: state
+
+  defp lose_open_chunk(%{open_chunk: chunk} = state) do
+    for {topic, count} <- chunk.messages, do: uncount_messages(state.table, topic, count)
+
+    [file | files] = state.files
+    lost = chunk.messages |> Map.values() |> Enum.sum()
+
+    topics =
+      Enum.reduce(chunk.messages, state.topics, fn {topic, count}, topics ->
+        update_in(topics[topic].message_count, &(&1 - count))
+      end)
+
+    %{
+      state
+      | open_chunk: nil,
+        topics: topics,
+        files: [%{file | message_count: file.message_count - lost} | files]
+    }
+  end
+
+  defp uncount_messages(table, topic, count) do
+    if :ets.update_counter(table, {:messages, topic}, -count) == 0,
+      do: :ets.delete(table, {:messages, topic})
+  end
+
+  defp start_part(state, disk, drops) do
+    part = state.part + 1
+    part_name = "#{state.name}_part#{part}"
+    dir = Path.join(disk.recordings_path, part_name)
+
+    case File.mkdir(dir) do
+      :ok ->
+        open_part(state, disk, part, part_name, dir, drops)
+
+      {:error, reason} ->
+        go_on(
+          %{state | disk: disk.uuid},
+          "cannot make #{dir}: #{:file.format_error(reason)}",
+          drops
+        )
+    end
+  end
+
+  defp open_part(state, disk, part, part_name, dir, drops) do
+    state = %{
+      state
+      | dir: dir,
+        disk: disk.uuid,
+        part: part,
+        part_name: part_name,
+        folders: state.folders ++ [dir],
+        writer: nil,
+        files: [],
+        topics: %{},
+        schemas: %{},
+        channels: %{},
+        dropped_before: drops,
+        open_chunk: nil
+    }
+
+    attempt_or_leave_disk(state, &open_file/1)
+  end
+
+  defp end_recording(%{writer: nil} = state, reason) do
     Logger.error("#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording ends")
-    # The step that failed may have written more than `state.writer` holds.
-    if state.writer, do: Writer.abandon(state.writer)
-    state = %{state | writer: nil, ended: true}
+    state = %{state | ended: true}
 
     try do
       write_metadata_file(state)
@@ -411,12 +665,16 @@ defmodule VisionCore.Ros2.Bag.Recording do
     state
   end
 
-  defp write_metadata_file(state) do
+  defp write_metadata_file(state), do: write_metadata_file(state, drops(state.table))
+
+  # Writes metadata.yaml with the part's share of `drops`, the drops counted per topic.
+  defp write_metadata_file(state, drops) do
     path = Path.join(state.dir, @metadata_file)
     temporary = path <> ".tmp"
+    metadata = metadata(state, drops)
 
     with {:ok, file} <- :file.open(temporary, [:raw, :binary, :write]),
-         :ok <- write_and_close(file, Metadata.encode(metadata(state))),
+         :ok <- write_and_close(file, Metadata.encode(metadata)),
          :ok <- :file.rename(temporary, path) do
       state
     else
@@ -430,11 +688,13 @@ defmodule VisionCore.Ros2.Bag.Recording do
     if written == :ok, do: closed, else: written
   end
 
-  defp metadata(state) do
+  defp metadata(state, drops) do
     drops =
-      for {{:dropped, topic}, count} <- :ets.tab2list(state.table),
+      for {topic, count} <- drops,
+          part_count = count - Map.get(state.dropped_before, topic, 0),
+          part_count > 0,
           into: %{},
-          do: {"dropped:" <> topic, Integer.to_string(count)}
+          do: {"dropped:" <> topic, Integer.to_string(part_count)}
 
     %{
       files:
@@ -465,6 +725,9 @@ defmodule VisionCore.Ros2.Bag.Recording do
     }
   end
 
+  defp drops(table),
+    do: for({{:dropped, topic}, count} <- :ets.tab2list(table), into: %{}, do: {topic, count})
+
   defp read_status(table) do
     entries = :ets.tab2list(table)
 
@@ -472,8 +735,10 @@ defmodule VisionCore.Ros2.Bag.Recording do
       bytes: :ets.lookup_element(table, :bytes, 2),
       files: :ets.lookup_element(table, :files, 2),
       messages: for({{:messages, topic}, count} <- entries, into: %{}, do: {topic, count}),
-      dropped: for({{:dropped, topic}, count} <- entries, into: %{}, do: {topic, count}),
-      error: :ets.lookup_element(table, :error, 2)
+      dropped: drops(table),
+      error: :ets.lookup_element(table, :error, 2),
+      disk: :ets.lookup_element(table, :disk, 2),
+      folders: :ets.lookup_element(table, :folders, 2)
     }
   end
 
