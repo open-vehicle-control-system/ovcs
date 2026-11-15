@@ -218,6 +218,17 @@ defmodule Ovcs1.VisionComposerTest do
         do: assert(VisionCore.Exporter.output_key(output, config), inspect(output))
   end
 
+  test "the debug exporter records the stereo unit, whose outputs the configuration produces" do
+    config = Ovcs1.Vision.Composer.config(:target)
+    options = Keyword.fetch!(config.exporters, VisionCore.Debug.Exporter) ++ [config: config]
+
+    assert VisionCore.Debug.Exporter.check(options) == :ok
+    assert {:ok, specs} = VisionCore.Exporter.output_specs(VisionCore.Debug.Exporter, options)
+
+    for {output, _max_hz} <- specs,
+        do: assert(VisionCore.Exporter.output_key(output, config), inspect(output))
+  end
+
   test "the calibration gives the rig's 20 cm baseline" do
     dir = Application.app_dir(:ovcs1, "priv/calibration")
 
