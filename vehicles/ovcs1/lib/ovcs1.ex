@@ -10,6 +10,17 @@ defmodule Ovcs1 do
   @behaviour RadioControlBridge
   @behaviour RosBridge
 
+  # The Volkswagen Polo 9N's published specifications, before its facelift.
+  @wheelbase_m 2.46
+  @front_track_m 1.435
+  @rear_track_m 1.425
+  @turning_circle_m 10.6
+  # 185/60 R14 tyres.
+  @tyre_width_mm 185
+  @tyre_aspect_ratio 0.60
+  @rim_diameter_inches 14
+  @millimetres_per_inch 25.4
+
   @impl OvcsVehicle
   def name, do: "OVCS1"
   @impl OvcsVehicle
@@ -26,6 +37,28 @@ defmodule Ovcs1 do
   def vision, do: Ovcs1.Vision.Composer
   @impl OvcsVehicle
   def vision_target, do: :arduino_ventuno_q
+
+  @impl OvcsVehicle
+  def geometry do
+    %{
+      wheelbase: @wheelbase_m,
+      track: @rear_track_m,
+      wheel_radius:
+        (@rim_diameter_inches * @millimetres_per_inch + 2 * @tyre_width_mm * @tyre_aspect_ratio) /
+          2 / 1000,
+      steering_limit: steering_limit()
+    }
+  end
+
+  # The bicycle model's angle that puts the outer front wheel on the turning circle.
+  defp steering_limit do
+    outer_front_radius = @turning_circle_m / 2
+
+    rear_axle_radius =
+      :math.sqrt(outer_front_radius ** 2 - @wheelbase_m ** 2) - @front_track_m / 2
+
+    :math.atan(@wheelbase_m / rear_axle_radius)
+  end
 
   @impl OvcsVehicle
   defdelegate simulator, to: Ovcs1.Simulator

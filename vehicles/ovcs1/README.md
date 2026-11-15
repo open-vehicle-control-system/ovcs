@@ -63,8 +63,8 @@ None of the physical parameters is measured on OVCS1:
 
 | Parameter | Value | Source |
 |---|---|---|
-| Wheelbase | 2.46 m | Polo 9N specification |
-| Wheel radius | 0.289 m | 185/60 R14 tyre |
+| Wheelbase | 2.46 m | Polo 9N specification, `Ovcs1.geometry/0` |
+| Wheel radius | 0.289 m | 185/60 R14 tyre, `Ovcs1.geometry/0` |
 | Maximum speed | 25 m/s | estimate |
 | Mass | 1,300 kg | estimate: a Polo 9N's kerb weight with the conversion |
 | Pack voltage | 360 V | estimate: a Leaf 24 kWh pack's nominal voltage |

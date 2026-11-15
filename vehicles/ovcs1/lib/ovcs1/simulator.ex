@@ -2,7 +2,8 @@ defmodule Ovcs1.Simulator do
   @moduledoc """
   OVCS1's simulated hardware, `Ovcs1.simulator/0`: the parts the VMS
   drives, on the controllers, pins, networks and radio channels of
-  `Ovcs1.Vms.Composer.wiring/0`. Only the physical parameters are set
+  `Ovcs1.Vms.Composer.wiring/0`, with the wheelbase and wheel radius
+  of `Ovcs1.geometry/0`. Only the other physical parameters are set
   here. The vehicle's README lists them and which are estimates.
 
   The key turns to start once the VMS is up, then back to on, so OVCS1
@@ -15,8 +16,7 @@ defmodule Ovcs1.Simulator do
 
   @simulated_networks ~w(ovcs misc leaf_drive polo_drive)
 
-  @vehicle %{wheelbase_m: 2.46, wheel_radius_m: 0.289, max_speed_m_s: 25.0}
-
+  @max_speed_m_s 25.0
   @mass_kg 1_300.0
   @pack_voltage_v 360
   # The Leaf motor drives the Polo's 02R gearbox through a coupling, with no Leaf reducer.
@@ -39,7 +39,11 @@ defmodule Ovcs1.Simulator do
     %{
       can_config_path: "can/simulator.yml",
       can_mapping: can_mapping(),
-      vehicle: @vehicle,
+      vehicle: %{
+        wheelbase_m: Ovcs1.geometry().wheelbase,
+        wheel_radius_m: Ovcs1.geometry().wheel_radius,
+        max_speed_m_s: @max_speed_m_s
+      },
       simulated_components: generic_controllers() ++ parts()
     }
   end
