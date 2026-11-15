@@ -18,8 +18,8 @@ defmodule OvcsMini.Vision.Composer do
 
   The ROS 2 exporter publishes the rectified pair, which the cockpit
   shows, and the left camera's JPEG. The bag exporter records the
-  unit's ROS 2 messages into `/data/recordings`, started and stopped
-  through its actions.
+  unit's ROS 2 messages on its disks, started and stopped from the
+  dashboard's ROS 2 · Bag page or `/api/recordings`.
 
   On a workstation, `OVCS_SIM=1` reads the simulator's camera topics
   and stamps with its clock; without it, the unit runs no cameras.
