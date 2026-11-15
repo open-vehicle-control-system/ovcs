@@ -6,11 +6,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
   Lyrical's writes `<n>_<name>_<local time>.mcap`, and both read the names
   from `metadata.yaml`.
 
-  `write/5` hands it a ROS 2 message, which it writes as rosbag2 stores
-  one: CDR with its encapsulation header (`Ros2Zenoh.RmwZenoh.encode_payload/1`),
-  on a `cdr` channel per topic, with the `ros2msg` schema of its type
-  (`Ros2Zenoh.definition/1`) and the channel metadata rosbag2's MCAP storage
-  writes. A file gets a topic's schema and channel before its first message
+  `write/5` encodes a ROS 2 message as rosbag2 stores one, CDR with its
+  encapsulation header (`Ros2Zenoh.RmwZenoh.encode_payload/1`), in the
+  caller, and this process writes it on a `cdr` channel per topic, with
+  the `ros2msg` schema of its type (`Ros2Zenoh.definition/1`) and the
+  channel metadata rosbag2's MCAP storage writes. A file gets a topic's schema and channel before its first message
   on that topic.
 
   The open chunk is closed, and the file synced to the disk, once its
@@ -29,9 +29,14 @@ defmodule VisionCore.Ros2.Bag.Recording do
   log time earlier than the latest written is raised to it, and the time
   given stays the message's publish time.
 
-  `write/5` drops and counts a message, without sending it, while more than
-  `:queue` messages wait for this process. A message that does not encode
-  is dropped and counted too.
+  `write/5` hands the message to the recording's
+  `VisionCore.Ros2.Bag.Buffer`, which holds it until this process has
+  written it, so that the callers never wait on the disk. A message past
+  `:buffer_bytes` of payloads held is dropped and counted, as is one that
+  does not encode. A stop, or the exit of the process that started the
+  recording, writes what the buffer holds, for `:drain_ms` at most, the
+  rest counted as dropped, then closes the files. The buffer stops with this
+  process, and this process with the buffer.
 
   ## Disks
 
@@ -71,7 +76,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   alias Ros2Zenoh.RmwZenoh
   alias VisionCore.{Disk, Disks}
   alias VisionCore.Mcap.Writer
-  alias VisionCore.Ros2.Bag.Metadata
+  alias VisionCore.Ros2.Bag.{Buffer, Metadata}
 
   require Logger
 
@@ -81,13 +86,14 @@ defmodule VisionCore.Ros2.Bag.Recording do
     :start_time_ns,
     compression: :zstd,
     max_file_bytes: 2_000_000_000,
-    queue: 256,
+    buffer_bytes: 64 * 1_048_576,
     attachments: [],
     metadata: %{},
     chunk_interval_ms: 1_000,
     disks: nil,
     disk: nil,
-    free_floor_bytes: 1_000_000_000
+    free_floor_bytes: 1_000_000_000,
+    drain_ms: 20_000
   ]
 
   @metadata_file "metadata.yaml"
@@ -114,7 +120,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
     * `:start_time_ns` - the recording's start on its messages' clock, the attachments' time
     * `:compression` - `:zstd` or `:none`, its chunks' (`:zstd`)
     * `:max_file_bytes` - the size past which a file is closed (`2_000_000_000`)
-    * `:queue` - the messages that may wait for this process (`256`)
+    * `:buffer_bytes` - the payload bytes held for this process to write (64 MiB)
     * `:attachments` - `{name, media_type, data}` attached to the first file (`[]`)
     * `:metadata` - string keys and values for the first file and `metadata.yaml` (`%{}`)
     * `:chunk_interval_ms` - the longest a chunk spans, in log time and since its
@@ -122,6 +128,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
     * `:disks` - the `VisionCore.Disks` to go on on, none by default
     * `:disk` - the UUID of the disk `:dir` is on
     * `:free_floor_bytes` - the free bytes below which a disk is left (`1_000_000_000`)
+    * `:drain_ms` - the longest a stop writes what the buffer holds, below `stop/1`'s
+      30 s wait so that the files close within it (`20_000`)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -131,21 +139,23 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   @doc """
   Hands the recording `message`, of `message_module`, on `topic` at
-  `log_time_ns`; dropped and counted while more than `:queue` messages wait.
+  `log_time_ns`; dropped and counted past `:buffer_bytes` held.
   """
   @spec write(pid(), String.t(), module(), struct(), non_neg_integer()) :: :ok
   def write(server, topic, message_module, message, log_time_ns) do
     topic = Ros2Zenoh.full_name(topic)
 
-    with {table, queue} <- :persistent_term.get({__MODULE__, server}, nil),
-         {:message_queue_len, waiting} <- Process.info(server, :message_queue_len) do
-      if waiting < queue,
-        do: GenServer.cast(server, {:write, topic, message_module, message, log_time_ns}),
-        else: count_drop(table, topic)
+    case :persistent_term.get({__MODULE__, server}, nil) do
+      nil -> :ok
+      intake -> buffer_or_drop(intake, topic, message_module, message, log_time_ns)
     end
 
     :ok
   end
+
+  @doc false
+  @spec write_encoded(pid(), Buffer.message()) :: :ok
+  def write_encoded(server, message), do: GenServer.cast(server, {:write, message})
 
   @doc """
   The bytes written to the files, the files begun, the messages written and
@@ -156,7 +166,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def status(server) do
     case :persistent_term.get({__MODULE__, server}, nil) do
       nil -> nil
-      {table, _queue} -> read_status(table)
+      {table, _buffer} -> read_status(table)
     end
   rescue
     ArgumentError -> nil
@@ -179,7 +189,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
     :ets.insert(table, [{:bytes, 0}, {:files, 0}, {:error, nil}, {:disk, disk}, {:folders, [dir]}])
 
-    :persistent_term.put({__MODULE__, self()}, {table, Keyword.fetch!(opts, :queue)})
+    {:ok, buffer} = Buffer.start_link(self(), Keyword.fetch!(opts, :buffer_bytes))
+    :persistent_term.put({__MODULE__, self()}, {table, buffer})
 
     state = %{
       dir: dir,
@@ -195,10 +206,12 @@ defmodule VisionCore.Ros2.Bag.Recording do
       compression: Keyword.fetch!(opts, :compression),
       max_file_bytes: Keyword.fetch!(opts, :max_file_bytes),
       chunk_interval_ms: Keyword.fetch!(opts, :chunk_interval_ms),
+      drain_ms: Keyword.fetch!(opts, :drain_ms),
       attachments: Keyword.fetch!(opts, :attachments),
       start_time_ns: Keyword.fetch!(opts, :start_time_ns),
       metadata: Keyword.fetch!(opts, :metadata),
       table: table,
+      buffer: buffer,
       writer: nil,
       files: [],
       closed_bytes: 0,
@@ -207,33 +220,21 @@ defmodule VisionCore.Ros2.Bag.Recording do
       topics: %{},
       last_log_time: 0,
       open_chunk: nil,
-      ended: false,
-      unencodable_topics: MapSet.new()
+      ended: false
     }
 
     {:ok, state |> attempt_or_end(&open_folder/1) |> schedule_tick()}
   end
 
   @impl GenServer
-  def handle_cast({:write, topic, _module, _message, _log_time}, %{ended: true} = state) do
-    count_drop(state.table, topic)
+  def handle_cast({:write, {topic, module, payload, log_time}}, state) do
+    state = write_payload(state, topic, module, payload, log_time)
+    Buffer.written(state.buffer)
     {:noreply, state}
   end
 
-  def handle_cast({:write, topic, module, message, log_time}, state) do
-    case encode(message) do
-      {:ok, payload} ->
-        {:noreply,
-         attempt_or_leave_disk(state, write_steps(state, topic, module, payload, log_time))}
-
-      {:error, reason} ->
-        count_drop(state.table, topic)
-        {:noreply, log_unencodable(state, topic, module, reason)}
-    end
-  end
-
   @impl GenServer
-  def handle_call(:stop, _from, state), do: {:stop, :normal, :ok, finish(state)}
+  def handle_call(:stop, _from, state), do: {:stop, :normal, :ok, close(state)}
 
   @impl GenServer
   def handle_info(:tick, %{ended: true} = state), do: {:noreply, state}
@@ -247,12 +248,56 @@ defmodule VisionCore.Ros2.Bag.Recording do
     {:noreply, schedule_tick(state)}
   end
 
+  def handle_info({:EXIT, pid, reason}, %{buffer: %Buffer{pid: pid}} = state),
+    do: {:stop, {:buffer_exited, reason}, state}
+
   def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
 
   @impl GenServer
   def terminate(_reason, state) do
-    finish(state)
+    close(state)
     :persistent_term.erase({__MODULE__, self()})
+  end
+
+  defp buffer_or_drop({table, buffer}, topic, module, message, log_time) do
+    case encode(message) do
+      {:ok, payload} ->
+        if Buffer.put(buffer, topic, module, payload, log_time) == :full,
+          do: count_drop(table, topic)
+
+      {:error, reason} ->
+        count_drop(table, topic)
+        log_unencodable(table, topic, module, reason)
+    end
+  end
+
+  defp write_payload(%{ended: true} = state, topic, _module, _payload, _log_time) do
+    count_drop(state.table, topic)
+    state
+  end
+
+  defp write_payload(state, topic, module, payload, log_time),
+    do: attempt_or_leave_disk(state, write_steps(state, topic, module, payload, log_time))
+
+  defp close(state), do: state |> write_held() |> finish()
+
+  defp write_held(%{buffer: nil} = state), do: state
+
+  defp write_held(state) do
+    deadline_ms = now_ms() + state.drain_ms
+
+    state.buffer
+    |> Buffer.close()
+    |> Enum.reduce(%{state | buffer: nil}, &write_before(&2, &1, deadline_ms))
+  end
+
+  defp write_before(state, {topic, module, payload, log_time}, deadline_ms) do
+    if now_ms() < deadline_ms do
+      write_payload(state, topic, module, payload, log_time)
+    else
+      count_drop(state.table, topic)
+      state
+    end
   end
 
   # A write's steps, each one write to the disk: one the disk refuses is the only one redone.
@@ -755,17 +800,18 @@ defmodule VisionCore.Ros2.Bag.Recording do
     exception -> {:error, Exception.message(exception)}
   end
 
-  defp log_unencodable(state, topic, module, reason) do
-    if MapSet.member?(state.unencodable_topics, topic) do
-      state
-    else
+  # Logs a topic's first message that does not encode.
+  defp log_unencodable(table, topic, module, reason) do
+    if :ets.insert_new(table, {{:unencodable, topic}}) do
       Logger.warning(
         "#{inspect(__MODULE__)} cannot encode #{inspect(module)} for #{topic}: #{reason}; " <>
           "dropping it; further failures are counted, not logged"
       )
-
-      %{state | unencodable_topics: MapSet.put(state.unencodable_topics, topic)}
     end
+
+    :ok
+  rescue
+    ArgumentError -> :ok
   end
 
   defp type_hash(module) do

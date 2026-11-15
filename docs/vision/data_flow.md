@@ -207,7 +207,7 @@ A recording goes in a folder `<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start 
 
 The recordings are listed across the disks plugged in, each with its parts and their disks ([`VisionCore.Recordings`](../../vision/core/lib/vision_core/recordings.ex)). Download one as one tar, its parts as folders, or delete it with every part.
 
-The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, on which disk, the clock, the bytes, files and messages written, and a warning once any message is dropped.
+The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording holds up to 64 MiB of messages its disk has not taken yet, set with the `buffer_bytes:` of the bag exporter's `recording:` option. That is about 16 s of the `review` preset: enough for a USB stick that stalls a second or more at each sync but keeps up on average. Past it, a message is dropped and counted by topic in the recording's status and in `metadata.yaml`. A stop writes what the recording holds before it closes the files. The bag exporter's status says what it records, since when, on which disk, the clock, the bytes, files and messages written, and a warning once any message is dropped.
 
 ### Disks
 

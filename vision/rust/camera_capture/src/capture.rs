@@ -1,5 +1,6 @@
 //! The libcamera capture loop, its JPEG encoder, its grey output and the
-//! JPEG outputs of its ISP output.
+//! JPEG outputs of its ISP output. A limited-range stream's JPEGs are
+//! expanded to the full range JFIF holds; its grey frames are not.
 
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_void, CStr};
@@ -20,6 +21,7 @@ use libcamera::camera::{
     Camera, CameraConfiguration, CameraConfigurationStatus, Orientation, SensorConfiguration,
 };
 use libcamera::camera_manager::CameraManager;
+use libcamera::color_space::Range as LibcameraRange;
 use libcamera::control::{ControlEntry, ControlList};
 use libcamera::control_value::{ControlType, ControlValue as LibcameraValue};
 use libcamera::controls;
@@ -33,6 +35,7 @@ use libcamera::stream::{Stream, StreamRole};
 
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
+use crate::full_range::{self, chroma_size, Expansion, Range};
 use crate::grey::{luma_length, pack_luma};
 use crate::log;
 use crate::schedule::Schedule;
@@ -269,7 +272,20 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
             stream,
             size: stream_configuration.get_size(),
             stride: stream_configuration.get_stride() as usize,
+            range: (stream_configuration.get_color_space())
+                .map(|colour_space| colour_space.range.into()),
         });
+        info(format!(
+            "stream {index} {}: {}",
+            describe_stream(&configuration, index),
+            match (index == plan.frames, arguments.format) {
+                (true, Format::Grey) => "grey frames of its luma as captured",
+                _ if full_range::expands(configured[index].range) => {
+                    "its JPEGs expanded from limited to full range"
+                }
+                _ => "its JPEGs as captured",
+            }
+        ));
     }
     let Size {
         width: output_width,
@@ -346,9 +362,12 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         ));
     }
 
+    let mut isp_output_planes = plan
+        .isp_output
+        .map(|index| JpegPlanes::new(&configured[index]));
     let mut output = match arguments.format {
         Format::Jpeg => match JpegEncoder::new(output_width, output_height, JPEG_QUALITY) {
-            Ok(encoder) => Output::Jpeg(encoder),
+            Ok(encoder) => Output::Jpeg(encoder, JpegPlanes::new(&configured[plan.frames])),
             Err(message) => {
                 error(message);
                 return 1;
@@ -495,8 +514,8 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         let (width, height) = (output_width as u16, output_height as u16);
         // The record's header, then its pixels, written as they are.
         let record = match &mut output {
-            Output::Jpeg(encoder) => encoder
-                .encode(view)
+            Output::Jpeg(encoder, planes) => encoder
+                .encode(planes.of(view))
                 .map(|jpeg| {
                     (
                         frame_header(width, height, capture_ns, jpeg.len()).to_vec(),
@@ -528,10 +547,15 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
             Err(message) => warning(message),
         }
 
-        if let (Some(isp_output), false) = (plan.isp_output, jpeg_outputs.is_empty()) {
+        if let (Some(isp_output), Some(planes), false) = (
+            plan.isp_output,
+            &mut isp_output_planes,
+            jpeg_outputs.is_empty(),
+        ) {
             if output_schedule.take_if_due(capture_ns) {
                 let view = &views[isp_output][buffer_index];
-                if write_jpeg_outputs(writer, view, &mut jpeg_outputs, capture_ns).is_err() {
+                if write_jpeg_outputs(writer, view, planes, &mut jpeg_outputs, capture_ns).is_err()
+                {
                     stop.store(true, Ordering::Relaxed);
                 }
             }
@@ -685,6 +709,17 @@ struct ConfiguredStream {
     size: Size,
     /// Its luma line stride.
     stride: usize,
+    /// Its YUV's range; `None` when libcamera reports no colour space.
+    range: Option<Range>,
+}
+
+impl From<LibcameraRange> for Range {
+    fn from(range: LibcameraRange) -> Range {
+        match range {
+            LibcameraRange::Full => Range::Full,
+            LibcameraRange::Limited => Range::Limited,
+        }
+    }
 }
 
 /// A stream's configuration as libcamera prints it, with its stride and colour space.
@@ -779,13 +814,15 @@ fn jpeg_outputs(arguments: &Arguments) -> Result<Vec<JpegOutput>, String> {
 fn write_jpeg_outputs(
     writer: &Writer,
     view: &YuvView,
+    planes: &mut JpegPlanes,
     jpeg_outputs: &mut [JpegOutput],
     capture_ns: i64,
 ) -> std::io::Result<()> {
     dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
+    let planes = planes.of(view);
     let mut written = Ok(());
     for output in jpeg_outputs.iter_mut() {
-        match output.encoder.encode(view) {
+        match output.encoder.encode(planes) {
             Ok(jpeg) => {
                 let header =
                     output_jpeg_header(output.index, output.width, output.height, capture_ns);
@@ -858,7 +895,7 @@ impl Drop for FdMapper {
 
 /// How a frame becomes a record: JPEG-encoded, or its luma packed into a reused buffer.
 enum Output {
-    Jpeg(JpegEncoder),
+    Jpeg(JpegEncoder, JpegPlanes),
     Grey(Vec<u8>),
 }
 
@@ -867,6 +904,62 @@ struct YuvView {
     planes: [*const u8; 3],
     strides: [c_int; 3],
     sync_fds: Vec<RawFd>,
+}
+
+/// The YUV420 planes and strides turbojpeg encodes.
+#[derive(Clone, Copy)]
+struct YuvPlanes {
+    planes: [*const u8; 3],
+    strides: [c_int; 3],
+}
+
+/// A stream's frames as its JPEGs are encoded from: as captured, or expanded
+/// to full range when the stream is limited range.
+struct JpegPlanes {
+    width: usize,
+    height: usize,
+    expansion: Option<Box<Expansion>>,
+}
+
+impl JpegPlanes {
+    fn new(stream: &ConfiguredStream) -> JpegPlanes {
+        JpegPlanes {
+            width: stream.size.width as usize,
+            height: stream.size.height as usize,
+            expansion: full_range::expands(stream.range).then(Box::default),
+        }
+    }
+
+    /// `view`'s planes, read between the dmabuf syncs; expanded ones stay valid
+    /// until the next call.
+    fn of(&mut self, view: &YuvView) -> YuvPlanes {
+        let Some(expansion) = &mut self.expansion else {
+            return YuvPlanes {
+                planes: view.planes,
+                strides: view.strides,
+            };
+        };
+        let (chroma_width, chroma_height) = chroma_size(self.width, self.height);
+        let strides = view.strides.map(|stride| stride as usize);
+        let sizes = [
+            (self.width, self.height),
+            (chroma_width, chroma_height),
+            (chroma_width, chroma_height),
+        ];
+        // SAFETY: each plane is mapped for its rows `stride` apart.
+        let planes: [&[u8]; 3] = std::array::from_fn(|plane| unsafe {
+            let (width, height) = sizes[plane];
+            std::slice::from_raw_parts(
+                view.planes[plane],
+                luma_length(width, height, strides[plane]),
+            )
+        });
+        let expanded = expansion.expand(planes, strides, self.width, self.height);
+        YuvPlanes {
+            planes: expanded.map(<[u8]>::as_ptr),
+            strides: sizes.map(|(width, _)| width as c_int),
+        }
+    }
 }
 
 const DMA_BUF_SYNC_READ: u64 = 1;
@@ -948,16 +1041,16 @@ impl JpegEncoder {
         }
     }
 
-    fn encode(&mut self, view: &YuvView) -> Result<&[u8], String> {
-        let mut planes = view.planes;
+    fn encode(&mut self, yuv: YuvPlanes) -> Result<&[u8], String> {
+        let mut planes = yuv.planes;
         let mut size = self.capacity;
-        // SAFETY: the planes are mapped for this frame size; NOREALLOC keeps the buffer.
+        // SAFETY: the planes hold this frame size; NOREALLOC keeps the buffer.
         unsafe {
             let status = tjCompressFromYUVPlanes(
                 self.handle,
                 planes.as_mut_ptr(),
                 self.width,
-                view.strides.as_ptr(),
+                yuv.strides.as_ptr(),
                 self.height,
                 TJSAMP_420,
                 &mut self.buffer,
