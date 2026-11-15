@@ -37,6 +37,17 @@ defmodule VisionCore.JpegTest do
 
   test "data that is not a JPEG does not decode" do
     assert {:error, :bad_request} = Jpeg.decode_grey("not a jpeg")
+    assert {:error, :bad_request} = Jpeg.decode_rgb("not a jpeg")
+  end
+
+  test "a colour JPEG decodes to its RGB pixels" do
+    image = Nx.broadcast(Nx.tensor([200, 40, 20], type: :u8), {48, 64, 3})
+    {:ok, jpeg} = Jpeg.encode_tensor(image)
+
+    assert {:ok, {64, 48, pixels}} = Jpeg.decode_rgb(jpeg)
+    decoded = Nx.from_binary(pixels, :u8) |> Nx.reshape({48, 64, 3})
+    difference = Nx.subtract(Nx.as_type(decoded, :s16), Nx.as_type(image, :s16))
+    assert difference |> Nx.abs() |> Nx.reduce_max() |> Nx.to_number() <= 8
   end
 
   test "an RGB image is encoded" do

@@ -12,6 +12,9 @@
 //!   blue, as a JPEG. A `near_mm` of 0 is the 2nd percentile of the depth; a
 //!   `far_mm` of 0 is infinitely far, so the colours do not follow the
 //!   farthest stray matches from one image to the next.
+//! - 3, decode to RGB: a JPEG; the reply is `width: u16, height: u16`,
+//!   little-endian, then its pixels as RGB, three bytes a pixel, row-major,
+//!   decoded by libjpeg-turbo; a grey JPEG's luma in each channel.
 //!
 //! A malformed request gets an empty reply.
 
@@ -23,6 +26,7 @@ use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 const ENCODE: u8 = 0;
 const DECODE: u8 = 1;
 const DEPTH: u8 = 2;
+const DECODE_RGB: u8 = 3;
 const ENCODE_HEADER: usize = 6;
 const DEPTH_HEADER: usize = 9;
 
@@ -294,6 +298,7 @@ fn reply_to(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
         (&ENCODE, body) => encode(compressor, body),
         (&DECODE, body) => decode_luma(body),
         (&DEPTH, body) => encode_depth(compressor, body),
+        (&DECODE_RGB, body) => decode_rgb(body),
         _ => None,
     }
 }
@@ -363,6 +368,22 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
             ((77 * red + 150 * green + 29 * blue + 128) >> 8) as u8
         })),
         _ => return None,
+    }
+    Some(reply)
+}
+
+fn decode_rgb(jpeg: &[u8]) -> Option<Vec<u8>> {
+    let image = turbojpeg::decompress(jpeg, PixelFormat::RGB).ok()?;
+    let (width, height) = (
+        u16::try_from(image.width).ok()?,
+        u16::try_from(image.height).ok()?,
+    );
+    let row = image.width * 3;
+    let mut reply = Vec::with_capacity(4 + row * image.height);
+    reply.extend_from_slice(&width.to_le_bytes());
+    reply.extend_from_slice(&height.to_le_bytes());
+    for line in image.pixels.chunks(image.pitch).take(image.height) {
+        reply.extend_from_slice(&line[..row]);
     }
     Some(reply)
 }
@@ -507,6 +528,42 @@ mod tests {
         let pixels = &reply[4..];
         assert_eq!(pixels.len(), 32 * 16);
         assert!(pixels.iter().zip(&grey).all(|(a, b)| a.abs_diff(*b) <= 8));
+    }
+
+    fn decode_rgb_request(jpeg: &[u8]) -> Vec<u8> {
+        let mut request = vec![DECODE_RGB];
+        request.extend_from_slice(jpeg);
+        request
+    }
+
+    #[test]
+    fn decodes_a_colour_jpeg_to_rgb() {
+        let rgb: Vec<u8> = [200u8, 40, 20].repeat(32 * 16);
+        let jpeg = reply_to(&request(32, 16, 3, &rgb)).unwrap();
+        let reply = reply_to(&decode_rgb_request(&jpeg)).unwrap();
+
+        assert_eq!(&reply[..4], &[32, 0, 16, 0]);
+        let pixels = &reply[4..];
+        assert_eq!(pixels.len(), 32 * 16 * 3);
+        assert!(pixels.iter().zip(&rgb).all(|(a, b)| a.abs_diff(*b) <= 8));
+    }
+
+    #[test]
+    fn decodes_a_grey_jpeg_to_rgb_its_luma_in_each_channel() {
+        let grey: Vec<u8> = (0..32 * 16).map(|i| (i % 32 * 8) as u8).collect();
+        let jpeg = reply_to(&request(32, 16, 1, &grey)).unwrap();
+        let reply = reply_to(&decode_rgb_request(&jpeg)).unwrap();
+
+        let pixels = &reply[4..];
+        assert_eq!(pixels.len(), 32 * 16 * 3);
+        assert!(pixels
+            .chunks_exact(3)
+            .all(|rgb| rgb[0] == rgb[1] && rgb[1] == rgb[2]));
+    }
+
+    #[test]
+    fn answers_a_decode_to_rgb_of_no_jpeg_with_nothing() {
+        assert_eq!(reply_to(&decode_rgb_request(b"not a jpeg")), None);
     }
 
     #[test]
