@@ -234,7 +234,7 @@ defmodule VisionCore.DisksTest do
     disks = TestDisks.start!(disks)
     eventually(fn -> state(disks, @stick) == :unusable end)
 
-    assert {:error, reason} = Disks.format(disks.server, "sda1", "label")
+    assert {:error, {:conflict, reason}} = Disks.format(disks.server, "sda1", "label")
     assert reason =~ "mounted"
     assert TestDisks.commands(disks, "umount") == []
     assert TestDisks.commands(disks, "mkfs.f2fs") == []
@@ -302,9 +302,9 @@ defmodule VisionCore.DisksTest do
     end
 
     test "names known disks only", %{disks: disks} do
-      assert {:error, reason} = Disks.put_order(disks.server, [@other, "internal"])
+      assert {:error, {:not_found, reason}} = Disks.put_order(disks.server, [@other, "internal"])
       assert reason =~ @other
-      assert {:error, _reason} = Disks.put_enabled(disks.server, @other, false)
+      assert {:error, {:not_found, _reason}} = Disks.put_enabled(disks.server, @other, false)
     end
 
     test "puts the disks it does not name after those it names", %{disks: disks} do
@@ -315,6 +315,26 @@ defmodule VisionCore.DisksTest do
 
       assert Disks.put_order(disks.server, [@other]) == :ok
       assert Enum.map(Disks.list(disks.server), & &1.uuid) == [@other, "internal", @stick]
+    end
+
+    test "moves one disk to a place, the others keeping their order", %{disks: disks} do
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+      TestDisks.plug(disks, "sdb", TestDisks.ext4_image(@other, "ext4-disk"))
+      mounted!(disks, @stick)
+      mounted!(disks, @other)
+
+      assert Disks.put_position(disks.server, @other, 0) == :ok
+      assert Enum.map(Disks.list(disks.server), & &1.uuid) == [@other, "internal", @stick]
+
+      assert Disks.put_position(disks.server, @other, 2) == :ok
+      assert Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal", @stick, @other]
+      assert Enum.map(Disks.list(disks.server), & &1.position) == [0, 1, 2]
+    end
+
+    test "refuses a place past the last and a disk it does not know", %{disks: disks} do
+      assert {:error, {:invalid, reason}} = Disks.put_position(disks.server, "internal", 1)
+      assert reason =~ "0 to 0"
+      assert {:error, {:not_found, _reason}} = Disks.put_position(disks.server, @other, 0)
     end
   end
 
@@ -397,14 +417,21 @@ defmodule VisionCore.DisksTest do
       mounted!(disks, @stick)
       TestDisks.hold_busy(disks, true)
 
-      assert {:error, reason} = Disks.eject(disks.server, @stick)
+      assert {:error, {:conflict, reason}} = Disks.eject(disks.server, @stick)
       assert reason =~ "busy"
       assert state(disks, @stick) == :mounted
     end
 
-    test "refuses the unit's storage and a disk not mounted", %{disks: disks} do
-      assert {:error, _reason} = Disks.eject(disks.server, "internal")
-      assert {:error, _reason} = Disks.eject(disks.server, @other)
+    test "refuses the unit's storage, a disk not mounted and a disk it does not know",
+         %{disks: disks} do
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+      mounted!(disks, @stick)
+      :ok = Disks.eject(disks.server, @stick)
+
+      assert {:error, {:conflict, _reason}} = Disks.eject(disks.server, "internal")
+      assert {:error, {:conflict, reason}} = Disks.eject(disks.server, @stick)
+      assert reason =~ "not mounted"
+      assert {:error, {:not_found, _reason}} = Disks.eject(disks.server, @other)
     end
   end
 
@@ -434,12 +461,15 @@ defmodule VisionCore.DisksTest do
       TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
       mounted!(disks, @stick)
 
-      assert {:error, reason} = Disks.format(disks.server, "sda1", "label")
+      assert {:error, {:conflict, reason}} = Disks.format(disks.server, "sda1", "label")
       assert reason =~ "mounted"
-      assert {:error, _reason} = Disks.format(disks.server, "mmcblk0p72", "label")
+      assert {:error, {:not_found, _reason}} = Disks.format(disks.server, "mmcblk0p72", "label")
 
       :ok = Disks.eject(disks.server, @stick)
-      assert {:error, _reason} = Disks.format(disks.server, "sda1", String.duplicate("a", 513))
+
+      assert {:error, {:invalid, _reason}} =
+               Disks.format(disks.server, "sda1", String.duplicate("a", 513))
+
       assert TestDisks.commands(disks, "mkfs.f2fs") == []
     end
 
@@ -457,7 +487,7 @@ defmodule VisionCore.DisksTest do
       TestDisks.plug(disks, "sdc", TestDisks.blank_image())
       eventually(fn -> length(Disks.list(disks.server)) == 2 end)
 
-      assert {:error, reason} = Disks.format(disks.server, "sdc", "label")
+      assert {:error, {:failed, reason}} = Disks.format(disks.server, "sdc", "label")
       assert reason =~ "Failed to open"
     end
 
@@ -495,7 +525,7 @@ defmodule VisionCore.DisksTest do
       looked_twice!(disks)
       send(mkfs, :fail)
 
-      assert {:error, reason} = Task.await(format)
+      assert {:error, {:failed, reason}} = Task.await(format)
       assert reason =~ "Failed to open"
       eventually(fn -> Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal"] end)
 
@@ -509,7 +539,7 @@ defmodule VisionCore.DisksTest do
       eventually(fn -> length(Disks.list(disks.server)) == 2 end)
       File.write!(TestDisks.device_path(disks, "sdc"), TestDisks.f2fs_image(@other, "precious"))
 
-      assert {:error, reason} = Disks.format(disks.server, "sdc", "wiped")
+      assert {:error, {:conflict, reason}} = Disks.format(disks.server, "sdc", "wiped")
       assert reason =~ "sdc"
       assert TestDisks.commands(disks, "mkfs.f2fs") == []
       mounted!(disks, @other)
@@ -526,7 +556,7 @@ defmodule VisionCore.DisksTest do
     mounted!(disks, @stick)
 
     assert {:ok, %Disk{uuid: "internal"}} = Disks.next(disks.server, 0)
-    assert {:error, reason} = Disks.put_order(disks.server, [@stick, "internal"])
+    assert {:error, {:unavailable, reason}} = Disks.put_order(disks.server, [@stick, "internal"])
     assert reason =~ "unavailable"
     assert Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal", @stick]
   end

@@ -336,6 +336,39 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
   end
 
+  # Answers the calls of its module's functions: `:ping` at once, `:later` once the runner is
+  # sent `:finish`; `:raise` raises and `:malformed` answers no result.
+  defmodule Calling do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(options),
+      do: Keyword.get(options, :init, {:ok, %{test: Keyword.fetch!(options, :test), from: nil}})
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, state), do: {:ok, state}
+
+    @impl VisionCore.Exporter
+    def handle_call(:ping, _from, state), do: {:reply, :pong, state}
+
+    def handle_call(:later, from, state) do
+      send(state.test, :pending)
+      {:noreply, %{state | from: from}}
+    end
+
+    def handle_call(:raise, _from, _state), do: raise("boom")
+    def handle_call(:malformed, _from, state), do: {:ok, %{state | from: nil}}
+
+    @impl VisionCore.Exporter
+    def handle_info(:finish, state) do
+      :ok = VisionCore.Exporter.reply(state.from, :done)
+      {:ok, %{state | from: nil}}
+    end
+  end
+
   # Subscribes from its init/1 to a key that is none of its outputs, and tells the test what it is sent.
   defmodule Subscribing do
     @behaviour VisionCore.Exporter
@@ -1335,6 +1368,61 @@ defmodule VisionCore.Exporter.RunnerTest do
       runner = start_runner(Acting, init: {:error, :not_ready})
 
       assert Runner.action(runner, "ping", %{}, 1000) == {:error, :not_running}
+    end
+  end
+
+  describe "call/3" do
+    test "hands the exporter's handle_call/3 the request and answers its reply" do
+      runner = start_runner(Calling, [])
+
+      assert Runner.call(runner, :ping, 1000) == :pong
+    end
+
+    test "answers a reply the exporter gives later, from handle_info" do
+      runner = start_runner(Calling, [])
+
+      task = Task.async(fn -> Runner.call(runner, :later, 1000) end)
+      assert_receive :pending
+      send(runner, :finish)
+
+      assert Task.await(task) == :done
+    end
+
+    test "a call that raises or answers no result fails, logged, the state kept, and the runner runs on" do
+      runner = start_runner(Calling, [])
+      task = Task.async(fn -> Runner.call(runner, :later, 1000) end)
+      assert_receive :pending
+
+      log =
+        capture_log(fn ->
+          assert Runner.call(runner, :raise, 1000) == {:error, {:failed, "boom"}}
+          assert {:error, {:failed, message}} = Runner.call(runner, :malformed, 1000)
+          assert message =~ "handle_call/3 returned"
+        end)
+
+      assert log =~ "boom"
+      send(runner, :finish)
+      assert Task.await(task) == :done
+    end
+
+    test "answers not running before init/1 succeeds, and once the runner is gone" do
+      runner = start_runner(Calling, init: {:error, :not_ready})
+      assert Runner.call(runner, :ping, 1000) == {:error, :not_running}
+
+      stop_supervised!(Runner)
+      assert Runner.call(runner, :ping, 1000) == {:error, :not_running}
+    end
+
+    test "answers a timeout when the exporter does not reply in time" do
+      runner = start_runner(Calling, [])
+
+      assert Runner.call(runner, :later, 50) == {:error, :timeout}
+    end
+
+    test "an exporter without handle_call/3 takes no call" do
+      runner = start_forwarder([outputs: [:stereo_pair]], config())
+
+      assert Runner.call(runner, :ping, 1000) == {:error, :unknown_call}
     end
   end
 

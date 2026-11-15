@@ -4,32 +4,20 @@ defmodule VisionCore.Ros2.BagExporter do
   `VisionCore.Exporter`, listed as `ros2_bag`, "ROS 2 · Bag", which
   `VisionCore.Exporters` runs as any other.
 
-  A recording starts and stops with the actions `start` and `stop`. Its
-  messages are those `VisionCore.Ros2.ZenohExporter` would publish with
+  A recording starts with `start_recording/3` and stops with
+  `stop_recording/2`, which reach the exporter through its runner
+  (`VisionCore.Exporter.Runner.call/3`); `VisionCore.Recordings` calls
+  them. Its messages are those `VisionCore.Ros2.ZenohExporter` would publish with
   the options of its preset (`VisionCore.Ros2.BagExporter.Preset`), built
   by a `ZenohExporter` state this exporter holds while it records, whose
   `:publish` writes to a `VisionCore.Ros2.Bag.Recording`. It needs no
   ROS 2 link and answers no service. While idle it builds nothing.
 
-  ## Actions
-
-    * `start`, with `preset` (`"replay"` or `"review"`, the default) and
-      `clock` (`"system"`, `"since_start"` or `"automatic"`, the default;
-      `VisionCore.Ros2.Bag.Clock`), records into
-      `<YYYYMMDDTHHMMSSZ>_<preset>`, the time the UTC start, `_2`, `_3`…
-      after it for a folder already there, in the recordings folder of
-      the first disk `VisionCore.Disks.next/3` gives. It answers the
-      folder, its disk, the preset, the clock chosen and the clock in
-      use, and whether the clock was synchronized; `{:error, :busy}`
-      while recording, `{:error, {:refused, reason}}` naming the allowed
-      values for a preset or clock it does not know, and
-      `{:error, {:failed, reason}}` with no disk to record on or when the
-      folder cannot be written.
-    * `stop` closes the recording, answering its first folder, every
-      part's folder, the bytes of its closed files on the disks still
-      mounted, its files, and the messages and drops counted when it was
-      asked; `{:error, {:refused, "Not recording"}}` while idle.
-
+  A recording records into `<YYYYMMDDTHHMMSSZ>_<preset>`, the time the
+  UTC start, `_2`, `_3`… after it for a name a recording on any mounted
+  disk has, a part `<name>_part<n>` included, so that no two recordings
+  join, in the recordings folder of the first disk
+  `VisionCore.Disks.next/3` gives.
   A recording goes on on the next disk when its disk fills past
   `:free_floor_bytes`, is ejected or pulled out, in a folder of the same
   name with `_part<n>` (`VisionCore.Ros2.Bag.Recording`).
@@ -87,8 +75,11 @@ defmodule VisionCore.Ros2.BagExporter do
       the `ZenohExporter` refuses, and the options this exporter sets
       itself: `:config`, `:link`, `:services`, `:jpeg_codec`, `:publish`
       and `:stamp`.
-    * `:disks` (`VisionCore.Disks`) — the name of the `VisionCore.Disks`
-      it starts and records on.
+    * `:disks` (`[]`) — the options of the `VisionCore.Disks` it starts
+      and records on, but `internal:`, which `:root` sets; registered as
+      `VisionCore.Disks` unless they give a `:name`. The vision API reads
+      the disks of that name. `check/1` refuses one that is no keyword
+      list or sets `internal:`.
     * `:root` (`"/data/recordings"`) — the recordings folder of the
       unit's own storage, the disk `internal`; another folder on a host.
       `check/1` refuses one that is no path.
@@ -98,8 +89,9 @@ defmodule VisionCore.Ros2.BagExporter do
     * `:recording` (`[]`) — the `VisionCore.Ros2.Bag.Recording` options
       `:compression`, `:max_file_bytes`, `:queue` and
       `:chunk_interval_ms`. `check/1` refuses a `:chunk_interval_ms` not
-      below the 10 s an eject waits for the recording to leave the disk,
-      which it checks once a chunk interval.
+      below the time an eject waits for the recording to leave the disk,
+      which it checks once a chunk interval: 10 s, or the
+      `:eject_timeout_ms` of `:disks`.
     * `:parameters` (`&VisionCore.Parameters.groups/0`) — the parameter
       groups to attach, none when it exits.
     * `:clock_synchronized?` — whether the clock is synchronized, the
@@ -116,6 +108,7 @@ defmodule VisionCore.Ros2.BagExporter do
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Camera.Frame
   alias VisionCore.{Disks, Exporter}
+  alias VisionCore.Exporter.Runner
   alias VisionCore.Parameters.Group
   alias VisionCore.Ros2.Bag.{Clock, Recording}
   alias VisionCore.Ros2.BagExporter.Preset
@@ -141,6 +134,11 @@ defmodule VisionCore.Ros2.BagExporter do
   @queue 64
   @check_interval_ms 1_000
   @clocks [:system, :since_start, :automatic]
+  # A start waits for the disk to take the folder and the first file.
+  @start_timeout_ms 15_000
+  # A stop waits for the recording to write what it holds, longer than `Bag.Recording.stop/1` waits.
+  @stop_timeout_ms 45_000
+  @recording_timeout_ms 5_000
   @recording_options [:compression, :max_file_bytes, :queue, :chunk_interval_ms]
   @own_zenoh_options [:config, :link, :services, :jpeg_codec, :publish, :stamp]
   # A transforms tick within this of the last one handed over is a stopped recording's.
@@ -156,33 +154,103 @@ defmodule VisionCore.Ros2.BagExporter do
   def children(options),
     do: [
       {Disks,
-       name: disks(options),
-       internal: Keyword.get(options, :root, @root),
-       eject_timeout_ms: @eject_timeout_ms}
+       Keyword.merge(
+         [name: Disks, internal: root(options), eject_timeout_ms: @eject_timeout_ms],
+         disks_options(options)
+       )}
     ]
 
-  defp disks(options), do: Keyword.get(options, :disks, Disks)
+  defp disks_options(options), do: Keyword.get(options, :disks, [])
+
+  defp disks(options), do: Keyword.get(disks_options(options), :name, Disks)
+
+  defp root(options), do: Keyword.get(options, :root, @root)
+
+  defp eject_timeout_ms(options),
+    do: Keyword.get(disks_options(options), :eject_timeout_ms, @eject_timeout_ms)
 
   defp free_floor(options), do: Keyword.get(options, :free_floor_bytes, @free_floor_bytes)
 
-  @impl Exporter
-  def actions(_options),
-    do: [
-      %{
-        name: :start,
-        label: "Start",
-        description:
-          "Records a preset, replay or review, review by default, with a clock, " <>
-            "system, since_start or automatic, automatic by default"
-      },
-      %{name: :stop, label: "Stop", description: "Closes the recording"}
-    ]
+  @typedoc "A recording in progress, as `start_recording/3` and `recording/1` answer it."
+  @type recording :: %{
+          name: String.t(),
+          folder: Path.t(),
+          folders: [Path.t()],
+          disk: String.t(),
+          preset: Preset.name(),
+          clock: Clock.mode() | :automatic,
+          clock_in_use: Clock.mode(),
+          synchronized: boolean(),
+          started_at: DateTime.t(),
+          duration_ms: non_neg_integer(),
+          bytes: non_neg_integer(),
+          files: non_neg_integer(),
+          messages: non_neg_integer(),
+          dropped: %{String.t() => pos_integer()}
+        }
+
+  @typedoc "A stopped recording, as `stop_recording/2` answers it."
+  @type summary :: %{
+          folder: Path.t(),
+          folders: [Path.t()],
+          bytes: non_neg_integer(),
+          files: non_neg_integer(),
+          messages: non_neg_integer(),
+          dropped: %{String.t() => pos_integer()}
+        }
+
+  @typedoc "Why a call through the runner got no answer (`VisionCore.Exporter.Runner.call/3`)."
+  @type unanswered :: :not_running | :timeout | :unknown_call | {:failed, String.t()}
+
+  @doc "The presets a recording records, `VisionCore.Ros2.BagExporter.Preset.names/0`."
+  @spec presets() :: [Preset.name()]
+  def presets, do: Preset.names()
+
+  @doc "The clocks a recording is started with (`VisionCore.Ros2.Bag.Clock`)."
+  @spec clocks() :: [Clock.mode() | :automatic]
+  def clocks, do: @clocks
+
+  @doc """
+  Starts a recording of `preset` with `clock` on the exporter `runner`
+  runs, answering it as `recording/1` does; `{:error, :busy}` while
+  recording, `{:error, {:no_disk, reason}}` with no disk to record on,
+  and `{:error, {:failed, reason}}` when the folder cannot be written or
+  the preset's messages cannot be built.
+  """
+  @spec start_recording(GenServer.server(), Preset.name(), Clock.mode() | :automatic) ::
+          {:ok, recording()}
+          | {:error, :busy | {:no_disk, String.t()} | {:failed, String.t()} | unanswered()}
+  def start_recording(runner, preset, clock) when clock in @clocks do
+    true = preset in Preset.names()
+    Runner.call(runner, {:start, preset, clock}, @start_timeout_ms)
+  end
+
+  @doc """
+  Closes the recording in progress named `name`, answering its first
+  folder, every part's folder, the bytes of its closed files on the
+  disks still mounted, its files, and the messages and drops counted
+  when it was asked; `{:error, :not_recording}` while idle and
+  `{:error, :other_recording}` while another records.
+  """
+  @spec stop_recording(GenServer.server(), String.t()) ::
+          {:ok, summary()} | {:error, :not_recording | :other_recording | unanswered()}
+  def stop_recording(runner, name), do: Runner.call(runner, {:stop, name}, @stop_timeout_ms)
+
+  @doc """
+  The recording in progress: its name, its first folder and every
+  part's, the disk it records on, its preset, the clock chosen and the
+  one in use, whether the clock was synchronized, its start and
+  duration, and the bytes, files, messages and drops by topic counted so
+  far; `nil` while idle.
+  """
+  @spec recording(GenServer.server()) :: {:ok, recording() | nil} | {:error, unanswered()}
+  def recording(runner), do: Runner.call(runner, :recording, @recording_timeout_ms)
 
   @impl Exporter
   def check(options) do
     presets = Keyword.get(options, :presets, [])
 
-    root = Keyword.get(options, :root, @root)
+    root = root(options)
 
     chunk_interval_ms =
       options |> Keyword.get(:recording, []) |> Keyword.get(:chunk_interval_ms, 0)
@@ -196,15 +264,22 @@ defmodule VisionCore.Ros2.BagExporter do
       not (is_list(presets) and Keyword.keyword?(presets)) ->
         {:error, "its presets: is not a keyword list: #{inspect(presets)}"}
 
+      not Keyword.keyword?(disks_options(options)) ->
+        {:error, "its disks: is not a keyword list: #{inspect(disks_options(options))}"}
+
+      Keyword.has_key?(disks_options(options), :internal) ->
+        {:error, "its disks: sets internal:, which root: sets"}
+
       not match?(floor when is_integer(floor) and floor >= 0, free_floor(options)) ->
         {:error, "its free_floor_bytes: is not a count of bytes: #{inspect(free_floor(options))}"}
 
       not (is_binary(root) and root != "") ->
         {:error, "its root: is not a folder's path: #{inspect(root)}"}
 
-      chunk_interval_ms not in 0..(@eject_timeout_ms - 1)//1 ->
+      chunk_interval_ms not in 0..(eject_timeout_ms(options) - 1)//1 ->
         {:error,
-         "its recording: chunk_interval_ms: is not a time in ms below #{@eject_timeout_ms}, " <>
+         "its recording: chunk_interval_ms: is not a time in ms below " <>
+           "#{eject_timeout_ms(options)}, " <>
            "the time an eject waits for the recording to leave the disk: " <>
            inspect(chunk_interval_ms)}
 
@@ -238,6 +313,8 @@ defmodule VisionCore.Ros2.BagExporter do
          "sets #{Enum.map_join(set, ", ", &"#{&1}:")}, which the bag exporter sets itself"}
     end
   end
+
+  defp allowed(names), do: Enum.map_join(names, ", ", &Atom.to_string/1)
 
   @impl Exporter
   def outputs(options) do
@@ -285,55 +362,46 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   @impl Exporter
-  def handle_action(:start, _params, _from, %{recording: %{}} = state),
+  def handle_call({:start, _preset, _clock}, _from, %{recording: %{}} = state),
     do: {:reply, {:error, :busy}, state}
 
-  def handle_action(:start, params, _from, state) do
-    with {:ok, preset} <- choice(params, "preset", :review, Preset.names()),
-         {:ok, clock} <- choice(params, "clock", :automatic, @clocks),
-         {:ok, recording} <- start_recording(state, preset, clock) do
-      {:reply, {:ok, started(recording)}, %{state | recording: recording, stopped: nil}}
+  def handle_call({:start, preset, clock}, _from, state) do
+    case begin_recording(state, preset, clock) do
+      {:ok, recording} ->
+        {:reply, {:ok, facts(recording)}, %{state | recording: recording, stopped: nil}}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
+  end
+
+  def handle_call({:stop, _name}, _from, %{recording: nil} = state),
+    do: {:reply, {:error, :not_recording}, state}
+
+  def handle_call({:stop, name}, _from, %{recording: recording} = state) do
+    if Path.basename(recording.dir) == name do
+      {summary, state} = end_recording(state)
+      {:reply, {:ok, summary}, state}
     else
-      {:error, {:refused, _reason} = refusal} -> {:reply, {:error, refusal}, state}
-      {:error, reason} -> {:reply, {:error, {:failed, reason}}, state}
+      {:reply, {:error, :other_recording}, state}
     end
   end
 
-  def handle_action(:stop, _params, _from, %{recording: nil} = state),
-    do: {:reply, {:error, {:refused, "Not recording"}}, state}
+  def handle_call(:recording, _from, %{recording: nil} = state), do: {:reply, {:ok, nil}, state}
 
-  def handle_action(:stop, _params, _from, state) do
-    {summary, state} = stop_recording(state)
-    {:reply, {:ok, summary}, state}
-  end
+  def handle_call(:recording, _from, %{recording: recording} = state),
+    do: {:reply, {:ok, facts(recording)}, state}
 
-  defp choice(params, key, default, allowed) do
-    case Map.get(params, key) do
-      nil ->
-        {:ok, default}
-
-      value ->
-        case Enum.find(allowed, &(Atom.to_string(&1) == value)) do
-          nil ->
-            {:error,
-             {:refused, "#{key} must be one of #{allowed(allowed)}, not #{inspect(value)}"}}
-
-          choice ->
-            {:ok, choice}
-        end
+  defp begin_recording(state, preset, clock_choice) do
+    case Disks.next(state.disks, state.free_floor_bytes) do
+      {:ok, disk} -> begin_recording(state, preset, clock_choice, disk)
+      {:error, reason} -> {:error, {:no_disk, reason}}
     end
   end
 
-  defp allowed(names), do: Enum.map_join(names, ", ", &Atom.to_string/1)
-
-  defp start_recording(state, preset, clock_choice) do
-    with {:ok, disk} <- Disks.next(state.disks, state.free_floor_bytes),
-         do: start_recording(state, preset, clock_choice, disk)
-  end
-
-  defp start_recording(state, preset, clock_choice, disk) do
+  defp begin_recording(state, preset, clock_choice, disk) do
     started_at = DateTime.utc_now()
-    name = folder_name(disk.recordings_path, started_at, preset)
+    name = folder_name(state.disks, disk.recordings_path, started_at, preset)
     dir = Path.join(disk.recordings_path, name)
     synchronized? = Keyword.get(state.options, :clock_synchronized?)
     clock_options = if synchronized?, do: [synchronized?: synchronized?], else: []
@@ -374,7 +442,7 @@ defmodule VisionCore.Ros2.BagExporter do
 
       {:error, reason} ->
         Recording.stop(pid)
-        {:error, reason}
+        {:error, {:failed, reason}}
     end
   end
 
@@ -426,35 +494,64 @@ defmodule VisionCore.Ros2.BagExporter do
     end
   end
 
-  defp folder_name(root, started_at, preset) do
+  # A name no recording on a mounted disk has, as `VisionCore.Recordings` joins their parts, nor any file in `root`.
+  defp folder_name(disks, root, started_at, preset) do
     base = Calendar.strftime(started_at, "%Y%m%dT%H%M%SZ") <> "_#{preset}"
+    taken = taken_names(disks)
 
     Stream.iterate(1, &(&1 + 1))
     |> Stream.map(fn
       1 -> base
       n -> "#{base}_#{n}"
     end)
-    |> Enum.find(&(not File.exists?(Path.join(root, &1))))
+    |> Enum.find(&(not MapSet.member?(taken, &1) and not File.exists?(Path.join(root, &1))))
+  end
+
+  defp taken_names(disks) do
+    for %{recordings_path: recordings} <- Disks.list(disks),
+        is_binary(recordings),
+        {:ok, folders} <- [File.ls(recordings)],
+        folder <- folders,
+        into: MapSet.new(),
+        do: folder |> VisionCore.Recording.part_of() |> elem(0)
   end
 
   defp check_later(pid),
     do: Process.send_after(self(), {__MODULE__, :check, pid}, @check_interval_ms)
 
-  defp started(recording) do
-    described = Clock.describe(recording.clock)
+  defp facts(recording) do
+    status = Recording.status(recording.pid) || ended_status(recording)
 
     %{
+      name: Path.basename(recording.dir),
       folder: recording.dir,
-      disk: recording.disk,
-      preset: Atom.to_string(recording.preset),
-      clock: Atom.to_string(recording.clock_choice),
-      clock_in_use: described.clock,
-      synchronized: described.synchronized
+      folders: status.folders,
+      disk: status.disk,
+      preset: recording.preset,
+      clock: recording.clock_choice,
+      clock_in_use: recording.clock.mode,
+      synchronized: recording.clock.synchronized,
+      started_at: recording.started_at,
+      duration_ms: System.monotonic_time(:millisecond) - recording.started_ms,
+      bytes: status.bytes,
+      files: status.files,
+      messages: status.messages |> Map.values() |> Enum.sum(),
+      dropped: status.dropped
     }
   end
 
+  defp ended_status(recording),
+    do: %{
+      bytes: 0,
+      files: 0,
+      messages: %{},
+      dropped: %{},
+      disk: recording.disk,
+      folders: [recording.dir]
+    }
+
   # Closes the recording; the encodes in flight are answered once their tasks are done.
-  defp stop_recording(%{recording: recording} = state, error \\ nil) do
+  defp end_recording(%{recording: recording} = state, error \\ nil) do
     status = Recording.status(recording.pid)
     Recording.stop(recording.pid)
     summary = summary(recording, status)
@@ -469,8 +566,7 @@ defmodule VisionCore.Ros2.BagExporter do
   end
 
   defp summary(recording, status) do
-    status =
-      status || %{bytes: 0, files: 0, messages: %{}, dropped: %{}, folders: [recording.dir]}
+    status = status || ended_status(recording)
 
     %{
       folder: recording.dir,
@@ -555,7 +651,7 @@ defmodule VisionCore.Ros2.BagExporter do
       ended ->
         reason = (ended && ended.error) || "the recording process stopped"
         Logger.error("#{inspect(__MODULE__)} #{state.recording.dir}: #{reason}")
-        {_summary, state} = stop_recording(state, reason)
+        {_summary, state} = end_recording(state, reason)
         {:ok, state}
     end
   end
@@ -598,9 +694,7 @@ defmodule VisionCore.Ros2.BagExporter do
     do: {:warning, "Stopped: #{stopped.error} (#{Path.basename(stopped.folder)})"}
 
   def status(%{recording: recording}) do
-    status =
-      Recording.status(recording.pid) ||
-        %{bytes: 0, files: 0, messages: %{}, dropped: %{}, disk: recording.disk}
+    status = Recording.status(recording.pid) || ended_status(recording)
 
     level = if status.dropped == %{}, do: :ok, else: :warning
     {level, recording_text(recording, status)}

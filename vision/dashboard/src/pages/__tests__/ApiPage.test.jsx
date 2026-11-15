@@ -72,7 +72,11 @@ describe('ApiPage', () => {
         'GET /api/saved-calibrations?filter[calibration]={id}',
         'PATCH /api/saved-calibrations/{id}',
         'DELETE /api/saved-calibrations/{id}',
-        'POST /api/exporters/{id}/actions/{name}'
+        'POST /api/exporters/{id}/actions/{name}',
+        'POST /api/recordings',
+        'PATCH /api/recordings/{id}',
+        'DELETE /api/recordings/{id}',
+        'PATCH /api/disks/{id}'
       ])
     )
   })
@@ -81,6 +85,8 @@ describe('ApiPage', () => {
     render(<ApiPage />)
 
     expect(screen.getByRole('row', { name: /^GET \/api\/exporters What/ }).textContent).toContain('outputs')
+    expect(screen.getByRole('row', { name: /^GET \/api\/recordings\?include=parts / }).textContent).toContain('parts')
+    expect(screen.getByRole('row', { name: /^GET \/api\/disks / }).textContent).toContain('order')
     expect(screen.queryByText(/besides ROS 2/)).toBeNull()
   })
 })

@@ -1,8 +1,9 @@
 defmodule VisionApiWeb.RefusalTests do
   @moduledoc """
   Tests the refusals every route creating a resource the unit names
-  makes, and those every calibration action makes, generated for one
-  route in the module that calls them. The module uses
+  makes, those every route changing a resource makes, and those every
+  calibration action makes, generated for one route in the module that
+  calls them. The module uses
   `VisionApiWeb.ConnCase`, and `VisionApiWeb.CalibrationCase` for the
   calibration actions.
   """
@@ -53,6 +54,55 @@ defmodule VisionApiWeb.RefusalTests do
 
         assert %{"errors" => [%{"status" => "403", "source" => %{"pointer" => "/data/id"}}]} =
                  json_response(conn, 403)
+      end
+    end
+  end
+
+  @doc """
+  Tests that `PATCH path`, the resource of `type` and `id`, refuses a
+  document of another type (409), another id (409), one without data
+  (400), and one sent as a form or in the query string (400).
+  """
+  defmacro test_change_refusals(path, type, id) do
+    quote do
+      test "PATCH #{unquote(path)} answers 409 for another type or id, and 400 without data",
+           %{conn: conn} do
+        for {data, pointer} <- [
+              {%{type: "widgets", id: unquote(id)}, "/data/type"},
+              {%{type: unquote(type), id: "another"}, "/data/id"}
+            ] do
+          conflict =
+            conn
+            |> put_req_header("content-type", unquote(@media_type))
+            |> patch(unquote(path), Jason.encode!(%{data: data}))
+
+          assert get_resp_header(conflict, "content-type") == [unquote(@media_type)]
+
+          assert %{"errors" => [%{"status" => "409", "source" => %{"pointer" => ^pointer}}]} =
+                   json_response(conflict, 409)
+        end
+
+        assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data"}}]} =
+                 conn
+                 |> put_req_header("content-type", unquote(@media_type))
+                 |> patch(unquote(path), "{}")
+                 |> json_response(400)
+      end
+
+      test "PATCH #{unquote(path)} refuses a document sent as a form or in the query string",
+           %{conn: conn} do
+        for {content_type, path, body} <- [
+              {"application/x-www-form-urlencoded", unquote(path),
+               "data[type]=#{unquote(type)}&data[id]=#{unquote(id)}"},
+              {nil, "#{unquote(path)}?data[type]=#{unquote(type)}&data[id]=#{unquote(id)}", nil}
+            ] do
+          conn =
+            if content_type, do: put_req_header(conn, "content-type", content_type), else: conn
+
+          refused = patch(conn, path, body)
+          assert get_resp_header(refused, "content-type") == [unquote(@media_type)]
+          assert %{"errors" => [%{"status" => "400"}]} = json_response(refused, 400)
+        end
       end
     end
   end

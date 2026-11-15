@@ -48,7 +48,8 @@ defmodule VisionApiWeb.JsonApiTest do
           "/api/calibrations",
           "/api/calibrations/unit",
           "/api/saved-calibrations",
-          "/api/saved-calibrations/1"
+          "/api/saved-calibrations/1",
+          "/api/disks"
         ] do
       test "GET #{path} answers 400 to an include, naming it", %{conn: conn} do
         conn = get(conn, unquote(path) <> "?include=stage")
@@ -73,7 +74,11 @@ defmodule VisionApiWeb.JsonApiTest do
           "/api/calibrations",
           "/api/calibrations/unit",
           "/api/saved-calibrations",
-          "/api/saved-calibrations/1"
+          "/api/saved-calibrations/1",
+          "/api/recordings",
+          "/api/recordings/20260101T000000Z_review",
+          "/api/recordings/20260101T000000Z_review/download",
+          "/api/disks"
         ] do
       test "GET #{path} answers 400 to a sort, naming it", %{conn: conn} do
         conn = get(conn, unquote(path) <> "?sort=name")

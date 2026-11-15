@@ -29,6 +29,18 @@ defmodule VisionCore.Disks do
   the saved disks, which it tries again at each look, so a database
   that starts late keeps the order it holds.
 
+  A change it refuses answers `{:error, {kind, reason}}`, `reason` a
+  sentence saying why and `kind` one of:
+
+    * `:not_found` — no disk, or no USB disk plugged in, of that name;
+    * `:conflict` — the disk's state refuses it: the unit's storage
+      ejected, a disk not mounted ejected, a mounted one formatted, a
+      device that no longer holds the disk listed formatted, or a disk
+      that stays busy;
+    * `:invalid` — a label f2fs cannot hold;
+    * `:failed` — the command failed;
+    * `:unavailable` — the order cannot be saved.
+
   The bag exporter (`VisionCore.Ros2.BagExporter`) starts it as its
   helper. The USB disks are watched only in a target build
   (`VisionCore.arm/0`), so a run on a host never mounts its disks.
@@ -65,6 +77,9 @@ defmodule VisionCore.Disks do
   @unavailable "the disks' order is unavailable"
   # No access time written, and no link followed, device opened, setuid or program run off a disk.
   @mount_options "noatime,nosymfollow,nodev,nosuid,noexec"
+
+  @typedoc "Why a change was refused; see the module doc."
+  @type refusal :: {:not_found | :conflict | :invalid | :failed | :unavailable, String.t()}
 
   @doc "Starts watching the disks; see the module's options."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -139,11 +154,20 @@ defmodule VisionCore.Disks do
   Puts the disks of `uuids` first, in that order, and the others after
   them in the order they had.
   """
-  @spec put_order(GenServer.server(), [String.t()]) :: :ok | {:error, String.t()}
+  @spec put_order(GenServer.server(), [String.t()]) :: :ok | {:error, refusal()}
   def put_order(server, uuids), do: GenServer.call(server, {:put_order, uuids})
 
+  @doc """
+  Moves the disk of `uuid` to `position` in the order, 0 first, the
+  others keeping their order; `{:invalid, reason}` past the last.
+  """
+  @spec put_position(GenServer.server(), String.t(), non_neg_integer()) ::
+          :ok | {:error, refusal()}
+  def put_position(server, uuid, position) when is_integer(position) and position >= 0,
+    do: GenServer.call(server, {:put_position, uuid, position})
+
   @doc "Turns the disk of `uuid` on or off: a disk turned off is not chosen by `next/3`."
-  @spec put_enabled(GenServer.server(), String.t(), boolean()) :: :ok | {:error, String.t()}
+  @spec put_enabled(GenServer.server(), String.t(), boolean()) :: :ok | {:error, refusal()}
   def put_enabled(server, uuid, enabled) when is_boolean(enabled),
     do: GenServer.call(server, {:put_enabled, uuid, enabled})
 
@@ -154,7 +178,7 @@ defmodule VisionCore.Disks do
   ejected disk stays unmounted until it is plugged in again or this
   process restarts, as at the unit's restart.
   """
-  @spec eject(GenServer.server(), String.t()) :: :ok | {:error, String.t()}
+  @spec eject(GenServer.server(), String.t()) :: :ok | {:error, refusal()}
   def eject(server, uuid), do: GenServer.call(server, {:eject, uuid}, :infinity)
 
   @doc """
@@ -165,7 +189,7 @@ defmodule VisionCore.Disks do
   mounted. A device whose superblock no longer reads as the disk listed
   is not formatted.
   """
-  @spec format(GenServer.server(), String.t(), String.t()) :: :ok | {:error, String.t()}
+  @spec format(GenServer.server(), String.t(), String.t()) :: :ok | {:error, refusal()}
   def format(server, device, label),
     do: GenServer.call(server, {:format, device, label}, @format_timeout_ms)
 
@@ -218,24 +242,37 @@ defmodule VisionCore.Disks do
   def handle_call({:put_order, uuids}, _from, state) do
     case Enum.reject(uuids, &Map.has_key?(state.disks, &1)) do
       [] ->
-        order = Enum.uniq(uuids ++ Enum.map(ordered(state), & &1.uuid))
-        disks = order |> Enum.with_index() |> Enum.map(&put_position(state, &1))
-        save_all(state, disks)
+        put_order_first(state, uuids)
 
       unknown ->
-        {:reply, {:error, "no disk #{Enum.join(unknown, ", ")} is known"}, state}
+        {:reply, {:error, {:not_found, "no disk #{Enum.join(unknown, ", ")} is known"}}, state}
+    end
+  end
+
+  def handle_call({:put_position, uuid, position}, _from, state) do
+    others = state |> ordered() |> Enum.map(& &1.uuid) |> List.delete(uuid)
+
+    cond do
+      not Map.has_key?(state.disks, uuid) ->
+        {:reply, {:error, {:not_found, "no disk #{uuid} is known"}}, state}
+
+      position > length(others) ->
+        {:reply, {:error, {:invalid, "a position is from 0 to #{length(others)}"}}, state}
+
+      true ->
+        put_order_first(state, List.insert_at(others, position, uuid))
     end
   end
 
   def handle_call({:put_enabled, uuid, enabled}, _from, state) do
     case state.disks do
       %{^uuid => disk} -> save_all(state, [%{disk | enabled: enabled}])
-      _disks -> {:reply, {:error, "no disk #{uuid} is known"}, state}
+      _disks -> {:reply, {:error, {:not_found, "no disk #{uuid} is known"}}, state}
     end
   end
 
   def handle_call({:eject, @internal}, _from, state),
-    do: {:reply, {:error, "the unit's storage is not ejected"}, state}
+    do: {:reply, {:error, {:conflict, "the unit's storage is not ejected"}}, state}
 
   def handle_call({:eject, uuid}, from, state) do
     case state.disks do
@@ -251,10 +288,10 @@ defmodule VisionCore.Disks do
         {:noreply, state}
 
       %{^uuid => _disk} ->
-        {:reply, {:error, "#{uuid} is not mounted"}, state}
+        {:reply, {:error, {:conflict, "#{uuid} is not mounted"}}, state}
 
       _disks ->
-        {:reply, {:error, "no disk #{uuid} is known"}, state}
+        {:reply, {:error, {:not_found, "no disk #{uuid} is known"}}, state}
     end
   end
 
@@ -263,8 +300,15 @@ defmodule VisionCore.Disks do
          :ok <- check_formattable(state, device) do
       {:noreply, start_format(state, device, label, from)}
     else
-      {:error, reason} -> {:reply, {:error, reason}, state}
+      {:error, refusal} -> {:reply, {:error, refusal}, state}
     end
+  end
+
+  # Puts the known disks of `uuids` first, in that order.
+  defp put_order_first(state, uuids) do
+    order = Enum.uniq(uuids ++ Enum.map(ordered(state), & &1.uuid))
+    disks = order |> Enum.with_index() |> Enum.map(&put_position(state, &1))
+    save_all(state, disks)
   end
 
   @impl GenServer
@@ -279,7 +323,11 @@ defmodule VisionCore.Disks do
       when is_map_key(state.formats, reference),
       do:
         {:noreply,
-         end_format(state, reference, {:error, "mkfs.f2fs stopped: #{inspect(reason)}"})}
+         end_format(
+           state,
+           reference,
+           {:error, {:failed, "mkfs.f2fs stopped: #{inspect(reason)}"}}
+         )}
 
   def handle_info({:unmount, uuid}, state) do
     case state.ejecting do
@@ -577,7 +625,10 @@ defmodule VisionCore.Disks do
           |> put_disk(%{disk | state: :mounted})
           |> publish()
           |> tap(fn _state ->
-            GenServer.reply(from, {:error, "#{uuid} stays busy: #{String.trim(output)}"})
+            GenServer.reply(
+              from,
+              {:error, {:conflict, "#{uuid} stays busy: #{String.trim(output)}"}}
+            )
           end)
         end
     end
@@ -589,7 +640,8 @@ defmodule VisionCore.Disks do
          true <- units <= @f2fs_label_units do
       :ok
     else
-      false -> {:error, "an f2fs label is text of at most #{@f2fs_label_units} characters"}
+      false ->
+        {:error, {:invalid, "an f2fs label is text of at most #{@f2fs_label_units} characters"}}
     end
   end
 
@@ -597,11 +649,11 @@ defmodule VisionCore.Disks do
     case Map.fetch(state.devices, device) do
       {:ok, %{uuid: uuid}} ->
         if mounted?(state, uuid, device),
-          do: {:error, "#{device} is mounted: eject it first"},
+          do: {:error, {:conflict, "#{device} is mounted: eject it first"}},
           else: :ok
 
       :error ->
-        {:error, "#{device} is no USB disk plugged in"}
+        {:error, {:not_found, "#{device} is no USB disk plugged in"}}
     end
   end
 
@@ -626,17 +678,23 @@ defmodule VisionCore.Disks do
 
   # Formats the device at `path` if it still holds the disk read as `identity`.
   defp format_device(run, device, path, identity, label) do
-    if Disk.read_identity(path) == identity,
-      do: run_with(run, "mkfs.f2fs", ["-f", "-l", label, path]),
-      else: {:error, "#{device} holds another disk than the one listed: not formatted"}
+    if Disk.read_identity(path) == identity do
+      with {:error, reason} <- run_with(run, "mkfs.f2fs", ["-f", "-l", label, path]),
+           do: {:error, {:failed, reason}}
+    else
+      {:error, {:conflict, "#{device} holds another disk than the one listed: not formatted"}}
+    end
   end
 
   defp end_format(state, reference, answer) do
     {%{from: from, disk: disk}, formats} = Map.pop!(state.formats, reference)
 
     case answer do
-      :ok -> Logger.info("#{inspect(__MODULE__)} #{disk.device} formatted f2fs, #{disk.label}")
-      {:error, reason} -> Logger.warning("#{inspect(__MODULE__)} #{disk.device}: #{reason}")
+      :ok ->
+        Logger.info("#{inspect(__MODULE__)} #{disk.device} formatted f2fs, #{disk.label}")
+
+      {:error, {_kind, reason}} ->
+        Logger.warning("#{inspect(__MODULE__)} #{disk.device}: #{reason}")
     end
 
     GenServer.reply(from, answer)
@@ -799,16 +857,16 @@ defmodule VisionCore.Disks do
     end
   end
 
-  defp save(%{loaded: false}, _disks), do: {:error, @unavailable}
+  defp save(%{loaded: false}, _disks), do: {:error, {:unavailable, @unavailable}}
   defp save(_state, []), do: :ok
 
   defp save(_state, disks) do
     {:ok, :ok} = Repo.transaction(fn -> Enum.each(disks, &upsert/1) end)
     :ok
   rescue
-    error -> unavailable(error, {:error, @unavailable})
+    error -> unavailable(error, {:error, {:unavailable, @unavailable}})
   catch
-    :exit, reason -> unavailable(reason, {:error, @unavailable})
+    :exit, reason -> unavailable(reason, {:error, {:unavailable, @unavailable}})
   end
 
   defp upsert(disk) do
