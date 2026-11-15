@@ -194,6 +194,50 @@ defmodule VisionCore.Mcap.WriterTest do
     end
   end
 
+  test "sync/1 puts the closed chunks in the file while it stays open", %{tmp_dir: dir} do
+    {writer, path} = open!(dir, :zstd)
+
+    {writer, schema_id} =
+      Writer.add_schema(writer, "std_msgs/msg/Float64", "ros2msg", @definition)
+
+    {writer, speed} = Writer.add_channel(writer, schema_id, "/speed", "cdr", @qos)
+
+    writer =
+      writer
+      |> Writer.write_message(speed, 0, 1_000, 900, "speed 0")
+      |> Writer.close_chunk()
+      |> Writer.sync()
+
+    assert [%{data: "speed 0", log_time: 1_000}] =
+             McapReader.read_complete_chunks!(File.read!(path))
+
+    :ok = Writer.close(writer)
+  end
+
+  test "a sync the file refuses raises File.Error", %{tmp_dir: dir} do
+    {writer, path} = open!(dir, :none)
+    :ok = Writer.close(writer)
+
+    assert_raise File.Error, ~r/#{Regex.escape(path)}/, fn -> Writer.sync(writer) end
+  end
+
+  test "abandon/1 closes the file as written, without its open chunk or summary",
+       %{tmp_dir: dir} do
+    {writer, path} = open!(dir, :zstd)
+    {writer, %{messages: [first, second | _messages]}} = three_chunks(writer)
+    writer = Writer.write_message(writer, first.channel_id, 9, 9_000, 9_000, "open chunk")
+
+    :ok = Writer.abandon(writer)
+
+    bytes = File.read!(path)
+
+    assert [^first, ^second | _messages] =
+             bytes |> McapReader.read_complete_chunks!() |> without_chunk()
+
+    refute Enum.any?(McapReader.read_complete_chunks!(bytes), &(&1.data == "open chunk"))
+    refute String.ends_with?(bytes, <<0x89, "MCAP0\r\n">>)
+  end
+
   test "attachments and metadata read back with their indexes", %{tmp_dir: dir} do
     {writer, path} = open!(dir, :zstd)
 

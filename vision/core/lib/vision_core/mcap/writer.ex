@@ -11,7 +11,8 @@ defmodule VisionCore.Mcap.Writer do
   chunk.
 
   A write the file refuses raises `File.Error`, except in `close/1`, which
-  closes the file and answers the error.
+  closes the file and answers the error. After one, the writer may not
+  hold what reached the file: `abandon/1` closes it without another write.
   """
 
   alias VisionCore.Mcap.Record
@@ -141,6 +142,18 @@ defmodule VisionCore.Mcap.Writer do
     write_file!(writer, chunk_bytes)
   end
 
+  @doc """
+  Puts what was written to the file, held back writes included, on the
+  disk (`:file.datasync/1`). The open chunk waits for `close_chunk/1`.
+  """
+  @spec sync(t()) :: t()
+  def sync(%__MODULE__{} = writer) do
+    case :file.datasync(writer.file) do
+      :ok -> writer
+      {:error, reason} -> raise File.Error, reason: reason, action: "sync", path: writer.path
+    end
+  end
+
   @doc "Writes an Attachment record."
   @spec add_attachment(
           t(),
@@ -208,6 +221,14 @@ defmodule VisionCore.Mcap.Writer do
     closed = :file.close(writer.file)
     if written == :ok, do: closed, else: written
   end
+
+  @doc """
+  Closes the file without writing the open chunk or the summary: it reads
+  up to its last whole chunk, as a file cut short does. Answers the error
+  of a write held back before, if any.
+  """
+  @spec abandon(t()) :: :ok | {:error, term()}
+  def abandon(%__MODULE__{file: file}), do: :file.close(file)
 
   # The open chunk's records and message indexes, counted as written.
   defp take_chunk(%__MODULE__{chunk: %{records: []}} = writer), do: {[], writer}

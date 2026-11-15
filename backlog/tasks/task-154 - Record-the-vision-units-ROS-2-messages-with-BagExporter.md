@@ -1,7 +1,7 @@
 ---
 id: TASK-154
 title: Record the vision unit's ROS 2 messages with BagExporter
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-14T19:13:00Z'
 labels:

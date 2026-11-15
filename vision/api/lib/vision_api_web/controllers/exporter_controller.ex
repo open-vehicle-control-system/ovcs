@@ -32,8 +32,8 @@ defmodule VisionApiWeb.ExporterController do
     outputs = Enum.filter(@preview_outputs, &VisionCore.Exporter.output_key(&1, config))
 
     %{
-      id: VisionApiWeb.ExporterJSON.api().id,
-      name: VisionApiWeb.ExporterJSON.api().name,
+      id: VisionApiWeb.Exporter.api_entry().id,
+      name: VisionApiWeb.Exporter.api_entry().name,
       module: VisionApiWeb.Endpoint,
       outputs:
         Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++

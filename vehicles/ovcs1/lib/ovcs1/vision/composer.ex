@@ -37,6 +37,12 @@ defmodule Ovcs1.Vision.Composer do
   it publishes every pair (`raw_image_max_hz` at the capture rate), so a
   consumer pairing left and right images gets frames of the same capture.
 
+  The bag exporter records the vision unit's ROS 2 messages into
+  `/data/recordings`, started and stopped through its actions: the raw
+  stereo pair
+  and the center camera's `:half_jpeg` for replay, the depth, the
+  center camera and its pipelines for review.
+
   The GPU modules are compiled on a host into `priv/nx_iree_cache`, for
   the stages, their options and the matching size; rebuild it after
   changing any of them:
@@ -98,7 +104,8 @@ defmodule Ovcs1.Vision.Composer do
            videos: [center: :full_h264]
          ],
          segmentation: [pipelines: [:scene]]},
-        {VisionCore.Snapshot.Exporter, []}
+        {VisionCore.Snapshot.Exporter, []},
+        {VisionCore.Ros2.BagExporter, []}
       ]
     }
   end

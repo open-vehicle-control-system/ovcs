@@ -70,6 +70,7 @@ defmodule VisionCore.Exporters do
           name: String.t(),
           module: module(),
           status: Exporter.status(),
+          dropped: %{Exporter.output() => non_neg_integer()},
           outputs: [listed_output()],
           actions: [Exporter.action()]
         }
@@ -80,24 +81,26 @@ defmodule VisionCore.Exporters do
   @doc """
   The exporters the unit runs, in the order of its configuration: each
   one's id, as text, and name (`VisionCore.Exporter.identity/2`), its
-  module, its status (`VisionCore.Exporter.Runner.status/2`), the
+  module, its status and the values its runner dropped from each
+  output's queue (`VisionCore.Exporter.Runner.report/2`), the
   outputs its runner reads, those the configuration produces
   (`VisionCore.Exporter.output_specs/2`), and its actions
   (`VisionCore.Exporter.actions/2`). An exporter that is not
   running is off, saying why: not started, with the reason it was
   refused or failed to start, stopped because it kept failing, or not
-  running. The statuses are asked all at once, and one that does not
-  come within `timeout_ms` is a warning, so that a stuck exporter holds
+  running, and has dropped none. The statuses are asked all at once,
+  and one that does not come within `timeout_ms` is a warning, with
+  none dropped, so that a stuck exporter holds
   up neither the others nor the caller. `[]` while the exporters do not
   run.
   """
   @spec list(timeout()) :: [entry()]
   def list(timeout_ms \\ @default_status_timeout_ms) do
     listed = listed()
-    statuses = statuses(listed, timeout_ms)
+    reports = reports(listed, timeout_ms)
 
-    Enum.zip_with(listed, statuses, fn {_id, opts, _supervisor}, status ->
-      opts |> description() |> Map.put(:status, status)
+    Enum.zip_with(listed, reports, fn {_id, opts, _supervisor}, report ->
+      opts |> description() |> Map.merge(report)
     end)
   end
 
@@ -228,12 +231,12 @@ defmodule VisionCore.Exporters do
     end
   end
 
-  # An exporter's status is its runner's, asked of each running one in a task of its own.
-  defp statuses(listed, timeout_ms) do
+  # An exporter's report is its runner's, asked of each running one in a task of its own.
+  defp reports(listed, timeout_ms) do
     asked =
       Enum.map(listed, fn
-        {id, _opts, :undefined} -> {:off, stop_reason(id)}
-        {_id, _opts, supervisor} -> Task.async(fn -> runner_status(supervisor, timeout_ms) end)
+        {id, _opts, :undefined} -> %{status: {:off, stop_reason(id)}, dropped: %{}}
+        {_id, _opts, supervisor} -> Task.async(fn -> runner_report(supervisor, timeout_ms) end)
       end)
 
     replies =
@@ -245,8 +248,8 @@ defmodule VisionCore.Exporters do
     Enum.map(asked, fn
       %Task{ref: ref} ->
         case replies[ref] do
-          {:ok, status} -> status
-          _late -> {:warning, "Not answering"}
+          {:ok, report} -> report
+          _late -> %{status: {:warning, "Not answering"}, dropped: %{}}
         end
 
       off ->
@@ -254,10 +257,10 @@ defmodule VisionCore.Exporters do
     end)
   end
 
-  defp runner_status(supervisor, timeout_ms) do
+  defp runner_report(supervisor, timeout_ms) do
     case runner(supervisor) do
-      nil -> {:off, "Not running"}
-      runner -> Runner.status(runner, timeout_ms)
+      nil -> %{status: {:off, "Not running"}, dropped: %{}}
+      runner -> Runner.report(runner, timeout_ms)
     end
   end
 

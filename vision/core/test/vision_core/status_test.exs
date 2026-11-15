@@ -111,7 +111,9 @@ defmodule VisionCore.StatusTest do
     start_exporter([])
     start_supervised!({Status, config: config([])})
 
-    assert Status.snapshot().exporters == [%{id: "probe", name: "Probe", status: {:ok, "Linked"}}]
+    assert Status.snapshot().exporters == [
+             %{id: "probe", name: "Probe", status: {:ok, "Linked"}, dropped: %{}}
+           ]
   end
 
   test "a listing that misses its deadline reports the exporters listed before as not answering" do
@@ -124,7 +126,7 @@ defmodule VisionCore.StatusTest do
     :ok = :sys.resume(VisionCore.Exporters)
 
     assert snapshot.exporters == [
-             %{id: "probe", name: "Probe", status: {:warning, "Not answering"}}
+             %{id: "probe", name: "Probe", status: {:warning, "Not answering"}, dropped: %{}}
            ]
   end
 

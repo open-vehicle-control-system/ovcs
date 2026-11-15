@@ -1,6 +1,7 @@
 defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
   use ExUnit.Case, async: true
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.DiagnosticMsgs.Msg.DiagnosticArray
   alias Ros2Zenoh.StdMsgs.Msg.Float64
   alias VisionCore.Camera.Frame
@@ -18,21 +19,24 @@ defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
     def live(server), do: GenServer.call(server, :live)
   end
 
-  defp start_diagnostics(driver) do
+  defp start_diagnostics(driver, options \\ []) do
     test = self()
 
     start_supervised!(
       {Diagnostics,
-       driver: driver,
-       topic_prefix: "stereo",
-       fps: 30,
-       left: [sync: :server],
-       right: [sync: :client],
-       name: Module.concat(driver, Diagnostics),
-       publish: fn topic, _module, message, _options ->
-         send(test, {:published, topic, message})
-         :ok
-       end}
+       options ++
+         [
+           driver: driver,
+           topic_prefix: "stereo",
+           fps: 30,
+           left: [sync: :server],
+           right: [sync: :client],
+           name: Module.concat(driver, Diagnostics),
+           publish: fn topic, _module, message, _options ->
+             send(test, {:published, topic, message})
+             :ok
+           end
+         ]}
     )
   end
 
@@ -67,6 +71,24 @@ defmodule VisionCore.Ros2.ZenohExporter.DiagnosticsTest do
     send(diagnostics, :plot)
     :sys.get_state(diagnostics)
     assert Process.alive?(diagnostics)
+  end
+
+  test "stamps its diagnostics with the stamp function it is given, at the time it sends them" do
+    test = self()
+
+    stamp = fn monotonic_ns ->
+      send(test, {:stamped, monotonic_ns})
+      %Time{sec: 42, nanosec: 0}
+    end
+
+    before_ns = System.monotonic_time(:nanosecond)
+    diagnostics = start_diagnostics(Camera, stamp: stamp)
+    send(diagnostics, :diagnostics)
+
+    assert_receive {:published, "/diagnostics", %DiagnosticArray{header: header}}, 1_000
+    assert header.stamp == %Time{sec: 42, nanosec: 0}
+    assert_received {:stamped, monotonic_ns}
+    assert monotonic_ns >= before_ns
   end
 
   test "plots the sync offset and each camera's exposure and gain" do

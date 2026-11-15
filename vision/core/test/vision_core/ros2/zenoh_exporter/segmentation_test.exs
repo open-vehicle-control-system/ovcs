@@ -1,6 +1,7 @@
 defmodule VisionCore.Ros2.ZenohExporter.SegmentationTest do
   use ExUnit.Case, async: true
 
+  alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias Ros2Zenoh.SensorMsgs.Msg.{CameraInfo, Image, PointCloud2}
   alias Ros2Zenoh.StdMsgs.Msg.Header
   alias VisionCore.Camera.Frame
@@ -124,6 +125,19 @@ defmodule VisionCore.Ros2.ZenohExporter.SegmentationTest do
 
     assert %PointCloud2{header: ^header, width: 1, row_step: 12, data: data} = off_road
     assert data == clouds().off_road
+  end
+
+  test "stamps the label image, its camera info and the clouds with the stamp function it is given" do
+    shifted_stamp = fn capture_ns -> %Time{sec: 1_000, nanosec: rem(capture_ns, 1_000_000)} end
+
+    assert [labels, camera_info, road, off_road] =
+             Segmentation.messages(frame(), labels(), clouds(), settings(stamp: shifted_stamp))
+
+    for {_topic, _module, message} <- [labels, camera_info],
+        do: assert(message.header.stamp == shifted_stamp.(@capture_ns))
+
+    for {_topic, _module, message} <- [road, off_road],
+        do: assert(message.header.stamp == shifted_stamp.(@pair_capture_ns))
   end
 
   test "a result without clouds publishes its label image and its camera info alone" do

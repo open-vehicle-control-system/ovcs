@@ -15,12 +15,19 @@ defmodule VisionCore.Ros2.Stamp do
   alias Ros2Zenoh.BuiltinInterfaces.Msg.Time
   alias VisionCore.Timing
 
+  @typedoc """
+  What stamps a message: the `builtin_interfaces/Time` of an Erlang
+  monotonic time in nanoseconds, as `stamp_from_monotonic/1` does.
+  """
+  @type stamp_function :: (integer() -> struct())
+
   @doc """
   Build a `builtin_interfaces/Time` message from a monotonic
   capture timestamp. Most publishers want this directly — they
   have a `frame.capture_ns` in hand and need a `%Time{sec,
   nanosec}` to drop into a `std_msgs/Header`.
   """
+  @spec stamp_from_monotonic(integer()) :: struct()
   def stamp_from_monotonic(monotonic_nanoseconds),
     do: stamp(Timing.export_time_from_monotonic(monotonic_nanoseconds))
 

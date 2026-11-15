@@ -184,7 +184,7 @@ The ROS 2 exporter's `cameras:` option publishes each camera of its own (`Vision
 
 | Topic or service | Type | What |
 |---|---|---|
-| `<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10) a second; a JPEG frame as it arrives. |
+| `<camera>/image_raw/compressed` | `sensor_msgs/CompressedImage` | The camera's image: an RGB or grey frame encoded to JPEG, at most `raw_image_max_hz` (10, `:infinity` for every frame) a second; a JPEG frame as it arrives. |
 | `<camera>/camera_info` | `sensor_msgs/CameraInfo` | Its K and D at the frame's size, R the identity and P = K with a zero column. |
 | `<camera>/image_raw/h264` | `foxglove_msgs/CompressedVideo` | With `videos:`, each frame of the camera's H.264 output, format `h264`, its NAL units in Annex B form. Foxglove's Image panel decodes it. It needs `ros-<distro>-foxglove-msgs` on the ROS side. |
 | `<camera>/exposure_us`, `<camera>/analogue_gain` | `std_msgs/Float64` | Five times a second, the exposure in microseconds and the analogue gain the camera applied, when its driver reports them, as `VisionCore.Camera.V4L2Single` does. |

@@ -10,7 +10,9 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     * **Raw images** on `<topic_prefix>/<side>/image_raw/compressed`,
       and **calibration** on `<topic_prefix>/<side>/camera_info` every
       Nth frame, so late subscribers see it without latched QoS, both
-      in the frame id the camera's frame carries.
+      in the frame id the camera's frame carries. With `:raw_images`,
+      each grey frame also goes out uncompressed on
+      `<topic_prefix>/<side>/image_raw`, under the same header.
     * **Stereo outputs**, all stamped with the left frame's capture time
       so consumers can pair them with the raw streams, in the frame id
       it carries (`VisionCore.Stereo.Pair.frame_id/1`):
@@ -56,6 +58,11 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     * `:width` (1280), `:height` (720) — the capture size, which the
       calibration is scaled to and an empty camera info carries.
     * `:camera_info_interval_frames` (30) — camera info every Nth frame.
+    * `:raw_images` (`false`) — each grey frame as a `mono8`
+      `sensor_msgs/Image` too, every frame, whatever
+      `:raw_image_max_hz` and `:publish_raw_images`: nothing is encoded.
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps every header from its capture time.
     * `:publish_raw_images` (`true`) — republish each camera frame. Off
       when the frames already come from those topics, as
       `VisionCore.Ros2.Camera`'s do against a simulator: republishing
@@ -72,6 +79,14 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
       pair as the matcher does. The left one's intrinsics are
       `<topic_prefix>/depth/camera_info`; `<topic_prefix>/left/camera_info`
       describes the raw image.
+    * `:pair_messages` (`[:disparity, :depth, :points]`) — which of a
+      pair's messages it makes: the `DisparityImage`, the depth image with
+      its camera info, the point cloud. The rectified and bare disparity
+      images follow their own switches.
+    * `:sides` (`[:left, :right]`) — the sides whose frames it publishes:
+      their raw images and camera info.
+
+  `outputs/1` gives the `VisionCore.Exporter` outputs these options read.
   """
   require Logger
 
@@ -94,6 +109,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   @default_height 720
   @default_camera_info_interval_frames 30
   @default_raw_image_max_hz 10
+  @pair_messages [:disparity, :depth, :points]
+  @sides [:left, :right]
 
   @typedoc "A message to publish: its topic, its module and the message."
   @type message :: {String.t(), module(), struct()}
@@ -127,6 +144,45 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
           next_image_ms: number() | nil
         }
 
+  @doc """
+  The outputs the stereo `options` read: the pairs, when it makes any of
+  a pair's messages, then the frames of each side it publishes.
+  """
+  @spec outputs(keyword()) :: [VisionCore.Exporter.output()]
+  def outputs(options) do
+    pairs =
+      Keyword.get(options, :pair_messages, @pair_messages) != [] or
+        Keyword.get(options, :publish_rectified_image, false) or
+        Keyword.get(options, :publish_disparity_image, false)
+
+    sides = Keyword.get(options, :sides, @sides)
+
+    if(pairs, do: [:stereo_pair], else: []) ++
+      for(side <- @sides, side in sides, do: {:camera_frame, side})
+  end
+
+  @doc """
+  `:ok`, or why the stereo `options` cannot work: a `:sides` or
+  `:pair_messages` naming what it does not know.
+  """
+  @spec check(keyword()) :: :ok | {:error, String.t()}
+  def check(options) do
+    with :ok <- check_subset(options, :sides, @sides),
+         do: check_subset(options, :pair_messages, @pair_messages)
+  end
+
+  defp check_subset(options, key, known) do
+    case Keyword.get(options, key, known) do
+      listed when is_list(listed) ->
+        if listed -- known == [],
+          do: :ok,
+          else: {:error, "its stereo: #{key} takes #{inspect(known)}, not #{inspect(listed)}"}
+
+      listed ->
+        {:error, "its stereo: #{key} takes a list of #{inspect(known)}, not #{inspect(listed)}"}
+    end
+  end
+
   @doc "The topics, sides and rates of the stereo `options`; see the module doc."
   @spec new(keyword()) :: t()
   def new(options) do
@@ -142,13 +198,21 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
         {label, side(label, prefix, side_options, width, height, publish_raw_images)}
       end)
 
+    uncompressed_image_topics =
+      if Keyword.get(options, :raw_images, false),
+        do: Map.new(["left", "right"], &{&1, "#{prefix}/#{&1}/image_raw"}),
+        else: %{}
+
     %{
       sides: sides,
+      stamp: Keyword.get(options, :stamp, &Stamp.stamp_from_monotonic/1),
+      uncompressed_image_topics: uncompressed_image_topics,
       # The depth and disparity are anchored to the left camera's frame, per ROS convention.
       frame_id: sides["left"].frame_id,
       disparity_topic: "#{prefix}/disparity",
       disparity_image_topic:
         Keyword.get(options, :publish_disparity_image, false) && "#{prefix}/disparity/image",
+      pair_messages: Keyword.get(options, :pair_messages, @pair_messages),
       depth_topic: "#{prefix}/depth/image_rect",
       depth_camera_info_topic: "#{prefix}/depth/camera_info",
       cloud_topic: "#{prefix}/points",
@@ -212,19 +276,21 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   The messages of a camera's `frame` on its `side` of `stereo` at
   `now_ms`, and the side after it: the frame as a raw image when its
   slot is open (`image_slot/4`), encoded by `encode` when it is grey,
-  then the side's camera info every Nth frame. A frame that does not
-  encode takes its slot all the same, so a failing codec is asked at
-  most `:raw_image_max_hz` times a second.
+  then, with `:raw_images`, a grey frame uncompressed, then the side's
+  camera info every Nth frame. A frame that does not encode takes its
+  slot all the same, so a failing codec is asked at most
+  `:raw_image_max_hz` times a second.
   """
   @spec frame_messages(Frame.t(), side(), t(), number(), (Frame.t() -> encoded())) ::
           {[message()], side()}
   def frame_messages(%Frame{} = frame, side, stereo, now_ms, encode) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      stamp: stereo.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || side.frame_id
     }
 
     {image, side} = raw_image(frame, side, header, now_ms, stereo.raw_image_max_hz, encode)
+    uncompressed = uncompressed_image(frame, stereo.uncompressed_image_topics[side.label], header)
 
     camera_info =
       if rem(side.frame_counter, stereo.camera_info_interval_frames) == 0,
@@ -233,8 +299,25 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
         ],
         else: []
 
-    {image ++ camera_info, %{side | frame_counter: side.frame_counter + 1}}
+    {image ++ uncompressed ++ camera_info, %{side | frame_counter: side.frame_counter + 1}}
   end
+
+  defp uncompressed_image(%Frame{grey: grey} = frame, topic, header)
+       when is_binary(topic) and is_binary(grey) do
+    image = %Image{
+      header: header,
+      height: frame.height,
+      width: frame.width,
+      encoding: "mono8",
+      is_bigendian: 0,
+      step: frame.width,
+      data: grey
+    }
+
+    [{topic, Image, image}]
+  end
+
+  defp uncompressed_image(_frame, _topic, _header), do: []
 
   defp raw_image(_frame, %{image_topic: false} = side, _header, _now_ms, _max_hz, _encode),
     do: {[], side}
@@ -260,15 +343,18 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
 
   @doc """
   Whether to publish `frame` as a raw image at `now_ms`. A JPEG frame is
-  always published. A grey frame, which has to be encoded, is published
-  once the side's next slot, `next_ms`, has opened: slots are
-  `1000 / max_hz` ms apart, so frames on a coarser grid still average
-  `max_hz`. Returns the next slot when the frame is published.
+  always published, and any frame with a `max_hz` of `:infinity`. A grey
+  frame, which has to be encoded, is published once the side's next
+  slot, `next_ms`, has opened: slots are `1000 / max_hz` ms apart, so
+  frames on a coarser grid still average `max_hz`. Returns the next slot
+  when the frame is published.
   """
-  @spec image_slot(number() | nil, Frame.t(), number(), number()) ::
+  @spec image_slot(number() | nil, Frame.t(), number(), number() | :infinity) ::
           {:publish, number() | nil} | :skip
   def image_slot(next_ms, %Frame{jpeg: jpeg}, _now_ms, _max_hz) when is_binary(jpeg),
     do: {:publish, next_ms}
+
+  def image_slot(next_ms, %Frame{}, _now_ms, :infinity), do: {:publish, next_ms}
 
   def image_slot(nil, %Frame{}, now_ms, max_hz), do: {:publish, now_ms + 1_000 / max_hz}
 
@@ -281,7 +367,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   Whether publishing `frame` as a raw image at `now_ms` encodes it: it is
   no JPEG frame and its slot is open (`image_slot/4`).
   """
-  @spec encodes_image?(Frame.t(), number() | nil, number(), number()) :: boolean()
+  @spec encodes_image?(Frame.t(), number() | nil, number(), number() | :infinity) :: boolean()
   def encodes_image?(%Frame{jpeg: jpeg}, _next_ms, _now_ms, _max_hz) when is_binary(jpeg),
     do: false
 
@@ -311,28 +397,35 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
   @spec pair_messages(Pair.t(), t(), (Nx.Tensor.t() -> encoded())) :: [message()]
   def pair_messages(%Pair{} = pair, stereo, encode) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
+      stamp: stereo.stamp.(Pair.capture_ns(pair)),
       frame_id: Pair.frame_id(pair) || stereo.frame_id
     }
 
     disparity_image = disparity_image(pair, header)
+    made = stereo.pair_messages
 
-    [
-      {stereo.disparity_topic, DisparityImage, disparity_message(pair, header, disparity_image)},
-      {stereo.depth_topic, Image, depth_message(pair, header)}
-    ] ++
-      cloud_messages(pair, header, stereo.cloud_topic) ++
+    made_messages(made, :disparity, fn ->
+      [{stereo.disparity_topic, DisparityImage, disparity_message(pair, header, disparity_image)}]
+    end) ++
+      made_messages(made, :depth, fn ->
+        [{stereo.depth_topic, Image, depth_message(pair, header)}]
+      end) ++
+      made_messages(made, :points, fn -> cloud_messages(pair, header, stereo.cloud_topic) end) ++
       rectified_messages(pair, header, stereo, encode) ++
-      [
+      made_messages(made, :depth, fn ->
         # Consumers look for camera_info next to the depth image topic.
-        {stereo.depth_camera_info_topic, CameraInfo,
-         depth_camera_info(pair.geometry.left_calibration, header)}
-      ] ++
+        [
+          {stereo.depth_camera_info_topic, CameraInfo,
+           depth_camera_info(pair.geometry.left_calibration, header)}
+        ]
+      end) ++
       if(stereo.disparity_image_topic,
         do: [{stereo.disparity_image_topic, Image, disparity_image}],
         else: []
       )
   end
+
+  defp made_messages(made, kind, messages), do: if(kind in made, do: messages.(), else: [])
 
   defp disparity_image(pair, header) do
     {width, height} = Pair.size(pair)

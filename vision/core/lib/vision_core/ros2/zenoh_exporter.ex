@@ -43,8 +43,9 @@ defmodule VisionCore.Ros2.ZenohExporter do
   ready once it is published, or failed. The other outputs go out
   meanwhile.
 
-  It needs the ROS 2 link, the `ros2:` section of the configuration:
-  without it, it is not started (`check/1`), nor when it publishes a
+  It needs the ROS 2 link, the `ros2:` section of the configuration,
+  unless `link: false`: without it, it is not started (`check/1`), nor
+  when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
   cannot read, nor with a `stereo:` that is no keyword list, a
   `cameras:`, `heartbeat:` or `segmentation:` option it does not take,
@@ -53,7 +54,8 @@ defmodule VisionCore.Ros2.ZenohExporter do
   link's:
   connected while the Zenoh session is open and the board's clock is
   synchronized, a warning while either is not, since nothing is published
-  before the clock is (`Ros2Zenoh.Client`'s "The clock").
+  before the clock is (`Ros2Zenoh.Client`'s "The clock"); running with
+  `link: false`.
 
   ## The stereo unit
 
@@ -95,8 +97,11 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
     * `:stereo` — publishes the stereo unit; `VisionCore.Ros2.ZenohExporter.Stereo`
       documents its options: `:topic_prefix`, the stereo unit's
-      `:prefix` by default, the `:publish_*` switches,
-      `:raw_image_max_hz` and `:camera_info_interval_frames`.
+      `:prefix` by default, the `:publish_*` switches, `:raw_images`,
+      off by default, `:raw_image_max_hz`,
+      `:camera_info_interval_frames`, and `:pair_messages` and `:sides`,
+      which leave out a pair's messages or a side, and the outputs
+      they would read.
     * `:detections` — publishes the detections of each pipeline its
       `:pipelines` list (`[:detection]`, a detector without a name), each on
       topics and in a marker namespace of its own, under the pipeline's
@@ -113,7 +118,8 @@ defmodule VisionCore.Ros2.ZenohExporter do
       topics under, each camera's being under its name
       (`VisionCore.Ros2.ZenohExporter.Camera.topic_root/2`);
       `:raw_image_max_hz` (10), the most images a second per
-      camera for frames it encodes, JPEG frames going out as they arrive;
+      camera for frames it encodes, `:infinity` for every frame, JPEG
+      frames going out as they arrive;
       `:camera_info_interval_frames` (30), the camera info every Nth frame.
     * `:segmentation` — publishes the results of each segmentation
       pipeline its `:pipelines` lists, by default every one of the
@@ -131,6 +137,13 @@ defmodule VisionCore.Ros2.ZenohExporter do
       message: called with its topic, its module, the message and `[]`.
     * `:register_service` (`&Ros2Zenoh.Client.register_service/3`)
       — registers each side's and camera's `set_camera_info` service.
+    * `:services` (`true`) — with `false`, it answers no service: no
+      `set_camera_info`.
+    * `:link` (`true`) — with `false`, it needs no ROS 2 link and does not
+      report one: what it builds goes to `:publish` alone.
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps every header and transform it builds, from an Erlang
+      monotonic time in nanoseconds.
     * `:jpeg_codec` (`VisionCore.Jpeg`) and `:config` (the active
       `VisionCore.Config`) — the `VisionCore.Jpeg` instance the raw and
       rectified images are encoded on, and the configuration, which
@@ -178,7 +191,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
   def check(options) do
     config = config(options)
 
-    with :ok <- check_link(config),
+    with :ok <- check_link(Keyword.get(options, :link, true), config),
          :ok <- check_heartbeat(options[:heartbeat]),
          :ok <- check_stereo(options[:stereo], config),
          :ok <- check_cameras(options[:cameras], config),
@@ -187,12 +200,12 @@ defmodule VisionCore.Ros2.ZenohExporter do
     end
   end
 
-  defp check_link(%VisionCore.Config{ros2: nil}),
+  defp check_link(true, %VisionCore.Config{ros2: nil}),
     do:
       {:error,
        "the vision configuration has no ros2: section, the ROS 2 link it publishes through"}
 
-  defp check_link(_config), do: :ok
+  defp check_link(_link, _config), do: :ok
 
   defp check_heartbeat(nil), do: :ok
 
@@ -225,7 +238,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
   defp check_stereo(stereo_options, config) do
     with true <- is_list(stereo_options) and Keyword.keyword?(stereo_options),
          {:ok, _cameras} <- StereoSupervisor.camera_options(config) do
-      :ok
+      Stereo.check(stereo_options)
     else
       false -> {:error, "its stereo: is not a keyword list: #{inspect(stereo_options)}"}
       {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
@@ -391,10 +404,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   @impl VisionCore.Exporter
   def outputs(options) do
-    stereo =
-      if options[:stereo],
-        do: [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}],
-        else: []
+    stereo = if options[:stereo], do: Stereo.outputs(options[:stereo]), else: []
 
     stereo ++
       Enum.map(detection_pipelines(options[:detections]), &Detection.output/1) ++
@@ -471,7 +481,11 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
       diagnostics =
         Keyword.take(cameras, [:driver, :fps, :left, :right]) ++
-          [topic_prefix: topic_prefix, publish: publish_function(options)]
+          [
+            topic_prefix: topic_prefix,
+            publish: publish_function(options),
+            stamp: stamp_function(options)
+          ]
 
       [{Diagnostics, diagnostics} | set_camera_info_children(cameras, topic_prefix, options)]
     else
@@ -480,6 +494,12 @@ defmodule VisionCore.Ros2.ZenohExporter do
   end
 
   defp set_camera_info_children(cameras, topic_prefix, options) do
+    if Keyword.get(options, :services, true),
+      do: stereo_set_camera_info_children(cameras, topic_prefix, options),
+      else: []
+  end
+
+  defp stereo_set_camera_info_children(cameras, topic_prefix, options) do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
@@ -509,6 +529,12 @@ defmodule VisionCore.Ros2.ZenohExporter do
     do: set_camera_info_children(options) ++ camera_live_children(options)
 
   defp set_camera_info_children(options) do
+    if Keyword.get(options, :services, true),
+      do: camera_set_camera_info_children(options),
+      else: []
+  end
+
+  defp camera_set_camera_info_children(options) do
     register_service =
       Keyword.get(options, :register_service, &Ros2Zenoh.Client.register_service/3)
 
@@ -546,10 +572,12 @@ defmodule VisionCore.Ros2.ZenohExporter do
     config = config(options)
     cameras = StereoSupervisor.camera_options(config)
 
-    with {:ok, stereo} <- start_stereo(options[:stereo], cameras) do
+    with {:ok, stereo} <- start_stereo(options[:stereo], cameras, stamp_function(options)) do
       state = %{
         config: config,
         publish: publish_function(options),
+        stamp: stamp_function(options),
+        link: Keyword.get(options, :link, true),
         jpeg_codec: Keyword.get(options, :jpeg_codec, VisionCore.Jpeg),
         heartbeat: options[:heartbeat] && start_heartbeat(options, config),
         stereo: stereo,
@@ -582,6 +610,9 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   defp publish_function(options), do: Keyword.get(options, :publish, &Topics.publish/4)
 
+  defp stamp_function(options),
+    do: Keyword.get(options, :stamp, &Stamp.stamp_from_monotonic/1)
+
   defp start_heartbeat(options, config) do
     interval_ms = Keyword.get(options[:heartbeat], :interval_ms, @default_heartbeat_interval_ms)
 
@@ -595,16 +626,17 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   defp heartbeat_topic(node_name), do: "#{node_name}/heartbeat"
 
-  defp start_stereo(nil, _cameras), do: {:ok, nil}
+  defp start_stereo(nil, _cameras, _stamp), do: {:ok, nil}
 
-  defp start_stereo(_options, {:error, reason}),
+  defp start_stereo(_options, {:error, reason}, _stamp),
     do: {:error, "cannot publish the stereo unit: #{reason}"}
 
-  defp start_stereo(options, {:ok, cameras}) do
+  defp start_stereo(options, {:ok, cameras}, stamp) do
     stereo =
       cameras
       |> Keyword.merge(options)
       |> Keyword.put_new(:topic_prefix, cameras[:prefix])
+      |> Keyword.put(:stamp, stamp)
       |> Stereo.new()
 
     Logger.info(
@@ -626,6 +658,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
         |> Keyword.put(:pipeline, pipeline)
         |> Keyword.put(:pair_frame_id, "#{unit_prefix(cameras)}_left")
         |> Keyword.put(:image_size, camera_image_size(sources[Detection.output(pipeline)], all))
+        |> Keyword.put(:stamp, stamp_function(all))
         |> Detections.new()
 
       Logger.info(
@@ -684,7 +717,8 @@ defmodule VisionCore.Ros2.ZenohExporter do
               camera: camera,
               camera_frame_id: camera_settings[camera] && camera_settings[camera].frame_id,
               calibration: calibrations[camera],
-              cloud_frame_id: left_frame_id(cameras) || "#{unit_prefix(cameras)}_left"
+              cloud_frame_id: left_frame_id(cameras) || "#{unit_prefix(cameras)}_left",
+              stamp: stamp_function(options)
             )
 
           Logger.info(
@@ -716,6 +750,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
           options[:cameras]
           |> Keyword.drop([:names, :outputs, :videos])
           |> Keyword.put(:topic_prefix, camera_topic_prefix(options))
+          |> Keyword.put(:stamp, stamp_function(options))
 
         Map.new(published, fn settings ->
           camera = Camera.new(settings, camera_options)
@@ -731,11 +766,13 @@ defmodule VisionCore.Ros2.ZenohExporter do
   defp transform_message(%{transform_parent_frame_id: nil}), do: nil
 
   defp transform_message(state) do
-    stamp = Stamp.stamp_from_monotonic(System.monotonic_time(:nanosecond))
+    stamp = state.stamp.(System.monotonic_time(:nanosecond))
     Camera.transform_message(Map.values(state.cameras), state.transform_parent_frame_id, stamp)
   end
 
   @impl VisionCore.Exporter
+  def status(%{link: false}), do: {:ok, "Running"}
+
   def status(_state) do
     cond do
       not Ros2Zenoh.Client.session_open?() ->
@@ -822,7 +859,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
     now_ms = System.monotonic_time(:millisecond)
     side_state = state.stereo.sides[label]
 
-    # :pub_left and :pub_right time the raw image alone; the camera info goes out after.
+    # :pub_left and :pub_right time the raw images alone; the camera info goes out after.
     publish = fn ->
       {publish_ns, {camera_info, side_state}} =
         measure_ns(fn ->
@@ -835,10 +872,10 @@ defmodule VisionCore.Ros2.ZenohExporter do
               &Frame.to_jpeg(&1, state.jpeg_codec)
             )
 
-          {image, camera_info} =
-            Enum.split_with(messages, &(elem(&1, 0) == side_state.image_topic))
+          {camera_info, images} =
+            Enum.split_with(messages, &(elem(&1, 0) == side_state.camera_info_topic))
 
-          publish_all(image, state)
+          publish_all(images, state)
           {camera_info, side_state}
         end)
 
@@ -859,6 +896,14 @@ defmodule VisionCore.Ros2.ZenohExporter do
       do: publish_apart(state, output, {:side, side}, publish),
       else: {:ok, published(state, {:side, side}, publish.())}
   end
+
+  @doc """
+  The publications in flight in `state`: each task's reference, whose
+  answer `handle_info/2` takes, and the output it is busy with.
+  """
+  @spec publishing(map()) :: %{reference() => VisionCore.Exporter.output()}
+  def publishing(state),
+    do: Map.new(state.publishing, fn {ref, {output, _what}} -> {ref, output} end)
 
   # An encode can take seconds: the runner is busy with `output` alone until `publish` is done.
   defp publish_apart(state, output, what, publish) do

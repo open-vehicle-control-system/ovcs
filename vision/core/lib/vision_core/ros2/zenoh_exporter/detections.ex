@@ -40,6 +40,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
       markers do not flicker, short enough that a stale box goes away
       promptly.
     * `:label_font_size` (`12.0`) — 2D overlay label size, in pixels.
+    * `:stamp` (`&VisionCore.Ros2.Stamp.stamp_from_monotonic/1`) — what
+      stamps the messages from the capture time of their pair or frame.
     * `:image_size` (`nil`) — on a camera source, `{width, height}`, the
       size of the camera's image the 2D boxes and the overlay are drawn
       on, the camera output the exporter publishes, when it is not the
@@ -97,7 +99,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
 
   @typedoc """
   The topics, the marker namespace, the frame of a pair that carries
-  none, the marker lifetime and the font size, from `new/1`.
+  none, the marker lifetime, the font size and what stamps the
+  messages, from `new/1`.
   """
   @type t :: %{
           markers_topic: String.t(),
@@ -108,7 +111,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
           default_frame_id: String.t(),
           marker_lifetime: struct(),
           label_font_size: float(),
-          image_size: {pos_integer(), pos_integer()} | nil
+          image_size: {pos_integer(), pos_integer()} | nil,
+          stamp: Stamp.stamp_function()
         }
 
   @doc "The topics and settings of the detection `options`; see the module doc."
@@ -124,7 +128,8 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
         |> Keyword.get(:marker_lifetime_ms, @default_marker_lifetime_ms)
         |> Duration.from_milliseconds(),
       label_font_size: Keyword.get(options, :label_font_size, @default_label_font_size),
-      image_size: Keyword.get(options, :image_size)
+      image_size: Keyword.get(options, :image_size),
+      stamp: Keyword.get(options, :stamp, &Stamp.stamp_from_monotonic/1)
     })
   end
 
@@ -153,7 +158,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
   @spec messages([map()], Pair.t() | Frame.t(), t(), non_neg_integer()) :: [message()]
   def messages(detections, %Pair{} = pair, settings, drawn) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(Pair.capture_ns(pair)),
+      stamp: settings.stamp.(Pair.capture_ns(pair)),
       frame_id: Pair.frame_id(pair) || settings.default_frame_id
     }
 
@@ -169,7 +174,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Detections do
 
   def messages(detections, %Frame{} = frame, settings, drawn) do
     header = %Header{
-      stamp: Stamp.stamp_from_monotonic(frame.capture_ns),
+      stamp: settings.stamp.(frame.capture_ns),
       frame_id: frame.frame_id || settings.default_frame_id
     }
 

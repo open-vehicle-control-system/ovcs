@@ -1,6 +1,8 @@
 defmodule VisionApiWeb.ExporterActionControllerTest do
   use VisionApiWeb.ConnCase, async: false
 
+  import VisionApiWeb.RefusalTests
+
   @moduletag :capture_log
 
   # Answers each action with the result its name says.
@@ -23,7 +25,7 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
     def actions(_options),
       do:
         for(
-          name <- ~w(export echo occupied stalled broken)a,
+          name <- ~w(export echo occupied stalled broken refusing)a,
           do: %{name: name, label: "Run #{name}", description: "Runs #{name}."}
         )
 
@@ -39,6 +41,9 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
 
     def handle_action(:broken, _params, _from, state),
       do: {:reply, {:error, {:failed, "No frames arrived"}}, state}
+
+    def handle_action(:refusing, _params, _from, state),
+      do: {:reply, {:error, {:refused, "preset must be one of replay, review"}}, state}
   end
 
   setup do
@@ -93,45 +98,7 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
              |> json_response(400)
   end
 
-  test "an action sent as a form or in the query string, as another site's page can, is refused",
-       %{conn: conn} do
-    for {content_type, path, body} <- [
-          {"application/x-www-form-urlencoded", "/api/exporters/acting/actions/echo",
-           "data[type]=exporter-actions"},
-          {"text/plain", "/api/exporters/acting/actions/echo",
-           ~s({"data":{"type":"exporter-actions"}})},
-          {nil, "/api/exporters/acting/actions/echo?data[type]=exporter-actions", nil}
-        ] do
-      conn = if content_type, do: put_req_header(conn, "content-type", content_type), else: conn
-
-      assert %{"errors" => [%{"status" => "400", "source" => %{"pointer" => "/data"}}]} =
-               conn |> post(path, body) |> json_response(400)
-    end
-  end
-
-  test "answers 400 for a body without a document", %{conn: conn} do
-    assert %{"errors" => [%{"status" => "400"}]} =
-             conn
-             |> put_req_header("content-type", "application/vnd.api+json")
-             |> post("/api/exporters/acting/actions/export", "{}")
-             |> json_response(400)
-  end
-
-  test "answers 409 for another data.type", %{conn: conn} do
-    assert %{"errors" => [%{"status" => "409", "source" => %{"pointer" => "/data/type"}}]} =
-             conn
-             |> run_action("/api/exporters/acting/actions/export", %{data: %{type: "parameters"}})
-             |> json_response(409)
-  end
-
-  test "answers 403 for a document carrying an id of the client's", %{conn: conn} do
-    assert %{"errors" => [%{"status" => "403", "source" => %{"pointer" => "/data/id"}}]} =
-             conn
-             |> run_action("/api/exporters/acting/actions/export", %{
-               data: %{type: "exporter-actions", id: "mine"}
-             })
-             |> json_response(403)
-  end
+  test_document_refusals("/api/exporters/acting/actions/echo", "exporter-actions")
 
   test "answers 404 for an unknown exporter, the API's own entry among them", %{conn: conn} do
     for id <- ["nothing", "api"] do
@@ -179,12 +146,25 @@ defmodule VisionApiWeb.ExporterActionControllerTest do
              conn |> run_action("/api/exporters/acting/actions/broken") |> json_response(500)
   end
 
+  test "answers 422 with the refusal's reason", %{conn: conn} do
+    assert %{
+             "errors" => [
+               %{
+                 "status" => "422",
+                 "title" => "Action refused",
+                 "detail" => "preset must be one of replay, review"
+               }
+             ]
+           } =
+             conn |> run_action("/api/exporters/acting/actions/refusing") |> json_response(422)
+  end
+
   test "GET /api/exporters lists each exporter's actions", %{conn: conn} do
     assert %{"data" => [acting, api]} = conn |> get("/api/exporters") |> json_response(200)
 
     assert %{"id" => "acting", "attributes" => %{"actions" => actions}} = acting
 
-    assert Enum.map(actions, & &1["name"]) == ~w(export echo occupied stalled broken)
+    assert Enum.map(actions, & &1["name"]) == ~w(export echo occupied stalled broken refusing)
 
     assert %{"name" => "export", "label" => "Run export", "description" => "Runs export."} =
              hd(actions)

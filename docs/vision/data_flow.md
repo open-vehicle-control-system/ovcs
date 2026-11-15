@@ -141,6 +141,8 @@ An exporter takes the unit's outputs out of it, to a network or to storage. It i
 
 [`VisionCore.Exporter.Runner`](../../vision/core/lib/vision_core/exporter/runner.ex) subscribes to those outputs and hands the exporter the newest value of each, at most the output's `:max_hz` times a second. A value that arrives while the exporter is busy replaces the one before it, so a slow exporter skips values instead of falling behind. An exporter whose transport answers later says it is busy with an output. It is handed that output's newest value once it says it is ready.
 
+An exporter that needs every value, such as a recorder, answers `{:queue, max}` from the optional `delivery/1` callback. The runner then queues each output's values while the exporter is busy and hands them over in order. Past `max` values, it drops the oldest and counts it. The counts per output are in the exporter's `dropped` on the [`status` channel](./channels.md). A camera's video is queued in order either way.
+
 Your vehicle's composer lists the exporters in its `VisionCore.Config`, next to the components that produce the outputs. Each entry is `{module, options}`, or a module alone. The ROS 2 exporter needs the ROS 2 link, the `ros2:` section:
 
 ```elixir
@@ -174,6 +176,36 @@ The ROS 2 exporter, [`VisionCore.Ros2.ZenohExporter`](../../vision/core/lib/visi
 Each time it starts, it reads the stereo unit's cameras in the configuration, the calibration a commit stored first. The camera info it publishes is therefore the calibration the stereo unit uses.
 
 `GET /api/exporters` lists the exporters with the outputs they read and their actions. Their statuses come on the `status` channel, where an exporter that does not run says why. The API comes last, as it is the one answering. The dashboard's Exporters menu is built from it.
+
+## Recording ROS 2 bags
+
+The bag exporter, [`VisionCore.Ros2.BagExporter`](../../vision/core/lib/vision_core/ros2/bag_exporter.ex), records the ROS 2 messages the ROS 2 exporter builds into rosbag2 folders. `ros2 bag play`, `ros2 bag info`, Foxglove and the `mcap` CLI open them as they are. It needs no ROS 2 link. List it in your vehicle's composer:
+
+```elixir
+exporters: [{VisionCore.Ros2.BagExporter, []}]
+```
+
+A recording records one preset. A preset sets what is built, from your configuration, so a recording costs only what it holds:
+
+| Preset | What it records | Rates |
+|---|---|---|
+| `replay` | each stereo side's frames uncompressed (`<prefix>/<side>/image_raw`, `mono8`) and its camera info; each camera's image, its first JPEG output when it has one, and its camera info; the cameras' poses on `/tf_static` | every frame |
+| `review` | the stereo left image compressed, the depth and its camera info, each camera's image and camera info, every detection and segmentation pipeline's results, the cameras' poses | the depth and its camera info at 5 Hz; each camera's image at 10 Hz, its camera info every 10th image; the stereo left image, encoded from grey frames, at most 10 a second; the pipelines' results as they come |
+
+[`VisionCore.Ros2.BagExporter.Preset`](../../vision/core/lib/vision_core/ros2/bag_exporter/preset.ex) builds them. A preset's `max_hz:` caps the values of each kind it records a second: `pairs`, `sides`, `cameras`, `detections`, `segmentation`. The rate is measured on capture times, so 5 Hz of 30 fps records every 6th pair; a value skipped for its rate is not a drop. A camera's video is recorded whole.
+
+Your vehicle replaces a preset with `presets:`, the ROS 2 exporter's options for it and its own `max_hz:`, every value without one: `presets: [review: [cameras: [names: [:front]], max_hz: [pairs: 2, cameras: 5]]]`. Give its `cameras:` `raw_image_max_hz: :infinity`, as the presets do: otherwise a camera whose frames are encoded is also held to 10 a second of the times they are handed over. A preset, a rate or an option the ROS 2 exporter refuses keeps the bag exporter from starting, with the reason logged. So does a preset that sets an option the bag exporter sets itself: `config:`, `link:`, `services:`, `jpeg_codec:`, `publish:` or `stamp:`.
+
+Start and stop a recording with the exporter's actions, `POST /api/exporters/ros2_bag/actions/start` and `.../actions/stop` ([Vision API](./api.md#the-unit-and-its-exports)). `start` takes two attributes:
+
+- `preset`: `replay` or `review`, the default.
+- `clock`: `system`, the wall clock; `since_start`, the time since the recording started, for a unit whose clock is not set; or `automatic`, the default, `system` once NTP has set the clock, `since_start` before.
+
+The clock stamps every header, transform and log time. A start while recording answers 409. A preset or clock it does not know answers 422, naming the allowed values, and so does a stop while idle.
+
+A recording goes to `/data/recordings/<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start in UTC; set another folder with `root:`. It holds `metadata.yaml` and MCAP files, zstd-compressed, a chunk closed and synced every second, a new file past 2 GB. The first file attaches the calibration files in use and the parameters, as `parameters.json`. Its metadata, as `metadata.yaml`'s, names the preset, the clock chosen and the clock used, the vehicle and the firmware.
+
+The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, the clock, the bytes, files and messages written, and a warning once any message is dropped. A recording the disk ends, full or pulled out, stops: the status says why until the next start. Its last file is closed without its summary and reads up to its last whole chunk.
 
 ## A new calibration
 

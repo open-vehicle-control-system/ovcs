@@ -363,6 +363,7 @@ An action that produces a file answers it with a 200 and `content-disposition: a
 
 - a 400 for a document without `data.type`, one sent as a form or in the query string, or `attributes` that are no object;
 - a 409 for another `data.type`, or when the exporter is busy;
+- a 422 when the exporter refuses the request as given, such as a parameter outside the values it allows, or a stop with nothing to stop;
 - a 404 for an exporter or an action it does not have;
 - a 503 when the exporter does not run;
 - a 504 when the action does not answer in time;

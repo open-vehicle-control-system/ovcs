@@ -242,6 +242,19 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
         assert reason =~ refusal
       end
     end
+
+    test "refuses stereo sides or pair messages it does not know" do
+      assert ZenohExporter.check(options(Camera, stereo: [sides: [:left], pair_messages: []])) ==
+               :ok
+
+      assert {:error, reason} = ZenohExporter.check(options(Camera, stereo: [sides: [:middle]]))
+      assert reason =~ "sides"
+
+      assert {:error, reason} =
+               ZenohExporter.check(options(Camera, stereo: [pair_messages: [:colour]]))
+
+      assert reason =~ "pair_messages"
+    end
   end
 
   test "is listed as ROS 2" do
@@ -258,6 +271,11 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
              ]
 
       assert ZenohExporter.outputs(heartbeat: []) == []
+    end
+
+    test "reads the stereo outputs its stereo options publish" do
+      assert ZenohExporter.outputs(stereo: [sides: [:left], pair_messages: []]) ==
+               [{:camera_frame, :left}]
     end
 
     test "reads the detections of each pipeline its detection options list" do
@@ -903,6 +921,22 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
       assert_received {:published, "stereo/left/camera_info", %CameraInfo{}}
       assert [_publish_ns] = state.telemetry.stages.pub_left
+    end
+
+    test "is listed among the publications in flight until its task answers", %{codec: codec} do
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: [], jpeg_codec: codec))
+      assert ZenohExporter.publishing(state) == %{}
+
+      {:busy, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, grey_frame("left"), state)
+
+      assert [{reference, {:camera_frame, :left}}] = Map.to_list(ZenohExporter.publishing(state))
+      assert is_reference(reference)
+
+      assert_receive {:encoding, encode}
+      GenServer.reply(encode, {:ok, "the jpeg"})
+      assert {:ready, _output, state} = encoded(state)
+      assert ZenohExporter.publishing(state) == %{}
     end
 
     test "that does not encode leaves its output ready, its camera info published",
@@ -1728,6 +1762,114 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       assert_receive {:published, "lanes/labels", %Image{}}, 1_000
       assert_receive {:published, "lanes/road/points", %PointCloud2{}}, 1_000
       refute_receive {:published, "road/" <> _topic, _message}, 100
+    end
+  end
+
+  describe "for a caller that only wants the messages" do
+    # A stamp the default never gives: 7 s past the epoch.
+    defp early_stamp(monotonic_ns), do: %Time{sec: 7, nanosec: rem(monotonic_ns, 1_000_000_000)}
+
+    # Every message published so far, by topic.
+    defp published_messages(messages \\ %{}) do
+      receive do
+        {:published, topic, message} -> published_messages(Map.put(messages, topic, message))
+      after
+        0 -> messages
+      end
+    end
+
+    # Every `builtin_interfaces/Time` in `term`.
+    defp times(%Time{} = time), do: [time]
+    defp times(%_{} = struct), do: struct |> Map.from_struct() |> times()
+    defp times(map) when is_map(map), do: map |> Map.values() |> times()
+    defp times(list) when is_list(list), do: Enum.flat_map(list, &times/1)
+    defp times(_other), do: []
+
+    @tag :tmp_dir
+    test "stamps every header and transform it builds with :stamp", %{tmp_dir: tmp_dir} do
+      exporter_options = [
+        stereo: [],
+        detections: [],
+        cameras: [],
+        segmentation: [],
+        stamp: &early_stamp/1
+      ]
+
+      options = segmentation_options(Camera, exporter_options, pose: pose_file(tmp_dir))
+      {:ok, state} = ZenohExporter.init(options)
+
+      pair = put_in(pair().left_frame.capture_ns, 3)
+      hq_frame = %{jpeg_frame("hq", 5) | width: 96, height: 72}
+      segmentation = {segmented_frame(), segmentation_labels(), segmentation_clouds()}
+
+      {:ok, state} = ZenohExporter.handle_output(:stereo_pair, pair, state)
+
+      {:ok, state} =
+        ZenohExporter.handle_output({:camera_frame, :left}, jpeg_frame("left", 4), state)
+
+      {:ok, state} = ZenohExporter.handle_output({:camera_frame, :hq}, hq_frame, state)
+
+      {:ok, state} =
+        ZenohExporter.handle_output({:detections, :detection}, {pair, [detection("car")]}, state)
+
+      {:ok, state} = ZenohExporter.handle_output({:segmentation, :road}, segmentation, state)
+      {:ok, _state} = ZenohExporter.handle_info(:publish_transforms, state)
+
+      messages = published_messages()
+
+      for topic <- [
+            "stereo/disparity",
+            "stereo/left/image_raw/compressed",
+            "hq/image_raw/compressed",
+            "detection/detections/markers",
+            "detection/annotations",
+            "road/labels",
+            "road/road/points",
+            "/tf_static"
+          ],
+          do: assert(Map.has_key?(messages, topic), "nothing on #{topic}")
+
+      assert messages["stereo/disparity"].header.stamp == early_stamp(3)
+      assert messages["stereo/left/image_raw/compressed"].header.stamp == early_stamp(4)
+      assert messages["hq/image_raw/compressed"].header.stamp == early_stamp(5)
+      assert messages["road/road/points"].header.stamp == early_stamp(5)
+      assert Enum.all?(times(Map.values(messages)), &(&1.sec == 7))
+    end
+
+    test "publishes the stereo unit's grey frames as mono8 images with stereo: [raw_images: true]" do
+      stereo = [raw_images: true, publish_raw_images: false]
+      {:ok, state} = ZenohExporter.init(options(Camera, stereo: stereo))
+
+      {:ok, _state} =
+        ZenohExporter.handle_output({:camera_frame, :right}, grey_frame("right"), state)
+
+      assert_received {:published, "stereo/right/image_raw", %Image{} = image}
+      assert {image.encoding, image.step, image.data} == {"mono8", 2, <<0, 64, 128, 255>>}
+      refute_received {:published, "stereo/right/image_raw/compressed", _image}
+    end
+
+    test "with services: false, answers no set_camera_info and keeps its other helpers" do
+      options =
+        hq_options(LiveCamera, [calibration: "hq.yaml"], stereo: [], cameras: [], services: false)
+
+      assert [{Diagnostics, _diagnostics}, {CameraLive, _live}] = ZenohExporter.children(options)
+
+      assert [{Diagnostics, _diagnostics}, _left, _right, _hq, {CameraLive, _live}] =
+               ZenohExporter.children(Keyword.delete(options, :services))
+    end
+
+    test "with link: false, runs without the ROS 2 link, which its status does not report" do
+      options = [
+        config: %{config(Camera) | ros2: nil},
+        publish: publish_to(self()),
+        link: false,
+        stereo: [],
+        heartbeat: [interval_ms: 10]
+      ]
+
+      assert ZenohExporter.check(options) == :ok
+      assert {:ok, state} = ZenohExporter.init(options)
+      assert ZenohExporter.status(state) == {:ok, "Running"}
     end
   end
 end
