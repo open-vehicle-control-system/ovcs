@@ -283,12 +283,19 @@ defmodule VisionCore.ApplicationTest do
   test "the previews encode JPEG on a codec of their own, not the pipeline's" do
     start_pipeline(%VisionCore.Config{})
     :ok = :sys.suspend(VisionCore.Jpeg)
-    :ok = VisionCore.Preview.subscribe(:left)
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+    :ok = VisionCore.Preview.subscribe("stereo/left")
+
+    frame = %Frame{
+      label: "stereo/left",
+      width: 2,
+      height: 2,
+      capture_ns: 1,
+      grey: <<0, 64, 128, 255>>
+    }
 
     GenServer.cast(VisionCore.Preview, {:camera_frame, frame})
 
-    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 2_000
+    assert_receive {:vision_preview, "stereo/left", <<0xFF, 0xD8, _rest::binary>>}, 2_000
     :ok = :sys.resume(VisionCore.Jpeg)
   end
 
@@ -616,7 +623,7 @@ defmodule VisionCore.ApplicationTest do
   end
 
   test "a camera whose name is not a valid name fails the start, stating the rule" do
-    for name <- ["hq", :right, :"hq-cam"] do
+    for name <- ["hq", :depth, :"hq-cam"] do
       Application.put_env(:vision_core, :test_config, %VisionCore.Config{
         components: [{:camera, name: name, driver: GStreamer, device: "/dev/video0"}]
       })
@@ -709,7 +716,7 @@ defmodule VisionCore.ApplicationTest do
       components: [stereo_component(exiting, idle, reopen_delays_ms: [20])]
     })
 
-    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("stereo/left")})
     stereo = VisionCore.Stereo.Supervisor
 
     assert stereo |> child_ids() |> Enum.reverse() == [
@@ -739,7 +746,12 @@ defmodule VisionCore.ApplicationTest do
 
     assert eventually(fn ->
              match?(
-               %{cameras: %{left: %{present: false}, right: %{present: false}}},
+               %{
+                 cameras: %{
+                   "stereo/left" => %{present: false},
+                   "stereo/right" => %{present: false}
+                 }
+               },
                VisionCore.Status.snapshot()
              )
            end)
@@ -1021,8 +1033,8 @@ defmodule VisionCore.ApplicationTest do
 
   defp assert_pair_streams_on(stereo) do
     assert stereo_processes() == stereo
-    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("left")})
-    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "left"}}}, 2_000
+    :ok = VisionCore.Outputs.subscribe({:camera_frame, LibCamera.name_for("stereo/left")})
+    assert_receive {:"$gen_cast", {:camera_frame, %Frame{label: "stereo/left"}}}, 2_000
   end
 
   test "a camera that fails to start is left down, the reason logged, and the stereo pair streams on",

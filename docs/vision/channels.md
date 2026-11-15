@@ -28,7 +28,7 @@ A channel answers an event it does not take with an error reply, `{"reason": "un
 
 `status` pushes a `status` event on join, then one a second: a `VisionCore.Status` snapshot with camelCase keys. A camera's or the sync's figures that were not measured are left out.
 
-`cameras` holds the stereo sides and each camera of its own, by name (`center` here). A camera of its own has no `issues`.
+`cameras` holds the stereo unit's cameras, under its `:prefix` (`stereo/left` and `stereo/right` here), and each camera of its own, by name (`center` here). A camera of its own has no `issues`.
 
 `npu` is the accelerator the detection and segmentation pipelines run on, `null` on a unit without one:
 
@@ -70,8 +70,8 @@ A pipeline that does not answer is left out.
 ```json
 {
   "cameras": {
-    "left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
-    "right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]},
+    "stereo/left": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6177, "issues": []},
+    "stereo/right": {"present": true, "fps": 30.0, "exposureTimeUs": 33013, "analogueGain": 8, "colourTemperature": 6155, "issues": ["focus_mismatch"]},
     "center": {"present": true, "fps": 30.0, "exposureTimeUs": 12000, "analogueGain": 4}
   },
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
@@ -153,12 +153,12 @@ The `rate` check is `off` until the unit has counted pairs for 10 s. Over 10 s, 
 
 ## Previews
 
-`preview:left`, `preview:right` and `preview:depth` push `frame` events whose payload is one JPEG image, as binary. So does `preview:<name>` for each camera of its own, a `:camera` component ([A camera of its own](./cameras.md)): `preview:center` for the camera named `center`. A name the unit has no camera for is refused with `unknown stream`. The unit encodes a camera's frame only when your client is due one: at most `preview.max_hz` a second, whatever the camera's own rate.
+`preview:stereo/left`, `preview:stereo/right` and `preview:stereo/depth` push `frame` events whose payload is one JPEG image, as binary: the stereo unit's cameras and depth, under its `:prefix`, `stereo` by default. So does `preview:<name>` for each camera of its own, a `:camera` component ([A camera of its own](./cameras.md)): `preview:center` for the camera named `center`. A stream the unit has not is refused with `unknown stream`. The `source` of each of the API's outputs in [`GET /api/exporters`](./api.md#the-unit-and-its-exports) names its stream. The unit encodes a camera's frame only when your client is due one: at most `preview.max_hz` a second, whatever the camera's own rate.
 
 The next frame comes once you push `ack`, so a slow link gets the newest frame instead of a backlog:
 
 ```javascript
-const left = socket.channel('preview:left')
+const left = socket.channel('preview:stereo/left')
 left.on('frame', (jpeg) => {
   URL.revokeObjectURL(image.src)
   image.src = URL.createObjectURL(new Blob([jpeg], { type: 'image/jpeg' }))
@@ -167,10 +167,10 @@ left.on('frame', (jpeg) => {
 left.join()
 ```
 
-`preview:depth` pushes the distance the depth video colours blue as a `depth_range` event, `metres`, after every join and on every change, whoever makes it. `0` colours blue only what is infinitely far. The range is the unit's, shared by every client, and set with [`PATCH /api/depth-preview`](./api.md#the-depth-videos-colour-range).
+`preview:stereo/depth` pushes the distance the depth video colours blue as a `depth_range` event, `metres`, after every join and on every change, whoever makes it. `0` colours blue only what is infinitely far. The range is the unit's, shared by every client, and set with [`PATCH /api/depth-preview`](./api.md#the-depth-videos-colour-range).
 
 ```javascript
-const depth = socket.channel('preview:depth')
+const depth = socket.channel('preview:stereo/depth')
 depth.on('depth_range', ({ metres }) => console.log(`blue at ${metres} m`))
 depth.join()
 ```

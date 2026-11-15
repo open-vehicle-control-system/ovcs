@@ -1,9 +1,11 @@
 defmodule VisionCore.Preview do
   @moduledoc """
   Live JPEG previews of the vision unit for the dashboard: the stereo
-  unit's `:left` and `:right` camera frames as captured and its `:depth`
-  map colourised, and one stream per camera of its own
-  (`VisionCore.Camera.Unit`), named as the camera is, from its frames.
+  unit's left and right camera frames as captured and its depth map
+  colourised, as the streams `<prefix>/left`, `<prefix>/right` and
+  `<prefix>/depth` under its prefix, and one stream per camera of its
+  own (`VisionCore.Camera.Unit`), named as the camera is, from its frames
+  (`streams/1`).
 
   A subscriber receives `{:vision_preview, stream, jpeg}` and calls
   `ack/1` once it has handled the frame. Each subscriber has at most one
@@ -68,14 +70,13 @@ defmodule VisionCore.Preview do
   alias VisionCore.Stereo.Pair
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
-  @stereo_streams [:left, :right, :depth]
   @default_max_hz 10
   @default_depth_range_m 0.0
 
   @jpeg_quality 80
 
-  @typedoc "`:left`, `:right`, `:depth` or the name of a camera of its own."
-  @type stream :: atom()
+  @typedoc "A stream's name, one of `streams/1`."
+  @type stream :: String.t()
 
   @doc "Starts the preview server; see the module doc for the options."
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -86,12 +87,12 @@ defmodule VisionCore.Preview do
   no camera for.
   """
   @spec subscribe(stream()) :: :ok | {:error, :unknown_stream}
-  def subscribe(stream) when is_atom(stream),
+  def subscribe(stream) when is_binary(stream),
     do: GenServer.call(__MODULE__, {:subscribe, self(), stream})
 
   @doc "Tells the server the caller has handled its last `stream` frame."
   @spec ack(stream()) :: :ok
-  def ack(stream) when is_atom(stream), do: GenServer.cast(__MODULE__, {:ack, self(), stream})
+  def ack(stream) when is_binary(stream), do: GenServer.cast(__MODULE__, {:ack, self(), stream})
 
   @doc """
   The depth of `pair` as a colour JPEG, by 1/depth: the nearest measured
@@ -116,6 +117,25 @@ defmodule VisionCore.Preview do
     end
   end
 
+  @doc """
+  The streams of the unit `config` describes: the stereo unit's cameras
+  by their labels (`VisionCore.Stereo.Supervisor.labels/1`) and its depth
+  as `<prefix>/depth`, then each camera of its own by its name. The
+  stereo streams are listed without a `:stereo` component too, and show
+  nothing.
+  """
+  @spec streams(VisionCore.Config.t()) :: [stream()]
+  def streams(config) do
+    stereo = Keyword.values(StereoSupervisor.labels(config)) ++ [depth_stream(config)]
+
+    stereo ++
+      for {name, _driver, _server} <- Camera.Unit.cameras(config), do: Atom.to_string(name)
+  end
+
+  @doc "The stream of the stereo unit's depth in `config`: `<prefix>/depth`, among `streams/1`."
+  @spec depth_stream(VisionCore.Config.t()) :: stream()
+  def depth_stream(config), do: "#{StereoSupervisor.prefix(config)}/depth"
+
   @doc "The settings in force."
   def options, do: GenServer.call(__MODULE__, :options)
 
@@ -136,7 +156,7 @@ defmodule VisionCore.Preview do
         key = camera_key(config, name, outputs[name]),
         do: :ok = Outputs.subscribe(key)
 
-    streams = @stereo_streams ++ for {name, _driver, _server} <- cameras, do: name
+    streams = streams(config)
 
     max_hz = VisionCore.Options.integer!(opts, :max_hz, @default_max_hz, 1)
     jpeg_codec = Keyword.get(opts, :jpeg_codec, VisionCore.Jpeg)
@@ -150,6 +170,7 @@ defmodule VisionCore.Preview do
        depth_encoder: Keyword.get(opts, :depth_encoder),
        frame_encoder: Keyword.get(opts, :frame_encoder, &Frame.to_jpeg(&1, jpeg_codec)),
        streams: streams,
+       depth_stream: depth_stream(config),
        latest: Map.new(streams, &{&1, %{sequence: 0, frame: nil}}),
        encoded: Map.new(streams, &{&1, {0, nil}}),
        encoding: %{},
@@ -236,16 +257,15 @@ defmodule VisionCore.Preview do
 
   @impl GenServer
   def handle_cast({:camera_frame, %Frame{label: label} = frame}, state) do
-    case Enum.find(state.streams, &(Atom.to_string(&1) == label and &1 != :depth)) do
-      nil -> {:noreply, state}
-      stream -> {:noreply, store_frame(state, stream, frame)}
-    end
+    if label in state.streams and label != state.depth_stream,
+      do: {:noreply, store_frame(state, label, frame)},
+      else: {:noreply, state}
   end
 
   def handle_cast({:stereo_pair, %Pair{depth: nil}}, state), do: {:noreply, state}
 
   def handle_cast({:stereo_pair, %Pair{} = pair}, state),
-    do: {:noreply, store_frame(state, :depth, pair)}
+    do: {:noreply, store_frame(state, state.depth_stream, pair)}
 
   def handle_cast({:ack, pid, stream}, state) do
     key = {pid, stream}
@@ -361,10 +381,13 @@ defmodule VisionCore.Preview do
     end
   end
 
-  defp encoder(%{depth_encoder: nil, depth_range_m: range_m, jpeg_codec: jpeg_codec}, :depth),
-    do: depth_encoder(&encode_depth(&1, range_m, jpeg_codec))
+  defp encoder(
+         %{depth_stream: stream, depth_encoder: nil, depth_range_m: range_m} = state,
+         stream
+       ),
+       do: depth_encoder(&encode_depth(&1, range_m, state.jpeg_codec))
 
-  defp encoder(state, :depth), do: depth_encoder(state.depth_encoder)
+  defp encoder(%{depth_stream: stream} = state, stream), do: depth_encoder(state.depth_encoder)
   defp encoder(state, _stream), do: state.frame_encoder
 
   defp depth_encoder(encode) do
@@ -422,15 +445,20 @@ defmodule VisionCore.Preview do
 
   # The depth range is the unit's, shared by every dashboard: each depth subscriber hears a new one.
   defp announce_depth_range(state) do
-    for {pid, :depth} <- Map.keys(state.subscribers),
+    for {pid, stream} <- Map.keys(state.subscribers),
+        stream == state.depth_stream,
         do: send(pid, {:vision_preview_options, %{depth_range_m: state.depth_range_m}})
 
     state
   end
 
   # The latest depth map again, as a new frame, so it is coloured over the new range and sent again.
-  defp recolour_depth(%{latest: %{depth: %{frame: nil}}} = state), do: state
-  defp recolour_depth(state), do: store_frame(state, :depth, state.latest.depth.frame)
+  defp recolour_depth(state) do
+    case state.latest[state.depth_stream] do
+      %{frame: nil} -> state
+      %{frame: pair} -> store_frame(state, state.depth_stream, pair)
+    end
+  end
 
   defp valid_option?(:max_hz, value), do: is_integer(value) and value in 1..30
   defp valid_option?(:depth_range_m, value), do: is_number(value) and value >= 0 and value <= 50

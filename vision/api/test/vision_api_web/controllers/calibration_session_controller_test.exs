@@ -157,7 +157,7 @@ defmodule VisionApiWeb.CalibrationSessionControllerTest do
     end
 
     test "answers 422 while the cameras are down", %{conn: conn} do
-      camera = Process.whereis(VisionApiWeb.CalibrationCase.Camera.name_for("left"))
+      camera = Process.whereis(VisionApiWeb.CalibrationCase.Camera.name_for("unit/left"))
       monitor = Process.monitor(camera)
       Process.exit(camera, :kill)
       assert_receive {:DOWN, ^monitor, :process, ^camera, :killed}

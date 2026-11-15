@@ -441,13 +441,13 @@ defmodule VisionCore.Exporter.RunnerTest do
         outputs: [
           :stereo_pair,
           {:detections, :detection},
-          {:camera_frame, :left},
-          {:camera_frame, :right}
+          {:stereo_frame, :left},
+          {:stereo_frame, :right}
         ]
       )
 
-      left = frame("left", 1)
-      right = frame("right", 1)
+      left = frame("stereo/left", 1)
+      right = frame("stereo/right", 1)
 
       publish_pair(:pair)
 
@@ -461,18 +461,18 @@ defmodule VisionCore.Exporter.RunnerTest do
 
       assert_receive {:exported, :stereo_pair, :pair, _at}
       assert_receive {:exported, {:detections, :detection}, {:pair, [:person]}, _at}
-      assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
-      assert_receive {:exported, {:camera_frame, :right}, ^right, _at}
+      assert_receive {:exported, {:stereo_frame, :left}, ^left, _at}
+      assert_receive {:exported, {:stereo_frame, :right}, ^right, _at}
     end
 
     test "names only the outputs it asks for" do
-      start_forwarder(outputs: [{:camera_frame, :right}])
+      start_forwarder(outputs: [{:stereo_frame, :right}])
 
       publish_pair(:pair)
-      publish_frame(frame("left", 1))
-      publish_frame(frame("right", 2))
+      publish_frame(frame("stereo/left", 1))
+      publish_frame(frame("stereo/right", 2))
 
-      assert_receive {:exported, {:camera_frame, :right}, %Frame{capture_ns: 2}, _at}
+      assert_receive {:exported, {:stereo_frame, :right}, %Frame{capture_ns: 2}, _at}
       refute_receive {:exported, _output, _value, _at}, 100
     end
 
@@ -480,18 +480,19 @@ defmodule VisionCore.Exporter.RunnerTest do
       config =
         config([
           {:stereo, driver: Camera, left: [], right: []},
-          {:camera, name: :hq, driver: Camera}
+          {:camera, name: :left, driver: Camera}
         ])
 
-      start_forwarder([outputs: [{:camera_frame, :hq}, {:camera_frame, :left}]], config)
+      start_forwarder([outputs: [{:camera_frame, :left}, {:stereo_frame, :left}]], config)
 
-      hq = frame("hq", 1)
-      left = frame("left", 2)
-      publish_frame(hq)
-      publish_frame(left)
+      camera = frame("left", 1)
+      stereo_left = frame("stereo/left", 2)
+      publish_frame(camera)
+      publish_frame(stereo_left)
 
-      assert_receive {:exported, {:camera_frame, :hq}, ^hq, _at}
-      assert_receive {:exported, {:camera_frame, :left}, ^left, _at}
+      assert_receive {:exported, {:camera_frame, :left}, ^camera, _at}
+      assert_receive {:exported, {:stereo_frame, :left}, ^stereo_left, _at}
+      refute_receive {:exported, _output, _value, _at}, 100
     end
 
     test "hands the exporter each output of a camera it names apart, the default as the camera's" do
@@ -568,7 +569,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     end
 
     test "leaves out an output the configuration has no producer of" do
-      runner = start_forwarder([outputs: [:stereo_pair, {:camera_frame, :left}]], config([]))
+      runner = start_forwarder([outputs: [:stereo_pair, {:stereo_frame, :left}]], config([]))
 
       refute runner in Outputs.subscribers(@pairs)
     end
@@ -713,7 +714,7 @@ defmodule VisionCore.Exporter.RunnerTest do
     test "a busy exporter is handed the newest value of each output, the older ones dropped" do
       runner =
         start_forwarder(
-          outputs: [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}],
+          outputs: [:stereo_pair, {:stereo_frame, :left}, {:stereo_frame, :right}],
           block_on: 0
         )
 
@@ -723,14 +724,14 @@ defmodule VisionCore.Exporter.RunnerTest do
       for pair <- 1..3, do: publish_pair(pair)
 
       for capture_ns <- 1..2,
-          label <- ["left", "right"],
+          label <- ["stereo/left", "stereo/right"],
           do: publish_frame(frame(label, capture_ns))
 
       send(runner, :release)
 
       assert_receive {:exported, :stereo_pair, 3, _at}
-      assert_receive {:exported, {:camera_frame, :left}, %Frame{capture_ns: 2}, _at}
-      assert_receive {:exported, {:camera_frame, :right}, %Frame{capture_ns: 2}, _at}
+      assert_receive {:exported, {:stereo_frame, :left}, %Frame{capture_ns: 2}, _at}
+      assert_receive {:exported, {:stereo_frame, :right}, %Frame{capture_ns: 2}, _at}
       refute_receive {:exported, _output, _value, _at}, 100
     end
 

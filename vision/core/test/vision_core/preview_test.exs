@@ -15,18 +15,25 @@ defmodule VisionCore.PreviewTest do
   end
 
   defp feed_left(sequence) do
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: sequence, jpeg: "#{sequence}"}
+    frame = %Frame{
+      label: "stereo/left",
+      width: 2,
+      height: 2,
+      capture_ns: sequence,
+      jpeg: "#{sequence}"
+    }
+
     GenServer.cast(Preview, {:camera_frame, frame})
   end
 
   # A pair whose depth image is `width` x `height` millimetres from `depth_mm`.
   defp pair(depth_mm \\ nil, {width, height} \\ {4, 4}) do
-    frame = %Frame{label: "left", width: width, height: height, capture_ns: 0, jpeg: <<>>}
+    frame = %Frame{label: "stereo/left", width: width, height: height, capture_ns: 0, jpeg: <<>>}
     depth = depth_mm && for(millimetres <- depth_mm, into: <<>>, do: <<millimetres::little-16>>)
 
     %Pair{
       left_frame: frame,
-      right_frame: %{frame | label: "right"},
+      right_frame: %{frame | label: "stereo/right"},
       depth: depth,
       geometry: %{width: width, height: height}
     }
@@ -36,8 +43,8 @@ defmodule VisionCore.PreviewTest do
     remaining_ms = max(deadline_ms - System.monotonic_time(:millisecond), 0)
 
     receive do
-      {:vision_preview, :left, jpeg} ->
-        Preview.ack(:left)
+      {:vision_preview, "stereo/left", jpeg} ->
+        Preview.ack("stereo/left")
         receive_and_ack_until(deadline_ms, [jpeg | frames])
     after
       remaining_ms -> Enum.reverse(frames)
@@ -46,7 +53,7 @@ defmodule VisionCore.PreviewTest do
 
   test "preview caps a subscriber at max_hz" do
     start_supervised!({Preview, config: @config, max_hz: 5})
-    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe("stereo/left")
 
     Task.start_link(fn ->
       for sequence <- 1..30 do
@@ -82,18 +89,18 @@ defmodule VisionCore.PreviewTest do
         {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
       )
 
-      :ok = Preview.subscribe(:hq)
-      refute_receive {:vision_preview, :hq, _}, 50
+      :ok = Preview.subscribe("hq")
+      refute_receive {:vision_preview, "hq", _}, 50
 
       publish_hq(hq_frame(1))
-      assert_receive {:vision_preview, :hq, "hq1"}, 500
+      assert_receive {:vision_preview, "hq", "hq1"}, 500
 
       for sequence <- 2..6, do: publish_hq(hq_frame(sequence))
       :sys.get_state(Preview)
-      refute_receive {:vision_preview, :hq, _}, 100
+      refute_receive {:vision_preview, "hq", _}, 100
 
-      Preview.ack(:hq)
-      assert_receive {:vision_preview, :hq, "hq6"}, 500
+      Preview.ack("hq")
+      assert_receive {:vision_preview, "hq", "hq6"}, 500
       for skipped <- 2..5, do: refute_received({:encoded, ^skipped})
     end
 
@@ -107,7 +114,7 @@ defmodule VisionCore.PreviewTest do
         {Preview, config: @camera_config, max_hz: 50, frame_encoder: encode_frame}
       )
 
-      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe("hq")
 
       log =
         capture_log(fn ->
@@ -117,13 +124,13 @@ defmodule VisionCore.PreviewTest do
             Process.sleep(30)
           end
 
-          refute_receive {:vision_preview, :hq, _jpeg}, 100
+          refute_receive {:vision_preview, "hq", _jpeg}, 100
         end)
 
       assert length(String.split(log, "cannot encode the hq preview: :no_codec")) == 2
 
       publish_hq(hq_frame(1))
-      assert_receive {:vision_preview, :hq, "hq1"}, 500
+      assert_receive {:vision_preview, "hq", "hq1"}, 500
     end
 
     # Encodes the left frames at once, and each hq frame once the test sends the encode :release.
@@ -146,16 +153,16 @@ defmodule VisionCore.PreviewTest do
         {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
       )
 
-      :ok = Preview.subscribe(:hq)
-      :ok = Preview.subscribe(:left)
+      :ok = Preview.subscribe("hq")
+      :ok = Preview.subscribe("stereo/left")
 
       publish_hq(hq_frame(1))
       assert_receive {:encoding, encode, 1}, 500
       feed_left(1)
 
-      assert_receive {:vision_preview, :left, "1"}, 500
+      assert_receive {:vision_preview, "stereo/left", "1"}, 500
       send(encode, :release)
-      assert_receive {:vision_preview, :hq, "hq1"}, 500
+      assert_receive {:vision_preview, "hq", "hq1"}, 500
     end
 
     test "one frame a stream encodes at a time, the newest waiting, sent though newer came" do
@@ -163,7 +170,7 @@ defmodule VisionCore.PreviewTest do
         {Preview, config: @camera_config, max_hz: 50, frame_encoder: held_hq_encoder(self())}
       )
 
-      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe("hq")
       publish_hq(hq_frame(1))
       assert_receive {:encoding, encode, 1}, 500
 
@@ -172,18 +179,18 @@ defmodule VisionCore.PreviewTest do
       refute_receive {:encoding, _encode, _sequence}, 100
 
       send(encode, :release)
-      assert_receive {:vision_preview, :hq, "hq1"}, 500
-      Preview.ack(:hq)
+      assert_receive {:vision_preview, "hq", "hq1"}, 500
+      Preview.ack("hq")
 
       assert_receive {:encoding, encode, 4}, 500
       send(encode, :release)
-      assert_receive {:vision_preview, :hq, "hq4"}, 500
+      assert_receive {:vision_preview, "hq", "hq4"}, 500
       refute_received {:encoding, _encode, _skipped}
     end
 
     test "a stream's frames reach only its subscribers" do
       start_supervised!({Preview, config: @camera_config, max_hz: 50})
-      :ok = Preview.subscribe(:left)
+      :ok = Preview.subscribe("stereo/left")
 
       publish_hq(%{hq_frame(1) | jpeg: "hq"})
       :sys.get_state(Preview)
@@ -219,14 +226,14 @@ defmodule VisionCore.PreviewTest do
         )
 
       refute preview in Outputs.subscribers({:camera_frame, server, :view})
-      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe("hq")
 
       Outputs.publish(
         {:camera_frame, server, :inference},
         {:camera_frame, %{hq_frame(1) | output: :inference}}
       )
 
-      assert_receive {:vision_preview, :hq, "inference"}, 500
+      assert_receive {:vision_preview, "hq", "inference"}, 500
     end
 
     test "its stream shows its camera's first sent output, not one it does not send" do
@@ -305,7 +312,7 @@ defmodule VisionCore.PreviewTest do
         {Preview, config: config, max_hz: 50, outputs: [hq: :view_jpeg], jpeg_codec: no_codec}
       )
 
-      :ok = Preview.subscribe(:hq)
+      :ok = Preview.subscribe("hq")
       jpeg = <<0xFF, 0xD8, 9, 8, 7, 0xFF, 0xD9>>
 
       frame = %Frame{
@@ -318,7 +325,7 @@ defmodule VisionCore.PreviewTest do
       }
 
       Outputs.publish({:camera_frame, server, :view_jpeg}, {:camera_frame, frame})
-      assert_receive {:vision_preview, :hq, ^jpeg}, 500
+      assert_receive {:vision_preview, "hq", ^jpeg}, 500
     end
 
     test "a camera whose outputs cannot be made has nothing to show, and the rest previews on" do
@@ -332,14 +339,14 @@ defmodule VisionCore.PreviewTest do
       preview = start_supervised!({Preview, config: config, max_hz: 50})
 
       refute preview in Outputs.subscribers(nil)
-      assert Preview.subscribe(:hq) == :ok
+      assert Preview.subscribe("hq") == :ok
     end
 
     test "a stream the configuration has no camera for cannot be subscribed to" do
       start_supervised!({Preview, config: @camera_config, max_hz: 50})
 
-      assert Preview.subscribe(:other) == {:error, :unknown_stream}
-      assert Preview.subscribe(:hq) == :ok
+      assert Preview.subscribe("other") == {:error, :unknown_stream}
+      assert Preview.subscribe("hq") == :ok
     end
   end
 
@@ -347,27 +354,41 @@ defmodule VisionCore.PreviewTest do
   test "a grey frame is previewed as a JPEG" do
     start_supervised!(VisionCore.Jpeg)
     start_supervised!({Preview, config: @config, max_hz: 5})
-    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe("stereo/left")
 
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+    frame = %Frame{
+      label: "stereo/left",
+      width: 2,
+      height: 2,
+      capture_ns: 1,
+      grey: <<0, 64, 128, 255>>
+    }
+
     GenServer.cast(Preview, {:camera_frame, frame})
 
-    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
+    assert_receive {:vision_preview, "stereo/left", <<0xFF, 0xD8, _rest::binary>>}, 1_000
   end
 
   @tag :jpeg
   test "encodes on the JPEG codec its :jpeg_codec option names" do
     start_supervised!({VisionCore.Jpeg, name: :preview_test_codec})
     start_supervised!({Preview, config: @config, max_hz: 50, jpeg_codec: :preview_test_codec})
-    :ok = Preview.subscribe(:left)
-    :ok = Preview.subscribe(:depth)
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, grey: <<0, 64, 128, 255>>}
+    :ok = Preview.subscribe("stereo/left")
+    :ok = Preview.subscribe("stereo/depth")
+
+    frame = %Frame{
+      label: "stereo/left",
+      width: 2,
+      height: 2,
+      capture_ns: 1,
+      grey: <<0, 64, 128, 255>>
+    }
 
     GenServer.cast(Preview, {:camera_frame, frame})
     GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(1000, 16))})
 
-    assert_receive {:vision_preview, :left, <<0xFF, 0xD8, _rest::binary>>}, 1_000
-    assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _rest::binary>>}, 1_000
+    assert_receive {:vision_preview, "stereo/left", <<0xFF, 0xD8, _rest::binary>>}, 1_000
+    assert_receive {:vision_preview, "stereo/depth", <<0xFF, 0xD8, _rest::binary>>}, 1_000
     assert Process.whereis(VisionCore.Jpeg) == nil
   end
 
@@ -387,13 +408,13 @@ defmodule VisionCore.PreviewTest do
 
     start_supervised!({Task, fn -> Stream.repeatedly(export) |> Stream.run() end})
     start_supervised!({Preview, config: @config, max_hz: 50, jpeg_codec: :shared_codec})
-    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe("stereo/left")
 
     for sequence <- 1..2 do
-      frame = %Frame{label: "left", width: 1, height: 1, capture_ns: sequence, grey: <<0>>}
+      frame = %Frame{label: "stereo/left", width: 1, height: 1, capture_ns: sequence, grey: <<0>>}
       GenServer.cast(Preview, {:camera_frame, frame})
-      assert_receive {:vision_preview, :left, "fast"}, 1_500
-      Preview.ack(:left)
+      assert_receive {:vision_preview, "stereo/left", "fast"}, 1_500
+      Preview.ack("stereo/left")
     end
 
     assert_receive {:exported, {:ok, "slow"}}, 1_500
@@ -402,17 +423,17 @@ defmodule VisionCore.PreviewTest do
 
   test "preview delivers only the latest frame to a slow subscriber" do
     start_supervised!({Preview, config: @config, max_hz: 50})
-    :ok = Preview.subscribe(:left)
+    :ok = Preview.subscribe("stereo/left")
 
     feed_left(0)
-    assert_receive {:vision_preview, :left, "0"}
+    assert_receive {:vision_preview, "stereo/left", "0"}
 
     for sequence <- 1..10, do: feed_left(sequence)
     :sys.get_state(Preview)
-    Preview.ack(:left)
+    Preview.ack("stereo/left")
 
-    assert_receive {:vision_preview, :left, "10"}, 500
-    refute_receive {:vision_preview, :left, _}, 200
+    assert_receive {:vision_preview, "stereo/left", "10"}, 500
+    refute_receive {:vision_preview, "stereo/left", _}, 200
   end
 
   test "a camera frame is encoded once, however many subscribers receive it" do
@@ -436,11 +457,11 @@ defmodule VisionCore.PreviewTest do
 
   defp spawn_subscriber(test_pid) do
     spawn_link(fn ->
-      :ok = Preview.subscribe(:left)
+      :ok = Preview.subscribe("stereo/left")
       send(test_pid, {:subscribed, self()})
 
       receive do
-        {:vision_preview, :left, jpeg} -> send(test_pid, {:previewed, jpeg})
+        {:vision_preview, "stereo/left", jpeg} -> send(test_pid, {:previewed, jpeg})
       end
 
       Process.sleep(:infinity)
@@ -449,7 +470,7 @@ defmodule VisionCore.PreviewTest do
 
   test "a new depth range is told to every depth subscriber, whoever set it" do
     start_supervised!({Preview, config: @config})
-    :ok = Preview.subscribe(:depth)
+    :ok = Preview.subscribe("stereo/depth")
     left_only = spawn_subscriber(self())
     assert_receive {:subscribed, ^left_only}, 500
 
@@ -464,19 +485,52 @@ defmodule VisionCore.PreviewTest do
     depth_encoder = fn _pair -> "depth jpeg" end
     config = %{@config | components: [stereo]}
     start_supervised!({Preview, config: config, depth_encoder: depth_encoder})
-    :ok = Preview.subscribe(:left)
-    :ok = Preview.subscribe(:depth)
-    frame = %Frame{label: "left", width: 2, height: 2, capture_ns: 1, jpeg: "left jpeg"}
+    :ok = Preview.subscribe("stereo/left")
+    :ok = Preview.subscribe("stereo/depth")
+    frame = %Frame{label: "stereo/left", width: 2, height: 2, capture_ns: 1, jpeg: "left jpeg"}
 
-    Outputs.publish({:camera_frame, Camera.name_for("left")}, {:camera_frame, frame})
+    Outputs.publish({:camera_frame, Camera.name_for("stereo/left")}, {:camera_frame, frame})
 
     Outputs.publish(
       {:stereo_pair, VisionCore.Stereo.Pipeline},
       {:stereo_pair, pair(List.duplicate(0, 16))}
     )
 
-    assert_receive {:vision_preview, :left, "left jpeg"}, 1_000
-    assert_receive {:vision_preview, :depth, "depth jpeg"}, 1_000
+    assert_receive {:vision_preview, "stereo/left", "left jpeg"}, 1_000
+    assert_receive {:vision_preview, "stereo/depth", "depth jpeg"}, 1_000
+  end
+
+  test "previews a camera named left apart from the stereo unit's left camera" do
+    config = %{
+      @config
+      | components: [
+          {:stereo, driver: Camera, left: [], right: []},
+          {:camera, name: :left, driver: Camera}
+        ]
+    }
+
+    assert Preview.streams(config) == ["stereo/left", "stereo/right", "stereo/depth", "left"]
+
+    start_supervised!({Preview, config: config})
+    :ok = Preview.subscribe("stereo/left")
+    :ok = Preview.subscribe("left")
+
+    for label <- ["stereo/left", "left"] do
+      frame = %Frame{label: label, width: 2, height: 2, capture_ns: 1, jpeg: "#{label} jpeg"}
+      Outputs.publish({:camera_frame, Camera.name_for(label)}, {:camera_frame, frame})
+    end
+
+    assert_receive {:vision_preview, "stereo/left", "stereo/left jpeg"}, 1_000
+    assert_receive {:vision_preview, "left", "left jpeg"}, 1_000
+  end
+
+  test "names the stereo streams under the stereo unit's prefix" do
+    config = %{
+      @config
+      | components: [{:stereo, driver: Camera, prefix: "front", left: [], right: []}]
+    }
+
+    assert Preview.streams(config) == ["front/left", "front/right", "front/depth"]
   end
 
   test "depth is not encoded without subscribers" do
@@ -493,11 +547,11 @@ defmodule VisionCore.PreviewTest do
     GenServer.cast(Preview, {:stereo_pair, pair(depth_mm)})
     refute_receive :depth_encoded, 200
 
-    :ok = Preview.subscribe(:depth)
+    :ok = Preview.subscribe("stereo/depth")
     GenServer.cast(Preview, {:stereo_pair, pair(depth_mm)})
 
     assert_receive :depth_encoded, 500
-    assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
+    assert_receive {:vision_preview, "stereo/depth", "depth jpeg"}, 500
   end
 
   test "the latest depth map is coloured again over a new depth range" do
@@ -509,25 +563,25 @@ defmodule VisionCore.PreviewTest do
     end
 
     start_supervised!({Preview, config: @config, depth_encoder: encode_depth})
-    :ok = Preview.subscribe(:depth)
+    :ok = Preview.subscribe("stereo/depth")
     GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(0, 16))})
-    assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
+    assert_receive {:vision_preview, "stereo/depth", "depth jpeg"}, 500
     assert_received :depth_encoded
 
     assert {:ok, _options} = Preview.set_options(depth_range_m: 8.5)
-    Preview.ack(:depth)
+    Preview.ack("stereo/depth")
 
     assert_receive :depth_encoded, 500
-    assert_receive {:vision_preview, :depth, "depth jpeg"}, 500
+    assert_receive {:vision_preview, "stereo/depth", "depth jpeg"}, 500
   end
 
   test "a pair without a depth map is not previewed" do
     preview = start_supervised!({Preview, config: @config})
-    :ok = Preview.subscribe(:depth)
+    :ok = Preview.subscribe("stereo/depth")
 
     GenServer.cast(Preview, {:stereo_pair, pair()})
 
-    refute_receive {:vision_preview, :depth, _jpeg}, 200
+    refute_receive {:vision_preview, "stereo/depth", _jpeg}, 200
     assert Process.alive?(preview)
   end
 
@@ -535,7 +589,7 @@ defmodule VisionCore.PreviewTest do
   test "a depth map that fails to encode is skipped, logged once" do
     start_supervised!(VisionCore.Jpeg)
     preview = start_supervised!({Preview, config: @config, max_hz: 50})
-    :ok = Preview.subscribe(:depth)
+    :ok = Preview.subscribe("stereo/depth")
     # A depth image shorter than its size says.
     truncated = %{pair(List.duplicate(1000, 16)) | geometry: %{width: 8, height: 8}}
 
@@ -547,14 +601,14 @@ defmodule VisionCore.PreviewTest do
           Process.sleep(30)
         end
 
-        refute_receive {:vision_preview, :depth, _jpeg}, 100
+        refute_receive {:vision_preview, "stereo/depth", _jpeg}, 100
       end)
 
     assert Process.alive?(preview)
     assert length(String.split(log, "depth preview")) == 2
 
     GenServer.cast(Preview, {:stereo_pair, pair(List.duplicate(1000, 16))})
-    assert_receive {:vision_preview, :depth, <<0xFF, 0xD8, _::binary>>}, 500
+    assert_receive {:vision_preview, "stereo/depth", <<0xFF, 0xD8, _::binary>>}, 500
   end
 
   test "a subscriber that dies while a frame awaits its ack is dropped" do
@@ -563,7 +617,7 @@ defmodule VisionCore.PreviewTest do
 
     subscriber =
       spawn(fn ->
-        :ok = Preview.subscribe(:left)
+        :ok = Preview.subscribe("stereo/left")
         send(test_pid, :subscribed)
         receive do: (:stop -> :ok)
       end)

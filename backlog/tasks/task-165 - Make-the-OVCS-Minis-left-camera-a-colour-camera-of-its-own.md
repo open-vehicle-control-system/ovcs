@@ -198,7 +198,7 @@ Until the pose is measured, `/tf_static` carries no transform for the camera. No
 - `/left/set_camera_info`;
 - `/tf_static` from `stereo_left_optical` to `left_optical`, once a pose exists.
 
-`/stereo/left/image_raw/compressed` does not change. It is the grey frame that `/stereo/left/camera_info` (480×270) and the depth describe, and the bag `replay` preset records it. The bag presets pick the camera up as any camera of their own: `replay` records `half_jpeg`, at 10 Hz from the cap, and `review` records it at 10 Hz. `BagExporter.Preset` is not on `main` yet, so its rename to `{:stereo_frame, side}` goes with whichever of the two lands second.
+`/stereo/left/image_raw/compressed` does not change. It is the grey frame that `/stereo/left/camera_info` (480×270) and the depth describe, and the bag `replay` preset records it. The bag presets pick the camera up as any camera of their own: `replay` records `half_jpeg`, at 10 Hz from the cap, and `review` records it at 10 Hz.
 
 ### 7. Generality
 
@@ -240,4 +240,13 @@ PR 1:
 - Of the stereo drivers, only `V4L2Pair` read its side from its label. `LibCamera`, `GStreamer` and `Ros2.Camera` take no side from their label: they receive `:side` and need nothing of it.
 - Each side's `:label` is among the side options the stereo unit resolves (`VisionCore.Stereo.Supervisor.camera_options/1`). The Pairer, the stereo parameters, the ROS 2 diagnostics and `V4L2Pair`'s peer take it from there, so PR 2 changes the label in one function.
 - `VisionCore.Camera.FocusSweep` sets the focus through the stereo unit's own driver, found in the configuration, rather than `V4L2Pair` by its registered name.
+
+PR 2, split in two stacked pull requests: 2a the core, the API and the guides, 2b the dashboard. The API's preview channel and exporter listing read the core's new names, so the API moves with the core to keep its suite green; the dashboard follows in 2b.
+
+- Registered names follow the labels, as the table above says (`LibCamera.L_stereo/left`): a stereo side and a camera `left` of the same driver module would otherwise register under one name.
+- A calibration's cameras in use and a session's result are named by label, `stereo/left` and `stereo/right` for the stereo target and the pose's stereo camera: the Calibration page shows each camera's preview stream and corners by that name. The saved calibrations keep naming the stereo lenses `left` and `right`, the sides `Calibration.Library` stores them by, which needed no change.
+- `VisionCore.Preview` streams are strings, the frames' labels and `<prefix>/depth`, so the API compares a topic with them without making atoms.
+- `VisionCore.Status` keyed the `running?` reply of a camera of its own and of a stereo side alike; a camera `left` took the side's. They are apart now.
+- The dashboard's `STEREO` constant is the stereo parameter groups' `pipeline`, not the unit's prefix, and stays. The prefix reaches the dashboard as the `source` of the API's stereo outputs (`stereo_frame:left`, `stereo_frame:right`, `stereo_pair`), the preview stream each is shown on, as a detection output's `source` already was; the API's camera outputs carry theirs too. A detection output without a `source` is no longer drawn on the left preview: the API names one for each.
+- The bag exporter's `Preset.kind/1` takes `{:stereo_frame, side}` as a stereo side's and every `{:camera_frame, ...}` as a camera's, so the presets record a camera `left` as a camera beside the stereo sides.
 <!-- SECTION:NOTES:END -->

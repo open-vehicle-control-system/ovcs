@@ -4,7 +4,9 @@ defmodule VisionCore.Stereo.Supervisor do
 
     1. Two camera drivers (left + right) of the same `VisionCore.Camera`
        implementation, each given its `:side`, `:left` or `:right`, its
-       side's `:label` and its side's frame id, which its frames carry.
+       side's frame id and its `:label`, `<prefix>/left` or
+       `<prefix>/right`, which its frames carry: a camera of its own
+       may be named `left` (`labels/1`).
     2. `VisionCore.Stereo.Pipeline`, which turns a pair of frames into
        disparity and depth through its stages.
     3. `VisionCore.Stereo.Pairer`, which pairs the drivers' frames and
@@ -76,9 +78,9 @@ defmodule VisionCore.Stereo.Supervisor do
       shrunk to it while they are rectified; larger, the pipeline does
       not start.
     * `:prefix` (`"stereo"`) — the unit's prefix: of its parameters
-      (`<prefix>.<stage>.<setting>`), of its calibration files and of
+      (`<prefix>.<stage>.<setting>`), of its calibration files, of
       each side's default `frame_id` (`<prefix>_left`,
-      `<prefix>_right`).
+      `<prefix>_right`) and of its cameras' labels (`labels/1`).
     * `:calibration_dir` — when set, the per-side
       `calibration_path` defaults to
       `<calibration_dir>/<prefix>_<side>.yaml`.
@@ -181,10 +183,35 @@ defmodule VisionCore.Stereo.Supervisor do
     with opts when is_list(opts) <- Enum.find_value(components, &stereo_options/1),
          driver = Keyword.get(opts, :driver),
          true <- camera_driver?(driver) do
-      for side <- [:left, :right], do: {driver, driver.name_for(label(side))}
+      prefix = Keyword.get(opts, :prefix, @default_prefix)
+      for side <- [:left, :right], do: {driver, driver.name_for(label(prefix, side))}
     else
       _no_cameras -> []
     end
+  end
+
+  @doc """
+  The prefix of the stereo unit in `config`, its `:prefix`: `"stereo"`
+  by default, and without a `:stereo` component.
+  """
+  @spec prefix(VisionCore.Config.t()) :: String.t()
+  def prefix(%VisionCore.Config{components: components}) do
+    case Enum.find_value(components, &stereo_options/1) do
+      opts when is_list(opts) -> Keyword.get(opts, :prefix, @default_prefix)
+      _no_unit -> @default_prefix
+    end
+  end
+
+  @doc """
+  The labels of the cameras of the stereo unit in `config`, which their
+  frames carry, under its `prefix/1`: `[left: "<prefix>/left", right:
+  "<prefix>/right"]`. The status, the previews and the calibration name
+  the cameras by them, apart from a camera of its own named `left`.
+  """
+  @spec labels(VisionCore.Config.t()) :: [left: String.t(), right: String.t()]
+  def labels(config) do
+    prefix = prefix(config)
+    for side <- [:left, :right], do: {side, label(prefix, side)}
   end
 
   defp stereo_options({:stereo, opts}), do: opts
@@ -197,8 +224,8 @@ defmodule VisionCore.Stereo.Supervisor do
   @doc """
   The outputs of the stereo unit in `config`, each with its
   `VisionCore.Outputs` key: its pipeline's pairs, then its left and
-  right cameras' frames, as `VisionCore.Exporter` names them. `[]`
-  without a `:stereo` component.
+  right cameras' frames, `{:stereo_frame, side}`, as
+  `VisionCore.Exporter` names them. `[]` without a `:stereo` component.
   """
   @spec outputs(VisionCore.Config.t()) :: [
           {VisionCore.Exporter.output(), VisionCore.Outputs.key()}
@@ -211,8 +238,8 @@ defmodule VisionCore.Stereo.Supervisor do
       [{_left_driver, left}, {_right_driver, right}] ->
         [
           {:stereo_pair, {:stereo_pair, Pipeline}},
-          {{:camera_frame, :left}, {:camera_frame, left}},
-          {{:camera_frame, :right}, {:camera_frame, right}}
+          {{:stereo_frame, :left}, {:camera_frame, left}},
+          {{:stereo_frame, :right}, {:camera_frame, right}}
         ]
     end
   end
@@ -462,11 +489,11 @@ defmodule VisionCore.Stereo.Supervisor do
     |> Keyword.put_new_lazy(:calibration_path, fn ->
       default_calibration_path(calibration_dir, prefix, side_string)
     end)
-    |> Keyword.put(:label, label(side))
+    |> Keyword.put(:label, label(prefix, side))
   end
 
   # The label of the camera of `side`, which its frames carry and its driver registers by.
-  defp label(side), do: Atom.to_string(side)
+  defp label(prefix, side), do: "#{prefix}/#{side}"
 
   @doc """
   The per-side opts with `:calibration_store_path` set from

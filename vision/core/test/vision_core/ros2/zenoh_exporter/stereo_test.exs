@@ -276,18 +276,18 @@ defmodule VisionCore.Ros2.ZenohExporter.StereoTest do
 
   describe "outputs/1" do
     test "reads the pairs and both sides by default" do
-      assert Stereo.outputs([]) == [:stereo_pair, {:camera_frame, :left}, {:camera_frame, :right}]
+      assert Stereo.outputs([]) == [:stereo_pair, {:stereo_frame, :left}, {:stereo_frame, :right}]
     end
 
     test "reads the sides it publishes alone" do
-      assert Stereo.outputs(sides: [:left]) == [:stereo_pair, {:camera_frame, :left}]
-      assert Stereo.outputs(sides: [:right]) == [:stereo_pair, {:camera_frame, :right}]
+      assert Stereo.outputs(sides: [:left]) == [:stereo_pair, {:stereo_frame, :left}]
+      assert Stereo.outputs(sides: [:right]) == [:stereo_pair, {:stereo_frame, :right}]
     end
 
     test "reads no pair when it publishes none of a pair's messages" do
       assert Stereo.outputs(pair_messages: []) == [
-               {:camera_frame, :left},
-               {:camera_frame, :right}
+               {:stereo_frame, :left},
+               {:stereo_frame, :right}
              ]
 
       assert Stereo.outputs(pair_messages: [:depth]) |> hd() == :stereo_pair

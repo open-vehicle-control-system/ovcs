@@ -158,7 +158,7 @@ defmodule VisionCore.Ros2.ZenohExporter.Stereo do
     sides = Keyword.get(options, :sides, @sides)
 
     if(pairs, do: [:stereo_pair], else: []) ++
-      for(side <- @sides, side in sides, do: {:camera_frame, side})
+      for(side <- @sides, side in sides, do: {:stereo_frame, side})
   end
 
   @doc """

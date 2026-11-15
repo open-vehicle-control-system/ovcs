@@ -34,8 +34,10 @@ defmodule VisionCore.CalibrationTest do
        %{tmp_dir: tmp_dir} do
     assert [stereo, camera, pose] = Calibration.targets(config(tmp_dir))
 
-    assert %{id: "front", kind: :stereo, name: nil, labels: ["left", "right"]} = stereo
-    assert stereo.servers == [Camera.name_for("left"), Camera.name_for("right")]
+    assert %{id: "front", kind: :stereo, name: nil, labels: ["front/left", "front/right"]} =
+             stereo
+
+    assert stereo.servers == [Camera.name_for("front/left"), Camera.name_for("front/right")]
     assert length(stereo.frame_keys) == 2
 
     assert camera == %{
@@ -51,12 +53,12 @@ defmodule VisionCore.CalibrationTest do
              id: "hq-pose",
              kind: :pose,
              name: :hq,
-             labels: ["hq", "left"],
+             labels: ["hq", "front/left"],
              frame_keys: [
                {:camera_frame, Camera.name_for("hq")},
-               {:camera_frame, Camera.name_for("left")}
+               {:camera_frame, Camera.name_for("front/left")}
              ],
-             servers: [Camera.name_for("hq"), Camera.name_for("left")]
+             servers: [Camera.name_for("hq"), Camera.name_for("front/left")]
            }
   end
 
@@ -94,7 +96,7 @@ defmodule VisionCore.CalibrationTest do
       assert in_use.pose == %{pose: @pose, file: "hq_pose.yaml", yaml: Pose.to_yaml(@pose)}
 
       assert [
-               %{name: "left", file: "front_left.yaml", calibration: %{}},
+               %{name: "front/left", file: "front_left.yaml", calibration: %{}},
                %{name: "hq", file: "hq.yaml", calibration: %{}}
              ] = in_use.cameras
     end
@@ -185,8 +187,8 @@ defmodule VisionCore.CalibrationTest do
     assert is_float(in_use.baseline_m)
 
     assert [
-             %{name: "left", file: "front_left.yaml", yaml: "image_width" <> _},
-             %{name: "right", file: "front_right.yaml"}
+             %{name: "front/left", file: "front_left.yaml", yaml: "image_width" <> _},
+             %{name: "front/right", file: "front_right.yaml"}
            ] = in_use.cameras
   end
 

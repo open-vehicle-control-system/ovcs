@@ -96,7 +96,7 @@ The exporters take the unit's outputs out of it; see [Exporters](#exporters). Th
 - A camera of its own's topics are under its name: `<camera>`.
 - A detection or segmentation pipeline's topics are under its name, whatever camera it reads: `<pipeline>`. A detector without a name is the pipeline `detection`.
 
-A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`.
+A `topic_prefix:` in the exporter's `cameras:`, `detections:` or `segmentation:` option puts those topics under `<topic_prefix>/<camera>/` or `<topic_prefix>/<pipeline>/` instead. The exporter refuses one that puts a camera or pipeline named `left` or `right` on the stereo unit's topics, such as `topic_prefix: "stereo"` beside a camera `left`. On the OVCS1 reference vehicle, as a worked example, the camera `center` publishes `/center/image_raw/compressed`, the detector `objects` `/objects/detections` and the segmenter `scene` `/scene/labels`.
 
 | Topic | Content |
 |---|---|
@@ -243,7 +243,7 @@ The calibration session finds the board in the cameras' frames, which it reads f
 
 ## The dashboard's previews
 
-The dashboard opens one channel per preview: `preview:left`, `preview:right` and `preview:depth`. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
+The dashboard opens one channel per preview: `preview:stereo/left`, `preview:stereo/right` and `preview:stereo/depth` for the stereo unit, under its `:prefix`, and `preview:<name>` for a camera of its own. `VisionCore.Preview` encodes a frame for a channel only when that channel's previous frame has been shown and acknowledged, and at most `:max_hz` times a second. A slow link therefore gets the latest frame instead of a backlog, and a unit with no dashboard open encodes nothing. Each frame goes to the browser as a binary WebSocket message holding the JPEG.
 
 Each preview encodes apart from the others, one frame at a time. A slow one, such as a camera's full-resolution frame, delays only its own stream. A frame that comes during its stream's encode waits, replaced by any newer one.
 

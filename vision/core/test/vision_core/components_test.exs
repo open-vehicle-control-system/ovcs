@@ -63,11 +63,18 @@ defmodule VisionCore.ComponentsTest do
              Components.start(:camera, name: :hq, driver: VisionCore.Camera.V4L2Single, csiphy: 2)
   end
 
+  test "a camera may be named left or right, the stereo unit's cameras being labelled under its prefix" do
+    for name <- [:left, :right] do
+      assert [%{id: {:camera, ^name}}] =
+               Components.start(:camera, name: name, driver: VisionCore.Camera.GStreamer)
+    end
+  end
+
   test "a camera without a valid name or a driver is refused, saying so" do
     for {opts, message} <- [
           {[driver: VisionCore.Camera.GStreamer], "a :camera component needs a :name"},
           {[name: "hq", driver: VisionCore.Camera.GStreamer], "got \"hq\""},
-          {[name: :left, driver: VisionCore.Camera.GStreamer], "got :left"},
+          {[name: :depth, driver: VisionCore.Camera.GStreamer], "got :depth"},
           {[name: :hq], "a :camera component needs a :driver"},
           {[name: :hq, driver: VisionCore.Camera.V4L2Singel], "is not a VisionCore.Camera"},
           {[name: :hq, driver: "gstreamer"], "is not a VisionCore.Camera"}

@@ -5,16 +5,19 @@ defmodule VisionApiWeb.ExporterController do
   answering, as `exporters`. Their statuses come with the unit's status
   (`VisionApiWeb.StatusJSON`). The API's outputs are those its channels
   carry, each with the most values a channel carries a second: the
-  previews' rate (`VisionCore.Preview.options/0`) for the camera frames
-  and each pair's depth, `{:camera_frame, name}` for each camera of its
-  own, in the order of the configuration's cameras, then
+  previews' rate (`VisionCore.Preview.options/0`) for the stereo unit's
+  frames, `{:stereo_frame, side}`, and each pair's depth, then
+  `{:camera_frame, name}` for each camera of its own, in the order of
+  the configuration's cameras, each with its source, the preview stream
+  it is shown on (`VisionCore.Preview.streams/1`); then
   `{:camera_video, name, output}` for each camera video
   `VisionCore.Video` relays, every frame, unbounded, and then each
   detection pipeline's detections, `{:detections, name}`, in the order
   of the configuration's detectors, each at
   its pipeline's `VisionCore.Detection.Live.max_hz/1` and with its
-  source, the preview its boxes are drawn on: `"left"` for the stereo
-  pair, the camera's name for a camera of its own; then each
+  source, the preview its boxes are drawn on: the stereo unit's left
+  camera's, `<prefix>/left`, for the stereo pair, the camera's name for
+  a camera of its own; then each
   segmentation pipeline's `{:segmentation, name}`, in the order of the
   configuration's segmenters, at its pipeline's
   `VisionCore.Segmentation.Live.max_hz/1` and with its camera's name as
@@ -22,30 +25,41 @@ defmodule VisionApiWeb.ExporterController do
   """
   use VisionApiWeb, :controller
 
-  @preview_outputs [{:camera_frame, :left}, {:camera_frame, :right}, :stereo_pair]
-
   def index(conn, _params),
     do: render(conn, :index, exporters: VisionCore.Exporters.describe() ++ [api()])
 
   defp api do
     config = VisionCore.Application.active_config()
-    outputs = Enum.filter(@preview_outputs, &VisionCore.Exporter.output_key(&1, config))
 
     %{
       id: VisionApiWeb.Exporter.api_entry().id,
       name: VisionApiWeb.Exporter.api_entry().name,
       module: VisionApiWeb.Endpoint,
       outputs:
-        Enum.map(outputs ++ camera_outputs(config), &%{output: &1, max_hz: channel_max_hz(&1)}) ++
+        preview_outputs(config) ++
           video_outputs() ++ detection_outputs(config) ++ segmentation_outputs(config),
       actions: []
     }
   end
 
-  defp camera_outputs(nil), do: []
+  defp preview_outputs(nil), do: []
 
-  defp camera_outputs(config),
-    do: for({output, _key} <- VisionCore.Camera.Unit.outputs(config), do: output)
+  defp preview_outputs(config) do
+    [left, right, depth | _cameras] = VisionCore.Preview.streams(config)
+
+    stereo =
+      Enum.filter(
+        [{{:stereo_frame, :left}, left}, {{:stereo_frame, :right}, right}, {:stereo_pair, depth}],
+        fn {output, _stream} -> VisionCore.Exporter.output_key(output, config) end
+      )
+
+    cameras =
+      for {{:camera_frame, name} = output, _key} <- VisionCore.Camera.Unit.outputs(config),
+          do: {output, Atom.to_string(name)}
+
+    for {output, stream} <- stereo ++ cameras,
+        do: %{output: output, max_hz: channel_max_hz(output), source: stream}
+  end
 
   defp video_outputs do
     for {camera, output} <- call_or_nil(&VisionCore.Video.videos/0) || [],
@@ -56,7 +70,7 @@ defmodule VisionApiWeb.ExporterController do
 
   defp detection_outputs(config) do
     for {output, source} <- VisionCore.Detection.Supervisor.sources(config),
-        do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source)}
+        do: %{output: output, max_hz: channel_max_hz(output), source: source_name(source, config)}
   end
 
   defp segmentation_outputs(nil), do: []
@@ -68,9 +82,11 @@ defmodule VisionApiWeb.ExporterController do
     end
   end
 
-  defp source_name(:stereo), do: "left"
-  defp source_name({:camera, name}), do: Atom.to_string(name)
-  defp source_name({:camera, name, _output}), do: Atom.to_string(name)
+  defp source_name(:stereo, config),
+    do: Keyword.fetch!(VisionCore.Stereo.Supervisor.labels(config), :left)
+
+  defp source_name({:camera, name}, _config), do: Atom.to_string(name)
+  defp source_name({:camera, name, _output}, _config), do: Atom.to_string(name)
 
   # A channel whose process is not running carries nothing to bound.
   defp channel_max_hz({:detections, name}),

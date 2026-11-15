@@ -97,6 +97,7 @@ defmodule VisionCore.SnapshotTest do
     assert %{"mean" => 30.0, "std" => 1.0, "n" => 2} = figures["summary"]["depthHz"]
     assert %{"mean" => 40.0, "n" => 1} = figures["summary"]["cpuPercent"]
     assert %{"mean" => 55.0, "n" => 2} = figures["summary"]["stereoLoadPercent"]
+    assert %{"mean" => 30.0, "n" => 2} = figures["summary"]["leftCameraFps"]
     assert %{"mean" => 29.0, "n" => 2} = figures["summary"]["rightCameraFps"]
     assert %{"max" => 2.0} = figures["summary"]["syncOffsetMaxMs"]
   end
@@ -278,6 +279,7 @@ defmodule VisionCore.SnapshotTest do
       ],
       configuration: %{"components" => [], "exporters" => []},
       calibration: %{left: "left calibration\n", right: "right calibration\n"},
+      camera_labels: [left: "stereo/left", right: "stereo/right"],
       pairs: Enum.map(0..2, &burst_pair/1),
       last_pair: last_pair(),
       status_snapshots: [status_snapshot(29.0, nil, 1.0), status_snapshot(31.0, 40.0, 2.0)],
@@ -323,8 +325,8 @@ defmodule VisionCore.SnapshotTest do
   defp status_snapshot(depth_hz, cpu_percent, offset_max_ms) do
     %{
       cameras: %{
-        left: %{present: true, fps: depth_hz},
-        right: %{present: true, fps: depth_hz - 1.0}
+        "stereo/left" => %{present: true, fps: depth_hz},
+        "stereo/right" => %{present: true, fps: depth_hz - 1.0}
       },
       sync: %{present: true, pairs: 30, offset_max_ms: offset_max_ms, offset_median_ms: 1.0},
       npu: %{kind: "Hexagon", state: :running},

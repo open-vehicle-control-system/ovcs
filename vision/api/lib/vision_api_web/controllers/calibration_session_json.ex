@@ -63,13 +63,16 @@ defmodule VisionApiWeb.CalibrationSessionJSON do
 
   defp result(nil, _target), do: nil
 
-  defp result(result, %{kind: :stereo, id: prefix}),
-    do: %{
+  # Each camera named by its label, as its preview stream is, from the configuration.
+  defp result(result, %{kind: :stereo, id: prefix}) do
+    {:ok, %{labels: [left, right]}} = Calibration.fetch_target(CalibrationUnit.config(), prefix)
+
+    %{
       imageWidth: result.left.width,
       imageHeight: result.left.height,
       cameras: [
-        solved("left", "#{prefix}_left", result.left, result.left_rms_px),
-        solved("right", "#{prefix}_right", result.right, result.right_rms_px)
+        solved(left, "#{prefix}_left", result.left, result.left_rms_px),
+        solved(right, "#{prefix}_right", result.right, result.right_rms_px)
       ],
       stereoRmsPx: result.stereo_rms_px,
       baselineM: result.baseline_m,
@@ -77,6 +80,7 @@ defmodule VisionApiWeb.CalibrationSessionJSON do
       samples: result.samples,
       pose: nil
     }
+  end
 
   defp result(result, %{kind: :camera, id: name}),
     do: %{

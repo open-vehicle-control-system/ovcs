@@ -195,10 +195,56 @@ defmodule VisionCore.Ros2.ZenohExporter do
          :ok <- check_heartbeat(options[:heartbeat]),
          :ok <- check_stereo(options[:stereo], config),
          :ok <- check_cameras(options[:cameras], config),
-         :ok <- check_detections(options[:detections], config) do
-      check_segmentation(options[:segmentation], config)
+         :ok <- check_detections(options[:detections], config),
+         :ok <- check_segmentation(options[:segmentation], config) do
+      check_stereo_topics(options, config)
     end
   end
+
+  # A camera or pipeline named `left` or `right` under the stereo unit's prefix would publish on its camera's topics.
+  defp check_stereo_topics(options, config) do
+    with stereo_options when is_list(stereo_options) <- options[:stereo],
+         {:ok, cameras} <- StereoSupervisor.camera_options(config) do
+      stereo_prefix = Keyword.get(stereo_options, :topic_prefix, cameras[:prefix])
+      sides = for side <- [:left, :right], do: topic_path("#{stereo_prefix}/#{side}")
+
+      Enum.find_value(topic_roots(options), :ok, fn {section, owner, topic_prefix, root} ->
+        if topic_path(root) in sides,
+          do:
+            {:error,
+             "its #{section}: topic_prefix #{inspect(topic_prefix)} puts the #{owner} " <>
+               "on the stereo unit's topics, #{root}"}
+      end)
+    else
+      _no_stereo_published -> :ok
+    end
+  end
+
+  # Each published camera's and pipeline's topic namespace, under the topic_prefix of its section.
+  defp topic_roots(options) do
+    camera_prefix = options[:cameras] && camera_topic_prefix(options)
+    detections_prefix = options[:detections] && options[:detections][:topic_prefix]
+    segmentation_prefix = options[:segmentation] && options[:segmentation][:topic_prefix]
+
+    for(
+      name <- published_camera_names(options),
+      do:
+        {"cameras", "camera #{inspect(name)}", camera_prefix,
+         Camera.topic_root(camera_prefix, name)}
+    ) ++
+      for(
+        name <- detection_pipelines(options[:detections]),
+        do:
+          {"detections", "pipeline #{inspect(name)}", detections_prefix,
+           Camera.topic_root(detections_prefix, name)}
+      ) ++
+      for name <- segmentation_pipelines(options),
+          do:
+            {"segmentation", "pipeline #{inspect(name)}", segmentation_prefix,
+             Camera.topic_root(segmentation_prefix, name)}
+  end
+
+  defp topic_path(topic), do: String.trim_leading(topic, "/")
 
   defp check_link(true, %VisionCore.Config{ros2: nil}),
     do:
@@ -817,6 +863,9 @@ defmodule VisionCore.Ros2.ZenohExporter do
   def handle_output({:camera_frame, name} = output, %Frame{} = frame, state),
     do: handle_frame(output, name, frame, state)
 
+  def handle_output({:stereo_frame, side} = output, %Frame{} = frame, state),
+    do: handle_side_frame(output, side, frame, state)
+
   def handle_output(output, {source, detections}, state)
       when is_map_key(state.detections, output) do
     %{settings: settings, drawn: drawn} = state.detections[output]
@@ -854,7 +903,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
       else: {:ok, published(state, {:camera, name}, publish.())}
   end
 
-  defp handle_frame(output, side, frame, state) do
+  defp handle_side_frame(output, side, frame, state) do
     label = Atom.to_string(side)
     now_ms = System.monotonic_time(:millisecond)
     side_state = state.stereo.sides[label]

@@ -1,8 +1,9 @@
 defmodule VisionApiWeb.StatusJSON do
   @moduledoc """
   A `VisionCore.Status` snapshot as the `"status"` event's payload: the
-  same fields with camelCase keys (`cameras` holds the sides and each camera
-  of its own, by name), states as strings, and
+  same fields with camelCase keys (`cameras` holds the stereo unit's
+  cameras by their labels, `<prefix>/left` and `<prefix>/right`, and each
+  camera of its own by its name), states as strings, and
   `:stereo_segment_percent` as `stereoLoadPercent`. The NPU is `nil`
   without one. `pipelines` holds each pipeline's times by its name
   (`VisionCore.StageTimes`): `totalMs`, each of its `stages`' time by

@@ -19,6 +19,9 @@ defmodule VisionCore.Snapshot do
       parameters; each is written as `id`, `value`, `saved` and `state`.
     * `:configuration` — `VisionCore.settings/0`, written as it is.
     * `:calibration` — `%{left: yaml, right: yaml}`, the files in use.
+    * `:camera_labels` — `[left: label, right: label]`, the labels the
+      status snapshots name the stereo unit's cameras by
+      (`VisionCore.Stereo.Supervisor.labels/1`).
     * `:pairs` — one map per burst pair, in the order the pipeline published
       them, not always consecutive: `:capture_ns`, `:interval_ms` (since the
       burst's previous pair, `nil` when unknown), `:device_ms`, `:sharpness`
@@ -234,7 +237,9 @@ defmodule VisionCore.Snapshot do
     pairs = recording.pairs |> Enum.with_index() |> Enum.map(&pair_figures/1)
 
     status_snapshots =
-      recording.status_snapshots |> Enum.with_index() |> Enum.map(&status_snapshot_figures/1)
+      recording.status_snapshots
+      |> Enum.with_index()
+      |> Enum.map(&status_snapshot_figures(&1, recording.camera_labels))
 
     %{
       "pairs" => pairs,
@@ -258,15 +263,15 @@ defmodule VisionCore.Snapshot do
     })
   end
 
-  defp status_snapshot_figures({snapshot, index}) do
+  defp status_snapshot_figures({snapshot, index}, camera_labels) do
     %{
       "index" => index,
       "depthHz" => snapshot[:depth_hz],
       "cpuPercent" => snapshot[:cpu_percent],
       "stereoLoadPercent" => snapshot[:stereo_segment_percent]
     }
-    |> Map.merge(scalars("left_camera", snapshot[:cameras][:left]))
-    |> Map.merge(scalars("right_camera", snapshot[:cameras][:right]))
+    |> Map.merge(scalars("left_camera", snapshot[:cameras][camera_labels[:left]]))
+    |> Map.merge(scalars("right_camera", snapshot[:cameras][camera_labels[:right]]))
     |> Map.merge(scalars("sync", snapshot[:sync]))
   end
 

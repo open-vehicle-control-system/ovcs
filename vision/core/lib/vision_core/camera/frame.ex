@@ -2,7 +2,7 @@ defmodule VisionCore.Camera.Frame do
   @moduledoc """
   One frame produced by any module implementing `VisionCore.Camera`.
 
-    * `:label` — driver-assigned identity (e.g. `"left"`, `"right"`).
+    * `:label` — driver-assigned identity (e.g. `"stereo/left"`, `"center"`).
       Lets a single consumer process multiplex frames from several
       cameras over its mailbox.
     * `:frame_id` — the camera's optical frame, the coordinate frame

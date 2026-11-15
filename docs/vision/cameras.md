@@ -9,8 +9,8 @@ Run a camera outside the stereo pair, for a view that is not a depth source. Dec
 
 The `:camera` component runs one camera outside the stereo pair: `{:camera, name: :center, driver: VisionCore.Camera.V4L2Single, csiphy: 2}`.
 
-- `:name` follows the rule of a detection pipeline's name, whose reserved names include `left`, `right` and `depth`. No camera shares a pipeline's name.
-- The camera's frames are the output `{:camera_frame, name}`, which an exporter lists like the stereo cameras' (`{:camera_frame, :center}`).
+- `:name` follows the rule of a detection pipeline's name, whose reserved names include `stereo` and `depth`. No camera shares a pipeline's name. A camera may be named `left` or `right`: the stereo unit's cameras are `<prefix>/left` and `<prefix>/right` in the status, the previews and the calibration, under the stereo unit's `:prefix`, `stereo` by default.
+- The camera's frames are the output `{:camera_frame, name}`, which an exporter lists beside the stereo cameras' `{:stereo_frame, :left}` and `{:stereo_frame, :right}` (`{:camera_frame, :center}`).
 - Each frame carries the optical frame `"<name>_optical"` unless you set `:frame_id`.
 - A camera whose driver has named outputs makes each at every frame. `{:camera_frame, name, output}` names one, and `{:camera_frame, name}` is its first sent image output, the default.
 

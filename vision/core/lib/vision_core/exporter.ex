@@ -15,7 +15,7 @@ defmodule VisionCore.Exporter do
 
     * `:stereo_pair` — a `VisionCore.Stereo.Pair` the stereo pipeline
       finished;
-    * `{:camera_frame, :left}`, `{:camera_frame, :right}` — a
+    * `{:stereo_frame, :left}`, `{:stereo_frame, :right}` — a
       `VisionCore.Camera.Frame` a stereo camera captured;
     * `{:camera_frame, name}` — a `VisionCore.Camera.Frame` the camera
       `name` captured, a `:camera` component (`VisionCore.Camera.Unit`),
@@ -42,7 +42,7 @@ defmodule VisionCore.Exporter do
   `:max_hz`, the most values of the output handed over a second
   (`output_specs/2`), which a video does not take:
 
-      [{:camera_frame, :left}, {{:detections, :road}, max_hz: 2}, stereo_pair: [max_hz: 5]]
+      [{:stereo_frame, :left}, {{:detections, :road}, max_hz: 2}, stereo_pair: [max_hz: 5]]
 
   The runner subscribes to each output through `VisionCore.Outputs`,
   under the key `output_key/2` resolves in the configuration, and leaves
@@ -70,8 +70,9 @@ defmodule VisionCore.Exporter do
   that come while it is busy queued (`VisionCore.Camera.VideoQueue`).
 
   An output's messages are `{output, value}`, but a camera's, which are
-  `{:camera_frame, frame}`, the frame carrying the camera's side, or
-  its name, as its `:label`. A new output is one more entry in this
+  `{:camera_frame, frame}`, the frame carrying its camera's label: a
+  stereo camera's (`VisionCore.Stereo.Supervisor.labels/1`), or a camera
+  of its own's name. A new output is one more entry in this
   module's table of outputs, with the unit whose `outputs/1` gives its
   key, its messages `{output, value}`.
 
@@ -202,13 +203,14 @@ defmodule VisionCore.Exporter do
   # Each output, and the unit whose `outputs/1` gives its key; named ones in `producer/1`.
   @outputs %{
     :stereo_pair => VisionCore.Stereo.Supervisor,
-    {:camera_frame, :left} => VisionCore.Stereo.Supervisor,
-    {:camera_frame, :right} => VisionCore.Stereo.Supervisor
+    {:stereo_frame, :left} => VisionCore.Stereo.Supervisor,
+    {:stereo_frame, :right} => VisionCore.Stereo.Supervisor
   }
 
   @typedoc "One of the unit's outputs; see the module doc."
   @type output ::
           :stereo_pair
+          | {:stereo_frame, :left | :right}
           | {:detections, atom()}
           | {:segmentation, atom()}
           | {:camera_frame, atom()}
@@ -361,26 +363,24 @@ defmodule VisionCore.Exporter do
   Whether `term` is one of the outputs an exporter can name:
   `{:detections, name}` and `{:segmentation, name}` for a valid pipeline
   name (`VisionCore.Pipelines.name?/1`),
-  `{:camera_frame, name}` for a stereo side or a valid camera name, and
-  `{:camera_frame, name, output}` and `{:camera_video, name, output}` for
-  a valid camera name and an atom.
+  `{:stereo_frame, side}` for a stereo side, `{:camera_frame, name}`
+  for a valid camera name, and `{:camera_frame, name, output}` and
+  `{:camera_video, name, output}` for a valid camera name and an atom.
   """
   @spec output?(term()) :: boolean()
   def output?({:detections, name}), do: VisionCore.Pipelines.name?(name)
   def output?({:segmentation, name}), do: VisionCore.Pipelines.name?(name)
-  def output?({:camera_frame, side}) when side in [:left, :right], do: true
   def output?({:camera_frame, name}), do: VisionCore.Pipelines.name?(name)
 
   def output?({kind, name, output}) when kind in [:camera_frame, :camera_video],
-    do: name not in [:left, :right] and VisionCore.Pipelines.name?(name) and is_atom(output)
+    do: VisionCore.Pipelines.name?(name) and is_atom(output)
 
   def output?(term), do: is_map_key(@outputs, term)
 
   defp producer({:detections, _name}), do: VisionCore.Detection.Supervisor
   defp producer({:segmentation, _name}), do: VisionCore.Segmentation.Supervisor
 
-  defp producer({:camera_frame, name}) when name not in [:left, :right],
-    do: VisionCore.Camera.Unit
+  defp producer({:camera_frame, _name}), do: VisionCore.Camera.Unit
 
   defp producer(output), do: Map.fetch!(@outputs, output)
 

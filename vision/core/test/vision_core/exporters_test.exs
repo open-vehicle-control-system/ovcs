@@ -192,7 +192,7 @@ defmodule VisionCore.ExportersTest do
     def describe(_options), do: %{id: :described, name: "Described"}
 
     @impl VisionCore.Exporter
-    def outputs(_options), do: [{:camera_frame, :left}, stereo_pair: [max_hz: 5]]
+    def outputs(_options), do: [{:stereo_frame, :left}, stereo_pair: [max_hz: 5]]
 
     @impl VisionCore.Exporter
     def init(_options), do: {:ok, nil}
@@ -405,7 +405,7 @@ defmodule VisionCore.ExportersTest do
                  status: {:ok, "Connected"},
                  dropped: %{},
                  outputs: [
-                   %{output: {:camera_frame, :left}, max_hz: nil},
+                   %{output: {:stereo_frame, :left}, max_hz: nil},
                    %{output: :stereo_pair, max_hz: 5}
                  ],
                  actions: []
