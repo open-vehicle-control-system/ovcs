@@ -5,15 +5,15 @@ import { decodeSegmentation } from './segmentation.js'
 const DETECTIONS = 'detections'
 
 /**
- * The detection outputs whose channels to join on the preview of `source`, `left` or a camera's name: each
- * `detections` output the API exporter lists whose pipeline's source it is, `left` when the API names none.
+ * The detection outputs whose channels to join on the preview of `source`, the stereo unit's left camera's stream or
+ * a camera's name: each `detections` output the API exporter lists whose pipeline's source it is.
  */
 export function useDetectionOutputs(source) {
   const outputs = useApiOutputs()
 
   return outputs
     .filter(({ name }) => name === DETECTIONS || name.startsWith(`${DETECTIONS}:`))
-    .filter((output) => (output.source ?? 'left') === source)
+    .filter((output) => output.source === source)
 }
 
 export const SEGMENTATION = 'segmentation:'

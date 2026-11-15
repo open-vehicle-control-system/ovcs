@@ -41,9 +41,9 @@ describe('ApiPage', () => {
     const topics = within(screen.getAllByRole('table')[1]).getAllByRole('row').slice(1).map((row) => row.cells[0].textContent)
     expect(topics).toEqual([
       'status',
-      'preview:left, preview:right',
+      'preview:<prefix>/left, preview:<prefix>/right',
       'preview:<name>',
-      'preview:depth',
+      'preview:<prefix>/depth',
       'detections:<name>',
       'segmentation:<name>'
     ])

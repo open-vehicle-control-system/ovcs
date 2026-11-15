@@ -43,7 +43,7 @@ Not explained yet: `CameraConfiguration::validate()` returns Adjusted with two s
 - [ ] #8 The `left` camera is calibrated at 1152×648 and its pose measured on the Calibration page, as OVCS1's `center`; both are shipped in `vehicles/ovcs_mini/priv/calibration/`
 - [ ] #9 Guides updated: `docs/vision/cameras.md`, `docs/vision/data_flow.md`, `docs/vision/channels.md`, `docs/vision/api.md`, `vision/rust/README.md`
 - [x] #10 PR 1: the stereo unit gives each side's driver its `:side`; `V4L2Pair`, the Pairer, the stereo parameters, the ROS 2 diagnostics and the focus sweep tell the sides apart by it or by the labels the unit gives, never by a label's text; nothing visible changes
-- [ ] #11 PR 2: with a stereo unit and a camera `:left` of its own, the status, the preview channels, the exporter outputs, the detection sources and a pose session tell them apart; a camera `topic_prefix:` that lands on a stereo topic is refused; the stereo unit's ROS 2 topics, frame ids, parameters and calibration files are unchanged
+- [x] #11 PR 2: with a stereo unit and a camera `:left` of its own, the status, the preview channels, the exporter outputs, the detection sources and a pose session tell them apart; a camera `topic_prefix:` that lands on a stereo topic is refused; the stereo unit's ROS 2 topics, frame ids, parameters and calibration files are unchanged
 <!-- AC:END -->
 
 ## Implementation Plan

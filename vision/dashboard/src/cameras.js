@@ -4,9 +4,6 @@ import { cameraIssues } from './status.js'
 /** The stereo pair's key among the cameras: the name of its pipeline. */
 export const STEREO = 'stereo'
 
-// The unit status reports the stereo pair's cameras by their side.
-const STEREO_SIDES = ['left', 'right']
-
 const lastSegment = (id) => id.slice(id.lastIndexOf('.') + 1)
 
 // `center` reads as "Center camera".
@@ -65,12 +62,14 @@ function reportStatus(report) {
 
 /**
  * What the unit status says of `camera`: its `level` (`ok`, `warning` or `error`), the `detail` of what is wrong and its
- * rate as `fps`; `null` before the unit reports. The stereo pair is as bad as its worse side, at the lower rate.
+ * rate as `fps`; `null` before the unit reports. The stereo pair is as bad as its worse side, at the lower rate: the
+ * status names its cameras as `stereo`'s `left` and `right` streams do (`stereoStreams`), and the pair has no status
+ * before those are known.
  */
-export function cameraStatus(snapshot, camera) {
-  if (!snapshot) return null
-  const sides = camera.kind === 'stereo' ? STEREO_SIDES : [camera.key]
-  const statuses = sides.map((side) => reportStatus(snapshot.cameras?.[side]))
+export function cameraStatus(snapshot, camera, stereo) {
+  const names = camera.kind === 'stereo' ? [stereo.left, stereo.right] : [camera.key]
+  if (!snapshot || names.includes(null)) return null
+  const statuses = names.map((name) => reportStatus(snapshot.cameras?.[name]))
   const worst = statuses.reduce((worse, status) => (LEVELS.indexOf(status.level) > LEVELS.indexOf(worse.level) ? status : worse))
   const rates = statuses.map((status) => status.fps)
   const fps = rates.includes(null) ? null : Math.min(...rates)

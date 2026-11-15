@@ -7,6 +7,7 @@ import { useCalibration } from '../stores/calibration.js'
 import { useNavigation } from '../stores/navigation.js'
 import { useParameters } from '../stores/parameters.js'
 import { useStatus } from '../stores/status.js'
+import { useStereoStreams } from '../stores/exporters.js'
 
 // What a camera's calibration covers, by the camera's kind.
 const CALIBRATION_DESCRIPTIONS = { stereo: 'Both lenses and their position to each other', camera: 'Its lens' }
@@ -37,9 +38,10 @@ const NO_STATUS = []
 /** The camera's name, opening its first entry, with its state as a dot and its rate at the end once the unit reports. */
 function CameraHeading({ camera, onOpen }) {
   // Flat, so that a status leaving the camera's state and rate as they were does not render the menu again.
+  const stereo = useStereoStreams()
   const [level, detail, fps] = useStatus(
     useShallow((state) => {
-      const status = cameraStatus(state.snapshot, camera)
+      const status = cameraStatus(state.snapshot, camera, stereo)
       return status ? [status.level, status.detail, status.fps] : NO_STATUS
     })
   )

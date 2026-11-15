@@ -163,11 +163,22 @@ describe('Menu', () => {
     it("shows each camera's state as a dot and its rate at its row's end, and says both", () => {
       withCenterCamera()
       useCalibration.setState({ targets: OVCS1_TARGETS })
+      useExporters.setState({
+        exporters: [
+          {
+            ...exporter('api', 'API'),
+            outputs: [
+              { name: 'stereo_frame:left', maxHz: 10, source: 'stereo/left' },
+              { name: 'stereo_frame:right', maxHz: 10, source: 'stereo/right' }
+            ]
+          }
+        ]
+      })
       useStatus.setState({
         snapshot: {
           cameras: {
-            left: { present: true, fps: 30, issues: [] },
-            right: { present: true, fps: 29.96, issues: ['focus_mismatch'] },
+            'stereo/left': { present: true, fps: 30, issues: [] },
+            'stereo/right': { present: true, fps: 29.96, issues: ['focus_mismatch'] },
             center: { present: true, fps: 0 }
           }
         }

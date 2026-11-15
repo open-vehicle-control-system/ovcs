@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
 import { fetchExporters } from '../services/unit.js'
 
 const FIRST_RETRY_MS = 1000
@@ -32,9 +33,25 @@ export const useExporters = create((set, get) => ({
 
 const NO_OUTPUTS = []
 
+const apiOutputs = (state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs ?? NO_OUTPUTS
+
 /** The outputs the API exporter lists, none until it is listed. */
-export const useApiOutputs = () =>
-  useExporters((state) => state.exporters.find((exporter) => exporter.id === 'api')?.outputs ?? NO_OUTPUTS)
+export const useApiOutputs = () => useExporters(apiOutputs)
+
+// The API's outputs that the stereo unit's previews show.
+const STEREO_OUTPUTS = { left: 'stereo_frame:left', right: 'stereo_frame:right', depth: 'stereo_pair' }
+
+/**
+ * The preview streams of the stereo unit's left and right cameras and of its depth, named under its prefix: the
+ * `source` the API exporter lists for each of their outputs, `null` until it lists them.
+ */
+export function stereoStreams(outputs) {
+  const source = (name) => outputs.find((output) => output.name === name)?.source ?? null
+  return Object.fromEntries(Object.entries(STEREO_OUTPUTS).map(([key, name]) => [key, source(name)]))
+}
+
+/** `stereoStreams` of the outputs the API exporter lists. */
+export const useStereoStreams = () => useExporters(useShallow((state) => stereoStreams(apiOutputs(state))))
 
 /** The status of `exporter`: the latest the unit status reports for it, `null` until it reports one. */
 export function exporterStatus(exporter, snapshot) {

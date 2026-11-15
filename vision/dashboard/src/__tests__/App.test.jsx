@@ -40,7 +40,17 @@ const exporters = [
     status: { level: 'ok', detail: 'Recording' },
     outputs: [{ name: 'stereo_pair', maxHz: 2 }]
   },
-  { id: 'api', name: 'API', module: 'VisionApiWeb.Endpoint', status: { level: 'ok', detail: 'Answering' }, outputs: [] }
+  {
+    id: 'api',
+    name: 'API',
+    module: 'VisionApiWeb.Endpoint',
+    status: { level: 'ok', detail: 'Answering' },
+    outputs: [
+      { name: 'stereo_frame:left', maxHz: 10, source: 'stereo/left' },
+      { name: 'stereo_frame:right', maxHz: 10, source: 'stereo/right' },
+      { name: 'stereo_pair', maxHz: 10, source: 'stereo/depth' }
+    ]
+  }
 ]
 
 const initial = useParameters.getState()
