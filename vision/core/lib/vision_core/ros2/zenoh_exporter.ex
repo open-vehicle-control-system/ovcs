@@ -552,12 +552,14 @@ defmodule VisionCore.Ros2.ZenohExporter do
     config = config(options)
 
     for side <- writable_sides(cameras) do
+      service_name = set_camera_info_service(topic_prefix, side)
+
       Supervisor.child_spec(
         {SetCameraInfoServer,
-         service_name: set_camera_info_service(topic_prefix, side),
+         service_name: service_name,
          commit: &Calibration.commit_side(config, side, &1),
          register_service: register_service},
-        id: {SetCameraInfoServer, side}
+        id: {SetCameraInfoServer, service_name}
       )
     end
   end
@@ -588,12 +590,14 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
     for %{name: name} = settings <- published_cameras(options),
         settings.calibration_store_path || settings.calibration_path do
+      service_name = Camera.service_name(camera_topic_prefix(options), name)
+
       Supervisor.child_spec(
         {SetCameraInfoServer,
-         service_name: Camera.service_name(camera_topic_prefix(options), name),
+         service_name: service_name,
          commit: &VisionCore.Camera.Calibration.commit(config, name, &1),
          register_service: register_service},
-        id: {SetCameraInfoServer, name}
+        id: {SetCameraInfoServer, service_name}
       )
     end
   end
