@@ -347,7 +347,7 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
                ZenohExporter.children(stereo: [topic_prefix: "front"], config: config)
 
       assert %{
-               id: {SetCameraInfoServer, :left},
+               id: {SetCameraInfoServer, "front/left/set_camera_info"},
                start: {SetCameraInfoServer, :start_link, [left_options]}
              } = left
 
@@ -365,7 +365,8 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
                ZenohExporter.children(stereo: [], config: config(Camera))
 
       for {side, child} <- [left: left, right: right] do
-        assert %{id: {SetCameraInfoServer, ^side}} = child
+        assert %{id: {SetCameraInfoServer, "stereo/" <> name}} = child
+        assert name == "#{side}/set_camera_info"
         %{start: {SetCameraInfoServer, :start_link, [options]}} = child
         assert is_function(options[:commit], 1)
       end
@@ -1443,7 +1444,10 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
       assert [server] = ZenohExporter.children(options)
 
-      assert %{id: {SetCameraInfoServer, :hq}, start: {SetCameraInfoServer, :start_link, [args]}} =
+      assert %{
+               id: {SetCameraInfoServer, "hq/set_camera_info"},
+               start: {SetCameraInfoServer, :start_link, [args]}
+             } =
                server
 
       assert args[:service_name] == "hq/set_camera_info"
@@ -1460,6 +1464,26 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       assert args[:service_name] == "front/hq/set_camera_info"
 
       assert ZenohExporter.children(hq_options(Camera, [], cameras: [])) == []
+    end
+
+    test "a camera named as a stereo side answers set_camera_info beside that side, each a child of its own" do
+      camera = {:camera, name: :left, driver: Camera, calibration: "left.yaml"}
+      config = Camera |> config() |> Map.update!(:components, &(&1 ++ [camera]))
+      options = Keyword.put(options(Camera, stereo: [], cameras: []), :config, config)
+
+      servers =
+        for %{id: id, start: {SetCameraInfoServer, :start_link, [args]}} <-
+              ZenohExporter.children(options),
+            do: {id, args[:service_name]}
+
+      assert Enum.map(servers, &elem(&1, 1)) ==
+               [
+                 "stereo/left/set_camera_info",
+                 "stereo/right/set_camera_info",
+                 "left/set_camera_info"
+               ]
+
+      assert servers |> Enum.map(&elem(&1, 0)) |> Enum.uniq() |> length() == 3
     end
 
     test "plots the exposure and gain of each camera whose driver reports them, in a helper" do

@@ -110,4 +110,16 @@ defmodule OvcsMini.VisionComposerTest do
           do: assert(VisionCore.Exporter.output_key(output, config), inspect(output))
     end
   end
+
+  test "the ROS 2 exporter's helpers start side by side, the left camera's beside the stereo unit's left side" do
+    config = OvcsMini.Vision.Composer.config(:target)
+    wired = %{config | components: VisionCore.Components.wire_streams!(config.components)}
+    options = Keyword.fetch!(wired.exporters, ZenohExporter) ++ [config: wired]
+
+    ids =
+      for %{id: id} <- Enum.map(ZenohExporter.children(options), &Supervisor.child_spec(&1, [])),
+          do: id
+
+    assert ids == Enum.uniq(ids)
+  end
 end
