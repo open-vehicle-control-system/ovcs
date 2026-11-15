@@ -46,10 +46,11 @@ defmodule VisionCore.Ros2.ZenohExporter do
   It needs the ROS 2 link, the `ros2:` section of the configuration:
   without it, it is not started (`check/1`), nor when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
-  cannot read, nor with a `cameras:`, `heartbeat:` or `segmentation:`
-  option it does not take, a heartbeat interval that is no positive
-  integer, or a name no camera or segmentation pipeline of the
-  configuration has. Its status is the link's:
+  cannot read, nor with a `stereo:` that is no keyword list, a
+  `cameras:`, `heartbeat:` or `segmentation:` option it does not take,
+  a heartbeat interval that is no positive integer, or a name no camera
+  or segmentation pipeline of the configuration has. Its status is the
+  link's:
   connected while the Zenoh session is open and the board's clock is
   synchronized, a warning while either is not, since nothing is published
   before the clock is (`Ros2Zenoh.Client`'s "The clock").
@@ -221,9 +222,12 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   defp check_stereo(nil, _config), do: :ok
 
-  defp check_stereo(_stereo_options, config) do
-    case StereoSupervisor.camera_options(config) do
-      {:ok, _cameras} -> :ok
+  defp check_stereo(stereo_options, config) do
+    with true <- is_list(stereo_options) and Keyword.keyword?(stereo_options),
+         {:ok, _cameras} <- StereoSupervisor.camera_options(config) do
+      :ok
+    else
+      false -> {:error, "its stereo: is not a keyword list: #{inspect(stereo_options)}"}
       {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
     end
   end

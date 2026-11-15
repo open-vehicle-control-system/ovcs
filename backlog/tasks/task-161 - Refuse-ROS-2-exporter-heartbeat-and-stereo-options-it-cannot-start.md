@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - '@claude'
 created_date: '2026-11-15T05:53:00Z'
-updated_date: '2026-11-15T05:55:00Z'
+updated_date: '2026-11-15T05:56:00Z'
 labels:
   - vision
 dependencies: []
@@ -20,9 +20,9 @@ ordinal: 110000
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 check/1 refuses a heartbeat: that is no keyword list, false included, saying so
-- [ ] #2 check/1 refuses a heartbeat: option other than :interval_ms, naming it
-- [ ] #3 check/1 refuses an :interval_ms that is no positive integer, naming the value
-- [ ] #4 check/1 still accepts heartbeat: [] and heartbeat: [interval_ms: <positive integer>], and the vehicles composers pass it
-- [ ] #5 check/1 refuses a stereo: that is no keyword list, saying so, which raised in init/1
+- [x] #1 check/1 refuses a heartbeat: that is no keyword list, false included, saying so
+- [x] #2 check/1 refuses a heartbeat: option other than :interval_ms, naming it
+- [x] #3 check/1 refuses an :interval_ms that is no positive integer, naming the value
+- [x] #4 check/1 still accepts heartbeat: [] and heartbeat: [interval_ms: <positive integer>], and the vehicles composers pass it
+- [x] #5 check/1 refuses a stereo: that is no keyword list, saying so, which raised in init/1
 <!-- AC:END -->

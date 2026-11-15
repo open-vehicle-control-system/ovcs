@@ -232,6 +232,16 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
 
       assert reason =~ ":left"
     end
+
+    test "refuses stereo: that is no keyword list" do
+      for {stereo, refusal} <- [
+            {true, "stereo: is not a keyword list: true"},
+            {[:left], "stereo: is not a keyword list: [:left]"}
+          ] do
+        assert {:error, reason} = ZenohExporter.check(options(Camera, stereo: stereo))
+        assert reason =~ refusal
+      end
+    end
   end
 
   test "is listed as ROS 2" do
