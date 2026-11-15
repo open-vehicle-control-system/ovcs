@@ -90,17 +90,23 @@ defmodule VisionCore.Detection.Backend do
   @typedoc "Whatever `start_link/1` registered the backend as."
   @type server :: GenServer.server()
 
+  @typedoc """
+  An image to detect on: a `u8` tensor, `{height, width}` grey or
+  `{height, width, 3}` RGB, or, to a backend that decodes JPEG
+  (`c:decodes_jpeg?/0`), `{:jpeg, jpeg}`.
+  """
+  @type image :: Nx.Tensor.t() | {:jpeg, binary()}
+
   @doc """
-  Submit one image, a `u8` tensor, `{height, width}` grey or
-  `{height, width, 3}` RGB, for detection, tagged with `sequence`. The
-  backend shrinks it whole to its model's input, letterboxed.
+  Submit one image (`t:image/0`) for detection, tagged with `sequence`.
+  The backend shrinks it whole to its model's input, letterboxed.
 
   `:ok` means the frame was accepted and a reply will follow.
   `{:error, :busy}` means one is already in flight and this frame was
   dropped. `{:error, :unavailable}` means the backend is not working
   and never will be without a restart.
   """
-  @callback detect(server(), sequence :: non_neg_integer(), image :: Nx.Tensor.t()) ::
+  @callback detect(server(), sequence :: non_neg_integer(), image()) ::
               :ok | {:error, :busy | :unavailable}
 
   @doc "False when the backend could not initialise. Never raises."
@@ -114,7 +120,21 @@ defmodule VisionCore.Detection.Backend do
   """
   @callback state(GenServer.server()) :: :starting | :running | :failed
 
-  @optional_callbacks state: 1
+  @doc """
+  Whether `detect/3` takes a JPEG frame as it is, `{:jpeg, jpeg}`, and
+  decodes it to RGB itself: the pipeline then hands it the JPEG rather
+  than the pixels. Without it, false.
+  """
+  @callback decodes_jpeg?() :: boolean()
+
+  @optional_callbacks state: 1, decodes_jpeg?: 0
+
+  @doc "Whether the backend module `backend` decodes JPEG itself (`c:decodes_jpeg?/0`)."
+  @spec decodes_jpeg?(module()) :: boolean()
+  def decodes_jpeg?(backend),
+    do:
+      Code.ensure_loaded?(backend) and function_exported?(backend, :decodes_jpeg?, 0) and
+        backend.decodes_jpeg?()
 
   @doc """
   The options the backend takes beside `:name` and those its unit's

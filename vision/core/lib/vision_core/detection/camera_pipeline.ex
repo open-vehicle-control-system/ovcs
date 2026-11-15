@@ -54,6 +54,9 @@ defmodule VisionCore.Detection.CameraPipeline do
   def accept(_frame, settings), do: {:ok, settings}
 
   @impl VisionCore.CameraPipeline
+  def prepare(%Frame{jpeg: jpeg}, %{decodes_jpeg?: true} = settings) when is_binary(jpeg),
+    do: {:submit, {:jpeg, jpeg}, nil, settings}
+
   def prepare(frame, settings) do
     case Frame.to_tensor(frame, colour: true) do
       {:ok, image} -> {:submit, image, nil, %{settings | undecodable_logged: false}}

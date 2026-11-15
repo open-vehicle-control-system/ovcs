@@ -205,7 +205,7 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. A camera of its own in colour, its outputs converted, averaged or encoded as JPEG with libjpeg-turbo. |
 | `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
 | `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey, or to RGB for the detection and segmentation pipelines. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
-| `hailo` | Pi 5 | Runs every detection and segmentation model the Hailo units name on the Hailo-8 through HailoRT, one thread a model, HailoRT's scheduler giving them the device in turn; returns boxes or class grids. |
+| `hailo` | Pi 5 | Runs every detection and segmentation model the Hailo units name on the Hailo-8 through HailoRT, one thread a model, HailoRT's scheduler giving them the device in turn; takes a frame's pixels or its JPEG, which it decodes with libjpeg-turbo, and returns boxes or class grids. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
 | `qnn_segment` | VENTUNO Q | Runs the road segmentation model's context binary on the Hexagon NPU through QNN, over a band of a colour frame. Returns each output cell's class. |
 

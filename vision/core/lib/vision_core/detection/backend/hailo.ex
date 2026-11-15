@@ -50,14 +50,19 @@ defmodule VisionCore.Detection.Backend.Hailo do
   def shared_server(name), do: {VisionCore.Hailo, name}
 
   @doc """
-  Submit a `u8` `{height, width}` (or `{height, width, 3}` RGB) tensor
-  for detection. Returns `:ok` when the frame was handed to the
+  Submit a `u8` `{height, width}` (or `{height, width, 3}` RGB) tensor,
+  or a JPEG, `{:jpeg, jpeg}`, which `hailo` decodes, for detection.
+  Returns `:ok` when the frame was handed to the
   accelerator, `{:error, :busy}` when one is already in flight, and
   `{:error, :unavailable}` without a Port.
   """
   @impl VisionCore.Detection.Backend
   def detect({process, lane}, sequence, image),
     do: PortBackend.submit(process, lane, sequence, image)
+
+  @doc "True: `hailo` decodes a JPEG frame itself, so only the JPEG crosses its Port."
+  @impl VisionCore.Detection.Backend
+  def decodes_jpeg?, do: true
 
   @doc "Whether the accelerator is loaded and answering, an inference in flight or not."
   @impl VisionCore.Detection.Backend

@@ -77,8 +77,10 @@ defmodule VisionCore.Segmentation.Pipeline do
   `:segment_every_n`-th frame, one band in flight at a time, the newest
   frame held meanwhile, and publishes the label images in capture
   order. The model needs colour: a JPEG frame is decoded to RGB by
-  `jpeg_codec`, and a grey frame, or a JPEG that does not decode, is
-  skipped, which is logged once.
+  `jpeg_codec`, or goes as it is, with its band's rows, to a backend
+  that decodes it itself
+  (`c:VisionCore.Segmentation.Backend.decodes_jpeg?/0`); a grey frame,
+  or a JPEG that does not decode, is skipped, which is logged once.
 
   ## Options
 
@@ -206,6 +208,7 @@ defmodule VisionCore.Segmentation.Pipeline do
       source: source!(Keyword.get(opts, :source)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
+      decodes_jpeg?: VisionCore.Segmentation.Backend.decodes_jpeg?(backend),
       labels: labels,
       road_classes: road_classes,
       road: road!(road_classes, labels),
@@ -367,6 +370,12 @@ defmodule VisionCore.Segmentation.Pipeline do
   end
 
   @impl CameraPipeline
+  def prepare(%Frame{rgb: nil, jpeg: jpeg} = frame, %{decodes_jpeg?: true} = settings)
+      when is_binary(jpeg) do
+    {_x, top, _width, height} = band = band(frame.width, frame.height, settings.band_top)
+    {:submit, %{jpeg: jpeg, top: top, height: height}, band, settings}
+  end
+
   def prepare(frame, settings) do
     case Frame.with_rgb(frame) do
       {:ok, frame} ->

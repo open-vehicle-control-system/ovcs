@@ -88,6 +88,32 @@ defmodule VisionCore.HailoTest do
     assert PortBackend.submit(server, :road, 3, @band) == {:error, :unavailable}
   end
 
+  test "hands each network a frame's JPEG as is, with the band of its rows to segment", %{
+    tmp_dir: tmp_dir
+  } do
+    objects = hef(tmp_dir, "objects.hef", "answer")
+    road = hef(tmp_dir, "road.hef", "answer")
+
+    server =
+      start_hailo(tmp_dir,
+        networks: [
+          objects: [kind: :detection, hef_path: objects],
+          road: [kind: :segmentation, hef_path: road]
+        ]
+      )
+
+    eventually(fn -> PortBackend.available?(server) end)
+    # The start of a 40 x 20 baseline JPEG, its SOF0 segment giving its size.
+    jpeg = <<0xFF, 0xD8, 0xFF, 0xC0, 11::16, 8, 20::16, 40::16, 3>>
+
+    assert PortBackend.submit(server, :objects, 1, {:jpeg, jpeg}) == :ok
+    assert PortBackend.submit(server, :road, 2, %{jpeg: jpeg, top: 4, height: 10}) == :ok
+
+    assert_receive {:inference_detections, 1, [%{class_id: 2, x1: 40.0, y1: 20.0}]}
+    assert_receive {:inference_labels, 2, %{width: 2, height: 1}}
+    assert File.read!(road <> ".bands") == "4 10 #{byte_size(jpeg)}\n"
+  end
+
   test "a segmentation in flight does not hold a detection back", %{tmp_dir: tmp_dir} do
     objects = hef(tmp_dir, "objects.hef", "answer")
     road = hef(tmp_dir, "road.hef", "hang")

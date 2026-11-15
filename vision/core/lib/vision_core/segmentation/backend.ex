@@ -40,7 +40,14 @@ defmodule VisionCore.Segmentation.Backend do
   A band of an image: `width * height * 3` bytes of 8-bit red, green and
   blue, row by row.
   """
-  @type band :: %{width: pos_integer(), height: pos_integer(), rgb: binary()}
+  @type band :: %{width: pos_integer(), height: pos_integer(), rgb: binary()} | jpeg_band()
+
+  @typedoc """
+  A band of a JPEG, to a backend that decodes JPEG (`c:decodes_jpeg?/0`):
+  the JPEG, whole, and the band's rows, `top` to `top + height`, full
+  width.
+  """
+  @type jpeg_band :: %{jpeg: binary(), top: non_neg_integer(), height: pos_integer()}
 
   @typedoc "One class id per cell of the model's output grid, row by row."
   @type labels :: %{width: pos_integer(), height: pos_integer(), data: binary()}
@@ -64,7 +71,21 @@ defmodule VisionCore.Segmentation.Backend do
   """
   @callback state(GenServer.server()) :: :starting | :running | :failed
 
-  @optional_callbacks state: 1
+  @doc """
+  Whether `segment/3` takes a JPEG frame as it is (`t:jpeg_band/0`), and
+  decodes it to RGB itself: the pipeline then hands it the JPEG rather
+  than the band's pixels. Without it, false.
+  """
+  @callback decodes_jpeg?() :: boolean()
+
+  @optional_callbacks state: 1, decodes_jpeg?: 0
+
+  @doc "Whether the backend module `backend` decodes JPEG itself (`c:decodes_jpeg?/0`)."
+  @spec decodes_jpeg?(module()) :: boolean()
+  def decodes_jpeg?(backend),
+    do:
+      Code.ensure_loaded?(backend) and function_exported?(backend, :decodes_jpeg?, 0) and
+        backend.decodes_jpeg?()
 
   @doc """
   The options the backend takes beside `:name` and those its unit's

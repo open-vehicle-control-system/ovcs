@@ -3,15 +3,23 @@ defmodule VisionCore.Segmentation.Backend.Wire do
   The packets `qnn_segment` and `hailo` speak for segmentation, which
   `VisionCore.Segmentation.Backend.Qnn` and `VisionCore.Hailo` hand to
   `VisionCore.Inference.PortBackend`: a band goes down as its sequence,
-  its size and its RGB pixels, and comes back as a grid of class ids,
+  its size and its RGB pixels, or to `hailo` as its sequence, its rows
+  and the JPEG it is a band of, and comes back as a grid of class ids,
   which the accelerator's time for the inference may follow.
   """
 
   # Port protocol tag, of a request and of its reply; must match the segmentation Ports'.
   @segment_tag 7
+  @segment_jpeg_tag 8
 
-  @doc "The request for the inference `sequence` on `band`, a whole RGB image."
+  @doc """
+  The request for the inference `sequence` on `band`, a whole RGB image,
+  or rows of a JPEG.
+  """
   @spec request(non_neg_integer(), VisionCore.Segmentation.Backend.band()) :: iodata()
+  def request(sequence, %{jpeg: jpeg, top: top, height: height}),
+    do: [<<@segment_jpeg_tag, sequence::little-32, top::little-16, height::little-16>>, jpeg]
+
   def request(sequence, %{width: width, height: height, rgb: rgb}) do
     [
       <<@segment_tag, sequence::little-32, width::little-16, height::little-16, 3, 0::little-16,

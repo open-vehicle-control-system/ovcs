@@ -48,6 +48,10 @@ defmodule VisionCore.Segmentation.Backend.Hailo do
   def segment({process, lane}, sequence, band),
     do: PortBackend.submit(process, lane, sequence, band)
 
+  @doc "True: `hailo` decodes a JPEG frame itself, so only the JPEG crosses its Port."
+  @impl VisionCore.Segmentation.Backend
+  def decodes_jpeg?, do: true
+
   @impl VisionCore.Segmentation.Backend
   def available?({process, _lane}), do: PortBackend.available?(process)
 
