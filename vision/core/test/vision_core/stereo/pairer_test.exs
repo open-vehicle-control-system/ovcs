@@ -201,6 +201,14 @@ defmodule VisionCore.Stereo.PairerTest do
           do: index * @frame_period_ns + Enum.at(@jitter_ms, rem(index, 5)) * 1_000_000
     end
 
+    # 10 s of pairs from cameras set to 30 fps that deliver 29.97, alternately 3 ms late and early.
+    defp measured_rate_ns do
+      for index <- 0..299,
+          do:
+            div(index * 1_001_000_000, 30) +
+              if(rem(index, 2) == 0, do: 3, else: -3) * 1_000_000
+    end
+
     defp publish_pair(capture_ns) do
       for {label, offset_ns} <- [{"left", 0}, {"right", 100_000}],
           do:
@@ -241,10 +249,23 @@ defmodule VisionCore.Stereo.PairerTest do
       assert submitted_ns(pairer, captures_ns) == Enum.take_every(captures_ns, 2)
     end
 
-    test "submits no more pairs a second than its rate, between the cameras' own" do
-      pairer = start_capped_pairer(max_hz: 20)
+    for {max_hz, tolerance} <- [{10, 1}, {15, 1}, {20, 2}, {25, 2}] do
+      test "at #{max_hz} Hz, submits #{max_hz} pairs a second of the cameras' 29.97, whatever their jitter" do
+        pairer = start_capped_pairer(max_hz: unquote(max_hz))
 
-      assert length(submitted_ns(pairer, jittered_ns(90))) in 59..61
+        assert_in_delta length(submitted_ns(pairer, measured_rate_ns())),
+                        unquote(max_hz) * 10,
+                        unquote(tolerance)
+      end
+    end
+
+    for max_hz <- [30, 0] do
+      test "at #{max_hz} Hz, submits every pair of the cameras' 29.97 a second, whatever their jitter" do
+        pairer = start_capped_pairer(max_hz: unquote(max_hz))
+        captures_ns = measured_rate_ns()
+
+        assert submitted_ns(pairer, captures_ns) == captures_ns
+      end
     end
 
     test "without it, submits every pair" do

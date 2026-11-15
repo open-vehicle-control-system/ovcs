@@ -18,12 +18,13 @@ defmodule VisionCore.Stereo.Pairer do
   With `:max_hz`, a pair captured too soon after the last one submitted
   is dropped before the pipeline sees it, busy or not, and published
   under `capped_key/0`. The pairs submitted are kept on a schedule of
-  capture times `1 / max_hz` s apart: a pair is due within half a
-  camera frame period of its slot, so a capture a few milliseconds early
-  still takes it, and the cameras' jitter does not drop a pair the rate
-  allows. A pair later than that, as after the pipeline was busy, or
-  captured before the last one submitted, as when a camera's clock
-  starts over, starts the schedule over from its own capture time.
+  capture times `1 / max_hz` s apart: a pair is due within three
+  quarters of a camera frame period of its slot. At 20 Hz from 30 Hz
+  cameras, every other slot falls half a frame period after a frame,
+  which takes it whatever the cameras' jitter. A pair later than that,
+  as after the pipeline was busy, or captured before the last one
+  submitted, as when a camera's clock starts over, starts the schedule
+  over from its own capture time.
 
   It also measures how far apart the two cameras capture, on every frame
   they deliver (`VisionCore.Stereo.Sync`), which `sync/1` answers, and
@@ -46,7 +47,7 @@ defmodule VisionCore.Stereo.Pairer do
       `<prefix>.pairing.max_hz`.
     * `:fps` (30) — the cameras' frame rate, an integer from 1 on:
       frames half a period apart or more are not measured as a pair of
-      the sync, and a pair half a period early is due.
+      the sync, and a pair three quarters of a period early is due.
     * `:now_ns` (`System.monotonic_time(:nanosecond)`) — the clock
       arrivals and submissions are timed on, a function of no argument
       on the timescale of `Frame.capture_ns`.
@@ -160,7 +161,7 @@ defmodule VisionCore.Stereo.Pairer do
        pipeline: pipeline,
        pair_tolerance_ns: tolerance_ms * @ns_per_ms,
        max_hz: max_hz,
-       due_slack_ns: div(@ns_per_s, 2 * fps),
+       due_slack_ns: div(3 * @ns_per_s, 4 * fps),
        next_due_ns: nil,
        left_frames: [],
        right_frames: [],
