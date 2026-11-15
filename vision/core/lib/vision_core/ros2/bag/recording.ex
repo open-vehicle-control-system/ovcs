@@ -34,11 +34,12 @@ defmodule VisionCore.Ros2.Bag.Recording do
   is dropped and counted too.
 
   A write the disk refuses, from a full disk or one pulled out, ends the
-  recording: the files are closed as far as the disk allows, `metadata.yaml`
-  written if it can be, and only then the reason kept in `status/1`. The process then
-  only counts the messages it is handed as drops until `stop/1` stops it
-  normally; a disk that refuses the folder at the start leaves it in that
-  state from the start.
+  recording: the open file is closed with nothing more written to it, and
+  reads up to its last whole chunk (`VisionCore.Mcap.Writer.abandon/1`),
+  `metadata.yaml` is written if it can be, and only then the reason kept in
+  `status/1`. The process then only counts the messages it is handed as
+  drops until `stop/1` stops it normally; a disk that refuses the folder at
+  the start leaves it in that state from the start.
 
   `status/1` reads a table this process keeps, without waiting on it, and
   `write/5`, `status/1` and `stop/1` answer even once it has stopped. A
@@ -396,7 +397,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
 
   defp end_recording(state, reason) do
     Logger.error("#{inspect(__MODULE__)} #{state.dir}: #{reason}; the recording ends")
-    if state.writer, do: Writer.close(state.writer)
+    # The step that failed may have written more than `state.writer` holds.
+    if state.writer, do: Writer.abandon(state.writer)
     state = %{state | writer: nil, ended: true}
 
     try do

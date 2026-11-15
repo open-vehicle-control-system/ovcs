@@ -64,6 +64,19 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
     _error -> false
   end
 
+  # Raw, so that the open waiting for the writer does not hold the file server.
+  defp read_pipe!(path) do
+    {:ok, pipe} = :file.open(path, [:raw, :read, :binary])
+    read_to_end!(pipe, [])
+  end
+
+  defp read_to_end!(pipe, read) do
+    case :file.read(pipe, 65_536) do
+      {:ok, bytes} -> read_to_end!(pipe, [read | bytes])
+      :eof -> IO.iodata_to_binary(read)
+    end
+  end
+
   defp eventually(check, attempts \\ 200) do
     cond do
       check.() -> :ok
@@ -411,6 +424,22 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
 
       assert IO.binread(rewriting, :eof) =~ "message_count: 1"
       eventually(fn -> Recording.status(pid).error != nil end)
+      :ok = Recording.stop(pid)
+    end
+
+    test "a sync refused after its chunk is written leaves the file with that chunk once",
+         %{tmp_dir: dir} do
+      # A pipe takes the writes and refuses the sync; the test reads the file through it.
+      File.mkdir_p!(bag_dir(dir))
+      {_output, 0} = System.cmd("mkfifo", [file_path(dir, 0)])
+      reader = Task.async(fn -> read_pipe!(file_path(dir, 0)) end)
+      pid = start_linked!(dir, chunk_interval_ms: 1)
+
+      :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
+      eventually(fn -> Recording.status(pid).error != nil end)
+
+      assert Recording.status(pid).error =~ "sync"
+      assert [%{log_time: 1_000}] = reader |> Task.await() |> McapReader.read_complete_chunks!()
       :ok = Recording.stop(pid)
     end
 

@@ -205,7 +205,7 @@ The clock stamps every header, transform and log time. A start while recording a
 
 A recording goes to `/data/recordings/<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start in UTC; set another folder with `root:`. It holds `metadata.yaml` and MCAP files, zstd-compressed, a chunk closed and synced every second, a new file past 2 GB. The first file attaches the calibration files in use and the parameters, as `parameters.json`. Its metadata, as `metadata.yaml`'s, names the preset, the clock chosen and the clock used, the vehicle and the firmware.
 
-The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, the clock, the bytes, files and messages written, and a warning once any message is dropped. A recording the disk ends, full or pulled out, stops: the status says why until the next start.
+The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, the clock, the bytes, files and messages written, and a warning once any message is dropped. A recording the disk ends, full or pulled out, stops: the status says why until the next start. Its last file is closed without its summary and reads up to its last whole chunk.
 
 ## A new calibration
 

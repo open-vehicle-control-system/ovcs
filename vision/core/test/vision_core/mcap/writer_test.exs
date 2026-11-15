@@ -221,6 +221,23 @@ defmodule VisionCore.Mcap.WriterTest do
     assert_raise File.Error, ~r/#{Regex.escape(path)}/, fn -> Writer.sync(writer) end
   end
 
+  test "abandon/1 closes the file as written, without its open chunk or summary",
+       %{tmp_dir: dir} do
+    {writer, path} = open!(dir, :zstd)
+    {writer, %{messages: [first, second | _messages]}} = three_chunks(writer)
+    writer = Writer.write_message(writer, first.channel_id, 9, 9_000, 9_000, "open chunk")
+
+    :ok = Writer.abandon(writer)
+
+    bytes = File.read!(path)
+
+    assert [^first, ^second | _messages] =
+             bytes |> McapReader.read_complete_chunks!() |> without_chunk()
+
+    refute Enum.any?(McapReader.read_complete_chunks!(bytes), &(&1.data == "open chunk"))
+    refute String.ends_with?(bytes, <<0x89, "MCAP0\r\n">>)
+  end
+
   test "attachments and metadata read back with their indexes", %{tmp_dir: dir} do
     {writer, path} = open!(dir, :zstd)
 
