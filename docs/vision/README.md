@@ -166,7 +166,7 @@ A firmware version ending in `-dirty` is a build with uncommitted changes.
 
 The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
 
-The Calibration page shows the calibration the cameras use and where it comes from, returns to the built-in one, and calibrates the cameras from views of a chessboard with the unit alone ([Calibrate the cameras](./calibration.md)). A unit without a calibration runs its cameras without depth, and the top bar reads uncalibrated until one is applied.
+The Calibration page shows the calibration the cameras use and where it comes from, returns to the built-in one, and calibrates the cameras from views of a chessboard with the unit alone ([Calibrate the cameras](./calibration.md)). A unit without a calibration runs its cameras without depth, and the dashboard's status bar reads uncalibrated until one is applied.
 
 The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
 
