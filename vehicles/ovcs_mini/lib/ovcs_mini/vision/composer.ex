@@ -11,9 +11,15 @@ defmodule OvcsMini.Vision.Composer do
   second (`max_hz`), so matching leaves the processor room for the
   cameras; detection, on each pair matched, runs at that rate too.
 
+  The left camera's capture also makes a colour camera of its own,
+  `:left` (`VisionCore.Camera.LibCameraStream`): a second ISP stream at
+  half the sensor mode, sent as a JPEG on at most 30 frames a second
+  (`max_hz`). The stereo frames do not change.
+
   The ROS 2 exporter publishes the rectified pair, which the cockpit
-  shows. The bag exporter records the unit's ROS 2 messages into
-  `/data/recordings`, started and stopped through its actions.
+  shows, and the left camera's JPEG. The bag exporter records the
+  unit's ROS 2 messages into `/data/recordings`, started and stopped
+  through its actions.
 
   On a workstation, `OVCS_SIM=1` reads the simulator's camera topics
   and stamps with its clock; without it, the unit runs no cameras.
@@ -42,10 +48,13 @@ defmodule OvcsMini.Vision.Composer do
       ros2: [
         zenoh_endpoint_ip: Application.get_env(:vision_core, :zenoh_endpoint_ip, "127.0.0.1")
       ],
-      components: [stereo_component(), hailo_detector()],
+      components: [stereo_component(), colour_camera(), hailo_detector()],
       exporters: [
         {VisionCore.Ros2.ZenohExporter,
-         heartbeat: [], stereo: [publish_rectified_image: true], detections: []},
+         heartbeat: [],
+         stereo: [publish_rectified_image: true],
+         cameras: [names: [:left], outputs: [left: :half_jpeg]],
+         detections: []},
         {VisionCore.Snapshot.Exporter, []},
         {VisionCore.Ros2.BagExporter, []}
       ]
@@ -110,6 +119,19 @@ defmodule OvcsMini.Vision.Composer do
       disparity: [num_disparities: 64, paths: 3, p1: 24, p2: 79, uniqueness: 1.1],
       speckle_filter: [min_support: 24]
     )
+  end
+
+  defp colour_camera do
+    {:camera,
+     name: :left,
+     driver: VisionCore.Camera.LibCameraStream,
+     stream_of: :left,
+     max_hz: 30,
+     outputs: [
+       half: [resolution: {1152, 648}, processor: :isp, send: false],
+       half_jpeg: [from: :half, format: :jpeg, quality: 80]
+     ],
+     calibration_store_dir: "/data/vision/calibration"}
   end
 
   defp hailo_detector do

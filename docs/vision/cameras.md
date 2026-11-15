@@ -154,14 +154,14 @@ The models' inputs are smaller still, so the full image would cross to their Por
 
 ## A second stream of a stereo camera
 
-On a Raspberry Pi 5, a camera of its own can come from a stereo camera's capture: the image signal processor makes a second stream beside the stereo unit's frames, in the same request. Use it for a colour view where the board has no third camera. Its driver is `VisionCore.Camera.LibCameraStream`, and `stream_of:` names the stereo side:
+On a Raspberry Pi 5, a camera of its own can come from a stereo camera's capture: the image signal processor makes a second stream beside the stereo unit's frames, in the same request. Use it for a colour view where the board has no third camera. Its driver is `VisionCore.Camera.LibCameraStream`, and `stream_of:` names the stereo side. The OVCS Mini reference vehicle declares this camera, as a worked example (`OvcsMini.Vision.Composer`):
 
 ```elixir
 {:camera,
  name: :left,
  driver: VisionCore.Camera.LibCameraStream,
  stream_of: :left,
- max_hz: 10,
+ max_hz: 30,
  outputs: [
    half: [resolution: {1152, 648}, processor: :isp, send: false],
    half_jpeg: [from: :half, format: :jpeg, quality: 80]

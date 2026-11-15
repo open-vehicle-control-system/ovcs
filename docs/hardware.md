@@ -311,7 +311,7 @@ The OVCS Mini reference vehicle runs the same framework on a Traxxas 4WD chassis
 | Spur rotation | Hall-effect sensor on the main controller's A1, counted by interrupt and reported as a frequency on `0x709` |
 | Radio control | ExpressLRS receiver on a Pi 3A running the `radio_control` bridge firmware |
 | ROS 2 | The `ros` bridge firmware on a Pi 4 |
-| Vision | The vision unit on a Pi 5 with two IMX708 cameras and a Hailo-8 |
+| Vision | The vision unit on a Pi 5 with two IMX708 cameras and a Hailo-8. A second stream of the left camera's capture is a colour camera of its own, `left` ([A second stream of a stereo camera](./vision/cameras.md#a-second-stream-of-a-stereo-camera)) |
 | Compute node | Raspberry Pi 5 running balenaOS from an NVMe SSD in a USB enclosure: Zenoh router, Foxglove bridge, Nav2, the vehicle's Wi-Fi access point. The bootloader EEPROM needs `PSU_MAX_CURRENT=5000` to boot from USB on the vehicle's supply; see [ROS compute node, Boot media](./ros2/compute_node.md#boot-media) |
 
 The Mini's VMS has two buses:
