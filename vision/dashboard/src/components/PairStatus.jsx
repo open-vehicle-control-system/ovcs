@@ -42,21 +42,20 @@ function PairCheck({ item }) {
   )
 }
 
-// Under both previews, two checks a row: on a narrow screen, and from `lg` where `under` asks for it.
+// Under both previews, two checks a row, on a narrow screen.
 const UNDER_NARROW = 'max-md:col-span-2 max-md:row-span-1 max-md:row-start-4 max-md:mt-3 max-md:grid max-md:w-full max-md:grid-cols-2 max-md:gap-x-4'
-const UNDER_WIDE = 'lg:col-span-2 lg:row-span-1 lg:row-start-4 lg:mt-3 lg:grid lg:w-full lg:grid-cols-2 lg:gap-x-4'
 
 /**
  * How the cameras work together, as the unit judges them, one line a check between their previews, or under them, two
- * a row, on a narrow screen and, `under`, on a wide one too; a dash until the first status.
+ * a row, on a narrow screen; a dash until the first status.
  */
-export default function PairStatus({ status, under = false }) {
+export default function PairStatus({ status }) {
   const items = status ? pairStatus(status) : PAIR_CHECKS.map((check) => ({ ...check, value: '–', tone: 'muted', issues: [] }))
 
   return (
     <ul
       aria-label="Camera pair"
-      className={`row-span-3 flex w-52 flex-col gap-3 self-center ${UNDER_NARROW} ${under ? UNDER_WIDE : ''}`}
+      className={`row-span-3 flex w-52 flex-col gap-3 self-center ${UNDER_NARROW}`}
     >
       {items.map((item) => (
         <PairCheck key={item.id} item={item} />

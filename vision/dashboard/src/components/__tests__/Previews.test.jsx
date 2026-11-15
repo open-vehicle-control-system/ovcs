@@ -518,7 +518,7 @@ describe('Previews', () => {
       expect(classes(document.querySelector('[data-cameras]'))).toContain('lg:flex-1')
     })
 
-    it('beside a panel, keeps each frame a useful height and the pair checks under both cameras, the column scrolling instead', () => {
+    it('beside a panel, keeps each frame a useful height and the pair checks between the cameras, the column scrolling instead', () => {
       listed({ name: 'camera_frame:hq', maxHz: 5 })
       const { socket } = liveSocket({ depthRange: 8 })
       const { rerender } = render(<Previews status={snapshot} socket={socket} besidePanel />)
@@ -532,14 +532,14 @@ describe('Previews', () => {
         expect(classes(row)).not.toContain('lg:grid-rows-[minmax(0,1fr)_auto_auto]')
       }
       expect(classes(screen.getByRole('region', { name: 'Previews' }))).toContain('lg:min-h-min')
-      // The checks leave both cameras the row's width.
-      expect(classes(rows[0])).toContain('lg:grid-cols-2')
-      expect(classes(pair)).toEqual(expect.arrayContaining(['lg:col-span-2', 'lg:row-start-4', 'lg:grid', 'lg:grid-cols-2', 'lg:w-full']))
+      // The checks stay between the cameras, as on the overview.
+      for (const besidePanel of [true, false]) {
+        rerender(<Previews status={snapshot} socket={socket} besidePanel={besidePanel} />)
+        expect(classes(rows[0])).not.toContain('lg:grid-cols-2')
+        expect(classes(pair).filter((name) => name.startsWith('lg:'))).toEqual([])
+      }
 
-      rerender(<Previews status={snapshot} socket={socket} />)
       expect(classes(rows[0])).toEqual(expect.arrayContaining(['lg:min-h-0', 'lg:grid-rows-[minmax(0,1fr)_auto_auto]']))
-      expect(classes(rows[0])).not.toContain('lg:grid-cols-2')
-      expect(classes(pair)).not.toContain('lg:col-span-2')
       expect(classes(screen.getByRole('region', { name: 'Previews' }))).not.toContain('lg:min-h-min')
     })
 

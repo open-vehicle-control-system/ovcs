@@ -321,8 +321,8 @@ const ROWS_BESIDE_PANEL = 'lg:min-h-min lg:flex-1 lg:grid-rows-[minmax(12.5rem,1
  * their own side by side, filling the height left. Each preview of a row spans the row's three tracks, frame, caption
  * and aside, so its frame's track starts and ends level with its neighbours' whatever their captions and asides hold;
  * in the depth's row, each frame has its image's shape, and the asides go beside the frames where those keep a frame
- * at least as wide as tall (`useBeside`). `besidePanel`, in the narrower column beside a page's panel, the checks go
- * under both cameras and each frame keeps at least 12.5rem of height, for its column to scroll.
+ * at least as wide as tall (`useBeside`). `besidePanel`, in the narrower column beside a page's panel, each frame
+ * keeps at least 12.5rem of height, for its column to scroll.
  */
 export default function Previews({ status, socket, besidePanel = false }) {
   const videos = useVideoCameras()
@@ -333,15 +333,13 @@ export default function Previews({ status, socket, besidePanel = false }) {
 
   return (
     <section aria-label="Previews" className={`flex flex-col gap-3 lg:flex-1 ${besidePanel ? 'lg:min-h-min' : 'lg:min-h-0'}`}>
-      {/* The asides' track takes the height the pair's checks add, under the captions; on a narrow screen, and beside a
-          panel, the checks go under both previews. */}
+      {/* The asides' track takes the height the pair's checks add, under the captions; on a narrow screen the checks go
+          under both previews. */}
       <div
-        className={`grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 ${rows} ${
-          besidePanel ? 'lg:grid-cols-2' : ''
-        }`}
+        className={`grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] grid-rows-[auto_auto_1fr] gap-x-3 gap-y-0 max-md:grid-cols-2 ${rows}`}
       >
         <LeftPreview status={status} socket={socket} />
-        <PairStatus status={status} under={besidePanel} />
+        <PairStatus status={status} />
         <Preview
           stream="right"
           socket={socket}
