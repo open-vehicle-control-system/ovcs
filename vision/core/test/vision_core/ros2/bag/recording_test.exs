@@ -653,6 +653,8 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = :sys.suspend(pid)
       for n <- 1..3, do: :ok = Recording.write(pid, "/speed", Float64, speed(n), n)
       :ok = :sys.resume(pid)
+      # The stick fills once the message taken is on it, not before.
+      eventually(fn -> Recording.status(pid).messages["/speed"] == 1 end)
 
       TestDisks.put_free(disks, TestDisks.mount_point(disks, @stick), 0)
       eventually(fn -> on_disk?(pid, "internal") end)
