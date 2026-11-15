@@ -2,6 +2,8 @@
 
 use std::str::FromStr;
 
+use framing::output_flag::{self, MAX_OUTPUTS};
+
 use crate::sensor::SensorModel;
 use crate::settings::{ColourSettings, Settings};
 
@@ -85,8 +87,6 @@ impl OutputSpec {
     }
 }
 
-/// The most outputs a single camera has: a record's output index is a byte.
-const MAX_OUTPUTS: usize = 256;
 /// The encoder takes its bitrate in bits per second, an `i32`.
 const MAX_BITRATE_KBPS: u32 = 2_000_000;
 const MAX_KEYFRAME_INTERVAL: u32 = i32::MAX as u32;
@@ -243,36 +243,36 @@ fn output_spec(
     sensor: (u32, u32),
     earlier: &[OutputSpec],
 ) -> Result<OutputSpec, String> {
-    let (value, send) = match value.strip_suffix(":unsent") {
-        Some(made) => (made, false),
-        None => (value, true),
-    };
+    let (value, send) = output_flag::strip_unsent(value);
     let (source, size, format) = match value.split(':').collect::<Vec<_>>()[..] {
         ["cpu", size] => (None, size, Format::Rgb),
-        ["from", index, size] => (Some(output_index(index)?), size, Format::Rgb),
+        ["from", index, size] => (Some(output_flag::index(index)?), size, Format::Rgb),
         ["from", _index, _size, "jpeg", _quality] if !send => {
             return Err(format!("a JPEG is always sent: {OUTPUT_FORMS}"))
         }
         ["from", index, size, "jpeg", quality] => {
-            (Some(output_index(index)?), size, jpeg(quality)?)
+            let quality = output_flag::jpeg_quality(quality)?;
+            (
+                Some(output_flag::index(index)?),
+                size,
+                Format::Jpeg { quality },
+            )
         }
         ["from", _index, _size, "h264", _bitrate, _interval] if !send => {
             return Err(format!("an H.264 output is always sent: {OUTPUT_FORMS}"))
         }
-        ["from", index, size, "h264", bitrate, interval] => {
-            (Some(output_index(index)?), size, h264(bitrate, interval)?)
-        }
+        ["from", index, size, "h264", bitrate, interval] => (
+            Some(output_flag::index(index)?),
+            size,
+            h264(bitrate, interval)?,
+        ),
         ["from", _index, _size, "h264", ..] => return Err(OUTPUT_FORMS.to_string()),
         ["from", _index, _size, format, _quality] => {
             return Err(format!("no format {format}: {OUTPUT_FORMS}"))
         }
         _ => return Err(OUTPUT_FORMS.to_string()),
     };
-    let (width, height) = size
-        .split_once('x')
-        .and_then(|(width, height)| Some((width.parse().ok()?, height.parse().ok()?)))
-        .filter(|&(width, height): &(u32, u32)| width > 0 && height > 0)
-        .ok_or_else(|| format!("no size {size}"))?;
+    let (width, height) = output_flag::size(size)?;
     let odd = width % 2 != 0 || height % 2 != 0;
     if matches!(format, Format::H264 { .. }) && odd {
         return Err(format!(
@@ -326,12 +326,6 @@ fn output_spec(
     })
 }
 
-fn output_index(index: &str) -> Result<usize, String> {
-    index
-        .parse()
-        .map_err(|_| format!("no output index {index}"))
-}
-
 fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
     let bitrate_kbps = match bitrate.parse() {
         Ok(bitrate @ 1..=MAX_BITRATE_KBPS) => bitrate,
@@ -349,13 +343,6 @@ fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
         _ => Err(format!(
             "a key frame interval is 1 frame or more, got {interval}"
         )),
-    }
-}
-
-fn jpeg(quality: &str) -> Result<Format, String> {
-    match quality.parse() {
-        Ok(quality @ 1..=100) => Ok(Format::Jpeg { quality }),
-        _ => Err(format!("a JPEG's quality is 1 to 100, got {quality}")),
     }
 }
 

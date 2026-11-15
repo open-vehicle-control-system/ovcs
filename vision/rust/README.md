@@ -12,7 +12,7 @@ Cargo workspace of the programs `vision_core` runs as Ports.
 | `detection` | Library the detection Ports share: their record protocol, the letterbox between the caller's image and the model's input, and non-maximum suppression. `qnn_segment` shares its bilinear resize |
 | `v4l2_capture` | Captures two CSI cameras over raw V4L2, on the OKdo Nano C100 or, through CAMSS in packed 10-bit Bayer, on the Arduino VENTUNO Q, locks the right sensor's frame starts to the left one's by adjusting its vertical blanking, holds both lens actuators at the `focus` setting when the system drives them, and writes grey frame pairs. Given one capture node and sensor, it captures that camera alone ([One camera with `v4l2_capture`](#one-camera-with-v4l2_capture)) |
 | `jpeg_codec` | Encodes grey or RGB images as JPEG with libjpeg-turbo, colours depth previews, and decodes JPEG frames to grey, for `VisionCore.Jpeg` |
-| `framing` | The `{:packet, 4}` framing the binaries share: a big-endian length prefix, little-endian scalars |
+| `framing` | The `{:packet, 4}` framing the binaries share: a big-endian length prefix, little-endian scalars. Also the parts of an `--output` flag the capture programs share |
 
 The Elixir side of the protocol is `VisionCore.Camera.LibCamera`, `VisionCore.Detection.Backend.Hailo`, `VisionCore.Detection.Backend.Qnn`, `VisionCore.Camera.V4L2Pair` and `VisionCore.Jpeg`; `qnn_segment`'s records are described in `qnn_segment/src/protocol.rs`. The stereo stages' native Port, `stereo_match`, is nx_stereo's: it builds it when it compiles.
 
