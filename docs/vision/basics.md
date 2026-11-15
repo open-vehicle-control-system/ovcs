@@ -164,7 +164,7 @@ To find `P`'s partner, the matcher would have to search the whole right image. T
               <---- search along this row only ---->
 ```
 
-The dashboard's Row alignment figure checks this on every pair: if a camera or a lens moves after calibration, points drift off their rows and depth degrades.
+The [status](./channels.md#status)'s `rows` and `rotation` checks follow this on every pair: if a camera or a lens moves after calibration, points drift off their rows and depth degrades.
 
 ## Calibration
 

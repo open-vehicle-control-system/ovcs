@@ -145,11 +145,11 @@ Measures how well the rectified images line up. A calibration that no longer fit
 
 The stage compares the matched pixels of one row in four with the right image at their disparity, on the rows 2 above to 2 below their own, in four vertical bands. The row with the lowest difference is the offset there. A band reads no offset where fewer than 64 of these pixels matched, or where two rows share the lowest difference. The same holds for the whole image.
 
-The dashboard shows it as Row alignment:
+It runs after Rectification, so it measures what is left once `right_row_offset` has moved the right image. The status's `rows` and `rotation` checks judge it ([Status](./channels.md#status)):
 
-- within half a row is good;
-- a larger offset means recalibrate;
-- offsets that change from band to band mean a rotation.
+- a residual within half a row is good;
+- a larger residual means the correction has not caught up, or recalibrate;
+- offsets that change from band to band mean a rotation, which only a new calibration fixes.
 
 Cost: under 1 ms.
 

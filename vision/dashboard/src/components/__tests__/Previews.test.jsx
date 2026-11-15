@@ -16,6 +16,7 @@ const snapshot = {
   pair: {
     timing: { level: 'ok', camera: null, issues: [], later: 'right', offsetMs: 0.12, maxOffsetMs: 0.4, pairs: 150 },
     rows: { level: 'off', camera: null, issues: [] },
+    rotation: { level: 'off', camera: null, issues: [] },
     focus: { level: 'warning', camera: 'right', issues: ['focus_mismatch'], softer: 'right', differencePercent: 30, left: 0.0312, right: 0.0218 },
     brightness: { level: 'ok', camera: null, issues: [], gauge: -0.3, brighter: 'left', differencePercent: 6, left: 104.2, right: 98.3 }
   },
@@ -69,19 +70,19 @@ describe('Previews', () => {
     expect(card('right').textContent).toContain('absent')
   })
 
-  it("puts the cameras' timing, rows, focus and brightness between the two camera previews", () => {
+  it("puts the cameras' timing, rows, rotation, focus and brightness between the two camera previews", () => {
     render(<Previews status={snapshot} socket={socket} />)
 
     const pair = screen.getByRole('list', { name: 'Camera pair' })
     const row = [...pair.parentElement.children]
     expect(row).toEqual([figure('left'), pair, figure('right')])
-    for (const id of ['timing', 'rows', 'focus', 'brightness']) expect(pair.contains(card(id))).toBe(true)
+    for (const id of ['timing', 'rows', 'rotation', 'focus', 'brightness']) expect(pair.contains(card(id))).toBe(true)
     expect(card('timing').textContent).toContain('0.12 ms')
     expect(card('brightness').textContent).toContain('left brighter')
   })
 
   it("badges the frame of a camera with something to do, and rings it, its text and layout unchanged", () => {
-    const right = { present: true, fps: 29.6, issues: ['focus_mismatch', 'large_row_correction', 'uneven_rows'] }
+    const right = { present: true, fps: 29.6, issues: ['focus_mismatch', 'large_row_correction', 'rotation_mismatch'] }
     render(<Previews status={{ ...snapshot, cameras: { ...snapshot.cameras, right } }} socket={socket} />)
 
     const badges = [...figure('right').querySelectorAll('[data-badge]')]
@@ -164,7 +165,7 @@ describe('Previews', () => {
     expect(screen.getAllByRole('figure')).toHaveLength(3)
     expect(card('left')).toBeNull()
     expect(card('depth').querySelector('[data-figure="rate"]')).toBeNull()
-    for (const id of ['timing', 'rows', 'focus', 'brightness']) expect(card(id).textContent).toContain('–')
+    for (const id of ['timing', 'rows', 'rotation', 'focus', 'brightness']) expect(card(id).textContent).toContain('–')
   })
 
   describe('colour range', () => {

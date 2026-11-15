@@ -41,31 +41,75 @@ defmodule VisionCore.Stereo.PairCheckTest do
              PairCheck.check(window(sync: late)).timing
   end
 
-  test "rows add the correction to what remains, and warn past half a row" do
+  test "rows give the offset left after the correction, and the correction's move of the right image" do
+    # The OVCS Mini: a 0.80-row correction leaves -0.05, the bands spread by a rotation.
     rows =
       PairCheck.check(
-        window(alignment: %{offset_rows: 0.6, band_offset_rows: [0.6]}, row_correction: -1.3)
+        window(
+          alignment: %{offset_rows: -0.05, band_offset_rows: [-0.32, 0.4, 1.2, 1.97]},
+          row_correction: 0.8
+        )
       ).rows
 
-    assert %{level: :warning, camera: :right, issues: [:row_offset], direction: :higher} = rows
-    assert_in_delta rows.misalignment_rows, 0.7, 1.0e-9
+    assert %{level: :ok, camera: nil, issues: [], correction_direction: :up} = rows
+    assert_in_delta rows.residual_rows, 0.05, 1.0e-9
+    assert_in_delta rows.correction_rows, 0.8, 1.0e-9
+    refute Map.has_key?(rows, :band_spread_rows)
   end
 
-  test "rows warn when the correction moves the right image past 3 rows, or the bands disagree" do
-    corrected = PairCheck.check(window(row_correction: 6.0)).rows
+  test "rows say which way the correction moves the right image, none without one" do
+    assert %{correction_direction: :down, correction_rows: 1.3} =
+             PairCheck.check(window(row_correction: -1.3)).rows
 
-    assert %{level: :warning, camera: :right, issues: [:large_row_correction], direction: :lower} =
-             corrected
+    assert %{correction_direction: nil, correction_rows: +0.0} =
+             PairCheck.check(window(row_correction: 0.0)).rows
 
+    assert %{correction_direction: nil, correction_rows: +0.0} =
+             PairCheck.check(window(row_correction: nil)).rows
+  end
+
+  test "rows warn past half a row left after the correction, or a correction past 3 rows" do
+    apart =
+      PairCheck.check(window(alignment: %{offset_rows: -0.6, band_offset_rows: [-0.6]})).rows
+
+    assert %{level: :warning, camera: :right, issues: [:row_offset]} = apart
+    assert_in_delta apart.residual_rows, 0.6, 1.0e-9
+
+    assert %{level: :warning, camera: :right, issues: [:large_row_correction]} =
+             PairCheck.check(window(row_correction: 6.0)).rows
+
+    assert %{level: :ok} = PairCheck.check(window(row_correction: 2.9)).rows
+  end
+
+  test "rotation warns when the bands are more than a row apart, the right image turned" do
     turned =
       PairCheck.check(
         window(alignment: %{offset_rows: 0.2, band_offset_rows: [0.3, 1.7, -0.1, nil]})
-      ).rows
+      )
 
-    assert %{issues: [:uneven_rows]} = turned
-    assert_in_delta turned.band_spread_rows, 1.8, 1.0e-9
+    assert %{level: :warning, camera: :right, issues: [:rotation_mismatch]} = turned.rotation
+    assert_in_delta turned.rotation.band_spread_rows, 1.8, 1.0e-9
+    assert turned.rotation.band_offset_rows == [0.3, 1.7, -0.1, nil]
+    assert %{level: :ok, issues: []} = turned.rows
+  end
 
-    assert %{level: :ok} = PairCheck.check(window(row_correction: 2.9)).rows
+  test "rotation says which way the right image is turned on screen, from the bands' slope" do
+    falling_right =
+      window(alignment: %{offset_rows: 0.0, band_offset_rows: [-0.32, 0.4, 1.2, 1.97]})
+
+    rising_right = window(alignment: %{offset_rows: 0.0, band_offset_rows: [0.5, nil, -0.5]})
+
+    assert %{turned: :clockwise} = PairCheck.check(falling_right).rotation
+    assert %{turned: :counterclockwise} = PairCheck.check(rising_right).rotation
+
+    assert %{turned: nil} =
+             PairCheck.check(window(alignment: %{offset_rows: 0.0, band_offset_rows: [0.2, 0.2]})).rotation
+  end
+
+  test "rotation has nothing to judge with fewer than two measured bands" do
+    one_band = window(alignment: %{offset_rows: 0.1, band_offset_rows: [nil, 0.1, nil, nil]})
+
+    assert PairCheck.check(one_band).rotation == %{level: :off, camera: nil, issues: []}
   end
 
   test "focus points at the softer camera, outside 0.8 to 1.25" do
@@ -108,16 +152,25 @@ defmodule VisionCore.Stereo.PairCheckTest do
   end
 
   test "keeps a raised issue until its figure falls below 0.8 of its threshold" do
-    uneven = fn spread ->
+    rotated = fn spread ->
       window(alignment: %{offset_rows: 0.0, band_offset_rows: [0.0, spread]})
     end
 
-    raised = PairCheck.check(uneven.(1.05))
-    assert raised.rows.issues == [:uneven_rows]
+    raised = PairCheck.check(rotated.(1.05))
+    assert raised.rotation.issues == [:rotation_mismatch]
 
-    assert PairCheck.check(uneven.(0.95), raised).rows.issues == [:uneven_rows]
-    assert PairCheck.check(uneven.(0.95)).rows.issues == []
-    assert PairCheck.check(uneven.(0.75), raised).rows.issues == []
+    assert PairCheck.check(rotated.(0.95), raised).rotation.issues == [:rotation_mismatch]
+    assert PairCheck.check(rotated.(0.95)).rotation.issues == []
+    assert PairCheck.check(rotated.(0.75), raised).rotation.issues == []
+  end
+
+  test "places rows on its gauge by its own measures only, not by the bands" do
+    rows =
+      PairCheck.check(
+        window(alignment: %{offset_rows: 0.1, band_offset_rows: [-1.0, 1.0]}, row_correction: 0.0)
+      ).rows
+
+    assert_in_delta rows.gauge, 0.2, 1.0e-9
   end
 
   test "places each check on a gauge, 1 at its threshold, signed toward the camera it concerns" do
@@ -133,17 +186,24 @@ defmodule VisionCore.Stereo.PairCheckTest do
 
     assert_in_delta checks.timing.gauge, -0.5, 1.0e-9
     assert_in_delta checks.rows.gauge, 2.0, 1.0e-9
+    assert_in_delta checks.rotation.gauge, 0.4, 1.0e-9
     assert_in_delta checks.focus.gauge, 1.0, 1.0e-9
     refute Map.has_key?(PairCheck.check(window(sync: %{present: false})).timing, :gauge)
   end
 
   test "gathers the issues pointing at each camera" do
     checks =
-      PairCheck.check(window(row_correction: 6.0, sharpness: %{left: 0.0052, right: 0.0032}))
+      PairCheck.check(
+        window(
+          alignment: %{offset_rows: 0.1, band_offset_rows: [0.0, 1.5]},
+          row_correction: 6.0,
+          sharpness: %{left: 0.0052, right: 0.0032}
+        )
+      )
 
     assert PairCheck.camera_issues(checks) == %{
              left: [],
-             right: [:large_row_correction, :focus_mismatch]
+             right: [:large_row_correction, :rotation_mismatch, :focus_mismatch]
            }
   end
 
@@ -171,7 +231,7 @@ defmodule VisionCore.Stereo.PairCheckTest do
                :timing_offset,
                :row_offset,
                :large_row_correction,
-               :uneven_rows,
+               :rotation_mismatch,
                :focus_mismatch,
                :brightness_mismatch
              ]

@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import UnitStatus from '../UnitStatus.jsx'
 import Previews from '../Previews.jsx'
+import { PAIR_CHECKS } from '../../status.js'
+import { HINTS } from '../../hints.js'
 
 const socket = { channel: vi.fn(() => ({ on: vi.fn(), join: vi.fn(() => ({ receive() { return this } })), push: vi.fn(() => ({ receive() { return this } })), off: vi.fn(), onError: vi.fn(), leave: vi.fn() })) }
 
@@ -22,12 +24,18 @@ const snapshot = {
       level: 'warning',
       camera: 'right',
       issues: ['row_offset', 'large_row_correction'],
-      direction: 'higher',
-      misalignmentRows: 7.43,
-      offsetRows: -1.43,
-      correctionRows: -6.0,
-      bandOffsetRows: [-1.9, -1.6, -1.2, -1.0],
-      bandSpreadRows: 0.9
+      residualRows: 1.43,
+      correctionRows: 6.0,
+      correctionDirection: 'down'
+    },
+    rotation: {
+      gauge: 0.9,
+      level: 'ok',
+      camera: null,
+      issues: [],
+      bandSpreadRows: 0.9,
+      bandOffsetRows: [-1.9, -1.6, null, -1.0],
+      turned: 'clockwise'
     },
     focus: {
       gauge: 1.2,
@@ -136,12 +144,39 @@ describe('UnitStatus and the pair status', () => {
     show(snapshot)
 
     expect(card('rows').textContent).toContain('Rows')
-    expect(card('rows').textContent).toContain('7.4 rows')
+    expect(card('rows').textContent).toContain('1.43 rows')
     expect(card('rows').querySelector('.ovcs-status--error')).not.toBeNull()
-    expect(card('rows').querySelector('[data-detail]').textContent).toBe('right higher · corrected -6.0')
-    expect(card('rows').title).toBe(
-      'left to right -1.9 · -1.6 · -1.2 · -1.0\nRows apart: recalibrate\nRows held by a large correction: recalibrate'
-    )
+    expect(card('rows').querySelector('[data-detail]').textContent).toBe('right moved down 6.0 rows')
+    expect(card('rows').title).toBe('Rows apart: recalibrate\nRows held by a large correction: recalibrate')
+  })
+
+  it('shows rows without a correction as such', () => {
+    show({ ...snapshot, pair: { ...snapshot.pair, rows: { ...snapshot.pair.rows, correctionRows: 0, correctionDirection: null } } })
+
+    expect(card('rows').querySelector('[data-detail]').textContent).toBe('no row correction')
+  })
+
+  it("shows the rotation as the bands' spread and the way the right image is turned, the bands on hover", () => {
+    const rotation = { ...snapshot.pair.rotation, level: 'warning', camera: 'right', issues: ['rotation_mismatch'], bandSpreadRows: 2.29 }
+    show({ ...snapshot, pair: { ...snapshot.pair, rotation } })
+
+    expect(card('rotation').textContent).toContain('Rotation')
+    expect(card('rotation').textContent).toContain('2.3 rows')
+    expect(card('rotation').querySelector('.ovcs-status--error')).not.toBeNull()
+    expect(card('rotation').querySelector('[data-detail]').textContent).toBe('right turned clockwise')
+    expect(card('rotation').title).toBe('left to right -1.9 · -1.6 · – · -1.0\nA camera turned against the other: recalibrate')
+  })
+
+  it('shows level bands as not turned', () => {
+    show({ ...snapshot, pair: { ...snapshot.pair, rotation: { ...snapshot.pair.rotation, turned: null } } })
+
+    expect(card('rotation').querySelector('[data-detail]').textContent).toBe('not turned')
+  })
+
+  it("says in each check's hint where it is measured", () => {
+    for (const check of PAIR_CHECKS) expect(check.hint.text).toMatch(/Measured (on|by)/)
+    expect(HINTS.rows.text).toContain('after the row correction')
+    expect(HINTS.rotation.text).toContain('no row correction')
   })
 
   it("puts each check's cursor where the unit places it, toward the camera it concerns, held at the track's ends", () => {

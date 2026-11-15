@@ -2,10 +2,14 @@ defmodule VisionCore.Stereo.PairCheck do
   @moduledoc """
   How well a stereo unit's two cameras work together, judged from a status
   window: their `:timing`, how far apart their captures start, their
-  `:rows`, how well the rectified images line up and how far the automatic
-  correction moves the right one, their `:focus`, how sharp each is next
-  to the other, and their `:brightness`, how bright each image is next to
-  the other at the same exposure and gain.
+  `:rows`, how far the rectified images' rows sit apart after the row
+  correction and how far it moves the right image, their `:rotation`, how
+  the rows' offset changes across the image, their `:focus`, how sharp
+  each is next to the other, and their `:brightness`, how bright each
+  image is next to the other at the same exposure and gain.
+
+  Each figure is what the stereo matching sees, after every correction;
+  the row correction itself is a figure of `:rows`.
 
   Each check is a `VisionCore.Stereo.Check`, with its `:issues`
   (`issues/0`), its `:gauge`, and its figures, the camera or direction
@@ -18,7 +22,7 @@ defmodule VisionCore.Stereo.PairCheck do
   @timing_offset :timing_offset
   @row_offset :row_offset
   @large_row_correction :large_row_correction
-  @uneven_rows :uneven_rows
+  @rotation_mismatch :rotation_mismatch
   @focus_mismatch :focus_mismatch
   @brightness_mismatch :brightness_mismatch
 
@@ -26,11 +30,11 @@ defmodule VisionCore.Stereo.PairCheck do
     @timing_offset,
     @row_offset,
     @large_row_correction,
-    @uneven_rows,
+    @rotation_mismatch,
     @focus_mismatch,
     @brightness_mismatch
   ]
-  @checks [:timing, :rows, :focus, :brightness]
+  @checks [:timing, :rows, :rotation, :focus, :brightness]
 
   # Thresholds past which a check warns.
   @max_timing_offset_ms 1.0
@@ -49,11 +53,17 @@ defmodule VisionCore.Stereo.PairCheck do
           :timing_offset
           | :row_offset
           | :large_row_correction
-          | :uneven_rows
+          | :rotation_mismatch
           | :focus_mismatch
           | :brightness_mismatch
 
-  @type t :: %{timing: Check.t(), rows: Check.t(), focus: Check.t(), brightness: Check.t()}
+  @type t :: %{
+          timing: Check.t(),
+          rows: Check.t(),
+          rotation: Check.t(),
+          focus: Check.t(),
+          brightness: Check.t()
+        }
 
   @doc "Every issue a check can raise."
   @spec issues() :: [issue()]
@@ -73,6 +83,7 @@ defmodule VisionCore.Stereo.PairCheck do
     %{
       timing: timing(window.cameras, window.sync, raised),
       rows: rows(window.alignment, window.row_correction, raised),
+      rotation: rotation(window.alignment, raised),
       focus: focus(window.cameras, window.sharpness, raised),
       brightness: brightness(window.cameras, window.brightness, raised)
     }
@@ -116,43 +127,77 @@ defmodule VisionCore.Stereo.PairCheck do
 
   defp timing(_cameras, _sync, _raised), do: Check.off()
 
-  # A positive offset is the right image's match sitting lower; the correction moves the right image.
-  defp rows(%{offset_rows: offset} = alignment, correction, raised) when is_number(offset) do
+  # The offset is measured once the correction has moved the right image, which a positive one moves up.
+  defp rows(%{offset_rows: offset}, correction, raised) when is_number(offset) do
     correction = correction || 0.0
-    misalignment = offset + correction
-    bands = Enum.filter(alignment.band_offset_rows, &is_number/1)
-    spread = if bands == [], do: 0.0, else: Enum.max(bands) - Enum.min(bands)
 
     issues =
       Enum.filter(
         [
           Check.past?(abs(offset), @max_row_offset_rows, @row_offset, raised) && @row_offset,
           Check.past?(abs(correction), @max_row_correction_rows, @large_row_correction, raised) &&
-            @large_row_correction,
-          Check.past?(spread, @max_band_spread_rows, @uneven_rows, raised) && @uneven_rows
+            @large_row_correction
         ],
         & &1
       )
 
-    gauge =
-      Enum.max([
-        abs(offset) / @max_row_offset_rows,
-        abs(correction) / @max_row_correction_rows,
-        spread / @max_band_spread_rows
-      ])
-
     Check.judged(issues, :right, %{
-      gauge: gauge,
-      direction: if(misalignment >= 0, do: :lower, else: :higher),
-      misalignment_rows: abs(misalignment),
-      offset_rows: offset,
-      correction_rows: correction,
-      band_offset_rows: alignment.band_offset_rows,
-      band_spread_rows: spread
+      gauge: max(abs(offset) / @max_row_offset_rows, abs(correction) / @max_row_correction_rows),
+      residual_rows: abs(offset),
+      correction_rows: abs(correction),
+      correction_direction: correction_direction(correction)
     })
   end
 
   defp rows(_alignment, _correction, _raised), do: Check.off()
+
+  defp correction_direction(correction) when correction > 0, do: :up
+  defp correction_direction(correction) when correction < 0, do: :down
+  defp correction_direction(_none), do: nil
+
+  # Offsets that change across the bands are a rotation no row correction undoes.
+  defp rotation(%{band_offset_rows: bands}, raised) do
+    measured = for {offset, band} <- Enum.with_index(bands), is_number(offset), do: {band, offset}
+
+    if length(measured) < 2 do
+      Check.off()
+    else
+      offsets = Enum.map(measured, &elem(&1, 1))
+      spread = Enum.max(offsets) - Enum.min(offsets)
+
+      issues =
+        if Check.past?(spread, @max_band_spread_rows, @rotation_mismatch, raised),
+          do: [@rotation_mismatch],
+          else: []
+
+      Check.judged(issues, :right, %{
+        gauge: spread / @max_band_spread_rows,
+        band_spread_rows: spread,
+        band_offset_rows: bands,
+        turned: turn(slope(measured))
+      })
+    end
+  end
+
+  defp rotation(_alignment, _raised), do: Check.off()
+
+  # The least-squares slope of the offsets over the bands, in rows a band.
+  defp slope(points) do
+    count = length(points)
+    mean_band = Enum.sum(Enum.map(points, &elem(&1, 0))) / count
+    mean_offset = Enum.sum(Enum.map(points, &elem(&1, 1))) / count
+
+    covariance =
+      Enum.sum(for {band, offset} <- points, do: (band - mean_band) * (offset - mean_offset))
+
+    variance = Enum.sum(for {band, _offset} <- points, do: (band - mean_band) ** 2)
+    covariance / variance
+  end
+
+  # Rows sitting lower toward the right edge turn the right image clockwise on screen.
+  defp turn(slope) when slope > 0, do: :clockwise
+  defp turn(slope) when slope < 0, do: :counterclockwise
+  defp turn(_level), do: nil
 
   defp focus(
          %{left: %{present: true}, right: %{present: true}},

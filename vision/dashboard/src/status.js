@@ -114,15 +114,22 @@ function checkItem({ id, title, hint, widest }, check, describe) {
 
 export const PAIR_CHECKS = [
   { id: 'timing', title: 'Timing', hint: HINTS.timing, widest: '00.00 ms' },
-  { id: 'rows', title: 'Rows', hint: HINTS.rows, widest: '00.0 rows' },
+  { id: 'rows', title: 'Rows', hint: HINTS.rows, widest: '0.00 rows' },
+  { id: 'rotation', title: 'Rotation', hint: HINTS.rotation, widest: '0.0 rows' },
   { id: 'focus', title: 'Focus', hint: HINTS.focus, widest: '100 %' },
   { id: 'brightness', title: 'Brightness', hint: HINTS.brightness, widest: '100 %' }
 ]
 
-/** How the cameras work together, as the unit judges them (`pair`): their timing, rows, focus and brightness. */
+// How far the row correction moves the right image, and which way.
+const rowCorrection = ({ correctionRows, correctionDirection }) =>
+  correctionDirection ? `right moved ${correctionDirection} ${formatNumber(correctionRows)} rows` : 'no row correction'
+
+/**
+ * How the cameras work together, as the unit judges them (`pair`): their timing, rows, rotation, focus and brightness.
+ */
 export function pairStatus(status) {
-  const { timing, rows, focus, brightness } = status.pair ?? {}
-  const [timingCheck, rowsCheck, focusCheck, brightnessCheck] = PAIR_CHECKS
+  const { timing, rows, rotation, focus, brightness } = status.pair ?? {}
+  const [timingCheck, rowsCheck, rotationCheck, focusCheck, brightnessCheck] = PAIR_CHECKS
 
   return [
     checkItem(timingCheck, timing, (check) => [
@@ -130,9 +137,10 @@ export function pairStatus(status) {
       `${check.later} later · max ${formatNumber(check.maxOffsetMs, 2)}`,
       `over ${check.pairs} pairs`
     ]),
-    checkItem(rowsCheck, rows, (check) => [
-      `${formatNumber(check.misalignmentRows)} rows`,
-      `right ${check.direction} · corrected ${formatNumber(check.correctionRows)}`,
+    checkItem(rowsCheck, rows, (check) => [`${formatNumber(check.residualRows, 2)} rows`, rowCorrection(check), '']),
+    checkItem(rotationCheck, rotation, (check) => [
+      `${formatNumber(check.bandSpreadRows)} rows`,
+      check.turned ? `right turned ${check.turned}` : 'not turned',
       `left to right ${check.bandOffsetRows.map((band) => formatNumber(band)).join(' · ')}`
     ]),
     checkItem(focusCheck, focus, (check) => [

@@ -20,7 +20,7 @@ defmodule VisionApiWeb.StatusJSON do
   `GET /api/exporters` lists it. The CPU's load is the board's
   (`OvcsVehicle.BoardStatus`). `pair` holds the
   `VisionCore.Stereo.PairCheck` checks, `timing`,
-  `rows`, `focus` and `brightness`, and `depth` the
+  `rows`, `rotation`, `focus` and `brightness`, and `depth` the
   `VisionCore.Stereo.DepthCheck` checks, `rate` and `range`, with
   camelCase keys; their levels, cameras, directions and issues are
   strings, as each camera's `issues`.

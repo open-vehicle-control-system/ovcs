@@ -29,7 +29,8 @@ defmodule VisionCore.Status do
 
   `:pair` judges the cameras together (`VisionCore.Stereo.PairCheck`):
   their timing, their rows, with the row correction the stage declaring
-  `right_row_offset` applies, their focus and their brightness; each
+  `right_row_offset` applies, their rotation, their focus and their
+  brightness; each
   camera's `:issues` are those of the checks pointing at it. `:depth`
   judges how well the unit turns pairs into depth
   (`VisionCore.Stereo.DepthCheck`): the pairs it dropped over the last

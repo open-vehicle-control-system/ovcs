@@ -77,8 +77,10 @@ A pipeline that does not answer is left out.
   "sync": {"present": true, "pairs": 150, "offsetMedianMs": -0.02, "offsetMaxMs": -0.77},
   "pair": {
     "timing": {"level": "ok", "camera": null, "issues": [], "gauge": -0.02, "later": "left", "offsetMs": 0.02, "maxOffsetMs": 0.77, "pairs": 150},
-    "rows": {"level": "ok", "camera": null, "issues": [], "gauge": 0.42, "direction": "lower", "misalignmentRows": 0.09,
-             "offsetRows": 0.09, "correctionRows": 0.0, "bandOffsetRows": [0.22, 0.28, 0.11, -0.14], "bandSpreadRows": 0.42},
+    "rows": {"level": "ok", "camera": null, "issues": [], "gauge": 0.27, "residualRows": 0.09, "correctionRows": 0.8,
+             "correctionDirection": "up"},
+    "rotation": {"level": "ok", "camera": null, "issues": [], "gauge": 0.42, "bandSpreadRows": 0.42,
+                 "bandOffsetRows": [0.22, 0.28, 0.11, -0.14], "turned": "counterclockwise"},
     "focus": {"level": "warning", "camera": "right", "issues": ["focus_mismatch"], "gauge": 1.0, "softer": "right",
               "differencePercent": 38, "ratio": 0.62, "left": 0.0052, "right": 0.0032},
     "brightness": {"level": "ok", "camera": null, "issues": [], "gauge": 0.2, "brighter": "right",
@@ -123,16 +125,18 @@ A pipeline that does not answer is left out.
 - its `gauge`;
 - its figures, with their direction already worked out.
 
-The `gauge` places the check against its threshold: 0 at best, 1 at the threshold, negative toward the left camera and positive toward the right. The `rows` check takes the worst of its three measures, toward the right camera, whose image the correction moves.
+Each figure is what the stereo matching sees, after every correction. The row correction is a figure of `rows`.
+
+The `gauge` places the check against its threshold: 0 at best, 1 at the threshold, negative toward the left camera and positive toward the right. A check's gauge counts only its own issues. The `rows` and `rotation` checks point toward the right camera, whose image the correction moves; `rows` takes the worse of its two measures.
 
 | Check | Figures | Issue | Raised when |
 |---|---|---|---|
-| `timing` | `later`, the camera whose capture starts later, by `offsetMs`, the median, and `maxOffsetMs` over `pairs` | `timing_offset` | the median offset is over 1 ms; points at the later camera |
-| `rows` | `misalignmentRows`, how far the right image sits from where the calibration puts it, `lower` or `higher` (`direction`): the measured `offsetRows` plus the `correctionRows` the automatic row correction moves it by; `bandOffsetRows` and their spread, `bandSpreadRows` | `row_offset` | the measured offset is over half a row |
+| `timing` | `later`, the camera whose capture starts later, by `offsetMs`, the median, and `maxOffsetMs` over `pairs`; measured on the capture times of every frame the cameras deliver, before pairing, and corrected by nothing | `timing_offset` | the median offset is over 1 ms; points at the later camera |
+| `rows` | `residualRows`, how many rows apart the rectified images still sit, as RowAlignment measures them after the row correction; `correctionRows`, how far `right_row_offset` moves the right image, `up` or `down` (`correctionDirection`, `null` without a correction) | `row_offset` | the residual is over half a row |
 | | | `large_row_correction` | the correction moves the right image more than 3 rows: recalibrate |
-| | | `uneven_rows` | the four bands are more than 1 row apart: a camera turned, recalibrate |
-| `focus` | `softer`, the less sharp camera, by `differencePercent`; `ratio`, right over left, and each camera's sharpness | `focus_mismatch` | the ratio is outside 0.8 to 1.25; points at the softer camera |
-| `brightness` | `brighter`, the brighter camera, by `differencePercent`; each camera's mean grey, 0 to 255 | `brightness_mismatch` | one camera is more than 20% brighter than the other at the same exposure and gain, as through a hazy or dirty lens; points at the brighter camera |
+| `rotation` | `bandSpreadRows`, how far apart the row offsets of RowAlignment's four bands are; `bandOffsetRows`, from left to right, `null` for a band it cannot measure; `turned`, `clockwise` or `counterclockwise`, the way the right image is turned against the left one on screen, `null` when the bands are level. Off with fewer than two measured bands | `rotation_mismatch` | the bands are more than 1 row apart: a camera turned, which no row correction undoes; recalibrate |
+| `focus` | `softer`, the less sharp camera, by `differencePercent`; `ratio`, right over left, and each camera's sharpness, measured by the Sharpness stage on the rectified images | `focus_mismatch` | the ratio is outside 0.8 to 1.25; points at the softer camera |
+| `brightness` | `brighter`, the brighter camera, by `differencePercent`; each camera's mean grey, 0 to 255, measured by the Sharpness stage on the rectified images, black borders left out | `brightness_mismatch` | one camera is more than 20% brighter than the other at the same exposure and gain, as through a hazy or dirty lens; points at the brighter camera |
 
 Each camera's `issues` are those of the checks pointing at it. `VisionCore.Stereo.PairCheck` holds the thresholds and the issues.
 
