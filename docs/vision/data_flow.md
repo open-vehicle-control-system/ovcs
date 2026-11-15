@@ -203,9 +203,26 @@ Start and stop a recording with the exporter's actions, `POST /api/exporters/ros
 
 The clock stamps every header, transform and log time. A start while recording answers 409. A preset or clock it does not know answers 422, naming the allowed values, and so does a stop while idle.
 
-A recording goes to `/data/recordings/<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start in UTC; set another folder with `root:`. It holds `metadata.yaml` and MCAP files, zstd-compressed, a chunk closed and synced every second, a new file past 2 GB. The first file attaches the calibration files in use and the parameters, as `parameters.json`. Its metadata, as `metadata.yaml`'s, names the preset, the clock chosen and the clock used, the vehicle and the firmware.
+A recording goes in a folder `<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start in UTC, on a disk. It holds `metadata.yaml` and MCAP files, zstd-compressed, a chunk closed and synced every second, a new file past 2 GB. The first file attaches the calibration files in use and the parameters, as `parameters.json`. Its metadata, as `metadata.yaml`'s, names the preset, the clock chosen and the clock used, the vehicle and the firmware.
 
-The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, the clock, the bytes, files and messages written, and a warning once any message is dropped. A recording the disk ends, full or pulled out, stops: the status says why until the next start. Its last file is closed without its summary and reads up to its last whole chunk.
+The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, on which disk, the clock, the bytes, files and messages written, and a warning once any message is dropped.
+
+### Disks
+
+A disk is the unit's own storage, `internal`, which records in `/data/recordings`, or a USB disk formatted f2fs or ext4. [`VisionCore.Disks`](../../vision/core/lib/vision_core/disks.ex), which the bag exporter starts, keeps them:
+
+1. **Find.** It looks at the USB disks every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; `VisionCore.Disks.format/3` makes it f2fs.
+2. **Mount.** It mounts a USB disk at `/data/disks/<uuid>`. Its recordings go in `recordings/` there.
+3. **Order.** The disks are filled in an order the unit saves in its database, with any turned off. A new disk goes last, turned on. The order and the disks turned off survive unplugging and a reboot (`put_order/2`, `put_enabled/3`).
+4. **Choose.** A recording starts on the first disk in the order that is mounted, turned on and has 1 GB free. Set another floor with the bag exporter's `free_floor_bytes:`.
+5. **Go on.** When the disk falls below the floor, refuses a write, is ejected or pulled out, the recording goes on on the next such disk. It never goes back to a disk it left.
+
+Each disk a recording goes on holds a part of it, in a folder of the same name with `_part2`, `_part3`, and so on. Each part is a complete rosbag2 folder, with its own `metadata.yaml`, attachments and metadata: open the parts one after the other. With no disk left, the recording stops, and the status says why until the next start. Its last file is closed without its summary and reads up to its last whole chunk.
+
+> [!WARNING]
+> A disk pulled out without ejecting loses the chunk being written, up to a second of messages, and its last file has no summary. Eject it first with `VisionCore.Disks.eject/2`: the recording closes its file and goes on on the next disk, then the disk is unmounted.
+
+A run on a host watches no USB disk: its only disk is `internal`.
 
 ## A new calibration
 
