@@ -22,9 +22,12 @@ defmodule VisionApiWeb.RecordingController do
   @state_pointer "/data/attributes/state"
 
   def index(conn, params) do
-    case JsonApi.includes(params, @relationships) do
-      {:ok, includes} -> render(conn, :index, recordings: Recordings.list(), includes: includes)
+    with {:ok, includes} <- JsonApi.includes(params, @relationships),
+         {:ok, recordings} <- Recordings.list() do
+      render(conn, :index, recordings: recordings, includes: includes)
+    else
       :error -> refuse(conn, nil, :unsupported_include)
+      refusal -> refuse(conn, nil, refusal)
     end
   end
 

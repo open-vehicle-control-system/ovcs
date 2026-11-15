@@ -10,6 +10,23 @@ defmodule VisionCore.RecordingsTest do
   @moduletag :tmp_dir
   @moduletag :capture_log
 
+  # Answers every call of the bag exporter's functions with its option `:answer`.
+  defmodule Answering do
+    @behaviour VisionCore.Exporter
+
+    @impl VisionCore.Exporter
+    def outputs(_options), do: []
+
+    @impl VisionCore.Exporter
+    def init(options), do: {:ok, Keyword.fetch!(options, :answer)}
+
+    @impl VisionCore.Exporter
+    def handle_output(_output, _value, answer), do: {:ok, answer}
+
+    @impl VisionCore.Exporter
+    def handle_call(_request, _from, answer), do: {:reply, answer, answer}
+  end
+
   @stick "c8803634-2bd4-4a62-8a68-ad456f6a52ce"
   @first "20261115T090000Z_review"
   @second "20261115T100000Z_replay"
@@ -137,7 +154,7 @@ defmodule VisionCore.RecordingsTest do
         messages: 0
       )
 
-      assert [%Recording{name: @second}, recording] = Recordings.list()
+      assert {:ok, [%Recording{name: @second}, recording]} = Recordings.list()
 
       assert %Recording{
                name: @first,
@@ -166,31 +183,32 @@ defmodule VisionCore.RecordingsTest do
       File.mkdir_p!(folder)
       File.write!(Path.join(folder, "20261115T110000Z_review_0.mcap"), "cut")
 
-      assert [
-               %Recording{
-                 name: "20261115T110000Z_review",
-                 preset: nil,
-                 started_at: nil,
-                 duration_ms: nil,
-                 messages: nil,
-                 dropped: %{},
-                 bytes: 3
-               }
-             ] = Recordings.list()
+      assert {:ok,
+              [
+                %Recording{
+                  name: "20261115T110000Z_review",
+                  preset: nil,
+                  started_at: nil,
+                  duration_ms: nil,
+                  messages: nil,
+                  dropped: %{},
+                  bytes: 3
+                }
+              ]} = Recordings.list()
     end
 
     test "leaves out the parts on a disk that is not mounted", context do
       two_parts!(context)
       :ok = Disks.eject(Disks, @stick)
 
-      assert [%Recording{name: @first, parts: [%{number: 2}]}] = Recordings.list()
+      assert {:ok, [%Recording{name: @first, parts: [%{number: 2}]}]} = Recordings.list()
     end
 
     test "is empty while the disks are not watched", context do
       two_parts!(context)
       TestDisks.stop!(context.disks)
 
-      assert Recordings.list() == []
+      assert Recordings.list() == {:ok, []}
     end
   end
 
@@ -217,7 +235,7 @@ defmodule VisionCore.RecordingsTest do
       assert [%{folder: folder, disk: "internal"}] = started.parts
       assert Path.dirname(folder) == internal
 
-      assert [%Recording{name: name, state: :recording, duration_ms: duration_ms}] =
+      assert {:ok, [%Recording{name: name, state: :recording, duration_ms: duration_ms}]} =
                Recordings.list(exporter: runner)
 
       assert name == started.name
@@ -276,7 +294,7 @@ defmodule VisionCore.RecordingsTest do
       assert Recordings.delete(@first) == :ok
       refute File.exists?(first)
       refute File.exists?(second)
-      assert Recordings.list() == []
+      assert Recordings.list() == {:ok, []}
     end
 
     test "refuses the recording in progress, and one it does not have", %{} do
@@ -288,6 +306,42 @@ defmodule VisionCore.RecordingsTest do
       assert Recordings.delete("../system", exporter: runner) == {:error, :not_found}
 
       Recordings.stop(started.name, exporter: runner)
+    end
+  end
+
+  defp answering!(answer) do
+    runner =
+      start_supervised!(
+        {Runner, exporter: Answering, options: [answer: answer], config: %VisionCore.Config{}},
+        id: make_ref()
+      )
+
+    :sys.get_state(runner)
+    runner
+  end
+
+  describe "an exporter that answers no recording" do
+    test "has list and fetch answer why", context do
+      two_parts!(context)
+
+      for answer <- [{:error, :timeout}, {:error, {:failed, "crashed"}}, {:error, :unknown_call}] do
+        runner = answering!(answer)
+
+        assert Recordings.list(exporter: runner) == answer
+        assert Recordings.fetch(@first, exporter: runner) == answer
+      end
+    end
+
+    test "that does not run records none", context do
+      two_parts!(context)
+      stopped = spawn(fn -> :ok end)
+      ref = Process.monitor(stopped)
+      assert_receive {:DOWN, ^ref, :process, ^stopped, _reason}
+
+      assert {:ok, [%Recording{name: @first, state: :stopped}]} =
+               Recordings.list(exporter: stopped)
+
+      assert {:ok, %Recording{state: :stopped}} = Recordings.fetch(@first, exporter: stopped)
     end
   end
 
@@ -311,7 +365,7 @@ defmodule VisionCore.RecordingsTest do
   end
 
   defp refuses_everything_on(outside) do
-    assert Recordings.list() == []
+    assert Recordings.list() == {:ok, []}
     assert Recordings.fetch(@first) == {:error, :not_found}
     assert Recordings.archive(@first) == {:error, :not_found}
     assert Recordings.delete(@first) == {:error, :not_found}
@@ -340,7 +394,7 @@ defmodule VisionCore.RecordingsTest do
       bytes = folder_bytes(first) + folder_bytes(second)
       File.ln_s!(Path.join([outside, @first, "key.pem"]), Path.join(first, "key.mcap"))
 
-      assert [%Recording{name: @first, bytes: ^bytes}] = Recordings.list()
+      assert {:ok, [%Recording{name: @first, bytes: ^bytes}]} = Recordings.list()
 
       {:ok, archive} = Recordings.archive(@first)
       tar = Enum.into(archive.stream, <<>>)
@@ -361,7 +415,7 @@ defmodule VisionCore.RecordingsTest do
       fifo = Path.join(folder, "metadata.yaml")
       {_output, 0} = System.cmd("mkfifo", [fifo])
 
-      assert [%Recording{name: @first, preset: nil, messages: nil, bytes: 3}] =
+      assert {:ok, [%Recording{name: @first, preset: nil, messages: nil, bytes: 3}]} =
                within(fn -> Recordings.list() end, fifo)
 
       {:ok, archive} = within(fn -> Recordings.archive(@first) end, fifo)
@@ -375,7 +429,7 @@ defmodule VisionCore.RecordingsTest do
       metadata = Path.join(first, "metadata.yaml")
       File.write!(metadata, ["# ", :binary.copy("x", 1_048_576), "\n"], [:append])
 
-      assert [%Recording{name: @first, messages: 200}] = Recordings.list()
+      assert {:ok, [%Recording{name: @first, messages: 200}]} = Recordings.list()
     end
   end
 

@@ -35,26 +35,37 @@ defmodule VisionCore.Recordings do
   @typedoc "A recording as one tar archive: its file name, its bytes and its blocks."
   @type archive :: %{filename: String.t(), size: non_neg_integer(), stream: Enumerable.t()}
 
-  @doc "The recordings, the newest first; see the module doc for `opts`."
-  @spec list(keyword()) :: [Recording.t()]
+  @doc """
+  The recordings, the newest first; see the module doc for `opts`. The
+  bag exporter's error when it does not answer which recording is in
+  progress, none on a unit without one or while it does not run.
+  """
+  @spec list(keyword()) :: {:ok, [Recording.t()]} | {:error, unanswered()}
   def list(opts \\ []) do
     opts = validate!(opts)
-    live = live_recording(opts)
-    parts = parts_by_name(opts)
 
-    parts
-    |> Map.keys()
-    |> Enum.concat(if live, do: [live.name], else: [])
-    |> Enum.uniq()
-    |> Enum.sort(:desc)
-    |> Enum.map(&recording(&1, Map.get(parts, &1, []), live))
+    with {:ok, live} <- live_recording(opts) do
+      parts = parts_by_name(opts)
+
+      {:ok,
+       parts
+       |> Map.keys()
+       |> Enum.concat(if live, do: [live.name], else: [])
+       |> Enum.uniq()
+       |> Enum.sort(:desc)
+       |> Enum.map(&recording(&1, Map.get(parts, &1, []), live))}
+    end
   end
 
-  @doc "The recording named `name`; see the module doc for `opts`."
-  @spec fetch(String.t(), keyword()) :: {:ok, Recording.t()} | {:error, :not_found}
+  @doc """
+  The recording named `name`, `{:error, :not_found}` for a name no
+  recording has, and the bag exporter's error as `list/1` answers it;
+  see the module doc for `opts`.
+  """
+  @spec fetch(String.t(), keyword()) :: {:ok, Recording.t()} | {:error, :not_found | unanswered()}
   def fetch(name, opts \\ []) do
     opts = validate!(opts)
-    fetch_with(name, live_recording(opts), opts)
+    with {:ok, live} <- live_recording(opts), do: fetch_with(name, live, opts)
   end
 
   defp fetch_with(name, live, opts) do
@@ -100,7 +111,7 @@ defmodule VisionCore.Recordings do
          {:ok, live} <- BagExporter.recording(runner),
          :ok <- check_recording(name, live, opts),
          {:ok, _summary} <- BagExporter.stop_recording(runner) do
-      fetch(name, Keyword.put(opts, :exporter, runner))
+      fetch_with(name, nil, opts)
     end
   end
 
@@ -113,26 +124,10 @@ defmodule VisionCore.Recordings do
   @spec delete(String.t(), keyword()) ::
           :ok | {:error, :not_found | :recording | {:failed, String.t()} | unanswered()}
   def delete(name, opts \\ []) do
-    case fetch_settled(name, opts) do
+    case fetch(name, opts) do
       {:ok, %Recording{state: :stopped} = recording} -> delete_parts(recording)
       {:ok, %Recording{state: :recording}} -> {:error, :recording}
       {:error, reason} -> {:error, reason}
-    end
-  end
-
-  # The recording, once the bag exporter answered whether it records it.
-  defp fetch_settled(name, opts) do
-    opts = validate!(opts)
-
-    case answered_recording(opts) do
-      {:ok, live} ->
-        fetch_with(name, live, opts)
-
-      {:error, reason} when reason in [:no_bag_exporter, :not_running] ->
-        fetch_with(name, nil, opts)
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 
@@ -159,7 +154,7 @@ defmodule VisionCore.Recordings do
           {:ok, archive()}
           | {:error, :not_found | :recording | {:failed, String.t()} | unanswered()}
   def archive(name, opts \\ []) do
-    with {:ok, %Recording{state: :stopped} = recording} <- fetch_settled(name, opts),
+    with {:ok, %Recording{state: :stopped} = recording} <- fetch(name, opts),
          {:ok, entries} <- archive_entries(recording) do
       {:ok, %{filename: name <> ".tar", size: Tar.size(entries), stream: Tar.stream(entries)}}
     else
@@ -198,7 +193,7 @@ defmodule VisionCore.Recordings do
   defp check_recording(name, %{name: name}, _opts), do: :ok
 
   defp check_recording(name, _live, opts) do
-    case fetch(name, opts) do
+    case fetch_with(name, nil, opts) do
       {:ok, _stopped} -> {:error, :stopped}
       {:error, :not_found} -> {:error, :not_found}
     end
@@ -233,15 +228,13 @@ defmodule VisionCore.Recordings do
 
   defp directory?(path), do: match?({:ok, %File.Stat{type: :directory}}, File.lstat(path))
 
+  # The recording in progress, `nil` on a unit without a bag exporter or while it does not run.
   defp live_recording(opts) do
-    case answered_recording(opts) do
-      {:ok, live} -> live
-      {:error, _reason} -> nil
+    case with({:ok, runner} <- runner(opts), do: BagExporter.recording(runner)) do
+      {:ok, live} -> {:ok, live}
+      {:error, reason} when reason in [:no_bag_exporter, :not_running] -> {:ok, nil}
+      {:error, reason} -> {:error, reason}
     end
-  end
-
-  defp answered_recording(opts) do
-    with {:ok, runner} <- runner(opts), do: BagExporter.recording(runner)
   end
 
   defp runner(opts) do
@@ -253,8 +246,15 @@ defmodule VisionCore.Recordings do
 
   defp find_runner do
     case Enum.find(Exporters.describe(), &(&1.module == BagExporter)) do
-      nil -> {:error, :no_bag_exporter}
-      %{id: id} -> Exporters.fetch_runner(id)
+      nil ->
+        {:error, :no_bag_exporter}
+
+      %{id: id} ->
+        case Exporters.fetch_runner(id) do
+          {:ok, runner} -> {:ok, runner}
+          {:error, :not_found} -> {:error, :no_bag_exporter}
+          {:error, :not_running} -> {:error, :not_running}
+        end
     end
   end
 end

@@ -3,7 +3,7 @@ defmodule VisionApiWeb.RecordingControllerTest do
 
   import VisionApiWeb.RefusalTests
 
-  alias VisionApiWeb.TestDisks
+  alias VisionApiWeb.{AnsweringBag, TestDisks}
   alias VisionCore.Ros2.Bag.Metadata
 
   @moduletag :tmp_dir
@@ -150,6 +150,26 @@ defmodule VisionApiWeb.RecordingControllerTest do
     test "answers 400 for another include", %{conn: conn} do
       assert %{"errors" => [%{"status" => "400", "source" => %{"parameter" => "include"}}]} =
                conn |> get("/api/recordings?include=disks") |> json_response(400)
+    end
+
+    test "answers 504 or 500 when the bag exporter does not say what it records",
+         %{conn: conn} = context do
+      stopped!(context)
+
+      for {answer, status} <- [
+            {{:error, :timeout}, 504},
+            {{:error, {:failed, "crashed"}}, 500},
+            {{:error, :unknown_call}, 500}
+          ] do
+        AnsweringBag.answer(answer)
+
+        for path <- ["/api/recordings", "/api/recordings/#{@stopped}"] do
+          assert %{"errors" => [%{"status" => status_text}]} =
+                   conn |> get(path) |> json_response(status)
+
+          assert status_text == Integer.to_string(status)
+        end
+      end
     end
 
     test "is empty on a unit without a bag exporter", %{conn: conn} do

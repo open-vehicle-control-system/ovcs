@@ -692,7 +692,8 @@ The recording routes answer:
 - a 409 for a delete or a download of the recording in progress;
 - a 422 for a preset or clock it does not have, naming the allowed values, for another `state`, and for a recording stopped already;
 - a 404 for a recording it does not have;
-- a 503 when the bag exporter does not run, and a 504 when it does not answer in time.
+- a 503 for a start or a stop while the bag exporter does not run;
+- a 504 when the bag exporter does not answer in time, a list or a read included, and a 500 when it fails.
 
 `GET /api/disks` lists the disks recordings go on, in the order they are filled, then the USB disks without a filesystem the unit mounts. A disk's id is its filesystem's UUID, `internal` for the unit's storage, or its device, such as `sdb1`, for one without a filesystem. Each has `internal`, `label`, `filesystem`, `device`, `sizeBytes`, `freeBytes`, `position`, `enabled`, `state` (`mounted`, `ejecting`, `ejected`, `unplugged`, `unusable` or `formatting`), `problem` and `lastSeenAt`.
 
