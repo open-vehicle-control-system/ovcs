@@ -1,6 +1,5 @@
 import { useEffect, useId } from 'react'
 import { OvcsPageFrame } from '@ovcs/ui/react'
-import DiskList from '../components/recordings/DiskList.jsx'
 import Recorder from '../components/recordings/Recorder.jsx'
 import RecordingList from '../components/recordings/RecordingList.jsx'
 import { useRecordings } from '../stores/recordings.js'
@@ -9,11 +8,10 @@ const POLL_MS = 1000
 // Reading every recording reads each one's metadata from the disks: the list is read less often than the disks.
 const LIST_EVERY_POLLS = 10
 
-/** The bag exporter's page: the recorder, the recordings and the disks they go on. */
+/** The bag exporter's page: the recorder with the disks it records on, then the recordings. */
 export default function Ros2BagPage() {
   const recorderId = useId()
   const recordingsId = useId()
-  const disksId = useId()
   const loadError = useRecordings((state) => state.loadError)
   const error = useRecordings((state) => state.error)
 
@@ -41,7 +39,6 @@ export default function Ros2BagPage() {
       {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
       <Recorder headingId={recorderId} />
       <RecordingList headingId={recordingsId} />
-      <DiskList headingId={disksId} />
     </OvcsPageFrame>
   )
 }

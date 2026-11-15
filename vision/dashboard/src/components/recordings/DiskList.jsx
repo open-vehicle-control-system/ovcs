@@ -172,10 +172,10 @@ export default function DiskList({ headingId }) {
   const lastPosition = Math.max(-1, ...disks.filter((disk) => disk.position != null).map((disk) => disk.position))
 
   return (
-    <OvcsCard as="section" aria-labelledby={headingId} className="flex flex-col gap-3">
-      <h3 id={headingId} className="font-semibold">
+    <section aria-labelledby={headingId} className="flex flex-col gap-3 border-t border-ovcs-border pt-4">
+      <h4 id={headingId} className="font-semibold">
         Disks
-      </h3>
+      </h4>
       <p className="text-sm text-ovcs-muted">
         A recording goes on the first disk that is mounted, turned on and has room, then on to the next one.
       </p>
@@ -201,6 +201,6 @@ export default function DiskList({ headingId }) {
           }}
         />
       ) : null}
-    </OvcsCard>
+    </section>
   )
 }

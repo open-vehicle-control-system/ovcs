@@ -64,6 +64,12 @@ const recording = (id, attributes, disk = null, parts = [[id, 1, 'internal']]) =
   }))
 })
 
+// The rows of the dropped messages by topic shown in `container`, `null` while they are hidden.
+const droppedTopics = (container) => {
+  const table = within(container).queryByRole('table', { name: 'Dropped by topic' })
+  return table && within(table).getAllByRole('row').slice(1).map((row) => within(row).getAllByRole('cell').map((cell) => cell.textContent))
+}
+
 const answer = (document, status = 200) => ({ ok: status < 400, status, json: async () => document })
 const flush = () => act(() => Promise.resolve())
 const settle = async () => {
@@ -134,7 +140,18 @@ describe('Ros2BagPage', () => {
   it('shows the recording in progress with its live figures and disk, and stops it', async () => {
     const live = '20261115T100000Z_replay'
     listed = [
-      recording(live, { state: 'recording', preset: 'replay', durationMs: 42_000, bytes: 812_000_000, dropped: [{ topic: '/stereo/left/image_raw', count: 2 }] }, STICK, [[live, 1, STICK]]),
+      recording(
+        live,
+        {
+          state: 'recording',
+          preset: 'replay',
+          durationMs: 42_000,
+          bytes: 812_000_000,
+          dropped: [{ topic: '/tf', count: 4 }, { topic: '/stereo/left/image_raw', count: 96 }]
+        },
+        STICK,
+        [[live, 1, STICK]]
+      ),
       ...listed
     ]
     useStatus.setState({
@@ -147,15 +164,23 @@ describe('Ros2BagPage', () => {
     expect(within(recorder).getByText(live)).toBeTruthy()
     expect(within(recorder).getByText('42 s')).toBeTruthy()
     expect(within(recorder).getByText('812.0 MB')).toBeTruthy()
-    expect(within(recorder).getByText('ovcs-recordings')).toBeTruthy()
-    expect(within(recorder).getByText('2: /stereo/left/image_raw 2')).toBeTruthy()
+    expect(within(recorder).getByText('ovcs-recordings', { selector: 'dd' })).toBeTruthy()
+    expect(within(recorder).getByText('100 messages · 1.8 %')).toBeTruthy()
     expect(within(recorder).queryByRole('button', { name: 'Start' })).toBeNull()
     expect(within(recorder).queryByText(/^Recording replay since/)).toBeNull()
+
+    expect(droppedTopics(recorder)).toBeNull()
+    fireEvent.click(within(recorder).getByRole('button', { name: 'by topic' }))
+    expect(droppedTopics(recorder)).toEqual([
+      ['/stereo/left/image_raw', '96'],
+      ['/tf', '4']
+    ])
 
     listed[0].resource.attributes.durationMs = 43_000
     await act(() => vi.advanceTimersByTimeAsync(1000))
     await settle()
     expect(within(recorder).getByText('43 s')).toBeTruthy()
+    expect(droppedTopics(recorder)).toHaveLength(2)
 
     fireEvent.click(within(recorder).getByRole('button', { name: 'Stop' }))
     await settle()
@@ -172,7 +197,9 @@ describe('Ros2BagPage', () => {
     expect(within(item).getByText('review')).toBeTruthy()
     expect(within(item).getByText('3 min 05 s')).toBeTruthy()
     expect(within(item).getByText('3.4 MB')).toBeTruthy()
-    expect(within(item).getByText('4: /tf 4')).toBeTruthy()
+    expect(within(item).getByText('4 messages · 0.1 %')).toBeTruthy()
+    fireEvent.click(within(item).getByRole('button', { name: 'by topic' }))
+    expect(droppedTopics(item)).toEqual([['/tf', '4']])
     expect(within(item).getByText("1 on ovcs-recordings, 2 on Unit's storage")).toBeTruthy()
 
     const download = within(item).getByRole('link', { name: `Download ${STOPPED}` })
@@ -186,6 +213,16 @@ describe('Ros2BagPage', () => {
     await settle()
 
     expect(writes()).toEqual([{ path: `recordings/${STOPPED}`, method: 'DELETE', body: undefined }])
+  })
+
+  it('shows the disks in the Recorder, before the recordings', async () => {
+    render(<Ros2BagPage />)
+    await settle()
+
+    const recorder = screen.getByRole('region', { name: 'Recorder' })
+    expect(within(recorder).getByRole('region', { name: 'Disks' })).toBeTruthy()
+    const cards = screen.getAllByRole('heading').map((heading) => heading.textContent)
+    expect(cards.filter((name) => ['Recorder', 'Disks', 'Recordings'].includes(name))).toEqual(['Recorder', 'Disks', 'Recordings'])
   })
 
   it('lists the disks in their order, with their state and free space, and changes them', async () => {

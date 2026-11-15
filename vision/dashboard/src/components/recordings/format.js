@@ -27,9 +27,20 @@ export const formatTime = (iso) =>
 /** A disk's name: the unit's storage, its label, or its device for one without a filesystem. */
 export const diskName = (disk) => (disk.internal ? "Unit's storage" : disk.label || disk.device || disk.id)
 
-/** The messages a recording dropped: `none`, or their count and each topic's. */
-export function droppedText(dropped) {
+// A share in percent to one decimal, `< 0.1 %` for one that rounds to nothing.
+const formatShare = (share) => (share < 0.0005 ? '< 0.1 %' : `${(share * 100).toFixed(1)} %`)
+
+/**
+ * The messages a recording dropped: `none`, or their count and their share of the messages that reached the recorder,
+ * written or dropped, without it when the messages written are not known.
+ */
+export function droppedText(dropped, messages) {
   if (!dropped?.length) return 'none'
   const total = dropped.reduce((sum, { count }) => sum + count, 0)
-  return `${total}: ${dropped.map(({ topic, count }) => `${topic} ${count}`).join(', ')}`
+  const count = `${total} ${total === 1 ? 'message' : 'messages'}`
+  return messages == null ? count : `${count} · ${formatShare(total / (messages + total))}`
 }
+
+/** The topics that dropped messages, the most first, then by name. */
+export const droppedByTopic = (dropped) =>
+  [...dropped].sort((one, other) => other.count - one.count || one.topic.localeCompare(other.topic))

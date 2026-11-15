@@ -1,6 +1,8 @@
 import { useId, useState } from 'react'
 import { OvcsCard, OvcsStatus } from '@ovcs/ui/react'
-import { diskName, droppedText, formatBytes, formatDuration } from './format.js'
+import DiskList from './DiskList.jsx'
+import Dropped from './Dropped.jsx'
+import { diskName, formatBytes, formatDuration } from './format.js'
 import { recording as inProgress, useRecordings } from '../../stores/recordings.js'
 import { useStatus } from '../../stores/status.js'
 import { PRIMARY } from '../../styles.js'
@@ -82,7 +84,7 @@ function Figures({ recording, disks }) {
       <Figure label="size">{formatBytes(recording.bytes)}</Figure>
       <Figure label="disk">{disk ? diskName(disk) : (recording.disk ?? '–')}</Figure>
       <Figure label="dropped" wide>
-        {droppedText(recording.dropped)}
+        <Dropped dropped={recording.dropped} messages={recording.messages} />
       </Figure>
     </dl>
   )
@@ -90,9 +92,11 @@ function Figures({ recording, disks }) {
 
 /**
  * Starts a recording of the preset and on the clock chosen, or shows the one in progress with its live figures and
- * stops it; while idle, the bag exporter's warning, such as a recording that stopped for want of a disk.
+ * stops it; while idle, the bag exporter's warning, such as a recording that stopped for want of a disk. The disks
+ * it records on follow.
  */
 export default function Recorder({ headingId }) {
+  const disksId = useId()
   const recording = useRecordings(inProgress)
   const disks = useRecordings((state) => state.disks)
   const busy = useRecordings((state) => state.busy)
@@ -134,6 +138,7 @@ export default function Recorder({ headingId }) {
           {status.detail}
         </OvcsStatus>
       ) : null}
+      <DiskList headingId={disksId} />
     </OvcsCard>
   )
 }

@@ -1,5 +1,6 @@
 import { OvcsBadge, OvcsCard, OvcsStatus, useOvcsConfirm } from '@ovcs/ui/react'
-import { diskName, droppedText, formatBytes, formatDuration, formatTime } from './format.js'
+import Dropped from './Dropped.jsx'
+import { diskName, formatBytes, formatDuration, formatTime } from './format.js'
 import { recordingDownloadUrl } from '../../services/recordings.js'
 import { useRecordings } from '../../stores/recordings.js'
 import { SMALL_BUTTON } from '../../styles.js'
@@ -41,7 +42,7 @@ function Recording({ recording, disks, busy, onDelete }) {
           {partsText(recording.parts, disks) || '–'}
         </Fact>
         <Fact label="dropped" wide>
-          {droppedText(recording.dropped)}
+          <Dropped dropped={recording.dropped} messages={recording.messages} />
         </Fact>
       </dl>
       {inProgress ? null : (
