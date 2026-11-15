@@ -23,7 +23,15 @@ const resources = (parameterId) => [
   ['GET', 'board', 'The board: its clock, its processor and memory load, and its network interfaces'],
   ['GET', 'exporters', 'What takes the outputs out of the unit: each exporter with the outputs it reads and its actions, this API last'],
   ['POST', 'exporters/{id}/actions/{name}', "Runs an exporter's action: answers the file it makes, or its result"],
-  ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered; 404 without the ROS 2 link']
+  ['GET', 'ros2-node?include=topics,services', 'The ROS 2 node: its Zenoh link, the topics published with their rates, the services answered; 404 without the ROS 2 link'],
+  ['GET', 'recordings?include=parts', "The bag exporter's recordings on the disks, each with its parts and the disk each part is on"],
+  ['POST', 'recordings', 'Starts a recording of a preset on a clock'],
+  ['PATCH', 'recordings/{id}', 'Stops a recording: its state changed to stopped'],
+  ['DELETE', 'recordings/{id}', 'Deletes a recording, every part of it'],
+  ['GET', 'recordings/{id}/download', 'A recording as one tar, each part a folder'],
+  ['GET', 'disks', 'The disks recordings go on, in the order they are filled'],
+  ['PATCH', 'disks/{id}', 'Moves a disk in the order, or turns it off'],
+  ['POST', 'disk-ejects', 'Unmounts a disk before it is pulled out; disk-formats are created the same way']
 ]
 
 const CHANNELS = [

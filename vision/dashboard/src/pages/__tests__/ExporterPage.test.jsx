@@ -78,9 +78,12 @@ describe('ExporterPage', () => {
     expect(status.className).not.toContain('ovcs-status--')
   })
 
-  it('opens the pages of the ROS 2 · Zenoh exporter and the API', () => {
+  it('opens the pages of the ROS 2 · Zenoh and ROS 2 · Bag exporters and the API', () => {
     render(<ExporterPage id="ros2_zenoh" />)
     expect(screen.getByRole('heading', { name: 'ROS 2 · Zenoh' })).toBeTruthy()
+
+    render(<ExporterPage id="ros2_bag" />)
+    expect(screen.getByRole('heading', { name: 'ROS 2 · Bag' })).toBeTruthy()
 
     render(<ExporterPage id="api" />)
     expect(screen.getByRole('heading', { name: 'API' })).toBeTruthy()

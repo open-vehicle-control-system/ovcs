@@ -1,6 +1,7 @@
 const MEDIA_TYPE = 'application/vnd.api+json'
 
-const url = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
+/** The URL of `path` under the unit's `/api`. */
+export const apiUrl = (path) => `${import.meta.env.VITE_BASE_URL}/api/${path}`
 
 const readDocument = (response) => response.json().catch(() => ({}))
 
@@ -25,7 +26,7 @@ export async function request(path, { method = 'GET', body, answer = readDocumen
   }, timeoutMs ?? (method === 'GET' ? READ_TIMEOUT_MS : ACTION_TIMEOUT_MS))
 
   try {
-    const response = await fetch(url(path), {
+    const response = await fetch(apiUrl(path), {
       method,
       headers: { Accept: MEDIA_TYPE, 'Content-Type': MEDIA_TYPE },
       body: body === undefined ? undefined : JSON.stringify(body),

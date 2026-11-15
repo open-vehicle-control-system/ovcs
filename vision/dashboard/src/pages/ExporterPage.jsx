@@ -1,6 +1,7 @@
 import { useId, useState } from 'react'
 import { OvcsCard, OvcsPageFrame, OvcsStatus } from '@ovcs/ui/react'
 import Ros2Page from './Ros2Page.jsx'
+import Ros2BagPage from './Ros2BagPage.jsx'
 import ApiPage from './ApiPage.jsx'
 import { runExporterAction } from '../services/unit.js'
 import { downloadFile } from '../services/download.js'
@@ -8,7 +9,7 @@ import { exporterStatus, useExporters } from '../stores/exporters.js'
 import { useStatus } from '../stores/status.js'
 import { BUTTON } from '../styles.js'
 
-const OWN_PAGES = { ros2_zenoh: Ros2Page, api: ApiPage }
+const OWN_PAGES = { ros2_zenoh: Ros2Page, ros2_bag: Ros2BagPage, api: ApiPage }
 
 // Coloured as the exporter's entry in the menu.
 const TONES = { ok: 'ok', warning: 'error', off: 'muted' }
@@ -140,7 +141,7 @@ function GenericExporterPage({ id }) {
   )
 }
 
-/** The page of the exporter `id`: its own for ROS 2 · Zenoh and the API, the generic one for the others. */
+/** The page of the exporter `id`: its own for ROS 2 · Zenoh, ROS 2 · Bag and the API, the generic one for the others. */
 export default function ExporterPage({ id }) {
   const Page = OWN_PAGES[id]
   return Page ? <Page /> : <GenericExporterPage key={id} id={id} />
