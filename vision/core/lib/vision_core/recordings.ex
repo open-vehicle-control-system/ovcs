@@ -147,8 +147,10 @@ defmodule VisionCore.Recordings do
   The recording `name` as one uncompressed tar archive (`VisionCore.Tar`),
   `<name>.tar`, each part a folder of its files, read from the disks as
   the stream is consumed; `{:error, :recording}` while it records, its
-  files still growing, and the bag exporter's error when it does not
-  answer whether it records.
+  files still growing, `{:error, {:failed, reason}}` for a file it
+  cannot read or a name a tar cannot hold, found before any byte is
+  sent, and the bag exporter's error when it does not answer whether it
+  records.
   """
   @spec archive(String.t(), keyword()) ::
           {:ok, archive()}
@@ -170,6 +172,9 @@ defmodule VisionCore.Recordings do
       case Tar.read_entry(name, path) do
         {:ok, entry} ->
           {:cont, {:ok, entries ++ [entry]}}
+
+        {:error, :enametoolong} ->
+          {:halt, {:error, {:failed, "#{name} is too long a name for a tar archive"}}}
 
         {:error, reason} ->
           {:halt, {:error, {:failed, "cannot read #{path}: #{:file.format_error(reason)}"}}}

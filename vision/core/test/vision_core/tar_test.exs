@@ -79,6 +79,19 @@ defmodule VisionCore.TarTest do
     assert Enum.all?(chunks, &(IO.iodata_length(&1) <= 1_048_576))
   end
 
+  test "takes no name a ustar header cannot hold", %{tmp_dir: dir} do
+    path = Path.join(dir, "file")
+    File.write!(path, "content")
+
+    for name <- [
+          String.duplicate("f", 100) <> "/",
+          "bag/" <> String.duplicate("f", 101),
+          String.duplicate("f", 156) <> "/file"
+        ] do
+      assert Tar.read_entry(name, path) == {:error, :enametoolong}
+    end
+  end
+
   test "takes no link, nor what it leads to", %{tmp_dir: dir} do
     target = Path.join(dir, "target")
     File.write!(target, "elsewhere")

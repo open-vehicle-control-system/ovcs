@@ -60,6 +60,22 @@ defmodule VisionApiWeb.RecordingDownloadControllerTest do
     assert get_resp_header(conn, "content-type") == ["application/x-tar"]
   end
 
+  test "answers 500 before any byte for a recording whose names a tar cannot hold", %{
+    conn: conn,
+    folders: [folder | _parts]
+  } do
+    name = String.duplicate("r", 100)
+    long = Path.join(Path.dirname(folder), name)
+    File.mkdir_p!(long)
+    File.write!(Path.join(long, "bag_0.mcap"), "cut")
+
+    conn = get(conn, "/api/recordings/#{name}/download")
+
+    assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+    assert %{"errors" => [%{"status" => "500", "detail" => detail}]} = json_response(conn, 500)
+    assert detail =~ "too long"
+  end
+
   test "answers 404 for a name no recording has", %{conn: conn} do
     conn = get(conn, "/api/recordings/20261115T000000Z_review/download")
 

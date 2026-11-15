@@ -473,6 +473,17 @@ defmodule VisionCore.RecordingsTest do
       assert Enum.sort(files) == Enum.sort(expected)
     end
 
+    test "refuses a recording whose names a tar cannot hold, before any byte", %{
+      internal: internal
+    } do
+      name = String.duplicate("r", 100)
+      File.mkdir_p!(Path.join(internal, name))
+      File.write!(Path.join([internal, name, "bag_0.mcap"]), "cut")
+
+      assert {:error, {:failed, reason}} = Recordings.archive(name)
+      assert reason =~ "too long"
+    end
+
     test "refuses the recording in progress, and one it does not have", %{} do
       runner = start_exporter!()
       {:ok, started} = Recordings.start(exporter: runner)

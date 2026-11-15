@@ -690,6 +690,7 @@ The recording routes answer:
 
 - a 409 for a start while a recording is in progress, or with no disk to record on;
 - a 409 for a delete or a download of the recording in progress;
+- a 500 for a download of a recording with a name a tar cannot hold, a folder of 100 bytes or more among them, before any byte is sent;
 - a 422 for a preset or clock it does not have, naming the allowed values, for another `state`, and for a recording stopped already;
 - a 404 for a recording it does not have;
 - a 503 for a start or a stop while the bag exporter does not run;

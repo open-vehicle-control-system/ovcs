@@ -50,7 +50,7 @@ defmodule VisionApiWeb.RecordingDownloadController do
     Enum.reduce_while(archive.stream, conn, fn block, conn ->
       case chunk(conn, block) do
         {:ok, conn} -> {:cont, conn}
-        {:error, :closed} -> {:halt, conn}
+        {:error, _reason} -> {:halt, conn}
       end
     end)
   end

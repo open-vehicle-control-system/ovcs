@@ -11,7 +11,8 @@ defmodule VisionCore.Tar do
   since. A file that shrank raises `File.Error` while the stream runs.
 
   A name up to 100 bytes goes in the header's name, a longer one is
-  split at a `/` into its 155-byte prefix and its name. Sizes up to
+  split at a `/` into its 155-byte prefix and its name; `read_entry/2`
+  refuses a name that does not split so, before any byte is sent. Sizes up to
   8 GiB are written in octal, larger ones in base-256, as GNU tar and
   `:erl_tar` read them.
 
@@ -38,10 +39,18 @@ defmodule VisionCore.Tar do
   @doc """
   The entry named `name` in the archive, of the folder or file at
   `path`: its type, size and time as they are now. A folder's name ends
-  with `/`. A link, followed by no archive, is `{:error, :einval}`.
+  with `/`. A link, followed by no archive, is `{:error, :einval}`, and
+  a name the header cannot hold `{:error, :enametoolong}`.
   """
   @spec read_entry(String.t(), Path.t()) :: {:ok, t()} | {:error, File.posix()}
   def read_entry(name, path) do
+    case split_name(name) do
+      {:ok, _split} -> read_stat(name, path)
+      :error -> {:error, :enametoolong}
+    end
+  end
+
+  defp read_stat(name, path) do
     case File.lstat(path, time: :posix) do
       {:ok, %File.Stat{type: :directory, mtime: mtime}} ->
         {:ok, %__MODULE__{name: name, type: :directory, path: path, size: 0, mtime: mtime}}
@@ -114,7 +123,7 @@ defmodule VisionCore.Tar do
   defp padding_bytes(size), do: rem(@block_bytes - rem(size, @block_bytes), @block_bytes)
 
   defp header(entry) do
-    {prefix, name} = split_name(entry.name)
+    {:ok, {prefix, name}} = split_name(entry.name)
 
     {mode, typeflag} =
       case entry.type do
@@ -150,21 +159,18 @@ defmodule VisionCore.Tar do
     IO.iodata_to_binary(fields.(checksum_field))
   end
 
-  defp split_name(name) when byte_size(name) <= @name_bytes, do: {"", name}
+  defp split_name(name) when byte_size(name) <= @name_bytes, do: {:ok, {"", name}}
 
   defp split_name(name) do
     parts = String.split(name, "/")
 
-    split =
-      Enum.find_value(1..(length(parts) - 1)//1, fn at ->
-        {prefix, rest} = Enum.split(parts, at)
-        {prefix, rest} = {Enum.join(prefix, "/"), Enum.join(rest, "/")}
+    Enum.find_value(1..(length(parts) - 1)//1, :error, fn at ->
+      {prefix, rest} = Enum.split(parts, at)
+      {prefix, rest} = {Enum.join(prefix, "/"), Enum.join(rest, "/")}
 
-        if byte_size(prefix) <= @prefix_bytes and byte_size(rest) <= @name_bytes and rest != "",
-          do: {prefix, rest}
-      end)
-
-    split || raise ArgumentError, "#{name} is too long for a ustar header"
+      if byte_size(prefix) <= @prefix_bytes and byte_size(rest) <= @name_bytes and rest != "",
+        do: {:ok, {prefix, rest}}
+    end)
   end
 
   defp field(text, bytes), do: text <> <<0::size((bytes - byte_size(text)) * 8)>>
