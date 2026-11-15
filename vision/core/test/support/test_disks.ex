@@ -217,8 +217,8 @@ defmodule VisionCore.TestDisks do
        "/dev/fake #{free_kib + 1000} 1000 #{free_kib} 1% #{path}\n", 0}
   end
 
-  defp answer(_system, mounts, "mount", ["-t", filesystem, "-o", "noatime", device, point]) do
-    File.write!(mounts, "#{device} #{point} #{filesystem} rw,noatime 0 0\n", [:append])
+  defp answer(_system, mounts, "mount", ["-t", filesystem, "-o", options, device, point]) do
+    File.write!(mounts, "#{device} #{point} #{filesystem} rw,#{options} 0 0\n", [:append])
     {"", 0}
   end
 

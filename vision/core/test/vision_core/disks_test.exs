@@ -83,7 +83,7 @@ defmodule VisionCore.DisksTest do
   describe "a USB disk plugged in" do
     setup :started
 
-    test "is mounted under its UUID, noatime, its recordings folder made, last in the order",
+    test "is mounted under its UUID following no link, its recordings folder made, last in order",
          %{disks: disks} do
       TestDisks.plug(
         disks,
@@ -113,7 +113,7 @@ defmodule VisionCore.DisksTest do
       assert File.dir?(recordings)
 
       assert TestDisks.commands(disks, "mount") == [
-               ["-t", "f2fs", "-o", "noatime", device, point]
+               ["-t", "f2fs", "-o", "noatime,nosymfollow,nodev,nosuid,noexec", device, point]
              ]
 
       assert Enum.map(Disks.list(disks.server), & &1.uuid) == ["internal", @stick]
@@ -153,6 +153,36 @@ defmodule VisionCore.DisksTest do
       assert [["-t", "ext4" | _rest]] = TestDisks.commands(disks, "mount")
     end
 
+    test "whose recordings folder is refused is unmounted again, unusable, saying why",
+         %{disks: disks} do
+      point = TestDisks.mount_point(disks, @stick)
+      File.mkdir_p!(point)
+      File.write!(Path.join(point, "recordings"), "")
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+      eventually(fn -> state(disks, @stick) == :unusable end)
+
+      assert {:ok, %Disk{problem: problem}} = Disks.fetch(disks.server, @stick)
+      assert problem =~ "recordings"
+      assert TestDisks.commands(disks, "umount") == [[point]]
+      assert File.read!(disks.options[:mounts_path]) == ""
+    end
+
+    test "whose recordings folder is a link is unusable, the link unfollowed", %{disks: disks} do
+      point = TestDisks.mount_point(disks, @stick)
+      elsewhere = Path.join(disks.dir, "elsewhere")
+      File.mkdir_p!(point)
+      File.mkdir_p!(elsewhere)
+      File.ln_s!(elsewhere, Path.join(point, "recordings"))
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+      eventually(fn -> state(disks, @stick) == :unusable end)
+
+      assert {:ok, %Disk{problem: problem, recordings_path: nil}} =
+               Disks.fetch(disks.server, @stick)
+
+      assert problem =~ "link"
+      assert TestDisks.commands(disks, "umount") == [[point]]
+    end
+
     test "whose mount fails is unusable, saying why", %{tmp_dir: dir} do
       disks = dir |> Path.join("refused") |> TestDisks.setup!()
 
@@ -189,6 +219,26 @@ defmodule VisionCore.DisksTest do
     assert {:ok, %Disk{recordings_path: recordings}} = Disks.fetch(disks.server, @stick)
     assert recordings == Path.join(elsewhere, "recordings")
     assert TestDisks.commands(disks, "mount") == []
+  end
+
+  test "leaves a disk mounted before whose recordings folder is refused mounted, and unformatted",
+       %{tmp_dir: dir} do
+    disks = TestDisks.setup!(dir)
+    TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ovcs-recordings"))
+    elsewhere = Path.join(dir, "elsewhere")
+    File.mkdir_p!(elsewhere)
+    File.write!(Path.join(elsewhere, "recordings"), "")
+    mounts = "#{TestDisks.device_path(disks, "sda1")} #{elsewhere} f2fs rw 0 0\n"
+    File.write!(disks.options[:mounts_path], mounts)
+
+    disks = TestDisks.start!(disks)
+    eventually(fn -> state(disks, @stick) == :unusable end)
+
+    assert {:error, reason} = Disks.format(disks.server, "sda1", "label")
+    assert reason =~ "mounted"
+    assert TestDisks.commands(disks, "umount") == []
+    assert TestDisks.commands(disks, "mkfs.f2fs") == []
+    assert File.read!(disks.options[:mounts_path]) == mounts
   end
 
   describe "a disk pulled out" do

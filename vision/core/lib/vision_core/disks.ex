@@ -10,13 +10,16 @@ defmodule VisionCore.Disks do
   `/sys/block/sd*` on a USB bus, whose sysfs device is under a `usb<n>`,
   or a disk without partitions whole, and reads each
   new one's superblock (`VisionCore.Disk.identify/1`): an f2fs or ext4
-  filesystem is mounted at `<mount_root>/<uuid>` with `noatime`, its
-  recordings in `recordings/` there; another is listed as unusable. A
-  disk already mounted, found in `/proc/mounts` by its device, is taken
-  as it is. A disk pulled out is unmounted lazily and listed as
-  unplugged; a device whose disk's `diskseq`, or size, changed between
-  two looks was pulled out and another plugged in. Then it reads each
-  mounted disk's free bytes with `df`.
+  filesystem is mounted at `<mount_root>/<uuid>` with `noatime`,
+  `nosymfollow`, `nodev`, `nosuid` and `noexec`, its recordings in the
+  folder `recordings/` there; another is listed as unusable. A disk
+  whose `recordings` is a link or a file is unmounted again and listed
+  as unusable. A disk already mounted, found in `/proc/mounts` by its
+  device, is taken as it is, and never formatted. A disk pulled out is
+  unmounted lazily and listed as unplugged; a device whose disk's
+  `diskseq`, or size, changed between two looks was pulled out and
+  another plugged in. Then it reads each mounted disk's free bytes with
+  `df`.
 
   `list/1`, `fetch/2` and `next/3` read a table this process keeps, so
   they answer while it mounts. `mkfs.f2fs` runs in a task, so the disks
@@ -58,6 +61,8 @@ defmodule VisionCore.Disks do
   @format_timeout_ms 300_000
   @f2fs_label_units 512
   @unavailable "the disks' order is unavailable"
+  # No access time written, and no link followed, device opened, setuid or program run off a disk.
+  @mount_options "noatime,nosymfollow,nodev,nosuid,noexec"
 
   @doc "Starts watching the disks; see the module's options."
   @spec start_link(keyword()) :: GenServer.on_start()
@@ -403,48 +408,83 @@ defmodule VisionCore.Disks do
   end
 
   defp mount(state, disk) do
-    device = device_path(state, disk.device)
+    case mount_point(state, disk, device_path(state, disk.device)) do
+      {:ok, mount_point, mounted_by} ->
+        use_recordings_folder(state, disk, mount_point, mounted_by)
 
-    with {:ok, mount_point} <- mount_point(state, disk, device),
-         recordings = Path.join(mount_point, "recordings"),
-         :ok <- make_folder(recordings) do
-      Logger.info(
-        "#{inspect(__MODULE__)} #{disk.device} (#{disk.label}) mounted at #{mount_point}"
-      )
-
-      %{state | mount_points: Map.put(state.mount_points, disk.uuid, mount_point)}
-      |> put_disk(%{disk | state: :mounted, recordings_path: recordings, problem: nil})
-    else
       {:error, problem} ->
-        Logger.warning(
-          "#{inspect(__MODULE__)} #{disk.device} (#{disk.uuid}) not mounted: #{problem}"
-        )
-
-        put_disk(state, %{disk | state: :unusable, problem: problem})
+        not_mounted(state, disk, problem)
     end
   end
 
+  defp use_recordings_folder(state, disk, mount_point, mounted_by) do
+    recordings = Path.join(mount_point, "recordings")
+
+    case make_recordings_folder(recordings) do
+      :ok ->
+        Logger.info(
+          "#{inspect(__MODULE__)} #{disk.device} (#{disk.label}) mounted at #{mount_point}"
+        )
+
+        %{state | mount_points: Map.put(state.mount_points, disk.uuid, mount_point)}
+        |> put_disk(%{disk | state: :mounted, recordings_path: recordings, problem: nil})
+
+      {:error, problem} ->
+        state |> unmount_unused(disk, mount_point, mounted_by) |> not_mounted(disk, problem)
+    end
+  end
+
+  defp not_mounted(state, disk, problem) do
+    Logger.warning("#{inspect(__MODULE__)} #{disk.device} (#{disk.uuid}) not mounted: #{problem}")
+    put_disk(state, %{disk | state: :unusable, problem: problem})
+  end
+
+  # Where `device` is mounted, and whether by this process or before it looked.
   defp mount_point(state, disk, device) do
     case mounted_at(state, device) do
       {:ok, mount_point} ->
-        {:ok, mount_point}
+        {:ok, mount_point, :before}
 
       :error ->
         mount_point = Path.join(state.options.mount_root, disk.uuid)
+        filesystem = Atom.to_string(disk.filesystem)
 
         with :ok <- make_folder(mount_point),
              :ok <-
-               run(state, "mount", [
-                 "-t",
-                 Atom.to_string(disk.filesystem),
-                 "-o",
-                 "noatime",
-                 device,
-                 mount_point
-               ]),
-             do: {:ok, mount_point}
+               run(state, "mount", ["-t", filesystem, "-o", @mount_options, device, mount_point]),
+             do: {:ok, mount_point, :here}
     end
   end
+
+  # Unmounts a disk mounted here and not used; one that stays mounted is detached when pulled out.
+  defp unmount_unused(state, _disk, _mount_point, :before), do: state
+
+  defp unmount_unused(state, disk, mount_point, :here) do
+    case run(state, "umount", [mount_point]) do
+      :ok ->
+        state
+
+      {:error, reason} ->
+        Logger.warning("#{inspect(__MODULE__)} #{mount_point} stays mounted: #{reason}")
+        %{state | mount_points: Map.put(state.mount_points, disk.uuid, mount_point)}
+    end
+  end
+
+  # Makes the recordings folder if missing; a link is refused, as it could lead off the disk.
+  defp make_recordings_folder(path) do
+    with {:error, :eexist} <- File.mkdir(path),
+         {:ok, %File.Stat{type: :directory}} <- File.lstat(path) do
+      :ok
+    else
+      :ok -> :ok
+      {:ok, %File.Stat{type: type}} -> {:error, "#{path} is #{kind(type)}, not a folder"}
+      {:error, reason} -> {:error, "cannot make #{path}: #{:file.format_error(reason)}"}
+    end
+  end
+
+  defp kind(:symlink), do: "a symbolic link"
+  defp kind(:regular), do: "a file"
+  defp kind(type), do: "a #{type}"
 
   # Where `device` is mounted, from the mounts table.
   defp mounted_at(state, device) do
@@ -549,16 +589,24 @@ defmodule VisionCore.Disks do
   end
 
   defp check_formattable(state, device) do
-    with {:ok, %{uuid: uuid}} <- Map.fetch(state.devices, device),
-         %Disk{state: mounted} when mounted in [:mounted, :ejecting] <- state.disks[uuid] do
-      {:error, "#{device} is mounted: eject it first"}
-    else
-      :error -> {:error, "#{device} is no USB disk plugged in"}
-      _not_mounted -> :ok
+    case Map.fetch(state.devices, device) do
+      {:ok, %{uuid: uuid}} ->
+        if mounted?(state, uuid, device),
+          do: {:error, "#{device} is mounted: eject it first"},
+          else: :ok
+
+      :error ->
+        {:error, "#{device} is no USB disk plugged in"}
     end
   end
 
-  # Runs mkfs.f2fs in a task, the device forgotten meanwhile: the next look after it reads it anew.
+  # Whether the disk of `uuid` is mounted, or `device` is, by this process or another.
+  defp mounted?(state, uuid, device) do
+    match?(%Disk{state: mounted} when mounted in [:mounted, :ejecting], state.disks[uuid]) or
+      mounted_at(state, device_path(state, device)) != :error
+  end
+
+  # Runs mkfs.f2fs in a task, the device forgotten: the next look after it reads it anew.
   defp start_format(state, device, label, from) do
     %{block: block, identity: identity} = state.devices[device]
     path = device_path(state, device)
