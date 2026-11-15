@@ -1,7 +1,7 @@
 defmodule VisionApiWeb.RecordingDownloadControllerTest do
   use VisionApiWeb.ConnCase, async: false
 
-  alias VisionApiWeb.TestDisks
+  alias VisionApiWeb.{AnsweringBag, TestDisks}
 
   @moduletag :tmp_dir
   @moduletag :capture_log
@@ -74,6 +74,23 @@ defmodule VisionApiWeb.RecordingDownloadControllerTest do
     assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
     assert %{"errors" => [%{"status" => "500", "detail" => detail}]} = json_response(conn, 500)
     assert detail =~ "too long"
+  end
+
+  test "answers 504 when the bag exporter does not answer in time, 500 when it fails", %{
+    conn: conn
+  } do
+    for {answer, status} <- [
+          {{:error, :timeout}, 504},
+          {{:error, {:failed, "crashed"}}, 500},
+          {{:error, :unknown_call}, 500}
+        ] do
+      AnsweringBag.answer(answer)
+      conn = get(conn, "/api/recordings/#{@recording}/download")
+
+      assert get_resp_header(conn, "content-type") == ["application/vnd.api+json"]
+      assert %{"errors" => [%{"status" => status_text}]} = json_response(conn, status)
+      assert status_text == Integer.to_string(status)
+    end
   end
 
   test "answers 404 for a name no recording has", %{conn: conn} do

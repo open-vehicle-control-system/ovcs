@@ -375,12 +375,79 @@ defmodule VisionApiWeb.RecordingControllerTest do
     test_change_refusals("/api/recordings/#{@stopped}", "recordings", @stopped)
   end
 
+  describe "a bag exporter that does not answer" do
+    test "has each route answer 504 when it does not answer in time, 500 when it fails",
+         %{conn: conn} = context do
+      stopped!(context)
+
+      for {answer, status} <- [
+            {{:error, :timeout}, 504},
+            {{:error, {:failed, "crashed"}}, 500},
+            {{:error, :unknown_call}, 500}
+          ] do
+        AnsweringBag.answer(answer)
+
+        for request <- [
+              &get(&1, "/api/recordings"),
+              &get(&1, "/api/recordings/#{@stopped}"),
+              &start_recording/1,
+              &change(&1, @stopped, %{state: "stopped"}),
+              &delete(&1, "/api/recordings/#{@stopped}")
+            ] do
+          assert %{"errors" => [%{"status" => status_text}]} =
+                   conn |> request.() |> json_response(status)
+
+          assert status_text == Integer.to_string(status)
+        end
+      end
+
+      assert File.exists?(Path.join(context.disks[:internal], @stopped))
+    end
+
+    test "answers 503 to a stop while it does not run, and deletes, recording nothing",
+         %{conn: conn} = context do
+      stopped!(context)
+      AnsweringBag.answer({:error, :not_running})
+
+      assert %{"errors" => [%{"status" => "503"}]} =
+               conn |> change(@stopped, %{state: "stopped"}) |> json_response(503)
+
+      assert build_conn() |> delete("/api/recordings/#{@stopped}") |> response(204) == ""
+    end
+
+    test "answers 503 to a stop and 404 to a delete once it stops, its disks with it",
+         %{conn: conn} = context do
+      stopped!(context)
+      :ok = Supervisor.terminate_child(VisionCore.Exporters, :ros2_bag)
+
+      assert %{"errors" => [%{"status" => "503"}]} =
+               conn |> change(@stopped, %{state: "stopped"}) |> json_response(503)
+
+      assert %{"errors" => [%{"status" => "404"}]} =
+               build_conn() |> delete("/api/recordings/#{@stopped}") |> json_response(404)
+
+      assert VisionCore.Disks.list(VisionCore.Disks) == []
+    end
+  end
+
   describe "DELETE /api/recordings/:id" do
     test "deletes every part of the recording", %{conn: conn} = context do
       stopped!(context)
 
       assert conn |> delete("/api/recordings/#{@stopped}") |> response(204) == ""
       assert File.ls!(context.disks[:internal]) == []
+    end
+
+    test "answers 500 when a part cannot be deleted", %{conn: conn} = context do
+      stopped!(context)
+      internal = context.disks[:internal]
+      File.chmod!(internal, 0o555)
+      on_exit(fn -> File.chmod!(internal, 0o755) end)
+
+      assert %{"errors" => [%{"status" => "500", "detail" => detail}]} =
+               conn |> delete("/api/recordings/#{@stopped}") |> json_response(500)
+
+      assert detail =~ "cannot delete"
     end
 
     test "answers 409 while it records, 404 for a name no recording has", %{conn: conn} do
