@@ -198,7 +198,7 @@ Until the pose is measured, `/tf_static` carries no transform for the camera. No
 - `/left/set_camera_info`;
 - `/tf_static` from `stereo_left_optical` to `left_optical`, once a pose exists.
 
-`/stereo/left/image_raw/compressed` does not change. It is the grey frame that `/stereo/left/camera_info` (480×270) and the depth describe, and the bag `replay` preset records it. The bag presets pick the camera up as any camera of their own: `replay` records `half_jpeg`, at 10 Hz from the cap, and `review` records it at 10 Hz.
+`/stereo/left/image_raw/compressed` does not change. It is the grey frame that `/stereo/left/camera_info` (480×270) and the depth describe, and the bag `replay` preset records it. The bag presets pick the camera up as any camera of their own: `replay` records `half_jpeg` at every frame it sends, 30 a second, and `review` at 10.
 
 ### 7. Generality
 
@@ -212,11 +212,7 @@ Nothing in this design is specific to the Mini outside `vehicles/ovcs_mini/`:
 
 Each PR becomes its own task once this design is agreed. Each one ships on its own.
 
-Unmerged work this plan builds on, not on `main` yet:
-
-- the stereo unit's `max_hz` (TASK-157): the slot rule of section 2, and the Mini's 20 pairs a second in AC #7;
-- the bag exporter (TASK-154, 155, 156, 162): `BagExporter.Preset`, and the Mini's bag exporter entry;
-- `vehicles/ovcs_mini/test/vision_composer_test.exs`, added with that work.
+It builds on the stereo unit's `max_hz` (TASK-157), for the slot rule of section 2 and the Mini's 20 pairs a second in AC #7, and on the bag exporter (TASK-154, 155, 156, 162), for `BagExporter.Preset` and the Mini's bag exporter entry.
 
 PR 2 splits into core (2a) and API with dashboard (2b) if it passes 400 lines; the two ship together in one release, as the API and the dashboard ship in one firmware.
 
