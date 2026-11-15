@@ -71,21 +71,45 @@ function useExportersListed() {
   }, [joins, load, loadTargets])
 }
 
-// Keeps focused controls clear of the sticky bar when the browser scrolls them into view.
-function useScrollPaddingFor(ref) {
+// Keeps focused controls clear of the sticky bar `ref` holds, at the page's `edge`, `Top` or `Bottom`, when the browser
+// scrolls them into view.
+function useScrollPaddingFor(ref, edge) {
   useEffect(() => {
     const bar = ref.current
     if (!bar || typeof ResizeObserver === 'undefined') return undefined
     const root = document.documentElement
+    const property = `scrollPadding${edge}`
     const observer = new ResizeObserver(() => {
-      root.style.scrollPaddingBottom = `${bar.offsetHeight}px`
+      root.style[property] = `${bar.offsetHeight}px`
     })
     observer.observe(bar)
     return () => {
       observer.disconnect()
-      root.style.scrollPaddingBottom = ''
+      root.style[property] = ''
     }
-  }, [ref])
+  }, [ref, edge])
+}
+
+// The page's own content, which the skip link focuses.
+const PAGE_ID = 'page'
+
+/** A link, hidden until focused, that takes the keyboard past the top bar and the menu to the page. */
+function SkipLink() {
+  return (
+    <a
+      href={`#${PAGE_ID}`}
+      onClick={(event) => {
+        event.preventDefault()
+        const page = document.getElementById(PAGE_ID)
+        // Focus alone scrolls a page taller than the screen past its top; its top is shown, below the top bar.
+        page?.focus({ preventScroll: true })
+        page?.scrollIntoView?.({ block: 'start' })
+      }}
+      className={`sr-only rounded border border-ovcs-accent bg-ovcs-surface text-sm focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:px-3 focus:py-2 ${FOCUS}`}
+    >
+      Skip to the page
+    </a>
+  )
 }
 
 /**
@@ -124,7 +148,7 @@ function ParameterSaveBar() {
   const discard = useParameters((state) => state.discard)
   const reset = useParameters((state) => state.reset)
 
-  useScrollPaddingFor(barRef)
+  useScrollPaddingFor(barRef, 'Bottom')
 
   return (
     <OvcsSaveBar
@@ -195,13 +219,16 @@ export default function App() {
   const board = useOvcsBoard(fetchBoard, connection === 'connected')
   const { page, selectedGroupId, exporterId, calibrationId } = useNavigationInUrl()
   const paused = useCalibration(capturing)
+  const topBarRef = useRef(null)
+  useScrollPaddingFor(topBarRef, 'Top')
   const panel =
     page === 'pipeline' ? <ParameterPanel groupId={selectedGroupId} /> : page === 'calibration' ? <CalibrationPage /> : null
 
   return (
     <OvcsShell product="Vision">
+      <SkipLink />
       <OvcsRegion name="The top bar">
-        <OvcsTopBar firmware={firmware} board={board}>
+        <OvcsTopBar ref={topBarRef} firmware={firmware} board={board}>
           <ParameterError connection={connection} />
         </OvcsTopBar>
       </OvcsRegion>
@@ -210,7 +237,7 @@ export default function App() {
         <OvcsRegion name="The menu">
           <Menu />
         </OvcsRegion>
-        <OvcsMain>
+        <OvcsMain id={PAGE_ID} tabIndex={-1} className="outline-none">
           <OvcsRegion name="This page" resetOn={`${page}/${exporterId}/${selectedGroupId}/${calibrationId}`}>
             {page === 'exporter' ? (
               <ExporterPage id={exporterId} />

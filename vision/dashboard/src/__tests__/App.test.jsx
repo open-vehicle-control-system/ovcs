@@ -64,6 +64,36 @@ describe('App', () => {
     useNavigation.setState({ page: pageFromUrl(), exporterId: exporterFromUrl(), calibrationId: calibrationFromUrl() })
   }
 
+  it('offers, first, a link that skips the bars and the menu to the page', () => {
+    render(<App />)
+
+    const [skip] = screen.getAllByRole('link')
+    expect(skip.textContent).toBe('Skip to the page')
+    fireEvent.click(skip)
+    expect(document.activeElement).toBe(screen.getByRole('main'))
+  })
+
+  it('keeps a focused control clear of the sticky top bar when the page scrolls it into view', () => {
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback) { this.callback = callback }
+      observe() { this.callback() }
+      disconnect() {}
+    })
+    const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function () {
+      return this.tagName === 'HEADER' ? 132 : 0
+    })
+    try {
+      const { unmount } = render(<App />)
+      expect(document.documentElement.style.scrollPaddingTop).toBe('132px')
+
+      unmount()
+      expect(document.documentElement.style.scrollPaddingTop).toBe('')
+    } finally {
+      height.mockRestore()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('polls the parameters while mounted', () => {
     const { unmount } = render(<App />)
     expect(actions.startPolling).toHaveBeenCalledTimes(1)
