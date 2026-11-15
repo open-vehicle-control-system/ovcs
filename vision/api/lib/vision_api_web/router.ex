@@ -43,6 +43,16 @@ defmodule VisionApiWeb.Router do
     get "/saved-calibrations/:id", SavedCalibrationController, :show
     patch "/saved-calibrations/:id", SavedCalibrationController, :update
     delete "/saved-calibrations/:id", SavedCalibrationController, :delete
+    get "/recordings", RecordingController, :index, private: %{jsonapi_include: true}
+    get "/recordings/:id", RecordingController, :show, private: %{jsonapi_include: true}
+    post "/recordings", RecordingController, :create
+    patch "/recordings/:id", RecordingController, :update
+    delete "/recordings/:id", RecordingController, :delete
+    get "/recordings/:id/download", RecordingDownloadController, :show
+    get "/disks", DiskController, :index
+    patch "/disks/:id", DiskController, :update
+    post "/disk-ejects", DiskEjectController, :create
+    post "/disk-formats", DiskFormatController, :create
   end
 
   scope "/api", VisionApiWeb do
