@@ -577,6 +577,16 @@ describe('Ros2BagPage', () => {
     render(<Ros2BagPage />)
     await settle()
 
-    expect(within(screen.getByRole('region', { name: 'Recorder' })).getByText(/Stopped: no disk left/)).toBeTruthy()
+    const warning = within(screen.getByRole('region', { name: 'Recorder' })).getByText(/Stopped: no disk left/)
+    expect(warning.closest('.ovcs-status--error')).not.toBeNull()
+  })
+
+  it('shows an exporter that is off muted, as the menu and the exporter page do, not as an error', async () => {
+    useStatus.setState({ snapshot: { exporters: [{ id: 'ros2_bag', status: { level: 'off', detail: 'Not running' } }] } })
+    render(<Ros2BagPage />)
+    await settle()
+
+    const status = within(screen.getByRole('region', { name: 'Recorder' })).getByText('Not running').closest('.ovcs-status')
+    expect(status.className).not.toContain('ovcs-status--error')
   })
 })

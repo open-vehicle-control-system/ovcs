@@ -146,7 +146,7 @@ function NewRecording() {
         {loaded ? <Destination id={destinationId} disk={disk} /> : null}
       </div>
       {status && status.level !== 'ok' ? (
-        <OvcsStatus tone="error" className="text-sm">
+        <OvcsStatus tone={status.level === 'off' ? 'muted' : 'error'} className="text-sm">
           {status.detail}
         </OvcsStatus>
       ) : null}
