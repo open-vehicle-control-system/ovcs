@@ -26,7 +26,7 @@ function Axis({ axis, label, term }) {
         <span className="font-medium text-ovcs-muted">
           {label} <span className="font-normal">({term})</span>
         </span>
-        <span className={`font-semibold tabular-nums ${covered ? 'text-ovcs-ok' : ''}`}>{percent} %</span>
+        <span className={`font-semibold tabular-nums ${covered ? 'text-ovcs-ok-text' : ''}`}>{percent} %</span>
       </div>
       <Gauge position={percent} zone={[100, 100]} tone={covered ? 'ok' : 'error'} />
     </li>

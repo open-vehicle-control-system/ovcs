@@ -711,6 +711,14 @@ describe('CalibrationPage', () => {
       expect(screen.getByText('Views kept (samples)').parentElement.textContent).toContain('12')
     })
 
+    it('writes a covered axis in the ok colour made for text, which reads on the light surfaces', () => {
+      show({ inUse: stored, session: capturing() })
+
+      const covered = within(coverage()).getByText('100 %')
+      expect(covered.className.split(' ')).toContain('text-ovcs-ok-text')
+      expect(covered.className.split(' ')).not.toContain('text-ovcs-ok')
+    })
+
     it('calibrates only once the samples are good enough, and cancels', () => {
       show({ inUse: stored, session: capturing() })
       expect(button('Compute calibration').disabled).toBe(true)
@@ -829,11 +837,17 @@ describe('CalibrationPage', () => {
       expect(rms('Right camera error').textContent).toContain('fair')
     })
 
+    it('heads the figures of the calibration in use In use, as the rest of the page names it', () => {
+      show({ inUse: stored, session: session({ phase: 'solved', board, result }) })
+
+      expect(within(resultCard()).getByRole('columnheader', { name: 'In use' })).toBeTruthy()
+    })
+
     it('compares with nothing on a unit without a calibration, under the title Calibrate', () => {
       show({ inUse: none, session: session({ phase: 'solved', board, result }) })
 
       expect(within(resultCard()).getByRole('heading').textContent).toBe('Calibrate')
-      expect(within(resultCard()).queryByText('Used now')).toBeNull()
+      expect(within(resultCard()).queryByRole('columnheader', { name: 'In use' })).toBeNull()
       expect(rms('Focal length').querySelectorAll('td')).toHaveLength(1)
     })
 
@@ -979,7 +993,7 @@ describe('CalibrationPage', () => {
       expect(within(figures).queryByRole('row', { name: /Pair error/ })).toBeNull()
       expect(within(figures).queryByRole('row', { name: /Distance between cameras/ })).toBeNull()
       expect(within(figures).getByRole('row', { name: /Focal length/ }).textContent).toContain('870.3 px')
-      expect(within(figures).queryByText('Used now')).toBeNull()
+      expect(within(figures).queryByRole('columnheader', { name: 'In use' })).toBeNull()
 
       fireEvent.click(button('Download the new calibration'))
       expect(downloadYaml.mock.calls).toEqual([['center.yaml', 'center solved']])
@@ -1092,7 +1106,7 @@ describe('CalibrationPage', () => {
         'Distance to the left camera100.3 mm100.3 mm'
       )
       expect(within(figures).getByRole('row', { name: /Turned/ }).textContent).toContain('10.0° right')
-      expect(within(figures).getByText('Used now')).toBeTruthy()
+      expect(within(figures).getByRole('columnheader', { name: 'In use' })).toBeTruthy()
       expect(within(figures).queryByRole('row', { name: /Focal length/ })).toBeNull()
 
       fireEvent.click(button('Download the new calibration'))
