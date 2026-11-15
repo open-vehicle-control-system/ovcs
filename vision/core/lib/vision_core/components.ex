@@ -36,7 +36,8 @@ defmodule VisionCore.Components do
       named one with `source: {:camera, name}` detects on the camera of
       its own `name` instead, and takes the depth of the stereo pairs
       projected into that camera's image.
-    * `:hailo_detector` — `:detector` with the Hailo backend.
+    * `:hailo_detector` — `:detector` with the Hailo backend
+      (`VisionCore.Detection.Backend.Hailo`), on the Hailo-8.
     * `:qnn_detector` — `:detector` with the QNN backend
       (`VisionCore.Detection.Backend.Qnn`), on a Qualcomm Hexagon NPU.
     * `:segmenter` — `VisionCore.Segmentation.Supervisor`: a road
@@ -53,6 +54,10 @@ defmodule VisionCore.Components do
 
     * `:qnn_segmenter` — `:segmenter` with the QNN backend, on a Qualcomm
       Hexagon NPU.
+    * `:hailo_segmenter` — `:segmenter` with the Hailo backend
+      (`VisionCore.Segmentation.Backend.Hailo`), on the Hailo-8. Every
+      `:hailo_detector` and `:hailo_segmenter` shares the accelerator
+      through `VisionCore.Hailo` (`hailo_children/1`).
     * `:camera` — `VisionCore.Camera.Unit`: a camera of its own, outside
       the stereo pair, its `:name` the child id of its unit, `{:camera,
       name}`, and its frames the output `{:camera_frame, name}`, of its
@@ -79,6 +84,57 @@ defmodule VisionCore.Components do
   alias VisionCore.Camera.{LibCamera, LibCameraStream}
 
   @doc """
+  The child that runs `components`' Hailo networks, before their units:
+  `VisionCore.Hailo`, under a supervisor of its own budget, with each
+  `:hailo_detector`'s and `:hailo_segmenter`'s model as its pipeline's
+  network, in `components`' order, and the Port's options from the
+  first unit that gives each. `[]` without such a component.
+  """
+  @spec hailo_children([atom() | {atom(), keyword()}]) :: [Supervisor.child_spec()]
+  def hailo_children(components) do
+    units =
+      for component <- components,
+          {kind, opts} = if(is_atom(component), do: {component, []}, else: component),
+          kind in [:hailo_detector, :hailo_segmenter],
+          do: {kind, opts}
+
+    if units == [] do
+      []
+    else
+      networks = Enum.map(units, &hailo_network/1)
+
+      port_options =
+        units
+        |> Enum.flat_map(fn {_kind, opts} ->
+          Keyword.take(opts, VisionCore.Hailo.port_options())
+        end)
+        |> Enum.uniq_by(&elem(&1, 0))
+
+      [
+        # Not restarted once it gives up, as a unit: VisionCore.Reviver starts it again.
+        Supervisor.child_spec(
+          {VisionCore.Hailo.Supervisor, [networks: networks] ++ port_options},
+          id: VisionCore.Hailo.Supervisor,
+          restart: :transient
+        )
+      ]
+    end
+  end
+
+  defp hailo_network({:hailo_detector, opts}),
+    do:
+      {Detection.pipeline_name(opts),
+       [kind: :detection] ++ Keyword.take(opts, [:hef_path, :score_threshold])}
+
+  defp hailo_network({:hailo_segmenter, opts}),
+    do:
+      {Keyword.get(opts, :name),
+       [
+         kind: :segmentation,
+         classes: length(Keyword.get(opts, :labels, VisionCore.Segmentation.labels()))
+       ] ++ Keyword.take(opts, [:hef_path, :cell_pixels])}
+
+  @doc """
   Returns the child specs to start `component` with `opts`. Raises on
   unknown names so a typo in a vehicle's `:components` list fails
   loudly at boot.
@@ -101,6 +157,10 @@ defmodule VisionCore.Components do
 
     # Its own budget, and restarted by VisionCore.Reviver alone once it gives up, so a crashing detector cannot exhaust the vision core's.
     [Supervisor.child_spec({VisionCore.Detection.Supervisor, opts}, id: id, restart: :transient)]
+  end
+
+  def start(:hailo_segmenter, opts) do
+    start(:segmenter, Keyword.put_new(opts, :backend, VisionCore.Segmentation.Backend.Hailo))
   end
 
   def start(:qnn_segmenter, opts) do

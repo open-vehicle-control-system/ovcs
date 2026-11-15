@@ -237,4 +237,35 @@ defmodule VisionCore.ComponentsTest do
       end
     end
   end
+
+  describe "hailo_children/1" do
+    test "none without a Hailo unit" do
+      assert Components.hailo_children([:stereo, {:qnn_detector, dlc_path: "/m.dlc"}]) == []
+    end
+
+    test "one VisionCore.Hailo for every Hailo unit, each its pipeline's network, in order" do
+      assert [
+               %{
+                 id: VisionCore.Hailo.Supervisor,
+                 restart: :transient,
+                 start: {VisionCore.Hailo.Supervisor, :start_link, [opts]}
+               }
+             ] =
+               Components.hailo_children([
+                 {:hailo_segmenter,
+                  name: :road, source: {:camera, :left, :half_jpeg}, hef_path: "/stdc1.hef"},
+                 :stereo,
+                 {:hailo_detector, hef_path: "/objects.hef", score_threshold: 0.5},
+                 {:hailo_detector, name: :signs, hef_path: "/signs.hef", executable: "/bin/hailo"}
+               ])
+
+      assert opts[:networks] == [
+               road: [kind: :segmentation, classes: 19, hef_path: "/stdc1.hef"],
+               detection: [kind: :detection, hef_path: "/objects.hef", score_threshold: 0.5],
+               signs: [kind: :detection, hef_path: "/signs.hef"]
+             ]
+
+      assert opts[:executable] == "/bin/hailo"
+    end
+  end
 end

@@ -19,14 +19,14 @@ QAIRT_ZIP ?= $(HOME)/.cache/nerves_system_arduino_ventuno_q/qairt-$(QAIRT_VERSIO
 QAIRT_INCLUDE := $(MIX_BUILD_PATH)/qairt_include
 QAIRT_HEADERS := $(QAIRT_INCLUDE)/qairt/$(QAIRT_VERSION)/include/QNN
 else
-BINARIES := camera_capture hailo_detect jpeg_codec
+BINARIES := camera_capture hailo jpeg_codec
 FEATURES := --features device
 TARGET_CPU_FLAGS := -C target-cpu=cortex-a76
 endif
 CARGO ?= cargo
 # Every Port binary: priv/ is shared by the host and every target, so a
 # target build removes the ones it does not build.
-ALL_BINARIES := camera_capture hailo_detect jpeg_codec qnn_detect qnn_segment v4l2_capture
+ALL_BINARIES := camera_capture hailo jpeg_codec qnn_detect qnn_segment v4l2_capture
 
 SYSROOT := $(NERVES_SDK_SYSROOT)
 RUST_TARGET := $(TARGET_ARCH)-unknown-$(TARGET_OS)-$(TARGET_ABI)
@@ -34,7 +34,7 @@ RUST_TARGET_ENV := $(subst -,_,$(RUST_TARGET))
 RUST_TARGET_ENV_UPPER := $(shell echo $(RUST_TARGET_ENV) | tr a-z A-Z)
 RUST_OUT := $(RUST_DIR)/target/$(RUST_TARGET)/release
 
-# bindgen's clang (libcamera-sys, hailo_detect) needs the cross g++
+# bindgen's clang (libcamera-sys, hailo) needs the cross g++
 # headers, which it does not find on its own.
 GCC_TRIPLE := $(shell $(CC) -dumpmachine)
 GCC_VERSION := $(shell $(CC) -dumpfullversion)

@@ -3,13 +3,15 @@ title: Road segmentation
 description: Classify each part of a camera's image and sort the stereo points it sees into road and off-road clouds for a navigation stack.
 ---
 
-Sort the stereo points a camera of its own sees into road and off-road clouds, for a navigation stack. A segmentation pipeline classifies each part of the camera's image among the 19 Cityscapes classes, `road` among them. You need an Arduino VENTUNO Q, whose NPU runs the model, and a camera of its own ([A camera of its own](./cameras.md)). The clouds also need the camera's calibration and pose.
+Sort the stereo points a camera of its own sees into road and off-road clouds, for a navigation stack. A segmentation pipeline classifies each part of the camera's image among the 19 Cityscapes classes, `road` among them. You need an accelerator to run the model, an Arduino VENTUNO Q's NPU or a Raspberry Pi 5's Hailo-8, and a camera of its own ([A camera of its own](./cameras.md)). The clouds also need the camera's calibration and pose.
 
 ## Declare the pipeline
 
 The pipeline takes a camera source only, `{:camera, name}` or `{:camera, name, output}`, in colour. The stereo pair's images are grey, and road models are trained on colour.
 
 The `:qnn_segmenter` component runs it on the VENTUNO Q's NPU, in the `qnn_segment` Port behind `VisionCore.Segmentation.Backend.Qnn`. It runs its model as the detection Port does ([On the VENTUNO Q's NPU](./detection.md#on-the-ventuno-qs-npu)). The board generates its context binary on first boot, into `/data/vision/qnn/<name>`, and the Port holds a power vote set by `performance:` and `rpc_polling_us:`.
+
+The `:hailo_segmenter` component runs it on a Raspberry Pi 5's Hailo-8, through the `hailo` Port that every Hailo pipeline shares ([VisionCore.Hailo](../../vision/core/lib/vision_core/hailo.ex)): HailoRT's scheduler gives the detection and segmentation models the device in turn. `hef_path` names a HEF whose argmax is in-graph, scoring the 19 Cityscapes classes, such as Hailo's `stdc1`. `cell_pixels` (8) is the side of the cells a class stands for, in the model's input pixels: the Port answers one class a cell rather than one a pixel.
 
 With the OVCS1 reference vehicle's colour camera, `:center`, and its `:half` output, it reads as below; it works the same with your camera:
 

@@ -1,5 +1,5 @@
 [package]
-name = "hailo_detect"
+name = "hailo"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,6 +9,7 @@ device = ["dep:bindgen"]
 [dependencies]
 detection = { path = "../detection" }
 framing = { path = "../framing" }
+segmentation = { path = "../segmentation" }
 
 [build-dependencies]
 bindgen = { version = "0.70", optional = true }

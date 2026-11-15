@@ -157,60 +157,49 @@ defmodule VisionCore.Detection.SupervisorTest do
     log = capture_log(fn -> assert Supervisor.start_link(backend: Hailo) == :ignore end)
 
     assert log =~ "failed to start, detection down"
-    assert log =~ "hef_path"
+    assert log =~ "VisionCore.Hailo is not running"
   end
 
   describe "the Hailo-8" do
     @hailo [backend: Hailo, hef_path: "/missing.hef"]
 
-    test "a Hailo unit claims the device before its backend starts; another unit claims nothing" do
-      {:ok, {_flags, [claim, backend | _rest]}} = Supervisor.init(@hailo ++ [name: :road])
+    test "a Hailo unit watches the shared VisionCore.Hailo instead of starting a backend" do
+      {:ok, {_flags, [watch, pipeline | _rest]}} = Supervisor.init(@hailo ++ [name: :road])
 
-      assert %{start: {Hailo.Device, :start_link, [[pipeline: :road]]}} = claim
-      assert %{start: {Hailo, :start_link, _options}} = backend
+      assert %{
+               start:
+                 {VisionCore.Inference.Watch, :start_link,
+                  [[server: VisionCore.Hailo, unit: :road]]}
+             } =
+               watch
+
+      assert %{start: {Pipeline, :start_link, [pipeline_options]}} = pipeline
+      assert pipeline_options[:backend_server] == {VisionCore.Hailo, :road}
 
       {:ok, {_flags, [stub | _rest]}} = Supervisor.init(@options)
       assert %{start: {Stub, :start_link, _options}} = stub
     end
 
-    test "a second Hailo unit is left down, saying the Hailo-8 serves another pipeline; the first runs" do
-      Process.flag(:trap_exit, true)
-      first = start_supervised!({Supervisor, @hailo})
-
-      log =
-        capture_log(fn -> assert Supervisor.start_link(@hailo ++ [name: :road]) == :ignore end)
-
-      assert log =~ "VisionCore.Detection.Supervisor failed to start, road down"
-      assert log =~ "the Hailo-8 already serves another pipeline, :detection"
-      refute GenServer.whereis(VisionCore.Pipelines.server(Supervisor, :road))
-      assert Process.alive?(first)
-      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
-    end
-
-    test "a Hailo unit runs beside a unit on another backend" do
-      start_supervised!({Supervisor, @hailo})
-
+    test "a Hailo unit restarts its pipeline when VisionCore.Hailo restarts" do
       start_supervised!(
-        Elixir.Supervisor.child_spec({Supervisor, @options ++ [name: :road]}, id: :road)
+        {VisionCore.Hailo, networks: [detection: [kind: :detection, hef_path: "/missing.hef"]]}
       )
 
-      assert Process.whereis(Hailo.Device)
-      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
-      assert GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :road))
-    end
-
-    test "a backend restart keeps the claim" do
       start_supervised!({Supervisor, @hailo})
-      claim = Process.whereis(Hailo.Device)
-      backend = GenServer.whereis(VisionCore.Pipelines.server(Hailo, :detection))
+      pipeline = GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection))
 
-      Process.exit(backend, :kill)
+      stop_supervised!(VisionCore.Hailo)
+
+      start_supervised!(
+        {VisionCore.Hailo, networks: [detection: [kind: :detection, hef_path: "/missing.hef"]]}
+      )
 
       eventually(fn ->
-        GenServer.whereis(VisionCore.Pipelines.server(Hailo, :detection)) not in [nil, backend]
+        GenServer.whereis(VisionCore.Pipelines.server(Pipeline, :detection)) not in [
+          nil,
+          pipeline
+        ]
       end)
-
-      assert Process.whereis(Hailo.Device) == claim
     end
   end
 
@@ -226,11 +215,11 @@ defmodule VisionCore.Detection.SupervisorTest do
     assert Supervisor.split_backend_options(
              backend: VisionCore.Detection.Backend.Hailo,
              hef_path: "/models/m.hef",
-             executable: "/bin/hailo_detect",
+             executable: "/bin/hailo",
              outline_segments: 2
            ) ==
              {VisionCore.Detection.Backend.Hailo,
-              [hef_path: "/models/m.hef", executable: "/bin/hailo_detect"]}
+              [hef_path: "/models/m.hef", executable: "/bin/hailo"]}
   end
 
   test "keeps every QNN option to the backend" do
@@ -282,7 +271,7 @@ defmodule VisionCore.Detection.SupervisorTest do
              ]
     end
 
-    test "its backends: the one each component names, the Hailo one by default, with its server" do
+    test "its backends: the one each component names, the Hailo one by default, with its server, the shared one for Hailo" do
       assert Supervisor.backends(config([{:stereo, []}, :qnn_detector])) ==
                [
                  {VisionCore.Detection.Backend.Qnn,
@@ -290,14 +279,14 @@ defmodule VisionCore.Detection.SupervisorTest do
                ]
 
       assert Supervisor.backends(config([{:hailo_detector, hef_path: "/m.hef"}])) ==
-               [{Hailo, VisionCore.Pipelines.server(Hailo, :detection)}]
+               [{Hailo, {VisionCore.Hailo, :detection}}]
 
       assert Supervisor.backends(config([{:detector, backend: Stub}])) == [
                {Stub, VisionCore.Pipelines.server(Stub, :detection)}
              ]
 
       assert Supervisor.backends(config([:detector])) == [
-               {Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+               {Hailo, {VisionCore.Hailo, :detection}}
              ]
     end
 
@@ -306,7 +295,7 @@ defmodule VisionCore.Detection.SupervisorTest do
 
       assert Supervisor.backends(config(components)) == [
                {Stub, VisionCore.Pipelines.server(Stub, :road)},
-               {Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+               {Hailo, {VisionCore.Hailo, :detection}}
              ]
     end
 
@@ -316,7 +305,7 @@ defmodule VisionCore.Detection.SupervisorTest do
       assert Supervisor.pipelines(config(components)) ==
                [
                  {:road, Stub, VisionCore.Pipelines.server(Stub, :road)},
-                 {:detection, Hailo, VisionCore.Pipelines.server(Hailo, :detection)}
+                 {:detection, Hailo, {VisionCore.Hailo, :detection}}
                ]
     end
 
