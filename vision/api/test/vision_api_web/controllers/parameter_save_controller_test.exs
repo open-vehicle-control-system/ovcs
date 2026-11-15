@@ -24,7 +24,7 @@ defmodule VisionApiWeb.ParameterSaveControllerTest do
     assert unsaved(conn) == 0
   end
 
-  test "POST /api/parameter-saves answers 503 when the values cannot be stored", %{conn: conn} do
+  test "POST /api/parameter-saves answers 503 when the values cannot be saved", %{conn: conn} do
     :sys.replace_state(VisionCore.Parameters, &%{&1 | store: VisionApiWeb.FailingStore})
     set("test.disparity.p1", 12)
 

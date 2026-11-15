@@ -667,7 +667,7 @@ defmodule VisionCore.ParametersTest do
     end
 
     @tag saved: %{"stereo.disparity.p2" => 70, "stereo.cameras.exposure_us" => 5000}
-    test "save stores changed values, drops values back at their default and saved automatic values",
+    test "save writes changed values, drops values back at their default and saved automatic values",
          %{server: server} do
       start_owner(server, &match_groups/1)
       start_owner(server, &cameras_groups(&1, true))
@@ -724,7 +724,7 @@ defmodule VisionCore.ParametersTest do
     end
 
     @tag store: FailingStore
-    test "set_and_save keeps the value applied and unsaved when it cannot be stored",
+    test "set_and_save keeps the value applied and unsaved when it cannot be saved",
          %{server: server} do
       {owner, _agent} = start_owner(server, &match_groups/1)
 

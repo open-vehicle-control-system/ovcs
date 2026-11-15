@@ -140,8 +140,8 @@ defmodule VisionCore.Parameters do
   def set(server \\ __MODULE__, id, value), do: GenServer.call(server, {:set, id, value})
 
   @doc """
-  `set/3`, then stores the value of parameter `id` alone, as `save/1` would;
-  other unsaved changes stay unsaved. A value applied but not stored is
+  `set/3`, then saves the value of parameter `id` alone, as `save/1` would;
+  other unsaved changes stay unsaved. A value applied but not saved is
   answered as an error and stays an unsaved change.
   """
   @spec set_and_save(GenServer.server(), id(), term()) ::
@@ -150,9 +150,9 @@ defmodule VisionCore.Parameters do
     do: GenServer.call(server, {:set_and_save, id, value})
 
   @doc """
-  Stores the value of every live parameter that differs from its default and
+  Saves the value of every live parameter that differs from its default and
   deletes the saved value of the others, in one write. Values set by an
-  automatic mode are not stored. Returns the ids whose saved value changed.
+  automatic mode are not saved. Returns the ids whose saved value changed.
   """
   @spec save(GenServer.server()) :: {:ok, [id()]} | {:error, String.t()}
   def save(server \\ __MODULE__), do: GenServer.call(server, :save)
@@ -264,7 +264,7 @@ defmodule VisionCore.Parameters do
       {{:ok, _parameter}, state} ->
         declared = find(state, id)
 
-        case store_values(state, [declared]) do
+        case save_values(state, [declared]) do
           {:ok, _ids, state} ->
             {parameter, state} = read_parameter(state, declared)
             {:reply, {:ok, parameter}, state}
@@ -285,7 +285,7 @@ defmodule VisionCore.Parameters do
         &(&1.applies == :build or MapSet.member?(state.unapplied_saved, &1.id))
       )
 
-    case store_values(state, parameters) do
+    case save_values(state, parameters) do
       {:ok, ids, state} -> {:reply, {:ok, ids}, state}
       {:error, reason, state} -> {:reply, {:error, reason}, state}
     end
@@ -550,8 +550,8 @@ defmodule VisionCore.Parameters do
     end
   end
 
-  # Stores the values of `parameters`; a failed write keeps the unsaved changes.
-  defp store_values(state, parameters) do
+  # Saves the values of `parameters`; a failed write keeps the unsaved changes.
+  defp save_values(state, parameters) do
     {values, state} = read_values(state, Enum.flat_map(parameters, &related_ids(state, &1)))
     readable = Enum.reject(parameters, &is_nil(values[&1.id]))
     rows = Enum.flat_map(readable, &saved_row(&1, values, state))
