@@ -1,7 +1,7 @@
-defmodule VisionCore.Debug.PngTest do
+defmodule VisionCore.Snapshot.PngTest do
   use ExUnit.Case, async: true
 
-  alias VisionCore.Debug.Png
+  alias VisionCore.Snapshot.Png
   alias VisionCore.TestPng
 
   test "writes a grey, a 16-bit and an RGB image a decoder reads back" do

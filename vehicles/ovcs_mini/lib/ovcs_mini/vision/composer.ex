@@ -45,7 +45,7 @@ defmodule OvcsMini.Vision.Composer do
       exporters: [
         {VisionCore.Ros2.ZenohExporter,
          heartbeat: [], stereo: [publish_rectified_image: true], detections: []},
-        {VisionCore.Debug.Exporter, []}
+        {VisionCore.Snapshot.Exporter, []}
       ]
     }
   end

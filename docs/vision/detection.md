@@ -41,7 +41,7 @@ Some names are reserved: those that collide with a ROS 2 topic segment under the
 
 The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
 
-Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The Debug exporter reads the pipeline `detection` only, the one a detector without a name runs.
+Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The snapshot exporter reads the pipeline `detection` only, the one a detector without a name runs.
 
 ## Settings
 

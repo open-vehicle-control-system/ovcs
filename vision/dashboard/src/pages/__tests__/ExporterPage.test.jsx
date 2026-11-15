@@ -24,21 +24,21 @@ const recorder = {
   ]
 }
 
-const debug = {
-  id: 'debug',
-  name: 'Debug',
-  module: 'VisionCore.Debug.Exporter',
+const snapshot = {
+  id: 'snapshot',
+  name: 'Snapshot',
+  module: 'VisionCore.Snapshot.Exporter',
   status: { level: 'ok', detail: 'Ready' },
   outputs: [],
   actions: [
-    { name: 'export', label: 'Export', description: 'Records a burst and answers it as a zip.' },
+    { name: 'take', label: 'Take snapshot', description: 'Records a burst and answers it as a zip.' },
     { name: 'clear', label: 'Clear', description: 'Forgets the last recording.' }
   ]
 }
 
 describe('ExporterPage', () => {
   beforeEach(() => {
-    useExporters.setState({ exporters: [recorder, debug] })
+    useExporters.setState({ exporters: [recorder, snapshot] })
     useStatus.setState({ snapshot: null })
     runExporterAction.mockReset()
   })
@@ -93,11 +93,11 @@ describe('ExporterPage', () => {
   })
 
   it('shows a button per action of an exporter without a page of its own', () => {
-    render(<ExporterPage id="debug" />)
+    render(<ExporterPage id="snapshot" />)
 
     const actions = screen.getAllByRole('button')
-    expect(actions.map((button) => button.textContent)).toEqual(['Export', 'Clear'])
-    expect(screen.getByRole('button', { name: 'Export' }).getAttribute('aria-describedby')).toBe(
+    expect(actions.map((button) => button.textContent)).toEqual(['Take snapshot', 'Clear'])
+    expect(screen.getByRole('button', { name: 'Take snapshot' }).getAttribute('aria-describedby')).toBe(
       screen.getByText('Records a burst and answers it as a zip.').id
     )
     expect(screen.getByText('Forgets the last recording.')).toBeTruthy()
@@ -134,51 +134,51 @@ describe('ExporterPage', () => {
       vi.useFakeTimers()
       let finish
       runExporterAction.mockReturnValue(new Promise((resolve) => (finish = resolve)))
-      render(<ExporterPage id="debug" />)
+      render(<ExporterPage id="snapshot" />)
 
-      fireEvent.click(screen.getByRole('button', { name: 'Export' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Take snapshot' }))
 
-      expect(runExporterAction).toHaveBeenCalledWith('debug', 'export')
+      expect(runExporterAction).toHaveBeenCalledWith('snapshot', 'take')
       const running = screen.getByRole('button', { name: 'Running…' })
       expect(running.disabled).toBe(true)
       expect(screen.getByRole('button', { name: 'Clear' }).disabled).toBe(true)
 
       const blob = new Blob(['zip'])
-      await act(async () => finish({ kind: 'file', blob, filename: 'vision-export.zip' }))
+      await act(async () => finish({ kind: 'file', blob, filename: 'vision-snapshot.zip' }))
 
       expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
       const link = click.mock.contexts[0]
-      expect(link.download).toBe('vision-export.zip')
+      expect(link.download).toBe('vision-snapshot.zip')
       expect(link.getAttribute('href')).toBe('blob:0')
       expect(URL.revokeObjectURL).not.toHaveBeenCalled()
 
       vi.runAllTimers()
       expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:0')
-      expect(screen.getByRole('button', { name: 'Export' }).disabled).toBe(false)
+      expect(screen.getByRole('button', { name: 'Take snapshot' }).disabled).toBe(false)
       expect(screen.queryByRole('alert')).toBeNull()
     })
 
     it("shows the error's detail when the action fails", async () => {
-      runExporterAction.mockRejectedValue(new Error('exporter debug is busy'))
-      render(<ExporterPage id="debug" />)
+      runExporterAction.mockRejectedValue(new Error('exporter snapshot is busy'))
+      render(<ExporterPage id="snapshot" />)
 
-      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export' })))
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Take snapshot' })))
 
-      expect(screen.getByRole('alert').textContent).toBe('exporter debug is busy')
+      expect(screen.getByRole('alert').textContent).toBe('exporter snapshot is busy')
       expect(click).not.toHaveBeenCalled()
-      expect(screen.getByRole('button', { name: 'Export' }).disabled).toBe(false)
+      expect(screen.getByRole('button', { name: 'Take snapshot' }).disabled).toBe(false)
     })
 
     it('shows the result of an action that answers JSON, and drops it and an error on the next run', async () => {
       runExporterAction.mockResolvedValueOnce({ kind: 'json', data: { cleared: 3 } })
-      render(<ExporterPage id="debug" />)
+      render(<ExporterPage id="snapshot" />)
 
       await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })))
       expect(JSON.parse(screen.getByRole('status').textContent)).toEqual({ cleared: 3 })
       expect(click).not.toHaveBeenCalled()
 
-      runExporterAction.mockRejectedValueOnce(new Error('exporter debug is busy'))
-      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export' })))
+      runExporterAction.mockRejectedValueOnce(new Error('exporter snapshot is busy'))
+      await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Take snapshot' })))
       expect(screen.queryByRole('status')).toBeNull()
       expect(screen.getByRole('alert')).toBeTruthy()
 

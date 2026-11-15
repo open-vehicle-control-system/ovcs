@@ -20,7 +20,7 @@ defmodule VisionApiWeb.JsonApiTest do
           {:patch, "/api/saved-calibrations/%FF"},
           {:delete, "/api/saved-calibrations/%FF"},
           {:post, "/api/exporters/%FF/actions/export"},
-          {:post, "/api/exporters/debug/actions/%C3%28"}
+          {:post, "/api/exporters/snapshot/actions/%C3%28"}
         ] do
       test "answers a JSON:API 400 to #{method |> to_string() |> String.upcase()} #{path}",
            %{conn: conn} do

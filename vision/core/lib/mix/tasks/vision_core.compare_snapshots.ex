@@ -1,33 +1,33 @@
-defmodule Mix.Tasks.VisionCore.CompareExports do
-  @shortdoc "Compares two vision debug exports"
+defmodule Mix.Tasks.VisionCore.CompareSnapshots do
+  @shortdoc "Compares two snapshots of the vision unit"
 
   @moduledoc """
-  Compares two zips of the vision unit's debug exporter, to see what a
-  change did and whether it exceeds the noise:
+  Compares two snapshots of the vision unit (`VisionCore.Snapshot.Exporter`),
+  to see what a change did and whether it exceeds the noise:
 
-      mix vision_core.compare_exports A.zip B.zip [--out DIR]
+      mix vision_core.compare_snapshots A.zip B.zip [--out DIR]
 
-  Prints, B read against A: which export is which, with the hostname,
+  Prints, B read against A: which snapshot is which, with the hostname,
   time, firmware, change age, changes during the burst and status
   availability its manifest gives; the parameters whose value differs; the
-  figures both exports measured, with their change and whether it stays
+  figures both snapshots measured, with their change and whether it stays
   within the spread; the stages' timings; and how the last pairs' pixels
-  differ. A figure or a stage only one export has is named below its
+  differ. A figure or a stage only one snapshot has is named below its
   table. It writes the difference images of the last pairs,
   `disparity-diff.png` and `depth-diff.png`, to `DIR`, `compare-out` by
-  default. See `VisionCore.Debug.Compare` for what each holds.
+  default. See `VisionCore.Snapshot.Compare` for what each holds.
 
   Read a figure's change as noise when it is within the spread. The
   figures of the status snapshots are never judged: they read `status
   figure, not judged`. A figure of the pairs measured on fewer than 3
-  samples in either export has no spread to judge by and reads `too few
+  samples in either snapshot has no spread to judge by and reads `too few
   samples`. Numbers are printed with 4 significant digits.
   """
   use Mix.Task
 
-  alias VisionCore.Debug.Compare
+  alias VisionCore.Snapshot.Compare
 
-  @usage "mix vision_core.compare_exports A.zip B.zip [--out DIR]"
+  @usage "mix vision_core.compare_snapshots A.zip B.zip [--out DIR]"
   @minimum_samples Compare.minimum_samples()
   @significant_digits 4
   @smallest_fixed 1.0e-4
@@ -58,7 +58,7 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
     Mix.shell().info(
       Enum.join(
         [
-          export_table(report.exports, path_a, path_b),
+          snapshot_table(report.snapshots, path_a, path_b),
           parameter_table(report.parameters),
           figure_table(report.figures, report.figures_only_in),
           timing_table(report.timings, report.timings_only_in),
@@ -83,11 +83,11 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
     error in ArgumentError -> Mix.raise(Exception.message(error))
   end
 
-  defp export_table(exports, path_a, path_b) do
-    "Exports\n" <>
+  defp snapshot_table(snapshots, path_a, path_b) do
+    "Snapshots\n" <>
       table(
         [
-          "export",
+          "snapshot",
           "hostname",
           "time",
           "firmware",
@@ -96,7 +96,7 @@ defmodule Mix.Tasks.VisionCore.CompareExports do
           "status",
           "file"
         ],
-        for {label, path, manifest} <- [{"A", path_a, exports.a}, {"B", path_b, exports.b}] do
+        for {label, path, manifest} <- [{"A", path_a, snapshots.a}, {"B", path_b, snapshots.b}] do
           [
             label,
             text(manifest.hostname),

@@ -1,7 +1,8 @@
-defmodule VisionCore.Debug.CompareTest do
+defmodule VisionCore.Snapshot.CompareTest do
   use ExUnit.Case, async: false
 
-  alias VisionCore.Debug.{Compare, Export, Png}
+  alias VisionCore.Snapshot
+  alias VisionCore.Snapshot.{Compare, Png}
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.Parameters.Parameter
   alias VisionCore.Stereo.Pair
@@ -17,10 +18,10 @@ defmodule VisionCore.Debug.CompareTest do
   @depth_b [1_100, 2_000, 3_000, 0, 800, 0, 102, 0, 0, 0, 0, 0]
 
   test "lists the parameters that differ" do
-    a = export(parameters: [parameter("stereo.block_size", 5), parameter("camera.gain", 1.5)])
+    a = snapshot(parameters: [parameter("stereo.block_size", 5), parameter("camera.gain", 1.5)])
 
     b =
-      export(
+      snapshot(
         parameters: [
           parameter("stereo.block_size", 7),
           parameter("camera.gain", 1.5),
@@ -35,8 +36,11 @@ defmodule VisionCore.Debug.CompareTest do
   end
 
   test "marks a figure change within the spread" do
-    a = export(matched: [90.0, 92.0, 94.0], sharpness: [100.0, 101.0, 102.0], depth_hz: [29, 31])
-    b = export(matched: [91.0, 93.0, 95.0], sharpness: [110.0, 111.0, 112.0], depth_hz: [49, 51])
+    a =
+      snapshot(matched: [90.0, 92.0, 94.0], sharpness: [100.0, 101.0, 102.0], depth_hz: [29, 31])
+
+    b =
+      snapshot(matched: [91.0, 93.0, 95.0], sharpness: [110.0, 111.0, 112.0], depth_hz: [49, 51])
 
     %{figures: figures} = Compare.compare(a, b)
 
@@ -55,8 +59,8 @@ defmodule VisionCore.Debug.CompareTest do
   end
 
   test "judges a change against the larger of the two spreads" do
-    wide_a = export(matched: [90.0, 92.0, 94.0], sharpness: [100.0, 100.0, 100.0])
-    wide_b = export(matched: [93.0, 93.0, 93.0], sharpness: [99.0, 101.0, 105.0])
+    wide_a = snapshot(matched: [90.0, 92.0, 94.0], sharpness: [100.0, 100.0, 100.0])
+    wide_b = snapshot(matched: [93.0, 93.0, 93.0], sharpness: [99.0, 101.0, 105.0])
 
     %{figures: figures} = Compare.compare(wide_a, wide_b)
 
@@ -70,15 +74,15 @@ defmodule VisionCore.Debug.CompareTest do
 
     assert narrow == 0.0 and sharpness.delta > 1.0 and sharpness.delta < wide
 
-    beyond_b = export(matched: [100.0, 100.0, 100.0])
+    beyond_b = snapshot(matched: [100.0, 100.0, 100.0])
 
     assert %{delta: 8.0, within_spread: false} =
              figure(Compare.compare(wide_a, beyond_b).figures, "matchedPercent")
   end
 
   test "takes a change on fewer than three samples for within the spread" do
-    a = export(interval_ms: 33.0, depth_hz: [29, 31])
-    b = export(interval_ms: 133.0, depth_hz: [49, 51])
+    a = snapshot(interval_ms: 33.0, depth_hz: [29, 31])
+    b = snapshot(interval_ms: 133.0, depth_hz: [49, 51])
 
     %{figures: figures} = Compare.compare(a, b)
 
@@ -90,10 +94,10 @@ defmodule VisionCore.Debug.CompareTest do
   end
 
   test "never judges a figure of the status snapshots, however many samples it has" do
-    a = export(depth_hz: [29, 30, 31, 30], cpu_percent: [40.0, 41.0, 40.0, 41.0])
+    a = snapshot(depth_hz: [29, 30, 31, 30], cpu_percent: [40.0, 41.0, 40.0, 41.0])
 
     b =
-      export(
+      snapshot(
         depth_hz: [49, 50, 51, 50],
         cpu_percent: [40.0, 41.0, 40.0, 41.0],
         matched: [100.0, 100.0, 100.0]
@@ -109,8 +113,8 @@ defmodule VisionCore.Debug.CompareTest do
   end
 
   test "compares the stages' timings" do
-    a = export(total_ms: [30.0, 31.0, 32.0])
-    b = export(total_ms: [40.0, 41.0, 42.0])
+    a = snapshot(total_ms: [30.0, 31.0, 32.0])
+    b = snapshot(total_ms: [40.0, 41.0, 42.0])
 
     assert %{
              timings: [
@@ -120,22 +124,22 @@ defmodule VisionCore.Debug.CompareTest do
            } = Compare.compare(a, b)
   end
 
-  test "tells the exports apart by their manifests" do
-    a = export(change_age_ms: 2_150, changes_during_burst: 0, firmware: firmware("abc123"))
+  test "tells the snapshots apart by their manifests" do
+    a = snapshot(change_age_ms: 2_150, changes_during_burst: 0, firmware: firmware("abc123"))
 
     b =
-      export_b(
+      snapshot_b(
         hostname: "unit-2",
         change_age_ms: nil,
         changes_during_burst: 1,
         status_available: false,
-        snapshots: [],
+        status_snapshots: [],
         firmware: firmware("def456")
       )
 
-    assert %{exports: %{a: export_a, b: export_b}} = Compare.compare(a, b)
+    assert %{snapshots: %{a: snapshot_a, b: snapshot_b}} = Compare.compare(a, b)
 
-    assert export_a == %{
+    assert snapshot_a == %{
              hostname: "unit-1",
              time: "2026-11-03T14:05:09Z",
              firmware: "abc123",
@@ -144,7 +148,7 @@ defmodule VisionCore.Debug.CompareTest do
              status_available: true
            }
 
-    assert export_b == %{
+    assert snapshot_b == %{
              hostname: "unit-2",
              time: "2026-11-04T08:00:00Z",
              firmware: "def456",
@@ -154,9 +158,9 @@ defmodule VisionCore.Debug.CompareTest do
            }
   end
 
-  test "lists the figures and stages only one export has" do
-    a = export(cpu_percent: [40.0, 41.0], extra_stage: %{decode: 3.0})
-    b = export(extra_stage: %{encode: 2.0})
+  test "lists the figures and stages only one snapshot has" do
+    a = snapshot(cpu_percent: [40.0, 41.0], extra_stage: %{decode: 3.0})
+    b = snapshot(extra_stage: %{encode: 2.0})
 
     report = Compare.compare(a, b)
 
@@ -169,27 +173,27 @@ defmodule VisionCore.Debug.CompareTest do
              Compare.compare(a, a)
   end
 
-  test "counts the pixels matched in one export only" do
-    assert %{pixels: pixels} = Compare.compare(export(), export_b())
+  test "counts the pixels matched in one snapshot only" do
+    assert %{pixels: pixels} = Compare.compare(snapshot(), snapshot_b())
 
     assert %{both: 3, a_only: 1, b_only: 1} = pixels
     assert_in_delta pixels.mean_abs_disparity_px, 3.5, 1.0e-9
     assert_in_delta pixels.mean_abs_depth_mm, 650.5, 1.0e-9
   end
 
-  test "has no mean where the exports share no matched pixel" do
+  test "has no mean where the snapshots share no matched pixel" do
     none = List.duplicate(-1.0, 12)
     no_depth = List.duplicate(0, 12)
 
     assert %{pixels: %{both: 0, mean_abs_disparity_px: nil, mean_abs_depth_mm: nil}} =
              Compare.compare(
-               export(disparity: none, depth: no_depth),
-               export(disparity: none, depth: no_depth)
+               snapshot(disparity: none, depth: no_depth),
+               snapshot(disparity: none, depth: no_depth)
              )
   end
 
   test "makes difference images of the size of the pair" do
-    assert %{images: images} = Compare.compare(export(), export_b())
+    assert %{images: images} = Compare.compare(snapshot(), snapshot_b())
 
     assert Map.keys(images) == ["depth-diff.png", "disparity-diff.png"]
 
@@ -202,25 +206,25 @@ defmodule VisionCore.Debug.CompareTest do
     assert depth.pixels == <<25, 0, 255, 255, 255, 0, 1, 0, 0, 0, 0, 0>>
   end
 
-  test "refuses exports whose images differ in size" do
+  test "refuses snapshots whose images differ in size" do
     assert_raise ArgumentError, ~r/4x3.*6x2/, fn ->
-      Compare.compare(export(), export(size: {6, 2}))
+      Compare.compare(snapshot(), snapshot(size: {6, 2}))
     end
   end
 
-  test "refuses a file that is not an export" do
+  test "refuses a file that is not a snapshot" do
     {:ok, {_name, empty}} = :zip.create(~c"empty.zip", [{~c"empty/README.md", "text"}], [:memory])
 
-    assert_raise ArgumentError, ~r/export B: manifest\.json is missing/, fn ->
-      Compare.compare(export(), empty)
+    assert_raise ArgumentError, ~r/snapshot B: manifest\.json is missing/, fn ->
+      Compare.compare(snapshot(), empty)
     end
 
-    assert_raise ArgumentError, ~r/export A: not a readable zip archive/, fn ->
-      Compare.compare("not a zip", export())
+    assert_raise ArgumentError, ~r/snapshot A: not a readable zip archive/, fn ->
+      Compare.compare("not a zip", snapshot())
     end
   end
 
-  test "names the file and the problem of a malformed export" do
+  test "names the file and the problem of a malformed snapshot" do
     short_disparity = <<1.0::float-32-little>>
 
     cases = [
@@ -238,18 +242,18 @@ defmodule VisionCore.Debug.CompareTest do
     ]
 
     for {changes, problem} <- cases do
-      message = "export B: " <> problem
+      message = "snapshot B: " <> problem
 
       error =
         assert_raise ArgumentError, fn ->
-          Compare.compare(export(), altered(export(), changes))
+          Compare.compare(snapshot(), altered(snapshot(), changes))
         end
 
       assert error.message =~ message
     end
   end
 
-  describe "mix vision_core.compare_exports" do
+  describe "mix vision_core.compare_snapshots" do
     test "the mix task writes the images and prints the tables", %{tmp_dir: directory} do
       a_path = Path.join(directory, "a.zip")
       b_path = Path.join(directory, "b.zip")
@@ -257,7 +261,7 @@ defmodule VisionCore.Debug.CompareTest do
 
       File.write!(
         a_path,
-        export(
+        snapshot(
           parameters: [parameter("stereo.block_size", 5)],
           cpu_percent: [40.0, 41.0],
           extra_stage: %{decode: 3.0},
@@ -267,7 +271,7 @@ defmodule VisionCore.Debug.CompareTest do
 
       File.write!(
         b_path,
-        export_b(
+        snapshot_b(
           hostname: "unit-2",
           changes_during_burst: 1,
           parameters: [parameter("stereo.block_size", 7)],
@@ -278,9 +282,10 @@ defmodule VisionCore.Debug.CompareTest do
 
       output =
         ExUnit.CaptureIO.capture_io(fn ->
-          Mix.Tasks.VisionCore.CompareExports.run([a_path, b_path, "--out", out])
+          Mix.Tasks.VisionCore.CompareSnapshots.run([a_path, b_path, "--out", out])
         end)
 
+      assert output =~ ~r/^Snapshots\nsnapshot\s+hostname\s+time/
       assert output =~ ~r/A\s+unit-1\s+2026-11-03T14:05:09Z.*2150 ms\s+0\s+available\s+\S*a\.zip/
 
       assert output =~
@@ -308,8 +313,8 @@ defmodule VisionCore.Debug.CompareTest do
       a_path = Path.join(directory, "a.zip")
       b_path = Path.join(directory, "b.zip")
       status = [depth_hz: [29, 30, 31, 30], cpu_percent: [nil, nil, nil, nil]]
-      File.write!(a_path, export([sharpness: [0.004588, 0.004592, 0.004596]] ++ status))
-      File.write!(b_path, export([sharpness: [0.005374, 0.005378, 0.005382]] ++ status))
+      File.write!(a_path, snapshot([sharpness: [0.004588, 0.004592, 0.004596]] ++ status))
+      File.write!(b_path, snapshot([sharpness: [0.005374, 0.005378, 0.005382]] ++ status))
 
       output = compare_output(a_path, b_path, directory)
 
@@ -322,20 +327,20 @@ defmodule VisionCore.Debug.CompareTest do
       assert compare_output(b_path, a_path, directory) =~ ~r/sharpnessLeft.*\s-0\.000786\s/
     end
 
-    test "turns a malformed export into an error naming the problem", %{tmp_dir: directory} do
+    test "turns a malformed snapshot into an error naming the problem", %{tmp_dir: directory} do
       good = Path.join(directory, "good.zip")
       bad = Path.join(directory, "bad.zip")
-      File.write!(good, export())
-      File.write!(bad, altered(export(), %{"figures.json" => "{}"}))
+      File.write!(good, snapshot())
+      File.write!(bad, altered(snapshot(), %{"figures.json" => "{}"}))
 
-      assert_raise Mix.Error, ~r/export B: figures\.json has no summary/, fn ->
-        Mix.Tasks.VisionCore.CompareExports.run([good, bad, "--out", directory])
+      assert_raise Mix.Error, ~r/snapshot B: figures\.json has no summary/, fn ->
+        Mix.Tasks.VisionCore.CompareSnapshots.run([good, bad, "--out", directory])
       end
     end
 
-    test "says what it needs when it is not given two exports" do
-      assert_raise Mix.Error, ~r/mix vision_core\.compare_exports A\.zip B\.zip/, fn ->
-        Mix.Tasks.VisionCore.CompareExports.run(["only-one.zip"])
+    test "says what it needs when it is not given two snapshots" do
+      assert_raise Mix.Error, ~r/mix vision_core\.compare_snapshots A\.zip B\.zip/, fn ->
+        Mix.Tasks.VisionCore.CompareSnapshots.run(["only-one.zip"])
       end
     end
 
@@ -343,14 +348,14 @@ defmodule VisionCore.Debug.CompareTest do
       missing = Path.join(directory, "missing.zip")
 
       assert_raise Mix.Error, ~r/cannot read .*missing\.zip/, fn ->
-        Mix.Tasks.VisionCore.CompareExports.run([missing, missing, "--out", directory])
+        Mix.Tasks.VisionCore.CompareSnapshots.run([missing, missing, "--out", directory])
       end
     end
   end
 
   defp compare_output(a_path, b_path, directory) do
     ExUnit.CaptureIO.capture_io(fn ->
-      Mix.Tasks.VisionCore.CompareExports.run([a_path, b_path, "--out", directory])
+      Mix.Tasks.VisionCore.CompareSnapshots.run([a_path, b_path, "--out", directory])
     end)
   end
 
@@ -388,15 +393,15 @@ defmodule VisionCore.Debug.CompareTest do
   defp relative(name, directory),
     do: name |> List.to_string() |> String.replace_prefix(directory <> "/", "")
 
-  defp export(options \\ []) do
-    {_filename, zip} = options |> recording() |> Export.build()
+  defp snapshot(options \\ []) do
+    {_filename, zip} = options |> recording() |> Snapshot.build()
     zip
   end
 
-  defp export_b(options \\ []) do
+  defp snapshot_b(options \\ []) do
     [time: ~U[2026-11-04 08:00:00Z], disparity: @disparity_b, depth: @depth_b]
     |> Keyword.merge(options)
-    |> export()
+    |> snapshot()
   end
 
   defp recording(options) do
@@ -426,8 +431,12 @@ defmodule VisionCore.Debug.CompareTest do
           burst_pair(index, matched, sharpness, total_ms, interval_ms, extra_stage)
         end),
       last_pair: last_pair(width, height, disparity, depth),
-      snapshots:
-        Keyword.get(options, :snapshots, Enum.zip_with(depth_hz, cpu_percent, &snapshot/2)),
+      status_snapshots:
+        Keyword.get(
+          options,
+          :status_snapshots,
+          Enum.zip_with(depth_hz, cpu_percent, &status_snapshot/2)
+        ),
       detections: nil,
       change_age_ms: Keyword.get(options, :change_age_ms),
       changes_during_burst: Keyword.get(options, :changes_during_burst, 0),
@@ -448,7 +457,7 @@ defmodule VisionCore.Debug.CompareTest do
     }
   end
 
-  defp snapshot(depth_hz, cpu_percent),
+  defp status_snapshot(depth_hz, cpu_percent),
     do: %{depth_hz: depth_hz, cpu_percent: cpu_percent, stereo_segment_percent: 50.0}
 
   defp last_pair(width, height, disparity, depth) do

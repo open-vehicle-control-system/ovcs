@@ -1,9 +1,10 @@
-defmodule VisionCore.Debug.Export do
+defmodule VisionCore.Snapshot do
   @moduledoc """
-  The zip a tuner downloads from the debug exporter: a burst of stereo
-  pairs, the unit's state when they were recorded and the last pair's
-  images, as plain files under one directory,
-  `vision-export-<hostname>-<YYYYMMDDTHHMMSSZ>/`. `build/1` is a pure
+  A snapshot of the vision unit, the zip a tuner downloads from
+  `VisionCore.Snapshot.Exporter`: a burst of stereo pairs, the unit's
+  state when they were recorded and the last pair's images, as plain
+  files under one directory,
+  `vision-snapshot-<hostname>-<YYYYMMDDTHHMMSSZ>/`. `build/1` is a pure
   function of the recording it is given; the zip is built in memory.
 
   The `README.md` the zip carries describes each file. JSON field names are
@@ -26,7 +27,7 @@ defmodule VisionCore.Debug.Export do
       as the cameras delivered them, `nil` for the pairs after the ones kept.
     * `:last_pair` — the last `VisionCore.Stereo.Pair`, with its rectified
       images, disparity and depth.
-    * `:snapshots` — the `VisionCore.Status` snapshots of the burst.
+    * `:status_snapshots` — the `VisionCore.Status` snapshots of the burst.
     * `:detections` — what the detector published during the burst, `nil`
       for a unit without detection; written as given.
     * `:change_age_ms` — how long before the burst the last change was, `nil`
@@ -38,8 +39,8 @@ defmodule VisionCore.Debug.Export do
   """
 
   alias VisionCore.Camera.Frame
-  alias VisionCore.Debug.Png
   alias VisionCore.Parameters.Group
+  alias VisionCore.Snapshot.Png
   alias VisionCore.Stereo.Pair
 
   # Jet: dark blue for the lowest disparity, through green, to dark red for the highest.
@@ -55,7 +56,7 @@ defmodule VisionCore.Debug.Export do
   @identity_figures ["index", "captureNs"]
 
   @doc """
-  The export of `recording`, as `{filename, zip}`: the zip's name, and its
+  The snapshot of `recording`, as `{filename, zip}`: the zip's name, and its
   bytes. See the module doc for the recording.
   """
   @spec build(map()) :: {String.t(), binary()}
@@ -72,7 +73,7 @@ defmodule VisionCore.Debug.Export do
 
   defp directory_name(recording) do
     hostname = String.replace(recording.hostname, ~r/[^A-Za-z0-9._-]+/, "-")
-    "vision-export-#{hostname}-#{Calendar.strftime(utc(recording.time), "%Y%m%dT%H%M%SZ")}"
+    "vision-snapshot-#{hostname}-#{Calendar.strftime(utc(recording.time), "%Y%m%dT%H%M%SZ")}"
   end
 
   defp utc(time), do: time |> DateTime.to_unix() |> DateTime.from_unix!()
@@ -137,7 +138,7 @@ defmodule VisionCore.Debug.Export do
   defp depth_coloured_files(nil), do: []
   defp depth_coloured_files(jpeg), do: [{"last/depth-coloured.jpg", jpeg}]
 
-  # The matcher's search range when the pair has it, so exports of one setup colour alike.
+  # The matcher's search range when the pair has it, so snapshots of one setup colour alike.
   defp disparity_colour_range(%Pair{disparity_range: %{}} = pair),
     do: widen(Pair.disparity_bounds(pair))
 
@@ -168,7 +169,7 @@ defmodule VisionCore.Debug.Export do
       "firmware" => camel_keys(recording.firmware),
       "burstPairs" => length(recording.pairs),
       "framesKept" => Enum.count(recording.pairs, & &1.frames),
-      "statusSnapshots" => length(recording.snapshots),
+      "statusSnapshots" => length(recording.status_snapshots),
       "statusAvailable" => recording.status_available,
       "changeAgeMs" => recording.change_age_ms,
       "changesDuringBurst" => recording.changes_during_burst,
@@ -231,12 +232,14 @@ defmodule VisionCore.Debug.Export do
 
   defp figures(recording) do
     pairs = recording.pairs |> Enum.with_index() |> Enum.map(&pair_figures/1)
-    snapshots = recording.snapshots |> Enum.with_index() |> Enum.map(&snapshot_figures/1)
+
+    status_snapshots =
+      recording.status_snapshots |> Enum.with_index() |> Enum.map(&status_snapshot_figures/1)
 
     %{
       "pairs" => pairs,
-      "snapshots" => snapshots,
-      "summary" => Map.merge(summarise(pairs), summarise(snapshots))
+      "snapshots" => status_snapshots,
+      "summary" => Map.merge(summarise(pairs), summarise(status_snapshots))
     }
   end
 
@@ -255,7 +258,7 @@ defmodule VisionCore.Debug.Export do
     })
   end
 
-  defp snapshot_figures({snapshot, index}) do
+  defp status_snapshot_figures({snapshot, index}) do
     %{
       "index" => index,
       "depthHz" => snapshot[:depth_hz],
@@ -330,7 +333,7 @@ defmodule VisionCore.Debug.Export do
     kept = Enum.count(recording.pairs, & &1.frames)
 
     """
-    # Vision unit export
+    # Vision unit snapshot
 
     Taken from `#{recording.hostname}` at #{recording.time |> utc() |> DateTime.to_iso8601()}, \
     firmware revision #{firmware["revision"] || "unknown"}.
@@ -343,7 +346,7 @@ defmodule VisionCore.Debug.Export do
     first #{kept} are kept.
     - #{change_age(recording.change_age_ms)}
     - Something changed during the burst: #{yes_no(recording.changes_during_burst)}.
-    - #{snapshot_count(recording)}
+    - #{status_snapshot_count(recording)}
 
     ## Files
 
@@ -390,9 +393,9 @@ defmodule VisionCore.Debug.Export do
   defp yes_no(0), do: "no"
   defp yes_no(_changes), do: "yes"
 
-  defp snapshot_count(%{status_available: true, snapshots: snapshots}),
+  defp status_snapshot_count(%{status_available: true, status_snapshots: snapshots}),
     do: "The burst holds #{length(snapshots)} status snapshots, one a second."
 
-  defp snapshot_count(_recording),
+  defp status_snapshot_count(_recording),
     do: "The status was not available: there are no status snapshots."
 end

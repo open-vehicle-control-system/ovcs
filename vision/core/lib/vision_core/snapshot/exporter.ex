@@ -1,26 +1,26 @@
-defmodule VisionCore.Debug.Exporter do
+defmodule VisionCore.Snapshot.Exporter do
   @moduledoc """
-  Records what the stereo unit sees and computes over a short burst, with
-  the state it was in, as one zip a tuner downloads to compare the unit's
-  results before and after a change of parameters
-  (`VisionCore.Debug.Export` describes the zip). A `VisionCore.Exporter`,
-  which `VisionCore.Exporters` lists as `debug`, "Debug"; a vehicle
-  enables it by listing `{VisionCore.Debug.Exporter, []}` among its
-  composer's `exporters:`.
+  Takes snapshots of the vision unit: what the stereo unit sees and
+  computes over a short burst, with the state it was in, as one zip a
+  tuner downloads to compare the unit's results before and after a change
+  of parameters (`VisionCore.Snapshot` describes the zip). A
+  `VisionCore.Exporter`, which `VisionCore.Exporters` lists as `snapshot`,
+  "Snapshot"; a vehicle enables it by listing
+  `{VisionCore.Snapshot.Exporter, []}` among its composer's `exporters:`.
 
   It reads the stereo unit's pairs, and its detections when the
   configuration has a detector. Without a stereo unit it is not started
-  (`check/1`). Between exports it does nothing with them.
+  (`check/1`). Between snapshots it does nothing with them.
 
-  ## The export action
+  ## The take action
 
-  `export` answers `{:file, filename, "application/zip", zip}`. One export
-  runs at a time: another asked for meanwhile is answered
-  `{:error, :busy}`. The status is "Exporting" from the request until the
-  zip is answered, "Ready" otherwise.
+  `take` answers `{:file, filename, "application/zip", zip}`. One snapshot
+  is taken at a time: another asked for meanwhile is answered
+  `{:error, :busy}`. The status is "Taking a snapshot" from the request
+  until the zip is answered, "Ready" otherwise.
 
     1. **Settle.** While the last change (`:last_change`) is under
-       `:settle_ms` old, the export waits until it is that old, and
+       `:settle_ms` old, the snapshot waits until it is that old, and
        checks again then: the temporal filter carries history.
     2. **Burst.** It records the pairs the pipeline publishes for at least
        `:burst_ms` and at least `:burst_pairs` pairs, whichever ends
@@ -29,13 +29,13 @@ defmodule VisionCore.Debug.Exporter do
        newest pair waiting (`VisionCore.Exporter.Runner`), so a pair can be
        skipped; a longer `intervalMs` shows where.
     3. **Answer.** It then collects the unit's state (`:unit_state`),
-       encodes the export, off the runner, and answers. An export that
+       encodes the snapshot, off the runner, and answers. A snapshot that
        raises, as on a unit whose stages leave the last pair without
        images, disparity or depth, answers `{:error, {:failed, message}}`.
 
-  `:deadline_ms` after the request, an export whose burst has not ended
+  `:deadline_ms` after the request, a snapshot whose burst has not ended
   answers `{:error, {:timeout, message}}`, naming how many pairs came;
-  nothing partial is answered. An export whose caller has gone runs on
+  nothing partial is answered. A snapshot whose caller has gone runs on
   to its end, and the exporter is then ready again.
 
   ## What a recording holds
@@ -58,7 +58,7 @@ defmodule VisionCore.Debug.Exporter do
       its end (`changesDuringBurst`, 1 or 0).
     * The depth coloured as the dashboard colours it, blue at infinity
       whatever range the dashboard shows, so that the colours of two
-      exports compare.
+      snapshots compare.
 
   ## Options
 
@@ -71,7 +71,7 @@ defmodule VisionCore.Debug.Exporter do
     * `:frames_kept` (`30`) — how many of the burst's first pairs keep
       their raw frames.
     * `:snapshot_delay_ms` (`1_000`) — how long after the burst starts a
-      status snapshot must arrive to be kept: the window a snapshot
+      status snapshot must arrive to be kept: the window a status snapshot
       describes.
     * `:last_change` — `(-> integer() | nil)`, the monotonic time in
       milliseconds of the last change to what the stages compute or the
@@ -81,7 +81,7 @@ defmodule VisionCore.Debug.Exporter do
       answer.
     * `:unit_state` — `(-> map())`, the unit's `:firmware`, `:parameters`,
       `:configuration`, `:calibration` and `:hostname`, as
-      `VisionCore.Debug.Export` takes them; by default
+      `VisionCore.Snapshot` takes them; by default
       `OvcsVehicle.FirmwareInfo.current/0`, `VisionCore.Parameters.groups/0`,
       `VisionCore.settings/0`, the stereo unit's calibration files
       (`VisionCore.Stereo.Supervisor.camera_options/1`) and
@@ -91,7 +91,8 @@ defmodule VisionCore.Debug.Exporter do
       with the runner's pid from a process of its own, since Status
       answers a subscription by asking each exporter's runner for its
       status; `VisionCore.Status.subscribe/1` and `unsubscribe/1` by
-      default. A subscribe that exits leaves the export without snapshots.
+      default. A subscribe that exits leaves the snapshot without status
+      snapshots.
     * `:jpeg_codec` (`VisionCore.Jpeg`) and `:config` (the active
       `VisionCore.Config`) — the `VisionCore.Jpeg` instance the coloured
       depth is encoded on, without which it is left out, and the
@@ -102,7 +103,7 @@ defmodule VisionCore.Debug.Exporter do
   alias OvcsVehicle.FirmwareInfo
   alias VisionCore.{Parameters, Preview, Status}
   alias VisionCore.Camera.Frame
-  alias VisionCore.Debug.Export
+  alias VisionCore.Snapshot
   alias VisionCore.Stereo.{Pair, Pipeline}
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
@@ -116,13 +117,13 @@ defmodule VisionCore.Debug.Exporter do
   @last_pair_fields [:left, :right, :disparity_bytes, :depth]
 
   @impl VisionCore.Exporter
-  def describe(_options), do: %{id: :debug, name: "Debug"}
+  def describe(_options), do: %{id: :snapshot, name: "Snapshot"}
 
   @impl VisionCore.Exporter
   def check(options) do
     if VisionCore.Exporter.output_key(:stereo_pair, config(options)),
       do: :ok,
-      else: {:error, "no stereo unit to export"}
+      else: {:error, "no stereo unit to take a snapshot of"}
   end
 
   @impl VisionCore.Exporter
@@ -136,8 +137,8 @@ defmodule VisionCore.Debug.Exporter do
   def actions(_options),
     do: [
       %{
-        name: :export,
-        label: "Export",
+        name: :take,
+        label: "Take snapshot",
         description: "A burst of pairs and the unit's state, as a zip"
       }
     ]
@@ -181,13 +182,13 @@ defmodule VisionCore.Debug.Exporter do
 
   @impl VisionCore.Exporter
   def status(%{recording: nil}), do: {:ok, "Ready"}
-  def status(_state), do: {:ok, "Exporting"}
+  def status(_state), do: {:ok, "Taking a snapshot"}
 
   @impl VisionCore.Exporter
-  def handle_action(:export, _params, _from, %{recording: %{}} = state),
+  def handle_action(:take, _params, _from, %{recording: %{}} = state),
     do: {:reply, {:error, :busy}, state}
 
-  def handle_action(:export, _params, from, state) do
+  def handle_action(:take, _params, from, state) do
     reference = make_ref()
     deadline = Process.send_after(self(), {__MODULE__, :deadline, reference}, state.deadline_ms)
     recording = %{reference: reference, from: from, phase: :settling, deadline: deadline}
@@ -241,8 +242,8 @@ defmodule VisionCore.Debug.Exporter do
       ),
       do: {:ok, update_in(state.recording.status_available, &(&1 or subscribed))}
 
-  def handle_info({:vision_status, snapshot}, %{recording: %{phase: :burst}} = state),
-    do: {:ok, record_snapshot(state, snapshot)}
+  def handle_info({:vision_status, status_snapshot}, %{recording: %{phase: :burst}} = state),
+    do: {:ok, record_status_snapshot(state, status_snapshot)}
 
   def handle_info(_message, state), do: {:ok, state}
 
@@ -276,7 +277,7 @@ defmodule VisionCore.Debug.Exporter do
       duration_reached: false,
       status_subscription: subscribe_to_status(state.status, recording.reference),
       status_available: false,
-      snapshots: [],
+      status_snapshots: [],
       detections: []
     }
 
@@ -344,10 +345,11 @@ defmodule VisionCore.Debug.Exporter do
   defp interval_ms([previous | _pairs], capture_ns),
     do: (capture_ns - previous.capture_ns) / 1.0e6
 
-  defp record_snapshot(%{recording: recording} = state, snapshot) do
+  defp record_status_snapshot(%{recording: recording} = state, status_snapshot) do
     if now_ms() - recording.started_ms >= state.snapshot_delay_ms do
-      snapshots = [snapshot | recording.snapshots]
-      %{state | recording: %{recording | snapshots: snapshots, status_available: true}}
+      status_snapshots = [status_snapshot | recording.status_snapshots]
+      recording = %{recording | status_snapshots: status_snapshots, status_available: true}
+      %{state | recording: recording}
     else
       state
     end
@@ -382,7 +384,7 @@ defmodule VisionCore.Debug.Exporter do
       time: recording.time,
       pairs: Enum.reverse(recording.pairs),
       last_pair: recording.last_pair,
-      snapshots: Enum.reverse(recording.snapshots),
+      status_snapshots: Enum.reverse(recording.status_snapshots),
       detections: if(state.reads_detections, do: Enum.reverse(recording.detections)),
       changed_ms: recording.changed_ms,
       change_age_ms: recording.change_age_ms,
@@ -391,12 +393,12 @@ defmodule VisionCore.Debug.Exporter do
   end
 
   defp answer(from, reference, runner, build) do
-    VisionCore.Exporter.reply(from, export_result(build))
+    VisionCore.Exporter.reply(from, snapshot_result(build))
   after
     send(runner, {__MODULE__, :answered, reference})
   end
 
-  defp export_result(build) do
+  defp snapshot_result(build) do
     {filename, zip} = build.()
     {:file, filename, "application/zip", zip}
   rescue
@@ -414,7 +416,7 @@ defmodule VisionCore.Debug.Exporter do
     |> Map.put(:changes_during_burst, changes_during_burst)
     |> Map.put(:detections, burst.detections && Enum.map(burst.detections, &detection_entry/1))
     |> Map.put(:depth_coloured_jpeg, depth_jpeg(burst.last_pair, jpeg_codec))
-    |> Export.build()
+    |> Snapshot.build()
   end
 
   defp check_last_pair!(pair) do
@@ -425,7 +427,7 @@ defmodule VisionCore.Debug.Exporter do
       missing ->
         raise ArgumentError,
               "the last pair has no #{Enum.map_join(missing, ", ", &inspect/1)}, which the " <>
-                "export needs: the stereo unit's stages do not provide it"
+                "snapshot needs: the stereo unit's stages do not provide it"
     end
   end
 

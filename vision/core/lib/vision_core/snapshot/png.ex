@@ -1,6 +1,6 @@
-defmodule VisionCore.Debug.Png do
+defmodule VisionCore.Snapshot.Png do
   @moduledoc """
-  A PNG writer and reader for the debug export's images, on Erlang's
+  A PNG writer and reader for the images of a `VisionCore.Snapshot`, on Erlang's
   `:zlib` and `:erlang.crc32/1`: 8-bit grey, 16-bit grey and 8-bit RGB.
   Each row is written unfiltered and the image is one `IDAT` chunk, so a
   file is larger than an optimising encoder's and cheap to make.

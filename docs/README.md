@@ -45,7 +45,7 @@ These guides are published on [ovcs.be/docs](https://ovcs.be/docs). This index i
 - [Object detection](./vision/detection.md)
 - [Road segmentation](./vision/segmentation.md)
 - [Vision performance](./vision/performance.md)
-- [Tune with exports](./vision/tuning.md)
+- [Tune with snapshots](./vision/tuning.md)
 - [Vision API](./vision/api.md)
 - [Vision channels](./vision/channels.md)
 
