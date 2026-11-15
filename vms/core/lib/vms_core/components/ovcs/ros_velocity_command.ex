@@ -43,9 +43,8 @@ defmodule VmsCore.Components.OVCS.RosVelocityCommand do
   ## Reverse is a sign, not a mode
 
   Negative `linear` is reverse. The actuator command carries a separate
-  `direction` because a negative throttle can mean regenerative
-  braking, as on the OVCS1 reference vehicle; a velocity has its sign
-  built in.
+  `direction` because a negative throttle can mean braking, as on the
+  OVCS1 reference vehicle; a velocity has its sign built in.
 
   ## Staleness
 

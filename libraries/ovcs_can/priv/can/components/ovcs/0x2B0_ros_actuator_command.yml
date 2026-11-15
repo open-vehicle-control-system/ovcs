@@ -9,8 +9,8 @@
 #
 # `steering` and `throttle` are the operator's axes in [-1, 1] at a
 # resolution of 0.001, far finer than any servo resolves. On OVCS1 a
-# negative throttle is regenerative braking and reverse is a gear, so
-# `direction` is carried separately rather than read from the sign.
+# negative throttle brakes and reverse is a gear, so `direction` is
+# carried separately rather than read from the sign.
 #
 # `sequence` is what makes staleness visible on the bus. Cantastic
 # retransmits a frame at its period whether or not anything new was
