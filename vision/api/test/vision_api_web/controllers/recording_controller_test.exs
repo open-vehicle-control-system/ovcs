@@ -287,6 +287,16 @@ defmodule VisionApiWeb.RecordingControllerTest do
       assert detail =~ "bag exporter"
     end
 
+    test "answers 504 when the bag exporter does not answer in time, the start maybe done",
+         %{conn: conn} do
+      AnsweringBag.answer({:error, :timeout})
+
+      assert %{"errors" => [%{"status" => "504", "detail" => detail}]} =
+               conn |> start_recording() |> json_response(504)
+
+      assert detail =~ "may have started"
+    end
+
     test "answers 503 while the bag exporter does not run", %{conn: conn} do
       :ok = Supervisor.terminate_child(VisionCore.Exporters, :ros2_bag)
 
@@ -339,6 +349,17 @@ defmodule VisionApiWeb.RecordingControllerTest do
                conn
                |> change("20261115T000000Z_review", %{state: "stopped"})
                |> json_response(404)
+    end
+
+    test "answers 504 when the bag exporter does not answer in time, the stop maybe done",
+         %{conn: conn} = context do
+      stopped!(context)
+      AnsweringBag.answer({:error, :timeout})
+
+      assert %{"errors" => [%{"status" => "504", "detail" => detail}]} =
+               conn |> change(@stopped, %{state: "stopped"}) |> json_response(504)
+
+      assert detail =~ "may still stop"
     end
 
     test_change_refusals("/api/recordings/#{@stopped}", "recordings", @stopped)

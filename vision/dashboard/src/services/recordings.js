@@ -1,8 +1,10 @@
 import { apiUrl, request } from './parameters.js'
 
-// Stopping waits for the recording to write what it holds; ejecting, for a busy disk to be let go; formatting writes
-// a whole filesystem.
-const STOP_TIMEOUT_MS = 50000
+// Each outlasts the unit's own wait before it answers 504 (the `@*_timeout_ms` of `VisionCore.Ros2.BagExporter`).
+const READ_TIMEOUT_MS = 10000
+const START_TIMEOUT_MS = 20000
+const STOP_TIMEOUT_MS = 60000
+const DELETE_TIMEOUT_MS = 15000
 const EJECT_TIMEOUT_MS = 20000
 const FORMAT_TIMEOUT_MS = 330000
 
@@ -22,14 +24,14 @@ const partsOf = (document) =>
 
 /** The recordings, the newest first: their facts, the disk the one in progress is on, and their parts with their disks. */
 export async function fetchRecordings() {
-  const document = await request('recordings?include=parts')
+  const document = await request('recordings?include=parts', { timeoutMs: READ_TIMEOUT_MS })
   const parts = partsOf(document)
   return document.data.map((resource) => toRecording(resource, parts))
 }
 
 /** The recording `id`, as `fetchRecordings` reads each. */
 export async function fetchRecording(id) {
-  const document = await request(`recordings/${encodeURIComponent(id)}?include=parts`)
+  const document = await request(`recordings/${encodeURIComponent(id)}?include=parts`, { timeoutMs: READ_TIMEOUT_MS })
   return toRecording(document.data, partsOf(document))
 }
 
@@ -37,7 +39,8 @@ export async function fetchRecording(id) {
 export async function startRecording({ preset, clock }) {
   const document = await request('recordings', {
     method: 'POST',
-    body: { data: { type: 'recordings', attributes: { preset, clock } } }
+    body: { data: { type: 'recordings', attributes: { preset, clock } } },
+    timeoutMs: START_TIMEOUT_MS
   })
   return toRecording(document.data, new Map())
 }
@@ -53,7 +56,7 @@ export function stopRecording(id) {
 
 /** Deletes every part of the recording `id`. */
 export function deleteRecording(id) {
-  return request(`recordings/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  return request(`recordings/${encodeURIComponent(id)}`, { method: 'DELETE', timeoutMs: DELETE_TIMEOUT_MS })
 }
 
 /** Where the browser downloads the recording `id`, one tar it saves as it comes. */

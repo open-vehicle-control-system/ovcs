@@ -52,6 +52,7 @@ defmodule VisionApiWeb.RecordingController do
       |> put_status(:created)
       |> render(:show, recording: recording, includes: [])
     else
+      {:error, :timeout} -> late(conn, "the recording may have started")
       refusal -> refuse(conn, nil, refusal)
     end
   end
@@ -65,6 +66,7 @@ defmodule VisionApiWeb.RecordingController do
          {:ok, recording} <- Recordings.stop(id, []) do
       render(conn, :show, recording: recording, includes: [])
     else
+      {:error, :timeout} -> late(conn, "#{id} may still stop")
       refusal -> refuse(conn, id, refusal)
     end
   end
@@ -148,4 +150,8 @@ defmodule VisionApiWeb.RecordingController do
 
   defp refuse(conn, _id, {:error, :unknown_call}),
     do: JsonApi.error(conn, 500, "the bag exporter takes no call")
+
+  # A start or a stop the bag exporter did not answer in time, which it may still carry out.
+  defp late(conn, outcome),
+    do: JsonApi.error(conn, 504, "the bag exporter did not answer in time: #{outcome}")
 end

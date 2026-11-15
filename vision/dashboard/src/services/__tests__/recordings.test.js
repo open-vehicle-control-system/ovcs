@@ -110,6 +110,27 @@ describe('recordings service', () => {
     expect(recordingDownloadUrl('20261115T090000Z_review')).toMatch(/\/api\/recordings\/20261115T090000Z_review\/download$/)
   })
 
+  // The longest the unit waits for the bag exporter on each request before it answers 504.
+  it.each([
+    ['a list', () => fetchRecordings(), 5000],
+    ['a read', () => fetchRecording('20261115T090000Z_review'), 5000],
+    ['a start', () => startRecording({ preset: 'review', clock: 'automatic' }), 15000],
+    ['a stop', () => stopRecording('20261115T090000Z_review'), 5000 + 45000],
+    ['a delete', () => deleteRecording('20261115T090000Z_review'), 5000]
+  ])('waits a second longer than the unit for %s', async (_request, send, unitMs) => {
+    vi.useFakeTimers()
+    try {
+      fetchMock.mockReturnValue(new Promise(() => {}))
+      send().catch(() => {})
+
+      await vi.advanceTimersByTimeAsync(unitMs + 1000)
+
+      expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('reads the disks, and changes, ejects and formats one', async () => {
     fetchMock.mockResolvedValue(respond({ data: [{ type: 'disks', id: 'internal', attributes: { internal: true, position: 0 } }] }))
     expect(await fetchDisks()).toEqual([{ id: 'internal', internal: true, position: 0 }])
