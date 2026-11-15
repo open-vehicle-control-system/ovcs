@@ -14,7 +14,9 @@ defmodule VisionCore.Disks do
   recordings in `recordings/` there; another is listed as unusable. A
   disk already mounted, found in `/proc/mounts` by its device, is taken
   as it is. A disk pulled out is unmounted lazily and listed as
-  unplugged. Then it reads each mounted disk's free bytes with `df`.
+  unplugged; a device whose disk's `diskseq`, or size, changed between
+  two looks was pulled out and another plugged in. Then it reads each
+  mounted disk's free bytes with `df`.
 
   `list/1`, `fetch/2` and `next/3` read a table this process keeps, so
   they answer while it mounts or formats. Without the database the disks
@@ -150,7 +152,9 @@ defmodule VisionCore.Disks do
   @doc """
   Makes `device`, a USB disk's partition such as `sda1` that is not
   mounted, f2fs labelled `label` (`mkfs.f2fs -f -l`). It is mounted at
-  the next look at the disks, as a new disk.
+  the next look at the disks, as a new disk. A device whose superblock
+  no longer reads as the disk listed is not formatted, and read again
+  at the next look.
   """
   @spec format(GenServer.server(), String.t(), String.t()) :: :ok | {:error, String.t()}
   def format(server, device, label),
@@ -244,10 +248,12 @@ defmodule VisionCore.Disks do
 
   def handle_call({:format, device, label}, _from, state) do
     with :ok <- check_label(label),
-         :ok <- check_formattable(state, device) do
+         :ok <- check_formattable(state, device),
+         :ok <- check_unchanged(state, device) do
       run_format(state, device, label)
     else
       {:error, reason} -> {:reply, {:error, reason}, state}
+      {:changed, reason} -> {:reply, {:error, reason}, state |> forget(device) |> publish()}
     end
   end
 
@@ -274,37 +280,46 @@ defmodule VisionCore.Disks do
 
   defp watch_usb(state) do
     present = scan(state.options.block_devices_path)
-    gone = Map.keys(state.devices) -- Map.keys(present)
-    state = Enum.reduce(gone, state, &pull_out(&2, &1))
+    state = Enum.reduce(replaced(state, present), state, &pull_out(&2, &1))
 
     present
     |> Map.drop(Map.keys(state.devices))
     |> Enum.sort()
-    |> Enum.reduce(state, fn {device, size_bytes}, state -> plug_in(state, device, size_bytes) end)
+    |> Enum.reduce(state, fn {device, block}, state -> plug_in(state, device, block) end)
   end
 
-  # Each USB disk's partitions, or the disk itself without any, with its size.
+  # The devices gone, or another disk under the same name: its diskseq or size changed.
+  defp replaced(state, present),
+    do: for({device, seen} <- state.devices, present[device] != seen.block, do: device)
+
+  # Each USB disk's partitions, or the disk whole without any, with its size and diskseq.
   defp scan(block_devices_path) do
     block_devices_path
     |> Path.join("sd*")
     |> Path.wildcard()
     |> Enum.filter(&usb?/1)
     |> Enum.flat_map(fn disk ->
-      case Path.wildcard(Path.join(disk, Path.basename(disk) <> "*")) do
-        [] -> [disk]
-        partitions -> partitions
-      end
-    end)
-    |> Enum.flat_map(fn path ->
-      case read_size(path) do
-        {:ok, size_bytes} -> [{Path.basename(path), size_bytes}]
-        :error -> []
-      end
+      diskseq =
+        case read_integer(Path.join(disk, "diskseq")) do
+          {:ok, diskseq} -> diskseq
+          :error -> nil
+        end
+
+      for path <- partitions_or_disk(disk),
+          {:ok, sectors} <- [read_integer(Path.join(path, "size"))],
+          do: {Path.basename(path), %{size_bytes: sectors * @sector_bytes, diskseq: diskseq}}
     end)
     |> Map.new()
   end
 
-  # A disk whose sysfs device sits under a USB bus, `usb<n>`: a USB SSD's enclosure is not removable.
+  defp partitions_or_disk(disk) do
+    case Path.wildcard(Path.join(disk, Path.basename(disk) <> "*")) do
+      [] -> [disk]
+      partitions -> partitions
+    end
+  end
+
+  # A disk under a USB bus, `usb<n>`: a USB SSD's enclosure does not set `removable`.
   defp usb?(disk) do
     case File.read_link(disk) do
       {:ok, target} -> target |> Path.split() |> Enum.any?(&Regex.match?(~r/^usb\d+$/, &1))
@@ -312,28 +327,33 @@ defmodule VisionCore.Disks do
     end
   end
 
-  defp read_size(path) do
-    with {:ok, text} <- File.read(Path.join(path, "size")),
-         {sectors, _rest} <- Integer.parse(text) do
-      {:ok, sectors * @sector_bytes}
+  defp read_integer(path) do
+    with {:ok, text} <- File.read(path),
+         {integer, _rest} <- Integer.parse(text) do
+      {:ok, integer}
     else
       _unreadable -> :error
     end
   end
 
-  defp plug_in(state, device, size_bytes) do
-    case Disk.read_identity(device_path(state, device)) do
+  # Holds `device` as seen: its block's size and diskseq, and the identity read now.
+  defp plug_in(state, device, block) do
+    identity = Disk.read_identity(device_path(state, device))
+    seen = %{block: block, identity: identity, uuid: nil}
+    state = %{state | devices: Map.put(state.devices, device, seen)}
+
+    case identity do
       {:ok, identity} ->
-        plug_in_known(state, device, size_bytes, identity)
+        plug_in_known(state, device, block.size_bytes, identity)
 
       {:error, problem} ->
-        put_unusable(state, device, size_bytes, problem)
+        put_unusable(state, device, block.size_bytes, problem)
     end
   end
 
   defp plug_in_known(state, device, size_bytes, identity) do
-    case Enum.find(state.devices, fn {_device, uuid} -> uuid == identity.uuid end) do
-      {other, _uuid} ->
+    case Enum.find(state.devices, fn {_device, seen} -> seen.uuid == identity.uuid end) do
+      {other, _seen} ->
         put_unusable(state, device, size_bytes, "#{other} has the same UUID, #{identity.uuid}")
 
       nil ->
@@ -349,7 +369,7 @@ defmodule VisionCore.Disks do
           })
 
         save([disk])
-        state = %{state | devices: Map.put(state.devices, device, identity.uuid)}
+        state = put_in(state.devices[device].uuid, identity.uuid)
         mount(state, disk)
     end
   end
@@ -357,12 +377,7 @@ defmodule VisionCore.Disks do
   defp put_unusable(state, device, size_bytes, problem) do
     Logger.warning("#{inspect(__MODULE__)} #{device} is not used: #{problem}")
     disk = %Disk{device: device, size_bytes: size_bytes, state: :unusable, problem: problem}
-
-    %{
-      state
-      | devices: Map.put(state.devices, device, nil),
-        unusable: Map.put(state.unusable, device, disk)
-    }
+    %{state | unusable: Map.put(state.unusable, device, disk)}
   end
 
   defp new_disk(state, uuid), do: %Disk{uuid: uuid, position: next_position(state)}
@@ -440,7 +455,7 @@ defmodule VisionCore.Disks do
   end
 
   defp pull_out(state, device) do
-    {uuid, devices} = Map.pop(state.devices, device)
+    {%{uuid: uuid}, devices} = Map.pop!(state.devices, device)
     state = %{state | devices: devices, unusable: Map.delete(state.unusable, device)}
 
     case state.disks do
@@ -521,7 +536,7 @@ defmodule VisionCore.Disks do
   end
 
   defp check_formattable(state, device) do
-    with {:ok, uuid} <- Map.fetch(state.devices, device),
+    with {:ok, %{uuid: uuid}} <- Map.fetch(state.devices, device),
          %Disk{state: mounted} when mounted in [:mounted, :ejecting] <- state.disks[uuid] do
       {:error, "#{device} is mounted: eject it first"}
     else
@@ -534,19 +549,28 @@ defmodule VisionCore.Disks do
     case run(state, "mkfs.f2fs", ["-f", "-l", label, device_path(state, device)]) do
       :ok ->
         Logger.info("#{inspect(__MODULE__)} #{device} formatted f2fs, #{label}")
-        {uuid, devices} = Map.pop(state.devices, device)
-        state = %{state | devices: devices, unusable: Map.delete(state.unusable, device)}
-
-        state =
-          case state.disks do
-            %{^uuid => disk} -> put_disk(state, unplugged(disk))
-            _disks -> state
-          end
-
-        {:reply, :ok, publish(state)}
+        {:reply, :ok, state |> forget(device) |> publish()}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
+    end
+  end
+
+  # Whether `device` holds the disk listed, as `mkfs.f2fs` would otherwise wipe another.
+  defp check_unchanged(state, device) do
+    if Disk.read_identity(device_path(state, device)) == state.devices[device].identity,
+      do: :ok,
+      else: {:changed, "#{device} holds another disk than the one listed: not formatted"}
+  end
+
+  # Drops what is known of `device`, so the next look at the disks reads it anew.
+  defp forget(state, device) do
+    {%{uuid: uuid}, devices} = Map.pop!(state.devices, device)
+    state = %{state | devices: devices, unusable: Map.delete(state.unusable, device)}
+
+    case state.disks do
+      %{^uuid => disk} -> put_disk(state, unplugged(disk))
+      _disks -> state
     end
   end
 

@@ -30,7 +30,7 @@ defmodule VisionCore.TestDisks do
     File.write!(mounts, "")
 
     system =
-      start_supervised!({Agent, fn -> %{free: %{}, busy: false, commands: []} end},
+      start_supervised!({Agent, fn -> %{free: %{}, busy: false, commands: [], diskseq: 0} end},
         id: make_ref()
       )
 
@@ -86,7 +86,8 @@ defmodule VisionCore.TestDisks do
   @doc """
   Plugs `device`, a partition such as `sda1` or a whole disk such as
   `sdb`, holding `image`, of `size_bytes`. Its disk's `/sys/block` entry
-  links to a device on a USB bus, or on `bus: :ata`.
+  links to a device on a USB bus, or on `bus: :ata`, with the next
+  `diskseq`.
   """
   @spec plug(t(), String.t(), binary(), pos_integer(), keyword()) :: :ok
   def plug(%__MODULE__{} = disks, device, image, size_bytes \\ 64_000_000_000, opts \\ []) do
@@ -110,7 +111,7 @@ defmodule VisionCore.TestDisks do
     File.write!(Path.join(block, "size"), "#{div(size_bytes, @sector_bytes)}\n")
   end
 
-  # The disk's sysfs folder and its `/sys/block` link, made the first time.
+  # The disk's sysfs folder, with its diskseq, and its `/sys/block` link, made the first time.
   defp disk_directory(disks, parent, bus) do
     link = Path.join(disks.options[:block_devices_path], parent)
     target = Path.join(["..", "devices", bus_path(bus), "block", parent])
@@ -118,6 +119,11 @@ defmodule VisionCore.TestDisks do
 
     unless File.dir?(disk) do
       File.mkdir_p!(disk)
+
+      diskseq =
+        Agent.get_and_update(disks.system, &{&1.diskseq + 1, %{&1 | diskseq: &1.diskseq + 1}})
+
+      File.write!(Path.join(disk, "diskseq"), "#{diskseq}\n")
       File.ln_s!(target, link)
     end
 

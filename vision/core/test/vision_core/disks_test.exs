@@ -167,6 +167,21 @@ defmodule VisionCore.DisksTest do
   describe "a disk pulled out" do
     setup :started
 
+    test "and another plugged in under its name between two looks is taken as the other",
+         %{disks: disks} do
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "first"))
+      mounted!(disks, @stick)
+
+      :ok = :sys.suspend(disks.server)
+      TestDisks.pull(disks, "sda1")
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@other, "second"))
+      :ok = :sys.resume(disks.server)
+
+      mounted!(disks, @other)
+      assert state(disks, @stick) == :unplugged
+      assert {:ok, %Disk{device: "sda1", label: "second"}} = Disks.fetch(disks.server, @other)
+    end
+
     test "is unplugged, unmounted lazily, and keeps its place until plugged again",
          %{disks: disks} do
       image = TestDisks.f2fs_image(@stick, "ovcs-recordings")
@@ -351,13 +366,35 @@ defmodule VisionCore.DisksTest do
       assert TestDisks.commands(disks, "mkfs.f2fs") == []
     end
 
-    test "says why mkfs.f2fs failed", %{disks: disks} do
+    test "says why mkfs.f2fs failed", %{tmp_dir: dir} do
+      disks = dir |> Path.join("refused") |> TestDisks.setup!()
+
+      disks =
+        TestDisks.start!(disks,
+          run: fn
+            "mkfs.f2fs", _arguments -> {"\tError: Failed to open /dev/sdc\n", 255}
+            command, arguments -> disks.options[:run].(command, arguments)
+          end
+        )
+
       TestDisks.plug(disks, "sdc", TestDisks.blank_image())
       eventually(fn -> length(Disks.list(disks.server)) == 2 end)
-      File.rm!(TestDisks.device_path(disks, "sdc"))
 
       assert {:error, reason} = Disks.format(disks.server, "sdc", "label")
       assert reason =~ "Failed to open"
+    end
+
+    test "refuses a device that holds another disk than the one listed, and looks at it again",
+         %{disks: disks} do
+      TestDisks.plug(disks, "sdc", TestDisks.blank_image())
+      eventually(fn -> length(Disks.list(disks.server)) == 2 end)
+      File.write!(TestDisks.device_path(disks, "sdc"), TestDisks.f2fs_image(@other, "precious"))
+
+      assert {:error, reason} = Disks.format(disks.server, "sdc", "wiped")
+      assert reason =~ "sdc"
+      assert TestDisks.commands(disks, "mkfs.f2fs") == []
+      mounted!(disks, @other)
+      assert {:ok, %Disk{label: "precious"}} = Disks.fetch(disks.server, @other)
     end
   end
 
