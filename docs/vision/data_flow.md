@@ -211,8 +211,8 @@ The bag exporter takes every value, queued up to 64 per output. The runner's dro
 
 A disk is the unit's own storage, `internal`, which records in `/data/recordings`, or a USB disk formatted f2fs or ext4. Set another folder for `internal` with the bag exporter's `root:`. [`VisionCore.Disks`](../../vision/core/lib/vision_core/disks.ex), which the bag exporter starts, keeps them:
 
-1. **Find.** It looks at the USB disks every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; `VisionCore.Disks.format/3` makes it f2fs.
-2. **Mount.** It mounts a USB disk at `/data/disks/<uuid>`. Its recordings go in `recordings/` there.
+1. **Find.** It looks at the disks on a USB bus every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; `VisionCore.Disks.format/3` makes it f2fs, listing it as `formatting` meanwhile.
+2. **Mount.** It mounts a USB disk at `/data/disks/<uuid>` with `nosymfollow`, `nodev`, `nosuid` and `noexec`. Its recordings go in the folder `recordings/` there; a disk whose `recordings` is a link or a file is unmounted and listed as unusable.
 3. **Order.** The disks are filled in an order the unit saves in its database, with any turned off. A new disk goes last, turned on. The order and the disks turned off survive unplugging and a reboot (`put_order/2`, `put_enabled/3`).
 4. **Choose.** A recording starts on the first disk in the order that is mounted, turned on and has 1 GB free. Set another floor with the bag exporter's `free_floor_bytes:`.
 5. **Go on.** When the disk falls below the floor, refuses a write, is ejected or pulled out, the recording goes on on the next such disk. It never goes back to a disk it left.
