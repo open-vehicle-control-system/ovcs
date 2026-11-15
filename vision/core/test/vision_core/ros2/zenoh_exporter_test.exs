@@ -465,6 +465,33 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       assert camera_info.header.frame_id == "left_optical"
     end
 
+    test "publishes each stereo side on the topics and services named by the unit's prefix and the side" do
+      config = config(OtherCamera)
+      start_runner(options(OtherCamera, stereo: []), config)
+      {:ok, cameras} = VisionCore.Stereo.Supervisor.camera_options(config)
+
+      for {side, {_driver, server}} <-
+            Enum.zip([:left, :right], VisionCore.Stereo.Supervisor.cameras(config)) do
+        frame = jpeg_frame(cameras[side][:label], 1)
+        Outputs.publish({:camera_frame, server}, {:camera_frame, frame})
+      end
+
+      for side <- ["left", "right"] do
+        assert_receive {:published, "stereo/" <> ^side <> "/image_raw/compressed",
+                        %CompressedImage{}},
+                       1_000
+
+        assert_receive {:published, "stereo/" <> ^side <> "/camera_info", %CameraInfo{}}, 1_000
+      end
+
+      services =
+        for %{start: {SetCameraInfoServer, :start_link, [options]}} <-
+              ZenohExporter.children(stereo: [], config: config),
+            do: options[:service_name]
+
+      assert services == ["stereo/left/set_camera_info", "stereo/right/set_camera_info"]
+    end
+
     test "publishes each pair, in the frame its left frame carries" do
       start_runner(options(OtherCamera, stereo: []), config(OtherCamera))
 
