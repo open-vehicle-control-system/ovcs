@@ -86,22 +86,53 @@ defmodule VisionCore.Camera.Frame do
   @doc """
   The frame as a `u8` tensor: `{height, width, 3}` for an RGB frame,
   `{height, width}` for a grey one, and for a JPEG frame its luma,
-  decoded through `VisionCore.Jpeg`.
+  decoded through `VisionCore.Jpeg`, or with `colour: true` its RGB.
   """
-  @spec to_tensor(t()) :: {:ok, Nx.Tensor.t()} | {:error, {:jpeg, term()}}
-  def to_tensor(%__MODULE__{grey: grey, width: width, height: height}) when is_binary(grey),
-    do: {:ok, grey |> Nx.from_binary(:u8) |> Nx.reshape({height, width})}
+  @spec to_tensor(t(), [{:colour, boolean()}]) :: {:ok, Nx.Tensor.t()} | {:error, {:jpeg, term()}}
+  def to_tensor(frame, options \\ [])
 
-  def to_tensor(%__MODULE__{rgb: rgb, width: width, height: height}) when is_binary(rgb),
-    do: {:ok, rgb |> Nx.from_binary(:u8) |> Nx.reshape({height, width, 3})}
+  def to_tensor(%__MODULE__{grey: grey, width: width, height: height}, _options)
+      when is_binary(grey),
+      do: {:ok, grey |> Nx.from_binary(:u8) |> Nx.reshape({height, width})}
 
-  def to_tensor(%__MODULE__{jpeg: jpeg}) when is_binary(jpeg) do
-    case VisionCore.Jpeg.decode_grey(jpeg) do
-      {:ok, {width, height, pixels}} ->
-        {:ok, pixels |> Nx.from_binary(:u8) |> Nx.reshape({height, width})}
+  def to_tensor(%__MODULE__{rgb: rgb, width: width, height: height}, _options)
+      when is_binary(rgb),
+      do: {:ok, rgb |> Nx.from_binary(:u8) |> Nx.reshape({height, width, 3})}
 
-      {:error, reason} ->
-        {:error, {:jpeg, reason}}
+  def to_tensor(%__MODULE__{jpeg: jpeg}, options) when is_binary(jpeg) do
+    if Keyword.get(options, :colour, false) do
+      with {:ok, {width, height, rgb}} <- decode_rgb(jpeg),
+           do: {:ok, rgb |> Nx.from_binary(:u8) |> Nx.reshape({height, width, 3})}
+    else
+      case VisionCore.Jpeg.decode_grey(jpeg) do
+        {:ok, {width, height, pixels}} ->
+          {:ok, pixels |> Nx.from_binary(:u8) |> Nx.reshape({height, width})}
+
+        {:error, reason} ->
+          {:error, {:jpeg, reason}}
+      end
+    end
+  end
+
+  @doc """
+  The frame with its RGB pixels: a JPEG frame's decoded through
+  `VisionCore.Jpeg`, its JPEG kept; `{:error, :colourless}` for a grey
+  frame.
+  """
+  @spec with_rgb(t()) :: {:ok, t()} | {:error, :colourless | {:jpeg, term()}}
+  def with_rgb(%__MODULE__{rgb: rgb} = frame) when is_binary(rgb), do: {:ok, frame}
+
+  def with_rgb(%__MODULE__{jpeg: jpeg} = frame) when is_binary(jpeg) do
+    with {:ok, {width, height, rgb}} <- decode_rgb(jpeg),
+         do: {:ok, %{frame | rgb: rgb, width: width, height: height}}
+  end
+
+  def with_rgb(%__MODULE__{}), do: {:error, :colourless}
+
+  defp decode_rgb(jpeg) do
+    case VisionCore.Jpeg.decode_rgb(jpeg) do
+      {:ok, decoded} -> {:ok, decoded}
+      {:error, reason} -> {:error, {:jpeg, reason}}
     end
   end
 end

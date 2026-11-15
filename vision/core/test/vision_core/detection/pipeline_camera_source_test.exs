@@ -35,6 +35,22 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
     def inference_times(_server), do: nil
   end
 
+  # Tells the test the shape of each image it is handed, and answers with no detection.
+  defmodule Shapes do
+    @behaviour VisionCore.Detection.Backend
+
+    def detect(test, sequence, image) do
+      send(test, {:image_shape, Nx.shape(image)})
+      send(self(), {:inference_detections, sequence, []})
+      :ok
+    end
+
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def options, do: []
+    def inference_times(_server), do: nil
+  end
+
   # Tells the test of each frame it is handed, answers what the test scripted, `:ok` once the
   # script is spent, and leaves the reply to the test.
   defmodule Held do
@@ -552,6 +568,38 @@ defmodule VisionCore.Detection.PipelineCameraSourceTest do
       end)
 
     assert length(String.split(log, "cannot detect on the camera hq's images")) == 2
+  end
+
+  @tag :jpeg
+  test "hands the backend a JPEG frame in colour", %{tmp_dir: dir} do
+    start_supervised!(VisionCore.Jpeg)
+
+    start_supervised!(
+      {Pipeline,
+       name: :hq_people,
+       backend: Shapes,
+       backend_server: self(),
+       source: {:camera, :hq},
+       config: config(dir, []),
+       clock: start_clock()}
+    )
+
+    rgb = %Frame{
+      label: "hq",
+      width: 40,
+      height: 20,
+      capture_ns: 0,
+      rgb: :binary.copy(<<200, 40, 20>>, 800)
+    }
+
+    {:ok, jpeg} = Frame.to_jpeg(rgb)
+
+    Outputs.publish(
+      {:camera_frame, @camera_server},
+      {:camera_frame, %Frame{rgb | rgb: nil, jpeg: jpeg}}
+    )
+
+    assert_receive {:image_shape, {20, 40, 3}}
   end
 
   test "publishes nothing for a frame the backend could not detect on, and detects the next", %{
