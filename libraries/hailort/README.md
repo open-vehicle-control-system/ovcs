@@ -18,7 +18,7 @@ On the host nothing is built, so applications that depend on it still compile an
 
 ## Using it
 
-A dependent Makefile run by `elixir_make` finds the outputs under `$(MIX_BUILD_PATH)/lib/hailort/`: compile with `-I.../native/include`, link with `-L.../native/lib -lhailort`. At runtime, start the executable with `LD_LIBRARY_PATH` set to `Hailort.lib_dir()`. `VisionCore.Detection.Backend.Hailo` and `vision/rust/hailo_detect`, built by `vision/core/Makefile`, are the worked example.
+A dependent Makefile run by `elixir_make` finds the outputs under `$(MIX_BUILD_PATH)/lib/hailort/`: compile with `-I.../native/include`, link with `-L.../native/lib -lhailort`. At runtime, start the executable with `LD_LIBRARY_PATH` set to `Hailort.lib_dir()`. `VisionCore.Hailo` and `vision/rust/hailo`, built by `vision/core/Makefile`, are the worked example.
 
 ## Version coupling
 

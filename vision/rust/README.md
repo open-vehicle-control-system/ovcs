@@ -5,18 +5,19 @@ Cargo workspace of the programs `vision_core` runs as Ports.
 | Crate | What it does |
 |---|---|
 | `camera_capture` | Captures frames through libcamera and writes them as JPEG records or, with `--format grey`, as grey records of their luma. Given outputs, it also writes JPEGs of a second stream of the same capture ([Outputs of `camera_capture`](#outputs-of-camera_capture)) |
-| `hailo_detect` | Runs a compiled model on a Hailo accelerator through HailoRT and writes detections |
+| `hailo` | Runs every detection and segmentation model the Hailo units name on one Hailo-8 through HailoRT, one thread a model, and writes each model's boxes or class grid |
 | `qnn_detect` | Runs a model's QNN context binary on a Qualcomm Hexagon NPU and writes detections, YOLOX's boxes decoded. Its statistics line, every minute, gives each stage's mean time per request: waiting (`idle`), reading, the letterbox, the execution's stages (`qnn`), decoding and the reply |
 | `qnn_segment` | Runs a semantic segmentation model's QNN context binary on a Qualcomm Hexagon NPU, over a band of an RGB image resized to the model's input. It writes each output cell's class. Its statistics line, every minute, gives each stage's mean time per request: waiting (`idle`), reading, the resize, the execution's stages (`qnn`), argmax and the reply |
 | `qnn` | Library the QNN Ports share ([`qnn`](#qnn)) |
-| `detection` | Library the detection Ports share: their record protocol, the letterbox between the caller's image and the model's input, and non-maximum suppression. `qnn_segment` shares its bilinear resize |
+| `detection` | Library the detection Ports share: their record protocol, the letterbox between the caller's image and the model's input, and non-maximum suppression |
+| `segmentation` | Library the segmentation Ports share: their record protocol and the band's resize to the model's input |
 | `v4l2_capture` | Captures two CSI cameras over raw V4L2, on the OKdo Nano C100 or, through CAMSS in packed 10-bit Bayer, on the Arduino VENTUNO Q, locks the right sensor's frame starts to the left one's by adjusting its vertical blanking, holds both lens actuators at the `focus` setting when the system drives them, and writes grey frame pairs. Given one capture node and sensor, it captures that camera alone ([One camera with `v4l2_capture`](#one-camera-with-v4l2_capture)) |
 | `jpeg_codec` | Encodes grey or RGB images as JPEG with libjpeg-turbo, colours depth previews, and decodes JPEG frames to grey, for `VisionCore.Jpeg` |
 | `framing` | The `{:packet, 4}` framing the binaries share: a big-endian length prefix, little-endian scalars. Also the parts of an `--output` flag the capture programs share |
 
-The Elixir side of the protocol is `VisionCore.Camera.LibCamera`, `VisionCore.Detection.Backend.Hailo`, `VisionCore.Detection.Backend.Qnn`, `VisionCore.Camera.V4L2Pair` and `VisionCore.Jpeg`; `qnn_segment`'s records are described in `qnn_segment/src/protocol.rs`. The stereo stages' native Port, `stereo_match`, is nx_stereo's: it builds it when it compiles.
+The Elixir side of the protocol is `VisionCore.Camera.LibCamera`, `VisionCore.Hailo`, `VisionCore.Detection.Backend.Qnn`, `VisionCore.Camera.V4L2Pair` and `VisionCore.Jpeg`; `qnn_segment`'s records are described in `qnn_segment/src/protocol.rs`. The stereo stages' native Port, `stereo_match`, is nx_stereo's: it builds it when it compiles.
 
-The `device` feature of `camera_capture` and `hailo_detect` links the device libraries: libcamera from the system, `libhailort` from [`libraries/hailort`](../../libraries/hailort), whose header and library directories `../core/Makefile` passes as `HAILORT_INCLUDE_DIR` and `HAILORT_LINK_DIR`. Without it the crates build on any host, all but `qnn`, `qnn_detect` and `qnn_segment`, which is what the unit tests use:
+The `device` feature of `camera_capture` and `hailo` links the device libraries: libcamera from the system, `libhailort` from [`libraries/hailort`](../../libraries/hailort), whose header and library directories `../core/Makefile` passes as `HAILORT_INCLUDE_DIR` and `HAILORT_LINK_DIR`. Without it the crates build on any host, all but `qnn`, `qnn_detect` and `qnn_segment`, which is what the unit tests use:
 
 ```sh
 cargo test
@@ -26,7 +27,7 @@ cargo test
 
 | Target | Ports |
 |---|---|
-| `rpi5` | `camera_capture`, `hailo_detect` and `jpeg_codec` |
+| `rpi5` | `camera_capture`, `hailo` and `jpeg_codec` |
 | `okdo_c100` | `v4l2_capture` and `jpeg_codec` |
 | `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec`, `qnn_detect` and `qnn_segment` |
 

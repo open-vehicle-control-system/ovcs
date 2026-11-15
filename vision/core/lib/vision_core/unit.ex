@@ -54,6 +54,39 @@ defmodule VisionCore.Unit do
   end
 
   @doc """
+  The server the unit `name`'s pipeline hands its backend: the one a
+  backend shared by several units gives the unit (`shared_server/1`),
+  such as its lane of `VisionCore.Hailo`, or the unit's own backend's
+  registered name.
+  """
+  @spec backend_server(module(), atom()) :: GenServer.name()
+  def backend_server(backend, name),
+    do:
+      if(shared?(backend),
+        do: backend.shared_server(name),
+        else: VisionCore.Pipelines.server(backend, name)
+      )
+
+  @doc """
+  The children that give the unit `name` its backend: the backend
+  itself, started with `opts` under `server`, or, for a backend shared
+  by several units, `VisionCore.Inference.Watch` on its process
+  (`shared_process/0`), which the unit's `:rest_for_one` supervisor
+  restarts the pipeline with when it goes down.
+  """
+  @spec backend_children(module(), keyword(), GenServer.name(), atom()) :: [
+          Supervisor.child_spec() | {module(), keyword()}
+        ]
+  def backend_children(backend, opts, server, name) do
+    if shared?(backend),
+      do: [{VisionCore.Inference.Watch, server: backend.shared_process(), unit: name}],
+      else: [{backend, opts ++ [name: server]}]
+  end
+
+  defp shared?(backend),
+    do: Code.ensure_loaded?(backend) and function_exported?(backend, :shared_process, 0)
+
+  @doc """
   `:ok` when every option of `opts` is among `taken`. Raises
   `ArgumentError` otherwise, saying of each other option that the unit
   has none such, or what `hints` says of it: where it belongs.

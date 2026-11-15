@@ -313,7 +313,7 @@ defmodule VisionCore.StatusTest do
   defp answer_backend(times \\ nil, state \\ :running) do
     receive do
       {:"$gen_call", from, :state} -> GenServer.reply(from, state)
-      {:"$gen_call", from, :inference_times} -> GenServer.reply(from, times)
+      {:"$gen_call", from, {:inference_times, _lane}} -> GenServer.reply(from, times)
     end
 
     answer_backend(times, state)
@@ -359,9 +359,13 @@ defmodule VisionCore.StatusTest do
 
   defp register_backend(name, times) do
     backend = spawn(fn -> answer_backend(times) end)
-    VisionCore.TestProcesses.register(backend, name)
+    register(backend, name)
     on_exit(fn -> Process.exit(backend, :kill) end)
   end
+
+  # VisionCore.Hailo registers under its module's name, a unit's own backend under a via name.
+  defp register(pid, name) when is_atom(name), do: Process.register(pid, name)
+  defp register(pid, name), do: VisionCore.TestProcesses.register(pid, name)
 
   defp next_load(timeout \\ 1_000) do
     assert_receive {:vision_status, %{npu: %{load_percent: load}} = snapshot}, timeout
@@ -460,7 +464,7 @@ defmodule VisionCore.StatusTest do
       count: 3
     })
 
-    register_backend(VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :road), %{
+    register_backend(VisionCore.Hailo, %{
       sum_us: 80_000,
       count: 2
     })
@@ -541,10 +545,7 @@ defmodule VisionCore.StatusTest do
   test "a Hailo pipeline beside a stub one reports the Hailo-8" do
     available = spawn(&answer_backend/0)
 
-    VisionCore.TestProcesses.register(
-      available,
-      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :road)
-    )
+    register(available, VisionCore.Hailo)
 
     on_exit(fn -> Process.exit(available, :kill) end)
 
@@ -612,10 +613,7 @@ defmodule VisionCore.StatusTest do
   test "a detector that does not answer is reported failed without stalling the snapshot" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
 
-    VisionCore.TestProcesses.register(
-      silent,
-      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
-    )
+    register(silent, VisionCore.Hailo)
 
     on_exit(fn -> Process.exit(silent, :kill) end)
     start_supervised!({Status, config: config([:hailo_detector])})
@@ -629,10 +627,7 @@ defmodule VisionCore.StatusTest do
   test "callees that do not answer delay the snapshot by one timeout, not one each" do
     silent = spawn(fn -> Process.sleep(:infinity) end)
 
-    VisionCore.TestProcesses.register(
-      silent,
-      VisionCore.Pipelines.server(VisionCore.Detection.Backend.Hailo, :detection)
-    )
+    register(silent, VisionCore.Hailo)
 
     on_exit(fn -> Process.exit(silent, :kill) end)
     start_exporter(delay_ms: 1_000)

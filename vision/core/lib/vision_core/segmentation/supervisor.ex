@@ -62,16 +62,22 @@ defmodule VisionCore.Segmentation.Supervisor do
     {backend, backend_opts} = split_backend_options(opts)
     Unit.refuse_unknown!(opts, options(backend), %{topic_prefix: @topic_prefix_hint})
     name = Segmentation.name!(opts)
-    backend_server = Pipelines.server(backend, name)
+    backend_server = Unit.backend_server(backend, name)
     classes = length(Keyword.get(opts, :labels, Segmentation.labels()))
 
-    children = [
-      {backend, backend_opts ++ [name: backend_server, pipeline: name, classes: classes]},
-      {Pipeline,
-       Keyword.take(opts, pipeline_keys()) ++
-         [backend: backend, backend_server: backend_server, name: name]},
-      {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
-    ]
+    children =
+      Unit.backend_children(
+        backend,
+        backend_opts ++ [pipeline: name, classes: classes],
+        backend_server,
+        name
+      ) ++
+        [
+          {Pipeline,
+           Keyword.take(opts, pipeline_keys()) ++
+             [backend: backend, backend_server: backend_server, name: name]},
+          {Live, Keyword.take(opts, [:max_hz]) ++ [name: name]}
+        ]
 
     Supervisor.init(children,
       strategy: :rest_for_one,
@@ -148,7 +154,7 @@ defmodule VisionCore.Segmentation.Supervisor do
     for opts <- units_options(config) do
       {backend, _backend_opts} = split_backend_options(opts)
       name = Keyword.fetch!(opts, :name)
-      {name, backend, Pipelines.server(backend, name)}
+      {name, backend, Unit.backend_server(backend, name)}
     end
   end
 

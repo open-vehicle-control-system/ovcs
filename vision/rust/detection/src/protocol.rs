@@ -4,7 +4,7 @@
 //! Detections: u8 tag 1, u32 sequence, u16 count, count × {u16 class_id, f32 score, x0, y0,
 //! x1, y1}, then a u32 inference time in µs when the frame was inferred, absent otherwise.
 
-const TAG_DETECT: u8 = 1;
+pub const TAG_DETECT: u8 = 1;
 const TAG_DETECTIONS: u8 = 1;
 /// tag, sequence, width, height, channels
 const DETECT_HEADER_BYTES: usize = 1 + 4 + 2 + 2 + 1;

@@ -4,7 +4,7 @@ Stereo depth, object detection and road segmentation for a vehicle. Its exporter
 
 `vision_core` holds no vehicle knowledge. The vehicle package implements `VisionCore.Composer`, which returns a `VisionCore.Config` naming:
 
-- the components to run: `:stereo`, `:camera`, `:detector`, `:hailo_detector`, `:qnn_detector`, `:segmenter` and `:qnn_segmenter` (`VisionCore.Components`);
+- the components to run: `:stereo`, `:camera`, `:detector`, `:hailo_detector`, `:qnn_detector`, `:segmenter`, `:hailo_segmenter` and `:qnn_segmenter` (`VisionCore.Components`);
 - the exporters (`VisionCore.Exporter`, such as `VisionCore.Ros2.ZenohExporter`);
 - for ROS 2, the Zenoh router and the node name.
 
@@ -16,7 +16,7 @@ On a vision target, compiling this app cross-builds the Ports from [`../rust`](.
 
 | Target | Ports |
 |---|---|
-| `rpi5` | `camera_capture`, `hailo_detect`, `jpeg_codec` and `stereo_match` |
+| `rpi5` | `camera_capture`, `hailo`, `jpeg_codec` and `stereo_match` |
 | `okdo_c100` | `v4l2_capture` and `jpeg_codec` |
 | `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec`, `qnn_detect` and `qnn_segment` |
 

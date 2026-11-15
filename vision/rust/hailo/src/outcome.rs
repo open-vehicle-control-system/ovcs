@@ -15,7 +15,7 @@ pub enum FrameOutcome {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Reply {
-    Detections,
+    Result,
     Empty,
     /// A frame left in the vstreams would answer the next request, so the process
     /// exits and its supervisor restarts it with fresh vstreams.
@@ -24,7 +24,7 @@ pub enum Reply {
 
 pub fn reply_for(outcome: FrameOutcome) -> Reply {
     match outcome {
-        FrameOutcome::Inferred => Reply::Detections,
+        FrameOutcome::Inferred => Reply::Result,
         FrameOutcome::Rejected
         | FrameOutcome::WriteFailed {
             streams_cleared: true,
@@ -47,7 +47,7 @@ mod tests {
 
     #[test]
     fn inferred_frame_answers_detections() {
-        assert_eq!(reply_for(FrameOutcome::Inferred), Reply::Detections);
+        assert_eq!(reply_for(FrameOutcome::Inferred), Reply::Result);
     }
 
     #[test]

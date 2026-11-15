@@ -7,7 +7,7 @@
 //! by row), then a u32 inference time in µs when the band was inferred, absent otherwise. A
 //! request that cannot be inferred is answered with a 0 × 0 label image.
 
-const TAG_SEGMENT: u8 = 7;
+pub const TAG_SEGMENT: u8 = 7;
 const TAG_LABELS: u8 = 7;
 /// tag, sequence, width, height, channels, band_top, band_height
 const SEGMENT_HEADER_BYTES: usize = 1 + 4 + 2 + 2 + 1 + 2 + 2;

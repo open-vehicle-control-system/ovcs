@@ -432,25 +432,28 @@ defmodule VisionCore.ApplicationTest do
            )
   end
 
-  test "a second Hailo detector is left down, the Hailo-8 serving the first, which runs" do
-    log =
-      capture_log(fn ->
-        start_pipeline(%VisionCore.Config{
-          components: [
-            {:hailo_detector, hef_path: "/missing.hef"},
-            {:hailo_detector, name: :road, hef_path: "/missing.hef"}
-          ]
-        })
-      end)
+  test "two Hailo detectors and a Hailo segmenter all run, each a network of the one Hailo-8" do
+    start_pipeline(%VisionCore.Config{
+      components: [
+        {:camera, name: :hq, driver: GStreamer, device: "/dev/video0"},
+        {:hailo_detector, hef_path: "/missing/objects.hef"},
+        {:hailo_detector, name: :signs, hef_path: "/missing/signs.hef"},
+        {:hailo_segmenter, name: :road, source: {:camera, :hq}, hef_path: "/missing/road.hef"}
+      ]
+    })
 
-    assert log =~ "road down: the Hailo-8 already serves another pipeline, :detection"
-    refute GenServer.whereis(VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :road))
+    assert %{networks: networks} = :sys.get_state(VisionCore.Hailo).settings
 
-    assert Process.alive?(
-             GenServer.whereis(
-               VisionCore.Pipelines.server(VisionCore.Detection.Supervisor, :detection)
-             )
-           )
+    assert Enum.map(networks, &{&1.pipeline, &1.kind}) ==
+             [detection: :detection, signs: :detection, road: :segmentation]
+
+    for {supervisor, name} <- [
+          {VisionCore.Detection.Supervisor, :detection},
+          {VisionCore.Detection.Supervisor, :signs},
+          {VisionCore.Segmentation.Supervisor, :road}
+        ],
+        do:
+          assert(Process.alive?(GenServer.whereis(VisionCore.Pipelines.server(supervisor, name))))
   end
 
   test "a Hailo detector and a stub one both run" do

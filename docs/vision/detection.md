@@ -39,7 +39,7 @@ A composer may list several detector components (`:detector`, `:hailo_detector`,
 
 Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, and the stereo pipeline's name. `VisionCore.Pipelines` lists them. Two detectors with the same name are refused.
 
-The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
+Every Hailo pipeline, detection and segmentation alike, runs on the one Hailo-8: one `hailo` Port opens it and loads each pipeline's model, and HailoRT's scheduler gives the models the device in turn ([VisionCore.Hailo](../../vision/core/lib/vision_core/hailo.ex)). Each pipeline has its own request in flight, so one waiting for the device does not hold another back. The status's `npu` reads `failed` when any pipeline's backend is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
 
 Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The snapshot exporter reads the pipeline `detection` only, the one a detector without a name runs.
 
