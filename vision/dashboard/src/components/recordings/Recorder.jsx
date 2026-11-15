@@ -1,23 +1,16 @@
 import { useId, useState } from 'react'
-import { OvcsCard, OvcsStatus } from '@ovcs/ui/react'
+import { OvcsCard, OvcsStatus, focusClass as FOCUS } from '@ovcs/ui/react'
 import DiskList from './DiskList.jsx'
-import Dropped from './Dropped.jsx'
-import { diskName, formatBytes, formatDuration } from './format.js'
+import { DroppedByTopic, DroppedSummary } from './Dropped.jsx'
+import { FREE_FLOOR_BYTES, nextDisk, timeLeftMs, writeRate } from './disks.js'
+import { diskName, formatBytes, formatDuration, formatRate } from './format.js'
 import { recording as inProgress, useRecordings } from '../../stores/recordings.js'
 import { useStatus } from '../../stores/status.js'
 import { PRIMARY } from '../../styles.js'
 
 const PRESETS = [
-  {
-    value: 'review',
-    label: 'review',
-    description: 'Compressed images, depth, detections and segmentation: hours of driving to look back on.'
-  },
-  {
-    value: 'replay',
-    label: 'replay',
-    description: "Raw stereo images and each camera's images as they come: a drive to play again in ROS 2."
-  }
+  { value: 'review', description: 'Compressed images, depth, detections' },
+  { value: 'replay', description: 'Raw stereo and camera frames' }
 ]
 
 const CLOCKS = [
@@ -26,119 +19,216 @@ const CLOCKS = [
   { value: 'since_start', label: 'since start', description: 'The time since the recording started, for a board whose clock is not set.' }
 ]
 
-const clockText = (clock) => CLOCKS.find((choice) => choice.value === clock)?.label ?? clock ?? '–'
+const CLOCKS_IN_USE = { system: 'system clock', since_start: 'time since start' }
 
-/** One radio button a choice, each with the line that says what it does. */
-function Choice({ legend, name, choices, value, onChange, disabled }) {
+/** The presets as two cards, one a radio button with its name and what it records. */
+function PresetChoice({ value, onChange }) {
   const id = useId()
   return (
-    <fieldset className="flex min-w-0 flex-col gap-2" disabled={disabled}>
-      <legend className="pb-1 text-xs text-ovcs-muted">{legend}</legend>
-      {choices.map((choice) => (
-        <div key={choice.value} className="flex items-start gap-2">
-          <input
-            type="radio"
-            id={`${id}-${choice.value}`}
-            name={`${id}-${name}`}
-            value={choice.value}
-            checked={value === choice.value}
-            onChange={() => onChange(choice.value)}
-            aria-describedby={`${id}-${choice.value}-description`}
-            className="mt-1 size-4 shrink-0 accent-ovcs-accent"
-          />
-          <div className="flex min-w-0 flex-col">
-            <label htmlFor={`${id}-${choice.value}`} className="font-medium">
-              {choice.label}
-            </label>
-            <span id={`${id}-${choice.value}-description`} className="text-sm text-ovcs-muted">
-              {choice.description}
+    <fieldset className="flex min-w-0 flex-col">
+      <legend className="pb-1.5 text-xs text-ovcs-muted">Preset</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {PRESETS.map((preset) => (
+          <label
+            key={preset.value}
+            className="flex cursor-pointer items-start gap-2.5 rounded border border-ovcs-border px-3 py-2.5 hover:border-ovcs-accent has-[:checked]:border-ovcs-accent has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 has-[:checked]:bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]"
+          >
+            <input
+              type="radio"
+              name={`${id}-preset`}
+              value={preset.value}
+              checked={value === preset.value}
+              onChange={() => onChange(preset.value)}
+              aria-labelledby={`${id}-${preset.value}`}
+              aria-describedby={`${id}-${preset.value}-description`}
+              className={`mt-0.5 size-4 shrink-0 accent-ovcs-accent ${FOCUS}`}
+            />
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span id={`${id}-${preset.value}`} className="font-medium leading-5">
+                {preset.value}
+              </span>
+              <span id={`${id}-${preset.value}-description`} className="text-sm leading-snug text-ovcs-muted">
+                {preset.description}
+              </span>
             </span>
-          </div>
-        </div>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
+/** The clocks as one segmented control, with the chosen one's explanation under it. */
+function ClockChoice({ value, onChange }) {
+  const id = useId()
+  return (
+    <fieldset className="flex min-w-0 flex-col">
+      <legend className="pb-1.5 text-xs text-ovcs-muted">Clock</legend>
+      <div className="inline-flex max-w-full self-start rounded border border-ovcs-border p-0.5">
+        {CLOCKS.map((clock) => (
+          <label
+            key={clock.value}
+            className="inline-flex min-h-8 cursor-pointer items-center whitespace-nowrap rounded-sm px-3 text-sm text-ovcs-muted hover:text-ovcs-text has-[:checked]:font-medium has-[:checked]:text-ovcs-accent-text has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50 has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-ovcs-accent has-[:checked]:bg-[color-mix(in_srgb,var(--ovcs-accent)_12%,var(--ovcs-surface))]"
+          >
+            <input
+              type="radio"
+              name={`${id}-clock`}
+              value={clock.value}
+              checked={value === clock.value}
+              onChange={() => onChange(clock.value)}
+              aria-describedby={`${id}-${clock.value}`}
+              className="sr-only"
+            />
+            {clock.label}
+          </label>
+        ))}
+      </div>
+      {CLOCKS.map((clock) => (
+        <p
+          key={clock.value}
+          id={`${id}-${clock.value}`}
+          data-explanation
+          hidden={value !== clock.value}
+          className="mt-1.5 text-sm text-ovcs-muted"
+        >
+          {clock.description}
+        </p>
       ))}
     </fieldset>
   )
 }
 
-function Figure({ label, wide = false, children }) {
+/** Where a recording started now goes: the first disk that takes it, with its room, or why none does. */
+function Destination({ id, disk }) {
+  if (!disk) {
+    return (
+      <p id={id} className="text-sm text-ovcs-warn-text">
+        No disk to record on: none is mounted, turned on and with {formatBytes(FREE_FLOOR_BYTES)} free.
+      </p>
+    )
+  }
   return (
-    <div className={`flex min-w-0 flex-col ${wide ? 'col-span-2' : ''}`}>
-      <dt className="text-xs text-ovcs-muted">{label}</dt>
-      <dd className="break-words font-semibold tabular-nums">{children}</dd>
-    </div>
+    <p id={id} className="text-sm text-ovcs-muted">
+      on <span className="font-medium text-ovcs-text">{diskName(disk)}</span> · <span className="tabular-nums">{formatBytes(disk.freeBytes)}</span> free
+    </p>
   )
 }
 
-/** What the recording in progress records, for how long, how much and on which disk. */
-function Figures({ recording, disks }) {
-  const disk = disks.find((listed) => listed.id === recording.disk)
-  return (
-    <dl className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
-      <div className="col-span-2 flex min-w-0 flex-col">
-        <dt className="text-xs text-ovcs-muted">recording</dt>
-        <dd className="break-all font-mono text-sm font-semibold">{recording.name}</dd>
-      </div>
-      <Figure label="preset">{recording.preset}</Figure>
-      <Figure label="clock">{clockText(recording.clockInUse)}</Figure>
-      <Figure label="duration">{formatDuration(recording.durationMs)}</Figure>
-      <Figure label="size">{formatBytes(recording.bytes)}</Figure>
-      <Figure label="disk">{disk ? diskName(disk) : (recording.disk ?? '–')}</Figure>
-      <Figure label="dropped" wide>
-        <Dropped dropped={recording.dropped} messages={recording.messages} />
-      </Figure>
-    </dl>
-  )
-}
-
-/**
- * Starts a recording of the preset and on the clock chosen, or shows the one in progress with its live figures and
- * stops it; while idle, the bag exporter's warning, such as a recording that stopped for want of a disk. The disks
- * it records on follow.
- */
-export default function Recorder({ headingId }) {
-  const disksId = useId()
-  const recording = useRecordings(inProgress)
+/** The preset and clock to record with, and Start, beside the disk the recording goes on. */
+function NewRecording() {
+  const destinationId = useId()
   const disks = useRecordings((state) => state.disks)
+  const loaded = useRecordings((state) => state.loaded)
   const busy = useRecordings((state) => state.busy)
   const start = useRecordings((state) => state.start)
-  const stop = useRecordings((state) => state.stop)
   const status = useStatus((state) => state.snapshot?.exporters?.find((exporter) => exporter.id === 'ros2_bag')?.status)
   const [preset, setPreset] = useState('review')
   const [clock, setClock] = useState('automatic')
+  const disk = nextDisk(disks)
 
   return (
-    <OvcsCard as="section" aria-labelledby={headingId} className="flex flex-col gap-4">
-      <h3 id={headingId} className="font-semibold">
-        Recorder
-      </h3>
-      {recording ? (
-        <>
-          <Figures recording={recording} disks={disks} />
-          <div>
-            <button type="button" disabled={busy !== null} onClick={() => stop(recording.id)} className={PRIMARY}>
-              {busy === `stop:${recording.id}` ? 'Stopping…' : 'Stop'}
-            </button>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Choice legend="Preset" name="preset" choices={PRESETS} value={preset} onChange={setPreset} disabled={busy !== null} />
-            <Choice legend="Clock" name="clock" choices={CLOCKS} value={clock} onChange={setClock} disabled={busy !== null} />
-          </div>
-          <div>
-            <button type="button" disabled={busy !== null} onClick={() => start({ preset, clock })} className={PRIMARY}>
-              {busy === 'start' ? 'Starting…' : 'Start'}
-            </button>
-          </div>
-        </>
-      )}
-      {!recording && status && status.level !== 'ok' ? (
+    <div className="flex min-w-0 flex-col gap-4">
+      <h3 className="font-semibold">New recording</h3>
+      <fieldset disabled={busy !== null} className="flex min-w-0 flex-col gap-4">
+        <PresetChoice value={preset} onChange={setPreset} />
+        <ClockChoice value={clock} onChange={setClock} />
+      </fieldset>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <button
+          type="button"
+          disabled={busy !== null || !loaded || !disk}
+          aria-describedby={loaded ? destinationId : undefined}
+          onClick={() => start({ preset, clock })}
+          className={`${PRIMARY} px-5`}
+        >
+          {busy === 'start' ? 'Starting…' : 'Start'}
+        </button>
+        {loaded ? <Destination id={destinationId} disk={disk} /> : null}
+      </div>
+      {status && status.level !== 'ok' ? (
         <OvcsStatus tone="error" className="text-sm">
           {status.detail}
         </OvcsStatus>
       ) : null}
-      <DiskList headingId={disksId} />
+    </div>
+  )
+}
+
+function Figure({ label, children }) {
+  return (
+    <div className="flex min-w-0 flex-col">
+      <dt className="text-xs text-ovcs-muted">{label}</dt>
+      <dd className="font-semibold tabular-nums">{children}</dd>
+    </div>
+  )
+}
+
+/** The recording in progress: its name, clock and disk, with Stop, then its live figures and its drops by topic. */
+function LiveRecording({ recording }) {
+  const droppedId = useId()
+  const [open, setOpen] = useState(false)
+  const disks = useRecordings((state) => state.disks)
+  const busy = useRecordings((state) => state.busy)
+  const stop = useRecordings((state) => state.stop)
+  const disk = disks.find((listed) => listed.id === recording.disk)
+  const rate = writeRate(recording)
+  const left = timeLeftMs(disk?.freeBytes, rate)
+  const facts = [
+    CLOCKS_IN_USE[recording.clockInUse] ?? recording.clockInUse,
+    recording.disk && `on ${disk ? diskName(disk) : recording.disk}`
+  ]
+
+  return (
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <h3 className="font-semibold">Recording</h3>
+            <span aria-hidden="true" className="ovcs-status ovcs-status--ok motion-safe:animate-pulse" />
+          </div>
+          <p translate="no" className="break-all font-mono text-sm font-semibold">
+            {recording.name}
+          </p>
+          <p className="text-sm text-ovcs-muted">{facts.filter(Boolean).join(' · ')}</p>
+        </div>
+        <button type="button" disabled={busy !== null} onClick={() => stop(recording.id)} className={`${PRIMARY} shrink-0 px-5`}>
+          {busy === `stop:${recording.id}` ? 'Stopping…' : 'Stop'}
+        </button>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
+        <Figure label="duration">{formatDuration(recording.durationMs)}</Figure>
+        <Figure label="size">{formatBytes(recording.bytes)}</Figure>
+        <Figure label="write rate">{formatRate(rate)}</Figure>
+        <Figure label="left on disk">{left == null ? '–' : `≈ ${formatDuration(left)}`}</Figure>
+        <div className="col-span-2 flex min-w-0 flex-col sm:col-span-4">
+          <dt className="text-xs text-ovcs-muted">dropped</dt>
+          <dd className="font-semibold tabular-nums">
+            <DroppedSummary
+              dropped={recording.dropped}
+              messages={recording.messages}
+              open={open}
+              onToggle={() => setOpen(!open)}
+              controls={droppedId}
+            />
+          </dd>
+        </div>
+      </dl>
+      {recording.dropped?.length ? <DroppedByTopic id={droppedId} dropped={recording.dropped} open={open} /> : null}
+    </div>
+  )
+}
+
+/**
+ * The recorder: a new recording's preset and clock with Start, or the recording in progress with its live figures and
+ * Stop, beside the disks recordings go on.
+ */
+export default function Recorder() {
+  const recording = useRecordings(inProgress)
+
+  return (
+    <OvcsCard as="section" aria-label="Recorder" className="grid gap-x-8 gap-y-5 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      {recording ? <LiveRecording recording={recording} /> : <NewRecording />}
+      <DiskList recording={recording} />
     </OvcsCard>
   )
 }

@@ -8,9 +8,8 @@ const POLL_MS = 1000
 // Reading every recording reads each one's metadata from the disks: the list is read less often than the disks.
 const LIST_EVERY_POLLS = 10
 
-/** The bag exporter's page: the recorder with the disks it records on, then the recordings. */
+/** The bag exporter's page: the recorder beside the disks it records on, then the recordings. */
 export default function Ros2BagPage() {
-  const recorderId = useId()
   const recordingsId = useId()
   const loadError = useRecordings((state) => state.loadError)
   const error = useRecordings((state) => state.error)
@@ -37,7 +36,7 @@ export default function Ros2BagPage() {
     <OvcsPageFrame title="ROS 2 · Bag" summary="Records what this unit publishes to ROS 2 as bags on its disks.">
       {loadError ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{loadError}</p> : null}
       {error ? <p role="alert" className="ovcs-status ovcs-status--error text-sm text-ovcs-error-text">{error}</p> : null}
-      <Recorder headingId={recorderId} />
+      <Recorder />
       <RecordingList headingId={recordingsId} />
     </OvcsPageFrame>
   )

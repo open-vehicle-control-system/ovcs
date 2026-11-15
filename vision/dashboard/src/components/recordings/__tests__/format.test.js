@@ -1,5 +1,14 @@
 import { describe, it, expect } from 'vitest'
-import { droppedByTopic, droppedText, formatBytes, formatDuration } from '../format.js'
+import {
+  disksText,
+  droppedByTopic,
+  droppedShortText,
+  droppedText,
+  formatBytes,
+  formatDuration,
+  formatRate,
+  formatShortTime
+} from '../format.js'
 
 describe('recording figures', () => {
   it('writes bytes in decimal units', () => {
@@ -25,5 +34,35 @@ describe('recording figures', () => {
       { topic: '/center/camera_info', count: 4 },
       { topic: '/tf', count: 4 }
     ])
+  })
+
+  it('counts the drops in short, for a column named dropped', () => {
+    expect(droppedShortText([{ topic: '/tf', count: 4 }, { topic: '/objects', count: 96 }], 5400)).toBe('100 · 1.8 %')
+    expect(droppedShortText([{ topic: '/tf', count: 4 }], null)).toBe('4')
+    expect(droppedShortText([], 5400)).toBe('none')
+  })
+
+  it('writes a rate in bytes a second', () => {
+    expect([null, 19_333_333, 640].map(formatRate)).toEqual(['–', '19.3 MB/s', '640 B/s'])
+  })
+
+  it('writes a time as a short date and the hour, in the reader\'s locale', () => {
+    expect(formatShortTime(null)).toBe('–')
+    expect(formatShortTime('2026-11-15T09:12:31.000000Z')).toBe(
+      new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }).format(
+        new Date('2026-11-15T09:12:31Z')
+      )
+    )
+  })
+
+  it('names the disks of the parts, with their count when there are several', () => {
+    const disks = [
+      { id: 'stick', label: 'ovcs-recordings' },
+      { id: 'internal', internal: true }
+    ]
+    expect(disksText([{ number: 1, disk: 'stick' }], disks)).toBe('ovcs-recordings')
+    expect(disksText([{ number: 1, disk: 'stick' }, { number: 2, disk: 'internal' }], disks)).toBe("2 parts · ovcs-recordings, Unit's storage")
+    expect(disksText([{ number: 1, disk: 'gone' }, { number: 2, disk: 'gone' }], disks)).toBe('2 parts · gone')
+    expect(disksText([], disks)).toBe('–')
   })
 })
