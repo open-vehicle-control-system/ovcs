@@ -25,7 +25,7 @@ use libcamera::geometry::Size;
 use libcamera::pixel_format::PixelFormat;
 use libcamera::properties;
 use libcamera::request::{RequestStatus, ReuseFlag};
-use libcamera::stream::StreamRole;
+use libcamera::stream::{Stream, StreamRole};
 
 use crate::arguments::{Arguments, ExposureMode, Format, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
@@ -229,16 +229,19 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         error("no stream after Camera::configure".to_string());
         return 1;
     };
+    let frames_stream = ConfiguredStream {
+        stream,
+        size: stream_configuration.get_size(),
+        stride: stream_configuration.get_stride() as usize,
+    };
     let Size {
         width: output_width,
         height: output_height,
-    } = stream_configuration.get_size();
-    let y_stride = stream_configuration.get_stride() as usize;
-    // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
-    let uv_stride = y_stride / 2;
+    } = frames_stream.size;
+    let y_stride = frames_stream.stride;
 
     let mut allocator = FrameBufferAllocator::new(&camera);
-    let buffers = match allocator.alloc(&stream) {
+    let buffers = match allocator.alloc(&frames_stream.stream) {
         Ok(buffers) => buffers,
         Err(_) => {
             error("buffer allocation failed".to_string());
@@ -250,53 +253,19 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     let mut views = Vec::new();
     let mut requests = Vec::new();
     for (index, buffer) in buffers.into_iter().enumerate() {
-        let view = {
-            let planes = buffer.planes();
-            if planes.is_empty() {
-                error("buffer has no planes".to_string());
+        match map_view(&mut mapper, &buffer, &frames_stream) {
+            Ok(view) => views.push(view),
+            Err(message) => {
+                error(message);
                 return 1;
             }
-            let plane = |plane_index: usize| {
-                let plane = planes.get(plane_index).expect("plane in range");
-                (plane.fd(), plane.offset().unwrap_or(0), plane.len())
-            };
-            let mut sync_fds = Vec::new();
-            let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
-                if !sync_fds.contains(&fd) {
-                    sync_fds.push(fd);
-                }
-                mapper.map_plane(fd, offset, length).map_err(|map_error| {
-                    error(format!("mmap(fd={fd}) failed: {map_error}"));
-                })
-            };
-            let mapped = if planes.len() >= 3 {
-                (|| Ok((map(plane(0))?, map(plane(1))?, map(plane(2))?)))()
-            } else {
-                // Single-plane dmabuf: Y, U and V at known offsets within it.
-                let y_size = y_stride * output_height as usize;
-                let uv_size = uv_stride * (output_height as usize / 2);
-                let (fd, offset, _) = plane(0);
-                // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
-                map((fd, offset, y_size + 2 * uv_size))
-                    .map(|base| unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) })
-            };
-            let Ok((y, u, v)) = mapped else {
-                error("failed to mmap buffer planes".to_string());
-                return 1;
-            };
-            YuvView {
-                planes: [y, u, v],
-                strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
-                sync_fds,
-            }
-        };
-        views.push(view);
+        }
 
         let Some(mut request) = camera.create_request(Some(index as u64)) else {
             error("createRequest failed".to_string());
             return 1;
         };
-        if request.add_buffer(&stream, buffer).is_err() {
+        if request.add_buffer(&frames_stream.stream, buffer).is_err() {
             error("addBuffer failed".to_string());
             return 1;
         }
@@ -304,7 +273,7 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     }
 
     let mut output = match arguments.format {
-        Format::Jpeg => match JpegEncoder::new(output_width, output_height) {
+        Format::Jpeg => match JpegEncoder::new(output_width, output_height, JPEG_QUALITY) {
             Ok(encoder) => Output::Jpeg(encoder),
             Err(message) => {
                 error(message);
@@ -626,6 +595,57 @@ fn monotonic_ns() -> i64 {
     now.tv_sec * 1_000_000_000 + now.tv_nsec
 }
 
+/// A stream as `Camera::configure` set it up.
+struct ConfiguredStream {
+    stream: Stream,
+    size: Size,
+    /// Its luma line stride.
+    stride: usize,
+}
+
+/// One buffer's planes, mapped.
+fn map_view(
+    mapper: &mut FdMapper,
+    buffer: &impl AsFrameBuffer,
+    stream: &ConfiguredStream,
+) -> Result<YuvView, String> {
+    let y_stride = stream.stride;
+    // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
+    let uv_stride = y_stride / 2;
+    let planes = buffer.planes();
+    if planes.is_empty() {
+        return Err("buffer has no planes".to_string());
+    }
+    let plane = |plane_index: usize| {
+        let plane = planes.get(plane_index).expect("plane in range");
+        (plane.fd(), plane.offset().unwrap_or(0), plane.len())
+    };
+    let mut sync_fds = Vec::new();
+    let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
+        if !sync_fds.contains(&fd) {
+            sync_fds.push(fd);
+        }
+        (mapper.map_plane(fd, offset, length))
+            .map_err(|map_error| format!("mmap(fd={fd}) failed: {map_error}"))
+    };
+    let (y, u, v) = if planes.len() >= 3 {
+        (map(plane(0))?, map(plane(1))?, map(plane(2))?)
+    } else {
+        // Single-plane dmabuf: Y, U and V at known offsets within it.
+        let y_size = y_stride * stream.size.height as usize;
+        let uv_size = uv_stride * (stream.size.height as usize / 2);
+        let (fd, offset, _) = plane(0);
+        let base = map((fd, offset, y_size + 2 * uv_size))?;
+        // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
+        unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) }
+    };
+    Ok(YuvView {
+        planes: [y, u, v],
+        strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
+        sync_fds,
+    })
+}
+
 /// One mmap per dmabuf fd: libcamera often carves several planes out of one buffer.
 #[derive(Default)]
 struct FdMapper {
@@ -739,10 +759,12 @@ struct JpegEncoder {
     capacity: c_ulong,
     width: c_int,
     height: c_int,
+    quality: c_int,
 }
 
 impl JpegEncoder {
-    fn new(width: u32, height: u32) -> Result<JpegEncoder, String> {
+    /// At `quality`, 1 to 100; the chroma stays the YUV420 frame's 4:2:0.
+    fn new(width: u32, height: u32, quality: c_int) -> Result<JpegEncoder, String> {
         let (width, height) = (width as c_int, height as c_int);
         // SAFETY: TurboJPEG C API; the handle and buffer are freed in Drop.
         unsafe {
@@ -762,6 +784,7 @@ impl JpegEncoder {
                 capacity,
                 width,
                 height,
+                quality,
             })
         }
     }
@@ -780,7 +803,7 @@ impl JpegEncoder {
                 TJSAMP_420,
                 &mut self.buffer,
                 &mut size,
-                JPEG_QUALITY,
+                self.quality,
                 TJFLAG_FASTDCT | TJFLAG_NOREALLOC,
             );
             if status != 0 {
