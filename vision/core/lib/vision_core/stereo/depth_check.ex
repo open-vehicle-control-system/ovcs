@@ -2,9 +2,10 @@ defmodule VisionCore.Stereo.DepthCheck do
   @moduledoc """
   How well a stereo unit turns its pairs into depth, judged from a status
   window: its `:rate`, the share of the cameras' pairs it drops over the
-  last 10 s, and its `:range`, the share of what it matches in the
-  nearest band it can see, where objects nearer than it can measure
-  show.
+  last 10 s, of those its `:max_hz` lets through, the share that rate
+  drops reported apart, and its `:range`, the share of what it matches
+  in the nearest band it can see, where objects nearer than it can
+  measure show.
 
   The rate is judged over 10 s of status windows (`record_counts/2`), so
   a frame counted in one window rather than the next, which moves one
@@ -36,12 +37,16 @@ defmodule VisionCore.Stereo.DepthCheck do
   @type issue :: :pairs_dropped | :too_near
   @type t :: %{rate: Check.t(), range: Check.t()}
 
-  @typedoc "A status window's length, the frames each camera delivered in it and the depth images computed."
+  @typedoc """
+  A status window's length, the frames each camera delivered in it, the
+  depth images computed and the pairs dropped for the unit's `:max_hz`.
+  """
   @type counts :: %{
           elapsed_ms: pos_integer(),
           left: non_neg_integer(),
           right: non_neg_integer(),
-          depth: non_neg_integer()
+          depth: non_neg_integer(),
+          capped: non_neg_integer()
         }
 
   @doc "Every issue a check can raise."
@@ -116,10 +121,15 @@ defmodule VisionCore.Stereo.DepthCheck do
   # Pairs the cameras deliver, at the slower one's rate, that do not become depth.
   defp rate(%{left: %{present: true}, right: %{present: true}}, counts, load, raised) do
     case totals(counts) do
-      %{elapsed_ms: elapsed_ms, left: left, right: right, depth: depth}
+      %{elapsed_ms: elapsed_ms, left: left, right: right, depth: depth, capped: capped}
       when elapsed_ms >= @rate_window_ms and left > 0 and right > 0 ->
-        camera_hz = min(left, right) * 1_000 / elapsed_ms
-        judge_rate(camera_hz, depth * 1_000 / elapsed_ms, load, raised)
+        hz = fn count -> count * 1_000 / elapsed_ms end
+
+        judge_rate(
+          %{camera: hz.(min(left, right)), capped: hz.(capped), depth: hz.(depth)},
+          load,
+          raised
+        )
 
       _too_few ->
         Check.off()
@@ -129,13 +139,19 @@ defmodule VisionCore.Stereo.DepthCheck do
   defp rate(_cameras, _counts, _load, _raised), do: Check.off()
 
   defp totals(counts) do
-    Enum.reduce(counts, %{elapsed_ms: 0, left: 0, right: 0, depth: 0}, fn window, totals ->
+    none = %{elapsed_ms: 0, left: 0, right: 0, depth: 0, capped: 0}
+
+    Enum.reduce(counts, none, fn window, totals ->
       Map.new(totals, fn {key, total} -> {key, total + Map.fetch!(window, key)} end)
     end)
   end
 
-  defp judge_rate(camera_hz, depth_hz, load, raised) do
-    dropped = max(0.0, 100 * (1 - depth_hz / camera_hz))
+  # The pairs dropped for `:max_hz` are dropped by choice: the share dropped is of the others.
+  defp judge_rate(%{camera: camera_hz, capped: capped_hz, depth: depth_hz}, load, raised) do
+    let_through_hz = camera_hz - capped_hz
+
+    dropped =
+      if let_through_hz > 0, do: max(0.0, 100 * (1 - depth_hz / let_through_hz)), else: 0.0
 
     issues =
       if Check.past?(dropped, @max_dropped_percent, @pairs_dropped, raised),
@@ -145,6 +161,7 @@ defmodule VisionCore.Stereo.DepthCheck do
     Check.judged(issues, nil, %{
       gauge: dropped / @max_dropped_percent,
       dropped_percent: dropped,
+      capped_percent: min(100 * capped_hz / camera_hz, 100.0),
       depth_hz: depth_hz,
       camera_hz: camera_hz,
       load_percent: load

@@ -14,6 +14,9 @@ defmodule VisionCore.Outputs do
       frames of its output `output` (`VisionCore.Camera.Unit.output_key/3`).
     * `{:stereo_pair, name}` — `{:stereo_pair, %VisionCore.Stereo.Pair{}}`
       from the `VisionCore.Stereo.Pipeline` started as `name`.
+    * `{:stereo_pair_capped, name}` — `{:stereo_pair_capped, capture_ns}`
+      from the `VisionCore.Stereo.Pairer` started as `name`, for each
+      pair it drops for its `:max_hz`.
     * `{:detections, name}` — `{output, {pair, detections}}` from the
       detection pipeline `name` (`VisionCore.Detection.Pipeline`),
       `output` being the key, its `VisionCore.Exporter` output, and the
@@ -58,7 +61,8 @@ defmodule VisionCore.Outputs do
 
   @typedoc "An output and the name of the producer publishing it."
   @type key ::
-          {:camera_frame | :stereo_pair | :detections | :segmentation, atom()}
+          {:camera_frame | :stereo_pair | :stereo_pair_capped | :detections | :segmentation,
+           atom()}
           | {:camera_frame, atom(), atom()}
           | {:stereo_calibration, String.t()}
           | {:camera_calibration, atom()}

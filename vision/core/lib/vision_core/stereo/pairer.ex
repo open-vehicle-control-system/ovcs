@@ -15,6 +15,17 @@ defmodule VisionCore.Stereo.Pairer do
   The next pair goes in as soon as the pipeline reports the previous one
   done, failed or not.
 
+  With `:max_hz`, a pair captured too soon after the last one submitted
+  is dropped before the pipeline sees it, busy or not, and published
+  under `capped_key/0`. The pairs submitted are kept on a schedule of
+  capture times `1 / max_hz` s apart: a pair is due within three
+  quarters of a camera frame period of its slot. At 20 Hz from 30 Hz
+  cameras, every other slot falls half a frame period after a frame,
+  which takes it whatever the cameras' jitter. A pair later than that,
+  as after the pipeline was busy, or captured before the last one
+  submitted, as when a camera's clock starts over, starts the schedule
+  over from its own capture time.
+
   It also measures how far apart the two cameras capture, on every frame
   they deliver (`VisionCore.Stereo.Sync`), which `sync/1` answers, and
   two latencies, which `latencies/1` answers: how long a frame takes
@@ -30,9 +41,13 @@ defmodule VisionCore.Stereo.Pairer do
       USB cameras with a stable phase offset. It changes while the
       pairer runs (`put_pair_tolerance_ms/2`), as the vision parameter
       `<prefix>.pairing.pair_tolerance_ms`.
+    * `:max_hz` (0) — the most pairs submitted a second, a number from
+      0 to 1000, 0 for every pair the pipeline can take. It changes
+      while the pairer runs (`put_max_hz/2`), as the vision parameter
+      `<prefix>.pairing.max_hz`.
     * `:fps` (30) — the cameras' frame rate, an integer from 1 on:
       frames half a period apart or more are not measured as a pair of
-      the sync.
+      the sync, and a pair three quarters of a period early is due.
     * `:now_ns` (`System.monotonic_time(:nanosecond)`) — the clock
       arrivals and submissions are timed on, a function of no argument
       on the timescale of `Frame.capture_ns`.
@@ -50,9 +65,16 @@ defmodule VisionCore.Stereo.Pairer do
       range: {0, 1000},
       default: 33,
       description: "Largest capture time gap between the two frames of a pair, in ms"
+    },
+    max_hz: %{
+      type: :double,
+      range: {0, 1000},
+      default: 0,
+      description: "Most pairs matched a second; 0 matches every pair the pipeline can take"
     }
   ]
   @ns_per_ms 1_000_000
+  @ns_per_s 1_000_000_000
   @default_fps 30
   # A few frame periods: enough to find the closest pair.
   @frames_kept_per_side 4
@@ -80,7 +102,10 @@ defmodule VisionCore.Stereo.Pairer do
   @spec latencies(GenServer.server()) :: %{cameras: float() | nil, pairing: float() | nil}
   def latencies(server \\ __MODULE__), do: GenServer.call(server, :latencies)
 
-  @doc "The pairer's setting, `:pair_tolerance_ms`: its type, the values it takes and its default."
+  @doc """
+  The pairer's settings, `:pair_tolerance_ms` and `:max_hz`: their type,
+  the values they take and their default.
+  """
   @spec setting_specs() :: Settings.specs()
   def setting_specs, do: @setting_specs
 
@@ -96,23 +121,48 @@ defmodule VisionCore.Stereo.Pairer do
   def put_pair_tolerance_ms(server \\ __MODULE__, tolerance_ms),
     do: GenServer.call(server, {:put_pair_tolerance_ms, tolerance_ms})
 
+  @doc "The most pairs submitted a second, 0.0 for every pair."
+  @spec max_hz(GenServer.server()) :: float()
+  def max_hz(server \\ __MODULE__), do: GenServer.call(server, :max_hz)
+
+  @doc """
+  Changes the most pairs submitted a second to `max_hz`, 0 for every
+  pair, the schedule starting over from the next pair, or says why it is
+  refused.
+  """
+  @spec put_max_hz(GenServer.server(), term()) :: :ok | {:error, String.t()}
+  def put_max_hz(server \\ __MODULE__, max_hz), do: GenServer.call(server, {:put_max_hz, max_hz})
+
+  @doc """
+  The `VisionCore.Outputs` key under which the pairer publishes
+  `{:stereo_pair_capped, capture_ns}` for each pair it drops for its
+  `:max_hz`, `capture_ns` the left frame's.
+  """
+  @spec capped_key() :: VisionCore.Outputs.key()
+  def capped_key, do: {:stereo_pair_capped, __MODULE__}
+
   @impl GenServer
   def init(opts) do
     cameras = Keyword.fetch!(opts, :cameras)
     pipeline = Keyword.get(opts, :pipeline, Pipeline)
-    %{pair_tolerance_ms: tolerance_ms} = Settings.init!(@setting_specs, opts)
+    %{pair_tolerance_ms: tolerance_ms, max_hz: max_hz} = Settings.init!(@setting_specs, opts)
+    fps = VisionCore.Options.integer!(opts, :fps, @default_fps, 1)
 
     for side <- ["left", "right"] do
       {driver, ^side} = List.keyfind(cameras, side, 1) || raise "no #{side} camera in :cameras"
       :ok = Outputs.subscribe({:camera_frame, driver.name_for(side)})
     end
 
-    Logger.info("#{__MODULE__} pairing within #{tolerance_ms} ms")
+    rate = if max_hz > 0, do: ", at most #{max_hz} pairs a second", else: ""
+    Logger.info("#{__MODULE__} pairing within #{tolerance_ms} ms#{rate}")
 
     {:ok,
      %{
        pipeline: pipeline,
        pair_tolerance_ns: tolerance_ms * @ns_per_ms,
+       max_hz: max_hz,
+       due_slack_ns: div(3 * @ns_per_s, 4 * fps),
+       next_due_ns: nil,
        left_frames: [],
        right_frames: [],
        awaiting_pair: false,
@@ -121,7 +171,7 @@ defmodule VisionCore.Stereo.Pairer do
        arrivals_ns: %{},
        capture_latency_ns: @no_latency,
        pairing_wait_ns: @no_latency,
-       sync: Sync.new(VisionCore.Options.integer!(opts, :fps, @default_fps, 1)),
+       sync: Sync.new(fps),
        timer: StageTimer.new(window: 30, label: "pairer")
      }}
   end
@@ -149,6 +199,15 @@ defmodule VisionCore.Stereo.Pairer do
 
       {:error, _reason} = refusal ->
         {:reply, refusal, state}
+    end
+  end
+
+  def handle_call(:max_hz, _from, state), do: {:reply, state.max_hz, state}
+
+  def handle_call({:put_max_hz, max_hz}, _from, state) do
+    case Settings.put(@setting_specs, %{max_hz: nil}, :max_hz, max_hz) do
+      {:ok, %{max_hz: max_hz}} -> {:reply, :ok, %{state | max_hz: max_hz, next_due_ns: nil}}
+      {:error, _reason} = refusal -> {:reply, refusal, state}
     end
   end
 
@@ -222,28 +281,66 @@ defmodule VisionCore.Stereo.Pairer do
       {:out_of_tolerance, delta_ns} ->
         record_drop(state, delta_ns, :drop_tolerance)
 
-      {:ok, _left, _right, delta_ns} when state.awaiting_pair ->
-        record_drop(state, delta_ns, :drop_busy)
-
       {:ok, left, right, delta_ns} ->
-        Pipeline.submit(state.pipeline, left, right)
-        submitted_at_ns = state.now_ns.()
-
-        first_arrival_ns =
-          min(state.arrivals_ns[arrival_key(left)], state.arrivals_ns[arrival_key(right)])
-
-        %{
-          state
-          | left_frames: newer_than(state.left_frames, left),
-            right_frames: newer_than(state.right_frames, right),
-            awaiting_pair: true,
-            submitted_at_ns: submitted_at_ns,
-            pairing_wait_ns:
-              add_latency(state.pairing_wait_ns, submitted_at_ns - first_arrival_ns),
-            timer: StageTimer.record(state.timer, :pair_delta, delta_ns)
-        }
+        cond do
+          too_soon?(state, left.capture_ns) -> cap(state, left, right, delta_ns)
+          state.awaiting_pair -> record_drop(state, delta_ns, :drop_busy)
+          true -> submit(state, left, right, delta_ns)
+        end
     end
   end
+
+  defp submit(state, left, right, delta_ns) do
+    Pipeline.submit(state.pipeline, left, right)
+    submitted_at_ns = state.now_ns.()
+
+    first_arrival_ns =
+      min(state.arrivals_ns[arrival_key(left)], state.arrivals_ns[arrival_key(right)])
+
+    %{
+      consume(state, left, right)
+      | awaiting_pair: true,
+        submitted_at_ns: submitted_at_ns,
+        next_due_ns: next_due_ns(state, left.capture_ns),
+        pairing_wait_ns: add_latency(state.pairing_wait_ns, submitted_at_ns - first_arrival_ns),
+        timer: StageTimer.record(state.timer, :pair_delta, delta_ns)
+    }
+  end
+
+  # Its frames go as a submitted pair's do, so that it is dropped, and published, once.
+  defp cap(state, left, right, delta_ns) do
+    Outputs.publish(capped_key(), {:stereo_pair_capped, left.capture_ns})
+    state |> consume(left, right) |> record_drop(delta_ns, :drop_capped)
+  end
+
+  defp consume(state, left, right) do
+    %{
+      state
+      | left_frames: newer_than(state.left_frames, left),
+        right_frames: newer_than(state.right_frames, right)
+    }
+  end
+
+  # Before its slot's slack, and not before the previous slot's, which only a clock that started over gives.
+  defp too_soon?(%{next_due_ns: nil}, _capture_ns), do: false
+
+  defp too_soon?(state, capture_ns) do
+    due_from_ns = state.next_due_ns - state.due_slack_ns
+    capture_ns < due_from_ns and capture_ns >= due_from_ns - interval_ns(state.max_hz)
+  end
+
+  defp next_due_ns(%{max_hz: max_hz}, _capture_ns) when max_hz == 0, do: nil
+
+  defp next_due_ns(state, capture_ns) do
+    slot_ns =
+      if state.next_due_ns && abs(capture_ns - state.next_due_ns) <= state.due_slack_ns,
+        do: state.next_due_ns,
+        else: capture_ns
+
+    slot_ns + interval_ns(state.max_hz)
+  end
+
+  defp interval_ns(max_hz), do: round(@ns_per_s / max_hz)
 
   defp record_drop(state, delta_ns, counter) do
     update_in(state.timer, fn timer ->

@@ -5,9 +5,13 @@ defmodule VisionCore.Stereo.DepthCheckTest do
 
   @running %{left: %{present: true, fps: 35.0}, right: %{present: true, fps: 34.8}}
 
-  # `seconds` one-second status windows, newest first, each with these frame and depth counts.
-  defp counts(left, right, depth, seconds \\ 10),
-    do: List.duplicate(%{elapsed_ms: 1_000, left: left, right: right, depth: depth}, seconds)
+  # `seconds` one-second status windows, newest first, each with these frame, depth and capped pair counts.
+  defp counts(left, right, depth, seconds \\ 10, capped \\ 0),
+    do:
+      List.duplicate(
+        %{elapsed_ms: 1_000, left: left, right: right, depth: depth, capped: capped},
+        seconds
+      )
 
   defp window(overrides) do
     Map.merge(
@@ -50,9 +54,23 @@ defmodule VisionCore.Stereo.DepthCheckTest do
              DepthCheck.check(window(counts: counts(35, 35, 36))).rate
   end
 
+  test "rate leaves out the pairs dropped for the unit's :max_hz, whose share it reports apart" do
+    assert %{level: :ok, dropped_percent: +0.0, capped_percent: 50.0, depth_hz: 15.0} =
+             DepthCheck.check(window(counts: counts(30, 30, 15, 10, 15))).rate
+
+    assert %{level: :ok, capped_percent: +0.0} = DepthCheck.check(window([])).rate
+  end
+
+  test "rate still warns of the pairs the unit drops beyond those of its :max_hz" do
+    rate = DepthCheck.check(window(counts: counts(30, 30, 12, 10, 15))).rate
+
+    assert %{level: :warning, issues: [:pairs_dropped], capped_percent: 50.0} = rate
+    assert_in_delta rate.dropped_percent, 100 * (1 - 12 / 15), 1.0e-9
+  end
+
   test "rate judges the drops over the last 10 s, so one second's do not warn" do
     one_bad_second = [
-      %{elapsed_ms: 1_000, left: 30, right: 30, depth: 27} | counts(30, 30, 30, 9)
+      %{elapsed_ms: 1_000, left: 30, right: 30, depth: 27, capped: 0} | counts(30, 30, 30, 9)
     ]
 
     assert %{level: :ok, dropped_percent: dropped} =

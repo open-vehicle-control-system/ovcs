@@ -37,6 +37,12 @@ function depthCheckFigure(label, check, value, hint) {
   return [{ label, value: value(check), tone: check.level === 'ok' ? 'ok' : 'error', hint }]
 }
 
+// The pairs skipped for the unit's max_hz, by choice: shown without a health colour, 0 % on a unit without a cap.
+function cappedFigure(check) {
+  if (!check || check.level === 'off' || typeof check.cappedPercent !== 'number') return []
+  return [{ label: 'capped', value: `${formatNumber(check.cappedPercent, 0)} %`, hint: HINTS.capped }]
+}
+
 // After the rate, the depth checks' figures, then the quality stage's averages: pixels matched, disparity mean and
 // spread, and jitter, the matcher's noise on a still scene.
 export function depthFigures(status) {
@@ -44,6 +50,7 @@ export function depthFigures(status) {
   const figures = [
     { label: 'rate', value: `${formatNumber(hz)} Hz`, tone: hz > 0 ? 'ok' : 'error', hint: HINTS.depthRate },
     ...depthCheckFigure('dropped', depth?.rate, (check) => `${formatNumber(check.droppedPercent, 0)} %`, HINTS.dropped),
+    ...cappedFigure(depth?.rate),
     ...depthCheckFigure(
       'too near',
       depth?.range,

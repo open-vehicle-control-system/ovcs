@@ -91,6 +91,9 @@ defmodule VisionCore.Stereo.Supervisor do
       read-only root filesystem. Without it, a commit writes to
       `calibration_path`.
     * `:pair_tolerance_ms` (33) — see `VisionCore.Stereo.Pairer`.
+    * `:max_hz` (0) — the most pairs matched a second, 0 for every pair
+      the pipeline can take: the pairs captured sooner are dropped before
+      the pipeline; see `VisionCore.Stereo.Pairer`.
     * `:align_correction` (`true`) — keep the rectified rows lined up
       with `VisionCore.Stereo.AlignmentCorrection`.
     * `:stages` (`VisionCore.Stereo.Pipeline.default_stages/0`) — the
@@ -115,6 +118,8 @@ defmodule VisionCore.Stereo.Supervisor do
   use Supervisor
   require Logger
 
+  alias VisionCore.Settings
+
   alias VisionCore.Stereo.{
     AlignmentCorrection,
     Matcher,
@@ -134,7 +139,7 @@ defmodule VisionCore.Stereo.Supervisor do
   @max_seconds 60
 
   @options [:driver, :left, :right, :width, :height, :fps, :match_width, :match_height] ++
-             [:prefix, :calibration_dir, :calibration_store_dir, :pair_tolerance_ms] ++
+             [:prefix, :calibration_dir, :calibration_store_dir, :pair_tolerance_ms, :max_hz] ++
              [:align_correction, :stages, :compute, :backends, :defn_options]
   @side_options [:frame_id, :calibration_path]
   @exporter_options [
@@ -287,7 +292,8 @@ defmodule VisionCore.Stereo.Supervisor do
          :ok <- check_keyword(Keyword.get(opts, :left), "its :left options"),
          :ok <- check_keyword(Keyword.get(opts, :right), "its :right options"),
          :ok <- check_sides(driver, Keyword.fetch!(opts, :left), Keyword.fetch!(opts, :right)),
-         :ok <- check_fps(Keyword.get(opts, :fps, @default_fps)) do
+         :ok <- check_fps(Keyword.get(opts, :fps, @default_fps)),
+         :ok <- check_max_hz(opts) do
       prefix = Keyword.get(opts, :prefix, @default_prefix)
 
       {left, right} =
@@ -308,6 +314,14 @@ defmodule VisionCore.Stereo.Supervisor do
 
   defp check_fps(fps) when is_integer(fps) and fps > 0, do: :ok
   defp check_fps(fps), do: {:error, "its :fps is an integer from 1 on, got #{inspect(fps)}"}
+
+  # As the pairer checks it at start, before any child starts.
+  defp check_max_hz(opts) do
+    Settings.init!(Keyword.take(Pairer.setting_specs(), [:max_hz]), opts)
+    :ok
+  rescue
+    error in ArgumentError -> {:error, error.message}
+  end
 
   defp check_keyword(options, what) do
     if is_list(options) and Keyword.keyword?(options),
@@ -388,6 +402,7 @@ defmodule VisionCore.Stereo.Supervisor do
       match_width: Keyword.get(opts, :match_width, cameras.width),
       match_height: Keyword.get(opts, :match_height, cameras.height),
       pair_tolerance_ms: Keyword.get(opts, :pair_tolerance_ms, @default_pair_tolerance_ms),
+      max_hz: Keyword.get(opts, :max_hz, 0),
       align_correction: Keyword.get(opts, :align_correction, true),
       stages: stages,
       backends: backends(opts),
@@ -566,6 +581,7 @@ defmodule VisionCore.Stereo.Supervisor do
       {Pairer,
        cameras: [{config.driver, "left"}, {config.driver, "right"}],
        pair_tolerance_ms: config.pair_tolerance_ms,
+       max_hz: config.max_hz,
        fps: config.fps}
     ] ++
       alignment_correction_specs(config) ++

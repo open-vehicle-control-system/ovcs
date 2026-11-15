@@ -15,7 +15,7 @@ The figure that matters is the **depth rate**: how many depth images the unit co
 | Dashboard, bottom bar | Stereo load | Share of each second the pairs spent at the stereo device, from a pair's hand-over to the device's reply. Near 100 %, the stages are the bottleneck. See [Stereo load](#stereo-load). |
 | Dashboard, Cameras and Pipelines menus | each step's time, each pipeline's total, the stereo cameras' and Pairing's latencies | Mean time of each step over the last second's pairs or frames, and their sum. Steps computed in one pass have no time of their own: they share one time, which the total counts. The latencies are waits, which the total leaves out. See [Step times](#step-times) and [Latencies](#latencies). |
 | Log, `[pipeline]` line | each stage, `total`, `wall` | Every 30 pairs: each stage's time, a pair's latency (`total`) and the interval between pairs (`wall`), as median / 95th percentile / maximum in milliseconds. |
-| Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy. |
+| Log, `[pairer]` line | `pair_delta` | The capture-time gap between a pair's left and right frames: how well the cameras are synchronised. The same line counts the pairs dropped while the pipeline was busy (`drop_busy`) and those dropped for `max_hz` (`drop_capped`). |
 
 The log goes to the unit's `RingLogger`; read it over SSH with `RingLogger.next`.
 
@@ -199,6 +199,7 @@ Each setting trades rate against something else. The matching dominates, and its
 | `performance:` | each QNN backend | `burst`, the default, holds the NPU at its highest voltage corner: the models' fastest times, at more power and heat. `sustained_high_performance` and `balanced` trade time for both. |
 | `rpc_polling_us:` | each QNN backend | 0, the default, lets each Port's thread sleep until the NPU signals the end of an inference, up to about a millisecond late. Up to 9999 µs of polling wakes it sooner, but keeps a core busy for each Port through each inference. Keep 0 when the CPU limits the frame rate. |
 | Camera frame rate | `:fps` | Pairs the stages cannot take are dropped. On the Pi 5, 24 frames a second instead of 30 did not raise the depth rate. |
+| `max_hz` | the `:stereo` component, Pairing, live | Matches at most that many pairs a second and drops the others before the stages, so they cost nothing; detection on the stereo pair follows. Unlike a lower `:fps`, it leaves the cameras' rate alone. |
 
 The kind of each stage setting, live or build, is in [Stereo stages](./stages.md). Change one thing at a time, then compare the depth rate and the `[pipeline]` line over at least a minute. On a busy board, single readings vary by about 15 %.
 

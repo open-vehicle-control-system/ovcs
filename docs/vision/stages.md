@@ -51,11 +51,14 @@ The defaults and accepted values of each setting are in its stage's module, link
 - a value outside what the stage accepts;
 - a `default_stages/1` override that names no stage.
 
-Before the stages, the pairing hands the pipeline the two frames captured closest together. Its one setting is live, as `<prefix>.pairing.pair_tolerance_ms`:
+Before the stages, the pairing hands the pipeline the two frames captured closest together. Its settings are live, as `<prefix>.pairing.<setting>`:
 
 | Setting | Kind | Meaning |
 |---|---|---|
 | `pair_tolerance_ms` | live | Largest capture time gap between the two frames of a pair, in ms: 0 to 1000, 33 by default (`:pair_tolerance_ms` on the `:stereo` component). |
+| `max_hz` | live | Most pairs matched a second: 0 to 1000, 0 by default for every pair the pipeline can take (`:max_hz` on the `:stereo` component). A pair captured sooner than `1 / max_hz` s after the last one matched is dropped before the stages, so it costs no rectification or matching. Detection, which runs on the matched pairs, follows that rate. |
+
+`max_hz` keeps the pairs matched on a schedule of capture times `1 / max_hz` apart. A pair captured within three quarters of a camera frame period of its slot takes it, so the cameras' jitter does not change how many pairs are matched: at 30 frames a second, `max_hz: 15` matches every other pair and `max_hz: 20` two pairs in three. A pair later than that, as after the pipeline was busy, starts the schedule over from its own capture time. The dashboard reports the share of pairs `max_hz` drops as `capped`, apart from `dropped`, which leaves them out ([Status](./channels.md#status)).
 
 Each cost below is the median time of the stage in the `stereo_match` Port. It was measured on a Raspberry Pi 5 matching 480 × 270 with 64 disparities over 3 paths, while both cameras captured at 30 frames a second. [Vision performance](./performance.md) has the full measurements.
 

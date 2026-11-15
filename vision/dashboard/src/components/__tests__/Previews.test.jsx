@@ -117,6 +117,22 @@ describe('Previews', () => {
     expect(card('depth').querySelector('[data-figure="too near"]')).toBeNull()
   })
 
+  it('shows the share of the pairs skipped for the unit\'s max_hz apart from those dropped, never as unhealthy', () => {
+    const rate = { ...snapshot.depth.rate, droppedPercent: 0.0, cappedPercent: 50.0, depthHz: 15.0, cameraHz: 30.0 }
+    render(<Previews status={{ ...snapshot, depth: { ...snapshot.depth, rate } }} socket={socket} />)
+
+    expect(card('depth').querySelector('[data-figure="dropped"]').textContent).toBe('dropped0 %')
+    expect(card('depth').querySelector('[data-figure="capped"]').textContent).toBe('capped50 %')
+    expect(figure('depth').querySelector('[data-alert]')).toBeNull()
+  })
+
+  it('shows a capped share of 0 % on a unit without max_hz, as every unit shows it', () => {
+    const rate = { ...snapshot.depth.rate, cappedPercent: 0.0 }
+    render(<Previews status={{ ...snapshot, depth: { ...snapshot.depth, rate } }} socket={socket} />)
+
+    expect(card('depth').querySelector('[data-figure="capped"]').textContent).toBe('capped0 %')
+  })
+
   it('puts the depth rate under the depth preview', () => {
     render(<Previews status={snapshot} socket={socket} />)
 

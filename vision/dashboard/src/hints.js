@@ -74,7 +74,14 @@ export const HINTS = {
     title: 'Dropped',
     text:
       'The share of the pairs the cameras delivered over the last 10 s that never became depth, because the stereo ' +
-      'work took longer than a frame. The unit warns past 5 %: lower the cameras’ frame rate or the stereo work.'
+      'work took longer than a frame, leaving out those the unit’s max_hz skips. The unit warns past 5 %: lower the ' +
+      'cameras’ frame rate or the stereo work.'
+  },
+  capped: {
+    title: 'Capped',
+    text:
+      'The share of the pairs the cameras delivered over the last 10 s that the unit skipped before matching, to ' +
+      'match no more than its max_hz a second. They are skipped by choice, so they never count as dropped.'
   },
   tooNear: {
     title: 'Too near',

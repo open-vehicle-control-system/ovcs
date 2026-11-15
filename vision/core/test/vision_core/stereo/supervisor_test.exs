@@ -6,7 +6,8 @@ defmodule VisionCore.Stereo.SupervisorTest do
   import VisionCore.Stereo.TestHelpers, only: [calibration_path: 2]
 
   alias VisionCore.Parameters.MemoryStore
-  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pipeline, VehicleRectification}
+  alias VisionCore.Stereo.{Matcher, NativeSegment, NxSegment, Pairer, Pipeline}
+  alias VisionCore.Stereo.VehicleRectification
   alias VisionCore.Stereo.Supervisor, as: StereoSupervisor
 
   @moduletag :tmp_dir
@@ -283,6 +284,7 @@ defmodule VisionCore.Stereo.SupervisorTest do
                        calibration_dir: "/rom/calibration",
                        calibration_store_dir: "/data/calibration",
                        pair_tolerance_ms: 5,
+                       max_hz: 15,
                        align_correction: false,
                        stages: Pipeline.default_stages(),
                        compute: :native,
@@ -372,6 +374,20 @@ defmodule VisionCore.Stereo.SupervisorTest do
 
       assert log =~ "VisionCore.Stereo.Supervisor failed to start, cameras down: its :fps is"
       refute log =~ "Elixir.VisionCore.Stereo.Supervisor failed"
+    end
+  end
+
+  test "is left down, saying why, with a :max_hz that is no number from 0 to 1000" do
+    Process.flag(:trap_exit, true)
+
+    for max_hz <- [-1, "15"] do
+      log =
+        capture_log(fn ->
+          assert StereoSupervisor.start_link(Keyword.merge(@stereo, max_hz: max_hz)) == :ignore
+        end)
+
+      assert log =~
+               "VisionCore.Stereo.Supervisor failed to start, cameras down: its :max_hz must be"
     end
   end
 
@@ -487,6 +503,20 @@ defmodule VisionCore.Stereo.SupervisorTest do
     test "with both calibration files, starts the pipeline", %{tmp_dir: tmp_dir} do
       install_calibration(tmp_dir, [:left, :right])
       assert Pipeline in child_ids(in_dir(tmp_dir))
+    end
+
+    test "with both calibration files, gives the pairer the unit's :max_hz, 0 without one",
+         %{tmp_dir: tmp_dir} do
+      install_calibration(tmp_dir, [:left, :right])
+
+      pairer_options = fn opts ->
+        {:ok, {_flags, children}} = StereoSupervisor.init(opts)
+        %{start: {Pairer, :start_link, [options]}} = Enum.find(children, &(&1.id == Pairer))
+        options
+      end
+
+      assert pairer_options.(in_dir(tmp_dir) ++ [max_hz: 15])[:max_hz] == 15
+      assert pairer_options.(in_dir(tmp_dir))[:max_hz] == 0
     end
 
     test "calibrated?/1 once both sides' calibration files exist", %{tmp_dir: tmp_dir} do
