@@ -554,6 +554,50 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       assert side.header.frame_id == "stereo/left_optical"
     end
 
+    test "publishes a camera made from the stereo left camera's stream as a camera of its own" do
+      outputs = [
+        half: [resolution: {1152, 648}, processor: :isp, send: false],
+        half_jpeg: [from: :half, format: :jpeg, quality: 80]
+      ]
+
+      camera =
+        {:camera,
+         name: :left,
+         driver: VisionCore.Camera.LibCameraStream,
+         stream_of: :left,
+         max_hz: 10,
+         outputs: outputs}
+
+      config = update_in(config(OtherCamera).components, &(&1 ++ [camera]))
+
+      options =
+        Keyword.put(
+          options(OtherCamera,
+            stereo: [],
+            cameras: [names: [:left], outputs: [left: :half_jpeg]]
+          ),
+          :config,
+          config
+        )
+
+      assert ZenohExporter.check(options) == :ok
+      start_runner(options, config)
+      jpeg = <<0xFF, 0xD8, 1, 0xFF, 0xD9>>
+
+      Outputs.publish(
+        {:camera_frame, VisionCore.Camera.LibCameraStream.name_for("left"), :half_jpeg},
+        {:camera_frame,
+         %{jpeg_frame("left", 1) | output: :half_jpeg, jpeg: jpeg, width: 1152, height: 648}}
+      )
+
+      assert_receive {:published, "left/image_raw/compressed", %CompressedImage{} = image}, 1_000
+      assert image.data == jpeg
+      assert image.header.frame_id == "left_optical"
+
+      assert_receive {:published, "left/camera_info", %CameraInfo{width: 1152, height: 648}},
+                     1_000
+    end
+
     test "publishes each pair, in the frame its left frame carries" do
       start_runner(options(OtherCamera, stereo: []), config(OtherCamera))
 

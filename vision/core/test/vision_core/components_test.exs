@@ -89,4 +89,152 @@ defmodule VisionCore.ComponentsTest do
       assert_raise FunctionClauseError, fn -> Components.start(component, []) end
     end
   end
+
+  describe "wire_streams!/1" do
+    @outputs [
+      half: [resolution: {1152, 648}, processor: :isp, send: false],
+      half_jpeg: [from: :half, format: :jpeg, quality: 80]
+    ]
+
+    @stereo_options [
+      driver: VisionCore.Camera.LibCamera,
+      left: [camera_id: 1, sensor_mode: {2304, 1296}, format: :grey],
+      right: [camera_id: 0, sensor_mode: {2304, 1296}, format: :grey]
+    ]
+    @stream_options [
+      name: :left,
+      driver: VisionCore.Camera.LibCameraStream,
+      stream_of: :left,
+      max_hz: 10,
+      outputs: @outputs
+    ]
+    @stereo {:stereo, @stereo_options}
+    @stream {:camera, @stream_options}
+
+    defp stereo(options), do: {:stereo, @stereo_options ++ options}
+
+    defp side(components, side) do
+      {:stereo, opts} = List.keyfind(components, :stereo, 0)
+      Keyword.fetch!(opts, side)
+    end
+
+    defp camera(components, name) do
+      Enum.find_value(components, fn
+        {:camera, opts} -> if opts[:name] == name, do: opts
+        _other -> nil
+      end)
+    end
+
+    test "gives the stereo side the camera's outputs and max_hz, and the camera the side's label" do
+      components = Components.wire_streams!([@stereo, @stream])
+
+      assert side(components, :left) ==
+               [camera_id: 1, sensor_mode: {2304, 1296}, format: :grey] ++
+                 [outputs: @outputs, outputs_max_hz: 10]
+
+      assert side(components, :right) == [camera_id: 0, sensor_mode: {2304, 1296}, format: :grey]
+      assert camera(components, :left)[:side_label] == "stereo/left"
+    end
+
+    test "names the side under the stereo unit's prefix, and leaves out a max_hz not given" do
+      components =
+        Components.wire_streams!([
+          stereo(prefix: "front"),
+          {:camera,
+           name: :colour,
+           driver: VisionCore.Camera.LibCameraStream,
+           stream_of: :right,
+           outputs: @outputs}
+        ])
+
+      assert camera(components, :colour)[:side_label] == "front/right"
+      refute Keyword.has_key?(side(components, :right), :outputs_max_hz)
+      assert side(components, :right)[:outputs] == @outputs
+    end
+
+    test "leaves a configuration without a stream as it is" do
+      components = [
+        @stereo,
+        {:camera, name: :hq, driver: VisionCore.Camera.GStreamer, device: "/dev/video0"}
+      ]
+
+      assert Components.wire_streams!(components) == components
+      assert Components.wire_streams!([]) == []
+    end
+
+    for {refusal, components, message} <- [
+          {"a stream without a stereo unit", [@stream],
+           "camera :left: stream_of: :left names a side of the stereo unit, " <>
+             "and there is no :stereo component"},
+          {"a stereo unit whose driver is not LibCamera",
+           [
+             {:stereo, driver: VisionCore.Camera.V4L2Pair, left: [csiphy: 0], right: [csiphy: 1]},
+             @stream
+           ],
+           "camera :left: stream_of: is a second stream of a VisionCore.Camera.LibCamera " <>
+             "capture, and the stereo unit's driver is VisionCore.Camera.V4L2Pair"},
+          {"a stereo unit on GStreamer",
+           [{:stereo, driver: VisionCore.Camera.GStreamer, left: [], right: []}, @stream],
+           "the stereo unit's driver is VisionCore.Camera.GStreamer"},
+          {"a stereo unit on ROS 2 topics",
+           [{:stereo, driver: VisionCore.Ros2.Camera, left: [], right: []}, @stream],
+           "the stereo unit's driver is VisionCore.Ros2.Camera"},
+          {"a side named twice",
+           [@stereo, @stream, {:camera, Keyword.put(@stream_options, :name, :colour)}],
+           "cameras :left and :colour both name stream_of: :left: " <>
+             "the ISP makes one stream beside the frames' own"},
+          {"a side that is neither left nor right",
+           [@stereo, {:camera, Keyword.put(@stream_options, :stream_of, :middle)}],
+           "camera :left: stream_of: is :left or :right, the stereo side whose capture makes it, " <>
+             "got :middle"},
+          {"stream_of: on another driver",
+           [
+             @stereo,
+             {:camera, name: :hq, driver: VisionCore.Camera.GStreamer, stream_of: :left}
+           ],
+           "camera :hq: stream_of: is VisionCore.Camera.LibCameraStream's, " <>
+             "and its driver is VisionCore.Camera.GStreamer"},
+          {"a LibCameraStream camera without stream_of:",
+           [@stereo, {:camera, name: :left, driver: VisionCore.Camera.LibCameraStream}],
+           "camera :left: VisionCore.Camera.LibCameraStream needs stream_of:, " <>
+             "the stereo side whose capture makes it"},
+          {"a camera without outputs",
+           [
+             @stereo,
+             {:camera, name: :left, driver: VisionCore.Camera.LibCameraStream, stream_of: :left}
+           ], "camera :left: it names its :outputs, which the stereo side's capture makes"},
+          {"an ISP output larger than the side's sensor mode",
+           [
+             @stereo,
+             {:camera,
+              Keyword.put(@stream_options, :outputs,
+                full: [resolution: {4608, 2592}, processor: :isp, send: false],
+                full_jpeg: [from: :full, format: :jpeg]
+              )}
+           ],
+           "camera :left, made by the stereo unit's left camera as its :outputs and " <>
+             ":outputs_max_hz (the camera's max_hz): output full: 4608x2592 is larger than " <>
+             "the sensor mode's 2304x1296, the most the ISP makes"},
+          {"an ISP output of an odd size",
+           [
+             @stereo,
+             {:camera,
+              Keyword.put(@stream_options, :outputs,
+                half: [resolution: {1152, 649}, processor: :isp, send: false],
+                half_jpeg: [from: :half, format: :jpeg]
+              )}
+           ], "output half: an ISP output takes an even width and height, not 1152x649"},
+          {"a max_hz out of range",
+           [@stereo, {:camera, Keyword.put(@stream_options, :max_hz, 0)}],
+           ":outputs_max_hz is a number above 0 and up to 1000, got 0"}
+        ] do
+      @components components
+      @message message
+
+      test "refuses #{refusal}" do
+        error = assert_raise ArgumentError, fn -> Components.wire_streams!(@components) end
+        assert error.message =~ @message
+      end
+    end
+  end
 end

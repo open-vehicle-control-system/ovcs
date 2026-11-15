@@ -207,3 +207,34 @@ defmodule VisionApiWeb.CalibrationControllerTest do
              json_response(conn, 404)
   end
 end
+
+defmodule VisionApiWeb.CalibrationControllerStreamCameraTest do
+  use VisionApiWeb.ConnCase, async: false
+
+  @moduletag :tmp_dir
+  @moduletag :capture_log
+
+  test "GET /api/calibrations lists a camera made from the stereo left camera's stream, and its pose, apart from the stereo pair",
+       %{conn: conn, tmp_dir: tmp_dir} do
+    tmp_dir |> VisionApiWeb.TestUnit.stream_camera_config() |> VisionApiWeb.TestUnit.start()
+
+    assert %{"data" => [stereo, camera, pose]} =
+             conn |> get("/api/calibrations") |> json_response(200)
+
+    assert %{"id" => "stereo", "attributes" => %{"kind" => "stereo"}} = stereo
+
+    assert %{
+             "id" => "left",
+             "attributes" => %{"kind" => "camera", "cameras" => [%{"name" => "left"}]}
+           } =
+             camera
+
+    assert %{
+             "id" => "left-pose",
+             "attributes" => %{
+               "kind" => "pose",
+               "cameras" => [%{"name" => "stereo/left"}, %{"name" => "left"}]
+             }
+           } = pose
+  end
+end

@@ -90,7 +90,9 @@ defmodule VisionCore.Camera.LibCamera do
   its output's name as its `:output`; the frames stay under
   `{:camera_frame, name}`, so that the stereo unit's Pairer never
   receives an output's. `capture_outputs/1` refuses outputs the capture
-  program cannot make, before it starts.
+  program cannot make, before it starts. A camera of its own made from
+  this stream (`VisionCore.Camera.LibCameraStream`) sets both, through
+  `VisionCore.Components.wire_streams!/1`.
 
   ## Sync
 

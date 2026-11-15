@@ -25,4 +25,37 @@ defmodule VisionApiWeb.TestUnit do
 
     :ok
   end
+
+  @doc """
+  A stereo unit on `VisionCore.Camera.LibCamera`, its capture programs
+  idle scripts written in `directory`, uncalibrated, and the camera of
+  its own `:left` made from its left camera's stream.
+  """
+  @spec stream_camera_config(Path.t()) :: VisionCore.Config.t()
+  def stream_camera_config(directory) do
+    idle = Path.join(directory, "camera_capture")
+    File.write!(idle, "#!/bin/sh\nexec cat > /dev/null\n")
+    File.chmod!(idle, 0o755)
+    side = [executable: idle, sensor_mode: {2304, 1296}, format: :grey]
+
+    %VisionCore.Config{
+      components: [
+        {:stereo,
+         driver: VisionCore.Camera.LibCamera,
+         left: [camera_id: 1] ++ side,
+         right: [camera_id: 0] ++ side},
+        {:camera,
+         name: :left,
+         driver: VisionCore.Camera.LibCameraStream,
+         stream_of: :left,
+         max_hz: 10,
+         outputs: [
+           half: [resolution: {1152, 648}, processor: :isp, send: false],
+           half_jpeg: [from: :half, format: :jpeg, quality: 80]
+         ],
+         calibration_store_dir: directory}
+      ],
+      preview: [max_hz: 50]
+    }
+  end
 end
