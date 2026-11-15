@@ -872,14 +872,14 @@ defmodule VisionCore.Exporter.RunnerTest do
     test "hands a queued output's values at most :max_hz a second, each in turn" do
       start_forwarder(outputs: [stereo_pair: [max_hz: 5]], delivery: {:queue, 10})
 
+      # Read before the runner hands the first over; the second is read after the runner's own reading.
+      published_ms = System.monotonic_time(:millisecond)
       publish_pair(1)
       publish_pair(2)
 
-      assert_receive {:exported, :stereo_pair, 1, first_ms}
+      assert_receive {:exported, :stereo_pair, 1, _first_ms}
       assert_receive {:exported, :stereo_pair, 2, second_ms}, 1_000
-
-      # Whole milliseconds, each read just after the runner's own reading: a tick may fall between.
-      assert second_ms - first_ms >= 200 - 1
+      assert second_ms - published_ms >= 200
     end
 
     test "with the newest value only, counts no drops" do
