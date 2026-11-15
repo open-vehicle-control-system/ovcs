@@ -156,6 +156,34 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
     :ok = Recording.stop(pid)
   end
 
+  test "a chunk spans at most the interval of log time, however late its messages are written",
+       %{tmp_dir: dir} do
+    pid = start!(dir, chunk_interval_ms: 1_000, queue: 1_000)
+
+    depth = %{
+      image(0)
+      | height: 320,
+        width: 640,
+        step: 1_280,
+        data: :crypto.strong_rand_bytes(409_600)
+    }
+
+    # Three seconds of 60 Hz images waiting together, as behind a slow close and sync.
+    :ok = :sys.suspend(pid)
+
+    for n <- 0..179,
+        do: :ok = Recording.write(pid, "/depth", Image, depth, div(n * 1_000_000_000, 60))
+
+    :ok = :sys.resume(pid)
+    :ok = Recording.stop(pid)
+
+    file = read_file!(dir, 0)
+    assert length(file.messages) == 180
+
+    for chunk <- file.chunks,
+        do: assert(chunk.message_end_time - chunk.message_start_time < 1_000_000_000)
+  end
+
   describe "past max_file_bytes" do
     setup %{tmp_dir: dir} do
       pid =

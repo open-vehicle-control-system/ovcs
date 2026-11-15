@@ -13,8 +13,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
   writes. A file gets a topic's schema and channel before its first message
   on that topic.
 
-  Every `:chunk_interval_ms` the open chunk is closed and the file synced to
-  the disk, so a power cut loses at most that much. Past `:max_file_bytes`
+  The open chunk is closed, and the file synced to the disk, once its
+  messages' log times span `:chunk_interval_ms`, or that long after it took
+  its first message. Messages that waited for this process, as behind a
+  slow sync, fill chunks of that span too, so a power cut loses at most
+  that much of the messages written. Past `:max_file_bytes`
   the file is closed and the next message opens the next one.
   `metadata.yaml` is rewritten, through a synced temporary file, at each
   new file and at the stop. The first file holds the attachments, at
@@ -85,7 +88,8 @@ defmodule VisionCore.Ros2.Bag.Recording do
     * `:queue` - the messages that may wait for this process (`256`)
     * `:attachments` - `{name, media_type, data}` attached to the first file (`[]`)
     * `:metadata` - string keys and values for the first file and `metadata.yaml` (`%{}`)
-    * `:chunk_interval_ms` - the time between two chunk closes (`1_000`)
+    * `:chunk_interval_ms` - the longest a chunk spans, in log time and since its
+      first message (`1_000`)
   """
   @spec start_link(keyword()) :: GenServer.on_start()
   def start_link(opts) do
@@ -158,8 +162,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
       channels: %{},
       topics: %{},
       last_log_time: 0,
-      last_flush_ms: now_ms(),
-      unsynced: false,
+      open_chunk: nil,
       ended: false,
       unencodable_topics: MapSet.new()
     }
@@ -197,7 +200,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
   def handle_info(:tick, %{ended: true} = state), do: {:noreply, state}
 
   def handle_info(:tick, state) do
-    state = if due?(state), do: attempt(state, &flush/1), else: state
+    state = if chunk_due?(state, state.last_log_time), do: attempt(state, &flush/1), else: state
     {:noreply, schedule_tick(state)}
   end
 
@@ -210,9 +213,9 @@ defmodule VisionCore.Ros2.Bag.Recording do
   end
 
   defp write_message(state, topic, module, payload, log_time) do
-    state = if due?(state), do: flush(state), else: state
-    state = state |> ensure_file() |> ensure_channel(topic, module)
     clamped = max(log_time, state.last_log_time)
+    state = if chunk_due?(state, clamped), do: flush(state), else: state
+    state = state |> ensure_file() |> ensure_channel(topic, module)
     sequence = get_in(state.topics, [topic, :message_count]) || 0
 
     writer =
@@ -237,7 +240,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
             %{topic | message_count: topic.message_count + 1}
           end),
         last_log_time: clamped,
-        unsynced: true
+        open_chunk: state.open_chunk || %{first_log_time: clamped, opened_ms: now_ms()}
     }
   end
 
@@ -329,13 +332,18 @@ defmodule VisionCore.Ros2.Bag.Recording do
       else: Writer.add_metadata(writer, "recording", state.metadata)
   end
 
-  defp due?(state),
-    do: state.unsynced and now_ms() - state.last_flush_ms >= state.chunk_interval_ms
+  # The open chunk spans the interval with a message at `log_time`, or has been open that long.
+  defp chunk_due?(%{open_chunk: nil}, _log_time), do: false
+
+  defp chunk_due?(%{open_chunk: chunk, chunk_interval_ms: interval_ms}, log_time) do
+    log_time - chunk.first_log_time >= interval_ms * 1_000_000 or
+      now_ms() - chunk.opened_ms >= interval_ms
+  end
 
   # Closes the open chunk and syncs it, and closes the file once past its size.
   defp flush(state) do
     writer = state.writer |> Writer.close_chunk() |> Writer.sync()
-    state = put_bytes(%{state | writer: writer, last_flush_ms: now_ms(), unsynced: false})
+    state = put_bytes(%{state | writer: writer, open_chunk: nil})
 
     if Writer.bytes_written(writer) >= state.max_file_bytes,
       do: close_file(state),
@@ -358,7 +366,7 @@ defmodule VisionCore.Ros2.Bag.Recording do
         {:error, _reason} -> bytes
       end
 
-    put_bytes(%{state | writer: nil, closed_bytes: state.closed_bytes + size, unsynced: false})
+    put_bytes(%{state | writer: nil, closed_bytes: state.closed_bytes + size, open_chunk: nil})
   end
 
   defp put_bytes(state) do
@@ -501,12 +509,11 @@ defmodule VisionCore.Ros2.Bag.Recording do
   defp schedule_tick(%{ended: true} = state), do: state
 
   defp schedule_tick(state) do
-    elapsed = now_ms() - state.last_flush_ms
-
     delay =
-      if state.unsynced,
-        do: max(state.chunk_interval_ms - elapsed, 0),
-        else: state.chunk_interval_ms
+      case state.open_chunk do
+        nil -> state.chunk_interval_ms
+        chunk -> max(chunk.opened_ms + state.chunk_interval_ms - now_ms(), 0)
+      end
 
     Process.send_after(self(), :tick, delay)
     state
