@@ -363,7 +363,7 @@ An action that produces a file answers it with a 200 and `content-disposition: a
 
 - a 400 for a document without `data.type`, one sent as a form or in the query string, or `attributes` that are no object;
 - a 409 for another `data.type`, or when the exporter is busy;
-- a 422 when the exporter refuses the request as given, such as a parameter outside the values it allows, or a stop with nothing to stop;
+- a 422 when the exporter refuses the request as given, such as a parameter outside the values it allows;
 - a 404 for an exporter or an action it does not have;
 - a 503 when the exporter does not run;
 - a 504 when the action does not answer in time;
@@ -615,6 +615,105 @@ A calibration leaves use when another one of its calibration is put in use, or w
   }
 }
 ```
+
+## Recordings and disks
+
+These routes record ROS 2 bags with the bag exporter ([Recording ROS 2 bags](./data_flow.md#recording-ros-2-bags)), as the dashboard's ROS 2 · Bag page does. A unit without the bag exporter lists no recording and no disk, and answers 404 to a start or a stop.
+
+`GET /api/recordings` lists the recordings on the disks plugged in, the newest first. Add `include=parts` to get each part, its folder on one disk, in `included`. A recording's id is its first folder's name. `GET /api/recordings/:id` returns one.
+
+```json
+{
+  "data": {
+    "type": "recordings",
+    "id": "20261115T090000Z_review",
+    "attributes": {
+      "name": "20261115T090000Z_review",
+      "state": "stopped",
+      "preset": "review",
+      "clock": "automatic",
+      "clockInUse": "system",
+      "clockSynchronized": true,
+      "startedAt": "2026-11-15T09:00:00.000000Z",
+      "durationMs": 185000,
+      "bytes": 3400000,
+      "messages": 5400,
+      "dropped": [{"topic": "/tf", "count": 4}]
+    },
+    "relationships": {
+      "disk": {"data": null},
+      "parts": {
+        "data": [
+          {"type": "recording-parts", "id": "20261115T090000Z_review"},
+          {"type": "recording-parts", "id": "20261115T090000Z_review_part2"}
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "type": "recording-parts",
+      "id": "20261115T090000Z_review",
+      "attributes": {"name": "20261115T090000Z_review", "number": 1, "bytes": 1700000},
+      "relationships": {"disk": {"data": {"type": "disks", "id": "c8803634-2bd4-4a62-8a68-ad456f6a52ce"}}}
+    }
+  ]
+}
+```
+
+`state` is `recording` for the recording in progress, whose `disk` is the disk it records on. Its figures are live: duration, bytes, messages and drops so far. A stopped recording's facts come from its parts' `metadata.yaml`, `null` where none tells them.
+
+Start a recording with a `recordings` document. `preset` and `clock` are optional, `review` and `automatic` by default:
+
+```sh
+curl --cacert vision.pem -X POST https://<vehicle>-vision.local/api/recordings \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "recordings", "attributes": {"preset": "replay", "clock": "since_start"}}}'
+```
+
+The unit answers a 201 with the recording. Stop it with a `PATCH` of its `state` to `stopped`, which answers the stopped recording:
+
+```sh
+curl --cacert vision.pem -X PATCH https://<vehicle>-vision.local/api/recordings/20261115T100000Z_replay \
+  -H 'content-type: application/vnd.api+json' \
+  -d '{"data": {"type": "recordings", "id": "20261115T100000Z_replay", "attributes": {"state": "stopped"}}}'
+```
+
+`DELETE /api/recordings/:id` deletes every part on the disks plugged in and answers a 204. `GET /api/recordings/:id/download` answers the recording as one uncompressed tar, `<id>.tar`, each part a folder. It is read from the disks as it is sent, its `content-length` set:
+
+```sh
+curl --cacert vision.pem --fail-with-body -o 20261115T090000Z_review.tar \
+  https://<vehicle>-vision.local/api/recordings/20261115T090000Z_review/download
+```
+
+The recording routes answer:
+
+- a 409 for a start while a recording is in progress, or with no disk to record on;
+- a 409 for a delete or a download of the recording in progress;
+- a 422 for a preset or clock it does not have, naming the allowed values, for another `state`, and for a recording stopped already;
+- a 404 for a recording it does not have;
+- a 503 when the bag exporter does not run, and a 504 when it does not answer in time.
+
+`GET /api/disks` lists the disks recordings go on, in the order they are filled, then the USB disks without a filesystem the unit mounts. A disk's id is its filesystem's UUID, `internal` for the unit's storage, or its device, such as `sdb1`, for one without a filesystem. Each has `internal`, `label`, `filesystem`, `device`, `sizeBytes`, `freeBytes`, `position`, `enabled`, `state` (`mounted`, `ejecting`, `ejected`, `unplugged`, `unusable` or `formatting`), `problem` and `lastSeenAt`.
+
+`PATCH /api/disks/:id` changes `position`, 0 first, the others keeping their order, or `enabled`: a disk turned off takes no recording. A position past the last is a 422, and a disk without a filesystem a 409.
+
+`POST /api/disk-ejects` unmounts the disk its `disk` relationship names, before you pull it out. A recording on it goes on on the next disk. `POST /api/disk-formats` makes a disk f2fs, labelled with its `label` attribute:
+
+```json
+{
+  "data": {
+    "type": "disk-formats",
+    "attributes": {"label": "ovcs-recordings"},
+    "relationships": {"disk": {"data": {"type": "disks", "id": "sdb1"}}}
+  }
+}
+```
+
+> [!CAUTION]
+> Formatting erases the disk. The unit mounts it at its next look at the disks, as a new disk with another id.
+
+Both answer a 201 once done. They answer a 409 for the unit's storage, for a disk not mounted when ejecting, and for a mounted or unplugged disk, or a device that no longer holds the disk listed, when formatting. A label f2fs cannot hold is a 422.
 
 ## Live channels
 

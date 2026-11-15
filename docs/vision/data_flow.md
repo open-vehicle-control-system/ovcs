@@ -196,14 +196,16 @@ A recording records one preset. A preset sets what is built, from your configura
 
 Your vehicle replaces a preset with `presets:`, the ROS 2 exporter's options for it and its own `max_hz:`, every value without one: `presets: [review: [cameras: [names: [:front]], max_hz: [pairs: 2, cameras: 5]]]`. Give its `cameras:` `raw_image_max_hz: :infinity`, as the presets do: otherwise a camera whose frames are encoded is also held to 10 a second of the times they are handed over. A preset, a rate or an option the ROS 2 exporter refuses keeps the bag exporter from starting, with the reason logged. So does a preset that sets an option the bag exporter sets itself: `config:`, `link:`, `services:`, `jpeg_codec:`, `publish:` or `stamp:`.
 
-Start and stop a recording with the exporter's actions, `POST /api/exporters/ros2_bag/actions/start` and `.../actions/stop` ([Vision API](./api.md#the-unit-and-its-exports)). `start` takes two attributes:
+Start and stop a recording on the dashboard's ROS 2 · Bag page, or with `POST /api/recordings` and a `PATCH` of its `state` ([Vision API](./api.md#recordings-and-disks)). A start takes two attributes:
 
 - `preset`: `replay` or `review`, the default.
 - `clock`: `system`, the wall clock; `since_start`, the time since the recording started, for a unit whose clock is not set; or `automatic`, the default, `system` once NTP has set the clock, `since_start` before.
 
-The clock stamps every header, transform and log time. A start while recording answers 409. A preset or clock it does not know answers 422, naming the allowed values, and so does a stop while idle.
+The clock stamps every header, transform and log time. A start while a recording is in progress answers 409. A preset or clock it does not know answers 422, naming the allowed values.
 
 A recording goes in a folder `<YYYYMMDDTHHMMSSZ>_<preset>/`, the time the start in UTC, on a disk. It holds `metadata.yaml` and MCAP files, zstd-compressed, a chunk closed and synced every second, a new file past 2 GB. The first file attaches the calibration files in use and the parameters, as `parameters.json`. Its metadata, as `metadata.yaml`'s, names the preset, the clock chosen and the clock used, the vehicle and the firmware.
+
+The recordings are listed across the disks plugged in, each with its parts and their disks ([`VisionCore.Recordings`](../../vision/core/lib/vision_core/recordings.ex)). Download one as one tar, its parts as folders, or delete it with every part.
 
 The bag exporter takes every value, queued up to 64 per output. The runner's drops are in its `dropped` on the `status` channel. The recording's own, when the disk cannot keep up, are counted by topic in its status and in `metadata.yaml`. Its status says what it records, since when, on which disk, the clock, the bytes, files and messages written, and a warning once any message is dropped.
 
@@ -211,16 +213,16 @@ The bag exporter takes every value, queued up to 64 per output. The runner's dro
 
 A disk is the unit's own storage, `internal`, which records in `/data/recordings`, or a USB disk formatted f2fs or ext4. Set another folder for `internal` with the bag exporter's `root:`. [`VisionCore.Disks`](../../vision/core/lib/vision_core/disks.ex), which the bag exporter starts, keeps them:
 
-1. **Find.** It looks at the disks on a USB bus every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; `VisionCore.Disks.format/3` makes it f2fs, listing it as `formatting` meanwhile.
+1. **Find.** It looks at the disks on a USB bus every 2 seconds and reads each new partition's filesystem UUID from its superblock. A disk of another filesystem is listed as unusable; formatting it makes it f2fs, listing it as `formatting` meanwhile.
 2. **Mount.** It mounts a USB disk at `/data/disks/<uuid>` with `nosymfollow`, `nodev`, `nosuid` and `noexec`. Its recordings go in the folder `recordings/` there; a disk whose `recordings` is a link or a file is unmounted and listed as unusable.
-3. **Order.** The disks are filled in an order the unit saves in its database, with any turned off. A new disk goes last, turned on. The order and the disks turned off survive unplugging and a reboot (`put_order/2`, `put_enabled/3`).
+3. **Order.** The disks are filled in an order the unit saves in its database, with any turned off. A new disk goes last, turned on. The order and the disks turned off survive unplugging and a reboot. Set them on the ROS 2 · Bag page or with `PATCH /api/disks/:id`.
 4. **Choose.** A recording starts on the first disk in the order that is mounted, turned on and has 1 GB free. Set another floor with the bag exporter's `free_floor_bytes:`.
 5. **Go on.** When the disk falls below the floor, refuses a write, is ejected or pulled out, the recording goes on on the next such disk. It never goes back to a disk it left.
 
 Each disk a recording goes on holds a part of it, in a folder of the same name with `_part2`, `_part3`, and so on. Each part is a complete rosbag2 folder, with its own `metadata.yaml`, attachments and metadata: open the parts one after the other. A part left at a write the disk refuses keeps its last file without its summary: it reads up to its last whole chunk, and the messages of the chunk the disk did not take are not counted. With no disk left, the recording stops, and the status says why until the next start.
 
 > [!WARNING]
-> A disk pulled out without ejecting loses the chunk being written, up to a second of messages, and its last file has no summary. Eject it first with `VisionCore.Disks.eject/2`: the recording closes its file and goes on on the next disk, then the disk is unmounted.
+> A disk pulled out without ejecting loses the chunk being written, up to a second of messages, and its last file has no summary. Eject it first, on the ROS 2 · Bag page or with `POST /api/disk-ejects`: the recording closes its file and goes on on the next disk, then the disk is unmounted.
 
 A run on a host watches no USB disk: its only disk is `internal`. Give it a folder you can write with `root:`.
 

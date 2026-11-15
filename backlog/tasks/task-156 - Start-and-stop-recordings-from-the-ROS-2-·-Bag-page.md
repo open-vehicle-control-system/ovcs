@@ -1,7 +1,7 @@
 ---
 id: TASK-156
 title: Start and stop recordings from the ROS 2 · Bag page
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-11-14T19:13:00Z'
 labels:
