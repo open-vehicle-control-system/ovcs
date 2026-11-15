@@ -91,7 +91,7 @@ A detector with `source: {:camera, name}` detects on the camera of its own `name
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox_w8a8.dlc")}
 ```
 
-- **Input.** Each frame goes to the backend whole, in colour, or in grey for a camera that delivers JPEG, as `VisionCore.Camera.GStreamer` does. The backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames: the pipeline detects on the `n`th, `2n`th, `3n`th…
+- **Input.** Each frame goes to the backend whole, in colour: a JPEG frame, as `VisionCore.Camera.GStreamer` and a libcamera camera of its own deliver, is decoded to RGB by `jpeg_codec`. The backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames: the pipeline detects on the `n`th, `2n`th, `3n`th…
 - **One frame at a time.** One frame is with the backend at a time. A frame to detect on that comes meanwhile waits, the newest one only, and goes to the backend as soon as the reply is back. A detection a little slower than the camera's frame period therefore does not wait for the frame after next.
 - **Matching.** The pipeline keeps the depth of the stereo pairs captured within `pair_wait_ms` of the newest one, at least two. It matches the frame with the pair whose left capture time is closest, within half the pairs' period.
 - **Placement.** It projects that pair's depth into the camera's image through the camera's calibration and pose ([Calibration and pose](./cameras.md#calibration-and-pose)), every `reprojection_stride`-th pixel and row (3). Each box takes the median depth projected in its middle, as on the stereo source. Only a frame with at least one box is projected.

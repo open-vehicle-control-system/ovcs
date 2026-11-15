@@ -55,7 +55,7 @@ defmodule VisionCore.Detection.CameraPipeline do
 
   @impl VisionCore.CameraPipeline
   def prepare(frame, settings) do
-    case Frame.to_tensor(frame) do
+    case Frame.to_tensor(frame, colour: true) do
       {:ok, image} -> {:submit, image, nil, %{settings | undecodable_logged: false}}
       {:error, reason} -> {:skip, note_undecodable(settings, reason)}
     end

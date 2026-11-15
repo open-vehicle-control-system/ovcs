@@ -72,5 +72,30 @@ defmodule VisionCore.Camera.FrameTest do
     start_supervised!(VisionCore.Jpeg)
     frame = %Frame{label: "left", width: 4, height: 2, capture_ns: 0, jpeg: "not a jpeg"}
     assert {:error, {:jpeg, _reason}} = Frame.to_tensor(frame)
+    assert {:error, {:jpeg, _reason}} = Frame.to_tensor(frame, colour: true)
+  end
+
+  @tag :jpeg
+  test "in colour, a JPEG frame decodes to RGB, and a grey or RGB frame stays as it is" do
+    start_supervised!(VisionCore.Jpeg)
+    {:ok, jpeg} = Frame.to_jpeg(@rgb)
+    frame = %Frame{label: "hq", width: 2, height: 2, capture_ns: 0, jpeg: jpeg}
+
+    assert {:ok, image} = Frame.to_tensor(frame, colour: true)
+    assert Nx.shape(image) == {2, 2, 3}
+    assert Frame.to_tensor(@rgb, colour: true) == Frame.to_tensor(@rgb)
+    assert Frame.to_tensor(@grey, colour: true) == Frame.to_tensor(@grey)
+  end
+
+  @tag :jpeg
+  test "in colour, a frame's RGB pixels: a JPEG's decoded, none for a grey frame" do
+    start_supervised!(VisionCore.Jpeg)
+    {:ok, jpeg} = Frame.to_jpeg(@rgb)
+    frame = %Frame{label: "hq", width: 2, height: 2, capture_ns: 0, jpeg: jpeg}
+
+    assert {:ok, %Frame{rgb: rgb, jpeg: ^jpeg}} = Frame.with_rgb(frame)
+    assert byte_size(rgb) == 2 * 2 * 3
+    assert Frame.with_rgb(@rgb) == {:ok, @rgb}
+    assert Frame.with_rgb(@grey) == {:error, :colourless}
   end
 end
