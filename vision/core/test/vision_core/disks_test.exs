@@ -114,6 +114,18 @@ defmodule VisionCore.DisksTest do
       assert TestDisks.commands(disks, "mount") == []
     end
 
+    test "is taken only on a USB bus, not as any SCSI disk", %{disks: disks} do
+      TestDisks.plug(disks, "sda1", TestDisks.f2fs_image(@stick, "ata"), 64_000_000_000,
+        bus: :ata
+      )
+
+      TestDisks.plug(disks, "sdb", TestDisks.ext4_image(@other, "usb"))
+      mounted!(disks, @other)
+
+      assert Disks.fetch(disks.server, @stick) == :error
+      assert [["-t", "ext4" | _rest]] = TestDisks.commands(disks, "mount")
+    end
+
     test "whose mount fails is unusable, saying why", %{tmp_dir: dir} do
       disks = dir |> Path.join("refused") |> TestDisks.setup!()
 

@@ -6,8 +6,9 @@ defmodule VisionCore.Disks do
   so the order and the disks turned off survive unplugging and a reboot.
   A new disk goes last, turned on.
 
-  Every `:poll_interval_ms` it lists the USB disks' partitions in
-  `/sys/block/sd*`, or a disk without partitions whole, and reads each
+  Every `:poll_interval_ms` it lists the partitions of the disks in
+  `/sys/block/sd*` on a USB bus, whose sysfs device is under a `usb<n>`,
+  or a disk without partitions whole, and reads each
   new one's superblock (`VisionCore.Disk.identify/1`): an f2fs or ext4
   filesystem is mounted at `<mount_root>/<uuid>` with `noatime`, its
   recordings in `recordings/` there; another is listed as unusable. A
@@ -287,6 +288,7 @@ defmodule VisionCore.Disks do
     block_devices_path
     |> Path.join("sd*")
     |> Path.wildcard()
+    |> Enum.filter(&usb?/1)
     |> Enum.flat_map(fn disk ->
       case Path.wildcard(Path.join(disk, Path.basename(disk) <> "*")) do
         [] -> [disk]
@@ -300,6 +302,14 @@ defmodule VisionCore.Disks do
       end
     end)
     |> Map.new()
+  end
+
+  # A disk whose sysfs device sits under a USB bus, `usb<n>`: a USB SSD's enclosure is not removable.
+  defp usb?(disk) do
+    case File.read_link(disk) do
+      {:ok, target} -> target |> Path.split() |> Enum.any?(&Regex.match?(~r/^usb\d+$/, &1))
+      {:error, _not_a_link} -> false
+    end
   end
 
   defp read_size(path) do

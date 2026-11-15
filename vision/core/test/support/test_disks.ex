@@ -85,34 +85,56 @@ defmodule VisionCore.TestDisks do
 
   @doc """
   Plugs `device`, a partition such as `sda1` or a whole disk such as
-  `sdb`, holding `image`, of `size_bytes`.
+  `sdb`, holding `image`, of `size_bytes`. Its disk's `/sys/block` entry
+  links to a device on a USB bus, or on `bus: :ata`.
   """
-  @spec plug(t(), String.t(), binary(), pos_integer()) :: :ok
-  def plug(%__MODULE__{} = disks, device, image, size_bytes \\ 64_000_000_000) do
+  @spec plug(t(), String.t(), binary(), pos_integer(), keyword()) :: :ok
+  def plug(%__MODULE__{} = disks, device, image, size_bytes \\ 64_000_000_000, opts \\ []) do
+    opts = Keyword.validate!(opts, bus: :usb)
     File.write!(device_path(disks, device), image)
+    [parent] = Regex.run(~r/^sd[a-z]+/, device)
+    disk = disk_directory(disks, parent, Keyword.fetch!(opts, :bus))
 
     block =
-      case Regex.run(~r/^(sd[a-z]+)(\d+)$/, device) do
-        [_device, parent, number] ->
-          block = Path.join([disks.options[:block_devices_path], parent, device])
+      case Regex.run(~r/^sd[a-z]+(\d+)$/, device) do
+        [_device, number] ->
+          block = Path.join(disk, device)
           File.mkdir_p!(block)
           File.write!(Path.join(block, "partition"), number <> "\n")
           block
 
         nil ->
-          block = Path.join(disks.options[:block_devices_path], device)
-          File.mkdir_p!(block)
-          block
+          disk
       end
 
     File.write!(Path.join(block, "size"), "#{div(size_bytes, @sector_bytes)}\n")
   end
 
+  # The disk's sysfs folder and its `/sys/block` link, made the first time.
+  defp disk_directory(disks, parent, bus) do
+    link = Path.join(disks.options[:block_devices_path], parent)
+    target = Path.join(["..", "devices", bus_path(bus), "block", parent])
+    disk = Path.expand(target, disks.options[:block_devices_path])
+
+    unless File.dir?(disk) do
+      File.mkdir_p!(disk)
+      File.ln_s!(target, link)
+    end
+
+    disk
+  end
+
+  defp bus_path(:usb), do: "platform/soc/xhci-hcd.0/usb1/1-1/1-1:1.0/host0/target0:0:0/0:0:0:0"
+  defp bus_path(:ata), do: "platform/soc/ahci.0/ata1/host0/target0:0:0/0:0:0:0"
+
   @doc "Pulls out the disk holding `device`, with all its partitions."
   @spec pull(t(), String.t()) :: :ok
   def pull(%__MODULE__{} = disks, device) do
     [parent] = Regex.run(~r/^sd[a-z]+/, device)
-    File.rm_rf!(Path.join(disks.options[:block_devices_path], parent))
+    link = Path.join(disks.options[:block_devices_path], parent)
+    {:ok, target} = File.read_link(link)
+    File.rm_rf!(Path.expand(target, disks.options[:block_devices_path]))
+    File.rm!(link)
 
     for path <- Path.wildcard(Path.join(disks.options[:devices_path], parent <> "*")),
         do: File.rm!(path)
