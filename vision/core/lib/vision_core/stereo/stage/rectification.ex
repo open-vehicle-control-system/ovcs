@@ -32,8 +32,8 @@ defmodule VisionCore.Stereo.Stage.Rectification do
         "matching size. Matching then only has to search along a row. If a camera shifts " <>
         "after calibration, the rows drift apart: right_row_offset moves the right image back " <>
         "into line, and auto_row_offset, when present, sets it for you from the row alignment " <>
-        "measure. A camera that turned, or moved sideways, needs a new calibration. Watch Row " <>
-        "alignment between the videos."
+        "measure. A camera that turned, or moved sideways, needs a new calibration. Watch Rows " <>
+        "and Rotation between the videos."
 
   # The cameras from the context's calibrations.
   @impl VisionCore.Stereo.NxStage

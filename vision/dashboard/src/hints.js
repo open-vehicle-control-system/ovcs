@@ -47,26 +47,38 @@ export const HINTS = {
     title: 'Timing',
     text:
       'Which camera starts its capture later, and by how much, as a median over the recent pairs; max is the ' +
-      'worst. Matching assumes both images show the same instant: the unit warns when they drift apart.'
+      'worst. Measured on the capture times of every frame the cameras deliver, before they are paired; nothing ' +
+      'corrects it. Matching assumes both images show the same instant: the unit warns when they drift apart.'
   },
   rows: {
     title: 'Rows',
     text:
-      'After rectification a point sits on the same row in both images. This is how far the right image is from ' +
-      'where the calibration puts it, the automatic row correction included, and the offset left in four bands ' +
-      'from left to right. The unit asks for a new calibration when the rows drift, the correction grows large ' +
-      'or the bands disagree, as when a camera turned.'
+      'After rectification a point sits on the same row in both images. This is how many rows apart they still ' +
+      'sit, as the matching sees them. Measured by the Row alignment stage on the rectified images, after the row ' +
+      'correction has moved the right image; below, how far that correction moves it, automatically or by hand ' +
+      '(right_row_offset). The unit asks for a new calibration when the rows stay apart or the correction grows large.'
+  },
+  rotation: {
+    title: 'Rotation',
+    text:
+      'How much the row offset changes across the image, from its left edge to its right. Measured by the Row ' +
+      'alignment stage on the rectified images, in four bands, after the row correction. Offsets that change ' +
+      'across the image are a camera turned against the other, which no row correction undoes; below, the way the ' +
+      'right image is turned on screen. The unit asks for a new calibration when the bands are more than a row apart.'
   },
   focus: {
     title: 'Focus',
     text:
-      'Which camera is less sharp than the other, and by how much. The unit warns when their focus differs ' +
-      'enough to cost matching; the softer camera shows the warning.'
+      'Which camera is less sharp than the other, and by how much. Measured by the Sharpness stage on the ' +
+      'rectified images, black borders left out, from the contrast between neighbouring pixels, which brightness ' +
+      'does not change. The unit warns when their focus differs enough to cost matching; the softer camera shows ' +
+      'the warning.'
   },
   brightness: {
     title: 'Brightness',
     text:
       'Which camera’s image is brighter than the other’s, and by how much, at the same exposure and gain. ' +
+      'Measured by the Sharpness stage on the rectified images, as their mean grey, black borders left out. ' +
       'A camera much brighter than the other sees through a hazy, dirty or different lens: the unit warns, and ' +
       'that camera shows the warning.'
   },

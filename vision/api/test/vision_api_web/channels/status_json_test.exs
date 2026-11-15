@@ -25,9 +25,17 @@ defmodule VisionApiWeb.StatusJSONTest do
           level: :warning,
           camera: :right,
           issues: [:large_row_correction],
-          direction: :lower,
-          misalignment_rows: 6.2,
-          correction_rows: 6.0
+          residual_rows: 0.2,
+          correction_rows: 6.0,
+          correction_direction: :up
+        },
+        rotation: %{
+          level: :warning,
+          camera: :right,
+          issues: [:rotation_mismatch],
+          band_spread_rows: 2.29,
+          band_offset_rows: [-0.32, nil, 1.97],
+          turned: :clockwise
         },
         focus: %{level: :ok, camera: nil, issues: [], softer: :left, difference_percent: 17},
         brightness: %{
@@ -102,9 +110,17 @@ defmodule VisionApiWeb.StatusJSONTest do
                  level: :warning,
                  camera: :right,
                  issues: [:large_row_correction],
-                 direction: :lower,
-                 misalignmentRows: 6.2,
-                 correctionRows: 6.0
+                 residualRows: 0.2,
+                 correctionRows: 6.0,
+                 correctionDirection: :up
+               },
+               rotation: %{
+                 level: :warning,
+                 camera: :right,
+                 issues: [:rotation_mismatch],
+                 bandSpreadRows: 2.29,
+                 bandOffsetRows: [-0.32, nil, 1.97],
+                 turned: :clockwise
                },
                focus: %{level: :ok, camera: nil, issues: [], softer: :left, differencePercent: 17},
                brightness: %{
@@ -180,6 +196,7 @@ defmodule VisionApiWeb.StatusJSONTest do
       pair: %{
         timing: %{level: :off, camera: nil, issues: []},
         rows: %{level: :off, camera: nil, issues: []},
+        rotation: %{level: :off, camera: nil, issues: []},
         focus: %{level: :off, camera: nil, issues: []},
         brightness: %{level: :off, camera: nil, issues: []}
       },

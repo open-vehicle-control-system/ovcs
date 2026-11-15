@@ -3,7 +3,7 @@ export const PAIR_ISSUES = Object.freeze({
   TIMING_OFFSET: 'timing_offset',
   ROW_OFFSET: 'row_offset',
   LARGE_ROW_CORRECTION: 'large_row_correction',
-  UNEVEN_ROWS: 'uneven_rows',
+  ROTATION_MISMATCH: 'rotation_mismatch',
   FOCUS_MISMATCH: 'focus_mismatch',
   BRIGHTNESS_MISMATCH: 'brightness_mismatch'
 })
@@ -19,7 +19,7 @@ export const ISSUE_WORDING = Object.freeze({
   [PAIR_ISSUES.TIMING_OFFSET]: 'Captures too far apart: check how the cameras are triggered',
   [PAIR_ISSUES.ROW_OFFSET]: 'Rows apart: recalibrate',
   [PAIR_ISSUES.LARGE_ROW_CORRECTION]: 'Rows held by a large correction: recalibrate',
-  [PAIR_ISSUES.UNEVEN_ROWS]: 'Rows uneven across the image, a camera turned: recalibrate',
+  [PAIR_ISSUES.ROTATION_MISMATCH]: 'A camera turned against the other: recalibrate',
   [PAIR_ISSUES.FOCUS_MISMATCH]: 'Softer than the other camera: refocus it',
   [PAIR_ISSUES.BRIGHTNESS_MISMATCH]: 'Brighter than the other camera, as through a hazy lens: clean or check its lens',
   [DEPTH_ISSUES.PAIRS_DROPPED]: 'Pairs dropped, depth slower than the cameras: lower their frame rate or the stereo work',
@@ -31,7 +31,7 @@ export const ISSUE_ACTION = Object.freeze({
   [PAIR_ISSUES.TIMING_OFFSET]: 'Check timing',
   [PAIR_ISSUES.ROW_OFFSET]: 'Recalibrate',
   [PAIR_ISSUES.LARGE_ROW_CORRECTION]: 'Recalibrate',
-  [PAIR_ISSUES.UNEVEN_ROWS]: 'Recalibrate',
+  [PAIR_ISSUES.ROTATION_MISMATCH]: 'Recalibrate',
   [PAIR_ISSUES.FOCUS_MISMATCH]: 'Refocus',
   [PAIR_ISSUES.BRIGHTNESS_MISMATCH]: 'Check lens',
   [DEPTH_ISSUES.PAIRS_DROPPED]: 'Lower frame rate',

@@ -164,11 +164,11 @@ The command prints the firmware the unit runs. The certificate names the unit's 
 
 A firmware version ending in `-dirty` is a build with uncommitted changes.
 
-The Row alignment card shows how many rows the right image's matches sit from the left image's, over the whole image and in four bands from left to right. A calibration that still fits the cameras reads within half a row. A larger offset means the cameras or their lenses have moved since the calibration, and depth degrades until you recalibrate. Offsets that change across the bands are a rotation.
+The [status](./channels.md#status)'s `rows` check gives how many rows the rectified images still sit apart once the row correction has moved the right image. It also gives how far the correction moves it. A residual within half a row is good. A correction past 3 rows means the cameras or their lenses have moved since the calibration: recalibrate. The `rotation` check gives how much the offset changes across four bands from left to right. A spread past 1 row is a camera turned, which only a new calibration fixes.
 
 The Calibration page shows the calibration the cameras use and where it comes from, returns to the built-in one, and calibrates the cameras from views of a chessboard with the unit alone ([Calibrate the cameras](./calibration.md)). A unit without a calibration runs its cameras without depth, and the dashboard's status bar reads uncalibrated until one is applied.
 
-The Sharpness card compares the two cameras' focus: the right image's sharpness over the left's, green between 0.8 and 1.25. Its absolute value depends on the scene, the ratio does not.
+The `focus` check compares the two cameras' focus: the right image's sharpness over the left's, which warns outside 0.8 to 1.25. Its absolute value depends on the scene, the ratio does not.
 
 On a unit whose cameras have lens actuators, such as the Camera Module 3, both lenses follow one `focus` camera setting. Cameras without one, such as the IMX296, have no `focus` setting. Its default, 428, focuses the Camera Module 3 Wide at about 1.5 to 2 m. `VisionCore.Camera.FocusSweep.run/1` steps `focus` through a range, sets the position best for both cameras and returns the sharpness curve. Run it from IEx, on the unit facing a textured scene at the distance that matters. Recalibrate after changing the focus.
 

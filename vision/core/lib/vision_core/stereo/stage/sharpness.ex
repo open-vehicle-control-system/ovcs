@@ -27,9 +27,9 @@ defmodule VisionCore.Stereo.Stage.Sharpness do
   def explanation,
     do:
       "Measures how sharp each rectified image is. The value itself depends on the scene; " <>
-        "what matters is how the two cameras compare, shown as Sharpness, right / left " <>
-        "between the videos. Near 1, both cameras are focused alike. Far from 1, one of them " <>
-        "is out of focus compared with the other, and matching loses detail: refocus that " <>
+        "what matters is how the two cameras compare, shown as Focus between the videos: " <>
+        "how much softer one camera is than the other. Near 0 %, both are focused alike. " <>
+        "Far from it, one of them is out of focus, and matching loses detail: refocus that " <>
         "camera. Black pixels are left out, among them the borders rectification leaves " <>
         "where it reaches past a camera's frame. It has no settings."
 

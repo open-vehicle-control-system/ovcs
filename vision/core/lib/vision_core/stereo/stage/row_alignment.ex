@@ -33,12 +33,12 @@ defmodule VisionCore.Stereo.Stage.RowAlignment do
     do:
       "Checks that the calibration still fits the cameras. After rectification, a point " <>
         "should be on the same row in both images; this measures how many rows the right " <>
-        "image is off, in four bands from left to right, shown as Row alignment between the " <>
-        "videos and on this step. A band with too little matched texture to measure shows " <>
-        "none. Within half a row is good. A steady larger offset means a camera has moved: " <>
-        "auto_row_offset in Rectification follows it, or recalibrate. Offsets that differ " <>
-        "from band to band mean a camera has turned, which only a new calibration fixes. It " <>
-        "has no settings."
+        "image is off once right_row_offset has moved it, in four bands from left to right, " <>
+        "shown as Rows and Rotation between the videos and on this step. A band with too " <>
+        "little matched texture to measure shows none. Within half a row is good. A steady " <>
+        "larger offset means a camera has moved: auto_row_offset in Rectification follows " <>
+        "it, or recalibrate. Offsets that differ from band to band mean a camera has turned, " <>
+        "which only a new calibration fixes. It has no settings."
 
   @impl VisionCore.Stereo.NxStage
   def provides, do: [:alignment, :metrics]

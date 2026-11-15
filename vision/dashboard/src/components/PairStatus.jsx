@@ -24,7 +24,8 @@ function PairCheck({ item }) {
           {item.title}
           <Hint hint={item.hint} />
         </span>
-        <OvcsStatus tone={tone} className="font-semibold tabular-nums">
+        {/* Smaller on a narrow screen, so that Rotation's value stays on one line beside its title. */}
+        <OvcsStatus tone={tone} className="font-semibold tabular-nums max-md:text-sm">
           <Widest widest={item.widest} align="end">
             {item.value}
           </Widest>

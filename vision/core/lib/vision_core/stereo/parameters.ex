@@ -58,7 +58,7 @@ defmodule VisionCore.Stereo.Parameters do
                          "and a higher gain brightens it but adds noise, which makes the images " <>
                          "harder to match. The automatic modes choose them for the scene; switch " <>
                          "them off to set them yourself. Where the lenses have a focus setting, " <>
-                         "Sharpness, right / left compares the two cameras' focus. The capture " <>
+                         "Focus between the videos compares the two cameras'. The capture " <>
                          "size, frame rate and each camera's addressing are fixed in the build. " <>
                          "Watch the frame rate, exposure and gain under each video, and the " <>
                          "synchronisation between them."

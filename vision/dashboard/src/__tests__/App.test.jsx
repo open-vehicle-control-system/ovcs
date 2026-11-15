@@ -366,8 +366,8 @@ describe('App', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<App />)
 
-    // A rows check without its bands, as a firmware newer than this page could push.
-    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+    // A rotation check without its bands, as a firmware newer than this page could push.
+    act(() => useStatus.setState({ snapshot: { pair: { rotation: { level: 'ok', issues: [] } } } }))
 
     expect(within(screen.getByRole('main')).getByRole('alert').textContent).toContain('This page cannot be shown')
     expect(screen.getByRole('navigation', { name: 'Vision unit' })).toBeTruthy()
@@ -379,7 +379,7 @@ describe('App', () => {
   it('shows the page again once another page is opened after one that could not be shown', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     render(<App />)
-    act(() => useStatus.setState({ snapshot: { pair: { rows: { level: 'ok', issues: [] } } } }))
+    act(() => useStatus.setState({ snapshot: { pair: { rotation: { level: 'ok', issues: [] } } } }))
 
     fireEvent.click(screen.getByRole('button', { name: /^API/ }))
 
