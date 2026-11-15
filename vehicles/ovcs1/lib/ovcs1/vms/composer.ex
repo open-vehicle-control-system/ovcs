@@ -42,6 +42,35 @@ defmodule Ovcs1.Vms.Composer do
   @doc "The Leaf inverter's torque request at full throttle in `:reverse`, in newton-metres."
   def inverter_reverse_max_torque_nm, do: @inverter_reverse_max_torque_nm
 
+  @wiring %{
+    abs: %{network: :polo_drive},
+    ignition_lock: %{network: :polo_drive},
+    inverter: %{network: :leaf_drive, controller: Vms.RearController, power_relay_pin: 7},
+    high_voltage_contactors: %{
+      controller: Vms.RearController,
+      main_negative_relay_pin: 3,
+      main_positive_relay_pin: 4,
+      precharge_relay_pin: 5
+    },
+    ibooster: %{network: :misc, controller: Vms.FrontController, power_relay_pin: 5},
+    steering_column: %{
+      network: :misc,
+      power_relay_controller: Vms.FrontController,
+      power_relay_pin: 6,
+      actuation_controller: Vms.ControlsController,
+      direction_pin: 1,
+      external_pwm_id: 0
+    },
+    radio_control_channels: %{steering: 1, throttle: 2, requested_control_level: 3, direction: 4}
+  }
+
+  @doc """
+  Where the VMS reaches the hardware it drives: networks, controllers,
+  pins and radio channels. What simulated hardware needs to be wired
+  like this one.
+  """
+  def wiring, do: @wiring
+
   @impl VmsCore.Vehicle
   def children do
     [
@@ -100,13 +129,12 @@ defmodule Ovcs1.Vms.Composer do
          rotation_per_minute_source: LeafAZE0.Inverter
        }},
       {Polo9N.ABS,
-       %{
-         network: :polo_drive,
+       Map.merge(@wiring.abs, %{
          contact_source: Polo9N.IgnitionLock,
          rotation_per_minute_source: LeafAZE0.Inverter
-       }},
+       })},
       {Polo9N.PassengerCompartment, %{network: :polo_drive}},
-      {Polo9N.IgnitionLock, %{network: :polo_drive}},
+      {Polo9N.IgnitionLock, @wiring.ignition_lock},
       {Polo9N.PowerSteeringPump,
        %{
          network: :misc,
@@ -121,16 +149,13 @@ defmodule Ovcs1.Vms.Composer do
 
       # NissanLeaf
       {LeafAZE0.Inverter,
-       %{
-         network: :leaf_drive,
+       Map.merge(@wiring.inverter, %{
          selected_control_level_source: Managers.ControlLevel,
          selected_gear_source: Managers.Gear,
          contact_source: Polo9N.IgnitionLock,
-         controller: Vms.RearController,
-         power_relay_pin: 7,
          drive_max_torque_nm: @inverter_drive_max_torque_nm,
          reverse_max_torque_nm: @inverter_reverse_max_torque_nm
-       }},
+       })},
 
       # Orion
       {Orion.Bms2,
@@ -145,31 +170,20 @@ defmodule Ovcs1.Vms.Composer do
 
       # Bosch
       {Bosch.IBoosterGen2,
-       %{
-         network: :misc,
+       Map.merge(@wiring.ibooster, %{
          selected_control_level_source: Managers.ControlLevel,
-         contact_source: Polo9N.IgnitionLock,
-         controller: Vms.FrontController,
-         power_relay_pin: 5
-       }},
+         contact_source: Polo9N.IgnitionLock
+       })},
 
       # OVCS
       {OVCS.RadioControl.Steering,
-       %{
-         radio_control_channel: 1
-       }},
+       %{radio_control_channel: @wiring.radio_control_channels.steering}},
       {OVCS.RadioControl.Throttle,
-       %{
-         radio_control_channel: 2
-       }},
+       %{radio_control_channel: @wiring.radio_control_channels.throttle}},
       {OVCS.RadioControl.RequestedControlLevel,
-       %{
-         radio_control_channel: 3
-       }},
+       %{radio_control_channel: @wiring.radio_control_channels.requested_control_level}},
       {OVCS.RadioControl.Direction,
-       %{
-         radio_control_channel: 4
-       }},
+       %{radio_control_channel: @wiring.radio_control_channels.direction}},
       {OVCS.RosActuatorCommand.Steering, %{}},
       {OVCS.RosActuatorCommand.Throttle, %{}},
       {OVCS.RosActuatorCommand.Direction, %{}},
@@ -235,26 +249,16 @@ defmodule Ovcs1.Vms.Composer do
        }},
       {OVCS.Infotainment, []},
       {OVCS.HighVoltageContactors,
-       %{
+       Map.merge(@wiring.high_voltage_contactors, %{
          contact_source: Polo9N.IgnitionLock,
          inverter_output_voltage_source: LeafAZE0.Inverter,
-         required_precharge_output_voltage_v: 300,
-         controller: Vms.RearController,
-         main_negative_relay_pin: 3,
-         main_positive_relay_pin: 4,
-         precharge_relay_pin: 5
-       }},
+         required_precharge_output_voltage_v: 300
+       })},
       {OVCS.SteeringColumn,
-       %{
-         network: :misc,
+       Map.merge(@wiring.steering_column, %{
          selected_control_level_source: Managers.ControlLevel,
-         power_relay_controller: Vms.FrontController,
-         power_relay_pin: 6,
-         actuation_controller: Vms.ControlsController,
-         direction_pin: 1,
-         external_pwm_id: 0,
          max_steering_angle_deg: 400
-       }},
+       })},
       {OVCS.WaterPump,
        %{
          controller: Vms.FrontController,

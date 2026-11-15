@@ -28,6 +28,9 @@ defmodule Ovcs1 do
   def vision_target, do: :arduino_ventuno_q
 
   @impl OvcsVehicle
+  defdelegate simulator, to: Ovcs1.Simulator
+
+  @impl OvcsVehicle
   def bridge_firmwares do
     %{
       "radio_control" => %{

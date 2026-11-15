@@ -1,0 +1,41 @@
+---
+# The simulator runner's topology: the frames the simulated hardware
+# reads and emits, vms.yml's the other way round.
+can_networks:
+  ovcs:
+    bitrate: 1000000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x2A0_radio_control_channels0.yml
+      - import!:@ovcs_can:can/components/ovcs/0x2A1_radio_control_channels1.yml
+      - import!:generic_controller/0x701_front_controller_alive.yml
+      - import!:generic_controller/0x704_front_controller_digital_and_analog_pin_status.yml
+      - import!:generic_controller/0x711_rear_controller_alive.yml
+      - import!:generic_controller/0x714_rear_controller_digital_and_analog_pin_status.yml
+      - import!:generic_controller/0x721_controls_controller_alive.yml
+      - import!:generic_controller/0x724_controls_controller_digital_and_analog_pin_status.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/ovcs/0x1A0_vms_status.yml
+      - import!:generic_controller/0x702_front_controller_digital_pin_request.yml
+      - import!:generic_controller/0x712_rear_controller_digital_pin_request.yml
+      - import!:generic_controller/0x722_controls_controller_digital_pin_request.yml
+      - import!:generic_controller/0x725_controls_controller_external_pwm0_request.yml
+  misc:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/bosch/i_booster_gen2/simulated/0x39D_ibooster_status.yml
+      - import!:@ovcs_can:can/components/bosch/lws/0x2B0_lws_status.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/bosch/i_booster_gen2/0x38C_brake_request.yml
+  leaf_drive:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/nissan/leaf_aze0/0x1DA_inverter_status.yml
+      - import!:@ovcs_can:can/components/nissan/leaf_aze0/0x55A_inverter_temperatures.yml
+    received_frames:
+      - import!:@ovcs_can:can/components/nissan/leaf_aze0/0x1D4_vms_torque_request.yml
+  polo_drive:
+    bitrate: 500000
+    emitted_frames:
+      - import!:@ovcs_can:can/components/volkswagen/polo_9n/0x5A0_abs_status.yml
+      - import!:@ovcs_can:can/components/volkswagen/polo_9n/0x4A0_wheels_speed.yml
+      - import!:@ovcs_can:can/components/volkswagen/polo_9n/simulated/0x570_key_status.yml

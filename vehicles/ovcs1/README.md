@@ -53,6 +53,28 @@ priv/can/generic_controller/       — Per-controller frame wirings (front, rear
 priv/firmware/{vms,infotainment,bridges}/  — Per-side fwup overrides
 ```
 
+## Simulation
+
+`Ovcs1.simulator/0` declares the simulated hardware the simulator runner runs: the three generic controllers, the Polo 9N ABS and ignition lock, the Leaf AZE0 inverter, the iBooster Gen2, the steering column and the radio, with their frames in `priv/can/simulator.yml`. Controllers, pins, networks and radio channels come from `Ovcs1.Vms.Composer.wiring/0`. The Orion BMS2 and the EVPT charger are not simulated, so the pack status reports the BMS as not alive.
+
+The key turns to start a second after the VMS's first `vms_status`, then back to on, and the radio stays at `:manual`.
+
+None of the physical parameters is measured on OVCS1:
+
+| Parameter | Value | Source |
+|---|---|---|
+| Wheelbase | 2.46 m | Polo 9N specification |
+| Wheel radius | 0.289 m | 185/60 R14 tyre |
+| Maximum speed | 25 m/s | estimate |
+| Mass | 1,300 kg | estimate: a Polo 9N's kerb weight with the conversion |
+| Pack voltage | 360 V | estimate: a Leaf 24 kWh pack's nominal voltage |
+| Reduction ratio | 3.300 × 3.389 | Polo 02R gearbox (code HGW) specification: first gear times the final drive. The Leaf motor drives it through a coupling, with no Leaf reducer, and the simulation holds first gear. |
+| Steering ratio | 17 | estimate |
+| Steps per column degree | 100 | estimate |
+| Column end stop | 520° either side | estimate |
+| iBooster rod speed | 100 mm/s | estimate |
+| iBooster full-travel deceleration | 8 m/s² | estimate |
+
 ## Hardware reference
 
 See [`WIRING.md`](./WIRING.md) for harness-level pin notes. The full
