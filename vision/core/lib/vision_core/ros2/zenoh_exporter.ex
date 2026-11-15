@@ -46,9 +46,11 @@ defmodule VisionCore.Ros2.ZenohExporter do
   It needs the ROS 2 link, the `ros2:` section of the configuration:
   without it, it is not started (`check/1`), nor when it publishes a
   stereo unit the configuration has none of, or one whose cameras it
-  cannot read, nor with a `cameras:` or `segmentation:` option it does
-  not take or a name no camera or segmentation pipeline of the
-  configuration has. Its status is the link's:
+  cannot read, nor with a `stereo:` that is no keyword list, a
+  `cameras:`, `heartbeat:` or `segmentation:` option it does not take,
+  a heartbeat interval that is no positive integer, or a name no camera
+  or segmentation pipeline of the configuration has. Its status is the
+  link's:
   connected while the Zenoh session is open and the board's clock is
   synchronized, a warning while either is not, since nothing is published
   before the clock is (`Ros2Zenoh.Client`'s "The clock").
@@ -177,6 +179,7 @@ defmodule VisionCore.Ros2.ZenohExporter do
     config = config(options)
 
     with :ok <- check_link(config),
+         :ok <- check_heartbeat(options[:heartbeat]),
          :ok <- check_stereo(options[:stereo], config),
          :ok <- check_cameras(options[:cameras], config),
          :ok <- check_detections(options[:detections], config) do
@@ -191,11 +194,40 @@ defmodule VisionCore.Ros2.ZenohExporter do
 
   defp check_link(_config), do: :ok
 
+  defp check_heartbeat(nil), do: :ok
+
+  defp check_heartbeat(heartbeat_options) do
+    cond do
+      not (is_list(heartbeat_options) and Keyword.keyword?(heartbeat_options)) ->
+        {:error, "its heartbeat: is not a keyword list: #{inspect(heartbeat_options)}"}
+
+      (unknown = Keyword.keys(heartbeat_options) -- [:interval_ms]) != [] ->
+        {:error, "its heartbeat: has no option #{Enum.map_join(unknown, ", ", &inspect/1)}"}
+
+      true ->
+        heartbeat_options
+        |> Keyword.get(:interval_ms, @default_heartbeat_interval_ms)
+        |> check_heartbeat_interval()
+    end
+  end
+
+  defp check_heartbeat_interval(interval_ms) when is_integer(interval_ms) and interval_ms > 0,
+    do: :ok
+
+  defp check_heartbeat_interval(interval_ms),
+    do:
+      {:error,
+       "its heartbeat: interval_ms: is not a positive number of milliseconds: " <>
+         inspect(interval_ms)}
+
   defp check_stereo(nil, _config), do: :ok
 
-  defp check_stereo(_stereo_options, config) do
-    case StereoSupervisor.camera_options(config) do
-      {:ok, _cameras} -> :ok
+  defp check_stereo(stereo_options, config) do
+    with true <- is_list(stereo_options) and Keyword.keyword?(stereo_options),
+         {:ok, _cameras} <- StereoSupervisor.camera_options(config) do
+      :ok
+    else
+      false -> {:error, "its stereo: is not a keyword list: #{inspect(stereo_options)}"}
       {:error, reason} -> {:error, "cannot publish the stereo unit: #{reason}"}
     end
   end

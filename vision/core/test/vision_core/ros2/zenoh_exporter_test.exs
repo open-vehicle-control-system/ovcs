@@ -183,6 +183,27 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
       end
     end
 
+    test "refuses heartbeat: that is no keyword list, an option it does not take, or an interval that is no positive integer" do
+      assert ZenohExporter.check(options(Camera, heartbeat: [])) == :ok
+      assert ZenohExporter.check(options(Camera, heartbeat: [interval_ms: 500])) == :ok
+
+      for {heartbeat, refusal} <- [
+            {true, "heartbeat: is not a keyword list: true"},
+            {false, "heartbeat: is not a keyword list: false"},
+            {[1_000], "heartbeat: is not a keyword list: [1000]"},
+            {[interval: 500], "heartbeat: has no option :interval"},
+            {[interval_ms: 0],
+             "heartbeat: interval_ms: is not a positive number of milliseconds: 0"},
+            {[interval_ms: 1.5],
+             "heartbeat: interval_ms: is not a positive number of milliseconds: 1.5"},
+            {[interval_ms: "1000"],
+             "heartbeat: interval_ms: is not a positive number of milliseconds: \"1000\""}
+          ] do
+        assert {:error, reason} = ZenohExporter.check(options(Camera, heartbeat: heartbeat))
+        assert reason =~ refusal
+      end
+    end
+
     test "runs with the ROS 2 link, whatever it publishes" do
       assert ZenohExporter.check(options(Camera, stereo: [], detections: [], heartbeat: [])) ==
                :ok
@@ -210,6 +231,16 @@ defmodule VisionCore.Ros2.ZenohExporterTest do
                ZenohExporter.check(stereo: [], config: config(Camera, left: :front))
 
       assert reason =~ ":left"
+    end
+
+    test "refuses stereo: that is no keyword list" do
+      for {stereo, refusal} <- [
+            {true, "stereo: is not a keyword list: true"},
+            {[:left], "stereo: is not a keyword list: [:left]"}
+          ] do
+        assert {:error, reason} = ZenohExporter.check(options(Camera, stereo: stereo))
+        assert reason =~ refusal
+      end
     end
   end
 
