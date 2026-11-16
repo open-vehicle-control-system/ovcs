@@ -547,7 +547,7 @@ mod tests {
     }
 
     #[test]
-    fn frame_record_matches_cpp_layout() {
+    fn frame_record_layout() {
         let got = frame_record(0x0102, 0x0304, 0x0807060504030201, &[0xaa, 0xbb]);
         let want = [
             1, 0x02, 0x01, 0x04, 0x03, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 2, 0, 0, 0,
@@ -557,13 +557,13 @@ mod tests {
     }
 
     #[test]
-    fn log_record_matches_cpp_layout() {
+    fn log_record_layout() {
         assert_eq!(log_record(LogLevel::Warning, "hi"), [2, 1, b'h', b'i']);
         assert_eq!(log_record(LogLevel::Error, ""), [2, 2]);
     }
 
     #[test]
-    fn metadata_record_matches_cpp_layout() {
+    fn metadata_record_layout() {
         let values = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -2.0];
         let got = metadata_record(-1, 0x81, &values);
         let mut want = vec![3, 0x81];
