@@ -54,13 +54,13 @@ pub fn letterbox_into(
     let model_px = model as usize;
     destination[..model_px * model_px * 3].fill(PAD_VALUE);
     match frame.channels {
-        1 => resize_into::<1>(frame, destination, model_px, letterbox, threads),
-        _ => resize_into::<3>(frame, destination, model_px, letterbox, threads),
+        1 => resize_image_area::<1>(frame, destination, model_px, letterbox, threads),
+        _ => resize_image_area::<3>(frame, destination, model_px, letterbox, threads),
     }
 }
 
 /// The letterbox's image area, from `frame`'s `CHANNELS`-sample pixels.
-fn resize_into<const CHANNELS: usize>(
+fn resize_image_area<const CHANNELS: usize>(
     frame: &Frame,
     destination: &mut [u8],
     model_px: usize,
