@@ -3,7 +3,11 @@
 
 use std::collections::VecDeque;
 
+/// The share of the measured offset one correction removes: less than all of
+/// it, so timestamp jitter does not swing the right sensor back and forth.
 const GAIN: f64 = 0.5;
+/// Offsets within this many lines are left alone: VBLANK moves in whole lines,
+/// and a smaller offset is within the timestamps' jitter.
 const DEADBAND_LINES: f64 = 2.0;
 /// The lock counts as held while the median recent offset is below this.
 const LOCKED_NS: i64 = 500_000;
