@@ -34,7 +34,7 @@ pub fn geometry(
             return Err(format!(
                 "input {} is {}, not [1, H, W, 3] uint8",
                 input.name,
-                described(input)
+                shape_and_type(input)
             ))
         }
     };
@@ -55,7 +55,7 @@ pub fn geometry(
             format!(
                 "output {} is {}, not [1, H, W, C] uint8, C at most 256",
                 output.name,
-                described(output)
+                shape_and_type(output)
             )
         })?;
     if classes as usize != expected_classes {
@@ -84,7 +84,7 @@ pub fn geometry(
 }
 
 /// The tensor's dimensions and whether its elements are uint8.
-fn described(tensor: &Tensor) -> String {
+fn shape_and_type(tensor: &Tensor) -> String {
     let element = if tensor.unsigned_8bit {
         "uint8"
     } else {

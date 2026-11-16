@@ -70,66 +70,72 @@ unsafe fn fields(tensor: &Qnn_Tensor_t) -> &Qnn_TensorV1_t {
     &tensor.__bindgen_anon_1.v1
 }
 
-/// # Safety
-/// `raw` is a tensor QNN described, its name and dimensions still allocated.
-unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
-    if raw.version != QNN_TENSOR_VERSION_1 && raw.version != QNN_TENSOR_VERSION_2 {
-        return Err(format!("unknown tensor version {}", raw.version));
+impl Tensor {
+    /// # Safety
+    /// `raw` is a tensor QNN described, its name and dimensions still allocated.
+    pub(crate) unsafe fn from_raw(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
+        if raw.version != QNN_TENSOR_VERSION_1 && raw.version != QNN_TENSOR_VERSION_2 {
+            return Err(format!("unknown tensor version {}", raw.version));
+        }
+        let v1 = fields(raw);
+        let name = if v1.name.is_null() {
+            String::new()
+        } else {
+            CStr::from_ptr(v1.name).to_string_lossy().into_owned()
+        };
+        let dimensions = if v1.dimensions.is_null() {
+            Vec::new()
+        } else {
+            std::slice::from_raw_parts(v1.dimensions, v1.rank as usize).to_vec()
+        };
+        let element = element_bytes(v1.dataType)
+            .ok_or_else(|| format!("{name}: unsupported data type {:#x}", v1.dataType))?;
+        let parameters = &v1.quantizeParams;
+        let scale_offset = match (
+            parameters.encodingDefinition,
+            parameters.quantizationEncoding,
+        ) {
+            (QNN_DEFINITION_DEFINED, QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) => {
+                let encoding = parameters.__bindgen_anon_1.scaleOffsetEncoding;
+                Some((encoding.scale, encoding.offset))
+            }
+            (QNN_DEFINITION_DEFINED, encoding)
+                if encoding != QNN_QUANTIZATION_ENCODING_UNDEFINED =>
+            {
+                return Err(format!(
+                    "{name}: quantisation encoding {encoding} unsupported, only a scale and an offset"
+                ));
+            }
+            _ => None,
+        };
+        let bytes = dimensions.iter().map(|&d| d as usize).product::<usize>() * element;
+        Ok(Tensor {
+            name,
+            dimensions,
+            scale_offset,
+            unsigned_8bit: is_unsigned_8bit(v1.dataType),
+            bytes,
+        })
     }
-    let v1 = fields(raw);
-    let name = if v1.name.is_null() {
-        String::new()
-    } else {
-        CStr::from_ptr(v1.name).to_string_lossy().into_owned()
-    };
-    let dimensions = if v1.dimensions.is_null() {
-        Vec::new()
-    } else {
-        std::slice::from_raw_parts(v1.dimensions, v1.rank as usize).to_vec()
-    };
-    let element = element_bytes(v1.dataType)
-        .ok_or_else(|| format!("{name}: unsupported data type {:#x}", v1.dataType))?;
-    let parameters = &v1.quantizeParams;
-    let scale_offset = match (
-        parameters.encodingDefinition,
-        parameters.quantizationEncoding,
-    ) {
-        (QNN_DEFINITION_DEFINED, QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) => {
-            let encoding = parameters.__bindgen_anon_1.scaleOffsetEncoding;
-            Some((encoding.scale, encoding.offset))
-        }
-        (QNN_DEFINITION_DEFINED, encoding) if encoding != QNN_QUANTIZATION_ENCODING_UNDEFINED => {
-            return Err(format!(
-                "{name}: quantisation encoding {encoding} unsupported, only a scale and an offset"
-            ));
-        }
-        _ => None,
-    };
-    let bytes = dimensions.iter().map(|&d| d as usize).product::<usize>() * element;
-    Ok(Tensor {
-        name,
-        dimensions,
-        scale_offset,
-        unsigned_8bit: is_unsigned_8bit(v1.dataType),
-        bytes,
-    })
 }
 
-/// # Safety
-/// `tensors` is null or points to `count` tensors as `describe` takes them.
-pub(crate) unsafe fn describe_all(
-    tensors: *const Qnn_Tensor_t,
-    count: u32,
-) -> Result<Tensors, String> {
-    if tensors.is_null() {
-        return Ok(Tensors::default());
+impl Tensors {
+    /// # Safety
+    /// `tensors` is null or points to `count` tensors as `Tensor::from_raw` takes them.
+    pub(crate) unsafe fn from_raw(
+        tensors: *const Qnn_Tensor_t,
+        count: u32,
+    ) -> Result<Tensors, String> {
+        if tensors.is_null() {
+            return Ok(Tensors::default());
+        }
+        let raw = std::slice::from_raw_parts(tensors, count as usize).to_vec();
+        let described = raw
+            .iter()
+            .map(|raw| Tensor::from_raw(raw))
+            .collect::<Result<_, _>>()?;
+        Ok(Tensors { described, raw })
     }
-    let raw = std::slice::from_raw_parts(tensors, count as usize).to_vec();
-    let described = raw
-        .iter()
-        .map(|raw| describe(raw))
-        .collect::<Result<_, _>>()?;
-    Ok(Tensors { described, raw })
 }
 
 /// Points QNN's tensors `raw`, the graph's inputs or outputs as `kind` says, which `tensors`
@@ -215,7 +221,7 @@ mod tests {
             encoding.scaleOffsetEncoding.offset = -128;
         }
         // SAFETY: the tensor's name outlives the call, and it has no dimensions.
-        let described = unsafe { describe(&raw) }.map(|tensor| tensor.scale_offset);
+        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.scale_offset);
         assert_eq!(described, Ok(Some((0.25, -128))));
     }
 
@@ -223,7 +229,7 @@ mod tests {
     fn a_tensor_quantised_otherwise_is_refused() {
         let (raw, _name) = quantised_tensor(QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
         // SAFETY: the tensor's name outlives the call, and it has no dimensions.
-        let described = unsafe { describe(&raw) }.map(|tensor| tensor.scale_offset);
+        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.scale_offset);
         assert_eq!(
             described,
             Err(

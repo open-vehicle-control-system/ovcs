@@ -44,7 +44,7 @@ use profile::{
     collect_events, create_profile, top_level_events, EventCursor, Profile, ProfileEvent,
     EXECUTIONS_PER_PROFILE,
 };
-use tensor::{bind, describe_all, Tensors};
+use tensor::{bind, Tensors};
 
 /// A context binary's first graph, ready to execute.
 pub struct Model {
@@ -156,8 +156,8 @@ unsafe fn first_graph(
                 } else {
                     $v.graphName
                 },
-                describe_all($v.graphInputs, $v.numGraphInputs)?,
-                describe_all($v.graphOutputs, $v.numGraphOutputs)?,
+                Tensors::from_raw($v.graphInputs, $v.numGraphInputs)?,
+                Tensors::from_raw($v.graphOutputs, $v.numGraphOutputs)?,
             )
         };
     }
@@ -202,7 +202,7 @@ impl Session {
     ///
     /// # Safety
     /// Called once, on a session just loaded.
-    unsafe fn describe_binary(
+    unsafe fn binary_info(
         &mut self,
         binary: &[u8],
     ) -> Result<*const QnnSystemContext_BinaryInfo_t, String> {
@@ -315,7 +315,7 @@ impl Model {
         // SAFETY: loading runs the libraries' initialisers, which ask nothing of the caller.
         let mut session = unsafe { Session::load() }?;
         // SAFETY: called once, on the session just loaded.
-        let info = unsafe { session.describe_binary(binary) }?;
+        let info = unsafe { session.binary_info(binary) }?;
         // SAFETY: `info` is null or the description the session's system context holds until
         // the session is dropped, with the model.
         let info =
