@@ -257,8 +257,17 @@ fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
         }
         let error = io::Error::last_os_error();
         if error.raw_os_error() != Some(libc::EINTR) {
-            return Err(error);
+            return Err(ioctl_error(error));
         }
+    }
+}
+
+/// `EPIPE`, an invalid media pipeline, kept apart from the closed stdout `main` exits 0 on.
+fn ioctl_error(error: io::Error) -> io::Error {
+    if error.raw_os_error() == Some(libc::EPIPE) {
+        io::Error::other(format!("the media pipeline is invalid: {error}"))
+    } else {
+        error
     }
 }
 
@@ -1041,6 +1050,15 @@ mod tests {
         assert!(!complete(BUF_FLAG_ERROR, 3_072 * 1_080, 3_072, 1_080));
         assert!(!complete(0, 3_072 * 1_079, 3_072, 1_080));
         assert!(!complete(0, 0, 3_072, 1_080));
+    }
+
+    #[test]
+    fn an_ioctl_refused_with_epipe_is_no_closed_host() {
+        let error = ioctl_error(io::Error::from_raw_os_error(libc::EPIPE));
+        assert_ne!(error.kind(), io::ErrorKind::BrokenPipe);
+        assert!(error.to_string().contains("os error 32"), "{error}");
+        let busy = ioctl_error(io::Error::from_raw_os_error(libc::EBUSY));
+        assert_eq!(busy.kind(), io::ErrorKind::ResourceBusy);
     }
 
     #[test]
