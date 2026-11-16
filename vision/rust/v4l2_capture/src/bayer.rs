@@ -122,9 +122,9 @@ fn samples(row: &[u8], layout: Layout, out: &mut [u16]) {
     }
 }
 
-/// Averages each 2x2 RGGB cell of 10-bit samples stored as `layout` into one
-/// grey pixel through `tone`, halving both dimensions; `rotate_180` turns the
-/// image for a sensor mounted upside down.
+/// Averages each 2x2 RGGB cell of `frame` into one grey pixel through
+/// `tone`, halving both dimensions; `rotate_180` turns the image for a sensor
+/// mounted upside down.
 pub fn grey_half(frame: &RawFrame, tone: &Tone, rotate_180: bool) -> Vec<u8> {
     let RawFrame {
         raw,
@@ -404,6 +404,7 @@ impl<'a> Image<'a> {
         if y.is_multiple_of(2) || !made_along {
             return;
         }
+        // Turned rows are stored bottom-up, so this row is its pair's first in memory.
         let pair = if self.rotate_180 { target } else { target - 1 };
         let rows = &self.rgb[pair * row_bytes..(pair + 2) * row_bytes];
         let width = row_bytes / 3;

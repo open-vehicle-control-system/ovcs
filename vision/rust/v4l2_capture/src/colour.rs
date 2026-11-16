@@ -115,7 +115,7 @@ struct Band {
 
 /// `frame` through `colour` into `images`' `rgb`, 8-bit red, green and blue
 /// per pixel, row-major, through `buffers`, at the size of
-/// `conversion.output`: at its own size demosaiced as `bayer::rgb_full`
+/// `conversion.output`: at its own size demosaiced as `bayer::develop`
 /// does, on linear values, each sample's signal above the black level times
 /// its lens shading and white balance gains, the sensor's full scale at
 /// 65535; at half size each 2x2 RGGB cell one pixel, red, the mean of both
