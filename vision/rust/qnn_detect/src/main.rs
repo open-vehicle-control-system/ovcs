@@ -24,7 +24,7 @@ mod yolox;
 use std::process::exit;
 use std::time::Instant;
 
-use detection::letterbox::{letterbox_for, letterbox_into, Frame};
+use detection::letterbox::{letterbox_for, letterbox_into};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{LogLevel, Writer};
 use model::Layout;
@@ -116,18 +116,8 @@ fn run(
                 writer.log(LogLevel::Warning, &message);
                 (Vec::new(), None)
             }
-            Ok(()) => {
-                letterbox_into(
-                    &Frame {
-                        pixels: request.pixels,
-                        width,
-                        height,
-                        channels: request.channels,
-                    },
-                    &mut input,
-                    &letterbox,
-                    LETTERBOX_THREADS,
-                );
+            Ok(frame) => {
+                letterbox_into(&frame, &mut input, &letterbox, LETTERBOX_THREADS);
                 clock.prepared();
                 match model.execute(&mut [input.as_mut_slice()], &mut buffers) {
                     Ok(timing) => {

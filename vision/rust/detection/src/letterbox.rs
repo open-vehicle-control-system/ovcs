@@ -42,6 +42,7 @@ fn scaled_size(width: i32, height: i32, scale: f32) -> (i32, i32) {
 }
 
 /// A caller frame: `width` × `height` pixels of 1 (grey) or 3 (RGB) channels.
+#[derive(Debug, PartialEq)]
 pub struct Frame<'a> {
     pub pixels: &'a [u8],
     pub width: i32,

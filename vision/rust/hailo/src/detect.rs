@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use detection::letterbox::{letterbox_for, letterbox_into, Frame};
+use detection::letterbox::{letterbox_for, letterbox_into};
 use detection::nms;
 use detection::protocol::{
     detections_record, inference_micros, parse_jpeg_request, parse_request, Request,
@@ -103,14 +103,9 @@ impl Detect {
                 writer.log(LogLevel::Warning, &message);
                 FrameOutcome::Rejected
             }
-            Ok(()) => {
+            Ok(frame) => {
                 letterbox_into(
-                    &Frame {
-                        pixels: request.pixels,
-                        width,
-                        height,
-                        channels: request.channels,
-                    },
+                    &frame,
                     self.network.input_mut(),
                     &letterbox,
                     LETTERBOX_THREADS,
