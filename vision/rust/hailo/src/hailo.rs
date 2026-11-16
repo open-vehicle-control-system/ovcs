@@ -190,25 +190,7 @@ impl Network {
         let path = CString::new(hef_path).map_err(|_| format!("bad HEF path {hef_path}"))?;
         // SAFETY: a plain libc call.
         let page_bytes = usize::try_from(unsafe { sysconf(SC_PAGESIZE) }).unwrap_or(4096);
-        let mut network = Network {
-            hef: ptr::null_mut(),
-            io: Io::Vstreams {
-                inputs: Vec::new(),
-                outputs: Vec::new(),
-            },
-            input: Shape {
-                height: 0,
-                width: 0,
-                features: 0,
-            },
-            // SAFETY: a plain C struct, filled in below before it is read.
-            output_info: unsafe { MaybeUninit::zeroed().assume_init() },
-            output_order: HAILO_FORMAT_ORDER_AUTO,
-            output_bytes: 0,
-            input_buffer: PageBuffer::new(0, page_bytes),
-            output_buffer: PageBuffer::new(0, page_bytes),
-            device: Arc::clone(device),
-        };
+        let mut network = Network::unopened(device, page_bytes);
 
         // SAFETY: `path` is NUL-terminated and the out-pointer live; Drop releases the HEF.
         check(
@@ -220,55 +202,8 @@ impl Network {
         let direct = output_format == HAILO_FORMAT_TYPE_UINT8
             && direct::takes_direct(&streams.iter().map(stream_of).collect::<Vec<_>>());
 
-        let mut configure_params = Box::new(MaybeUninit::<hailo_configure_params_t>::zeroed());
-        // SAFETY: the HEF and the vdevice are live, and the params are a live
-        // hailo_configure_params_t for HailoRT to fill in.
-        check(
-            unsafe {
-                hailo_init_configure_params_by_vdevice(
-                    network.hef,
-                    device.vdevice,
-                    configure_params.as_mut_ptr(),
-                )
-            },
-            "hailo_init_configure_params_by_vdevice",
-        )?;
-        // SAFETY: hailo_init_configure_params_by_vdevice initialised them.
-        let configure_params = unsafe { configure_params.assume_init_mut() };
-        if direct {
-            let groups = configure_params.network_group_params_count;
-            for group in &mut configure_params.network_group_params[..groups] {
-                let count = group.stream_params_by_name_count;
-                for stream in &mut group.stream_params_by_name[..count] {
-                    stream.stream_params.flags |= HAILO_STREAM_FLAGS_ASYNC;
-                }
-            }
-        }
-
-        let mut network_groups: [hailo_configured_network_group;
-            HAILO_MAX_NETWORK_GROUPS as usize] =
-            [ptr::null_mut(); HAILO_MAX_NETWORK_GROUPS as usize];
-        let mut network_group_count = network_groups.len();
-        // SAFETY: the vdevice and the HEF are live, the params initialised, and the groups'
-        // array holds `network_group_count` handles; the vdevice owns the groups.
-        check(
-            unsafe {
-                hailo_configure_vdevice(
-                    device.vdevice,
-                    network.hef,
-                    configure_params,
-                    network_groups.as_mut_ptr(),
-                    &mut network_group_count,
-                )
-            },
-            &format!("hailo_configure_vdevice({hef_path})"),
-        )?;
-        if network_group_count == 0 {
-            return Err(format!(
-                "{hef_path}: hailo_configure_vdevice returned no network group"
-            ));
-        }
-        let network_group = network_groups[0];
+        // SAFETY: the HEF was just created.
+        let network_group = unsafe { configure(device, network.hef, hef_path, direct) }?;
 
         if direct {
             // SAFETY: the group is configured from the HEF `streams` describe, its streams
@@ -287,6 +222,30 @@ impl Network {
             ));
         }
         Ok(network)
+    }
+
+    /// A network with no HEF, streams or buffers yet, which `open` fills in and Drop
+    /// releases whatever it holds of.
+    fn unopened(device: &Arc<Device>, page_bytes: usize) -> Network {
+        Network {
+            hef: ptr::null_mut(),
+            io: Io::Vstreams {
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+            },
+            input: Shape {
+                height: 0,
+                width: 0,
+                features: 0,
+            },
+            // SAFETY: a plain C struct, filled in below before it is read.
+            output_info: unsafe { MaybeUninit::zeroed().assume_init() },
+            output_order: HAILO_FORMAT_ORDER_AUTO,
+            output_bytes: 0,
+            input_buffer: PageBuffer::new(0, page_bytes),
+            output_buffer: PageBuffer::new(0, page_bytes),
+            device: Arc::clone(device),
+        }
     }
 
     /// The network's streams, made async at configuration, and its buffers, which HailoRT
@@ -827,6 +786,67 @@ unsafe fn hef_streams(hef: hailo_hef, hef_path: &str) -> Result<Vec<hailo_stream
     )?;
     streams.truncate(count);
     Ok(streams)
+}
+
+/// The HEF configured on the device, its streams made async when `async_streams`; returns its
+/// first network group, which the vdevice owns.
+///
+/// # Safety
+/// `hef` is a live HEF handle.
+unsafe fn configure(
+    device: &Device,
+    hef: hailo_hef,
+    hef_path: &str,
+    async_streams: bool,
+) -> Result<hailo_configured_network_group, String> {
+    let mut configure_params = Box::new(MaybeUninit::<hailo_configure_params_t>::zeroed());
+    // SAFETY: the HEF and the vdevice are live, and the params are a live
+    // hailo_configure_params_t for HailoRT to fill in.
+    check(
+        unsafe {
+            hailo_init_configure_params_by_vdevice(
+                hef,
+                device.vdevice,
+                configure_params.as_mut_ptr(),
+            )
+        },
+        "hailo_init_configure_params_by_vdevice",
+    )?;
+    // SAFETY: hailo_init_configure_params_by_vdevice initialised them.
+    let configure_params = unsafe { configure_params.assume_init_mut() };
+    if async_streams {
+        let groups = configure_params.network_group_params_count;
+        for group in &mut configure_params.network_group_params[..groups] {
+            let count = group.stream_params_by_name_count;
+            for stream in &mut group.stream_params_by_name[..count] {
+                stream.stream_params.flags |= HAILO_STREAM_FLAGS_ASYNC;
+            }
+        }
+    }
+
+    let mut network_groups: [hailo_configured_network_group; HAILO_MAX_NETWORK_GROUPS as usize] =
+        [ptr::null_mut(); HAILO_MAX_NETWORK_GROUPS as usize];
+    let mut network_group_count = network_groups.len();
+    // SAFETY: the vdevice and the HEF are live, the params initialised, and the groups'
+    // array holds `network_group_count` handles; the vdevice owns the groups.
+    check(
+        unsafe {
+            hailo_configure_vdevice(
+                device.vdevice,
+                hef,
+                configure_params,
+                network_groups.as_mut_ptr(),
+                &mut network_group_count,
+            )
+        },
+        &format!("hailo_configure_vdevice({hef_path})"),
+    )?;
+    if network_group_count == 0 {
+        return Err(format!(
+            "{hef_path}: hailo_configure_vdevice returned no network group"
+        ));
+    }
+    Ok(network_groups[0])
 }
 
 /// What `direct::takes_direct` needs of a stream info.
