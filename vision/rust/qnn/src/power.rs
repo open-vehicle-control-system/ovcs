@@ -57,7 +57,7 @@ pub struct Power {
 }
 
 /// A profile's DCVS_V3 vote.
-struct Vote {
+struct DcvsVote {
     sleep_latency_micros: u32,
     corner: QnnHtpPerfInfrastructure_VoltageCorner_t,
 }
@@ -86,7 +86,7 @@ impl Performance {
             .unwrap_or_default()
     }
 
-    fn vote(self) -> Option<Vote> {
+    fn dcvs_vote(self) -> Option<DcvsVote> {
         let (sleep_latency_micros, corner) = match self {
             Performance::Burst => (40, DCVS_VOLTAGE_VCORNER_MAX_VOLTAGE_CORNER),
             Performance::SustainedHighPerformance => (100, DCVS_VOLTAGE_VCORNER_TURBO),
@@ -94,7 +94,7 @@ impl Performance {
             Performance::PowerSaver => (1000, DCVS_VOLTAGE_VCORNER_SVS),
             Performance::NoVote => return None,
         };
-        Some(Vote {
+        Some(DcvsVote {
             sleep_latency_micros,
             corner,
         })
@@ -105,7 +105,7 @@ impl Power {
     /// The `setPowerConfig` calls the vote makes on the power config `id`, one config each:
     /// the DCVS_V3 vote, the RPC control latency, the RPC polling time; none for `NoVote`.
     pub(crate) fn power_configs(self, id: u32) -> Vec<QnnHtpPerfInfrastructure_PowerConfig_t> {
-        let Some(vote) = self.performance.vote() else {
+        let Some(vote) = self.performance.dcvs_vote() else {
             return Vec::new();
         };
         let dcvs = QnnHtpPerfInfrastructure_DcvsV3_t {
@@ -163,7 +163,7 @@ impl Power {
     /// What the vote holds, for the log.
     pub fn describe(self) -> String {
         let name = self.performance.name();
-        let Some(vote) = self.performance.vote() else {
+        let Some(vote) = self.performance.dcvs_vote() else {
             return format!("{name}: no power vote");
         };
         let rpc_polling = match self.rpc_polling_micros {
