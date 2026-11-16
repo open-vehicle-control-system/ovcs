@@ -1,4 +1,4 @@
-//! Decoding of HailoRT's `HAILO_NMS_BY_CLASS` output.
+//! Decoding of HailoRT's `HAILO_NMS_BY_CLASS` output, and greedy non-maximum suppression.
 
 use crate::letterbox::{to_caller, Letterbox};
 use crate::protocol::Detection;

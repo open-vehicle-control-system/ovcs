@@ -67,9 +67,9 @@ impl Channels {
     }
 }
 
-/// Bilinear resize of `frame` into `destination`, a `model_size`x`model_size` RGB buffer padded with
-/// 114, YOLO's conventional letterbox fill. The output rows are split into up to `threads`
-/// bands, with the same output whatever their count.
+/// Bilinear resize of `frame` into `destination`, a `model_size`x`model_size` RGB buffer
+/// padded with 114, YOLO's conventional letterbox fill. The output rows are split into up to
+/// `threads` bands, with the same output whatever their count.
 pub fn letterbox_into(
     frame: &Frame,
     destination: &mut [u8],
