@@ -52,12 +52,13 @@ fn main() {
     let Some(context_path) = arguments.first() else {
         framing::exit_early(NAME, USAGE, 2);
     };
-    let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
+    let score_threshold = match arguments
+        .get(1)
+        .map(|value| detection::score_threshold(value))
+    {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => {
-            framing::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2)
-        }
+        Some(Err(message)) => framing::exit_early(NAME, &message, 2),
     };
     if let Err(message) = run(context_path, score_threshold, power, &writer) {
         writer.log(LogLevel::Error, &message);

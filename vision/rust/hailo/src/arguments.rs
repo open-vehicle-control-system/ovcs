@@ -28,11 +28,7 @@ pub fn parse(arguments: &[String]) -> Result<Vec<Network>, String> {
         };
         let kind = match flag.as_str() {
             "--detect" => Kind::Detection {
-                score_threshold: value
-                    .parse()
-                    .ok()
-                    .filter(|threshold: &f32| (0.0..=1.0).contains(threshold))
-                    .ok_or(format!("bad score threshold {value}"))?,
+                score_threshold: detection::score_threshold(value)?,
             },
             "--segment" => Kind::Segmentation {
                 cell_pixels: value
