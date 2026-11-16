@@ -630,12 +630,21 @@ unsafe fn describe(raw: &Qnn_Tensor_t) -> Result<Tensor, String> {
     let element = element_bytes(v1.dataType)
         .ok_or_else(|| format!("{name}: unsupported data type {:#x}", v1.dataType))?;
     let parameters = &v1.quantizeParams;
-    let scale_offset = (parameters.encodingDefinition == QNN_DEFINITION_DEFINED
-        && parameters.quantizationEncoding == QNN_QUANTIZATION_ENCODING_SCALE_OFFSET)
-        .then(|| {
+    let scale_offset = match (
+        parameters.encodingDefinition,
+        parameters.quantizationEncoding,
+    ) {
+        (QNN_DEFINITION_DEFINED, QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) => {
             let encoding = parameters.__bindgen_anon_1.scaleOffsetEncoding;
-            (encoding.scale, encoding.offset)
-        });
+            Some((encoding.scale, encoding.offset))
+        }
+        (QNN_DEFINITION_DEFINED, encoding) if encoding != QNN_QUANTIZATION_ENCODING_UNDEFINED => {
+            return Err(format!(
+                "{name}: quantisation encoding {encoding} unsupported, only a scale and an offset"
+            ));
+        }
+        _ => None,
+    };
     let bytes = dimensions.iter().map(|&d| d as usize).product::<usize>() * element;
     Ok(Tensor {
         name,
@@ -1183,6 +1192,48 @@ mod tests {
         assert_eq!(
             described,
             Err("the context binary's first graph has no name".to_string())
+        );
+    }
+
+    /// An unsigned 8-bit tensor named "mask", quantised with `encoding`.
+    fn quantised_tensor(encoding: Qnn_QuantizationEncoding_t) -> (Qnn_Tensor_t, CString) {
+        let name = CString::new("mask").unwrap();
+        // SAFETY: a tensor is plain data, and its zero holds null pointers.
+        let mut raw: Qnn_Tensor_t = unsafe { std::mem::zeroed() };
+        raw.version = QNN_TENSOR_VERSION_1;
+        // SAFETY: the tensor is of version 1.
+        let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
+        v1.name = name.as_ptr();
+        v1.dataType = QNN_DATATYPE_UFIXED_POINT_8;
+        v1.quantizeParams.encodingDefinition = QNN_DEFINITION_DEFINED;
+        v1.quantizeParams.quantizationEncoding = encoding;
+        (raw, name)
+    }
+
+    #[test]
+    fn a_tensor_quantised_with_a_scale_and_an_offset_is_described_with_them() {
+        let (mut raw, _name) = quantised_tensor(QNN_QUANTIZATION_ENCODING_SCALE_OFFSET);
+        // SAFETY: the tensor is of version 1, and its union holds the scale and offset.
+        unsafe {
+            let encoding = &mut raw.__bindgen_anon_1.v1.quantizeParams.__bindgen_anon_1;
+            encoding.scaleOffsetEncoding.scale = 0.25;
+            encoding.scaleOffsetEncoding.offset = -128;
+        }
+        // SAFETY: the tensor's name outlives the call, and it has no dimensions.
+        let described = unsafe { describe(&raw) }.map(|tensor| tensor.scale_offset);
+        assert_eq!(described, Ok(Some((0.25, -128))));
+    }
+
+    #[test]
+    fn a_tensor_quantised_otherwise_is_refused() {
+        let (raw, _name) = quantised_tensor(QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
+        // SAFETY: the tensor's name outlives the call, and it has no dimensions.
+        let described = unsafe { describe(&raw) }.map(|tensor| tensor.scale_offset);
+        assert_eq!(
+            described,
+            Err(
+                "mask: quantisation encoding 1 unsupported, only a scale and an offset".to_string()
+            )
         );
     }
 
