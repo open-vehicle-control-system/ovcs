@@ -46,7 +46,7 @@ pub fn run(
             &format!("running on every CPU, the slowest kept: {error}"),
         ),
     }
-    let model = SensorModel::for_sensor(&arguments.camera.sensor);
+    let model = arguments.camera.model;
     let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;

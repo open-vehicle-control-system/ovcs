@@ -22,16 +22,16 @@ pub enum SensorModel {
 const BLACK_LEVEL_10_BIT: u16 = 64;
 
 impl SensorModel {
-    /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`);
-    /// the IMX708 for any other.
-    pub fn for_sensor(name: &str) -> SensorModel {
-        if name.starts_with("imx296") {
-            SensorModel::Imx296
-        } else if name.starts_with("imx477") {
-            SensorModel::Imx477
-        } else {
-            SensorModel::Imx708
-        }
+    /// The model of the sensor whose V4L2 entity is `name` (`imx296 5-001a`),
+    /// `None` for a sensor of another model.
+    pub fn for_sensor(name: &str) -> Option<SensorModel> {
+        [
+            ("imx708", SensorModel::Imx708),
+            ("imx296", SensorModel::Imx296),
+            ("imx477", SensorModel::Imx477),
+        ]
+        .into_iter()
+        .find_map(|(prefix, model)| name.starts_with(prefix).then_some(model))
     }
 
     /// The analogue gain code for `gain`, within the control's range.
@@ -134,19 +134,20 @@ mod tests {
     fn the_model_follows_the_sensor_name() {
         assert_eq!(
             SensorModel::for_sensor("imx296 5-001a"),
-            SensorModel::Imx296
+            Some(SensorModel::Imx296)
         );
         assert_eq!(
             SensorModel::for_sensor("imx708 6-001a"),
-            SensorModel::Imx708
+            Some(SensorModel::Imx708)
         );
+        assert_eq!(SensorModel::for_sensor("imx219 10-0010"), None);
         assert!(SensorModel::Imx708.has_lens());
         assert!(!SensorModel::Imx296.has_lens());
     }
 
     #[test]
     fn the_imx477_is_a_12_bit_sensor_without_a_lens() {
-        let model = SensorModel::for_sensor("imx477 5-001a");
+        let model = SensorModel::for_sensor("imx477 5-001a").unwrap();
         assert_eq!(model, SensorModel::Imx477);
         assert!(!model.has_lens());
         assert_eq!(model.sample_bits(), 12);

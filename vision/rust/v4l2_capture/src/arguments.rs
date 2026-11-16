@@ -126,6 +126,23 @@ impl Output {
 pub struct Nodes {
     pub video: String,
     pub sensor: String,
+    /// The sensor's model, from its name.
+    pub model: SensorModel,
+}
+
+/// A camera's nodes, its sensor named by `flag`, refused for a sensor of no
+/// known model.
+fn nodes(video: String, sensor: String, flag: &str) -> Result<Nodes, String> {
+    Ok(Nodes {
+        model: sensor_model(flag, &sensor)?,
+        video,
+        sensor,
+    })
+}
+
+fn sensor_model(flag: &str, sensor: &str) -> Result<SensorModel, String> {
+    SensorModel::for_sensor(sensor)
+        .ok_or_else(|| format!("{flag}: {sensor} is none of imx708, imx296 and imx477"))
 }
 
 const SINGLE_FLAGS: [&str; 4] = ["--video", "--sensor", "--sensor-width", "--sensor-height"];
@@ -171,7 +188,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
     let mut outputs = Vec::new();
     // The settings start from the sensor's, wherever `--sensor` comes.
     let named = (arguments.chunks_exact(2)).find(|pair| pair[0] == "--sensor");
-    let model = SensorModel::for_sensor(named.map_or("", |pair| pair[1].as_str()));
+    let model = sensor_model("--sensor", &named.ok_or("missing --sensor")?[1])?;
     let mut settings = ColourSettings::for_sensor(model);
     let mut rest = arguments.iter();
     while let Some(flag) = rest.next() {
@@ -225,6 +242,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
         camera: Nodes {
             video: video.ok_or("missing --video")?,
             sensor: sensor.ok_or("missing --sensor")?,
+            model,
         },
         outputs: specs,
         settings,
@@ -377,14 +395,16 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
         width: width.ok_or("missing --width")?,
         height: height.ok_or("missing --height")?,
         fps: fps.ok_or("missing --fps")?,
-        left: Nodes {
-            video: left_node.ok_or("missing --left-video")?,
-            sensor: left_subdevice.ok_or("missing --left-sensor")?,
-        },
-        right: Nodes {
-            video: right_node.ok_or("missing --right-video")?,
-            sensor: right_subdevice.ok_or("missing --right-sensor")?,
-        },
+        left: nodes(
+            left_node.ok_or("missing --left-video")?,
+            left_subdevice.ok_or("missing --left-sensor")?,
+            "--left-sensor",
+        )?,
+        right: nodes(
+            right_node.ok_or("missing --right-video")?,
+            right_subdevice.ok_or("missing --right-sensor")?,
+            "--right-sensor",
+        )?,
         settings,
     })
 }
@@ -453,7 +473,8 @@ mod tests {
             arguments.left,
             Nodes {
                 video: "vi-output-0".to_string(),
-                sensor: "imx708 5-001a".to_string()
+                sensor: "imx708 5-001a".to_string(),
+                model: SensorModel::Imx708,
             }
         );
         assert_eq!(arguments.right.sensor, "imx708 6-001a");
@@ -469,6 +490,21 @@ mod tests {
         let mut single = single_command_line(&[]);
         single[9] = "0".to_string();
         assert_eq!(parse_single(&single).map(|_| ()), refused);
+    }
+
+    #[test]
+    fn a_sensor_of_no_known_model_is_refused() {
+        let refused = |flag: &str| {
+            Err(format!(
+                "{flag}: imx219 10-0010 is none of imx708, imx296 and imx477"
+            ))
+        };
+        let mut pair = command_line(&[]);
+        pair[13] = "imx219 10-0010".to_string();
+        assert_eq!(parse(&pair).map(|_| ()), refused("--right-sensor"));
+        let mut single = single_command_line(&[]);
+        single[3] = "imx219 10-0010".to_string();
+        assert_eq!(parse_single(&single).map(|_| ()), refused("--sensor"));
     }
 
     #[test]
@@ -580,7 +616,8 @@ mod tests {
             arguments.camera,
             Nodes {
                 video: "msm_vfe2_video0".to_string(),
-                sensor: "imx477 5-001a".to_string()
+                sensor: "imx477 5-001a".to_string(),
+                model: SensorModel::Imx477,
             }
         );
         assert!(!arguments.settings.awb);

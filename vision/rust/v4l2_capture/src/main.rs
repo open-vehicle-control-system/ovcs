@@ -38,7 +38,6 @@ use exposure::AutoExposure;
 use framing::{log_record, metadata_record, pair_record, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
-use sensor::SensorModel;
 use settings::Settings;
 use v4l2::{Capture, Node};
 
@@ -117,7 +116,7 @@ fn wait_for_node(name: &str) -> io::Result<String> {
 }
 
 fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<Camera> {
-    let model = SensorModel::for_sensor(&nodes.sensor);
+    let model = nodes.model;
     let has_lens = model.has_lens();
     let open = || -> io::Result<Camera> {
         host_present()?;
@@ -144,7 +143,7 @@ fn run(
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {
     let (sensor_width, sensor_height) = (arguments.width * 2, arguments.height * 2);
-    let model = SensorModel::for_sensor(&arguments.left.sensor);
+    let model = arguments.left.model;
     let left = open_camera(&arguments.left, sensor_width, sensor_height)?;
     let right = open_camera(&arguments.right, sensor_width, sensor_height)?;
 
