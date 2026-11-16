@@ -1,5 +1,9 @@
 //! Automatic exposure for sensors without an ISP to run one.
 
+use std::io;
+
+use crate::settings::Settings;
+
 /// A sensor's exposure time and analogue gain.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Exposure {
@@ -61,6 +65,46 @@ impl AutoExposure {
         }
         self.exposure = exposure;
         Some(exposure)
+    }
+}
+
+pub fn auto_exposure(settings: &Settings, frame_us: f64) -> AutoExposure {
+    auto_exposure_from(settings, frame_us, settings.manual_exposure())
+}
+
+/// Where auto exposure continues from after a settings change: where it ran,
+/// or, while it is off, the manual values `apply_manual` gives the sensors,
+/// so switching it on again starts from what they hold.
+pub fn resume_point(
+    settings: &Settings,
+    running: Exposure,
+    apply_manual: impl FnOnce() -> io::Result<Exposure>,
+) -> io::Result<Exposure> {
+    if settings.auto_exposure {
+        Ok(running)
+    } else {
+        apply_manual()
+    }
+}
+
+/// Auto exposure from `settings`, continuing from `exposure`.
+pub fn auto_exposure_from(settings: &Settings, frame_us: f64, exposure: Exposure) -> AutoExposure {
+    AutoExposure {
+        exposure,
+        max_exposure_us: f64::from(settings.max_exposure_us).min(frame_us),
+        max_gain: settings.max_gain,
+        target: settings.target_brightness,
+        gamma: settings.gamma,
+    }
+}
+
+/// The exposure and gain auto exposure, while on, applies at once to stay
+/// within caps a settings change lowered.
+pub fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<Exposure> {
+    if settings.auto_exposure {
+        auto_exposure.capped()
+    } else {
+        None
     }
 }
 
@@ -181,5 +225,53 @@ mod tests {
     fn mean_samples_the_image() {
         assert_eq!(mean(&[10, 20, 30, 40], 1), 25.0);
         assert_eq!(mean(&[], 4), 0.0);
+    }
+
+    #[test]
+    fn auto_exposure_switched_on_again_starts_from_the_manual_values() {
+        let mut settings = Settings::default();
+        let start = Exposure {
+            exposure_us: 12_000.0,
+            gain: 3.0,
+        };
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
+
+        settings.apply(b"auto_exposure=false").unwrap();
+        settings.apply(b"exposure_us=5000").unwrap();
+        let manual = Exposure {
+            exposure_us: 5_000.0,
+            gain: 1.5,
+        };
+        let resume_from = resume_point(&settings, auto_exposure.exposure, || Ok(manual)).unwrap();
+        auto_exposure = auto_exposure_from(&settings, 33_333.0, resume_from);
+
+        settings.apply(b"auto_exposure=true").unwrap();
+        let resume_from = resume_point(&settings, auto_exposure.exposure, || {
+            panic!("no manual values while automatic")
+        })
+        .unwrap();
+        assert_eq!(resume_from, manual);
+    }
+
+    #[test]
+    fn lowered_caps_apply_at_once_to_auto_exposure_and_never_to_manual_values() {
+        let mut settings = Settings::default();
+        settings.apply(b"auto_exposure=false").unwrap();
+        settings.apply(b"max_exposure_us=1000").unwrap();
+        let start = Exposure {
+            exposure_us: 8_000.0,
+            gain: 2.0,
+        };
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
+        assert_eq!(capped_now(&settings, &mut auto_exposure), None);
+
+        settings.apply(b"auto_exposure=true").unwrap();
+        assert_eq!(
+            capped_now(&settings, &mut auto_exposure),
+            Some(Exposure {
+                exposure_us: 1_000.0,
+                gain: 16.0
+            })
+        );
     }
 }

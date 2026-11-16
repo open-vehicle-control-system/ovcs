@@ -8,15 +8,17 @@ use framing::{metadata_record, pair_header, LogLevel, Writer};
 
 use crate::arguments;
 use crate::bayer::{self, Tone};
-use crate::exposure::{self, Exposure};
+use crate::exposure::{
+    self, auto_exposure, auto_exposure_from, capped_now, resume_point, Exposure,
+};
 use crate::pairing::{Pairer, Side};
 use crate::phase_lock::PhaseLock;
 use crate::sensor::{FrameTiming, SensorModel};
 use crate::settings::Settings;
 use crate::v4l2;
 use crate::{
-    auto_exposure, auto_exposure_from, capped_now, input, open_camera, poll, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT, STATISTICS_EVERY_S,
+    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT,
+    STATISTICS_EVERY_S,
 };
 
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;

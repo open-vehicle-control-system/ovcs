@@ -35,9 +35,7 @@ mod white_balance;
 use std::io;
 use std::process::ExitCode;
 
-use exposure::{AutoExposure, Exposure};
 use framing::{LogLevel, Writer};
-use settings::Settings;
 use v4l2::{Capture, Node};
 
 const BUFFERS: u32 = 4;
@@ -120,46 +118,6 @@ fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<
         .map_err(|error| io::Error::new(error.kind(), format!("{}: {error}", nodes.video)))
 }
 
-fn auto_exposure(settings: &Settings, frame_us: f64) -> AutoExposure {
-    auto_exposure_from(settings, frame_us, settings.manual_exposure())
-}
-
-/// Where auto exposure continues from after a settings change: where it ran,
-/// or, while it is off, the manual values `apply_manual` gives the sensors,
-/// so switching it on again starts from what they hold.
-fn resume_point(
-    settings: &Settings,
-    running: Exposure,
-    apply_manual: impl FnOnce() -> io::Result<Exposure>,
-) -> io::Result<Exposure> {
-    if settings.auto_exposure {
-        Ok(running)
-    } else {
-        apply_manual()
-    }
-}
-
-/// Auto exposure from `settings`, continuing from `exposure`.
-fn auto_exposure_from(settings: &Settings, frame_us: f64, exposure: Exposure) -> AutoExposure {
-    AutoExposure {
-        exposure,
-        max_exposure_us: f64::from(settings.max_exposure_us).min(frame_us),
-        max_gain: settings.max_gain,
-        target: settings.target_brightness,
-        gamma: settings.gamma,
-    }
-}
-
-/// The exposure and gain auto exposure, while on, applies at once to stay
-/// within caps a settings change lowered.
-fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<Exposure> {
-    if settings.auto_exposure {
-        auto_exposure.capped()
-    } else {
-        None
-    }
-}
-
 fn pollfd(fd: i32) -> libc::pollfd {
     libc::pollfd {
         fd,
@@ -190,57 +148,4 @@ fn poll(descriptors: &mut [libc::pollfd], timeout: std::time::Duration) -> io::R
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn auto_exposure_switched_on_again_starts_from_the_manual_values() {
-        let mut settings = Settings::default();
-        let start = Exposure {
-            exposure_us: 12_000.0,
-            gain: 3.0,
-        };
-        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
-
-        settings.apply(b"auto_exposure=false").unwrap();
-        settings.apply(b"exposure_us=5000").unwrap();
-        let manual = Exposure {
-            exposure_us: 5_000.0,
-            gain: 1.5,
-        };
-        let resume_from = resume_point(&settings, auto_exposure.exposure, || Ok(manual)).unwrap();
-        auto_exposure = auto_exposure_from(&settings, 33_333.0, resume_from);
-
-        settings.apply(b"auto_exposure=true").unwrap();
-        let resume_from = resume_point(&settings, auto_exposure.exposure, || {
-            panic!("no manual values while automatic")
-        })
-        .unwrap();
-        assert_eq!(resume_from, manual);
-    }
-
-    #[test]
-    fn lowered_caps_apply_at_once_to_auto_exposure_and_never_to_manual_values() {
-        let mut settings = Settings::default();
-        settings.apply(b"auto_exposure=false").unwrap();
-        settings.apply(b"max_exposure_us=1000").unwrap();
-        let start = Exposure {
-            exposure_us: 8_000.0,
-            gain: 2.0,
-        };
-        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
-        assert_eq!(capped_now(&settings, &mut auto_exposure), None);
-
-        settings.apply(b"auto_exposure=true").unwrap();
-        assert_eq!(
-            capped_now(&settings, &mut auto_exposure),
-            Some(Exposure {
-                exposure_us: 1_000.0,
-                gain: 16.0
-            })
-        );
-    }
 }

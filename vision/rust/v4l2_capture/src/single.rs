@@ -16,7 +16,7 @@ use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::cpus;
 use crate::encoder::{Encoder, H264Settings, M2mEncoder};
-use crate::exposure::Exposure;
+use crate::exposure::{auto_exposure, auto_exposure_from, capped_now, resume_point, Exposure};
 use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
@@ -26,8 +26,8 @@ use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
-    auto_exposure, auto_exposure_from, capped_now, input, open_camera, poll, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT, STATISTICS_EVERY_S,
+    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT,
+    STATISTICS_EVERY_S,
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
