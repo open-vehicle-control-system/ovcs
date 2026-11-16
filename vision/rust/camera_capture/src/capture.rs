@@ -21,7 +21,7 @@ use libcamera::camera::{
 use libcamera::camera_manager::CameraManager;
 use libcamera::color_space::Range as LibcameraRange;
 use libcamera::control::{ControlEntry, ControlList};
-use libcamera::control_value::{ControlType, ControlValue as LibcameraValue};
+use libcamera::control_value::{ControlType, ControlValue};
 use libcamera::controls;
 use libcamera::framebuffer_allocator::FrameBufferAllocator;
 use libcamera::geometry::Size;
@@ -567,7 +567,7 @@ fn start_controls(
                     SyncMode::Server => (SYNC_MODE_SERVER, "server"),
                     _ => (SYNC_MODE_CLIENT, "client"),
                 };
-                let _ = start_controls.set_raw(SYNC_MODE_ID, LibcameraValue::from(value));
+                let _ = start_controls.set_raw(SYNC_MODE_ID, ControlValue::from(value));
                 info(format!("camera sync as {role}"));
             }
         }
@@ -602,7 +602,7 @@ fn start_controls(
 fn requeue(
     camera: &ActiveCamera,
     mut request: Request,
-    pending: &Mutex<HashMap<u32, LibcameraValue>>,
+    pending: &Mutex<HashMap<u32, ControlValue>>,
 ) -> Result<(), String> {
     request.reuse(ReuseFlag::REUSE_BUFFERS);
     for (id, value) in pending.lock().unwrap_or_else(|e| e.into_inner()).drain() {
@@ -649,7 +649,7 @@ const MAX_CONTROL_BYTES: usize = 64 << 10;
 /// read stops it too, its error set in the cell returned.
 fn spawn_stdin_reader(
     control_ids: HashMap<String, (u32, ControlKind)>,
-    pending: Arc<Mutex<HashMap<u32, LibcameraValue>>>,
+    pending: Arc<Mutex<HashMap<u32, ControlValue>>>,
     writer: Arc<Writer>,
     stop: Arc<AtomicBool>,
 ) -> Arc<OnceLock<String>> {
@@ -690,7 +690,7 @@ fn spawn_stdin_reader(
     error
 }
 
-fn libcamera_value(value: TypedValue) -> LibcameraValue {
+fn libcamera_value(value: TypedValue) -> ControlValue {
     match value {
         TypedValue::Bool(flag) => flag.into(),
         TypedValue::Int32(integer) => integer.into(),
@@ -715,7 +715,7 @@ impl FrameMetadata {
         };
         for (id, value) in control_list {
             if id == controls::SensorTimestamp::ID {
-                if let LibcameraValue::Int64(timestamps) = &value {
+                if let ControlValue::Int64(timestamps) = &value {
                     metadata.sensor_timestamp = timestamps.first().copied();
                 }
             } else if let Some(field) = ids.iter().position(|field_id| *field_id == id) {
@@ -733,12 +733,12 @@ impl FrameMetadata {
     }
 }
 
-fn scalar(value: &LibcameraValue) -> Option<f64> {
+fn scalar(value: &ControlValue) -> Option<f64> {
     match value {
-        LibcameraValue::Bool(values) => values.first().map(|flag| f64::from(u8::from(*flag))),
-        LibcameraValue::Int32(values) => values.first().map(|integer| f64::from(*integer)),
-        LibcameraValue::Int64(values) => values.first().map(|integer| *integer as f64),
-        LibcameraValue::Float(values) => values.first().map(|float| f64::from(*float)),
+        ControlValue::Bool(values) => values.first().map(|flag| f64::from(u8::from(*flag))),
+        ControlValue::Int32(values) => values.first().map(|integer| f64::from(*integer)),
+        ControlValue::Int64(values) => values.first().map(|integer| *integer as f64),
+        ControlValue::Float(values) => values.first().map(|float| f64::from(*float)),
         _ => None,
     }
 }

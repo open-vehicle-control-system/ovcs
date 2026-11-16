@@ -3,7 +3,7 @@
 //! libcamera's control id when the control is applied.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum ControlValue {
+pub enum Number {
     Integer(i64),
     Float(f32),
 }
@@ -26,7 +26,7 @@ pub enum TypedValue {
 }
 
 /// Splits a command into the control's name and its value.
-pub fn parse_control(line: &str) -> Result<(String, ControlValue), String> {
+pub fn parse_control(line: &str) -> Result<(String, Number), String> {
     let (name, value) = line
         .split_once('=')
         .ok_or_else(|| "expected Name=value".to_string())?;
@@ -34,9 +34,9 @@ pub fn parse_control(line: &str) -> Result<(String, ControlValue), String> {
         return Err("empty control name".to_string());
     }
     let value = if let Ok(integer) = value.parse() {
-        ControlValue::Integer(integer)
+        Number::Integer(integer)
     } else if let Ok(float) = value.parse() {
-        ControlValue::Float(float)
+        Number::Float(float)
     } else {
         return Err(format!("{name}: {value:?} is not a number"));
     };
@@ -45,18 +45,16 @@ pub fn parse_control(line: &str) -> Result<(String, ControlValue), String> {
 
 /// `value` as a `kind` control: a bool is 0 or 1, an integer control takes
 /// no fraction, a float control takes either. `None` when it does not fit.
-pub fn coerce(value: ControlValue, kind: ControlKind) -> Option<TypedValue> {
+pub fn coerce(value: Number, kind: ControlKind) -> Option<TypedValue> {
     match (kind, value) {
-        (ControlKind::Bool, ControlValue::Integer(0)) => Some(TypedValue::Bool(false)),
-        (ControlKind::Bool, ControlValue::Integer(1)) => Some(TypedValue::Bool(true)),
-        (ControlKind::Int32, ControlValue::Integer(integer)) => {
+        (ControlKind::Bool, Number::Integer(0)) => Some(TypedValue::Bool(false)),
+        (ControlKind::Bool, Number::Integer(1)) => Some(TypedValue::Bool(true)),
+        (ControlKind::Int32, Number::Integer(integer)) => {
             i32::try_from(integer).ok().map(TypedValue::Int32)
         }
-        (ControlKind::Int64, ControlValue::Integer(integer)) => Some(TypedValue::Int64(integer)),
-        (ControlKind::Float, ControlValue::Integer(integer)) => {
-            Some(TypedValue::Float(integer as f32))
-        }
-        (ControlKind::Float, ControlValue::Float(float)) => Some(TypedValue::Float(float)),
+        (ControlKind::Int64, Number::Integer(integer)) => Some(TypedValue::Int64(integer)),
+        (ControlKind::Float, Number::Integer(integer)) => Some(TypedValue::Float(integer as f32)),
+        (ControlKind::Float, Number::Float(float)) => Some(TypedValue::Float(float)),
         _ => None,
     }
 }
@@ -69,7 +67,7 @@ mod tests {
     fn parses_float_control() {
         assert_eq!(
             parse_control("LensPosition=2.5"),
-            Ok(("LensPosition".to_string(), ControlValue::Float(2.5)))
+            Ok(("LensPosition".to_string(), Number::Float(2.5)))
         );
     }
 
@@ -77,11 +75,11 @@ mod tests {
     fn parses_int_control() {
         assert_eq!(
             parse_control("AeExposureMode=1"),
-            Ok(("AeExposureMode".to_string(), ControlValue::Integer(1)))
+            Ok(("AeExposureMode".to_string(), Number::Integer(1)))
         );
         assert_eq!(
             parse_control("ExposureTime=-20000"),
-            Ok(("ExposureTime".to_string(), ControlValue::Integer(-20000)))
+            Ok(("ExposureTime".to_string(), Number::Integer(-20000)))
         );
     }
 
@@ -119,7 +117,7 @@ mod tests {
 
     #[test]
     fn coerces_to_the_control_type() {
-        use ControlValue::*;
+        use Number::*;
         assert_eq!(
             coerce(Integer(1), ControlKind::Bool),
             Some(TypedValue::Bool(true))
