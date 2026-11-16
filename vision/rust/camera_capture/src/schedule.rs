@@ -9,6 +9,10 @@
 
 const NS_PER_S: f64 = 1e9;
 
+/// The lowest `max_hz` above 0: its interval and a capture time, each at most
+/// half of `i64::MAX`, add up without overflowing.
+pub const MIN_MAX_HZ: f64 = NS_PER_S / (i64::MAX / 2) as f64;
+
 pub struct Schedule {
     /// `None` takes every frame.
     interval_ns: Option<i64>,
@@ -17,7 +21,8 @@ pub struct Schedule {
 }
 
 impl Schedule {
-    /// At most `max_hz` frames a second, 0 for every frame, of a camera at `fps`.
+    /// At most `max_hz` frames a second, 0 for every frame or from
+    /// `MIN_MAX_HZ`, of a camera at `fps`.
     pub fn new(max_hz: f64, fps: u32) -> Schedule {
         Schedule {
             interval_ns: (max_hz > 0.0).then(|| (NS_PER_S / max_hz).round() as i64),

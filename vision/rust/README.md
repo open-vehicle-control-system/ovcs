@@ -67,7 +67,7 @@ With `--output`, `camera_capture` asks libcamera for a second stream of the same
 
 The ISP output is the `VideoRecording` stream and the frames are the `ViewFinder` one. The frames' records are unchanged, and each frame's comes before its outputs'.
 
-`--outputs-max-hz <hz>`, 0 to 1000, makes the outputs on at most that many frames a second. The frames are chosen on their capture times: a slot every `1 / hz` s, a frame due within three quarters of a frame period (`--fps`) of its slot. A later frame, or one captured before the last one chosen, starts the slots over from its capture time. Without the flag, or at 0, the outputs are made on every frame. The JPEG is encoded on the capture thread, after the frame's record is written.
+`--outputs-max-hz <hz>`, 0 or 2.2e-10 to 1000, makes the outputs on at most that many frames a second. The frames are chosen on their capture times: a slot every `1 / hz` s, a frame due within three quarters of a frame period (`--fps`) of its slot. A later frame, or one captured before the last one chosen, starts the slots over from its capture time. Without the flag, or at 0, the outputs are made on every frame. The JPEG is encoded on the capture thread, after the frame's record is written.
 
 At start, `camera_capture` logs each stream's configuration, its colour space and how its frames are written. When libcamera adjusts the configuration, it also logs each stream as asked. If the ISP output's size changed, it writes the frames without the outputs.
 

@@ -2,6 +2,8 @@
 
 use framing::output_flag::{self, MAX_OUTPUTS};
 
+use crate::schedule::MIN_MAX_HZ;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SyncMode {
     Off,
@@ -245,9 +247,9 @@ fn jpeg_output(
 
 fn max_hz(flag: &str, value: &str) -> Result<f64, String> {
     match value.parse::<f64>() {
-        Ok(max_hz) if (0.0..=1000.0).contains(&max_hz) => Ok(max_hz),
+        Ok(max_hz) if max_hz == 0.0 || (MIN_MAX_HZ..=1000.0).contains(&max_hz) => Ok(max_hz),
         _ => Err(format!(
-            "{flag} must be a number from 0 to 1000, got {value}"
+            "{flag} must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, got {value}"
         )),
     }
 }
@@ -518,7 +520,8 @@ mod tests {
             assert_eq!(
                 parse(&strings(&flags)),
                 Err(format!(
-                    "--outputs-max-hz must be a number from 0 to 1000, got {max_hz}"
+                    "--outputs-max-hz must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, \
+                     got {max_hz}"
                 ))
             );
         }
@@ -526,6 +529,27 @@ mod tests {
             parse(&strings(&["--outputs-max-hz", "10"])),
             Err("--outputs-max-hz needs an --output".to_string())
         );
+    }
+
+    #[test]
+    fn an_outputs_cap_whose_interval_overflows_a_capture_time_is_refused() {
+        let flags = |max_hz| {
+            strings(&[
+                "--output",
+                "isp:1152x648:unsent",
+                "--output",
+                "from:0:1152x648:jpeg:80",
+                "--outputs-max-hz",
+                max_hz,
+            ])
+        };
+        assert_eq!(
+            parse(&flags("1e-11")),
+            Err(format!(
+                "--outputs-max-hz must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, got 1e-11"
+            ))
+        );
+        assert_eq!(parse(&flags("1e-9")).unwrap().outputs_max_hz, 1e-9);
     }
 
     #[test]
