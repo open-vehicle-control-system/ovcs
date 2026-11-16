@@ -29,7 +29,7 @@ A unit runs one detection pipeline per detector its vehicle lists, each with its
                                                                      └─ GPU through nx_iree (C100, VENTUNO Q)
 
  subscribers:  ROS 2 exporter ── Zenoh ──► the vehicle's ROS 2 graph
-               Detection pipeline ──► hailo_detect Port (Hailo-8)
+               Detection pipeline ──► hailo Port (Hailo-8)
                Status (rates, load, alignment, sharpness)
                Preview ──► jpeg_codec Ports ──► dashboard channels
 ```
@@ -46,7 +46,7 @@ A Port's row below names the process that owns it.
 | ROS 2 exporter | [`VisionCore.Ros2.ZenohExporter`](../../vision/core/lib/vision_core/ros2/zenoh_exporter.ex), with [`VisionCore.Ros2.ZenohExporter.Diagnostics`](../../vision/core/lib/vision_core/ros2/zenoh_exporter/diagnostics.ex) publishing what the stereo cameras do and their sync, [`VisionCore.Ros2.ZenohExporter.CameraLive`](../../vision/core/lib/vision_core/ros2/zenoh_exporter/camera_live.ex) plotting what the cameras of their own apply, and a [`VisionCore.Ros2.Services.SetCameraInfoServer`](../../vision/core/lib/vision_core/ros2/services/set_camera_info_server.ex) per camera answering `cameracalibrator`'s commit | `VisionCore.Exporters` |
 | Calibration session | [`VisionCore.Calibration.Session`](../../vision/core/lib/vision_core/calibration/session.ex), running its detections, solves and commits under the `VisionCore.Calibration.Tasks` task supervisor | `VisionCore.Consumers`, on a unit with a stereo pair or a camera of its own to calibrate |
 | Detection pipeline, one per detector | [`VisionCore.Detection.Pipeline`](../../vision/core/lib/vision_core/detection/pipeline.ex), with [`VisionCore.Detection.Live`](../../vision/core/lib/vision_core/detection/live.ex) passing its results to the dashboard | `VisionCore.Detection.Supervisor`, one per pipeline |
-| `hailo_detect` Port | [`VisionCore.Detection.Backend.Hailo`](../../vision/core/lib/vision_core/detection/backend/hailo.ex) | `VisionCore.Detection.Supervisor` |
+| `hailo` Port | [`VisionCore.Hailo`](../../vision/core/lib/vision_core/hailo.ex), one lane for each Hailo unit's pipeline | `VisionCore.Hailo.Supervisor` |
 | `qnn_detect` Port | [`VisionCore.Detection.Backend.Qnn`](../../vision/core/lib/vision_core/detection/backend/qnn.ex) | `VisionCore.Detection.Supervisor` |
 | Segmentation pipeline, one per segmenter | [`VisionCore.Segmentation.Pipeline`](../../vision/core/lib/vision_core/segmentation/pipeline.ex), with [`VisionCore.Segmentation.Live`](../../vision/core/lib/vision_core/segmentation/live.ex) passing its label grids to the dashboard | `VisionCore.Segmentation.Supervisor`, one per pipeline |
 | `qnn_segment` Port | [`VisionCore.Segmentation.Backend.Qnn`](../../vision/core/lib/vision_core/segmentation/backend/qnn.ex) | `VisionCore.Segmentation.Supervisor` |

@@ -1,23 +1,27 @@
 defmodule VisionCore.Detection.Backend.Wire do
   @moduledoc """
-  The packets `hailo_detect` and `qnn_detect` speak, which
-  `VisionCore.Detection.Backend.Hailo` and
-  `VisionCore.Detection.Backend.Qnn` hand to
+  The packets `hailo` and `qnn_detect` speak for detection, which
+  `VisionCore.Hailo` and `VisionCore.Detection.Backend.Qnn` hand to
   `VisionCore.Inference.PortBackend`: an image goes down as its
-  sequence, its size, its channels and its pixels, and comes back as the
-  boxes found on it, in its pixels, which the accelerator's time for the
-  inference may follow.
+  sequence, its size, its channels and its pixels, or to `hailo` as its
+  sequence and its JPEG, and comes back as the boxes found on it, in its
+  pixels, which the accelerator's time for the inference may follow.
   """
 
-  # Port protocol tags; must match `hailo_detect` and `qnn_detect`.
+  # Port protocol tags; must match `hailo` and `qnn_detect`.
   @detect_request_tag 1
+  @detect_jpeg_request_tag 3
   @detections_reply_tag 1
 
   @doc """
   The request for the inference `sequence` on `image`, a `u8`
-  `{height, width}` grey or `{height, width, 3}` RGB tensor.
+  `{height, width}` grey or `{height, width, 3}` RGB tensor, or
+  `{:jpeg, jpeg}`.
   """
-  @spec request(non_neg_integer(), Nx.Tensor.t()) :: iodata()
+  @spec request(non_neg_integer(), VisionCore.Detection.Backend.image()) :: iodata()
+  def request(sequence, {:jpeg, jpeg}),
+    do: [<<@detect_jpeg_request_tag, sequence::little-32>>, jpeg]
+
   def request(sequence, image) do
     {height, width, channels} = image_shape(image)
 

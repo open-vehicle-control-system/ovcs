@@ -7,7 +7,8 @@ use detection::bilinear;
 /// Bilinear resize of the RGB image's `rows`, `width` pixels wide, into `destination`, an
 /// `output_width` × `output_height` RGB image. Samples are taken at pixel centres, and a tap
 /// past the band's edge takes the edge's pixel, never a row outside the band. The output rows
-/// are split into up to `threads` bands, with the same output whatever their count.
+/// are split into up to `threads` bands, with the same output whatever their count. A band
+/// of the output's size is copied as it is.
 pub fn resize_band(
     image: &[u8],
     width: usize,
@@ -17,6 +18,11 @@ pub fn resize_band(
     output_height: usize,
     threads: usize,
 ) {
+    if width == output_width && rows.len() == output_height {
+        let bytes = width * 3 * output_height;
+        destination[..bytes].copy_from_slice(&image[rows.start * width * 3..][..bytes]);
+        return;
+    }
     let to_pixels = |input: usize, output: usize| {
         let scale = input as f32 / output as f32;
         move |samples: f32| samples * scale

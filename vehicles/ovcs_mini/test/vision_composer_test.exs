@@ -12,9 +12,11 @@ defmodule OvcsMini.VisionComposerTest do
     end)
   end
 
-  test "the stereo unit matches at most 20 pairs a second, a value its vision parameter takes" do
+  test "the stereo cameras capture 25 frames a second, of which at most 20 pairs are matched" do
     %VisionCore.Config{components: components} = OvcsMini.Vision.Composer.config(:target)
     stereo = Keyword.fetch!(components, :stereo)
+
+    assert stereo[:fps] == 25
 
     assert %{max_hz: 20.0, pair_tolerance_ms: 5} =
              VisionCore.Settings.init!(VisionCore.Stereo.Pairer.setting_specs(), stereo)
@@ -23,7 +25,7 @@ defmodule OvcsMini.VisionComposerTest do
              VisionCore.Stereo.Supervisor.camera_options(OvcsMini.Vision.Composer.config(:target))
   end
 
-  test "the bag exporter records the stereo pair, the left camera's JPEG and the detections" do
+  test "the bag exporter records the stereo pair, the left camera's JPEG, the detections and the scene" do
     config = OvcsMini.Vision.Composer.config(:target)
     wired = %{config | components: VisionCore.Components.wire_streams!(config.components)}
 
@@ -39,10 +41,12 @@ defmodule OvcsMini.VisionComposerTest do
                {:stereo_frame, :right},
                {:camera_frame, :left, :half_jpeg},
                :stereo_pair,
-               {:detections, :detection}
+               {:detections, :detection},
+               {:segmentation, :scene}
              ]
 
-      assert Enum.map(outputs, &Preset.kind/1) == [:sides, :sides, :cameras, :pairs, :detections]
+      assert Enum.map(outputs, &Preset.kind/1) ==
+               [:sides, :sides, :cameras, :pairs, :detections, :segmentation]
 
       for preset <- Preset.names(),
           do: assert(Preset.options(preset, config)[:cameras][:outputs] == [left: :half_jpeg])
@@ -52,13 +56,13 @@ defmodule OvcsMini.VisionComposerTest do
     end
   end
 
-  test "the left camera of its own is a second stream of the stereo unit's left capture, a JPEG at half the sensor mode, at most 30 a second" do
+  test "the left camera of its own is a second stream of the stereo unit's left capture, a JPEG at half the sensor mode, at most 25 a second" do
     config = OvcsMini.Vision.Composer.config(:target)
     camera = camera(config, :left)
 
     assert camera[:driver] == LibCameraStream
     assert camera[:stream_of] == :left
-    assert camera[:max_hz] == 30
+    assert camera[:max_hz] == 25
 
     assert camera[:outputs] == [
              half: [resolution: {1152, 648}, processor: :isp, send: false],
@@ -76,7 +80,7 @@ defmodule OvcsMini.VisionComposerTest do
     stereo = Keyword.fetch!(components, :stereo)
 
     assert stereo[:left][:outputs] == camera[:outputs]
-    assert stereo[:left][:outputs_max_hz] == 30
+    assert stereo[:left][:outputs_max_hz] == 25
     assert {:ok, _outputs} = LibCamera.capture_outputs(stereo[:left])
     refute Keyword.has_key?(stereo[:right], :outputs)
     assert camera(%{config | components: components}, :left)[:side_label] == "stereo/left"
@@ -121,5 +125,34 @@ defmodule OvcsMini.VisionComposerTest do
           do: id
 
     assert ids == Enum.uniq(ids)
+  end
+
+  test "detects and segments every third frame of the left camera's colour, both on the Hailo-8" do
+    config = OvcsMini.Vision.Composer.config(:target)
+    components = Map.new(config.components, fn {kind, opts} -> {kind, opts} end)
+
+    assert components.hailo_detector[:source] == {:camera, :left, :half_jpeg}
+    assert components.hailo_segmenter[:name] == :scene
+    assert components.hailo_segmenter[:source] == {:camera, :left, :half_jpeg}
+    assert components.hailo_segmenter[:hef_path] =~ "ddrnet_23_slim_576x1152.hef"
+    assert components.hailo_segmenter[:segment_every_n] == 3
+    assert components.hailo_detector[:detect_every_n] == 3
+
+    assert [%{start: {VisionCore.Hailo.Supervisor, :start_link, [hailo]}}] =
+             VisionCore.Components.hailo_children(config.components)
+
+    assert Enum.map(hailo[:networks], fn {name, network} -> {name, network[:kind]} end) ==
+             [detection: :detection, scene: :segmentation]
+
+    assert "priv/models/ddrnet_23_slim_576x1152.hef" in OvcsMini.Vision.Composer.required_files()
+  end
+
+  test "the ROS 2 exporter publishes the scene's classes and its road clouds" do
+    config = OvcsMini.Vision.Composer.config(:target)
+    options = Keyword.fetch!(config.exporters, ZenohExporter) ++ [config: config]
+
+    assert ZenohExporter.check(options) == :ok
+    assert {:ok, specs} = VisionCore.Exporter.output_specs(ZenohExporter, options)
+    assert {:segmentation, :scene} in Enum.map(specs, &elem(&1, 0))
   end
 end

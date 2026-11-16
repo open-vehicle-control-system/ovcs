@@ -10,7 +10,7 @@ The [stereo stages](./stages.md) are written once and run one of two ways, depen
 | Stages | Nx, compiled by `nx_iree` into Vulkan compute shaders | Nx, compiled by `nx_iree` into Vulkan compute shaders | Native Rust, in the `stereo_match` Port |
 | Runs on | the GPU: 128 Maxwell cores | the GPU: an Adreno 623 | the CPU: 4 Cortex-A76 cores |
 | Composer | `defn_options: VisionCore.Stereo.NxSegment.c100_defn_options/1` | `defn_options: VisionCore.Stereo.NxSegment.ventuno_q_defn_options/1` | `compute: :native` |
-| Detection | none | the Hexagon NPU, through `qnn_detect` | the Hailo-8, through `hailo_detect` |
+| Detection | none | the Hexagon NPU, through `qnn_detect` | the Hailo-8, through `hailo` |
 | Road segmentation | none | the Hexagon NPU, through `qnn_segment` | none |
 
 Both give the same results: the native stages are tested against the Nx ones, image for image.
@@ -204,8 +204,8 @@ The core runs its Rust programs as Ports: separate processes speaking length-pre
 | `camera_capture` | Pi 5 | One libcamera camera: the image signal processor's output as grey frames (`format: :grey`) or JPEG, and with outputs a second stream encoded as JPEG for a camera of its own; takes camera controls on stdin. |
 | `v4l2_capture` | C100, VENTUNO Q | Both CSI cameras over V4L2: locks the right sensor's frame starts to the left one's and writes grey pairs. A camera of its own in colour, its outputs converted, averaged or encoded as JPEG with libjpeg-turbo. |
 | `stereo_match` | Pi 5, workstation | The native stereo stages, built by nx_stereo. |
-| `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
-| `hailo_detect` | Pi 5 | Runs the detection model on the Hailo-8 through HailoRT and returns boxes. |
+| `jpeg_codec` | every board | Encodes grey and colour images and coloured depth previews as JPEG with libjpeg-turbo, and decodes JPEG frames to grey, or to RGB for the detection and segmentation pipelines. The previews and the exporters encode on a pool of them, the configuration's `jpeg: [ports: n]`, each camera frame once for all of them. |
+| `hailo` | Pi 5 | Runs every detection and segmentation model the Hailo units name on the Hailo-8 through HailoRT, one thread a model, HailoRT's scheduler giving them the device in turn; takes a frame's pixels or its JPEG, which it decodes with libjpeg-turbo once for every model it is sent to, and returns boxes or class grids. A model whose frames need no conversion reads and writes them by DMA. |
 | `qnn_detect` | VENTUNO Q | Runs the detection model's context binary on the Hexagon NPU through QNN and returns boxes. |
 | `qnn_segment` | VENTUNO Q | Runs the road segmentation model's context binary on the Hexagon NPU through QNN, over a band of a colour frame. Returns each output cell's class. |
 
@@ -213,7 +213,7 @@ Compiling `vision_core` for a vision target cross-builds that target's Ports thr
 
 | Target | Ports |
 |---|---|
-| `rpi5` | `camera_capture`, `hailo_detect` and `jpeg_codec` |
+| `rpi5` | `camera_capture`, `hailo` and `jpeg_codec` |
 | `okdo_c100` | `v4l2_capture` and `jpeg_codec` |
 | `arduino_ventuno_q` | `v4l2_capture`, `jpeg_codec`, `qnn_detect` and `qnn_segment` |
 

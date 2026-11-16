@@ -36,6 +36,18 @@ defmodule VisionCore.Segmentation.PipelineTest do
     def inference_times(_server), do: nil
   end
 
+  # Recorder, decoding a JPEG itself.
+  defmodule JpegDecoding do
+    @behaviour VisionCore.Segmentation.Backend
+
+    defdelegate segment(server, sequence, band), to: Recorder
+    def decodes_jpeg?, do: true
+    def available?(_server), do: true
+    def npu_kind, do: nil
+    def options, do: []
+    def inference_times(_server), do: nil
+  end
+
   # Tells the test each sequence it is handed and answers what the test scripted, `:ok` once the
   # script is spent; never replies, the test does.
   defmodule Scripted do
@@ -546,6 +558,59 @@ defmodule VisionCore.Segmentation.PipelineTest do
       end)
 
     assert [_once] = Regex.scan(~r/camera hq's images have no colour/, log)
+  end
+
+  @tag :jpeg
+  test "segments a JPEG frame's colour, decoded", %{tmp_dir: dir} do
+    start_supervised!(VisionCore.Jpeg)
+
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: Recorder,
+       backend_server: {self(), @label_image},
+       source: {:camera, :hq},
+       config: config(dir, [])}
+    )
+
+    rgb = %Frame{
+      label: "hq",
+      width: 40,
+      height: 40,
+      capture_ns: 0,
+      rgb: :binary.copy(<<200, 40, 20>>, 1600)
+    }
+
+    {:ok, jpeg} = Frame.to_jpeg(rgb)
+
+    Outputs.publish(
+      {:camera_frame, @camera_server},
+      {:camera_frame, %Frame{rgb | rgb: nil, jpeg: jpeg}}
+    )
+
+    assert_receive {:band, %{width: 40, height: 20, rgb: band}}
+    assert byte_size(band) == 40 * 20 * 3
+    assert <<red, _green, _blue, _rest::binary>> = band
+    assert abs(red - 200) <= 8
+  end
+
+  test "hands a backend that decodes JPEG a JPEG frame as is, with its band's rows", %{
+    tmp_dir: dir
+  } do
+    start_supervised!(
+      {Pipeline,
+       name: :road,
+       backend: JpegDecoding,
+       backend_server: {self(), @label_image},
+       source: {:camera, :hq},
+       band_top: 0.25,
+       config: config(dir, [])}
+    )
+
+    jpeg = %Frame{label: "hq", width: 40, height: 40, capture_ns: 0, jpeg: "the JPEG"}
+    Outputs.publish({:camera_frame, @camera_server}, {:camera_frame, jpeg})
+
+    assert_receive {:band, %{jpeg: "the JPEG", top: 10, height: 20}}
   end
 
   test "publishes nothing for a frame the backend could not segment", %{tmp_dir: dir} do

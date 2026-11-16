@@ -61,9 +61,11 @@ defmodule VisionCore.Detection.Pipeline do
   ## A camera source
 
   Hands every `:detect_every_n`-th frame of the camera, as a tensor
-  (`VisionCore.Camera.Frame.to_tensor/1`: RGB for an RGB frame, its luma
-  for a JPEG one), to the backend, which shrinks it whole to its model's
-  input. Its boxes are placed with the depth of the stereo pair captured
+  (`VisionCore.Camera.Frame.to_tensor/2`: RGB for an RGB or a JPEG
+  frame, decoded by `jpeg_codec`, its luma for a grey one), to the
+  backend, which shrinks it whole to its model's input; a JPEG frame
+  goes as it is to a backend that decodes it itself
+  (`c:VisionCore.Detection.Backend.decodes_jpeg?/0`). Its boxes are placed with the depth of the stereo pair captured
   closest to the frame, projected into the camera's image through its
   calibration and pose (`VisionCore.Detection.CameraSource`), only for a
   frame with boxes. The stereo pipeline publishes a pair after the
@@ -307,6 +309,7 @@ defmodule VisionCore.Detection.Pipeline do
       source: source!(Keyword.get(opts, :source, :stereo)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
+      decodes_jpeg?: VisionCore.Detection.Backend.decodes_jpeg?(backend),
       labels: Keyword.get(opts, :labels, @coco_labels)
     })
   end

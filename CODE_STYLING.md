@@ -119,6 +119,12 @@ first, evidence before a claim, small reviewed PRs) is in
   so the logic runs on the host.
 - **No speculative generality.** No option, hook or callback without a
   current user. Delete dead code and unused parameters.
+- **What the configuration declares, the code keys by its configured
+  name.** A set of pipelines, cameras, networks or exporters is as long
+  as the configuration makes it and each member goes by the name it is
+  given, never by a fixed name for its kind (`:detect`, `:segment`).
+  No limit the hardware or a library does not impose: two detectors on
+  one accelerator are two names, not an error.
 - **A `case` on a closed set in one place is fine.** The same switch in
   several places becomes a behaviour or protocol.
 - **Assertive code.** Match what must be there (`state.speed`, pattern

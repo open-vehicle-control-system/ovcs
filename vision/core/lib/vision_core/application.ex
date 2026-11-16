@@ -119,6 +119,7 @@ defmodule VisionCore.Application do
            threads: Application.get_env(:vision_core, :stereo_match_threads)}
         ]
 
+    hailo_children = Components.hailo_children(config.components)
     component_children = Enum.flat_map(config.components, &resolve_component/1)
     check_unit_names!(component_children, Detection.Supervisor, "detectors")
     check_unit_names!(component_children, Segmentation.Supervisor, "segmenters")
@@ -147,12 +148,15 @@ defmodule VisionCore.Application do
         {Supervisor, :start_link,
          [
            core_children ++
+             hailo_children ++
              component_children ++
              [
                {VisionCore.Consumers, consumer_children},
                {VisionCore.Reviver,
                 supervisor: VisionCore.Supervisor,
-                units: Enum.map(component_children, & &1.id) ++ [VisionCore.Consumers]}
+                units:
+                  Enum.map(hailo_children ++ component_children, & &1.id) ++
+                    [VisionCore.Consumers]}
              ],
            [strategy: :rest_for_one, name: VisionCore.Supervisor]
          ]}

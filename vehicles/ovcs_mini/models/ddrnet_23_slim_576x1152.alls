@@ -1,0 +1,7 @@
+normalization1 = normalization([123.675, 116.28, 103.53], [58.395, 57.12, 57.375])
+# The argmax on the 1/8 scores answers one class id per 8x8 cell, which hailo keeps as it is.
+logits_layer1 = logits_layer(conv55, argmax, -1)
+# Level 1: levels 2 and up fine-tune, which wants a GPU.
+model_optimization_flavor(optimization_level=1, compression_level=0)
+model_optimization_config(calibration, batch_size=1, calibset_size=64)
+allocator_param(timeout=25m)

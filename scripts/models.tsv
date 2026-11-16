@@ -26,7 +26,7 @@
 # The default. NanoDet-RepVGG is Apache-2.0, so nothing about it
 # conflicts with this repository's MIT licence, and it needs no code
 # change: it carries the same in-graph NMS net flow as YOLOv8
-# (HAILO_NET_FLOW_YOLOV8_NMS), and `hailo_detect` derives the input
+# (HAILO_NET_FLOW_YOLOV8_NMS), and `hailo` derives the input
 # size and class count from the HEF at runtime.
 vehicles/ovcs_mini/priv/models/nanodet_repvgg.hef	001f01e35e5a568ddfc5ddd881efdb1fa689a4ee7a93250593702cf13ca98051	Apache-2.0 (NanoDet)	https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.15.0/hailo8/nanodet_repvgg.hef
 

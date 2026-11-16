@@ -49,6 +49,107 @@ defmodule VisionCore.Inference.PortBackendTest do
     def reply_tag, do: :probe_result
   end
 
+  # Two lanes, `:near` and `:far`: a request is its lane's byte and its sequence, and the
+  # program's echo of it answers that request on that lane, with the lane as the result.
+  defmodule LanedProbe do
+    @behaviour PortBackend
+
+    @lanes %{near: 10, far: 11}
+
+    @impl PortBackend
+    def init(opts), do: %{executable: Keyword.fetch!(opts, :executable)}
+
+    @impl PortBackend
+    def wording(_settings),
+      do: %{label: "Laned", program: "laned", loaded: "ready", input: "frame", output: "results"}
+
+    @impl PortBackend
+    def inference_group(_settings),
+      do: [
+        VisionCore.Parameters.step(:laned_near, "inference", "Inference", 102, %{
+          summary: "Near",
+          parameters: []
+        }),
+        VisionCore.Parameters.step(:laned_far, "inference", "Inference", 102, %{
+          summary: "Far",
+          parameters: []
+        })
+      ]
+
+    @impl PortBackend
+    def open(settings, nil),
+      do:
+        {:ok,
+         Port.open({:spawn_executable, settings.executable}, [
+           :binary,
+           :exit_status,
+           {:packet, 4}
+         ])}
+
+    @impl PortBackend
+    def final?(_reason), do: false
+
+    @impl PortBackend
+    def lanes(_settings), do: [:near, :far]
+
+    @impl PortBackend
+    def lane_request(_settings, lane, sequence, _input), do: <<@lanes[lane], sequence::32>>
+
+    @impl PortBackend
+    def lane_parse(_settings, <<byte, sequence::32>>) do
+      {lane, _byte} = Enum.find(@lanes, fn {_lane, value} -> value == byte end)
+      {:ok, lane, sequence, lane, 7}
+    end
+
+    @impl PortBackend
+    def lane_reply_tag(_settings, lane), do: :"#{lane}_result"
+  end
+
+  defp start_laned(tmp_dir, script) do
+    executable = Path.join(tmp_dir, "laned.sh")
+    File.write!(executable, "#!/bin/sh\n" <> script)
+    File.chmod!(executable, 0o755)
+
+    start_supervised!(%{
+      id: LanedProbe,
+      start:
+        {PortBackend, :start_link,
+         [LanedProbe, [executable: executable, name: nil, reopen_delays_ms: [60_000]]]}
+    })
+  end
+
+  test "each lane carries its own request in flight and its own reply", %{tmp_dir: tmp_dir} do
+    server = start_laned(tmp_dir, "exec cat\n")
+
+    assert PortBackend.submit(server, :near, 1, :frame) == :ok
+    assert PortBackend.submit(server, :far, 2, :frame) == :ok
+
+    assert_receive {:near_result, 1, :near}
+    assert_receive {:far_result, 2, :far}
+    assert PortBackend.inference_times(server, :near) == %{sum_us: 7, count: 1}
+    assert PortBackend.inference_times(server, :far) == %{sum_us: 7, count: 1}
+  end
+
+  test "a lane busy with a request leaves the other lane free", %{tmp_dir: tmp_dir} do
+    server = start_laned(tmp_dir, "exec sleep 60\n")
+
+    assert PortBackend.submit(server, :near, 1, :frame) == :ok
+    assert PortBackend.submit(server, :near, 2, :frame) == {:error, :busy}
+    assert PortBackend.submit(server, :far, 3, :frame) == :ok
+  end
+
+  test "a Port that exits answers every lane's request in flight with no result", %{
+    tmp_dir: tmp_dir
+  } do
+    server = start_laned(tmp_dir, "head -c 4 > /dev/null; exit 1\n")
+
+    assert PortBackend.submit(server, :near, 1, :frame) == :ok
+    assert PortBackend.submit(server, :far, 2, :frame) == :ok
+
+    assert_receive {:near_result, 1, nil}, 2_000
+    assert_receive {:far_result, 2, nil}, 2_000
+  end
+
   defp start_probe(tmp_dir, script, opts) do
     executable = Path.join(tmp_dir, "probe.sh")
     File.write!(executable, "#!/bin/sh\n" <> script)

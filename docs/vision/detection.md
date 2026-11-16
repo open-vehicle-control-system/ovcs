@@ -39,7 +39,7 @@ A composer may list several detector components (`:detector`, `:hailo_detector`,
 
 Some names are reserved: those that collide with a ROS 2 topic segment under the prefix, and the stereo pipeline's name. `VisionCore.Pipelines` lists them. Two detectors with the same name are refused.
 
-The Hailo-8 serves one pipeline. A second Hailo pipeline is left down, with "the Hailo-8 already serves another pipeline" logged. The status's `npu` then reads `failed`: it covers every pipeline's backend, and is `failed` when any of them is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
+Every Hailo pipeline, detection and segmentation alike, runs on the one Hailo-8: one `hailo` Port opens it and loads each pipeline's model, and HailoRT's scheduler gives the models the device in turn ([VisionCore.Hailo](../../vision/core/lib/vision_core/hailo.ex)). Each pipeline has its own request in flight, so one waiting for the device does not hold another back. The status's `npu` reads `failed` when any pipeline's backend is unavailable. Two QNN pipelines each run on the NPU; a pipeline's default `cache_dir` is `/data/vision/qnn/<name>`.
 
 Each exporter takes the pipelines it publishes. The ROS 2 exporter's `detections:` takes `pipelines:` (`[:detection]` by default), and the API serves a channel per pipeline ([Detections](./channels.md#detections)). The snapshot exporter reads the pipeline `detection` only, the one a detector without a name runs.
 
@@ -91,7 +91,7 @@ A detector with `source: {:camera, name}` detects on the camera of its own `name
  dlc_path: Application.app_dir(:<vehicle>, "priv/models/yolox_w8a8.dlc")}
 ```
 
-- **Input.** Each frame goes to the backend whole, in colour, or in grey for a camera that delivers JPEG, as `VisionCore.Camera.GStreamer` does. The backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames: the pipeline detects on the `n`th, `2n`th, `3n`th…
+- **Input.** Each frame goes to the backend whole, in colour: a JPEG frame, as `VisionCore.Camera.GStreamer` and a libcamera camera of its own deliver, is decoded to RGB by `jpeg_codec`, except for the Hailo backend, whose `hailo` Port decodes it itself, so only the JPEG crosses the Port. The backend shrinks it to its model's input, letterboxed. `detect_every_n` counts the camera's frames: the pipeline detects on the `n`th, `2n`th, `3n`th…
 - **One frame at a time.** One frame is with the backend at a time. A frame to detect on that comes meanwhile waits, the newest one only, and goes to the backend as soon as the reply is back. A detection a little slower than the camera's frame period therefore does not wait for the frame after next.
 - **Matching.** The pipeline keeps the depth of the stereo pairs captured within `pair_wait_ms` of the newest one, at least two. It matches the frame with the pair whose left capture time is closest, within half the pairs' period.
 - **Placement.** It projects that pair's depth into the camera's image through the camera's calibration and pose ([Calibration and pose](./cameras.md#calibration-and-pose)), every `reprojection_stride`-th pixel and row (3). Each box takes the median depth projected in its middle, as on the stereo source. Only a frame with at least one box is projected.

@@ -76,8 +76,11 @@ defmodule VisionCore.Segmentation.Pipeline do
   `VisionCore.CameraPipeline` runs the pipeline: it segments every
   `:segment_every_n`-th frame, one band in flight at a time, the newest
   frame held meanwhile, and publishes the label images in capture
-  order. The model needs colour: a frame to segment without RGB pixels
-  is skipped, which is logged once.
+  order. The model needs colour: a JPEG frame is decoded to RGB by
+  `jpeg_codec`, or goes as it is, with its band's rows, to a backend
+  that decodes it itself
+  (`c:VisionCore.Segmentation.Backend.decodes_jpeg?/0`); a grey frame,
+  or a JPEG that does not decode, is skipped, which is logged once.
 
   ## Options
 
@@ -205,10 +208,12 @@ defmodule VisionCore.Segmentation.Pipeline do
       source: source!(Keyword.get(opts, :source)),
       backend: backend,
       backend_server: Keyword.get(opts, :backend_server, backend),
+      decodes_jpeg?: VisionCore.Segmentation.Backend.decodes_jpeg?(backend),
       labels: labels,
       road_classes: road_classes,
       road: road!(road_classes, labels),
-      colourless_logged: false
+      colourless_logged: false,
+      undecodable_logged: false
     })
   end
 
@@ -350,6 +355,7 @@ defmodule VisionCore.Segmentation.Pipeline do
 
   @impl CameraPipeline
   def accept(%Frame{rgb: rgb}, settings) when is_binary(rgb), do: {:ok, settings}
+  def accept(%Frame{jpeg: jpeg}, settings) when is_binary(jpeg), do: {:ok, settings}
   def accept(_colourless, settings), do: {:skip, note_colourless(settings)}
 
   defp note_colourless(%{colourless_logged: true} = settings), do: settings
@@ -364,10 +370,35 @@ defmodule VisionCore.Segmentation.Pipeline do
   end
 
   @impl CameraPipeline
+  def prepare(%Frame{rgb: nil, jpeg: jpeg} = frame, %{decodes_jpeg?: true} = settings)
+      when is_binary(jpeg) do
+    {_x, top, _width, height} = band = band(frame.width, frame.height, settings.band_top)
+    {:submit, %{jpeg: jpeg, top: top, height: height}, band, settings}
+  end
+
   def prepare(frame, settings) do
-    {_x, top, width, height} = band = band(frame.width, frame.height, settings.band_top)
-    rgb = binary_part(frame.rgb, top * width * 3, height * width * 3)
-    {:submit, %{width: width, height: height, rgb: rgb}, band, settings}
+    case Frame.with_rgb(frame) do
+      {:ok, frame} ->
+        {_x, top, width, height} = band = band(frame.width, frame.height, settings.band_top)
+        rgb = binary_part(frame.rgb, top * width * 3, height * width * 3)
+
+        {:submit, %{width: width, height: height, rgb: rgb}, band,
+         %{settings | undecodable_logged: false}}
+
+      {:error, reason} ->
+        {:skip, note_undecodable(settings, reason)}
+    end
+  end
+
+  defp note_undecodable(%{undecodable_logged: true} = settings, _reason), do: settings
+
+  defp note_undecodable(%{source: {:camera, camera, _output}} = settings, reason) do
+    Logger.warning(
+      "segmentation pipeline #{settings.name}: cannot segment the camera #{camera}'s " <>
+        "images, which do not decode: #{inspect(reason)}"
+    )
+
+    %{settings | undecodable_logged: true}
   end
 
   @impl CameraPipeline

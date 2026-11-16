@@ -7,7 +7,7 @@ erl_crash.dump
 *.ez
 /tmp/
 /priv/camera_capture
-/priv/hailo_detect
+/priv/hailo
 /priv/jpeg_codec
 /priv/qnn_detect
 /priv/qnn_segment
