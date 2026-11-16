@@ -13,6 +13,8 @@ mod colour;
 mod cpus;
 mod encoder;
 mod exposure;
+#[cfg(test)]
+mod fixtures;
 mod h264;
 mod input;
 mod jpeg;

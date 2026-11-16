@@ -716,10 +716,10 @@ mod tests {
 
     use super::*;
     use crate::arguments::{Format, Output, Source};
-    use crate::bands::{Conversion, Images};
+    use crate::bands::Conversion;
     use crate::bayer::tests::padded_packed12;
-    use crate::bayer::Layout;
     use crate::encoder::EncodedFrame;
+    use crate::fixtures::{packed12_frame, rgb_only};
     use crate::nv12::{self, Nv12Layout};
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
@@ -798,13 +798,7 @@ mod tests {
                 host.as_mut().unwrap().write_all(&record.concat())?;
             }
             let whole = frame.as_ref().map(|raw| {
-                let frame = RawFrame {
-                    raw,
-                    width: WIDTH,
-                    height: HEIGHT,
-                    row_stride: STRIDE,
-                    layout: Layout::Packed12,
-                };
+                let frame = packed12_frame(raw, WIDTH, STRIDE);
                 (frame, 1_000_000 * (index as i64 + 1))
             });
             Ok(Some(take(whole)))
@@ -1540,13 +1534,7 @@ mod tests {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
@@ -1556,11 +1544,7 @@ mod tests {
             threads: 3,
         };
         let mut rgb = Vec::new();
-        let images = Images {
-            rgb: &mut rgb,
-            averaged: None,
-            nv12: None,
-        };
+        let images = rgb_only(&mut rgb);
         develop_along(
             Path::Denoised,
             &frame,

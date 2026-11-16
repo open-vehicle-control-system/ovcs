@@ -206,16 +206,12 @@ fn rebuild<const CELL_SIZE: usize>(luma: &[i32], [red, blue]: &[Vec<i32>; 2], ou
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::xorshift;
 
     // Noise uniform within -amplitude..=amplitude.
     fn noise(amplitude: i32, seed: u32) -> impl FnMut() -> i32 {
-        let mut state = seed;
-        move || {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            (state % (2 * amplitude as u32 + 1)) as i32 - amplitude
-        }
+        let mut next = xorshift(seed);
+        move || (next() % (2 * amplitude as u32 + 1)) as i32 - amplitude
     }
 
     // `rows` of linear red, green and blue through the chroma denoise at

@@ -520,6 +520,7 @@ mod tests {
     use super::*;
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
+    use crate::fixtures::rgb_only;
     use crate::sensor::{Rectangle, SensorCrop};
     use crate::tuning::imx477;
     use crate::white_balance;
@@ -1007,11 +1008,7 @@ mod tests {
             frame,
             colour,
             &conversion(Output::Full, rotate_180),
-            Images {
-                rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(rgb),
             buffers,
         );
         rgb
@@ -1028,11 +1025,7 @@ mod tests {
             frame,
             colour,
             &conversion(Output::Half, rotate_180),
-            Images {
-                rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(rgb),
             buffers,
         );
         rgb
@@ -1055,11 +1048,7 @@ mod tests {
             frame,
             colour,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             buffers,
         )
         .green_mean
@@ -1093,11 +1082,7 @@ mod tests {
             frame,
             &colour,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             &mut Buffers::default(),
         )
         .channel_means

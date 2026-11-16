@@ -307,6 +307,7 @@ fn parts(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::rgb_only;
 
     #[test]
     fn bands_cover_the_rows_of_cells_in_order_their_sizes_at_most_one_apart() {
@@ -331,11 +332,7 @@ mod tests {
     ) -> (Vec<u8>, u64) {
         let mut rgb = vec![0; rows * 2 * 3];
         let mut scratch: Vec<()> = Vec::new();
-        let images = Images {
-            rgb: &mut rgb,
-            averaged: None,
-            nv12: None,
-        };
+        let images = rgb_only(&mut rgb);
         let sums = convert(
             images,
             2,

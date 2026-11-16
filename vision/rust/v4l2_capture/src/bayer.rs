@@ -638,18 +638,7 @@ fn measure(
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-
-    // The frame of the rows `raw` holds, each `width` samples stored as
-    // `layout` in `row_stride` bytes.
-    fn frame(raw: &[u8], width: usize, row_stride: usize, layout: Layout) -> RawFrame<'_> {
-        RawFrame {
-            raw,
-            width,
-            height: raw.len() / row_stride,
-            row_stride,
-            layout,
-        }
-    }
+    use crate::fixtures::{frame, packed12_frame, rgb_only};
 
     fn little_endian_samples(samples: &[u16]) -> Vec<u8> {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
@@ -829,11 +818,7 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut rgb),
             &mut Buffers::default(),
         );
         rgb
@@ -847,11 +832,7 @@ pub(crate) mod tests {
             tone,
             gains,
             &conversion,
-            Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut rgb),
             &mut Buffers::default(),
         );
         rgb
@@ -869,11 +850,7 @@ pub(crate) mod tests {
             tone,
             UNITY,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             &mut Buffers::default(),
         )
         .green_mean
@@ -893,11 +870,7 @@ pub(crate) mod tests {
             &tone,
             UNITY,
             &conversion,
-            Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            },
+            rgb_only(&mut Vec::new()),
             &mut Buffers::default(),
         )
         .channel_means
@@ -920,13 +893,8 @@ pub(crate) mod tests {
 
     #[test]
     fn demosaics_each_rggb_cell_into_one_rgb_pixel() {
-        let frame = RawFrame {
-            raw: &two_cells(),
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let raw = two_cells();
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(
             rgb_half(&frame, &linear_tone(), UNITY, false),
             [255, 0, 85, 0, 170, 255]
@@ -935,13 +903,8 @@ pub(crate) mod tests {
 
     #[test]
     fn a_rotated_image_keeps_each_pixel_red_green_blue() {
-        let frame = RawFrame {
-            raw: &two_cells(),
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let raw = two_cells();
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(
             rgb_half(&frame, &linear_tone(), UNITY, true),
             [0, 170, 255, 255, 0, 85]
@@ -951,13 +914,7 @@ pub(crate) mod tests {
     #[test]
     fn white_balance_gains_scale_red_and_blue_above_the_black_level() {
         let raw = packed12(&[256 + 400, 256 + 400, 256 + 400, 256 + 400]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 2,
-            height: 2,
-            row_stride: 3,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 2, 3);
         let tone = Tone::with_sample_bits(256, 1.0, 12);
         let gains = Gains {
             red: 2.0,
@@ -973,13 +930,7 @@ pub(crate) mod tests {
     #[test]
     fn a_gain_saturates_at_full_scale() {
         let raw = packed12(&[4000, 100, 100, 4000]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 2,
-            height: 2,
-            row_stride: 3,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 2, 3);
         let gains = Gains {
             red: 4.0,
             blue: 4.0,
@@ -990,13 +941,7 @@ pub(crate) mod tests {
     #[test]
     fn clipped_highlights_stay_white_under_a_gain_below_one() {
         let raw = padded_packed12(&[4095; 4 * 4], 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 0.5,
@@ -1009,13 +954,7 @@ pub(crate) mod tests {
     #[test]
     fn a_gain_below_one_raises_the_other_channels_instead() {
         let raw = packed12(&[1000, 1000, 1000, 1000]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 2,
-            height: 2,
-            row_stride: 3,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 2, 3);
         let gains = Gains {
             red: 0.5,
             blue: 1.0,
@@ -1056,13 +995,7 @@ pub(crate) mod tests {
     #[test]
     fn full_output_interpolates_each_pixels_missing_colours_from_its_neighbours() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 8);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 8,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 8);
         #[rustfmt::skip]
         let expected = [
             200, 30, 4,    180, 10, 4,    160, 45, 6,    160, 30, 8,
@@ -1080,13 +1013,7 @@ pub(crate) mod tests {
             .flat_map(|row| (0..6).map(move |column| cells[(row % 2) * 2 + column % 2]))
             .collect();
         let raw = padded_packed12(&samples, 6, 12);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 6,
-            height: 4,
-            row_stride: 12,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 6, 12);
         let tone = linear_tone();
         let pixel = [tone.grey(1000), tone.grey(2000), tone.grey(3000)];
         assert_eq!(rgb_full(&frame, &tone, UNITY, false), pixel.repeat(24));
@@ -1095,13 +1022,7 @@ pub(crate) mod tests {
     #[test]
     fn full_output_scales_red_and_blue_by_the_white_balance_gains() {
         let raw = padded_packed12(&[100; 16], 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let gains = Gains {
             red: 2.0,
             blue: 1.5,
@@ -1115,13 +1036,7 @@ pub(crate) mod tests {
     #[test]
     fn a_rotated_full_image_reverses_the_pixels_each_red_green_blue() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let upright = rgb_full(&frame, &identity_tone(), UNITY, false);
         let reversed: Vec<u8> = upright.chunks_exact(3).rev().flatten().copied().collect();
         assert_eq!(rgb_full(&frame, &identity_tone(), UNITY, true), reversed);
@@ -1130,13 +1045,7 @@ pub(crate) mod tests {
     #[test]
     fn the_toned_green_mean_is_the_half_outputs_mean_green() {
         let raw = padded_packed12(&FOUR_BY_FOUR, 4, 6);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 4,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         let tone = Tone::with_sample_bits(0, 2.2, 8);
         let half = rgb_half(&frame, &tone, UNITY, false);
         let greens: Vec<f64> = half
@@ -1157,13 +1066,7 @@ pub(crate) mod tests {
         let packed = padded_packed12(&samples, 4, 6);
         let padded = padded_packed12(&samples, 4, 10);
         let means = |raw: &[u8], row_stride| {
-            let frame = RawFrame {
-                raw,
-                width: 4,
-                height: 2,
-                row_stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(raw, 4, row_stride);
             channel_means(&frame, 0, 1)
         };
         assert_eq!(means(&padded, 10), means(&packed, 6));
@@ -1181,13 +1084,7 @@ pub(crate) mod tests {
             256 + 300,
             100,
         ]);
-        let frame = RawFrame {
-            raw: &raw,
-            width: 4,
-            height: 2,
-            row_stride: 6,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, 4, 6);
         assert_eq!(channel_means(&frame, 256, 1), [300.0, 200.0, 25.0]);
     }
 }

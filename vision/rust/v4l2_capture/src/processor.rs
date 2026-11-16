@@ -203,7 +203,7 @@ pub(crate) mod tests {
     use super::*;
     use crate::bands::Nv12Target;
     use crate::bayer::tests::padded_packed12;
-    use crate::bayer::Layout;
+    use crate::fixtures::{packed12_frame, rgb_only, xorshift};
     use crate::nv12::{self, Nv12Layout};
     use crate::scale;
     use crate::sensor::Rectangle;
@@ -212,15 +212,12 @@ pub(crate) mod tests {
 
     // Noise over a gradient down and across, so that every row differs.
     pub(crate) fn samples(width: usize, height: usize) -> Vec<u16> {
-        let mut state = 0x2545_f491u32;
+        let mut noise = xorshift(0x2545_f491);
         (0..width * height)
             .map(|i| {
-                state ^= state << 13;
-                state ^= state >> 17;
-                state ^= state << 5;
                 let (x, y) = (i % width, i / width);
                 let gradient = (y * 2400 / height + x * 600 / width) as u32;
-                (200 + gradient + state % 900).min(4095) as u16
+                (200 + gradient + noise() % 900).min(4095) as u16
             })
             .collect()
     }
@@ -296,13 +293,7 @@ pub(crate) mod tests {
         for ((width, height), output, rotate_180, path, expected) in pinned {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             let settings = ColourSettings {
                 denoise: !matches!(path, Path::Undenoised),
                 ..ColourSettings::for_sensor(SensorModel::Imx477)
@@ -323,11 +314,7 @@ pub(crate) mod tests {
                         &tone,
                         gains,
                         &conversion,
-                        Images {
-                            rgb: &mut rgb,
-                            averaged: None,
-                            nv12: None,
-                        },
+                        rgb_only(&mut rgb),
                         &mut bayer::Buffers::default(),
                     ),
                     _ => develop_tuned(
@@ -336,11 +323,7 @@ pub(crate) mod tests {
                         &settings,
                         gains,
                         &mut tuned,
-                        Images {
-                            rgb: &mut rgb,
-                            averaged: None,
-                            nv12: None,
-                        },
+                        rgb_only(&mut rgb),
                         &mut colour::Buffers::default(),
                     ),
                 };
@@ -376,19 +359,10 @@ pub(crate) mod tests {
                 .map(|sample| sample + frame % 3)
                 .collect();
             let raw = padded_packed12(&samples, width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             let before = tuned.at_gains.as_ref().map(|at_gains| at_gains.gains);
-            let images = Images {
-                rgb: &mut Vec::new(),
-                averaged: None,
-                nv12: None,
-            };
+            let mut rgb = Vec::new();
+            let images = rgb_only(&mut rgb);
             let measures = develop_tuned(
                 &frame,
                 &conversion,
@@ -411,13 +385,7 @@ pub(crate) mod tests {
         let (width, height) = (24, 46);
         let stride = width * 3 / 2 + 6;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
@@ -441,11 +409,7 @@ pub(crate) mod tests {
         };
         let developed = |sensor_crop| {
             let mut rgb = Vec::new();
-            let images = Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            };
+            let images = rgb_only(&mut rgb);
             let gains = Gains {
                 red: 2.1,
                 blue: 1.6,
@@ -481,13 +445,7 @@ pub(crate) mod tests {
         let (width, height) = (24, 46);
         let stride = width * 3 / 2 + 6;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
@@ -499,11 +457,7 @@ pub(crate) mod tests {
         let settings = ColourSettings::for_sensor(SensorModel::Imx477);
         let developed = |tuned: &mut TunedColour, red: f64, blue: f64| {
             let mut rgb = Vec::new();
-            let images = Images {
-                rgb: &mut rgb,
-                averaged: None,
-                nv12: None,
-            };
+            let images = rgb_only(&mut rgb);
             let gains = Gains { red, blue };
             let mut buffers = colour::Buffers::default();
             let measures = develop_tuned(
@@ -541,13 +495,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 50), (32, 22), (36, 6)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 for rotate_180 in [false, true] {
                     for (denoise, ccm) in [(true, true), (false, true), (true, false)] {
@@ -576,11 +524,7 @@ pub(crate) mod tests {
                                 &settings,
                                 gains,
                                 &mut tuned,
-                                Images {
-                                    rgb: &mut rgb,
-                                    averaged: None,
-                                    nv12: None,
-                                },
+                                rgb_only(&mut rgb),
                                 &mut buffers,
                             );
                             let tuned = outcome(&rgb, measures);
@@ -589,11 +533,7 @@ pub(crate) mod tests {
                                 &tone,
                                 gains,
                                 &conversion,
-                                Images {
-                                    rgb: &mut rgb,
-                                    averaged: None,
-                                    nv12: None,
-                                },
+                                rgb_only(&mut rgb),
                                 &mut fallback,
                             );
                             (tuned, outcome(&rgb, measures))
@@ -644,13 +584,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 6)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 let (output_width, output_height) = output.size(width as u32, height as u32);
                 if output_height % 2 != 0 {
@@ -670,11 +604,7 @@ pub(crate) mod tests {
                                 row_step: MEASURED_ROW_STEP,
                                 threads,
                             };
-                            let images = Images {
-                                rgb: &mut alone,
-                                averaged: None,
-                                nv12: None,
-                            };
+                            let images = rgb_only(&mut alone);
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
                             let expected = outcome(&alone, measures);
@@ -711,13 +641,7 @@ pub(crate) mod tests {
         for (width, height) in [(24, 46), (24, 44), (32, 52), (36, 12), (36, 8)] {
             let stride = width * 3 / 2 + 6;
             let raw = padded_packed12(&samples(width, height), width, stride);
-            let frame = RawFrame {
-                raw: &raw,
-                width,
-                height,
-                row_stride: stride,
-                layout: Layout::Packed12,
-            };
+            let frame = packed12_frame(&raw, width, stride);
             for output in [Output::Full, Output::Half] {
                 let (output_width, output_height) = output.size(width as u32, height as u32);
                 let (output_width, output_height) = (output_width as usize, output_height as usize);
@@ -753,11 +677,7 @@ pub(crate) mod tests {
                                 row_step: MEASURED_ROW_STEP,
                                 threads,
                             };
-                            let images = Images {
-                                rgb: &mut alone,
-                                averaged: None,
-                                nv12: None,
-                            };
+                            let images = rgb_only(&mut alone);
                             let measures =
                                 develop_along(path, &frame, &conversion, images, &mut buffers);
                             let expected = outcome(&alone, measures);
@@ -794,13 +714,7 @@ pub(crate) mod tests {
         let (width, height) = (2028, 1520);
         let stride = width * 3 / 2;
         let raw = padded_packed12(&samples(width, height), width, stride);
-        let frame = RawFrame {
-            raw: &raw,
-            width,
-            height,
-            row_stride: stride,
-            layout: Layout::Packed12,
-        };
+        let frame = packed12_frame(&raw, width, stride);
         let conversion = Conversion {
             output: Output::Full,
             rotate_180: false,
