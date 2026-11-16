@@ -25,7 +25,7 @@ const PAIR_TOLERANCE_NS: i64 = 1_000_000;
 const EXPOSURE_SAMPLE_STRIDE: usize = 7;
 
 pub fn run(
-    arguments: &arguments::Arguments,
+    arguments: &arguments::PairArguments,
     writer: &Writer,
     log: &dyn Fn(LogLevel, &str),
 ) -> io::Result<()> {

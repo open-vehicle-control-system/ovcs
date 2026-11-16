@@ -10,12 +10,12 @@ use crate::settings::{ColourSettings, Settings};
 /// What to capture: the stereo pair, or a single colour camera.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Command {
-    Pair(Arguments),
+    Pair(PairArguments),
     Single(SingleArguments),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct Arguments {
+pub struct PairArguments {
     /// Output size; the sensor runs at twice this in each axis.
     pub width: u32,
     pub height: u32,
@@ -367,7 +367,7 @@ fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
 /// Parses the arguments after the program name: the size and rate, each
 /// side's nodes, then any setting as `--name value`, with dashes for
 /// underscores. The error is the message to log.
-pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
+pub fn parse(arguments: &[String]) -> Result<PairArguments, String> {
     let (mut width, mut height, mut fps) = (None, None, None);
     let (mut left_node, mut left_subdevice) = (None, None);
     let (mut right_node, mut right_subdevice) = (None, None);
@@ -391,7 +391,7 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
             },
         }
     }
-    Ok(Arguments {
+    Ok(PairArguments {
         width: width.ok_or("missing --width")?,
         height: height.ok_or("missing --height")?,
         fps: fps.ok_or("missing --fps")?,
