@@ -129,11 +129,7 @@ fn run(
                     LETTERBOX_THREADS,
                 );
                 clock.prepared();
-                let mut outputs: Vec<&mut [u8]> = buffers
-                    .iter_mut()
-                    .map(|buffer| buffer.as_mut_slice())
-                    .collect();
-                match model.execute(&mut [input.as_mut_slice()], &mut outputs) {
+                match model.execute(&mut [input.as_mut_slice()], &mut buffers) {
                     Ok(timing) => {
                         port::log_execution(writer, &mut model, &mut time_log, &timing);
                         clock.executed(&timing);

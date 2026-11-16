@@ -237,7 +237,8 @@ pub struct Model {
     pub graph_name: String,
     pub inputs: Vec<Tensor>,
     pub outputs: Vec<Tensor>,
-    // QNN's tensors point into the session's system context: valid as long as `session`.
+    // QNN's tensors point into the session's system context, valid as long as `session`, and
+    // at the latest execution's buffers, valid only during it.
     raw_inputs: Vec<Qnn_Tensor_t>,
     raw_outputs: Vec<Qnn_Tensor_t>,
     /// Why executions are timed by the wall time, once the profile is unavailable.
@@ -247,6 +248,9 @@ pub struct Model {
     profile_reported: bool,
     /// Why the power vote is missing or partial, if it is.
     pub power_vote_error: Option<String>,
+    /// The latest execution's top-level event ids and events, kept between executions.
+    event_ids: Vec<QnnProfile_EventId_t>,
+    events: Vec<ProfileEvent>,
 }
 
 /// The QNN libraries and what a model creates in them, each handle null until it is created.
@@ -898,6 +902,8 @@ impl Model {
             profile_report: None,
             profile_reported: false,
             power_vote_error,
+            event_ids: Vec::new(),
+            events: Vec::new(),
         })
     }
 
@@ -911,11 +917,11 @@ impl Model {
     /// when the profile does not report it.
     pub fn execute(
         &mut self,
-        inputs: &mut [&mut [u8]],
-        outputs: &mut [&mut [u8]],
+        inputs: &mut [impl AsMut<[u8]>],
+        outputs: &mut [impl AsMut<[u8]>],
     ) -> Result<Timing, String> {
-        let inputs = bind("input", &self.inputs, &self.raw_inputs, inputs)?;
-        let mut outputs = bind("output", &self.outputs, &self.raw_outputs, outputs)?;
+        bind("input", &self.inputs, &mut self.raw_inputs, inputs)?;
+        bind("output", &self.outputs, &mut self.raw_outputs, outputs)?;
         let graph_execute = self
             .session
             .interface
@@ -928,14 +934,14 @@ impl Model {
             .map_or(ptr::null_mut(), |profile| profile.handle);
         let started = Instant::now();
         // SAFETY: the graph and the profile are the session's; each tensor is QNN's own
-        // description on a buffer of its size that outlives the call.
+        // description, just bound to a buffer of its size that outlives the call.
         let executed = check("graphExecute", unsafe {
             graph_execute(
                 self.graph,
-                inputs.as_ptr(),
-                inputs.len() as u32,
-                outputs.as_mut_ptr(),
-                outputs.len() as u32,
+                self.raw_inputs.as_ptr(),
+                self.raw_inputs.len() as u32,
+                self.raw_outputs.as_mut_ptr(),
+                self.raw_outputs.len() as u32,
                 profile_handle,
                 ptr::null_mut(),
             )
@@ -965,25 +971,24 @@ impl Model {
     /// The latest execution's times from the profile. The handle is replaced every
     /// `EXECUTIONS_PER_PROFILE` executions, and as soon as it stores no more events.
     fn profiled_times(&mut self) -> ProfiledTimes {
-        let session = &mut self.session;
-        let Some(profile) = session.profile.as_mut() else {
+        let Some(profile) = self.session.profile.as_mut() else {
             return ProfiledTimes::default();
         };
-        let interface = &session.interface;
+        let interface = &self.session.interface;
         // SAFETY: the handle is the session's live profile.
-        let top_level = unsafe { top_level_events(interface, profile.handle) };
-        let latest = profile.cursor.latest_execution(top_level.len());
+        unsafe { top_level_events(interface, profile.handle, &mut self.event_ids) };
+        let latest = profile.cursor.latest_execution(self.event_ids.len());
         let replace = latest.is_none() || profile.cursor.executions >= EXECUTIONS_PER_PROFILE;
-        let mut events = Vec::new();
-        for &id in &top_level[latest.unwrap_or_default()] {
+        self.events.clear();
+        for &id in &self.event_ids[latest.unwrap_or_default()] {
             // SAFETY: the profile that gave `id` is still alive.
-            unsafe { collect_events(interface, id, &mut events) };
+            unsafe { collect_events(interface, id, &mut self.events) };
         }
-        if !self.profile_reported && !events.is_empty() {
+        if !self.profile_reported && !self.events.is_empty() {
             self.profile_reported = true;
             self.profile_report = Some(format!(
                 "{:?}",
-                events
+                self.events
                     .iter()
                     .map(|event| (event.kind, event.unit, event.value))
                     .collect::<Vec<_>>()
@@ -992,7 +997,7 @@ impl Model {
         if replace {
             self.replace_profile();
         }
-        ProfiledTimes::of(&events)
+        ProfiledTimes::of(&self.events)
     }
 
     /// A fresh profile handle in place of the current one, or none, the reason in
@@ -1012,14 +1017,14 @@ impl Model {
     }
 }
 
-/// QNN's tensors `raw`, the graph's inputs or outputs as `kind` says, which `tensors`
-/// describe, each on the buffer of `buffers` in its place.
+/// Points QNN's tensors `raw`, the graph's inputs or outputs as `kind` says, which `tensors`
+/// describe, each at the buffer of `buffers` in its place.
 fn bind(
     kind: &str,
     tensors: &[Tensor],
-    raw: &[Qnn_Tensor_t],
-    buffers: &mut [&mut [u8]],
-) -> Result<Vec<Qnn_Tensor_t>, String> {
+    raw: &mut [Qnn_Tensor_t],
+    buffers: &mut [impl AsMut<[u8]>],
+) -> Result<(), String> {
     if buffers.len() != tensors.len() {
         return Err(format!(
             "{} {kind} buffers for the graph's {} {kind}s",
@@ -1027,28 +1032,25 @@ fn bind(
             tensors.len()
         ));
     }
-    (tensors.iter().zip(raw))
-        .zip(buffers.iter_mut())
-        .map(|((tensor, raw), buffer)| {
-            if buffer.len() != tensor.bytes {
-                return Err(format!(
-                    "{}: {} bytes for a {}-byte tensor",
-                    tensor.name,
-                    buffer.len(),
-                    tensor.bytes
-                ));
-            }
-            let mut raw = *raw;
-            // SAFETY: version 2 begins with version 1's fields, which are plain data.
-            let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
-            v1.memType = QNN_TENSORMEMTYPE_RAW;
-            v1.__bindgen_anon_1.clientBuf = Qnn_ClientBuffer_t {
-                data: buffer.as_mut_ptr() as *mut c_void,
-                dataSize: buffer.len() as u32,
-            };
-            Ok(raw)
-        })
-        .collect()
+    for ((tensor, raw), buffer) in tensors.iter().zip(raw).zip(buffers.iter_mut()) {
+        let buffer = buffer.as_mut();
+        if buffer.len() != tensor.bytes {
+            return Err(format!(
+                "{}: {} bytes for a {}-byte tensor",
+                tensor.name,
+                buffer.len(),
+                tensor.bytes
+            ));
+        }
+        // SAFETY: version 2 begins with version 1's fields, which are plain data.
+        let v1 = unsafe { &mut raw.__bindgen_anon_1.v1 };
+        v1.memType = QNN_TENSORMEMTYPE_RAW;
+        v1.__bindgen_anon_1.clientBuf = Qnn_ClientBuffer_t {
+            data: buffer.as_mut_ptr() as *mut c_void,
+            dataSize: buffer.len() as u32,
+        };
+    }
+    Ok(())
 }
 
 /// A basic-level profile handle on `backend`.
@@ -1067,23 +1069,26 @@ fn create_profile(
     Ok(handle)
 }
 
-/// The profile's top-level events; none when they cannot be read.
+/// The profile's top-level events into `ids`, in place of its contents; none when they cannot
+/// be read.
 ///
 /// # Safety
 /// `profile` is a live handle of `interface`'s library.
 unsafe fn top_level_events(
     interface: &QnnInterface_ImplementationV2_39_t,
     profile: Qnn_ProfileHandle_t,
-) -> Vec<QnnProfile_EventId_t> {
+    ids: &mut Vec<QnnProfile_EventId_t>,
+) {
+    ids.clear();
     let Some(get_events) = interface.profileGetEvents else {
-        return Vec::new();
+        return;
     };
-    let mut ids: *const QnnProfile_EventId_t = ptr::null();
+    let mut returned: *const QnnProfile_EventId_t = ptr::null();
     let mut count = 0u32;
-    if get_events(profile, &mut ids, &mut count) != 0 || ids.is_null() {
-        return Vec::new();
+    if get_events(profile, &mut returned, &mut count) != 0 || returned.is_null() {
+        return;
     }
-    std::slice::from_raw_parts(ids, count as usize).to_vec()
+    ids.extend_from_slice(std::slice::from_raw_parts(returned, count as usize));
 }
 
 /// `id`'s data, then its sub-events', depth first; an event whose data cannot be
@@ -1257,18 +1262,38 @@ mod tests {
         };
         let tensors = [tensor.clone(), tensor];
         // SAFETY: a tensor is plain data, and its zero holds null pointers.
-        let raw: [Qnn_Tensor_t; 2] = unsafe { std::mem::zeroed() };
+        let mut raw: [Qnn_Tensor_t; 2] = unsafe { std::mem::zeroed() };
         let (mut first, mut second, mut short) = ([0u8; 4], [0u8; 4], [0u8; 3]);
-        let bound = |buffers: &mut [&mut [u8]]| {
-            bind("output", &tensors, &raw, buffers).map(|bound| bound.len())
-        };
-        assert_eq!(bound(&mut [&mut first, &mut second]), Ok(2));
         assert_eq!(
-            bound(&mut [&mut first]),
+            bind(
+                "output",
+                &tensors,
+                &mut raw,
+                &mut [&mut first[..], &mut second[..]]
+            ),
+            Ok(())
+        );
+        for (tensor, buffer) in raw.iter().zip([&first, &second]) {
+            // SAFETY: the tensor is of version 1 and `bind` set its client buffer.
+            let (memory, client) = unsafe {
+                let v1 = &tensor.__bindgen_anon_1.v1;
+                (v1.memType, v1.__bindgen_anon_1.clientBuf)
+            };
+            assert_eq!(memory, QNN_TENSORMEMTYPE_RAW);
+            assert_eq!(client.data.cast_const(), buffer.as_ptr().cast());
+            assert_eq!(client.dataSize, 4);
+        }
+        assert_eq!(
+            bind("output", &tensors, &mut raw, &mut [&mut first[..]]),
             Err("1 output buffers for the graph's 2 outputs".to_string())
         );
         assert_eq!(
-            bound(&mut [&mut first, &mut short]),
+            bind(
+                "output",
+                &tensors,
+                &mut raw,
+                &mut [&mut first[..], &mut short[..]]
+            ),
             Err("scores: 3 bytes for a 4-byte tensor".to_string())
         );
     }
