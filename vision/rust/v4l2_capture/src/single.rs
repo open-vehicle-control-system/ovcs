@@ -99,8 +99,19 @@ pub fn run(
         statistics_every: Duration::from_secs(STATISTICS_EVERY_S),
         encoders,
     };
+    let set_focus = |focus: u16| match &camera.lens {
+        Some(lens) => lens.set_control(v4l2::CID_FOCUS_ABSOLUTE, i32::from(focus)),
+        None => Ok(()),
+    };
     let mut input = input::unbuffered(io::stdin().as_fd())?;
-    capture(setup, &frames, &set_exposure, &mut input, writer)
+    capture(
+        setup,
+        &frames,
+        &set_exposure,
+        &set_focus,
+        &mut input,
+        writer,
+    )
 }
 
 /// The sysfs name of the video encoder node: Qualcomm's Iris, on the VENTUNO Q.
@@ -241,6 +252,7 @@ fn capture(
     mut setup: Setup,
     frames: &impl Frames,
     set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     records: &impl Records,
 ) -> io::Result<()> {
@@ -277,7 +289,7 @@ fn capture(
             to_video: video_encoder.is_some().then_some(to_video),
             images,
         };
-        let converted = convert_frames(setup, plan, frames, set_exposure, input, &queue);
+        let converted = convert_frames(setup, plan, frames, set_exposure, set_focus, input, &queue);
         drop(queue);
         let joined = |thread: std::thread::ScopedJoinHandle<io::Result<()>>| {
             thread
@@ -518,6 +530,7 @@ fn convert_frames(
     mut plan: Plan,
     frames: &impl Frames,
     set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     queue: &Queue,
 ) -> io::Result<()> {
@@ -530,6 +543,12 @@ fn convert_frames(
     } = setup;
     let log = |level, message: &str| {
         let _ = queue.send(Record::Other(log_record(level, message)));
+    };
+    let hold_focus = |settings: &ColourSettings| {
+        let focus = settings.capture.focus;
+        if let Err(error) = set_focus(focus) {
+            log(LogLevel::Warning, &format!("lens: focus {focus}: {error}"));
+        }
     };
     let tone_for = |settings: &ColourSettings| {
         Tone::with_sample_bits(
@@ -547,6 +566,7 @@ fn convert_frames(
         vec![Vec::new(); plan.output_count()],
         Some(vec![Vec::new(); plan.output_count()]),
     );
+    hold_focus(&settings);
     let mut tone = tone_for(&settings);
     let mut gains = settings.gains();
     let mut auto_exposure = auto_exposure(&settings.capture, frame_us);
@@ -594,6 +614,7 @@ fn convert_frames(
                             let record = exposure_record(applied, last_ns.unwrap_or(0));
                             queue.send(Record::Other(record))?;
                         }
+                        hold_focus(&settings);
                         log(LogLevel::Info, &format!("settings: {settings:?}"));
                     }
                     Err(message) => log(LogLevel::Warning, &message),
@@ -869,7 +890,7 @@ mod tests {
             encoders,
         };
         let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
-        capture(setup, frames, &set_exposure, input, records)
+        capture(setup, frames, &set_exposure, &|_| Ok(()), input, records)
     }
 
     // The records the frame loop writes for `frames` from the IMX477.
@@ -1200,6 +1221,36 @@ mod tests {
                 .collect()
         };
         assert!(made(&records) == made(&all));
+    }
+
+    #[test]
+    fn the_lens_is_held_at_the_focus_setting_from_the_start_and_as_it_changes() {
+        let (frames, mut input) = TestFrames::new(scenes(3, None), vec![(1, "focus=600")]);
+        let setup = Setup {
+            outputs: vec![FULL],
+            model: SensorModel::Imx708,
+            frame_us: 33_333.0,
+            settings: ColourSettings::for_sensor(SensorModel::Imx708),
+            statistics_every: Duration::from_secs(3_600),
+            encoders: Vec::new(),
+        };
+        let focused = RefCell::new(Vec::new());
+        let set_focus = |focus: u16| {
+            focused.borrow_mut().push(focus);
+            Ok(())
+        };
+        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us, gain));
+        let records = Collected::default();
+        capture(
+            setup,
+            &frames,
+            &set_exposure,
+            &set_focus,
+            &mut input,
+            &records,
+        )
+        .unwrap();
+        assert_eq!(focused.into_inner(), [428, 600]);
     }
 
     #[test]
