@@ -124,17 +124,15 @@ fn samples(row: &[u8], layout: Layout, out: &mut [u16]) {
 
 /// Averages each 2x2 RGGB cell of 10-bit samples stored as `layout` into one
 /// grey pixel through `tone`, halving both dimensions; `rotate_180` turns the
-/// image for a sensor mounted upside down. Rows start every `row_stride`
-/// bytes, at least `layout.row_bytes(width)`, and `raw` holds `height` of them.
-pub fn grey_half(
-    raw: &[u8],
-    width: usize,
-    height: usize,
-    row_stride: usize,
-    layout: Layout,
-    tone: &Tone,
-    rotate_180: bool,
-) -> Vec<u8> {
+/// image for a sensor mounted upside down.
+pub fn grey_half(frame: &RawFrame, tone: &Tone, rotate_180: bool) -> Vec<u8> {
+    let RawFrame {
+        raw,
+        width,
+        height,
+        row_stride,
+        layout,
+    } = *frame;
     let row_bytes = layout.row_bytes(width);
     let mut grey = Vec::with_capacity((width / 2) * (height / 2));
     let (mut top_samples, mut bottom_samples) = (vec![0u16; width], vec![0u16; width]);
@@ -640,6 +638,18 @@ fn measure(
 pub(crate) mod tests {
     use super::*;
 
+    // The frame of the rows `raw` holds, each `width` samples stored as
+    // `layout` in `row_stride` bytes.
+    fn frame(raw: &[u8], width: usize, row_stride: usize, layout: Layout) -> RawFrame<'_> {
+        RawFrame {
+            raw,
+            width,
+            height: raw.len() / row_stride,
+            row_stride,
+            layout,
+        }
+    }
+
     fn little_endian_samples(samples: &[u16]) -> Vec<u8> {
         samples.iter().flat_map(|s| s.to_le_bytes()).collect()
     }
@@ -668,7 +678,11 @@ pub(crate) mod tests {
     fn averages_each_rggb_cell_into_one_grey_byte() {
         let raw = little_endian_samples(&[1023, 1023, 400, 800, 1023, 1023, 800, 400]);
         assert_eq!(
-            grey_half(&raw, 4, 2, 8, Layout::Unpacked16, &Tone::new(0, 1.0), false),
+            grey_half(
+                &frame(&raw, 4, 8, Layout::Unpacked16),
+                &Tone::new(0, 1.0),
+                false
+            ),
             [255, 150]
         );
     }
@@ -677,11 +691,12 @@ pub(crate) mod tests {
     fn black_stays_black() {
         assert_eq!(
             grey_half(
-                &little_endian_samples(&[0, 0, 0, 0]),
-                2,
-                2,
-                4,
-                Layout::Unpacked16,
+                &frame(
+                    &little_endian_samples(&[0, 0, 0, 0]),
+                    2,
+                    4,
+                    Layout::Unpacked16
+                ),
                 &Tone::imx708(),
                 false
             ),
@@ -706,11 +721,11 @@ pub(crate) mod tests {
             64, 64, 64, 64, 1023, 1023, 1023, 1023, 64, 64, 64, 64, 1023, 1023, 1023, 1023,
         ]);
         assert_eq!(
-            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, false),
+            grey_half(&frame(&raw, 8, 16, Layout::Unpacked16), &tone, false),
             [0, 0, 255, 255]
         );
         assert_eq!(
-            grey_half(&raw, 8, 2, 16, Layout::Unpacked16, &tone, true),
+            grey_half(&frame(&raw, 8, 16, Layout::Unpacked16), &tone, true),
             [255, 255, 0, 0]
         );
     }
@@ -738,8 +753,8 @@ pub(crate) mod tests {
         let unpacked = little_endian_samples(&samples);
         let packed = packed10(&samples);
         assert_eq!(
-            grey_half(&packed, 4, 2, 5, Layout::Packed10, &tone, false),
-            grey_half(&unpacked, 4, 2, 8, Layout::Unpacked16, &tone, false)
+            grey_half(&frame(&packed, 4, 5, Layout::Packed10), &tone, false),
+            grey_half(&frame(&unpacked, 4, 8, Layout::Unpacked16), &tone, false)
         );
     }
 
@@ -752,8 +767,8 @@ pub(crate) mod tests {
             .flat_map(|row| [row, &[0xff; 8][..]].concat())
             .collect();
         assert_eq!(
-            grey_half(&padded, 4, 2, 16, Layout::Unpacked16, &tone, false),
-            grey_half(&packed, 4, 2, 8, Layout::Unpacked16, &tone, false)
+            grey_half(&frame(&padded, 4, 16, Layout::Unpacked16), &tone, false),
+            grey_half(&frame(&packed, 4, 8, Layout::Unpacked16), &tone, false)
         );
     }
 

@@ -278,15 +278,14 @@ fn run(
                 }
                 statistics[side as usize] += 1;
                 let converting = std::time::Instant::now();
-                let grey = bayer::grey_half(
-                    camera.capture.pixels(&frame),
-                    sensor_width as usize,
-                    sensor_height as usize,
-                    camera.capture.row_stride,
-                    camera.capture.layout,
-                    &tone,
-                    settings.rotation == 180,
-                );
+                let raw = bayer::RawFrame {
+                    raw: camera.capture.pixels(&frame),
+                    width: sensor_width as usize,
+                    height: sensor_height as usize,
+                    row_stride: camera.capture.row_stride,
+                    layout: camera.capture.layout,
+                };
+                let grey = bayer::grey_half(&raw, &tone, settings.rotation == 180);
                 conversion_ns += converting.elapsed().as_nanos();
                 let start_ns = frame.start_ns;
                 camera.capture.queue(frame)?;
