@@ -7,6 +7,9 @@ The parts of the simulator that know nothing about ROS: simulated pieces of hard
 | `SimulatorCore.SimulatedComponent` | The behaviour of one piece of a vehicle's hardware emulated on CAN: it reads the frames the VMS sends it, acts on the motion model, and reports what the real hardware would |
 | `SimulatorCore.SimulatedComponents.*` | The simulated components, named after the VMS components they stand in for: `OVCS.GenericController`, `OVCS.RadioControl`, `Vesc.MotorController`, `Traxxas.Steering` |
 | `SimulatorCore.Vehicle` | The simulated vehicle's motion: commanded speed, steering, and how far and how fast the wheels turned. Pure |
+| `SimulatorCore.Efforts` | What simulated actuators ask of the vehicle in one tick: drive and brake torques at the wheels, the front wheels' angle, the driveline's inertia. Pure |
+| `SimulatorCore.WorldState` | What a simulated world reports of the vehicle: each wheel's angle, spin and contact with the ground, and the body's motion. Pure |
+| `SimulatorCore.FlatGround` | A world for when no external simulator owns the vehicle's dynamics: efforts move one rigid body on wheels that never slip, on flat ground. Pure |
 | `SimulatorCore.Hardware` | The loop: every tick it collects the simulated components' actuations, advances the motion model, lets them report, and hands the motion to the world |
 | `SimulatorCore.World` | The behaviour of what moves the vehicle: it takes the motion and reports how far the wheels turned. Gazebo's is `RosBridge.Simulator.World`, in the [ROS bridge](../../bridges/ros_bridge/README.md) |
 
