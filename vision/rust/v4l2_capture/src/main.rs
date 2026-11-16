@@ -51,6 +51,9 @@ const NODE_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const BUSY_RETRY: std::time::Duration = std::time::Duration::from_millis(200);
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
 const STATISTICS_EVERY_S: u64 = 60;
+/// The longest a frame loop waits for a frame or a setting, so it serves its
+/// statistics while no frame comes.
+const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 // Auto exposure measures every this many left frames: the sensor applies a
 // change a few frames after it is set.
 const EXPOSURE_EVERY_FRAMES: u32 = 4;
@@ -219,13 +222,7 @@ fn run(
     ];
     loop {
         // SAFETY: `poll_descriptors` is a valid array of three pollfds.
-        if unsafe { libc::poll(poll_descriptors.as_mut_ptr(), 3, 1_000) } < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(libc::EINTR) {
-                continue;
-            }
-            return Err(error);
-        }
+        poll(&mut poll_descriptors, POLL_TIMEOUT)?;
         if poll_descriptors[2].revents != 0 {
             match framing::read_record(&mut input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),
@@ -388,6 +385,30 @@ fn pollfd(fd: i32) -> libc::pollfd {
         events: libc::POLLIN,
         revents: 0,
     }
+}
+
+/// Waits up to `timeout` for an event on `descriptors`, each one's `revents`
+/// set as it comes. A signal ends the wait with no event, as a timeout does.
+fn poll(descriptors: &mut [libc::pollfd], timeout: std::time::Duration) -> io::Result<()> {
+    let timeout_ms = i32::try_from(timeout.as_millis()).unwrap_or(i32::MAX);
+    // SAFETY: `descriptors` is a valid array of `descriptors.len()` pollfds.
+    let polled = unsafe {
+        libc::poll(
+            descriptors.as_mut_ptr(),
+            descriptors.len() as libc::nfds_t,
+            timeout_ms,
+        )
+    };
+    if polled < 0 {
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::EINTR) {
+            return Err(error);
+        }
+        for descriptor in descriptors {
+            descriptor.revents = 0;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

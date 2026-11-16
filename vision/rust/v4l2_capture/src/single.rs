@@ -25,8 +25,9 @@ use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
-    auto_exposure, auto_exposure_from, capped_now, input, open_camera, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, STATISTICS_EVERY_S,
+    auto_exposure, auto_exposure_from, capped_now, input, open_camera, poll, pollfd, resume_point,
+    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, POLL_TIMEOUT,
+    STATISTICS_EVERY_S,
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
@@ -586,14 +587,7 @@ fn convert_frames(
     let mut statistics_since = Instant::now();
     let mut poll_descriptors = [pollfd(frames.descriptor()), pollfd(input.as_raw_fd())];
     loop {
-        // SAFETY: `poll_descriptors` is a valid array of two pollfds.
-        if unsafe { libc::poll(poll_descriptors.as_mut_ptr(), 2, 1_000) } < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(libc::EINTR) {
-                continue;
-            }
-            return Err(error);
-        }
+        poll(&mut poll_descriptors, POLL_TIMEOUT)?;
         if poll_descriptors[1].revents != 0 {
             match framing::read_record(input, input::MAX_SETTING_BYTES)? {
                 None => return Ok(()),

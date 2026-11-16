@@ -1039,14 +1039,10 @@ impl M2mDevice for M2mNode {
             },
             revents: 0,
         };
-        let timeout_ms = timeout.as_millis().clamp(1, i32::MAX as u128) as i32;
-        // SAFETY: one valid pollfd.
-        if unsafe { libc::poll(&mut polled, 1, timeout_ms) } < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() != Some(libc::EINTR) {
-                return Err(error);
-            }
-        }
+        crate::poll(
+            std::slice::from_mut(&mut polled),
+            timeout.max(std::time::Duration::from_millis(1)),
+        )?;
         if polled.revents & libc::POLLERR != 0 {
             return Err(io::Error::other("the encoder's queues stopped"));
         }
