@@ -109,6 +109,45 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
     end
   end
 
+  @fifo_end "--the test's end of the FIFO--\n"
+
+  # Reads the FIFO at `path` from a process that also holds it for writing: no end-of-file
+  # comes between the writes of others, so theirs never wait in open or fail with EPIPE, and
+  # one read does not take two writes as one. Ends at `finish_fifo_reader!/2`.
+  defp start_fifo_reader!(path) do
+    test = self()
+
+    reader =
+      Task.async(fn ->
+        {:ok, fifo} = :file.open(path, [:raw, :read, :write, :binary])
+        send(test, {:fifo_open, self()})
+        read_to_fifo_end!(fifo, "")
+      end)
+
+    reader_pid = reader.pid
+    assert_receive {:fifo_open, ^reader_pid}
+    reader
+  end
+
+  # What was written to the FIFO before; its reader holds it open, so the open never waits.
+  defp finish_fifo_reader!(reader, path) do
+    {:ok, fifo} = :file.open(path, [:raw, :binary, :write])
+    :ok = :file.write(fifo, @fifo_end)
+    :ok = :file.close(fifo)
+    Task.await(reader)
+  end
+
+  # A byte at a time: a raw read of more waits for all of it, and no end-of-file comes.
+  defp read_to_fifo_end!(fifo, read) do
+    if String.ends_with?(read, @fifo_end) do
+      :ok = :file.close(fifo)
+      String.replace_suffix(read, @fifo_end, "")
+    else
+      {:ok, byte} = :file.read(fifo, 1)
+      read_to_fifo_end!(fifo, read <> byte)
+    end
+  end
+
   defp eventually(check, attempts \\ 200) do
     cond do
       check.() -> :ok
@@ -590,18 +629,21 @@ defmodule VisionCore.Ros2.Bag.RecordingTest do
       :ok = Recording.write(pid, "/speed", Float64, speed(1.0), 1_000)
       eventually(fn -> Recording.status(pid).messages == %{"/speed" => 1} end)
 
-      # A pipe takes metadata.yaml and refuses its sync; the test reads each attempt through it.
+      # A pipe takes metadata.yaml and refuses its sync; the test reads both attempts through it.
       temporary = Path.join(bag_dir(dir), "metadata.yaml.tmp")
       {_output, 0} = System.cmd("mkfifo", [temporary])
-      stopping = Task.async(fn -> Recording.stop(pid) end)
-      _refused = read_pipe!(temporary)
-      after_refusal = read_pipe!(temporary)
-      :ok = Task.await(stopping)
+      reader = start_fifo_reader!(temporary)
+      :ok = Recording.stop(pid)
+
+      assert [_refused, after_refusal] =
+               reader
+               |> finish_fifo_reader!(temporary)
+               |> String.split("rosbag2_bagfile_information:", trim: true)
 
       assert [{"/speed", 0, 1_000, 1_000, _payload}] = messages(read_file!(dir, 0))
 
       assert %{"message_count" => 1} =
-               after_refusal
+               ("rosbag2_bagfile_information:" <> after_refusal)
                |> YamlElixir.read_from_string!()
                |> Map.fetch!("rosbag2_bagfile_information")
     end
