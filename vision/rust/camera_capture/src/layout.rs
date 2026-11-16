@@ -15,6 +15,28 @@ pub fn plane_lengths(width: usize, height: usize, strides: [usize; 3]) -> [usize
     ]
 }
 
+/// The Y, U and V planes' lengths TurboJPEG reads to encode a 4:2:0
+/// `width`×`height` frame: it reads luma at the width and height padded to
+/// even, and takes a stride of 0 as packed rows. `None` when a stride is
+/// shorter than the row it holds.
+pub fn jpeg_plane_lengths(width: usize, height: usize, strides: [usize; 3]) -> Option<[usize; 3]> {
+    let (luma_width, luma_height) = (width.next_multiple_of(2), height.next_multiple_of(2));
+    let (chroma_width, chroma_height) = (luma_width / 2, luma_height / 2);
+    let sizes = [
+        (luma_width, luma_height),
+        (chroma_width, chroma_height),
+        (chroma_width, chroma_height),
+    ];
+    let mut lengths = [0; 3];
+    for ((length, (width, height)), stride) in lengths.iter_mut().zip(sizes).zip(strides) {
+        if stride < width {
+            return None;
+        }
+        *length = luma_length(width, height, stride);
+    }
+    Some(lengths)
+}
+
 /// Whether `length` bytes from `offset` lie within a mapping of `total` bytes.
 pub fn holds(total: usize, offset: usize, length: usize) -> bool {
     offset.checked_add(length).is_some_and(|end| end <= total)
@@ -37,6 +59,19 @@ mod tests {
     #[test]
     fn packed_planes_take_their_own_strides() {
         assert_eq!(plane_lengths(3, 3, [3, 2, 2]), [9, 4, 4]);
+    }
+
+    #[test]
+    fn turbojpeg_reads_luma_padded_to_even_sizes() {
+        assert_eq!(jpeg_plane_lengths(4, 2, [8, 4, 4]), Some([12, 2, 2]));
+        assert_eq!(jpeg_plane_lengths(3, 3, [4, 2, 2]), Some([16, 4, 4]));
+    }
+
+    #[test]
+    fn turbojpeg_refuses_a_stride_shorter_than_its_row() {
+        assert_eq!(jpeg_plane_lengths(3, 3, [3, 2, 2]), None);
+        assert_eq!(jpeg_plane_lengths(4, 2, [0, 2, 2]), None);
+        assert_eq!(jpeg_plane_lengths(4, 2, [4, 1, 2]), None);
     }
 
     #[test]

@@ -126,8 +126,11 @@ impl JpegEncoder {
     /// Refuses planes shorter than this encoder's frame size takes at their strides.
     pub(crate) fn encode(&mut self, yuv: YuvPlanes) -> Result<&[u8], String> {
         let (width, height) = (self.width as usize, self.height as usize);
-        let lengths = layout::plane_lengths(width, height, yuv.strides);
-        if (yuv.planes.iter().zip(lengths)).any(|(plane, length)| plane.len() < length) {
+        let lengths = layout::jpeg_plane_lengths(width, height, yuv.strides);
+        let short = |lengths: [usize; 3]| {
+            (yuv.planes.iter().zip(lengths)).any(|(plane, length)| plane.len() < length)
+        };
+        if lengths.is_none_or(short) {
             return Err(format!(
                 "planes of {:?} bytes {:?} apart are no {width}x{height} frame",
                 yuv.planes.map(<[u8]>::len),
@@ -140,7 +143,7 @@ impl JpegEncoder {
         };
         let mut planes = yuv.planes.map(<[u8]>::as_ptr);
         let mut size = self.capacity;
-        // SAFETY: each plane holds its rows of this frame size at its stride, checked above;
+        // SAFETY: each plane holds the rows TurboJPEG reads of this frame size, checked above;
         // NOREALLOC keeps the buffer.
         unsafe {
             let status = tjCompressFromYUVPlanes(
