@@ -24,6 +24,39 @@ const snapshot = (p1 = 12, unsaved = 0) => ({
   unsaved
 })
 
+// `value` as the parameters channel pushes it: the JSON:API document of GET /api/stages?include=parameters.
+const stagesDocument = ({ groups, parameters, unsaved }, complete = true) => ({
+  data: groups.map(({ id, parameterIds, ...attributes }) => ({
+    type: 'stages',
+    id,
+    attributes,
+    relationships: { parameters: { data: parameterIds.map((parameterId) => ({ type: 'parameters', id: parameterId })) } }
+  })),
+  included: Object.values(parameters).map(({ id, stage, controlledBy, greaterThan, ...attributes }) => ({
+    type: 'parameters',
+    id,
+    attributes,
+    relationships: {
+      stage: { data: { type: 'stages', id: stage } },
+      controlledBy: { data: controlledBy && { type: 'parameters', id: controlledBy } },
+      greaterThan: { data: greaterThan && { type: 'parameters', id: greaterThan } }
+    }
+  })),
+  meta: complete ? { complete, unsaved } : { complete }
+})
+
+// A parameters channel that keeps its handlers, so a test pushes stages or fails it.
+function fakeChannel() {
+  const handlers = {}
+  const channel = {
+    on: vi.fn((event, handler) => { handlers[event] = handler }),
+    onError: vi.fn((handler) => { handlers.error = handler }),
+    join: vi.fn(),
+    leave: vi.fn()
+  }
+  return { socket: { channel: vi.fn(() => channel) }, handlers, channel }
+}
+
 const initial = useParameters.getState()
 
 describe('parameters store', () => {
@@ -31,10 +64,7 @@ describe('parameters store', () => {
     vi.resetAllMocks()
     useParameters.setState({ ...initial, editing: new Set() }, true)
   })
-  afterEach(() => {
-    useParameters.getState().stopPolling()
-    vi.useRealTimers()
-  })
+  afterEach(() => vi.useRealTimers())
 
   const state = () => useParameters.getState()
 
@@ -324,45 +354,71 @@ describe('parameters store', () => {
     expect(state().error).toBe('GET failed: 500')
   })
 
-  describe('polling', () => {
-    beforeEach(() => vi.useFakeTimers())
+  describe('following the parameters channel', () => {
+    it('joins it and shows the stages it pushes, without asking the unit for them', () => {
+      const { socket, handlers, channel } = fakeChannel()
 
-    it('loads now and every interval until stopped', async () => {
-      service.fetchGroups.mockResolvedValue(snapshot())
+      state().listen(socket)
+      handlers.stages(stagesDocument(snapshot(20, 2)))
 
-      state().startPolling(1000)
-      await vi.advanceTimersByTimeAsync(0)
-      expect(service.fetchGroups).toHaveBeenCalledTimes(1)
-
-      await vi.advanceTimersByTimeAsync(2000)
-      expect(service.fetchGroups).toHaveBeenCalledTimes(3)
-
-      state().stopPolling()
-      await vi.advanceTimersByTimeAsync(5000)
-      expect(service.fetchGroups).toHaveBeenCalledTimes(3)
+      expect(socket.channel).toHaveBeenCalledWith('parameters', {})
+      expect(channel.join).toHaveBeenCalled()
+      expect(service.fetchGroups).not.toHaveBeenCalled()
+      expect(state().groups.map((group) => group.id)).toEqual(['detection.input', 'stereo.match', 'camera'])
+      expect(state().parameters['stereo.match.p1']).toMatchObject({ value: 20, stage: 'stereo.match' })
+      expect(state().unsaved).toBe(2)
     })
 
-    it('never runs two loads at once', async () => {
-      let finish
-      service.fetchGroups.mockReturnValue(new Promise((resolve) => { finish = resolve }))
+    it('replaces only the stages a partial push carries, and keeps the unsaved count', () => {
+      const { socket, handlers } = fakeChannel()
+      state().listen(socket)
+      handlers.stages(stagesDocument(snapshot(12, 1)))
+      const detection = state().groups[0]
 
-      state().startPolling(1000)
-      await vi.advanceTimersByTimeAsync(3500)
-      expect(service.fetchGroups).toHaveBeenCalledTimes(1)
+      const match = snapshot(30)
+      handlers.stages(stagesDocument({
+        groups: [{ ...match.groups[1], name: 'Matching' }],
+        parameters: { 'stereo.match.p1': match.parameters['stereo.match.p1'] }
+      }, false))
 
-      finish(snapshot())
-      await vi.advanceTimersByTimeAsync(1000)
-      expect(service.fetchGroups).toHaveBeenCalledTimes(2)
+      expect(state().groups.map((group) => group.name)).toEqual(['Input', 'Matching', 'Camera'])
+      expect(state().groups[0]).toBe(detection)
+      expect(state().parameters['stereo.match.p1'].value).toBe(30)
+      expect(state().parameters['detection.input.p']).toBeDefined()
+      expect(state().unsaved).toBe(1)
     })
 
-    it('does not start a second timer when started twice', async () => {
-      service.fetchGroups.mockResolvedValue(snapshot())
+    it('keeps the value of a parameter being edited when a push arrives', () => {
+      const { socket, handlers } = fakeChannel()
+      state().listen(socket)
+      handlers.stages(stagesDocument(snapshot(12)))
+      state().beginEdit('stereo.match.p1')
+      useParameters.setState((current) => ({
+        parameters: { ...current.parameters, 'stereo.match.p1': { ...current.parameters['stereo.match.p1'], value: 15 } }
+      }))
 
-      state().startPolling(1000)
-      state().startPolling(1000)
-      await vi.advanceTimersByTimeAsync(1000)
+      handlers.stages(stagesDocument(snapshot(20)))
 
-      expect(service.fetchGroups).toHaveBeenCalledTimes(2)
+      expect(state().parameters['stereo.match.p1'].value).toBe(15)
+    })
+
+    it('says the unit cannot be reached once the channel fails, until it pushes again', () => {
+      const { socket, handlers } = fakeChannel()
+      state().listen(socket)
+
+      handlers.error()
+      expect(state()).toMatchObject({ error: 'Cannot reach the vision unit', errorSource: 'load' })
+
+      handlers.stages(stagesDocument(snapshot()))
+      expect(state()).toMatchObject({ error: null, errorSource: null })
+    })
+
+    it('leaves the channel once unlistened', () => {
+      const { socket, channel } = fakeChannel()
+
+      state().listen(socket)()
+
+      expect(channel.leave).toHaveBeenCalled()
     })
   })
 

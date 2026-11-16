@@ -1,7 +1,8 @@
 defmodule VisionApiWeb.ParametersCase do
   @moduledoc """
   Test case declaring the group `test.disparity` in a restarted `:vision_core`
-  whose registry saves into memory. The declaring process is the test
+  whose registry saves into memory, its values in the Agent `values` of the
+  test's context. The declaring process is the test
   process, which stays alive for the test. The unit has the ROS 2 link and
   a ROS 2 exporter, which publishes nothing.
   """
@@ -103,5 +104,7 @@ defmodule VisionApiWeb.ParametersCase do
           ]
         }
       ])
+
+    %{values: values}
   end
 end

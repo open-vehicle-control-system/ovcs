@@ -53,7 +53,7 @@ An unknown resource answers a 404 whose `detail` names it, such as `no parameter
 
 ## Stages and parameters
 
-The unit's settings are parameters, grouped by stage. A stage is a component, such as the cameras, or a step of a pipeline.
+The unit's settings are parameters, grouped by stage. A stage is a component, such as the cameras, or a step of a pipeline. To follow them as they change, join the [`parameters` channel](./channels.md#parameters) rather than reading them again.
 
 `GET /api/stages?include=parameters` returns the stages in pipeline order, their parameters in `included`, and the count of unsaved parameters in `meta.unsaved`. Any other `include` is a 400. One stage of `data`:
 
