@@ -16,7 +16,8 @@
 //!   little-endian, then its pixels as RGB, three bytes a pixel, row-major,
 //!   decoded by libjpeg-turbo; a grey JPEG's luma in each channel.
 //!
-//! A malformed request gets an empty reply.
+//! A malformed request, or a JPEG of more pixels than the largest RGB image a
+//! request holds, gets an empty reply.
 
 use std::io::{self, Write};
 
@@ -32,6 +33,10 @@ const DEPTH_HEADER: usize = 9;
 
 /// The longest request taken: above any camera's whole RGB frame.
 const MAX_REQUEST_BYTES: usize = 64 << 20;
+
+/// The most pixels a decoded JPEG may have: those of the largest RGB image a request holds.
+/// Its header is checked before its pixels are allocated.
+const MAX_DECODED_PIXELS: usize = MAX_REQUEST_BYTES / 3;
 
 // OpenCV's COLORMAP_TURBO, as RGB.
 const TURBO: [[u8; 3]; 256] = [
@@ -356,8 +361,15 @@ fn compress(
 // within rounding of the stored Y samples a grayscale decode gives.
 fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
     let mut decoder = Decoder::new(jpeg);
-    let samples = decoder.decode().ok()?;
+    decoder.read_info().ok()?;
     let properties = decoder.info()?;
+    if !decodable(
+        usize::from(properties.width),
+        usize::from(properties.height),
+    ) {
+        return None;
+    }
+    let samples = decoder.decode().ok()?;
     let mut reply = Vec::with_capacity(4 + properties.width as usize * properties.height as usize);
     reply.extend_from_slice(&properties.width.to_le_bytes());
     reply.extend_from_slice(&properties.height.to_le_bytes());
@@ -373,6 +385,10 @@ fn decode_luma(jpeg: &[u8]) -> Option<Vec<u8>> {
 }
 
 fn decode_rgb(jpeg: &[u8]) -> Option<Vec<u8>> {
+    let header = turbojpeg::read_header(jpeg).ok()?;
+    if !decodable(header.width, header.height) {
+        return None;
+    }
     let image = turbojpeg::decompress(jpeg, PixelFormat::RGB).ok()?;
     let (width, height) = (
         u16::try_from(image.width).ok()?,
@@ -386,6 +402,11 @@ fn decode_rgb(jpeg: &[u8]) -> Option<Vec<u8>> {
         reply.extend_from_slice(&line[..row]);
     }
     Some(reply)
+}
+
+/// Whether a JPEG of `width` × `height` pixels is small enough to decode.
+fn decodable(width: usize, height: usize) -> bool {
+    width.saturating_mul(height) <= MAX_DECODED_PIXELS
 }
 
 fn encode_depth(compressor: &mut Compressor, request: &[u8]) -> Option<Vec<u8>> {
@@ -727,6 +748,28 @@ mod tests {
         let colours = luma(&depth_colours(&depth, Some((500, 4_000))));
         let decibels = psnr(&reply[4..], &colours);
         assert!(decibels > 40.0, "{decibels} dB");
+    }
+
+    #[test]
+    fn refuses_to_decode_a_jpeg_of_more_pixels_than_an_rgb_request_holds() {
+        let (width, height) = (8192u16, 2736u16);
+        assert!(usize::from(width) * usize::from(height) * 3 > MAX_REQUEST_BYTES);
+        let grey = vec![128u8; usize::from(width) * usize::from(height)];
+        let jpeg = reply_to(&request(width, height, 1, &grey)).unwrap();
+
+        assert!(reply_to(&decode_request(&jpeg)).is_none());
+        assert!(reply_to(&decode_rgb_request(&jpeg)).is_none());
+    }
+
+    #[test]
+    fn refuses_a_jpeg_whose_header_claims_65535_by_65535_pixels() {
+        let mut jpeg = reply_to(&request(16, 16, 1, &[128; 16 * 16])).unwrap();
+        let frame_header = jpeg.windows(2).position(|bytes| bytes == [0xFF, 0xC0]);
+        let height_at = frame_header.unwrap() + 5;
+        jpeg[height_at..height_at + 4].fill(0xFF);
+
+        assert_eq!(reply_to(&decode_request(&jpeg)), None);
+        assert_eq!(reply_to(&decode_rgb_request(&jpeg)), None);
     }
 
     #[test]
