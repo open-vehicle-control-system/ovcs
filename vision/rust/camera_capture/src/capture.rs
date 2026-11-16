@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::ffi::c_int;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::Duration;
 
@@ -29,6 +29,7 @@ use libcamera::pixel_format::PixelFormat;
 use libcamera::properties;
 use libcamera::request::{Request, RequestStatus, ReuseFlag};
 use libcamera::stream::{Stream, StreamRole};
+use libcamera::utils::UniquePtr;
 
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
@@ -40,7 +41,7 @@ use crate::full_range::{self, Range};
 use crate::grey::pack_luma;
 use crate::jpeg::{JpegEncoder, JpegPlanes};
 use crate::schedule::Schedule;
-use crate::streams::{self, Role};
+use crate::streams::{self, Role, StreamPlan};
 
 const METADATA_EVERY_FRAMES: u32 = 5;
 const JPEG_QUALITY: c_int = 85;
@@ -79,237 +80,59 @@ fn camera_manager(camera_id: usize) -> std::io::Result<CameraManager> {
     }
 }
 
+/// What ends a capture before the host closes the Port: the error, logged once,
+/// and the exit status.
+struct Failure {
+    message: String,
+    status: i32,
+}
+
+impl From<String> for Failure {
+    fn from(message: String) -> Failure {
+        Failure { message, status: 1 }
+    }
+}
+
 /// Captures until stdin closes; the process exit status.
 pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
+    match capture(arguments, writer) {
+        Ok(()) => 0,
+        Err(failure) => {
+            writer.log(LogLevel::Error, &failure.message);
+            failure.status
+        }
+    }
+}
+
+fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
     let info = |message: String| writer.log(LogLevel::Info, &message);
     let warning = |message: String| writer.log(LogLevel::Warning, &message);
-    let error = |message: String| writer.log(LogLevel::Error, &message);
 
     let manager = match camera_manager(arguments.camera_id as usize) {
         Ok(manager) => manager,
-        Err(start_error) if start_error.kind() == std::io::ErrorKind::BrokenPipe => return 0,
-        Err(start_error) => {
-            error(format!("CameraManager::start failed ({start_error})"));
-            return 1;
-        }
+        Err(start_error) if start_error.kind() == std::io::ErrorKind::BrokenPipe => return Ok(()),
+        Err(start_error) => Err(format!("CameraManager::start failed ({start_error})"))?,
     };
-    let cameras = manager.cameras();
-    if cameras.is_empty() {
-        error("no cameras detected by libcamera".to_string());
-        return 1;
-    }
-    let Some(camera) = cameras.get(arguments.camera_id as usize) else {
-        error(format!(
-            "camera_id {} out of range (have {} cameras)",
-            arguments.camera_id,
-            cameras.len()
-        ));
-        return 1;
-    };
-    let mut camera = match camera.acquire() {
-        Ok(camera) => camera,
-        Err(_) => {
-            error(format!(
-                "Camera::acquire failed (camera {})",
-                arguments.camera_id
-            ));
-            return 1;
-        }
-    };
-
+    let mut camera = acquire(&manager, arguments.camera_id)?;
     let plan = streams::plan(arguments);
-    let roles: Vec<StreamRole> = (plan.streams.iter())
-        .map(|stream| match stream.role {
-            Role::VideoRecording => StreamRole::VideoRecording,
-            Role::ViewFinder => StreamRole::ViewFinder,
-        })
-        .collect();
-    let mut configuration = match camera.generate_configuration(&roles) {
-        Some(configuration) if configuration.len() == roles.len() => configuration,
-        _ => {
-            error(format!("generateConfiguration failed for {roles:?}"));
-            return 1;
-        }
-    };
-
-    // Rotated in the pipeline: an upside-down sensor gives an upright frame.
-    let orientation = match arguments.rotation {
-        0 => Orientation::Rotate0,
-        90 => Orientation::Rotate90,
-        180 => Orientation::Rotate180,
-        270 => Orientation::Rotate270,
-        rotation => {
-            error(format!(
-                "--rotation {rotation} unsupported (use 0/90/180/270)"
-            ));
-            return 2;
-        }
-    };
-    configuration.set_orientation(orientation);
-
-    for (index, stream) in plan.streams.iter().enumerate() {
-        if let Some(mut stream_configuration) = configuration.get_mut(index) {
-            stream_configuration.set_size(Size::new(stream.width, stream.height));
-            stream_configuration.set_pixel_format(YUV420);
-            stream_configuration.set_buffer_count(BUFFER_COUNT);
-        }
-    }
-
-    if let Some(mode) = arguments.sensor_mode {
-        let mut sensor = SensorConfiguration::new();
-        sensor.set_bit_depth(mode.bit_depth);
-        sensor.set_output_size(mode.width, mode.height);
-        configuration.set_sensor_configuration(sensor);
-    }
-
-    let asked: Vec<String> = (0..configuration.len())
-        .map(|index| describe_stream(&configuration, index))
-        .collect();
-    match configuration.validate() {
-        CameraConfigurationStatus::Valid => {}
-        CameraConfigurationStatus::Adjusted => {
-            for (index, asked) in asked.iter().enumerate() {
-                info(format!(
-                    "configuration adjusted: stream {index} asked as {asked}, now {}",
-                    describe_stream(&configuration, index)
-                ));
-            }
-        }
-        CameraConfigurationStatus::Invalid => {
-            error(match arguments.sensor_mode {
-                Some(mode) => format!(
-                    "configuration invalid: no {}x{} {}-bit sensor mode?",
-                    mode.width, mode.height, mode.bit_depth
-                ),
-                None => "configuration invalid".to_string(),
-            });
-            return 1;
-        }
-    }
-    if configuration.orientation() != orientation {
-        warning(format!(
-            "--rotation {} adjusted to {:?}",
-            arguments.rotation,
-            configuration.orientation()
-        ));
-    }
-
-    for index in 0..configuration.len() {
-        let pixel_format = configuration
-            .get(index)
-            .expect("stream configuration")
-            .get_pixel_format();
-        if pixel_format != YUV420 {
-            error(format!(
-                "driver refused YUV420 on stream {index} (got {pixel_format}); aborting"
-            ));
-            return 1;
-        }
-    }
-    // The JPEG outputs' records carry the size asked for; the frames go on without them.
-    let mut isp_output_adjusted = false;
-    if let Some(index) = plan.isp_output {
-        let asked = &plan.streams[index];
-        let size = configuration
-            .get(index)
-            .expect("stream configuration")
-            .get_size();
-        if (size.width, size.height) != (asked.width, asked.height) {
-            error(format!(
-                "ISP output adjusted to {}x{} from {}x{}; its outputs are not written",
-                size.width, size.height, asked.width, asked.height
-            ));
-            isp_output_adjusted = true;
-        }
-    }
-
-    if camera.configure(&mut configuration).is_err() {
-        error("Camera::configure failed".to_string());
-        return 1;
-    }
-
-    let mut configured = Vec::with_capacity(configuration.len());
-    for index in 0..configuration.len() {
-        let stream_configuration = configuration.get(index).expect("stream configuration");
-        let Some(stream) = stream_configuration.stream() else {
-            error("no stream after Camera::configure".to_string());
-            return 1;
-        };
-        configured.push(ConfiguredStream {
-            stream,
-            size: stream_configuration.get_size(),
-            stride: stream_configuration.get_stride() as usize,
-            range: (stream_configuration.get_color_space())
-                .map(|colour_space| colour_space.range.into()),
-        });
-        info(format!(
-            "stream {index} {}: {}",
-            describe_stream(&configuration, index),
-            match (index == plan.frames, arguments.format) {
-                (true, Format::Grey) => "grey frames of its luma as captured",
-                _ if full_range::expands(configured[index].range) => {
-                    "its JPEGs expanded from limited to full range"
-                }
-                _ => "its JPEGs as captured",
-            }
-        ));
-    }
+    let Configured {
+        streams: configured,
+        isp_output_adjusted,
+    } = configure(&mut camera, &plan, arguments, writer)?;
     let Size {
         width: output_width,
         height: output_height,
     } = configured[plan.frames].size;
     let y_stride = configured[plan.frames].stride;
+    let Buffers {
+        requests,
+        views,
+        mapper,
+    } = create_requests(&mut camera, &configured)?;
 
-    let mut allocator = FrameBufferAllocator::new(&camera);
-    let mut stream_buffers = Vec::with_capacity(configured.len());
-    for configured_stream in &configured {
-        match allocator.alloc(&configured_stream.stream) {
-            Ok(buffers) => stream_buffers.push(buffers.into_iter()),
-            Err(_) => {
-                error("buffer allocation failed".to_string());
-                return 1;
-            }
-        }
-    }
-    let buffer_count = stream_buffers.iter().map(|buffers| buffers.len()).min();
-
-    let mut mapper = FdMapper::default();
-    // Each stream's buffer views, by a request's cookie.
-    let mut views: Vec<Vec<YuvView>> = configured.iter().map(|_| Vec::new()).collect();
-    let mut requests = Vec::new();
-    for index in 0..buffer_count.unwrap_or(0) {
-        let Some(mut request) = camera.create_request(Some(index as u64)) else {
-            error("createRequest failed".to_string());
-            return 1;
-        };
-        for (stream_index, buffers) in stream_buffers.iter_mut().enumerate() {
-            let buffer = buffers.next().expect("a buffer per request");
-            let configured_stream = &configured[stream_index];
-            match map_view(&mut mapper, &buffer, configured_stream) {
-                Ok(view) => views[stream_index].push(view),
-                Err(message) => {
-                    error(message);
-                    return 1;
-                }
-            }
-            if request
-                .add_buffer(&configured_stream.stream, buffer)
-                .is_err()
-            {
-                error("addBuffer failed".to_string());
-                return 1;
-            }
-        }
-        requests.push(request);
-    }
-
-    let mut jpeg_outputs = match jpeg_outputs(arguments) {
-        Ok(_) if isp_output_adjusted => Vec::new(),
-        Ok(jpeg_outputs) => jpeg_outputs,
-        Err(message) => {
-            error(message);
-            return 1;
-        }
+    let mut jpeg_outputs = match jpeg_outputs(arguments)? {
+        _ if isp_output_adjusted => Vec::new(),
+        jpeg_outputs => jpeg_outputs,
     };
     let mut output_schedule = Schedule::new(arguments.outputs_max_hz, arguments.fps);
     if let (Some(index), false) = (plan.isp_output, jpeg_outputs.is_empty()) {
@@ -333,13 +156,10 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         .isp_output
         .map(|index| JpegPlanes::new(&configured[index]));
     let mut output = match arguments.format {
-        Format::Jpeg => match JpegEncoder::new(output_width, output_height, JPEG_QUALITY) {
-            Ok(encoder) => Output::Jpeg(encoder, JpegPlanes::new(&configured[plan.frames])),
-            Err(message) => {
-                error(message);
-                return 1;
-            }
-        },
+        Format::Jpeg => Output::Jpeg(
+            JpegEncoder::new(output_width, output_height, JPEG_QUALITY)?,
+            JpegPlanes::new(&configured[plan.frames]),
+        ),
         Format::Grey => Output::Grey(Vec::with_capacity(
             output_width as usize * output_height as usize,
         )),
@@ -357,63 +177,11 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         SYNC_READY_ID,
         SYNC_TIMER_ID,
     ];
-
-    let mut start_controls = ControlList::new();
-    let period_us = 1_000_000 / i64::from(arguments.fps.max(1));
-    let _ = start_controls.set(controls::FrameDurationLimits([period_us, period_us]));
-
-    // The widest crop the sensor mode allows; a mode can itself be a centre crop of the sensor.
-    match camera.properties().get::<properties::ScalerCropMaximum>() {
-        Ok(max_crop) => {
-            let _ = start_controls.set(controls::ScalerCrop(*max_crop));
-            info(format!(
-                "ScalerCrop set to the sensor mode's full area ({}x{} @ {},{})",
-                max_crop.width, max_crop.height, max_crop.x, max_crop.y
-            ));
-        }
-        Err(_) => warning("ScalerCropMaximum unavailable; FoV may be cropped".to_string()),
-    }
-
-    if arguments.sync_mode != SyncMode::Off {
-        match camera.controls().count(SYNC_MODE_ID) {
-            0 => warning("no camera sync on this pipeline; --sync ignored".to_string()),
-            _ => {
-                let (value, role) = match arguments.sync_mode {
-                    SyncMode::Server => (SYNC_MODE_SERVER, "server"),
-                    _ => (SYNC_MODE_CLIENT, "client"),
-                };
-                let _ = start_controls.set_raw(SYNC_MODE_ID, LibcameraValue::from(value));
-                info(format!("camera sync as {role}"));
-            }
-        }
-    }
-
-    if let Some(mode) = arguments.exposure_mode {
-        let mode = match mode {
-            ExposureMode::Normal => controls::AeExposureMode::ExposureNormal,
-            ExposureMode::Short => controls::AeExposureMode::ExposureShort,
-            ExposureMode::Long => controls::AeExposureMode::ExposureLong,
-        };
-        let _ = start_controls.set(mode);
-        info(format!("auto-exposure mode {}", mode as i32));
-    }
-
-    // A stereo calibration holds only while the lens stays put: focus is manual and fixed.
-    if let Some(position) = arguments.lens_position.filter(|p| *p >= 0.0) {
-        if camera.controls().count(controls::AfMode::ID) > 0
-            && camera.controls().count(controls::LensPosition::ID) > 0
-        {
-            let _ = start_controls.set(controls::AfMode::Manual);
-            let _ = start_controls.set(controls::LensPosition(position));
-            info(format!("focus fixed at {position:.2} dioptres"));
-        } else {
-            warning("no focus control on this sensor; --lens-position ignored".to_string());
-        }
-    }
+    let start_controls = start_controls(&camera, arguments, writer);
 
     let stop = Arc::new(AtomicBool::new(false));
     let pending = Arc::new(Mutex::new(HashMap::new()));
-    let stdin_failed = spawn_stdin_reader(
+    let stdin_error = spawn_stdin_reader(
         control_ids,
         Arc::clone(&pending),
         Arc::clone(writer),
@@ -422,14 +190,12 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
 
     let completed = camera.subscribe_request_completed();
     if camera.start(Some(&start_controls)).is_err() {
-        error("Camera::start failed".to_string());
-        return 1;
+        Err("Camera::start failed".to_string())?;
     }
-    let mut exit_status = 0;
+    let mut ended = Ok(());
     for request in requests {
         if let Err((_, queue_error)) = camera.queue_request(request) {
-            error(format!("initial queueRequest failed ({queue_error})"));
-            exit_status = 1;
+            ended = Err(format!("initial queueRequest failed ({queue_error})"));
             stop.store(true, Ordering::Relaxed);
             break;
         }
@@ -438,7 +204,7 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     let mut sync_reported = false;
     let mut frames_without_sync = 0;
     let mut frames_since_metadata = 0;
-    // Acquire: a stop from the stdin reader also brings its failure.
+    // Acquire: a stop from the stdin reader also brings its error.
     while !stop.load(Ordering::Acquire) {
         let request = match completed.recv_timeout(Duration::from_millis(50)) {
             Ok(request) => request,
@@ -447,8 +213,7 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         };
         if request.status() == RequestStatus::Cancelled {
             if let Err(message) = requeue(&camera, request, &pending) {
-                error(message);
-                exit_status = 1;
+                ended = Err(message);
                 break;
             }
             continue;
@@ -533,18 +298,304 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         }
 
         if let Err(message) = requeue(&camera, request, &pending) {
-            error(message);
-            exit_status = 1;
+            ended = Err(message);
             break;
         }
     }
 
-    if stdin_failed.load(Ordering::Relaxed) {
-        exit_status = 1;
+    if let (Ok(()), Some(message)) = (&ended, stdin_error.get()) {
+        ended = Err(message.clone());
     }
     let _ = camera.stop();
     drop(completed);
-    exit_status
+    // The views read the mapper's mappings until the capture stops.
+    drop(mapper);
+    ended.map_err(Failure::from)
+}
+
+/// The camera `camera_id` of `manager`, acquired.
+fn acquire(manager: &CameraManager, camera_id: u32) -> Result<ActiveCamera<'_>, String> {
+    let cameras = manager.cameras();
+    if cameras.is_empty() {
+        return Err("no cameras detected by libcamera".to_string());
+    }
+    let Some(camera) = cameras.get(camera_id as usize) else {
+        return Err(format!(
+            "camera_id {camera_id} out of range (have {} cameras)",
+            cameras.len()
+        ));
+    };
+    camera
+        .acquire()
+        .map_err(|_| format!("Camera::acquire failed (camera {camera_id})"))
+}
+
+/// The streams `Camera::configure` set up, and whether the ISP output's size
+/// was adjusted, which leaves its outputs unwritten.
+struct Configured {
+    streams: Vec<ConfiguredStream>,
+    isp_output_adjusted: bool,
+}
+
+/// Configures `camera` for the streams of `plan`, logging what libcamera adjusted.
+fn configure(
+    camera: &mut ActiveCamera,
+    plan: &StreamPlan,
+    arguments: &Arguments,
+    writer: &Writer,
+) -> Result<Configured, Failure> {
+    let info = |message: String| writer.log(LogLevel::Info, &message);
+    let warning = |message: String| writer.log(LogLevel::Warning, &message);
+
+    let roles: Vec<StreamRole> = (plan.streams.iter())
+        .map(|stream| match stream.role {
+            Role::VideoRecording => StreamRole::VideoRecording,
+            Role::ViewFinder => StreamRole::ViewFinder,
+        })
+        .collect();
+    let mut configuration = match camera.generate_configuration(&roles) {
+        Some(configuration) if configuration.len() == roles.len() => configuration,
+        _ => Err(format!("generateConfiguration failed for {roles:?}"))?,
+    };
+
+    // Rotated in the pipeline: an upside-down sensor gives an upright frame.
+    let orientation = match arguments.rotation {
+        0 => Orientation::Rotate0,
+        90 => Orientation::Rotate90,
+        180 => Orientation::Rotate180,
+        270 => Orientation::Rotate270,
+        rotation => {
+            return Err(Failure {
+                message: format!("--rotation {rotation} unsupported (use 0/90/180/270)"),
+                status: 2,
+            })
+        }
+    };
+    configuration.set_orientation(orientation);
+
+    for (index, stream) in plan.streams.iter().enumerate() {
+        if let Some(mut stream_configuration) = configuration.get_mut(index) {
+            stream_configuration.set_size(Size::new(stream.width, stream.height));
+            stream_configuration.set_pixel_format(YUV420);
+            stream_configuration.set_buffer_count(BUFFER_COUNT);
+        }
+    }
+
+    if let Some(mode) = arguments.sensor_mode {
+        let mut sensor = SensorConfiguration::new();
+        sensor.set_bit_depth(mode.bit_depth);
+        sensor.set_output_size(mode.width, mode.height);
+        configuration.set_sensor_configuration(sensor);
+    }
+
+    let asked: Vec<String> = (0..configuration.len())
+        .map(|index| describe_stream(&configuration, index))
+        .collect();
+    match configuration.validate() {
+        CameraConfigurationStatus::Valid => {}
+        CameraConfigurationStatus::Adjusted => {
+            for (index, asked) in asked.iter().enumerate() {
+                info(format!(
+                    "configuration adjusted: stream {index} asked as {asked}, now {}",
+                    describe_stream(&configuration, index)
+                ));
+            }
+        }
+        CameraConfigurationStatus::Invalid => Err(match arguments.sensor_mode {
+            Some(mode) => format!(
+                "configuration invalid: no {}x{} {}-bit sensor mode?",
+                mode.width, mode.height, mode.bit_depth
+            ),
+            None => "configuration invalid".to_string(),
+        })?,
+    }
+    if configuration.orientation() != orientation {
+        warning(format!(
+            "--rotation {} adjusted to {:?}",
+            arguments.rotation,
+            configuration.orientation()
+        ));
+    }
+
+    for index in 0..configuration.len() {
+        let pixel_format = configuration
+            .get(index)
+            .expect("stream configuration")
+            .get_pixel_format();
+        if pixel_format != YUV420 {
+            Err(format!(
+                "driver refused YUV420 on stream {index} (got {pixel_format}); aborting"
+            ))?;
+        }
+    }
+    // The JPEG outputs' records carry the size asked for; the frames go on without them.
+    let mut isp_output_adjusted = false;
+    if let Some(index) = plan.isp_output {
+        let asked = &plan.streams[index];
+        let size = configuration
+            .get(index)
+            .expect("stream configuration")
+            .get_size();
+        if (size.width, size.height) != (asked.width, asked.height) {
+            writer.log(
+                LogLevel::Error,
+                &format!(
+                    "ISP output adjusted to {}x{} from {}x{}; its outputs are not written",
+                    size.width, size.height, asked.width, asked.height
+                ),
+            );
+            isp_output_adjusted = true;
+        }
+    }
+
+    if camera.configure(&mut configuration).is_err() {
+        Err("Camera::configure failed".to_string())?;
+    }
+
+    let mut configured = Vec::with_capacity(configuration.len());
+    for index in 0..configuration.len() {
+        let stream_configuration = configuration.get(index).expect("stream configuration");
+        let Some(stream) = stream_configuration.stream() else {
+            Err("no stream after Camera::configure".to_string())?
+        };
+        configured.push(ConfiguredStream {
+            stream,
+            size: stream_configuration.get_size(),
+            stride: stream_configuration.get_stride() as usize,
+            range: (stream_configuration.get_color_space())
+                .map(|colour_space| colour_space.range.into()),
+        });
+        info(format!(
+            "stream {index} {}: {}",
+            describe_stream(&configuration, index),
+            match (index == plan.frames, arguments.format) {
+                (true, Format::Grey) => "grey frames of its luma as captured",
+                _ if full_range::expands(configured[index].range) => {
+                    "its JPEGs expanded from limited to full range"
+                }
+                _ => "its JPEGs as captured",
+            }
+        ));
+    }
+    Ok(Configured {
+        streams: configured,
+        isp_output_adjusted,
+    })
+}
+
+/// A request per buffer of every stream, and each stream's buffer views by a
+/// request's cookie, mapped through `mapper`.
+struct Buffers {
+    requests: Vec<Request>,
+    views: Vec<Vec<YuvView>>,
+    mapper: FdMapper,
+}
+
+fn create_requests(
+    camera: &mut ActiveCamera,
+    configured: &[ConfiguredStream],
+) -> Result<Buffers, String> {
+    let mut allocator = FrameBufferAllocator::new(camera);
+    let mut stream_buffers = Vec::with_capacity(configured.len());
+    for configured_stream in configured {
+        match allocator.alloc(&configured_stream.stream) {
+            Ok(buffers) => stream_buffers.push(buffers.into_iter()),
+            Err(_) => return Err("buffer allocation failed".to_string()),
+        }
+    }
+    let buffer_count = stream_buffers.iter().map(|buffers| buffers.len()).min();
+
+    let mut mapper = FdMapper::default();
+    // Each stream's buffer views, by a request's cookie.
+    let mut views: Vec<Vec<YuvView>> = configured.iter().map(|_| Vec::new()).collect();
+    let mut requests = Vec::new();
+    for index in 0..buffer_count.unwrap_or(0) {
+        let Some(mut request) = camera.create_request(Some(index as u64)) else {
+            return Err("createRequest failed".to_string());
+        };
+        for (stream_index, buffers) in stream_buffers.iter_mut().enumerate() {
+            let buffer = buffers.next().expect("a buffer per request");
+            let configured_stream = &configured[stream_index];
+            views[stream_index].push(map_view(&mut mapper, &buffer, configured_stream)?);
+            if request
+                .add_buffer(&configured_stream.stream, buffer)
+                .is_err()
+            {
+                return Err("addBuffer failed".to_string());
+            }
+        }
+        requests.push(request);
+    }
+
+    Ok(Buffers {
+        requests,
+        views,
+        mapper,
+    })
+}
+
+/// The controls `camera` starts with, from `arguments`, each logged.
+fn start_controls(
+    camera: &ActiveCamera,
+    arguments: &Arguments,
+    writer: &Writer,
+) -> UniquePtr<ControlList> {
+    let info = |message: String| writer.log(LogLevel::Info, &message);
+    let warning = |message: String| writer.log(LogLevel::Warning, &message);
+
+    let mut start_controls = ControlList::new();
+    let period_us = 1_000_000 / i64::from(arguments.fps.max(1));
+    let _ = start_controls.set(controls::FrameDurationLimits([period_us, period_us]));
+
+    // The widest crop the sensor mode allows; a mode can itself be a centre crop of the sensor.
+    match camera.properties().get::<properties::ScalerCropMaximum>() {
+        Ok(max_crop) => {
+            let _ = start_controls.set(controls::ScalerCrop(*max_crop));
+            info(format!(
+                "ScalerCrop set to the sensor mode's full area ({}x{} @ {},{})",
+                max_crop.width, max_crop.height, max_crop.x, max_crop.y
+            ));
+        }
+        Err(_) => warning("ScalerCropMaximum unavailable; FoV may be cropped".to_string()),
+    }
+
+    if arguments.sync_mode != SyncMode::Off {
+        match camera.controls().count(SYNC_MODE_ID) {
+            0 => warning("no camera sync on this pipeline; --sync ignored".to_string()),
+            _ => {
+                let (value, role) = match arguments.sync_mode {
+                    SyncMode::Server => (SYNC_MODE_SERVER, "server"),
+                    _ => (SYNC_MODE_CLIENT, "client"),
+                };
+                let _ = start_controls.set_raw(SYNC_MODE_ID, LibcameraValue::from(value));
+                info(format!("camera sync as {role}"));
+            }
+        }
+    }
+
+    if let Some(mode) = arguments.exposure_mode {
+        let mode = match mode {
+            ExposureMode::Normal => controls::AeExposureMode::ExposureNormal,
+            ExposureMode::Short => controls::AeExposureMode::ExposureShort,
+            ExposureMode::Long => controls::AeExposureMode::ExposureLong,
+        };
+        let _ = start_controls.set(mode);
+        info(format!("auto-exposure mode {}", mode as i32));
+    }
+
+    // A stereo calibration holds only while the lens stays put: focus is manual and fixed.
+    if let Some(position) = arguments.lens_position.filter(|p| *p >= 0.0) {
+        if camera.controls().count(controls::AfMode::ID) > 0
+            && camera.controls().count(controls::LensPosition::ID) > 0
+        {
+            let _ = start_controls.set(controls::AfMode::Manual);
+            let _ = start_controls.set(controls::LensPosition(position));
+            info(format!("focus fixed at {position:.2} dioptres"));
+        } else {
+            warning("no focus control on this sensor; --lens-position ignored".to_string());
+        }
+    }
+    start_controls
 }
 
 /// Queues `request` again, with the controls received since the last one.
@@ -595,15 +646,15 @@ const MAX_CONTROL_BYTES: usize = 64 << 10;
 
 /// stdin carries the Port's `{:packet, 4}` records, one `Name=value` each; they apply to
 /// the next request requeued. EOF, the BEAM closing the Port, stops the capture; a failed
-/// read stops it too, logged, and sets the flag returned.
+/// read stops it too, its error set in the cell returned.
 fn spawn_stdin_reader(
     control_ids: HashMap<String, (u32, ControlKind)>,
     pending: Arc<Mutex<HashMap<u32, LibcameraValue>>>,
     writer: Arc<Writer>,
     stop: Arc<AtomicBool>,
-) -> Arc<AtomicBool> {
-    let failed = Arc::new(AtomicBool::new(false));
-    let read_failed = Arc::clone(&failed);
+) -> Arc<OnceLock<String>> {
+    let error = Arc::new(OnceLock::new());
+    let read_error = Arc::clone(&error);
     thread::spawn(move || {
         let mut requests = Requests::new(std::io::stdin().lock(), MAX_CONTROL_BYTES);
         loop {
@@ -611,8 +662,7 @@ fn spawn_stdin_reader(
                 Ok(Some(record)) => record,
                 Ok(None) => break,
                 Err(error) => {
-                    writer.log(LogLevel::Error, &format!("reading a control: {error}"));
-                    read_failed.store(true, Ordering::Relaxed);
+                    let _ = read_error.set(format!("reading a control: {error}"));
                     break;
                 }
             };
@@ -637,7 +687,7 @@ fn spawn_stdin_reader(
         }
         stop.store(true, Ordering::Release);
     });
-    failed
+    error
 }
 
 fn libcamera_value(value: TypedValue) -> LibcameraValue {
