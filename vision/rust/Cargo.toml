@@ -8,3 +8,5 @@ default-members = ["camera_capture", "detection", "framing", "hailo", "jpeg_code
 # programs that write records send the message first (`Writer::log_panics`).
 [profile.release]
 panic = "abort"
+lto = true
+codegen-units = 1
