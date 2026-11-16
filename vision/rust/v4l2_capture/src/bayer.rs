@@ -224,6 +224,9 @@ pub struct Buffers {
 /// At its own size, white balance by `gains`, then the tone, then
 /// interpolation: one lookup per sample instead of three per pixel,
 /// invisible between neighbours.
+///
+/// No channel's gain is below 1: a gain below 1 raises the other channels
+/// instead, so that clipped highlights stay white.
 pub fn develop(
     frame: &RawFrame,
     tone: &Tone,
@@ -233,18 +236,18 @@ pub fn develop(
     Buffers { bands }: &mut Buffers,
 ) -> Measures {
     let rotate_180 = conversion.rotate_180;
+    let least = gains.red.min(gains.blue).min(1.0);
+    let gains_q12 = [gains.red, 1.0, gains.blue].map(|gain| q12(gain / least));
     let sums = match conversion.output {
         Output::Full => {
-            let scaled_table = |gain: f64| -> Vec<u8> {
-                let gain_q12 = q12(gain);
+            let [red, green, blue] = gains_q12.map(|gain_q12| -> Vec<u8> {
                 (0..tone.table.len())
                     .map(|sample| tone.scaled(sample as u16, gain_q12))
                     .collect()
-            };
-            let (red, blue) = (scaled_table(gains.red), scaled_table(gains.blue));
+            });
             let tables = ChannelTables {
                 red: &red,
-                green: &tone.table,
+                green: &green,
                 blue: &blue,
             };
             images
@@ -258,14 +261,14 @@ pub fn develop(
                 conversion.threads,
                 bands,
                 |cells, image, demosaic| {
-                    let sums = measure(frame, tone, conversion, cells.clone(), &mut demosaic.cells);
+                    let rows = &mut demosaic.cells;
+                    let sums = measure(frame, tone, gains_q12[1], conversion, cells.clone(), rows);
                     full_band(frame, &tables, cells, image, demosaic);
                     sums
                 },
             )
         }
         Output::Half => {
-            let gains_q12 = (q12(gains.red), q12(gains.blue));
             images
                 .rgb
                 .resize(frame.width / 2 * frame.cell_row_count() * 3, 0);
@@ -278,7 +281,7 @@ pub fn develop(
                 bands,
                 |cells, image, demosaic| {
                     let rows = &mut demosaic.cells;
-                    let sums = measure(frame, tone, conversion, cells.clone(), rows);
+                    let sums = measure(frame, tone, gains_q12[1], conversion, cells.clone(), rows);
                     half_band(frame, tone, gains_q12, cells, image, rows);
                     sums
                 },
@@ -307,12 +310,12 @@ fn full_band(
 }
 
 /// Writes the rows of RGGB cells `cells` of `frame` into `image`, each cell
-/// one pixel, through `tone`, red and blue scaled by `gains_q12`, red's and
-/// blue's gains in 1/4096ths, first.
+/// one pixel, through `tone`, each channel scaled by `gains_q12`, red's,
+/// green's and blue's gains in 1/4096ths, first.
 fn half_band(
     frame: &RawFrame,
     tone: &Tone,
-    (red_q12, blue_q12): (u32, u32),
+    [red_q12, green_q12, blue_q12]: [u32; 3],
     cells: Range<usize>,
     mut image: Image,
     rows: &mut CellRows,
@@ -326,7 +329,7 @@ fn half_band(
             {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
                 pixel[0] = tone.scaled(top_pair[0], red_q12);
-                pixel[1] = tone.grey(green as u16);
+                pixel[1] = tone.scaled(green as u16, green_q12);
                 pixel[2] = tone.scaled(bottom_pair[1], blue_q12);
             }
         });
@@ -605,12 +608,13 @@ fn q12(gain: f64) -> u32 {
 
 /// What `conversion` asks to measure of every `conversion.row_step`-th row
 /// of RGGB cells of `frame` within `cells`: for auto exposure, each cell's
-/// two greens averaged through `tone`, as the half-size image has them; for
-/// white balance, each cell's red, greens and blue above `tone`'s black
-/// level.
+/// two greens averaged, scaled by `green_q12`, green's gain in 1/4096ths,
+/// and through `tone`, as the half-size image has them; for white balance,
+/// each cell's red, greens and blue above `tone`'s black level.
 fn measure(
     frame: &RawFrame,
     tone: &Tone,
+    green_q12: u32,
     conversion: &Conversion,
     cells: Range<usize>,
     rows: &mut CellRows,
@@ -620,7 +624,7 @@ fn measure(
         for (top_pair, bottom_pair) in top.chunks_exact(2).zip(bottom.chunks_exact(2)) {
             if conversion.green_mean {
                 let green = (u32::from(top_pair[1]) + u32::from(bottom_pair[0])) / 2;
-                sums.green += u64::from(tone.grey(green as u16));
+                sums.green += u64::from(tone.scaled(green as u16, green_q12));
             }
             if conversion.channel_means {
                 sums.channels[0] += signal(top_pair[0]);
@@ -940,12 +944,12 @@ pub(crate) mod tests {
         let tone = Tone::with_sample_bits(256, 1.0, 12);
         let gains = Gains {
             red: 2.0,
-            blue: 0.5,
+            blue: 1.5,
         };
         let grey = tone.grey(256 + 400);
         assert_eq!(
             rgb_half(&frame, &tone, gains, false),
-            [tone.grey(256 + 800), grey, tone.grey(256 + 200)]
+            [tone.grey(256 + 800), grey, tone.grey(256 + 600)]
         );
     }
 
@@ -964,6 +968,46 @@ pub(crate) mod tests {
             blue: 4.0,
         };
         assert_eq!(rgb_half(&frame, &linear_tone(), gains, false)[0], 255);
+    }
+
+    #[test]
+    fn clipped_highlights_stay_white_under_a_gain_below_one() {
+        let raw = padded_packed12(&[4095; 4 * 4], 4, 6);
+        let frame = RawFrame {
+            raw: &raw,
+            width: 4,
+            height: 4,
+            row_stride: 6,
+            layout: Layout::Packed12,
+        };
+        let tone = Tone::with_sample_bits(256, 2.2, 12);
+        let gains = Gains {
+            red: 0.5,
+            blue: 1.5,
+        };
+        assert_eq!(rgb_half(&frame, &tone, gains, false), [255; 2 * 2 * 3]);
+        assert_eq!(rgb_full(&frame, &tone, gains, false), [255; 4 * 4 * 3]);
+    }
+
+    #[test]
+    fn a_gain_below_one_raises_the_other_channels_instead() {
+        let raw = packed12(&[1000, 1000, 1000, 1000]);
+        let frame = RawFrame {
+            raw: &raw,
+            width: 2,
+            height: 2,
+            row_stride: 3,
+            layout: Layout::Packed12,
+        };
+        let gains = Gains {
+            red: 0.5,
+            blue: 1.0,
+        };
+        let tone = linear_tone();
+        assert_eq!(
+            rgb_half(&frame, &tone, gains, false),
+            [tone.grey(1000), tone.grey(2000), tone.grey(2000)]
+        );
     }
 
     // 8-bit samples through an 8-bit linear tone come out unchanged.
@@ -1043,11 +1087,11 @@ pub(crate) mod tests {
         };
         let gains = Gains {
             red: 2.0,
-            blue: 0.5,
+            blue: 1.5,
         };
         assert_eq!(
             rgb_full(&frame, &identity_tone(), gains, false),
-            [200, 100, 50].repeat(16)
+            [200, 100, 150].repeat(16)
         );
     }
 
