@@ -7,6 +7,7 @@
 
 pub mod imx477;
 
+use crate::sensor::SensorCrop;
 use crate::white_balance::Gains;
 
 /// The values of one sensor's tuning file for libcamera.
@@ -201,6 +202,47 @@ fn cell_corners(cells: &[f64], columns: usize, rows: usize) -> Vec<f64> {
 }
 
 impl LensShading {
+    /// The gains over `sensor_crop.crop` alone, on a grid of as many
+    /// vertices, each sampled bilinearly from these gains over its bounds,
+    /// the rectangle the tables cover.
+    pub fn cropped(&self, SensorCrop { crop, bounds }: &SensorCrop) -> LensShading {
+        let (cells_across, cells_down) = (self.columns - 1, self.rows - 1);
+        // The grid position of the crop's vertex `vertex` of `cells`, along one axis.
+        let position = |start: i32, length: u32, bound_start: i32, bound_length: u32| {
+            move |vertex: usize, cells: usize| {
+                let share = vertex as f64 / cells as f64;
+                let offset = f64::from(start - bound_start) + f64::from(length) * share;
+                (offset / f64::from(bound_length) * cells as f64).clamp(0.0, cells as f64)
+            }
+        };
+        let across = position(crop.left, crop.width, bounds.left, bounds.width);
+        let down = position(crop.top, crop.height, bounds.top, bounds.height);
+        let gains = self.gains.each_ref().map(|gains| {
+            let at = |row: usize, column: usize| gains[row * self.columns + column];
+            let mut cropped = Vec::with_capacity(gains.len());
+            for row in 0..self.rows {
+                let y = down(row, cells_down);
+                let above = y.floor().min(cells_down as f64 - 1.0);
+                let (above, y_weight) = (above as usize, y - above);
+                for column in 0..self.columns {
+                    let x = across(column, cells_across);
+                    let left = x.floor().min(cells_across as f64 - 1.0);
+                    let (left, x_weight) = (left as usize, x - left);
+                    let top = at(above, left) * (1.0 - x_weight) + at(above, left + 1) * x_weight;
+                    let bottom =
+                        at(above + 1, left) * (1.0 - x_weight) + at(above + 1, left + 1) * x_weight;
+                    cropped.push(top * (1.0 - y_weight) + bottom * y_weight);
+                }
+            }
+            cropped
+        });
+        LensShading {
+            columns: self.columns,
+            rows: self.rows,
+            gains,
+        }
+    }
+
     /// No shading: every gain 1, on a grid of one cell.
     #[cfg(test)]
     pub fn none() -> LensShading {
@@ -215,6 +257,7 @@ impl LensShading {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sensor::Rectangle;
 
     const TUNING: &Tuning = &imx477::TUNING;
 
@@ -292,6 +335,52 @@ mod tests {
             .map(|x| TUNING.contrast(f64::from(x)))
             .collect();
         assert!(outputs.windows(2).all(|pair| pair[0] <= pair[1]));
+    }
+
+    #[test]
+    fn lens_shading_cropped_to_its_bounds_is_unchanged() {
+        let shading = TUNING.lens_shading(4000.0);
+        let whole = Rectangle {
+            left: 8,
+            top: 16,
+            width: 4056,
+            height: 3040,
+        };
+        let cropped = shading.cropped(&SensorCrop {
+            crop: whole,
+            bounds: whole,
+        });
+        for (cropped, gains) in cropped.gains.iter().zip(&shading.gains) {
+            for (cropped, gain) in cropped.iter().zip(gains) {
+                assert!((cropped - gain).abs() < 1e-12, "{cropped} for {gain}");
+            }
+        }
+    }
+
+    #[test]
+    fn lens_shading_cropped_to_a_half_spreads_that_half_over_the_grid() {
+        // Each gain its vertex's column, on a grid of 4 cells across and 1 down.
+        let shading = LensShading {
+            columns: 5,
+            rows: 2,
+            gains: std::array::from_fn(|_| [0.0, 1.0, 2.0, 3.0, 4.0].repeat(2)),
+        };
+        let right_half = SensorCrop {
+            crop: Rectangle {
+                left: 400,
+                top: 0,
+                width: 400,
+                height: 100,
+            },
+            bounds: Rectangle {
+                left: 0,
+                top: 0,
+                width: 800,
+                height: 100,
+            },
+        };
+        let cropped = shading.cropped(&right_half);
+        assert_eq!(cropped.gains[0], [2.0, 2.5, 3.0, 3.5, 4.0].repeat(2));
     }
 
     #[test]

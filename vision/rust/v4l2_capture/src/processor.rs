@@ -7,7 +7,7 @@ use crate::arguments::Output;
 use crate::bands::{Conversion, Images, Measures};
 use crate::bayer::{self, RawFrame, Tone};
 use crate::colour::{self, Colour, ContrastTable};
-use crate::sensor::SensorModel;
+use crate::sensor::{SensorCrop, SensorModel};
 use crate::settings::ColourSettings;
 use crate::tuning::{LensShading, Tuning};
 use crate::white_balance::Gains;
@@ -59,7 +59,7 @@ pub struct Cpu {
 /// The conversion a sensor takes, with the buffers it converts through.
 enum ColourPath {
     Tuned {
-        tuned: TunedColour,
+        tuned: Box<TunedColour>,
         buffers: colour::Buffers,
     },
     Gamma {
@@ -68,10 +68,12 @@ enum ColourPath {
 }
 
 impl Cpu {
-    pub fn new(model: SensorModel, output: Output) -> Cpu {
+    /// The conversion of a `model` sensor's frames, read from `sensor_crop`
+    /// when the sensor reports it.
+    pub fn new(model: SensorModel, output: Output, sensor_crop: Option<SensorCrop>) -> Cpu {
         let path = match model.tuning() {
             Some(tuning) => ColourPath::Tuned {
-                tuned: TunedColour::new(tuning),
+                tuned: Box::new(TunedColour::new(tuning, sensor_crop)),
                 buffers: colour::Buffers::default(),
             },
             None => ColourPath::Gamma {
@@ -123,11 +125,13 @@ impl Processor for Cpu {
     }
 }
 
-/// A sensor's tuning, the table of its contrast curve, and what it gives at the white
-/// balance gains of the last frame.
+/// A sensor's tuning, the table of its contrast curve, where its frames are
+/// read from when it reports it, and what it gives at the white balance
+/// gains of the last frame.
 pub struct TunedColour {
     pub tuning: &'static Tuning,
     contrast: ContrastTable,
+    sensor_crop: Option<SensorCrop>,
     at_gains: Option<AtGains>,
 }
 
@@ -139,19 +143,21 @@ struct AtGains {
 }
 
 impl TunedColour {
-    pub fn new(tuning: &'static Tuning) -> TunedColour {
+    pub fn new(tuning: &'static Tuning, sensor_crop: Option<SensorCrop>) -> TunedColour {
         TunedColour {
             tuning,
             contrast: ContrastTable::new(tuning),
+            sensor_crop,
             at_gains: None,
         }
     }
 }
 
 /// `raw` through `tuned`'s colour path as `conversion` asks, into `images`
-/// through `buffers`, at the colour temperature of `gains`, with the colour
-/// correction matrix and the chroma denoise as `settings` switch them.
-/// `tuned` keeps what the tuning gives at `gains` for the next frame's.
+/// through `buffers`, at the colour temperature of `gains`, the lens shading
+/// cropped to where the sensor reads, with the colour correction matrix and
+/// the chroma denoise as `settings` switch them. `tuned` keeps what the
+/// tuning gives at `gains` for the next frame's.
 pub fn develop_tuned(
     raw: &RawFrame,
     conversion: &Conversion,
@@ -161,13 +167,17 @@ pub fn develop_tuned(
     images: Images,
     buffers: &mut colour::Buffers,
 ) -> Measures {
-    let tuning = tuned.tuning;
+    let (tuning, sensor_crop) = (tuned.tuning, tuned.sensor_crop);
     let kept = tuned.at_gains.take().filter(|kept| kept.gains == gains);
     let at_gains = tuned.at_gains.insert(kept.unwrap_or_else(|| {
         let kelvin = tuning.colour_temperature(gains);
+        let shading = tuning.lens_shading(kelvin);
         AtGains {
             gains,
-            shading: tuning.lens_shading(kelvin),
+            shading: match sensor_crop {
+                Some(sensor_crop) => shading.cropped(&sensor_crop),
+                None => shading,
+            },
             matrix: tuning.colour_matrix(kelvin),
         }
     }));
@@ -196,6 +206,7 @@ pub(crate) mod tests {
     use crate::bayer::Layout;
     use crate::nv12::{self, Nv12Layout};
     use crate::scale;
+    use crate::sensor::Rectangle;
     use crate::tuning::imx477;
     use crate::white_balance;
 
@@ -248,7 +259,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_frame_converts_to_the_same_image_and_measures_on_any_number_of_threads() {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -355,7 +366,7 @@ pub(crate) mod tests {
             threads: 1,
         };
         let settings = ColourSettings::for_sensor(SensorModel::Imx477);
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let mut buffers = colour::Buffers::default();
         let mut gains = settings.gains();
         let mut kept = Vec::new();
@@ -393,6 +404,76 @@ pub(crate) mod tests {
 
         // Computed at the settings' gains, then at the scene's, then kept.
         assert_eq!(kept, [false, false, true, true, true, true]);
+    }
+
+    #[test]
+    fn a_cropped_sensor_develops_through_the_lens_shading_of_its_crop() {
+        let (width, height) = (24, 46);
+        let stride = width * 3 / 2 + 6;
+        let raw = padded_packed12(&samples(width, height), width, stride);
+        let frame = RawFrame {
+            raw: &raw,
+            width,
+            height,
+            row_stride: stride,
+            layout: Layout::Packed12,
+        };
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: false,
+            green_mean: false,
+            row_step: MEASURED_ROW_STEP,
+            threads: 1,
+        };
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
+        let bounds = Rectangle {
+            left: 8,
+            top: 16,
+            width: 4056,
+            height: 3040,
+        };
+        let centre = Rectangle {
+            left: 1048,
+            top: 976,
+            width: 2028,
+            height: 1080,
+        };
+        let developed = |sensor_crop| {
+            let mut rgb = Vec::new();
+            let images = Images {
+                rgb: &mut rgb,
+                averaged: None,
+                nv12: None,
+            };
+            let gains = Gains {
+                red: 2.1,
+                blue: 1.6,
+            };
+            let mut tuned = TunedColour::new(&imx477::TUNING, sensor_crop);
+            let mut buffers = colour::Buffers::default();
+            develop_tuned(
+                &frame,
+                &conversion,
+                &settings,
+                gains,
+                &mut tuned,
+                images,
+                &mut buffers,
+            );
+            rgb
+        };
+        let whole = Some(SensorCrop {
+            crop: bounds,
+            bounds,
+        });
+        let cropped = Some(SensorCrop {
+            crop: centre,
+            bounds,
+        });
+
+        assert!(developed(whole) == developed(None));
+        assert!(developed(cropped) != developed(None));
     }
 
     #[test]
@@ -436,8 +517,8 @@ pub(crate) mod tests {
             );
             outcome(&rgb, measures)
         };
-        let fresh = |red, blue| developed(&mut TunedColour::new(&imx477::TUNING), red, blue);
-        let mut kept = TunedColour::new(&imx477::TUNING);
+        let fresh = |red, blue| developed(&mut TunedColour::new(&imx477::TUNING, None), red, blue);
+        let mut kept = TunedColour::new(&imx477::TUNING, None);
         for (red, blue) in [(2.1, 1.6), (2.1, 1.6), (1.4, 2.3), (1.4, 1.6), (2.1, 1.6)] {
             assert!(
                 developed(&mut kept, red, blue) == fresh(red, blue),
@@ -449,7 +530,7 @@ pub(crate) mod tests {
 
     #[test]
     fn a_frame_converted_on_several_threads_is_the_one_converted_on_one() {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,
@@ -539,7 +620,7 @@ pub(crate) mod tests {
         images: Images,
         (buffers, fallback): &mut (colour::Buffers, bayer::Buffers),
     ) -> Measures {
-        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut tuned = TunedColour::new(&imx477::TUNING, None);
         let tone = Tone::with_sample_bits(256, 2.2, 12);
         let gains = Gains {
             red: 2.1,

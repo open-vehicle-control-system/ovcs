@@ -20,7 +20,7 @@ use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
 use crate::processor::Development;
-use crate::sensor::{self, SensorModel};
+use crate::sensor::{self, SensorCrop, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
@@ -99,6 +99,7 @@ pub fn run(
     let setup = Setup {
         outputs: arguments.outputs.clone(),
         model,
+        sensor_crop,
         frame_us,
         settings,
         statistics_every: Duration::from_secs(STATISTICS_EVERY_S),
@@ -238,6 +239,8 @@ impl Records for Writer {
 struct Setup {
     outputs: Vec<OutputSpec>,
     model: SensorModel,
+    /// Where the sensor reads its frames from, when it reports it.
+    sensor_crop: Option<SensorCrop>,
     /// A frame's period.
     frame_us: f64,
     settings: ColourSettings,
@@ -263,7 +266,7 @@ fn capture(
 ) -> io::Result<()> {
     let encoders = std::mem::take(&mut setup.encoders);
     let layouts: Vec<_> = encoders.iter().map(|encoder| encoder.layout()).collect();
-    let plan = Plan::new(&setup.outputs, setup.model, &layouts);
+    let plan = Plan::new(&setup.outputs, setup.model, setup.sensor_crop, &layouts);
     let jpeg_outputs = plan.jpeg_outputs();
     let mut video_outputs: Vec<(usize, Box<dyn Encoder>)> =
         plan.h264_outputs().into_iter().zip(encoders).collect();
@@ -889,6 +892,7 @@ mod tests {
         let setup = Setup {
             outputs: outputs.to_vec(),
             model: SensorModel::Imx477,
+            sensor_crop: None,
             frame_us: 28_571.0,
             settings: ColourSettings::for_sensor(SensorModel::Imx477),
             statistics_every,
@@ -1234,6 +1238,7 @@ mod tests {
         let setup = Setup {
             outputs: vec![FULL],
             model: SensorModel::Imx708,
+            sensor_crop: None,
             frame_us: 33_333.0,
             settings: ColourSettings::for_sensor(SensorModel::Imx708),
             statistics_every: Duration::from_secs(3_600),

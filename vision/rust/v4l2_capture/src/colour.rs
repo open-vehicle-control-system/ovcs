@@ -822,6 +822,7 @@ mod tests {
     use super::*;
     use crate::bayer::tests::padded_packed12;
     use crate::bayer::Layout;
+    use crate::sensor::{Rectangle, SensorCrop};
     use crate::tuning::imx477;
     use crate::white_balance;
 
@@ -924,6 +925,53 @@ mod tests {
                 assert!((200..=225).contains(least), "{pixel:?}");
             }
         }
+    }
+
+    #[test]
+    fn a_cropped_modes_grey_scene_comes_out_grey_through_the_lens_shading_of_its_crop() {
+        let (sensor_width, sensor_height) = (64, 48);
+        let crop = Rectangle {
+            left: 16,
+            top: 12,
+            width: 32,
+            height: 24,
+        };
+        let light = Gains {
+            red: 1.0 / 0.3031,
+            blue: 1.0 / 0.6573,
+        };
+        let lens = TUNING.lens_shading(4559.0);
+        let scene = grey_scene(2400.0, &lens, light, sensor_width, sensor_height);
+        let cropped: Vec<u16> = (scene.chunks_exact(sensor_width))
+            .skip(crop.top as usize)
+            .take(crop.height as usize)
+            .flat_map(|row| &row[crop.left as usize..][..crop.width as usize])
+            .copied()
+            .collect();
+        let (width, height) = (crop.width as usize, crop.height as usize);
+        let raw = packed(&cropped, width);
+        let shading = lens.cropped(&SensorCrop {
+            crop,
+            bounds: Rectangle {
+                left: 0,
+                top: 0,
+                width: sensor_width as u32,
+                height: sensor_height as u32,
+            },
+        });
+        let contrast = ContrastTable::new(TUNING);
+        let colour = Colour {
+            black_level: BLACK,
+            shading: &shading,
+            white_balance: light,
+            matrix: TUNING.colour_matrix(4559.0),
+            contrast: &contrast,
+            denoise: false,
+        };
+
+        let rgb = full(&frame(&raw, width, height), &colour, false);
+        let (least, most) = (rgb.iter().min().unwrap(), rgb.iter().max().unwrap());
+        assert!(most - least <= 1, "{least} to {most}");
     }
 
     #[test]
