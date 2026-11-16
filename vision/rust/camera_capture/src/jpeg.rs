@@ -60,6 +60,8 @@ const TJSAMP_420: c_int = 2;
 const TJFLAG_NOREALLOC: c_int = 1024;
 const TJFLAG_FASTDCT: c_int = 2048;
 
+// TurboJPEG's C API rather than the turbojpeg crate: tjCompressFromYUVPlanes takes each
+// plane from its own pointer and stride, so a frame is encoded straight from its mapping.
 extern "C" {
     fn tjInitCompress() -> TjHandle;
     fn tjDestroy(handle: TjHandle) -> c_int;
