@@ -15,6 +15,8 @@ mod full_range;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod grey;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod layout;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod schedule;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod streams;

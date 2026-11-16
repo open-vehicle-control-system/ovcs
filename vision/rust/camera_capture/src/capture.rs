@@ -37,7 +37,8 @@ use libcamera::stream::{Stream, StreamRole};
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
 use crate::full_range::{self, chroma_size, Expansion, Range};
-use crate::grey::{luma_length, pack_luma};
+use crate::grey::pack_luma;
+use crate::layout;
 use crate::log;
 use crate::schedule::Schedule;
 use crate::streams::{self, Role};
@@ -533,11 +534,7 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
                 .map_err(|message| format!("tjCompressFromYUVPlanes: {message}")),
             Output::Grey(grey) => {
                 let (columns, rows) = (output_width as usize, output_height as usize);
-                // SAFETY: the Y plane is mapped for `height` rows `y_stride` apart.
-                let luma = unsafe {
-                    std::slice::from_raw_parts(view.planes[0], luma_length(columns, rows, y_stride))
-                };
-                pack_luma(grey, luma, columns, rows, y_stride);
+                pack_luma(grey, view.plane(0), columns, rows, y_stride);
                 Ok((
                     grey_frame_header(width, height, capture_ns).to_vec(),
                     &grey[..],
@@ -773,7 +770,7 @@ fn map_view(
     }
     let plane = |plane_index: usize| {
         let plane = planes.get(plane_index).expect("plane in range");
-        (plane.fd(), plane.offset().unwrap_or(0), plane.len())
+        (plane.fd(), plane.offset().unwrap_or(0))
     };
     let mut sync_fds = Vec::new();
     let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
@@ -781,21 +778,29 @@ fn map_view(
             sync_fds.push(fd);
         }
         (mapper.map_plane(fd, offset, length))
-            .map_err(|map_error| format!("mmap(fd={fd}) failed: {map_error}"))
+            .map_err(|map_error| format!("mapping a plane of fd {fd} failed: {map_error}"))
     };
+    let (width, height) = (stream.size.width as usize, stream.size.height as usize);
+    let lengths = layout::plane_lengths(width, height, y_stride);
     let (y, u, v) = if planes.len() >= 3 {
-        (map(plane(0))?, map(plane(1))?, map(plane(2))?)
+        let mut map_read = |plane_index: usize| {
+            let (fd, offset) = plane(plane_index);
+            map((fd, offset, lengths[plane_index]))
+        };
+        (map_read(0)?, map_read(1)?, map_read(2)?)
     } else {
         // Single-plane dmabuf: Y, U and V at known offsets within it.
-        let y_size = y_stride * stream.size.height as usize;
-        let uv_size = uv_stride * (stream.size.height as usize / 2);
-        let (fd, offset, _) = plane(0);
-        let base = map((fd, offset, y_size + 2 * uv_size))?;
-        // SAFETY: the mapping covers y_size + 2 * uv_size bytes from base.
+        let y_size = y_stride * height;
+        let uv_size = uv_stride * (height / 2);
+        let (fd, offset) = plane(0);
+        let base = map((fd, offset, y_size + uv_size + lengths[2]))?;
+        // SAFETY: map_plane checked that the mapping holds y_size + uv_size + lengths[2] bytes
+        // from base, which covers the U and V planes read from these offsets.
         unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) }
     };
     Ok(YuvView {
         planes: [y, u, v],
+        lengths,
         strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
         sync_fds,
     })
@@ -871,9 +876,11 @@ struct FdMapper {
 }
 
 impl FdMapper {
+    /// The start of `length` bytes at `offset` in the dmabuf `fd`, refused when
+    /// its mapping does not hold them.
     fn map_plane(&mut self, fd: RawFd, offset: usize, length: usize) -> std::io::Result<*const u8> {
-        let base = match self.maps.get(&fd) {
-            Some((base, _)) => *base,
+        let (base, total) = match self.maps.get(&fd) {
+            Some(&mapping) => mapping,
             None => {
                 // The whole dmabuf, which is usually larger than one plane.
                 // SAFETY: fd is a dmabuf owned by the allocator, mapped read-only.
@@ -898,10 +905,16 @@ impl FdMapper {
                     return Err(std::io::Error::last_os_error());
                 }
                 self.maps.insert(fd, (base, total));
-                base
+                (base, total)
             }
         };
-        // SAFETY: offset lies within the mapping of this plane's dmabuf.
+        if !layout::holds(total, offset, length) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!("{length} bytes at {offset} overrun its {total}-byte mapping"),
+            ));
+        }
+        // SAFETY: the mapping holds `length` bytes from `offset`.
         Ok(unsafe { (base as *const u8).add(offset) })
     }
 }
@@ -924,8 +937,19 @@ enum Output {
 /// Plane pointers of one buffer, resolved once.
 struct YuvView {
     planes: [*const u8; 3],
+    /// The bytes map_view checked each plane's mapping holds.
+    lengths: [usize; 3],
     strides: [c_int; 3],
     sync_fds: Vec<RawFd>,
+}
+
+impl YuvView {
+    /// Plane `index`'s bytes, read between the dmabuf syncs.
+    fn plane(&self, index: usize) -> &[u8] {
+        // SAFETY: map_view checked the mapping holds `lengths[index]` bytes from
+        // `planes[index]`, and the FdMapper that keeps it mapped outlives every view.
+        unsafe { std::slice::from_raw_parts(self.planes[index], self.lengths[index]) }
+    }
 }
 
 /// The YUV420 planes and strides turbojpeg encodes.
@@ -968,14 +992,7 @@ impl JpegPlanes {
             (chroma_width, chroma_height),
             (chroma_width, chroma_height),
         ];
-        // SAFETY: each plane is mapped for its rows `stride` apart.
-        let planes: [&[u8]; 3] = std::array::from_fn(|plane| unsafe {
-            let (width, height) = sizes[plane];
-            std::slice::from_raw_parts(
-                view.planes[plane],
-                luma_length(width, height, strides[plane]),
-            )
-        });
+        let planes: [&[u8]; 3] = std::array::from_fn(|plane| view.plane(plane));
         let expanded = expansion.expand(planes, strides, self.width, self.height);
         YuvPlanes {
             planes: expanded.map(<[u8]>::as_ptr),
