@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn detections_record_matches_cpp_layout() {
+    fn detections_record_is_the_header_and_each_detection() {
         let detection = Detection {
             class_id: 0x0102,
             score: 0.5,
