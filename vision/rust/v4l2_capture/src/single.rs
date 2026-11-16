@@ -194,7 +194,7 @@ struct CameraFrames<'a> {
 
 impl Frames for CameraFrames<'_> {
     fn descriptor(&self) -> RawFd {
-        self.capture.node.fd
+        self.capture.node.as_raw_fd()
     }
 
     fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>> {

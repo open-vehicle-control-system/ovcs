@@ -227,8 +227,8 @@ fn run(
     let mut statistics_since = std::time::Instant::now();
     let mut input = input::unbuffered(io::stdin().as_fd())?;
     let mut poll_descriptors = [
-        pollfd(left.capture.node.fd),
-        pollfd(right.capture.node.fd),
+        pollfd(left.capture.node.as_raw_fd()),
+        pollfd(right.capture.node.as_raw_fd()),
         pollfd(input.as_raw_fd()),
     ];
     loop {

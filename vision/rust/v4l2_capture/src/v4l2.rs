@@ -3,6 +3,7 @@
 use std::ffi::CString;
 use std::fs;
 use std::io;
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::ptr;
 
 use crate::bayer::Layout;
@@ -347,7 +348,13 @@ pub fn node_named(name: &str) -> io::Result<String> {
 
 /// An open video or subdevice node, closed on drop.
 pub struct Node {
-    pub fd: i32,
+    fd: OwnedFd,
+}
+
+impl AsRawFd for Node {
+    fn as_raw_fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
+    }
 }
 
 impl Node {
@@ -359,6 +366,8 @@ impl Node {
         if fd < 0 {
             return Err(io::Error::last_os_error());
         }
+        // SAFETY: `open` just returned this descriptor, which nothing else owns.
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         Ok(Node { fd })
     }
 
@@ -366,7 +375,7 @@ impl Node {
     pub fn multiplanar(&self) -> io::Result<bool> {
         let mut capability: Capability = zeroed();
         // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
-        unsafe { xioctl(self.fd, VIDIOC_QUERYCAP, &mut capability) }?;
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_QUERYCAP, &mut capability) }?;
         let capabilities = if capability.capabilities & CAP_DEVICE_CAPS != 0 {
             capability.device_caps
         } else {
@@ -378,13 +387,13 @@ impl Node {
     pub fn control(&self, id: u32) -> io::Result<i32> {
         let mut control = Control { id, value: 0 };
         // SAFETY: VIDIOC_G_CTRL takes a Control, which holds no pointer.
-        unsafe { xioctl(self.fd, VIDIOC_G_CTRL, &mut control) }?;
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_G_CTRL, &mut control) }?;
         Ok(control.value)
     }
 
     pub fn set_control(&self, id: u32, value: i32) -> io::Result<()> {
         // SAFETY: VIDIOC_S_CTRL takes a Control, which holds no pointer.
-        unsafe { xioctl(self.fd, VIDIOC_S_CTRL, &mut Control { id, value }) }
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_S_CTRL, &mut Control { id, value }) }
     }
 
     /// `(minimum, maximum)` of a control.
@@ -392,7 +401,7 @@ impl Node {
         let mut query: QueryControl = zeroed();
         query.id = id;
         // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
-        unsafe { xioctl(self.fd, VIDIOC_QUERYCTRL, &mut query) }?;
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_QUERYCTRL, &mut query) }?;
         Ok((query.minimum, query.maximum))
     }
 
@@ -414,15 +423,8 @@ impl Node {
         };
         // SAFETY: VIDIOC_G_EXT_CTRLS takes ExtControls, whose `controls` points
         // at the `count` ExtControl in `control`, alive across the call.
-        unsafe { xioctl(self.fd, VIDIOC_G_EXT_CTRLS, &mut controls) }?;
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_G_EXT_CTRLS, &mut controls) }?;
         Ok(control.value64)
-    }
-}
-
-impl Drop for Node {
-    fn drop(&mut self) {
-        // SAFETY: the fd is owned by this node.
-        unsafe { libc::close(self.fd) };
     }
 }
 
@@ -521,7 +523,7 @@ fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
         description.index = offered.len() as u32;
         description.kind = kind;
         // SAFETY: VIDIOC_ENUM_FMT takes a FormatDescription, which holds no pointer.
-        match unsafe { xioctl(node.fd, VIDIOC_ENUM_FMT, &mut description) } {
+        match unsafe { xioctl(node.as_raw_fd(), VIDIOC_ENUM_FMT, &mut description) } {
             Ok(()) => offered.push(description.pixelformat),
             Err(error) if error.raw_os_error() == Some(libc::EINVAL) => return Ok(offered),
             Err(error) => return Err(error),
@@ -547,7 +549,7 @@ fn set_format(
         format.pix.num_planes = 1;
         // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
         // multiplanar member holds no pointer.
-        unsafe { xioctl(node.fd, VIDIOC_S_FMT, &mut format) }?;
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok((
             pix.width,
@@ -563,7 +565,7 @@ fn set_format(
         format.pix.pixelformat = pixelformat;
         // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as Format, whose
         // single-plane member holds no pointer.
-        unsafe { xioctl(node.fd, VIDIOC_S_FMT, &mut format) }?;
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok((pix.width, pix.height, pix.pixelformat, pix.bytesperline))
     }
@@ -624,7 +626,7 @@ impl Capture {
             _reserved: [0; 3],
         };
         // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
-        unsafe { xioctl(node.fd, VIDIOC_REQBUFS, &mut request) }?;
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_REQBUFS, &mut request) }?;
 
         let mut capture = Capture {
             node,
@@ -648,7 +650,7 @@ impl Capture {
                     length as usize,
                     libc::PROT_READ,
                     libc::MAP_SHARED,
-                    capture.node.fd,
+                    capture.node.as_raw_fd(),
                     offset as libc::off_t,
                 )
             };
@@ -660,7 +662,7 @@ impl Capture {
         }
         let mut stream_kind = kind as i32;
         // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
-        unsafe { xioctl(capture.node.fd, VIDIOC_STREAMON, &mut stream_kind) }?;
+        unsafe { xioctl(capture.node.as_raw_fd(), VIDIOC_STREAMON, &mut stream_kind) }?;
         Ok(capture)
     }
 
@@ -679,7 +681,7 @@ impl Capture {
         debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
         // SAFETY: the buffer ioctls take a Buffer, whose planes, on a multiplanar
         // node, are the one `plane` alive across the call.
-        unsafe { xioctl(self.node.fd, request, &mut buffer) }?;
+        unsafe { xioctl(self.node.as_raw_fd(), request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 
@@ -769,7 +771,7 @@ impl M2mNode {
         let node = Node::open(&node_named(name)?)?;
         let mut capability: Capability = zeroed();
         // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
-        unsafe { xioctl(node.fd, VIDIOC_QUERYCAP, &mut capability) }?;
+        unsafe { xioctl(node.as_raw_fd(), VIDIOC_QUERYCAP, &mut capability) }?;
         if capability.device_caps & CAP_VIDEO_M2M_MPLANE == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -803,7 +805,7 @@ impl M2mNode {
         debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
         // SAFETY: the buffer ioctls take a Buffer, whose planes are the one
         // `plane` alive across the call.
-        unsafe { xioctl(self.node.fd, request, &mut buffer) }?;
+        unsafe { xioctl(self.node.as_raw_fd(), request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 }
@@ -830,7 +832,7 @@ impl M2mDevice for M2mNode {
         }
         // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
         // multiplanar member holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_S_FMT, &mut format) }?;
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok(BufferFormat {
             width: pix.width,
@@ -847,7 +849,7 @@ impl M2mDevice for M2mNode {
         selection.width = width;
         selection.height = height;
         // SAFETY: VIDIOC_S_SELECTION takes a Selection, which holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_S_SELECTION, &mut selection) }?;
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_SELECTION, &mut selection) }?;
         Ok((selection.width, selection.height))
     }
 
@@ -858,14 +860,14 @@ impl M2mDevice for M2mNode {
         parameters.denominator = fps;
         // SAFETY: VIDIOC_S_PARM takes a v4l2_streamparm, as large as OutputParameters,
         // whose output member holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_S_PARM, &mut parameters) }
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_S_PARM, &mut parameters) }
     }
 
     fn has_control(&self, id: u32) -> bool {
         let mut query: QueryControl = zeroed();
         query.id = id;
         // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_QUERYCTRL, &mut query) }.is_ok()
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_QUERYCTRL, &mut query) }.is_ok()
             && query.flags & CTRL_FLAG_DISABLED == 0
     }
 
@@ -883,7 +885,7 @@ impl M2mDevice for M2mNode {
             _reserved: [0; 3],
         };
         // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_REQBUFS, &mut request) }?;
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_REQBUFS, &mut request) }?;
         let protection = match stream {
             Stream::Raw => libc::PROT_READ | libc::PROT_WRITE,
             Stream::Coded => libc::PROT_READ,
@@ -898,7 +900,7 @@ impl M2mDevice for M2mNode {
                     plane.length as usize,
                     protection,
                     libc::MAP_SHARED,
-                    self.node.fd,
+                    self.node.as_raw_fd(),
                     plane.mem_offset as libc::off_t,
                 )
             };
@@ -968,7 +970,7 @@ impl M2mDevice for M2mNode {
 
     fn wait(&mut self, stream: Stream, timeout: std::time::Duration) -> io::Result<()> {
         let mut polled = libc::pollfd {
-            fd: self.node.fd,
+            fd: self.node.as_raw_fd(),
             events: match stream {
                 Stream::Raw => libc::POLLOUT,
                 Stream::Coded => libc::POLLIN,
@@ -992,20 +994,20 @@ impl M2mDevice for M2mNode {
     fn stream_on(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
         // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
-        unsafe { xioctl(self.node.fd, VIDIOC_STREAMON, &mut kind) }
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_STREAMON, &mut kind) }
     }
 
     fn stream_off(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
         // SAFETY: VIDIOC_STREAMOFF takes the buffer type as an int.
-        unsafe { xioctl(self.node.fd, VIDIOC_STREAMOFF, &mut kind) }
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_STREAMOFF, &mut kind) }
     }
 
     fn stop_encoding(&mut self) -> io::Result<()> {
         let mut command: EncoderCommand = zeroed();
         command.command = ENC_CMD_STOP;
         // SAFETY: VIDIOC_ENCODER_CMD takes an EncoderCommand, which holds no pointer.
-        unsafe { xioctl(self.node.fd, VIDIOC_ENCODER_CMD, &mut command) }
+        unsafe { xioctl(self.node.as_raw_fd(), VIDIOC_ENCODER_CMD, &mut command) }
     }
 }
 
