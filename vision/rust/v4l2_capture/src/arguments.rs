@@ -157,11 +157,11 @@ const PAIR_FLAGS: [&str; 6] = [
 
 /// Parses the arguments after the program name: a single camera's when they
 /// name its nodes (`--video`, `--sensor`, see `parse_single`), the pair's
-/// otherwise (see `parse`). The error is the message to log.
+/// otherwise (see `parse_pair`). The error is the message to log.
 pub fn parse_command(arguments: &[String]) -> Result<Command, String> {
     let flags: Vec<&str> = arguments.iter().step_by(2).map(String::as_str).collect();
     if !flags.iter().any(|flag| SINGLE_FLAGS.contains(flag)) {
-        return parse(arguments).map(Command::Pair);
+        return parse_pair(arguments).map(Command::Pair);
     }
     match flags.iter().find(|flag| PAIR_FLAGS.contains(flag)) {
         Some(flag) => Err(format!(
@@ -367,7 +367,7 @@ fn h264(bitrate: &str, interval: &str) -> Result<Format, String> {
 /// Parses the arguments after the program name: the size and rate, each
 /// side's nodes, then any setting as `--name value`, with dashes for
 /// underscores. The error is the message to log.
-pub fn parse(arguments: &[String]) -> Result<PairArguments, String> {
+pub fn parse_pair(arguments: &[String]) -> Result<PairArguments, String> {
     let (mut width, mut height, mut fps) = (None, None, None);
     let (mut left_node, mut left_subdevice) = (None, None);
     let (mut right_node, mut right_subdevice) = (None, None);
@@ -464,7 +464,7 @@ mod tests {
 
     #[test]
     fn parses_the_size_the_nodes_and_the_settings() {
-        let arguments = parse(&command_line(&["--black-level", "60"])).unwrap();
+        let arguments = parse_pair(&command_line(&["--black-level", "60"])).unwrap();
         assert_eq!(
             (arguments.width, arguments.height, arguments.fps),
             (768, 432, 30)
@@ -486,7 +486,7 @@ mod tests {
         let refused = Err("--fps: at least 1 frame a second, got 0".to_string());
         let mut pair = command_line(&[]);
         pair[5] = "0".to_string();
-        assert_eq!(parse(&pair).map(|_| ()), refused);
+        assert_eq!(parse_pair(&pair).map(|_| ()), refused);
         let mut single = single_command_line(&[]);
         single[9] = "0".to_string();
         assert_eq!(parse_single(&single).map(|_| ()), refused);
@@ -501,7 +501,7 @@ mod tests {
         };
         let mut pair = command_line(&[]);
         pair[13] = "imx219 10-0010".to_string();
-        assert_eq!(parse(&pair).map(|_| ()), refused("--right-sensor"));
+        assert_eq!(parse_pair(&pair).map(|_| ()), refused("--right-sensor"));
         let mut single = single_command_line(&[]);
         single[3] = "imx219 10-0010".to_string();
         assert_eq!(parse_single(&single).map(|_| ()), refused("--sensor"));
@@ -511,7 +511,10 @@ mod tests {
     fn every_node_is_required() {
         let mut arguments = command_line(&[]);
         arguments.drain(8..10);
-        assert_eq!(parse(&arguments), Err("missing --left-sensor".to_string()));
+        assert_eq!(
+            parse_pair(&arguments),
+            Err("missing --left-sensor".to_string())
+        );
     }
 
     fn single_command_line(extra: &[&str]) -> Vec<String> {
@@ -594,7 +597,7 @@ mod tests {
         let command_line = command_line(&["--black-level", "60"]);
         assert_eq!(
             parse_command(&command_line),
-            Ok(Command::Pair(parse(&command_line).unwrap()))
+            Ok(Command::Pair(parse_pair(&command_line).unwrap()))
         );
     }
 
