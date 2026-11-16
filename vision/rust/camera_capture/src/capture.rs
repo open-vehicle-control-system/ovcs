@@ -781,7 +781,8 @@ fn map_view(
             .map_err(|map_error| format!("mapping a plane of fd {fd} failed: {map_error}"))
     };
     let (width, height) = (stream.size.width as usize, stream.size.height as usize);
-    let lengths = layout::plane_lengths(width, height, y_stride);
+    let strides = [y_stride, uv_stride, uv_stride];
+    let lengths = layout::plane_lengths(width, height, strides);
     let (y, u, v) = if planes.len() >= 3 {
         let mut map_read = |plane_index: usize| {
             let (fd, offset) = plane(plane_index);
@@ -801,7 +802,7 @@ fn map_view(
     Ok(YuvView {
         planes: [y, u, v],
         lengths,
-        strides: [y_stride as c_int, uv_stride as c_int, uv_stride as c_int],
+        strides,
         sync_fds,
     })
 }
@@ -939,7 +940,7 @@ struct YuvView {
     planes: [*const u8; 3],
     /// The bytes map_view checked each plane's mapping holds.
     lengths: [usize; 3],
-    strides: [c_int; 3],
+    strides: [usize; 3],
     sync_fds: Vec<RawFd>,
 }
 
@@ -954,9 +955,9 @@ impl YuvView {
 
 /// The YUV420 planes and strides turbojpeg encodes.
 #[derive(Clone, Copy)]
-struct YuvPlanes {
-    planes: [*const u8; 3],
-    strides: [c_int; 3],
+struct YuvPlanes<'a> {
+    planes: [&'a [u8]; 3],
+    strides: [usize; 3],
 }
 
 /// A stream's frames as its JPEGs are encoded from: as captured, or expanded
@@ -976,27 +977,25 @@ impl JpegPlanes {
         }
     }
 
-    /// `view`'s planes, read between the dmabuf syncs; expanded ones stay valid
-    /// until the next call.
-    fn of(&mut self, view: &YuvView) -> YuvPlanes {
+    /// `view`'s planes, read between the dmabuf syncs.
+    fn of<'a>(&'a mut self, view: &'a YuvView) -> YuvPlanes<'a> {
         let Some(expansion) = &mut self.expansion else {
             return YuvPlanes {
-                planes: view.planes,
+                planes: std::array::from_fn(|plane| view.plane(plane)),
                 strides: view.strides,
             };
         };
         let (chroma_width, chroma_height) = chroma_size(self.width, self.height);
-        let strides = view.strides.map(|stride| stride as usize);
         let sizes = [
             (self.width, self.height),
             (chroma_width, chroma_height),
             (chroma_width, chroma_height),
         ];
         let planes: [&[u8]; 3] = std::array::from_fn(|plane| view.plane(plane));
-        let expanded = expansion.expand(planes, strides, self.width, self.height);
+        let expanded = expansion.expand(planes, view.strides, self.width, self.height);
         YuvPlanes {
-            planes: expanded.map(<[u8]>::as_ptr),
-            strides: sizes.map(|(width, _)| width as c_int),
+            planes: expanded,
+            strides: sizes.map(|(width, _)| width),
         }
     }
 }
@@ -1056,7 +1055,9 @@ struct JpegEncoder {
 impl JpegEncoder {
     /// At `quality`, 1 to 100; the chroma stays the YUV420 frame's 4:2:0.
     fn new(width: u32, height: u32, quality: c_int) -> Result<JpegEncoder, String> {
-        let (width, height) = (width as c_int, height as c_int);
+        let (Ok(width), Ok(height)) = (c_int::try_from(width), c_int::try_from(height)) else {
+            return Err(format!("no JPEG of {width}x{height}"));
+        };
         // SAFETY: TurboJPEG C API; the handle and buffer are freed in Drop.
         unsafe {
             let handle = tjInitCompress();
@@ -1080,16 +1081,31 @@ impl JpegEncoder {
         }
     }
 
+    /// Refuses planes shorter than this encoder's frame size takes at their strides.
     fn encode(&mut self, yuv: YuvPlanes) -> Result<&[u8], String> {
-        let mut planes = yuv.planes;
+        let (width, height) = (self.width as usize, self.height as usize);
+        let lengths = layout::plane_lengths(width, height, yuv.strides);
+        if (yuv.planes.iter().zip(lengths)).any(|(plane, length)| plane.len() < length) {
+            return Err(format!(
+                "planes of {:?} bytes {:?} apart are no {width}x{height} frame",
+                yuv.planes.map(<[u8]>::len),
+                yuv.strides
+            ));
+        }
+        let strides = match yuv.strides.map(c_int::try_from) {
+            [Ok(y_stride), Ok(u_stride), Ok(v_stride)] => [y_stride, u_stride, v_stride],
+            _ => return Err(format!("strides {:?} past a C int", yuv.strides)),
+        };
+        let mut planes = yuv.planes.map(<[u8]>::as_ptr);
         let mut size = self.capacity;
-        // SAFETY: the planes hold this frame size; NOREALLOC keeps the buffer.
+        // SAFETY: each plane holds its rows of this frame size at its stride, checked above;
+        // NOREALLOC keeps the buffer.
         unsafe {
             let status = tjCompressFromYUVPlanes(
                 self.handle,
                 planes.as_mut_ptr(),
                 self.width,
-                yuv.strides.as_ptr(),
+                strides.as_ptr(),
                 self.height,
                 TJSAMP_420,
                 &mut self.buffer,
