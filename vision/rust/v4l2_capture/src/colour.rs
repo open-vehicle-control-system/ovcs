@@ -128,17 +128,17 @@ pub fn develop(
     images: Images,
     Buffers { bands }: &mut Buffers,
 ) -> Measures {
-    let (width, cell) = match conversion.output {
+    let (width, cell_size) = match conversion.output {
         Output::Full => (frame.width, 2),
         Output::Half => (frame.width / 2, 1),
     };
     images
         .rgb
-        .resize(width * frame.cell_row_count() * cell * 3, 0);
+        .resize(width * frame.cell_row_count() * cell_size * 3, 0);
     let sums = bands::convert(
         images,
         width,
-        cell,
+        cell_size,
         conversion.rotate_180,
         conversion.threads,
         bands,
@@ -390,7 +390,7 @@ struct Denoise<'a> {
 }
 
 /// With `colour.denoise`, the chroma denoise of the rows of cells `cells` of
-/// an image of `cell_rows` rows of cells of `size` by `size` pixels, `width`
+/// an image of `cell_rows` rows of cells of `cell_size` by `cell_size` pixels, `width`
 /// pixels wide, in `matrixed` and `chroma`. Returns it, and the rows of
 /// pixels to hand it (`ChromaDenoise::start`), or without it those of
 /// `cells`.
@@ -399,15 +399,15 @@ fn denoise<'a>(
     matrixed: &'a mut Vec<i32>,
     chroma: &'a mut ChromaDenoise,
     width: usize,
-    size: usize,
+    cell_size: usize,
     cell_rows: usize,
     cells: Range<usize>,
 ) -> (Option<Denoise<'a>>, Range<usize>) {
     if !colour.denoise {
-        return (None, size * cells.start..size * cells.end);
+        return (None, cell_size * cells.start..cell_size * cells.end);
     }
     matrixed.resize(width * 3, 0);
-    let rows = chroma.start(width, size, cell_rows, cells);
+    let rows = chroma.start(width, cell_size, cell_rows, cells);
     (Some(Denoise { matrixed, chroma }), rows)
 }
 

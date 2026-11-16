@@ -8,7 +8,7 @@ const LUMA_SHIFT: u32 = 10;
 
 /// Blurs the chroma of rows of pixels' linear red, green and blue and keeps
 /// each pixel's luma. The chroma, red less green and blue less green, is
-/// averaged over cells of `size` by `size` pixels, then blurred over cells
+/// averaged over cells of `cell_size` by `cell_size` pixels, then blurred over cells
 /// by 1-4-6-4-1 across and down, the edge cells standing in for those
 /// beyond; each pixel then takes its cell's chroma around its own luma.
 /// Cb and Cr are linear in red and blue less green once luma is kept, so
@@ -16,7 +16,7 @@ const LUMA_SHIFT: u32 = 10;
 #[derive(Default)]
 pub(super) struct ChromaDenoise {
     width: usize,
-    size: usize,
+    cell_size: usize,
     cell_rows: usize,
     /// The next cell row to hand out, and the one after the last.
     next: usize,
@@ -39,21 +39,21 @@ pub(super) struct ChromaDenoise {
 
 impl ChromaDenoise {
     /// Starts the cell rows `band` of an image of `cell_rows` rows of
-    /// cells of `size` by `size` pixels, 1 or 2, `width` pixels wide.
+    /// cells of `cell_size` by `cell_size` pixels, 1 or 2, `width` pixels wide.
     /// Returns the rows of pixels to push: those of `band` and of the two
     /// cell rows on each side of it within the image, the blur's reach.
     pub(super) fn start(
         &mut self,
         width: usize,
-        size: usize,
+        cell_size: usize,
         cell_rows: usize,
         band: Range<usize>,
     ) -> Range<usize> {
-        let cells = width / size;
-        (self.width, self.size, self.cell_rows) = (width, size, cell_rows);
+        let cells = width / cell_size;
+        (self.width, self.cell_size, self.cell_rows) = (width, cell_size, cell_rows);
         (self.next, self.end) = (band.start, band.end.min(cell_rows));
         for luma in &mut self.luma {
-            luma.resize(size * width, 0);
+            luma.resize(cell_size * width, 0);
         }
         self.padded.resize(cells + 4, 0);
         for row in self
@@ -65,14 +65,14 @@ impl ChromaDenoise {
             row.resize(cells, 0);
         }
         self.out.resize(width * 3, 0);
-        size * self.next.saturating_sub(2)..size * (self.end + 2).min(cell_rows)
+        cell_size * self.next.saturating_sub(2)..cell_size * (self.end + 2).min(cell_rows)
     }
 
     /// Takes row `y` of pixels, and hands each row of pixels of the band
     /// whose cell row's chroma is blurred, two cell rows behind, to
     /// `denoised(y, rgb)`.
     pub(super) fn push(&mut self, y: usize, rgb: &[i32], mut denoised: impl FnMut(usize, &[i32])) {
-        let (cell_row, row_in_cell) = (y / self.size, y % self.size);
+        let (cell_row, row_in_cell) = (y / self.cell_size, y % self.cell_size);
         let width = self.width;
         let luma = &mut self.luma[cell_row % 3][row_in_cell * width..(row_in_cell + 1) * width];
         for (pixel, luma) in rgb.chunks_exact(3).zip(luma) {
@@ -83,12 +83,12 @@ impl ChromaDenoise {
                 sums.fill(0);
             }
         }
-        if self.size == 2 {
+        if self.cell_size == 2 {
             add_chroma::<2>(rgb, &mut self.sums);
         } else {
             add_chroma::<1>(rgb, &mut self.sums);
         }
-        if row_in_cell + 1 == self.size {
+        if row_in_cell + 1 == self.cell_size {
             self.blur_across(cell_row);
             if self.next < self.end && cell_row >= self.next + 2 {
                 self.hand_out(&mut denoised);
@@ -106,7 +106,7 @@ impl ChromaDenoise {
     /// Averages the chroma of cell row `cell_row` over its cells and blurs
     /// it across.
     fn blur_across(&mut self, cell_row: usize) {
-        let shift = 2 * self.size.trailing_zeros();
+        let shift = 2 * self.cell_size.trailing_zeros();
         let half = (1 << shift) >> 1;
         let ChromaDenoise {
             sums,
@@ -138,7 +138,7 @@ impl ChromaDenoise {
             std::array::from_fn(|offset| (cell_row + offset).saturating_sub(2).min(last) % 5);
         let ChromaDenoise {
             width,
-            size,
+            cell_size,
             luma,
             across,
             blurred,
@@ -158,22 +158,22 @@ impl ChromaDenoise {
                 *blurred = (up2 + down2 + 4 * (up1 + down1) + 6 * centre + 128) >> 8;
             }
         }
-        for row_in_cell in 0..*size {
+        for row_in_cell in 0..*cell_size {
             let luma = &luma[cell_row % 3][row_in_cell * *width..(row_in_cell + 1) * *width];
-            if *size == 2 {
+            if *cell_size == 2 {
                 rebuild::<2>(luma, blurred, out);
             } else {
                 rebuild::<1>(luma, blurred, out);
             }
-            denoised(cell_row * *size + row_in_cell, out);
+            denoised(cell_row * *cell_size + row_in_cell, out);
         }
     }
 }
 
-/// Adds the chroma of each cell of `SIZE` pixels of `rgb` to `sums`.
-fn add_chroma<const SIZE: usize>(rgb: &[i32], [red_sums, blue_sums]: &mut [Vec<i32>; 2]) {
+/// Adds the chroma of each cell of `CELL_SIZE` pixels of `rgb` to `sums`.
+fn add_chroma<const CELL_SIZE: usize>(rgb: &[i32], [red_sums, blue_sums]: &mut [Vec<i32>; 2]) {
     for ((cell, red), blue) in rgb
-        .chunks_exact(3 * SIZE)
+        .chunks_exact(3 * CELL_SIZE)
         .zip(red_sums.iter_mut())
         .zip(blue_sums.iter_mut())
     {
@@ -184,13 +184,13 @@ fn add_chroma<const SIZE: usize>(rgb: &[i32], [red_sums, blue_sums]: &mut [Vec<i
     }
 }
 
-/// Writes to `out` each pixel of cells of `SIZE` pixels with its cell's
+/// Writes to `out` each pixel of cells of `CELL_SIZE` pixels with its cell's
 /// `chroma` around its own `luma`.
-fn rebuild<const SIZE: usize>(luma: &[i32], [red, blue]: &[Vec<i32>; 2], out: &mut [i32]) {
+fn rebuild<const CELL_SIZE: usize>(luma: &[i32], [red, blue]: &[Vec<i32>; 2], out: &mut [i32]) {
     let half = 1 << (LUMA_SHIFT - 1);
     for (((pixels, lumas), &red), &blue) in out
-        .chunks_exact_mut(3 * SIZE)
-        .zip(luma.chunks_exact(SIZE))
+        .chunks_exact_mut(3 * CELL_SIZE)
+        .zip(luma.chunks_exact(CELL_SIZE))
         .zip(red)
         .zip(blue)
     {
@@ -219,11 +219,11 @@ mod tests {
     }
 
     // `rows` of linear red, green and blue through the chroma denoise at
-    // cells of `size` by `size` pixels.
-    fn denoised(rows: &[Vec<i32>], size: usize) -> Vec<Vec<i32>> {
+    // cells of `cell_size` by `cell_size` pixels.
+    fn denoised(rows: &[Vec<i32>], cell_size: usize) -> Vec<Vec<i32>> {
         let mut denoise = ChromaDenoise::default();
-        let cell_rows = rows.len() / size;
-        denoise.start(rows[0].len() / 3, size, cell_rows, 0..cell_rows);
+        let cell_rows = rows.len() / cell_size;
+        denoise.start(rows[0].len() / 3, cell_size, cell_rows, 0..cell_rows);
         let mut out = vec![Vec::new(); rows.len()];
         for (y, row) in rows.iter().enumerate() {
             denoise.push(y, row, |y, linear| out[y] = linear.to_vec());
@@ -251,9 +251,13 @@ mod tests {
 
     #[test]
     fn denoise_keeps_a_uniform_colour_field() {
-        for (size, width, height) in [(1, 7, 3), (2, 8, 6), (2, 2, 2), (1, 1, 1)] {
+        for (cell_size, width, height) in [(1, 7, 3), (2, 8, 6), (2, 2, 2), (1, 1, 1)] {
             let rows = vec![[30_000, 20_000, 9_000].repeat(width); height];
-            assert_eq!(denoised(&rows, size), rows, "{size} {width}x{height}");
+            assert_eq!(
+                denoised(&rows, cell_size),
+                rows,
+                "{cell_size} {width}x{height}"
+            );
         }
     }
 
@@ -262,7 +266,7 @@ mod tests {
         // 1-4-6-4-1 over 16 each way keeps (70/256)^2 of the variance of
         // noise independent from cell to cell; a 2x2 cell averages 4 pixels.
         let kernel = (70.0f64 / 256.0).powi(2);
-        for (size, kept) in [(1, kernel), (2, kernel / 4.0)] {
+        for (cell_size, kept) in [(1, kernel), (2, kernel / 4.0)] {
             let (mut red, mut blue) = (noise(4_000, 0x2545_f491), noise(4_000, 0x9e37_79b9));
             let rows: Vec<Vec<i32>> = (0..96)
                 .map(|_| {
@@ -272,10 +276,13 @@ mod tests {
                 })
                 .collect();
             let before = chroma_variance(&rows);
-            let after = chroma_variance(&denoised(&rows, size));
+            let after = chroma_variance(&denoised(&rows, cell_size));
             for channel in 0..2 {
                 let ratio = after[channel] / before[channel];
-                assert!((ratio / kept - 1.0).abs() < 0.15, "{size}: {ratio}, {kept}");
+                assert!(
+                    (ratio / kept - 1.0).abs() < 0.15,
+                    "{cell_size}: {ratio}, {kept}"
+                );
             }
         }
     }
@@ -293,8 +300,8 @@ mod tests {
                     .collect()
             })
             .collect();
-        for size in [1, 2] {
-            for (row, denoised_row) in rows.iter().zip(denoised(&rows, size)) {
+        for cell_size in [1, 2] {
+            for (row, denoised_row) in rows.iter().zip(denoised(&rows, cell_size)) {
                 for (pixel, denoised) in row.chunks_exact(3).zip(denoised_row.chunks_exact(3)) {
                     assert!(
                         (luma(pixel) - luma(denoised)).abs() <= 1.0,

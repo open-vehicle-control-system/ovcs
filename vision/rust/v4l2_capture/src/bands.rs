@@ -107,7 +107,7 @@ pub struct Nv12Target<'a> {
 }
 
 /// Converts an image of rows of `width` pixels into `images`, turned by 180
-/// degrees with `rotate_180`, its rows grouped by `cell`, in up to
+/// degrees with `rotate_180`, its rows grouped by `cell_size`, in up to
 /// `threads` bands of groups (`split`): `convert(cell_rows, image,
 /// scratch)` writes the rows of the groups `cell_rows` into `image`, which
 /// holds those rows of `images`, through a `scratch` of the band's own, and
@@ -122,7 +122,7 @@ pub fn convert<S: Default + Send>(
         nv12,
     }: Images,
     width: usize,
-    cell: usize,
+    cell_size: usize,
     rotate_180: bool,
     threads: usize,
     scratch: &mut Vec<S>,
@@ -132,8 +132,8 @@ pub fn convert<S: Default + Send>(
     let height = rgb.len() / (width * 3).max(1);
     // Groups of cells whose rows are a whole number of 2x2 blocks' rows.
     let in_pairs = averaged.is_some() || nv12.is_some();
-    let group = if in_pairs && cell % 2 == 1 { 2 } else { 1 };
-    let bands: Vec<Range<usize>> = (split(height / cell / group, threads).into_iter())
+    let group = if in_pairs && cell_size % 2 == 1 { 2 } else { 1 };
+    let bands: Vec<Range<usize>> = (split(height / cell_size / group, threads).into_iter())
         .map(|groups| group * groups.start..group * groups.end)
         .collect();
     if scratch.len() < bands.len() {
@@ -157,7 +157,7 @@ pub fn convert<S: Default + Send>(
             part,
             along,
             width,
-            cell * cells.start..cell * cells.end,
+            cell_size * cells.start..cell_size * cells.end,
             rotate_180,
         )
     };
@@ -172,7 +172,7 @@ pub fn convert<S: Default + Send>(
         };
         return convert(cells.clone(), image(rgb, along, cells), &mut scratch[0]);
     }
-    let rows = |band: &Range<usize>| band.len() * cell;
+    let rows = |band: &Range<usize>| band.len() * cell_size;
     let rgb_parts = parts(
         rgb,
         bands.iter().map(|band| rows(band) * width * 3),
@@ -321,9 +321,14 @@ mod tests {
         assert_eq!(split(0, 3), vec![0..0]);
     }
 
-    // Each row of an image 2 pixels wide, its rows grouped by `cell`, as
+    // Each row of an image 2 pixels wide, its rows grouped by `cell_size`, as
     // its index, written in bands on `threads` threads.
-    fn row_indices(rows: usize, cell: usize, rotate_180: bool, threads: usize) -> (Vec<u8>, u64) {
+    fn row_indices(
+        rows: usize,
+        cell_size: usize,
+        rotate_180: bool,
+        threads: usize,
+    ) -> (Vec<u8>, u64) {
         let mut rgb = vec![0; rows * 2 * 3];
         let mut scratch: Vec<()> = Vec::new();
         let images = Images {
@@ -334,12 +339,12 @@ mod tests {
         let sums = convert(
             images,
             2,
-            cell,
+            cell_size,
             rotate_180,
             threads,
             &mut scratch,
             |cells, mut image, _| {
-                for y in cell * cells.start..cell * cells.end {
+                for y in cell_size * cells.start..cell_size * cells.end {
                     image.write(y, |out| out.fill(y as u8));
                 }
                 Sums {
@@ -353,7 +358,7 @@ mod tests {
 
     #[test]
     fn each_band_writes_its_own_rows_where_the_image_has_them() {
-        for (rows, cell) in [(7, 1), (10, 2), (2, 2)] {
+        for (rows, cell_size) in [(7, 1), (10, 2), (2, 2)] {
             for rotate_180 in [false, true] {
                 let mut expected: Vec<u8> = (0..rows).flat_map(|y| [y as u8; 6]).collect();
                 if rotate_180 {
@@ -361,9 +366,9 @@ mod tests {
                 }
                 for threads in 1..=5 {
                     assert_eq!(
-                        row_indices(rows, cell, rotate_180, threads),
-                        (expected.clone(), (rows / cell) as u64),
-                        "{rows} rows of {cell}, rotated {rotate_180}, {threads} threads"
+                        row_indices(rows, cell_size, rotate_180, threads),
+                        (expected.clone(), (rows / cell_size) as u64),
+                        "{rows} rows of {cell_size}, rotated {rotate_180}, {threads} threads"
                     );
                 }
             }
