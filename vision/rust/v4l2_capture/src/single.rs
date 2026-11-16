@@ -189,7 +189,10 @@ trait Frames {
     /// Hands the next frame ready to `take`, with its start, or `None` for
     /// one incomplete, then gives its buffer back to the driver; `None`
     /// when no frame is ready.
-    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>>;
+    fn with_next_frame<T>(
+        &self,
+        take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
+    ) -> io::Result<Option<T>>;
 }
 
 /// The frames of a capture node, `width` x `height` samples each.
@@ -204,7 +207,10 @@ impl Frames for CameraFrames<'_> {
         self.capture.node.as_raw_fd()
     }
 
-    fn next<T>(&self, take: impl FnOnce(Option<(RawFrame, i64)>) -> T) -> io::Result<Option<T>> {
+    fn with_next_frame<T>(
+        &self,
+        take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
+    ) -> io::Result<Option<T>> {
         let Some(frame) = self.capture.dequeue()? else {
             return Ok(None);
         };
@@ -631,7 +637,7 @@ fn convert_frames(
             statistics_since = Instant::now();
         }
         // One frame a round: the settings and statistics are served between frames.
-        if let Some(taken) = frames.next(|whole| {
+        if let Some(taken) = frames.with_next_frame(|whole| {
             let (raw, start_ns) = whole?;
             let converting = Instant::now();
             converted += 1;
@@ -776,7 +782,7 @@ mod tests {
             self.ready.0.as_raw_fd()
         }
 
-        fn next<T>(
+        fn with_next_frame<T>(
             &self,
             take: impl FnOnce(Option<(RawFrame, i64)>) -> T,
         ) -> io::Result<Option<T>> {
