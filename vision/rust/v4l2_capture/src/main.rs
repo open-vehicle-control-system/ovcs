@@ -38,6 +38,7 @@ use exposure::AutoExposure;
 use framing::{log_record, metadata_record, pair_record, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
+use sensor::SensorModel;
 use settings::Settings;
 use v4l2::{Capture, Node};
 
@@ -191,7 +192,7 @@ fn run(
         }
     };
     let mut settings = arguments.settings.clone();
-    let mut tone = Tone::new(settings.black_level, settings.gamma);
+    let mut tone = pair_tone(&settings, model);
     set_focus(settings.focus);
     if left.lens.is_none() || right.lens.is_none() {
         log(
@@ -244,7 +245,7 @@ fn run(
                 None => return Ok(()),
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {
-                        tone = Tone::new(settings.black_level, settings.gamma);
+                        tone = pair_tone(&settings, model);
                         let running = (auto_exposure.exposure_us, auto_exposure.gain);
                         let resume_from = resume_point(&settings, running, || {
                             let applied = set_exposure(
@@ -388,6 +389,13 @@ fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<(
     }
 }
 
+/// The tone of a `model` pair's samples, from its black level in 10 bits as the host gives it.
+fn pair_tone(settings: &Settings, model: SensorModel) -> Tone {
+    let sample_bits = model.sample_bits();
+    let black_level = settings.black_level << (sample_bits - 10);
+    Tone::with_sample_bits(black_level, settings.gamma, sample_bits)
+}
+
 fn pollfd(fd: i32) -> libc::pollfd {
     libc::pollfd {
         fd,
@@ -399,6 +407,17 @@ fn pollfd(fd: i32) -> libc::pollfd {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_12_bit_pair_is_toned_over_its_full_scale_from_its_black_level_in_10_bits() {
+        let settings = Settings::default();
+        let tone = pair_tone(&settings, SensorModel::Imx477);
+        assert_eq!(tone.grey(64 << 2), 0);
+        assert!(tone.grey(2_048) < 255);
+        assert_eq!(tone.grey(4_095), 255);
+        let ten_bit = pair_tone(&settings, SensorModel::Imx708);
+        assert_eq!((ten_bit.grey(64), ten_bit.grey(1_023)), (0, 255));
+    }
 
     #[test]
     fn auto_exposure_switched_on_again_starts_from_the_manual_values() {

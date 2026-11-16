@@ -17,6 +17,7 @@ pub struct Tone {
 
 impl Tone {
     /// The tone of 10-bit samples.
+    #[cfg(test)]
     pub fn new(black_level: u16, gamma: f64) -> Tone {
         Tone::with_sample_bits(black_level, gamma, 10)
     }
