@@ -120,8 +120,8 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
         isp_output_adjusted,
     } = configure(&mut camera, &plan, arguments, writer)?;
     let Size {
-        width: output_width,
-        height: output_height,
+        width: frame_width,
+        height: frame_height,
     } = configured[plan.frames].size;
     let y_stride = configured[plan.frames].stride;
     let Buffers {
@@ -155,13 +155,13 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
     let mut isp_output_planes = plan
         .isp_output
         .map(|index| JpegPlanes::new(&configured[index]));
-    let mut output = match arguments.format {
-        Format::Jpeg => Output::Jpeg(
-            JpegEncoder::new(output_width, output_height, JPEG_QUALITY)?,
+    let mut frame_encoder = match arguments.format {
+        Format::Jpeg => FrameEncoder::Jpeg(
+            JpegEncoder::new(frame_width, frame_height, JPEG_QUALITY)?,
             JpegPlanes::new(&configured[plan.frames]),
         ),
-        Format::Grey => Output::Grey(Vec::with_capacity(
-            output_width as usize * output_height as usize,
+        Format::Grey => FrameEncoder::Grey(Vec::with_capacity(
+            frame_width as usize * frame_height as usize,
         )),
     };
 
@@ -251,10 +251,10 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
 
         // The dmabuf is not cache-coherent: invalidate before the CPU reads what the ISP wrote.
         dmabuf_sync(&view.sync_fds, DMA_BUF_SYNC_START | DMA_BUF_SYNC_READ);
-        let (width, height) = (output_width as u16, output_height as u16);
+        let (width, height) = (frame_width as u16, frame_height as u16);
         // The record's header, then its pixels, written as they are.
-        let record = match &mut output {
-            Output::Jpeg(encoder, planes) => encoder
+        let record = match &mut frame_encoder {
+            FrameEncoder::Jpeg(encoder, planes) => encoder
                 .encode(planes.of(view))
                 .map(|jpeg| {
                     (
@@ -263,8 +263,8 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
                     )
                 })
                 .map_err(|message| format!("tjCompressFromYUVPlanes: {message}")),
-            Output::Grey(grey) => {
-                let (columns, rows) = (output_width as usize, output_height as usize);
+            FrameEncoder::Grey(grey) => {
+                let (columns, rows) = (frame_width as usize, frame_height as usize);
                 pack_luma(grey, view.plane(0), columns, rows, y_stride);
                 Ok((
                     grey_frame_header(width, height, capture_ns).to_vec(),
@@ -849,7 +849,7 @@ fn write_jpeg_outputs(
 }
 
 /// How a frame becomes a record: JPEG-encoded, or its luma packed into a reused buffer.
-enum Output {
+enum FrameEncoder {
     Jpeg(JpegEncoder, JpegPlanes),
     Grey(Vec<u8>),
 }
