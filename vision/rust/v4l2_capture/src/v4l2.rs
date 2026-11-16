@@ -249,9 +249,16 @@ struct OutputParameters {
     _rest: [u8; 200 - 40],
 }
 
-fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
+/// Runs the ioctl `request` on `fd` with `argument`, again while a signal interrupts it.
+///
+/// # Safety
+///
+/// `T` is the struct `request` is defined for, whose size it encodes, and each
+/// pointer in `argument` points at memory valid for what the ioctl does with it.
+unsafe fn xioctl<T>(fd: i32, request: u64, argument: &mut T) -> io::Result<()> {
+    debug_assert_eq!(std::mem::size_of::<T>() as u64, (request >> 16) & 0x3fff);
     loop {
-        // SAFETY: `argument` is the struct the request's size encodes.
+        // SAFETY: as the caller guarantees.
         if unsafe { libc::ioctl(fd, request as _, argument as *mut T) } == 0 {
             return Ok(());
         }
@@ -271,8 +278,36 @@ fn ioctl_error(error: io::Error) -> io::Error {
     }
 }
 
-fn zeroed<T>() -> T {
-    // SAFETY: only used for the plain-data ioctl structs above.
+/// A struct of which all-zero bytes are a valid value.
+///
+/// # Safety
+///
+/// Implemented only for `repr(C)` structs of integers, arrays of them and raw pointers.
+unsafe trait Zeroable {}
+
+// SAFETY: each is a `repr(C)` struct of integers, integer arrays and raw pointers.
+unsafe impl Zeroable for Format {}
+// SAFETY: as above.
+unsafe impl Zeroable for FormatMplane {}
+// SAFETY: as above.
+unsafe impl Zeroable for FormatDescription {}
+// SAFETY: as above.
+unsafe impl Zeroable for Capability {}
+// SAFETY: as above.
+unsafe impl Zeroable for Plane {}
+// SAFETY: as above.
+unsafe impl Zeroable for Buffer {}
+// SAFETY: as above.
+unsafe impl Zeroable for QueryControl {}
+// SAFETY: as above.
+unsafe impl Zeroable for Selection {}
+// SAFETY: as above.
+unsafe impl Zeroable for EncoderCommand {}
+// SAFETY: as above.
+unsafe impl Zeroable for OutputParameters {}
+
+fn zeroed<T: Zeroable>() -> T {
+    // SAFETY: all-zero bytes are a valid `T`, as `Zeroable` requires.
     unsafe { std::mem::zeroed() }
 }
 
@@ -330,7 +365,8 @@ impl Node {
     /// Whether the node captures through the multiplanar API, as CAMSS's do.
     pub fn multiplanar(&self) -> io::Result<bool> {
         let mut capability: Capability = zeroed();
-        xioctl(self.fd, VIDIOC_QUERYCAP, &mut capability)?;
+        // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
+        unsafe { xioctl(self.fd, VIDIOC_QUERYCAP, &mut capability) }?;
         let capabilities = if capability.capabilities & CAP_DEVICE_CAPS != 0 {
             capability.device_caps
         } else {
@@ -341,19 +377,22 @@ impl Node {
 
     pub fn control(&self, id: u32) -> io::Result<i32> {
         let mut control = Control { id, value: 0 };
-        xioctl(self.fd, VIDIOC_G_CTRL, &mut control)?;
+        // SAFETY: VIDIOC_G_CTRL takes a Control, which holds no pointer.
+        unsafe { xioctl(self.fd, VIDIOC_G_CTRL, &mut control) }?;
         Ok(control.value)
     }
 
     pub fn set_control(&self, id: u32, value: i32) -> io::Result<()> {
-        xioctl(self.fd, VIDIOC_S_CTRL, &mut Control { id, value })
+        // SAFETY: VIDIOC_S_CTRL takes a Control, which holds no pointer.
+        unsafe { xioctl(self.fd, VIDIOC_S_CTRL, &mut Control { id, value }) }
     }
 
     /// `(minimum, maximum)` of a control.
     pub fn control_range(&self, id: u32) -> io::Result<(i32, i32)> {
         let mut query: QueryControl = zeroed();
         query.id = id;
-        xioctl(self.fd, VIDIOC_QUERYCTRL, &mut query)?;
+        // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
+        unsafe { xioctl(self.fd, VIDIOC_QUERYCTRL, &mut query) }?;
         Ok((query.minimum, query.maximum))
     }
 
@@ -373,7 +412,9 @@ impl Node {
             _pad: 0,
             controls: &mut control,
         };
-        xioctl(self.fd, VIDIOC_G_EXT_CTRLS, &mut controls)?;
+        // SAFETY: VIDIOC_G_EXT_CTRLS takes ExtControls, whose `controls` points
+        // at the `count` ExtControl in `control`, alive across the call.
+        unsafe { xioctl(self.fd, VIDIOC_G_EXT_CTRLS, &mut controls) }?;
         Ok(control.value64)
     }
 }
@@ -479,7 +520,8 @@ fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
         let mut description: FormatDescription = zeroed();
         description.index = offered.len() as u32;
         description.kind = kind;
-        match xioctl(node.fd, VIDIOC_ENUM_FMT, &mut description) {
+        // SAFETY: VIDIOC_ENUM_FMT takes a FormatDescription, which holds no pointer.
+        match unsafe { xioctl(node.fd, VIDIOC_ENUM_FMT, &mut description) } {
             Ok(()) => offered.push(description.pixelformat),
             Err(error) if error.raw_os_error() == Some(libc::EINVAL) => return Ok(offered),
             Err(error) => return Err(error),
@@ -503,7 +545,9 @@ fn set_format(
         format.pix.height = height;
         format.pix.pixelformat = pixelformat;
         format.pix.num_planes = 1;
-        xioctl(node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
+        // multiplanar member holds no pointer.
+        unsafe { xioctl(node.fd, VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok((
             pix.width,
@@ -517,7 +561,9 @@ fn set_format(
         format.pix.width = width;
         format.pix.height = height;
         format.pix.pixelformat = pixelformat;
-        xioctl(node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as Format, whose
+        // single-plane member holds no pointer.
+        unsafe { xioctl(node.fd, VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok((pix.width, pix.height, pix.pixelformat, pix.bytesperline))
     }
@@ -577,7 +623,8 @@ impl Capture {
             flags: MEMORY_FLAG_NON_COHERENT,
             _reserved: [0; 3],
         };
-        xioctl(node.fd, VIDIOC_REQBUFS, &mut request)?;
+        // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
+        unsafe { xioctl(node.fd, VIDIOC_REQBUFS, &mut request) }?;
 
         let mut capture = Capture {
             node,
@@ -612,7 +659,8 @@ impl Capture {
             capture.queue_index(index)?;
         }
         let mut stream_kind = kind as i32;
-        xioctl(capture.node.fd, VIDIOC_STREAMON, &mut stream_kind)?;
+        // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
+        unsafe { xioctl(capture.node.fd, VIDIOC_STREAMON, &mut stream_kind) }?;
         Ok(capture)
     }
 
@@ -628,7 +676,10 @@ impl Capture {
             buffer.offset = &mut plane as *mut Plane as u64;
             buffer.length = 1;
         }
-        xioctl(self.node.fd, request, &mut buffer)?;
+        debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
+        // SAFETY: the buffer ioctls take a Buffer, whose planes, on a multiplanar
+        // node, are the one `plane` alive across the call.
+        unsafe { xioctl(self.node.fd, request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 
@@ -717,7 +768,8 @@ impl M2mNode {
     pub fn open_named(name: &str) -> io::Result<M2mNode> {
         let node = Node::open(&node_named(name)?)?;
         let mut capability: Capability = zeroed();
-        xioctl(node.fd, VIDIOC_QUERYCAP, &mut capability)?;
+        // SAFETY: VIDIOC_QUERYCAP takes a Capability, which holds no pointer.
+        unsafe { xioctl(node.fd, VIDIOC_QUERYCAP, &mut capability) }?;
         if capability.device_caps & CAP_VIDEO_M2M_MPLANE == 0 {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
@@ -748,7 +800,10 @@ impl M2mNode {
         prepare(&mut buffer, &mut plane);
         buffer.offset = &mut plane as *mut Plane as u64;
         buffer.length = 1;
-        xioctl(self.node.fd, request, &mut buffer)?;
+        debug_assert!([VIDIOC_QUERYBUF, VIDIOC_QBUF, VIDIOC_DQBUF].contains(&request));
+        // SAFETY: the buffer ioctls take a Buffer, whose planes are the one
+        // `plane` alive across the call.
+        unsafe { xioctl(self.node.fd, request, &mut buffer) }?;
         Ok((buffer, plane))
     }
 }
@@ -773,7 +828,9 @@ impl M2mDevice for M2mNode {
             format.pix.ycbcr_enc = YCBCR_ENC_601;
             format.pix.quantization = QUANTIZATION_LIM_RANGE;
         }
-        xioctl(self.node.fd, VIDIOC_S_FMT, &mut format)?;
+        // SAFETY: VIDIOC_S_FMT takes a v4l2_format, as large as FormatMplane, whose
+        // multiplanar member holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
         Ok(BufferFormat {
             width: pix.width,
@@ -789,7 +846,8 @@ impl M2mDevice for M2mNode {
         selection.target = SEL_TGT_CROP;
         selection.width = width;
         selection.height = height;
-        xioctl(self.node.fd, VIDIOC_S_SELECTION, &mut selection)?;
+        // SAFETY: VIDIOC_S_SELECTION takes a Selection, which holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_S_SELECTION, &mut selection) }?;
         Ok((selection.width, selection.height))
     }
 
@@ -798,13 +856,16 @@ impl M2mDevice for M2mNode {
         parameters.kind = BUF_TYPE_VIDEO_OUTPUT_MPLANE;
         parameters.numerator = 1;
         parameters.denominator = fps;
-        xioctl(self.node.fd, VIDIOC_S_PARM, &mut parameters)
+        // SAFETY: VIDIOC_S_PARM takes a v4l2_streamparm, as large as OutputParameters,
+        // whose output member holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_S_PARM, &mut parameters) }
     }
 
     fn has_control(&self, id: u32) -> bool {
         let mut query: QueryControl = zeroed();
         query.id = id;
-        xioctl(self.node.fd, VIDIOC_QUERYCTRL, &mut query).is_ok()
+        // SAFETY: VIDIOC_QUERYCTRL takes a QueryControl, which holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_QUERYCTRL, &mut query) }.is_ok()
             && query.flags & CTRL_FLAG_DISABLED == 0
     }
 
@@ -821,7 +882,8 @@ impl M2mDevice for M2mNode {
             flags: 0,
             _reserved: [0; 3],
         };
-        xioctl(self.node.fd, VIDIOC_REQBUFS, &mut request)?;
+        // SAFETY: VIDIOC_REQBUFS takes RequestBuffers, which holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_REQBUFS, &mut request) }?;
         let protection = match stream {
             Stream::Raw => libc::PROT_READ | libc::PROT_WRITE,
             Stream::Coded => libc::PROT_READ,
@@ -929,18 +991,21 @@ impl M2mDevice for M2mNode {
 
     fn stream_on(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
-        xioctl(self.node.fd, VIDIOC_STREAMON, &mut kind)
+        // SAFETY: VIDIOC_STREAMON takes the buffer type as an int.
+        unsafe { xioctl(self.node.fd, VIDIOC_STREAMON, &mut kind) }
     }
 
     fn stream_off(&mut self, stream: Stream) -> io::Result<()> {
         let mut kind = buffer_kind(stream) as i32;
-        xioctl(self.node.fd, VIDIOC_STREAMOFF, &mut kind)
+        // SAFETY: VIDIOC_STREAMOFF takes the buffer type as an int.
+        unsafe { xioctl(self.node.fd, VIDIOC_STREAMOFF, &mut kind) }
     }
 
     fn stop_encoding(&mut self) -> io::Result<()> {
         let mut command: EncoderCommand = zeroed();
         command.command = ENC_CMD_STOP;
-        xioctl(self.node.fd, VIDIOC_ENCODER_CMD, &mut command)
+        // SAFETY: VIDIOC_ENCODER_CMD takes an EncoderCommand, which holds no pointer.
+        unsafe { xioctl(self.node.fd, VIDIOC_ENCODER_CMD, &mut command) }
     }
 }
 
@@ -948,6 +1013,33 @@ impl M2mDevice for M2mNode {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[test]
+    fn each_request_encodes_the_size_of_the_struct_it_is_called_with() {
+        let encoded = |request: u64| ((request >> 16) & 0x3fff) as usize;
+        use std::mem::size_of;
+        for (request, size) in [
+            (VIDIOC_QUERYCAP, size_of::<Capability>()),
+            (VIDIOC_ENUM_FMT, size_of::<FormatDescription>()),
+            (VIDIOC_S_FMT, size_of::<Format>()),
+            (VIDIOC_S_FMT, size_of::<FormatMplane>()),
+            (VIDIOC_REQBUFS, size_of::<RequestBuffers>()),
+            (VIDIOC_QUERYBUF, size_of::<Buffer>()),
+            (VIDIOC_QBUF, size_of::<Buffer>()),
+            (VIDIOC_DQBUF, size_of::<Buffer>()),
+            (VIDIOC_STREAMON, size_of::<i32>()),
+            (VIDIOC_STREAMOFF, size_of::<i32>()),
+            (VIDIOC_G_CTRL, size_of::<Control>()),
+            (VIDIOC_S_CTRL, size_of::<Control>()),
+            (VIDIOC_QUERYCTRL, size_of::<QueryControl>()),
+            (VIDIOC_G_EXT_CTRLS, size_of::<ExtControls>()),
+            (VIDIOC_S_PARM, size_of::<OutputParameters>()),
+            (VIDIOC_ENCODER_CMD, size_of::<EncoderCommand>()),
+            (VIDIOC_S_SELECTION, size_of::<Selection>()),
+        ] {
+            assert_eq!(encoded(request), size, "request {request:#x}");
+        }
+    }
 
     #[test]
     fn the_ioctl_structs_have_the_kernel_sizes() {
@@ -960,6 +1052,11 @@ mod tests {
         assert_eq!(std::mem::size_of::<Selection>(), 64);
         assert_eq!(std::mem::size_of::<EncoderCommand>(), 40);
         assert_eq!(std::mem::size_of::<OutputParameters>(), 204);
+        assert_eq!(std::mem::size_of::<RequestBuffers>(), 20);
+        assert_eq!(std::mem::size_of::<Control>(), 8);
+        assert_eq!(std::mem::size_of::<QueryControl>(), 68);
+        assert_eq!(std::mem::size_of::<ExtControl>(), 20);
+        assert_eq!(std::mem::size_of::<ExtControls>(), 32);
     }
 
     #[test]
