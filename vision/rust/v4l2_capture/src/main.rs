@@ -54,8 +54,6 @@ const POLL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 // Auto exposure measures every this many left frames: the sensor applies a
 // change a few frames after it is set.
 const EXPOSURE_EVERY_FRAMES: u32 = 4;
-// The exposure ends this many lines before the frame does.
-const EXPOSURE_MARGIN_LINES: i32 = 8;
 
 struct Camera {
     capture: Capture,

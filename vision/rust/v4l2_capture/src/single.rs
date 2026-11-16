@@ -20,14 +20,13 @@ use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
 use crate::processor::Development;
-use crate::sensor::{self, SensorCrop, SensorModel};
+use crate::sensor::{FrameTiming, SensorCrop, SensorModel};
 use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
     auto_exposure, auto_exposure_from, capped_now, input, open_camera, poll, pollfd, resume_point,
-    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, EXPOSURE_MARGIN_LINES, POLL_TIMEOUT,
-    STATISTICS_EVERY_S,
+    EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT, STATISTICS_EVERY_S,
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
@@ -53,24 +52,18 @@ pub fn run(
     let sensor = &camera.sensor;
     let sensor_crop = sensor.sensor_crop()?;
 
-    let hblank = sensor.control(v4l2::CID_HBLANK)?;
-    let pixel_rate = sensor.control64(v4l2::CID_PIXEL_RATE)?;
-    let line_ns = sensor::line_ns(sensor_width, hblank as u32, pixel_rate as u64);
-    let (vblank_min, vblank_max) = sensor.control_range(v4l2::CID_VBLANK)?;
-    let frame_lines = (1e9 / f64::from(arguments.fps) / line_ns).round() as i32;
-    let vblank = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
-    let period_ns = (f64::from(sensor_height as i32 + vblank) * line_ns).round() as i64;
+    let sensor_size = (sensor_width, sensor_height);
+    let timing = FrameTiming::read(sensor, sensor, sensor_size, arguments.fps)?;
     let gain_range = sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
-    let frame_us = period_ns as f64 / 1_000.0;
-    let max_exposure_lines = sensor_height as i32 + vblank - EXPOSURE_MARGIN_LINES;
+    let frame_us = timing.frame_us();
     let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
-        let lines = ((exposure_us * 1_000.0 / line_ns).round() as i32).clamp(1, max_exposure_lines);
+        let lines = timing.exposure_lines(exposure_us);
         let code = model.gain_code(gain, gain_range.0, gain_range.1);
         sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
         sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
-        Ok((f64::from(lines) * line_ns / 1_000.0, model.gain(code)))
+        Ok((timing.exposure_us(lines), model.gain(code)))
     };
-    sensor.set_control(v4l2::CID_VBLANK, vblank)?;
+    sensor.set_control(v4l2::CID_VBLANK, timing.vblank)?;
 
     let settings = arguments.settings.clone();
     writer.write_record(&exposure_record(
@@ -83,13 +76,16 @@ pub fn run(
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} {:?} to {:?}, {}, line {line_ns:.1} ns, \
-             vblank {vblank}, period {period_ns} ns, {settings:?}",
+            "{sensor_width}x{sensor_height} {:?} to {:?}, {}, line {:.1} ns, \
+             vblank {}, period {} ns, {settings:?}",
             camera.capture.layout,
             arguments.outputs,
             sensor_crop.map_or("no sensor crop".to_string(), |crop| format!(
                 "read from {crop}"
-            ))
+            )),
+            timing.line_ns,
+            timing.vblank,
+            timing.period_ns
         ),
     );
     let frames = CameraFrames {

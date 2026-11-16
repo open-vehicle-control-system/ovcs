@@ -1,10 +1,70 @@
 //! Conversions between physical settings and the sensor's V4L2 controls.
 
+use std::io;
+
 use crate::tuning::{self, Tuning};
+use crate::v4l2::{self, Node};
+
+// The exposure ends this many lines before the frame does.
+const EXPOSURE_MARGIN_LINES: i32 = 8;
 
 /// Line time in nanoseconds: the line length in pixels over the pixel rate.
 pub fn line_ns(sensor_width: u32, hblank: u32, pixel_rate_hz: u64) -> f64 {
     f64::from(sensor_width + hblank) * 1e9 / pixel_rate_hz as f64
+}
+
+/// The line time of a sensor's frames and the vertical blanking that runs
+/// them at a frame rate.
+pub struct FrameTiming {
+    pub line_ns: f64,
+    /// The VBLANK that gives the frame rate, within the control's range.
+    pub vblank: i32,
+    pub vblank_min: i32,
+    pub vblank_max: i32,
+    pub period_ns: i64,
+    sensor_height: u32,
+}
+
+impl FrameTiming {
+    /// The timing of `sensor_width` x `sensor_height` frames at `fps`, the line
+    /// time read from `line_sensor` and the VBLANK range from `vblank_sensor`.
+    pub fn read(
+        line_sensor: &Node,
+        vblank_sensor: &Node,
+        (sensor_width, sensor_height): (u32, u32),
+        fps: u32,
+    ) -> io::Result<FrameTiming> {
+        let hblank = line_sensor.control(v4l2::CID_HBLANK)?;
+        let pixel_rate = line_sensor.control64(v4l2::CID_PIXEL_RATE)?;
+        let line_ns = line_ns(sensor_width, hblank as u32, pixel_rate as u64);
+        let (vblank_min, vblank_max) = vblank_sensor.control_range(v4l2::CID_VBLANK)?;
+        let frame_lines = (1e9 / f64::from(fps) / line_ns).round() as i32;
+        let vblank = (frame_lines - sensor_height as i32).clamp(vblank_min, vblank_max);
+        let period_ns = (f64::from(sensor_height as i32 + vblank) * line_ns).round() as i64;
+        Ok(FrameTiming {
+            line_ns,
+            vblank,
+            vblank_min,
+            vblank_max,
+            period_ns,
+            sensor_height,
+        })
+    }
+
+    pub fn frame_us(&self) -> f64 {
+        self.period_ns as f64 / 1_000.0
+    }
+
+    /// The exposure lines closest to `exposure_us` that fit in a frame.
+    pub fn exposure_lines(&self, exposure_us: f64) -> i32 {
+        let max_lines = self.sensor_height as i32 + self.vblank - EXPOSURE_MARGIN_LINES;
+        ((exposure_us * 1_000.0 / self.line_ns).round() as i32).clamp(1, max_lines)
+    }
+
+    /// The exposure time of `lines` exposure lines.
+    pub fn exposure_us(&self, lines: i32) -> f64 {
+        f64::from(lines) * self.line_ns / 1_000.0
+    }
 }
 
 /// What differs between the sensors `v4l2_capture` drives.
