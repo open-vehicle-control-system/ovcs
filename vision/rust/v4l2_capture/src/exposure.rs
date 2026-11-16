@@ -2,13 +2,27 @@
 
 use std::io;
 
+use framing::metadata_record;
+
 use crate::settings::Settings;
+use crate::EXPOSURE_GAIN_PRESENT;
 
 /// A sensor's exposure time and analogue gain.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Exposure {
     pub exposure_us: f64,
     pub gain: f64,
+}
+
+impl Exposure {
+    /// The metadata record telling the host the sensors took this exposure,
+    /// stamped with a frame start.
+    pub fn record(self, capture_ns: i64) -> Vec<u8> {
+        let mut values = [0.0; framing::METADATA_FIELDS];
+        values[0] = self.exposure_us;
+        values[1] = self.gain;
+        metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
+    }
 }
 
 /// Steers the mean grey of the image to `target` by changing the exposure

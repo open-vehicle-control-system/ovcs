@@ -26,8 +26,7 @@ use crate::settings::ColourSettings;
 use crate::v4l2;
 use crate::white_balance::{self, Gains};
 use crate::{
-    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT,
-    STATISTICS_EVERY_S,
+    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, POLL_TIMEOUT, STATISTICS_EVERY_S,
 };
 
 /// Captures the camera `arguments` names at its full sensor size until the
@@ -70,10 +69,8 @@ pub fn run(
     sensor.set_control(v4l2::CID_VBLANK, timing.vblank)?;
 
     let settings = arguments.settings.clone();
-    writer.write_record(&exposure_record(
-        set_exposure(settings.capture.manual_exposure())?,
-        0,
-    ))?;
+    let applied = set_exposure(settings.capture.manual_exposure())?;
+    writer.write_record(&applied.record(0))?;
     log(
         LogLevel::Info,
         &format!(
@@ -158,15 +155,6 @@ fn start_encoders(
         encoders.push(Box::new(encoder));
     }
     Ok(encoders)
-}
-
-/// The record telling the host the exposure and gain just applied, stamped
-/// with a frame start.
-fn exposure_record(exposure: Exposure, capture_ns: i64) -> Vec<u8> {
-    let mut values = [0.0; framing::METADATA_FIELDS];
-    values[0] = exposure.exposure_us;
-    values[1] = exposure.gain;
-    metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
 }
 
 /// The record telling the host the white balance gains applied to the frame
@@ -609,7 +597,7 @@ fn convert_frames(
                         auto_exposure =
                             retarget(&settings.capture, frame_us, running, |exposure| {
                                 let applied = set_exposure(exposure)?;
-                                let record = exposure_record(applied, last_ns.unwrap_or(0));
+                                let record = applied.record(last_ns.unwrap_or(0));
                                 queue.send(Record::Other(record))?;
                                 Ok(applied)
                             })?;
@@ -660,7 +648,7 @@ fn convert_frames(
             if let Some(mean) = green_mean {
                 if let Some(exposure) = auto_exposure.observe(mean) {
                     let applied = set_exposure(exposure)?;
-                    queue.send(Record::Other(exposure_record(applied, start_ns)))?;
+                    queue.send(Record::Other(applied.record(start_ns)))?;
                 }
             }
             if settings.awb && reported_gains != Some(applied_gains) {

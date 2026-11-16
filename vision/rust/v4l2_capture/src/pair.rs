@@ -4,7 +4,7 @@
 use std::io;
 use std::os::fd::{AsFd, AsRawFd};
 
-use framing::{metadata_record, pair_header, LogLevel, Writer};
+use framing::{pair_header, LogLevel, Writer};
 
 use crate::arguments;
 use crate::bayer::{self, Tone};
@@ -15,8 +15,7 @@ use crate::sensor::{FrameTiming, SensorModel};
 use crate::settings::Settings;
 use crate::v4l2;
 use crate::{
-    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, EXPOSURE_GAIN_PRESENT, POLL_TIMEOUT,
-    STATISTICS_EVERY_S,
+    input, open_camera, poll, pollfd, EXPOSURE_EVERY_FRAMES, POLL_TIMEOUT, STATISTICS_EVERY_S,
 };
 
 const PAIR_TOLERANCE_NS: i64 = 1_000_000;
@@ -51,10 +50,7 @@ pub fn run(
     };
     // Tells the host the exposure and gain just applied, stamped with the left frame start.
     let report_exposure = |exposure: Exposure, capture_ns: i64| -> io::Result<()> {
-        let mut values = [0.0; framing::METADATA_FIELDS];
-        values[0] = exposure.exposure_us;
-        values[1] = exposure.gain;
-        writer.write_record(&metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values))
+        writer.write_record(&exposure.record(capture_ns))
     };
     for camera in [&left, &right] {
         camera.sensor.set_control(v4l2::CID_VBLANK, timing.vblank)?;
