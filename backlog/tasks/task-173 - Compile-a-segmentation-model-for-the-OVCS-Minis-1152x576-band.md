@@ -1,11 +1,11 @@
 ---
 id: TASK-173
 title: Compile a segmentation model for the OVCS Mini's 1152x576 band
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T17:42:00Z'
-updated_date: '2026-11-15T20:40:00Z'
+updated_date: '2026-11-16T21:20:00Z'
 labels:
   - vision
 dependencies:
@@ -36,5 +36,5 @@ Rewrite the simplified ONNX's input, output and Resize sizes for 576x1152 (scrip
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-On a Cityscapes street image: the 576x1152 float model agrees with the 1024x2048 one on 94.5% of the pixels (road IoU 0.98); the HEF on the Mini agrees with the float model on 98.8% of the cells (road IoU 0.99). Calibrated on 64 indoor frames of the Mini; outdoor frames would suit the scenes better. The HEF is local: vehicles/ovcs_mini/models/README.md builds it. #4 held, at 25 pairs a second, while the ROS 2 exporter dropped its messages; publishing, the stereo keeps 16.4 (TASK-174).
+On a Cityscapes street image: the 576x1152 float model agrees with the 1024x2048 one on 94.5% of the pixels (road IoU 0.98); the HEF on the Mini agrees with the float model on 98.8% of the cells (road IoU 0.99). Calibrated on 64 indoor frames of the Mini; outdoor frames would suit the scenes better. The HEF is local: vehicles/ovcs_mini/models/README.md builds it. #4 held, at 25 pairs a second, while the ROS 2 exporter dropped its messages; publishing, the stereo keeps 16.4 (TASK-174). The Mini detects and segments on every third frame instead, where the stereo keeps 20 pairs a second with the exporter publishing; detection on every frame is TASK-174's.
 <!-- SECTION:NOTES:END -->

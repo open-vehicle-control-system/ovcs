@@ -1,11 +1,11 @@
 ---
 id: TASK-169
 title: Detect and segment on the OVCS Mini's left colour camera, on its Hailo-8
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T15:07:00Z'
-updated_date: '2026-11-15T20:40:00Z'
+updated_date: '2026-11-16T21:20:00Z'
 labels:
   - vision
 dependencies: []

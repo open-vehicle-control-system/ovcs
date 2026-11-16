@@ -1,11 +1,11 @@
 ---
-id: TASK-175
+id: TASK-178
 title: Push the vision parameters to the dashboard instead of polling them
-status: In Progress
+status: Done
 assignee:
   - '@claude'
 created_date: '2026-11-15T19:56:00Z'
-updated_date: '2026-11-15T19:57:00Z'
+updated_date: '2026-11-16T21:20:00Z'
 labels:
   - vision
   - dashboard
