@@ -125,7 +125,6 @@ fn run(
                         channels: request.channels,
                     },
                     &mut input,
-                    MODEL_SIZE,
                     &letterbox,
                     LETTERBOX_THREADS,
                 );

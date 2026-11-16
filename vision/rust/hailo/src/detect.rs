@@ -112,7 +112,6 @@ impl Detect {
                         channels: request.channels,
                     },
                     self.network.input_mut(),
-                    self.model_size,
                     &letterbox,
                     LETTERBOX_THREADS,
                 );
@@ -151,15 +150,8 @@ impl Detect {
                 output.len() / std::mem::size_of::<f32>(),
             )
         };
-        let detections = nms::decode_nms_by_class(
-            output,
-            self.class_count,
-            width,
-            height,
-            &letterbox,
-            self.model_size,
-            self.score_threshold,
-        );
+        let detections =
+            nms::decode_nms_by_class(output, self.class_count, &letterbox, self.score_threshold);
         Answer::Reply(detections_record(
             request.sequence,
             &detections,

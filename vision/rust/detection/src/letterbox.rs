@@ -13,6 +13,11 @@ pub struct Letterbox {
     pub offset_x: i32,
     /// Top padding, in model px.
     pub offset_y: i32,
+    /// Side of the model's square input, in px.
+    pub model_size: i32,
+    /// The caller frame's size, in px.
+    pub caller_width: i32,
+    pub caller_height: i32,
 }
 
 /// Fit `width`x`height` into a square of side `model_size`, centred.
@@ -23,6 +28,9 @@ pub fn letterbox_for(width: i32, height: i32, model_size: i32) -> Letterbox {
         scale,
         offset_x: (model_size - scaled_width) / 2,
         offset_y: (model_size - scaled_height) / 2,
+        model_size,
+        caller_width: width,
+        caller_height: height,
     }
 }
 
@@ -47,11 +55,10 @@ pub struct Frame<'a> {
 pub fn letterbox_into(
     frame: &Frame,
     destination: &mut [u8],
-    model_size: i32,
     letterbox: &Letterbox,
     threads: usize,
 ) {
-    let model_size = model_size as usize;
+    let model_size = letterbox.model_size as usize;
     destination[..model_size * model_size * 3].fill(PAD_VALUE);
     match frame.channels {
         1 => resize_image_area::<1>(frame, destination, model_size, letterbox, threads),
@@ -156,7 +163,6 @@ mod tests {
                 channels: 3,
             },
             &mut destination,
-            model,
             &letterbox,
             1,
         );
@@ -181,7 +187,6 @@ mod tests {
                 channels: 1,
             },
             &mut destination,
-            2,
             &letterbox,
             1,
         );
@@ -201,7 +206,6 @@ mod tests {
                 channels: 3,
             },
             &mut destination,
-            1,
             &letterbox,
             1,
         );
@@ -223,7 +227,6 @@ mod tests {
                 channels: 1,
             },
             &mut destination,
-            4,
             &letterbox,
             1,
         );
@@ -274,7 +277,6 @@ mod tests {
                         channels,
                     },
                     &mut destination,
-                    model,
                     &letterbox,
                     threads,
                 );
