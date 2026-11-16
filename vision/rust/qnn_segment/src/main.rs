@@ -80,10 +80,10 @@ fn run(
             model.graph_name,
             model.inputs[0].name,
             model.inputs[0].dimensions,
-            model.inputs[0].scale_offset,
+            model.inputs[0].quantisation,
             model.outputs[0].name,
             model.outputs[0].dimensions,
-            model.outputs[0].scale_offset,
+            model.outputs[0].quantisation,
         ),
     );
 

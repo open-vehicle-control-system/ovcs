@@ -3,9 +3,9 @@
 //! outputs, `boxes` `[1, 8400, 4]` and `scores` `[1, 8400]` quantised, `class_idx` `[1, 8400]` a
 //! class per anchor.
 
-use qnn::Tensor;
+use qnn::{Quantisation, Tensor};
 
-use crate::yolox::{Quantisation, ANCHORS, MODEL_SIZE};
+use crate::yolox::{ANCHORS, MODEL_SIZE};
 
 /// The shapes of the image and of the outputs the decoding reads.
 const IMAGE_DIMENSIONS: [u32; 4] = [1, MODEL_SIZE as u32, MODEL_SIZE as u32, 3];
@@ -67,13 +67,9 @@ fn check(kind: &str, tensor: &Tensor, dimensions: &[u32]) -> Result<(), String> 
 }
 
 fn quantisation(output: &Tensor) -> Result<Quantisation, String> {
-    let (scale, offset) = output
-        .scale_offset
-        .ok_or_else(|| format!("output {} is not quantised", output.name))?;
-    Ok(Quantisation {
-        scale,
-        zero_point: -offset,
-    })
+    output
+        .quantisation
+        .ok_or_else(|| format!("output {} is not quantised", output.name))
 }
 
 #[cfg(test)]
@@ -84,7 +80,7 @@ mod tests {
         Tensor {
             name: name.to_string(),
             dimensions: dimensions.to_vec(),
-            scale_offset,
+            quantisation: scale_offset.map(|(scale, offset)| Quantisation { scale, offset }),
             unsigned_8bit: true,
             bytes: dimensions.iter().map(|&size| size as usize).product(),
         }
@@ -110,12 +106,12 @@ mod tests {
                 boxes: 1,
                 box_quantisation: Quantisation {
                     scale: 2.5,
-                    zero_point: 3
+                    offset: -3
                 },
                 scores: 2,
                 score_quantisation: Quantisation {
                     scale: 0.004,
-                    zero_point: 0
+                    offset: 0
                 },
                 classes: 0,
             })
@@ -146,13 +142,16 @@ mod tests {
             Err("input image is not uint8".to_string())
         );
         let offset = Tensor {
-            scale_offset: Some((1.0 / 255.0, -128)),
+            quantisation: Some(Quantisation {
+                scale: 1.0 / 255.0,
+                offset: -128,
+            }),
             ..image()
         };
         let refused = layout(&[offset], &yolox_outputs()).unwrap_err();
         assert!(refused.contains("an offset of -128"), "{refused}");
         let unquantised = Tensor {
-            scale_offset: None,
+            quantisation: None,
             ..image()
         };
         assert!(layout(&[unquantised], &yolox_outputs()).is_ok());
@@ -194,7 +193,7 @@ mod tests {
             Err("output boxes is [1, 8400, 2], not [1, 8400, 4]".to_string())
         );
         let mut outputs = yolox_outputs();
-        outputs[2].scale_offset = None;
+        outputs[2].quantisation = None;
         assert_eq!(
             layout(&[image()], &outputs),
             Err("output scores is not quantised".to_string())

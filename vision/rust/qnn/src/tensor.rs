@@ -5,13 +5,26 @@ use std::ffi::{c_void, CStr};
 
 use crate::ffi::*;
 
+/// A quantised tensor's scale and offset: a value `q` stands for `(q + offset) × scale`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Quantisation {
+    pub scale: f32,
+    pub offset: i32,
+}
+
+impl Quantisation {
+    /// The value the 8-bit code `q` stands for.
+    pub fn real(self, q: u8) -> f32 {
+        (i32::from(q) + self.offset) as f32 * self.scale
+    }
+}
+
 /// A graph input or output: its name, shape, 8-bit quantisation if any, and size.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tensor {
     pub name: String,
     pub dimensions: Vec<u32>,
-    /// `(scale, offset)`: a value `q` stands for `(q + offset) × scale`.
-    pub scale_offset: Option<(f32, i32)>,
+    pub quantisation: Option<Quantisation>,
     /// Whether an element is one unsigned byte, quantised or not.
     pub unsigned_8bit: bool,
     pub bytes: usize,
@@ -24,8 +37,8 @@ impl Tensor {
     /// Whether the input reads its bytes as the pixel values they are: unquantised, or with
     /// a scale of 1/255 and an offset of 0. `Err` names the quantisation that does not.
     pub fn check_takes_pixel_values(&self) -> Result<(), String> {
-        match self.scale_offset {
-            Some((scale, offset))
+        match self.quantisation {
+            Some(Quantisation { scale, offset })
                 if offset != 0 || (scale * 255.0 - 1.0).abs() > PIXEL_SCALE_TOLERANCE =>
             {
                 Err(format!(
@@ -91,13 +104,16 @@ impl Tensor {
         let element = element_bytes(v1.dataType)
             .ok_or_else(|| format!("{name}: unsupported data type {:#x}", v1.dataType))?;
         let parameters = &v1.quantizeParams;
-        let scale_offset = match (
+        let quantisation = match (
             parameters.encodingDefinition,
             parameters.quantizationEncoding,
         ) {
             (QNN_DEFINITION_DEFINED, QNN_QUANTIZATION_ENCODING_SCALE_OFFSET) => {
                 let encoding = parameters.__bindgen_anon_1.scaleOffsetEncoding;
-                Some((encoding.scale, encoding.offset))
+                Some(Quantisation {
+                    scale: encoding.scale,
+                    offset: encoding.offset,
+                })
             }
             (QNN_DEFINITION_DEFINED, encoding)
                 if encoding != QNN_QUANTIZATION_ENCODING_UNDEFINED =>
@@ -112,7 +128,7 @@ impl Tensor {
         Ok(Tensor {
             name,
             dimensions,
-            scale_offset,
+            quantisation,
             unsigned_8bit: is_unsigned_8bit(v1.dataType),
             bytes,
         })
@@ -221,15 +237,21 @@ mod tests {
             encoding.scaleOffsetEncoding.offset = -128;
         }
         // SAFETY: the tensor's name outlives the call, and it has no dimensions.
-        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.scale_offset);
-        assert_eq!(described, Ok(Some((0.25, -128))));
+        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.quantisation);
+        assert_eq!(
+            described,
+            Ok(Some(Quantisation {
+                scale: 0.25,
+                offset: -128
+            }))
+        );
     }
 
     #[test]
     fn a_tensor_quantised_otherwise_is_refused() {
         let (raw, _name) = quantised_tensor(QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
         // SAFETY: the tensor's name outlives the call, and it has no dimensions.
-        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.scale_offset);
+        let described = unsafe { Tensor::from_raw(&raw) }.map(|tensor| tensor.quantisation);
         assert_eq!(
             described,
             Err(
@@ -243,7 +265,7 @@ mod tests {
         let tensor = Tensor {
             name: "scores".to_string(),
             dimensions: vec![4],
-            scale_offset: None,
+            quantisation: None,
             unsigned_8bit: true,
             bytes: 4,
         };

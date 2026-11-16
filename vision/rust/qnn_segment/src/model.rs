@@ -2,7 +2,7 @@
 //! or quantised with a scale of 1/255 and an offset of 0, one `[1, H, W, C]` uint8 score map out,
 //! C scores per cell, C the classes the pipeline names.
 
-use qnn::Tensor;
+use qnn::{Quantisation, Tensor};
 
 /// The model's input image and output grid sizes, and its classes.
 #[derive(Debug, PartialEq)]
@@ -65,9 +65,9 @@ pub fn geometry(
             output.name
         ));
     }
-    if let Some((scale, _)) = output
-        .scale_offset
-        .filter(|&(scale, _)| scale.is_nan() || scale <= 0.0)
+    if let Some(Quantisation { scale, .. }) = output
+        .quantisation
+        .filter(|quantisation| quantisation.scale.is_nan() || quantisation.scale <= 0.0)
     {
         return Err(format!(
             "output {}'s scale is {scale}, not positive",
@@ -100,11 +100,11 @@ mod tests {
     const PIXEL_SCALE: f32 = 1.0 / 255.0;
     const CITYSCAPES_CLASSES: usize = 19;
 
-    fn tensor(name: &str, dimensions: &[u32], scale_offset: (f32, i32)) -> Tensor {
+    fn tensor(name: &str, dimensions: &[u32], (scale, offset): (f32, i32)) -> Tensor {
         Tensor {
             name: name.to_string(),
             dimensions: dimensions.to_vec(),
-            scale_offset: Some(scale_offset),
+            quantisation: Some(Quantisation { scale, offset }),
             unsigned_8bit: true,
             bytes: dimensions.iter().map(|&size| size as usize).product(),
         }
@@ -190,8 +190,8 @@ mod tests {
     #[test]
     fn the_input_takes_pixel_values_unquantised_or_with_a_scale_of_1_over_255_and_no_offset() {
         let ffnet_mask = [mask(&FFNET_OUTPUT)];
-        let quantised = |scale_offset| Tensor {
-            scale_offset,
+        let quantised = |scale_offset: Option<(f32, i32)>| Tensor {
+            quantisation: scale_offset.map(|(scale, offset)| Quantisation { scale, offset }),
             ..image(&FFNET_INPUT)
         };
         for close in [
@@ -264,7 +264,10 @@ mod tests {
     fn the_scores_scale_must_keep_their_order() {
         let ffnet_image = [image(&FFNET_INPUT)];
         let negative = Tensor {
-            scale_offset: Some((-0.2, 0)),
+            quantisation: Some(Quantisation {
+                scale: -0.2,
+                offset: 0,
+            }),
             ..mask(&FFNET_OUTPUT)
         };
         assert_eq!(
@@ -272,7 +275,10 @@ mod tests {
             Err("output mask's scale is -0.2, not positive".to_string())
         );
         let not_a_number = Tensor {
-            scale_offset: Some((f32::NAN, 0)),
+            quantisation: Some(Quantisation {
+                scale: f32::NAN,
+                offset: 0,
+            }),
             ..mask(&FFNET_OUTPUT)
         };
         assert_eq!(
@@ -280,7 +286,7 @@ mod tests {
             Err("output mask's scale is NaN, not positive".to_string())
         );
         let plain = Tensor {
-            scale_offset: None,
+            quantisation: None,
             ..mask(&FFNET_OUTPUT)
         };
         assert!(checked(&ffnet_image, &[plain]).is_ok());

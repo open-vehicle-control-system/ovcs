@@ -29,7 +29,7 @@ pub use dlc::{dlc_graph_names, print_dlc_graph_names};
 pub use power::{command_line, CommandLine, Performance, Power, DEFAULT_PERFORMANCE};
 pub use profile::{ProfiledTimes, TimeSource, Timing, EXECUTION_STAGES};
 pub use stage_times::{micros, Stage, StageTimes, STAGE_TIMES_EVERY};
-pub use tensor::Tensor;
+pub use tensor::{Quantisation, Tensor};
 pub use time_log::TimeLog;
 
 use std::ffi::{c_void, CStr};
