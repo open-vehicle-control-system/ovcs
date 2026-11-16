@@ -197,6 +197,7 @@ pub(crate) mod tests {
     use crate::nv12::{self, Nv12Layout};
     use crate::scale;
     use crate::tuning::imx477;
+    use crate::white_balance;
 
     // Noise over a gradient down and across, so that every row differs.
     pub(crate) fn samples(width: usize, height: usize) -> Vec<u16> {
@@ -339,6 +340,59 @@ pub(crate) mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn a_still_scene_under_automatic_white_balance_keeps_the_tuning_at_its_gains() {
+        let (width, height) = (24, 46);
+        let stride = width * 3 / 2 + 6;
+        let conversion = Conversion {
+            output: Output::Full,
+            rotate_180: false,
+            channel_means: true,
+            green_mean: false,
+            row_step: MEASURED_ROW_STEP,
+            threads: 1,
+        };
+        let settings = ColourSettings::for_sensor(SensorModel::Imx477);
+        let mut tuned = TunedColour::new(&imx477::TUNING);
+        let mut buffers = colour::Buffers::default();
+        let mut gains = settings.gains();
+        let mut kept = Vec::new();
+        // The same scene with a little noise from one frame to the next.
+        for frame in 0..6 {
+            let samples: Vec<u16> = (samples(width, height).iter())
+                .map(|sample| sample + frame % 3)
+                .collect();
+            let raw = padded_packed12(&samples, width, stride);
+            let frame = RawFrame {
+                raw: &raw,
+                width,
+                height,
+                row_stride: stride,
+                layout: Layout::Packed12,
+            };
+            let before = tuned.at_gains.as_ref().map(|at_gains| at_gains.gains);
+            let images = Images {
+                rgb: &mut Vec::new(),
+                averaged: None,
+                nv12: None,
+            };
+            let measures = develop_tuned(
+                &frame,
+                &conversion,
+                &settings,
+                gains,
+                &mut tuned,
+                images,
+                &mut buffers,
+            );
+            kept.push(before == Some(gains));
+            gains = white_balance::grey_world(measures.channel_means.unwrap(), gains);
+        }
+
+        // Computed at the settings' gains, then at the scene's, then kept.
+        assert_eq!(kept, [false, false, true, true, true, true]);
     }
 
     #[test]

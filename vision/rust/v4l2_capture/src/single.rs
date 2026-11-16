@@ -952,7 +952,7 @@ mod tests {
             .iter()
             .all(|record| record[0] != 7 || record[1] == 0));
         // Which thread writes the records changes none of them nor their order.
-        assert_eq!(records_digest(&records), 0xf59f18cebb97b9cf);
+        assert_eq!(records_digest(&records), 0xbd0b60e328854774);
     }
 
     #[test]
@@ -1337,6 +1337,29 @@ mod tests {
             .iter()
             .all(|&(red, blue)| (0.5..=4.0).contains(&red) && (0.5..=4.0).contains(&blue)));
         assert!(reported.iter().any(|&gains| gains != (1.0, 1.0)));
+    }
+
+    #[test]
+    fn a_still_scene_reports_its_white_balance_only_when_the_gains_change() {
+        // The same scene with a little noise from one frame to the next.
+        let frames = (0..6)
+            .map(|index| {
+                let samples: Vec<u16> = samples(WIDTH, HEIGHT)
+                    .iter()
+                    .map(|sample| sample + index % 3)
+                    .collect();
+                Some(padded_packed12(&samples, WIDTH, STRIDE))
+            })
+            .collect();
+        let records = captured(frames, vec![]);
+        let reported: Vec<(f64, f64)> = records
+            .iter()
+            .filter_map(|record| white_balance_of(record))
+            .collect();
+
+        // The settings' gains on the first frame, then the scene's.
+        assert_eq!(reported.len(), 2, "{reported:?}");
+        assert_eq!(reported[0], (1.0, 1.0));
     }
 
     #[test]
