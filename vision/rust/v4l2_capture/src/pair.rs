@@ -104,9 +104,7 @@ pub fn run(
         timing.vblank_max,
     );
     let mut pairer = Pairer::new(PAIR_TOLERANCE_NS);
-    // Frames left and right, pairs, and frames dropped as incomplete.
-    let mut statistics = [0u64; 4];
-    let mut conversion_ns = 0u128;
+    let mut statistics = PairStatistics::default();
     let mut statistics_since = std::time::Instant::now();
     let mut input = input::unbuffered(io::stdin().as_fd())?;
     let mut poll_descriptors = [
@@ -137,31 +135,21 @@ pub fn run(
             }
         }
         if statistics_since.elapsed().as_secs() >= STATISTICS_EVERY_S {
-            let frames = u128::from((statistics[0] + statistics[1]).max(1));
-            log(
-                LogLevel::Info,
-                &format!(
-                    "last {STATISTICS_EVERY_S} s: frames left {} right {}, pairs {}, \
-                     incomplete {}, {} us per conversion",
-                    statistics[0],
-                    statistics[1],
-                    statistics[2],
-                    statistics[3],
-                    conversion_ns / 1_000 / frames
-                ),
-            );
-            statistics = [0; 4];
-            conversion_ns = 0;
+            log(LogLevel::Info, &statistics.line());
+            statistics = PairStatistics::default();
             statistics_since = std::time::Instant::now();
         }
         for (side, camera) in [(Side::Left, &left), (Side::Right, &right)] {
             while let Some(frame) = camera.capture.dequeue()? {
                 if !camera.capture.complete(&frame) {
-                    statistics[3] += 1;
+                    statistics.incomplete += 1;
                     camera.capture.queue(frame)?;
                     continue;
                 }
-                statistics[side as usize] += 1;
+                match side {
+                    Side::Left => statistics.left += 1,
+                    Side::Right => statistics.right += 1,
+                }
                 let converting = std::time::Instant::now();
                 let raw = bayer::RawFrame {
                     raw: camera.capture.pixels(&frame),
@@ -171,7 +159,7 @@ pub fn run(
                     layout: camera.capture.layout,
                 };
                 let grey = bayer::grey_half(&raw, &tone, settings.rotation == 180);
-                conversion_ns += converting.elapsed().as_nanos();
+                statistics.conversion += converting.elapsed();
                 let start_ns = frame.start_ns;
                 camera.capture.queue(frame)?;
                 match side {
@@ -196,7 +184,7 @@ pub fn run(
                     }
                 }
                 if let Some(pair) = pairer.push(side, start_ns, grey) {
-                    statistics[2] += 1;
+                    statistics.pairs += 1;
                     let header = pair_header(
                         arguments.width as u16,
                         arguments.height as u16,
@@ -207,6 +195,32 @@ pub fn run(
                 }
             }
         }
+    }
+}
+
+/// What the pair loop counts and times between two statistics lines.
+#[derive(Default)]
+struct PairStatistics {
+    /// Frames converted from each side, and frames dropped as incomplete.
+    left: u64,
+    right: u64,
+    incomplete: u64,
+    pairs: u64,
+    conversion: std::time::Duration,
+}
+
+impl PairStatistics {
+    fn line(&self) -> String {
+        let frames = u128::from((self.left + self.right).max(1));
+        format!(
+            "last {STATISTICS_EVERY_S} s: frames left {} right {}, pairs {}, \
+             incomplete {}, {} us per conversion",
+            self.left,
+            self.right,
+            self.pairs,
+            self.incomplete,
+            self.conversion.as_nanos() / 1_000 / frames
+        )
     }
 }
 
