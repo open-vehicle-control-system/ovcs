@@ -96,7 +96,12 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
             "--camera" => arguments.camera_id = unsigned(flag, value)?,
             "--width" => arguments.width = unsigned(flag, value)?,
             "--height" => arguments.height = unsigned(flag, value)?,
-            "--fps" => arguments.fps = unsigned(flag, value)?,
+            "--fps" => {
+                arguments.fps = match unsigned(flag, value)? {
+                    0 => return Err(format!("{flag} must be above 0")),
+                    fps => fps,
+                }
+            }
             "--rotation" => arguments.rotation = unsigned(flag, value)?,
             "--sync" => {
                 arguments.sync_mode = match value.as_str() {
@@ -624,6 +629,14 @@ mod tests {
         assert_eq!(
             parse(&strings(&["--zoom", "2"])),
             Err("unknown argument --zoom".to_string())
+        );
+    }
+
+    #[test]
+    fn rejects_a_frame_rate_of_0() {
+        assert_eq!(
+            parse(&strings(&["--fps", "0"])),
+            Err("--fps must be above 0".to_string())
         );
     }
 
