@@ -10,7 +10,8 @@ use framing::{exit_early, LogLevel, Requests, Writer, MAX_REQUEST_BYTES};
 
 use crate::stage_times::Stage;
 use crate::{
-    CommandLine, Model, Power, StageTimes, TimeLog, Timing, EXECUTION_STAGES, STAGE_TIMES_EVERY,
+    CommandLine, ExecutionStages, Model, Power, StageTimes, TimeLog, Timing, EXECUTION_STAGES,
+    STAGE_TIMES_EVERY,
 };
 
 /// Room asked for in the request pipe, which the BEAM then fills in fewer turns with the Port.
@@ -92,7 +93,7 @@ pub struct Clock {
     idle: Stage,
     read: Stage,
     prepare: Stage,
-    execution: [Stage; 6],
+    execution: ExecutionStages,
     finish: Stage,
     reply: Stage,
 }
@@ -114,7 +115,7 @@ impl Clock {
             finish,
             "reply",
         ];
-        let (times, [idle, read, prepare, e0, e1, e2, e3, e4, e5, finish, reply]) =
+        let (times, [idle, read, prepare, execution @ .., finish, reply]) =
             StageTimes::new(names, STAGE_TIMES_EVERY, now);
         Clock {
             times,
@@ -122,7 +123,7 @@ impl Clock {
             idle,
             read,
             prepare,
-            execution: [e0, e1, e2, e3, e4, e5],
+            execution: ExecutionStages::from(execution),
             finish,
             reply,
         }

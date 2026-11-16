@@ -50,22 +50,48 @@ pub const EXECUTION_STAGES: [&str; 6] = [
     "profile read",
 ];
 
+/// Where `Timing::add_to` adds each of an execution's stages.
+#[derive(Clone, Copy, Debug)]
+pub struct ExecutionStages {
+    pub graph_execute: Stage,
+    pub execute: Stage,
+    pub host_rpc: Stage,
+    pub htp_rpc: Stage,
+    pub htp: Stage,
+    pub profile_read: Stage,
+}
+
+impl From<[Stage; 6]> for ExecutionStages {
+    /// The stages `StageTimes::new` gave for `EXECUTION_STAGES`, in its order.
+    fn from(
+        [graph_execute, execute, host_rpc, htp_rpc, htp, profile_read]: [Stage; 6],
+    ) -> ExecutionStages {
+        ExecutionStages {
+            graph_execute,
+            execute,
+            host_rpc,
+            htp_rpc,
+            htp,
+            profile_read,
+        }
+    }
+}
+
 impl Timing {
-    /// Adds the execution's times to `times`, whose `stages` are `EXECUTION_STAGES`.
-    pub fn add_to(&self, times: &mut StageTimes, stages: &[Stage; 6]) {
-        let [graph_execute, execute, host_rpc, htp_rpc, htp, profile_read] = *stages;
-        times.add(graph_execute, self.graph_execute_micros);
+    /// Adds the execution's times to `times`, at `stages`.
+    pub fn add_to(&self, times: &mut StageTimes, stages: &ExecutionStages) {
+        times.add(stages.graph_execute, self.graph_execute_micros);
         for (stage, micros) in [
-            (execute, self.profiled.execute_micros),
-            (host_rpc, self.profiled.host_rpc_micros),
-            (htp_rpc, self.profiled.htp_rpc_micros),
-            (htp, self.profiled.accelerator_micros),
+            (stages.execute, self.profiled.execute_micros),
+            (stages.host_rpc, self.profiled.host_rpc_micros),
+            (stages.htp_rpc, self.profiled.htp_rpc_micros),
+            (stages.htp, self.profiled.accelerator_micros),
         ] {
             if let Some(micros) = micros {
                 times.add(stage, micros);
             }
         }
-        times.add(profile_read, self.profile_read_micros);
+        times.add(stages.profile_read, self.profile_read_micros);
     }
 }
 
@@ -316,7 +342,7 @@ mod tests {
                 accelerator_micros: Some(8700),
             },
         };
-        timing.add_to(&mut times, &stages);
+        timing.add_to(&mut times, &ExecutionStages::from(stages));
         times.count_request();
         assert_eq!(
             times.line(start + STAGE_TIMES_EVERY).as_deref(),
