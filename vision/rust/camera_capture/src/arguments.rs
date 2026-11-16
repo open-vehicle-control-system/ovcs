@@ -50,8 +50,9 @@ pub struct Arguments {
     pub format: Format,
     /// Each output made beside the frames, in the order of their indices.
     pub outputs: Vec<OutputSpec>,
-    /// The most frames a second the outputs are made on, 0 for every frame.
-    pub outputs_max_hz: f64,
+    /// The most frames a second the outputs are made on; `None` makes them on
+    /// every frame.
+    pub outputs_max_hz: Option<f64>,
 }
 
 /// One of the outputs made beside the frames from the ISP's second stream.
@@ -83,7 +84,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
         sensor_mode: None,
         format: Format::Jpeg,
         outputs: Vec::new(),
-        outputs_max_hz: 0.0,
+        outputs_max_hz: None,
     };
     let mut outputs = Vec::new();
     let mut outputs_max_hz = None;
@@ -148,7 +149,7 @@ pub fn parse(command_line: &[String]) -> Result<Arguments, String> {
         if outputs.is_empty() {
             return Err("--outputs-max-hz needs an --output".to_string());
         }
-        arguments.outputs_max_hz = max_hz;
+        arguments.outputs_max_hz = (max_hz > 0.0).then_some(max_hz);
     }
     Ok(arguments)
 }
@@ -304,7 +305,7 @@ mod tests {
                 sensor_mode: None,
                 format: Format::Jpeg,
                 outputs: Vec::new(),
-                outputs_max_hz: 0.0,
+                outputs_max_hz: None,
             })
         );
     }
@@ -368,7 +369,7 @@ mod tests {
                         quality: 80
                     }
                 ],
-                outputs_max_hz: 10.0,
+                outputs_max_hz: Some(10.0),
             })
         );
     }
@@ -504,8 +505,13 @@ mod tests {
             "--output",
             "from:0:1152x648:jpeg:80",
         ];
-        assert_eq!(parse(&strings(&flags)).unwrap().outputs_max_hz, 0.0);
-        for (max_hz, expected) in [("10", 10.0), ("7.5", 7.5), ("10.0", 10.0), ("0", 0.0)] {
+        assert_eq!(parse(&strings(&flags)).unwrap().outputs_max_hz, None);
+        for (max_hz, expected) in [
+            ("10", Some(10.0)),
+            ("7.5", Some(7.5)),
+            ("10.0", Some(10.0)),
+            ("0", None),
+        ] {
             let capped = [&flags[..], &["--outputs-max-hz", max_hz]].concat();
             assert_eq!(parse(&strings(&capped)).unwrap().outputs_max_hz, expected);
         }
@@ -554,7 +560,7 @@ mod tests {
                 "--outputs-max-hz must be 0 or a number from {MIN_MAX_HZ:.1e} to 1000, got 1e-11"
             ))
         );
-        assert_eq!(parse(&flags("1e-9")).unwrap().outputs_max_hz, 1e-9);
+        assert_eq!(parse(&flags("1e-9")).unwrap().outputs_max_hz, Some(1e-9));
     }
 
     #[test]

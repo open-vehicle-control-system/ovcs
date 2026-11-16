@@ -138,8 +138,8 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
     if let (Some(index), false) = (plan.isp_output, jpeg_outputs.is_empty()) {
         let isp_output = &plan.streams[index];
         let frames = match arguments.outputs_max_hz {
-            0.0 => "every frame".to_string(),
-            max_hz => format!("at most {max_hz} frames a second"),
+            None => "every frame".to_string(),
+            Some(max_hz) => format!("at most {max_hz} frames a second"),
         };
         info(format!(
             "ISP output {}x{}, JPEG outputs {:?}, on {frames}",
