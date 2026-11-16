@@ -14,12 +14,12 @@ pub fn decode_nms_by_class(
     source_width: i32,
     source_height: i32,
     letterbox: &Letterbox,
-    model: i32,
+    model_size: i32,
     score_threshold: f32,
 ) -> Vec<Detection> {
     let mut detections = Vec::new();
     let mut offset = 0;
-    let model = model as f32;
+    let model_size = model_size as f32;
     let (width, height) = (source_width as f32, source_height as f32);
 
     for class_id in 0..class_count {
@@ -44,10 +44,10 @@ pub fn decode_nms_by_class(
             let [x0, y0, x1, y1] = to_caller(
                 letterbox,
                 [
-                    bounding_box[1] * model,
-                    bounding_box[0] * model,
-                    bounding_box[3] * model,
-                    bounding_box[2] * model,
+                    bounding_box[1] * model_size,
+                    bounding_box[0] * model_size,
+                    bounding_box[3] * model_size,
+                    bounding_box[2] * model_size,
                 ],
             );
             // A box may extend into the padding when an object is cut off at the frame edge.

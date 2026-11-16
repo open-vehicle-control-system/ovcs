@@ -15,14 +15,14 @@ pub struct Letterbox {
     pub offset_y: i32,
 }
 
-/// Fit `width`x`height` into a `model`-sized square, centred.
-pub fn letterbox_for(width: i32, height: i32, model: i32) -> Letterbox {
-    let scale = (model as f32 / width as f32).min(model as f32 / height as f32);
+/// Fit `width`x`height` into a square of side `model_size`, centred.
+pub fn letterbox_for(width: i32, height: i32, model_size: i32) -> Letterbox {
+    let scale = (model_size as f32 / width as f32).min(model_size as f32 / height as f32);
     let (scaled_width, scaled_height) = scaled_size(width, height, scale);
     Letterbox {
         scale,
-        offset_x: (model - scaled_width) / 2,
-        offset_y: (model - scaled_height) / 2,
+        offset_x: (model_size - scaled_width) / 2,
+        offset_y: (model_size - scaled_height) / 2,
     }
 }
 
@@ -41,21 +41,21 @@ pub struct Frame<'a> {
     pub channels: u8,
 }
 
-/// Bilinear resize of `frame` into `destination`, a `model`x`model` RGB buffer padded with
+/// Bilinear resize of `frame` into `destination`, a `model_size`x`model_size` RGB buffer padded with
 /// 114, YOLO's conventional letterbox fill. The output rows are split into up to `threads`
 /// bands, with the same output whatever their count.
 pub fn letterbox_into(
     frame: &Frame,
     destination: &mut [u8],
-    model: i32,
+    model_size: i32,
     letterbox: &Letterbox,
     threads: usize,
 ) {
-    let model_px = model as usize;
-    destination[..model_px * model_px * 3].fill(PAD_VALUE);
+    let model_size = model_size as usize;
+    destination[..model_size * model_size * 3].fill(PAD_VALUE);
     match frame.channels {
-        1 => resize_image_area::<1>(frame, destination, model_px, letterbox, threads),
-        _ => resize_image_area::<3>(frame, destination, model_px, letterbox, threads),
+        1 => resize_image_area::<1>(frame, destination, model_size, letterbox, threads),
+        _ => resize_image_area::<3>(frame, destination, model_size, letterbox, threads),
     }
 }
 
@@ -63,7 +63,7 @@ pub fn letterbox_into(
 fn resize_image_area<const CHANNELS: usize>(
     frame: &Frame,
     destination: &mut [u8],
-    model_px: usize,
+    model_size: usize,
     letterbox: &Letterbox,
     threads: usize,
 ) {
@@ -71,14 +71,14 @@ fn resize_image_area<const CHANNELS: usize>(
     let to_pixels = |samples: f32| samples / letterbox.scale;
     let columns = bilinear::taps(scaled_width as usize, frame.width as usize, to_pixels);
     let rows = bilinear::taps(scaled_height as usize, frame.height as usize, to_pixels);
-    let start = (letterbox.offset_y as usize * model_px + letterbox.offset_x as usize) * 3;
+    let start = (letterbox.offset_y as usize * model_size + letterbox.offset_x as usize) * 3;
     bilinear::resize_into::<CHANNELS>(
         frame.pixels,
         frame.width as usize,
         &columns,
         &rows,
         &mut destination[start..],
-        model_px * 3,
+        model_size * 3,
         threads,
     );
 }
