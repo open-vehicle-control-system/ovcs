@@ -181,7 +181,7 @@ pub fn parse_single(arguments: &[String]) -> Result<SingleArguments, String> {
         match flag.as_str() {
             "--sensor-width" => sensor_width = Some(even(flag, value)?),
             "--sensor-height" => sensor_height = Some(even(flag, value)?),
-            "--fps" => fps = Some(number(flag, value)?),
+            "--fps" => fps = Some(frame_rate(flag, value)?),
             "--video" => video = Some(value.clone()),
             "--sensor" => sensor = Some(value.clone()),
             "--output" => outputs.push(value.as_str()),
@@ -362,7 +362,7 @@ pub fn parse(arguments: &[String]) -> Result<Arguments, String> {
         match flag.as_str() {
             "--width" => width = Some(number(flag, value)?),
             "--height" => height = Some(number(flag, value)?),
-            "--fps" => fps = Some(number(flag, value)?),
+            "--fps" => fps = Some(frame_rate(flag, value)?),
             "--left-video" => left_node = Some(value.clone()),
             "--left-sensor" => left_subdevice = Some(value.clone()),
             "--right-video" => right_node = Some(value.clone()),
@@ -398,6 +398,14 @@ fn even(flag: &str, value: &str) -> Result<u32, String> {
         Ok(samples)
     } else {
         Err(format!("{flag}: an even number of samples, got {value}"))
+    }
+}
+
+/// A frame rate the sensor's blanking can be computed for.
+fn frame_rate(flag: &str, value: &str) -> Result<u32, String> {
+    match number(flag, value)? {
+        0 => Err(format!("{flag}: at least 1 frame a second, got {value}")),
+        fps => Ok(fps),
     }
 }
 
@@ -450,6 +458,17 @@ mod tests {
         );
         assert_eq!(arguments.right.sensor, "imx708 6-001a");
         assert_eq!(arguments.settings.black_level, 60);
+    }
+
+    #[test]
+    fn a_frame_rate_of_0_is_refused() {
+        let refused = Err("--fps: at least 1 frame a second, got 0".to_string());
+        let mut pair = command_line(&[]);
+        pair[5] = "0".to_string();
+        assert_eq!(parse(&pair).map(|_| ()), refused);
+        let mut single = single_command_line(&[]);
+        single[9] = "0".to_string();
+        assert_eq!(parse_single(&single).map(|_| ()), refused);
     }
 
     #[test]
