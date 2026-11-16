@@ -176,15 +176,22 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
         })
         .collect();
 
-    let mut stdin = std::io::stdin().lock();
-    while let Ok(Some(mut record)) = framing::read_record(&mut stdin, framing::MAX_REQUEST_BYTES) {
-        let Some(&index) = record.first() else {
+    let mut requests = framing::Requests::new(std::io::stdin().lock(), framing::MAX_REQUEST_BYTES);
+    loop {
+        let record = match requests.read() {
+            Ok(Some(record)) => record,
+            Ok(None) => return 0,
+            Err(error) => {
+                writer.log(LogLevel::Error, &format!("reading a request: {error}"));
+                return 1;
+            }
+        };
+        let Some((&index, request)) = record.split_first() else {
             continue;
         };
         match senders.get(usize::from(index)) {
             Some(sender) => {
-                record.remove(0);
-                if sender.send(record).is_err() {
+                if sender.send(request.to_vec()).is_err() {
                     return 1;
                 }
             }
@@ -194,5 +201,4 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
             ),
         }
     }
-    0
 }

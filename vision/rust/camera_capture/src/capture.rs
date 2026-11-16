@@ -14,8 +14,8 @@ use std::thread;
 use std::time::Duration;
 
 use framing::{
-    frame_header, grey_frame_header, metadata_record, output_jpeg_header, LogLevel, Writer,
-    METADATA_FIELDS,
+    frame_header, grey_frame_header, metadata_record, output_jpeg_header, LogLevel, Requests,
+    Writer, METADATA_FIELDS,
 };
 use libcamera::camera::{
     ActiveCamera, Camera, CameraConfiguration, CameraConfigurationStatus, Orientation,
@@ -447,7 +447,7 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
 
     let stop = Arc::new(AtomicBool::new(false));
     let pending = Arc::new(Mutex::new(HashMap::new()));
-    spawn_stdin_reader(
+    let stdin_failed = spawn_stdin_reader(
         control_ids,
         Arc::clone(&pending),
         Arc::clone(writer),
@@ -472,7 +472,8 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     let mut sync_reported = false;
     let mut frames_without_sync = 0;
     let mut frames_since_metadata = 0;
-    while !stop.load(Ordering::Relaxed) {
+    // Acquire: a stop from the stdin reader also brings its failure.
+    while !stop.load(Ordering::Acquire) {
         let request = match completed.recv_timeout(Duration::from_millis(50)) {
             Ok(request) => request,
             Err(RecvTimeoutError::Timeout) => continue,
@@ -572,6 +573,9 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         }
     }
 
+    if stdin_failed.load(Ordering::Relaxed) {
+        exit_status = 1;
+    }
     let _ = camera.stop();
     drop(completed);
     exit_status
@@ -620,21 +624,33 @@ fn control_table(camera: &Camera) -> HashMap<String, (u32, ControlKind)> {
     table
 }
 
-/// stdin carries the Port's `{:packet, 4}` records, one `Name=value` each; they apply to
-/// the next request requeued. EOF, the BEAM closing the Port, stops the capture.
 /// The longest record taken from the host: a control is a line of text.
 const MAX_CONTROL_BYTES: usize = 64 << 10;
 
+/// stdin carries the Port's `{:packet, 4}` records, one `Name=value` each; they apply to
+/// the next request requeued. EOF, the BEAM closing the Port, stops the capture; a failed
+/// read stops it too, logged, and sets the flag returned.
 fn spawn_stdin_reader(
     control_ids: HashMap<String, (u32, ControlKind)>,
     pending: Arc<Mutex<HashMap<u32, LibcameraValue>>>,
     writer: Arc<Writer>,
     stop: Arc<AtomicBool>,
-) {
+) -> Arc<AtomicBool> {
+    let failed = Arc::new(AtomicBool::new(false));
+    let read_failed = Arc::clone(&failed);
     thread::spawn(move || {
-        let mut stdin = std::io::stdin().lock();
-        while let Ok(Some(record)) = framing::read_record(&mut stdin, MAX_CONTROL_BYTES) {
-            let command = String::from_utf8_lossy(&record);
+        let mut requests = Requests::new(std::io::stdin().lock(), MAX_CONTROL_BYTES);
+        loop {
+            let record = match requests.read() {
+                Ok(Some(record)) => record,
+                Ok(None) => break,
+                Err(error) => {
+                    writer.log(LogLevel::Error, &format!("reading a control: {error}"));
+                    read_failed.store(true, Ordering::Relaxed);
+                    break;
+                }
+            };
+            let command = String::from_utf8_lossy(record);
             let resolved = parse_control(&command).ok().and_then(|(name, value)| {
                 let (id, kind) = control_ids.get(&name)?;
                 Some((*id, coerce(value, *kind)?))
@@ -653,8 +669,9 @@ fn spawn_stdin_reader(
                 ),
             }
         }
-        stop.store(true, Ordering::Relaxed);
+        stop.store(true, Ordering::Release);
     });
+    failed
 }
 
 fn libcamera_value(value: TypedValue) -> LibcameraValue {

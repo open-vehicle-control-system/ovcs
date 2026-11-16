@@ -69,10 +69,47 @@ pub fn read_record<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Opti
     Ok(read_body_into(reader, length, &mut body)?.then_some(body))
 }
 
+/// The requests a Port reads from `input`, each into one buffer reused from the
+/// one before.
+pub struct Requests<R> {
+    input: R,
+    max_bytes: usize,
+    record: Vec<u8>,
+}
+
+impl<R: Read> Requests<R> {
+    /// Requests of at most `max_bytes` each.
+    pub fn new(input: R, max_bytes: usize) -> Requests<R> {
+        Requests {
+            input,
+            max_bytes,
+            record: Vec::new(),
+        }
+    }
+
+    /// The next request, valid until the next read. `None` once the input
+    /// closes, at a request or within one; an error for a failed read or a
+    /// request over `max_bytes`.
+    pub fn read(&mut self) -> io::Result<Option<&[u8]>> {
+        self.read_timed(|| {})
+    }
+
+    /// `read`, calling `arrived` once the request's length is in, before its body
+    /// is read.
+    pub fn read_timed(&mut self, arrived: impl FnOnce()) -> io::Result<Option<&[u8]>> {
+        let Some(length) = read_length(&mut self.input, self.max_bytes)? else {
+            return Ok(None);
+        };
+        arrived();
+        let complete = read_body_into(&mut self.input, length, &mut self.record)?;
+        Ok(complete.then_some(&self.record[..]))
+    }
+}
+
 /// Waits for the next record's length prefix. `None` on clean EOF or a
 /// truncated prefix; an error for a length over `max_bytes`, which no record
 /// of the Port's has: the stream is out of step.
-pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
+fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Option<usize>> {
     let mut prefix = [0u8; 4];
     if !read_exact_or_eof(reader, &mut prefix)? {
         return Ok(None);
@@ -89,11 +126,7 @@ pub fn read_length<R: Read>(reader: &mut R, max_bytes: usize) -> io::Result<Opti
 
 /// Reads a record's body of `length` bytes into `body` in place of its
 /// contents, reusing its allocation. `false` on a truncated body.
-pub fn read_body_into<R: Read>(
-    reader: &mut R,
-    length: usize,
-    body: &mut Vec<u8>,
-) -> io::Result<bool> {
+fn read_body_into<R: Read>(reader: &mut R, length: usize, body: &mut Vec<u8>) -> io::Result<bool> {
     body.resize(length, 0);
     read_exact_or_eof(reader, body)
 }
@@ -598,6 +631,66 @@ mod tests {
         );
         let mut input: &[u8] = &[0xff, 0xff, 0xff, 0xff];
         assert!(read_length(&mut input, 64 << 20).is_err());
+    }
+
+    /// Gives `bytes`, then fails every read.
+    struct Broken(&'static [u8]);
+
+    impl Read for Broken {
+        fn read(&mut self, buffer: &mut [u8]) -> io::Result<usize> {
+            if self.0.is_empty() {
+                return Err(io::Error::other("input gone"));
+            }
+            self.0.read(buffer)
+        }
+    }
+
+    #[test]
+    fn requests_are_read_in_order_until_the_input_closes() {
+        let mut requests = Requests::new(&[0, 0, 0, 2, 9, 8, 0, 0, 0, 1, 7][..], 16);
+        assert_eq!(requests.read().unwrap(), Some(&[9, 8][..]));
+        assert_eq!(requests.read().unwrap(), Some(&[7][..]));
+        assert_eq!(requests.read().unwrap(), None);
+    }
+
+    #[test]
+    fn a_failed_read_is_an_error_not_the_end_of_the_requests() {
+        let mut requests = Requests::new(Broken(&[0, 0, 0, 1, 7]), 16);
+        assert_eq!(requests.read().unwrap(), Some(&[7][..]));
+        let error = requests.read().unwrap_err();
+        assert_eq!(error.to_string(), "input gone");
+    }
+
+    #[test]
+    fn a_request_cut_short_ends_the_requests_as_a_closed_input_does() {
+        let mut requests = Requests::new(&[0, 0, 0, 3, 1, 2][..], 16);
+        assert_eq!(requests.read().unwrap(), None);
+    }
+
+    #[test]
+    fn a_request_over_the_largest_taken_is_an_error() {
+        let mut requests = Requests::new(&[0, 0, 0, 5, 1, 2, 3, 4, 5][..], 4);
+        assert_eq!(
+            requests.read().unwrap_err().kind(),
+            io::ErrorKind::InvalidData
+        );
+    }
+
+    #[test]
+    fn a_request_is_read_into_the_buffer_of_the_one_before() {
+        let mut requests = Requests::new(&[0, 0, 0, 3, 1, 2, 3, 0, 0, 0, 2, 4, 5][..], 16);
+        let first = requests.read().unwrap().unwrap().as_ptr();
+        let second = requests.read().unwrap().unwrap();
+        assert_eq!(second, [4, 5]);
+        assert_eq!(second.as_ptr(), first);
+    }
+
+    #[test]
+    fn the_arrival_of_a_request_is_noted_before_its_body_is_read() {
+        let mut requests = Requests::new(Broken(&[0, 0, 0, 2]), 16);
+        let mut arrived = false;
+        assert!(requests.read_timed(|| arrived = true).is_err());
+        assert!(arrived);
     }
 
     #[test]

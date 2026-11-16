@@ -21,7 +21,7 @@
 
 use std::io::{self, Write};
 
-use framing::MAX_REQUEST_BYTES;
+use framing::{Requests, MAX_REQUEST_BYTES};
 use jpeg_decoder::Decoder;
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
@@ -484,11 +484,11 @@ fn depth_colours(depth_mm: &[u16], range: Option<(u16, u16)>) -> Vec<u8> {
 }
 
 fn main() -> io::Result<()> {
-    let mut input = io::stdin().lock();
+    let mut requests = Requests::new(io::stdin().lock(), MAX_REQUEST_BYTES);
     let mut output = io::stdout().lock();
     let mut compressor = Compressor::new().map_err(io::Error::other)?;
-    while let Some(request) = framing::read_record(&mut input, MAX_REQUEST_BYTES)? {
-        let reply = reply_to(&mut compressor, &request).unwrap_or_default();
+    while let Some(request) = requests.read()? {
+        let reply = reply_to(&mut compressor, request).unwrap_or_default();
         output.write_all(&(reply.len() as u32).to_be_bytes())?;
         output.write_all(&reply)?;
         output.flush()?;

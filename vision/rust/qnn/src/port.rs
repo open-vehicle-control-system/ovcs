@@ -6,7 +6,7 @@ use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
-use framing::{exit_early, LogLevel, Writer, MAX_REQUEST_BYTES};
+use framing::{exit_early, LogLevel, Requests, Writer, MAX_REQUEST_BYTES};
 
 use crate::stage_times::Stage;
 use crate::{
@@ -171,18 +171,14 @@ pub fn serve<R: Read>(
     clock: &mut Clock,
     mut answer: impl FnMut(&[u8], &mut Clock) -> Answer,
 ) -> Result<(), String> {
-    let mut record = Vec::new();
-    let failed = |error: std::io::Error| format!("reading a request: {error}");
+    let mut requests = Requests::new(input, MAX_REQUEST_BYTES);
     loop {
-        let Some(length) = framing::read_length(input, MAX_REQUEST_BYTES).map_err(failed)? else {
+        let read = requests.read_timed(|| clock.lap(clock.idle));
+        let Some(record) = read.map_err(|error| format!("reading a request: {error}"))? else {
             return Ok(());
         };
-        clock.lap(clock.idle);
-        if !framing::read_body_into(input, length, &mut record).map_err(failed)? {
-            return Ok(());
-        }
         clock.lap(clock.read);
-        let (reply, error) = match answer(&record, clock) {
+        let (reply, error) = match answer(record, clock) {
             Answer::Nothing => {
                 let skipped = format!(
                     "skipped a record of {} bytes that is no request",
