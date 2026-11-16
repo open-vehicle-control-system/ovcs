@@ -859,37 +859,46 @@ impl Model {
     /// holds. A vote that fails leaves the HTP under its default power policy, the reason in
     /// `power_vote_error`.
     pub fn open(binary: &[u8], power: Power) -> Result<Model, String> {
-        // SAFETY: the steps run once each in the order they depend on, on handles the
-        // session's libraries gave; `info`, the graph's name and the tensors' pointers
-        // belong to the system context, which the session keeps with them.
-        unsafe {
-            let mut session = Session::load()?;
-            let info = session.describe_binary(binary)?;
-            let info = info
-                .as_ref()
-                .ok_or("systemContextGetBinaryInfo gave no description")?;
-            let (graph_name, inputs, outputs) = first_graph(info)?;
-            let graph_name_text = CStr::from_ptr(graph_name).to_string_lossy().into_owned();
-            session.create_backend()?;
-            let (power_vote, power_vote_error) = vote(&session.interface, power);
-            session.power_vote = power_vote;
-            session.create_context(binary)?;
-            let graph = session.retrieve_graph(graph_name)?;
-            let profile_error = session.create_profile().err();
-            Ok(Model {
-                session,
-                graph,
-                graph_name: graph_name_text,
-                inputs: inputs.described,
-                outputs: outputs.described,
-                raw_inputs: inputs.raw,
-                raw_outputs: outputs.raw,
-                profile_error,
-                profile_report: None,
-                profile_reported: false,
-                power_vote_error,
-            })
-        }
+        // SAFETY: loading runs the libraries' initialisers, which ask nothing of the caller.
+        let mut session = unsafe { Session::load() }?;
+        // SAFETY: called once, on the session just loaded.
+        let info = unsafe { session.describe_binary(binary) }?;
+        // SAFETY: `info` is null or the description the session's system context holds until
+        // the session is dropped, with the model.
+        let info =
+            unsafe { info.as_ref() }.ok_or("systemContextGetBinaryInfo gave no description")?;
+        // SAFETY: `info` is a description the session's system context gave and still holds.
+        let (graph_name, inputs, outputs) = unsafe { first_graph(info) }?;
+        // SAFETY: `first_graph` refuses a null name; the name is NUL-terminated, and the system
+        // context holds it.
+        let graph_name_text = unsafe { CStr::from_ptr(graph_name) }
+            .to_string_lossy()
+            .into_owned();
+        // SAFETY: called once, on a session without a backend.
+        unsafe { session.create_backend() }?;
+        // SAFETY: the session keeps the backend's library loaded, and `create_backend` called its
+        // `deviceCreate` where it has one.
+        let (power_vote, power_vote_error) = unsafe { vote(&session.interface, power) };
+        session.power_vote = power_vote;
+        // SAFETY: called once, after `create_backend`.
+        unsafe { session.create_context(binary) }?;
+        // SAFETY: called after `create_context`, on the NUL-terminated name the system context
+        // holds.
+        let graph = unsafe { session.retrieve_graph(graph_name) }?;
+        let profile_error = session.create_profile().err();
+        Ok(Model {
+            session,
+            graph,
+            graph_name: graph_name_text,
+            inputs: inputs.described,
+            outputs: outputs.described,
+            raw_inputs: inputs.raw,
+            raw_outputs: outputs.raw,
+            profile_error,
+            profile_report: None,
+            profile_reported: false,
+            power_vote_error,
+        })
     }
 
     /// The first profiled execution's events, `(type, unit, value)` each, once.
