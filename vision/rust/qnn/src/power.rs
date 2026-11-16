@@ -277,6 +277,31 @@ impl Drop for PowerVote {
     }
 }
 
+/// What voting a `Power` came to.
+#[expect(
+    dead_code,
+    reason = "a `PowerVote` is held for its drop, which ends the vote"
+)]
+pub(crate) enum Vote {
+    /// `--performance none` asks for no vote.
+    NotAsked,
+    Held(PowerVote),
+    /// The DCVS_V3 vote holds; the message names each other call that failed.
+    Partial(PowerVote, String),
+    /// No vote holds, for the reason the message gives.
+    Failed(String),
+}
+
+impl Vote {
+    /// Why the vote is missing or partial, if it is.
+    pub(crate) fn error(&self) -> Option<&str> {
+        match self {
+            Vote::NotAsked | Vote::Held(_) => None,
+            Vote::Partial(_, error) | Vote::Failed(error) => Some(error),
+        }
+    }
+}
+
 /// The calls of a power vote, in `Power::power_configs`' order.
 const POWER_CONFIG_CALLS: [&str; 3] = [
     "setPowerConfig DCVS_V3",
@@ -284,26 +309,19 @@ const POWER_CONFIG_CALLS: [&str; 3] = [
     "setPowerConfig RPC_POLLING_TIME",
 ];
 
-/// Votes `power` on the HTP through the device's performance infrastructure. The vote
-/// holds while the returned id lives; there is none when the DCVS_V3 call fails. The message
-/// names each call that failed.
+/// Votes `power` on the HTP through the device's performance infrastructure. The vote holds
+/// while the returned `Vote`'s `PowerVote` lives; there is none when the DCVS_V3 call fails.
 ///
 /// # Safety
 /// `interface` is of a library still loaded, after its `deviceCreate`.
-pub(crate) unsafe fn vote(
-    interface: &QnnInterface_ImplementationV2_39_t,
-    power: Power,
-) -> (Option<PowerVote>, Option<String>) {
+pub(crate) unsafe fn vote(interface: &QnnInterface_ImplementationV2_39_t, power: Power) -> Vote {
     let unvoted = |message: String| {
-        (
-            None,
-            Some(format!(
-                "{message}; the HTP runs under its default power policy"
-            )),
-        )
+        Vote::Failed(format!(
+            "{message}; the HTP runs under its default power policy"
+        ))
     };
     if power.performance == Performance::NoVote {
-        return (None, None);
+        return Vote::NotAsked;
     }
     let Some(get_infrastructure) = interface.deviceGetInfrastructure else {
         return unvoted(missing("deviceGetInfrastructure"));
@@ -352,8 +370,11 @@ pub(crate) unsafe fn vote(
             failures.push(message);
         }
     }
-    let error = (!failures.is_empty()).then(|| failures.join(", "));
-    (Some(held), error)
+    if failures.is_empty() {
+        Vote::Held(held)
+    } else {
+        Vote::Partial(held, failures.join(", "))
+    }
 }
 
 #[cfg(test)]

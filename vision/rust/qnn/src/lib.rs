@@ -39,7 +39,7 @@ use std::time::Instant;
 use ffi::*;
 use interface::{backend_interface, system_interface};
 use libloading::Library;
-use power::{vote, PowerVote};
+use power::{vote, Vote};
 use profile::{
     collect_events, create_profile, top_level_events, EventCursor, Profile, ProfileEvent,
     EXECUTIONS_PER_PROFILE,
@@ -62,8 +62,6 @@ pub struct Model {
     /// The first profiled execution's events, until `take_profile_report`.
     profile_report: Option<String>,
     profile_reported: bool,
-    /// Why the power vote is missing or partial, if it is.
-    pub power_vote_error: Option<String>,
     /// The latest execution's top-level event ids and events, kept between executions.
     event_ids: Vec<QnnProfile_EventId_t>,
     events: Vec<ProfileEvent>,
@@ -77,7 +75,7 @@ struct Session {
     system_context: QnnSystemContext_Handle_t,
     backend: Qnn_BackendHandle_t,
     device: Qnn_DeviceHandle_t,
-    power_vote: Option<PowerVote>,
+    power_vote: Vote,
     context: Qnn_ContextHandle_t,
     profile: Option<Profile>,
     _libraries: [Library; 2],
@@ -96,7 +94,7 @@ impl Drop for Session {
                 free(self.context, ptr::null_mut());
             }
             // The vote is the device's infrastructure's.
-            drop(self.power_vote.take());
+            drop(std::mem::replace(&mut self.power_vote, Vote::NotAsked));
             if let (false, Some(free)) = (self.device.is_null(), interface.deviceFree) {
                 free(self.device);
             }
@@ -191,7 +189,7 @@ impl Session {
             system_context: ptr::null_mut(),
             backend: ptr::null_mut(),
             device: ptr::null_mut(),
-            power_vote: None,
+            power_vote: Vote::NotAsked,
             context: ptr::null_mut(),
             profile: None,
             _libraries: [backend_library, system_library],
@@ -331,8 +329,7 @@ impl Model {
         unsafe { session.create_backend() }?;
         // SAFETY: the session keeps the backend's library loaded, and `create_backend` called its
         // `deviceCreate` where it has one.
-        let (power_vote, power_vote_error) = unsafe { vote(&session.interface, power) };
-        session.power_vote = power_vote;
+        session.power_vote = unsafe { vote(&session.interface, power) };
         // SAFETY: called once, after `create_backend`.
         unsafe { session.create_context(binary) }?;
         // SAFETY: called after `create_context`, on the NUL-terminated name the system context
@@ -350,10 +347,14 @@ impl Model {
             profile_error,
             profile_report: None,
             profile_reported: false,
-            power_vote_error,
             event_ids: Vec::new(),
             events: Vec::new(),
         })
+    }
+
+    /// Why the power vote is missing or partial, if it is.
+    pub fn power_vote_error(&self) -> Option<&str> {
+        self.session.power_vote.error()
     }
 
     /// The first profiled execution's events, `(type, unit, value)` each, once.

@@ -63,7 +63,7 @@ pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<M
     }
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
     let model = Model::open(&binary, power)?;
-    match power.outcome(model.power_vote_error.as_deref()) {
+    match power.outcome(model.power_vote_error()) {
         Ok(line) => writer.log(LogLevel::Info, &line),
         Err(line) => writer.log(LogLevel::Warning, &line),
     }
