@@ -14,7 +14,7 @@ use framing::{LogLevel, Writer};
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_FLOAT32};
 use crate::jpeg::SharedDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
-use crate::{log, Answer};
+use crate::Answer;
 
 /// Threads the letterbox splits its rows across.
 const LETTERBOX_THREADS: usize = 1;
@@ -75,8 +75,7 @@ impl Detect {
         let decoded = match self.jpegs.decode(request.jpeg) {
             Ok(decoded) => decoded,
             Err(message) => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     &format!("frame {}: {message}", request.sequence),
                 );
@@ -101,7 +100,7 @@ impl Detect {
         let mut inference_time = None;
         let outcome = match request.check() {
             Err(message) => {
-                log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 FrameOutcome::Rejected
             }
             Ok(()) => {
@@ -123,7 +122,7 @@ impl Detect {
                         FrameOutcome::Inferred
                     }
                     Err(failure) => {
-                        log(writer, LogLevel::Error, &failure.message);
+                        writer.log(LogLevel::Error, &failure.message);
                         failure.outcome
                     }
                 }
@@ -135,8 +134,7 @@ impl Detect {
         match reply_for(outcome) {
             Reply::Empty => return Answer::Reply(empty),
             Reply::EmptyThenExit => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     "detection vstreams may hold a frame in flight; exiting for a restart",
                 );

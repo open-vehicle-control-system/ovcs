@@ -12,7 +12,7 @@ use crate::grid::{cell_labels, output_stride};
 use crate::hailo::{io, Device, Network, HAILO_FORMAT_TYPE_UINT8};
 use crate::jpeg::SharedDecoder;
 use crate::outcome::{reply_for, FrameOutcome, Reply};
-use crate::{log, Answer};
+use crate::Answer;
 
 /// Threads the band's resize splits its rows across.
 const RESIZE_THREADS: usize = 2;
@@ -84,8 +84,7 @@ impl Segment {
         let decoded = match self.jpegs.decode(request.jpeg) {
             Ok(decoded) => decoded,
             Err(message) => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     &format!("frame {}: {message}", request.sequence),
                 );
@@ -111,7 +110,7 @@ impl Segment {
         let mut inference_time = None;
         let outcome = match request.check() {
             Err(message) => {
-                log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 FrameOutcome::Rejected
             }
             Ok(()) => {
@@ -131,7 +130,7 @@ impl Segment {
                         FrameOutcome::Inferred
                     }
                     Err(failure) => {
-                        log(writer, LogLevel::Error, &failure.message);
+                        writer.log(LogLevel::Error, &failure.message);
                         failure.outcome
                     }
                 }
@@ -143,8 +142,7 @@ impl Segment {
         match reply_for(outcome) {
             Reply::Empty => return Answer::Reply(empty),
             Reply::EmptyThenExit => {
-                log(
-                    writer,
+                writer.log(
                     LogLevel::Warning,
                     "segmentation vstreams may hold a frame in flight; exiting for a restart",
                 );

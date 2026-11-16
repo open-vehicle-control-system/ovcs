@@ -39,11 +39,9 @@ mod segment;
 
 use std::process::exit;
 
-use framing::{log_record, LogLevel, Writer};
+use framing::{exit_early, LogLevel, Writer};
 
-/// The longest request taken: above any camera's whole RGB frame.
-#[cfg_attr(not(feature = "device"), allow(dead_code))]
-const MAX_REQUEST_BYTES: usize = 64 << 20;
+const NAME: &str = "hailo";
 
 /// What a network makes of a request.
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
@@ -59,28 +57,17 @@ pub enum Answer {
 #[cfg(feature = "device")]
 const REPLY_TAG: u8 = 10;
 
-/// A LOG record, which `VisionCore.Hailo` hands to the Logger.
-fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
-
-/// A failure before stdout carries records goes to stderr.
-fn exit_early(message: &str, status: i32) -> ! {
-    eprintln!("hailo: {message}");
-    exit(status)
-}
-
 fn main() {
     let command_line: Vec<String> = std::env::args().skip(1).collect();
     let networks = match arguments::parse(&command_line) {
         Ok(networks) => networks,
-        Err(message) => exit_early(&format!("{message}\n{}", arguments::USAGE), 2),
+        Err(message) => exit_early(NAME, &format!("{message}\n{}", arguments::USAGE), 2),
     };
 
     // Before any HailoRT call: libhailort may log onto stdout.
     let writer = match Writer::from_stdout_redirecting() {
         Ok(writer) => writer,
-        Err(error) => exit_early(&format!("stdout: {error}"), 1),
+        Err(error) => exit_early(NAME, &format!("stdout: {error}"), 1),
     };
     writer.log_panics();
 
@@ -90,7 +77,7 @@ fn main() {
     #[cfg(not(feature = "device"))]
     {
         let _ = networks;
-        log(&writer, LogLevel::Error, "built without the device feature");
+        writer.log(LogLevel::Error, "built without the device feature");
         exit(1);
     }
 }
@@ -153,7 +140,7 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
     let lanes = match opened {
         Ok(lanes) => lanes,
         Err(message) => {
-            log(&writer, LogLevel::Error, &message);
+            writer.log(LogLevel::Error, &message);
             return 1;
         }
     };
@@ -163,8 +150,7 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
         .into_iter()
         .enumerate()
         .map(|(index, mut lane)| {
-            log(
-                &writer,
+            writer.log(
                 LogLevel::Info,
                 &format!("network {index} ready: {}", lane.description()),
             );
@@ -191,7 +177,7 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
         .collect();
 
     let mut stdin = std::io::stdin().lock();
-    while let Ok(Some(mut record)) = framing::read_record(&mut stdin, MAX_REQUEST_BYTES) {
+    while let Ok(Some(mut record)) = framing::read_record(&mut stdin, framing::MAX_REQUEST_BYTES) {
         let Some(&index) = record.first() else {
             continue;
         };
@@ -202,8 +188,7 @@ fn run(networks: Vec<arguments::Network>, writer: Writer) -> i32 {
                     return 1;
                 }
             }
-            None => log(
-                &writer,
+            None => writer.log(
                 LogLevel::Warning,
                 &format!("a request for network {index}, which this program does not run; skipped"),
             ),

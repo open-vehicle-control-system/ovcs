@@ -35,7 +35,7 @@ use std::process::ExitCode;
 
 use bayer::Tone;
 use exposure::AutoExposure;
-use framing::{log_record, metadata_record, pair_header, LogLevel, Writer};
+use framing::{metadata_record, pair_header, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
 use sensor::SensorModel;
@@ -75,9 +75,7 @@ fn main() -> ExitCode {
         }
     };
     writer.log_panics();
-    let log = |level, message: &str| {
-        let _ = writer.write_record(&log_record(level, message));
-    };
+    let log = |level, message: &str| writer.log(level, message);
     let command_line: Vec<String> = std::env::args().skip(1).collect();
     match arguments::parse_command(&command_line)
         .map_err(|message| io::Error::new(io::ErrorKind::InvalidInput, message))

@@ -50,15 +50,17 @@ fn main() {
         writer,
     } = port::start(NAME, USAGE);
     let Some(context_path) = arguments.first() else {
-        port::exit_early(NAME, USAGE, 2);
+        framing::exit_early(NAME, USAGE, 2);
     };
     let score_threshold = match arguments.get(1).map(|s| s.parse::<f32>()) {
         None => DEFAULT_SCORE_THRESHOLD,
         Some(Ok(threshold)) => threshold,
-        Some(Err(_)) => port::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2),
+        Some(Err(_)) => {
+            framing::exit_early(NAME, &format!("bad score threshold {}", arguments[1]), 2)
+        }
     };
     if let Err(message) = run(context_path, score_threshold, power, &writer) {
-        port::log(&writer, LogLevel::Error, &message);
+        writer.log(LogLevel::Error, &message);
         exit(1);
     }
 }
@@ -79,9 +81,7 @@ fn run(
         classes,
     } = model::layout(&model.inputs, &model.outputs)?;
 
-    port::log(
-        writer,
-        LogLevel::Info,
+    writer.log(LogLevel::Info,
         &format!(
             "ready: {context_path}, graph {}, input {:?}, outputs {:?}, \
              boxes {box_quantisation:?}, scores {score_quantisation:?}, threshold {score_threshold}",
@@ -112,7 +112,7 @@ fn run(
         let letterbox = letterbox_for(width, height, MODEL_SIZE);
         let (detections, time) = match request.check() {
             Err(message) => {
-                port::log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 (Vec::new(), None)
             }
             Ok(()) => {

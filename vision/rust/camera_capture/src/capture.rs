@@ -39,7 +39,6 @@ use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
 use crate::full_range::{self, chroma_size, Expansion, Range};
 use crate::grey::pack_luma;
 use crate::layout;
-use crate::log;
 use crate::schedule::Schedule;
 use crate::streams::{self, Role};
 
@@ -87,7 +86,7 @@ pub fn forward_stderr(read_fd: RawFd, writer: Arc<Writer>) {
             } else {
                 LogLevel::Info
             };
-            log(&writer, level, &format!("libcamera: {line}"));
+            writer.log(level, &format!("libcamera: {line}"));
         }
     });
 }
@@ -117,9 +116,9 @@ fn camera_manager(camera_id: usize) -> std::io::Result<CameraManager> {
 
 /// Captures until stdin closes; the process exit status.
 pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
-    let info = |message: String| log(writer, LogLevel::Info, &message);
-    let warning = |message: String| log(writer, LogLevel::Warning, &message);
-    let error = |message: String| log(writer, LogLevel::Error, &message);
+    let info = |message: String| writer.log(LogLevel::Info, &message);
+    let warning = |message: String| writer.log(LogLevel::Warning, &message);
+    let error = |message: String| writer.log(LogLevel::Error, &message);
 
     let manager = match camera_manager(arguments.camera_id as usize) {
         Ok(manager) => manager,
@@ -646,10 +645,9 @@ fn spawn_stdin_reader(
                         .lock()
                         .unwrap_or_else(|e| e.into_inner())
                         .insert(id, libcamera_value(value));
-                    log(&writer, LogLevel::Info, &format!("control {command}"));
+                    writer.log(LogLevel::Info, &format!("control {command}"));
                 }
-                None => log(
-                    &writer,
+                None => writer.log(
                     LogLevel::Warning,
                     &format!("control not understood: {command}"),
                 ),
@@ -859,8 +857,7 @@ fn write_jpeg_outputs(
                     break;
                 }
             }
-            Err(message) => log(
-                writer,
+            Err(message) => writer.log(
                 LogLevel::Warning,
                 &format!("output {} tjCompressFromYUVPlanes: {message}", output.index),
             ),

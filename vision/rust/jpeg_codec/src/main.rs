@@ -21,6 +21,7 @@
 
 use std::io::{self, Write};
 
+use framing::MAX_REQUEST_BYTES;
 use jpeg_decoder::Decoder;
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
@@ -30,9 +31,6 @@ const DEPTH: u8 = 2;
 const DECODE_RGB: u8 = 3;
 const ENCODE_HEADER: usize = 6;
 const DEPTH_HEADER: usize = 9;
-
-/// The longest request taken: above any camera's whole RGB frame.
-const MAX_REQUEST_BYTES: usize = 64 << 20;
 
 /// The most pixels a decoded JPEG may have: those of the largest RGB image a request holds.
 /// Its header is checked before its pixels are allocated.

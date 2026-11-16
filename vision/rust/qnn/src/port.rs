@@ -6,7 +6,7 @@ use std::os::fd::AsFd;
 use std::process::exit;
 use std::time::Instant;
 
-use framing::{log_record, LogLevel, Writer};
+use framing::{exit_early, LogLevel, Writer, MAX_REQUEST_BYTES};
 
 use crate::stage_times::Stage;
 use crate::{
@@ -16,25 +16,12 @@ use crate::{
 /// Room asked for in the request pipe, which the BEAM then fills in fewer turns with the Port.
 const REQUEST_PIPE_BYTES: usize = 4 << 20;
 
-/// The longest request taken: above any camera's whole RGB frame.
-const MAX_REQUEST_BYTES: usize = 64 << 20;
-
 /// What a Port serves with: its own positional arguments, the power vote, and the writer of
 /// its records.
 pub struct Start {
     pub arguments: Vec<String>,
     pub power: Power,
     pub writer: Writer,
-}
-
-pub fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
-
-/// A failure before stdout carries records goes to stderr.
-pub fn exit_early(name: &str, message: &str, status: i32) -> ! {
-    eprintln!("{name}: {message}");
-    exit(status)
 }
 
 /// Reads the command line of the Port `name`: answers `--graph-names` and exits, exits with
@@ -67,13 +54,8 @@ pub fn start(name: &str, usage: &str) -> Start {
 /// `power`, logging the pipe's size and the vote's outcome.
 pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<Model, String> {
     match framing::enlarge_pipe(std::io::stdin().as_fd(), REQUEST_PIPE_BYTES) {
-        Ok(bytes) => log(
-            writer,
-            LogLevel::Info,
-            &format!("request pipe: {bytes} bytes"),
-        ),
-        Err(error) => log(
-            writer,
+        Ok(bytes) => writer.log(LogLevel::Info, &format!("request pipe: {bytes} bytes")),
+        Err(error) => writer.log(
             LogLevel::Warning,
             &format!("request pipe not enlarged: {error}"),
         ),
@@ -81,8 +63,8 @@ pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<M
     let binary = std::fs::read(context_path).map_err(|e| format!("{context_path}: {e}"))?;
     let model = Model::open(&binary, power)?;
     match power.outcome(model.power_vote_error.as_deref()) {
-        Ok(line) => log(writer, LogLevel::Info, &line),
-        Err(line) => log(writer, LogLevel::Warning, &line),
+        Ok(line) => writer.log(LogLevel::Info, &line),
+        Err(line) => writer.log(LogLevel::Warning, &line),
     }
     Ok(model)
 }
@@ -91,14 +73,13 @@ pub fn open_model(context_path: &str, power: Power, writer: &Writer) -> Result<M
 /// (`TimeLog`).
 pub fn log_execution(writer: &Writer, model: &mut Model, time_log: &mut TimeLog, timing: &Timing) {
     if let Some(report) = model.take_profile_report() {
-        log(
-            writer,
+        writer.log(
             LogLevel::Info,
             &format!("first execution's profile events: {report}"),
         );
     }
     if let Some(message) = time_log.message(timing.source, model.profile_error.as_deref()) {
-        log(writer, LogLevel::Info, &message);
+        writer.log(LogLevel::Info, &message);
     }
 }
 
@@ -207,7 +188,7 @@ pub fn serve<R: Read>(
                     "skipped a record of {} bytes that is no request",
                     record.len()
                 );
-                log(writer, LogLevel::Warning, &skipped);
+                writer.log(LogLevel::Warning, &skipped);
                 continue;
             }
             Answer::Reply(reply) => (reply, None),
@@ -223,7 +204,7 @@ pub fn serve<R: Read>(
         clock.lap(clock.reply);
         clock.times.count_request();
         if let Some(line) = clock.times.line(clock.mark) {
-            log(writer, LogLevel::Info, &line);
+            writer.log(LogLevel::Info, &line);
         }
     }
 }
@@ -233,6 +214,8 @@ mod tests {
     use std::fs::File;
     use std::os::fd::OwnedFd;
     use std::os::unix::net::UnixStream;
+
+    use framing::log_record;
 
     use super::*;
 

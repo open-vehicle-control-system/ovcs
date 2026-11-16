@@ -12,7 +12,7 @@ const KEPT_FRAMES: usize = 2;
 
 /// The most pixels a decoded JPEG may have: those of the largest RGB image a request holds.
 /// Its header is checked before its pixels are allocated.
-const MAX_PIXELS: usize = crate::MAX_REQUEST_BYTES / 3;
+const MAX_PIXELS: usize = framing::MAX_REQUEST_BYTES / 3;
 
 /// A decoded frame: `width` × `height` RGB pixels, row-major.
 #[derive(Debug, PartialEq)]
@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn refuses_a_jpeg_of_more_pixels_than_an_rgb_request_holds() {
         let (width, height) = (8192, 2736);
-        assert!(width * height * 3 > crate::MAX_REQUEST_BYTES);
+        assert!(width * height * 3 > framing::MAX_REQUEST_BYTES);
         let jpeg = compressed(width, height, PixelFormat::GRAY);
         let mut pixels = Vec::new();
         assert!(RgbDecoder::new()

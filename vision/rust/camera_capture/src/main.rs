@@ -24,12 +24,7 @@ mod streams;
 use std::process::exit;
 use std::sync::Arc;
 
-use framing::{log_record, LogLevel, Writer};
-
-/// Messages reach the BEAM's logger as LOG records: the Port does not capture stderr.
-fn log(writer: &Writer, level: LogLevel, message: &str) {
-    let _ = writer.write_record(&log_record(level, message));
-}
+use framing::{LogLevel, Writer};
 
 fn main() {
     // Before the Writer, so that libcamera's stderr and any stray stdout both reach the forwarder.
@@ -51,13 +46,12 @@ fn main() {
     let arguments = match arguments::parse(&command_line) {
         Ok(arguments) => arguments,
         Err(message) => {
-            log(&writer, LogLevel::Warning, &message);
+            writer.log(LogLevel::Warning, &message);
             exit(2);
         }
     };
 
-    log(
-        &writer,
+    writer.log(
         LogLevel::Info,
         &format!(
             "camera={} {}x{} @{} fps, {:?} frames",
@@ -70,7 +64,7 @@ fn main() {
 
     #[cfg(not(feature = "device"))]
     {
-        log(&writer, LogLevel::Error, "built without the device feature");
+        writer.log(LogLevel::Error, "built without the device feature");
         exit(1);
     }
 }

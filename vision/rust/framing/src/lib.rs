@@ -23,6 +23,9 @@ const KEY_FRAME_FLAG: u8 = 1;
 
 pub const METADATA_FIELDS: usize = 8;
 
+/// The longest request a Port takes: above any camera's whole RGB frame.
+pub const MAX_REQUEST_BYTES: usize = 64 << 20;
+
 /// How long a panic waits for the thread writing a record before it gives up its own.
 const PANIC_LOCK_WAIT: Duration = Duration::from_millis(500);
 const PANIC_LOCK_RETRY: Duration = Duration::from_millis(1);
@@ -130,6 +133,13 @@ pub fn enlarge_pipe(descriptor: BorrowedFd<'_>, bytes: usize) -> io::Result<usiz
     set(i32::try_from(bytes).unwrap_or(i32::MAX)).or_else(|_| set(UNPRIVILEGED_PIPE_BYTES))
 }
 
+/// Ends the program `name` with `status` on a failure before stdout carries
+/// records, its message on stderr.
+pub fn exit_early(name: &str, message: &str, status: i32) -> ! {
+    eprintln!("{name}: {message}");
+    std::process::exit(status)
+}
+
 /// Record output on the real stdout. Libraries that print to stdout would
 /// corrupt the framing, so fd 1 is pointed at stderr.
 pub struct Writer {
@@ -190,6 +200,13 @@ impl Writer {
             }
             report(info);
         }));
+    }
+
+    /// Sends `message` as a LOG record, which the Port's driver hands to the
+    /// Logger: the Port does not read stderr. A failed write is dropped, the host
+    /// that would read it being gone.
+    pub fn log(&self, level: LogLevel, message: &str) {
+        let _ = self.write_record(&log_record(level, message));
     }
 
     /// Writes one record. Safe to call from several threads.
@@ -473,6 +490,15 @@ mod tests {
         drop(output);
         drop(writer);
         assert_eq!(read_record(&mut pipe_out, 1 << 10).unwrap(), None);
+    }
+
+    #[test]
+    fn a_log_is_written_as_a_log_record() {
+        let (writer, mut pipe_out) = piped_writer();
+        writer.log(LogLevel::Warning, "hi");
+        drop(writer);
+        let record = read_record(&mut pipe_out, 1 << 10).unwrap();
+        assert_eq!(record, Some(log_record(LogLevel::Warning, "hi")));
     }
 
     #[test]

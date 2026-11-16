@@ -46,12 +46,12 @@ fn main() {
     let (context_path, classes) = match &arguments[..] {
         [context_path, classes] => match classes.parse::<usize>() {
             Ok(classes) => (context_path, classes),
-            Err(_) => port::exit_early(NAME, &format!("classes: {classes} is not a count"), 2),
+            Err(_) => framing::exit_early(NAME, &format!("classes: {classes} is not a count"), 2),
         },
-        _ => port::exit_early(NAME, USAGE, 2),
+        _ => framing::exit_early(NAME, USAGE, 2),
     };
     if let Err(message) = run(context_path, classes, power, &writer) {
-        port::log(&writer, LogLevel::Error, &message);
+        writer.log(LogLevel::Error, &message);
         exit(1);
     }
 }
@@ -72,8 +72,7 @@ fn run(
         classes,
     } = model::geometry(&model.inputs, &model.outputs, expected_classes)?;
 
-    port::log(
-        writer,
+    writer.log(
         LogLevel::Info,
         &format!(
             "ready: {context_path}, graph {}, input {} {:?} quantisation {:?}, output {} {:?} \
@@ -101,7 +100,7 @@ fn run(
         let unanswered = || labels_record(request.sequence, 0, 0, &[], None);
         let reply = match request.check() {
             Err(message) => {
-                port::log(writer, LogLevel::Warning, &message);
+                writer.log(LogLevel::Warning, &message);
                 unanswered()
             }
             Ok(()) => {
