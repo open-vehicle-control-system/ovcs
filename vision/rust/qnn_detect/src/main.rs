@@ -14,7 +14,8 @@
 //! sequence, the image's size, 1 (grey) or 3 (RGB) channels and its pixels;
 //! the reply the detections in the image's pixels and, when the graph ran, its
 //! time on the HTP from QNN's profile, or the wall time around its execution
-//! when the profile is unavailable; or a LOG record.
+//! when the profile is unavailable; or a LOG record. A failed execution is answered with no
+//! detections, then the program exits, so its driver reopens it.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod model;
@@ -27,7 +28,7 @@ use detection::letterbox::{letterbox_for, letterbox_into, Frame};
 use detection::protocol::{detections_record, inference_micros, parse_request};
 use framing::{LogLevel, Writer};
 use model::Layout;
-use qnn::port::{self, Clock, Start};
+use qnn::port::{self, Answer, Clock, Start};
 use qnn::{Power, TimeLog};
 use yolox::{decode, Outputs, MODEL_SIZE};
 
@@ -104,7 +105,9 @@ fn run(
     let mut clock = Clock::new("letterbox", "decode", Instant::now());
     let mut stdin = std::io::stdin().lock();
     port::serve(&mut stdin, writer, &mut clock, |record, clock| {
-        let request = parse_request(record)?;
+        let Some(request) = parse_request(record) else {
+            return Answer::Nothing;
+        };
         let (width, height) = (i32::from(request.width), i32::from(request.height));
         let letterbox = letterbox_for(width, height, MODEL_SIZE);
         let (detections, time) = match request.check() {
@@ -153,12 +156,14 @@ fn run(
                         )
                     }
                     Err(message) => {
-                        port::log(writer, LogLevel::Error, &message);
-                        (Vec::new(), None)
+                        return Answer::ReplyThenExit {
+                            reply: detections_record(request.sequence, &[], None),
+                            error: format!("{message}; exiting to be reopened"),
+                        }
                     }
                 }
             }
         };
-        Some(detections_record(request.sequence, &detections, time))
+        Answer::Reply(detections_record(request.sequence, &detections, time))
     })
 }

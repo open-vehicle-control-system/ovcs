@@ -13,7 +13,8 @@
 //! carries an RGB image and a band of its rows; the band, resized to the model's input, is
 //! inferred, and the reply carries each cell's class, the highest of its scores, and, when the
 //! graph ran, its time on the HTP from QNN's profile, or the wall time around its execution when
-//! the profile is unavailable; or a LOG record.
+//! the profile is unavailable; or a LOG record. A failed execution is answered with an empty
+//! label image, then the program exits, so its driver reopens it.
 //! Every minute, a LOG record gives each stage's mean time per request (`qnn::StageTimes`).
 
 mod labels;
@@ -24,7 +25,7 @@ use std::time::Instant;
 
 use framing::{LogLevel, Writer};
 use model::Geometry;
-use qnn::port::{self, Clock, Start};
+use qnn::port::{self, Answer, Clock, Start};
 use qnn::{Power, TimeLog};
 use segmentation::band;
 use segmentation::protocol::{labels_record, parse_request};
@@ -94,7 +95,9 @@ fn run(
     let mut clock = Clock::new("resize", "argmax", Instant::now());
     let mut stdin = std::io::stdin().lock();
     port::serve(&mut stdin, writer, &mut clock, |record, clock| {
-        let request = parse_request(record)?;
+        let Some(request) = parse_request(record) else {
+            return Answer::Nothing;
+        };
         let unanswered = || labels_record(request.sequence, 0, 0, &[], None);
         let reply = match request.check() {
             Err(message) => {
@@ -128,12 +131,14 @@ fn run(
                         )
                     }
                     Err(message) => {
-                        port::log(writer, LogLevel::Error, &message);
-                        unanswered()
+                        return Answer::ReplyThenExit {
+                            reply: unanswered(),
+                            error: format!("{message}; exiting to be reopened"),
+                        }
                     }
                 }
             }
         };
-        Some(reply)
+        Answer::Reply(reply)
     })
 }

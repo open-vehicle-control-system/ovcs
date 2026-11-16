@@ -168,14 +168,27 @@ impl Clock {
     }
 }
 
+/// What a Port makes of a record.
+pub enum Answer {
+    /// Not a request: there is no sequence to answer.
+    Nothing,
+    Reply(Vec<u8>),
+    /// The model failed: the Port exits once the reply is written, so its driver counts the
+    /// failure and reopens it.
+    ReplyThenExit {
+        reply: Vec<u8>,
+        error: String,
+    },
+}
+
 /// Answers the requests `input` brings until it closes, each record with the reply `answer`
 /// gives it, written to `writer`; a record `answer` gives none for is skipped with a warning.
-/// `Err` is a failed read.
+/// `Err` is a failed read, or the error of a `ReplyThenExit` once its reply is written.
 pub fn serve<R: Read>(
     input: &mut R,
     writer: &Writer,
     clock: &mut Clock,
-    mut answer: impl FnMut(&[u8], &mut Clock) -> Option<Vec<u8>>,
+    mut answer: impl FnMut(&[u8], &mut Clock) -> Answer,
 ) -> Result<(), String> {
     let mut record = Vec::new();
     let failed = |error: std::io::Error| format!("reading a request: {error}");
@@ -188,17 +201,24 @@ pub fn serve<R: Read>(
             return Ok(());
         }
         clock.lap(clock.read);
-        let Some(reply) = answer(&record, clock) else {
-            let skipped = format!(
-                "skipped a record of {} bytes that is no request",
-                record.len()
-            );
-            log(writer, LogLevel::Warning, &skipped);
-            continue;
+        let (reply, error) = match answer(&record, clock) {
+            Answer::Nothing => {
+                let skipped = format!(
+                    "skipped a record of {} bytes that is no request",
+                    record.len()
+                );
+                log(writer, LogLevel::Warning, &skipped);
+                continue;
+            }
+            Answer::Reply(reply) => (reply, None),
+            Answer::ReplyThenExit { reply, error } => (reply, Some(error)),
         };
         // The host closed the Port: nothing reads a log either.
         if writer.write_record(&reply).is_err() {
             return Ok(());
+        }
+        if let Some(error) = error {
+            return Err(error);
         }
         clock.lap(clock.reply);
         clock.times.count_request();
@@ -232,14 +252,21 @@ mod tests {
     }
 
     // The records `serve` writes for `input`, each request answered with its bytes doubled,
-    // one starting with 0 skipped.
+    // one starting with 0 skipped, one starting with 255 answered as it is before the Port exits.
     fn served(mut input: impl Read) -> (Result<(), String>, Vec<Vec<u8>>) {
         let (writer, mut written) = writer();
         let mut clock = Clock::new("resize", "argmax", Instant::now());
         let outcome = serve(&mut input, &writer, &mut clock, |record, clock| {
             clock.prepared();
             clock.finished();
-            (record[0] != 0).then(|| record.iter().map(|byte| byte * 2).collect())
+            match record[0] {
+                0 => Answer::Nothing,
+                255 => Answer::ReplyThenExit {
+                    reply: record.to_vec(),
+                    error: "graphExecute failed".to_string(),
+                },
+                _ => Answer::Reply(record.iter().map(|byte| byte * 2).collect()),
+            }
         });
         drop(writer);
         let mut records = Vec::new();
@@ -273,6 +300,13 @@ mod tests {
         let (outcome, records) = served(cut);
         assert_eq!(outcome, Ok(()));
         assert_eq!(records, [vec![2, 4]]);
+    }
+
+    #[test]
+    fn a_failed_model_ends_the_loop_with_its_error_once_the_reply_is_written() {
+        let (outcome, records) = served(&framed(&[&[1, 2], &[255, 4], &[3]])[..]);
+        assert_eq!(outcome, Err("graphExecute failed".to_string()));
+        assert_eq!(records, [vec![2, 4], vec![255, 4]]);
     }
 
     // One request, then a read that fails.
