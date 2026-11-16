@@ -88,9 +88,12 @@ impl PhaseLock {
         if self.history.len() < HISTORY {
             return false;
         }
-        let mut recent: Vec<i64> = self.history.iter().copied().collect();
-        recent.sort_unstable();
-        recent[recent.len() / 2] < LOCKED_NS
+        let mut recent = [0; HISTORY];
+        for (slot, offset) in recent.iter_mut().zip(&self.history) {
+            *slot = *offset;
+        }
+        let (_, median, _) = recent.select_nth_unstable(HISTORY / 2);
+        *median < LOCKED_NS
     }
 }
 
