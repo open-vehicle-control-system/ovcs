@@ -697,7 +697,6 @@ fn convert_frames(
 mod tests {
     use std::cell::{Cell, RefCell};
     use std::io::Write;
-    use std::os::fd::FromRawFd;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{mpsc, Mutex};
 
@@ -707,19 +706,11 @@ mod tests {
     use crate::bayer::tests::padded_packed12;
     use crate::encoder::EncodedFrame;
     use crate::fixtures::{packed12_frame, rgb_only};
+    use crate::input::tests::{pipe, record};
     use crate::nv12::{self, Nv12Layout};
     use crate::processor::tests::{develop_along, samples, Path};
     use crate::processor::MEASURED_ROW_STEP;
     use crate::scale;
-
-    // A pipe's reading and writing ends.
-    fn pipe() -> (File, File) {
-        let mut ends = [0; 2];
-        // SAFETY: `ends` has room for the two descriptors.
-        assert_eq!(unsafe { libc::pipe(ends.as_mut_ptr()) }, 0);
-        // SAFETY: both descriptors were just created and nothing else owns them.
-        unsafe { (File::from_raw_fd(ends[0]), File::from_raw_fd(ends[1])) }
-    }
 
     const WIDTH: usize = 24;
     const HEIGHT: usize = 46;
@@ -777,12 +768,10 @@ mod tests {
                 let _ = on_take.send(index);
             }
             for (_, setting) in self.settings.iter().filter(|(at, _)| *at == index) {
-                let record = [
-                    &(setting.len() as u32).to_be_bytes()[..],
-                    setting.as_bytes(),
-                ];
                 let mut host = self.host.borrow_mut();
-                host.as_mut().unwrap().write_all(&record.concat())?;
+                host.as_mut()
+                    .unwrap()
+                    .write_all(&record(setting.as_bytes()))?;
             }
             let whole = frame.as_ref().map(|raw| {
                 let frame = packed12_frame(raw, WIDTH, STRIDE);
