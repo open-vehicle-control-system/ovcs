@@ -41,13 +41,30 @@ fn scaled_size(width: i32, height: i32, scale: f32) -> (i32, i32) {
     )
 }
 
-/// A caller frame: `width` × `height` pixels of 1 (grey) or 3 (RGB) channels.
+/// A caller frame: `width` × `height` pixels of `channels`.
 #[derive(Debug, PartialEq)]
 pub struct Frame<'a> {
     pub pixels: &'a [u8],
     pub width: i32,
     pub height: i32,
-    pub channels: u8,
+    pub channels: Channels,
+}
+
+/// The samples of a caller frame's pixel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channels {
+    Grey,
+    Rgb,
+}
+
+impl Channels {
+    /// Samples a pixel.
+    pub fn samples(self) -> usize {
+        match self {
+            Channels::Grey => 1,
+            Channels::Rgb => 3,
+        }
+    }
 }
 
 /// Bilinear resize of `frame` into `destination`, a `model_size`x`model_size` RGB buffer padded with
@@ -62,8 +79,10 @@ pub fn letterbox_into(
     let model_size = letterbox.model_size as usize;
     destination[..model_size * model_size * 3].fill(PAD_VALUE);
     match frame.channels {
-        1 => resize_image_area::<1>(frame, destination, model_size, letterbox, threads),
-        _ => resize_image_area::<3>(frame, destination, model_size, letterbox, threads),
+        Channels::Grey => {
+            resize_image_area::<1>(frame, destination, model_size, letterbox, threads)
+        }
+        Channels::Rgb => resize_image_area::<3>(frame, destination, model_size, letterbox, threads),
     }
 }
 
@@ -161,7 +180,7 @@ mod tests {
                 pixels: &source,
                 width,
                 height,
-                channels: 3,
+                channels: Channels::Rgb,
             },
             &mut destination,
             &letterbox,
@@ -185,7 +204,7 @@ mod tests {
                 pixels: &source,
                 width: 2,
                 height: 2,
-                channels: 1,
+                channels: Channels::Grey,
             },
             &mut destination,
             &letterbox,
@@ -204,7 +223,7 @@ mod tests {
                 pixels: &source,
                 width: 1,
                 height: 1,
-                channels: 3,
+                channels: Channels::Rgb,
             },
             &mut destination,
             &letterbox,
@@ -225,7 +244,7 @@ mod tests {
                 pixels: &source,
                 width: 2,
                 height: 1,
-                channels: 1,
+                channels: Channels::Grey,
             },
             &mut destination,
             &letterbox,
@@ -259,15 +278,15 @@ mod tests {
     fn the_letterboxed_images_keep_their_digests_on_one_to_four_threads() {
         for threads in 1..=4 {
             let digests: Vec<u64> = [
-                (1014, 760, 3, 640),
-                (1014, 760, 1, 640),
-                (37, 23, 3, 64),
-                (100, 200, 3, 64),
-                (5, 3, 1, 16),
+                (1014, 760, Channels::Rgb, 640),
+                (1014, 760, Channels::Grey, 640),
+                (37, 23, Channels::Rgb, 64),
+                (100, 200, Channels::Rgb, 64),
+                (5, 3, Channels::Grey, 16),
             ]
             .iter()
             .map(|&(width, height, channels, model)| {
-                let source = noise((width * height) as usize * usize::from(channels));
+                let source = noise((width * height) as usize * channels.samples());
                 let letterbox = letterbox_for(width, height, model);
                 let mut destination = vec![0u8; (model * model * 3) as usize];
                 letterbox_into(
