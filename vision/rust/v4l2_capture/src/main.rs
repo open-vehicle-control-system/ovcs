@@ -35,7 +35,7 @@ mod white_balance;
 use std::io;
 use std::process::ExitCode;
 
-use exposure::AutoExposure;
+use exposure::{AutoExposure, Exposure};
 use framing::{LogLevel, Writer};
 use settings::Settings;
 use v4l2::{Capture, Node};
@@ -121,8 +121,7 @@ fn open_camera(nodes: &arguments::Nodes, width: u32, height: u32) -> io::Result<
 }
 
 fn auto_exposure(settings: &Settings, frame_us: f64) -> AutoExposure {
-    let start = (f64::from(settings.exposure_us), settings.analogue_gain);
-    auto_exposure_from(settings, frame_us, start)
+    auto_exposure_from(settings, frame_us, settings.manual_exposure())
 }
 
 /// Where auto exposure continues from after a settings change: where it ran,
@@ -130,9 +129,9 @@ fn auto_exposure(settings: &Settings, frame_us: f64) -> AutoExposure {
 /// so switching it on again starts from what they hold.
 fn resume_point(
     settings: &Settings,
-    running: (f64, f64),
-    apply_manual: impl FnOnce() -> io::Result<(f64, f64)>,
-) -> io::Result<(f64, f64)> {
+    running: Exposure,
+    apply_manual: impl FnOnce() -> io::Result<Exposure>,
+) -> io::Result<Exposure> {
     if settings.auto_exposure {
         Ok(running)
     } else {
@@ -140,15 +139,10 @@ fn resume_point(
     }
 }
 
-/// Auto exposure from `settings`, continuing from `(exposure_us, gain)`.
-fn auto_exposure_from(
-    settings: &Settings,
-    frame_us: f64,
-    (exposure_us, gain): (f64, f64),
-) -> AutoExposure {
+/// Auto exposure from `settings`, continuing from `exposure`.
+fn auto_exposure_from(settings: &Settings, frame_us: f64, exposure: Exposure) -> AutoExposure {
     AutoExposure {
-        exposure_us,
-        gain,
+        exposure,
         max_exposure_us: f64::from(settings.max_exposure_us).min(frame_us),
         max_gain: settings.max_gain,
         target: settings.target_brightness,
@@ -158,7 +152,7 @@ fn auto_exposure_from(
 
 /// The exposure and gain auto exposure, while on, applies at once to stay
 /// within caps a settings change lowered.
-fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<(f64, f64)> {
+fn capped_now(settings: &Settings, auto_exposure: &mut AutoExposure) -> Option<Exposure> {
     if settings.auto_exposure {
         auto_exposure.capped()
     } else {
@@ -205,21 +199,27 @@ mod tests {
     #[test]
     fn auto_exposure_switched_on_again_starts_from_the_manual_values() {
         let mut settings = Settings::default();
-        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, (12_000.0, 3.0));
+        let start = Exposure {
+            exposure_us: 12_000.0,
+            gain: 3.0,
+        };
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
 
         settings.apply(b"auto_exposure=false").unwrap();
         settings.apply(b"exposure_us=5000").unwrap();
-        let running = (auto_exposure.exposure_us, auto_exposure.gain);
-        let resume_from = resume_point(&settings, running, || Ok((5_000.0, 1.5))).unwrap();
+        let manual = Exposure {
+            exposure_us: 5_000.0,
+            gain: 1.5,
+        };
+        let resume_from = resume_point(&settings, auto_exposure.exposure, || Ok(manual)).unwrap();
         auto_exposure = auto_exposure_from(&settings, 33_333.0, resume_from);
 
         settings.apply(b"auto_exposure=true").unwrap();
-        let running = (auto_exposure.exposure_us, auto_exposure.gain);
-        let resume_from = resume_point(&settings, running, || {
+        let resume_from = resume_point(&settings, auto_exposure.exposure, || {
             panic!("no manual values while automatic")
         })
         .unwrap();
-        assert_eq!(resume_from, (5_000.0, 1.5));
+        assert_eq!(resume_from, manual);
     }
 
     #[test]
@@ -227,13 +227,20 @@ mod tests {
         let mut settings = Settings::default();
         settings.apply(b"auto_exposure=false").unwrap();
         settings.apply(b"max_exposure_us=1000").unwrap();
-        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, (8_000.0, 2.0));
+        let start = Exposure {
+            exposure_us: 8_000.0,
+            gain: 2.0,
+        };
+        let mut auto_exposure = auto_exposure_from(&settings, 33_333.0, start);
         assert_eq!(capped_now(&settings, &mut auto_exposure), None);
 
         settings.apply(b"auto_exposure=true").unwrap();
         assert_eq!(
             capped_now(&settings, &mut auto_exposure),
-            Some((1_000.0, 16.0))
+            Some(Exposure {
+                exposure_us: 1_000.0,
+                gain: 16.0
+            })
         );
     }
 }

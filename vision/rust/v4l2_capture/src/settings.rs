@@ -1,6 +1,7 @@
 //! The capture settings: set at start from the command line, and while
 //! running from `name=value` records on stdin.
 
+use crate::exposure::Exposure;
 use crate::sensor::SensorModel;
 use crate::white_balance::{self, Gains};
 
@@ -82,6 +83,14 @@ impl Settings {
     pub fn apply(&mut self, record: &[u8]) -> Result<(), String> {
         let (name, value) = name_and_value(record)?;
         self.set(name, value)
+    }
+
+    /// The exposure the sensors hold without auto exposure, and start from with it.
+    pub fn manual_exposure(&self) -> Exposure {
+        Exposure {
+            exposure_us: f64::from(self.exposure_us),
+            gain: self.analogue_gain,
+        }
     }
 }
 

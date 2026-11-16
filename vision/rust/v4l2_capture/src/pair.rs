@@ -8,7 +8,7 @@ use framing::{metadata_record, pair_header, LogLevel, Writer};
 
 use crate::arguments;
 use crate::bayer::{self, Tone};
-use crate::exposure;
+use crate::exposure::{self, Exposure};
 use crate::pairing::{Pairer, Side};
 use crate::phase_lock::PhaseLock;
 use crate::sensor::{FrameTiming, SensorModel};
@@ -37,20 +37,23 @@ pub fn run(
     let timing = FrameTiming::read(&left.sensor, &right.sensor, sensor_size, arguments.fps)?;
     let gain_range = left.sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
     let frame_us = timing.frame_us();
-    let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
-        let lines = timing.exposure_lines(exposure_us);
-        let code = model.gain_code(gain, gain_range.0, gain_range.1);
+    let set_exposure = |exposure: Exposure| -> io::Result<Exposure> {
+        let lines = timing.exposure_lines(exposure.exposure_us);
+        let code = model.gain_code(exposure.gain, gain_range.0, gain_range.1);
         for camera in [&left, &right] {
             camera.sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
             camera.sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
         }
-        Ok((timing.exposure_us(lines), model.gain(code)))
+        Ok(Exposure {
+            exposure_us: timing.exposure_us(lines),
+            gain: model.gain(code),
+        })
     };
     // Tells the host the exposure and gain just applied, stamped with the left frame start.
-    let report_exposure = |(exposure_us, gain): (f64, f64), capture_ns: i64| -> io::Result<()> {
+    let report_exposure = |exposure: Exposure, capture_ns: i64| -> io::Result<()> {
         let mut values = [0.0; framing::METADATA_FIELDS];
-        values[0] = exposure_us;
-        values[1] = gain;
+        values[0] = exposure.exposure_us;
+        values[1] = exposure.gain;
         writer.write_record(&metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values))
     };
     for camera in [&left, &right] {
@@ -83,10 +86,7 @@ pub fn run(
     }
     let mut auto_exposure = auto_exposure(&settings, frame_us);
     let mut last_left_ns = None;
-    report_exposure(
-        set_exposure(f64::from(settings.exposure_us), settings.analogue_gain)?,
-        0,
-    )?;
+    report_exposure(set_exposure(settings.manual_exposure())?, 0)?;
     log(
         LogLevel::Info,
         &format!(
@@ -123,19 +123,15 @@ pub fn run(
                 Some(record) => match settings.apply(&record) {
                     Ok(()) => {
                         tone = pair_tone(&settings, model);
-                        let running = (auto_exposure.exposure_us, auto_exposure.gain);
+                        let running = auto_exposure.exposure;
                         let resume_from = resume_point(&settings, running, || {
-                            let applied = set_exposure(
-                                f64::from(settings.exposure_us),
-                                settings.analogue_gain,
-                            )?;
+                            let applied = set_exposure(settings.manual_exposure())?;
                             report_exposure(applied, last_left_ns.unwrap_or(0))?;
                             Ok(applied)
                         })?;
                         auto_exposure = auto_exposure_from(&settings, frame_us, resume_from);
-                        if let Some((exposure_us, gain)) = capped_now(&settings, &mut auto_exposure)
-                        {
-                            let applied = set_exposure(exposure_us, gain)?;
+                        if let Some(capped) = capped_now(&settings, &mut auto_exposure) {
+                            let applied = set_exposure(capped)?;
                             report_exposure(applied, last_left_ns.unwrap_or(0))?;
                         }
                         set_focus(settings.focus);
@@ -191,8 +187,8 @@ pub fn run(
                             && left_frames.is_multiple_of(EXPOSURE_EVERY_FRAMES)
                         {
                             let mean = exposure::mean(&grey, EXPOSURE_SAMPLE_STRIDE);
-                            if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                                report_exposure(set_exposure(exposure_us, gain)?, start_ns)?;
+                            if let Some(exposure) = auto_exposure.observe(mean) {
+                                report_exposure(set_exposure(exposure)?, start_ns)?;
                             }
                         }
                     }

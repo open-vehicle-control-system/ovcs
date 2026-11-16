@@ -16,6 +16,7 @@ use crate::arguments::{Format, OutputSpec, SingleArguments};
 use crate::bayer::{RawFrame, Tone};
 use crate::cpus;
 use crate::encoder::{Encoder, H264Settings, M2mEncoder};
+use crate::exposure::Exposure;
 use crate::h264::{self, EncodedVideo};
 use crate::jpeg::{self, Encoded};
 use crate::plan::{Plan, Sent};
@@ -56,21 +57,21 @@ pub fn run(
     let timing = FrameTiming::read(sensor, sensor, sensor_size, arguments.fps)?;
     let gain_range = sensor.control_range(v4l2::CID_ANALOGUE_GAIN)?;
     let frame_us = timing.frame_us();
-    let set_exposure = |exposure_us: f64, gain: f64| -> io::Result<(f64, f64)> {
-        let lines = timing.exposure_lines(exposure_us);
-        let code = model.gain_code(gain, gain_range.0, gain_range.1);
+    let set_exposure = |exposure: Exposure| -> io::Result<Exposure> {
+        let lines = timing.exposure_lines(exposure.exposure_us);
+        let code = model.gain_code(exposure.gain, gain_range.0, gain_range.1);
         sensor.set_control(v4l2::CID_EXPOSURE, lines)?;
         sensor.set_control(v4l2::CID_ANALOGUE_GAIN, code)?;
-        Ok((timing.exposure_us(lines), model.gain(code)))
+        Ok(Exposure {
+            exposure_us: timing.exposure_us(lines),
+            gain: model.gain(code),
+        })
     };
     sensor.set_control(v4l2::CID_VBLANK, timing.vblank)?;
 
     let settings = arguments.settings.clone();
     writer.write_record(&exposure_record(
-        set_exposure(
-            f64::from(settings.capture.exposure_us),
-            settings.capture.analogue_gain,
-        )?,
+        set_exposure(settings.capture.manual_exposure())?,
         0,
     ))?;
     log(
@@ -161,10 +162,10 @@ fn start_encoders(
 
 /// The record telling the host the exposure and gain just applied, stamped
 /// with a frame start.
-fn exposure_record((exposure_us, gain): (f64, f64), capture_ns: i64) -> Vec<u8> {
+fn exposure_record(exposure: Exposure, capture_ns: i64) -> Vec<u8> {
     let mut values = [0.0; framing::METADATA_FIELDS];
-    values[0] = exposure_us;
-    values[1] = gain;
+    values[0] = exposure.exposure_us;
+    values[1] = exposure.gain;
     metadata_record(capture_ns, EXPOSURE_GAIN_PRESENT, &values)
 }
 
@@ -262,7 +263,7 @@ struct Setup {
 fn capture(
     mut setup: Setup,
     frames: &impl Frames,
-    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_exposure: &dyn Fn(Exposure) -> io::Result<Exposure>,
     set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     records: &impl Records,
@@ -545,7 +546,7 @@ fn convert_frames(
     setup: Setup,
     mut plan: Plan,
     frames: &impl Frames,
-    set_exposure: &dyn Fn(f64, f64) -> io::Result<(f64, f64)>,
+    set_exposure: &dyn Fn(Exposure) -> io::Result<Exposure>,
     set_focus: &dyn Fn(u16) -> io::Result<()>,
     input: &mut File,
     queue: &Queue,
@@ -604,22 +605,17 @@ fn convert_frames(
                         if !settings.awb {
                             gains = settings.gains();
                         }
-                        let running = (auto_exposure.exposure_us, auto_exposure.gain);
+                        let running = auto_exposure.exposure;
                         let resume_from = resume_point(&settings.capture, running, || {
-                            let applied = set_exposure(
-                                f64::from(settings.capture.exposure_us),
-                                settings.capture.analogue_gain,
-                            )?;
+                            let applied = set_exposure(settings.capture.manual_exposure())?;
                             let record = exposure_record(applied, last_ns.unwrap_or(0));
                             queue.send(Record::Other(record))?;
                             Ok(applied)
                         })?;
                         auto_exposure =
                             auto_exposure_from(&settings.capture, frame_us, resume_from);
-                        if let Some((exposure_us, gain)) =
-                            capped_now(&settings.capture, &mut auto_exposure)
-                        {
-                            let applied = set_exposure(exposure_us, gain)?;
+                        if let Some(capped) = capped_now(&settings.capture, &mut auto_exposure) {
+                            let applied = set_exposure(capped)?;
                             let record = exposure_record(applied, last_ns.unwrap_or(0));
                             queue.send(Record::Other(record))?;
                         }
@@ -668,8 +664,8 @@ fn convert_frames(
             statistics.frames += 1;
             last_ns = Some(start_ns);
             if let Some(mean) = green_mean {
-                if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                    let applied = set_exposure(exposure_us, gain)?;
+                if let Some(exposure) = auto_exposure.observe(mean) {
+                    let applied = set_exposure(exposure)?;
                     queue.send(Record::Other(exposure_record(applied, start_ns)))?;
                 }
             }
@@ -893,7 +889,12 @@ mod tests {
             statistics_every,
             encoders,
         };
-        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us.round(), gain));
+        let set_exposure = |exposure: Exposure| {
+            Ok(Exposure {
+                exposure_us: exposure.exposure_us.round(),
+                ..exposure
+            })
+        };
         capture(setup, frames, &set_exposure, &|_| Ok(()), input, records)
     }
 
@@ -1244,7 +1245,7 @@ mod tests {
             focused.borrow_mut().push(focus);
             Ok(())
         };
-        let set_exposure = |exposure_us: f64, gain: f64| Ok((exposure_us, gain));
+        let set_exposure = |exposure: Exposure| Ok(exposure);
         let records = Collected::default();
         capture(
             setup,
