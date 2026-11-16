@@ -109,7 +109,6 @@ pub fn run(
         pollfd(input.as_raw_fd()),
     ];
     loop {
-        // SAFETY: `poll_descriptors` is a valid array of three pollfds.
         poll(&mut poll_descriptors, POLL_TIMEOUT)?;
         if poll_descriptors[2].revents != 0 {
             match framing::read_record(&mut input, input::MAX_SETTING_BYTES)? {
