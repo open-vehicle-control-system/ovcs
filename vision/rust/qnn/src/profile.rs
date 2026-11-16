@@ -30,7 +30,7 @@ pub enum TimeSource {
 /// An execution's time in µs and what it measures, and where the time around it went.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Timing {
-    pub micros: u64,
+    pub inference_micros: u64,
     pub source: TimeSource,
     /// The wall time around `graphExecute`.
     pub graph_execute_micros: u64,
@@ -305,7 +305,7 @@ mod tests {
         let start = Instant::now();
         let (mut times, stages) = StageTimes::new(EXECUTION_STAGES, STAGE_TIMES_EVERY, start);
         let timing = Timing {
-            micros: 8700,
+            inference_micros: 8700,
             source: TimeSource::Accelerator,
             graph_execute_micros: 20_000,
             profile_read_micros: 300,

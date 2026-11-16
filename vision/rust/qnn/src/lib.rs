@@ -404,12 +404,12 @@ impl Model {
         let reading = Instant::now();
         let profiled = self.profiled_times();
         let profile_read_micros = micros(reading.elapsed());
-        let (micros, source) = match profiled.accelerator_micros {
+        let (inference_micros, source) = match profiled.accelerator_micros {
             Some(micros) => (micros, TimeSource::Accelerator),
             None => (graph_execute_micros, TimeSource::WallTime),
         };
         Ok(Timing {
-            micros,
+            inference_micros,
             source,
             graph_execute_micros,
             profile_read_micros,

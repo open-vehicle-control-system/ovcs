@@ -138,7 +138,7 @@ fn run(
                         clock.finished();
                         (
                             detections,
-                            Some(inference_micros(u128::from(timing.micros))),
+                            Some(inference_micros(u128::from(timing.inference_micros))),
                         )
                     }
                     Err(message) => {

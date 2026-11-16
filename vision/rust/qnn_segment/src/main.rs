@@ -126,7 +126,7 @@ fn run(
                             output_width,
                             output_height,
                             &labels,
-                            Some(timing.micros),
+                            Some(timing.inference_micros),
                         )
                     }
                     Err(message) => {
