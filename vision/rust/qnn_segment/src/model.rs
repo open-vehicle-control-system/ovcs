@@ -100,11 +100,15 @@ mod tests {
     const PIXEL_SCALE: f32 = 1.0 / 255.0;
     const CITYSCAPES_CLASSES: usize = 19;
 
-    fn tensor(name: &str, dimensions: &[u32], (scale, offset): (f32, i32)) -> Tensor {
+    fn quantisation((scale, offset): (f32, i32)) -> Option<Quantisation> {
+        Some(Quantisation { scale, offset })
+    }
+
+    fn tensor(name: &str, dimensions: &[u32], scale_offset: (f32, i32)) -> Tensor {
         Tensor {
             name: name.to_string(),
             dimensions: dimensions.to_vec(),
-            quantisation: Some(Quantisation { scale, offset }),
+            quantisation: quantisation(scale_offset),
             unsigned_8bit: true,
             bytes: dimensions.iter().map(|&size| size as usize).product(),
         }
@@ -191,7 +195,7 @@ mod tests {
     fn the_input_takes_pixel_values_unquantised_or_with_a_scale_of_1_over_255_and_no_offset() {
         let ffnet_mask = [mask(&FFNET_OUTPUT)];
         let quantised = |scale_offset: Option<(f32, i32)>| Tensor {
-            quantisation: scale_offset.map(|(scale, offset)| Quantisation { scale, offset }),
+            quantisation: scale_offset.and_then(quantisation),
             ..image(&FFNET_INPUT)
         };
         for close in [
@@ -264,10 +268,7 @@ mod tests {
     fn the_scores_scale_must_keep_their_order() {
         let ffnet_image = [image(&FFNET_INPUT)];
         let negative = Tensor {
-            quantisation: Some(Quantisation {
-                scale: -0.2,
-                offset: 0,
-            }),
+            quantisation: quantisation((-0.2, 0)),
             ..mask(&FFNET_OUTPUT)
         };
         assert_eq!(
@@ -275,10 +276,7 @@ mod tests {
             Err("output mask's scale is -0.2, not positive".to_string())
         );
         let not_a_number = Tensor {
-            quantisation: Some(Quantisation {
-                scale: f32::NAN,
-                offset: 0,
-            }),
+            quantisation: quantisation((f32::NAN, 0)),
             ..mask(&FFNET_OUTPUT)
         };
         assert_eq!(
