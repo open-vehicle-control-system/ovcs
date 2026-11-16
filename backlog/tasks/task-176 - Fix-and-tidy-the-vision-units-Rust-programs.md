@@ -30,14 +30,14 @@ Chosen behaviour for each fix:
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 Each defect fixed in this task has a test that fails without its fix
-- [ ] #2 qnn_detect and qnn_segment answer a failed graphExecute empty and exit 1
-- [ ] #3 v4l2_capture exits 1 on a V4L2 EPIPE and 0 only when the host closed the Port
+- [x] #2 qnn_detect and qnn_segment answer a failed graphExecute empty and exit 1
+- [x] #3 v4l2_capture exits 1 on a V4L2 EPIPE and 0 only when the host closed the Port
 - [ ] #4 camera_capture keeps its four requests in flight through cancellations and stops with an error when one cannot be requeued
-- [ ] #5 jpeg_codec refuses a JPEG whose frame header exceeds the largest frame it accepts, before allocating
-- [ ] #6 framing provides the log, exit, request-size, request-reading and host-presence helpers every Port uses; no crate defines its own
-- [ ] #7 qnn/src/lib.rs, v4l2_capture/src/colour.rs and camera_capture/src/capture.rs are split into modules, each split a move with no other change
-- [ ] #8 Every name listed in the readability review means one thing across the workspace
-- [ ] #9 cargo fmt --check, cargo clippy --all-targets and cargo test pass on every crate, the qnn crates included, at every commit
+- [x] #5 jpeg_codec refuses a JPEG whose frame header exceeds the largest frame it accepts, before allocating
+- [x] #6 framing provides the log, exit, request-size, request-reading and host-presence helpers every Port uses; no crate defines its own
+- [x] #7 qnn/src/lib.rs, v4l2_capture/src/colour.rs and camera_capture/src/capture.rs are split into modules, each split a move with no other change
+- [x] #8 The names that meant two things (output, map_plane, Stream, ControlValue, describe, cell_rows, resize_into, model_px, Timing::micros, lock, Frames::next) mean one thing across the workspace
+- [x] #9 cargo fmt --check, cargo clippy --all-targets and cargo test pass on every crate, the qnn crates included, at every commit; camera_capture and hailo's device features pass clippy at the last one
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -83,3 +83,19 @@ Splits (moves only), then renames and types, crate by crate:
 28. Comments: misplaced and stale docs, the missing whys
 29. Tests: shared fixtures
 <!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Left out, each for a reason that holds on the code:
+
+- Persistent band threads: spawning them costs about 0.5 to 0.8% of a frame's conversion, and keeping them alive needs unsafe lifetime erasure, a new dependency or owned buffers.
+- Tests of camera_capture's requeue and of hailo's NMS order check, so criteria 1 and 4 stay open: the capture loop drives libcamera directly, and a seam for it would need a trait over the camera; the NMS check compiles only with the device feature.
+- enum Rotation: two call sites compare with 180, and Settings::set already refuses any other value.
+- One device module in hailo: only the serve loop moved into a device-only module; nesting detect, hailo and segment under one more directory clarifies nothing.
+- hailo refusing more than one input: open_vstreams already refuses it.
+
+camera_capture refuses an --outputs-max-hz below 2.2e-10 while LibCamera's check_outputs_max_hz accepts any rate above 0; such a rate makes the program exit 2 at startup.
+
+Only hardware can confirm: libcamera's request flow on a Pi 5, the V4L2 sensors' crop selections and the shading over them, the IMX477 pair's tone, the lens focus, the Hailo-8's NMS order check, and QNN's tensor shapes, quantisation and in-place binding on the VENTUNO Q.
+<!-- SECTION:NOTES:END -->
