@@ -18,7 +18,8 @@ use framing::{
     METADATA_FIELDS,
 };
 use libcamera::camera::{
-    Camera, CameraConfiguration, CameraConfigurationStatus, Orientation, SensorConfiguration,
+    ActiveCamera, Camera, CameraConfiguration, CameraConfigurationStatus, Orientation,
+    SensorConfiguration,
 };
 use libcamera::camera_manager::CameraManager;
 use libcamera::color_space::Range as LibcameraRange;
@@ -30,7 +31,7 @@ use libcamera::framebuffer_allocator::FrameBufferAllocator;
 use libcamera::geometry::Size;
 use libcamera::pixel_format::PixelFormat;
 use libcamera::properties;
-use libcamera::request::{RequestStatus, ReuseFlag};
+use libcamera::request::{Request, RequestStatus, ReuseFlag};
 use libcamera::stream::{Stream, StreamRole};
 
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
@@ -458,9 +459,11 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
         error("Camera::start failed".to_string());
         return 1;
     }
+    let mut exit_status = 0;
     for request in requests {
-        if camera.queue_request(request).is_err() {
-            error("initial queueRequest failed".to_string());
+        if let Err((_, queue_error)) = camera.queue_request(request) {
+            error(format!("initial queueRequest failed ({queue_error})"));
+            exit_status = 1;
             stop.store(true, Ordering::Relaxed);
             break;
         }
@@ -470,12 +473,17 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
     let mut frames_without_sync = 0;
     let mut frames_since_metadata = 0;
     while !stop.load(Ordering::Relaxed) {
-        let mut request = match completed.recv_timeout(Duration::from_millis(50)) {
+        let request = match completed.recv_timeout(Duration::from_millis(50)) {
             Ok(request) => request,
             Err(RecvTimeoutError::Timeout) => continue,
             Err(RecvTimeoutError::Disconnected) => break,
         };
         if request.status() == RequestStatus::Cancelled {
+            if let Err(message) = requeue(&camera, request, &pending) {
+                error(message);
+                exit_status = 1;
+                break;
+            }
             continue;
         }
         let buffer_index = request.cookie() as usize;
@@ -561,16 +569,30 @@ pub fn run(arguments: &Arguments, writer: &Arc<Writer>) -> i32 {
             }
         }
 
-        request.reuse(ReuseFlag::REUSE_BUFFERS);
-        for (id, value) in pending.lock().unwrap_or_else(|e| e.into_inner()).drain() {
-            let _ = request.controls_mut().set_raw(id, value);
+        if let Err(message) = requeue(&camera, request, &pending) {
+            error(message);
+            exit_status = 1;
+            break;
         }
-        let _ = camera.queue_request(request);
     }
 
     let _ = camera.stop();
     drop(completed);
-    0
+    exit_status
+}
+
+/// Queues `request` again, with the controls received since the last one.
+fn requeue(
+    camera: &ActiveCamera,
+    mut request: Request,
+    pending: &Mutex<HashMap<u32, LibcameraValue>>,
+) -> Result<(), String> {
+    request.reuse(ReuseFlag::REUSE_BUFFERS);
+    for (id, value) in pending.lock().unwrap_or_else(|e| e.into_inner()).drain() {
+        let _ = request.controls_mut().set_raw(id, value);
+    }
+    (camera.queue_request(request))
+        .map_err(|(_, queue_error)| format!("queueRequest failed ({queue_error})"))
 }
 
 /// Every scalar libcamera control by name, with its id and type.
