@@ -6,6 +6,8 @@
 //! and stdin EOF stops the capture.
 
 mod arguments;
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
+mod cancellations;
 #[cfg(feature = "device")]
 mod capture;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]

@@ -32,6 +32,7 @@ use libcamera::stream::{Stream, StreamRole};
 use libcamera::utils::UniquePtr;
 
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
+use crate::cancellations::Cancellations;
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
 use crate::dmabuf::{
     dmabuf_sync, map_view, FdMapper, YuvView, DMA_BUF_SYNC_END, DMA_BUF_SYNC_READ,
@@ -193,6 +194,7 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
         Err("Camera::start failed".to_string())?;
     }
     let mut ended = Ok(());
+    let mut cancellations = Cancellations::new(requests.len());
     for request in requests {
         if let Err((_, queue_error)) = camera.queue_request(request) {
             ended = Err(format!("initial queueRequest failed ({queue_error})"));
@@ -212,12 +214,17 @@ fn capture(arguments: &Arguments, writer: &Arc<Writer>) -> Result<(), Failure> {
             Err(RecvTimeoutError::Disconnected) => break,
         };
         if request.status() == RequestStatus::Cancelled {
+            if !cancellations.cancelled() {
+                ended = Err("every request came back cancelled: the pipeline stopped".to_string());
+                break;
+            }
             if let Err(message) = requeue(&camera, request, &pending) {
                 ended = Err(message);
                 break;
             }
             continue;
         }
+        cancellations.completed();
         let buffer_index = request.cookie() as usize;
         let Some(view) = views[plan.frames].get(buffer_index) else {
             continue;
