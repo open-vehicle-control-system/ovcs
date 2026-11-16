@@ -1,12 +1,9 @@
-//! The libcamera capture loop, its JPEG encoder, its grey output and the
-//! JPEG outputs of its ISP output. A limited-range stream's JPEGs are
+//! The libcamera capture loop, its grey output and the JPEG outputs of its
+//! ISP output. A limited-range stream's JPEGs are
 //! expanded to the full range JFIF holds; its grey frames are not.
 
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_uchar, c_ulong, c_void, CStr};
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::os::fd::{FromRawFd, RawFd};
+use std::ffi::c_int;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::RecvTimeoutError;
 use std::sync::{Arc, Mutex};
@@ -26,7 +23,6 @@ use libcamera::color_space::Range as LibcameraRange;
 use libcamera::control::{ControlEntry, ControlList};
 use libcamera::control_value::{ControlType, ControlValue as LibcameraValue};
 use libcamera::controls;
-use libcamera::framebuffer::AsFrameBuffer;
 use libcamera::framebuffer_allocator::FrameBufferAllocator;
 use libcamera::geometry::Size;
 use libcamera::pixel_format::PixelFormat;
@@ -36,9 +32,13 @@ use libcamera::stream::{Stream, StreamRole};
 
 use crate::arguments::{Arguments, ExposureMode, Format, OutputSpec, SyncMode};
 use crate::controls::{coerce, parse_control, ControlKind, TypedValue};
-use crate::full_range::{self, chroma_size, Expansion, Range};
+use crate::dmabuf::{
+    dmabuf_sync, map_view, FdMapper, YuvView, DMA_BUF_SYNC_END, DMA_BUF_SYNC_READ,
+    DMA_BUF_SYNC_START,
+};
+use crate::full_range::{self, Range};
 use crate::grey::pack_luma;
-use crate::layout;
+use crate::jpeg::{JpegEncoder, JpegPlanes};
 use crate::schedule::Schedule;
 use crate::streams::{self, Role};
 
@@ -57,39 +57,6 @@ const SYNC_READY_ID: u32 = 20012;
 const SYNC_TIMER_ID: u32 = 20013;
 const SYNC_MODE_SERVER: i32 = 1;
 const SYNC_MODE_CLIENT: i32 = 2;
-
-/// Points stderr at a pipe and returns its read end, for `forward_stderr`.
-pub fn redirect_stderr() -> Option<RawFd> {
-    let mut pipe_fds = [0 as c_int; 2];
-    // SAFETY: plain fd syscalls on fds this function owns.
-    unsafe {
-        if libc::pipe(pipe_fds.as_mut_ptr()) != 0 {
-            return None;
-        }
-        libc::dup2(pipe_fds[1], libc::STDERR_FILENO);
-        libc::close(pipe_fds[1]);
-    }
-    Some(pipe_fds[0])
-}
-
-/// libcamera writes its own log to stderr: each line becomes a LOG record.
-pub fn forward_stderr(read_fd: RawFd, writer: Arc<Writer>) {
-    // SAFETY: `read_fd` is the pipe's read end, owned from here on.
-    let pipe = unsafe { File::from_raw_fd(read_fd) };
-    thread::spawn(move || {
-        for line in BufReader::new(pipe).split(b'\n').map_while(Result::ok) {
-            let line = String::from_utf8_lossy(&line);
-            let level = if line.contains(" ERROR ") || line.contains(" FATAL ") {
-                LogLevel::Error
-            } else if line.contains(" WARN ") {
-                LogLevel::Warning
-            } else {
-                LogLevel::Info
-            };
-            writer.log(level, &format!("libcamera: {line}"));
-        }
-    });
-}
 
 // How long a start waits for libcamera to list the camera: at boot the sensors
 // can still be probing when the first capture starts.
@@ -737,13 +704,13 @@ fn monotonic_ns() -> i64 {
 }
 
 /// A stream as `Camera::configure` set it up.
-struct ConfiguredStream {
+pub(crate) struct ConfiguredStream {
     stream: Stream,
-    size: Size,
+    pub(crate) size: Size,
     /// Its luma line stride.
-    stride: usize,
+    pub(crate) stride: usize,
     /// Its YUV's range; `None` when libcamera reports no colour space.
-    range: Option<Range>,
+    pub(crate) range: Option<Range>,
 }
 
 impl From<LibcameraRange> for Range {
@@ -767,58 +734,6 @@ fn describe_stream(configuration: &CameraConfiguration, index: usize) -> String 
         stream_configuration.to_string_repr(),
         stream_configuration.get_stride()
     )
-}
-
-/// One buffer's planes, mapped.
-fn map_view(
-    mapper: &mut FdMapper,
-    buffer: &impl AsFrameBuffer,
-    stream: &ConfiguredStream,
-) -> Result<YuvView, String> {
-    let y_stride = stream.stride;
-    // libcamera's YUV420 packs U and V at half the line stride: the I420 layout turbojpeg expects.
-    let uv_stride = y_stride / 2;
-    let planes = buffer.planes();
-    if planes.is_empty() {
-        return Err("buffer has no planes".to_string());
-    }
-    let plane = |plane_index: usize| {
-        let plane = planes.get(plane_index).expect("plane in range");
-        (plane.fd(), plane.offset().unwrap_or(0))
-    };
-    let mut sync_fds = Vec::new();
-    let mut map = |(fd, offset, length): (RawFd, usize, usize)| {
-        if !sync_fds.contains(&fd) {
-            sync_fds.push(fd);
-        }
-        (mapper.map_plane(fd, offset, length))
-            .map_err(|map_error| format!("mapping a plane of fd {fd} failed: {map_error}"))
-    };
-    let (width, height) = (stream.size.width as usize, stream.size.height as usize);
-    let strides = [y_stride, uv_stride, uv_stride];
-    let lengths = layout::plane_lengths(width, height, strides);
-    let (y, u, v) = if planes.len() >= 3 {
-        let mut map_read = |plane_index: usize| {
-            let (fd, offset) = plane(plane_index);
-            map((fd, offset, lengths[plane_index]))
-        };
-        (map_read(0)?, map_read(1)?, map_read(2)?)
-    } else {
-        // Single-plane dmabuf: Y, U and V at known offsets within it.
-        let y_size = y_stride * height;
-        let uv_size = uv_stride * (height / 2);
-        let (fd, offset) = plane(0);
-        let base = map((fd, offset, y_size + uv_size + lengths[2]))?;
-        // SAFETY: map_plane checked that the mapping holds y_size + uv_size + lengths[2] bytes
-        // from base, which covers the U and V planes read from these offsets.
-        unsafe { (base, base.add(y_size), base.add(y_size + uv_size)) }
-    };
-    Ok(YuvView {
-        planes: [y, u, v],
-        lengths,
-        strides,
-        sync_fds,
-    })
 }
 
 /// A JPEG output of the ISP output, written as OUTPUT_JPEG records under its index.
@@ -883,265 +798,8 @@ fn write_jpeg_outputs(
     written
 }
 
-/// One mmap per dmabuf fd: libcamera often carves several planes out of one buffer.
-#[derive(Default)]
-struct FdMapper {
-    maps: HashMap<RawFd, (*mut c_void, usize)>,
-}
-
-impl FdMapper {
-    /// The start of `length` bytes at `offset` in the dmabuf `fd`, refused when
-    /// its mapping does not hold them.
-    fn map_plane(&mut self, fd: RawFd, offset: usize, length: usize) -> std::io::Result<*const u8> {
-        let (base, total) = match self.maps.get(&fd) {
-            Some(&mapping) => mapping,
-            None => {
-                // The whole dmabuf, which is usually larger than one plane.
-                // SAFETY: fd is a dmabuf owned by the allocator, mapped read-only.
-                let end = unsafe { libc::lseek(fd, 0, libc::SEEK_END) };
-                let total = if end > 0 {
-                    end as usize
-                } else {
-                    offset + length
-                };
-                // SAFETY: a fresh read-only shared mapping of `total` bytes of the dmabuf.
-                let base = unsafe {
-                    libc::mmap(
-                        std::ptr::null_mut(),
-                        total,
-                        libc::PROT_READ,
-                        libc::MAP_SHARED,
-                        fd,
-                        0,
-                    )
-                };
-                if base == libc::MAP_FAILED {
-                    return Err(std::io::Error::last_os_error());
-                }
-                self.maps.insert(fd, (base, total));
-                (base, total)
-            }
-        };
-        if !layout::holds(total, offset, length) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                format!("{length} bytes at {offset} overrun its {total}-byte mapping"),
-            ));
-        }
-        // SAFETY: the mapping holds `length` bytes from `offset`.
-        Ok(unsafe { (base as *const u8).add(offset) })
-    }
-}
-
-impl Drop for FdMapper {
-    fn drop(&mut self) {
-        for (base, length) in self.maps.values() {
-            // SAFETY: each entry is a live mapping created by map_plane.
-            unsafe { libc::munmap(*base, *length) };
-        }
-    }
-}
-
 /// How a frame becomes a record: JPEG-encoded, or its luma packed into a reused buffer.
 enum Output {
     Jpeg(JpegEncoder, JpegPlanes),
     Grey(Vec<u8>),
-}
-
-/// Plane pointers of one buffer, resolved once.
-struct YuvView {
-    planes: [*const u8; 3],
-    /// The bytes map_view checked each plane's mapping holds.
-    lengths: [usize; 3],
-    strides: [usize; 3],
-    sync_fds: Vec<RawFd>,
-}
-
-impl YuvView {
-    /// Plane `index`'s bytes, read between the dmabuf syncs.
-    fn plane(&self, index: usize) -> &[u8] {
-        // SAFETY: map_view checked the mapping holds `lengths[index]` bytes from
-        // `planes[index]`, and the FdMapper that keeps it mapped outlives every view.
-        unsafe { std::slice::from_raw_parts(self.planes[index], self.lengths[index]) }
-    }
-}
-
-/// The YUV420 planes and strides turbojpeg encodes.
-#[derive(Clone, Copy)]
-struct YuvPlanes<'a> {
-    planes: [&'a [u8]; 3],
-    strides: [usize; 3],
-}
-
-/// A stream's frames as its JPEGs are encoded from: as captured, or expanded
-/// to full range when the stream is limited range.
-struct JpegPlanes {
-    width: usize,
-    height: usize,
-    expansion: Option<Box<Expansion>>,
-}
-
-impl JpegPlanes {
-    fn new(stream: &ConfiguredStream) -> JpegPlanes {
-        JpegPlanes {
-            width: stream.size.width as usize,
-            height: stream.size.height as usize,
-            expansion: full_range::expands(stream.range).then(Box::default),
-        }
-    }
-
-    /// `view`'s planes, read between the dmabuf syncs.
-    fn of<'a>(&'a mut self, view: &'a YuvView) -> YuvPlanes<'a> {
-        let Some(expansion) = &mut self.expansion else {
-            return YuvPlanes {
-                planes: std::array::from_fn(|plane| view.plane(plane)),
-                strides: view.strides,
-            };
-        };
-        let (chroma_width, chroma_height) = chroma_size(self.width, self.height);
-        let sizes = [
-            (self.width, self.height),
-            (chroma_width, chroma_height),
-            (chroma_width, chroma_height),
-        ];
-        let planes: [&[u8]; 3] = std::array::from_fn(|plane| view.plane(plane));
-        let expanded = expansion.expand(planes, view.strides, self.width, self.height);
-        YuvPlanes {
-            planes: expanded,
-            strides: sizes.map(|(width, _)| width),
-        }
-    }
-}
-
-const DMA_BUF_SYNC_READ: u64 = 1;
-const DMA_BUF_SYNC_START: u64 = 0;
-const DMA_BUF_SYNC_END: u64 = 1 << 2;
-// _IOW('b', 0, struct dma_buf_sync)
-const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x4008_6200;
-
-fn dmabuf_sync(sync_fds: &[RawFd], flags: u64) {
-    for fd in sync_fds {
-        // Failure ignored: the worst case is one stale cache line.
-        // SAFETY: `flags` matches struct dma_buf_sync, a single u64.
-        unsafe { libc::ioctl(*fd, DMA_BUF_IOCTL_SYNC as _, &flags) };
-    }
-}
-
-type TjHandle = *mut c_void;
-
-const TJSAMP_420: c_int = 2;
-const TJFLAG_NOREALLOC: c_int = 1024;
-const TJFLAG_FASTDCT: c_int = 2048;
-
-extern "C" {
-    fn tjInitCompress() -> TjHandle;
-    fn tjDestroy(handle: TjHandle) -> c_int;
-    fn tjBufSize(width: c_int, height: c_int, subsamp: c_int) -> c_ulong;
-    fn tjAlloc(bytes: c_int) -> *mut c_uchar;
-    fn tjFree(buffer: *mut c_uchar);
-    fn tjGetErrorStr2(handle: TjHandle) -> *mut c_char;
-    fn tjCompressFromYUVPlanes(
-        handle: TjHandle,
-        src_planes: *mut *const c_uchar,
-        width: c_int,
-        strides: *const c_int,
-        height: c_int,
-        subsamp: c_int,
-        jpeg_buf: *mut *mut c_uchar,
-        jpeg_size: *mut c_ulong,
-        jpeg_qual: c_int,
-        flags: c_int,
-    ) -> c_int;
-}
-
-/// TurboJPEG into one buffer of the largest size a frame can take, so no
-/// allocation happens per frame.
-struct JpegEncoder {
-    handle: TjHandle,
-    buffer: *mut c_uchar,
-    capacity: c_ulong,
-    width: c_int,
-    height: c_int,
-    quality: c_int,
-}
-
-impl JpegEncoder {
-    /// At `quality`, 1 to 100; the chroma stays the YUV420 frame's 4:2:0.
-    fn new(width: u32, height: u32, quality: c_int) -> Result<JpegEncoder, String> {
-        let (Ok(width), Ok(height)) = (c_int::try_from(width), c_int::try_from(height)) else {
-            return Err(format!("no JPEG of {width}x{height}"));
-        };
-        // SAFETY: TurboJPEG C API; the handle and buffer are freed in Drop.
-        unsafe {
-            let handle = tjInitCompress();
-            if handle.is_null() {
-                return Err("tjInitCompress failed".to_string());
-            }
-            let capacity = tjBufSize(width, height, TJSAMP_420);
-            let buffer = tjAlloc(capacity as c_int);
-            if buffer.is_null() {
-                tjDestroy(handle);
-                return Err(format!("tjAlloc({capacity}) failed"));
-            }
-            Ok(JpegEncoder {
-                handle,
-                buffer,
-                capacity,
-                width,
-                height,
-                quality,
-            })
-        }
-    }
-
-    /// Refuses planes shorter than this encoder's frame size takes at their strides.
-    fn encode(&mut self, yuv: YuvPlanes) -> Result<&[u8], String> {
-        let (width, height) = (self.width as usize, self.height as usize);
-        let lengths = layout::plane_lengths(width, height, yuv.strides);
-        if (yuv.planes.iter().zip(lengths)).any(|(plane, length)| plane.len() < length) {
-            return Err(format!(
-                "planes of {:?} bytes {:?} apart are no {width}x{height} frame",
-                yuv.planes.map(<[u8]>::len),
-                yuv.strides
-            ));
-        }
-        let strides = match yuv.strides.map(c_int::try_from) {
-            [Ok(y_stride), Ok(u_stride), Ok(v_stride)] => [y_stride, u_stride, v_stride],
-            _ => return Err(format!("strides {:?} past a C int", yuv.strides)),
-        };
-        let mut planes = yuv.planes.map(<[u8]>::as_ptr);
-        let mut size = self.capacity;
-        // SAFETY: each plane holds its rows of this frame size at its stride, checked above;
-        // NOREALLOC keeps the buffer.
-        unsafe {
-            let status = tjCompressFromYUVPlanes(
-                self.handle,
-                planes.as_mut_ptr(),
-                self.width,
-                strides.as_ptr(),
-                self.height,
-                TJSAMP_420,
-                &mut self.buffer,
-                &mut size,
-                self.quality,
-                TJFLAG_FASTDCT | TJFLAG_NOREALLOC,
-            );
-            if status != 0 {
-                return Err(CStr::from_ptr(tjGetErrorStr2(self.handle))
-                    .to_string_lossy()
-                    .into_owned());
-            }
-            Ok(std::slice::from_raw_parts(self.buffer, size as usize))
-        }
-    }
-}
-
-impl Drop for JpegEncoder {
-    fn drop(&mut self) {
-        // SAFETY: both were allocated by TurboJPEG in `new`.
-        unsafe {
-            tjFree(self.buffer);
-            tjDestroy(self.handle);
-        }
-    }
 }

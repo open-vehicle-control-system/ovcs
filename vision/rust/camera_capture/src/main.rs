@@ -10,14 +10,20 @@ mod arguments;
 mod capture;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod controls;
+#[cfg(feature = "device")]
+mod dmabuf;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod full_range;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod grey;
+#[cfg(feature = "device")]
+mod jpeg;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod layout;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod schedule;
+#[cfg(feature = "device")]
+mod stderr;
 #[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod streams;
 
@@ -29,7 +35,7 @@ use framing::{LogLevel, Writer};
 fn main() {
     // Before the Writer, so that libcamera's stderr and any stray stdout both reach the forwarder.
     #[cfg(feature = "device")]
-    let stderr_pipe = capture::redirect_stderr();
+    let stderr_pipe = stderr::redirect_stderr();
 
     let writer = match Writer::from_stdout_redirecting() {
         Ok(writer) => Arc::new(writer),
@@ -39,7 +45,7 @@ fn main() {
 
     #[cfg(feature = "device")]
     if let Some(read_fd) = stderr_pipe {
-        capture::forward_stderr(read_fd, Arc::clone(&writer));
+        stderr::forward_stderr(read_fd, Arc::clone(&writer));
     }
 
     let command_line: Vec<String> = std::env::args().skip(1).collect();
