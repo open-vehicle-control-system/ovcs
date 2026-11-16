@@ -39,6 +39,7 @@ use std::time::Instant;
 use ffi::*;
 use interface::{backend_interface, system_interface};
 use libloading::Library;
+use performance::{vote, PowerVote};
 use profile::{
     collect_events, create_profile, top_level_events, EventCursor, Profile, ProfileEvent,
     EXECUTIONS_PER_PROFILE,
@@ -107,101 +108,6 @@ impl Drop for Session {
             }
         }
     }
-}
-
-/// A power config id holding a power vote, which ends when it is destroyed.
-struct PowerVote {
-    destroy: QnnHtpPerfInfrastructure_DestroyPowerConfigIdFn_t,
-    id: u32,
-}
-
-impl Drop for PowerVote {
-    fn drop(&mut self) {
-        if let Some(destroy) = self.destroy {
-            // SAFETY: the session destroys the vote while its library is loaded, and `id`
-            // is the one that library created.
-            unsafe { destroy(self.id) };
-        }
-    }
-}
-
-/// The calls of a power vote, in `Power::power_configs`' order.
-const POWER_CONFIG_CALLS: [&str; 3] = [
-    "setPowerConfig DCVS_V3",
-    "setPowerConfig RPC_CONTROL_LATENCY",
-    "setPowerConfig RPC_POLLING_TIME",
-];
-
-/// Votes `power` on the HTP through the device's performance infrastructure. The vote
-/// holds while the returned id lives; there is none when the DCVS_V3 call fails. The message
-/// names each call that failed.
-///
-/// # Safety
-/// `interface` is of a library still loaded, after its `deviceCreate`.
-unsafe fn vote(
-    interface: &QnnInterface_ImplementationV2_39_t,
-    power: Power,
-) -> (Option<PowerVote>, Option<String>) {
-    let unvoted = |message: String| {
-        (
-            None,
-            Some(format!(
-                "{message}; the HTP runs under its default power policy"
-            )),
-        )
-    };
-    if power.performance == Performance::NoVote {
-        return (None, None);
-    }
-    let Some(get_infrastructure) = interface.deviceGetInfrastructure else {
-        return unvoted(missing("deviceGetInfrastructure"));
-    };
-    let mut infrastructure: QnnDevice_Infrastructure_t = ptr::null_mut();
-    // QNN writes the infrastructure through the pointer its header declares const.
-    let written = ptr::addr_of_mut!(infrastructure).cast_const();
-    if let Err(message) = check("deviceGetInfrastructure", get_infrastructure(written)) {
-        return unvoted(message);
-    }
-    if infrastructure.is_null() {
-        return unvoted("deviceGetInfrastructure gave no infrastructure".to_string());
-    }
-    let htp = &*(infrastructure as *const QnnHtpDevice_Infrastructure_t);
-    if htp.infraType != QNN_HTP_DEVICE_INFRASTRUCTURE_TYPE_PERF {
-        return unvoted(format!(
-            "the device's infrastructure is of type {}, not the HTP's performance one",
-            htp.infraType
-        ));
-    }
-    let performance_infrastructure = htp.__bindgen_anon_1.perfInfra;
-    let (Some(create), Some(set)) = (
-        performance_infrastructure.createPowerConfigId,
-        performance_infrastructure.setPowerConfig,
-    ) else {
-        return unvoted(missing("createPowerConfigId or setPowerConfig"));
-    };
-    let mut id = 0u32;
-    if let Err(message) = check("createPowerConfigId", create(0, 0, &mut id)) {
-        return unvoted(message);
-    }
-    let held = PowerVote {
-        destroy: performance_infrastructure.destroyPowerConfigId,
-        id,
-    };
-    let mut failures = Vec::new();
-    for (config, call) in power.power_configs(id).iter().zip(POWER_CONFIG_CALLS) {
-        let mut configs = [
-            config as *const QnnHtpPerfInfrastructure_PowerConfig_t,
-            ptr::null(),
-        ];
-        if let Err(message) = check(call, set(id, configs.as_mut_ptr())) {
-            if call == POWER_CONFIG_CALLS[0] {
-                return unvoted(message);
-            }
-            failures.push(message);
-        }
-    }
-    let error = (!failures.is_empty()).then(|| failures.join(", "));
-    (Some(held), error)
 }
 
 fn check(what: &str, status: Qnn_ErrorHandle_t) -> Result<(), String> {
