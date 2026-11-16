@@ -278,31 +278,33 @@ fn capture(
     let mut video_outputs: Vec<(usize, Box<dyn Encoder>)> =
         plan.h264_outputs().into_iter().zip(encoders).collect();
     std::thread::scope(|scope| {
-        let (sender, queued) = mpsc::channel();
-        let (written, images) = mpsc::channel();
-        let (to_encode, frames_to_encode) = mpsc::channel();
-        let (encoded_sender, encoded) = mpsc::channel();
-        let (to_video, frames_to_video) = mpsc::channel();
-        let (video_sender, video) = mpsc::channel();
+        let (records_sender, records_receiver) = mpsc::channel();
+        let (written_sender, written_receiver) = mpsc::channel();
+        let (jpeg_frames_sender, jpeg_frames_receiver) = mpsc::channel();
+        let (jpegs_sender, jpegs_receiver) = mpsc::channel();
+        let (video_frames_sender, video_frames_receiver) = mpsc::channel();
+        let (video_sender, video_receiver) = mpsc::channel();
         let jpeg_encoder = (!jpeg_outputs.is_empty()).then(|| {
-            scope
-                .spawn(move || jpeg::encode_frames(&jpeg_outputs, frames_to_encode, encoded_sender))
+            scope.spawn(move || {
+                jpeg::encode_frames(&jpeg_outputs, jpeg_frames_receiver, jpegs_sender)
+            })
         });
         let video_encoder = (!video_outputs.is_empty()).then(|| {
             scope.spawn(move || {
-                h264::encode_frames(&mut video_outputs, frames_to_video, video_sender)
+                h264::encode_frames(&mut video_outputs, video_frames_receiver, video_sender)
             })
         });
         let encodings = Encodings {
-            jpegs: jpeg_encoder.is_some().then_some(encoded),
-            video: video_encoder.is_some().then_some(video),
+            jpegs: jpeg_encoder.is_some().then_some(jpegs_receiver),
+            video: video_encoder.is_some().then_some(video_receiver),
         };
-        let writer = scope.spawn(move || write_records(records, encodings, queued, written));
+        let writer = scope
+            .spawn(move || write_records(records, encodings, records_receiver, written_sender));
         let queue = Queue {
-            records: sender,
-            to_encode: jpeg_encoder.is_some().then_some(to_encode),
-            to_video: video_encoder.is_some().then_some(to_video),
-            images,
+            records: records_sender,
+            jpeg_frames: jpeg_encoder.is_some().then_some(jpeg_frames_sender),
+            video_frames: video_encoder.is_some().then_some(video_frames_sender),
+            written: written_receiver,
         };
         let converted = convert_frames(setup, plan, frames, set_exposure, set_focus, input, &queue);
         drop(queue);
@@ -311,11 +313,14 @@ fn capture(
                 .join()
                 .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
         };
-        let written = joined(writer);
-        let encoded = jpeg_encoder.map_or(Ok(()), joined);
-        let video = video_encoder.map_or(Ok(()), joined);
+        let write_result = joined(writer);
+        let jpeg_result = jpeg_encoder.map_or(Ok(()), joined);
+        let video_result = video_encoder.map_or(Ok(()), joined);
         // After a failed encode or write the others' errors only say that thread stopped.
-        encoded.and(video).and(written).and(converted)
+        jpeg_result
+            .and(video_result)
+            .and(write_result)
+            .and(converted)
     })
 }
 
@@ -410,7 +415,7 @@ fn write_records(
                     drop(encoded.images);
                     encoded.took
                 });
-                let video = video.map_or_else(VideoWritten::default, |encoded| {
+                let video_written = video.map_or_else(VideoWritten::default, |encoded| {
                     drop(encoded.images);
                     let frames = encoded.frames.iter().flatten();
                     VideoWritten {
@@ -424,7 +429,7 @@ fn write_records(
                     images,
                     write,
                     encode,
-                    video,
+                    video: video_written,
                 });
             }
             Record::Other(record) => records.write(&[&record])?,
@@ -433,16 +438,16 @@ fn write_records(
     Ok(())
 }
 
-/// The frame's encodes in `slot`, received from `encoded` unless they already were.
+/// The frame's encodes in `cached`, received from `encoded` unless they already were.
 fn received<'a, T>(
-    slot: &'a mut Option<T>,
+    cached: &'a mut Option<T>,
     encoded: &Option<mpsc::Receiver<T>>,
 ) -> io::Result<&'a T> {
-    if slot.is_none() {
+    if cached.is_none() {
         let encoded = encoded.as_ref().expect("an encoder thread");
-        *slot = Some(encoded.recv().map_err(|_| encoder_stopped())?);
+        *cached = Some(encoded.recv().map_err(|_| encoder_stopped())?);
     }
-    Ok(slot.as_ref().expect("the frame's encodes"))
+    Ok(cached.as_ref().expect("the frame's encodes"))
 }
 
 /// The records on their way to the writer thread, the frames on their way
@@ -450,10 +455,10 @@ fn received<'a, T>(
 /// written on their way back.
 struct Queue {
     records: mpsc::Sender<Record>,
-    to_encode: Option<mpsc::Sender<FrameImages>>,
+    jpeg_frames: Option<mpsc::Sender<FrameImages>>,
     /// The frames on their way to the video encoder thread, with their start.
-    to_video: Option<mpsc::Sender<(FrameImages, i64)>>,
-    images: mpsc::Receiver<Written>,
+    video_frames: Option<mpsc::Sender<(FrameImages, i64)>>,
+    written: mpsc::Receiver<Written>,
 }
 
 impl Queue {
@@ -469,19 +474,19 @@ impl Queue {
         images: FrameImages,
         start_ns: i64,
     ) -> io::Result<()> {
-        if let Some(to_encode) = &self.to_encode {
-            (to_encode.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
+        if let Some(jpeg_frames) = &self.jpeg_frames {
+            (jpeg_frames.send(Arc::clone(&images))).map_err(|_| encoder_stopped())?;
         }
-        if let Some(to_video) = &self.to_video {
+        if let Some(video_frames) = &self.video_frames {
             let frame = (Arc::clone(&images), start_ns);
-            to_video.send(frame).map_err(|_| encoder_stopped())?;
+            video_frames.send(frame).map_err(|_| encoder_stopped())?;
         }
         self.send(Record::Frame(sent, images))
     }
 
     /// The next frame's images written, waiting for their writes to end.
     fn written(&self) -> io::Result<Written> {
-        self.images.recv().map_err(|_| writer_stopped())
+        self.written.recv().map_err(|_| writer_stopped())
     }
 }
 
