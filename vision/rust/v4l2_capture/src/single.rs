@@ -50,6 +50,7 @@ pub fn run(
     let encoders = start_encoders(arguments, log)?;
     let camera = open_camera(&arguments.camera, sensor_width, sensor_height)?;
     let sensor = &camera.sensor;
+    let sensor_crop = sensor.sensor_crop()?;
 
     let hblank = sensor.control(v4l2::CID_HBLANK)?;
     let pixel_rate = sensor.control64(v4l2::CID_PIXEL_RATE)?;
@@ -81,9 +82,13 @@ pub fn run(
     log(
         LogLevel::Info,
         &format!(
-            "{sensor_width}x{sensor_height} {:?} to {:?}, line {line_ns:.1} ns, \
+            "{sensor_width}x{sensor_height} {:?} to {:?}, {}, line {line_ns:.1} ns, \
              vblank {vblank}, period {period_ns} ns, {settings:?}",
-            camera.capture.layout, arguments.outputs
+            camera.capture.layout,
+            arguments.outputs,
+            sensor_crop.map_or("no sensor crop".to_string(), |crop| format!(
+                "read from {crop}"
+            ))
         ),
     );
     let frames = CameraFrames {

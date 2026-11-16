@@ -80,6 +80,40 @@ impl SensorModel {
     }
 }
 
+/// A rectangle of a sensor's pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rectangle {
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Where a frame lies on its sensor: the rectangle `crop` it is read from,
+/// binned or not, within `bounds`, the rectangle the sensor can read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SensorCrop {
+    pub crop: Rectangle,
+    pub bounds: Rectangle,
+}
+
+impl std::fmt::Display for SensorCrop {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Rectangle {
+            left,
+            top,
+            width,
+            height,
+        } = self.crop;
+        let bounds = self.bounds;
+        write!(
+            formatter,
+            "{width}x{height} at ({left}, {top}) of {}x{} at ({}, {})",
+            bounds.width, bounds.height, bounds.left, bounds.top
+        )
+    }
+}
+
 /// The V4L2 name of the lens actuator on the Camera Module 3 whose sensor is
 /// named `sensor` (`imx708 <bus>-001a`): the DW9817 at 0x0c on the same bus.
 pub fn lens_name(sensor: &str) -> Option<String> {

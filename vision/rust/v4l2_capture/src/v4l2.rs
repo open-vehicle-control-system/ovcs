@@ -8,6 +8,7 @@ use std::ptr;
 
 use crate::bayer::Layout;
 use crate::encoder::{BufferFormat, DequeuedBuffer, M2mDevice, Stream};
+use crate::sensor::{Rectangle, SensorCrop};
 
 const fn ioc(direction: u64, number: u64, size: u64) -> u64 {
     (direction << 30) | (size << 16) | ((b'V' as u64) << 8) | number
@@ -31,6 +32,7 @@ const VIDIOC_STREAMOFF: u64 = ioc(WRITE, 19, 4);
 const VIDIOC_S_PARM: u64 = ioc(READ_WRITE, 22, 204);
 const VIDIOC_ENCODER_CMD: u64 = ioc(READ_WRITE, 77, 40);
 const VIDIOC_S_SELECTION: u64 = ioc(READ_WRITE, 95, 64);
+const VIDIOC_SUBDEV_G_SELECTION: u64 = ioc(READ_WRITE, 61, 64);
 
 const BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
 const BUF_TYPE_VIDEO_OUTPUT: u32 = 2;
@@ -43,6 +45,8 @@ const COLORSPACE_SMPTE170M: u32 = 1;
 const YCBCR_ENC_601: u8 = 1;
 const QUANTIZATION_LIM_RANGE: u8 = 2;
 const SEL_TGT_CROP: u32 = 0;
+const SEL_TGT_CROP_BOUNDS: u32 = 2;
+const SUBDEV_FORMAT_ACTIVE: u32 = 1;
 const ENC_CMD_STOP: u32 = 1;
 const CTRL_FLAG_DISABLED: u32 = 0x0001;
 const CAP_DEVICE_CAPS: u32 = 0x8000_0000;
@@ -229,6 +233,21 @@ struct Selection {
     _reserved: [u32; 9],
 }
 
+/// `v4l2_subdev_selection`.
+#[repr(C)]
+struct SubdevSelection {
+    which: u32,
+    pad: u32,
+    target: u32,
+    flags: u32,
+    left: i32,
+    top: i32,
+    width: u32,
+    height: u32,
+    stream: u32,
+    _reserved: [u32; 7],
+}
+
 #[repr(C)]
 struct EncoderCommand {
     command: u32,
@@ -303,6 +322,8 @@ unsafe impl Zeroable for QueryControl {}
 // SAFETY: as above.
 unsafe impl Zeroable for Selection {}
 // SAFETY: as above.
+unsafe impl Zeroable for SubdevSelection {}
+// SAFETY: as above.
 unsafe impl Zeroable for EncoderCommand {}
 // SAFETY: as above.
 unsafe impl Zeroable for OutputParameters {}
@@ -310,6 +331,23 @@ unsafe impl Zeroable for OutputParameters {}
 fn zeroed<T: Zeroable>() -> T {
     // SAFETY: all-zero bytes are a valid `T`, as `Zeroable` requires.
     unsafe { std::mem::zeroed() }
+}
+
+/// The crop of a sensor from its `crop` and `bounds` selections: `None` when
+/// the node has no selection API or either rectangle is empty.
+fn sensor_crop(
+    crop: io::Result<Rectangle>,
+    bounds: io::Result<Rectangle>,
+) -> io::Result<Option<SensorCrop>> {
+    let unsupported =
+        |error: &io::Error| matches!(error.raw_os_error(), Some(libc::ENOTTY | libc::EINVAL));
+    let (crop, bounds) = match (crop, bounds) {
+        (Ok(crop), Ok(bounds)) => (crop, bounds),
+        (Err(error), _) | (_, Err(error)) if unsupported(&error) => return Ok(None),
+        (Err(error), _) | (_, Err(error)) => return Err(error),
+    };
+    let empty = |rectangle: Rectangle| rectangle.width == 0 || rectangle.height == 0;
+    Ok((!empty(crop) && !empty(bounds)).then_some(SensorCrop { crop, bounds }))
 }
 
 /// Calls `attempt` until it fails with another error than `waiting`, such as
@@ -382,6 +420,30 @@ impl Node {
             capability.capabilities
         };
         Ok(capabilities & CAP_VIDEO_CAPTURE_MPLANE != 0)
+    }
+
+    /// Where the sensor this subdevice node stands for reads its frames
+    /// from, `None` when the node reports no selection.
+    pub fn sensor_crop(&self) -> io::Result<Option<SensorCrop>> {
+        sensor_crop(
+            self.selection(SEL_TGT_CROP),
+            self.selection(SEL_TGT_CROP_BOUNDS),
+        )
+    }
+
+    /// The rectangle of the selection `target` on pad 0 of this subdevice node.
+    fn selection(&self, target: u32) -> io::Result<Rectangle> {
+        let mut selection: SubdevSelection = zeroed();
+        selection.which = SUBDEV_FORMAT_ACTIVE;
+        selection.target = target;
+        // SAFETY: VIDIOC_SUBDEV_G_SELECTION takes a SubdevSelection, which holds no pointer.
+        unsafe { xioctl(self.as_raw_fd(), VIDIOC_SUBDEV_G_SELECTION, &mut selection) }?;
+        Ok(Rectangle {
+            left: selection.left,
+            top: selection.top,
+            width: selection.width,
+            height: selection.height,
+        })
     }
 
     pub fn control(&self, id: u32) -> io::Result<i32> {
@@ -1015,6 +1077,56 @@ impl M2mDevice for M2mNode {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    const FULL: Rectangle = Rectangle {
+        left: 8,
+        top: 16,
+        width: 4056,
+        height: 3040,
+    };
+    const CENTRE: Rectangle = Rectangle {
+        left: 1048,
+        top: 976,
+        width: 2028,
+        height: 1080,
+    };
+
+    #[test]
+    fn a_sensor_crop_is_its_crop_within_its_bounds() {
+        assert_eq!(
+            sensor_crop(Ok(CENTRE), Ok(FULL)).unwrap(),
+            Some(SensorCrop {
+                crop: CENTRE,
+                bounds: FULL
+            })
+        );
+    }
+
+    #[test]
+    fn a_node_without_selections_or_with_an_empty_one_has_no_sensor_crop() {
+        let error = |code| Err(io::Error::from_raw_os_error(code));
+        assert_eq!(
+            sensor_crop(error(libc::ENOTTY), error(libc::ENOTTY)).unwrap(),
+            None
+        );
+        assert_eq!(sensor_crop(Ok(CENTRE), error(libc::EINVAL)).unwrap(), None);
+        let empty = Rectangle { width: 0, ..FULL };
+        assert_eq!(sensor_crop(Ok(CENTRE), Ok(empty)).unwrap(), None);
+        assert_eq!(
+            sensor_crop(Ok(CENTRE), error(libc::EIO))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::EIO)
+        );
+    }
+
+    #[test]
+    fn a_subdev_selection_is_the_size_its_ioctl_encodes() {
+        assert_eq!(
+            std::mem::size_of::<SubdevSelection>() as u64,
+            (VIDIOC_SUBDEV_G_SELECTION >> 16) & 0x3fff
+        );
+    }
 
     #[test]
     fn each_request_encodes_the_size_of_the_struct_it_is_called_with() {
