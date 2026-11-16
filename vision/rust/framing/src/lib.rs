@@ -324,6 +324,18 @@ pub fn metadata_record(capture_ns: i64, present: u8, values: &[f64; METADATA_FIE
     record
 }
 
+/// The start of a PAIR record, which the left then the right 8-bit grey
+/// frame of `width` x `height` follow, row-major.
+pub fn pair_header(width: u16, height: u16, left_ns: i64, right_ns: i64) -> [u8; 21] {
+    let mut header = [0; 21];
+    header[0] = TAG_PAIR;
+    header[1..3].copy_from_slice(&width.to_le_bytes());
+    header[3..5].copy_from_slice(&height.to_le_bytes());
+    header[5..13].copy_from_slice(&left_ns.to_le_bytes());
+    header[13..].copy_from_slice(&right_ns.to_le_bytes());
+    header
+}
+
 /// Two 8-bit grey frames of `width` x `height`, row-major, with their start times.
 pub fn pair_record(
     width: u16,
@@ -333,15 +345,12 @@ pub fn pair_record(
     left: &[u8],
     right: &[u8],
 ) -> Vec<u8> {
-    let mut record = Vec::with_capacity(21 + left.len() + right.len());
-    record.push(TAG_PAIR);
-    record.extend_from_slice(&width.to_le_bytes());
-    record.extend_from_slice(&height.to_le_bytes());
-    record.extend_from_slice(&left_ns.to_le_bytes());
-    record.extend_from_slice(&right_ns.to_le_bytes());
-    record.extend_from_slice(left);
-    record.extend_from_slice(right);
-    record
+    [
+        &pair_header(width, height, left_ns, right_ns)[..],
+        left,
+        right,
+    ]
+    .concat()
 }
 
 #[cfg(test)]
@@ -501,6 +510,7 @@ mod tests {
             4, 2, 0, 1, 0, 5, 0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4,
         ];
         assert_eq!(got, want);
+        assert_eq!(pair_header(2, 1, 5, 6), want[..21]);
     }
 
     #[test]

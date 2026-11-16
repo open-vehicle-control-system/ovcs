@@ -35,7 +35,7 @@ use std::process::ExitCode;
 
 use bayer::Tone;
 use exposure::AutoExposure;
-use framing::{log_record, metadata_record, pair_record, LogLevel, Writer};
+use framing::{log_record, metadata_record, pair_header, LogLevel, Writer};
 use lock::PhaseLock;
 use pairing::{Pairer, Side};
 use sensor::SensorModel;
@@ -330,14 +330,13 @@ fn run(
                 }
                 if let Some(pair) = pairer.push(side, start_ns, grey) {
                     statistics[2] += 1;
-                    writer.write_record(&pair_record(
+                    let header = pair_header(
                         arguments.width as u16,
                         arguments.height as u16,
                         pair.left_ns,
                         pair.right_ns,
-                        &pair.left,
-                        &pair.right,
-                    ))?;
+                    );
+                    writer.write_record_parts(&[&header, &pair.left, &pair.right])?;
                 }
             }
         }
