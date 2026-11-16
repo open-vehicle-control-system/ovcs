@@ -593,15 +593,23 @@ fn formats_offered(node: &Node, kind: u32) -> io::Result<Vec<u32>> {
     }
 }
 
+/// The format a node set when asked for one.
+struct FormatReply {
+    width: u32,
+    height: u32,
+    pixel_format: u32,
+    bytes_per_line: u32,
+}
+
 /// Asks `node` for `width` x `height` in `pixelformat` and returns the format
-/// it sets: its size, pixel format and bytes per row.
+/// it sets.
 fn set_format(
     node: &Node,
     multiplanar: bool,
     width: u32,
     height: u32,
     pixelformat: u32,
-) -> io::Result<(u32, u32, u32, u32)> {
+) -> io::Result<FormatReply> {
     if multiplanar {
         let mut format: FormatMplane = zeroed();
         format.kind = BUF_TYPE_VIDEO_CAPTURE_MPLANE;
@@ -613,12 +621,12 @@ fn set_format(
         // multiplanar member holds no pointer.
         unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
-        Ok((
-            pix.width,
-            pix.height,
-            pix.pixelformat,
-            pix.plane_fmt[0].bytesperline,
-        ))
+        Ok(FormatReply {
+            width: pix.width,
+            height: pix.height,
+            pixel_format: pix.pixelformat,
+            bytes_per_line: pix.plane_fmt[0].bytesperline,
+        })
     } else {
         let mut format: Format = zeroed();
         format.kind = BUF_TYPE_VIDEO_CAPTURE;
@@ -629,7 +637,12 @@ fn set_format(
         // single-plane member holds no pointer.
         unsafe { xioctl(node.as_raw_fd(), VIDIOC_S_FMT, &mut format) }?;
         let pix = &format.pix;
-        Ok((pix.width, pix.height, pix.pixelformat, pix.bytesperline))
+        Ok(FormatReply {
+            width: pix.width,
+            height: pix.height,
+            pixel_format: pix.pixelformat,
+            bytes_per_line: pix.bytesperline,
+        })
     }
 }
 
@@ -653,10 +666,9 @@ impl Capture {
         let (layout, bytesperline) = negotiate(
             sample_bits,
             |pixelformat| {
-                let (set_width, set_height, set, bytesperline) =
-                    set_format(&node, multiplanar, width, height, pixelformat)?;
-                set_size = (set_width, set_height);
-                Ok((set, bytesperline))
+                let reply = set_format(&node, multiplanar, width, height, pixelformat)?;
+                set_size = (reply.width, reply.height);
+                Ok((reply.pixel_format, reply.bytes_per_line))
             },
             || formats_offered(&node, kind),
         )?;
