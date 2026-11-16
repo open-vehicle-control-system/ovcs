@@ -18,15 +18,15 @@ mod ffi {
 
 mod dlc;
 mod interface;
-mod performance;
 pub mod port;
+mod power;
 mod profile;
 mod stage_times;
 mod tensor;
 mod time_log;
 
 pub use dlc::{dlc_graph_names, print_dlc_graph_names};
-pub use performance::{command_line, CommandLine, Performance, Power, DEFAULT_PERFORMANCE};
+pub use power::{command_line, CommandLine, Performance, Power, DEFAULT_PERFORMANCE};
 pub use profile::{ProfiledTimes, TimeSource, Timing, EXECUTION_STAGES};
 pub use stage_times::{micros, Stage, StageTimes, STAGE_TIMES_EVERY};
 pub use tensor::Tensor;
@@ -39,7 +39,7 @@ use std::time::Instant;
 use ffi::*;
 use interface::{backend_interface, system_interface};
 use libloading::Library;
-use performance::{vote, PowerVote};
+use power::{vote, PowerVote};
 use profile::{
     collect_events, create_profile, top_level_events, EventCursor, Profile, ProfileEvent,
     EXECUTIONS_PER_PROFILE,
