@@ -212,7 +212,7 @@ impl Frames for CameraFrames<'_> {
             (raw, frame.start_ns)
         });
         let taken = take(whole);
-        self.capture.queue(frame.index)?;
+        self.capture.queue(frame)?;
         Ok(Some(taken))
     }
 }

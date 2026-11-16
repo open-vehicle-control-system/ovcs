@@ -399,9 +399,10 @@ pub struct Capture {
 }
 
 /// A dequeued frame: its buffer index, the frame start in CLOCK_MONOTONIC ns,
-/// the bytes the driver filled and its flags.
+/// the bytes the driver filled and its flags. Queueing it again takes it, which
+/// ends the borrows of its pixels before the driver writes to them.
 pub struct Dequeued {
-    pub index: u32,
+    index: u32,
     pub start_ns: i64,
     pub bytes: usize,
     flags: u32,
@@ -608,7 +609,7 @@ impl Capture {
                 return Err(io::Error::last_os_error());
             }
             capture.buffers.push((address, length as usize));
-            capture.queue(index)?;
+            capture.queue_index(index)?;
         }
         let mut stream_kind = kind as i32;
         xioctl(capture.node.fd, VIDIOC_STREAMON, &mut stream_kind)?;
@@ -631,7 +632,12 @@ impl Capture {
         Ok((buffer, plane))
     }
 
-    pub fn queue(&self, index: u32) -> io::Result<()> {
+    /// Gives `frame`'s buffer back to the driver to fill.
+    pub fn queue(&self, frame: Dequeued) -> io::Result<()> {
+        self.queue_index(frame.index)
+    }
+
+    fn queue_index(&self, index: u32) -> io::Result<()> {
         self.buffer_ioctl(VIDIOC_QBUF, index).map(|_| ())
     }
 
@@ -658,10 +664,10 @@ impl Capture {
         complete(frame.flags, frame.bytes, self.row_stride, self.height)
     }
 
-    pub fn pixels(&self, frame: &Dequeued) -> &[u8] {
+    pub fn pixels<'a>(&'a self, frame: &'a Dequeued) -> &'a [u8] {
         let (address, length) = self.buffers[frame.index as usize];
-        // SAFETY: the buffer stays mapped for the life of `self` and the driver
-        // does not write to it until it is queued again.
+        // SAFETY: the buffer stays mapped for the life of `self`, and the driver
+        // does not write to it until `queue` takes `frame`, which ends this borrow.
         unsafe { std::slice::from_raw_parts(address as *const u8, frame.bytes.min(length)) }
     }
 }

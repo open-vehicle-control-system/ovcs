@@ -290,7 +290,7 @@ fn run(
             while let Some(frame) = camera.capture.dequeue()? {
                 if !camera.capture.complete(&frame) {
                     statistics[3] += 1;
-                    camera.capture.queue(frame.index)?;
+                    camera.capture.queue(frame)?;
                     continue;
                 }
                 statistics[side as usize] += 1;
@@ -305,29 +305,30 @@ fn run(
                     settings.rotation == 180,
                 );
                 conversion_ns += converting.elapsed().as_nanos();
-                camera.capture.queue(frame.index)?;
+                let start_ns = frame.start_ns;
+                camera.capture.queue(frame)?;
                 match side {
                     Side::Left => {
-                        last_left_ns = Some(frame.start_ns);
+                        last_left_ns = Some(start_ns);
                         left_frames += 1;
                         if settings.auto_exposure
                             && left_frames.is_multiple_of(EXPOSURE_EVERY_FRAMES)
                         {
                             let mean = exposure::mean(&grey, EXPOSURE_SAMPLE_STRIDE);
                             if let Some((exposure_us, gain)) = auto_exposure.observe(mean) {
-                                report_exposure(set_exposure(exposure_us, gain)?, frame.start_ns)?;
+                                report_exposure(set_exposure(exposure_us, gain)?, start_ns)?;
                             }
                         }
                     }
                     Side::Right => {
                         if let Some(left_ns) = last_left_ns {
-                            if let Some(vblank) = lock.observe(left_ns, frame.start_ns) {
+                            if let Some(vblank) = lock.observe(left_ns, start_ns) {
                                 right.sensor.set_control(v4l2::CID_VBLANK, vblank)?;
                             }
                         }
                     }
                 }
-                if let Some(pair) = pairer.push(side, frame.start_ns, grey) {
+                if let Some(pair) = pairer.push(side, start_ns, grey) {
                     statistics[2] += 1;
                     writer.write_record(&pair_record(
                         arguments.width as u16,
